@@ -99,6 +99,12 @@ async function main() {
   // --- state --------------------------------------------------------------
   let running = false;
   let needsReset = true;
+  // Run the present test automatically for the first 1.5 s of the session, so
+  // the very first thing on screen answers 'can this canvas show WebGPU output
+  // at all?' without the user needing to know a keyboard shortcut.
+  let presentTest = true;
+  const autoTestUntil = performance.now() + 1500;
+  let manualPresentTest = false;
 
   // Self-test: once a second, fire the GPU pick straight down the camera's
   // forward ray and record whether it found rock. This turns "is there
@@ -202,6 +208,7 @@ async function main() {
     if (e.target instanceof HTMLInputElement) return;
     if (e.code === 'Space') { e.preventDefault(); running = !running; panel.setPlaying(running); }
     if (e.code === 'KeyR') needsReset = true;
+    if (e.code === 'KeyP') { presentTest = !presentTest; manualPresentTest = presentTest; }
     if (e.code === 'BracketLeft') brushRadius = Math.max(4, brushRadius * 0.85);
     if (e.code === 'BracketRight') brushRadius = Math.min(90, brushRadius * 1.18);
   });
@@ -272,7 +279,46 @@ async function main() {
     camera.writeUniform(camData, aspect, canvas.width, canvas.height, now * 0.001, frame);
     device.queue.writeBuffer(res.cameraBuf, 0, camData);
 
-    const encoder = device.createCommandEncoder({ label: 'frame' });
+      // -----------------------------------------------------------------------
+    //  PRESENT TEST (press P)
+    //
+    //  Clears the swapchain to solid ORANGE and submits nothing else - no
+    //  pipeline, no shader, no bind groups. This separates two failures that
+    //  look identical on screen:
+    //
+    //    orange  -> WebGPU is presenting correctly, so the fault is in the
+    //               render pipeline or its shader
+    //    white   -> the canvas is not showing WebGPU output at all, and no
+    //               amount of shader work will ever appear
+    //
+    //  A raymarcher has many ways to draw nothing; the swapchain has very few.
+    // -----------------------------------------------------------------------
+    if (presentTest && autoTestUntil > 0 && now > autoTestUntil && !manualPresentTest) {
+      presentTest = false;
+    }
+    if (presentTest) {
+      const enc = device.createCommandEncoder({ label: 'present test' });
+      const pass = enc.beginRenderPass({
+        colorAttachments: [{
+          view: context.getCurrentTexture().createView(),
+          clearValue: { r: 0.95, g: 0.45, b: 0.10, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        }],
+      });
+      pass.end();
+      device.queue.submit([enc.finish()]);
+      statsEl.textContent =
+        'PRESENT TEST\n' +
+        'orange = WebGPU presents fine (shader/pipeline is the bug)\n' +
+        'white  = canvas is not showing WebGPU output at all\n' +
+        'press P again to return';
+      frame++;
+      requestAnimationFrame(frameLoop);
+      return;
+    }
+
+  const encoder = device.createCommandEncoder({ label: 'frame' });
 
     if (needsReset) {
       sim.reset(encoder);
