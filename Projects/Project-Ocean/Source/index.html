@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontier · Project-Ocean O0</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1420;
+    font: 13px/1.45 system-ui, sans-serif; color: #dfe9f2; }
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #panel { position: fixed; top: 12px; left: 12px; background: rgba(8,16,28,.72);
+    border: 1px solid rgba(140,180,220,.25); border-radius: 8px; padding: 10px 12px;
+    min-width: 230px; backdrop-filter: blur(4px); }
+  #panel h1 { font-size: 14px; margin: 0 0 6px; font-weight: 600; }
+  #panel h1 span { color: #8fd0ff; }
+  #stats { font-variant-numeric: tabular-nums; color: #a9c6de; margin-bottom: 8px; }
+  #panel label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+  #panel input[type=range] { flex: 1; }
+  #hint { margin-top: 6px; color: #7d97ad; font-size: 12px; }
+  #err { position: fixed; left: 12px; bottom: 12px; right: 12px; display: none;
+    background: rgba(120,20,20,.9); border-radius: 8px; padding: 10px 12px;
+    font-family: monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="panel">
+  <h1>Frontier · Project-Ocean <span>O0</span></h1>
+  <div id="stats">starting…</div>
+  <label>wind <input id="wind" type="range" min="2" max="22" step="1" value="10">
+    <b id="windVal">10</b> m/s</label>
+  <label><input id="auto" type="checkbox" checked> auto-orbit</label>
+  <label><input id="pause" type="checkbox"> pause</label>
+  <div id="hint">drag&nbsp;·&nbsp;orbit&nbsp;&nbsp;wheel&nbsp;·&nbsp;zoom</div>
+</div>
+<div id="err"></div>
+<script type="module" src="./OceanApp.js"></script>
+</body>
+</html>
