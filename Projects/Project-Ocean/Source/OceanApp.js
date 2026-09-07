@@ -122,7 +122,7 @@ async function main() {
   if (!navigator.gpu) { fail('WebGPU not available in this browser.'); return; }
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) { fail('No WebGPU adapter found.'); return; }
-  const device = await navigator.gpu.requestDevice();
+  const device = await adapter.requestDevice();
   device.lost.then((info) => { if (window.__ocean.ready) fail('Device lost: ' + info.message); });
 
   const canvas = $('view');
