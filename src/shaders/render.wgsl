@@ -70,21 +70,26 @@ fn gradCheap(p: vec3f, d0: f32) -> vec3f {
 /// steps and is the difference between an interactive frame rate and a
 /// slideshow.
 fn mapDetailed(p: vec3f, dist: f32) -> f32 {
-  let d = sampleDist(p);
+  // One fetch gives distance AND the sediment channel, so the talus rubble
+  // detail below is free.
+  let v = sampleVol(p);
+  let d = v.r;
   let amp = detailScale(dist);
   if (amp <= 1e-4) { return d; }
 
-  // Largest OUTWARD displacement rockDetail can produce (its minimum value is
-  // about -0.9 before the detailAmp scale). Outside the shell we return this
-  // conservative lower bound rather than the raw distance: it is guaranteed
-  // never to overshoot the displaced surface, so the march stays watertight
-  // while still skipping the expensive noise on almost every step.
-  let maxOut = amp * max(U.detailAmp, 1e-3);
+  // Largest OUTWARD displacement rockDetail can produce. Its terms are all
+  // non-negative except the grain term, so the most negative value the
+  // expression can reach is (-0.315 - 0.6) ~ -0.92 before the detailAmp
+  // scale. Outside the shell we return that conservative lower bound rather
+  // than the raw distance: it can never overshoot the displaced surface, so
+  // the march stays watertight while skipping the expensive noise on almost
+  // every step.
+  let maxOut = amp * max(U.detailAmp, 1e-3) * 0.92;
   if (d > maxOut * 3.0 + VOXEL_SIZE.x) { return d - maxOut; }
 
   let n = normalize(gradCheap(p, d) + vec3f(0.0, 1e-6, 0.0));
   let hard = rockHardnessFast(p);
-  return d + rockDetail(p, n, hard) * amp;
+  return d + rockDetail(p, n, hard, v.g) * amp;
 }
 
 /// High-quality normal including micro-detail, for shading.
@@ -264,8 +269,18 @@ fn rockSurface(p: vec3f, n: vec3f, vox: vec4f) -> Surface {
     alb = mix(alb, vegCol, saturate(veg) * 0.80);
   }
 
+  // --- active drainage darkens the bed ------------------------------------
+  // The simulation knows exactly where water concentrates (flowAcc), so the
+  // channel network can be drawn from the physics rather than painted on:
+  // scoured, damp, sediment-washed rock in the washes, dry rock on the ribs
+  // between them. This is what makes the drainage pattern legible from above.
+  let cellS = simAtF(p.xz);
+  let channel = saturate(cellS.flowAcc * 9.0);
+  let onBed = smoothstep(2.5, 0.0, abs(p.y - cellS.h));
+  alb = mix(alb, alb * vec3f(0.62, 0.60, 0.58), channel * onBed * 0.85);
+
   // --- wet rock is darker and shinier -------------------------------------
-  let wetF = saturate(wet * 1.2);
+  let wetF = saturate(max(wet, cellS.wet * onBed) * 1.2);
   alb *= mix(1.0, 0.52, wetF);
 
   s.albedo = alb;

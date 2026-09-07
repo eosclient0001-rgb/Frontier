@@ -93,7 +93,7 @@ fn curvatureAt(t: texture_3d<f32>, c: vec3i) -> f32 {
 //  free. Crucially the detail is driven by the SAME strata/joint fields as the
 //  macro form, so it reads as one coherent rock rather than a noise overlay.
 // ---------------------------------------------------------------------------
-fn rockDetail(p: vec3f, n: vec3f, hardness: f32) -> f32 {
+fn rockDetail(p: vec3f, n: vec3f, hardness: f32, sediment: f32) -> f32 {
   if (U.detailAmp <= 0.001) { return 0.0; }
 
   let f = U.detailFreq;
@@ -115,6 +115,17 @@ fn rockDetail(p: vec3f, n: vec3f, hardness: f32) -> f32 {
   // Vertical rills on steep soft faces — rainwash channels.
   let rill = ridged2(vec2f(p.x, p.z) * 0.30 * f + vec2f(0.0, p.y * 0.02), 3);
   d += rill * steep * (1.0 - hardness) * 0.7;
+
+  // Talus rubble. A scree apron is not a smooth ramp of sand: it is a mass of
+  // loose angular blocks, and that texture is one of the most recognisable
+  // things in a canyon photograph. Where the simulation has deposited
+  // regolith, break the surface up with cell-noise boulders. The sediment
+  // channel comes free with the SDF fetch, so this costs nothing extra.
+  if (sediment > 0.01) {
+    let blocks = 1.0 - voronoiEdge(p.xz * 0.55 * f + vec2f(p.y * 0.06), 0.9);
+    let bedded = smoothstep(0.25, 0.75, n.y);   // rubble rests on slopes
+    d += blocks * saturate(sediment) * bedded * 1.35;
+  }
 
   return (d - 0.6) * U.detailAmp;
 }
