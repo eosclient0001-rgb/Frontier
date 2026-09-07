@@ -22,6 +22,10 @@ export async function initGPU(canvas: HTMLCanvasElement): Promise<GPUContext> {
   const wanted: GPUFeatureName[] = [];
   if (adapter.features.has('float32-filterable')) wanted.push('float32-filterable' as GPUFeatureName);
   if (adapter.features.has('timestamp-query')) wanted.push('timestamp-query' as GPUFeatureName);
+  // NOTE on the volume format: we use rgba16float with WRITE-ONLY storage
+  // access, which is part of core WebGPU. (Only READ-WRITE access to
+  // rgba16float requires the optional texture-formats-tier2 feature, and the
+  // ping-pong design deliberately avoids needing it.)
 
   // Ask for headroom on the 3D texture dimension and storage-buffer size.
   const lim = adapter.limits;

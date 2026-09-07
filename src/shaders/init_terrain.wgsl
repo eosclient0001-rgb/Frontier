@@ -9,7 +9,7 @@
 
 #include "volume.wgsl"
 
-@group(0) @binding(1) var dstVol: texture_storage_3d<r32float, write>;
+@group(0) @binding(1) var dstVol: texture_storage_3d<rgba16float, write>;
 
 /// Path of the trunk drainage across the domain, as an x offset per z.
 fn riverCenterX(z: f32) -> f32 {
@@ -74,5 +74,6 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   // Clip to the domain box so the world is a finite diorama with clean sides.
   d = max(d, domainSDF(p));
 
-  textureStore(dstVol, c, vec4f(d, 0.0, 0.0, 1.0));
+  // .r distance  .g sediment  .b weathering damage  .a wetness
+  textureStore(dstVol, c, vec4f(d, 0.0, 0.0, 0.0));
 }
