@@ -11,6 +11,9 @@ see repo-root `TRACKING_SLATE.md`.
   crest-lightening placeholder, aerial haze, gamma. Sky gradient + sun pass.
 - Query: `?wind=10&auto=1&grid=224`.
 - **Accept:** page runs on GTX Chrome + SwiftShader; no console errors; water + horizon + sun read correctly.
+- O0 refinements shipped: look panel (sea/sun/color/look), WASD glide + R reset, 8-wave
+  non-harmonic set (no visible loop), swell scales heights too, domain-warped detail,
+  2-octave foam lace + patchiness. O1 adds camera-following mesh (FFT is world-space).
 
 ## O1 — FFT core + real foam + proofs
 - Tessendorf FFT in compute (Stockham, butterfly texture): 256² × 3 cascades (GTX), 512² × 4 (RTX).

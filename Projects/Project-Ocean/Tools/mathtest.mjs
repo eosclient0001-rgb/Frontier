@@ -36,12 +36,12 @@ const eq = (a, b, tol, name) => {
   M.mInvert(I, V); M.mMultiply(R, V, I);
   for (let i = 0; i < 16; i++) eq(R[i], i % 5 === 0 ? 1 : 0, 1e-5, 'V*inv(V)[' + i + ']');
 }
-// 3. waves from wind
+// 3. waves from wind (8-wave non-harmonic set)
 {
   const W = M.buildWaves(10, 0.9);
-  eq(W.count, 6, 0, 'wave count');
+  eq(W.count, 8, 0, 'wave count');
   let amp = 0;
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const dx = W.data[i * 4], dz = W.data[i * 4 + 1];
     eq(Math.hypot(dx, dz), 1, 1e-6, 'dir unit ' + i);
     if (!(W.data[i * 4 + 2] > 0)) { console.log('FAIL wavelength', i); process.exitCode = 1; } else pass++;
@@ -68,7 +68,10 @@ const eq = (a, b, tol, name) => {
   eq(flat.data[0], flat.data[4], 1e-6, 'chop=0 aligned dirs');
   eq(flat.steep, 0.5, 0, 'steep override');
   const big = M.buildWaves(10, 0.9, 2, 1, null);
-  eq(big.data[2], 180, 1e-6, 'swell scales wavelength');
+  eq(big.data[2], 186, 1e-6, 'swell scales wavelength');
+  let amp2 = 0;
+  for (let i = 0; i < 8; i++) amp2 += big.data[i * 4 + 3];
+  eq(amp2, big.Hs, 1e-6, 'swell scales amplitude (sum = Hs at swell 2)');
   const c = M.hexToLinear('#ffffff');
   eq(c[0] + c[1] + c[2], 3, 1e-6, 'white stays white');
   const s = M.sunDirFromAngles(90, 0);

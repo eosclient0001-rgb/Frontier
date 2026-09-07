@@ -15,7 +15,10 @@ Requires a WebGPU browser (Chrome/Edge 113+, Firefox 141+, Safari 26).
 
 ## Controls
 
-- Drag: orbit · wheel: zoom · panel groups: sea / sun / color / look (all live)
+- Drag: orbit · wheel: zoom · WASD: glide across the water · Q/E: down/up ·
+  Shift: fast glide · R: reset view (glide is leashed to ±120 m: the O0 mesh is fixed)
+- Panel groups: sea / sun / color / look (all live). `swell` scales wavelengths AND
+  heights (overall sea scale); storm Hs cap is 9 m — wind 22 + swell 2.5 is huge.
 - Query string mirrors every control: `?wind=10&swell=1&chop=1.3&steep=0.65`
   `&sunEl=32&sunAz=206&sunI=1.15&deep=1c5266&sky=709ed6&hor=cfdee8&sun=fff3e0`
   `&glitter=1&foam=1&foamTh=0.78&haze=1&detail=0.55&expo=1&auto=1&grid=224`

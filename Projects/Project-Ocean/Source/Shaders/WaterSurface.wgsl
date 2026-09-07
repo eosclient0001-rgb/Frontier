@@ -83,14 +83,17 @@ fn fsMain(f : VSOut) -> @location(0) vec4<f32> {
   let dist = length(toCam);
   let V = toCam / max(dist, 0.0001);
 
-  // Detail normal: two scrolling value-noise octaves, distance-faded (~120 m band limit).
+  // Detail normal: domain-warped octaves at non-harmonic scales (de-tiled).
   let wdir = u.wind.xy;
   let fade = exp(-dist / 120.0);
+  let warpRot = mat2x2<f32>(0.8, -0.6, 0.6, 0.8); // ~37° frame rotation
   let p1 = f.world.xz * u.wind.w + wdir * u.time * 1.1;
-  let p2 = f.world.xz * u.wind.w * 2.7 - vec2<f32>(wdir.y, wdir.x) * u.time * 1.7;
   let g1 = vec2<f32>(vnoise(p1) - 0.5, vnoise(p1 + 13.7) - 0.5);
-  let g2 = vec2<f32>(vnoise(p2) - 0.5, vnoise(p2 + 7.3) - 0.5);
-  let grad = (g1 + g2 * 0.5) * u.wind.z * fade;
+  let pw = f.world.xz * u.wind.w * 2.7 - vec2<f32>(wdir.y, wdir.x) * u.time * 1.7 + g1 * 2.2;
+  let g2 = vec2<f32>(vnoise(pw) - 0.5, vnoise(pw + 7.3) - 0.5);
+  let p3 = (warpRot * f.world.xz) * u.wind.w * 5.3 + wdir.yx * u.time * 2.6;
+  let g3 = vec2<f32>(vnoise(p3) - 0.5, vnoise(p3 + 3.1) - 0.5);
+  let grad = (g1 + g2 * 0.5 + g3 * 0.22 * fade) * u.wind.z * fade;
   let n = normalize(f.normal + vec3<f32>(grad.x, 0.0, grad.y));
 
   let NdotV = max(dot(n, V), 0.0);
@@ -105,10 +108,14 @@ fn fsMain(f : VSOut) -> @location(0) vec4<f32> {
   let scatter = pow(clamp(0.5 + 0.5 * NdotL, 0.0, 1.0), 2.0);
   var body = u.deepColor * (0.35 + 0.65 * scatter * u.scatterAmt);
 
-  // Crest lightening — O0 placeholder for Jacobian foam (O1 replaces with foam texture).
+  // Crest foam: two-octave lace in a rotated frame + large-scale patchiness,
+  // so foam breaks into patches instead of striping with the waves.
   let crestN = clamp(f.crest * 0.5 + 0.5, 0.0, 1.0);
-  let lace = vnoise(f.world.xz * 0.9 + wdir * u.time * 0.6);
-  let foamM = smoothstep(u.look.z, u.look.z + 0.2, crestN * (0.75 + 0.5 * lace)) * exp(-dist / 90.0) * u.look.y;
+  let fp = f.world.xz * 0.9 + wdir * u.time * 0.6;
+  let lace = vnoise(fp) * 0.65 + vnoise(warpRot * fp * 2.3 - wdir.yx * u.time * 0.9) * 0.35;
+  let patch = vnoise(warpRot * f.world.xz * 0.05 + vec2<f32>(u.time * 0.03, -u.time * 0.02));
+  let foamM = smoothstep(u.look.z, u.look.z + 0.2,
+    crestN * (0.55 + 0.7 * lace) * (0.45 + 0.9 * patch)) * exp(-dist / 90.0) * u.look.y;
   body = mix(body, vec3<f32>(0.9, 0.93, 0.95), foamM * 0.85);
 
   var col = mix(body, reflCol, fres);

@@ -80,17 +80,18 @@ function mInvert(out, m) {
 
 // ---------- waves from wind (Gerstner placeholder; O1 replaces with FFT) ----------
 function buildWaves(wind, windAngle, swell = 1, chop = 1, steep = null) {
-  const Hs = Math.min(0.21 * wind * wind / 9.81, 6.0); // Pierson–Moskowitz cap
-  const L = [90, 46, 23, 12, 6.5, 4.0];
-  const w = [0.34, 0.24, 0.17, 0.11, 0.08, 0.06];
-  const spread = [0, 0.35, -0.50, 0.95, -1.15, 1.90]; // short waves spread widest
+  const Hs = Math.min(0.21 * wind * wind / 9.81, 9.0); // Pierson–Moskowitz, storm cap
+  // Non-harmonic wavelengths: no simple ratios -> the sum never visibly loops.
+  const L = [93, 54, 29, 15.5, 9.2, 5.9, 4.2, 3.4];
+  const w = [0.30, 0.22, 0.16, 0.11, 0.08, 0.06, 0.04, 0.03];
+  const spread = [0, 0.40, -0.62, 1.05, -1.30, 2.10, -2.40, 2.90];
   const arr = new Float32Array(8 * 4);
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 8; i++) {
     const a = windAngle + spread[i] * chop;
     arr[i * 4] = Math.cos(a); arr[i * 4 + 1] = Math.sin(a);
-    arr[i * 4 + 2] = L[i] * swell; arr[i * 4 + 3] = Hs * 0.5 * w[i];
+    arr[i * 4 + 2] = L[i] * swell; arr[i * 4 + 3] = Hs * 0.5 * w[i] * swell;
   }
-  return { data: arr, count: 6, steep: steep === null ? Math.min(0.45 + wind * 0.02, 0.85) : steep, Hs };
+  return { data: arr, count: 8, steep: steep === null ? Math.min(0.45 + wind * 0.02, 0.85) : steep, Hs };
 }
 
 function hexToLinear(hex) {
@@ -266,6 +267,14 @@ async function main() {
     cam.dist = Math.min(400, Math.max(8, cam.dist * (1 + e.deltaY * 0.001)));
   }, { passive: false });
 
+  const keyState = {};
+  addEventListener('keydown', (e) => {
+    keyState[e.code] = true;
+    if (e.code === 'KeyR') { cam.target = [0, 0.5, 0]; cam.yaw = 0.55; cam.pitch = 0.24; cam.dist = 64; }
+  });
+  addEventListener('keyup', (e) => { keyState[e.code] = false; });
+  addEventListener('blur', () => { for (const k in keyState) keyState[k] = false; });
+
   const autoEl = $('auto'), pauseEl = $('pause');
   autoEl.checked = P.auto;
   function bindNum(id, key, apply, fmt = (v) => String(v)) {
@@ -320,6 +329,7 @@ async function main() {
   const eye = [0, 0, 0];
   let simT = 0, last = performance.now(), emaMs = 16, frames = 0, fpsT = last;
   const statsEl = $('stats');
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
   function frame(now) {
     requestAnimationFrame(frame);
@@ -327,6 +337,22 @@ async function main() {
     last = now;
     if (!pauseEl.checked) simT += dt;
     if (autoEl.checked && !dragging && !pauseEl.checked) cam.yaw += dt * 0.03;
+
+    // WASD glide: move the orbit rig across the water (leashed to the 320 m mesh).
+    const ks = keyState;
+    const spd = (8 + cam.dist * 0.35) * dt * ((ks.ShiftLeft || ks.ShiftRight) ? 3 : 1);
+    const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw); // view forward, ground-projected
+    const rx = -fz, rz = fx; // camera right
+    let mx = 0, mz = 0, my = 0;
+    if (ks.KeyW) { mx += fx; mz += fz; }
+    if (ks.KeyS) { mx -= fx; mz -= fz; }
+    if (ks.KeyD) { mx += rx; mz += rz; }
+    if (ks.KeyA) { mx -= rx; mz -= rz; }
+    if (ks.KeyE) my += 1;
+    if (ks.KeyQ) my -= 1;
+    cam.target[0] = clamp(cam.target[0] + mx * spd, -120, 120);
+    cam.target[2] = clamp(cam.target[2] + mz * spd, -120, 120);
+    cam.target[1] = clamp(cam.target[1] + my * spd, -5, 80);
 
     eye[0] = cam.target[0] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw);
     eye[1] = cam.target[1] + cam.dist * Math.sin(cam.pitch);
@@ -362,7 +388,8 @@ async function main() {
       frames = 0; fpsT = now;
       window.__ocean.fps = Math.round(fps); window.__ocean.ms = +emaMs.toFixed(2);
       statsEl.textContent = `${window.__ocean.fps} fps · ${window.__ocean.ms} ms · ` +
-        `${(mesh.tris / 1000).toFixed(0)}k tris · wind ${P.wind} m/s`;
+        `${(mesh.tris / 1000).toFixed(0)}k tris · wind ${P.wind} m/s · ` +
+        `@(${cam.target[0].toFixed(0)},${cam.target[2].toFixed(0)})`;
     }
   }
 
