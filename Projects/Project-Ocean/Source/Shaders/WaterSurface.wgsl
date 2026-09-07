@@ -113,9 +113,9 @@ fn fsMain(f : VSOut) -> @location(0) vec4<f32> {
   let crestN = clamp(f.crest * 0.5 + 0.5, 0.0, 1.0);
   let fp = f.world.xz * 0.9 + wdir * u.time * 0.6;
   let lace = vnoise(fp) * 0.65 + vnoise(warpRot * fp * 2.3 - wdir.yx * u.time * 0.9) * 0.35;
-  let patch = vnoise(warpRot * f.world.xz * 0.05 + vec2<f32>(u.time * 0.03, -u.time * 0.02));
+  let blotch = vnoise(warpRot * f.world.xz * 0.05 + vec2<f32>(u.time * 0.03, -u.time * 0.02));
   let foamM = smoothstep(u.look.z, u.look.z + 0.2,
-    crestN * (0.55 + 0.7 * lace) * (0.45 + 0.9 * patch)) * exp(-dist / 90.0) * u.look.y;
+    crestN * (0.55 + 0.7 * lace) * (0.45 + 0.9 * blotch)) * exp(-dist / 90.0) * u.look.y;
   body = mix(body, vec3<f32>(0.9, 0.93, 0.95), foamM * 0.85);
 
   var col = mix(body, reflCol, fres);

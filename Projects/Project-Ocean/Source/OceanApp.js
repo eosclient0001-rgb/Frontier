@@ -5,10 +5,14 @@ const $ = (id) => document.getElementById(id);
 window.__ocean = { ready: false, error: null, fps: 0, ms: 0, tris: 0 };
 
 function fail(msg) {
-  window.__ocean.error = String(msg);
+  // Keep the FIRST error: WebGPU failures cascade (bad shader -> bad pipeline ->
+  // bad command buffer -> submit error), and the first message names the cause.
+  if (!window.__ocean.error) window.__ocean.error = String(msg);
+  window.__ocean.errors = (window.__ocean.errors || 0) + 1;
   const e = $('err');
   e.style.display = 'block';
-  e.textContent = 'Ocean O0 error: ' + msg;
+  e.textContent = 'Ocean O0 error: ' + window.__ocean.error +
+    (window.__ocean.errors > 1 ? `\n(+${window.__ocean.errors - 1} follow-on errors; first kept)` : '');
   console.error('[ocean]', msg);
 }
 window.addEventListener('error', (ev) => fail(ev.message || ev.error));
