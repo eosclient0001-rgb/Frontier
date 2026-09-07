@@ -278,6 +278,10 @@ input[type="range"]::-moz-range-thumb {
   background: rgba(10, 8, 7, 0.96);
   padding: 24px;
 }
+/* An explicit `display` overrides the [hidden] attribute, which is only
+   `display:none` at user-agent priority. Without this the gate is permanently
+   painted over the canvas and the app looks dead even when it is running. */
+#gate[hidden] { display: none; }
 .gate-card {
   max-width: 520px;
   border: 1px solid var(--line);

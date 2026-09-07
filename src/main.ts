@@ -37,7 +37,15 @@ async function fail(msg: string) {
   }
 }
 
+/** Report boot progress into the gate, so a hang is never a blank spinner. */
+function boot(step: string) {
+  const el = document.getElementById('gate-msg');
+  if (el) el.textContent = step;
+  console.info(`[frontier] ${step}`);
+}
+
 async function main() {
+  boot('Requesting GPU adapter and device…');
   let gpu;
   try {
     gpu = await initGPU(canvas);
@@ -45,6 +53,12 @@ async function main() {
     await fail(String(e instanceof Error ? e.message : e));
     return;
   }
+
+  // WebGPU is alive: make certain the gate is down. Belt and braces, because
+  // an overlay stuck at z-index 100 makes a perfectly working renderer look
+  // completely dead.
+  gateEl.hidden = true;
+  gateEl.style.display = 'none';
 
   const { device, context, format } = gpu;
 
@@ -59,8 +73,11 @@ async function main() {
   let renderer: Renderer;
 
   try {
+    boot('Allocating volume textures…');
     res = createResources(device, grid);
+    boot('Compiling simulation shaders…');
     sim = new Simulation(device, res);
+    boot('Compiling renderer…');
     renderer = new Renderer(device, res, format);
   } catch (e) {
     await fail(`Failed to create GPU pipelines: ${e instanceof Error ? e.message : e}`);

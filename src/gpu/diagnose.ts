@@ -69,6 +69,16 @@ function linuxChromeSteps(): string[] {
   ];
 }
 
+/** Reject if a promise takes longer than `ms` — adapter/device requests can
+ *  hang indefinitely on a wedged driver, and a hung probe is indistinguishable
+ *  from a hung app. */
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms}ms`)), ms)),
+  ]);
+}
+
 export async function diagnose(): Promise<Diagnosis> {
   const env = browserGuess();
   const facts: Array<[string, string]> = [
@@ -136,13 +146,13 @@ export async function diagnose(): Promise<Diagnosis> {
   let adapter: GPUAdapter | null = null;
   let adapterErr = '';
   try {
-    adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    adapter = await withTimeout(navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }), 8000, 'requestAdapter()');
     if (!adapter) {
       // Retry with no hint — some setups only expose a low-power/software one.
-      adapter = await navigator.gpu.requestAdapter();
+      adapter = await withTimeout(navigator.gpu.requestAdapter(), 8000, 'requestAdapter()');
     }
     if (!adapter) {
-      adapter = await navigator.gpu.requestAdapter({ forceFallbackAdapter: true });
+      adapter = await withTimeout(navigator.gpu.requestAdapter({ forceFallbackAdapter: true }), 8000, 'requestAdapter()');
       if (adapter) facts.push(['Adapter', 'fallback (software) only']);
     }
   } catch (e) {
@@ -189,7 +199,7 @@ export async function diagnose(): Promise<Diagnosis> {
   let device: GPUDevice | null = null;
   let deviceErr = '';
   try {
-    device = await adapter.requestDevice();
+    device = await withTimeout(adapter.requestDevice(), 8000, 'requestDevice()');
   } catch (e) {
     deviceErr = e instanceof Error ? e.message : String(e);
   }
