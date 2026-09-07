@@ -1,0 +1,33 @@
+{
+  "name": "frontier-terrain",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eosclient0001-rgb/Frontier.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/eosclient0001-rgb/Frontier/issues"
+  },
+  "homepage": "https://github.com/eosclient0001-rgb/Frontier#readme",
+  "devDependencies": {
+    "@webgpu/types": "^0.1.72",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21",
+    "wgsl_reflect": "^1.6.0"
+  },
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>Frontier — SDF Terrain &amp; Erosion</title>
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <div id="hud">
+      <div id="stats"></div>
+      <div id="hint">
+        <b>LMB drag</b> orbit &nbsp;·&nbsp; <b>RMB / MMB drag</b> pan &nbsp;·&nbsp; <b>wheel</b> zoom
+        &nbsp;·&nbsp; <b>Ctrl+LMB</b> sculpt &nbsp;·&nbsp; <b>Shift+Ctrl+LMB</b> add
+      </div>
+    </div>
+
+    <div id="panel"></div>
+
+    <div id="gate" hidden>
+      <div class="gate-card">
+        <h1>WebGPU required</h1>
+        <p id="gate-msg"></p>
+        <p class="dim">
+          Use Chrome/Edge 113+, or Firefox 141+ on Windows. On Linux Chrome you may need
+          <code>--enable-unsafe-webgpu --enable-features=Vulkan</code>.
+        </p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
