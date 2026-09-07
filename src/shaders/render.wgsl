@@ -262,10 +262,10 @@ fn rockSurface(p: vec3f, n: vec3f, vox: vec4f) -> Surface {
     let moisture = saturate(wet * 1.4 + 0.10);
     // North-facing slopes hold moisture in the northern hemisphere.
     let aspect = saturate(-n.z * 0.5 + 0.5);
-    let patch = fbm2(p.xz * 0.11 + vec2f(U.seed * 3.0), 4) * 0.5 + 0.5;
-    let clump = smoothstep(0.52, 0.80, patch);
+    let vegPatch = fbm2(p.xz * 0.11 + vec2f(U.seed * 3.0), 4) * 0.5 + 0.5;
+    let clump = smoothstep(0.52, 0.80, vegPatch);
     let veg = bench * clump * saturate(U.vegetation) * (0.35 + moisture * 0.65) * (0.55 + aspect * 0.45);
-    let vegCol = mix(vec3f(0.115, 0.135, 0.070), vec3f(0.180, 0.190, 0.105), patch);
+    let vegCol = mix(vec3f(0.115, 0.135, 0.070), vec3f(0.180, 0.190, 0.105), vegPatch);
     alb = mix(alb, vegCol, saturate(veg) * 0.80);
   }
 

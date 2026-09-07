@@ -97,12 +97,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     default: {
       if (B.strength >= 0.0) {
         // ADD material: union with the brush.
-        let target = smin(d, bd, k);
-        d = mix(d, target, saturate(B.strength) * saturate(w * 2.0 + 0.35));
+        let blended = smin(d, bd, k);
+        d = mix(d, blended, saturate(B.strength) * saturate(w * 2.0 + 0.35));
       } else {
         // SUBTRACT: difference. This is what carves caves, arches, alcoves.
-        let target = smax(d, -bd, k);
-        d = mix(d, target, saturate(-B.strength) * saturate(w * 2.0 + 0.35));
+        let blended = smax(d, -bd, k);
+        d = mix(d, blended, saturate(-B.strength) * saturate(w * 2.0 + 0.35));
       }
     }
   }

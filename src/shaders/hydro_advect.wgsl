@@ -1,7 +1,7 @@
 // ===========================================================================
 //  hydro_advect.wgsl — move suspended sediment with the flow.
 //
-//  Semi-Lagrangian backtrace: look up where this parcel of water came from and
+//  Semi-Lagrangian backtrace: look up where this parcel of water came srcPos and
 //  take its sediment. Unconditionally stable at any time step, which matters
 //  because the user is dragging sliders in real time and can pick a dt that a
 //  forward-Euler advection would explode on.
@@ -33,8 +33,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
   // Backtrace in sim-grid units.
   let vGrid = s.vel * U.dt / SIM_CELL;
-  let from = vec2f(c) - vGrid;
-  let clamped = clamp(from, vec2f(0.0), vec2f(f32(SIMX - 1), f32(SIMZ - 1)));
+  let srcPos = vec2f(c) - vGrid;
+  let clamped = clamp(srcPos, vec2f(0.0), vec2f(f32(SIMX - 1), f32(SIMZ - 1)));
 
   var newSed = sedBilinear(clamped);
 
