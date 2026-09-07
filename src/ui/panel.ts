@@ -14,7 +14,7 @@ export interface PanelCallbacks {
 
 const DEBUG_VIEWS = [
   'Beauty', 'Rock hardness', 'Normals', 'March cost',
-  'Water & flow', 'Sediment', 'Weathering',
+  'Water & flow', 'Sediment', 'Weathering', 'RAW SDF (diagnostic)',
 ];
 
 const BRUSH_MODES = ['Subtract', 'Add', 'Smooth'];

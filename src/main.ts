@@ -99,6 +99,13 @@ async function main() {
   // --- state --------------------------------------------------------------
   let running = false;
   let needsReset = true;
+
+  // Self-test: once a second, fire the GPU pick straight down the camera's
+  // forward ray and record whether it found rock. This turns "is there
+  // anything in the volume?" - otherwise invisible GPU state - into a line of
+  // text in the HUD.
+  let probeInfo = 'probing…';
+  let lastProbe = 0;
   let stepsPerFrame = 2;
   let frame = 0;
   let simTime = 0;
@@ -280,6 +287,12 @@ async function main() {
     // actually been handed to the queue.
     let pickStrength = 0;
     let didPick = false;
+    let didProbe = false;
+    if (!pendingPick && !pickInFlight && now - lastProbe > 1000) {
+      lastProbe = now;
+      sim.encodePick(encoder, camera.position, camera.forward);
+      didProbe = true;
+    }
     if (pendingPick && !pickInFlight) {
       sim.encodePick(encoder, pendingPick.origin, pendingPick.dir);
       pickStrength = pendingPick.strength;
@@ -320,11 +333,17 @@ async function main() {
     device.queue.submit([encoder.finish()]);
 
     // Now that the pick pass is queued, read its result asynchronously.
-    if (didPick) {
+    if (didPick || didProbe) {
       pickInFlight = true;
       sim.readPick().then((r) => {
         pickInFlight = false;
-        if (r && r.hit) {
+        if (!r) return;
+        if (didProbe) {
+          probeInfo = r.hit
+            ? `center ray HITS rock at ${r.pos.map((v) => v.toFixed(0)).join(', ')}`
+            : 'center ray finds NO rock — volume looks empty';
+        }
+        if (didPick && r.hit) {
           pendingSculpt = { x: r.pos[0], y: r.pos[1], z: r.pos[2], strength: pickStrength };
         }
       }).catch(() => { pickInFlight = false; });
@@ -335,7 +354,9 @@ async function main() {
       `${fps.toFixed(0)} fps   ${canvas.width}×${canvas.height}\n` +
       `grid  ${grid.volX}×${grid.volY}×${grid.volZ}  (${mb.toFixed(0)} MB)\n` +
       `steps ${sim.stepCount}   ${running ? 'ERODING' : 'paused'}\n` +
-      `brush r=${brushRadius.toFixed(0)}m`;
+      `brush r=${brushRadius.toFixed(0)}m\n` +
+      `cam   ${camera.position.map((v) => v.toFixed(0)).join(', ')}\n` +
+      `probe ${probeInfo}`;
 
     frame++;
     requestAnimationFrame(frameLoop);

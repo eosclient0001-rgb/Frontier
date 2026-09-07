@@ -398,6 +398,41 @@ fn fs(in: VSOut) -> @location(0) vec4f {
     tStartOffset = tp;
   }
 
+  // -------------------------------------------------------------------------
+  //  debugView 7 — RAW SDF probe.
+  //
+  //  Deliberately bypasses lighting, shadows, AO, fog, dust and the tonemapper.
+  //  It answers exactly one question: does the volume contain a surface where
+  //  the ray expects one? Anything that renders here is real geometry, so if
+  //  this shows terrain but Beauty is blank, the fault is in shading, not in
+  //  the sim. Colours are raw, not tonemapped, so they cannot blow out.
+  //
+  //    magenta = ray never entered the domain box
+  //    green   = hit, brightness is depth through the box
+  //    blue    = passed through the box without ever finding rock (empty volume)
+  //    red     = camera started inside rock
+  // -------------------------------------------------------------------------
+  if (U.debugView == 7u) {
+    if (tFar <= tNear) { return vec4f(1.0, 0.0, 1.0, 1.0); }
+    if (sampleDist(ro) < 0.0) { return vec4f(1.0, 0.0, 0.0, 1.0); }
+    var t = max(tNear + 0.01, 0.0);
+    var minD = 1e9;
+    for (var i = 0; i < 512; i++) {
+      let p = ro + rd * t;
+      let d = sampleDist(p);
+      minD = min(minD, d);
+      if (d < VOXEL_SIZE.x * 0.5) {
+        let shade = 1.0 - saturate((t - tNear) / max(tFar - tNear, 1.0));
+        return vec4f(0.0, 0.25 + shade * 0.75, 0.0, 1.0);
+      }
+      t += max(d * 0.9, VOXEL_SIZE.x * 0.5);
+      if (t > tFar) { break; }
+    }
+    // No surface anywhere along the ray: show how close it got.
+    let near = saturate(1.0 - minD / (WORLD_H * 0.5));
+    return vec4f(0.0, 0.0, 0.25 + near * 0.75, 1.0);
+  }
+
   var sceneDist = 1e9;
   var hitRock = false;
   var rockCol = vec3f(0.0);

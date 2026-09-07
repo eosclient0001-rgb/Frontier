@@ -39,6 +39,24 @@ export async function initGPU(canvas: HTMLCanvasElement): Promise<GPUContext> {
     },
   });
 
+  // Per-frame validation errors are otherwise invisible: the frame silently
+  // produces nothing and the canvas keeps whatever it had. Surface the first
+  // one in the corner of the screen so a broken pipeline announces itself
+  // instead of looking like a rendering bug.
+  let errShown = 0;
+  device.addEventListener('uncapturederror', (ev) => {
+    const e = (ev as GPUUncapturedErrorEvent).error;
+    console.error('WebGPU error:', e);
+    if (errShown++ > 2) return;
+    let box = document.getElementById('gpu-error');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'gpu-error';
+      document.body.appendChild(box);
+    }
+    box.textContent = `GPU error: ${e.message}`;
+  });
+
   device.lost.then((info) => {
     // Surfaced by the app; a lost device cannot be recovered in place.
     console.error('WebGPU device lost:', info.reason, info.message);
