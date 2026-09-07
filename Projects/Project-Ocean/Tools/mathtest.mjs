@@ -62,4 +62,18 @@ const eq = (a, b, tol, name) => {
   for (let i = 0; i < g.v.length; i += 3) mx = Math.max(mx, Math.abs(g.v[i]), Math.abs(g.v[i + 2]));
   eq(mx, 5, 1e-6, 'grid extent');
 }
+// 5. variety params + color/sun helpers
+{
+  const flat = M.buildWaves(10, 0.9, 1, 0, 0.5);
+  eq(flat.data[0], flat.data[4], 1e-6, 'chop=0 aligned dirs');
+  eq(flat.steep, 0.5, 0, 'steep override');
+  const big = M.buildWaves(10, 0.9, 2, 1, null);
+  eq(big.data[2], 180, 1e-6, 'swell scales wavelength');
+  const c = M.hexToLinear('#ffffff');
+  eq(c[0] + c[1] + c[2], 3, 1e-6, 'white stays white');
+  const s = M.sunDirFromAngles(90, 0);
+  eq(s[1], 1, 1e-6, 'el=90 zenith');
+  const h = M.sunDirFromAngles(0, 90);
+  eq(Math.hypot(h[0], h[1], h[2]), 1, 1e-6, 'sun dir unit');
+}
 console.log(pass + ' assertions checked, exit=' + (process.exitCode || 0));

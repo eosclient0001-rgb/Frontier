@@ -300,4 +300,4 @@ async function main() {
 main().catch((e) => fail(e && e.stack ? e.stack : e));
 
 // Pure-math exports for headless unit tests (ignored by the browser page).
-export { mPerspective, mLookAt, mMultiply, mInvert, buildWaves, buildGrid };
+export { mPerspective, mLookAt, mMultiply, mInvert, buildWaves, buildGrid, hexToLinear, sunDirFromAngles };

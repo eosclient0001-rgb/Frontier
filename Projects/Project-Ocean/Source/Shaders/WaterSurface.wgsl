@@ -16,6 +16,7 @@ struct Uniforms {
   waveCount : f32,
   wind : vec4<f32>, // dir.x, dir.z, detailAmp, detailFreq
   waves : array<vec4<f32>, 8>, // dir.x, dir.z, wavelength, amplitude
+  look : vec4<f32>, // glitter, foamAmt, foamThresh, exposure
 };
 @group(0) @binding(0) var<uniform> u : Uniforms;
 
