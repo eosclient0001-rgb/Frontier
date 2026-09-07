@@ -85,11 +85,14 @@ async function main() {
   }
 
   // --- camera -------------------------------------------------------------
+  // Framed as a canyon overlook: high enough to clear the plateau by a
+  // comfortable margin (see tools/check-camera.mjs) and angled down the
+  // drainage so the trunk channel runs away from the viewer.
   const camera = new OrbitCamera(
-    [grid.worldW * 0.5, grid.worldH * 0.42, grid.worldD * 0.5],
-    grid.worldW * 1.05,
-    0.75,
-    0.30,
+    [grid.worldW * 0.5, grid.worldH * 0.38, grid.worldD * 0.5],
+    grid.worldW * 1.15,
+    0.72,
+    0.42,
   );
   const camData = new Float32Array(28);
 

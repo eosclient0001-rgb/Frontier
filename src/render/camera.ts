@@ -116,11 +116,17 @@ export class OrbitCamera {
     this.pitch = pitch;
   }
 
+  /**
+   * Camera position on the orbit sphere.
+   *
+   * Convention: POSITIVE pitch = camera ABOVE the target, looking down. The
+   * sign here must match orbit(), or the starting view ends up underground.
+   */
   get position(): [number, number, number] {
     const cp = Math.cos(this.pitch);
     return [
       this.target[0] + this.distance * cp * Math.sin(this.yaw),
-      this.target[1] - this.distance * Math.sin(this.pitch),
+      this.target[1] + this.distance * Math.sin(this.pitch),
       this.target[2] + this.distance * cp * Math.cos(this.yaw),
     ];
   }
@@ -136,7 +142,8 @@ export class OrbitCamera {
 
   orbit(dx: number, dy: number) {
     this.yaw -= dx * 0.006;
-    this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch + dy * 0.006));
+    // Drag down -> camera swings down toward the horizon.
+    this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * 0.006));
   }
 
   pan(dx: number, dy: number) {

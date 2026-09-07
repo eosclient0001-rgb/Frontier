@@ -382,13 +382,29 @@ fn fs(in: VSOut) -> @location(0) vec4f {
   let tNear = max(hitBox.x, 0.0);
   let tFar = hitBox.y;
 
+  // If the camera is INSIDE rock, every ray starts with d < 0 and the marcher
+  // reports an immediate hit at t~0. The normal is then garbage and the whole
+  // screen renders as one flat, blown-out surface. Rather than show that, skip
+  // forward to where the ray actually leaves the rock, so the view recovers by
+  // itself instead of looking like the renderer has died.
+  var tStartOffset = 0.0;
+  if (sampleDist(ro) < 0.0) {
+    var tp = tNear;
+    for (var i = 0; i < 128; i++) {
+      tp += VOXEL_SIZE.x * 1.5;
+      if (tp > tFar) { break; }
+      if (sampleDist(ro + rd * tp) > 0.0) { break; }
+    }
+    tStartOffset = tp;
+  }
+
   var sceneDist = 1e9;
   var hitRock = false;
   var rockCol = vec3f(0.0);
   var rockPos = vec3f(0.0);
 
   if (tFar > tNear) {
-    let h = march(ro, rd, tNear + 0.01, tFar);
+    let h = march(ro, rd, max(tNear + 0.01, tStartOffset), tFar);
     if (h.hit) {
       hitRock = true;
       sceneDist = h.t;

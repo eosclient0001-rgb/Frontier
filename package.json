@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node tools/check-shaders.mjs && node tools/check-idents.mjs && node tools/check-bindings.mjs && node tools/check-layout.mjs && node tools/check-slang-parity.mjs && node tools/check-css-hidden.mjs && tsc --noEmit",
+    "check": "node tools/check-shaders.mjs && node tools/check-idents.mjs && node tools/check-bindings.mjs && node tools/check-layout.mjs && node tools/check-slang-parity.mjs && node tools/check-css-hidden.mjs && node tools/check-camera.mjs && tsc --noEmit",
     "test:physics": "node tools/sim-reference.mjs",
     "test:morphology": "node tools/render-profile.mjs"
   },
