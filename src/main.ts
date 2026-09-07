@@ -1,4 +1,5 @@
 import { initGPU } from './gpu/device';
+import { diagnose, renderDiagnosis } from './gpu/diagnose';
 import { configureShaders } from './gpu/shaders';
 import { createResources, type Resources } from './gpu/resources';
 import { RESOLUTIONS, DEFAULT_RESOLUTION, type GridConfig } from './config';
@@ -14,10 +15,26 @@ const panelEl = document.getElementById('panel')!;
 const gateEl = document.getElementById('gate')!;
 const gateMsg = document.getElementById('gate-msg')!;
 
-function fail(msg: string) {
-  gateMsg.textContent = msg;
-  gateEl.hidden = false;
+/**
+ * Show the failure gate. Runs the capability probe so the user is told which
+ * stage actually failed and what to do about it, rather than a bare
+ * "WebGPU required".
+ */
+async function fail(msg: string) {
   console.error(msg);
+  try {
+    const d = await diagnose();
+    // If WebGPU itself is fine, the failure was ours, not the browser's.
+    if (d.ok) {
+      d.headline = 'The terrain failed to start';
+      d.detail = 'WebGPU is available on this machine, so this is a bug in the application rather than your browser.';
+      d.steps = ['Open the browser console and send the error text.', 'Try the Low grid preset if this looks like a memory limit.'];
+    }
+    renderDiagnosis(d, msg);
+  } catch {
+    gateMsg.textContent = msg;
+    gateEl.hidden = false;
+  }
 }
 
 async function main() {
@@ -25,7 +42,7 @@ async function main() {
   try {
     gpu = await initGPU(canvas);
   } catch (e) {
-    fail(String(e instanceof Error ? e.message : e));
+    await fail(String(e instanceof Error ? e.message : e));
     return;
   }
 
@@ -46,7 +63,7 @@ async function main() {
     sim = new Simulation(device, res);
     renderer = new Renderer(device, res, format);
   } catch (e) {
-    fail(`Failed to create GPU pipelines: ${e instanceof Error ? e.message : e}`);
+    await fail(`Failed to create GPU pipelines: ${e instanceof Error ? e.message : e}`);
     return;
   }
 
@@ -310,4 +327,4 @@ async function main() {
   requestAnimationFrame(frameLoop);
 }
 
-main().catch((e) => fail(String(e instanceof Error ? e.stack ?? e.message : e)));
+main().catch((e) => { void fail(String(e instanceof Error ? e.stack ?? e.message : e)); });

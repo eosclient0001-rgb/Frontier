@@ -308,3 +308,43 @@ input[type="range"]::-moz-range-thumb {
   transition: right 0.2s;
 }
 #panel-toggle.closed { right: 12px; }
+
+/* ---------------- Diagnostic gate ---------------- */
+.gate-card { max-width: 620px; max-height: 88vh; overflow-y: auto; }
+.gate-card .err {
+  background: rgba(217, 90, 60, 0.14);
+  border-left: 2px solid #d9553c;
+  padding: 7px 10px;
+  border-radius: 3px;
+  font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #f0c9bd;
+  word-break: break-word;
+}
+.gate-card .lead { margin-top: 14px; font-weight: 600; color: #cbb59a; font-size: 12.5px; }
+.gate-card ol { margin: 6px 0 0; padding-left: 20px; }
+.gate-card ol li { margin: 6px 0; font-size: 12.5px; color: var(--text); line-height: 1.5; }
+.gate-card details { margin-top: 14px; }
+.gate-card summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--accent);
+  padding: 4px 0;
+  user-select: none;
+}
+.gate-card table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.gate-card td {
+  padding: 3px 8px 3px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  color: var(--dim);
+  vertical-align: top;
+}
+.gate-card td:first-child { white-space: nowrap; width: 42%; color: #9c8b78; }
+.gate-card td:last-child { color: var(--text); word-break: break-word; }
+.gate-card .note { margin-top: 14px; line-height: 1.55; }
+.gate-card .note b { color: #cbb59a; }
+#gate-retry { margin-top: 4px; }
