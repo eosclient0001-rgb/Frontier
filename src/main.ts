@@ -364,6 +364,15 @@ async function main() {
 
   // Start with the canyon preset.
   store.applyPreset(PRESETS['Canyon (Colorado Plateau)']);
+
+  // TEMPORARY DIAGNOSTIC: start in the RAW SDF view. Beauty shading has been
+  // verified numerically to produce ordinary sandstone tones, and the probe
+  // confirms the centre ray hits rock, so if the screen is still blank the
+  // fault lies between the marcher and the framebuffer. Raw SDF bypasses
+  // lighting, fog, dust and the tonemapper entirely, so whatever colour
+  // appears identifies the stage that is failing.
+  store.set('debugView', 7);
+
   panel.refresh();
   requestAnimationFrame(frameLoop);
 }

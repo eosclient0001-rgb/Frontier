@@ -30,6 +30,7 @@ function fmt(v: number, d: ParamDef): string {
 }
 
 export class Panel {
+  private dbgSel?: HTMLSelectElement;
   private root: HTMLElement;
   private store: ParamStore;
   private cb: PanelCallbacks;
@@ -118,6 +119,7 @@ export class Panel {
       dbgSel.appendChild(o);
     });
     dbgSel.onchange = () => this.cb.onDebugView(parseInt(dbgSel.value, 10));
+    this.dbgSel = dbgSel;
     row3.append(resSel, dbgSel);
     head.appendChild(row3);
 
@@ -255,6 +257,11 @@ export class Panel {
 
   /** Push store values back into the widgets (after a preset load). */
   refresh() {
+    // Keep the debug dropdown in step with the store. Otherwise the menu can
+    // read 'Beauty' while a different view is actually being rendered, which
+    // makes the viewport look broken for no visible reason.
+    if (this.dbgSel) this.dbgSel.value = String(this.store.get('debugView'));
+
     for (const d of this.store.defs) {
       const io = this.inputs.get(d.name);
       if (!io) continue;
