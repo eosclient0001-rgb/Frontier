@@ -1,5 +1,6 @@
-// Project-Ocean O0 — Gerstner placeholder displacement + deep-water shading.
-// O1 replaces the vertex wave sum with FFT cascade sampling; the fragment stack stays.
+// Project-Ocean R1 — Gerstner displacement (R2 replaces with FFT) + true-mirror shading.
+// Reflection evaluates the full analytic sky along R: exact mirror at zero pass cost.
+// Body is SoT-style: deep <-> subsurface by view angle, sun direction, and peak mask.
 struct Uniforms {
   viewProj : mat4x4<f32>,
   camPos : vec3<f32>,
@@ -77,6 +78,17 @@ fn vnoise(p : vec2<f32>) -> f32 {
   return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
 }
 
+// Full analytic sky in LINEAR (mirrors SkyBackdrop pre-gamma): gradient + sun + haze.
+fn skyLinear(dir : vec3<f32>) -> vec3<f32> {
+  var col = mix(u.horizonColor, u.skyColor, pow(max(dir.y, 0.0), 0.55));
+  col = mix(u.horizonColor, col, smoothstep(-0.05, 0.02, dir.y));
+  let d = max(dot(dir, u.sunDir), 0.0);
+  col = col + u.sunColor * (smoothstep(0.9993, 0.9997, d) * 4.0 +
+    pow(d, 350.0) * 0.9 + pow(d, 8.0) * 0.12);
+  col = mix(col, u.horizonColor, (1.0 - smoothstep(0.0, 0.18, abs(dir.y))) * 0.6);
+  return col;
+}
+
 @fragment
 fn fsMain(f : VSOut) -> @location(0) vec4<f32> {
   let toCam = u.camPos - f.world;
@@ -99,18 +111,22 @@ fn fsMain(f : VSOut) -> @location(0) vec4<f32> {
   let NdotV = max(dot(n, V), 0.0);
   let fres = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
 
-  // Reflected-sky approx from mirror-direction elevation.
+  // TRUE MIRROR: full sky along the reflection vector (sun disc -> glitter path).
   let R = reflect(-V, n);
-  let reflCol = mix(u.horizonColor, u.skyColor, pow(clamp(R.y, 0.0, 1.0), 0.6));
+  let reflCol = skyLinear(R);
 
-  // Body: deep color + wrapped sun scatter through the surface.
+  // SoT-style body: deep <-> subsurface by peak mask and sun-facing.
+  let crestN = clamp(f.crest * 0.5 + 0.5, 0.0, 1.0);
+  let peak = smoothstep(0.55, 0.95, crestN);
+  let sunFace = clamp(dot(-V, u.sunDir) * 0.5 + 0.5, 0.0, 1.0);
   let NdotL = dot(n, u.sunDir);
   let scatter = pow(clamp(0.5 + 0.5 * NdotL, 0.0, 1.0), 2.0);
-  var body = u.deepColor * (0.35 + 0.65 * scatter * u.scatterAmt);
+  let deepTerm = u.deepColor * (0.35 + 0.65 * scatter * u.scatterAmt);
+  let subTint = mix(u.deepColor, u.skyColor * 0.6, 0.55) * (0.6 + 0.8 * scatter);
+  var body = mix(deepTerm, subTint, peak * sunFace);
 
-  // Crest foam: two-octave lace in a rotated frame + large-scale patchiness,
-  // so foam breaks into patches instead of striping with the waves.
-  let crestN = clamp(f.crest * 0.5 + 0.5, 0.0, 1.0);
+  // Crest foam: two-octave lace in a rotated frame + large-scale blotchiness.
+  // (R3 replaces the crest key with Jacobian energy + a feedback dispersion buffer.)
   let fp = f.world.xz * 0.9 + wdir * u.time * 0.6;
   let lace = vnoise(fp) * 0.65 + vnoise(warpRot * fp * 2.3 - wdir.yx * u.time * 0.9) * 0.35;
   let blotch = vnoise(warpRot * f.world.xz * 0.05 + vec2<f32>(u.time * 0.03, -u.time * 0.02));
@@ -120,10 +136,11 @@ fn fsMain(f : VSOut) -> @location(0) vec4<f32> {
 
   var col = mix(body, reflCol, fres);
 
-  // Sun: tight glitter + broad sheen.
+  // Residual sparkle: the mirror now carries the sun, so the analytic spec is a
+  // small extra (broad sheen kept, tight glitter attenuated).
   let H = normalize(u.sunDir + V);
   let ndh = max(dot(n, H), 0.0);
-  let spec = pow(ndh, 720.0) * 3.0 + pow(ndh, 60.0) * 0.25;
+  let spec = pow(ndh, 720.0) * 3.0 * 0.35 + pow(ndh, 60.0) * 0.25;
   let glit = 0.6 + 0.8 * vnoise(f.world.xz * 3.0 + vec2<f32>(u.time * 2.0, -u.time));
   col = col + u.sunColor * spec * mix(1.0, glit, 0.65) * u.look.x;
 
