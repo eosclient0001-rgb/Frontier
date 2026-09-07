@@ -108,7 +108,7 @@ fn fsMain(f : VSOut) -> @location(0) vec4<f32> {
   // Crest lightening — O0 placeholder for Jacobian foam (O1 replaces with foam texture).
   let crestN = clamp(f.crest * 0.5 + 0.5, 0.0, 1.0);
   let lace = vnoise(f.world.xz * 0.9 + wdir * u.time * 0.6);
-  let foamM = smoothstep(0.78, 0.98, crestN * (0.75 + 0.5 * lace)) * exp(-dist / 90.0);
+  let foamM = smoothstep(u.look.z, u.look.z + 0.2, crestN * (0.75 + 0.5 * lace)) * exp(-dist / 90.0) * u.look.y;
   body = mix(body, vec3<f32>(0.9, 0.93, 0.95), foamM * 0.85);
 
   var col = mix(body, reflCol, fres);
@@ -118,12 +118,13 @@ fn fsMain(f : VSOut) -> @location(0) vec4<f32> {
   let ndh = max(dot(n, H), 0.0);
   let spec = pow(ndh, 720.0) * 3.0 + pow(ndh, 60.0) * 0.25;
   let glit = 0.6 + 0.8 * vnoise(f.world.xz * 3.0 + vec2<f32>(u.time * 2.0, -u.time));
-  col = col + u.sunColor * spec * mix(1.0, glit, 0.65);
+  col = col + u.sunColor * spec * mix(1.0, glit, 0.65) * u.look.x;
 
   // Aerial haze to horizon.
   let haze = 1.0 - exp(-dist / 900.0 * u.hazeAmt);
   col = mix(col, u.horizonColor, clamp(haze, 0.0, 1.0));
 
+  col = col * u.look.w; // exposure
   col = pow(max(col, vec3<f32>(0.0)), vec3<f32>(0.4545));
   return vec4<f32>(col, 1.0);
 }

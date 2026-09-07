@@ -12,15 +12,15 @@
     border: 1px solid rgba(140,180,220,.25); border-radius: 8px; padding: 10px 12px;
     min-width: 230px; max-width: 260px; max-height: 86vh; overflow-y: auto;
     backdrop-filter: blur(4px); }
-  #panel details { margin: 2px 0; }
-  #panel summary { cursor: pointer; color: #8fd0ff; font-weight: 600; }
-  #panel b { min-width: 36px; text-align: right; font-weight: 600; }
-  #panel input[type=color] { width: 44px; height: 22px; padding: 0; border: none; }
   #panel h1 { font-size: 14px; margin: 0 0 6px; font-weight: 600; }
   #panel h1 span { color: #8fd0ff; }
   #stats { font-variant-numeric: tabular-nums; color: #a9c6de; margin-bottom: 8px; }
+  #panel details { margin: 2px 0; }
+  #panel summary { cursor: pointer; color: #8fd0ff; font-weight: 600; }
   #panel label { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
   #panel input[type=range] { flex: 1; }
+  #panel input[type=color] { width: 44px; height: 22px; padding: 0; border: none; }
+  #panel b { min-width: 36px; text-align: right; font-weight: 600; }
   #hint { margin-top: 6px; color: #7d97ad; font-size: 12px; }
   #err { position: fixed; left: 12px; bottom: 12px; right: 12px; display: none;
     background: rgba(120,20,20,.9); border-radius: 8px; padding: 10px 12px;
@@ -32,13 +32,36 @@
 <div id="panel">
   <h1>Frontier · Project-Ocean <span>O0</span></h1>
   <div id="stats">starting…</div>
-  <label>wind <input id="wind" type="range" min="2" max="22" step="1" value="10">
-    <b id="windVal">10</b> m/s</label>
+  <details open><summary>sea</summary>
+    <label>wind <input id="wind" type="range" min="2" max="22" step="1" value="10"><b id="windVal">10</b></label>
+    <label>swell <input id="swell" type="range" min="0.4" max="2.5" step="0.05" value="1"><b id="swellVal">1</b></label>
+    <label>chop <input id="chop" type="range" min="0" max="2.5" step="0.05" value="1.3"><b id="chopVal">1.3</b></label>
+    <label>steep <input id="steep" type="range" min="0" max="1" step="0.05" value="0.65"><b id="steepVal">.65</b></label>
+  </details>
+  <details open><summary>sun</summary>
+    <label>elev <input id="sunEl" type="range" min="4" max="80" step="1" value="32"><b id="sunElVal">32°</b></label>
+    <label>azim <input id="sunAz" type="range" min="0" max="360" step="1" value="206"><b id="sunAzVal">206°</b></label>
+    <label>power <input id="sunI" type="range" min="0" max="2.5" step="0.05" value="1.15"><b id="sunIVal">1.15</b></label>
+  </details>
+  <details open><summary>color</summary>
+    <label>water <input id="cDeep" type="color" value="#1c5266"></label>
+    <label>sky <input id="cSky" type="color" value="#709ed6"></label>
+    <label>horizon <input id="cHor" type="color" value="#cfdee8"></label>
+    <label>sun <input id="cSun" type="color" value="#fff3e0"></label>
+  </details>
+  <details open><summary>look</summary>
+    <label>glitter <input id="glitter" type="range" min="0" max="2.5" step="0.05" value="1"><b id="glitterVal">1</b></label>
+    <label>foam <input id="foam" type="range" min="0" max="2.5" step="0.05" value="1"><b id="foamVal">1</b></label>
+    <label>foam th <input id="foamTh" type="range" min="0.35" max="0.95" step="0.01" value="0.78"><b id="foamThVal">.78</b></label>
+    <label>haze <input id="haze" type="range" min="0" max="2.5" step="0.05" value="1"><b id="hazeVal">1</b></label>
+    <label>detail <input id="detail" type="range" min="0" max="2" step="0.05" value="0.55"><b id="detailVal">.55</b></label>
+    <label>exposure <input id="expo" type="range" min="0.4" max="2" step="0.05" value="1"><b id="expoVal">1</b></label>
+  </details>
   <label><input id="auto" type="checkbox" checked> auto-orbit</label>
   <label><input id="pause" type="checkbox"> pause</label>
   <div id="hint">drag&nbsp;·&nbsp;orbit&nbsp;&nbsp;wheel&nbsp;·&nbsp;zoom</div>
 </div>
 <div id="err"></div>
-<script type="module" src="./OceanApp.js?v=2"></script>
+<script type="module" src="./OceanApp.js?v=3"></script>
 </body>
 </html>

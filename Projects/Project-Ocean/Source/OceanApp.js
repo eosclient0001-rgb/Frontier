@@ -79,18 +79,29 @@ function mInvert(out, m) {
 }
 
 // ---------- waves from wind (Gerstner placeholder; O1 replaces with FFT) ----------
-function buildWaves(wind, windAngle) {
+function buildWaves(wind, windAngle, swell = 1, chop = 1, steep = null) {
   const Hs = Math.min(0.21 * wind * wind / 9.81, 6.0); // Pierson–Moskowitz cap
   const L = [90, 46, 23, 12, 6.5, 4.0];
-  const w = [0.42, 0.24, 0.15, 0.09, 0.06, 0.04];
-  const spread = [0, 0.18, -0.22, 0.34, -0.40, 0.55];
+  const w = [0.34, 0.24, 0.17, 0.11, 0.08, 0.06];
+  const spread = [0, 0.35, -0.50, 0.95, -1.15, 1.90]; // short waves spread widest
   const arr = new Float32Array(8 * 4);
   for (let i = 0; i < 6; i++) {
-    const a = windAngle + spread[i];
+    const a = windAngle + spread[i] * chop;
     arr[i * 4] = Math.cos(a); arr[i * 4 + 1] = Math.sin(a);
-    arr[i * 4 + 2] = L[i]; arr[i * 4 + 3] = Hs * 0.5 * w[i];
+    arr[i * 4 + 2] = L[i] * swell; arr[i * 4 + 3] = Hs * 0.5 * w[i];
   }
-  return { data: arr, count: 6, steep: Math.min(0.45 + wind * 0.02, 0.85), Hs };
+  return { data: arr, count: 6, steep: steep === null ? Math.min(0.45 + wind * 0.02, 0.85) : steep, Hs };
+}
+
+function hexToLinear(hex) {
+  const n = parseInt(String(hex).replace('#', ''), 16);
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+  return c.map((v) => v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+}
+
+function sunDirFromAngles(elDeg, azDeg) {
+  const el = elDeg * Math.PI / 180, az = azDeg * Math.PI / 180;
+  return [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];
 }
 
 // ---------- grid mesh ----------
@@ -102,8 +113,7 @@ function buildGrid(n, size) {
   }
   const idx = new Uint32Array(n * n * 6);
   let q = 0;
-  for (let j = 0; j < n; j++) for (let i = 0; i <= n; i++) {
-    if (i === n) continue;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const a = j * (n + 1) + i, b = a + 1, c = a + n + 1, d = c + 1;
     idx[q++] = a; idx[q++] = c; idx[q++] = b;
     idx[q++] = b; idx[q++] = c; idx[q++] = d;
@@ -113,8 +123,25 @@ function buildGrid(n, size) {
 
 async function main() {
   const qs = new URLSearchParams(location.search);
+  const num = (k, d, lo, hi) => Math.min(hi, Math.max(lo, parseFloat(qs.get(k) || String(d))));
   const P = {
-    wind: Math.min(22, Math.max(2, parseFloat(qs.get('wind') || '10'))),
+    wind: num('wind', 10, 2, 22),
+    swell: num('swell', 1, 0.4, 2.5),
+    chop: num('chop', 1.3, 0, 2.5),
+    steep: qs.has('steep') ? num('steep', 0.65, 0, 1) : null, // null = auto from wind
+    sunEl: num('sunEl', 32, 4, 80),
+    sunAz: num('sunAz', 206, 0, 360),
+    sunI: num('sunI', 1.15, 0, 2.5),
+    cDeep: '#' + (qs.get('deep') || '1c5266'),
+    cSky: '#' + (qs.get('sky') || '709ed6'),
+    cHor: '#' + (qs.get('hor') || 'cfdee8'),
+    cSun: '#' + (qs.get('sun') || 'fff3e0'),
+    glitter: num('glitter', 1, 0, 2.5),
+    foam: num('foam', 1, 0, 2.5),
+    foamTh: num('foamTh', 0.78, 0.35, 0.95),
+    haze: num('haze', 1, 0, 2.5),
+    detail: num('detail', 0.55, 0, 2),
+    expo: num('expo', 1, 0.4, 2),
     auto: (qs.get('auto') || '1') === '1',
     grid: Math.min(384, Math.max(32, parseInt(qs.get('grid') || '224', 10))),
     size: 320,
@@ -124,6 +151,7 @@ async function main() {
   if (!adapter) { fail('No WebGPU adapter found.'); return; }
   const device = await adapter.requestDevice();
   device.lost.then((info) => { if (window.__ocean.ready) fail('Device lost: ' + info.message); });
+  device.addEventListener('uncapturederror', (e) => fail('WebGPU: ' + (e.error && e.error.message)));
 
   const canvas = $('view');
   const ctx = canvas.getContext('webgpu');
@@ -147,7 +175,7 @@ async function main() {
 
   // camera state
   const cam = { yaw: 0.55, pitch: 0.24, dist: 64, target: [0, 0.5, 0] };
-  const sunDir = (() => { const s = [-0.38, 0.52, -0.76]; const l = Math.hypot(...s); return s.map((x) => x / l); })();
+  let sunDir = sunDirFromAngles(P.sunEl, P.sunAz);
 
   // mesh
   const mesh = buildGrid(P.grid, P.size);
@@ -157,33 +185,37 @@ async function main() {
   const iBuf = device.createBuffer({ size: mesh.idx.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(iBuf, 0, mesh.idx);
 
-  // uniforms: water 76 floats (304 B), sky 36 floats (144 B)
-  const wU = new Float32Array(76);
+  // uniforms: water 80 floats (320 B: +look vec4), sky 36 floats (144 B)
+  const wU = new Float32Array(80);
   const sU = new Float32Array(36);
   const wBuf = device.createBuffer({ size: wU.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const sBuf = device.createBuffer({ size: sU.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
-  // static water uniforms
-  wU.set(sunDir, 20); wU[23] = P.wind;
-  wU.set([1.15, 1.02, 0.88], 24); // sunColor (linear)
-  wU.set([0.012, 0.086, 0.130], 28); wU[31] = 1.0; // deepColor + scatter
-  wU.set([0.16, 0.34, 0.68], 32); wU[35] = 1.0; // sky + haze
-  wU.set([0.62, 0.72, 0.80], 36); // horizon
   const windAngle = 0.9;
   wU[40] = Math.cos(windAngle); wU[41] = Math.sin(windAngle);
-  wU[42] = 0.55; wU[43] = 1.6; // detailAmp, detailFreq
-  function applyWind() {
-    const W = buildWaves(P.wind, windAngle);
+  wU[43] = 1.6; // detailFreq
+  function applyWaves() {
+    const W = buildWaves(P.wind, windAngle, P.swell, P.chop, P.steep);
     wU[23] = P.wind; wU[27] = W.steep; wU[39] = W.count;
     wU.set(W.data, 44);
   }
-  applyWind();
-
-  // static sky uniforms
-  sU.set(sunDir, 20); sU[23] = 1.0;
-  sU.set([0.16, 0.34, 0.68], 24); sU[27] = 0.6;
-  sU.set([0.62, 0.72, 0.80], 28);
-  sU.set([1.15, 1.02, 0.88], 32);
+  function applySun() {
+    sunDir = sunDirFromAngles(P.sunEl, P.sunAz);
+    const sc = hexToLinear(P.cSun).map((v) => v * P.sunI);
+    wU.set(sunDir, 20); wU.set(sc, 24);
+    sU.set(sunDir, 20); sU[23] = 1.0; sU.set(sc, 32);
+  }
+  function applyColors() {
+    const deep = hexToLinear(P.cDeep), sky = hexToLinear(P.cSky), hor = hexToLinear(P.cHor);
+    wU.set(deep, 28); wU[31] = 1.0; // deepColor + scatter
+    wU.set(sky, 32); wU.set(hor, 36); // sky + horizon
+    sU.set(sky, 24); sU[27] = 0.6; sU.set(hor, 28); // zenith + horizon
+  }
+  function applyLook() {
+    wU[35] = P.haze; wU[42] = P.detail;
+    wU[76] = P.glitter; wU[77] = P.foam; wU[78] = P.foamTh; wU[79] = P.expo;
+  }
+  applyWaves(); applySun(); applyColors(); applyLook();
 
   function layout() {
     return device.createBindGroupLayout({ entries: [{
@@ -234,12 +266,53 @@ async function main() {
     cam.dist = Math.min(400, Math.max(8, cam.dist * (1 + e.deltaY * 0.001)));
   }, { passive: false });
 
-  const windEl = $('wind'), windVal = $('windVal'), autoEl = $('auto'), pauseEl = $('pause');
-  windEl.value = String(P.wind); windVal.textContent = String(P.wind);
+  const autoEl = $('auto'), pauseEl = $('pause');
   autoEl.checked = P.auto;
-  windEl.addEventListener('input', () => {
-    P.wind = parseFloat(windEl.value); windVal.textContent = windEl.value; applyWind();
+  function bindNum(id, key, apply, fmt = (v) => String(v)) {
+    const el = $(id), val = $(id + 'Val');
+    el.value = String(P[key]); val.textContent = fmt(P[key]);
+    el.addEventListener('input', () => {
+      P[key] = parseFloat(el.value); val.textContent = fmt(P[key]); apply();
+    });
+  }
+  function bindColor(id, key, apply) {
+    const el = $(id);
+    el.value = P[key];
+    el.addEventListener('input', () => { P[key] = el.value; apply(); });
+  }
+  const steepAuto = () => buildWaves(P.wind, windAngle, P.swell, P.chop, null).steep;
+  let steepTouched = P.steep !== null;
+  bindNum('wind', 'wind', () => { // wind re-derives auto steepness until user overrides
+    if (!steepTouched) {
+      const a = steepAuto();
+      $('steep').value = String(a); $('steepVal').textContent = a.toFixed(2);
+    }
+    applyWaves();
   });
+  bindNum('swell', 'swell', applyWaves, (v) => v.toFixed(2));
+  bindNum('chop', 'chop', applyWaves, (v) => v.toFixed(2));
+  { // steep slider shows auto value while untouched (P.steep stays null = auto)
+    const el = $('steep'), val = $('steepVal');
+    const show = P.steep === null ? steepAuto() : P.steep;
+    el.value = String(show); val.textContent = show.toFixed(2);
+    el.addEventListener('input', () => {
+      steepTouched = true; P.steep = parseFloat(el.value);
+      val.textContent = P.steep.toFixed(2); applyWaves();
+    });
+  }
+  bindNum('sunEl', 'sunEl', applySun, (v) => v.toFixed(0) + '°');
+  bindNum('sunAz', 'sunAz', applySun, (v) => v.toFixed(0) + '°');
+  bindNum('sunI', 'sunI', applySun, (v) => v.toFixed(2));
+  bindColor('cDeep', 'cDeep', applyColors);
+  bindColor('cSky', 'cSky', applyColors);
+  bindColor('cHor', 'cHor', applyColors);
+  bindColor('cSun', 'cSun', applySun); // sun color feeds applySun (intensity multiply)
+  bindNum('glitter', 'glitter', applyLook, (v) => v.toFixed(2));
+  bindNum('foam', 'foam', applyLook, (v) => v.toFixed(2));
+  bindNum('foamTh', 'foamTh', applyLook, (v) => v.toFixed(2));
+  bindNum('haze', 'haze', applyLook, (v) => v.toFixed(2));
+  bindNum('detail', 'detail', applyLook, (v) => v.toFixed(2));
+  bindNum('expo', 'expo', applyLook, (v) => v.toFixed(2));
 
   // loop
   const view = new Float32Array(16), proj = new Float32Array(16);
