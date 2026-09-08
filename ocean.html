@@ -118,7 +118,7 @@
 <div id="warnBadge"></div>
 <button id="toggle" title="Show / hide panel (H)">&#9881;</button>
 <div id="panel"></div>
-<div id="hint"><b>drag</b> orbit &nbsp;&middot;&nbsp; <b>wheel</b> zoom &nbsp;&middot;&nbsp; <b>WASD</b> sail &nbsp;&middot;&nbsp; <b>shift+drag</b> pan &nbsp;&middot;&nbsp; <b>space</b> pause &nbsp;&middot;&nbsp; <b>H</b> panel</div>
+<div id="hint"><b>drag</b> look &nbsp;&middot;&nbsp; <b>wheel</b> fly &nbsp;&middot;&nbsp; <b>WASD</b> fly &nbsp;&middot;&nbsp; <b>Q/E</b> down/up &nbsp;&middot;&nbsp; <b>shift</b> boost &nbsp;&middot;&nbsp; <b>space</b> pause &nbsp;&middot;&nbsp; <b>H</b> panel</div>
 
 <div id="info"><div class="box">
   <h2>HOW THIS OCEAN WORKS</h2>
@@ -837,6 +837,7 @@ void main() {
   /* --- water body + crest subsurface scattering --- */
   float hN = clamp(vH / max(uHmax, 0.05), -1.0, 1.5);
   vec3 body = uDeep * (0.30 + 0.70 * ndv);
+  body += uHorizon * 0.055 * (1.0 - F);   /* sky bounce so troughs never go pitch black */
   body += uScatter * smoothstep(0.05, 1.0, hN) * 0.45;
   float towardSun = max(dot(toCam, uSunDir), 0.0);
   float crest = 1.0 - smoothstep(0.15, 0.95, vJ.x);
@@ -859,16 +860,17 @@ void main() {
   float crestI = 1.0 - smoothstep(-0.55, 0.8, vJ.x);
   crestI *= crestI;
   float m = clamp(vFoam * uFoamStrength + crestI * uCrestFoam, 0.0, 1.0);
-  float foam = smoothstep(1.02 - m, 1.30 - m, edge * 0.62 + m * 0.55);
-  foam *= mix(1.0, 0.55, smoothstep(500.0, 4000.0, dist));
+  float foam = smoothstep(1.00 - m, 1.48 - m, edge * 0.62 + m * 0.55);
+  foam *= mix(1.0, 0.40, smoothstep(300.0, 2600.0, dist));
   float ndl = max(dot(N, uSunDir) * 0.5 + 0.5, 0.0);
   vec3 foamCol = uFoamColor * (0.45 + 0.55 * ndl) + uSunColor * 0.06 * pow(towardSun, 2.0);
   vec2 cell = floor(p * 7.0) + floor(uTime * 2.0) * 0.317;
-  float sp = step(0.9965, vhash(cell)) * foam * max(dot(N, uSunDir), 0.0);
-  foamCol += uSunColor * sp * 2.0 * exp(-dist / 350.0);
+  float sp = step(0.9985, vhash(cell)) * foam * max(dot(N, uSunDir), 0.0);
+  foamCol += uSunColor * sp * 1.2 * exp(-dist / 220.0);
   col = mix(col, foamCol, clamp(foam, 0.0, 1.0));
   /* --- aerial perspective into the horizon --- */
   float f2 = 1.0 - exp(-dist * uFogK);
+  f2 = pow(max(f2, 0.0), 1.2);
   col = mix(col, uFogColor, clamp(f2, 0.0, 1.0));
   o = vec4(col, 1.0);
 }`;
@@ -1569,12 +1571,12 @@ const RAIN_MAX = 1600;
    ===================================================================== */
 const P = {
   windSpeed: 9, windDir: 130, swellHeight: 1.0, chopHeight: 1.0, choppiness: 1.0, timeScale: 1.0,
-  coverage: 0.45, persistence: 2.5, foamStrength: 1.0, crestFoam: 1.0, spray: 0.7, splash: 0.8,
-  sunElev: 28, sunAzim: 215, haze: 0.35, clouds: 0.55,
-  deepColor: '#062a40', scatterColor: '#0e6a5b', foamColor: '#f2f8fa',
-  sss: 1.2, detail: 1.0, exposure: 1.05,
+  coverage: 0.45, persistence: 2.5, foamStrength: 1.0, crestFoam: 0.8, spray: 0.7, splash: 0.8,
+  sunElev: 28, sunAzim: 215, haze: 0.30, clouds: 0.55,
+  deepColor: '#0a3a55', scatterColor: '#147a64', foamColor: '#f2f8fa',
+  sss: 1.2, detail: 1.0, exposure: 1.0,
   fov: 58, autoOrbit: true, orbitSpeed: 0.35, resScale: 1.0, paused: false,
-  showBuoy: true, showBoat: true, cruise: true, rain: 0, autoQuality: true
+  showBuoy: true, showBoat: true, cruise: true, rain: 0, autoQuality: true, flySpeed: 14
 };
 const PARAMS = [
   { g: 'Sea State', id: 'windSpeed', label: 'Wind speed', min: 2, max: 22, step: 0.1, unit: ' m/s', sea: 1 },
@@ -1601,8 +1603,9 @@ const PARAMS = [
   { g: 'Water', id: 'detail', label: 'Surface detail', min: 0, max: 2, step: 0.05, unit: '×' },
   { g: 'Water', id: 'exposure', label: 'Exposure', min: 0.4, max: 2, step: 0.01, unit: '×' },
   { g: 'Camera', id: 'fov', label: 'Field of view', min: 35, max: 90, step: 1, unit: '°' },
-  { g: 'Camera', id: 'autoOrbit', label: 'Cinematic auto-orbit', type: 'check' },
-  { g: 'Camera', id: 'orbitSpeed', label: 'Orbit speed', min: 0, max: 2, step: 0.05, unit: '×' },
+  { g: 'Camera', id: 'autoOrbit', label: 'Cinematic drift', type: 'check' },
+  { g: 'Camera', id: 'orbitSpeed', label: 'Drift speed', min: 0, max: 2, step: 0.05, unit: '×' },
+  { g: 'Camera', id: 'flySpeed', label: 'Fly speed', min: 1, max: 60, step: 1, unit: ' m/s' },
   { g: 'Scene', id: 'showBuoy', label: 'Mooring buoy', type: 'check' },
   { g: 'Scene', id: 'showBoat', label: 'Patrol boat', type: 'check' },
   { g: 'Scene', id: 'cruise', label: 'Boat cruising (foam wake)', type: 'check' },
@@ -1669,36 +1672,48 @@ function mInvert(m) {
 }
 
 /* ---------------- camera + input ---------------- */
-const cam = { yaw: -0.65, pitch: 0.17, dist: 26, tx: 0, tz: 0 };
-const keys = new Set();
-function groundDirs() {
-  const ox = Math.cos(cam.yaw), oz = Math.sin(cam.yaw);
-  return { fwd: [-ox, -oz], right: [oz, -ox] };
+/* Unreal-style fly camera: drag to look, WASD fly, Q/E down/up, wheel dolly */
+const CAM_HOME = { pos: [20.4, 4.4, -15.5], yaw: 2.49, pitch: -0.17 };
+const cam = { pos: CAM_HOME.pos.slice(), yaw: CAM_HOME.yaw, pitch: CAM_HOME.pitch };
+function camForward() {
+  const cp = Math.cos(cam.pitch);
+  return [cp * Math.cos(cam.yaw), Math.sin(cam.pitch), cp * Math.sin(cam.yaw)];
 }
+function camRight() {
+  const f = camForward();
+  const l = Math.hypot(f[0], f[2]) || 1;
+  return [-f[2] / l, 0, f[0] / l];
+}
+const keys = new Set();
+/* (fly camera: no orbit target; boat/foam focus follows the camera) */
 function updateCamera(dt, hmax) {
   if (P.autoOrbit && !drag.on) cam.yaw += P.orbitSpeed * dt * 0.22;
-  const sp = cam.dist * 0.85 * dt + 2.0 * dt;
-  const { fwd, right } = groundDirs();
-  let mx = 0, mz = 0;
-  if (keys.has('KeyW') || keys.has('ArrowUp')) { mx += fwd[0]; mz += fwd[1]; }
-  if (keys.has('KeyS') || keys.has('ArrowDown')) { mx -= fwd[0]; mz -= fwd[1]; }
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) { mx -= right[0]; mz -= right[1]; }
-  if (keys.has('KeyD') || keys.has('ArrowRight')) { mx += right[0]; mz += right[1]; }
-  const ml = Math.hypot(mx, mz);
-  if (ml > 0) { cam.tx += mx / ml * sp; cam.tz += mz / ml * sp; }
-  cam.pitch = clamp(cam.pitch, -0.35, 1.35);
-  cam.dist = clamp(cam.dist, 2.5, 500);
+  const boost = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 4 : 1;
+  const sp = P.flySpeed * boost * dt;
+  const f = camForward(), r = camRight();
+  let mx = 0, my = 0, mz = 0;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) { mx += f[0]; my += f[1]; mz += f[2]; }
+  if (keys.has('KeyS') || keys.has('ArrowDown')) { mx -= f[0]; my -= f[1]; mz -= f[2]; }
+  if (keys.has('KeyD') || keys.has('ArrowRight')) { mx += r[0]; mz += r[2]; }
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) { mx -= r[0]; mz -= r[2]; }
+  if (keys.has('KeyE')) my += 1;
+  if (keys.has('KeyQ')) my -= 1;
+  const ml = Math.hypot(mx, my, mz);
+  if (ml > 0) { cam.pos[0] += mx / ml * sp; cam.pos[1] += my / ml * sp; cam.pos[2] += mz / ml * sp; }
+  cam.pos[0] = clamp(cam.pos[0], -2500, 2500);
+  cam.pos[2] = clamp(cam.pos[2], -2500, 2500);
+  cam.pos[1] = clamp(cam.pos[1], 0.8 + hmax * 1.1, 400);   /* stay out of the waves */
+  cam.pitch = clamp(cam.pitch, -1.45, 1.45);
 }
-function cameraFrame(hmax) {
-  const cp = Math.cos(cam.pitch), spp = Math.sin(cam.pitch);
-  const pos = [cam.tx + cam.dist * cp * Math.cos(cam.yaw), cam.dist * spp,
-    cam.tz + cam.dist * cp * Math.sin(cam.yaw)];
-  pos[1] = Math.max(pos[1], 0.5 + hmax * 0.85);   /* stay out of the waves */
-  const view = mLookAt(pos, [cam.tx, 0, cam.tz], [0, 1, 0]);
+function cameraFrame() {
+  const pos = cam.pos.slice();
+  const f = camForward();
+  const tgt = [pos[0] + f[0], pos[1] + f[1], pos[2] + f[2]];
+  const view = mLookAt(pos, tgt, [0, 1, 0]);
   const aspect = canvas.width / canvas.height;
   const proj = mPerspective(P.fov * Math.PI / 180, aspect, 0.3, 15000);
   return {
-    pos, view, proj, VP: mMul(proj, view), invVP: mInvert(mMul(proj, view)),
+    pos: pos, view, proj, VP: mMul(proj, view), invVP: mInvert(mMul(proj, view)),
     right: [view[0], view[1], view[2]], up: [view[4], view[5], view[6]], proj11: proj[5]
   };
 }
@@ -1717,21 +1732,16 @@ canvas.addEventListener('pointermove', (e) => {
   if (!drag.on || activePtrs.size > 1) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   drag.x = e.clientX; drag.y = e.clientY;
-  if (drag.pan) {
-    const k = cam.dist / 600;
-    const { fwd, right } = groundDirs();
-    cam.tx += (-dx * right[0] + dy * fwd[0]) * k;
-    cam.tz += (-dx * right[1] + dy * fwd[1]) * k;
-  } else {
-    cam.yaw -= dx * 0.005;
-    cam.pitch = clamp(cam.pitch + dy * 0.004, -0.35, 1.35);
-  }
+  cam.yaw += dx * 0.0042;   /* FPS-look: drag right -> look right */
+  cam.pitch = clamp(cam.pitch - dy * 0.0042, -1.45, 1.45);
 });
 addEventListener('pointerup', (e) => { activePtrs.delete(e.pointerId); drag.on = false; });
 addEventListener('pointercancel', (e) => { activePtrs.delete(e.pointerId); drag.on = false; });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  cam.dist = clamp(cam.dist * Math.exp(e.deltaY * 0.0011), 2.5, 500);
+  const f = camForward();
+  const d = -e.deltaY * 0.002 * P.flySpeed;
+  cam.pos[0] += f[0] * d; cam.pos[1] += f[1] * d; cam.pos[2] += f[2] * d;
 }, { passive: false });
 /* touch: 1 finger orbit, 2 finger pinch-zoom */
 const touches = new Map();
@@ -1749,7 +1759,8 @@ canvas.addEventListener('touchmove', (e) => {
   if (pinch.on && touches.size === 2) {
     const p = [...touches.values()];
     const d = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
-    if (pinch.d > 0) cam.dist = clamp(cam.dist * pinch.d / Math.max(d, 1), 2.5, 500);
+    if (pinch.d > 0) { const pf = camForward(); const dd = (d - pinch.d) * 0.05;
+      cam.pos[0] += pf[0] * dd; cam.pos[1] += pf[1] * dd; cam.pos[2] += pf[2] * dd; }
     pinch.d = d;
   }
 }, { passive: false });
@@ -1768,7 +1779,7 @@ addEventListener('keyup', (e) => keys.delete(e.code));
 function hexRGB(h) {
   return [parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255];
 }
-function toLinear(c) { return [Math.pow(c[0], 2.2) * 0.85, Math.pow(c[1], 2.2) * 0.85, Math.pow(c[2], 2.2) * 0.85]; }
+function toLinear(c) { return [Math.pow(c[0], 2.2), Math.pow(c[1], 2.2), Math.pow(c[2], 2.2)]; }
 const mix3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 function estimateHmax() {
   const Hs = 0.21 * P.windSpeed * P.windSpeed / GRAV;   /* Pierson-Moskowitz */
@@ -1796,12 +1807,12 @@ function buildFrameState(cf, time) {
   const wa = P.windDir * Math.PI / 180;
   return {
     VP: cf.VP, invVP: cf.invVP, camPos: cf.pos, camRight: cf.right, camUp: cf.up, proj11: cf.proj11,
-    focus: [cam.tx, cam.tz], time,
+    focus: [cam.pos[0], cam.pos[2]], time,
     windDir: [Math.cos(wa), Math.sin(wa)],
     windVec: [Math.cos(wa) * P.windSpeed * 0.35, Math.sin(wa) * P.windSpeed * 0.35],
     sunDir, zenith, horizon, sunColor, cloudLit, cloudShadow,
-    fogColor: mix3(horizon, [0.72, 0.75, 0.78], P.haze * 0.55),
-    fogK: lerp(1 / 9000, 1 / 2600, P.haze),
+    fogColor: mix3(horizon, [0.72, 0.75, 0.78], P.haze * 0.35),
+    fogK: lerp(1 / 12000, 1 / 3200, P.haze),
     deep, scatter, foamColor,
     foamShadow: [horizon[0] * 0.5 + deep[0] * 0.35, horizon[1] * 0.5 + deep[1] * 0.35, horizon[2] * 0.5 + deep[2] * 0.35],
     cloudCover: P.clouds, detail: P.detail, foamStrength: P.foamStrength,
@@ -1866,7 +1877,7 @@ function buildUI() {
   }
   panel.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', (e) => { applyPreset(c.dataset.p); e.currentTarget.blur(); }));
   $('bPause').addEventListener('click', (e) => { togglePause(); e.currentTarget.blur(); });
-  $('bCam').addEventListener('click', (e) => { cam.yaw = -0.65; cam.pitch = 0.17; cam.dist = 26; cam.tx = 0; cam.tz = 0; e.currentTarget.blur(); });
+  $('bCam').addEventListener('click', (e) => { cam.pos = CAM_HOME.pos.slice(); cam.yaw = CAM_HOME.yaw; cam.pitch = CAM_HOME.pitch; e.currentTarget.blur(); });
   $('bInfo').addEventListener('click', (e) => { $('info').classList.add('open'); e.currentTarget.blur(); });
 }
 function refreshUI() {
@@ -1921,7 +1932,7 @@ function frame(now) {
   stepFoam(P.paused ? 0 : Math.min(dt * P.timeScale, 0.05), P.coverage, P.persistence, hmax, simTime);
   if ((frameNo % 5 === 0) && (P.showBoat || P.showBuoy)) refreshSamples();
   updateCamera(dt, hmax);
-  const cf = cameraFrame(hmax);
+  const cf = cameraFrame();
   const S = buildFrameState(cf, simTime);
   gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fboDraw);
   gl.viewport(0, 0, scene.w, scene.h);
