@@ -823,22 +823,25 @@ void main() {
   vec3 g2 = fbmG(w2, 3);
   vec2 grad = g1.yz * 0.62 + g2.yz * 0.38;
   vec3 gm = fbmG(p * 1.9 + uWindDir * (uTime * 1.7), 2);
-  float dFade = exp(-dist / 230.0);
-  float mFade = exp(-dist / 55.0);
+  float dFade = exp(-dist / 180.0);
+  float mFade = exp(-dist / 40.0);
   vec3 N = normalize(vN
     + vec3(grad.x, 0.0, grad.y) * (uDetail * 0.55 * dFade)
     + vec3(gm.y, 0.0, gm.z) * (uDetail * 0.22 * mFade));
   /* --- fresnel + reflection --- */
-  vec3 R = reflect(-toCam, N);
+  float rough = clamp(dist / 900.0, 0.0, 1.0);
+  vec3 RN = normalize(mix(N, vN, rough * 0.65));   /* distance-blurred normal: stable far field */
+  vec3 R = reflect(-toCam, RN);
   R.y = abs(R.y);
   float ndv = max(dot(N, toCam), 0.0);
   float F = 0.0209 + 0.9791 * pow(1.0 - ndv, 5.0);   /* exact n=1.34 */
+  F *= (1.0 - rough * 0.45);   /* distant chop is milky, not a perfect mirror */
   vec3 skyRef = skyColor(R, 3);
   /* --- water body + crest subsurface scattering --- */
   float hN = clamp(vH / max(uHmax, 0.05), -1.0, 1.5);
   vec3 body = uDeep * (0.30 + 0.70 * ndv);
-  body += uHorizon * 0.055 * (1.0 - F);   /* sky bounce so troughs never go pitch black */
-  body += uScatter * smoothstep(0.05, 1.0, hN) * 0.45;
+  body += uHorizon * 0.075 * (1.0 - F);   /* sky bounce so troughs never go pitch black */
+  body += uScatter * smoothstep(0.05, 1.0, hN) * 0.60;
   float towardSun = max(dot(toCam, uSunDir), 0.0);
   float crest = 1.0 - smoothstep(0.15, 0.95, vJ.x);
   vec3 sssCol = uScatter * (pow(towardSun, 3.0) * (0.35 + 0.65 * smoothstep(-0.3, 0.9, hN))
@@ -846,9 +849,9 @@ void main() {
   body += sssCol * uSSS * (1.0 - F);
   /* --- sun specular + glitter --- */
   vec3 H = normalize(toCam + uSunDir);
-  float ndh = max(dot(N, H), 0.0);
+  float ndh = max(dot(RN, H), 0.0);
   float spec = pow(ndh, 720.0) * 3.2 + pow(ndh, 90.0) * 0.28;
-  vec3 Ng = normalize(N + vec3(gm.y, 0.0, gm.z) * 0.55);
+  vec3 Ng = normalize(N + vec3(gm.y, 0.0, gm.z) * (0.55 * exp(-dist / 600.0)));
   float glit = pow(max(dot(Ng, H), 0.0), 2600.0) * 9.0 * exp(-dist / 900.0);
   vec3 sunTerm = uSunColor * (spec * (0.25 + 0.75 * F) + glit);
   vec3 col = body * (1.0 - F) + skyRef * F + sunTerm;
@@ -1111,7 +1114,7 @@ void main() {
   vec3 Bc = texture(uChop, (R * spawn.xz) / uLB).xyz;
   spawn.y = A.y + Bc.y;
   float crest = 1.0 - smoothstep(-0.4, 0.85, A.w);
-  float gate = step(s1 * 0.9, crest * uAmount);
+  float gate = smoothstep(s1 * 0.9 - 0.18, s1 * 0.9 + 0.18, crest * uAmount);
   vec3 vel = vec3(uWind.x * (0.4 + 0.8 * s2) + (s3 - 0.5) * 1.4,
                   1.1 + 2.4 * s3,
                   uWind.z * (0.4 + 0.8 * s2) + (s4 - 0.5) * 1.4);
@@ -1130,7 +1133,7 @@ void main() {
   vec3 vd = (P - uCamPos) / max(camd, 0.001);
   vBright = 1.0 + pow(max(dot(vd, uSunDir), 0.0), 6.0) * 2.4;
   gl_Position = uVP * vec4(wp, 1.0);
-  if (gate < 0.5 || alpha < 0.001) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  if (gate < 0.02 || alpha < 0.001) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 const SPRAY_FS = `#version 300 es
 precision highp float;
@@ -1170,7 +1173,8 @@ void main() {
   float hgt = A.y + texture(uChop, (R * spawn.xz) / uLB).y;
   spawn.y = hgt;
   float crest = 1.0 - smoothstep(-0.6, 0.35, A.w);
-  float gate = step(s1 * 0.92, crest * uAmount) * step(0.10 * uHmax, hgt);
+  float gate = smoothstep(s1 * 0.92 - 0.18, s1 * 0.92 + 0.18, crest * uAmount)
+           * smoothstep(0.05 * uHmax, 0.15 * uHmax, hgt);
   vec3 vel = vec3(uWind.x * 0.3 + (s2 - 0.5) * 3.0, 3.5 + 5.5 * s3,
                   uWind.z * 0.3 + (s4 - 0.5) * 3.0);
   vec3 P = spawn + vel * age + vec3(0.0, -4.9, 0.0) * age * age;
@@ -1198,7 +1202,7 @@ void main() {
   vec3 vd = (P - uCamPos) / max(camd, 0.001);
   vBright = 1.2 + pow(max(dot(vd, uSunDir), 0.0), 4.0) * 2.0;
   gl_Position = vec4(c0.xy + off * c0.w, c0.z, c0.w);
-  if (gate < 0.5 || alpha < 0.004 || c0.w < 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  if (gate < 0.02 || alpha < 0.004 || c0.w < 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 }`;
 const SPLASH_FS = `#version 300 es
 precision highp float;
