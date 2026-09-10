@@ -1,0 +1,2396 @@
+<!doctype html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta content="#050505" name="theme-color" />
+    <title>Frontier — Terrain Studio</title>
+    <!-- Load the complete UI before scripts: the editor must not depend on a late HMR CSS injection. -->
+    <link href="/src/interface.css?v=oled-20260908" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <a aria-label="Frontier home" class="brand" href="./"
+          ><svg fill="none" viewBox="0 0 34 34">
+            <path
+              d="M3 27 12 7l5 11 4-9 10 18H3Z"
+              stroke="currentColor"
+              stroke-width="1.6"
+            ></path>
+            <path
+              d="m8 27 6-13m1 13 6-12m1 12 4-9M5 23h24M7 19h7m6 0h7"
+              stroke="currentColor"
+              stroke-width="1.1"
+            ></path></svg
+          ><span>FRONTIER</span></a
+        >
+        <button
+          aria-controls="scene-outliner"
+          aria-expanded="true"
+          aria-label="Toggle outliner"
+          class="layout-toggle"
+          id="toggle-outliner"
+          title="Show / hide the left outliner"
+        >
+          <svg viewBox="0 0 24 24">
+            <path d="M3 4h18v16H3zM9 4v16M5 8h2m-2 4h2"></path>
+          </svg>
+        </button>
+        <div class="header-actions">
+          <button class="button primary" id="run">
+            <span class="play-icon">▶</span
+            ><span id="run-label">Run erosion</span>
+          </button>
+          <button
+            aria-controls="scene-properties"
+            aria-expanded="true"
+            aria-label="Toggle inspector"
+            class="layout-toggle"
+            id="toggle-properties"
+            title="Show / hide the right properties and tools"
+          >
+            <svg viewBox="0 0 24 24">
+              <path d="M3 4h18v16H3zM15 4v16M17 8h2m-2 4h2"></path>
+            </svg>
+          </button>
+          <button
+            aria-label="Help"
+            class="icon-button"
+            id="help"
+            title="Keyboard shortcuts"
+          >
+            ?</button
+          ><button class="button export-button" id="export">
+            <svg viewBox="0 0 20 20">
+              <path d="M10 3v9m-3-3 3 3 3-3M4 12v4h12v-4"></path></svg
+            >Export scene
+          </button>
+        </div>
+      </header>
+      <aside aria-label="Scene outliner" class="outliner" id="scene-outliner">
+        <div class="sidebar-heading">
+          <span>Scene</span><span class="panel-caption">OUTLINER</span>
+        </div>
+        <div class="scene-actions">
+          <button aria-haspopup="dialog" class="button" id="new-scene">
+            New scene</button
+          ><button
+            aria-label="Add object"
+            class="button primary"
+            id="add-object"
+            popovertarget="add-menu"
+          >
+            + Add
+          </button>
+        </div>
+        <div aria-label="Scene objects" id="scene-tree" role="tree"></div>
+        <div class="mono object-count" id="object-count">1 OBJECT</div>
+      </aside>
+      <main class="viewport" id="viewport">
+        <canvas
+          aria-label="Interactive 3D SDF landscape. Drag to orbit, sculpt surfaces, or edit object gizmos and spline handles."
+          id="scene"
+          tabindex="0"
+        ></canvas
+        ><svg aria-hidden="true" id="spline-overlay"></svg
+        ><svg aria-hidden="true" id="fracture-overlay"></svg>
+        <div class="hidden" id="fracture-hint">
+          Paint → preview cells → fracture → remove chunks
+        </div>
+        <div class="loading" id="loading">
+          <div class="loading-mark">F</div>
+          <strong>Forming your landscape</strong
+          ><span>Building a world, one voxel at a time.</span>
+          <div class="hidden" id="render-recovery">
+            <a class="button primary compatibility-link" href="?webgl=1"
+              >Restart WebGL2</a
+            >
+            <button class="button glass-button" id="retry-renderer">
+              Retry renderer
+            </button>
+            <button class="text-button" id="error-details">
+              Show diagnostic details
+            </button>
+            <p>Reloading resets unsaved sculpting and erosion.</p>
+          </div>
+        </div>
+        <div class="viewport-top">
+          <button
+            aria-label="Viewport settings"
+            class="viewport-options"
+            id="viewport-options"
+            popovertarget="view-menu"
+            title="Viewport settings"
+          >
+            View <span aria-hidden="true">⌄</span>
+          </button>
+        </div>
+        <div class="brush-hint hidden" id="brush-hint">
+          CARVE <span>Click + drag on rock</span>
+        </div>
+        <div class="toast hidden" id="toast" role="status"></div>
+      </main>
+      <aside
+        aria-label="Properties and tools"
+        class="sidebar"
+        data-panel="terrain"
+        id="scene-properties"
+      >
+        <div class="inspector-heading">
+          <button
+            aria-haspopup="menu"
+            aria-label="Choose inspector section"
+            id="inspector-switch"
+            popovertarget="inspector-menu"
+          >
+            <span id="inspector-mode-label">Object properties</span
+            ><span aria-hidden="true">⌄</span>
+          </button>
+        </div>
+        <div id="inspector-title">Desert canyon</div>
+        <div class="panels">
+          <details class="detail-settings hidden" id="object-transform" open="">
+            <summary>Transform</summary>
+            <div class="editor-actions">
+              <button class="button" id="gizmo-move" title="Move gizmo (G)">
+                Move · G</button
+              ><button
+                class="button"
+                id="gizmo-rotate"
+                title="Rotate gizmo (R)"
+              >
+                Rotate · R</button
+              ><button class="button" id="gizmo-scale" title="Scale gizmo (S)">
+                Scale · S</button
+              ><button class="button" id="gizmo-off">Off</button>
+            </div>
+            <div class="point-coordinates">
+              <label
+                >X<input
+                  aria-label="Object X position"
+                  data-editor=""
+                  id="transform-x"
+                  max="21"
+                  min="-21"
+                  step="0.1"
+                  type="number" /></label
+              ><label
+                >Y<input
+                  aria-label="Object Y position"
+                  data-editor=""
+                  id="transform-y"
+                  max="21"
+                  min="-21"
+                  step="0.1"
+                  type="number" /></label
+              ><label
+                >Z<input
+                  aria-label="Object Z position"
+                  data-editor=""
+                  id="transform-z"
+                  max="21"
+                  min="-21"
+                  step="0.1"
+                  type="number"
+              /></label>
+            </div>
+            <details class="transform-options">
+              <summary>More options</summary>
+              <label class="editor-label" for="transform-target"
+                >Transform target</label
+              ><select class="editor-input" id="transform-target">
+                <option value="object">Whole object</option>
+                <option value="point">Selected spline point</option>
+              </select>
+              <div class="editor-actions">
+                <input
+                  aria-label="Uniform scale factor"
+                  class="editor-input"
+                  data-editor=""
+                  id="object-scale"
+                  max="4"
+                  min="0.25"
+                  step="0.1"
+                  type="number"
+                  value="1"
+                /><button class="button" id="apply-object-scale">
+                  Apply scale ×
+                </button>
+              </div>
+              <p class="control-note" id="transform-help">
+                Drag the colored X/Y/Z handles. Y moves the cut and its bed
+                up/down. Scale also changes channel width/depth.
+              </p>
+            </details>
+          </details>
+          <section
+            aria-label="Terrain properties and sculpt tools"
+            class="panel"
+            id="panel-terrain"
+            role="tabpanel"
+          >
+            <details class="base-warning">
+              <summary>Base edits reset sculpting &amp; erosion</summary>
+              <p>
+                Changing the base also clears fractures. Live shapes and cuts
+                are reapplied. Export first to keep the current result.
+              </p>
+            </details>
+            <div class="hidden" id="plot-controls">
+              <div class="section-label">
+                LAND PLOT <span class="tiny-tag">BOUNDED SDF</span>
+              </div>
+              <div class="control">
+                <label for="plotWidth"
+                  >Width<output id="plotWidth-value">38 m</output></label
+                ><input
+                  id="plotWidth"
+                  max="40"
+                  min="10"
+                  step="1"
+                  type="range"
+                  value="38"
+                />
+              </div>
+              <div class="control">
+                <label for="plotLength"
+                  >Length<output id="plotLength-value">34 m</output></label
+                ><input
+                  id="plotLength"
+                  max="36"
+                  min="10"
+                  step="1"
+                  type="range"
+                  value="34"
+                />
+              </div>
+              <div class="control">
+                <label for="plotHeight"
+                  >Top elevation<output id="plotHeight-value"
+                    >2.5 m</output
+                  ></label
+                ><input
+                  id="plotHeight"
+                  max="12"
+                  min="0"
+                  step="0.1"
+                  type="range"
+                  value="2.5"
+                />
+              </div>
+              <div class="control">
+                <label for="plotBase"
+                  >Bottom elevation (m)<output id="plotBase-value"
+                    >-2</output
+                  ></label
+                ><input
+                  id="plotBase"
+                  max="8"
+                  min="-3"
+                  step="0.1"
+                  type="range"
+                  value="-2"
+                />
+              </div>
+              <div class="control">
+                <label for="plotBevel"
+                  >Edge rounding (m)<output id="plotBevel-value"
+                    >0.3</output
+                  ></label
+                ><input
+                  id="plotBevel"
+                  max="2"
+                  min="0"
+                  step="0.1"
+                  type="range"
+                  value="0.3"
+                />
+              </div>
+              <details class="detail-settings">
+                <summary>3D surface noise &amp; terracing</summary>
+                <label class="editor-label" for="plotNoiseType"
+                  >Noise family</label
+                ><select
+                  class="editor-input"
+                  data-parameter=""
+                  id="plotNoiseType"
+                >
+                  <option value="0">None</option>
+                  <option value="1">Fractal fBm</option>
+                  <option value="2">Ridged</option>
+                  <option value="3">Ridged multifractal</option>
+                  <option value="4">Billow / turbulence</option>
+                </select>
+                <div class="control">
+                  <label for="plotNoiseAmount"
+                    >Displacement (m)<output id="plotNoiseAmount-value"
+                      >0</output
+                    ></label
+                  ><input
+                    id="plotNoiseAmount"
+                    max="3"
+                    min="0"
+                    step="0.05"
+                    type="range"
+                    value="0"
+                  />
+                </div>
+                <div class="control">
+                  <label for="plotNoiseScale"
+                    >Feature wavelength (m)<output id="plotNoiseScale-value"
+                      >4</output
+                    ></label
+                  ><input
+                    id="plotNoiseScale"
+                    max="10"
+                    min="0.8"
+                    step="0.1"
+                    type="range"
+                    value="4"
+                  />
+                </div>
+                <div class="control">
+                  <label for="plotNoiseOctaves"
+                    >Octaves<output id="plotNoiseOctaves-value"
+                      >4</output
+                    ></label
+                  ><input
+                    id="plotNoiseOctaves"
+                    max="5"
+                    min="1"
+                    step="1"
+                    type="range"
+                    value="4"
+                  />
+                </div>
+                <div class="control">
+                  <label for="plotNoiseGain"
+                    >Persistence<output id="plotNoiseGain-value"
+                      >0.5</output
+                    ></label
+                  ><input
+                    id="plotNoiseGain"
+                    max="0.85"
+                    min="0.1"
+                    step="0.05"
+                    type="range"
+                    value="0.5"
+                  />
+                </div>
+                <div class="control">
+                  <label for="plotNoiseLacunarity"
+                    >Lacunarity<output id="plotNoiseLacunarity-value"
+                      >2</output
+                    ></label
+                  ><input
+                    id="plotNoiseLacunarity"
+                    max="3"
+                    min="1.2"
+                    step="0.1"
+                    type="range"
+                    value="2"
+                  />
+                </div>
+                <div class="control">
+                  <label for="plotNoiseWarp"
+                    >Domain warp<output id="plotNoiseWarp-value"
+                      >0</output
+                    ></label
+                  ><input
+                    id="plotNoiseWarp"
+                    max="2"
+                    min="0"
+                    step="0.1"
+                    type="range"
+                    value="0"
+                  />
+                </div>
+                <div class="control">
+                  <label for="plotNoiseSeed"
+                    >Noise seed<output id="plotNoiseSeed-value"
+                      >4821</output
+                    ></label
+                  ><input
+                    id="plotNoiseSeed"
+                    max="9999"
+                    min="1"
+                    step="1"
+                    type="range"
+                    value="4821"
+                  />
+                </div>
+                <div class="control">
+                  <label for="plotTerraceHeight"
+                    >Terrace step (m)<output id="plotTerraceHeight-value"
+                      >1</output
+                    ></label
+                  ><input
+                    id="plotTerraceHeight"
+                    max="4"
+                    min="0.4"
+                    step="0.1"
+                    type="range"
+                    value="1"
+                  />
+                </div>
+                <div class="control">
+                  <label for="plotTerraceStrength"
+                    >Terrace strength<output id="plotTerraceStrength-value"
+                      >0</output
+                    ></label
+                  ><input
+                    id="plotTerraceStrength"
+                    max="1"
+                    min="0"
+                    step="0.05"
+                    type="range"
+                    value="0"
+                  />
+                </div>
+                <p class="control-note">
+                  Noise deforms the XYZ density, including sides and
+                  underside—not a height texture. Features smaller than the
+                  voxel spacing cannot be resolved.
+                </p>
+              </details>
+              <div class="section-line"></div>
+            </div>
+            <div id="procedural-controls">
+              <div class="section-label section-spaced">FORMATION</div>
+              <div class="control">
+                <label for="relief"
+                  >Vertical relief
+                  <output id="relief-value">12.0 m</output></label
+                ><input
+                  id="relief"
+                  max="18"
+                  min="7"
+                  step="0.1"
+                  type="range"
+                  value="12"
+                />
+                <div class="range-labels">
+                  <span>Lowlands</span><span>High cliffs</span>
+                </div>
+              </div>
+              <div class="control">
+                <label for="strata"
+                  >Rock stratification
+                  <output id="strata-value">0.65</output></label
+                ><input
+                  id="strata"
+                  max="1"
+                  min="0"
+                  step="0.01"
+                  type="range"
+                  value="0.65"
+                />
+              </div>
+              <div class="control">
+                <label for="roughness"
+                  >Surface roughness
+                  <output id="roughness-value">0.48</output></label
+                ><input
+                  id="roughness"
+                  max="1"
+                  min="0"
+                  step="0.01"
+                  type="range"
+                  value="0.48"
+                />
+              </div>
+              <div id="canyon-controls">
+                <div class="section-label section-spaced">CANYON SHAPE</div>
+                <div class="control">
+                  <label for="canyonWidth"
+                    >Wall spacing / base gap<output id="canyonWidth-value"
+                      >6.1</output
+                    ></label
+                  ><input
+                    id="canyonWidth"
+                    max="16"
+                    min="3"
+                    step="0.1"
+                    type="range"
+                    value="6.1"
+                  />
+                </div>
+                <div class="control">
+                  <label for="canyonMeander"
+                    >Channel bends<output id="canyonMeander-value"
+                      >1</output
+                    ></label
+                  ><input
+                    id="canyonMeander"
+                    max="2"
+                    min="0"
+                    step="0.05"
+                    type="range"
+                    value="1"
+                  />
+                </div>
+                <div class="control">
+                  <label for="canyonFlare"
+                    >Wall flare with height<output id="canyonFlare-value"
+                      >0.105</output
+                    ></label
+                  ><input
+                    id="canyonFlare"
+                    max="0.25"
+                    min="0"
+                    step="0.005"
+                    type="range"
+                    value="0.105"
+                  />
+                </div>
+                <p class="control-note">
+                  Nominal gap before rock noise and caves.
+                </p>
+              </div>
+              <div class="seed-row">
+                <label for="seed">World seed</label
+                ><input
+                  id="seed"
+                  max="99999"
+                  min="1"
+                  type="number"
+                  value="4821"
+                /><button
+                  aria-label="Randomize seed"
+                  class="icon-button"
+                  id="randomize"
+                  title="Randomize seed"
+                >
+                  <svg viewBox="0 0 20 20">
+                    <path
+                      d="m3 5 3 0 8 10h3m-3-3 3 3-3 3M3 15h3l3-4m2-4 3-2h3m-3-3 3 3-3 3"
+                    ></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="section-line"></div>
+            </div>
+          </section>
+          <section
+            aria-label="Volumetric sculpt tools"
+            class="panel hidden"
+            id="panel-sculpt"
+            role="tabpanel"
+          >
+            <div class="section-label">
+              SCULPT <span class="hint">3D SDF</span>
+            </div>
+            <div
+              aria-label="Sculpt tools"
+              class="sculpt-tools unified-tools"
+              role="group"
+            >
+              <button
+                class="sculpt-tool active"
+                data-tool="orbit"
+                title="Orbit (1)"
+              >
+                <svg viewBox="0 0 24 24">
+                  <ellipse
+                    cx="12"
+                    cy="12"
+                    rx="9"
+                    ry="4"
+                    transform="rotate(-35 12 12)"
+                  ></ellipse>
+                  <path d="M12 3c5 0 5 18 0 18S7 3 12 3Z"></path></svg
+                ><span>Orbit</span></button
+              ><button
+                class="sculpt-tool"
+                data-tool="carve"
+                title="Carve material (2)"
+              >
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="m5 19 3-7L18 2l4 4-10 10-7 3Zm3-7 4 4M3 22h17"
+                  ></path></svg
+                ><span>Carve</span></button
+              ><button
+                class="sculpt-tool"
+                data-tool="add"
+                title="Add material (3)"
+              >
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="m3 17 5-7 5 5 4-6 4 8H3ZM17 2v6m-3-3h6M3 21h18"
+                  ></path></svg
+                ><span>Build</span></button
+              ><button
+                class="sculpt-tool"
+                data-tool="smooth"
+                title="Smooth surface (4)"
+              >
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M3 17c3 0 3-10 6-10s3 10 6 10 3-6 6-6M4 21h16M4 3h5"
+                  ></path></svg
+                ><span>Smooth</span>
+              </button>
+              <button
+                class="sculpt-tool"
+                data-tool="ridge"
+                title="Build a volumetric ridge (5)"
+              >
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M3 19h18M5 16q7-20 14 0M12 14V3m-3 3 3-3 3 3"
+                  ></path></svg
+                ><span>Ridge</span></button
+              ><button
+                class="sculpt-tool"
+                data-tool="dent"
+                title="Indent any surface in 3D (6)"
+              >
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M3 5h18M5 8q7 20 14 0M12 10v11m-3-3 3 3 3-3"
+                  ></path></svg
+                ><span>Dent</span></button
+              ><button class="button sculpt-tool" data-tool="flatten">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 12h18M6 5v4m12-4v4M6 15v4m12-4v4"></path></svg
+                ><span>Flatten</span></button
+              ><button class="button sculpt-tool" data-tool="texture">
+                <svg viewBox="0 0 24 24">
+                  <path d="m3 16 4-8 5 10 5-13 4 8"></path></svg
+                ><span>Noise</span>
+              </button>
+            </div>
+            <div class="control">
+              <label for="brushStrength"
+                >Brush strength<output id="brushStrength-value"
+                  >0.35</output
+                ></label
+              ><input
+                id="brushStrength"
+                max="1"
+                min="0.05"
+                step="0.05"
+                type="range"
+                value="0.35"
+              />
+            </div>
+            <div class="control">
+              <label for="radius"
+                >Brush radius <output id="radius-value">1.8 m</output></label
+              ><input
+                id="radius"
+                max="5"
+                min="0.5"
+                step="0.1"
+                type="range"
+                value="1.8"
+              />
+            </div>
+            <details class="detail-settings">
+              <summary>Volumetric brush properties</summary>
+              <div class="control">
+                <label for="brushFalloff"
+                  >Falloff exponent<output id="brushFalloff-value"
+                    >2</output
+                  ></label
+                ><input
+                  id="brushFalloff"
+                  max="5"
+                  min="0.5"
+                  step="0.25"
+                  type="range"
+                  value="2"
+                />
+              </div>
+              <div class="control">
+                <label for="brushAspect"
+                  >Stroke elongation<output id="brushAspect-value"
+                    >1.8</output
+                  ></label
+                ><input
+                  id="brushAspect"
+                  max="3"
+                  min="1"
+                  step="0.1"
+                  type="range"
+                  value="1.8"
+                />
+              </div>
+              <div class="control">
+                <label for="brushDepth"
+                  >Normal depth / radius<output id="brushDepth-value"
+                    >1</output
+                  ></label
+                ><input
+                  id="brushDepth"
+                  max="2"
+                  min="0.25"
+                  step="0.05"
+                  type="range"
+                  value="1"
+                />
+              </div>
+              <div class="control">
+                <label for="brushSpacing"
+                  >Dab spacing / radius<output id="brushSpacing-value"
+                    >0.25</output
+                  ></label
+                ><input
+                  id="brushSpacing"
+                  max="1"
+                  min="0.1"
+                  step="0.05"
+                  type="range"
+                  value="0.25"
+                />
+              </div>
+              <div class="control">
+                <label for="brushTexture"
+                  >Texture influence<output id="brushTexture-value"
+                    >0</output
+                  ></label
+                ><input
+                  id="brushTexture"
+                  max="1"
+                  min="0"
+                  step="0.05"
+                  type="range"
+                  value="0"
+                />
+              </div>
+              <div class="control">
+                <label for="brushNoiseScale"
+                  >Texture wavelength (m)<output id="brushNoiseScale-value"
+                    >1.5</output
+                  ></label
+                ><input
+                  id="brushNoiseScale"
+                  max="5"
+                  min="0.8"
+                  step="0.1"
+                  type="range"
+                  value="1.5"
+                />
+              </div>
+              <div class="control">
+                <label for="brushOctaves"
+                  >Texture octaves<output id="brushOctaves-value"
+                    >3</output
+                  ></label
+                ><input
+                  id="brushOctaves"
+                  max="5"
+                  min="1"
+                  step="1"
+                  type="range"
+                  value="3"
+                />
+              </div>
+              <label class="editor-label" for="brushNoiseType"
+                >3D brush texture</label
+              ><select
+                class="editor-input"
+                data-parameter=""
+                id="brushNoiseType"
+              >
+                <option value="1">Fractal fBm</option>
+                <option value="2">Ridged</option>
+                <option value="3">Ridged multifractal</option>
+                <option value="4">Billow</option>
+              </select>
+              <p class="control-note">
+                Ridge / Dent / Smooth / Flatten / Noise operate around the
+                picked surface in XYZ. Elongation follows the stroke; depth
+                follows the surface normal. Carve / Build remain full CSG
+                stamps. Destructive brushes bake live objects.
+              </p>
+            </details>
+            <p class="control-note" id="sculpt-note">
+              Drag to orbit. Scroll to explore.<br />Select a brush to shape the
+              rock.
+            </p>
+          </section>
+          <section
+            aria-label="Shape properties"
+            class="panel hidden"
+            id="panel-shape"
+            role="tabpanel"
+          >
+            <div class="section-label">
+              VOLUMETRIC SHAPE <span class="tiny-tag">LIVE SDF</span>
+            </div>
+            <label class="editor-label" for="shape-name">Shape name</label
+            ><input class="editor-input" id="shape-name" maxlength="60" /><label
+              class="editor-visible"
+              ><input checked="" id="shape-visible" type="checkbox" /> Visible /
+              enabled</label
+            ><label class="editor-label" for="shape-primitive">Primitive</label
+            ><select class="editor-input" id="shape-primitive">
+              <option value="0">Ellipsoid / boulder</option>
+              <option value="1">Rounded box</option>
+              <option value="2">Capsule / river stone</option>
+              <option value="3">Torus / rock ring</option>
+              <option value="4">Egg / teardrop</option>
+              <option value="5">Organic cluster</option>
+              <option value="6">Rounded cylinder</option>
+            </select>
+            <p class="control-note" id="primitive-help"></p>
+            <div class="control">
+              <label for="shape-profile"
+                >Organic profile<output id="shape-profile-value"
+                  >0.50</output
+                ></label
+              ><input
+                data-editor=""
+                id="shape-profile"
+                max="0.8"
+                min="0.2"
+                step="0.05"
+                type="range"
+                value="0.5"
+              />
+            </div>
+            <div class="control">
+              <label for="shape-size-x"
+                >Size X (m)<output id="shape-size-x-value">5</output></label
+              ><input
+                data-editor=""
+                id="shape-size-x"
+                max="20"
+                min="0.8"
+                step="0.1"
+                type="range"
+                value="5"
+              />
+            </div>
+            <div class="control">
+              <label for="shape-size-y"
+                >Size Y (m)<output id="shape-size-y-value">5</output></label
+              ><input
+                data-editor=""
+                id="shape-size-y"
+                max="20"
+                min="0.8"
+                step="0.1"
+                type="range"
+                value="5"
+              />
+            </div>
+            <div class="control">
+              <label for="shape-size-z"
+                >Size Z (m)<output id="shape-size-z-value">5</output></label
+              ><input
+                data-editor=""
+                id="shape-size-z"
+                max="20"
+                min="0.8"
+                step="0.1"
+                type="range"
+                value="5"
+              />
+            </div>
+            <details class="detail-settings">
+              <summary>Rotation &amp; edge rounding</summary>
+              <div class="control">
+                <label for="shape-rotation-x"
+                  >Rotation X (degrees)<output id="shape-rotation-x-value"
+                    >0</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-rotation-x"
+                  max="180"
+                  min="-180"
+                  step="1"
+                  type="range"
+                  value="0"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-rotation-y"
+                  >Rotation Y (degrees)<output id="shape-rotation-y-value"
+                    >0</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-rotation-y"
+                  max="180"
+                  min="-180"
+                  step="1"
+                  type="range"
+                  value="0"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-rotation-z"
+                  >Rotation Z (degrees)<output id="shape-rotation-z-value"
+                    >0</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-rotation-z"
+                  max="180"
+                  min="-180"
+                  step="1"
+                  type="range"
+                  value="0"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-rounding"
+                  >Edge rounding (m)<output id="shape-rounding-value"
+                    >0.3</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-rounding"
+                  max="2"
+                  min="0"
+                  step="0.05"
+                  type="range"
+                  value="0.3"
+                />
+              </div>
+            </details>
+            <details class="detail-settings" open="">
+              <summary>Shape-only 3D density noise</summary>
+              <label class="editor-label" for="shape-noise-Type"
+                >Noise family</label
+              ><select
+                class="editor-input"
+                data-editor=""
+                id="shape-noise-Type"
+              >
+                <option value="0">None</option>
+                <option value="1">Fractal fBm</option>
+                <option value="2">Ridged</option>
+                <option value="3">Ridged multifractal</option>
+                <option value="4">Billow / turbulence</option>
+              </select>
+              <div class="control">
+                <label for="shape-noise-Amount"
+                  >Displacement (m)<output id="shape-noise-Amount-value"
+                    >0</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-noise-Amount"
+                  max="3"
+                  min="0"
+                  step="0.05"
+                  type="range"
+                  value="0"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-noise-Scale"
+                  >Feature wavelength (m)<output id="shape-noise-Scale-value"
+                    >4</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-noise-Scale"
+                  max="10"
+                  min="0.8"
+                  step="0.1"
+                  type="range"
+                  value="4"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-noise-Octaves"
+                  >Octaves<output id="shape-noise-Octaves-value"
+                    >4</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-noise-Octaves"
+                  max="5"
+                  min="1"
+                  step="1"
+                  type="range"
+                  value="4"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-noise-Gain"
+                  >Persistence<output id="shape-noise-Gain-value"
+                    >0.5</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-noise-Gain"
+                  max="0.85"
+                  min="0.1"
+                  step="0.05"
+                  type="range"
+                  value="0.5"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-noise-Lacunarity"
+                  >Lacunarity<output id="shape-noise-Lacunarity-value"
+                    >2</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-noise-Lacunarity"
+                  max="3"
+                  min="1.2"
+                  step="0.1"
+                  type="range"
+                  value="2"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-noise-Warp"
+                  >Domain warp<output id="shape-noise-Warp-value"
+                    >0</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-noise-Warp"
+                  max="2"
+                  min="0"
+                  step="0.1"
+                  type="range"
+                  value="0"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-noise-Seed"
+                  >Noise seed<output id="shape-noise-Seed-value"
+                    >4821</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-noise-Seed"
+                  max="9999"
+                  min="1"
+                  step="1"
+                  type="range"
+                  value="4821"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-terrace-height"
+                  >Terrace step (m)<output id="shape-terrace-height-value"
+                    >1</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-terrace-height"
+                  max="4"
+                  min="0.4"
+                  step="0.1"
+                  type="range"
+                  value="1"
+                />
+              </div>
+              <div class="control">
+                <label for="shape-terrace-strength"
+                  >Terrace strength<output id="shape-terrace-strength-value"
+                    >0</output
+                  ></label
+                ><input
+                  data-editor=""
+                  id="shape-terrace-strength"
+                  max="1"
+                  min="0"
+                  step="0.05"
+                  type="range"
+                  value="0"
+                />
+              </div>
+            </details>
+            <button class="button wide" id="shape-bake">
+              Bake live geometry</button
+            ><button class="button wide" id="shape-delete">Delete shape</button>
+            <p class="control-note" id="shape-status">
+              Shape noise changes only this primitive. Shapes fuse into the SDF
+              before channel cuts. Sculpting and erosion bake live objects;
+              baked guides cannot undo the solid.
+            </p>
+          </section>
+          <section
+            aria-label="Spline properties"
+            class="panel hidden"
+            id="panel-path"
+            role="tabpanel"
+          >
+            <div class="section-label" id="path-kind">LIVE CHANNEL CUT</div>
+            <label class="editor-label" for="object-name">Object name</label
+            ><input
+              aria-label="Object name"
+              class="editor-input"
+              id="object-name"
+              maxlength="60"
+            /><label class="editor-visible"
+              ><input id="object-visible" type="checkbox" /> Visible /
+              enabled</label
+            >
+            <div class="section-line"></div>
+            <div class="section-label">SHAPE &amp; FLOW</div>
+            <div class="control" id="path-width-row">
+              <label for="path-width"
+                >Full width<output id="path-width-value">4.5</output></label
+              ><input
+                data-editor=""
+                id="path-width"
+                max="16"
+                min="0.8"
+                step="0.1"
+                type="range"
+                value="4.5"
+              />
+            </div>
+            <div class="control" id="path-depth-row">
+              <label for="path-depth"
+                >Cut depth<output id="path-depth-value">2</output></label
+              ><input
+                data-editor=""
+                id="path-depth"
+                max="16"
+                min="0.2"
+                step="0.1"
+                type="range"
+                value="2"
+              />
+            </div>
+            <div class="control" id="path-bank-row">
+              <label for="path-bank"
+                >Bank slope<output id="path-bank-value">0.25</output></label
+              ><input
+                data-editor=""
+                id="path-bank"
+                max="1"
+                min="0"
+                step="0.05"
+                type="range"
+                value="0.25"
+              />
+            </div>
+            <div class="control" id="path-speed-row">
+              <label for="path-speed"
+                >Flow speed<output id="path-speed-value">3.2</output></label
+              ><input
+                data-editor=""
+                id="path-speed"
+                max="10"
+                min="0.2"
+                step="0.1"
+                type="range"
+                value="3.2"
+              />
+            </div>
+            <div class="section-line"></div>
+            <div class="section-label">
+              CONTROL POINTS <span class="hint">MAX 12</span>
+            </div>
+            <div class="editor-actions">
+              <button class="button" id="path-place">+ Add points</button
+              ><button class="button" id="path-finish">Finish / edit</button>
+            </div>
+            <p aria-live="polite" class="control-note" id="path-status">
+              Click the terrain to place points.
+            </p>
+            <div aria-label="Control points" id="point-list"></div>
+            <div class="point-coordinates">
+              <label for="point-x"
+                >X<input
+                  aria-label="Point X"
+                  data-editor=""
+                  id="point-x"
+                  max="21"
+                  min="-21"
+                  step="0.1"
+                  type="number" /></label
+              ><label for="point-y"
+                >Y<input
+                  aria-label="Point Y"
+                  data-editor=""
+                  id="point-y"
+                  max="21"
+                  min="-3.5"
+                  step="0.1"
+                  type="number" /></label
+              ><label for="point-z"
+                >Z<input
+                  aria-label="Point Z"
+                  data-editor=""
+                  id="point-z"
+                  max="19"
+                  min="-19"
+                  step="0.1"
+                  type="number"
+              /></label>
+            </div>
+            <div class="editor-actions">
+              <button class="button" id="point-delete">Remove point</button
+              ><button class="button" id="path-reverse">
+                Reverse direction
+              </button>
+            </div>
+            <div class="section-line"></div>
+            <button class="button wide" id="path-copy-water">
+              Create water from this cut</button
+            ><button class="button wide" id="path-bake">
+              Bake live geometry</button
+            ><button class="button wide danger-outline" id="path-delete">
+              Delete spline
+            </button>
+            <p class="control-note" id="path-help"></p>
+          </section>
+          <section
+            aria-label="Fracture settings"
+            class="panel hidden"
+            id="panel-fracture"
+            role="tabpanel"
+          >
+            <div class="section-label">
+              CELL FRACTURE <span class="tiny-tag">3D VORONOI</span>
+            </div>
+            <div class="info-card">
+              <span class="info-icon">⬡</span>
+              <div>
+                <strong>Paint. Fracture. Remove chunks.</strong>
+                <p>
+                  Irregular, interlocking cells inside the rock—not parallel
+                  slices. Paint the region, preview the pattern, then subtract
+                  selected fragments.
+                </p>
+              </div>
+            </div>
+            <div class="fracture-step">
+              <span>01</span
+              ><strong>Paint where the rock should fracture</strong>
+            </div>
+            <div class="fracture-paint-tools">
+              <button
+                aria-pressed="false"
+                class="button fracture-button"
+                id="fracture-paint"
+              >
+                Paint fracture region</button
+              ><button
+                aria-pressed="false"
+                class="button fracture-button"
+                id="fracture-erase"
+              >
+                Erase paint
+              </button>
+            </div>
+            <div class="control">
+              <label for="fracture-brush"
+                >Paint radius<output id="fracture-brush-value"></output></label
+              ><input
+                data-fracture=""
+                id="fracture-brush"
+                max="10"
+                min="1.5"
+                step="0.25"
+                type="range"
+                value="4.5"
+              />
+            </div>
+            <div class="control">
+              <label for="fracture-size"
+                >Target chunk size<output
+                  id="fracture-size-value"
+                ></output></label
+              ><input
+                data-fracture=""
+                id="fracture-size"
+                max="12"
+                min="2"
+                step="0.25"
+                type="range"
+                value="4.5"
+              />
+            </div>
+            <div class="control">
+              <label for="fracture-variation"
+                >Cell irregularity<output
+                  id="fracture-variation-value"
+                ></output></label
+              ><input
+                data-fracture=""
+                id="fracture-variation"
+                max="1"
+                min="0"
+                step="0.05"
+                type="range"
+                value="0.9"
+              />
+            </div>
+            <div class="control">
+              <label for="fracture-depth"
+                >Fracture depth<output
+                  id="fracture-depth-value"
+                ></output></label
+              ><input
+                data-fracture=""
+                id="fracture-depth"
+                max="45"
+                min="1"
+                step="0.5"
+                type="range"
+                value="18"
+              />
+            </div>
+            <p class="control-note">
+              Drag across visible rock. Paint follows your stroke; depth extends
+              into the rock along your view. Smaller chunks produce a denser
+              fracture network. Radius affects new paint samples.
+            </p>
+            <label class="fracture-kind-label" for="fracture-kind"
+              >Crack output</label
+            ><select id="fracture-kind">
+              <option value="intact">Intact cracks · selectable pieces</option>
+              <option value="solid">Open gaps · destructive</option>
+              <option value="detail">Visual hairline network only</option>
+            </select>
+            <p class="control-note">
+              Intact cracks only mark piece boundaries. The volume stays
+              unchanged until you remove a selection. One active map; a new map
+              replaces it.
+            </p>
+            <div class="control">
+              <label for="fracture-width"
+                ><span id="fracture-width-label">Hairline width</span
+                ><output id="fracture-width-value"></output></label
+              ><input
+                data-fracture=""
+                id="fracture-width"
+                max="0.08"
+                min="0.002"
+                step="0.002"
+                type="range"
+                value="0.014"
+              />
+            </div>
+            <label class="fracture-check"
+              ><input id="fracture-separate" type="checkbox" /> Separate painted
+              boundary from intact rock</label
+            >
+            <p class="control-note hidden" id="fracture-gap-warning">
+              Open-gap mode removes rock along every crack (minimum 0.8 m on
+              this grid) and can detach chunks. Use Intact cracks to leave the
+              formation joined.
+            </p>
+            <div class="fracture-seed-row">
+              <label for="fracture-seed">Pattern seed</label
+              ><input
+                id="fracture-seed"
+                max="99999"
+                min="1"
+                step="1"
+                type="number"
+                value="4101"
+              /><button class="text-button" disabled="" id="fracture-reroll">
+                New pattern
+              </button>
+            </div>
+            <label class="fracture-check"
+              ><input checked="" id="fracture-show" type="checkbox" /> Show
+              painted cells and crack preview</label
+            >
+            <p class="control-note" id="fracture-paint-count">
+              0 / 24 paint samples
+            </p>
+            <p class="control-note" id="fracture-pattern-info">
+              Paint to reveal irregular, interlocking cells—not parallel slices.
+            </p>
+            <div class="fracture-actions">
+              <button class="text-button" disabled="" id="fracture-clear">
+                Clear paint</button
+              ><button
+                class="button fracture-button"
+                disabled=""
+                id="fracture-apply"
+              >
+                Mark cracks · keep intact
+              </button>
+            </div>
+            <div class="section-line"></div>
+            <div class="fracture-step">
+              <span>02</span><strong>Choose the chunks to remove</strong>
+            </div>
+            <button
+              aria-pressed="false"
+              class="button fracture-button"
+              id="fracture-select"
+            >
+              Select piece
+            </button>
+            <p id="fracture-status" role="status">
+              Paint where you want irregular fracture cells.
+            </p>
+            <label class="fracture-check hidden" id="fracture-large-row"
+              ><input id="fracture-large" type="checkbox" /> I intend to remove
+              this large portion</label
+            >
+            <button
+              class="button fracture-delete"
+              disabled=""
+              id="fracture-delete"
+            >
+              Remove selected chunk
+            </button>
+            <button
+              class="button fracture-button"
+              disabled=""
+              id="fracture-undo"
+            >
+              ↶ Undo last fracture edit
+            </button>
+            <p class="control-note">
+              Orange shows only the selected piece. Nothing moves or separates
+              when marking cracks. Removing a support can still leave an
+              overhang; neighbouring pieces are never automatically deleted.
+              Undo stores one edit.
+            </p>
+            <details class="process-details">
+              <summary>Active crack map</summary>
+              <p class="control-note" id="fracture-detail-count">
+                No visual crack layer.
+              </p>
+              <button
+                class="text-button"
+                disabled=""
+                id="fracture-clear-details"
+              >
+                Clear crack map
+              </button>
+              <p class="control-note">
+                Clearing the map removes hairlines and cell selection, not baked
+                gaps or previously deleted rock. Use Undo to restore the last
+                edit.
+              </p>
+            </details>
+          </section>
+          <section
+            aria-label="Erosion settings"
+            class="panel hidden"
+            id="panel-erosion"
+            role="tabpanel"
+          >
+            <div class="simulation-bar">
+              <div class="simulation-state">
+                <span class="sim-state-dot"></span>
+                <div>
+                  <strong id="simulation-label">Erosion ready</strong
+                  ><span
+                    ><span id="iterations">0</span> iterations <i>·</i>
+                    <span id="sim-detail">Waiting for rain</span></span
+                  >
+                </div>
+              </div>
+              <div class="simulation-buttons">
+                <button
+                  aria-label="Step simulation"
+                  class="step-button"
+                  id="step"
+                  title="Advance one simulation step"
+                >
+                  <svg viewBox="0 0 20 20">
+                    <path d="m5 4 8 6-8 6V4Zm10 0v12"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="section-label">
+              PARTICLE EROSION <span class="tiny-tag">GPU</span>
+            </div>
+            <div class="section-label">EMITTER</div>
+            <div
+              aria-label="Weathering agent"
+              class="source-tools weather-grid"
+              role="group"
+            >
+              <button class="active" data-source="0">Rain</button
+              ><button data-source="1">Runoff</button
+              ><button data-source="2">River</button
+              ><button data-source="3">Wind</button
+              ><button data-source="4">Rockfall</button
+              ><button data-source="5">Chemical</button>
+            </div>
+            <p class="control-note" id="weather-description">
+              Rain parcels become runoff and join the stream.
+            </p>
+            <div class="toggle-row particle-toggle-row">
+              <div>
+                <strong>Show erosion agents</strong
+                ><span
+                  >Water · Sand · Wet fines · Rock chips · Dissolved load</span
+                >
+              </div>
+              <button
+                aria-checked="true"
+                aria-label="Show erosion particles"
+                class="switch on"
+                id="particle-toggle"
+                role="switch"
+              >
+                <span></span>
+              </button>
+            </div>
+            <div class="control">
+              <label for="particleCount"
+                >Particle pool
+                <output id="particleCount-value">1024</output></label
+              ><input
+                id="particleCount"
+                max="2048"
+                min="256"
+                step="256"
+                type="range"
+                value="1024"
+              />
+            </div>
+            <div class="control">
+              <label for="agentDiameter"
+                >Incoming agent diameter
+                <output id="agentDiameter-value">3.0 mm</output></label
+              ><input
+                id="agentDiameter"
+                max="8"
+                min="0.5"
+                step="0.5"
+                type="range"
+                value="3"
+              />
+            </div>
+            <div class="control">
+              <label for="footprint"
+                >Agent footprint
+                <output id="footprint-value">0.85 m</output></label
+              ><input
+                id="footprint"
+                max="1.15"
+                min="0.45"
+                step="0.05"
+                type="range"
+                value="0.85"
+              />
+            </div>
+            <div class="control">
+              <label for="capacity"
+                >Sediment capacity
+                <output id="capacity-value">0.60</output></label
+              ><input
+                id="capacity"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.6"
+              />
+            </div>
+            <div class="control">
+              <label for="grainSize"
+                >Sediment diameter
+                <output id="grainSize-value">0.15 mm</output></label
+              ><input
+                id="grainSize"
+                max="0.25"
+                min="0.03"
+                step="0.01"
+                type="range"
+                value="0.15"
+              />
+            </div>
+            <div class="control">
+              <label for="rainfall"
+                >Emitter intensity
+                <output id="rainfall-value">0.55</output></label
+              ><input
+                id="rainfall"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.55"
+              />
+              <div class="range-labels">
+                <span>Arid</span><span>Heavy rain</span>
+              </div>
+            </div>
+            <div class="control">
+              <label for="erosion"
+                >Erosion rate <output id="erosion-value">0.45</output></label
+              ><input
+                id="erosion"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.45"
+              />
+            </div>
+            <div class="control">
+              <label for="hardness"
+                >Rock hardness <output id="hardness-value">0.60</output></label
+              ><input
+                id="hardness"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.6"
+              />
+            </div>
+            <div class="control">
+              <label for="restitution"
+                >Impact restitution
+                <output id="restitution-value">0.08</output></label
+              ><input
+                id="restitution"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.08"
+              />
+            </div>
+            <div class="control">
+              <label for="wind"
+                >Wind drift <output id="wind-value">0.20</output></label
+              ><input
+                id="wind"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.2"
+              />
+            </div>
+            <div class="control">
+              <label for="deposition"
+                >Sediment deposition
+                <output id="deposition-value">0.35</output></label
+              ><input
+                id="deposition"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.35"
+              />
+            </div>
+            <details class="process-details" id="river-controls">
+              <summary>River current &amp; bed erosion</summary>
+              <div class="toggle-row">
+                <div>
+                  <strong>River transport</strong
+                  ><span>Entrains wet sediment from every agent</span>
+                </div>
+                <button
+                  aria-checked="true"
+                  aria-label="Enable river current"
+                  class="switch on"
+                  id="river-toggle"
+                  role="switch"
+                >
+                  <span></span>
+                </button>
+              </div>
+              <div class="control">
+                <label for="riverSpeed"
+                  >Current speed<output id="riverSpeed-value"
+                    >3.2</output
+                  ></label
+                ><input
+                  id="riverSpeed"
+                  max="8"
+                  min="0"
+                  step="0.1"
+                  type="range"
+                  value="3.2"
+                />
+              </div>
+              <div class="control">
+                <label for="riverWidth"
+                  >Current half-width<output id="riverWidth-value"
+                    >3</output
+                  ></label
+                ><input
+                  id="riverWidth"
+                  max="6"
+                  min="0.8"
+                  step="0.1"
+                  type="range"
+                  value="3"
+                />
+              </div>
+              <div class="control">
+                <label for="riverDepth"
+                  >Source depth<output id="riverDepth-value">0.6</output></label
+                ><input
+                  id="riverDepth"
+                  max="2"
+                  min="0.1"
+                  step="0.1"
+                  type="range"
+                  value="0.6"
+                />
+              </div>
+              <div class="control">
+                <label for="riverOffset"
+                  >Channel X offset<output id="riverOffset-value"
+                    >0</output
+                  ></label
+                ><input
+                  id="riverOffset"
+                  max="10"
+                  min="-10"
+                  step="0.1"
+                  type="range"
+                  value="0"
+                />
+              </div>
+              <p class="control-note">
+                River agents start low in the canyon. Current bends with the
+                channel and entrains sand, wet fines, and coarse bedload. Water
+                level is set in the Water tab.
+              </p>
+            </details>
+            <details class="process-details" id="wind-controls">
+              <summary>Wind field &amp; altitude</summary>
+              <div class="control">
+                <label for="windSpeed"
+                  >Wind speed<output id="windSpeed-value">5.5</output></label
+                ><input
+                  id="windSpeed"
+                  max="12"
+                  min="0"
+                  step="0.1"
+                  type="range"
+                  value="5.5"
+                />
+              </div>
+              <div class="control">
+                <label for="windHeight"
+                  >Emitter height<output id="windHeight-value">6</output></label
+                ><input
+                  id="windHeight"
+                  max="18"
+                  min="0.5"
+                  step="0.1"
+                  type="range"
+                  value="6"
+                />
+              </div>
+              <div class="control">
+                <label for="windSpread"
+                  >Vertical spread<output id="windSpread-value"
+                    >2</output
+                  ></label
+                ><input
+                  id="windSpread"
+                  max="6"
+                  min="0.2"
+                  step="0.1"
+                  type="range"
+                  value="2"
+                />
+              </div>
+              <div class="control">
+                <label for="windDirection"
+                  >Wind direction<output id="windDirection-value"
+                    >0</output
+                  ></label
+                ><input
+                  id="windDirection"
+                  max="360"
+                  min="0"
+                  step="1"
+                  type="range"
+                  value="0"
+                />
+              </div>
+            </details>
+            <details class="process-details" id="chemical-controls">
+              <summary>Chemical dissolution</summary>
+              <div class="control">
+                <label for="chemicalRate"
+                  >Reaction rate<output id="chemicalRate-value"
+                    >0.45</output
+                  ></label
+                ><input
+                  id="chemicalRate"
+                  max="1"
+                  min="0"
+                  step="0.01"
+                  type="range"
+                  value="0.45"
+                />
+              </div>
+              <div class="control">
+                <label for="solubility"
+                  >Solution capacity<output id="solubility-value"
+                    >0.6</output
+                  ></label
+                ><input
+                  id="solubility"
+                  max="1"
+                  min="0"
+                  step="0.01"
+                  type="range"
+                  value="0.6"
+                />
+              </div>
+              <p class="control-note">
+                Reaction-limited removal at wet contact. Dissolved load follows
+                the carrier but does not settle as sand. These are artistic
+                coefficients, not a calibrated pH/mineral model.
+              </p>
+            </details>
+            <div class="toggle-row particle-toggle-row">
+              <div>
+                <strong>Show sediment plumes</strong
+                ><span>Wet sand and fines following the stream</span>
+              </div>
+              <button
+                aria-checked="true"
+                aria-label="Show sediment plumes"
+                class="switch on"
+                id="sediment-toggle"
+                role="switch"
+              >
+                <span></span>
+              </button>
+            </div>
+            <div class="section-line"></div>
+            <button class="button wide audit-button" id="audit-erosion">
+              Audit sediment balance
+            </button>
+            <pre
+              class="erosion-audit hidden"
+              id="erosion-audit"
+              role="status"
+            ></pre>
+            <div class="section-label">SIMULATION</div>
+            <div class="control">
+              <label for="speed"
+                >Time scale <output id="speed-value">1×</output></label
+              ><input
+                id="speed"
+                max="5"
+                min="1"
+                step="1"
+                type="range"
+                value="1"
+              />
+            </div>
+            <button class="text-button wide" id="reset-erosion">
+              Reset erosion &amp; sculpting
+            </button>
+            <p class="control-note">
+              Research-informed GPU particle transport. Agents represent
+              parcels, not individual resolved grains. Not calibrated CFD.
+            </p>
+          </section>
+          <section
+            aria-label="Water settings"
+            class="panel hidden"
+            id="panel-water"
+            role="tabpanel"
+          >
+            <div class="section-label">
+              CANYON WATER <span class="tiny-tag">PROCEDURAL</span>
+            </div>
+            <div class="toggle-row">
+              <div>
+                <strong>Water surface</strong
+                ><span>Animated surface · live while erosion is paused</span>
+              </div>
+              <button
+                aria-checked="true"
+                aria-label="Enable water"
+                class="switch on"
+                id="water-toggle"
+                role="switch"
+              >
+                <span></span>
+              </button>
+            </div>
+            <div class="control">
+              <label for="waterLevel"
+                >Water level <output id="waterLevel-value">0.7 m</output></label
+              ><input
+                id="waterLevel"
+                max="5"
+                min="0.1"
+                step="0.1"
+                type="range"
+                value="0.7"
+              />
+            </div>
+            <div class="section-label section-spaced">WAVES &amp; CURRENT</div>
+            <div class="control">
+              <label for="waveHeight"
+                >Wave height<output id="waveHeight-value">0.12</output></label
+              ><input
+                id="waveHeight"
+                max="0.35"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.12"
+              />
+            </div>
+            <div class="control">
+              <label for="waveLength"
+                >Wave length<output id="waveLength-value">2.8</output></label
+              ><input
+                id="waveLength"
+                max="8"
+                min="1.5"
+                step="0.1"
+                type="range"
+                value="2.8"
+              />
+            </div>
+            <div class="control">
+              <label for="waveSpeed"
+                >Wave animation speed<output id="waveSpeed-value"
+                  >1.15</output
+                ></label
+              ><input
+                id="waveSpeed"
+                max="2.5"
+                min="0"
+                step="0.05"
+                type="range"
+                value="1.15"
+              />
+            </div>
+            <div class="control">
+              <label for="waterDirection"
+                >Wave heading<output id="waterDirection-value"
+                  >25</output
+                ></label
+              ><input
+                id="waterDirection"
+                max="360"
+                min="0"
+                step="1"
+                type="range"
+                value="25"
+              />
+            </div>
+            <div class="control">
+              <label for="ripple"
+                >Fine ripple strength
+                <output id="ripple-value">0.25</output></label
+              ><input
+                id="ripple"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.25"
+              />
+            </div>
+            <div class="section-label section-spaced">FOAM</div>
+            <div class="control">
+              <label for="foamAmount"
+                >Foam coverage<output id="foamAmount-value">0.65</output></label
+              ><input
+                id="foamAmount"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.65"
+              />
+            </div>
+            <div class="control">
+              <label for="foamReach"
+                >Shoreline foam reach<output id="foamReach-value"
+                  >0.85</output
+                ></label
+              ><input
+                id="foamReach"
+                max="2"
+                min="0.15"
+                step="0.05"
+                type="range"
+                value="0.85"
+              />
+            </div>
+            <div class="control">
+              <label for="foamScale"
+                >Foam patch scale<output id="foamScale-value"
+                  >0.55</output
+                ></label
+              ><input
+                id="foamScale"
+                max="1.5"
+                min="0.2"
+                step="0.05"
+                type="range"
+                value="0.55"
+              />
+            </div>
+            <p class="control-note">
+              Procedural foam forms near actual rock and shallows. It moves with
+              the guided river current, without a repeating foam texture.
+              Current speed is set under Erosion → River.
+            </p>
+            <div class="section-label section-spaced">WATER OPTICS</div>
+            <div class="control">
+              <label for="waterReflection"
+                >Reflection strength<output id="waterReflection-value"
+                  >0.65</output
+                ></label
+              ><input
+                id="waterReflection"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.65"
+              />
+            </div>
+            <div class="control">
+              <label for="clarity"
+                >Water clarity <output id="clarity-value">0.65</output></label
+              ><input
+                id="clarity"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.65"
+              />
+            </div>
+            <div class="section-line"></div>
+            <div class="section-label">ATMOSPHERE</div>
+            <div class="control">
+              <label for="sun"
+                >Sun direction <output id="sun-value">135°</output></label
+              ><input
+                id="sun"
+                max="360"
+                min="0"
+                step="1"
+                type="range"
+                value="135"
+              />
+            </div>
+            <div class="control">
+              <label for="haze"
+                >Desert haze <output id="haze-value">0.25</output></label
+              ><input
+                id="haze"
+                max="1"
+                min="0"
+                step="0.01"
+                type="range"
+                value="0.25"
+              />
+            </div>
+            <p class="control-note">
+              Displaced procedural waves, flowing shoreline foam, depth
+              absorption and bounded SDF bank reflections/refraction. Animation
+              stays live while erosion is paused. Wave steepness is limited for
+              stable intersections. This is surface rendering, not a
+              free-surface fluid solve.
+            </p>
+          </section>
+        </div>
+      </aside>
+    </div>
+    <dialog id="help-dialog">
+      <div class="dialog-heading">
+        <span class="section-label">FRONTIER</span
+        ><button aria-label="Close help" class="icon-button" id="close-help">
+          ×
+        </button>
+      </div>
+      <h2>Controls &amp; help</h2>
+      <p>
+        The rock is a three-dimensional signed-distance field, not a heightmap.
+        Carve into walls, build out ledges, or smooth a tunnel.
+      </p>
+      <dl>
+        <dt>1 / 2 / 3 / 4 / 5 / 6</dt>
+        <dd>Orbit / Carve / Build / Smooth / Ridge / Dent</dd>
+        <dt>Left drag</dt>
+        <dd>Orbit or apply the selected brush</dd>
+        <dt>Right drag</dt>
+        <dd>Look around the camera position</dd>
+        <dt>W / A / S / D</dt>
+        <dd>Hold RMB: move forward / left / back / right</dd>
+        <dt>Q / E</dt>
+        <dd>Hold RMB: move vertically down / up</dd>
+        <dt>Shift</dt>
+        <dd>4× movement speed</dd>
+        <dt>Middle drag</dt>
+        <dd>Pan</dd>
+        <dt>Scroll</dt>
+        <dd>Orbit zoom; in Fly mode, adjust movement speed</dd>
+        <dt>Space</dt>
+        <dd>Pause / run erosion</dd>
+        <dt>G / R / S</dt>
+        <dd>
+          Move / Rotate / Scale the selected live object. Drag the gizmo
+          handles.
+        </dd>
+        <dt>Home</dt>
+        <dd>Reset camera</dd>
+      </dl>
+      <p class="dialog-note">
+        Formation controls regenerate the base volume and clear sculpting.
+        Erosion controls affect the next simulation step. Export saves the
+        current volume and settings as a portable .frontier file.
+      </p>
+      <div class="camera-controls">
+        <h3>Fly camera</h3>
+        <p>
+          Hold right mouse to look and use WASD / Q/E for flight. Release it for
+          G / R / S gizmo shortcuts; Shift moves 4× faster. Middle mouse pans.
+          Alt + left drag or the Orbit/Fly button retains orbit navigation. Esc
+          releases mouse capture.
+        </p>
+        <div class="control">
+          <label for="cameraSpeed"
+            >Movement speed<output id="cameraSpeed-value">8</output></label
+          ><input
+            id="cameraSpeed"
+            max="40"
+            min="0.5"
+            step="0.5"
+            type="range"
+            value="8"
+          />
+        </div>
+      </div>
+      <section class="diagnostics-section">
+        <h3>Renderer diagnostics</h3>
+        <p>
+          The scene uses WebGL2. Particle motion, erosion, deposition, and
+          sculpting run on the GPU using WebGL2 fragment passes. A worker
+          handles initial generation and explicit connected-fragment selection.
+          WebGPU is not initialized. A floating-point render target is required
+          for GPU erosion.
+        </p>
+        <pre id="renderer-diagnostics">Starting renderer…</pre>
+        <button class="button primary" id="copy-diagnostics">
+          Copy diagnostics
+        </button>
+        <a class="compatibility-link text-button" href="?webgl=1"
+          >Restart WebGL2 (reloads scene)</a
+        >
+        <button
+          class="glass-button"
+          id="renderer-info"
+          title="WebGL2 renderer health and restart options"
+        >
+          Checking WebGL2
+        </button>
+        <p class="diagnostic-status">
+          <span id="renderer-label">Starting renderer</span> ·
+          <span id="voxel-label">3D SDF</span>
+        </p>
+        <footer class="diagnostic-counters">
+          <span
+            ><span class="key">LMB</span> <span id="mouse-action">Orbit</span
+            ><span class="key">RMB</span> Look
+            <span class="key">RMB + WASD QE</span> Fly<span class="key"
+              >SCROLL</span
+            >
+            Zoom</span
+          ><span
+            ><span id="fps">—</span> FPS <i>·</i>
+            <span id="resolution">112 × 72 × 112</span> <i>·</i> SDF VOLUME
+            <span class="status-dot"></span><span id="backend">GPU</span></span
+          >
+        </footer>
+      </section>
+    </dialog>
+    <script src="/src/main.js" type="module"></script>
+    <dialog aria-labelledby="new-scene-title" id="new-scene-dialog">
+      <div class="dialog-heading">
+        <span class="section-label">NEW SCENE</span
+        ><button
+          aria-label="Close new scene"
+          class="icon-button"
+          id="close-new-scene"
+        >
+          ×
+        </button>
+      </div>
+      <h2 id="new-scene-title">Choose your starting point.</h2>
+      <p>
+        Start with a blank plot or a procedural formation.
+        <span class="current-scene"
+          >Current: <span id="biome-name">Desert canyon</span></span
+        >
+      </p>
+      <div class="scene-choices">
+        <button class="scene-choice plot-choice" id="new-plot">
+          <span class="choice-icon">▧</span
+          ><span
+            ><strong>Empty land plot</strong
+            ><small>A clean solid. Build something your own.</small></span
+          ><span class="choice-arrow">↗</span></button
+        ><button class="preset scene-choice" data-preset="0">
+          <span class="preset-thumb canyon"></span
+          ><span
+            ><strong>Desert canyon</strong
+            ><small>Layered · Carved · Arid</small></span
+          ><span class="preset-arrow">↗</span></button
+        ><button class="preset scene-choice" data-preset="1">
+          <span class="preset-thumb badlands"></span
+          ><span
+            ><strong>The badlands</strong
+            ><small>Weathered · Wild · Open</small></span
+          ><span class="preset-arrow">↗</span></button
+        ><button class="preset scene-choice" data-preset="2">
+          <span class="preset-thumb monument"></span
+          ><span
+            ><strong>Monument valley</strong
+            ><small>Isolated · Towering · Still</small></span
+          ><span class="preset-arrow">↗</span>
+        </button>
+      </div>
+      <p class="scene-warning">
+        Replaces the current scene, including sculpting and erosion. Export
+        first to keep your work.
+      </p>
+      <button class="button wide" id="cancel-new-scene">
+        Keep current scene
+      </button>
+    </dialog>
+    <div aria-label="Add object" id="add-menu" popover="">
+      <div class="menu-heading">ADD TO SCENE</div>
+      <button autofocus="" class="add-choice" id="add-shape">
+        <span class="choice-icon">◇</span
+        ><span
+          ><strong>Shape</strong
+          ><small>Seven primitives with local 3D noise</small></span
+        ></button
+      ><button class="add-choice" id="add-cut">
+        <span class="choice-icon">⌁</span
+        ><span
+          ><strong>Cut spline</strong
+          ><small>Draw a channel through the terrain</small></span
+        ></button
+      ><button class="add-choice" id="add-water">
+        <span class="choice-icon">≈</span
+        ><span
+          ><strong>Water spline</strong
+          ><small>Draw the route of flowing water</small></span
+        >
+      </button>
+    </div>
+    <div
+      aria-label="Viewport settings"
+      class="view-menu"
+      id="view-menu"
+      popover=""
+    >
+      <button
+        aria-pressed="false"
+        class="glass-button"
+        id="navigation-mode"
+        title="Fly camera: hold RMB for look + WASD/QE, Shift boost"
+      >
+        Orbit / Fly
+      </button>
+      <button
+        class="glass-button"
+        id="view-mode"
+        title="Switch between lit and clay view"
+      >
+        <svg viewBox="0 0 20 20">
+          <path d="m10 2 7 4v8l-7 4-7-4V6l7-4Zm0 0v16M3 6l7 4 7-4"></path></svg
+        ><span>Lit view</span></button
+      ><button
+        aria-label="Reset camera"
+        class="glass-button icon-only"
+        id="reset-camera"
+        title="Reset camera (Home)"
+      >
+        <svg viewBox="0 0 20 20">
+          <path d="M3 7V3h4m-4 4a7 7 0 1 1 0 6M3 7h4"></path></svg
+        ><span>Reset camera</span></button
+      ><button
+        aria-label="Fullscreen"
+        class="glass-button icon-only"
+        id="fullscreen"
+        title="Fullscreen"
+      >
+        <svg viewBox="0 0 20 20">
+          <path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"></path>
+        </svg>
+        <span>Fullscreen</span>
+      </button>
+    </div>
+    <div
+      aria-label="Inspector section"
+      class="tab-list"
+      id="inspector-menu"
+      popover=""
+      role="menu"
+    >
+      <button
+        aria-checked="true"
+        aria-controls="panel-terrain"
+        class="tab active"
+        data-tab="terrain"
+        id="tab-terrain"
+        role="menuitemradio"
+        tabindex="0"
+      >
+        Object</button
+      ><button
+        aria-checked="false"
+        aria-controls="panel-sculpt"
+        class="tab"
+        data-tab="sculpt"
+        id="tab-sculpt"
+        role="menuitemradio"
+        tabindex="-1"
+      >
+        Sculpt</button
+      ><button
+        aria-checked="false"
+        aria-controls="panel-erosion"
+        class="tab"
+        data-tab="erosion"
+        id="tab-erosion"
+        role="menuitemradio"
+        tabindex="-1"
+      >
+        Erosion</button
+      ><button
+        aria-checked="false"
+        aria-controls="panel-water"
+        class="tab"
+        data-tab="water"
+        id="tab-water"
+        role="menuitemradio"
+        tabindex="-1"
+      >
+        Water</button
+      ><button
+        aria-checked="false"
+        aria-controls="panel-fracture"
+        class="tab"
+        data-tab="fracture"
+        id="tab-fracture"
+        role="menuitemradio"
+        tabindex="-1"
+      >
+        Fracture
+      </button>
+    </div>
+  </body>
+</html>
