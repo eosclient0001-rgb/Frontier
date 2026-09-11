@@ -1556,17 +1556,18 @@ const PLANTS=[
     tops.push(tiltVec(0,pr*1.2,0,tilt,ry,center));
   }
   for(let i=0;i<3&&i<tops.length;i++){
-    const tb=tops[i],pr=R(0.13,0.17)*S,ry=R(0,6.28),tilt=R(0.1,0.45);
-    const center=[tb[0],tb[1]+pr*0.9,tb[2]];
+    const parent=tops[i],pr=R(0.13,0.17)*S,ry=R(0,6.28),tilt=R(0.1,0.45);
+    const center=tiltPoint(0,parent.pr*1.0,0,parent.tilt,parent.ry,parent.center);
     B.ball({r:pr,pos:center,pad:true,rx:tilt,ry,s:[1,1.3,0.42],c0:shade(P.foliage,-0.04),c1:shade(P.foliage,0.05),jit:P.variation,fx:{sun:0.45}});
     areoles(center,tilt,ry,pr);
     tops.push(tiltVec(0,pr*1.2,0,tilt,ry,center));
   }
   const nfr=Math.max(1,Math.round((3+Math.floor(R(0,3)))*(P.fruitLoad??0.55)));
   for(let k=0;k<nfr;k++){
-    const tb=tops[Math.floor(R(0,tops.length))];
-    const fa=R(0,6.283),fr=R(0.09,0.16)*S;
-    const fp=[tb[0]+Math.sin(fa)*fr*0.18,tb[1]-0.05,tb[2]+Math.cos(fa)*fr*0.18];
+    const parent=tops[Math.floor(R(0,tops.length))];
+    const localX=R(-0.35,0.35)*parent.pr, localY=parent.pr*0.96, localZ=R(-0.08,0.08)*parent.pr;
+    /* Fruit is placed on a known pad-local surface point, never from a detached top point. */
+    const fp=tiltPoint(localX,localY,localZ,parent.tilt,parent.ry,parent.center);
     B.ball({r:R(0.032,0.045)*S,smooth:true,pos:fp,s:[0.82,1.18,0.82],c0:shade(P.extra,-0.06),c1:P.extra,jit:0});
   }
 }},
