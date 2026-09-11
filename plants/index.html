@@ -510,7 +510,7 @@ const PROF_WIDE=t=>Math.pow(Math.sin(Math.PI*Math.pow(t,0.75)),0.6);
 
 /* tapered strip along +Y, bending toward +Z */
 function strip(o){
-  const segs=o.segs??4, across=3, pos=[], idx=[];
+  const segs=o.segs??4, across=5, pos=[], idx=[];
   for(let i=0;i<=segs;i++){
     const t=i/segs;
     const dr=(o.droop||0)*Math.pow(Math.max(0,(t-0.45)/0.55),2);
@@ -737,11 +737,11 @@ class Bag{
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
   }
   leaf(o){
-    const g=strip({len:o.len,w0:o.w,w1:o.w,segs:o.segs??4,prof:o.prof||PROF_LEAF,bend:o.bend??0.4,droop:o.droop||0,twist:o.twist??((this.rnd()*2-1)*0.4),fold:o.fold??.5,cup:o.cup||0});
+    const g=strip({len:o.len,w0:o.w,w1:o.w,segs:o.segs??6,prof:o.prof||PROF_LEAF,bend:o.bend??0.4,droop:o.droop||0,twist:o.twist??((this.rnd()*2-1)*0.4),fold:o.fold??.5,cup:o.cup||0});
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
   }
   petal(o){
-    const g=strip({len:o.len,w0:o.w,w1:o.w*0.9,segs:4,prof:PROF_LEAF,bend:o.bend??0.3,droop:o.droop||0,twist:0,fold:0.15,cup:o.cup??.6});
+    const g=strip({len:o.len,w0:o.w,w1:o.w*0.9,segs:6,prof:PROF_LEAF,bend:o.bend??0.3,droop:o.droop||0,twist:0,fold:0.15,cup:o.cup??.6});
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
   }
   stem(o){
