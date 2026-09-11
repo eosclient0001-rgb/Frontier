@@ -553,6 +553,25 @@ function opuntiaPad(r,depth=1,segments=28,rings=14){
   const g=new THREE.BufferGeometry();
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);return g;
 }
+/* High-resolution barrel body: continuous longitudinal ribs, rounded shoulders,
+   and no faceted icosahedron silhouette in close-up. */
+function ribbedBarrel(r,h,ribs=20,segments=96,rings=24){
+  const pos=[],idx=[];
+  for(let j=0;j<=rings;j++){
+    const t=j/rings, cap=Math.pow(Math.sin(Math.PI*t),0.52), y=(t-.5)*h;
+    for(let i=0;i<segments;i++){
+      const th=i/segments*Math.PI*2;
+      const rib=1+0.085*Math.cos(th*ribs);
+      const rr=Math.max(0.012*r,r*cap*rib);
+      pos.push(Math.sin(th)*rr,y,Math.cos(th)*rr);
+    }
+  }
+  for(let j=0;j<rings;j++)for(let i=0;i<segments;i++){
+    const a=j*segments+i,b=j*segments+(i+1)%segments,c=(j+1)*segments+(i+1)%segments,d=(j+1)*segments+i;
+    idx.push(a,b,d,b,c,d);
+  }
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);return g;
+}
 function conePart(r,h,rs){
   const pos=[],idx=[];
   for(let i=0;i<rs;i++){const t=i/rs*Math.PI*2;pos.push(Math.sin(t)*r,0,Math.cos(t)*r);}
@@ -1465,17 +1484,8 @@ const PLANTS=[
  build(B,P,R){
   const S=P.spread;
   B.disc({r:0.42*S,r2:0.52*S,h:0.1,pos:[0,0.03,0],c0:'#8a6f4a',c1:'#b89a6a',jit:0,rs:14});
-  const r=R(0.3,0.38)*S,ribs=20,cy=0.06+r*0.7;
-  const g=new THREE.IcosahedronGeometry(r,3);
-  ribDisplace(g,ribs,0.13);
-  const pp=g.attributes.position;
-  for(let i=0;i<pp.count;i++){
-    let x=pp.getX(i),y=pp.getY(i),z=pp.getZ(i);
-    const dxz=Math.hypot(x,z);
-    if(y>0)y-=0.16*r*Math.exp(-(dxz*dxz)/(0.09*r*r));
-    if(y<-0.74*r)y=-0.74*r;
-    pp.setXYZ(i,x,y,z);
-  }
+  const r=R(0.3,0.38)*S,ribs=20,cy=0.06+r*0.92;
+  const g=ribbedBarrel(r,r*1.84,ribs,96,24);
   B.raw(g,{p:[0,cy,0],s:[1,0.95,1],ry:R(0,6.28),c0:shade(P.foliage,-0.08),c1:P.foliage,jit:P.variation,fx:{sun:0.5}});
   for(let row=0;row<7;row++){
     const yy=r*(0.62-row*0.19);
@@ -1484,17 +1494,17 @@ const PLANTS=[
       const th=(k/ribs)*6.2832;
       const px=Math.sin(th)*ringR,py=cy+yy*0.95,pz=Math.cos(th)*ringR;
       const out=[Math.sin(th)*0.92,yy/r*0.9+0.25,Math.cos(th)*0.92];
-      B.ball({r:0.008*S,pos:[px,py,pz],c0:'#efe8d0',c1:'#efe8d0',jit:0});
-      B.spike({r:0.006*S,h:R(0.07,0.1)*S,rs:4,pos:[px,py,pz],q:dirQuat(out,0),c0:'#c83a1a',c1:P.accent,jit:0});
+      B.ball({r:0.007*S,pos:[px,py,pz],smooth:true,c0:'#efe8d0',c1:'#efe8d0',jit:0});
+      B.spike({r:0.008*S,h:R(0.035,0.06)*S,rs:6,pos:[px,py,pz],q:dirQuat(out,0),c0:P.accent,c1:shade(P.accent,0.08),jit:0});
       if(row<3)for(let s=0;s<3;s++){
         const sa=th+(s-1)*0.5;
-        B.spike({r:0.004*S,h:0.045*S,rs:4,pos:[px,py,pz],q:dirQuat([Math.sin(sa)*0.85,out[1]*0.7-0.2,Math.cos(sa)*0.85],0),c0:'#f4f0e0',c1:'#f4f0e0',jit:0});
+        B.spike({r:0.005*S,h:0.03*S,rs:5,pos:[px,py,pz],q:dirQuat([Math.sin(sa)*0.85,out[1]*0.7-0.2,Math.cos(sa)*0.85],0),c0:'#f4f0e0',c1:'#f4f0e0',jit:0});
       }
     }
   }
   for(let k=0;k<18;k++){
     const a=R(0,6.28),rr=Math.sqrt(R(0,1))*r*0.3;
-    B.ball({r:R(0.014,0.022)*S,pos:[Math.cos(a)*rr,cy+r*0.72+R(0,0.06),Math.sin(a)*rr],c0:'#e8d890',c1:'#f4e8b0',jit:0});
+    B.ball({r:R(0.014,0.022)*S,smooth:true,pos:[Math.cos(a)*rr,cy+r*0.72+R(0,0.06),Math.sin(a)*rr],c0:'#e8d890',c1:'#f4e8b0',jit:0});
   }
   const nf=Math.round(9*P.density);
   for(let k=0;k<nf;k++){
@@ -1502,7 +1512,7 @@ const PLANTS=[
     const fp=[Math.sin(th)*fr,cy+r*0.78,Math.cos(th)*fr];
     for(let pt=0;pt<6;pt++)
       B.petal({len:0.05*S,w:0.024*S,bend:0.3,cup:0.5,tilt:R(0.45,0.65),ry:(pt/6)*6.2832+th,pos:fp,c0:shade(P.extra,-0.08),c1:P.extra,jit:0});
-    B.ball({r:0.015*S,pos:[fp[0],fp[1]+0.015,fp[2]],c0:'#c85a1a',c1:'#e87a2a',jit:0});
+    B.ball({r:0.015*S,smooth:true,pos:[fp[0],fp[1]+0.015,fp[2]],c0:'#c85a1a',c1:'#e87a2a',jit:0});
   }
 }},
 
