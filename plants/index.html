@@ -425,6 +425,7 @@ function hashSeed(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++)
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 const randSeed=()=>'s-'+Math.random().toString(36).slice(2,7);
 function shade(hex,dl){const c=new THREE.Color(hex);c.offsetHSL(0,0,dl);return '#'+c.getHexString();}
+function mix(a,b,t){const A=new THREE.Color(a),Bc=new THREE.Color(b);A.lerp(Bc,Math.min(1,Math.max(0,t)));return '#'+A.getHexString();}
 
 /* ═══════════════ icons ═══════════════ */
 const I=(inner,vb='0 0 24 24')=>`<svg class="i" viewBox="${vb}">${inner}</svg>`;
@@ -1793,54 +1794,103 @@ const PLANTS=[
   }
 }},
 /* ── vegetables ── */
-{id:'tomato',cat:'veg',name:'Tomato',latin:'Solanum lycopersicum',icon:'tomato',desc:'Sprawling vines of compound leaves hung with ripening truss tomatoes.',
- params:[...COMMON],colors:[CC('foliage','Leaves','#3f7a2f'),CC('accent','Ripe','#d43a22'),CC('extra','Unripe','#7aa04a'),CC('stem','Vines','#5a7a35')],
+{id:'tomato',cat:'veg',name:'Tomato',latin:'Solanum lycopersicum',icon:'tomato',desc:'Zigzag vine with rugose compound leaves; trusses ripen base-first from green to red.',
+ params:[...COMMON,
+  {k:'trusses',label:'Trusses',min:2,max:7,step:1,def:4},
+  {k:'fruits',label:'Fruits / truss',min:3,max:9,step:1,def:6},
+  {k:'ripeness',label:'Ripeness',min:0,max:1,step:0.05,def:0.55},
+  {k:'variety',label:'Variety 0 cherry · 1 salad · 2 beef',min:0,max:2,step:1,def:1}],
+ colors:[CC('foliage','Leaves','#3f7a2f'),CC('accent','Ripe','#d43a22'),CC('extra','Unripe','#6a9a3a'),CC('stem','Vines','#5a7a35')],
  build(B,P,R){
   const H=P.height,S=P.spread;
-  B.disc({r:0.4*S,r2:0.5*S,h:0.09,pos:[0,0.02,0],c0:'#2c2218',c1:'#4a3a28',jit:0,rs:12});
-  const vines=[[0.15,R(0.9,1.2)*H,0.02],[0.6,R(0.5,0.7)*H,0.014],[0.65,R(0.5,0.7)*H,0.014]];
-  const leafAt=(base,ry)=>{
-    const rl=R(0.18,0.24)*S,rr=R(0,6.28);
-    B.stem({len:rl,r0:0.006*S,r1:0.004*S,bend:0.15,tilt:1.0,ry:rr,pos:base,c0:P.stem,c1:P.stem,jit:P.variation,rad:4,segs:2});
-    for(let k=0;k<3;k++){
-      const t=0.3+0.25*k;
-      const pp=tiltPoint(rl*t,0.15*rl*t*t,1.0,rr,base);
+  B.blob({r:0.32*S,pos:[0,0.02,0],s:[1,0.28,1],jit:0.3,c0:'#241c12',c1:'#3a2e1e',jitC:0.1});
+  for(let k=0;k<5;k++)
+    B.ball({r:R(0.012,0.025)*S,pos:[R(-0.28,0.28)*S,0.06,R(-0.28,0.28)*S],c0:'#2c2218',c1:'#4a3a28',jit:0});
+  B.leaf({len:0.09*S,w:0.05*S,segs:2,prof:PROF_WIDE,bend:0.15,tilt:1.45,ry:R(0,6.28),pos:[0.2*S,0.07,-0.1*S],c0:'#8a7a3a',c1:'#a88a4a',jit:0});
+  const leafAt=(base,lry,scale)=>{
+    const rl=R(0.3,0.38)*S*scale;
+    B.stem({len:rl,r0:0.006*S,r1:0.003*S,bend:0.2,tilt:1.0,ry:lry,pos:base,c0:P.stem,c1:P.stem,jit:P.variation,rad:4,segs:2});
+    for(let k=0;k<4;k++){
+      const t=0.25+0.2*k;
+      const pp=tiltPoint(rl*t,0.2*rl*t*t,1.0,lry,base);
+      const ll=R(0.11,0.16)*S*scale*(k===1||k===2?1.15:0.9);
       for(const s of [-1,1])
-        B.leaf({len:R(0.05,0.08)*S*(1-k*0.18),w:0.032*S,segs:8,prof:PROF_WIDE,bend:0.3,serr:0.25,serrN:7,tilt:1.2,ry:rr+s*1.4+R(-0.2,0.2),pos:pp,
-          c0:shade(P.foliage,-0.06),c1:P.foliage,jit:P.variation,fx:{sun:0.35}});
+        B.leaf({len:ll,w:ll*0.62,segs:8,prof:PROF_WIDE,bend:0.35,fold:0.7,cup:0.25,twist:R(-0.3,0.3),serr:0.22,serrN:7,
+          tilt:1.15+R(-0.15,0.15),ry:lry+s*1.4+R(-0.2,0.2),pos:pp,
+          c0:shade(P.foliage,-0.07),c1:P.foliage,jit:P.variation,fx:{sun:0.35}});
+      if(k<3){
+        const ip=tiltPoint(rl*(t+0.1),0.2*rl*(t+0.1)*(t+0.1),1.0,lry,base);
+        B.leaf({len:0.022*S,w:0.012*S,segs:2,prof:PROF_WIDE,bend:0.3,tilt:1.2,ry:lry+(k%2?1.4:-1.4),pos:ip,c0:P.foliage,c1:P.foliage,jit:0});
+      }
     }
-    const tp=tiltPoint(rl,0.15*rl,1.0,rr,base);
-    B.leaf({len:0.07*S,w:0.04*S,segs:8,prof:PROF_WIDE,bend:0.3,serr:0.25,serrN:7,tilt:0.9,ry:rr,pos:tp,c0:shade(P.foliage,-0.06),c1:P.foliage,jit:P.variation,fx:{sun:0.35}});
+    const tp=tiltPoint(rl,0.2*rl,1.0,lry,base);
+    B.leaf({len:0.18*S*scale,w:0.1*S*scale,segs:8,prof:PROF_WIDE,bend:0.35,fold:0.7,cup:0.25,serr:0.22,serrN:7,tilt:0.85,ry:lry,pos:tp,
+      c0:shade(P.foliage,-0.07),c1:P.foliage,jit:P.variation,fx:{sun:0.35}});
   };
-  vines.forEach(([vt,vl,r0],vi)=>{
-    const vry=vi*2.1+R(0,1);
-    B.stem({len:vl,r0:r0*S,r1:0.008*S,bend:0.15*P.bend,tilt:vt,ry:vry,pos:[0,0.05,0],c0:P.stem,c1:P.stem,jit:P.variation,rad:6,segs:4});
-    const nn=vi===0?5:3;
-    for(let k=0;k<nn;k++){
-      const t=0.25+0.65*(k/nn);
-      leafAt(tiltPoint(vl*t,0.15*P.bend*vl*t*t,vt,vry,[0,0.05,0]),vry);
+  const fv={0:{r:0.024,det:1,sq:0.92,n:1.5},1:{r:0.038,det:2,sq:0.85,n:1},2:{r:0.068,det:2,sq:0.78,n:0.6}}[Math.round(P.variety)];
+  const fruitAt=(kp,fry,ripe)=>{
+    const fr=fv.r*S*R(0.92,1.08);
+    const fp=[kp[0]+Math.sin(fry)*0.012,kp[1]-fr-0.016*S,kp[2]+Math.cos(fry)*0.012];
+    const ft=[fp[0],fp[1]+fr*fv.sq,fp[2]];
+    const pdx=ft[0]-kp[0],pdy=ft[1]-kp[1],pdz=ft[2]-kp[2],pdl=Math.hypot(pdx,pdy,pdz)||1;
+    B.stem({len:pdl,r0:0.0045*S,r1:0.004*S,bend:0,pos:kp,q:dirQuat([pdx/pdl,pdy/pdl,pdz/pdl],0),c0:P.stem,c1:P.stem,jit:0,rad:4,segs:1});
+    B.ball({r:0.007*S,pos:[kp[0]+pdx*0.4,kp[1]+pdy*0.4,kp[2]+pdz*0.4],c0:P.stem,c1:P.stem,jit:0});
+    const t=Math.min(1,Math.max(0,ripe));
+    const fc=t<0.5?mix(P.extra,'#e8781a',t*2):mix('#e8781a',P.accent,(t-0.5)*2);
+    if(P.variety>1.5)B.raw(ribDisplace(new THREE.IcosahedronGeometry(fr,fv.det),9,0.08),{p:fp,s:[1,fv.sq,1],ry:R(0,6.28),c0:shade(fc,-0.08),c1:fc,jit:P.variation,fx:{sun:0.5}});
+    else B.ball({r:fr,det:fv.det,pos:fp,s:[1,fv.sq,1],c0:shade(fc,-0.08),c1:fc,jit:P.variation,fx:{sun:0.5}});
+    for(let s=0;s<6;s++)
+      B.leaf({len:fr*0.95,w:fr*0.24,segs:2,bend:0.35,tilt:R(1.9,2.3),ry:(s/6)*6.28+R(0,0.5),pos:ft,c0:shade(P.stem,-0.05),c1:P.stem,jit:0});
+    B.stem({len:0.02*S,r0:0.005*S,r1:0.004*S,bend:0,tilt:0.2,ry:R(0,6.28),pos:ft,c0:P.stem,c1:P.stem,jit:0,rad:4,segs:1});
+    B.ball({r:fr*0.16,pos:[fp[0],fp[1]-fr*fv.sq*0.96,fp[2]],c0:'#3a2a1a',c1:'#3a2a1a',jit:0});
+  };
+  const trussAt=(np,try_)=>{
+    const nf=Math.max(2,Math.round(P.fruits*fv.n*P.density));
+    let tp=np;
+    for(let k=0;k<nf;k++){
+      const tilt=1.35+k*0.12,fry=try_+(k%2?0.35:-0.35);
+      const sl=(0.045+fv.r*0.7)*S;
+      B.stem({len:sl,r0:0.005*S,r1:0.004*S,bend:0,tilt,ry:fry,pos:tp,c0:P.stem,c1:P.stem,jit:0,rad:4,segs:1});
+      tp=tiltPoint(sl,0,tilt,fry,tp);
+      const ripe=P.ripeness*1.1+(1-k/Math.max(1,nf-1))*0.55-0.3+R(-0.06,0.06);
+      fruitAt(tp,fry,ripe);
     }
-  });
-  const ntr=3+Math.floor(R(0,2));
-  for(let i=0;i<ntr;i++){
-    const a=R(0,6.28),tb=[Math.cos(a)*R(0.1,0.2)*S,R(0.3,0.6)*H,Math.sin(a)*R(0.1,0.2)*S];
-    B.stem({len:0.12*S,r0:0.006*S,r1:0.004*S,bend:0,pos:tb,q:dirQuat([Math.cos(a)*0.3,-1,Math.sin(a)*0.3],0),c0:P.stem,c1:P.stem,jit:0,rad:4,segs:1});
-    const nfr=3+Math.floor(R(0,3));
-    for(let k=0;k<nfr;k++){
-      const fp=[tb[0]+R(-0.06,0.06)*S,tb[1]-0.1*S+R(-0.03,0.03),tb[2]+R(-0.06,0.06)*S];
-      const rip=R(),fc=rip<0.55?P.accent:(rip<0.8?'#e8781a':P.extra);
-      B.ball({r:R(0.032,0.048)*S,pos:fp,s:[1,0.88,1],c0:shade(fc,-0.08),c1:fc,jit:P.variation,fx:{sun:0.45}});
-      for(let s=0;s<5;s++)
-        B.leaf({len:0.02*S,w:0.008*S,segs:1,bend:0.2,tilt:R(0.9,1.2),ry:(s/5)*6.28+R(0,1),pos:[fp[0],fp[1]+0.032*S,fp[2]],c0:P.stem,c1:P.stem,jit:0});
-      B.stem({len:0.025*S,r0:0.006*S,r1:0.005*S,bend:0,tilt:0.2,ry:R(0,6.28),pos:[fp[0],fp[1]+0.035*S,fp[2]],c0:P.stem,c1:P.stem,jit:0,rad:4,segs:1});
+    if(R()<0.7){
+      for(let b=0;b<3;b++){
+        const fp=[tp[0]+R(-0.03,0.03),tp[1]+R(-0.02,0.02),tp[2]+R(-0.03,0.03)];
+        if(b<2)for(let pt=0;pt<5;pt++)
+          B.petal({len:0.02*S,w:0.009*S,bend:0.3,cup:0.3,tilt:1.0,ry:(pt/5)*6.2832,pos:fp,c0:'#e8d83a',c1:'#f4e84a',jit:0});
+        else B.ball({r:0.009*S,pos:fp,c0:P.extra,c1:P.extra,jit:0});
+      }
     }
+  };
+  let vp=[0,0.06,0];
+  const vry=R(0,6.28),vseg=7;
+  let trussBudget=Math.round(P.trusses);
+  for(let sgm=0;sgm<vseg;sgm++){
+    const sl=R(0.15,0.2)*H,lean=(sgm%2?1:-1)*R(0.1,0.2);
+    const r0=0.024*S*(1-sgm/vseg*0.55);
+    B.stem({len:sl,r0,r1:r0*0.7,bend:0.05,tilt:lean,ry:vry,pos:vp,c0:shade(P.stem,-0.04),c1:P.stem,jit:P.variation,rad:6,segs:2});
+    const top=tiltPoint(sl,0.05*sl,lean,vry,vp);
+    const lry=vry+sgm*2.4;
+    leafAt(vp,lry,1-sgm*0.06);
+    if(sgm>=2&&trussBudget>0){trussAt(vp,lry+Math.PI+R(-0.3,0.3));trussBudget--;}
+    vp=top;
   }
-  for(let k=0;k<3;k++){
-    const fp=[R(-0.2,0.2)*S,R(0.5,0.8)*H,R(-0.2,0.2)*S];
-    for(let pt=0;pt<5;pt++)
-      B.petal({len:0.02*S,w:0.009*S,bend:0.3,cup:0.3,tilt:1.0,ry:(pt/5)*6.2832,pos:fp,c0:'#e8d83a',c1:'#f4e84a',jit:0});
+  B.stem({len:0.12*H,r0:0.008*S,r1:0.004*S,bend:0.3,tilt:0.2,ry:vry,pos:vp,c0:P.stem,c1:P.stem,jit:0,rad:5,segs:2});
+  leafAt(vp,vry+1,0.55);
+  for(let k=0;k<30;k++){
+    const t=R(0.05,0.95);
+    B.spike({r:0.0018,h:0.014,rs:3,pos:[vp[0]*t+R(-0.02,0.02),0.06+t*(vp[1]-0.06),vp[2]*t+R(-0.02,0.02)],q:dirQuat(tiltDir(R(0.8,1.4),R(0,6.28)),0),c0:'#d8d8c0',c1:'#d8d8c0',jit:0});
+  }
+  if(R()<0.8){
+    const sry=R(0,6.28),snp=[vp[0]*0.3,0.06+(vp[1]-0.06)*0.3,vp[2]*0.3];
+    B.stem({len:0.5*H,r0:0.01*S,r1:0.005*S,bend:0.2*P.bend,tilt:0.5,ry:sry,pos:snp,c0:P.stem,c1:P.stem,jit:P.variation,rad:5,segs:3});
+    for(let k=0;k<3;k++)leafAt(tiltPoint(0.5*H*(0.3+0.25*k),0.2*P.bend*0.5*H*(0.3+0.25*k)**2,0.5,sry,snp),sry+k*2.4,0.7);
+    if(trussBudget>0)trussAt(tiltPoint(0.5*H*0.55,0.2*P.bend*0.5*H*0.55*0.55,0.5,sry,snp),sry+Math.PI);
   }
 }},
+
 {id:'pumpkin',cat:'veg',name:'Pumpkin',latin:'Cucurbita pepo',icon:'pumpkin',desc:'Rampant ground vines with lobed leaves, curling tendrils and ribbed fruit.',
  params:[...COMMON],colors:[CC('foliage','Leaves','#3a7a2f'),CC('accent','Fruit','#e8781a'),CC('extra','Blossom','#f4c81a'),CC('stem','Vines','#4a6a2a')],
  build(B,P,R){
@@ -2055,6 +2105,15 @@ scene.add(sun);
 const fill=new THREE.DirectionalLight(0x9db8ff,0.5);fill.position.set(-5,3,-4);scene.add(fill);
 const MAT_FLAT=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.85,metalness:0,side:THREE.DoubleSide});
 const MAT_WIRE=new THREE.MeshBasicMaterial({vertexColors:true,wireframe:true,transparent:true,opacity:0.85});
+const CONTACT_GEO=new THREE.CircleGeometry(1,32);
+const CONTACT_MAT=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.3,depthWrite:false});
+const CONTACT_MAT2=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.32,depthWrite:false});
+function addContact(spec){
+  spec.contact=new THREE.Group();
+  const o=new THREE.Mesh(CONTACT_GEO,CONTACT_MAT);o.rotation.x=-Math.PI/2;
+  const i=new THREE.Mesh(CONTACT_GEO,CONTACT_MAT2);i.rotation.x=-Math.PI/2;i.position.y=0.001;i.scale.set(0.55,0.55,1);
+  spec.contact.add(o,i);spec.contact.position.y=0.002;scene.add(spec.contact);
+}
 const groundDisc=new THREE.Mesh(new THREE.CircleGeometry(30,64),new THREE.MeshStandardMaterial({color:0x0b0d0c,roughness:1}));
 groundDisc.rotation.x=-Math.PI/2;groundDisc.position.y=-0.01;groundDisc.receiveShadow=true;scene.add(groundDisc);
 const grid=new THREE.GridHelper(60,60,0x2e3236,0x1b1d20);
@@ -2079,6 +2138,7 @@ function buildSpecimen(spec){
   spec.group.scale.setScalar(spec.params.size||1);
   const bb=geo.boundingBox,size=new THREE.Vector3();bb.getSize(size);
   spec.height=size.y*(spec.params.size||1);spec.tris=Math.round(geo.index.count/3);spec.parts=B.count;
+  spec.contactR=Math.max(0.22,(size.x+size.z)/4*(spec.params.size||1));
 }
 function makeSpecimen(type,seed,params,colors,name){
   const def=plantOf(type),d=defaultsOf(def);
@@ -2087,8 +2147,8 @@ function makeSpecimen(type,seed,params,colors,name){
   const spec={uid,type,name:name||`${def.name} ${String(n).padStart(2,'0')}`,
     seed:seed||randSeed(),params:{...d.params,...(params||{})},colors:{...d.colors,...(colors||{})},
     visible:true,solo:false,spin:false,shadow:true,off:{x:0,z:0,ry:0},phase:Math.random()*6.28,
-    group:new THREE.Group(),mesh:null,height:0,tris:0,parts:0,slot:{x:0,z:0}};
-  scene.add(spec.group);
+    group:new THREE.Group(),mesh:null,height:0,tris:0,parts:0,slot:{x:0,z:0},contact:null,contactR:0.4};
+  scene.add(spec.group);addContact(spec);
   buildSpecimen(spec);
   G.specs.push(spec);
   layout();refresh();
@@ -2098,7 +2158,7 @@ function removeSpecimen(uid){
   const i=G.specs.findIndex(s=>s.uid===uid);if(i<0)return;
   const s=G.specs[i];
   if(s.mesh)s.mesh.geometry.dispose();
-  scene.remove(s.group);G.specs.splice(i,1);
+  if(s.contact)scene.remove(s.contact);scene.remove(s.group);G.specs.splice(i,1);
   if(G.sel===uid)G.sel=null;
   layout();refresh();autosave();
 }
@@ -2114,6 +2174,7 @@ function layout(){
     if(G.mode==='solo'){s.group.visible=(s.uid===G.sel)&&s.visible;s.group.position.set(s.off.x,0,s.off.z);}
     else{s.group.visible=s.visible;s.group.position.set(s.slot.x+s.off.x,0,s.slot.z+s.off.z);}
     s.group.rotation.y=s.off.ry;
+    if(s.contact){s.contact.position.set(s.group.position.x,0.002,s.group.position.z);s.contact.visible=s.group.visible;s.contact.scale.set(s.contactR,s.contactR,1);}
   }
   const sel=selSpec();
   if(sel&&sel.group.visible){ring.visible=true;ring.position.set(sel.group.position.x,0.015,sel.group.position.z);
@@ -2618,13 +2679,13 @@ function makeSpecimenSilent(type,seed,params,colors,name){
   const def=plantOf(type),d=defaultsOf(def),uid='sp'+(++G.uidc);
   const spec={uid,type,name:name||`${def.name}`,seed:seed||randSeed(),params:{...d.params,...(params||{})},colors:{...d.colors,...(colors||{})},
     visible:true,solo:false,spin:false,shadow:true,off:{x:0,z:0,ry:0},phase:Math.random()*6.28,
-    group:new THREE.Group(),mesh:null,height:0,tris:0,parts:0,slot:{x:0,z:0}};
-  scene.add(spec.group);buildSpecimen(spec);G.specs.push(spec);
+    group:new THREE.Group(),mesh:null,height:0,tris:0,parts:0,slot:{x:0,z:0},contact:null,contactR:0.4};
+  scene.add(spec.group);addContact(spec);buildSpecimen(spec);G.specs.push(spec);
   return spec;
 }
 function removeSpecimenSilent(uid){
   const i=G.specs.findIndex(s=>s.uid===uid);if(i<0)return;
-  const s=G.specs[i];if(s.mesh)s.mesh.geometry.dispose();scene.remove(s.group);G.specs.splice(i,1);
+  const s=G.specs[i];if(s.mesh)s.mesh.geometry.dispose();if(s.contact)scene.remove(s.contact);scene.remove(s.group);G.specs.splice(i,1);
 }
 function autosave(){try{localStorage.setItem(LS_G,JSON.stringify(gardenData()));$('#dAuto').textContent='autosaved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){}}
 $('#dSave').addEventListener('click',()=>{
@@ -3001,7 +3062,12 @@ function loop(t){
 restoreLayout();fit();
 let restored=null;
 try{restored=JSON.parse(localStorage.getItem(LS_G)||'null');}catch(e){}
-if(restored&&restored.specs&&restored.specs.length){
+const bootQ=new URLSearchParams(location.search),bootPlant=bootQ.get('plant');
+if(bootPlant&&plantOf(bootPlant)){
+  const bs=makeSpecimenSilent(bootPlant,bootQ.get('seed')||'showcase-01');
+  G.sel=bs.uid;G.mode='solo';syncModeSeg();layout();refresh();focusSpec(bs);
+  clog(`showcase · ${bs.name} · ?plant=${bootPlant}`);
+}else if(restored&&restored.specs&&restored.specs.length){
   $('#startInfo').textContent=`${restored.specs.length} specimens · autosaved · HQ geometry · atlas included`;
   $('#start').classList.add('show');
   $('#startCont').addEventListener('click',()=>{loadGarden(restored);$('#start').classList.remove('show');clog(`restored ${G.specs.length} specimens from autosave`);});

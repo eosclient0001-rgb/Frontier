@@ -24,10 +24,15 @@ python3 -m http.server 8123   # then open http://localhost:8123/plants/
 - **Exports** — per-specimen `.obj` (baked vertex colours), whole-garden `.obj`,
   garden `.json` save/open, autosave to localStorage.
 - **Command line** — `grow rose · seed test-99 · atlas · wire · solo · help …`
+- **Showcase links** — `?plant=tomato&seed=x` boots the app with one isolated plant.
+- Every specimen gets a contact-shadow disc so nothing floats; soil mounds
+  ground each plant.
 
 ## Tests ( throwaway harnesses, not committed)
 
 - `node /tmp/geotest.mjs` — every builder × default/min/max params: indexed,
   NaN-free, zero degenerate tris (135 checks).
+- `node /tmp/shot/render.mjs <id> [seed] [out.png] [k=v…]` — software-rasterized
+  verification renders (this is how each plant is visually checked).
 - `node /tmp/uitest/run.mjs` — jsdom + real three.js: boot, catalogue, `+` buttons,
   atlas modal + manifest, param-edit duplicate regression, commands, keys (49 checks).
