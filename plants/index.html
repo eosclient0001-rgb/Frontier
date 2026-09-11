@@ -334,7 +334,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
   <div id="axisHud"><span class="pill" id="camPill">orbit</span><span class="pill" id="fpsPill"><span class="ax" style="background:var(--green)"></span><span id="fps">60</span> fps</span></div>
   <div id="errBar"></div>
   <div id="prompt"><span class="s">grow ›</span><span id="promptTool"></span>: <span id="promptTxt"></span></div>
-  <div id="start" class="show">
+  <div id="start">
     <div class="card">
       <h3>FlorArc AAA Cacti Generator</h3>
       <p class="m" id="startInfo">Ultra-meticulous 3D procedural structure generator for tree-sized desert cacti &amp; succulents.</p>
@@ -1600,6 +1600,14 @@ function loop(t){
 }
 
 /* ═══════════════ boot ═══════════════ */
+$('#startNew')?.addEventListener('click', () => {
+  $('#start')?.classList.remove('show');
+  starters();
+});
+$('#start')?.addEventListener('click', () => {
+  $('#start')?.classList.remove('show');
+});
+
 fit();
 let restored=null;
 try{restored=JSON.parse(localStorage.getItem(LS_G)||'null');}catch(e){}
