@@ -1,11 +1,11 @@
 // Frontier SDF — renderer: raymarched SDF scene + sea water, river ribbons from
 // live particle trails, depth-tested particle/plume sprites, canvas composite.
 
-import { PMAX } from "./glsl-lib.js?v=2";
+import { PMAX } from "./glsl-lib.js?v=3";
 import {
   FULLSCREEN_VERT, SCENE_FRAG, POINTS_VERT, POINTS_FRAG,
   RIBBON_VERT, RIBBON_FRAG, BLIT_FRAG,
-} from "./render-shaders.js?v=2";
+} from "./render-shaders.js?v=3";
 
 // --- minimal mat4 (column-major) ---
 function perspective(fovY, aspect, near, far) {

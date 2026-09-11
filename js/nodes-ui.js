@@ -1,7 +1,7 @@
 // Frontier SDF — node editor canvas (pan/zoom, drag, wire, add-menu).
 
-import { NODE_DEFS, CATS } from "./graph.js?v=2";
-import { el, clamp } from "./util.js?v=2";
+import { NODE_DEFS, CATS } from "./graph.js?v=3";
+import { el, clamp } from "./util.js?v=3";
 
 export class NodeEditor {
   constructor(root, graph, opts = {}) {

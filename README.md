@@ -11,7 +11,7 @@ Single-page web app, zero dependencies, zero build step. WebGL2 only.
 ## Run
 
 ```sh
-python3 -m http.server 8000
+python3 server.py 8000
 # open http://localhost:8000
 ```
 

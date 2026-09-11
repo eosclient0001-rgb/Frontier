@@ -3,7 +3,7 @@
 // Anti-griefing rules baked in: capacity-limited detach, per-step voxel clamp,
 // resting timers with forced settle, sleep when clean+still, spawn rate limits.
 
-import { SIM_HEAD, FULLSCREEN_VERT, NOISE_GLSL, SDFLIB_GLSL } from "./glsl-lib.js?v=2";
+import { SIM_HEAD, FULLSCREEN_VERT, NOISE_GLSL, SDFLIB_GLSL } from "./glsl-lib.js?v=3";
 
 export { FULLSCREEN_VERT };
 
@@ -360,9 +360,9 @@ void main() {
   vec4 R = texelFetch(uReq, uv, 0) / uReqScale;
   float solid = clamp(0.5 - V.x / 1.2, 0.0, 1.0);
   float avail = solid * VOXELV;
-  float det = min(R.x, avail * 0.5);
-  float dep = min(R.y, (1.0 - solid) * VOXELV * 0.5 + 1e-9);
-  float dShift = clamp((det - dep) / FACEV, -0.08, 0.08);
+  float det = min(R.x, avail * 0.2);
+  float dep = min(R.y, (1.0 - solid) * VOXELV * 0.2 + 1e-9);
+  float dShift = clamp((det - dep) / FACEV, -0.008, 0.008);
   vec2 px = vec2(uv);
   float tx = floor(px.x / 128.0); float ty = floor(px.y / 80.0);
   vec3 vv = vec3(px.x - tx * 128.0, px.y - ty * 80.0, ty * 8.0 + tx);
@@ -407,8 +407,7 @@ void main() {
   float det = EX.x * acc.x; float dep = EX.y * acc.y;
   vec3 prod = kind < 0.5 ? vec3(0.55, 0.35, 0.10)
     : (kind < 1.5 ? vec3(0.5, 0.3, 0.2) : (kind < 2.5 ? vec3(0.85, 0.15, 0.0) : vec3(0.3, 0.1, 0.6)));
-  vec3 load = C.xyz + prod * det;
-  float tot = load.x + load.y + load.z;
+  vec3 load = C.xyz + prod * det;float tot = load.x + load.y + load.z;
   float dd = min(dep, tot);
   if (tot > 1e-9 && dd > 0.0) {
     vec3 frac = load / max(tot, 1e-9);
@@ -510,4 +509,5 @@ void main() {
   float speed = length(flow);
   oFlow = vec4(speed > 1e-4 ? flow / speed : vec2(0.0), speed, sea);
 }
+`;
 `;
