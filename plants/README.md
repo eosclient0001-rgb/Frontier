@@ -10,9 +10,10 @@ python3 -m http.server 8123   # then open http://localhost:8123/plants/
 
 ## What's inside
 
-- **39 plants** in 7 categories — Grasses (10), Shrubs (9), Flowers (4), Weeds (4),
-  Ferns (3), Desert (5), Alpine (4). All smooth-shaded, indexed, welded geometry
-  with vertex colours, baked sun-light and cavity AO.
+- **45 plants** in 8 categories — Grasses (10), Shrubs (9), Flowers (4),
+  Vegetables (6), Weeds (4), Ferns (3), Desert (5), Alpine (4). All smooth-shaded,
+  indexed, welded geometry with vertex colours, baked sun-light and cavity AO.
+  Per-specimen **Size** (0.2–8×) supports massive environments; exports bake it.
 - **Texture atlas** — press `A`: a procedural 1024×512 PNG (32 cells: blades,
   leaves, petals, pinnae, bark, soil, berries…) with a JSON manifest. Both are
   downloadable from the modal and regenerate deterministically from seed.
@@ -27,6 +28,6 @@ python3 -m http.server 8123   # then open http://localhost:8123/plants/
 ## Tests ( throwaway harnesses, not committed)
 
 - `node /tmp/geotest.mjs` — every builder × default/min/max params: indexed,
-  NaN-free, zero degenerate tris (117 checks).
+  NaN-free, zero degenerate tris (135 checks).
 - `node /tmp/uitest/run.mjs` — jsdom + real three.js: boot, catalogue, `+` buttons,
-  atlas modal + manifest, param-edit duplicate regression, commands, keys (50 checks).
+  atlas modal + manifest, param-edit duplicate regression, commands, keys (49 checks).
