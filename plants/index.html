@@ -10,7 +10,7 @@
 <style>
 :root{
   --font:'Outfit','General Sans','Inter',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
-  --glass:rgba(15,16,18,.86); --g2:rgba(255,255,255,.045); --g3:rgba(255,255,255,.08);
+  --glass:rgba(15,16,18,.88); --g2:rgba(255,255,255,.045); --g3:rgba(255,255,255,.08);
   --stroke:rgba(255,255,255,.08); --stroke2:rgba(255,255,255,.15);
   --text:rgba(255,255,255,.94); --t2:rgba(255,255,255,.62); --t3:rgba(255,255,255,.36);
   --red:#ff453a; --green:#30d158; --yellow:#ffd60a; --orange:#ff9f0a; --blue:#0a84ff; --violet:#bf5af2; --cyan:#64d2ff; --desert:#e8a83a;
@@ -25,8 +25,8 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 input{font:inherit;color:inherit;background:none;border:0;padding:0;outline:0}
 ::-webkit-scrollbar{width:0;height:0}
 #bg{position:fixed;inset:0;background:
-  radial-gradient(1200px 700px at 30% 110%,rgba(80,55,25,.38),transparent 60%),
-  radial-gradient(900px 600px at 85% -10%,rgba(40,55,68,.35),transparent 60%),#070806}
+  radial-gradient(1200px 700px at 30% 110%,rgba(90,60,30,.4),transparent 60%),
+  radial-gradient(900px 600px at 85% -10%,rgba(45,60,75,.35),transparent 60%),#080907}
 .glass{background:var(--glass);backdrop-filter:blur(28px) saturate(1.3);-webkit-backdrop-filter:blur(28px) saturate(1.3);border:1px solid var(--stroke);box-shadow:0 30px 80px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.06)}
 
 /* ── three independent panels ───────────────────────────── */
@@ -48,7 +48,7 @@ input{font:inherit;color:inherit;background:none;border:0;padding:0;outline:0}
 #layoutBtn{position:absolute;right:10px;top:10px;z-index:4;width:30px;height:30px;background:rgba(0,0,0,.35);border:1px solid var(--stroke)}
 
 /* ── grow catalogue ─────────────────────────────────────── */
-#cat{position:fixed;z-index:10000;width:660px;height:520px;min-width:440px;min-height:340px;border-radius:14px;display:none;flex-direction:column;overflow:hidden;color:var(--text);resize:both}
+#cat{position:fixed;z-index:10000;width:680px;height:540px;min-width:440px;min-height:340px;border-radius:14px;display:none;flex-direction:column;overflow:hidden;color:var(--text);resize:both}
 #cat.show{display:flex;animation:ddIn .16s var(--ease)}
 .cat-head{display:flex;align-items:center;gap:8px;height:46px;padding:0 8px 0 16px;border-bottom:1px solid var(--stroke);cursor:grab;flex-shrink:0;background:rgba(255,255,255,.03)}
 .cat-head .ttl{font-size:15px;font-weight:400;display:flex;align-items:center;gap:8px}
@@ -66,7 +66,7 @@ input{font:inherit;color:inherit;background:none;border:0;padding:0;outline:0}
 .rail-item .n{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--t3)}
 .grid-pane{flex:1;display:flex;flex-direction:column;min-width:0}
 .grid-body{flex:1;overflow:auto;padding:12px;display:grid;grid-template-columns:repeat(2,1fr);gap:8px;align-content:start}
-.ctile{position:relative;height:90px;border-radius:10px;background:var(--g2);border:1px solid var(--stroke);display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:10px 12px;gap:4px;cursor:pointer;transition:all .18s var(--spring);color:var(--t2)}
+.ctile{position:relative;height:92px;border-radius:10px;background:var(--g2);border:1px solid var(--stroke);display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:10px 12px;gap:4px;cursor:pointer;transition:all .18s var(--spring);color:var(--t2)}
 .ctile-head{display:flex;align-items:center;gap:8px;width:100%}
 .ctile svg.i{width:22px;height:22px;stroke-width:1.5;color:var(--acc,var(--desert))}
 .ctile .t-lbl{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -266,7 +266,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 #cmd{display:flex;align-items:center;gap:8px;height:34px;margin:0 12px 12px;border-radius:999px;background:var(--g2);border:1px solid var(--stroke);padding:0 14px;font-family:var(--mono);font-size:12px;flex-shrink:0}
 #cmd .p{color:var(--desert);flex-shrink:0} #cmd input{flex:1;color:var(--text);font-family:var(--mono);min-width:0}
 .seedrow{display:flex;align-items:center;gap:6px;margin-top:6px}
-.seedrow .field{flex:1;height:30px;border-radius:9px;background:var(--g2);border:1px solid var(--stroke);display:flex;align-items:center;padding:0 10px;min-width:0}
+.seedrow .field{flex:1;height:30px;border-radius:999px;background:var(--g2);border:1px solid var(--stroke);display:flex;align-items:center;padding:0 10px;min-width:0}
 .seedrow .field input{flex:1;font-family:var(--mono);font-size:12px;color:var(--text);min-width:0}
 .seedrow .abtn{flex:0 0 auto;height:30px;padding:0 10px}
 .csw{width:36px;height:22px;border-radius:7px;border:1px solid var(--stroke2);position:relative;overflow:hidden;cursor:pointer;flex-shrink:0}
@@ -455,26 +455,34 @@ function dirQuat(dir,twist=0){
 class Bag {
   constructor(rnd){this.rnd=rnd;this.parts=[];this.count=0;}
 
-  /* Meticulous Ribbed Column Builder (Saguaro, Cardon, Barrel, Organ Pipe) */
+  /* Meticulous Ribbed Column Builder with Organic Curve & Fluted Accordion Ribs */
   ribbedColumn(o){
-    const h=o.h||4.0, r0=o.r0||0.4, r1=o.r1||0.2, ribs=o.ribs||16;
-    const segs=o.segs||24, ribDepth=o.ribDepth||0.28, hydration=o.hydration??1.0;
+    const path=o.path||[new THREE.Vector3(0,0,0), new THREE.Vector3(0,o.h||4.0,0)];
+    const r0=o.r0||0.4, r1=o.r1||0.2, ribs=o.ribs||18;
+    const segs=o.segs||36, ribDepth=o.ribDepth||0.32, hydration=o.hydration??0.85;
     const pos=o.pos||[0,0,0], q=o.q||[0,0,0,1];
-    const cSkin=o.cSkin||'#4a8a4f', cWood=o.cWood||'#3a2c20';
-    const cSun=new THREE.Color(o.cSun||'#e8f4d8'), cDark=new THREE.Color(shade(cSkin,-0.35));
-    const corking=o.corking||0.25;
+    const cSkin=o.cSkin||'#3f8a48', cWood=o.cWood||'#3d2e20';
+    const cSun=new THREE.Color('#fff2e0');
+    const corking=o.corking||0.2;
+
+    const curve=new THREE.CatmullRomCurve3(path);
+    const points=curve.getPoints(segs);
+    const frames=curve.computeFrenetFrames(segs,false);
 
     const positions=[], normals=[], colors=[], indices=[];
     const quat=new THREE.Quaternion(...q);
-    const effectiveDepth=ribDepth*(2.0-hydration*0.8);
+    const effectiveDepth=ribDepth*(2.2-hydration*0.9);
 
     for(let i=0;i<=segs;i++){
       const t=i/segs;
-      const y=t*h;
+      const pCurr=points[i];
+      const N=frames.normals[i];
+      const B=frames.binormals[i];
+
       // Stem profile taper & top rounded dome
-      let rTaper=t<0.08?(0.4+0.6*(t/0.08)):(t>0.88?Math.sin((1.0-t)/0.12*Math.PI*0.5):1.0);
+      let rTaper=t<0.06?(0.35+0.65*(t/0.06)):(t>0.88?Math.sin((1.0-t)/0.12*Math.PI*0.5):1.0);
       const rCurr=lerp(r0,r1,t)*rTaper;
-      
+
       const isCorked=t<corking;
       const baseCol=isCorked?mix(cWood,cSkin,t/corking):cSkin;
 
@@ -483,23 +491,20 @@ class Bag {
         const isRibCrest=(j%2===0);
         const rRad=rCurr*(isRibCrest?(1.0+effectiveDepth):1.0);
 
-        const lx=Math.cos(angle)*rRad;
-        const lz=Math.sin(angle)*rRad;
-        const pVec=new THREE.Vector3(lx,y,lz).applyQuaternion(quat).add(new THREE.Vector3(...pos));
+        const cosA=Math.cos(angle), sinA=Math.sin(angle);
+        const vOffset=new THREE.Vector3().addScaledVector(N,cosA*rRad).addScaledVector(B,sinA*rRad);
+        const pVec=pCurr.clone().add(vOffset).applyQuaternion(quat).add(new THREE.Vector3(...pos));
 
         // Normal calculation
-        const nx=Math.cos(angle)*(isRibCrest?1.0:0.7);
-        const nz=Math.sin(angle)*(isRibCrest?1.0:0.7);
-        const ny=isRibCrest?0.1:0.0;
-        const nVec=new THREE.Vector3(nx,ny,nz).normalize().applyQuaternion(quat);
+        const nOffset=new THREE.Vector3().addScaledVector(N,cosA*(isRibCrest?1.0:0.6)).addScaledVector(B,sinA*(isRibCrest?1.0:0.6)).normalize().applyQuaternion(quat);
 
         // Baked lighting & cavity AO
-        const sunDot=Math.max(0.2,nVec.dot(new THREE.Vector3(0.5,0.8,0.3).normalize()));
-        const cavityAO=isRibCrest?1.0:0.45; // Troughs get cavity shadow
+        const sunDot=Math.max(0.2,nOffset.dot(new THREE.Vector3(0.5,0.8,0.3).normalize()));
+        const cavityAO=isRibCrest?1.0:0.42; // Deep rib valleys get ambient darkening
         const finalCol=new THREE.Color(baseCol).multiply(cSun).multiplyScalar(sunDot*cavityAO);
 
         positions.push(pVec.x,pVec.y,pVec.z);
-        normals.push(nVec.x,nVec.y,nVec.z);
+        normals.push(nOffset.x,nOffset.y,nOffset.z);
         colors.push(finalCol.r,finalCol.g,finalCol.b);
       }
     }
@@ -511,7 +516,7 @@ class Bag {
         const a=i*vertsPerRow+j;
         const b=a+vertsPerRow;
         const c=i*vertsPerRow+((j+1)%vertsPerRow);
-        const d=b+((j+1)%vertsPerRow)-j;
+        const d=b+((j+1)%vertsPerRow);
         indices.push(a,b,c, c,b,d);
       }
     }
@@ -520,39 +525,53 @@ class Bag {
     this.count++;
   }
 
-  /* Areole Spine Cluster Builder */
+  /* Curving Elbow Arm Builder with Seamless Flared Junction */
+  elbowArm(o){
+    const trunkHeight=o.trunkH||4.0, attachY=o.attachY||1.8, armLen=o.armH||2.5;
+    const armR=o.armR||0.25, angle=o.angle||0;
+    const cSkin=o.cSkin||'#3f8a48', cWood=o.cWood||'#3d2e20';
+    const hydration=o.hydration??0.85;
+
+    // Build elbow bezier path projecting horizontally, curving downward slightly, then 90° upward
+    const p0=new THREE.Vector3(Math.cos(angle)*0.2, attachY, Math.sin(angle)*0.2);
+    const p1=new THREE.Vector3(Math.cos(angle)*0.85, attachY-0.1, Math.sin(angle)*0.85);
+    const p2=new THREE.Vector3(Math.cos(angle)*1.0, attachY+0.6, Math.sin(angle)*1.0);
+    const p3=new THREE.Vector3(Math.cos(angle)*1.0, attachY+armLen, Math.sin(angle)*1.0);
+
+    const path=[p0,p1,p2,p3];
+    this.ribbedColumn({path,r0:armR*1.3,r1:armR*0.7,ribs:16,segs:32,hydration,cSkin,cWood,corking:0.0});
+  }
+
+  /* Areole Spine Cluster Builder along Rib Crests */
   spineCluster(o){
-    const pos=o.pos||[0,0,0], dir=o.dir||[0,1,0], count=o.count||8, len=o.len||0.15;
-    const cFelt='#d8d4c0', cSpine='#f4e8b0';
+    const pos=o.pos||[0,0,0], dir=o.dir||[0,1,0], count=o.count||8, len=o.len||0.18;
     const quat=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(...dir).normalize());
 
-    // Central felt pad
     const p0=new THREE.Vector3(...pos);
     for(let k=0;k<count;k++){
       const a=(k/count)*Math.PI*2;
-      const tilt=0.4+0.5*(k%2);
+      const tilt=0.35+0.5*(k%2);
       const sDir=new THREE.Vector3(Math.cos(a)*Math.sin(tilt),Math.cos(tilt),Math.sin(a)*Math.sin(tilt)).applyQuaternion(quat);
       const pTip=p0.clone().addScaledVector(sDir,len);
 
       this.parts.push({
-        p:[p0.x,p0.y,p0.z, pTip.x,pTip.y,pTip.z, pTip.x+0.005,pTip.y,pTip.z],
+        p:[p0.x,p0.y,p0.z, pTip.x,pTip.y,pTip.z, pTip.x+0.006,pTip.y,pTip.z],
         n:[sDir.x,sDir.y,sDir.z, sDir.x,sDir.y,sDir.z, sDir.x,sDir.y,sDir.z],
-        c:[0.9,0.85,0.6, 0.95,0.9,0.7, 0.95,0.9,0.7],
+        c:[0.95,0.9,0.7, 0.98,0.92,0.6, 0.98,0.92,0.6],
         i:[0,1,2]
       });
     }
     this.count++;
   }
 
-  /* Cladode / Prickly Pear Flat Pad Builder */
+  /* Cladode / Prickly Pear Flat Pad Builder with Bevelled Edges */
   pad(o){
-    const pos=o.pos||[0,0,0], q=o.q||[0,0,0,1], rx=o.rx||0.3, ry=o.ry||0.4, rz=o.rz||0.05;
-    const cSkin=o.cSkin||'#4a8a4f';
+    const pos=o.pos||[0,0,0], q=o.q||[0,0,0,1], rx=o.rx||0.35, ry=o.ry||0.45, rz=o.rz||0.06;
+    const cSkin=o.cSkin||'#4a9a52';
     const quat=new THREE.Quaternion(...q);
     const pCenter=new THREE.Vector3(...pos);
 
-    // Build 3D bevelled spatulate pad
-    const segs=16;
+    const segs=20;
     const positions=[], normals=[], colors=[], indices=[];
     const cCol=new THREE.Color(cSkin);
 
@@ -562,7 +581,7 @@ class Bag {
         const a=(i/segs)*Math.PI*2;
         const px=Math.cos(a)*rx;
         const py=(Math.sin(a)+1.0)*ry*0.5;
-        const pVec=new THREE.Vector3(px,py,zSign*rz*(1.0-Math.pow(px/rx,2)*0.3)).applyQuaternion(quat).add(pCenter);
+        const pVec=new THREE.Vector3(px,py,zSign*rz*(1.0-Math.pow(px/rx,2)*0.35)).applyQuaternion(quat).add(pCenter);
         const nVec=new THREE.Vector3(0,0,zSign).applyQuaternion(quat);
 
         positions.push(pVec.x,pVec.y,pVec.z);
@@ -582,12 +601,12 @@ class Bag {
 
   /* Flower / Fruit Trumpet & Ball Builder */
   flowerFruit(o){
-    const pos=o.pos||[0,0,0], r=o.r||0.08, isFruit=o.isFruit??true;
+    const pos=o.pos||[0,0,0], r=o.r||0.09, isFruit=o.isFruit??true;
     const cCol=new THREE.Color(isFruit?(o.cCol||'#d83a3a'):(o.cCol||'#fff4c0'));
     const p0=new THREE.Vector3(...pos);
 
     const positions=[], normals=[], colors=[], indices=[];
-    const segs=12;
+    const segs=14;
     for(let i=0;i<=segs;i++){
       const lat=(i/segs)*Math.PI;
       for(let j=0;j<=segs;j++){
@@ -612,21 +631,21 @@ class Bag {
     this.count++;
   }
 
-  /* Ground soil mound & fallen grit debris */
+  /* Ground Soil Mound & Grit Particles */
   ground(o){
-    const r=o.r||1.5, cSoil=new THREE.Color(o.cSoil||'#3a2c20');
+    const r=o.r||1.8, cSoil=new THREE.Color(o.cSoil||'#3a2c20');
     const positions=[], normals=[], colors=[], indices=[];
-    const segs=24;
+    const segs=28;
     positions.push(0,0,0);
     normals.push(0,1,0);
     colors.push(cSoil.r*1.1,cSoil.g*1.1,cSoil.b*1.1);
 
     for(let i=0;i<=segs;i++){
       const a=(i/segs)*Math.PI*2;
-      const rr=r*(0.85+0.3*(i%2));
+      const rr=r*(0.88+0.25*(i%2));
       positions.push(Math.cos(a)*rr,-0.08,Math.sin(a)*rr);
       normals.push(0,1,0);
-      colors.push(cSoil.r*0.6,cSoil.g*0.6,cSoil.b*0.6);
+      colors.push(cSoil.r*0.55,cSoil.g*0.55,cSoil.b*0.55);
     }
     for(let i=1;i<=segs;i++){
       indices.push(0,i,i%segs+1);
@@ -683,35 +702,37 @@ const PLANTS=[
     eco:'Pollinated by Lesser Long-nosed bats at night; fruits eaten by desert birds/mammals; ribs used for indigenous housing.',
     uses:'Edible fruit (dihé) harvested by Seri people; dried ribs used for fences/beams; drought-resistant xeriscape focal tree.'
   },
-  desc:'The tallest cactus species on Earth. Features a massive fluted columnar trunk with candelabra branching, deep accordion ribs, dense areole spine rows, and felted fruits.',
+  desc:'The tallest cactus species on Earth. Features a massive fluted columnar trunk with multi-level candelabra branching, 14 deep accordion ribs, dense areole spine rows, and felted fruits.',
   params:[...COMMON],
-  colors:[CC('skin','Stem Skin','#3f8a48'),CC('wood','Woody Cork Base','#3a2c20'),CC('fruit','Ripe Fruit','#d83a3a'),CC('flower','Nocturnal Bloom','#fff8e0')],
+  colors:[CC('skin','Stem Skin','#3f8a48'),CC('wood','Woody Cork Base','#3d2e20'),CC('fruit','Ripe Fruit','#d83a3a'),CC('flower','Nocturnal Bloom','#fff8e0')],
   build(B,P,R){
-    const H=4.5*P.size*P.age, rTrunk=0.45*Math.sqrt(P.age);
-    // Main Columnar Trunk
-    B.ribbedColumn({h:H,r0:rTrunk*1.2,r1:rTrunk*0.7,ribs:14,segs:28,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.2*P.age});
-    B.ground({r:rTrunk*3.5,cSoil:P.wood});
+    const H=4.8*P.size*P.age, rTrunk=0.48*Math.sqrt(P.age);
+    const pathTrunk=[
+      new THREE.Vector3(0,0,0),
+      new THREE.Vector3(R(-0.1,0.1), H*0.35, R(-0.1,0.1)),
+      new THREE.Vector3(R(-0.15,0.15), H*0.7, R(-0.15,0.15)),
+      new THREE.Vector3(0, H, 0)
+    ];
+    B.ribbedColumn({path:pathTrunk,r0:rTrunk*1.25,r1:rTrunk*0.65,ribs:16,segs:36,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.22*P.age});
+    B.ground({r:rTrunk*3.6,cSoil:P.wood});
 
-    // Candelabra Arms
+    // Candelabra Elbow Arms
     const numArms=Math.round(4*P.branching*P.age);
     for(let i=0;i<numArms;i++){
-      const a=(i/numArms)*Math.PI*2+R(-0.2,0.2);
-      const armH=H*R(0.5,0.85);
+      const a=(i/numArms)*Math.PI*2+R(-0.25,0.25);
+      const armH=H*R(0.45,0.8);
       const armR=rTrunk*0.65;
-      const pStart=[Math.cos(a)*rTrunk*0.8, H*R(0.2,0.45), Math.sin(a)*rTrunk*0.8];
-      const qArm=dirQuat([Math.cos(a)*0.6, 0.8, Math.sin(a)*0.6]);
-      B.ribbedColumn({pos:pStart,q:qArm,h:armH,r0:armR,r1:armR*0.75,ribs:12,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.0});
+      const attachY=H*R(0.25,0.55);
+      B.elbowArm({trunkH:H,attachY,armH,armR,angle:a,hydration:P.hydration,cSkin:P.skin,cWood:P.wood});
 
-      // Areole spine clusters along arm crests
       if(P.spines>0.3){
-        for(let k=0;k<8;k++){
-          const sPos=[pStart[0]+Math.cos(a)*armR*1.1, pStart[1]+armH*(0.2+0.1*k), pStart[2]+Math.sin(a)*armR*1.1];
-          B.spineCluster({pos:sPos,dir:[Math.cos(a),0.2,Math.sin(a)],count:Math.round(8*P.spines),len:0.12});
+        for(let k=0;k<10;k++){
+          const sPos=[Math.cos(a)*rTrunk*1.2, attachY+armH*(0.2+0.08*k), Math.sin(a)*rTrunk*1.2];
+          B.spineCluster({pos:sPos,dir:[Math.cos(a),0.2,Math.sin(a)],count:Math.round(8*P.spines),len:0.14});
         }
       }
     }
 
-    // Fruits & Flowers at top crests
     for(let f=0;f<P.fruits;f++){
       const fAngle=R(0,Math.PI*2);
       const fPos=[Math.cos(fAngle)*rTrunk*0.8, H*(0.88+R(0,0.1)), Math.sin(fAngle)*rTrunk*0.8];
@@ -735,24 +756,26 @@ const PLANTS=[
   },
   desc:'The iconic monarch of the Sonoran Desert. Features a tall pleated main trunk with thick upward-curving arms that flare seamlessly at branch junctions.',
   params:[...COMMON],
-  colors:[CC('skin','Trunk Skin','#458a4d'),CC('wood','Woody Base','#382a1e'),CC('fruit','Ruby Tuna','#cf2b36'),CC('flower','White Wax Bloom','#fffae8')],
+  colors:[CC('skin','Trunk Skin','#428a49'),CC('wood','Woody Base','#382a1e'),CC('fruit','Ruby Tuna','#cf2b36'),CC('flower','White Wax Bloom','#fffae8')],
   build(B,P,R){
-    const H=4.0*P.size*P.age, rTrunk=0.38*Math.sqrt(P.age);
-    B.ribbedColumn({h:H,r0:rTrunk*1.15,r1:rTrunk*0.65,ribs:18,segs:32,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.18*P.age});
-    B.ground({r:rTrunk*3.2,cSoil:P.wood});
+    const H=4.2*P.size*P.age, rTrunk=0.4*Math.sqrt(P.age);
+    const pathTrunk=[
+      new THREE.Vector3(0,0,0),
+      new THREE.Vector3(R(-0.08,0.08), H*0.4, R(-0.08,0.08)),
+      new THREE.Vector3(0, H, 0)
+    ];
+    B.ribbedColumn({path:pathTrunk,r0:rTrunk*1.2,r1:rTrunk*0.65,ribs:20,segs:36,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.18*P.age});
+    B.ground({r:rTrunk*3.4,cSoil:P.wood});
 
-    // Upward arms
     const numArms=Math.round(3*P.branching*P.age);
     for(let i=0;i<numArms;i++){
       const a=(i/numArms)*Math.PI*2+R(-0.3,0.3);
-      const armH=H*R(0.4,0.7);
+      const armH=H*R(0.45,0.75);
       const armR=rTrunk*0.6;
-      const pStart=[Math.cos(a)*rTrunk*0.85, H*R(0.35,0.6), Math.sin(a)*rTrunk*0.85];
-      const qArm=dirQuat([Math.cos(a)*0.2, 0.98, Math.sin(a)*0.2]);
-      B.ribbedColumn({pos:pStart,q:qArm,h:armH,r0:armR,r1:armR*0.7,ribs:14,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.0});
+      const attachY=H*R(0.35,0.6);
+      B.elbowArm({trunkH:H,attachY,armH,armR,angle:a,hydration:P.hydration,cSkin:P.skin,cWood:P.wood});
     }
 
-    // Top fruits & flowers
     for(let f=0;f<P.fruits;f++){
       const fAngle=R(0,Math.PI*2);
       const fPos=[Math.cos(fAngle)*rTrunk*0.7, H*(0.9+R(0,0.08)), Math.sin(fAngle)*rTrunk*0.7];
@@ -773,18 +796,23 @@ const PLANTS=[
   params:[...COMMON],
   colors:[CC('skin','Stem Skin','#3b7a45'),CC('wood','Base Soil','#2e2218'),CC('fruit','Sweet Pitahaya','#e83a4d')],
   build(B,P,R){
-    const H=3.2*P.size*P.age;
-    const numPipes=Math.round(12*P.branching*P.age);
-    B.ground({r:2.2*P.size,cSoil:P.wood});
+    const H=3.5*P.size*P.age;
+    const numPipes=Math.round(14*P.branching*P.age);
+    B.ground({r:2.4*P.size,cSoil:P.wood});
 
     for(let i=0;i<numPipes;i++){
       const a=(i/numPipes)*Math.PI*2+R(-0.2,0.2);
-      const rr=R(0.1,0.6)*P.size;
-      const pH=H*R(0.6,1.0);
-      const pR=0.16*Math.sqrt(P.age);
+      const rr=R(0.12,0.65)*P.size;
+      const pH=H*R(0.65,1.0);
+      const pR=0.18*Math.sqrt(P.age);
       const pPos=[Math.cos(a)*rr, 0, Math.sin(a)*rr];
-      const qPipe=dirQuat([Math.cos(a)*0.18, 0.98, Math.sin(a)*0.18]);
-      B.ribbedColumn({pos:pPos,q:qPipe,h:pH,r0:pR*1.1,r1:pR*0.7,ribs:12,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.1});
+
+      const pathPipe=[
+        new THREE.Vector3(0,0,0),
+        new THREE.Vector3(Math.cos(a)*0.25, pH*0.4, Math.sin(a)*0.25),
+        new THREE.Vector3(Math.cos(a)*0.15, pH, Math.sin(a)*0.15)
+      ];
+      B.ribbedColumn({path:pathPipe,pos:pPos,r0:pR*1.15,r1:pR*0.7,ribs:14,segs:28,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.1});
     }
   }
 },
@@ -801,16 +829,16 @@ const PLANTS=[
   params:[...COMMON],
   colors:[CC('skin','Succulent Body','#4da853'),CC('spines','Golden Spines','#f4d83a'),CC('flower','Yellow Crown Bloom','#fff066')],
   build(B,P,R){
-    const H=1.4*P.size*P.age, rBar=0.6*P.size*P.age;
-    B.ribbedColumn({h:H,r0:rBar,r1:rBar*0.8,ribs:24,segs:20,hydration:P.hydration,cSkin:P.skin,cWood:'#2e2218',corking:0.08});
-    B.ground({r:rBar*2.0,cSoil:'#2e2218'});
+    const H=1.5*P.size*P.age, rBar=0.65*P.size*P.age;
+    const pathBar=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,H,0)];
+    B.ribbedColumn({path:pathBar,r0:rBar,r1:rBar*0.78,ribs:26,segs:24,hydration:P.hydration,cSkin:P.skin,cWood:'#2e2218',corking:0.08});
+    B.ground({r:rBar*2.2,cSoil:'#2e2218'});
 
-    // Golden spine rows
     if(P.spines>0.3){
-      for(let i=0;i<16;i++){
-        const a=(i/16)*Math.PI*2;
-        const sPos=[Math.cos(a)*rBar*1.05, H*0.6, Math.sin(a)*rBar*1.05];
-        B.spineCluster({pos:sPos,dir:[Math.cos(a),0.1,Math.sin(a)],count:Math.round(10*P.spines),len:0.15});
+      for(let i=0;i<20;i++){
+        const a=(i/20)*Math.PI*2;
+        const sPos=[Math.cos(a)*rBar*1.08, H*0.6, Math.sin(a)*rBar*1.08];
+        B.spineCluster({pos:sPos,dir:[Math.cos(a),0.1,Math.sin(a)],count:Math.round(10*P.spines),len:0.16});
       }
     }
   }
@@ -828,19 +856,19 @@ const PLANTS=[
   params:[...COMMON],
   colors:[CC('skin','Pad Green','#4a9a52'),CC('wood','Woody Trunk','#3d2e20'),CC('fruit','Crimson Tuna','#e82e3e')],
   build(B,P,R){
-    const H=2.5*P.size*P.age, rTrunk=0.22*P.age;
-    B.ribbedColumn({h:H*0.4,r0:rTrunk*1.3,r1:rTrunk,ribs:8,cSkin:P.wood,cWood:P.wood,corking:1.0});
-    B.ground({r:rTrunk*4.0,cSoil:P.wood});
+    const H=2.8*P.size*P.age, rTrunk=0.24*P.age;
+    const pathTrunk=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,H*0.45,0)];
+    B.ribbedColumn({path:pathTrunk,r0:rTrunk*1.3,r1:rTrunk,ribs:10,cSkin:P.wood,cWood:P.wood,corking:1.0});
+    B.ground({r:rTrunk*4.2,cSoil:P.wood});
 
-    // Stacked pads
-    const numPads=Math.round(18*P.branching*P.age);
+    const numPads=Math.round(22*P.branching*P.age);
     for(let i=0;i<numPads;i++){
-      const pPos=[R(-0.8,0.8)*P.size, H*0.3+R(0,H*0.7), R(-0.8,0.8)*P.size];
+      const pPos=[R(-0.95,0.95)*P.size, H*0.35+R(0,H*0.65), R(-0.95,0.95)*P.size];
       const qPad=dirQuat([R(-0.5,0.5),1,R(-0.5,0.5)]);
-      B.pad({pos:pPos,q:qPad,rx:0.28*P.size,ry:0.38*P.size,rz:0.04,cSkin:P.skin});
+      B.pad({pos:pPos,q:qPad,rx:0.3*P.size,ry:0.42*P.size,rz:0.05,cSkin:P.skin});
 
       if(i%2===0&&P.fruits>0){
-        B.flowerFruit({pos:[pPos[0],pPos[1]+0.3,pPos[2]],r:0.06,isFruit:true,cCol:P.fruit});
+        B.flowerFruit({pos:[pPos[0],pPos[1]+0.35,pPos[2]],r:0.065,isFruit:true,cCol:P.fruit});
       }
     }
   }
@@ -858,20 +886,20 @@ const PLANTS=[
   params:[...COMMON],
   colors:[CC('skin','Stem Green','#428a49'),CC('wood','Dark Trunk','#2e2218'),CC('fruit','Yellow Cholla Fruit','#d8e83a')],
   build(B,P,R){
-    const H=2.2*P.size*P.age, rTrunk=0.18*P.age;
-    B.ribbedColumn({h:H*0.5,r0:rTrunk*1.2,r1:rTrunk,ribs:10,cSkin:P.wood,cWood:P.wood,corking:1.0});
-    B.ground({r:rTrunk*4.0,cSoil:P.wood});
+    const H=2.5*P.size*P.age, rTrunk=0.2*P.age;
+    const pathTrunk=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,H*0.5,0)];
+    B.ribbedColumn({path:pathTrunk,r0:rTrunk*1.2,r1:rTrunk,ribs:10,cSkin:P.wood,cWood:P.wood,corking:1.0});
+    B.ground({r:rTrunk*4.2,cSoil:P.wood});
 
-    // Cylindrical jointed segments
-    const numSegs=Math.round(22*P.branching*P.age);
+    const numSegs=Math.round(26*P.branching*P.age);
     for(let i=0;i<numSegs;i++){
-      const sPos=[R(-0.9,0.9)*P.size, H*0.4+R(0,H*0.55), R(-0.9,0.9)*P.size];
+      const sPos=[R(-1.0,1.0)*P.size, H*0.4+R(0,H*0.55), R(-1.0,1.0)*P.size];
       const qSeg=dirQuat([R(-0.6,0.6),0.8,R(-0.6,0.6)]);
-      B.ribbedColumn({pos:sPos,q:qSeg,h:0.45*P.size,r0:0.07,r1:0.06,ribs:8,cSkin:P.skin,cWood:P.skin,corking:0.0});
+      const pathSeg=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,0.48*P.size,0)];
+      B.ribbedColumn({path:pathSeg,pos:sPos,q:qSeg,r0:0.075,r1:0.06,ribs:8,segs:12,cSkin:P.skin,cWood:P.skin,corking:0.0});
 
       if(i%3===0&&P.fruits>0){
-        // Hanging fruit chain
-        B.flowerFruit({pos:[sPos[0],sPos[1]-0.15,sPos[2]],r:0.05,isFruit:true,cCol:P.fruit});
+        B.flowerFruit({pos:[sPos[0],sPos[1]-0.18,sPos[2]],r:0.055,isFruit:true,cCol:P.fruit});
       }
     }
   }
@@ -889,24 +917,24 @@ const PLANTS=[
   params:[...COMMON],
   colors:[CC('skin','Fibrous Bark','#4a3b2b'),CC('leaves','Dagger Leaves','#3f7a52'),CC('flower','Cream Panicle','#f4ebd0')],
   build(B,P,R){
-    const H=3.8*P.size*P.age, rTrunk=0.3*P.age;
-    B.ribbedColumn({h:H*0.6,r0:rTrunk*1.3,r1:rTrunk,ribs:12,cSkin:P.skin,cWood:P.skin,corking:1.0});
-    B.ground({r:rTrunk*3.5,cSoil:P.skin});
+    const H=4.2*P.size*P.age, rTrunk=0.32*P.age;
+    const pathTrunk=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,H*0.6,0)];
+    B.ribbedColumn({path:pathTrunk,r0:rTrunk*1.3,r1:rTrunk,ribs:12,cSkin:P.skin,cWood:P.skin,corking:1.0});
+    B.ground({r:rTrunk*3.8,cSoil:P.skin});
 
-    // Forking branches with dagger leaf rosettes
-    const numBranches=Math.round(5*P.branching*P.age);
+    const numBranches=Math.round(6*P.branching*P.age);
     for(let i=0;i<numBranches;i++){
       const a=(i/numBranches)*Math.PI*2+R(-0.2,0.2);
       const bPos=[Math.cos(a)*rTrunk*1.2, H*0.55, Math.sin(a)*rTrunk*1.2];
       const qB=dirQuat([Math.cos(a)*0.6,0.8,Math.sin(a)*0.6]);
-      B.ribbedColumn({pos:bPos,q:qB,h:H*0.4,r0:rTrunk*0.7,r1:rTrunk*0.4,ribs:10,cSkin:P.skin,cWood:P.skin,corking:0.8});
+      const pathB=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,H*0.4,0)];
+      B.ribbedColumn({path:pathB,pos:bPos,q:qB,r0:rTrunk*0.7,r1:rTrunk*0.4,ribs:10,cSkin:P.skin,cWood:P.skin,corking:0.8});
 
-      // Terminal leaf rosette at tip
-      const tipPos=[bPos[0]+Math.cos(a)*0.8, bPos[1]+H*0.35, bPos[2]+Math.sin(a)*0.8];
-      for(let k=0;k<18;k++){
-        const lA=(k/18)*Math.PI*2;
+      const tipPos=[bPos[0]+Math.cos(a)*0.85, bPos[1]+H*0.35, bPos[2]+Math.sin(a)*0.85];
+      for(let k=0;k<20;k++){
+        const lA=(k/20)*Math.PI*2;
         const lPos=[tipPos[0]+Math.cos(lA)*0.1, tipPos[1]+0.1, tipPos[2]+Math.sin(lA)*0.1];
-        B.spineCluster({pos:lPos,dir:[Math.cos(lA),0.4,Math.sin(lA)],count:1,len:0.35*P.size});
+        B.spineCluster({pos:lPos,dir:[Math.cos(lA),0.4,Math.sin(lA)],count:1,len:0.38*P.size});
       }
     }
   }
@@ -924,26 +952,24 @@ const PLANTS=[
   params:[...COMMON],
   colors:[CC('leaves','Blue-Grey Leaves','#5a8a80'),CC('mast','Towering Mast','#8a7a40'),CC('flower','Yellow Umbrella Bloom','#f4d83a')],
   build(B,P,R){
-    const rRos=1.2*P.size*P.age, hMast=5.0*P.size*P.age;
+    const rRos=1.3*P.size*P.age, hMast=5.5*P.size*P.age;
     B.ground({r:rRos*1.8,cSoil:'#2e2218'});
 
-    // Sabre leaves in rosette
-    for(let i=0;i<28;i++){
-      const a=(i/28)*Math.PI*2;
-      const tilt=0.3+0.4*(i%3);
+    for(let i=0;i<32;i++){
+      const a=(i/32)*Math.PI*2;
+      const tilt=0.3+0.42*(i%3);
       const lPos=[Math.cos(a)*0.1, 0.05, Math.sin(a)*0.1];
       const qL=dirQuat([Math.cos(a)*Math.sin(tilt),Math.cos(tilt),Math.sin(a)*Math.sin(tilt)]);
-      B.pad({pos:lPos,q:qL,rx:0.18*P.size,ry:rRos,rz:0.04,cSkin:P.leaves});
+      B.pad({pos:lPos,q:qL,rx:0.19*P.size,ry:rRos,rz:0.045,cSkin:P.leaves});
     }
 
-    // Towering central flower mast
-    B.ribbedColumn({h:hMast,r0:0.12*P.size,r1:0.04*P.size,ribs:10,cSkin:P.mast,cWood:P.mast,corking:0.0});
+    const pathMast=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,hMast,0)];
+    B.ribbedColumn({path:pathMast,r0:0.13*P.size,r1:0.04*P.size,ribs:10,cSkin:P.mast,cWood:P.mast,corking:0.0});
 
-    // Umbrella flower clusters
-    for(let k=0;k<6;k++){
-      const mAngle=(k/6)*Math.PI*2;
-      const mPos=[Math.cos(mAngle)*0.3, hMast*(0.65+0.05*k), Math.sin(mAngle)*0.3];
-      B.flowerFruit({pos:mPos,r:0.15*P.size,isFruit:false,cCol:P.flower});
+    for(let k=0;k<7;k++){
+      const mAngle=(k/7)*Math.PI*2;
+      const mPos=[Math.cos(mAngle)*0.35, hMast*(0.62+0.05*k), Math.sin(mAngle)*0.35];
+      B.flowerFruit({pos:mPos,r:0.16*P.size,isFruit:false,cCol:P.flower});
     }
   }
 },
@@ -960,17 +986,18 @@ const PLANTS=[
   params:[...COMMON],
   colors:[CC('skin','Glaucous Blue Skin','#4a8a85'),CC('wood','Woody Base','#382b1e'),CC('fruit','Dark Garambullo Berry','#3a3b7a')],
   build(B,P,R){
-    const H=3.0*P.size*P.age, rTrunk=0.25*P.age;
-    B.ribbedColumn({h:H*0.35,r0:rTrunk*1.2,r1:rTrunk,ribs:6,cSkin:P.wood,cWood:P.wood,corking:1.0});
-    B.ground({r:rTrunk*3.5,cSoil:P.wood});
+    const H=3.2*P.size*P.age, rTrunk=0.26*P.age;
+    const pathTrunk=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,H*0.35,0)];
+    B.ribbedColumn({path:pathTrunk,r0:rTrunk*1.2,r1:rTrunk,ribs:6,cSkin:P.wood,cWood:P.wood,corking:1.0});
+    B.ground({r:rTrunk*3.6,cSoil:P.wood});
 
-    // Candelabra blue branches
-    const numBranches=Math.round(8*P.branching*P.age);
+    const numBranches=Math.round(10*P.branching*P.age);
     for(let i=0;i<numBranches;i++){
       const a=(i/numBranches)*Math.PI*2+R(-0.2,0.2);
       const bPos=[Math.cos(a)*rTrunk, H*0.3, Math.sin(a)*rTrunk];
       const qB=dirQuat([Math.cos(a)*0.4,0.9,Math.sin(a)*0.4]);
-      B.ribbedColumn({pos:bPos,q:qB,h:H*0.65,r0:0.12*P.size,r1:0.08*P.size,ribs:6,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.0});
+      const pathB=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,H*0.65,0)];
+      B.ribbedColumn({path:pathB,pos:bPos,q:qB,r0:0.12*P.size,r1:0.08*P.size,ribs:6,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.0});
 
       if(i%2===0&&P.fruits>0){
         B.flowerFruit({pos:[bPos[0]+Math.cos(a)*0.15, bPos[1]+H*0.5, bPos[2]+Math.sin(a)*0.15],r:0.05,isFruit:true,cCol:P.fruit});
@@ -991,19 +1018,19 @@ const PLANTS=[
   params:[...COMMON],
   colors:[CC('skin','Spiny Woody Cane','#5a4a35'),CC('leaves','Rain Leaves','#4a9a4f'),CC('flower','Fiery Scarlet Spike','#e82e2e')],
   build(B,P,R){
-    const H=3.5*P.size*P.age;
-    const numCanes=Math.round(18*P.branching*P.age);
-    B.ground({r:1.8*P.size,cSoil:P.skin});
+    const H=3.8*P.size*P.age;
+    const numCanes=Math.round(22*P.branching*P.age);
+    B.ground({r:2.0*P.size,cSoil:P.skin});
 
     for(let i=0;i<numCanes;i++){
       const a=(i/numCanes)*Math.PI*2+R(-0.2,0.2);
-      const tilt=0.15+0.25*R(0,1);
+      const tilt=0.15+0.28*R(0,1);
       const qC=dirQuat([Math.sin(tilt)*Math.cos(a), Math.cos(tilt), Math.sin(tilt)*Math.sin(a)]);
-      B.ribbedColumn({pos:[Math.cos(a)*0.15,0,Math.sin(a)*0.15],q:qC,h:H,r0:0.04,r1:0.02,ribs:6,cSkin:P.skin,cWood:P.skin,corking:0.1});
+      const pathC=[new THREE.Vector3(0,0,0), new THREE.Vector3(0,H,0)];
+      B.ribbedColumn({path:pathC,pos:[Math.cos(a)*0.15,0,Math.sin(a)*0.15],q:qC,r0:0.045,r1:0.022,ribs:6,segs:20,cSkin:P.skin,cWood:P.skin,corking:0.1});
 
-      // Scarlet tip blossom
       const tip=[Math.sin(tilt)*Math.cos(a)*H, Math.cos(tilt)*H, Math.sin(tilt)*Math.sin(a)*H];
-      B.flowerFruit({pos:tip,r:0.08,isFruit:false,cCol:P.flower});
+      B.flowerFruit({pos:tip,r:0.085,isFruit:false,cCol:P.flower});
     }
   }
 }
@@ -1016,7 +1043,7 @@ const defaultsOf=def=>({params:Object.fromEntries(def.params.map(p=>[p.k,p.def])
 const G={
   specs:[], uidc:0, sel:null,
   mode:'nursery', shade:'flat',
-  scene:{wind:true,shadows:true,ground:true,spacing:3.5},
+  scene:{wind:true,shadows:true,ground:true,spacing:4.2},
   filter:'all', q:'', groups:{cacti:false},
 };
 const specOf=uid=>G.specs.find(s=>s.uid===uid);
@@ -1078,7 +1105,7 @@ function buildSpecimen(spec){
   mesh.castShadow=spec.shadow;mesh.receiveShadow=true;
   mesh.userData.uid=spec.uid;
   spec.mesh=mesh;spec.group.add(mesh);
-  
+
   const bb=geo.boundingBox,size=new THREE.Vector3();bb.getSize(size);
   spec.height=size.y;spec.tris=Math.round(geo.index.count/3);spec.parts=B.count;
   if(spec.contact)spec.contact.scale.set(size.x*0.6,size.z*0.6,1);
@@ -1109,7 +1136,7 @@ function removeSpecimenSilent(uid){
 function reseedSpec(spec,seed){spec.seed=seed||randSeed();buildSpecimen(spec);layout();refresh();autosave();}
 
 /* ═══════════════ camera orbit ═══════════════ */
-const orb={az:0.6,el:0.35,dist:12,gtx:0,gty:2.5,gtz:0,cx:0,cy:2.5,cz:12};
+const orb={az:0.6,el:0.35,dist:14,gtx:0,gty:2.5,gtz:0,cx:0,cy:2.5,cz:14};
 function setView(v){
   if(v==='front'){orb.az=0;orb.el=0.1;}
   if(v==='top'){orb.az=0;orb.el=1.55;}
@@ -1148,7 +1175,7 @@ function focusSpec(spec){
   if(!spec)return;
   const p=spec.group.position;
   orb.gtx=p.x;orb.gty=Math.max(0.5,p.y+spec.height*0.4);orb.gtz=p.z;
-  orb.dist=clamp(spec.height*2.2,3.0,30);
+  orb.dist=clamp(spec.height*2.2,3.5,35);
 }
 
 {
@@ -1236,7 +1263,7 @@ function renderOutliner(){
   const sel=selSpec();
   $('#tSelS').textContent=sel?plantOf(sel.type).name:'none';
   $('#tSelT').classList.toggle('ok',!!sel);
-  
+
   const cur=catOf('cacti');
   $('#ddBtn').innerHTML=`<span class="cur"><span class="kd" style="--acc:${cur.acc};background:${cur.acc}"></span>${esc(cur.label)}</span><span class="cnt">${G.specs.length}</span><span class="caret">${IC.chev}</span>`;
   $('#ddMenu').innerHTML=`<div class="opt on"><span class="kd" style="--acc:${cur.acc};background:${cur.acc}"></span><span class="lab">${esc(cur.label)}</span><span class="n">${G.specs.length}</span><span class="tick">${IC.check}</span></div>`;
@@ -1357,7 +1384,7 @@ function openCat(){
   $('#cat').classList.remove('opts');
   const c=$('#cat');
   if(!c.dataset.placed){
-    c.style.left=Math.max(8,(innerWidth-660)/2)+'px';c.style.top=Math.max(8,(innerHeight-520)/2)+'px';
+    c.style.left=Math.max(8,(innerWidth-680)/2)+'px';c.style.top=Math.max(8,(innerHeight-540)/2)+'px';
     c.dataset.placed='1';
   }
   renderCatHead();renderCatRail();renderCatGrid();
@@ -1445,16 +1472,21 @@ function download(name,text,mime){
 function objChunk(spec,{off=null,base=0}={}){
   const g=spec.mesh.geometry,p=g.attributes.position,n=g.attributes.normal,c=g.attributes.color,ix=g.index.array;
   const ox=off?off[0]:0,oy=off?off[1]:0,oz=off?off[2]:0;
-  let s=`o ${spec.name.replace(/\s+/g,'_')}\n`;
-  for(let i=0;i<p.count;i++){s+=`v ${(p.getX(i)+ox).toFixed(4)} ${(p.getY(i)+oy).toFixed(4)} ${(p.getZ(i)+oz).toFixed(4)} ${c.getX(i).toFixed(4)} ${c.getY(i).toFixed(4)} ${c.getZ(i).toFixed(4)}\n`;}
-  for(let i=0;i<n.count;i++){s+=`vn ${n.getX(i).toFixed(4)} ${n.getY(i).toFixed(4)} ${n.getZ(i).toFixed(4)}\n`;}
-  for(let i=0;i<ix.length;i+=3)s+=`f ${base+ix[i]+1}//${base+ix[i]+1} ${base+ix[i+1]+1}//${base+ix[i+1]+1} ${base+ix[i+2]+1}//${base+ix[i+2]+1}\n`;
+  let s=`o ${spec.name.replace(/\s+/g,'_')}
+`;
+  for(let i=0;i<p.count;i++){s+=`v ${(p.getX(i)+ox).toFixed(4)} ${(p.getY(i)+oy).toFixed(4)} ${(p.getZ(i)+oz).toFixed(4)} ${c.getX(i).toFixed(4)} ${c.getY(i).toFixed(4)} ${c.getZ(i).toFixed(4)}
+`;}
+  for(let i=0;i<n.count;i++){s+=`vn ${n.getX(i).toFixed(4)} ${n.getY(i).toFixed(4)} ${n.getZ(i).toFixed(4)}
+`;}
+  for(let i=0;i<ix.length;i+=3)s+=`f ${base+ix[i]+1}//${base+ix[i]+1} ${base+ix[i+1]+1}//${base+ix[i+1]+1} ${base+ix[i+2]+1}//${base+ix[i+2]+1}
+`;
   return {text:s,count:p.count};
 }
 function exportOBJ(spec){
   spec=spec||selSpec();if(!spec)return;
   const {text}=objChunk(spec);
-  download(`${plantOf(spec.type).id}-${spec.seed}.obj`,`# FlorArc AAA Cactus · ${spec.name} · ${spec.tris} tris\n`+text,'text/plain');
+  download(`${plantOf(spec.type).id}-${spec.seed}.obj`,`# FlorArc AAA Cactus · ${spec.name} · ${spec.tris} tris
+`+text,'text/plain');
   clog(`exported ${spec.name} .obj`);prompt('export',`${spec.name}.obj`);
 }
 function exportJSON(spec){
