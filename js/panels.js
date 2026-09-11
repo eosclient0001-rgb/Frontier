@@ -1,7 +1,7 @@
 // Frontier SDF — outliner (left) + inspector (right) panels.
 
-import { NODE_DEFS, CATS } from "./graph.js?v=3";
-import { el, fmt } from "./util.js?v=3";
+import { NODE_DEFS, CATS } from "./graph.js?v=4";
+import { el, fmt } from "./util.js?v=4";
 
 function sliderRow(label, min, max, step, value, onInput, format = (v) => fmt(v, 2)) {
   const row = el("div", "p-row");

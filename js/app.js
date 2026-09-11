@@ -1,11 +1,11 @@
 // Frontier SDF — app shell: boot, main loop, camera, wiring, export, diagnostics.
 
-import { Graph, compileGraph, buildPreset, PRESETS, NODE_DEFS } from "./graph.js?v=3";
-import { Sim } from "./sim.js?v=3";
-import { Renderer } from "./render.js?v=3";
-import { NodeEditor } from "./nodes-ui.js?v=3";
-import { buildOutliner, buildInspector } from "./panels.js?v=3";
-import { $, el, toast, download, fmt, fmtInt, clamp } from "./util.js?v=3";
+import { Graph, compileGraph, buildPreset, PRESETS, NODE_DEFS } from "./graph.js?v=4";
+import { Sim } from "./sim.js?v=4";
+import { Renderer } from "./render.js?v=4";
+import { NodeEditor } from "./nodes-ui.js?v=4";
+import { buildOutliner, buildInspector } from "./panels.js?v=4";
+import { $, el, toast, download, fmt, fmtInt, clamp } from "./util.js?v=4";
 
 const errors = [];
 window.addEventListener("error", (e) => {

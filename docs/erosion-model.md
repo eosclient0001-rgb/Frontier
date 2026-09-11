@@ -17,15 +17,21 @@ converts to cargo by a per-kind product mix; deposition settles gravel first.
 
 ## No-infinite-holes guarantee
 
-1. **Capacity clamp**: `detach ≤ max(0, capacity − load)`.
-2. **Voxel clamp**: `detach ≤ 8%` of kernel solid mass; `deposit ≤ 10%` of void.
-3. **Apply clamp**: surface moves ≤ 0.08 world units per step (≈¼ voxel).
-4. **Acceptance feedback**: volume-apply returns accept rates; cargo only books
+1. **Motion gate**: rain/river detach scales with `smoothstep(0.3, 1.0, speed)` —
+   no flow means no shear, so bouncing in place removes nothing.
+2. **Rest gate**: any particle with `rest > 0.15–0.3 s` detaches exactly zero.
+   It can only deposit, then dump and sleep. This breaks the dig→fall→dig loop.
+3. **Capacity clamp**: `detach ≤ max(0, capacity − load)`.
+4. **Voxel clamp**: `detach ≤ 2%` of kernel solid mass; `deposit ≤ 3%` of void.
+5. **Apply clamp**: surface moves ≤ 0.008 world units per step (≈¼ voxel per
+   10 steps) and ≤ 20% of voxel mass per side — small controlled pieces only.
+6. **Acceptance feedback**: volume-apply returns accept rates; cargo only books
    accepted mass (no phantom sediment).
-5. **Rest → settle → sleep**: contact + slow ⇒ rest timer; `rest > 0.4 s` dumps
-   all load at the contact; dry + clean + still ⇒ slot sleeps until an emitter
-   recycles it. Resting droplets freeze instead of jitter-cutting.
-6. **Rate-limited emitters** + finite lifetimes (25–60 s) + boundary retirement.
+7. **Rest → settle → sleep**: contact + slow ⇒ rest timer; `rest > 0.4 s` dumps
+   all load at the contact; rested + (dry or clean) ⇒ slot sleeps until an
+   emitter recycles it. Dry rain gives up 3× faster. Resting droplets freeze
+   instead of jitter-cutting.
+8. **Rate-limited emitters** + finite lifetimes (25–60 s) + boundary retirement.
 
 ## Volume channels
 

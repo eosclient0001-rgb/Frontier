@@ -3,7 +3,7 @@
 // Anti-griefing rules baked in: capacity-limited detach, per-step voxel clamp,
 // resting timers with forced settle, sleep when clean+still, spawn rate limits.
 
-import { SIM_HEAD, FULLSCREEN_VERT, NOISE_GLSL, SDFLIB_GLSL } from "./glsl-lib.js?v=3";
+import { SIM_HEAD, FULLSCREEN_VERT, NOISE_GLSL, SDFLIB_GLSL } from "./glsl-lib.js?v=4";
 
 export { FULLSCREEN_VERT };
 
@@ -69,8 +69,9 @@ void main() {
   float kind = M.x;
   float load = C.x + C.y + C.z;
   bool dead = P.w < 0.0;
-  // Settled, dry and clean -> sleep (slot is recycled by emitters).
-  if (!dead && A.x > 1.0 && V.w < 0.05 && load < 0.0001) {
+  // Settling sleep: rested and (dry or clean) -> slot is recycled by emitters.
+  // River agents (water pinned at 1) sleep once pooled and emptied.
+  if (!dead && A.x > 0.8 && (V.w < 0.08 || load < 0.0001)) {
     oPos.w = -1.0; oVel = vec4(0.0); return;
   }
   if (dead) {
@@ -161,7 +162,7 @@ void main() {
       }
       p = q;
     }
-    if (kind < 0.5) water *= exp(-uDT * (0.25 + contact * 1.2) * uPhysA.w);
+    if (kind < 0.5) water *= exp(-uDT * (0.4 + contact * 2.5) * uPhysA.w);
     else water = 1.0;
   } else if (kind < 2.5) {
     vec3 wdir = vec3(uWindA.x, 0.0, uWindA.y);
@@ -208,7 +209,8 @@ void main() {
     water *= exp(-uDT * 0.5);
   }
   // Resting particles freeze in place instead of jitter-cutting.
-  if (contact > 0.5 && length(v) < 0.2 && kind < 1.5) v *= exp(-uDT * 10.0);
+  // (Anything that cannot move cannot erode -- enforced again in event.)
+  if (contact > 0.5 && length(v) < 0.45 && kind < 1.5) v *= exp(-uDT * 14.0);
   age += uDT;
   float life = kind < 0.5 ? 30.0 : (kind < 1.5 ? 60.0 : (kind < 2.5 ? 40.0 : 25.0));
   if (age > life || p.x < VMIN.x - 1.0 || p.x > VMAX.x + 1.0 || p.y < VMIN.y - 1.0 ||
@@ -260,40 +262,46 @@ void main() {
   float speed = length(V.xyz); float slope = 1.0 - n.y; float water = V.w;
   float load = C.x + C.y + C.z;
   float cap = 0.0; float det = 0.0;
+  // A particle that is not moving relative to the surface cannot erode.
+  // moveGate kills drilling-while-bouncing; restGate kills drilling-while-resting.
+  float moveGate = kind < 1.5 ? smoothstep(0.3, 1.0, speed) : 1.0;
+  float restGate = 1.0 - smoothstep(0.15, 0.3, A.x);
   float hemi = 2.0944 * radius * radius * radius;
   if (kind < 0.5) {
     cap = (0.03 + uHyd.x * 0.25) * water * (0.2 + speed * 0.5) * (0.3 + slope * 2.0);
     float stress = speed * (0.3 + slope * 2.5);
-    det = uHyd.y * max(0.0, stress - 0.6) * hemi * uDT;
+    det = uHyd.y * max(0.0, stress - 0.6) * hemi * uDT * 0.35;
   } else if (kind < 1.5) {
     cap = (0.05 + uRiv.x * 0.5) * water * (0.3 + speed * 0.6);
-    det = uRiv.y * max(0.0, speed * speed * 0.08 + slope * speed - 0.5) * hemi * uDT;
+    det = uRiv.y * max(0.0, speed * speed * 0.025 + slope * speed * 0.5 - 0.5) * hemi * uDT * 0.35;
   } else if (kind < 2.5) {
     vec2 wd = uWindA.xy / max(length(uWindA.xy), 1e-3);
     float facing = max(0.0, dot(n, -vec3(wd.x, 0.0, wd.y)));
     float sizeF = clamp(M.z / 0.15, 0.2, 3.0);
     float abra = max(H.x * 0.8, speed * 0.2) * facing;
-    det = uWnd.y * max(0.0, abra - 0.4) * sizeF * hemi * 0.6 * uDT;
+    det = uWnd.y * max(0.0, abra - 0.4) * sizeF * hemi * 0.25 * uDT;
     cap = (0.02 + uWnd.x * 0.2) * speed * speed * 0.05;
   } else {
-    if (slope > uThm.y) det = uThm.x * (slope - uThm.y) * 8.0 * hemi * uDT;
+    if (slope > uThm.y) det = uThm.x * (slope - uThm.y) * 3.0 * hemi * uDT;
     cap = 0.05 + speed * 0.1;
   }
+  det *= moveGate * restGate;
   det = min(det, max(0.0, cap - load));
-  det = min(det, sums.x * VOXELV * 0.08);
+  det = min(det, sums.x * VOXELV * 0.02);
   float depK = kind < 0.5 ? uHyd.z : (kind < 1.5 ? uRiv.z : (kind < 2.5 ? uWnd.z : uThm.z));
   float surplus = max(0.0, load - cap);
-  float settle = kind < 0.5 ? 2.0 : (kind < 1.5 ? 1.2 : (kind < 2.5 ? 0.8 : 3.0));
-  float dep = depK * (surplus * (1.0 - exp(-uDT * 4.0)) + load * settle * uDT * 0.5);
-  dep += C.z * uDT * 0.8 / (1.0 + speed);
-  if (P.y < uWater) dep += load * uDT * 3.0;
+  float settle = kind < 0.5 ? 5.0 : (kind < 1.5 ? 3.0 : (kind < 2.5 ? 2.0 : 6.0));
+  float dep = depK * (surplus * (1.0 - exp(-uDT * 8.0)) + load * settle * uDT * 0.5);
+  dep += C.z * uDT * 1.5 / (1.0 + speed);
+  if (P.y < uWater) dep += load * uDT * 4.0;
+  if (kind < 0.5 && water < 0.05) dep += load * min(1.0, uDT * 6.0); // dry-out dump
   if (A.w > 0.5) dep += load;
   if (kind > 1.5 && kind < 2.5) {
     vec2 wd = uWindA.xy / max(length(uWindA.xy), 1e-3);
     float lee = max(0.0, dot(n, vec3(wd.x, 0.0, wd.y)));
     dep *= 1.0 + lee * 2.0;
   }
-  dep = min(dep, sums.y * VOXELV * 0.1 + 1e-9);
+  dep = min(dep, sums.y * VOXELV * 0.03 + 1e-9);
   float wet = (kind > 1.5 && kind < 2.5) ? 0.0 : clamp(water, 0.0, 1.0);
   oContact = vec4(c, radius);
   oExchange = vec4(det, dep, 0.0, wet);
@@ -416,7 +424,8 @@ void main() {
     load = max(load - frac * dd, vec3(0.0));
   }
   float rest = A.x;
-  if (H.y > 0.5 && length(V.xyz) < 0.35) rest += uDT; else rest = 0.0;
+  if (H.y > 0.5 && length(V.xyz) < 0.5) rest += uDT; else rest = 0.0;
+  if (M.x < 0.5 && V.w < 0.04) rest += uDT * 2.0; // dry droplets give up fast
   float flags = A.w;
   float tot2 = load.x + load.y + load.z;
   if (rest > 0.4 && tot2 > 1e-6) flags = 1.0;
@@ -509,5 +518,4 @@ void main() {
   float speed = length(flow);
   oFlow = vec4(speed > 1e-4 ? flow / speed : vec2(0.0), speed, sea);
 }
-`;
 `;
