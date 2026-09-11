@@ -434,13 +434,13 @@ uniform sampler2D uPos, uCargo, uAux, uMeta;
 uniform float uActive;
 layout(location = 0) out vec4 oCount;
 void main() {
-  float active = 0.0; float resting = 0.0; float carried = 0.0; float river = 0.0;
+  float alive = 0.0; float resting = 0.0; float carried = 0.0; float river = 0.0;
   for (int y = 0; y < 64; y++) for (int x = 0; x < 64; x++) {
     ivec2 q = ivec2(x, y);
     vec4 P = texelFetch(uPos, q, 0);
     if (P.w < 0.0) continue;
     if (float(y * 64 + x) >= uActive) continue;
-    active += 1.0;
+    alive += 1.0;
     vec4 A = texelFetch(uAux, q, 0);
     if (A.x > 0.4) resting += 1.0;
     vec4 C = texelFetch(uCargo, q, 0);
@@ -448,7 +448,7 @@ void main() {
     vec4 M = texelFetch(uMeta, q, 0);
     if (M.x > 0.5 && M.x < 1.5) river += 1.0;
   }
-  oCount = vec4(active, resting, carried, river);
+  oCount = vec4(alive, resting, carried, river);
 }
 `;
 
