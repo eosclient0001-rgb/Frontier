@@ -1517,8 +1517,8 @@ const PLANTS=[
   }
 }},
 
-{id:'pear',cat:'cactus',name:'Prickly Pear',latin:'Opuntia ficus-indica',icon:'pear',desc:'Stacked fleshy pads dotted with areoles, spines and ruby tunas.',
- params:[...COMMON],colors:[CC('foliage','Pads','#4a8a4a'),CC('accent','Areoles','#e8e4d0'),CC('extra','Tunas','#d4542a')],
+{id:'pear',cat:'cactus',name:'Prickly Pear',latin:'Opuntia ficus-indica',icon:'pear',desc:'Broad, flat blue-green pads with sparse dark areoles, fine glochids and edge-set ruby tunas.',
+ params:[...COMMON],colors:[CC('foliage','Pads','#4a8a4a'),CC('accent','Glochids','#c9b58a'),CC('extra','Tunas','#d4542a')],
  build(B,P,R){
   const S=P.spread;
   B.disc({r:0.45*S,r2:0.55*S,h:0.1,pos:[0,0.03,0],c0:'#8a6f4a',c1:'#b89a6a',jit:0,rs:14});
@@ -1532,15 +1532,24 @@ const PLANTS=[
       let nx=lx/(a*a),ny=ly/(b*b),nz=lz/(c*c);
       const nl=Math.hypot(nx,ny,nz)||1;
       const wn=tiltVec(nx/nl,ny/nl,nz/nl,tilt,ry,null);
-      B.ball({r:0.009*S,pos:[wp[0]-wn[0]*0.01*S,wp[1]-wn[1]*0.01*S,wp[2]-wn[2]*0.01*S],smooth:true,c0:P.accent,c1:P.accent,jit:0});
-      if(R()<0.5){B.spike({r:0.010*S,h:R(0.05,0.08)*S,rs:7,pos:[wp[0]-wn[0]*0.008*S,wp[1]-wn[1]*0.008*S,wp[2]-wn[2]*0.008*S],q:dirQuat(wn,0),c0:P.accent,c1:P.accent,jit:0});
-        for(const s of [-1,1])B.spike({r:0.006*S,h:0.03*S,rs:5,pos:[wp[0]-wn[0]*0.006*S,wp[1]-wn[1]*0.006*S,wp[2]-wn[2]*0.006*S],q:dirQuat([wn[0]+s*0.4,wn[1]-0.2,wn[2]],0),c0:P.accent,c1:P.accent,jit:0});}
+      /* Ficus-indica references are broad and mostly spineless: a dark felted
+         areole with a small glochid tuft, not a porcupine of long needles. */
+      const seat=[wp[0]-wn[0]*0.012*S,wp[1]-wn[1]*0.012*S,wp[2]-wn[2]*0.012*S];
+      B.ball({r:0.012*S,pos:seat,smooth:true,c0:shade(P.foliage,-0.28),c1:shade(P.foliage,-0.16),jit:0});
+      const glochids=2+Math.floor(R(0,3));
+      for(let g=0;g<glochids;g++){
+        const gd=dirQuat([wn[0]+R(-0.22,0.22),wn[1]+R(-0.12,0.18),wn[2]+R(-0.22,0.22)],0);
+        B.spike({r:0.0035*S,h:R(0.012,0.024)*S,rs:4,pos:seat,q:gd,c0:P.accent,c1:P.accent,jit:0});
+      }
+      if(R()<0.16){
+        B.spike({r:0.004*S,h:R(0.035,0.055)*S,rs:5,pos:seat,q:dirQuat(wn,0),c0:P.accent,c1:P.accent,jit:0});
+      }
     }
   };
   const tops=[];
   const nfb=4+Math.floor(R(0,2));
   for(let i=0;i<nfb;i++){
-    const ry=(i/nfb)*6.28+R(-0.3,0.3),pr=R(0.16,0.22)*S,tilt=R(0.15,0.4);
+    const ry=(i/nfb)*6.28+R(-0.55,0.55),pr=R(0.16,0.22)*S,tilt=R(0.15,0.4);
     const center=[Math.sin(ry)*0.1*S,0.06+pr*1.05,Math.cos(ry)*0.1*S];
     B.ball({r:pr,pos:center,pad:true,rx:tilt,ry,s:[1,1.3,0.42],c0:shade(P.foliage,-0.06),c1:P.foliage,jit:P.variation,fx:{sun:0.45}});
     areoles(center,tilt,ry,pr);
