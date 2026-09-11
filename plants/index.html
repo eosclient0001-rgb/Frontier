@@ -533,6 +533,26 @@ function strip(o){
   g.setIndex(idx);
   return g;
 }
+/* A pad is not a perfect primitive: this creates a dense, slightly undulating
+   Opuntia pad silhouette with real edge topology for close-up shots. */
+function opuntiaPad(r,depth=1,segments=28,rings=14){
+  const pos=[],idx=[];
+  for(let j=0;j<=rings;j++){
+    const v=j/rings, ph=v*Math.PI, sy=Math.sin(ph), cy=Math.cos(ph);
+    for(let i=0;i<segments;i++){
+      const th=i/segments*Math.PI*2;
+      const edge=1+0.035*Math.sin(th*6+ph*1.7);
+      const rr=r*sy*edge;
+      pos.push(rr*Math.cos(th),r*1.28*cy,rr*depth*Math.sin(th));
+    }
+  }
+  for(let j=0;j<rings;j++)for(let i=0;i<segments;i++){
+    const a=j*segments+i,b=j*segments+(i+1)%segments,c=(j+1)*segments+(i+1)%segments,d=(j+1)*segments+i;
+    idx.push(a,b,d,b,c,d);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);return g;
+}
 function conePart(r,h,rs){
   const pos=[],idx=[];
   for(let i=0;i<rs;i++){const t=i/rs*Math.PI*2;pos.push(Math.sin(t)*r,0,Math.cos(t)*r);}
@@ -717,7 +737,7 @@ class Bag{
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
   }
   ball(o){
-    const g=o.smooth?new THREE.SphereGeometry(o.r,o.wsegs??20,o.hsegs??12):new THREE.IcosahedronGeometry(o.r,o.det??0);
+    const g=o.pad?opuntiaPad(o.r,o.depth??1,o.wsegs??28,o.hsegs??14):(o.smooth?new THREE.SphereGeometry(o.r,o.wsegs??20,o.hsegs??12):new THREE.IcosahedronGeometry(o.r,o.det??0));
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q,s:o.s||1});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
   }
   blob(o){
@@ -1501,7 +1521,7 @@ const PLANTS=[
       let nx=lx/(a*a),ny=ly/(b*b),nz=lz/(c*c);
       const nl=Math.hypot(nx,ny,nz)||1;
       const wn=tiltVec(nx/nl,ny/nl,nz/nl,tilt,ry,null);
-      B.ball({r:0.009*S,pos:wp,smooth:true,c0:P.accent,c1:P.accent,jit:0});
+      B.ball({r:0.009*S,pos:[wp[0]-wn[0]*0.01*S,wp[1]-wn[1]*0.01*S,wp[2]-wn[2]*0.01*S],smooth:true,c0:P.accent,c1:P.accent,jit:0});
       if(R()<0.5){B.spike({r:0.010*S,h:R(0.05,0.08)*S,rs:7,pos:[wp[0]-wn[0]*0.008*S,wp[1]-wn[1]*0.008*S,wp[2]-wn[2]*0.008*S],q:dirQuat(wn,0),c0:P.accent,c1:P.accent,jit:0});
         for(const s of [-1,1])B.spike({r:0.006*S,h:0.03*S,rs:5,pos:[wp[0]-wn[0]*0.006*S,wp[1]-wn[1]*0.006*S,wp[2]-wn[2]*0.006*S],q:dirQuat([wn[0]+s*0.4,wn[1]-0.2,wn[2]],0),c0:P.accent,c1:P.accent,jit:0});}
     }
@@ -1511,21 +1531,21 @@ const PLANTS=[
   for(let i=0;i<nfb;i++){
     const ry=(i/nfb)*6.28+R(-0.3,0.3),pr=R(0.16,0.22)*S,tilt=R(0.15,0.4);
     const center=[Math.sin(ry)*0.1*S,0.06+pr*1.05,Math.cos(ry)*0.1*S];
-    B.ball({r:pr,pos:center,smooth:true,rx:tilt,ry,s:[1,1.3,0.42],c0:shade(P.foliage,-0.06),c1:P.foliage,jit:P.variation,fx:{sun:0.45}});
+    B.ball({r:pr,pos:center,pad:true,rx:tilt,ry,s:[1,1.3,0.42],c0:shade(P.foliage,-0.06),c1:P.foliage,jit:P.variation,fx:{sun:0.45}});
     areoles(center,tilt,ry,pr);
     tops.push(tiltVec(0,pr*1.2,0,tilt,ry,center));
   }
   for(let i=0;i<3&&i<tops.length;i++){
     const tb=tops[i],pr=R(0.13,0.17)*S,ry=R(0,6.28),tilt=R(0.1,0.45);
     const center=[tb[0],tb[1]+pr*0.9,tb[2]];
-    B.ball({r:pr,pos:center,smooth:true,rx:tilt,ry,s:[1,1.3,0.42],c0:shade(P.foliage,-0.04),c1:shade(P.foliage,0.05),jit:P.variation,fx:{sun:0.45}});
+    B.ball({r:pr,pos:center,pad:true,rx:tilt,ry,s:[1,1.3,0.42],c0:shade(P.foliage,-0.04),c1:shade(P.foliage,0.05),jit:P.variation,fx:{sun:0.45}});
     areoles(center,tilt,ry,pr);
     tops.push(tiltVec(0,pr*1.2,0,tilt,ry,center));
   }
   const nfr=3+Math.floor(R(0,3));
   for(let k=0;k<nfr;k++){
     const tb=tops[Math.floor(R(0,tops.length))];
-    B.ball({r:R(0.028,0.038)*S,smooth:true,pos:[tb[0]+R(-0.04,0.04)*S,tb[1]+0.01,tb[2]+R(-0.04,0.04)*S],c0:shade(P.extra,-0.06),c1:P.extra,jit:0});
+    B.ball({r:R(0.028,0.038)*S,smooth:true,pos:[tb[0]+R(-0.04,0.04)*S,tb[1]-0.015,tb[2]+R(-0.04,0.04)*S],c0:shade(P.extra,-0.06),c1:P.extra,jit:0});
   }
 }},
 {id:'agave',cat:'cactus',name:'Agave',latin:'Agave americana',icon:'agave',desc:'Blue-grey sabre leaves in a phyllotactic rosette, each tipped with a thorn.',
@@ -2181,7 +2201,7 @@ function removeSpecimen(uid){
   layout();refresh();autosave();
 }
 function layout(){
-  const vis=visibleSpecs(),sp=G.scene.spacing;
+  const vis=visibleSpecs(),sp=Math.max(G.scene.spacing,...vis.map(s=>s.contactR*2.35),3.2);
   const cols=vis.length<=5?Math.max(1,vis.length):Math.ceil(vis.length/2);
   const rows=Math.ceil(vis.length/cols);
   vis.forEach((s,i)=>{
