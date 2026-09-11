@@ -276,6 +276,22 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 .csw input{position:absolute;inset:-6px;width:60px;height:40px;cursor:pointer;opacity:0}
 .csw-hex{font-family:var(--mono);font-size:11px;color:var(--t3)}
 @supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){.glass{background:var(--glass)}}
+#atlas{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(6,10,8,.72);backdrop-filter:blur(6px)}
+#atlas.show{display:flex}
+.atlas-card{width:min(860px,94vw);max-height:90vh;overflow:auto;border-radius:16px;background:linear-gradient(180deg,#101a14,#0b120e);border:1px solid rgba(151,215,124,.25);box-shadow:0 24px 80px rgba(0,0,0,.6);padding:18px 20px 20px}
+.atlas-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.atlas-head h2{font-size:15px;letter-spacing:.04em}
+.atlas-head .m{font:10.5px var(--mono);color:var(--t3)}
+.atlas-head .sp{flex:1}
+#atlasImg{width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12);image-rendering:pixelated;margin:10px 0}
+#atlasGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;margin:8px 0 12px}
+#atlasGrid span{font:10px var(--mono);color:var(--t2);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:3px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atlas-foot{display:flex;gap:8px;justify-content:flex-end}
+#addBtn{display:flex;align-items:center;gap:6px}
+.radd{margin-left:auto;width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:var(--t2);font-size:13px;line-height:1;cursor:pointer;flex:none}
+.radd:hover{background:var(--grn);color:#06210f;border-color:var(--grn)}
+.rail-item{gap:8px}
+
 </style>
 </head>
 <body>
@@ -298,7 +314,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
     </div>
     <div class="filters" id="filters"><div class="dd-btn" id="ddBtn"></div><div class="dd-menu" id="ddMenu"></div></div>
   </div>
-  <div class="docbar"><button class="abtn" id="dSave" title="download garden .json">save</button><button class="abtn" id="dOpen" title="open garden .json">open</button><button class="abtn" id="dNew" title="new garden (starts from 4 starters)">new</button><span class="sp"></span><span class="m" id="dAuto">autosave</span></div>
+  <div class="docbar"><button class="abtn" id="dSave" title="download garden .json">save</button><button class="abtn" id="dOpen" title="open garden .json">open</button><button class="abtn" id="dNew" title="new garden (starts from 5 starters)">new</button><span class="sp"></span><span class="m" id="dAuto">autosave</span></div>
   <div class="fpills" id="fpills"></div>
   <div class="tree" id="tree"></div>
   <div class="outliner-foot" id="ofoot"></div>
@@ -307,11 +323,13 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 <!-- ═══════════════ VIEWPORT ═══════════════ -->
 <section id="viewport" class="glass panel">
   <div id="errBar"></div>
-  <div id="start"><div class="card"><h3>Welcome back</h3><div class="m" id="startInfo"></div><div class="srow"><button class="abtn pri" id="startCont">continue previous</button><button class="abtn" id="startNew">new garden</button></div><div class="lnk">or <b id="startOpen">open a .json</b> · geometry only, textures come later</div></div></div>
+  <div id="start"><div class="card"><h3>Welcome back</h3><div class="m" id="startInfo"></div><div class="srow"><button class="abtn pri" id="startCont">continue previous</button><button class="abtn" id="startNew">new garden</button></div><div class="lnk">or <b id="startOpen">open a .json</b> · HQ geometry · atlas included</div></div></div>
   <canvas id="gl"></canvas>
   <div id="vgrip" title="drag viewport"></div>
   <div id="vtop">
     <button id="catBtn" title="Grow catalogue (Tab)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Grow</button>
+    <button id="addBtn" title="Quick-grow a random plant">+ add</button>
+    <button id="atlasBtn" title="Texture atlas (A)">Atlas</button>
     <div class="seg" id="modeSeg">
       <button data-m="nursery" class="on">Nursery</button>
       <button data-m="solo">Solo <kbd>F</kbd></button>
@@ -332,7 +350,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
     <div class="pill" id="selPill"><span class="ax" style="background:#ff6b6b"></span>X <span id="cx">—</span><span class="ax" style="background:#6fe38a"></span>Y <span id="cy">—</span><span class="ax" style="background:#5db3ff"></span>Z <span id="cz">—</span></div>
     <div class="pill" id="camPill">orbit · az 40° · el 29°</div>
   </div>
-  <div id="vtitle"><span class="n" id="vname">Nursery</span><span class="m" id="vmeta">procedural flora · geometry only</span></div>
+  <div id="vtitle"><span class="n" id="vname">Nursery</span><span class="m" id="vmeta">procedural flora · HQ + atlas</span></div>
   <div id="hud">
     <div class="nav glass">
       <div class="keys"><span class="k">LMB</span><span class="k">orbit</span></div>
@@ -345,6 +363,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
       <div class="keys"><span class="k">F</span><span class="k">focus</span><span class="k">H</span><span class="k">hide</span></div>
       <div class="keys"><span class="k">R</span><span class="k">reseed</span><span class="k">E</span><span class="k">export</span></div>
       <div class="keys"><span class="k">⌫</span><span class="k">del</span><span class="k">/</span><span class="k">search</span></div>
+      <div class="keys"><span class="k">A</span><span class="k">atlas</span><span class="k">+</span><span class="k">add</span></div>
     </div>
   </div>
   <button class="hbtn" id="layoutBtn" title="Reset layout"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="8" height="16" rx="1.5"/><rect x="20" y="4" width="1" height="16" rx=".5"/></svg></button>
@@ -368,6 +387,15 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
   <div id="insp"></div>
   <div id="cmd"><span class="p">grow ›</span><input id="cmdIn" placeholder="grow daisy · seed aspen-12 · export obj · help" spellcheck="false" autocomplete="off"></div>
 </aside>
+
+<!-- ═══════════════ TEXTURE ATLAS ═══════════════ -->
+<div id="atlas"><div class="atlas-card">
+  <div class="atlas-head"><h2>Texture atlas</h2><span class="m" id="atlasMeta"></span><span class="sp"></span>
+    <button class="hbtn" id="atlasX" title="close (Esc)">✕</button></div>
+  <img id="atlasImg" alt="procedural flora texture atlas">
+  <div id="atlasGrid"></div>
+  <div class="atlas-foot"><button class="abtn" id="atlasJSON">manifest .json</button><button class="abtn primary" id="atlasPNG">download .png</button></div>
+</div></div>
 
 <input type="file" id="file" accept=".json,application/json" hidden>
 
@@ -434,6 +462,17 @@ const IC={
   target:I('<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'),
   leaf:I('<path d="M5 19C5 9 12 4 20 4c0 8-5 15-15 15zM5 19c3-5 7-9 11-11"/>'),
   box:I('<path d="M12 3 4 7.5v9L12 21l8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9"/>'),
+  pampas:I('<path d="M12 21v-8M12 13c-3-1-4-4-4-7 3 0 4 3 4 7zM12 13c3-1 4-4 4-7-3 0-4 3-4 7zM12 13V6M8 21c0-4 1-7 4-9M16 21c0-4-1-7-4-9"/>'),
+  bamboo:I('<path d="M9 21V4M15 21V4M9 8h6M9 13h6M9 18h6M15 6c2-1 3-1 5 0M9 10c-2-1-3-1-5 0"/>'),
+  fescue:I('<path d="M7 21v-7M10 21V9M12.5 21V8M15 21V9M18 21v-7M12.5 8c0-2 1-3 3-4"/>'),
+  feather:I('<path d="M12 21V9M12 9c-2-2-2-4 0-6 2 2 2 4 0 6zM10 12 7 9M14 12l3-3M10 15l-3-1M14 15l3-1"/>'),
+  rose:I('<circle cx="12" cy="9" r="4"/><path d="M12 5c-1 1-1 3 0 4 1-1 1-3 0-4zM12 13v8M12 17c-2 0-3-1-4-3M12 17c2 0 3-1 4-3M9 21l1-2M15 21l-1-2"/>'),
+  holly:I('<path d="M12 4c2 2 2 5 0 8-2-3-2-6 0-8zM6 9c3 0 5 2 5 5-3 0-5-2-5-5zM18 9c-3 0-5 2-5 5 3 0 5-2 5-5z"/><circle cx="10" cy="18" r="1.5"/><circle cx="14" cy="18" r="1.5"/>'),
+  juniper:I('<path d="M12 3 7 18h10z"/><circle cx="10" cy="12" r="1" fill="currentColor"/><circle cx="14" cy="14" r="1" fill="currentColor"/><circle cx="12" cy="9" r="1" fill="currentColor"/>'),
+  fern:I('<path d="M12 21V7M12 10l-4-2M12 10l4-2M12 13l-4-2M12 13l4-2M12 16l-4-2M12 16l4-2M12 19l-3-2M12 19l3-2"/>'),
+  treefern:I('<path d="M12 21V10M12 10C8 10 5 8 4 5c4 0 7 2 8 5zM12 10c4 0 7-2 8-5-4 0-7 2-8 5zM9 21h6"/>'),
+  moss:I('<path d="M4 20c0-3 2-5 4-5 1-2 3-3 5-3 3 0 6 3 7 8z"/><path d="M9 12V8M14 11V7M17 13V9"/><circle cx="9" cy="7" r="1" fill="currentColor"/><circle cx="14" cy="6" r="1" fill="currentColor"/>'),
+  plus:I('<path d="M12 5v14M5 12h14"/>'),
   spark:I('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>'),
   all:I('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'),
 };
@@ -444,6 +483,7 @@ const CATS=[
   {id:'shrub', label:'Shrubs',   acc:'#4da3ff'},
   {id:'flower',label:'Flowers',  acc:'#b48cff'},
   {id:'weed',  label:'Weeds',    acc:'#ffb454'},
+  {id:'fern',  label:'Ferns',    acc:'#a3e635'},
 ];
 const catOf=id=>CATS.find(c=>c.id===id);
 
@@ -475,6 +515,17 @@ function strip(o){
   g.setIndex(idx);
   return g;
 }
+function conePart(r,h,rs){
+  const pos=[],idx=[];
+  for(let i=0;i<rs;i++){const t=i/rs*Math.PI*2;pos.push(Math.sin(t)*r,0,Math.cos(t)*r);}
+  const apex=rs,center=rs+1;
+  pos.push(0,h,0, 0,0,0);
+  for(let i=0;i<rs;i++){const n=(i+1)%rs;idx.push(i,n,apex, center,n,i);}
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  g.setIndex(idx);
+  return g;
+}
 function tiltDir(tilt,ry){return [Math.sin(tilt)*Math.sin(ry),Math.cos(tilt),Math.sin(tilt)*Math.cos(ry)];}
 function tiltPoint(y,zb,tilt,ry,pos){
   const ct=Math.cos(tilt),st=Math.sin(tilt);
@@ -497,8 +548,22 @@ function fibDirs(n,rnd,jit=0.05){
   return out;
 }
 function randDir(R){const u=R(0,1)*2-1,th=R(0,6.2832),s=Math.sqrt(Math.max(0,1-u*u));return [s*Math.cos(th),u,s*Math.sin(th)];}
+function weldIndexed(g){
+  if(g.index)return g;
+  const p=g.attributes.position,map=new Map(),pos=[],idx=[];
+  for(let i=0;i<p.count;i++){
+    const k=p.getX(i).toFixed(4)+','+p.getY(i).toFixed(4)+','+p.getZ(i).toFixed(4);
+    let id=map.get(k);
+    if(id===undefined){id=pos.length/3;map.set(k,id);pos.push(p.getX(i),p.getY(i),p.getZ(i));}
+    idx.push(id);
+  }
+  const ng=new THREE.BufferGeometry();
+  ng.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  ng.setIndex(idx);
+  return ng;
+}
 function paint(g,c0,c1,jit,rnd){
-  let ng=g.index?g.toNonIndexed():g;
+  let ng=g.index?g:weldIndexed(g);
   if(ng!==g)g.dispose();
   ng.computeVertexNormals();
   const p=ng.attributes.position,n=p.count;
@@ -525,26 +590,26 @@ class Bag{
   add(g,c0,c1,jit){this.parts.push(paint(g,c0,c1,jit,this.rnd));this.count++;return g;}
   raw(g,o){this.put(g,o);this.add(g,o.c0,o.c1??o.c0,o.jit);}
   blade(o){
-    const g=strip({len:o.len,w0:o.w,w1:0.004,segs:o.segs??4,bend:o.bend??0.6,droop:o.droop||0,twist:o.twist??((this.rnd()*2-1)*0.5),fold:o.fold??.5});
+    const g=strip({len:o.len,w0:o.w,w1:0.004,segs:o.segs??6,bend:o.bend??0.6,droop:o.droop||0,twist:o.twist??((this.rnd()*2-1)*0.5),fold:o.fold??.5});
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit);
   }
   leaf(o){
-    const g=strip({len:o.len,w0:o.w,w1:o.w,segs:o.segs??3,prof:o.prof||PROF_LEAF,bend:o.bend??0.4,droop:o.droop||0,twist:o.twist??((this.rnd()*2-1)*0.4),fold:o.fold??.5,cup:o.cup||0});
+    const g=strip({len:o.len,w0:o.w,w1:o.w,segs:o.segs??4,prof:o.prof||PROF_LEAF,bend:o.bend??0.4,droop:o.droop||0,twist:o.twist??((this.rnd()*2-1)*0.4),fold:o.fold??.5,cup:o.cup||0});
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit);
   }
   petal(o){
-    const g=strip({len:o.len,w0:o.w,w1:o.w*0.9,segs:3,prof:PROF_LEAF,bend:o.bend??0.3,droop:o.droop||0,twist:0,fold:0.15,cup:o.cup??.6});
+    const g=strip({len:o.len,w0:o.w,w1:o.w*0.9,segs:4,prof:PROF_LEAF,bend:o.bend??0.3,droop:o.droop||0,twist:0,fold:0.15,cup:o.cup??.6});
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit);
   }
   stem(o){
-    const g=new THREE.CylinderGeometry(o.r1??0.012,o.r0??0.02,o.len,o.rad??6,o.segs??3);
+    const g=new THREE.CylinderGeometry(o.r1??0.012,o.r0??0.02,o.len,o.rad??8,o.segs??4);
     g.translate(0,o.len/2,0);
     const p=g.attributes.position;
     for(let i=0;i<p.count;i++){const t=p.getY(i)/o.len;p.setZ(i,p.getZ(i)+(o.bend||0)*o.len*t*t);}
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit);
   }
   spike(o){
-    const g=new THREE.ConeGeometry(o.r,o.h,o.rs||6);g.translate(0,o.h/2,0);
+    const g=conePart(o.r,o.h,o.rs||8);
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit);
   }
   ball(o){
@@ -567,14 +632,30 @@ class Bag{
     this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit);
   }
   merge(){
-    let total=0;for(const g of this.parts)total+=g.attributes.position.count;
-    const pos=new Float32Array(total*3),nor=new Float32Array(total*3),col=new Float32Array(total*3);
-    let o=0;
-    for(const g of this.parts){pos.set(g.attributes.position.array,o*3);nor.set(g.attributes.normal.array,o*3);col.set(g.attributes.color.array,o*3);o+=g.attributes.position.count;g.dispose();}
+    let vc=0,ic=0;
+    for(const g of this.parts){vc+=g.attributes.position.count;ic+=g.index.count;}
+    const pos=new Float32Array(vc*3),nor=new Float32Array(vc*3),col=new Float32Array(vc*3);
+    const idx=new (vc>65535?Uint32Array:Uint16Array)(ic);
+    let vo=0,io=0;
+    for(const g of this.parts){
+      const pa=g.attributes.position.array;
+      pos.set(pa,vo*3);nor.set(g.attributes.normal.array,vo*3);col.set(g.attributes.color.array,vo*3);
+      const gi=g.index.array;
+      for(let t=0;t<gi.length;t+=3){
+        const a=gi[t]*3,b=gi[t+1]*3,c=gi[t+2]*3;
+        const ux=pa[b]-pa[a],uy=pa[b+1]-pa[a+1],uz=pa[b+2]-pa[a+2];
+        const vx=pa[c]-pa[a],vy=pa[c+1]-pa[a+1],vz=pa[c+2]-pa[a+2];
+        const cx=uy*vz-uz*vy,cy=uz*vx-ux*vz,cz=ux*vy-uy*vx;
+        if(cx*cx+cy*cy+cz*cz<1e-16)continue;
+        idx[io++]=gi[t]+vo;idx[io++]=gi[t+1]+vo;idx[io++]=gi[t+2]+vo;
+      }
+      vo+=g.attributes.position.count;g.dispose();
+    }
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
     geo.setAttribute('normal',new THREE.BufferAttribute(nor,3));
     geo.setAttribute('color',new THREE.BufferAttribute(col,3));
+    geo.setIndex(new THREE.BufferAttribute(idx.slice(0,io),1));
     this.parts.length=0;return geo;
   }
 }
@@ -593,13 +674,13 @@ const PLANTS=[
 {id:'meadow',cat:'grass',name:'Meadow Tuft',latin:'Poa pratensis',icon:'tuft',desc:'Arching blades from a tight crown, with a few seed stalks.',
  params:[...COMMON],colors:[CC('foliage','Foliage','#5a8f3c'),CC('accent','Seed heads','#c9b458'),CC('stem','Stems','#4a7030')],
  build(B,P,R){
-  const n=Math.round(30*P.density);
+  const n=Math.round(44*P.density);
   for(let i=0;i<n;i++){
     const a=i*2.39996+R(-0.35,0.35);
     B.blade({len:R(0.45,0.85)*P.height,w:R(0.024,0.042),bend:R(0.4,1.0)*P.bend,tilt:R(0.1,0.55),ry:a,
       pos:[R(-0.05,0.05)*P.spread,0,R(-0.05,0.05)*P.spread],c0:shade(P.foliage,-0.10),c1:P.foliage,jit:P.variation});
   }
-  const m=Math.round(5*P.density);
+  const m=Math.round(7*P.density);
   for(let i=0;i<m;i++){
     const ry=R(0,6.28),tilt=R(0.05,0.3),len=R(0.8,1.15)*P.height,bend=0.25*P.bend;
     B.stem({len,r0:0.008,r1:0.005,bend,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation});
@@ -609,13 +690,13 @@ const PLANTS=[
 {id:'reed',cat:'grass',name:'Common Reed',latin:'Phragmites australis',icon:'reed',desc:'Tall straight culms with drooping leaves and fluffy plumes.',
  params:[...COMMON],colors:[CC('foliage','Foliage','#6a9a4a'),CC('accent','Plumes','#cbb37a'),CC('stem','Culms','#557733')],
  build(B,P,R){
-  const n=Math.max(3,Math.round(9*P.density));
+  const n=Math.max(3,Math.round(11*P.density));
   for(let i=0;i<n;i++){
     const a=R(0,6.28),rr=Math.sqrt(R(0,1))*0.28*P.spread,pos=[Math.cos(a)*rr,0,Math.sin(a)*rr];
     const ry=R(0,6.28),tilt=R(0.02,0.18),len=R(1.1,1.6)*P.height,bend=R(0.1,0.35)*P.bend;
     B.stem({len,r0:0.02,r1:0.008,bend,tilt,ry,pos,c0:shade(P.foliage,-0.12),c1:P.foliage,jit:P.variation});
-    for(let j=0;j<3;j++){
-      const t=0.25+0.2*j;
+    for(let j=0;j<4;j++){
+      const t=0.2+0.2*j;
       B.leaf({len:R(0.3,0.5)*P.height,w:R(0.03,0.05),bend:R(0.5,1.0)*P.bend,droop:R(0.2,0.6)*P.bend,tilt:R(0.6,1.1),ry:R(0,6.28),
         pos:tiltPoint(len*t,bend*len*t*t,tilt,ry,pos),c0:shade(P.foliage,-0.08),c1:P.foliage,jit:P.variation});
     }
@@ -626,7 +707,7 @@ const PLANTS=[
 {id:'tussock',cat:'grass',name:'Tussock',latin:'Festuca ovina',icon:'tussock',desc:'Dense fountain of fine blades that arch over and straw at the tips.',
  params:[...COMMON],colors:[CC('foliage','Foliage','#7a9a4a'),CC('accent','Straw tips','#c2a95e'),CC('stem','Base','#5a7038')],
  build(B,P,R){
-  const n=Math.round(46*P.density);
+  const n=Math.round(64*P.density);
   for(let i=0;i<n;i++){
     const a=i*2.39996+R(-0.3,0.3);
     B.blade({len:R(0.6,1.0)*P.height,w:R(0.018,0.032),bend:R(0.5,1.0)*P.bend,droop:R(0.4,0.9)*P.bend,tilt:R(0.05,0.35),ry:a,
@@ -637,13 +718,13 @@ const PLANTS=[
 {id:'lawn',cat:'grass',name:'Creeping Lawn',latin:'Cynodon dactylon',icon:'lawn',desc:'Short turf over a wide patch, stitched together with runners.',
  params:[...COMMON],colors:[CC('foliage','Foliage','#4f9a3f'),CC('accent','Fresh tips','#6fbf5a'),CC('stem','Runners','#3f7a32')],
  build(B,P,R){
-  const rad=1.1*P.spread,n=Math.round(110*P.density);
+  const rad=1.1*P.spread,n=Math.round(150*P.density);
   for(let i=0;i<n;i++){
     const a=R(0,6.28),rr=Math.sqrt(R(0,1))*rad;
     B.blade({len:R(0.1,0.28)*P.height,w:0.02,segs:3,bend:R(0.2,0.7)*P.bend,tilt:R(0,0.4),ry:R(0,6.28),
       pos:[Math.cos(a)*rr,0,Math.sin(a)*rr],c0:shade(P.foliage,-0.08),c1:(R()<0.3?P.accent:P.foliage),jit:P.variation});
   }
-  const m=Math.round(6*P.density);
+  const m=Math.round(8*P.density);
   for(let i=0;i<m;i++){
     const ry=R(0,6.28),len=R(0.3,0.6)*P.spread;
     B.stem({len,r0:0.006,r1:0.004,bend:0.1,tilt:1.45,ry,pos:[0,0.02,0],c0:P.stem,c1:P.stem,jit:P.variation,rad:5,segs:2});
@@ -665,7 +746,7 @@ const PLANTS=[
     const c=[Math.cos(th)*Math.cos(ph)*0.35*P.spread,0.55*P.height+Math.sin(ph)*0.28*P.height,Math.sin(th)*Math.cos(ph)*0.35*P.spread];
     const r=R(0.28,0.42)*P.spread;
     B.blob({r,pos:c,s:[1,R(0.7,0.9),1],jit:0.16,c0:shade(P.foliage,-0.08),c1:P.foliage,jitC:P.variation});
-    const nl=Math.round(14*P.density);
+    const nl=Math.round(20*P.density);
     for(let j=0;j<nl;j++){
       const d=randDir(R);
       B.leaf({len:R(0.09,0.15),w:0.05,segs:2,bend:0.3,prof:PROF_WIDE,q:dirQuat(d,R(0,6.28)),
@@ -681,7 +762,7 @@ const PLANTS=[
     const t=L/3,y=(0.35+t*0.75)*P.height,r=(0.5-t*0.36)*P.spread;
     const c=[R(-0.03,0.03),y,R(-0.03,0.03)];
     B.blob({r,pos:c,s:[1,0.75,1],jit:0.14,c0:shade(P.foliage,-0.08),c1:P.foliage,jitC:P.variation});
-    const nl=Math.round(12*P.density);
+    const nl=Math.round(18*P.density);
     for(let j=0;j<nl;j++){
       const a=j*2.39996+R(-0.4,0.4),d0=[Math.cos(a),R(0.1,0.6),Math.sin(a)],l=Math.hypot(...d0),d=[d0[0]/l,d0[1]/l,d0[2]/l];
       B.leaf({len:R(0.08,0.13),w:0.045,segs:2,bend:0.3,prof:PROF_WIDE,q:dirQuat(d,R(0,6.28)),
@@ -699,7 +780,7 @@ const PLANTS=[
       const c=[xx*P.spread+R(-0.04,0.04),(ry0*P.height)+R(-0.03,0.05),R(-0.12,0.12)*P.spread];
       const r=R(0.3,0.38)*P.spread;
       B.blob({r,pos:c,s:[1.15,0.7,0.9],jit:0.14,c0:shade(P.foliage,-0.08),c1:P.foliage,jitC:P.variation});
-      const nl=Math.round(10*P.density);
+      const nl=Math.round(16*P.density);
       for(let j=0;j<nl;j++){
         const d=randDir(R);
         B.leaf({len:R(0.07,0.11),w:0.04,segs:2,bend:0.3,prof:PROF_WIDE,q:dirQuat(d,R(0,6.28)),
@@ -727,7 +808,7 @@ const PLANTS=[
       const t=0.25+0.18*j,p=tiltPoint(L.len*t,L.bend*L.len*t*t,L.tilt,L.ry,L.pos);
       const od=tiltDir(Math.min(1.5,L.tilt+1.1),L.ry+R(0,6.28));
       B.spike({r:0.012,h:R(0.04,0.07),pos:p,q:dirQuat(od,0),c0:P.accent,c1:P.accent,jit:P.variation});
-      if(R()<0.35)B.leaf({len:R(0.06,0.1),w:0.035,segs:2,bend:0.4,tilt:R(0.3,0.9),ry:R(0,6.28),pos:p,c0:P.foliage,c1:P.foliage,jit:P.variation});
+      if(R()<0.5)B.leaf({len:R(0.06,0.1),w:0.035,segs:2,bend:0.4,tilt:R(0.3,0.9),ry:R(0,6.28),pos:p,c0:P.foliage,c1:P.foliage,jit:P.variation});
     }
   }
 }},
@@ -736,7 +817,7 @@ const PLANTS=[
  params:[...COMMON,{k:'petals',label:'Petals',min:6,max:20,step:1,def:12}],
  colors:[CC('foliage','Leaves','#4a8a3f'),CC('accent','Petals','#f2f2ea'),CC('extra','Disc','#e8b93a'),CC('stem','Stems','#4a7030')],
  build(B,P,R){
-  const ns=1+Math.round(3*P.density);
+  const ns=1+Math.round(4*P.density);
   for(let i=0;i<ns;i++){
     const a=(i/ns)*6.28+R(-0.3,0.3),pos=[Math.cos(a)*0.06*P.spread,0,Math.sin(a)*0.06*P.spread];
     const ry=R(0,6.28),tilt=R(0,0.25),len=R(0.4,0.6)*P.height,bend=0.2*P.bend;
@@ -773,7 +854,7 @@ const PLANTS=[
 {id:'lavender',cat:'flower',name:'Lavender',latin:'Lavandula angustifolia',icon:'lavender',desc:'Fragrant spikes of tiny buds over narrow grey-green leaves.',
  params:[...COMMON],colors:[CC('foliage','Leaves','#5a7a4a'),CC('accent','Buds','#8a6fc9'),CC('stem','Stems','#5a6a45')],
  build(B,P,R){
-  const ns=Math.round(8*P.density);
+  const ns=Math.round(10*P.density);
   for(let i=0;i<ns;i++){
     const a=(i/ns)*6.28+R(-0.3,0.3),pos=[Math.cos(a)*0.09*P.spread,0,Math.sin(a)*0.09*P.spread];
     const ry=R(0,6.28),tilt=R(0.02,0.2),len=R(0.45,0.65)*P.height,bend=0.12*P.bend;
@@ -816,7 +897,7 @@ const PLANTS=[
 {id:'clover',cat:'weed',name:'White Clover',latin:'Trifolium repens',icon:'clover',desc:'Creeping runners rooting as they go, dotted with trefoils.',
  params:[...COMMON],colors:[CC('foliage','Leaflets','#3f9a45'),CC('accent','Flowers','#eef2e8'),CC('stem','Runners','#3f7a35')],
  build(B,P,R){
-  const nr=Math.round(10*P.density);
+  const nr=Math.round(12*P.density);
   for(let i=0;i<nr;i++){
     const ry=(i/nr)*6.28+R(-0.3,0.3),len=R(0.3,0.6)*P.spread;
     B.stem({len,r0:0.006,r1:0.004,bend:0.2,tilt:1.5,ry,pos:[0,0.015,0],c0:P.stem,c1:P.stem,jit:P.variation,rad:5,segs:2});
@@ -842,7 +923,7 @@ const PLANTS=[
   B.stem({len,r0:0.012,r1:0.009,bend:0.1*P.bend,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation,rad:6});
   const tip=tiltPoint(len,0.1*P.bend*len,tilt,ry,null),cr=0.16*P.spread;
   B.ball({r:0.02,pos:tip,c0:P.stem,c1:P.stem,jit:0});
-  const N=Math.round(110*P.density),dirs=fibDirs(N,()=>R(0,1),0.04);
+  const N=Math.round(140*P.density),dirs=fibDirs(N,()=>R(0,1),0.04);
   for(const d of dirs){
     B.stem({len:cr,r0:0.0022,r1:0.0015,bend:0,q:dirQuat(d,0),pos:tip,c0:shade(P.accent,-0.05),c1:P.accent,jit:0,rad:4,segs:1});
     B.ball({r:0.008,pos:[tip[0]+d[0]*cr,tip[1]+d[1]*cr,tip[2]+d[2]*cr],c0:P.accent,c1:P.accent,jit:P.variation});
@@ -899,6 +980,206 @@ const PLANTS=[
     }
   }
 }},
+/* ── more grasses ── */
+{id:'pampas',cat:'grass',name:'Pampas Grass',latin:'Cortaderia selloana',icon:'pampas',desc:'Towering fountain grass crowned with silky cream plumes.',
+ params:[...COMMON],colors:[CC('foliage','Foliage','#6a8a4a'),CC('accent','Plumes','#e8dcc0'),CC('stem','Stems','#7a8a55')],
+ build(B,P,R){
+  const n=Math.round(52*P.density);
+  for(let i=0;i<n;i++){
+    const a=i*2.39996+R(-0.3,0.3);
+    B.blade({len:R(0.9,1.4)*P.height,w:R(0.02,0.034),bend:R(0.5,1.0)*P.bend,droop:R(0.4,0.9)*P.bend,tilt:R(0.05,0.35),ry:a,
+      pos:[R(-0.08,0.08)*P.spread,0,R(-0.08,0.08)*P.spread],c0:shade(P.foliage,-0.12),c1:P.foliage,jit:P.variation});
+  }
+  const m=Math.round(7*P.density);
+  for(let i=0;i<m;i++){
+    const ry=R(0,6.28),tilt=R(0.03,0.2),len=R(1.6,2.2)*P.height,bend=0.15*P.bend;
+    B.stem({len,r0:0.014,r1:0.007,bend,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation});
+    const tip=tiltPoint(len,bend*len,tilt,ry,null),d=tiltDir(tilt,ry),q=dirQuat(d,0);
+    B.spike({r:0.07,h:0.34,rs:8,pos:[tip[0]-d[0]*0.1,tip[1]-d[1]*0.1,tip[2]-d[2]*0.1],q,c0:shade(P.accent,-0.1),c1:P.accent,jit:P.variation});
+    B.spike({r:0.05,h:0.28,rs:8,pos:[tip[0]+d[0]*0.08,tip[1]+d[1]*0.08,tip[2]+d[2]*0.08],q,c0:shade(P.accent,-0.05),c1:shade(P.accent,0.05),jit:P.variation});
+    for(let k=0;k<4;k++)
+      B.spike({r:0.006,h:R(0.15,0.25),rs:4,tilt:R(0.2,0.5),ry:R(0,6.28),pos:tip,c0:P.accent,c1:P.accent,jit:P.variation});
+  }
+}},
+{id:'bamboo',cat:'grass',name:'Bamboo',latin:'Bambusa vulgaris',icon:'bamboo',desc:'Jointed green-gold culms with drooping lance leaves.',
+ params:[...COMMON],colors:[CC('foliage','Leaves','#3f8a45'),CC('accent','Node bands','#c9b458'),CC('stem','Culms','#7aa04c')],
+ build(B,P,R){
+  const n=Math.max(3,Math.round(6*P.density));
+  for(let i=0;i<n;i++){
+    const a=(i/n)*6.28+R(-0.3,0.3);
+    let base=[Math.cos(a)*0.22*P.spread,0,Math.sin(a)*0.22*P.spread];
+    let ryy=R(0,6.28),tt=R(0.02,0.14);
+    const segs=4+Math.floor(R(0,3)),sl=R(0.4,0.55)*P.height;
+    for(let sgm=0;sgm<segs;sgm++){
+      const bend=0.06*P.bend;
+      B.stem({len:sl,r0:0.032,r1:0.028,bend,tilt:tt,ry:ryy,pos:base,c0:shade(P.stem,-0.06),c1:P.stem,jit:P.variation,rad:8});
+      const top=tiltPoint(sl,bend*sl,tt,ryy,base);
+      B.disc({r:0.036,h:0.025,pos:[top[0],top[1]-0.02,top[2]],c0:P.accent,c1:P.accent,jit:P.variation,rs:8});
+      if(sgm>=segs-2)for(let k=0;k<3;k++)
+        B.leaf({len:R(0.3,0.45)*P.height,w:0.05,bend:0.7*P.bend,droop:0.4*P.bend,tilt:R(0.5,0.9),ry:R(0,6.28),pos:top,c0:shade(P.foliage,-0.08),c1:P.foliage,jit:P.variation});
+      base=top;tt=Math.min(0.5,tt+R(0,0.06));ryy+=R(-0.2,0.2);
+    }
+  }
+}},
+{id:'fescue',cat:'grass',name:'Blue Fescue',latin:'Festuca glauca',icon:'fescue',desc:'Compact steel-blue tuft of needle-fine upright blades.',
+ params:[...COMMON],colors:[CC('foliage','Foliage','#7a9ab0'),CC('accent','Tips','#a8c4d4'),CC('stem','Base','#5a7a8a')],
+ build(B,P,R){
+  const n=Math.round(60*P.density);
+  for(let i=0;i<n;i++){
+    const a=i*2.39996+R(-0.3,0.3);
+    B.blade({len:R(0.25,0.45)*P.height,w:0.015,bend:R(0.2,0.5)*P.bend,tilt:R(0.02,0.3),ry:a,
+      pos:[R(-0.07,0.07)*P.spread,0,R(-0.07,0.07)*P.spread],c0:shade(P.foliage,-0.08),c1:(R()<0.4?P.accent:P.foliage),jit:P.variation});
+  }
+}},
+{id:'feather',cat:'grass',name:'Feather Grass',latin:'Stipa pennata',icon:'feather',desc:'Silky awns that shimmer above a low tuft of fine leaves.',
+ params:[...COMMON],colors:[CC('foliage','Foliage','#8a9a55'),CC('accent','Awns','#e4d8b8'),CC('stem','Stems','#7a8a4a')],
+ build(B,P,R){
+  const n=Math.round(36*P.density);
+  for(let i=0;i<n;i++){
+    const a=i*2.39996+R(-0.3,0.3);
+    B.blade({len:R(0.3,0.5)*P.height,w:0.018,bend:R(0.4,0.8)*P.bend,tilt:R(0.1,0.45),ry:a,
+      pos:[R(-0.06,0.06)*P.spread,0,R(-0.06,0.06)*P.spread],c0:shade(P.foliage,-0.1),c1:P.foliage,jit:P.variation});
+  }
+  const m=Math.round(10*P.density);
+  for(let i=0;i<m;i++){
+    const ry=R(0,6.28),tilt=R(0.05,0.3),len=R(0.7,1.0)*P.height,bend=0.2*P.bend;
+    B.stem({len,r0:0.006,r1:0.003,bend,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation,rad:5});
+    const tip=tiltPoint(len,bend*len,tilt,ry,null),d=tiltDir(tilt,ry);
+    B.spike({r:0.008,h:0.3,rs:5,pos:tip,q:dirQuat(d,0),c0:P.accent,c1:P.accent,jit:P.variation});
+    for(let k=0;k<10;k++){
+      const t=R(0.2,1),pp=[tip[0]+d[0]*0.3*t,tip[1]+d[1]*0.3*t,tip[2]+d[2]*0.3*t];
+      B.spike({r:0.0025,h:R(0.08,0.14),rs:4,pos:pp,q:dirQuat(tiltDir(R(0.6,1.2),R(0,6.28)),0),c0:shade(P.accent,-0.05),c1:P.accent,jit:0});
+    }
+  }
+}},
+/* ── more shrubs ── */
+{id:'rose',cat:'shrub',name:'Rose Bush',latin:'Rosa damascena',icon:'rose',desc:'Thorny canes, glossy leaflets and layered fragrant blooms.',
+ params:[...COMMON,{k:'blooms',label:'Blooms',min:2,max:8,step:1,def:4}],
+ colors:[CC('foliage','Leaflets','#2f7a35'),CC('accent','Petals','#d84a6a'),CC('extra','Heart','#e8a83a'),CC('stem','Canes','#5a4a35')],
+ build(B,P,R){
+  const canes=[];
+  for(let i=0;i<5;i++){
+    const ry=(i/5)*6.28+R(-0.3,0.3),tilt=R(0.15,0.45),len=R(0.5,0.8)*P.height,bend=R(0.1,0.3)*P.bend;
+    canes.push({ry,tilt,len,bend});
+    B.stem({len,r0:0.02,r1:0.01,bend,tilt,ry,c0:shade(P.stem,-0.06),c1:P.stem,jit:P.variation,rad:6});
+    for(let j=0;j<4;j++){
+      const t=0.3+0.17*j,p=tiltPoint(len*t,bend*len*t*t,tilt,ry,null);
+      B.spike({r:0.008,h:R(0.025,0.045),rs:5,pos:p,q:dirQuat(tiltDir(Math.min(1.5,tilt+1.2),ry+R(0,6.28)),0),c0:shade(P.stem,-0.1),c1:P.stem,jit:0});
+      for(let k=0;k<3;k++)
+        B.leaf({len:R(0.07,0.11),w:0.045,segs:2,prof:PROF_WIDE,bend:0.4,tilt:R(0.4,0.9),ry:R(0,6.28),pos:p,c0:P.foliage,c1:P.foliage,jit:P.variation});
+    }
+  }
+  for(let i=0;i<P.blooms;i++){
+    const c=canes[i%canes.length],t=R(0.75,1);
+    const tip=tiltPoint(c.len*t,c.bend*c.len*t*t,c.tilt,c.ry,null);
+    B.ball({r:0.025,pos:[tip[0],tip[1]+0.02,tip[2]],c0:P.extra,c1:P.extra,jit:0});
+    for(let k=0;k<5;k++)
+      B.petal({len:0.07,w:0.055,bend:0.5,cup:0.7,tilt:0.9+R(-0.1,0.1),ry:(k/5)*6.28+R(0,0.5),pos:tip,c0:shade(P.accent,-0.12),c1:P.accent,jit:P.variation});
+    for(let k=0;k<5;k++)
+      B.petal({len:0.055,w:0.045,bend:0.3,cup:0.8,tilt:0.45+R(-0.1,0.1),ry:(k/5)*6.28+0.6+R(0,0.5),pos:[tip[0],tip[1]+0.015,tip[2]],c0:shade(P.accent,-0.05),c1:shade(P.accent,0.08),jit:P.variation});
+  }
+}},
+{id:'holly',cat:'shrub',name:'Holly Bush',latin:'Ilex aquifolium',icon:'holly',desc:'Glossy spiked leaves made for berries — clusters of winter red.',
+ params:[...COMMON],colors:[CC('foliage','Leaves','#1f5a2a'),CC('accent','Berries','#d42a2a'),CC('stem','Wood','#4a3a2a')],
+ build(B,P,R){
+  B.stem({len:0.25*P.height,r0:0.045,r1:0.035,bend:0.05,c0:P.stem,c1:P.stem,jit:P.variation});
+  for(let i=0;i<5;i++){
+    const th=R(0,6.28),ph=R(-0.4,1.1);
+    const c=[Math.cos(th)*Math.cos(ph)*0.32*P.spread,0.5*P.height+Math.sin(ph)*0.25*P.height,Math.sin(th)*Math.cos(ph)*0.32*P.spread];
+    const r=R(0.26,0.36)*P.spread;
+    B.blob({r,pos:c,s:[1,0.8,1],jit:0.16,c0:shade(P.foliage,-0.1),c1:P.foliage,jitC:P.variation});
+    const nl=Math.round(12*P.density);
+    for(let j=0;j<nl;j++){
+      const d=randDir(R),lp=[c[0]+d[0]*r*0.95,c[1]+d[1]*r*0.75,c[2]+d[2]*r*0.95];
+      B.leaf({len:0.12,w:0.06,prof:PROF_WIDE,bend:0.25,q:dirQuat(d,R(0,6.28)),pos:lp,c0:P.foliage,c1:shade(P.foliage,0.1),jit:P.variation});
+      for(let k=0;k<3;k++){
+        const tt=0.3+0.25*k;
+        for(const s of [-1,1]){
+          const pp=[lp[0]+d[0]*0.12*tt+s*0.03,lp[1]+d[1]*0.12*tt,lp[2]+d[2]*0.12*tt];
+          B.spike({r:0.008,h:0.035,rs:4,pos:pp,q:dirQuat([d[0]+s*0.8,d[1]+0.2,d[2]],0),c0:shade(P.foliage,-0.06),c1:P.foliage,jit:0});
+        }
+      }
+      if(R()<0.4){
+        const bp=[c[0]+d[0]*r*0.9,c[1]+d[1]*r*0.7,c[2]+d[2]*r*0.9];
+        for(let k=0;k<3;k++)B.ball({r:0.02,pos:[bp[0]+R(-0.03,0.03),bp[1]+R(-0.02,0.02),bp[2]+R(-0.03,0.03)],c0:shade(P.accent,-0.08),c1:P.accent,jit:P.variation});
+      }
+    }
+  }
+}},
+{id:'juniper',cat:'shrub',name:'Juniper',latin:'Juniperus communis',icon:'juniper',desc:'Blue-green needles packed on a windswept cone, dotted with berries.',
+ params:[...COMMON],colors:[CC('foliage','Needles','#4a7a6a'),CC('accent','Berries','#2a3a5a'),CC('stem','Wood','#4a3a2a')],
+ build(B,P,R){
+  B.stem({len:0.15,r0:0.045,r1:0.04,bend:0.02,c0:P.stem,c1:P.stem,jit:P.variation});
+  for(let L=0;L<3;L++){
+    const t=L/2,y=(0.3+t*0.55)*P.height,r=(0.45-t*0.3)*P.spread;
+    const c=[R(-0.02,0.02),y,R(-0.02,0.02)];
+    B.blob({r,pos:c,s:[1,0.8,1],jit:0.14,c0:shade(P.foliage,-0.1),c1:P.foliage,jitC:P.variation});
+    const nn=Math.round(40*P.density);
+    for(let j=0;j<nn;j++){
+      const d=randDir(R);
+      B.spike({r:0.006,h:R(0.04,0.07),rs:4,pos:[c[0]+d[0]*r*0.9,c[1]+d[1]*r*0.7,c[2]+d[2]*r*0.9],q:dirQuat(d,0),c0:P.foliage,c1:shade(P.foliage,0.12),jit:P.variation});
+    }
+    for(let k=0;k<5;k++){
+      const d=randDir(R);
+      B.ball({r:0.018,pos:[c[0]+d[0]*r*0.85,c[1]+d[1]*r*0.65,c[2]+d[2]*r*0.85],c0:shade(P.accent,-0.05),c1:P.accent,jit:P.variation});
+    }
+  }
+}},
+/* ── ferns ── */
+{id:'fern',cat:'fern',name:'Boston Fern',latin:'Nephrolepis exaltata',icon:'fern',desc:'Arching fronds of paired pinnae unfurling from a central crown.',
+ params:[...COMMON],colors:[CC('foliage','Pinnae','#3f8a3f'),CC('accent','New fronds','#7ac95a'),CC('stem','Rachis','#5a7a35')],
+ build(B,P,R){
+  const nf=Math.round(12*P.density);
+  for(let i=0;i<nf;i++){
+    const ry=(i/nf)*6.28+R(-0.25,0.25),tilt=R(0.35,0.7),len=R(0.5,0.8)*P.height,bd=0.7*P.bend;
+    B.stem({len,r0:0.008,r1:0.003,bend:bd,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation,rad:5});
+    for(let j=0;j<13;j++){
+      const t=0.12+0.8*(j/13);
+      const p=tiltPoint(len*t,bd*len*t*t,tilt,ry,null);
+      const pl=(0.09*(1-t*0.75)+0.02)*P.spread;
+      for(const s of [-1,1])
+        B.leaf({len:pl,w:pl*0.4,segs:2,bend:0.3,tilt:1.35,ry:ry+s*1.35+R(-0.15,0.15),pos:p,c0:(R()<0.25?P.accent:P.foliage),c1:P.foliage,jit:P.variation});
+    }
+    const tip=tiltPoint(len,bd*len,tilt,ry,null);
+    B.leaf({len:0.06,w:0.02,segs:2,bend:0.4,tilt:tilt+0.4,ry,pos:tip,c0:P.foliage,c1:P.foliage,jit:P.variation});
+  }
+}},
+{id:'treefern',cat:'fern',name:'Tree Fern',latin:'Cyathea dealbata',icon:'treefern',desc:'A fibrous trunk crowned with a parasol of giant fronds.',
+ params:[...COMMON],colors:[CC('foliage','Pinnae','#358a3f'),CC('accent','Silver backs','#9ab8a0'),CC('stem','Trunk','#5a4632')],
+ build(B,P,R){
+  const th=1.0*P.height;
+  B.stem({len:th,r0:0.09,r1:0.07,bend:0.05*P.bend,c0:shade(P.stem,-0.08),c1:P.stem,jit:P.variation,rad:9,segs:5});
+  for(let j=0;j<5;j++){const t=0.15+0.18*j;B.disc({r:0.095,h:0.03,pos:[0,th*t,0.05*P.bend*th*t*t],c0:shade(P.stem,-0.12),c1:P.stem,jit:0,rs:9});}
+  const top=[0,th,0.05*P.bend*th];
+  const nf=Math.round(9*P.density);
+  for(let i=0;i<nf;i++){
+    const ry=(i/nf)*6.28+R(-0.2,0.2),tilt=R(0.9,1.25),len=R(1.0,1.4)*P.height,bend=0.4*P.bend;
+    B.stem({len,r0:0.02,r1:0.005,bend,tilt,ry,pos:top,c0:P.stem,c1:shade(P.stem,0.1),jit:P.variation,rad:6});
+    for(let j=0;j<16;j++){
+      const t=0.1+0.82*(j/16);
+      const p=tiltPoint(len*t,bend*len*t*t,tilt,ry,top);
+      const pl=(0.16*(1-t*0.7)+0.04)*P.spread;
+      for(const s of [-1,1])
+        B.leaf({len:pl,w:pl*0.38,segs:2,bend:0.35,droop:0.3*P.bend,tilt:1.3,ry:ry+s*1.35+R(-0.15,0.15),pos:p,c0:(j%3===0?P.accent:P.foliage),c1:P.foliage,jit:P.variation});
+    }
+  }
+}},
+{id:'moss',cat:'fern',name:'Moss Cushion',latin:'Bryophyta',icon:'moss',desc:'Velvet mounds breathing with tiny sporophyte lanterns.',
+ params:[...COMMON],colors:[CC('foliage','Moss','#4aa84a'),CC('accent','Tips','#8ae08a'),CC('stem','Setae','#8a6a3a'),CC('extra','Capsules','#5a3a20')],
+ build(B,P,R){
+  const n=Math.round(10*P.density);
+  for(let i=0;i<n;i++){
+    const a=R(0,6.28),rr=Math.sqrt(R(0,1))*0.5*P.spread;
+    const cx=Math.cos(a)*rr,cz=Math.sin(a)*rr,r=R(0.12,0.2)*P.spread;
+    B.blob({r,pos:[cx,r*0.32,cz],s:[1,0.45,1],jit:0.2,c0:shade(P.foliage,-0.1),c1:P.accent,jitC:P.variation});
+    const ns=2+Math.floor(R(0,3));
+    for(let k=0;k<ns;k++){
+      const px=cx+R(-r,r)*0.6,pz=cz+R(-r,r)*0.6,sh=R(0.06,0.1)*P.height;
+      B.stem({len:sh,r0:0.003,r1:0.002,bend:0,tilt:R(0,0.2),ry:R(0,6.28),pos:[px,r*0.5,pz],c0:P.stem,c1:P.stem,jit:0,rad:4,segs:1});
+      B.ball({r:0.009,pos:[px,r*0.5+sh,pz],c0:P.extra,c1:P.extra,jit:0});
+    }
+  }
+}},
 ];
 const plantOf=id=>PLANTS.find(p=>p.id===id);
 const defaultsOf=def=>({params:Object.fromEntries(def.params.map(p=>[p.k,p.def])),colors:Object.fromEntries(def.colors.map(c=>[c.k,c.def]))});
@@ -908,7 +1189,7 @@ const G={
   specs:[], uidc:0, sel:null,
   mode:'nursery', shade:'flat',
   scene:{wind:true,shadows:true,ground:true,spacing:2.6},
-  filter:'all', q:'', groups:{grass:false,shrub:false,flower:false,weed:false},
+  filter:'all', q:'', groups:{grass:false,shrub:false,flower:false,weed:false,fern:false},
 };
 const specOf=uid=>G.specs.find(s=>s.uid===uid);
 const selSpec=()=>specOf(G.sel);
@@ -922,12 +1203,14 @@ try{
 }catch(e){errBar('⚠ WebGL unavailable: '+e.message);throw e;}
 renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
 renderer.setClearColor(0x000000,0);
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.15;
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
 scene.fog=new THREE.Fog(0x07080a,18,46);
 const camera=new THREE.PerspectiveCamera(42,1,0.1,200);
-const hemi=new THREE.HemisphereLight(0xbfd4ff,0x2a2620,0.85);scene.add(hemi);
+const hemi=new THREE.HemisphereLight(0xbfd4ff,0x2a2620,1.0);scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xfff2e0,2.4);
 sun.position.set(4,8,2);sun.castShadow=true;
 sun.shadow.mapSize.set(2048,2048);
@@ -935,7 +1218,7 @@ sun.shadow.camera.left=-12;sun.shadow.camera.right=12;sun.shadow.camera.top=12;s
 sun.shadow.camera.far=30;sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.02;
 scene.add(sun);
 const fill=new THREE.DirectionalLight(0x9db8ff,0.5);fill.position.set(-5,3,-4);scene.add(fill);
-const MAT_FLAT=new THREE.MeshStandardMaterial({vertexColors:true,flatShading:true,roughness:0.9,metalness:0,side:THREE.DoubleSide});
+const MAT_FLAT=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.85,metalness:0,side:THREE.DoubleSide});
 const MAT_WIRE=new THREE.MeshBasicMaterial({vertexColors:true,wireframe:true,transparent:true,opacity:0.85});
 const groundDisc=new THREE.Mesh(new THREE.CircleGeometry(20,48),new THREE.MeshStandardMaterial({color:0x0b0d0c,roughness:1}));
 groundDisc.rotation.x=-Math.PI/2;groundDisc.position.y=-0.01;groundDisc.receiveShadow=true;scene.add(groundDisc);
@@ -953,13 +1236,13 @@ function buildSpecimen(spec){
   def.build(B,{...spec.params,...spec.colors},R);
   const geo=B.merge();
   geo.computeBoundingBox();
-  if(spec.mesh){spec.mesh.geometry.dispose();scene.remove(spec.mesh);}
+  while(spec.group.children.length){const old=spec.group.children[0];spec.group.remove(old);if(old.geometry)old.geometry.dispose();}
   const mesh=new THREE.Mesh(geo,G.shade==='wire'?MAT_WIRE:MAT_FLAT);
   mesh.castShadow=spec.shadow;mesh.receiveShadow=true;
   mesh.userData.uid=spec.uid;
   spec.mesh=mesh;spec.group.add(mesh);
   const bb=geo.boundingBox,size=new THREE.Vector3();bb.getSize(size);
-  spec.height=size.y;spec.tris=Math.round(geo.attributes.position.count/3);spec.parts=B.count;
+  spec.height=size.y;spec.tris=Math.round(geo.index.count/3);spec.parts=B.count;
 }
 function makeSpecimen(type,seed,params,colors,name){
   const def=plantOf(type),d=defaultsOf(def);
@@ -1234,7 +1517,7 @@ function renderInspector(){
   }
   insp.appendChild(secP);
   /* colours */
-  const [secC,bodyC]=section('Colours','vertex · no textures yet');
+  const [secC,bodyC]=section('Colours','vertex colours + atlas');
   for(const c of def.colors){
     bodyC.appendChild(colorRow(c.label,s.colors[c.k],hex=>{s.colors[c.k]=hex;buildSpecimen(s);layout();}));
   }
@@ -1266,7 +1549,7 @@ function renderInspector(){
 function renderInspEmpty(insp){
   const tris=G.specs.reduce((a,s)=>a+s.tris,0);
   const hero=document.createElement('div');hero.className='hero';hero.style.setProperty('--acc','#4fd8e0');
-  hero.innerHTML=`<div class="c-top"><span class="ico">${IC.leaf}</span><span class="t"><span class="n">Nursery</span><span class="m">geometry only · textures later</span></span></div>
+  hero.innerHTML=`<div class="c-top"><span class="ico">${IC.leaf}</span><span class="t"><span class="n">Nursery</span><span class="m">HQ geometry · atlas ready</span></span></div>
     <div class="big"><span class="v">${G.specs.length}</span><span class="u">grown</span><span class="lab">click a plant<br>or a row</span></div>
     <div class="side"><div><span class="k">tris</span><span class="v2">${fmtK(tris)}</span></div><div><span class="k">types</span><span class="v2">${PLANTS.length}</span></div><div><span class="k">visible</span><span class="v2">${visibleSpecs().length}</span></div></div>`;
   insp.appendChild(hero);
@@ -1345,6 +1628,12 @@ function openCat(){
 }
 function closeCat(){cat.open=false;$('#cat').classList.remove('show');}
 $('#catBtn').addEventListener('click',()=>cat.open?closeCat():openCat());
+$('#addBtn').addEventListener('click',()=>quickGrow(PLANTS[Math.floor(Math.random()*PLANTS.length)].id));
+$('#atlasBtn').addEventListener('click',openAtlas);
+$('#atlasX').addEventListener('click',closeAtlas);
+$('#atlasPNG').addEventListener('click',downloadAtlasPNG);
+$('#atlasJSON').addEventListener('click',downloadAtlasJSON);
+$('#atlas').addEventListener('click',e=>{if(e.target.id==='atlas')closeAtlas();});
 function renderCatHead(){
   const n=cat.cat==='all'?PLANTS.length:PLANTS.filter(p=>p.cat===cat.cat).length;
   const lbl=cat.cat==='all'?'everything':catOf(cat.cat).label.toLowerCase();
@@ -1355,8 +1644,13 @@ function renderCatHead(){
 }
 function renderCatRail(){
   $('#catRail').innerHTML=CATS.map(c=>{const n=PLANTS.filter(p=>p.cat===c.id).length;
-    return `<div class="rail-item${cat.cat===c.id?' on':''}" data-c="${c.id}">${IC.leaf}<span>${c.label}</span><span class="n">${n}</span></div>`;}).join('')
+    return `<div class="rail-item${cat.cat===c.id?' on':''}" data-c="${c.id}">${IC.leaf}<span>${c.label}</span><span class="n">${n}</span><button class="radd" data-c="${c.id}" title="quick-grow random ${c.label.toLowerCase()}">+</button></div>`;}).join('')
     +`<div class="rail-item" data-c="all" style="margin-top:auto"><span>All</span><span class="n">${PLANTS.length}</span></div>`;
+  $$('#catRail .radd').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    const pool=PLANTS.filter(p=>p.cat===b.dataset.c);
+    if(pool.length)quickGrow(pool[Math.floor(Math.random()*pool.length)].id);
+  }));
   $$('#catRail .rail-item').forEach(r=>r.addEventListener('click',()=>{
     cat.cat=r.dataset.c==='all'?'all':r.dataset.c;
     $$('#catRail .rail-item').forEach(x=>x.classList.toggle('on',x===r));
@@ -1364,7 +1658,7 @@ function renderCatRail(){
   }));
   const on=$(`#catRail [data-c="${cat.cat}"]`);if(on)$$('#catRail .rail-item').forEach(x=>x.classList.toggle('on',x===on));
 }
-const TILE_KEYS='123456789ABCDEFG';
+const TILE_KEYS='123456789ABCDEFGHIJKLMNOPQ';
 function visibleTiles(){return PLANTS.filter(p=>cat.cat==='all'||p.cat===cat.cat);}
 function renderCatGrid(){
   const tiles=visibleTiles();
@@ -1428,34 +1722,31 @@ function download(name,text,mime){
   a.href=URL.createObjectURL(new Blob([text],{type:mime||'text/plain'}));a.download=name;a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
-function objOf(spec,off){
-  const g=spec.mesh.geometry,p=g.attributes.position,n=g.attributes.normal,c=g.attributes.color;
+function objChunk(spec,{off=null,rotY=0,base=0}={}){
+  const g=spec.mesh.geometry,p=g.attributes.position,n=g.attributes.normal,c=g.attributes.color,ix=g.index.array;
+  const cy=Math.cos(rotY),sy=Math.sin(rotY);
+  const rot=(x,z)=>[x*cy+z*sy,-x*sy+z*cy];
   const ox=off?off[0]:0,oy=off?off[1]:0,oz=off?off[2]:0;
   let s=`o ${spec.name.replace(/\s+/g,'_')}\n`;
-  for(let i=0;i<p.count;i++)s+=`v ${(p.getX(i)+ox).toFixed(4)} ${(p.getY(i)+oy).toFixed(4)} ${(p.getZ(i)+oz).toFixed(4)} ${c.getX(i).toFixed(4)} ${c.getY(i).toFixed(4)} ${c.getZ(i).toFixed(4)}\n`;
-  for(let i=0;i<n.count;i++)s+=`vn ${n.getX(i).toFixed(4)} ${n.getY(i).toFixed(4)} ${n.getZ(i).toFixed(4)}\n`;
-  for(let i=1;i<=p.count;i+=3)s+=`f ${i}//${i} ${i+1}//${i+1} ${i+2}//${i+2}\n`;
+  for(let i=0;i<p.count;i++){const r=rot(p.getX(i),p.getZ(i));s+=`v ${(r[0]+ox).toFixed(4)} ${(p.getY(i)+oy).toFixed(4)} ${(r[1]+oz).toFixed(4)} ${c.getX(i).toFixed(4)} ${c.getY(i).toFixed(4)} ${c.getZ(i).toFixed(4)}\n`;}
+  for(let i=0;i<n.count;i++){const r=rot(n.getX(i),n.getZ(i));s+=`vn ${r[0].toFixed(4)} ${n.getY(i).toFixed(4)} ${r[1].toFixed(4)}\n`;}
+  for(let i=0;i<ix.length;i+=3)s+=`f ${base+ix[i]+1}//${base+ix[i]+1} ${base+ix[i+1]+1}//${base+ix[i+1]+1} ${base+ix[i+2]+1}//${base+ix[i+2]+1}\n`;
   return {text:s,count:p.count};
 }
 function exportOBJ(spec){
   spec=spec||selSpec();if(!spec){clog('nothing selected','warn');return;}
-  const {text,count}=objOf(spec,null);
-  download(`${plantOf(spec.type).id}-${spec.seed}.obj`,`# FlorArc · ${spec.name} · seed ${spec.seed} · ${spec.tris} tris\n`+text,'text/plain');
-  clog(`exported ${spec.name} · ${(count/3/1000).toFixed(1)}k tris · .obj`);
+  const {text}=objChunk(spec);
+  download(`${plantOf(spec.type).id}-${spec.seed}.obj`,`# FlorArc · ${spec.name} · seed ${spec.seed} · ${spec.tris} tris · HQ smooth\n`+text,'text/plain');
+  clog(`exported ${spec.name} · ${fmtK(spec.tris)} tris · .obj`);
   prompt('export',`${spec.name}.obj`);
 }
 function exportAll(){
   const vis=visibleSpecs();if(!vis.length){clog('nothing visible to export','warn');return;}
   let s=`# FlorArc nursery · ${vis.length} specimens · vertex colours · nursery transforms baked\n`,base=0;
   for(const sp of vis){
-    const g=sp.mesh.geometry,p=g.attributes.position,n=g.attributes.normal,c=g.attributes.color;
-    const gp=sp.group.position,ry=sp.group.rotation.y,cy=Math.cos(ry),sy=Math.sin(ry);
-    const rot=(x,z)=>[x*cy+z*sy,-x*sy+z*cy];
-    s+=`o ${sp.name.replace(/\s+/g,'_')}\n`;
-    for(let i=0;i<p.count;i++){const [rx,rz]=rot(p.getX(i),p.getZ(i));s+=`v ${(rx+gp.x).toFixed(4)} ${(p.getY(i)).toFixed(4)} ${(rz+gp.z).toFixed(4)} ${c.getX(i).toFixed(4)} ${c.getY(i).toFixed(4)} ${c.getZ(i).toFixed(4)}\n`;}
-    for(let i=0;i<n.count;i++){const [rx,rz]=rot(n.getX(i),n.getZ(i));s+=`vn ${rx.toFixed(4)} ${n.getY(i).toFixed(4)} ${rz.toFixed(4)}\n`;}
-    for(let i=1;i<=p.count;i+=3)s+=`f ${base+i}//${base+i} ${base+i+1}//${base+i+1} ${base+i+2}//${base+i+2}\n`;
-    base+=p.count;
+    const gp=sp.group.position;
+    const {text,count}=objChunk(sp,{off:[gp.x,0,gp.z],rotY:sp.group.rotation.y,base});
+    s+=text;base+=count;
   }
   download('florarc-nursery.obj',s,'text/plain');
   clog(`exported nursery · ${vis.length} specimens · .obj`);
@@ -1504,7 +1795,7 @@ $('#dSave').addEventListener('click',()=>{
   clog(`saved garden · ${G.specs.length} specimens`);prompt('save','garden.json');
 });
 $('#dOpen').addEventListener('click',()=>$('#file').click());
-$('#dNew').addEventListener('click',()=>{starters();clog('new garden · 4 starters grown');prompt('new','garden reset');});
+$('#dNew').addEventListener('click',()=>{starters();clog('new garden · 5 starters grown');prompt('new','garden reset');});
 $('#file').addEventListener('change',e=>{
   const f=e.target.files[0];if(!f)return;
   const r=new FileReader();
@@ -1523,12 +1814,201 @@ function starters(){
   for(const s of [...G.specs])removeSpecimenSilent(s.uid);
   G.sel=null;G.uidc=0;
   makeSpecimenSilent('meadow','meadow-01');makeSpecimenSilent('bush','grove-02');
-  makeSpecimenSilent('daisy','petal-03');makeSpecimenSilent('clover','patch-04');
+  makeSpecimenSilent('daisy','petal-03');makeSpecimenSilent('clover','patch-04');makeSpecimenSilent('fern','fern-05');
   layout();refresh();autosave();
 }
 
 /* ═══════════════ command line ═══════════════ */
 const cmdHist=[];let cmdHi=-1;
+/* ═══════════════ texture atlas ═══════════════ */
+const ATLAS_CELLS=[
+  ['grassBlade','blade',{base:'#4d8a35',tip:'#8fd45a',vein:'#d5efa8'}],
+  ['reedBlade','blade',{base:'#3f7a4a',tip:'#6fb85a',vein:'#c9e89a'}],
+  ['fescueBlade','blade',{base:'#5a7a9a',tip:'#a8c4d4',vein:'#e0eef4'}],
+  ['tussockBlade','blade',{base:'#8a6d2a',tip:'#d4a83a',vein:'#f4e2a8'}],
+  ['pampasPlume','plume',{base:'#c9b890',tip:'#f4ecd8'}],
+  ['bambooLeaf','leaf',{base:'#2f7a35',tip:'#6fc25a',vein:'#d5efb0'}],
+  ['featherAwn','fluff',{base:'#b8a878',tip:'#f4ecd0'}],
+  ['broadLeaf','leaf',{base:'#2a6a2a',tip:'#5ab85a',vein:'#c9efa9'}],
+  ['clover','clover',{base:'#2f8a35',tip:'#6fd45a'}],
+  ['roseLeaf','leaf',{base:'#1f5a25',tip:'#4aa84a',vein:'#b8e89a'}],
+  ['hollyLeaf','leaf',{base:'#174a20',tip:'#3f9a45',vein:'#a8e08a'}],
+  ['fernPinna','pinna',{base:'#2f7a30',tip:'#6fc95a'}],
+  ['treefernPinna','pinna',{base:'#257a35',tip:'#5ab85a'}],
+  ['daisyPetal','petal',{base:'#e8eef4',tip:'#ffffff',vein:'#c9d4e0'}],
+  ['rosePetal','petal',{base:'#b83a5a',tip:'#f06a8a',vein:'#ffb0c0'}],
+  ['tulipPetal','petal',{base:'#d46a2a',tip:'#f4a83a',vein:'#ffd88a'}],
+  ['lavenderBud','buds',{base:'#6a4a9a',tip:'#9a7ac9'}],
+  ['sunflowerPetal','petal',{base:'#e89a1a',tip:'#ffd83a',vein:'#fff0a8'}],
+  ['dandelionFluff','fluff',{base:'#c9c9c9',tip:'#ffffff'}],
+  ['thistleTuft','fluff',{base:'#9a5a9a',tip:'#d48ad4'}],
+  ['needle','needles',{base:'#1f5a35',tip:'#4aa86a'}],
+  ['juniperScale','needles',{base:'#3a6a5a',tip:'#6fb89a'}],
+  ['mossTuft','moss',{base:'#2f8a35',tip:'#8ae08a'}],
+  ['broadLeafDark','leaf',{base:'#1a4a20',tip:'#3f8a45',vein:'#8ad08a'}],
+  ['bark','bark',{base:'#3a2c20',tip:'#6a5638'}],
+  ['bambooCulm','culm',{base:'#6a8a3a',tip:'#a8c45a'}],
+  ['stem','stem',{base:'#4a6a2a',tip:'#7ab84a'}],
+  ['thornWood','bark',{base:'#4a3828',tip:'#7a6248'}],
+  ['soil','soil',{base:'#2c2018',tip:'#5a4a38'}],
+  ['mossySoil','soil',{base:'#2a3a20',tip:'#5a8a45'}],
+  ['berryRed','berry',{base:'#8a1a1a',tip:'#f44a4a'}],
+  ['berryBlue','berry',{base:'#1a2a5a',tip:'#4a6ad4'}],
+];
+const atlasPainters={
+  blade(g,x,y,s,p,R){
+    const gr=g.createLinearGradient(x,y,x+s,y);gr.addColorStop(0,p.base);gr.addColorStop(0.5,p.tip);gr.addColorStop(1,p.base);
+    g.fillStyle=gr;g.fillRect(x,y,s,s);
+    g.strokeStyle=p.vein;g.lineWidth=Math.max(1,s*0.012);g.globalAlpha=0.9;
+    g.beginPath();g.moveTo(x+s/2,y+s);g.quadraticCurveTo(x+s/2+s*0.06,y+s/2,x+s/2,y);g.stroke();
+    g.globalAlpha=0.25;g.lineWidth=1;
+    for(let i=0;i<9;i++){const xx=x+s*(0.08+0.84*i/8);g.beginPath();g.moveTo(xx,y+s);g.lineTo(xx+s*0.02,y);g.stroke();}
+    g.globalAlpha=1;
+    for(let i=0;i<40;i++){g.fillStyle=R()<0.5?p.base:p.tip;g.globalAlpha=0.12;g.fillRect(x+R()*s,y+R()*s,s*0.02,s*0.06);}
+    g.globalAlpha=1;
+  },
+  leaf(g,x,y,s,p,R){
+    const gr=g.createLinearGradient(x,y,x,y+s);gr.addColorStop(0,p.tip);gr.addColorStop(1,p.base);
+    g.fillStyle=gr;g.fillRect(x,y,s,s);
+    g.strokeStyle=p.vein;g.lineWidth=Math.max(1,s*0.014);
+    g.beginPath();g.moveTo(x+s/2,y+s*0.04);g.lineTo(x+s/2,y+s*0.96);g.stroke();
+    g.lineWidth=1;g.globalAlpha=0.7;
+    for(let i=0;i<7;i++){const yy=y+s*(0.14+0.72*i/6);
+      for(const d of[-1,1]){g.beginPath();g.moveTo(x+s/2,yy);g.quadraticCurveTo(x+s/2+d*s*0.2,yy-s*0.02,x+s/2+d*s*0.42,yy-s*0.12);g.stroke();}}
+    g.globalAlpha=1;
+    for(let i=0;i<50;i++){g.fillStyle=p.tip;g.globalAlpha=0.08;const r=s*0.01+R()*s*0.02;g.beginPath();g.arc(x+R()*s,y+R()*s,r,0,7);g.fill();}
+    g.globalAlpha=1;
+  },
+  petal(g,x,y,s,p,R){
+    const gr=g.createRadialGradient(x+s/2,y+s*0.9,s*0.05,x+s/2,y+s*0.9,s*1.1);gr.addColorStop(0,p.base);gr.addColorStop(1,p.tip);
+    g.fillStyle=gr;g.fillRect(x,y,s,s);
+    g.strokeStyle=p.vein;g.globalAlpha=0.55;g.lineWidth=1;
+    for(let i=0;i<11;i++){const t=i/10;g.beginPath();g.moveTo(x+s*(0.3+0.4*t),y+s);g.quadraticCurveTo(x+s*(0.2+0.6*t),y+s*0.5,x+s*t,y+s*0.03);g.stroke();}
+    g.globalAlpha=1;
+  },
+  clover(g,x,y,s,p,R){
+    g.fillStyle=p.base;g.fillRect(x,y,s,s);
+    g.fillStyle=p.tip;g.globalAlpha=0.9;
+    for(const[cx,cy]of[[0.35,0.36],[0.65,0.36],[0.5,0.62]]){g.beginPath();g.arc(x+s*cx,y+s*cy,s*0.2,0,7);g.fill();}
+    g.globalAlpha=1;g.strokeStyle=p.base;g.lineWidth=Math.max(1,s*0.02);
+    g.beginPath();g.moveTo(x+s*0.5,y+s*0.7);g.lineTo(x+s*0.5,y+s);g.stroke();
+  },
+  pinna(g,x,y,s,p,R){
+    g.fillStyle=p.base;g.fillRect(x,y,s,s);
+    g.strokeStyle=p.tip;g.lineWidth=Math.max(1,s*0.02);
+    g.beginPath();g.moveTo(x+s*0.5,y+s);g.lineTo(x+s*0.5,y);g.stroke();
+    g.lineWidth=Math.max(1,s*0.03);g.lineCap='round';
+    for(let i=0;i<14;i++){const yy=y+s*(0.06+0.88*i/13),w=s*0.36*(1-Math.abs(i-6.5)/9);
+      for(const d of[-1,1]){g.globalAlpha=0.85;g.beginPath();g.moveTo(x+s/2,yy);g.lineTo(x+s/2+d*w,yy-s*0.05);g.stroke();}}
+    g.globalAlpha=1;
+  },
+  plume(g,x,y,s,p,R){
+    g.fillStyle=p.base;g.fillRect(x,y,s,s);
+    for(let i=0;i<220;i++){g.strokeStyle=R()<0.6?p.tip:p.base;g.globalAlpha=0.5;g.lineWidth=1;
+      const xx=x+R()*s,yy=y+R()*s;g.beginPath();g.moveTo(xx,yy);g.lineTo(xx+R()*s*0.06-s*0.03,yy-R()*s*0.09);g.stroke();}
+    g.globalAlpha=1;
+  },
+  fluff(g,x,y,s,p,R){
+    g.fillStyle=p.base;g.fillRect(x,y,s,s);
+    g.strokeStyle=p.tip;g.globalAlpha=0.8;g.lineWidth=1;
+    for(let i=0;i<90;i++){const a=R()*6.28,r=s*(0.1+R()*0.4);
+      g.beginPath();g.moveTo(x+s/2,y+s/2);g.lineTo(x+s/2+Math.cos(a)*r,y+s/2+Math.sin(a)*r);g.stroke();}
+    g.globalAlpha=1;g.fillStyle=p.tip;g.beginPath();g.arc(x+s/2,y+s/2,s*0.05,0,7);g.fill();
+  },
+  buds(g,x,y,s,p,R){
+    const gr=g.createLinearGradient(x,y,x,y+s);gr.addColorStop(0,p.tip);gr.addColorStop(1,p.base);
+    g.fillStyle='#3a5a2a';g.fillRect(x,y,s,s);
+    g.strokeStyle='#4a7a35';g.lineWidth=Math.max(1,s*0.03);
+    g.beginPath();g.moveTo(x+s/2,y+s);g.lineTo(x+s/2,y);g.stroke();
+    for(let i=0;i<9;i++){const yy=y+s*(0.08+0.5*i/8);
+      for(const d of[-1,1]){g.fillStyle=i%2?p.tip:p.base;g.beginPath();g.ellipse(x+s/2+d*s*0.09,yy,s*0.06,s*0.09,d*0.5,0,7);g.fill();}}
+    g.fillStyle=p.tip;g.beginPath();g.arc(x+s/2,y+s*0.05,s*0.07,0,7);g.fill();
+  },
+  needles(g,x,y,s,p,R){
+    g.fillStyle=p.base;g.fillRect(x,y,s,s);
+    g.lineCap='round';
+    for(let i=0;i<120;i++){g.strokeStyle=R()<0.5?p.tip:p.base;g.globalAlpha=0.75;g.lineWidth=Math.max(1,s*0.012);
+      const xx=x+R()*s,yy=y+R()*s,a=R()*6.28,l=s*0.06+R()*s*0.1;
+      g.beginPath();g.moveTo(xx,yy);g.lineTo(xx+Math.cos(a)*l,yy+Math.sin(a)*l);g.stroke();}
+    g.globalAlpha=1;
+  },
+  moss(g,x,y,s,p,R){
+    g.fillStyle=p.base;g.fillRect(x,y,s,s);
+    for(let i=0;i<160;i++){g.fillStyle=R()<0.5?p.tip:p.base;g.globalAlpha=0.6;
+      const r=s*0.008+R()*s*0.025;g.beginPath();g.arc(x+R()*s,y+R()*s,r,0,7);g.fill();}
+    g.globalAlpha=1;
+  },
+  bark(g,x,y,s,p,R){
+    g.fillStyle=p.base;g.fillRect(x,y,s,s);
+    for(let i=0;i<26;i++){g.strokeStyle=R()<0.5?p.tip:p.base;g.globalAlpha=0.6;g.lineWidth=1+R()*s*0.02;
+      const xx=x+R()*s;g.beginPath();g.moveTo(xx,y);g.bezierCurveTo(xx+s*0.05,y+s*0.3,xx-s*0.05,y+s*0.6,xx+s*0.03,y+s);g.stroke();}
+    g.globalAlpha=1;
+  },
+  culm(g,x,y,s,p,R){
+    const gr=g.createLinearGradient(x,y,x+s,y);gr.addColorStop(0,p.base);gr.addColorStop(0.5,p.tip);gr.addColorStop(1,p.base);
+    g.fillStyle=gr;g.fillRect(x,y,s,s);
+    g.fillStyle=p.base;g.globalAlpha=0.85;g.fillRect(x,y+s*0.46,s,s*0.08);g.globalAlpha=1;
+    g.fillStyle=p.tip;g.fillRect(x,y+s*0.44,s,s*0.02);
+  },
+  stem(g,x,y,s,p,R){
+    const gr=g.createLinearGradient(x,y,x+s,y);gr.addColorStop(0,p.base);gr.addColorStop(0.5,p.tip);gr.addColorStop(1,p.base);
+    g.fillStyle=gr;g.fillRect(x,y,s,s);
+    g.globalAlpha=0.3;
+    for(let i=0;i<12;i++){g.strokeStyle=p.base;g.lineWidth=1;const xx=x+R()*s;g.beginPath();g.moveTo(xx,y);g.lineTo(xx+s*0.02,y+s);g.stroke();}
+    g.globalAlpha=1;
+  },
+  soil(g,x,y,s,p,R){
+    g.fillStyle=p.base;g.fillRect(x,y,s,s);
+    for(let i=0;i<200;i++){g.fillStyle=R()<0.4?p.tip:p.base;g.globalAlpha=0.7;
+      const r=s*0.006+R()*s*0.02;g.beginPath();g.arc(x+R()*s,y+R()*s,r,0,7);g.fill();}
+    g.globalAlpha=1;
+  },
+  berry(g,x,y,s,p,R){
+    g.fillStyle='#1a2a1a';g.fillRect(x,y,s,s);
+    for(let i=0;i<4;i++){const cx=x+s*(0.25+0.5*(i%2)),cy=y+s*(0.28+0.44*Math.floor(i/2)),r=s*0.16;
+      const gr=g.createRadialGradient(cx-r*0.3,cy-r*0.3,r*0.1,cx,cy,r);gr.addColorStop(0,p.tip);gr.addColorStop(1,p.base);
+      g.fillStyle=gr;g.beginPath();g.arc(cx,cy,r,0,7);g.fill();
+      g.fillStyle='rgba(255,255,255,.75)';g.beginPath();g.arc(cx-r*0.35,cy-r*0.35,r*0.18,0,7);g.fill();}
+  },
+};
+let atlasCache=null;
+function buildAtlas(){
+  if(atlasCache)return atlasCache;
+  const cell=128,cols=8,rows=4;
+  const cv=document.createElement('canvas');cv.width=cols*cell;cv.height=rows*cell;
+  const g=cv.getContext('2d');
+  g.fillStyle='#000';g.fillRect(0,0,cv.width,cv.height);
+  const manifest={meta:{name:'FlorArc flora atlas',version:1,size:[cv.width,cv.height],cell,cols,rows},cells:[]};
+  ATLAS_CELLS.forEach(([name,kind,pal],i)=>{
+    const cx=(i%cols)*cell,cy=Math.floor(i/cols)*cell;
+    g.save();g.beginPath();g.rect(cx,cy,cell,cell);g.clip();
+    atlasPainters[kind](g,cx,cy,cell,pal,mulberry32(hashSeed('atlas-'+name)));
+    g.restore();
+    manifest.cells.push({name,x:cx,y:cy,w:cell,h:cell});
+  });
+  atlasCache={canvas:cv,manifest};
+  return atlasCache;
+}
+const atlas={open:false};
+function openAtlas(){
+  const {canvas,manifest}=buildAtlas();
+  const img=$('#atlasImg');img.src=canvas.toDataURL('image/png');
+  $('#atlasMeta').textContent=`${canvas.width}×${canvas.height} · ${manifest.cells.length} cells · 128px`;
+  $('#atlasGrid').innerHTML=manifest.cells.map(c=>`<span title="${c.name}">${c.name}</span>`).join('');
+  atlas.open=true;$('#atlas').classList.add('show');
+}
+function closeAtlas(){atlas.open=false;$('#atlas').classList.remove('show');}
+function downloadAtlasPNG(){
+  buildAtlas().canvas.toBlob(b=>{
+    const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='florarc-atlas.png';a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  });
+}
+function downloadAtlasJSON(){
+  download('florarc-atlas.json',JSON.stringify(buildAtlas().manifest,null,1),'application/json');
+}
+window.__atlas={build:()=>buildAtlas()};
+
 $('#cmdIn').addEventListener('keydown',e=>{
   if(e.key==='Enter'){execCmd(e.target.value);e.target.value='';}
   if(e.key==='ArrowUp'){e.preventDefault();if(cmdHist.length){cmdHi=(cmdHi+1)%cmdHist.length;e.target.value=cmdHist[cmdHist.length-1-cmdHi];}}
@@ -1542,7 +2022,7 @@ function execCmd(line){
   const s=selSpec();
   const needSel=()=>{if(!s){clog('nothing selected','warn');return true;}return false;};
   switch(cmd.toLowerCase()){
-    case 'help':clog('grow <type> [seed] · seed <s> · reseed · solo · nursery · flat · wire · top · front · iso · focus · hide · show · dup · del · export obj|json|all · save · new · clear');break;
+    case 'help':clog('grow <type> [seed] · seed <s> · reseed · solo · nursery · flat · wire · top · front · iso · focus · hide · show · dup · del · export obj|json|all · save · new · clear · atlas');break;
     case 'grow':{
       const t=(rest[0]||'').toLowerCase();
       const def=PLANTS.find(p=>p.id===t||p.name.toLowerCase().includes(t));
@@ -1567,6 +2047,7 @@ function execCmd(line){
     case 'save':$('#dSave').click();break;
     case 'new':starters();break;
     case 'clear':{const c=$('#consoleLog');if(c)c.innerHTML='';break;}
+    case 'atlas':openAtlas();break;
     default:clog(`unknown · ${cmd} · try help`,'warn');
   }
 }
@@ -1624,7 +2105,7 @@ $('#layoutBtn').addEventListener('click',()=>{
 /* ═══════════════ keyboard ═══════════════ */
 addEventListener('keydown',e=>{
   const typing=/INPUT|TEXTAREA/.test(document.activeElement?.tagName||'');
-  if(e.key==='Escape'){if(cat.open)closeCat();return;}
+  if(e.key==='Escape'){if(atlas.open)closeAtlas();else if(cat.open)closeCat();return;}
   if(typing)return;
   if(e.key==='Tab'){e.preventDefault();cat.open?closeCat():openCat();return;}
   if(cat.open){
@@ -1641,6 +2122,8 @@ addEventListener('keydown',e=>{
   if(e.key==='r'||e.key==='R'){if(s){reseedSpec(s);clog(`reseeded → ${s.seed}`);}return;}
   if(e.key==='e'||e.key==='E'){exportOBJ(s);return;}
   if(e.key==='v'||e.key==='V'){setShade(G.shade==='wire'?'flat':'wire');return;}
+  if(e.key==='a'||e.key==='A'){openAtlas();return;}
+  if(e.key==='+'){quickGrow(PLANTS[Math.floor(Math.random()*PLANTS.length)].id);return;}
   if(e.key==='1')setView('front');
   if(e.key==='7')setView('top');
   if(e.key==='5')setView('iso');
@@ -1682,7 +2165,7 @@ restoreLayout();fit();
 let restored=null;
 try{restored=JSON.parse(localStorage.getItem(LS_G)||'null');}catch(e){}
 if(restored&&restored.specs&&restored.specs.length){
-  $('#startInfo').textContent=`${restored.specs.length} specimens · autosaved · geometry only, no textures yet.`;
+  $('#startInfo').textContent=`${restored.specs.length} specimens · autosaved · HQ geometry · atlas included`;
   $('#start').classList.add('show');
   $('#startCont').addEventListener('click',()=>{loadGarden(restored);$('#start').classList.remove('show');clog(`restored ${G.specs.length} specimens from autosave`);});
   $('#startNew').addEventListener('click',()=>{starters();$('#start').classList.remove('show');});
@@ -1692,6 +2175,7 @@ if(restored&&restored.specs&&restored.specs.length){
   starters();
 }
 window.__florarc=true;
+window.__florarcInfo=()=>({specs:G.specs.map(s=>({uid:s.uid,type:s.type,cat:plantOf(s.type).cat,kids:s.group.children.length,tris:s.tris})),sel:G.sel,mode:G.mode,shade:G.shade});
 requestAnimationFrame(loop);
 </script>
 </body>
