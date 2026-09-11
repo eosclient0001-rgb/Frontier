@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#050607" />
+  <title>Frontier SDF — Nodal Terrain Studio</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 34 34" fill="none"><path d="M3 27 12 7l5 11 4-9 10 18H3Z" stroke="currentColor" stroke-width="1.6"/><path d="m8 27 6-13m1 13 6-12m1 12 4-9M5 23h24" stroke="currentColor" stroke-width="1.1"/></svg>
+      FRONTIER <small>SDF LAB</small>
+    </div>
+    <input id="docname" value="Canyon Rivers" spellcheck="false" title="Document name (used for exports)" />
+    <button class="icon-btn" id="toggle-outliner" title="Show / hide outliner">◧</button>
+    <div class="tb-sep"></div>
+    <button class="btn primary" id="run"><span class="play-icon">❚❚</span><span id="run-label">Pause</span></button>
+    <button class="btn" id="step-btn" title="Advance 20 simulation ticks">Step +20</button>
+    <button class="btn" id="reset-btn" title="Rebuild base terrain from graph, restart erosion">Reset sim</button>
+    <div class="tb-right">
+      <button class="btn" id="diag-btn" title="Renderer + simulation diagnostics">Diagnostics</button>
+      <button class="icon-btn" id="help-btn" title="Shortcuts &amp; help">?</button>
+      <div class="tb-sep"></div>
+      <button class="btn" id="export-png">PNG</button>
+      <button class="btn" id="export-graph">Export graph</button>
+      <button class="btn" id="import-graph">Import</button>
+      <input type="file" id="file-input" accept=".json" hidden />
+      <button class="icon-btn" id="toggle-inspector" title="Show / hide inspector">◨</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside id="outliner" aria-label="Outliner"></aside>
+    <main id="viewport">
+      <canvas id="scene"></canvas>
+      <div class="view-tools">
+        <button class="icon-btn" id="home-btn" title="Reset camera (Home)">⌂</button>
+      </div>
+      <div class="stat-chip"><span id="stat-fps">— fps</span><b id="stat-sim">starting…</b><span id="stat-build"></span></div>
+      <div id="toasts"></div>
+      <div class="loading" id="loading">
+        <div class="loading-mark">F</div>
+        <strong>Forming your landscape</strong>
+        <span>Compiling SDF graph on the GPU…</span>
+      </div>
+      <div class="ctx-lost hidden" id="ctx-lost">
+        <strong>Graphics context lost.</strong>
+        <span>Reload to restore the session (export first if anything still renders).</span>
+        <button class="btn primary" id="ctx-reload">Reload</button>
+      </div>
+    </main>
+    <aside id="inspector" aria-label="Inspector"></aside>
+  </div>
+
+  <section id="node-dock">
+    <div id="dock-grip"></div>
+    <div class="dock-head">
+      <span class="cap">NODE GRAPH</span>
+      <button class="btn" id="node-add">+ Add</button>
+      <button class="btn" id="node-layout">Auto-layout</button>
+      <button class="btn" id="node-fit">Fit view</button>
+      <span class="sp"></span>
+      <span id="node-zoom">90%</span>
+      <button class="btn" id="dock-toggle">▼ Graph</button>
+    </div>
+    <div id="node-canvas"></div>
+  </section>
+
+  <footer class="statusbar">
+    <span>WebGL2 · SDF 128×80×128 · 4096 agents</span>
+    <span id="stat-backend">backend: …</span>
+    <span class="hint">L-drag orbit · wheel zoom · M-drag pan · R-drag + WASD fly · Space run/pause · dbl-click graph to add</span>
+  </footer>
+
+  <div class="modal" id="modal-diag">
+    <div class="modal-card">
+      <h2>Diagnostics <span class="modal-x">✕</span></h2>
+      <pre id="diag-text"></pre>
+      <button class="btn" id="copy-diag">Copy diagnostics</button>
+    </div>
+  </div>
+  <div class="modal" id="modal-help">
+    <div class="modal-card">
+      <h2>Shortcuts &amp; workflow <span class="modal-x">✕</span></h2>
+      <table>
+        <tr><td>Left drag / wheel / M-drag</td><td>Orbit / zoom / pan camera</td></tr>
+        <tr><td>Right-drag + W A S D Q E</td><td>Fly (Shift = 4× speed)</td></tr>
+        <tr><td>Space / Home</td><td>Run-pause erosion / reset camera</td></tr>
+        <tr><td>Double-click graph</td><td>Add node menu</td></tr>
+        <tr><td>Drag ○ → ○</td><td>Connect fields (all sockets carry SDF)</td></tr>
+        <tr><td>Double-click wire / Del</td><td>Delete wire / selected node</td></tr>
+        <tr><td>● / ◌ on node</td><td>Enable / bypass node</td></tr>
+      </table>
+      <p class="dim">Build: sources → modify → combine → erosion → Terrain Output. Only nodes chained into the output take effect; erosion nodes pass the field through and drive the live GPU simulation. Editing the graph rebuilds the base volume and restarts erosion.</p>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
