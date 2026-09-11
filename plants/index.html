@@ -543,7 +543,7 @@ function opuntiaPad(r,depth=1,segments=28,rings=14){
       const th=i/segments*Math.PI*2;
       const edge=1+0.035*Math.sin(th*6+ph*1.7);
       const rr=r*sy*edge;
-      pos.push(rr*Math.cos(th),r*1.28*cy,rr*depth*Math.sin(th));
+      pos.push(rr*1.18*Math.cos(th),r*1.02*cy,rr*depth*Math.sin(th));
     }
   }
   for(let j=0;j<rings;j++)for(let i=0;i<segments;i++){
@@ -1535,7 +1535,7 @@ const PLANTS=[
       /* Ficus-indica references are broad and mostly spineless: a dark felted
          areole with a small glochid tuft, not a porcupine of long needles. */
       const seat=[wp[0]-wn[0]*0.012*S,wp[1]-wn[1]*0.012*S,wp[2]-wn[2]*0.012*S];
-      B.ball({r:0.012*S,pos:seat,smooth:true,c0:shade(P.foliage,-0.28),c1:shade(P.foliage,-0.16),jit:0});
+      B.ball({r:0.006*S,pos:seat,smooth:true,c0:'#55442b',c1:'#766040',jit:0});
       const glochids=2+Math.floor(R(0,3));
       for(let g=0;g<glochids;g++){
         const gd=dirQuat([wn[0]+R(-0.22,0.22),wn[1]+R(-0.12,0.18),wn[2]+R(-0.22,0.22)],0);
@@ -1562,10 +1562,12 @@ const PLANTS=[
     areoles(center,tilt,ry,pr);
     tops.push(tiltVec(0,pr*1.2,0,tilt,ry,center));
   }
-  const nfr=3+Math.floor(R(0,3));
+  const nfr=Math.max(1,Math.round((3+Math.floor(R(0,3)))*(P.fruitLoad??0.55)));
   for(let k=0;k<nfr;k++){
     const tb=tops[Math.floor(R(0,tops.length))];
-    B.ball({r:R(0.028,0.038)*S,smooth:true,pos:[tb[0]+R(-0.04,0.04)*S,tb[1]-0.015,tb[2]+R(-0.04,0.04)*S],c0:shade(P.extra,-0.06),c1:P.extra,jit:0});
+    const fa=R(0,6.283),fr=R(0.09,0.16)*S;
+    const fp=[tb[0]+Math.sin(fa)*fr,tb[1]-0.015,tb[2]+Math.cos(fa)*fr];
+    B.ball({r:R(0.032,0.045)*S,smooth:true,pos:fp,c0:shade(P.extra,-0.06),c1:P.extra,jit:0});
   }
 }},
 {id:'agave',cat:'cactus',name:'Agave',latin:'Agave americana',icon:'agave',desc:'Blue-grey sabre leaves in a phyllotactic rosette, each tipped with a thorn.',
