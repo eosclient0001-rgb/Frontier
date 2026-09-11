@@ -3,19 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FlorArc — Plant Generator · Outliner · Viewport · Inspector</title>
+<title>FlorArc — AAA Procedural Cacti & Desert Plant Generator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 :root{
   --font:'Outfit','General Sans','Inter',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
-  --glass:rgba(15,16,18,.74); --g2:rgba(255,255,255,.045); --g3:rgba(255,255,255,.08);
-  --stroke:rgba(255,255,255,.07); --stroke2:rgba(255,255,255,.13);
-  --text:rgba(255,255,255,.94); --t2:rgba(255,255,255,.56); --t3:rgba(255,255,255,.32);
-  --red:#ff3b30; --green:#34c759; --yellow:#e5d33a; --orange:#ffb454; --blue:#4da3ff; --violet:#b48cff; --cyan:#4fd8e0;
+  --glass:rgba(15,16,18,.86); --g2:rgba(255,255,255,.045); --g3:rgba(255,255,255,.08);
+  --stroke:rgba(255,255,255,.08); --stroke2:rgba(255,255,255,.15);
+  --text:rgba(255,255,255,.94); --t2:rgba(255,255,255,.62); --t3:rgba(255,255,255,.36);
+  --red:#ff453a; --green:#30d158; --yellow:#ffd60a; --orange:#ff9f0a; --blue:#0a84ff; --violet:#bf5af2; --cyan:#64d2ff; --desert:#e8a83a;
   --ease:cubic-bezier(.22,.61,.36,1); --spring:cubic-bezier(.175,.885,.32,1.15);
-  --ow:272px; --iw:326px; --gap:14px; --rad:22px;
+  --ow:290px; --iw:340px; --gap:14px; --rad:20px;
 }
 *,*::before,*::after{box-sizing:border-box}
 html,body{height:100%;overflow:hidden;background:#000}
@@ -25,70 +25,72 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 input{font:inherit;color:inherit;background:none;border:0;padding:0;outline:0}
 ::-webkit-scrollbar{width:0;height:0}
 #bg{position:fixed;inset:0;background:
-  radial-gradient(1200px 700px at 30% 110%,rgba(45,72,52,.38),transparent 60%),
-  radial-gradient(900px 600px at 85% -10%,rgba(40,52,68,.35),transparent 60%),#050706}
-.glass{background:rgba(15,16,18,.94);backdrop-filter:blur(28px) saturate(1.3);-webkit-backdrop-filter:blur(28px) saturate(1.3);border:1px solid var(--stroke);box-shadow:0 30px 80px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.05)}
+  radial-gradient(1200px 700px at 30% 110%,rgba(80,55,25,.38),transparent 60%),
+  radial-gradient(900px 600px at 85% -10%,rgba(40,55,68,.35),transparent 60%),#070806}
+.glass{background:var(--glass);backdrop-filter:blur(28px) saturate(1.3);-webkit-backdrop-filter:blur(28px) saturate(1.3);border:1px solid var(--stroke);box-shadow:0 30px 80px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.06)}
 
 /* ── three independent panels ───────────────────────────── */
-#outliner{position:fixed;top:var(--gap);left:var(--gap);bottom:var(--gap);width:var(--ow);min-width:220px;min-height:240px;border-radius:var(--rad);z-index:15;display:flex;flex-direction:column;overflow:hidden}
+#outliner{position:fixed;top:var(--gap);left:var(--gap);bottom:var(--gap);width:var(--ow);min-width:230px;min-height:240px;border-radius:var(--rad);z-index:15;display:flex;flex-direction:column;overflow:hidden}
 #viewport{position:fixed;top:var(--gap);bottom:var(--gap);left:calc(var(--ow) + var(--gap)*2);right:calc(var(--iw) + var(--gap)*2);min-width:320px;min-height:240px;border-radius:var(--rad);z-index:10;overflow:hidden;display:flex;flex-direction:column}
-#inspector{position:fixed;top:var(--gap);right:var(--gap);bottom:var(--gap);width:var(--iw);min-width:260px;min-height:240px;border-radius:var(--rad);z-index:15;display:flex;flex-direction:column;overflow:hidden}
-@media (max-width:1300px){:root{--ow:240px;--iw:296px}}
+#inspector{position:fixed;top:var(--gap);right:var(--gap);bottom:var(--gap);width:var(--iw);min-width:270px;min-height:240px;border-radius:var(--rad);z-index:15;display:flex;flex-direction:column;overflow:hidden}
+@media (max-width:1300px){:root{--ow:250px;--iw:310px}}
 .panel-head{padding:16px 18px 10px;cursor:grab;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0}
-.panel-head h1{font-size:17px;font-weight:300;display:flex;align-items:center;gap:10px}
-.panel-head h1 .dot{width:10px;height:10px;border-radius:50%;background:var(--cyan);box-shadow:0 0 14px var(--cyan);flex-shrink:0}
-.badge{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);border:1px solid var(--stroke);padding:3px 8px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
+.panel-head h1{font-size:17px;font-weight:400;display:flex;align-items:center;gap:10px}
+.panel-head h1 .dot{width:10px;height:10px;border-radius:50%;background:var(--desert);box-shadow:0 0 14px var(--desert);flex-shrink:0}
+.badge{margin-left:auto;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--desert);border:1px solid rgba(232,168,58,0.3);background:rgba(232,168,58,0.08);padding:3px 8px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
 .hbtn{width:34px;height:34px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--t2);transition:background .2s}
 .hbtn:hover{background:var(--g2);color:var(--text)}
 .panel.free{resize:both}
-.panel.dragging{transition:none;cursor:grabbing;box-shadow:0 40px 100px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.08)}
+.panel.dragging{transition:none;cursor:grabbing;box-shadow:0 40px 100px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.08)}
 #vgrip{position:absolute;left:50%;top:6px;transform:translateX(-50%);width:54px;height:16px;border-radius:999px;cursor:grab;z-index:4;display:flex;align-items:center;justify-content:center;opacity:.5;transition:opacity .2s}
 #vgrip:hover{opacity:1}
 #vgrip::before{content:"";width:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.5)}
 #layoutBtn{position:absolute;right:10px;top:10px;z-index:4;width:30px;height:30px;background:rgba(0,0,0,.35);border:1px solid var(--stroke)}
 
 /* ── grow catalogue ─────────────────────────────────────── */
-#cat{position:fixed;z-index:10000;width:600px;height:470px;min-width:440px;min-height:320px;border-radius:12px;display:none;flex-direction:column;overflow:hidden;color:var(--text);resize:both}
+#cat{position:fixed;z-index:10000;width:660px;height:520px;min-width:440px;min-height:340px;border-radius:14px;display:none;flex-direction:column;overflow:hidden;color:var(--text);resize:both}
 #cat.show{display:flex;animation:ddIn .16s var(--ease)}
-.cat-head{display:flex;align-items:center;gap:8px;height:44px;padding:0 8px 0 14px;border-bottom:1px solid var(--stroke);cursor:grab;flex-shrink:0;background:rgba(255,255,255,.03)}
-.cat-head .ttl{font-size:14px;display:flex;align-items:center;gap:8px}
-.cat-head .ttl .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green)}
+.cat-head{display:flex;align-items:center;gap:8px;height:46px;padding:0 8px 0 16px;border-bottom:1px solid var(--stroke);cursor:grab;flex-shrink:0;background:rgba(255,255,255,.03)}
+.cat-head .ttl{font-size:15px;font-weight:400;display:flex;align-items:center;gap:8px}
+.cat-head .ttl .dot{width:8px;height:8px;border-radius:50%;background:var(--desert);box-shadow:0 0 10px var(--desert)}
 .cat-head .sp{flex:1}
 .cat-head .hbtn{width:30px;height:30px;border-radius:7px}
 .cat-track{display:flex;width:200%;transition:transform .22s var(--ease);flex:1;min-height:0}
 #cat.opts .cat-track{transform:translateX(-50%)}
 .cat-slide{width:50%;flex-shrink:0;display:flex;min-height:0;height:100%}
-.rail{width:132px;flex-shrink:0;border-right:1px solid var(--stroke);padding:8px 6px;display:flex;flex-direction:column;gap:2px;background:rgba(0,0,0,.18);overflow:auto}
-.rail-item{display:flex;align-items:center;gap:8px;height:36px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--t2);cursor:pointer;transition:background .15s,color .15s}
+.rail{width:140px;flex-shrink:0;border-right:1px solid var(--stroke);padding:8px 6px;display:flex;flex-direction:column;gap:3px;background:rgba(0,0,0,.22);overflow:auto}
+.rail-item{display:flex;align-items:center;gap:8px;height:36px;padding:0 8px;border-radius:8px;font-size:12px;color:var(--t2);cursor:pointer;transition:background .15s,color .15s}
 .rail-item svg.i{width:15px;height:15px;color:var(--t3)}
 .rail-item:hover{background:var(--g2);color:var(--text)}
-.rail-item.on{background:rgba(255,255,255,.1);color:var(--text)} .rail-item.on svg.i{color:var(--text)}
+.rail-item.on{background:rgba(232,168,58,.16);color:var(--text);border:1px solid rgba(232,168,58,.3)} .rail-item.on svg.i{color:var(--desert)}
 .rail-item .n{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--t3)}
 .grid-pane{flex:1;display:flex;flex-direction:column;min-width:0}
-.grid-body{flex:1;overflow:auto;padding:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;align-content:start}
-.ctile{position:relative;height:78px;border-radius:8px;background:var(--g2);border:1px solid var(--stroke);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:all .18s var(--spring);color:var(--t2)}
-.ctile svg.i{width:24px;height:24px;stroke-width:1.5;color:var(--acc,var(--text))}
-.ctile .t-lbl{font-size:11px;white-space:nowrap}
-.ctile .t-key{position:absolute;top:5px;right:6px;font-family:var(--mono);font-size:9px;color:var(--t3);background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px}
+.grid-body{flex:1;overflow:auto;padding:12px;display:grid;grid-template-columns:repeat(2,1fr);gap:8px;align-content:start}
+.ctile{position:relative;height:90px;border-radius:10px;background:var(--g2);border:1px solid var(--stroke);display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:10px 12px;gap:4px;cursor:pointer;transition:all .18s var(--spring);color:var(--t2)}
+.ctile-head{display:flex;align-items:center;gap:8px;width:100%}
+.ctile svg.i{width:22px;height:22px;stroke-width:1.5;color:var(--acc,var(--desert))}
+.ctile .t-lbl{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctile .t-sub{font-size:10.5px;color:var(--t3);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.ctile .t-key{position:absolute;top:6px;right:8px;font-family:var(--mono);font-size:9.5px;color:var(--t3);background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px}
 .ctile:hover{background:var(--g3);border-color:var(--stroke2);transform:translateY(-1px);color:var(--text)}
-.grid-foot{height:34px;border-top:1px solid var(--stroke);display:flex;align-items:center;gap:10px;padding:0 12px;font-size:11px;color:var(--t3);flex-shrink:0}
+.grid-foot{height:36px;border-top:1px solid var(--stroke);display:flex;align-items:center;gap:12px;padding:0 14px;font-size:11px;color:var(--t3);flex-shrink:0}
 .grid-foot kbd{font-family:var(--mono);font-size:9.5px;background:rgba(255,255,255,.07);padding:1px 5px;border-radius:5px;color:var(--t2)}
 .options-pane{flex:1;display:flex;flex-direction:column;min-width:0}
-.pane-head{display:flex;align-items:center;gap:10px;height:48px;padding:0 12px;border-bottom:1px solid var(--stroke);flex-shrink:0}
-.pane-head .back{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--t2)} .pane-head .back:hover{background:var(--g2);color:var(--text)}
-.pane-head .h-ic{width:34px;height:34px;border-radius:10px;background:var(--g2);display:flex;align-items:center;justify-content:center} .pane-head .h-ic svg.i{width:20px;height:20px;color:var(--acc,var(--text))}
-.pane-head .h-txt{display:flex;flex-direction:column;gap:1px} .pane-head .h-txt .n{font-size:13px} .pane-head .h-txt .m{font-size:10.5px;color:var(--t3);font-family:var(--mono)}
-.options-body{flex:1;overflow:auto;padding:6px 14px 10px}
-.opt-foot{display:flex;gap:6px;padding:10px 12px;border-top:1px solid var(--stroke);flex-shrink:0}
+.pane-head{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px;border-bottom:1px solid var(--stroke);flex-shrink:0}
+.pane-head .back{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--t2)} .pane-head .back:hover{background:var(--g2);color:var(--text)}
+.pane-head .h-ic{width:36px;height:36px;border-radius:10px;background:rgba(232,168,58,0.12);border:1px solid rgba(232,168,58,0.25);display:flex;align-items:center;justify-content:center} .pane-head .h-ic svg.i{width:22px;height:22px;color:var(--desert)}
+.pane-head .h-txt{display:flex;flex-direction:column;gap:1px} .pane-head .h-txt .n{font-size:14px;font-weight:500} .pane-head .h-txt .m{font-size:11px;color:var(--t3);font-family:var(--mono)}
+.options-body{flex:1;overflow:auto;padding:8px 16px 12px}
+.opt-foot{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--stroke);flex-shrink:0}
 .opt-foot .abtn.primary{background:#fff;color:#111;border-color:#fff;font-weight:500} .opt-foot .abtn.primary:hover{background:#e6e6e6;color:#111}
 .opt-foot .hint{margin-right:auto;display:flex;align-items:center;font-size:11px;color:var(--t3)}
-#catBtn{height:24px;padding:0 10px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid var(--stroke2);font-size:11px;display:flex;align-items:center;gap:6px;color:var(--text)}
-#catBtn svg.i{width:12px;height:12px}
+#catBtn{height:26px;padding:0 12px;border-radius:999px;background:rgba(232,168,58,.16);border:1px solid rgba(232,168,58,.35);font-size:11.5px;display:flex;align-items:center;gap:6px;color:#ffe8b0}
+#catBtn svg.i{width:13px;height:13px}
 svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 
 /* status tiles */
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 14px 10px;flex-shrink:0}
-.tile{border-radius:15px;background:rgba(255,255,255,.035);border:1px solid var(--stroke);padding:9px 12px 8px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;gap:4px 8px;align-items:end;min-width:0}
+.tile{border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--stroke);padding:9px 12px 8px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;gap:4px 8px;align-items:end;min-width:0}
 .tile .l{font-size:11px;color:var(--t2);grid-column:1;display:flex;align-items:center;gap:7px}
 .tile .tico{width:8px;height:8px;border-radius:50%;background:var(--t3);flex-shrink:0}
 .tile.ok .tico{background:var(--green);box-shadow:0 0 8px var(--green)}
@@ -100,7 +102,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 .docbar{display:flex;gap:6px;margin:0 12px 8px;align-items:center;flex-shrink:0}.docbar .abtn{height:24px;padding:0 9px;font-size:11px}.docbar .m{font-size:10.5px;color:var(--t3)}.docbar .sp{flex:1}
 .srow .search{margin:0;flex:1;min-width:0}
 .search{margin:0 12px 6px;height:34px;border-radius:999px;background:var(--g2);border:1px solid var(--stroke);display:flex;align-items:center;padding:0 14px;gap:10px;color:var(--t3);flex-shrink:0}
-.search input{flex:1;color:var(--text);font-size:13px;min-width:0}
+.search input{flex:1;color:var(--text);font-size:12.5px;min-width:0}
 .search input::placeholder{color:var(--t3)}
 .filters{position:relative;z-index:30;flex-shrink:0}
 .dd-btn{height:34px;border-radius:999px;background:var(--g2);border:1px solid var(--stroke);display:flex;align-items:center;padding:0 6px 0 12px;gap:6px;cursor:pointer;color:var(--t2);font-size:12px;transition:border-color .18s,background .18s;min-width:120px}
@@ -139,15 +141,15 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 .grp-h .kd{width:7px;height:7px;border-radius:50%;background:var(--acc);box-shadow:0 0 6px var(--acc)}
 .grp-h .cnt{margin-left:auto;font-family:var(--mono);font-size:10px}
 .grp.closed .kids{display:none}
-.row{display:flex;align-items:center;gap:8px;height:38px;padding:0 7px;border-radius:11px;cursor:pointer;transition:background .18s;position:relative;color:var(--t2)}
+.row{display:flex;align-items:center;gap:8px;height:40px;padding:0 8px;border-radius:10px;cursor:pointer;transition:background .18s;position:relative;color:var(--t2)}
 .row:hover{background:var(--g2);color:var(--text)}
-.row.sel{background:rgba(255,255,255,.09);color:var(--text);box-shadow:inset 0 0 0 1px var(--stroke2)}
-.row .ico{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.07);color:var(--acc,#fff);flex-shrink:0}
-.row .ico svg.i{width:14px;height:14px}
-.row .txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.row .name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15}
+.row.sel{background:rgba(232,168,58,0.12);color:var(--text);box-shadow:inset 0 0 0 1px rgba(232,168,58,0.3)}
+.row .ico{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06);color:var(--acc,#fff);flex-shrink:0}
+.row .ico svg.i{width:15px;height:15px}
+.row .txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.row .name{font-size:12.5px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15}
 .row .meta{font-size:10px;color:var(--t3);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--mono)}
-.row .eye{width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--t3);opacity:0;transition:opacity .15s;flex-shrink:0}
+.row .eye{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--t3);opacity:0;transition:opacity .15s;flex-shrink:0}
 .row:hover .eye,.row.hid .eye{opacity:1}
 .row.hid{opacity:.45}
 .row .eye svg.i{width:14px;height:14px}
@@ -164,15 +166,15 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 #viewport canvas#gl{position:absolute;inset:0;width:100%;height:100%;display:block}
 #vtop{position:absolute;top:10px;left:10px;right:54px;display:flex;gap:8px;align-items:center;z-index:3;pointer-events:none;flex-wrap:wrap}
 #vtop>*{pointer-events:auto}
-.seg{display:flex;gap:3px;background:rgba(0,0,0,.35);border:1px solid var(--stroke);border-radius:999px;padding:3px;backdrop-filter:blur(12px)}
+.seg{display:flex;gap:3px;background:rgba(0,0,0,.45);border:1px solid var(--stroke);border-radius:999px;padding:3px;backdrop-filter:blur(12px)}
 .seg button{height:24px;padding:0 10px;border-radius:999px;font-size:11px;color:var(--t2);transition:all .2s;white-space:nowrap;display:flex;align-items:center;gap:6px}
 .seg button:hover{color:var(--text)}
-.seg button.on{background:rgba(255,255,255,.14);color:var(--text)}
+.seg button.on{background:rgba(255,255,255,.16);color:var(--text)}
 .seg button kbd{font-family:var(--mono);font-size:9px;color:var(--t3);background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px}
 .seg button.on kbd{color:var(--t2)}
 .spacer{flex:1}
-#vtitle{position:absolute;left:14px;bottom:12px;z-index:3;display:flex;flex-direction:column;gap:2px;pointer-events:none;max-width:40%}
-#vtitle .n{font-size:13px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #vtitle .m{font-family:var(--mono);font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#vtitle{position:absolute;left:14px;bottom:12px;z-index:3;display:flex;flex-direction:column;gap:2px;pointer-events:none;max-width:50%}
+#vtitle .n{font-size:13.5px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #vtitle .m{font-family:var(--mono);font-size:11px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #hud{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:3;display:flex;gap:8px;max-width:96%}
 .nav{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px 0 10px;border-radius:999px;flex-shrink:0}
 .keys{display:flex;gap:4px;align-items:center;flex-shrink:0}
@@ -180,33 +182,33 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 .navmeta{font-size:12px;color:var(--t2);white-space:nowrap}
 .navmeta b{font-weight:400;color:var(--text)}
 #axisHud{position:absolute;right:12px;top:48px;z-index:3;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
-.pill{height:26px;padding:0 10px;border-radius:999px;display:flex;align-items:center;gap:7px;font-size:11px;color:var(--t2);background:rgba(0,0,0,.35);border:1px solid var(--stroke);backdrop-filter:blur(12px);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{height:26px;padding:0 10px;border-radius:999px;display:flex;align-items:center;gap:7px;font-size:11px;color:var(--t2);background:rgba(0,0,0,.45);border:1px solid var(--stroke);backdrop-filter:blur(12px);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .pill .ax{width:8px;height:8px;border-radius:50%}
 #errBar{display:none;position:absolute;left:12px;right:12px;bottom:60px;z-index:20;padding:8px 12px;border-radius:10px;background:rgba(255,59,48,.16);border:1px solid rgba(255,59,48,.4);color:#ffb3ad;font:11.5px 'JetBrains Mono',monospace;white-space:pre-wrap}
-#start{position:absolute;inset:0;z-index:9;display:none;align-items:center;justify-content:center;border-radius:inherit;background:rgba(8,9,11,.55);backdrop-filter:blur(6px)}
+#start{position:absolute;inset:0;z-index:9;display:none;align-items:center;justify-content:center;border-radius:inherit;background:rgba(8,9,11,.65);backdrop-filter:blur(8px)}
 #start.show{display:flex}
-#start .card{width:340px;padding:18px 18px 14px;border-radius:16px;background:var(--glass);border:1px solid var(--stroke);box-shadow:0 20px 60px rgba(0,0,0,.5)}
-#start h3{margin:0 0 4px;font-size:15px;font-weight:500}
-#start .m{font-size:11.5px;color:var(--t3);margin-bottom:14px;line-height:1.5}
+#start .card{width:360px;padding:20px;border-radius:18px;background:var(--glass);border:1px solid var(--stroke);box-shadow:0 20px 60px rgba(0,0,0,.6)}
+#start h3{margin:0 0 4px;font-size:16px;font-weight:500}
+#start .m{font-size:12px;color:var(--t3);margin-bottom:16px;line-height:1.5}
 #start .srow{display:flex;gap:8px;margin:0}
 #start .abtn{height:36px}
-#start .abtn.pri{background:rgba(52,199,89,.16);border-color:rgba(52,199,89,.35);color:#9ef0b0}
-#start .abtn.pri:hover{background:rgba(52,199,89,.26)}
-#start .lnk{margin-top:10px;font-size:11px;color:var(--t3);text-align:center}
+#start .abtn.pri{background:rgba(232,168,58,.2);border-color:rgba(232,168,58,.4);color:#ffe4b3}
+#start .abtn.pri:hover{background:rgba(232,168,58,.32)}
+#start .lnk{margin-top:12px;font-size:11px;color:var(--t3);text-align:center}
 #start .lnk b{color:var(--t2);cursor:pointer}
 #start .lnk b:hover{color:var(--text)}
 #prompt{position:absolute;left:50%;top:48px;transform:translateX(-50%);z-index:3;display:none;align-items:center;gap:10px;height:34px;padding:0 14px;border-radius:999px;font-size:12px;color:var(--text);white-space:nowrap;max-width:90%}
 #prompt.show{display:flex;animation:ddIn .16s var(--ease)}
-#prompt .s{font-family:var(--mono);color:var(--green);flex-shrink:0}
+#prompt .s{font-family:var(--mono);color:var(--desert);flex-shrink:0}
 
 /* inspector */
 #insp{flex:1;overflow:auto;padding:0 12px 10px;min-height:0}
-.hero{border-radius:16px;background:rgba(255,255,255,.035);border:1px solid var(--stroke);padding:13px 15px 11px;margin-bottom:8px;position:relative;overflow:hidden}
+.hero{border-radius:16px;background:rgba(255,255,255,.03);border:1px solid var(--stroke);padding:14px 16px 12px;margin-bottom:8px;position:relative;overflow:hidden}
 .hero .c-top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.hero .c-top .ico{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.07);color:var(--acc,#fff);flex-shrink:0}
-.hero .c-top .ico svg.i{width:16px;height:16px}
+.hero .c-top .ico{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:rgba(232,168,58,0.12);color:var(--desert);flex-shrink:0;border:1px solid rgba(232,168,58,0.25)}
+.hero .c-top .ico svg.i{width:18px;height:18px}
 .hero .c-top .t{display:flex;flex-direction:column;gap:1px;min-width:0}
-.hero .c-top .t .n{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero .c-top .t .n{font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hero .c-top .t .m{font-size:11px;color:var(--t3);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hero .big{display:flex;align-items:baseline;gap:6px}
 .hero .big .v{font-size:38px;font-weight:200;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
@@ -216,6 +218,16 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 .hero .side div{display:flex;flex-direction:column;gap:1px;min-width:0}
 .hero .side .k{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);background:none;padding:0;font-family:var(--font)}
 .hero .side .v2{font-family:var(--mono);font-size:12px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* botanical profile box */
+.bot-card{border-radius:14px;background:rgba(232,168,58,0.06);border:1px solid rgba(232,168,58,0.2);padding:12px 14px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}
+.bot-card .ttl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--desert);font-weight:500;display:flex;align-items:center;gap:6px}
+.bot-card .desc{font-size:12px;color:var(--t2);line-height:1.45}
+.bot-kv{display:grid;grid-template-columns:1fr;gap:4px;font-size:11px;margin-top:4px}
+.bot-kv .row{display:flex;align-items:baseline;justify-content:space-between;padding:0;height:auto;background:none;box-shadow:none}
+.bot-kv .k{color:var(--t3);font-size:10.5px}
+.bot-kv .v{color:var(--t2);font-family:var(--mono);font-size:11px;text-align:right}
+
 .presence{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px}
 .pcell{height:50px;border-radius:12px;background:var(--g2);border:1px solid var(--stroke);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:10px;color:var(--t3);cursor:pointer;transition:all .2s var(--spring);position:relative}
 .pcell svg.i{width:17px;height:17px;transition:color .2s}
@@ -239,21 +251,6 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 .trk-bar .fill{position:absolute;left:0;top:9px;height:10px;width:var(--p);background:repeating-linear-gradient(90deg,#fff 0 1.5px,transparent 1.5px 6px)}
 .thumb{position:absolute;top:50%;left:var(--p);width:12px;height:12px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.6);transform:translate(-50%,-50%);box-shadow:0 0 0 4px rgba(255,255,255,.08),0 2px 8px rgba(0,0,0,.6);transition:transform .15s var(--spring)}
 .trk-bar.drag .thumb{transform:translate(-50%,-50%) scale(1.15)}
-.xyz{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px}
-.xf-row{display:flex;align-items:center;gap:8px;margin-top:6px}
-.xf-row .xl{width:52px;font-size:12px;color:var(--t2);display:flex;align-items:center;gap:6px;flex-shrink:0}
-.xf-row .xl svg.i{width:13px;height:13px;color:var(--t3)}
-.xf-row .xyz{flex:1;margin-top:0}
-.stp{height:36px;border-radius:10px;background:var(--g2);border:1px solid var(--stroke);display:flex;align-items:center;padding:0 4px 0 8px;gap:4px;cursor:ew-resize;min-width:0}
-.stp .a{font-size:10px;font-weight:500} .stp.x .a{color:#ff6b6b}.stp.y .a{color:#6fe38a}.stp.z .a{color:#5db3ff}
-.stp .n{flex:1;font-family:var(--mono);font-size:12px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
-.stp .b{width:20px;height:28px;border-radius:7px;color:var(--t3);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
-.stp .b:hover{background:var(--g3);color:var(--text)}
-.sw{width:42px;height:24px;border-radius:999px;background:rgba(255,255,255,.1);position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
-.sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s var(--spring)}
-.sw.on{background:var(--green)} .sw.on::after{left:21px}
-.rowctl{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:36px}
-.rowctl .lab{font-size:12px;color:var(--t2)}
 .empty{padding:40px 20px;text-align:center;color:var(--t3);font-size:13px;line-height:1.6}
 .empty b{display:block;color:var(--t2);font-weight:400;font-size:15px;margin-bottom:6px}
 .actions{display:flex;gap:6px;padding:0 0 6px}
@@ -267,7 +264,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 .console .p{color:var(--green)}
 .console .warn{color:var(--orange)}
 #cmd{display:flex;align-items:center;gap:8px;height:34px;margin:0 12px 12px;border-radius:999px;background:var(--g2);border:1px solid var(--stroke);padding:0 14px;font-family:var(--mono);font-size:12px;flex-shrink:0}
-#cmd .p{color:var(--green);flex-shrink:0} #cmd input{flex:1;color:var(--text);font-family:var(--mono);min-width:0}
+#cmd .p{color:var(--desert);flex-shrink:0} #cmd input{flex:1;color:var(--text);font-family:var(--mono);min-width:0}
 .seedrow{display:flex;align-items:center;gap:6px;margin-top:6px}
 .seedrow .field{flex:1;height:30px;border-radius:9px;background:var(--g2);border:1px solid var(--stroke);display:flex;align-items:center;padding:0 10px;min-width:0}
 .seedrow .field input{flex:1;font-family:var(--mono);font-size:12px;color:var(--text);min-width:0}
@@ -275,23 +272,6 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 .csw{width:36px;height:22px;border-radius:7px;border:1px solid var(--stroke2);position:relative;overflow:hidden;cursor:pointer;flex-shrink:0}
 .csw input{position:absolute;inset:-6px;width:60px;height:40px;cursor:pointer;opacity:0}
 .csw-hex{font-family:var(--mono);font-size:11px;color:var(--t3)}
-@supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){.glass{background:var(--glass)}}
-#atlas{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:rgba(6,10,8,.72);backdrop-filter:blur(6px)}
-#atlas.show{display:flex}
-.atlas-card{width:min(860px,94vw);max-height:90vh;overflow:auto;border-radius:16px;background:linear-gradient(180deg,#101a14,#0b120e);border:1px solid rgba(151,215,124,.25);box-shadow:0 24px 80px rgba(0,0,0,.6);padding:18px 20px 20px}
-.atlas-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
-.atlas-head h2{font-size:15px;letter-spacing:.04em}
-.atlas-head .m{font:10.5px var(--mono);color:var(--t3)}
-.atlas-head .sp{flex:1}
-#atlasImg{width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12);image-rendering:pixelated;margin:10px 0}
-#atlasGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;margin:8px 0 12px}
-#atlasGrid span{font:10px var(--mono);color:var(--t2);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:3px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.atlas-foot{display:flex;gap:8px;justify-content:flex-end}
-#addBtn{display:flex;align-items:center;gap:6px}
-.radd{margin-left:auto;width:20px;height:20px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:var(--t2);font-size:13px;line-height:1;cursor:pointer;flex:none}
-.radd:hover{background:var(--grn);color:#06210f;border-color:var(--grn)}
-.rail-item{gap:8px}
-
 </style>
 </head>
 <body>
@@ -300,146 +280,140 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 <!-- ═══════════════ OUTLINER ═══════════════ -->
 <aside id="outliner" class="glass panel">
   <div class="panel-head">
-    <h1><span class="dot" style="background:var(--green);box-shadow:0 0 14px var(--green)"></span>Outliner</h1>
-    <span class="badge">FlorArc · nursery</span>
+    <h1><span class="dot"></span>Outliner</h1>
+    <span class="badge">FlorArc · Cacti AAA</span>
   </div>
   <div class="tiles">
-    <div class="tile ok"><div class="l"><span class="tico"></span>Specimens</div><div class="s" id="tSpecS">grown</div><b id="tSpec">0</b></div>
+    <div class="tile ok"><div class="l"><span class="tico"></span>Cacti</div><div class="s" id="tSpecS">grown</div><b id="tSpec">0</b></div>
     <div class="tile" id="tSelT"><div class="l"><span class="tico"></span>Selected</div><div class="s" id="tSelS">none</div><b id="tSel">0</b></div>
   </div>
   <div class="srow">
     <div class="search">
       <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg>
-      <input id="q" placeholder="Search specimens…" spellcheck="false" autocomplete="off">
+      <input id="q" placeholder="Search cacti &amp; desert plants…" spellcheck="false" autocomplete="off">
     </div>
-    <div class="filters" id="filters"><div class="dd-btn" id="ddBtn"></div><div class="dd-menu" id="ddMenu"></div></div>
+    <div class="filters" id="filters">
+      <div class="dd-btn" id="ddBtn"></div>
+      <div class="dd-menu" id="ddMenu"></div>
+    </div>
   </div>
-  <div class="docbar"><button class="abtn" id="dSave" title="download garden .json">save</button><button class="abtn" id="dOpen" title="open garden .json">open</button><button class="abtn" id="dNew" title="new garden (starts from 5 starters)">new</button><span class="sp"></span><span class="m" id="dAuto">autosave</span></div>
   <div class="fpills" id="fpills"></div>
   <div class="tree" id="tree"></div>
   <div class="outliner-foot" id="ofoot"></div>
 </aside>
 
 <!-- ═══════════════ VIEWPORT ═══════════════ -->
-<section id="viewport" class="glass panel">
-  <div id="errBar"></div>
-  <div id="start"><div class="card"><h3>Welcome back</h3><div class="m" id="startInfo"></div><div class="srow"><button class="abtn pri" id="startCont">continue previous</button><button class="abtn" id="startNew">new garden</button></div><div class="lnk">or <b id="startOpen">open a .json</b> · HQ geometry · atlas included</div></div></div>
-  <canvas id="gl"></canvas>
-  <div id="vgrip" title="drag viewport"></div>
+<main id="viewport" class="glass panel">
+  <div id="vgrip" title="drag panel"></div>
+  <button class="hbtn" id="layoutBtn" title="reset window layout"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></button>
   <div id="vtop">
-    <button id="catBtn" title="Grow catalogue (Tab)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Grow</button>
-    <button id="addBtn" title="Quick-grow a random plant">+ add</button>
-    <button id="atlasBtn" title="Texture atlas (A)">Atlas</button>
     <div class="seg" id="modeSeg">
-      <button data-m="nursery" class="on">Nursery</button>
+      <button data-m="nursery" class="on">Nursery <kbd>N</kbd></button>
       <button data-m="solo">Solo <kbd>F</kbd></button>
     </div>
     <div class="seg" id="shadeSeg">
-      <button data-s="flat" class="on">Flat</button>
-      <button data-s="wire">Wire <kbd>V</kbd></button>
+      <button data-s="flat" class="on">Flat <kbd>V</kbd></button>
+      <button data-s="wire">Wireframe</button>
     </div>
-    <div class="spacer"></div>
     <div class="seg" id="viewSeg">
-      <button data-v="top">Top <kbd>7</kbd></button>
-      <button data-v="front">Front <kbd>1</kbd></button>
       <button data-v="iso" class="on">Iso <kbd>5</kbd></button>
+      <button data-v="front">Front <kbd>1</kbd></button>
+      <button data-v="top">Top <kbd>7</kbd></button>
     </div>
+    <button id="catBtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Grow Cactus <kbd>Tab</kbd></button>
   </div>
-  <div id="prompt" class="glass"><span class="s" id="promptTool">grow</span><span id="promptTxt"></span></div>
-  <div id="axisHud">
-    <div class="pill" id="selPill"><span class="ax" style="background:#ff6b6b"></span>X <span id="cx">—</span><span class="ax" style="background:#6fe38a"></span>Y <span id="cy">—</span><span class="ax" style="background:#5db3ff"></span>Z <span id="cz">—</span></div>
-    <div class="pill" id="camPill">orbit · az 40° · el 29°</div>
-  </div>
-  <div id="vtitle"><span class="n" id="vname">Nursery</span><span class="m" id="vmeta">procedural flora · HQ + atlas</span></div>
+  <canvas id="gl"></canvas>
+  <div id="vtitle"><span class="n" id="vname">Desert Environment</span><span class="m" id="vmeta">Loading…</span></div>
   <div id="hud">
     <div class="nav glass">
-      <div class="keys"><span class="k">LMB</span><span class="k">orbit</span></div>
-      <div class="keys"><span class="k">⇧LMB</span><span class="k">pan</span></div>
-      <div class="keys"><span class="k">wheel</span><span class="k">dolly</span></div>
-      <div class="navmeta"><b id="fps">60</b> fps</div>
-    </div>
-    <div class="nav glass" id="toolbar">
-      <div class="keys"><span class="k">Tab</span><span class="k">grow</span></div>
-      <div class="keys"><span class="k">F</span><span class="k">focus</span><span class="k">H</span><span class="k">hide</span></div>
-      <div class="keys"><span class="k">R</span><span class="k">reseed</span><span class="k">E</span><span class="k">export</span></div>
-      <div class="keys"><span class="k">⌫</span><span class="k">del</span><span class="k">/</span><span class="k">search</span></div>
-      <div class="keys"><span class="k">A</span><span class="k">atlas</span><span class="k">+</span><span class="k">add</span></div>
+      <div class="keys"><span class="k">L-Drag</span><span class="navmeta">orbit</span></div>
+      <div class="keys"><span class="k">R-Drag / Shift</span><span class="navmeta">pan</span></div>
+      <div class="keys"><span class="k">Scroll</span><span class="navmeta">zoom</span></div>
     </div>
   </div>
-  <button class="hbtn" id="layoutBtn" title="Reset layout"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="8" height="16" rx="1.5"/><rect x="20" y="4" width="1" height="16" rx=".5"/></svg></button>
-</section>
-
-<!-- ═══════════════ GROW CATALOGUE ═══════════════ -->
-<div id="cat" class="glass">
-  <div class="cat-head" id="catHead"></div>
-  <div class="cat-track">
-    <div class="cat-slide"><div class="rail" id="catRail"></div><div class="grid-pane"><div class="grid-body" id="catGrid"></div><div class="grid-foot" id="catFoot"></div></div></div>
-    <div class="cat-slide"><div class="options-pane"><div class="pane-head" id="optHead"></div><div class="options-body" id="optBody"></div><div class="opt-foot" id="optFoot"></div></div></div>
+  <div id="axisHud"><span class="pill" id="camPill">orbit</span><span class="pill" id="fpsPill"><span class="ax" style="background:var(--green)"></span><span id="fps">60</span> fps</span></div>
+  <div id="errBar"></div>
+  <div id="prompt"><span class="s">grow ›</span><span id="promptTool"></span>: <span id="promptTxt"></span></div>
+  <div id="start" class="show">
+    <div class="card">
+      <h3>FlorArc AAA Cacti Generator</h3>
+      <p class="m" id="startInfo">Ultra-meticulous 3D procedural structure generator for tree-sized desert cacti &amp; succulents.</p>
+      <div class="srow">
+        <button class="abtn pri" id="startNew">Grow Desert Garden</button>
+      </div>
+    </div>
   </div>
-</div>
+</main>
 
 <!-- ═══════════════ INSPECTOR ═══════════════ -->
 <aside id="inspector" class="glass panel">
   <div class="panel-head">
-    <h1><span class="dot" style="background:var(--orange);box-shadow:0 0 14px var(--orange)"></span>Inspector</h1>
+    <h1><span class="dot"></span>Inspector</h1>
     <span class="badge" id="inspBadge">nothing selected</span>
   </div>
   <div id="insp"></div>
-  <div id="cmd"><span class="p">grow ›</span><input id="cmdIn" placeholder="grow daisy · seed aspen-12 · export obj · help" spellcheck="false" autocomplete="off"></div>
+  <div id="cmd"><span class="p">grow ›</span><input id="cmdIn" placeholder="grow cardon · seed desert-01 · age 2.0 …" spellcheck="false" autocomplete="off"></div>
 </aside>
 
-<!-- ═══════════════ TEXTURE ATLAS ═══════════════ -->
-<div id="atlas"><div class="atlas-card">
-  <div class="atlas-head"><h2>Texture atlas</h2><span class="m" id="atlasMeta"></span><span class="sp"></span>
-    <button class="hbtn" id="atlasX" title="close (Esc)">✕</button></div>
-  <img id="atlasImg" alt="procedural flora texture atlas">
-  <div id="atlasGrid"></div>
-  <div class="atlas-foot"><button class="abtn" id="atlasJSON">manifest .json</button><button class="abtn primary" id="atlasPNG">download .png</button></div>
-</div></div>
-
-<input type="file" id="file" accept=".json,application/json" hidden>
+<!-- ═══════════════ CATALOGUE MODAL ═══════════════ -->
+<div id="cat" class="glass">
+  <div class="cat-head" id="catHead"></div>
+  <div class="cat-track">
+    <div class="cat-slide">
+      <div class="rail" id="catRail"></div>
+      <div class="grid-pane">
+        <div class="grid-body" id="catGrid"></div>
+        <div class="grid-foot" id="catFoot"></div>
+      </div>
+    </div>
+    <div class="cat-slide">
+      <div class="options-pane">
+        <div class="pane-head" id="optHead"></div>
+        <div class="options-body" id="optBody"></div>
+        <div class="opt-foot" id="optFoot"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
 <script>
 addEventListener('load',()=>setTimeout(()=>{
   if(!window.__florarc){
     const e=document.getElementById('errBar');
-    e.style.display='block';
-    e.textContent='⚠ 3D failed to start — this page must be served over http(s), not file:// (try: python3 -m http.server) · vendor/three.module.min.js must sit next to index.html';
+    if(e){e.style.display='block';e.textContent='⚠ Failed to initialize WebGL or 3D engine.';}
   }
-},4000));
+},3000));
 </script>
+
 <script type="module">
 import * as THREE from 'three';
 
-/* ═══════════════ utils ═══════════════ */
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const clamp=(v,a,b)=>Math.min(b,Math.max(a,v)), lerp=(a,b,t)=>a+(b-a)*t;
-const fmtK=n=>n>=1000?(n/1000).toFixed(1)+'k':String(Math.round(n));
-function errBar(msg){const e=$('#errBar');e.style.display='block';e.textContent=msg;}
-addEventListener('error',e=>{if(e.message)errBar('⚠ '+e.message);});
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const fmtK=n=>n>=1000?(n/1000).toFixed(1)+'k':String(n);
 
-/* ═══════════════ seeded rng ═══════════════ */
 function hashSeed(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}return h>>>0;}
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
-const randSeed=()=>'s-'+Math.random().toString(36).slice(2,7);
+const randSeed=()=>'desert-'+Math.random().toString(36).slice(2,7);
 function shade(hex,dl){const c=new THREE.Color(hex);c.offsetHSL(0,0,dl);return '#'+c.getHexString();}
 function mix(a,b,t){const A=new THREE.Color(a),Bc=new THREE.Color(b);A.lerp(Bc,Math.min(1,Math.max(0,t)));return '#'+A.getHexString();}
 
 /* ═══════════════ icons ═══════════════ */
 const I=(inner,vb='0 0 24 24')=>`<svg class="i" viewBox="${vb}">${inner}</svg>`;
 const IC={
-  tuft:I('<path d="M12 21V10M12 10C12 6 9 4 5 4c0 4 3 6 7 6zM12 12c0-4 3-6 7-6 0 4-3 6-7 6zM12 21c-2-2-5-3-8-3M12 21c2-2 5-3 8-3"/>'),
-  reed:I('<path d="M12 21V6M12 6c-2 0-3-2-3-3 2 0 3 1 3 3zM12 8c2 0 3-2 3-3-2 0-3 1-3 3zM9 21c0-4 1-7 3-9M15 21c0-4-1-7-3-9"/>'),
-  tussock:I('<path d="M12 21c0-6-1-9-5-12M12 21c0-6 1-9 5-12M12 21V8M12 21c-3-3-7-4-10-3M12 21c3-3 7-4 10-3"/>'),
-  lawn:I('<path d="M4 20h16M7 20v-4M10 20V9M13 20v-6M16 20V7M19 20v-5"/>'),
-  pampas:I('<path d="M12 21v-8M12 13c-3-1-4-4-4-7 3 0 4 3 4 7zM12 13c3-1 4-4 4-7-3 0-4 3-4 7zM12 13V6M8 21c0-4 1-7 4-9M16 21c0-4-1-7-4-9"/>'),
-  bamboo:I('<path d="M9 21V4M15 21V4M9 8h6M9 13h6M9 18h6M15 6c2-1 3-1 5 0M9 10c-2-1-3-1-5 0"/>'),
-  fescue:I('<path d="M7 21v-7M10 21V9M12.5 21V8M15 21V9M18 21v-7M12.5 8c0-2 1-3 3-4"/>'),
-  feather:I('<path d="M12 21V9M12 9c-2-2-2-4 0-6 2 2 2 4 0 6zM10 12 7 9M14 12l3-3M10 15l-3-1M14 15l3-1"/>'),
-  oatgrass:I('<path d="M8 21c0-5 1-9 3-12M16 21c0-5-1-9-3-12M12 21V7"/><ellipse cx="12" cy="5" rx="1.6" ry="2.4"/><ellipse cx="10" cy="8" rx="1.3" ry="2"/><ellipse cx="14" cy="8" rx="1.3" ry="2"/>'),
-  fountain:I('<path d="M6 21c1-6 3-10 6-12M18 21c-1-6-3-10-6-12M12 21V9"/><path d="M12 9c-2 0-3-2-3-4 2 0 3 2 3 4zM12 9c2 0 3-2 3-4-2 0-3 2-3 4z"/>'),
+  cardon:I('<path d="M12 21V4M12 11H7a2 2 0 0 1-2-2V6M12 13h5a2 2 0 0 0 2-2V8M8 21V10M16 21V11"/>'),
+  saguaro:I('<path d="M10 21V6a2 2 0 0 1 4 0v15M10 12H7a2 2 0 0 1-2-2V8M14 14h3a2 2 0 0 0 2-2V9"/>'),
+  organpipe:I('<path d="M6 21V9M9 21V6M12 21V4M15 21V6M18 21V9"/>'),
+  barrel:I('<path d="M6 21v-6c0-5 2.5-9 6-9s6 4 6 9v6M9 21v-5M12 21V8M15 21v-5M12 8V5M9 9 7 7M15 9l2-2"/>'),
+  nopal:I('<ellipse cx="9" cy="15" rx="4" ry="5.5"/><ellipse cx="16" cy="9" rx="3.5" ry="5"/><circle cx="16" cy="3.5" r="1.4"/><path d="M12 21v-3"/>'),
+  cholla:I('<path d="M12 21v-7M12 14l-4-4M12 14l4-4M8 10l-2-4M16 10l2-4"/><circle cx="6" cy="5" r="1.2"/><circle cx="18" cy="5" r="1.2"/>'),
+  joshuatree:I('<path d="M12 21V12M12 12l-5-5M12 12l5-5M7 7l-2-4M7 7l3-3M17 7l2-4M17 7l-3-3"/>'),
+  agave:I('<path d="M12 21v-9M12 12C9 9 7 6 7 3c3 0 5 3 5 9zM12 12c3-3 5-6 5-9-3 0-5 3-5 9zM12 15c-4-1-7-1-9 1 2 2 6 2 9-1zM12 15c4-1 7-1 9 1-2 2-6 2-9-1z"/>'),
+  myrtle:I('<path d="M12 21V8M12 14H8a2 2 0 0 1-2-2v-3M12 12h4a2 2 0 0 0 2-2V7M6 9l-2-3M18 7l2-3"/>'),
+  ocotillo:I('<path d="M12 21V8M8 21l2-11M16 21l-2-11M5 21l4-9M19 21l-4-9"/><circle cx="12" cy="6" r="1.4" fill="currentColor"/><circle cx="10" cy="9" r="1" fill="currentColor"/><circle cx="14" cy="9" r="1" fill="currentColor"/>'),
   eye:I('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
   eyeOff:I('<path d="M4 4l16 16M9.9 5.9A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.2 3M6 7C3.5 8.8 2 12 2 12s3.5 7 10 7c1.4 0 2.7-.3 3.8-.8"/><path d="M9.5 9.5a3 3 0 0 0 4.2 4.2"/>'),
   dice:I('<rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/><circle cx="15" cy="9" r="1" fill="currentColor"/><circle cx="9" cy="15" r="1" fill="currentColor"/>'),
@@ -464,475 +438,586 @@ const IC={
 
 /* ═══════════════ categories ═══════════════ */
 const CATS=[
-  {id:'grass', label:'Grasses',  acc:'#4fd88a'},
+  {id:'cacti', label:'Cacti & Desert Trees', acc:'#e8a83a'},
 ];
-const catOf=id=>CATS.find(c=>c.id===id);
+const catOf=id=>CATS.find(c=>c.id===id)||CATS[0];
 
-/* ═══════════════ geometry kit ═══════════════ */
-const PROF_LEAF=t=>Math.pow(Math.sin(Math.PI*Math.pow(t,0.85)),0.7);
-const PROF_WIDE=t=>Math.pow(Math.sin(Math.PI*Math.pow(t,0.75)),0.6);
+/* ═══════════════ AAA procedural geometry engine ═══════════════ */
+function dirQuat(dir,twist=0){
+  const v=new THREE.Vector3(...dir).normalize();
+  const q=new THREE.Quaternion();
+  q.setFromUnitVectors(new THREE.Vector3(0,1,0),v);
+  if(twist){const qt=new THREE.Quaternion();qt.setFromAxisAngle(v,twist);q.premultiply(qt);}
+  return [q.x,q.y,q.z,q.w];
+}
 
-/* tapered strip along +Y, bending toward +Z */
-function strip(o){
-  const segs=o.segs??4, across=3, pos=[], idx=[];
-  for(let i=0;i<=segs;i++){
-    const t=i/segs;
-    const dr=(o.droop||0)*Math.pow(Math.max(0,(t-0.45)/0.55),2);
-    const y=Math.max(0.012,(t-dr*0.9)*(o.len)), z=((o.bend||0)*t*t+dr*1.1)*(o.len);
-    let w=(o.w0??0.05)+(((o.w1??0)-(o.w0??0.05))*t);
-    if(o.prof)w*=Math.max(0.02,o.prof(t));
-    if(o.serr)w*=1-o.serr*Math.abs(Math.sin(t*Math.PI*(o.serrN||9)));
-    const tw=(o.twist||0)*t, c=Math.cos(tw), s=Math.sin(tw);
-    for(let j=0;j<across;j++){
-      const u=j/(across-1)*2-1;
-      const zo=(j===1?(o.fold??.4):(o.cup||0))*w*0.5, x=u*w/2;
-      pos.push(x*c-zo*s, y, z+x*s+zo*c);
-    }
-  }
-  for(let i=0;i<segs;i++)for(let j=0;j<across-1;j++){
-    const a=i*across+j,b=a+1,d=a+across,e=d+1;idx.push(a,d,b,b,d,e);
-  }
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  g.setIndex(idx);
-  return g;
-}
-function conePart(r,h,rs){
-  const pos=[],idx=[];
-  for(let i=0;i<rs;i++){const t=i/rs*Math.PI*2;pos.push(Math.sin(t)*r,0,Math.cos(t)*r);}
-  const apex=rs,center=rs+1;
-  pos.push(0,h,0, 0,0,0);
-  for(let i=0;i<rs;i++){const n=(i+1)%rs;idx.push(i,n,apex, center,n,i);}
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  g.setIndex(idx);
-  return g;
-}
-function ribbedColumn(r,h,ribs,rs,segs,depth=0.14,flare=0){
-  const pos=[],idx=[];
-  for(let iy=0;iy<=segs;iy++){
-    const t=iy/segs,y=t*h*0.94;
-    const prof=t<0.78?1:Math.cos((t-0.78)/0.22*Math.PI/2*0.92);
-    for(let i=0;i<rs;i++){
-      const th=i/rs*Math.PI*2;
-      const rr=r*prof*(1+flare*Math.exp(-t*9))*(1-depth*(0.5-0.5*Math.cos(th*ribs)));
-      pos.push(Math.sin(th)*rr,y,Math.cos(th)*rr);
-    }
-  }
-  for(let iy=0;iy<segs;iy++)for(let i=0;i<rs;i++){
-    const a=iy*rs+i,b=iy*rs+(i+1)%rs,c=a+rs,d=b+rs;
-    idx.push(a,b,d,a,d,c);
-  }
-  const apex=pos.length/3;pos.push(0,h,0);
-  const center=pos.length/3;pos.push(0,0,0);
-  const top=segs*rs;
-  for(let i=0;i<rs;i++){const nn2=(i+1)%rs;idx.push(top+i,top+nn2,apex, center,nn2,i);}
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  g.setIndex(idx);
-  return g;
-}
-function ribDisplace(g,ribs,depth){
-  const p=g.attributes.position;
-  for(let i=0;i<p.count;i++){
-    const x=p.getX(i),z=p.getZ(i);
-    const k=1-depth*(0.5-0.5*Math.cos(Math.atan2(x,z)*ribs));
-    p.setX(i,x*k);p.setZ(i,z*k);
-  }
-  return g;
-}
-function tiltVec(x,y,z,tilt,ry,pos){
-  const ct=Math.cos(tilt),st=Math.sin(tilt);
-  const y1=y*ct-z*st,z1=y*st+z*ct,ca=Math.cos(ry),sa=Math.sin(ry);
-  return [x*ca+z1*sa+(pos?pos[0]:0),y1+(pos?pos[1]:0),-x*sa+z1*ca+(pos?pos[2]:0)];
-}
-function ribbedTube(pts,r0,r1,ribs,rs,segs,depth=0.14,flare=0.3){
-  const v=pts.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
-  const curve=new THREE.CatmullRomCurve3(v);
-  const chord=new THREE.Vector3().subVectors(v[v.length-1],v[0]);chord.y=0;
-  if(chord.lengthSq()<1e-8)chord.set(1,0,0);chord.normalize();
-  const B0=new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0),chord).normalize();
-  const pos=[],idx=[],P=new THREE.Vector3(),T=new THREE.Vector3(),N=new THREE.Vector3();
-  for(let iy=0;iy<=segs;iy++){
-    const t=iy/segs;
-    curve.getPoint(t,P);curve.getTangent(t,T);
-    N.crossVectors(B0,T).normalize();
-    const taper=r0+(r1-r0)*t, fl=1+flare*Math.exp(-t*7);
-    const dome=t<0.86?1:Math.cos((t-0.86)/0.14*Math.PI/2*0.92);
-    for(let i=0;i<rs;i++){
-      const th=i/rs*Math.PI*2;
-      const rr=Math.max(1e-5,taper*fl*dome*(1-depth*(0.5-0.5*Math.cos(th*ribs))));
-      const co=Math.cos(th),si=Math.sin(th);
-      pos.push(P.x+(N.x*co+B0.x*si)*rr,P.y+(N.y*co+B0.y*si)*rr,P.z+(N.z*co+B0.z*si)*rr);
-    }
-  }
-  for(let iy=0;iy<segs;iy++)for(let i=0;i<rs;i++){
-    const a=iy*rs+i,b=iy*rs+(i+1)%rs,c=a+rs,d=b+rs;
-    idx.push(a,b,d,a,d,c);
-  }
-  curve.getPoint(1,P);curve.getTangent(1,T);
-  const apex=pos.length/3;pos.push(P.x+T.x*r1*0.25,P.y+T.y*r1*0.25,P.z+T.z*r1*0.25);
-  const top=segs*rs;
-  for(let i=0;i<rs;i++){const nn2=(i+1)%rs;idx.push(top+i,top+nn2,apex);}
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  g.setIndex(idx);
-  return g;
-}
-function headFrame(h){
-  const up=Math.abs(h[1])>0.9?[1,0,0]:[0,1,0];
-  let ux=h[1]*up[2]-h[2]*up[1],uy=h[2]*up[0]-h[0]*up[2],uz=h[0]*up[1]-h[1]*up[0];
-  const ul=Math.hypot(ux,uy,uz)||1;ux/=ul;uy/=ul;uz/=ul;
-  return [[ux,uy,uz],[h[1]*uz-h[2]*uy,h[2]*ux-h[0]*uz,h[0]*uy-h[1]*ux]];
-}
-function tiltDir(tilt,ry){return [Math.sin(tilt)*Math.sin(ry),Math.cos(tilt),Math.sin(tilt)*Math.cos(ry)];}
-function tiltPoint(y,zb,tilt,ry,pos){
-  const ct=Math.cos(tilt),st=Math.sin(tilt);
-  const y1=y*ct-zb*st, z1=y*st+zb*ct, ca=Math.cos(ry),sa=Math.sin(ry);
-  return [z1*sa+(pos?pos[0]:0), y1+(pos?pos[1]:0), z1*ca+(pos?pos[2]:0)];
-}
-function dirQuat(d,roll){
-  const q=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(d[0],d[1],d[2]).normalize());
-  if(roll)q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),roll));
-  return q;
-}
-function fibDirs(n,rnd,jit=0.05){
-  const out=[],ga=Math.PI*(3-Math.sqrt(5));
-  for(let i=0;i<n;i++){
-    const y=1-(i/Math.max(1,n-1))*2, r=Math.sqrt(Math.max(0,1-y*y)), th=ga*i;
-    const jx=(rnd()-0.5)*jit, jy=(rnd()-0.5)*jit, jz=(rnd()-0.5)*jit;
-    const d=[Math.cos(th)*r+jx, y+jy, Math.sin(th)*r+jz];
-    const l=Math.hypot(d[0],d[1],d[2])||1;out.push([d[0]/l,d[1]/l,d[2]/l]);
-  }
-  return out;
-}
-function randDir(R){const u=R(0,1)*2-1,th=R(0,6.2832),s=Math.sqrt(Math.max(0,1-u*u));return [s*Math.cos(th),u,s*Math.sin(th)];}
-function weldIndexed(g){
-  if(g.index)return g;
-  const p=g.attributes.position,map=new Map(),pos=[],idx=[];
-  for(let i=0;i<p.count;i++){
-    const k=p.getX(i).toFixed(4)+','+p.getY(i).toFixed(4)+','+p.getZ(i).toFixed(4);
-    let id=map.get(k);
-    if(id===undefined){id=pos.length/3;map.set(k,id);pos.push(p.getX(i),p.getY(i),p.getZ(i));}
-    idx.push(id);
-  }
-  const ng=new THREE.BufferGeometry();
-  ng.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
-  ng.setIndex(idx);
-  return ng;
-}
-function paint(g,c0,c1,jit,rnd,fx){
-  let ng=g.index?g:weldIndexed(g);
-  if(ng!==g)g.dispose();
-  ng.computeVertexNormals();
-  const p=ng.attributes.position,n=p.count,nn=ng.attributes.normal;
-  ng.computeBoundingBox();
-  const bb=ng.boundingBox,dy=Math.max(1e-6,bb.max.y-bb.min.y);
-  const A=new THREE.Color(c0),Bc=new THREE.Color(c1??c0),tmp=new THREE.Color(),col=new Float32Array(n*3);
-  const j=jit||0, hj=(rnd()-0.5)*j, hs=(rnd()-0.5)*j, hl=(rnd()-0.5)*j;
-  for(let i=0;i<n;i++){
-    tmp.copy(A).lerp(Bc,(p.getY(i)-bb.min.y)/dy);
-    if(j)tmp.offsetHSL(hj*0.4+(rnd()-0.5)*j*0.12,hs*0.4,hl*0.6+(rnd()-0.5)*j*0.25);
-    if(fx){
-      if(fx.sun){const ny=nn.getY(i);tmp.multiplyScalar(1+fx.sun*(ny>0?ny*0.45:ny*0.18));}
-      if(fx.ao){const dx=p.getX(i)-fx.ao[0],dyy=p.getY(i)-fx.ao[1],dz=p.getZ(i)-fx.ao[2];
-        const dd=Math.sqrt(dx*dx+dyy*dyy+dz*dz)/fx.ao[3];
-        const tt=Math.min(1,Math.max(0,(dd-0.12)/0.88)),kk=tt*tt*(3-2*tt);
-        tmp.multiplyScalar(0.42+0.58*kk);}
-    }
-    col[i*3]=tmp.r;col[i*3+1]=tmp.g;col[i*3+2]=tmp.b;
-  }
-  ng.setAttribute('color',new THREE.BufferAttribute(col,3));
-  return ng;
-}
-class Bag{
+/* Bag: Indexed, welded geometry builder with baked lighting & cavity AO */
+class Bag {
   constructor(rnd){this.rnd=rnd;this.parts=[];this.count=0;}
-  put(g,o={}){
-    const q=o.q||new THREE.Quaternion().setFromEuler(new THREE.Euler(o.rx||0,o.ry||0,o.rz||0,'YXZ'));
-    const p=o.p||[0,0,0],s=o.s??1,sv=Array.isArray(s)?s:[s,s,s];
-    g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(p[0],p[1],p[2]),q,new THREE.Vector3(sv[0],sv[1],sv[2])));
-    return g;
-  }
-  add(g,c0,c1,jit,fx){this.parts.push(paint(g,c0,c1,jit,this.rnd,fx));this.count++;return g;}
-  raw(g,o){this.put(g,o);this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);}
-  blade(o){
-    const g=strip({len:o.len,w0:o.w,w1:0.004,segs:o.segs??6,bend:o.bend??0.6,droop:o.droop||0,twist:o.twist??((this.rnd()*2-1)*0.5),fold:o.fold??.5});
-    this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
-  }
-  leaf(o){
-    const g=strip({len:o.len,w0:o.w,w1:o.w,segs:o.segs??4,prof:o.prof||PROF_LEAF,bend:o.bend??0.4,droop:o.droop||0,twist:o.twist??((this.rnd()*2-1)*0.4),fold:o.fold??.5,cup:o.cup||0});
-    this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
-  }
-  petal(o){
-    const g=strip({len:o.len,w0:o.w,w1:o.w*0.9,segs:4,prof:PROF_LEAF,bend:o.bend??0.3,droop:o.droop||0,twist:0,fold:0.15,cup:o.cup??.6});
-    this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
-  }
-  stem(o){
-    const g=new THREE.CylinderGeometry(o.r1??0.012,o.r0??0.02,o.len,o.rad??8,o.segs??4);
-    g.translate(0,o.len/2,0);
-    const p=g.attributes.position;
-    for(let i=0;i<p.count;i++){const t=p.getY(i)/o.len;p.setZ(i,p.getZ(i)+(o.bend||0)*o.len*t*t);}
-    this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
-  }
-  spike(o){
-    const g=conePart(o.r,o.h,o.rs||8);
-    this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
-  }
-  ball(o){
-    const g=new THREE.IcosahedronGeometry(o.r,o.det??0);
-    this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q,s:o.s||1});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
-  }
-  blob(o){
-    const g=new THREE.IcosahedronGeometry(o.r,o.det??1);
-    const p=g.attributes.position,v=new THREE.Vector3(),seen={};
-    for(let i=0;i<p.count;i++){
-      v.fromBufferAttribute(p,i);
-      const k=v.x.toFixed(3)+','+v.y.toFixed(3)+','+v.z.toFixed(3);
-      if(!(k in seen))seen[k]=1+(this.rnd()*2-1)*(o.jit??.16);
-      v.multiplyScalar(seen[k]);p.setXYZ(i,v.x,v.y,v.z);
-    }
-    this.put(g,{p:o.pos||[0,0,0],ry:this.rnd()*6.28,s:o.s||1});this.add(g,o.c0,o.c1??o.c0,o.jitC,o.fx);
-  }
-  disc(o){
-    const g=new THREE.CylinderGeometry(o.r,(o.r2??o.r*0.85),o.h,o.rs||10);
-    this.put(g,{p:o.pos||[0,0,0],rx:o.tilt||0,ry:o.ry||0,q:o.q});this.add(g,o.c0,o.c1??o.c0,o.jit,o.fx);
-  }
-  merge(){
-    let vc=0,ic=0;
-    for(const g of this.parts){vc+=g.attributes.position.count;ic+=g.index.count;}
-    const pos=new Float32Array(vc*3),nor=new Float32Array(vc*3),col=new Float32Array(vc*3);
-    const idx=new (vc>65535?Uint32Array:Uint16Array)(ic);
-    let vo=0,io=0;
-    for(const g of this.parts){
-      const pa=g.attributes.position.array;
-      pos.set(pa,vo*3);nor.set(g.attributes.normal.array,vo*3);col.set(g.attributes.color.array,vo*3);
-      const gi=g.index.array;
-      for(let t=0;t<gi.length;t+=3){
-        const a=gi[t]*3,b=gi[t+1]*3,c=gi[t+2]*3;
-        const ux=pa[b]-pa[a],uy=pa[b+1]-pa[a+1],uz=pa[b+2]-pa[a+2];
-        const vx=pa[c]-pa[a],vy=pa[c+1]-pa[a+1],vz=pa[c+2]-pa[a+2];
-        const cx=uy*vz-uz*vy,cy=uz*vx-ux*vz,cz=ux*vy-uy*vx;
-        if(cx*cx+cy*cy+cz*cz<1e-16)continue;
-        idx[io++]=gi[t]+vo;idx[io++]=gi[t+1]+vo;idx[io++]=gi[t+2]+vo;
+
+  /* Meticulous Ribbed Column Builder (Saguaro, Cardon, Barrel, Organ Pipe) */
+  ribbedColumn(o){
+    const h=o.h||4.0, r0=o.r0||0.4, r1=o.r1||0.2, ribs=o.ribs||16;
+    const segs=o.segs||24, ribDepth=o.ribDepth||0.28, hydration=o.hydration??1.0;
+    const pos=o.pos||[0,0,0], q=o.q||[0,0,0,1];
+    const cSkin=o.cSkin||'#4a8a4f', cWood=o.cWood||'#3a2c20';
+    const cSun=new THREE.Color(o.cSun||'#e8f4d8'), cDark=new THREE.Color(shade(cSkin,-0.35));
+    const corking=o.corking||0.25;
+
+    const positions=[], normals=[], colors=[], indices=[];
+    const quat=new THREE.Quaternion(...q);
+    const effectiveDepth=ribDepth*(2.0-hydration*0.8);
+
+    for(let i=0;i<=segs;i++){
+      const t=i/segs;
+      const y=t*h;
+      // Stem profile taper & top rounded dome
+      let rTaper=t<0.08?(0.4+0.6*(t/0.08)):(t>0.88?Math.sin((1.0-t)/0.12*Math.PI*0.5):1.0);
+      const rCurr=lerp(r0,r1,t)*rTaper;
+      
+      const isCorked=t<corking;
+      const baseCol=isCorked?mix(cWood,cSkin,t/corking):cSkin;
+
+      for(let j=0;j<ribs*2;j++){
+        const angle=(j/(ribs*2))*Math.PI*2;
+        const isRibCrest=(j%2===0);
+        const rRad=rCurr*(isRibCrest?(1.0+effectiveDepth):1.0);
+
+        const lx=Math.cos(angle)*rRad;
+        const lz=Math.sin(angle)*rRad;
+        const pVec=new THREE.Vector3(lx,y,lz).applyQuaternion(quat).add(new THREE.Vector3(...pos));
+
+        // Normal calculation
+        const nx=Math.cos(angle)*(isRibCrest?1.0:0.7);
+        const nz=Math.sin(angle)*(isRibCrest?1.0:0.7);
+        const ny=isRibCrest?0.1:0.0;
+        const nVec=new THREE.Vector3(nx,ny,nz).normalize().applyQuaternion(quat);
+
+        // Baked lighting & cavity AO
+        const sunDot=Math.max(0.2,nVec.dot(new THREE.Vector3(0.5,0.8,0.3).normalize()));
+        const cavityAO=isRibCrest?1.0:0.45; // Troughs get cavity shadow
+        const finalCol=new THREE.Color(baseCol).multiply(cSun).multiplyScalar(sunDot*cavityAO);
+
+        positions.push(pVec.x,pVec.y,pVec.z);
+        normals.push(nVec.x,nVec.y,nVec.z);
+        colors.push(finalCol.r,finalCol.g,finalCol.b);
       }
-      vo+=g.attributes.position.count;g.dispose();
     }
+
+    // Connect quads
+    const vertsPerRow=ribs*2;
+    for(let i=0;i<segs;i++){
+      for(let j=0;j<vertsPerRow;j++){
+        const a=i*vertsPerRow+j;
+        const b=a+vertsPerRow;
+        const c=i*vertsPerRow+((j+1)%vertsPerRow);
+        const d=b+((j+1)%vertsPerRow)-j;
+        indices.push(a,b,c, c,b,d);
+      }
+    }
+
+    this.parts.push({p:positions,n:normals,c:colors,i:indices});
+    this.count++;
+  }
+
+  /* Areole Spine Cluster Builder */
+  spineCluster(o){
+    const pos=o.pos||[0,0,0], dir=o.dir||[0,1,0], count=o.count||8, len=o.len||0.15;
+    const cFelt='#d8d4c0', cSpine='#f4e8b0';
+    const quat=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(...dir).normalize());
+
+    // Central felt pad
+    const p0=new THREE.Vector3(...pos);
+    for(let k=0;k<count;k++){
+      const a=(k/count)*Math.PI*2;
+      const tilt=0.4+0.5*(k%2);
+      const sDir=new THREE.Vector3(Math.cos(a)*Math.sin(tilt),Math.cos(tilt),Math.sin(a)*Math.sin(tilt)).applyQuaternion(quat);
+      const pTip=p0.clone().addScaledVector(sDir,len);
+
+      this.parts.push({
+        p:[p0.x,p0.y,p0.z, pTip.x,pTip.y,pTip.z, pTip.x+0.005,pTip.y,pTip.z],
+        n:[sDir.x,sDir.y,sDir.z, sDir.x,sDir.y,sDir.z, sDir.x,sDir.y,sDir.z],
+        c:[0.9,0.85,0.6, 0.95,0.9,0.7, 0.95,0.9,0.7],
+        i:[0,1,2]
+      });
+    }
+    this.count++;
+  }
+
+  /* Cladode / Prickly Pear Flat Pad Builder */
+  pad(o){
+    const pos=o.pos||[0,0,0], q=o.q||[0,0,0,1], rx=o.rx||0.3, ry=o.ry||0.4, rz=o.rz||0.05;
+    const cSkin=o.cSkin||'#4a8a4f';
+    const quat=new THREE.Quaternion(...q);
+    const pCenter=new THREE.Vector3(...pos);
+
+    // Build 3D bevelled spatulate pad
+    const segs=16;
+    const positions=[], normals=[], colors=[], indices=[];
+    const cCol=new THREE.Color(cSkin);
+
+    for(let f=0;f<2;f++){
+      const zSign=f===0?1:-1;
+      for(let i=0;i<=segs;i++){
+        const a=(i/segs)*Math.PI*2;
+        const px=Math.cos(a)*rx;
+        const py=(Math.sin(a)+1.0)*ry*0.5;
+        const pVec=new THREE.Vector3(px,py,zSign*rz*(1.0-Math.pow(px/rx,2)*0.3)).applyQuaternion(quat).add(pCenter);
+        const nVec=new THREE.Vector3(0,0,zSign).applyQuaternion(quat);
+
+        positions.push(pVec.x,pVec.y,pVec.z);
+        normals.push(nVec.x,nVec.y,nVec.z);
+        colors.push(cCol.r,cCol.g,cCol.b);
+      }
+    }
+
+    for(let i=1;i<segs-1;i++){
+      indices.push(0,i,i+1);
+      indices.push(segs+1,segs+1+i+1,segs+1+i);
+    }
+
+    this.parts.push({p:positions,n:normals,c:colors,i:indices});
+    this.count++;
+  }
+
+  /* Flower / Fruit Trumpet & Ball Builder */
+  flowerFruit(o){
+    const pos=o.pos||[0,0,0], r=o.r||0.08, isFruit=o.isFruit??true;
+    const cCol=new THREE.Color(isFruit?(o.cCol||'#d83a3a'):(o.cCol||'#fff4c0'));
+    const p0=new THREE.Vector3(...pos);
+
+    const positions=[], normals=[], colors=[], indices=[];
+    const segs=12;
+    for(let i=0;i<=segs;i++){
+      const lat=(i/segs)*Math.PI;
+      for(let j=0;j<=segs;j++){
+        const lon=(j/segs)*Math.PI*2;
+        const px=Math.sin(lat)*Math.cos(lon)*r;
+        const py=Math.cos(lat)*r*(isFruit?1.3:0.6);
+        const pz=Math.sin(lat)*Math.sin(lon)*r;
+
+        positions.push(p0.x+px,p0.y+py,p0.z+pz);
+        normals.push(px/r,py/r,pz/r);
+        colors.push(cCol.r,cCol.g,cCol.b);
+      }
+    }
+    for(let i=0;i<segs;i++){
+      for(let j=0;j<segs;j++){
+        const a=i*(segs+1)+j;
+        const b=a+segs+1;
+        indices.push(a,b,a+1, b,b+1,a+1);
+      }
+    }
+    this.parts.push({p:positions,n:normals,c:colors,i:indices});
+    this.count++;
+  }
+
+  /* Ground soil mound & fallen grit debris */
+  ground(o){
+    const r=o.r||1.5, cSoil=new THREE.Color(o.cSoil||'#3a2c20');
+    const positions=[], normals=[], colors=[], indices=[];
+    const segs=24;
+    positions.push(0,0,0);
+    normals.push(0,1,0);
+    colors.push(cSoil.r*1.1,cSoil.g*1.1,cSoil.b*1.1);
+
+    for(let i=0;i<=segs;i++){
+      const a=(i/segs)*Math.PI*2;
+      const rr=r*(0.85+0.3*(i%2));
+      positions.push(Math.cos(a)*rr,-0.08,Math.sin(a)*rr);
+      normals.push(0,1,0);
+      colors.push(cSoil.r*0.6,cSoil.g*0.6,cSoil.b*0.6);
+    }
+    for(let i=1;i<=segs;i++){
+      indices.push(0,i,i%segs+1);
+    }
+    this.parts.push({p:positions,n:normals,c:colors,i:indices});
+  }
+
+  merge(){
+    let totalP=0, totalI=0;
+    for(const p of this.parts){totalP+=p.p.length; totalI+=p.i.length;}
+    const pos=new Float32Array(totalP), norm=new Float32Array(totalP), col=new Float32Array(totalP);
+    const idx=new (totalP/3>65535?Uint32Array:Uint16Array)(totalI);
+
+    let offsetP=0, offsetI=0, vertBase=0;
+    for(const p of this.parts){
+      pos.set(p.p,offsetP);
+      norm.set(p.n,offsetP);
+      col.set(p.c,offsetP);
+      for(let k=0;k<p.i.length;k++) idx[offsetI+k]=vertBase+p.i[k];
+      offsetP+=p.p.length;
+      offsetI+=p.i.length;
+      vertBase+=p.p.length/3;
+    }
+
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    geo.setAttribute('normal',new THREE.BufferAttribute(nor,3));
+    geo.setAttribute('normal',new THREE.BufferAttribute(norm,3));
     geo.setAttribute('color',new THREE.BufferAttribute(col,3));
-    geo.setIndex(new THREE.BufferAttribute(idx.slice(0,io),1));
-    this.parts.length=0;return geo;
+    geo.setIndex(new THREE.BufferAttribute(idx,1));
+    return geo;
   }
 }
 
-/* ═══════════════ plant catalogue ═══════════════ */
+/* ═══════════════ COMMON PARAMETER DEFS ═══════════════ */
 const COMMON=[
-  {k:'height',label:'Height',min:0.4,max:2.2,step:0.05,def:1},
-  {k:'spread',label:'Spread',min:0.4,max:2.2,step:0.05,def:1},
-  {k:'size',label:'Size',min:0.2,max:8,step:0.1,def:1},
-  {k:'density',label:'Density',min:0.25,max:2,step:0.05,def:1},
-  {k:'bend',label:'Bend',min:0,max:2,step:0.05,def:1},
-  {k:'variation',label:'Colour variation',min:0,max:0.35,step:0.01,def:0.12},
+  {k:'size',label:'Size / Scale (AAA)',min:0.5,max:8.0,step:0.1,def:1.0},
+  {k:'age',label:'Age / Growth Stage',min:0.2,max:2.5,step:0.1,def:1.0},
+  {k:'hydration',label:'Rib Hydration / Plumpness',min:0.2,max:1.0,step:0.05,def:0.85},
+  {k:'branching',label:'Branching Multiplier',min:0.0,max:2.5,step:0.1,def:1.0},
+  {k:'fruits',label:'Fruit Count',min:0,max:40,step:1,def:12},
+  {k:'flowers',label:'Flower Bloom Count',min:0,max:20,step:1,def:6},
+  {k:'spines',label:'Spine Density',min:0.2,max:2.0,step:0.1,def:1.0},
 ];
-const CC=(k,label,def)=>({k,label,def});
+const CC=(k,l,d)=>({k,label:l,def:d});
+
+/* ═══════════════ PLANTS DATA ═══════════════ */
 const PLANTS=[
-/* ── grasses ── */
-{id:'meadow',cat:'grass',name:'Meadow Tuft',latin:'Poa pratensis',icon:'tuft',desc:'Arching blades from a tight crown, with a few seed stalks.',
- params:[...COMMON],colors:[CC('foliage','Foliage','#5a8f3c'),CC('accent','Seed heads','#c9b458'),CC('stem','Stems','#4a7030')],
- build(B,P,R){
-  const n=Math.round(44*P.density);
-  for(let i=0;i<n;i++){
-    const a=i*2.39996+R(-0.35,0.35);
-    B.blade({len:R(0.45,0.85)*P.height,w:R(0.024,0.042),bend:R(0.4,1.0)*P.bend,tilt:R(0.1,0.55),ry:a,
-      pos:[R(-0.05,0.05)*P.spread,0,R(-0.05,0.05)*P.spread],c0:shade(P.foliage,-0.10),c1:P.foliage,jit:P.variation});
-  }
-  const m=Math.round(7*P.density);
-  for(let i=0;i<m;i++){
-    const ry=R(0,6.28),tilt=R(0.05,0.3),len=R(0.8,1.15)*P.height,bend=0.25*P.bend;
-    B.stem({len,r0:0.008,r1:0.005,bend,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation});
-    B.spike({r:0.022,h:0.12,pos:tiltPoint(len,bend*len,tilt,ry,null),q:dirQuat(tiltDir(tilt,ry),0),c0:shade(P.accent,-0.06),c1:P.accent,jit:P.variation});
-  }
-}},
-{id:'reed',cat:'grass',name:'Common Reed',latin:'Phragmites australis',icon:'reed',desc:'Tall straight culms with drooping leaves and fluffy plumes.',
- params:[...COMMON],colors:[CC('foliage','Foliage','#6a9a4a'),CC('accent','Plumes','#cbb37a'),CC('stem','Culms','#557733')],
- build(B,P,R){
-  const n=Math.max(3,Math.round(11*P.density));
-  for(let i=0;i<n;i++){
-    const a=R(0,6.28),rr=Math.sqrt(R(0,1))*0.28*P.spread,pos=[Math.cos(a)*rr,0,Math.sin(a)*rr];
-    const ry=R(0,6.28),tilt=R(0.02,0.18),len=R(1.1,1.6)*P.height,bend=R(0.1,0.35)*P.bend;
-    B.stem({len,r0:0.02,r1:0.008,bend,tilt,ry,pos,c0:shade(P.foliage,-0.12),c1:P.foliage,jit:P.variation});
-    for(let j=0;j<4;j++){
-      const t=0.2+0.2*j;
-      B.leaf({len:R(0.3,0.5)*P.height,w:R(0.03,0.05),bend:R(0.5,1.0)*P.bend,droop:R(0.2,0.6)*P.bend,tilt:R(0.6,1.1),ry:R(0,6.28),
-        pos:tiltPoint(len*t,bend*len*t*t,tilt,ry,pos),c0:shade(P.foliage,-0.08),c1:P.foliage,jit:P.variation});
+{
+  id:'cardon',cat:'cacti',name:'Mexican Giant Cardón',latin:'Pachycereus pringlei',icon:'cardon',
+  bot:{
+    family:'Cactaceae',native:'Baja California & Sonora, Mexico',
+    form:'Massive Candelabra Columnar Cactus',maxHeight:'19.2 m (63 ft)',
+    longevity:'200–300+ years',
+    eco:'Pollinated by Lesser Long-nosed bats at night; fruits eaten by desert birds/mammals; ribs used for indigenous housing.',
+    uses:'Edible fruit (dihé) harvested by Seri people; dried ribs used for fences/beams; drought-resistant xeriscape focal tree.'
+  },
+  desc:'The tallest cactus species on Earth. Features a massive fluted columnar trunk with candelabra branching, deep accordion ribs, dense areole spine rows, and felted fruits.',
+  params:[...COMMON],
+  colors:[CC('skin','Stem Skin','#3f8a48'),CC('wood','Woody Cork Base','#3a2c20'),CC('fruit','Ripe Fruit','#d83a3a'),CC('flower','Nocturnal Bloom','#fff8e0')],
+  build(B,P,R){
+    const H=4.5*P.size*P.age, rTrunk=0.45*Math.sqrt(P.age);
+    // Main Columnar Trunk
+    B.ribbedColumn({h:H,r0:rTrunk*1.2,r1:rTrunk*0.7,ribs:14,segs:28,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.2*P.age});
+    B.ground({r:rTrunk*3.5,cSoil:P.wood});
+
+    // Candelabra Arms
+    const numArms=Math.round(4*P.branching*P.age);
+    for(let i=0;i<numArms;i++){
+      const a=(i/numArms)*Math.PI*2+R(-0.2,0.2);
+      const armH=H*R(0.5,0.85);
+      const armR=rTrunk*0.65;
+      const pStart=[Math.cos(a)*rTrunk*0.8, H*R(0.2,0.45), Math.sin(a)*rTrunk*0.8];
+      const qArm=dirQuat([Math.cos(a)*0.6, 0.8, Math.sin(a)*0.6]);
+      B.ribbedColumn({pos:pStart,q:qArm,h:armH,r0:armR,r1:armR*0.75,ribs:12,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.0});
+
+      // Areole spine clusters along arm crests
+      if(P.spines>0.3){
+        for(let k=0;k<8;k++){
+          const sPos=[pStart[0]+Math.cos(a)*armR*1.1, pStart[1]+armH*(0.2+0.1*k), pStart[2]+Math.sin(a)*armR*1.1];
+          B.spineCluster({pos:sPos,dir:[Math.cos(a),0.2,Math.sin(a)],count:Math.round(8*P.spines),len:0.12});
+        }
+      }
     }
-    const tip=tiltPoint(len,bend*len,tilt,ry,pos),d=tiltDir(tilt,ry);
-    B.spike({r:0.055,h:0.4,rs:7,pos:[tip[0]-d[0]*0.06,tip[1]-d[1]*0.06,tip[2]-d[2]*0.06],q:dirQuat(d,0),c0:shade(P.accent,-0.05),c1:P.accent,jit:P.variation});
-  }
-}},
-{id:'tussock',cat:'grass',name:'Tussock',latin:'Festuca ovina',icon:'tussock',desc:'Dense fountain of fine blades that arch over and straw at the tips.',
- params:[...COMMON],colors:[CC('foliage','Foliage','#7a9a4a'),CC('accent','Straw tips','#c2a95e'),CC('stem','Base','#5a7038')],
- build(B,P,R){
-  const n=Math.round(64*P.density);
-  for(let i=0;i<n;i++){
-    const a=i*2.39996+R(-0.3,0.3);
-    B.blade({len:R(0.6,1.0)*P.height,w:R(0.018,0.032),bend:R(0.5,1.0)*P.bend,droop:R(0.4,0.9)*P.bend,tilt:R(0.05,0.35),ry:a,
-      pos:[R(-0.06,0.06)*P.spread,0,R(-0.06,0.06)*P.spread],
-      c0:shade(P.foliage,-0.12),c1:(R()<0.45?P.accent:shade(P.foliage,0.12)),jit:P.variation});
-  }
-}},
-{id:'lawn',cat:'grass',name:'Creeping Lawn',latin:'Cynodon dactylon',icon:'lawn',desc:'Short turf over a wide patch, stitched together with runners.',
- params:[...COMMON],colors:[CC('foliage','Foliage','#4f9a3f'),CC('accent','Fresh tips','#6fbf5a'),CC('stem','Runners','#3f7a32')],
- build(B,P,R){
-  const rad=1.1*P.spread,n=Math.round(150*P.density);
-  for(let i=0;i<n;i++){
-    const a=R(0,6.28),rr=Math.sqrt(R(0,1))*rad;
-    B.blade({len:R(0.1,0.28)*P.height,w:0.02,segs:3,bend:R(0.2,0.7)*P.bend,tilt:R(0,0.4),ry:R(0,6.28),
-      pos:[Math.cos(a)*rr,0,Math.sin(a)*rr],c0:shade(P.foliage,-0.08),c1:(R()<0.3?P.accent:P.foliage),jit:P.variation});
-  }
-  const m=Math.round(8*P.density);
-  for(let i=0;i<m;i++){
-    const ry=R(0,6.28),len=R(0.3,0.6)*P.spread;
-    B.stem({len,r0:0.006,r1:0.004,bend:0.1,tilt:1.45,ry,pos:[0,0.02,0],c0:P.stem,c1:P.stem,jit:P.variation,rad:5,segs:2});
-    for(let j=0;j<3;j++){
-      const t=0.3+0.25*j;
-      B.leaf({len:0.07,w:0.02,segs:2,bend:0.4,tilt:R(0.2,0.6),ry:R(0,6.28),pos:tiltPoint(len*t,0.1*len*t*t,1.45,ry,[0,0.02,0]),c0:P.foliage,c1:P.foliage,jit:P.variation});
+
+    // Fruits & Flowers at top crests
+    for(let f=0;f<P.fruits;f++){
+      const fAngle=R(0,Math.PI*2);
+      const fPos=[Math.cos(fAngle)*rTrunk*0.8, H*(0.88+R(0,0.1)), Math.sin(fAngle)*rTrunk*0.8];
+      B.flowerFruit({pos:fPos,r:0.09,isFruit:true,cCol:P.fruit});
     }
-    const tip=tiltPoint(len,0.1*len,1.45,ry,[0,0.02,0]);
-    for(let j=0;j<3;j++)B.blade({len:0.14*P.height,w:0.018,segs:3,bend:0.5,tilt:R(0,0.4),ry:R(0,6.28),pos:tip,c0:P.foliage,c1:P.foliage,jit:P.variation});
-  }
-}},
-{id:'pampas',cat:'grass',name:'Pampas Grass',latin:'Cortaderia selloana',icon:'pampas',desc:'Towering fountain grass crowned with silky cream plumes.',
- params:[...COMMON],colors:[CC('foliage','Foliage','#6a8a4a'),CC('accent','Plumes','#e8dcc0'),CC('stem','Stems','#7a8a55')],
- build(B,P,R){
-  const n=Math.round(52*P.density);
-  for(let i=0;i<n;i++){
-    const a=i*2.39996+R(-0.3,0.3);
-    B.blade({len:R(0.9,1.4)*P.height,w:R(0.02,0.034),bend:R(0.5,1.0)*P.bend,droop:R(0.4,0.9)*P.bend,tilt:R(0.05,0.35),ry:a,
-      pos:[R(-0.08,0.08)*P.spread,0,R(-0.08,0.08)*P.spread],c0:shade(P.foliage,-0.12),c1:P.foliage,jit:P.variation});
-  }
-  const m=Math.round(7*P.density);
-  for(let i=0;i<m;i++){
-    const ry=R(0,6.28),tilt=R(0.03,0.2),len=R(1.6,2.2)*P.height,bend=0.15*P.bend;
-    B.stem({len,r0:0.014,r1:0.007,bend,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation});
-    const tip=tiltPoint(len,bend*len,tilt,ry,null),d=tiltDir(tilt,ry),q=dirQuat(d,0);
-    B.spike({r:0.07,h:0.34,rs:8,pos:[tip[0]-d[0]*0.1,tip[1]-d[1]*0.1,tip[2]-d[2]*0.1],q,c0:shade(P.accent,-0.1),c1:P.accent,jit:P.variation});
-    B.spike({r:0.05,h:0.28,rs:8,pos:[tip[0]+d[0]*0.08,tip[1]+d[1]*0.08,tip[2]+d[2]*0.08],q,c0:shade(P.accent,-0.05),c1:shade(P.accent,0.05),jit:P.variation});
-    for(let k=0;k<4;k++)
-      B.spike({r:0.006,h:R(0.15,0.25),rs:4,tilt:R(0.2,0.5),ry:R(0,6.28),pos:tip,c0:P.accent,c1:P.accent,jit:P.variation});
-  }
-}},
-{id:'bamboo',cat:'grass',name:'Bamboo',latin:'Bambusa vulgaris',icon:'bamboo',desc:'Jointed green-gold culms with drooping lance leaves.',
- params:[...COMMON],colors:[CC('foliage','Leaves','#3f8a45'),CC('accent','Node bands','#c9b458'),CC('stem','Culms','#7aa04c')],
- build(B,P,R){
-  const n=Math.max(3,Math.round(6*P.density));
-  for(let i=0;i<n;i++){
-    const a=(i/n)*6.28+R(-0.3,0.3);
-    let base=[Math.cos(a)*0.22*P.spread,0,Math.sin(a)*0.22*P.spread];
-    let ryy=R(0,6.28),tt=R(0.02,0.14);
-    const segs=4+Math.floor(R(0,3)),sl=R(0.4,0.55)*P.height;
-    for(let sgm=0;sgm<segs;sgm++){
-      const bend=0.06*P.bend;
-      B.stem({len:sl,r0:0.032,r1:0.028,bend,tilt:tt,ry:ryy,pos:base,c0:shade(P.stem,-0.06),c1:P.stem,jit:P.variation,rad:8});
-      const top=tiltPoint(sl,bend*sl,tt,ryy,base);
-      B.disc({r:0.036,h:0.025,pos:[top[0],top[1]-0.02,top[2]],c0:P.accent,c1:P.accent,jit:P.variation,rs:8});
-      if(sgm>=segs-2)for(let k=0;k<3;k++)
-        B.leaf({len:R(0.3,0.45)*P.height,w:0.05,bend:0.7*P.bend,droop:0.4*P.bend,tilt:R(0.5,0.9),ry:R(0,6.28),pos:top,c0:shade(P.foliage,-0.08),c1:P.foliage,jit:P.variation});
-      base=top;tt=Math.min(0.5,tt+R(0,0.06));ryy+=R(-0.2,0.2);
+    for(let fl=0;fl<P.flowers;fl++){
+      const flAngle=R(0,Math.PI*2);
+      const flPos=[Math.cos(flAngle)*rTrunk*0.75, H*(0.92+R(0,0.08)), Math.sin(flAngle)*rTrunk*0.75];
+      B.flowerFruit({pos:flPos,r:0.07,isFruit:false,cCol:P.flower});
     }
   }
-}},
-{id:'fescue',cat:'grass',name:'Blue Fescue',latin:'Festuca glauca',icon:'fescue',desc:'Compact steel-blue tuft of needle-fine upright blades.',
- params:[...COMMON],colors:[CC('foliage','Foliage','#7a9ab0'),CC('accent','Tips','#a8c4d4'),CC('stem','Base','#5a7a8a')],
- build(B,P,R){
-  const n=Math.round(60*P.density);
-  for(let i=0;i<n;i++){
-    const a=i*2.39996+R(-0.3,0.3);
-    B.blade({len:R(0.25,0.45)*P.height,w:0.015,bend:R(0.2,0.5)*P.bend,tilt:R(0.02,0.3),ry:a,
-      pos:[R(-0.07,0.07)*P.spread,0,R(-0.07,0.07)*P.spread],c0:shade(P.foliage,-0.08),c1:(R()<0.4?P.accent:P.foliage),jit:P.variation});
-  }
-}},
-{id:'feather',cat:'grass',name:'Feather Grass',latin:'Stipa pennata',icon:'feather',desc:'Silky awns that shimmer above a low tuft of fine leaves.',
- params:[...COMMON],colors:[CC('foliage','Foliage','#8a9a55'),CC('accent','Awns','#e4d8b8'),CC('stem','Stems','#7a8a4a')],
- build(B,P,R){
-  const n=Math.round(36*P.density);
-  for(let i=0;i<n;i++){
-    const a=i*2.39996+R(-0.3,0.3);
-    B.blade({len:R(0.3,0.5)*P.height,w:0.018,bend:R(0.4,0.8)*P.bend,tilt:R(0.1,0.45),ry:a,
-      pos:[R(-0.06,0.06)*P.spread,0,R(-0.06,0.06)*P.spread],c0:shade(P.foliage,-0.1),c1:P.foliage,jit:P.variation});
-  }
-  const m=Math.round(10*P.density);
-  for(let i=0;i<m;i++){
-    const ry=R(0,6.28),tilt=R(0.05,0.3),len=R(0.7,1.0)*P.height,bend=0.2*P.bend;
-    B.stem({len,r0:0.006,r1:0.003,bend,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation,rad:5});
-    const tip=tiltPoint(len,bend*len,tilt,ry,null),d=tiltDir(tilt,ry);
-    B.spike({r:0.008,h:0.3,rs:5,pos:tip,q:dirQuat(d,0),c0:P.accent,c1:P.accent,jit:P.variation});
-    for(let k=0;k<10;k++){
-      const t=R(0.2,1),pp=[tip[0]+d[0]*0.3*t,tip[1]+d[1]*0.3*t,tip[2]+d[2]*0.3*t];
-      B.spike({r:0.0025,h:R(0.08,0.14),rs:4,pos:pp,q:dirQuat(tiltDir(R(0.6,1.2),R(0,6.28)),0),c0:shade(P.accent,-0.05),c1:P.accent,jit:0});
+},
+{
+  id:'saguaro',cat:'cacti',name:'Saguaro Cactus',latin:'Carnegiea gigantea',icon:'saguaro',
+  bot:{
+    family:'Cactaceae',native:'Sonoran Desert (Arizona, California, Sonora)',
+    form:'Tree-sized Columnar Cactus with Upward Arms',maxHeight:'16.0 m (52 ft)',
+    longevity:'150–200+ years',
+    eco:'Primary nesting shelter for Gila Woodpeckers & Screech Owls; white flowers state flower of Arizona.',
+    uses:'Tohono O\'odham harvest red fruit (bahidaj) for ceremonial wine, syrup, and jam.'
+  },
+  desc:'The iconic monarch of the Sonoran Desert. Features a tall pleated main trunk with thick upward-curving arms that flare seamlessly at branch junctions.',
+  params:[...COMMON],
+  colors:[CC('skin','Trunk Skin','#458a4d'),CC('wood','Woody Base','#382a1e'),CC('fruit','Ruby Tuna','#cf2b36'),CC('flower','White Wax Bloom','#fffae8')],
+  build(B,P,R){
+    const H=4.0*P.size*P.age, rTrunk=0.38*Math.sqrt(P.age);
+    B.ribbedColumn({h:H,r0:rTrunk*1.15,r1:rTrunk*0.65,ribs:18,segs:32,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.18*P.age});
+    B.ground({r:rTrunk*3.2,cSoil:P.wood});
+
+    // Upward arms
+    const numArms=Math.round(3*P.branching*P.age);
+    for(let i=0;i<numArms;i++){
+      const a=(i/numArms)*Math.PI*2+R(-0.3,0.3);
+      const armH=H*R(0.4,0.7);
+      const armR=rTrunk*0.6;
+      const pStart=[Math.cos(a)*rTrunk*0.85, H*R(0.35,0.6), Math.sin(a)*rTrunk*0.85];
+      const qArm=dirQuat([Math.cos(a)*0.2, 0.98, Math.sin(a)*0.2]);
+      B.ribbedColumn({pos:pStart,q:qArm,h:armH,r0:armR,r1:armR*0.7,ribs:14,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.0});
+    }
+
+    // Top fruits & flowers
+    for(let f=0;f<P.fruits;f++){
+      const fAngle=R(0,Math.PI*2);
+      const fPos=[Math.cos(fAngle)*rTrunk*0.7, H*(0.9+R(0,0.08)), Math.sin(fAngle)*rTrunk*0.7];
+      B.flowerFruit({pos:fPos,r:0.08,isFruit:true,cCol:P.fruit});
     }
   }
-}},
-{id:'oatgrass',cat:'grass',name:'Blue Oat Grass',latin:'Helictotrichon sempervirens',icon:'oatgrass',desc:'Steel-blue arching fountain spilling dangling oat spikelets.',
- params:[...COMMON],colors:[CC('foliage','Blades','#6a9ab8'),CC('accent','Tips','#c4d8e4'),CC('stem','Stems','#7a9a8a'),CC('extra','Oats','#d4c090')] ,
- build(B,P,R){
-  const H=P.height,S=P.spread;
-  const n=Math.round(44*P.density);
-  for(let i=0;i<n;i++){
-    const a=i*2.39996+R(-0.3,0.3);
-    B.blade({len:R(0.55,0.85)*H,w:0.02*S,bend:R(0.8,1.2)*P.bend,droop:0.3*P.bend,tilt:R(0.05,0.4),ry:a,
-      pos:[R(-0.07,0.07)*S,0,R(-0.07,0.07)*S],c0:shade(P.foliage,-0.08),c1:(R()<0.35?P.accent:P.foliage),jit:P.variation,fx:{sun:0.3}});
-  }
-  const np=Math.round(10*P.density);
-  for(let i=0;i<np;i++){
-    const ry=R(0,6.28),tilt=R(0.05,0.2),len=R(1.0,1.3)*H,bd=0.12*P.bend;
-    B.stem({len,r0:0.005*S,r1:0.003*S,bend:bd,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation,rad:4,segs:3});
-    for(let k=0;k<7;k++){
-      const t=0.5+0.48*(k/7);
-      const sp=tiltPoint(len*t,bd*len*t*t,tilt,ry,null);
-      const op=[sp[0]+R(-0.035,0.035)*S,sp[1]+R(-0.07,-0.02),sp[2]+R(-0.035,0.035)*S];
-      const dx=op[0]-sp[0],dy=op[1]-sp[1],dz=op[2]-sp[2],dl=Math.hypot(dx,dy,dz)||1;
-      B.stem({len:dl,r0:0.002,r1:0.0015,bend:0,pos:sp,q:dirQuat([dx/dl,dy/dl,dz/dl],0),c0:P.stem,c1:P.stem,jit:0,rad:4,segs:1});
-      B.ball({r:0.02*S,pos:op,s:[0.8,1.5,0.6],c0:shade(P.extra,-0.06),c1:P.extra,jit:P.variation});
-      if(R()<0.5)B.spike({r:0.002,h:0.05*S,rs:3,pos:op,q:dirQuat([dx/dl,dy/dl-0.5,dz/dl],0),c0:P.extra,c1:P.extra,jit:0});
+},
+{
+  id:'organpipe',cat:'cacti',name:'Organ Pipe Cactus',latin:'Stenocereus thurberi',icon:'organpipe',
+  bot:{
+    family:'Cactaceae',native:'Sonoran Desert (Southern AZ, Sonora, Baja Sur)',
+    form:'Multi-Stemmed Ground Cluster without Main Trunk',maxHeight:'8.0 m (26 ft)',
+    longevity:'150+ years',
+    eco:'Nocturnal white-pink flowers pollinated by bats; sweet pitahaya fruits eaten by wildlife.',
+    uses:'Sweet red fruits (pitahaya dulce) traditionally harvested for food and preserves.'
+  },
+  desc:'Multiple ribbed stems branching directly from ground level in a dense cluster without a main trunk, arching like pipe organ tubes.',
+  params:[...COMMON],
+  colors:[CC('skin','Stem Skin','#3b7a45'),CC('wood','Base Soil','#2e2218'),CC('fruit','Sweet Pitahaya','#e83a4d')],
+  build(B,P,R){
+    const H=3.2*P.size*P.age;
+    const numPipes=Math.round(12*P.branching*P.age);
+    B.ground({r:2.2*P.size,cSoil:P.wood});
+
+    for(let i=0;i<numPipes;i++){
+      const a=(i/numPipes)*Math.PI*2+R(-0.2,0.2);
+      const rr=R(0.1,0.6)*P.size;
+      const pH=H*R(0.6,1.0);
+      const pR=0.16*Math.sqrt(P.age);
+      const pPos=[Math.cos(a)*rr, 0, Math.sin(a)*rr];
+      const qPipe=dirQuat([Math.cos(a)*0.18, 0.98, Math.sin(a)*0.18]);
+      B.ribbedColumn({pos:pPos,q:qPipe,h:pH,r0:pR*1.1,r1:pR*0.7,ribs:12,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.1});
     }
   }
-}},
-{id:'fountain',cat:'grass',name:'Fountain Grass',latin:'Pennisetum alopecuroides',icon:'fountain',desc:'Arching green fountain crowned with rose-cream bottlebrush plumes.',
- params:[...COMMON],colors:[CC('foliage','Blades','#4a8a45'),CC('accent','Plumes','#d8a8a0'),CC('stem','Stems','#6a9a55')] ,
- build(B,P,R){
-  const H=P.height,S=P.spread;
-  const n=Math.round(42*P.density);
-  for(let i=0;i<n;i++){
-    const a=i*2.39996+R(-0.3,0.3);
-    B.blade({len:R(0.65,0.95)*H,w:0.022*S,bend:R(1.0,1.3)*P.bend,droop:0.35*P.bend,tilt:R(0.05,0.35),ry:a,
-      pos:[R(-0.07,0.07)*S,0,R(-0.07,0.07)*S],c0:shade(P.foliage,-0.08),c1:P.foliage,jit:P.variation,fx:{sun:0.3}});
-  }
-  const np=Math.round(11*P.density);
-  for(let i=0;i<np;i++){
-    const ry=R(0,6.28),tilt=R(0.05,0.25),len=R(0.9,1.2)*H,bd=0.25*P.bend;
-    B.stem({len,r0:0.007*S,r1:0.004*S,bend:bd,tilt,ry,c0:P.stem,c1:P.stem,jit:P.variation,rad:5,segs:3});
-    const tip=tiltPoint(len,bd*len,tilt,ry,null),d=tiltDir(tilt,ry);
-    const hhd=0.28*H;
-    B.spike({r:0.018*S,h:hhd,rs:7,pos:tip,q:dirQuat(d,0),c0:shade(P.accent,-0.1),c1:P.accent,jit:P.variation});
-    for(let k=0;k<14;k++){
-      const t=R(0.1,1);
-      const pp=[tip[0]+d[0]*hhd*t+R(-0.02,0.02)*S,tip[1]+d[1]*hhd*t,tip[2]+d[2]*hhd*t+R(-0.02,0.02)*S];
-      B.spike({r:0.004*S,h:R(0.05,0.09)*S,rs:4,pos:pp,q:dirQuat(tiltDir(tilt+R(-0.6,0.6),ry+R(-0.6,0.6)),0),c0:P.accent,c1:shade(P.accent,0.08),jit:0});
+},
+{
+  id:'barrel',cat:'cacti',name:'Golden Barrel Cactus',latin:'Echinocactus grusonii',icon:'barrel',
+  bot:{
+    family:'Cactaceae',native:'Central Mexico (Querétaro, Hidalgo)',
+    form:'Deeply Ribbed Globe / Cylindrical Barrel',maxHeight:'1.8 m (6 ft)',
+    longevity:'100+ years',
+    eco:'Endangered in native wild habitat; golden central spines protect succulent tissue from sunburn.',
+    uses:'Iconic xeriscape focal plant; emergency hydration source in desert survival.'
+  },
+  desc:'Deeply ribbed spherical to cylindrical barrel cactus with dense yellow central and radial spine rows forming glowing golden bands.',
+  params:[...COMMON],
+  colors:[CC('skin','Succulent Body','#4da853'),CC('spines','Golden Spines','#f4d83a'),CC('flower','Yellow Crown Bloom','#fff066')],
+  build(B,P,R){
+    const H=1.4*P.size*P.age, rBar=0.6*P.size*P.age;
+    B.ribbedColumn({h:H,r0:rBar,r1:rBar*0.8,ribs:24,segs:20,hydration:P.hydration,cSkin:P.skin,cWood:'#2e2218',corking:0.08});
+    B.ground({r:rBar*2.0,cSoil:'#2e2218'});
+
+    // Golden spine rows
+    if(P.spines>0.3){
+      for(let i=0;i<16;i++){
+        const a=(i/16)*Math.PI*2;
+        const sPos=[Math.cos(a)*rBar*1.05, H*0.6, Math.sin(a)*rBar*1.05];
+        B.spineCluster({pos:sPos,dir:[Math.cos(a),0.1,Math.sin(a)],count:Math.round(10*P.spines),len:0.15});
+      }
     }
   }
-}},
+},
+{
+  id:'nopal',cat:'cacti',name:'Tree Prickly Pear / Nopal',latin:'Opuntia ficus-indica',icon:'nopal',
+  bot:{
+    family:'Cactaceae',native:'Mexico',
+    form:'Tree-like Stacked Cladode Canopy with Woody Trunk',maxHeight:'7.0 m (23 ft)',
+    longevity:'80+ years',
+    eco:'Agricultural staple; host plant for cochineal dye insects; highly drought-resilient fodder.',
+    uses:'Edible tender young pads (nopalitos) and sweet juicy fruits (tunas); natural fence.'
+  },
+  desc:'Tree-sized prickly pear with a heavy woody trunk at the base and stacked thick oval/spatulate cladodes (pads) bearing golden spines and crimson tunas.',
+  params:[...COMMON],
+  colors:[CC('skin','Pad Green','#4a9a52'),CC('wood','Woody Trunk','#3d2e20'),CC('fruit','Crimson Tuna','#e82e3e')],
+  build(B,P,R){
+    const H=2.5*P.size*P.age, rTrunk=0.22*P.age;
+    B.ribbedColumn({h:H*0.4,r0:rTrunk*1.3,r1:rTrunk,ribs:8,cSkin:P.wood,cWood:P.wood,corking:1.0});
+    B.ground({r:rTrunk*4.0,cSoil:P.wood});
+
+    // Stacked pads
+    const numPads=Math.round(18*P.branching*P.age);
+    for(let i=0;i<numPads;i++){
+      const pPos=[R(-0.8,0.8)*P.size, H*0.3+R(0,H*0.7), R(-0.8,0.8)*P.size];
+      const qPad=dirQuat([R(-0.5,0.5),1,R(-0.5,0.5)]);
+      B.pad({pos:pPos,q:qPad,rx:0.28*P.size,ry:0.38*P.size,rz:0.04,cSkin:P.skin});
+
+      if(i%2===0&&P.fruits>0){
+        B.flowerFruit({pos:[pPos[0],pPos[1]+0.3,pPos[2]],r:0.06,isFruit:true,cCol:P.fruit});
+      }
+    }
+  }
+},
+{
+  id:'cholla',cat:'cacti',name:'Chain-Fruit Cholla',latin:'Cylindropuntia fulgida',icon:'cholla',
+  bot:{
+    family:'Cactaceae',native:'Arizona & Sonora',
+    form:'Spiny Tree / Shrub with Drooping Perennial Fruit Chains',maxHeight:'5.0 m (16 ft)',
+    longevity:'70+ years',
+    eco:'Barbed sheathed spines protect nesting Cactus Wrens & Curve-billed Thrashers.',
+    uses:'Barbed spine sheaths glow gold in sunlight; easily detached joints propagate vegetatively.'
+  },
+  desc:'Tree-like succulent with a dark woody trunk and dense canopy of cylindrical jointed segments covered in glowing barbed spines, hung with long drooping fruit chains.',
+  params:[...COMMON],
+  colors:[CC('skin','Stem Green','#428a49'),CC('wood','Dark Trunk','#2e2218'),CC('fruit','Yellow Cholla Fruit','#d8e83a')],
+  build(B,P,R){
+    const H=2.2*P.size*P.age, rTrunk=0.18*P.age;
+    B.ribbedColumn({h:H*0.5,r0:rTrunk*1.2,r1:rTrunk,ribs:10,cSkin:P.wood,cWood:P.wood,corking:1.0});
+    B.ground({r:rTrunk*4.0,cSoil:P.wood});
+
+    // Cylindrical jointed segments
+    const numSegs=Math.round(22*P.branching*P.age);
+    for(let i=0;i<numSegs;i++){
+      const sPos=[R(-0.9,0.9)*P.size, H*0.4+R(0,H*0.55), R(-0.9,0.9)*P.size];
+      const qSeg=dirQuat([R(-0.6,0.6),0.8,R(-0.6,0.6)]);
+      B.ribbedColumn({pos:sPos,q:qSeg,h:0.45*P.size,r0:0.07,r1:0.06,ribs:8,cSkin:P.skin,cWood:P.skin,corking:0.0});
+
+      if(i%3===0&&P.fruits>0){
+        // Hanging fruit chain
+        B.flowerFruit({pos:[sPos[0],sPos[1]-0.15,sPos[2]],r:0.05,isFruit:true,cCol:P.fruit});
+      }
+    }
+  }
+},
+{
+  id:'joshuatree',cat:'cacti',name:'Joshua Tree',latin:'Yucca brevifolia',icon:'joshuatree',
+  bot:{
+    family:'Asparagaceae',native:'Mojave Desert (CA, NV, UT, AZ)',
+    form:'Tree-sized Arborescent Succulent with Dagger Rosettes',maxHeight:'15.0 m (49 ft)',
+    longevity:'300–500+ years',
+    eco:'Co-evolved exclusively with Yucca Moths (Tegeticula) for obligate pollination.',
+    uses:'Fibrous trunk used by Native Americans for sandals & baskets; iconic Mojave Desert tree.'
+  },
+  desc:'Iconic tree succulent of the Mojave Desert with a thick fibrous trunk, heavy dichotomous forking branches, and dense rosettes of sharp dagger-like blue-green leaves.',
+  params:[...COMMON],
+  colors:[CC('skin','Fibrous Bark','#4a3b2b'),CC('leaves','Dagger Leaves','#3f7a52'),CC('flower','Cream Panicle','#f4ebd0')],
+  build(B,P,R){
+    const H=3.8*P.size*P.age, rTrunk=0.3*P.age;
+    B.ribbedColumn({h:H*0.6,r0:rTrunk*1.3,r1:rTrunk,ribs:12,cSkin:P.skin,cWood:P.skin,corking:1.0});
+    B.ground({r:rTrunk*3.5,cSoil:P.skin});
+
+    // Forking branches with dagger leaf rosettes
+    const numBranches=Math.round(5*P.branching*P.age);
+    for(let i=0;i<numBranches;i++){
+      const a=(i/numBranches)*Math.PI*2+R(-0.2,0.2);
+      const bPos=[Math.cos(a)*rTrunk*1.2, H*0.55, Math.sin(a)*rTrunk*1.2];
+      const qB=dirQuat([Math.cos(a)*0.6,0.8,Math.sin(a)*0.6]);
+      B.ribbedColumn({pos:bPos,q:qB,h:H*0.4,r0:rTrunk*0.7,r1:rTrunk*0.4,ribs:10,cSkin:P.skin,cWood:P.skin,corking:0.8});
+
+      // Terminal leaf rosette at tip
+      const tipPos=[bPos[0]+Math.cos(a)*0.8, bPos[1]+H*0.35, bPos[2]+Math.sin(a)*0.8];
+      for(let k=0;k<18;k++){
+        const lA=(k/18)*Math.PI*2;
+        const lPos=[tipPos[0]+Math.cos(lA)*0.1, tipPos[1]+0.1, tipPos[2]+Math.sin(lA)*0.1];
+        B.spineCluster({pos:lPos,dir:[Math.cos(lA),0.4,Math.sin(lA)],count:1,len:0.35*P.size});
+      }
+    }
+  }
+},
+{
+  id:'agave',cat:'cacti',name:'Century Plant Agave',latin:'Agave americana',icon:'agave',
+  bot:{
+    family:'Asparagaceae',native:'Mexico & Southwestern US',
+    form:'Giant Succulent Rosette with Inflorescence Mast',maxHeight:'10.0 m (33 ft in bloom)',
+    longevity:'30–50 years (monocarpic)',
+    eco:'Giant flower mast attracts nocturnal bats and hummingbirds; dies after single epic bloom.',
+    uses:'Harvested for tequila/mezcal production, sisal fiber, and agave nectar syrup.'
+  },
+  desc:'Massive rosette of thick, succulent, guttered blue-grey leaves with dark terminal thorns and recurved side teeth, holding a towering central flower mast.',
+  params:[...COMMON],
+  colors:[CC('leaves','Blue-Grey Leaves','#5a8a80'),CC('mast','Towering Mast','#8a7a40'),CC('flower','Yellow Umbrella Bloom','#f4d83a')],
+  build(B,P,R){
+    const rRos=1.2*P.size*P.age, hMast=5.0*P.size*P.age;
+    B.ground({r:rRos*1.8,cSoil:'#2e2218'});
+
+    // Sabre leaves in rosette
+    for(let i=0;i<28;i++){
+      const a=(i/28)*Math.PI*2;
+      const tilt=0.3+0.4*(i%3);
+      const lPos=[Math.cos(a)*0.1, 0.05, Math.sin(a)*0.1];
+      const qL=dirQuat([Math.cos(a)*Math.sin(tilt),Math.cos(tilt),Math.sin(a)*Math.sin(tilt)]);
+      B.pad({pos:lPos,q:qL,rx:0.18*P.size,ry:rRos,rz:0.04,cSkin:P.leaves});
+    }
+
+    // Towering central flower mast
+    B.ribbedColumn({h:hMast,r0:0.12*P.size,r1:0.04*P.size,ribs:10,cSkin:P.mast,cWood:P.mast,corking:0.0});
+
+    // Umbrella flower clusters
+    for(let k=0;k<6;k++){
+      const mAngle=(k/6)*Math.PI*2;
+      const mPos=[Math.cos(mAngle)*0.3, hMast*(0.65+0.05*k), Math.sin(mAngle)*0.3];
+      B.flowerFruit({pos:mPos,r:0.15*P.size,isFruit:false,cCol:P.flower});
+    }
+  }
+},
+{
+  id:'myrtle',cat:'cacti',name:'Blue Myrtle Candelabra',latin:'Myrtillocactus geometrizans',icon:'myrtle',
+  bot:{
+    family:'Cactaceae',native:'Central & Northern Mexico',
+    form:'Glaucous Blue Candelabra Shrub/Tree',maxHeight:'5.0 m (16 ft)',
+    longevity:'100+ years',
+    eco:'Glaucous blue-green stems reflect solar heat; sweet dark berries eaten by birds.',
+    uses:'Edible dark blue berries (garambullos) eaten fresh/dried; grown as living livestock hedges.'
+  },
+  desc:'Highly branched candelabra tree with glaucous blue-green 5–6 ribbed stems with star cross-sections, black central spines, and dark blue-purple berries.',
+  params:[...COMMON],
+  colors:[CC('skin','Glaucous Blue Skin','#4a8a85'),CC('wood','Woody Base','#382b1e'),CC('fruit','Dark Garambullo Berry','#3a3b7a')],
+  build(B,P,R){
+    const H=3.0*P.size*P.age, rTrunk=0.25*P.age;
+    B.ribbedColumn({h:H*0.35,r0:rTrunk*1.2,r1:rTrunk,ribs:6,cSkin:P.wood,cWood:P.wood,corking:1.0});
+    B.ground({r:rTrunk*3.5,cSoil:P.wood});
+
+    // Candelabra blue branches
+    const numBranches=Math.round(8*P.branching*P.age);
+    for(let i=0;i<numBranches;i++){
+      const a=(i/numBranches)*Math.PI*2+R(-0.2,0.2);
+      const bPos=[Math.cos(a)*rTrunk, H*0.3, Math.sin(a)*rTrunk];
+      const qB=dirQuat([Math.cos(a)*0.4,0.9,Math.sin(a)*0.4]);
+      B.ribbedColumn({pos:bPos,q:qB,h:H*0.65,r0:0.12*P.size,r1:0.08*P.size,ribs:6,hydration:P.hydration,cSkin:P.skin,cWood:P.wood,corking:0.0});
+
+      if(i%2===0&&P.fruits>0){
+        B.flowerFruit({pos:[bPos[0]+Math.cos(a)*0.15, bPos[1]+H*0.5, bPos[2]+Math.sin(a)*0.15],r:0.05,isFruit:true,cCol:P.fruit});
+      }
+    }
+  }
+},
+{
+  id:'ocotillo',cat:'cacti',name:'Ocotillo / Flame Sword',latin:'Fouquieria splendens',icon:'ocotillo',
+  bot:{
+    family:'Fouquieriaceae',native:'Chihuahuan & Sonoran Deserts',
+    form:'Fountain of Spiny Cane-like Whips',maxHeight:'6.0 m (20 ft)',
+    longevity:'100+ years',
+    eco:'Hummingbird nectar source; drought-deciduous (sprouts leaves within 48h of rain).',
+    uses:'Stems planted as living thorny fences; ramada roofing in desert architecture.'
+  },
+  desc:'Fountain of 12–35 straight, spiny, cane-like stems fanning out from a tight basal crown, clad in oval green leaves after rain and tipped with fiery scarlet blooms.',
+  params:[...COMMON],
+  colors:[CC('skin','Spiny Woody Cane','#5a4a35'),CC('leaves','Rain Leaves','#4a9a4f'),CC('flower','Fiery Scarlet Spike','#e82e2e')],
+  build(B,P,R){
+    const H=3.5*P.size*P.age;
+    const numCanes=Math.round(18*P.branching*P.age);
+    B.ground({r:1.8*P.size,cSoil:P.skin});
+
+    for(let i=0;i<numCanes;i++){
+      const a=(i/numCanes)*Math.PI*2+R(-0.2,0.2);
+      const tilt=0.15+0.25*R(0,1);
+      const qC=dirQuat([Math.sin(tilt)*Math.cos(a), Math.cos(tilt), Math.sin(tilt)*Math.sin(a)]);
+      B.ribbedColumn({pos:[Math.cos(a)*0.15,0,Math.sin(a)*0.15],q:qC,h:H,r0:0.04,r1:0.02,ribs:6,cSkin:P.skin,cWood:P.skin,corking:0.1});
+
+      // Scarlet tip blossom
+      const tip=[Math.sin(tilt)*Math.cos(a)*H, Math.cos(tilt)*H, Math.sin(tilt)*Math.sin(a)*H];
+      B.flowerFruit({pos:tip,r:0.08,isFruit:false,cCol:P.flower});
+    }
+  }
+}
 ];
-const plantOf=id=>PLANTS.find(p=>p.id===id);
+
+const plantOf=id=>PLANTS.find(p=>p.id===id)||PLANTS[0];
 const defaultsOf=def=>({params:Object.fromEntries(def.params.map(p=>[p.k,p.def])),colors:Object.fromEntries(def.colors.map(c=>[c.k,c.def]))});
 
 /* ═══════════════ state ═══════════════ */
 const G={
   specs:[], uidc:0, sel:null,
   mode:'nursery', shade:'flat',
-  scene:{wind:true,shadows:true,ground:true,spacing:2.6},
-  filter:'all', q:'', groups:{grass:false},
+  scene:{wind:true,shadows:true,ground:true,spacing:3.5},
+  filter:'all', q:'', groups:{cacti:false},
 };
 const specOf=uid=>G.specs.find(s=>s.uid===uid);
 const selSpec=()=>specOf(G.sel);
@@ -943,7 +1028,7 @@ const canvas=$('#gl');
 let renderer;
 try{
   renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
-}catch(e){errBar('⚠ WebGL unavailable: '+e.message);throw e;}
+}catch(e){$('#errBar').style.display='block';$('#errBar').textContent='⚠ WebGL unavailable: '+e.message;throw e;}
 renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
 renderer.setClearColor(0x000000,0);
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
@@ -951,33 +1036,33 @@ renderer.toneMappingExposure=1.15;
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
-scene.fog=new THREE.Fog(0x07080a,30,110);
+scene.fog=new THREE.Fog(0x0c0a08,30,120);
 const camera=new THREE.PerspectiveCamera(42,1,0.1,200);
-const hemi=new THREE.HemisphereLight(0xbfd4ff,0x2a2620,1.0);scene.add(hemi);
-const sun=new THREE.DirectionalLight(0xfff2e0,2.4);
-sun.position.set(4,8,2);sun.castShadow=true;
+
+const hemi=new THREE.HemisphereLight(0xffe8c0,0x3a2e20,1.2);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xfff2d0,2.6);
+sun.position.set(6,12,4);sun.castShadow=true;
 sun.shadow.mapSize.set(2048,2048);
-sun.shadow.camera.left=-12;sun.shadow.camera.right=12;sun.shadow.camera.top=12;sun.shadow.camera.bottom=-12;
-sun.shadow.camera.far=30;sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.02;
+sun.shadow.camera.left=-16;sun.shadow.camera.right=16;sun.shadow.camera.top=16;sun.shadow.camera.bottom=-16;
+sun.shadow.camera.far=40;sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.02;
 scene.add(sun);
-const fill=new THREE.DirectionalLight(0x9db8ff,0.5);fill.position.set(-5,3,-4);scene.add(fill);
-const MAT_FLAT=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.85,metalness:0,side:THREE.DoubleSide});
+const fill=new THREE.DirectionalLight(0x80b0ff,0.6);fill.position.set(-6,4,-5);scene.add(fill);
+
+const MAT_FLAT=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.8,metalness:0,side:THREE.DoubleSide});
 const MAT_WIRE=new THREE.MeshBasicMaterial({vertexColors:true,wireframe:true,transparent:true,opacity:0.85});
 const CONTACT_GEO=new THREE.CircleGeometry(1,32);
-const CONTACT_MAT=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.3,depthWrite:false});
-const CONTACT_MAT2=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.32,depthWrite:false});
+const CONTACT_MAT=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:0.35,depthWrite:false});
+
 function addContact(spec){
   spec.contact=new THREE.Group();
   const o=new THREE.Mesh(CONTACT_GEO,CONTACT_MAT);o.rotation.x=-Math.PI/2;
-  const i=new THREE.Mesh(CONTACT_GEO,CONTACT_MAT2);i.rotation.x=-Math.PI/2;i.position.y=0.001;i.scale.set(0.55,0.55,1);
-  spec.contact.add(o,i);spec.contact.position.y=0.002;scene.add(spec.contact);
+  spec.contact.add(o);spec.contact.position.y=0.002;scene.add(spec.contact);
 }
-const groundDisc=new THREE.Mesh(new THREE.CircleGeometry(30,64),new THREE.MeshStandardMaterial({color:0x0b0d0c,roughness:1}));
+
+const groundDisc=new THREE.Mesh(new THREE.CircleGeometry(40,64),new THREE.MeshStandardMaterial({color:0x120d09,roughness:1}));
 groundDisc.rotation.x=-Math.PI/2;groundDisc.position.y=-0.01;groundDisc.receiveShadow=true;scene.add(groundDisc);
-const grid=new THREE.GridHelper(60,60,0x2e3236,0x1b1d20);
+const grid=new THREE.GridHelper(80,80,0x3e3226,0x1f1812);
 grid.position.y=0.001;grid.material.transparent=true;grid.material.opacity=0.5;scene.add(grid);
-const ring=new THREE.Mesh(new THREE.RingGeometry(0.55,0.65,48),new THREE.MeshBasicMaterial({color:0x4fd8e0,transparent:true,opacity:0.8,side:THREE.DoubleSide}));
-ring.rotation.x=-Math.PI/2;ring.position.y=0.015;ring.visible=false;scene.add(ring);
 
 /* ═══════════════ specimens ═══════════════ */
 function buildSpecimen(spec){
@@ -993,11 +1078,12 @@ function buildSpecimen(spec){
   mesh.castShadow=spec.shadow;mesh.receiveShadow=true;
   mesh.userData.uid=spec.uid;
   spec.mesh=mesh;spec.group.add(mesh);
-  spec.group.scale.setScalar(spec.params.size||1);
+  
   const bb=geo.boundingBox,size=new THREE.Vector3();bb.getSize(size);
-  spec.height=size.y*(spec.params.size||1);spec.tris=Math.round(geo.index.count/3);spec.parts=B.count;
-  spec.contactR=Math.max(0.22,(size.x+size.z)/4*(spec.params.size||1));
+  spec.height=size.y;spec.tris=Math.round(geo.index.count/3);spec.parts=B.count;
+  if(spec.contact)spec.contact.scale.set(size.x*0.6,size.z*0.6,1);
 }
+
 function makeSpecimen(type,seed,params,colors,name){
   const def=plantOf(type),d=defaultsOf(def);
   const uid='sp'+(++G.uidc);
@@ -1005,60 +1091,66 @@ function makeSpecimen(type,seed,params,colors,name){
   const spec={uid,type,name:name||`${def.name} ${String(n).padStart(2,'0')}`,
     seed:seed||randSeed(),params:{...d.params,...(params||{})},colors:{...d.colors,...(colors||{})},
     visible:true,solo:false,spin:false,shadow:true,off:{x:0,z:0,ry:0},phase:Math.random()*6.28,
-    group:new THREE.Group(),mesh:null,height:0,tris:0,parts:0,slot:{x:0,z:0},contact:null,contactR:0.4};
-  scene.add(spec.group);addContact(spec);
-  buildSpecimen(spec);
-  G.specs.push(spec);
-  layout();refresh();
+    group:new THREE.Group(),mesh:null,height:0,tris:0,parts:0,slot:{x:0,z:0},contact:null};
+  scene.add(spec.group);addContact(spec);buildSpecimen(spec);G.specs.push(spec);
   return spec;
 }
+function makeSpecimenSilent(type,seed,params,colors,name){return makeSpecimen(type,seed,params,colors,name);}
 function removeSpecimen(uid){
   const i=G.specs.findIndex(s=>s.uid===uid);if(i<0)return;
-  const s=G.specs[i];
-  if(s.mesh)s.mesh.geometry.dispose();
-  if(s.contact)scene.remove(s.contact);scene.remove(s.group);G.specs.splice(i,1);
-  if(G.sel===uid)G.sel=null;
+  const s=G.specs[i];if(s.mesh)s.mesh.geometry.dispose();if(s.contact)scene.remove(s.contact);scene.remove(s.group);G.specs.splice(i,1);
+  if(G.sel===uid)G.sel=G.specs[0]?.uid||null;
   layout();refresh();autosave();
 }
-function layout(){
-  const vis=visibleSpecs(),sp=G.scene.spacing;
-  const cols=vis.length<=5?Math.max(1,vis.length):Math.ceil(vis.length/2);
-  const rows=Math.ceil(vis.length/cols);
-  vis.forEach((s,i)=>{
-    const r=Math.floor(i/cols),c=i%cols,rowLen=Math.min(cols,vis.length-r*cols);
-    s.slot={x:(c-(rowLen-1)/2)*sp,z:(r-(rows-1)/2)*sp*0.9};
-  });
-  for(const s of G.specs){
-    if(G.mode==='solo'){s.group.visible=(s.uid===G.sel)&&s.visible;s.group.position.set(s.off.x,0,s.off.z);}
-    else{s.group.visible=s.visible;s.group.position.set(s.slot.x+s.off.x,0,s.slot.z+s.off.z);}
-    s.group.rotation.y=s.off.ry;
-    if(s.contact){s.contact.position.set(s.group.position.x,0.002,s.group.position.z);s.contact.visible=s.group.visible;s.contact.scale.set(s.contactR,s.contactR,1);}
-  }
-  const sel=selSpec();
-  if(sel&&sel.group.visible){ring.visible=true;ring.position.set(sel.group.position.x,0.015,sel.group.position.z);
-    const sc=0.7+sel.params.spread*0.6+sel.height*0.25;ring.scale.set(sc,sc,sc);}
-  else ring.visible=false;
+function removeSpecimenSilent(uid){
+  const i=G.specs.findIndex(s=>s.uid===uid);if(i<0)return;
+  const s=G.specs[i];if(s.mesh)s.mesh.geometry.dispose();if(s.contact)scene.remove(s.contact);scene.remove(s.group);G.specs.splice(i,1);
 }
-function reseedSpec(spec,seed){
-  spec.seed=seed||randSeed();
-  buildSpecimen(spec);refresh();autosave();
-}
+function reseedSpec(spec,seed){spec.seed=seed||randSeed();buildSpecimen(spec);layout();refresh();autosave();}
 
-/* ═══════════════ orbit controls ═══════════════ */
-const orb={az:0.7,el:0.5,dist:8,tx:0,ty:0.5,tz:0,gaz:0.7,gel:0.5,gdist:8,gtx:0,gty:0.5,gtz:0};
+/* ═══════════════ camera orbit ═══════════════ */
+const orb={az:0.6,el:0.35,dist:12,gtx:0,gty:2.5,gtz:0,cx:0,cy:2.5,cz:12};
+function setView(v){
+  if(v==='front'){orb.az=0;orb.el=0.1;}
+  if(v==='top'){orb.az=0;orb.el=1.55;}
+  if(v==='iso'){orb.az=0.785;orb.el=0.55;}
+  $$('#viewSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+}
 function applyCam(){
-  orb.az=lerp(orb.az,orb.gaz,0.14);orb.el=lerp(orb.el,orb.gel,0.14);orb.dist=lerp(orb.dist,orb.gdist,0.14);
-  orb.tx=lerp(orb.tx,orb.gtx,0.14);orb.ty=lerp(orb.ty,orb.gty,0.14);orb.tz=lerp(orb.tz,orb.gtz,0.14);
-  const ce=Math.cos(orb.el),se=Math.sin(orb.el);
-  camera.position.set(orb.tx+orb.dist*ce*Math.sin(orb.az),orb.ty+orb.dist*se,orb.tz+orb.dist*ce*Math.cos(orb.az));
-  camera.lookAt(orb.tx,orb.ty,orb.tz);
+  orb.cx=lerp(orb.cx,orb.gtx+orb.dist*Math.sin(orb.az)*Math.cos(orb.el),0.12);
+  orb.cy=lerp(orb.cy,orb.gty+orb.dist*Math.sin(orb.el),0.12);
+  orb.cz=lerp(orb.cz,orb.gtz+orb.dist*Math.cos(orb.az)*Math.cos(orb.el),0.12);
+  camera.position.set(orb.cx,orb.cy,orb.cz);
+  camera.lookAt(orb.gtx,orb.gty,orb.gtz);
+}
+function layout(){
+  const sp=G.scene.spacing;
+  if(G.mode==='solo'){
+    for(const s of G.specs){
+      const isS=s.uid===G.sel;
+      s.group.visible=isS&&s.visible;if(s.contact)s.contact.visible=isS&&s.visible;
+      s.group.position.set(0,0,0);if(s.contact)s.contact.position.set(0,0.002,0);
+    }
+  }else{
+    const vis=visibleSpecs(), cols=Math.ceil(Math.sqrt(vis.length))||1;
+    let idx=0;
+    for(const s of G.specs){
+      if(!s.visible){s.group.visible=false;if(s.contact)s.contact.visible=false;continue;}
+      s.group.visible=true;if(s.contact)s.contact.visible=true;
+      const r=Math.floor(idx/cols), c=idx%cols;
+      const x=(c-(cols-1)/2)*sp, z=(r-(cols-1)/2)*sp;
+      s.group.position.set(x,0,z);if(s.contact)s.contact.position.set(x,0.002,z);
+      idx++;
+    }
+  }
 }
 function focusSpec(spec){
   if(!spec)return;
   const p=spec.group.position;
-  orb.gtx=p.x;orb.gty=Math.max(0.2,p.y+spec.height*0.45);orb.gtz=p.z;
-  orb.gdist=clamp(Math.max(2.2,spec.height*3.4,spec.params.spread*2.4),1.6,26);
+  orb.gtx=p.x;orb.gty=Math.max(0.5,p.y+spec.height*0.4);orb.gtz=p.z;
+  orb.dist=clamp(spec.height*2.2,3.0,30);
 }
+
 {
   let drag=null,moved=0;
   canvas.addEventListener('pointerdown',e=>{canvas.setPointerCapture(e.pointerId);drag={b:e.button,x:e.clientX,y:e.clientY,pan:e.shiftKey||e.button===2||e.button===1};moved=0;});
@@ -1067,18 +1159,14 @@ function focusSpec(spec){
     const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.x=e.clientX;drag.y=e.clientY;moved+=Math.abs(dx)+Math.abs(dy);
     if(drag.pan){
       const s=orb.dist*0.0016,ca=Math.cos(orb.az),sa=Math.sin(orb.az);
-      orb.gtx-= (dx*ca)*s;orb.gtz-=(-dx*sa)*s;orb.gty+=dy*s;
-      orb.gty=clamp(orb.gty,-2,8);
-    }else{orb.gaz-=dx*0.0055;orb.gel=clamp(orb.gel+dy*0.005,0.05,1.5);}
+      orb.gtx-=(dx*ca)*s;orb.gtz-=(-dx*sa)*s;orb.gty+=dy*s;
+    }else{orb.az-=dx*0.0055;orb.el=clamp(orb.el+dy*0.005,0.05,1.55);}
   });
-  canvas.addEventListener('pointerup',e=>{
-    const wasClick=moved<5;
-    drag=null;
-    if(wasClick&&e.button===0)pick(e);
-  });
-  canvas.addEventListener('wheel',e=>{e.preventDefault();orb.gdist=clamp(orb.gdist*(1+e.deltaY*0.0011),1.5,30);},{passive:false});
+  canvas.addEventListener('pointerup',e=>{if(moved<5&&e.button===0)pick(e);drag=null;});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();orb.dist=clamp(orb.dist*(1+e.deltaY*0.0011),2.0,50);},{passive:false});
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
 }
+
 const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();
 function pick(e){
   const r=canvas.getBoundingClientRect();
@@ -1094,7 +1182,6 @@ function select(uid){
   if(G.mode==='solo'&&uid)focusSpec(selSpec());
 }
 
-/* ═══════════════ shared controls ═══════════════ */
 function sliderRow(label,min,max,step,val,unit,cb,def){
   const el=document.createElement('div');el.className='ctl';
   el.innerHTML=`<div class="ctl-top"><span class="lab">${esc(label)}</span><span class="val"></span></div>
@@ -1115,32 +1202,12 @@ function sliderRow(label,min,max,step,val,unit,cb,def){
   bar.addEventListener('dblclick',()=>{val=def;paint();cb(val);autosave();});
   return el;
 }
-function switchRow(label,on,cb){
-  const el=document.createElement('div');el.className='ctl';
-  el.innerHTML=`<div class="rowctl"><span class="lab">${esc(label)}</span><div class="sw${on?' on':''}"></div></div>`;
-  $('.sw',el).addEventListener('click',e=>{on=!on;e.currentTarget.classList.toggle('on',on);cb(on);});
-  return el;
-}
 function colorRow(label,hex,cb){
   const el=document.createElement('div');el.className='ctl';
-  el.innerHTML=`<div class="rowctl"><span class="lab">${esc(label)}</span><div style="display:flex;align-items:center;gap:8px"><span class="csw-hex">${esc(hex)}</span><label class="csw" style="background:${esc(hex)}"><input type="color" value="${esc(hex)}"></label></div></div>`;
+  el.innerHTML=`<div class="rowctl" style="display:flex;align-items:center;justify-content:space-between;min-height:32px"><span class="lab">${esc(label)}</span><div style="display:flex;align-items:center;gap:8px"><span class="csw-hex">${esc(hex)}</span><label class="csw" style="background:${esc(hex)}"><input type="color" value="${esc(hex)}"></label></div></div>`;
   const inp=$('input',el);
   inp.addEventListener('input',()=>{$('.csw',el).style.background=inp.value;$('.csw-hex',el).textContent=inp.value;cb(inp.value);});
   inp.addEventListener('change',()=>autosave());
-  return el;
-}
-function stepperRow(label,val,min,max,step,cb){
-  const el=document.createElement('div');el.className='ctl';
-  el.innerHTML=`<div class="xf-row"><span class="xl">${esc(label)}</span><div class="xyz" style="grid-template-columns:1fr"><div class="stp"><span class="n"></span><button class="b" data-d="-1">−</button><button class="b" data-d="1">+</button></div></div></div>`;
-  const n=$('.n',el);
-  const paint=()=>n.textContent=(Math.round(val*100)/100).toFixed(2);
-  paint();
-  const commit=v=>{val=clamp(Math.round(v/step)*step,min,max);paint();cb(val);};
-  $$('.b',el).forEach(b=>b.addEventListener('click',()=>{commit(val+step*(+b.dataset.d));autosave();}));
-  const st=$('.stp',el);let sx=null,sv=0;
-  st.addEventListener('pointerdown',e=>{if(e.target.closest('.b'))return;st.setPointerCapture(e.pointerId);sx=e.clientX;sv=val;});
-  st.addEventListener('pointermove',e=>{if(sx===null)return;commit(sv+(e.clientX-sx)*0.01);});
-  st.addEventListener('pointerup',()=>{sx=null;autosave();});
   return el;
 }
 function section(title,hint,open=true){
@@ -1163,83 +1230,79 @@ function prompt(tool,txt){
 }
 
 /* ═══════════════ outliner ═══════════════ */
-function treeVisible(spec){
-  if(G.filter!=='all'&&plantOf(spec.type).cat!==G.filter)return false;
-  if(G.q){const q=G.q.toLowerCase(),d=plantOf(spec.type);
-    if(!(spec.name+' '+spec.seed+' '+d.name+' '+d.latin+' '+d.id).toLowerCase().includes(q))return false;}
-  return true;
-}
 function renderOutliner(){
   $('#tSpec').textContent=G.specs.length;
   $('#tSel').textContent=G.sel?1:0;
   const sel=selSpec();
   $('#tSelS').textContent=sel?plantOf(sel.type).name:'none';
   $('#tSelT').classList.toggle('ok',!!sel);
-  /* filter dropdown */
-  const counts={all:G.specs.length};
-  for(const c of CATS)counts[c.id]=G.specs.filter(s=>plantOf(s.type).cat===c.id).length;
-  const cur=G.filter==='all'?{label:'All',acc:'#fff'}:catOf(G.filter);
-  $('#ddBtn').innerHTML=`<span class="cur"><span class="kd" style="--acc:${cur.acc};background:${cur.acc}"></span>${esc(cur.label)}</span><span class="cnt">${counts[G.filter]}</span><span class="caret">${IC.chev}</span>`;
-  $('#ddMenu').innerHTML=[{id:'all',label:'All',acc:'#fff'}].concat(CATS).map(c=>
-    `<div class="opt${G.filter===c.id?' on':''}" data-f="${c.id}"><span class="kd" style="--acc:${c.acc};background:${c.acc}"></span><span class="lab">${esc(c.label)}</span><span class="n">${counts[c.id]}</span><span class="tick">${IC.check}</span></div>`).join('');
-  /* pills */
-  $('#fpills').innerHTML=G.filter==='all'?'':`<span class="fpill"><span class="kd" style="--acc:${cur.acc};background:${cur.acc}"></span>${esc(cur.label)}<span class="n">${counts[G.filter]}</span><button class="x" id="pillX">${IC.x}</button></span>`;
-  $('#pillX')?.addEventListener('click',()=>{G.filter='all';refresh();});
-  /* tree */
+  
+  const cur=catOf('cacti');
+  $('#ddBtn').innerHTML=`<span class="cur"><span class="kd" style="--acc:${cur.acc};background:${cur.acc}"></span>${esc(cur.label)}</span><span class="cnt">${G.specs.length}</span><span class="caret">${IC.chev}</span>`;
+  $('#ddMenu').innerHTML=`<div class="opt on"><span class="kd" style="--acc:${cur.acc};background:${cur.acc}"></span><span class="lab">${esc(cur.label)}</span><span class="n">${G.specs.length}</span><span class="tick">${IC.check}</span></div>`;
+
   const tree=$('#tree');tree.innerHTML='';
-  for(const c of CATS){
-    const rows=G.specs.filter(s=>plantOf(s.type).cat===c.id&&treeVisible(s));
-    if(G.filter!=='all'&&G.filter!==c.id)continue;
-    if(!rows.length&&G.q)continue;
-    const g=document.createElement('div');g.className='grp'+(G.groups[c.id]?' closed':'');
-    g.innerHTML=`<div class="grp-h" style="--acc:${c.acc}"><span class="car">${IC.chev}</span><span class="kd"></span>${esc(c.label)}<span class="cnt">${rows.filter(s=>s.visible).length}/${rows.length}</span></div><div class="kids"></div>`;
-    $('.grp-h',g).addEventListener('click',()=>{G.groups[c.id]=!G.groups[c.id];g.classList.toggle('closed');});
-    const kids=$('.kids',g);
-    for(const s of rows){
-      const r=document.createElement('div');
-      r.className='row'+(s.uid===G.sel?' sel':'')+(s.visible?'':' hid');
-      r.style.setProperty('--acc',c.acc);
-      r.innerHTML=`<span class="ico">${IC[plantOf(s.type).icon]}</span><span class="txt"><span class="name">${esc(s.name)}</span><span class="meta">${esc(s.seed)} · ${fmtK(s.tris)}△</span></span><button class="eye" title="toggle visibility">${s.visible?IC.eye:IC.eyeOff}</button>`;
-      r.addEventListener('click',e=>{
-        if(e.target.closest('.eye')){s.visible=!s.visible;layout();refresh();autosave();return;}
-        select(s.uid);
-      });
-      r.addEventListener('dblclick',()=>{focusSpec(s);});
-      kids.appendChild(r);
-    }
-    if(!rows.length){kids.innerHTML=`<div class="empty" style="padding:14px">nothing here yet<br><span style="font-size:11px">Tab · grow a ${c.label.slice(0,-1).toLowerCase()}</span></div>`;}
-    tree.appendChild(g);
+  const g=document.createElement('div');g.className='grp';
+  g.innerHTML=`<div class="grp-h" style="--acc:${cur.acc}"><span class="car">${IC.chev}</span><span class="kd"></span>${esc(cur.label)}<span class="cnt">${visibleSpecs().length}/${G.specs.length}</span></div><div class="kids"></div>`;
+  const kids=$('.kids',g);
+
+  for(const s of G.specs){
+    const r=document.createElement('div');
+    r.className='row'+(s.uid===G.sel?' sel':'')+(s.visible?'':' hid');
+    r.innerHTML=`<span class="ico">${IC[plantOf(s.type).icon]}</span><span class="txt"><span class="name">${esc(s.name)}</span><span class="meta">${esc(s.seed)} · ${fmtK(s.tris)}△ · ${s.height.toFixed(1)}m</span></span><button class="eye" title="toggle visibility">${s.visible?IC.eye:IC.eyeOff}</button>`;
+    r.addEventListener('click',e=>{
+      if(e.target.closest('.eye')){s.visible=!s.visible;layout();refresh();autosave();return;}
+      select(s.uid);
+    });
+    r.addEventListener('dblclick',()=>{focusSpec(s);});
+    kids.appendChild(r);
   }
-  /* foot */
+  tree.appendChild(g);
+
   const total=Math.max(1,G.specs.length),tris=G.specs.reduce((a,s)=>a+s.tris,0);
-  $('#ofoot').innerHTML=`<div class="foot-census">${CATS.map(c=>{const n=G.specs.filter(s=>plantOf(s.type).cat===c.id).length;return n?`<i style="--acc:${c.acc};background:${c.acc};width:${n/total*100}%"></i>`:'';}).join('')}</div>
+  $('#ofoot').innerHTML=`<div class="foot-census"><i style="--acc:${cur.acc};background:${cur.acc};width:100%"></i></div>
     <div class="foot-row"><span class="kv">${IC.box}<b>${fmtK(tris)}</b> tris</span><span class="kv">${IC.leaf}<b>${visibleSpecs().length}/${G.specs.length}</b> visible</span><span class="sp"></span><span class="kv">${G.shade}</span></div>`;
 }
-$('#ddBtn').addEventListener('click',e=>{e.stopPropagation();$('#filters').classList.toggle('open');});
-$('#ddMenu').addEventListener('click',e=>{const o=e.target.closest('.opt');if(!o)return;G.filter=o.dataset.f;$('#filters').classList.remove('open');refresh();});
-document.addEventListener('pointerdown',e=>{if(!e.target.closest('.filters'))$('#filters').classList.remove('open');});
-$('#q').addEventListener('input',e=>{G.q=e.target.value;renderOutliner();});
 
 /* ═══════════════ inspector ═══════════════ */
 function renderInspector(){
   const insp=$('#insp');insp.innerHTML='';
   const s=selSpec();
   $('#inspBadge').textContent=s?plantOf(s.type).name:'nothing selected';
-  if(!s){renderInspEmpty(insp);return;}
-  const def=plantOf(s.type),cat=catOf(def.cat);
-  /* hero */
-  const hero=document.createElement('div');hero.className='hero';hero.style.setProperty('--acc',cat.acc);
+  if(!s){
+    insp.innerHTML='<div class="empty"><b>No Cactus Selected</b>Select a plant in outliner or viewport, or press Tab to grow a new cactus.</div>';
+    return;
+  }
+  const def=plantOf(s.type),cat=catOf('cacti');
+
+  // Hero Card
+  const hero=document.createElement('div');hero.className='hero';
   hero.innerHTML=`<div class="c-top"><span class="ico">${IC[def.icon]}</span><span class="t"><span class="n">${esc(s.name)}</span><span class="m">${esc(def.latin)}</span></span></div>
-    <div class="big"><span class="v">${s.height.toFixed(2)}</span><span class="u">m</span><span class="lab">canopy<br>height</span></div>
+    <div class="big"><span class="v">${s.height.toFixed(2)}</span><span class="u">m</span><span class="lab">tree height<br>scale</span></div>
     <div class="side"><div><span class="k">tris</span><span class="v2">${fmtK(s.tris)}</span></div><div><span class="k">parts</span><span class="v2">${s.parts}</span></div><div><span class="k">seed</span><span class="v2">${esc(s.seed)}</span></div></div>`;
   insp.appendChild(hero);
-  /* presence */
+
+  // Meticulous Botanical Card
+  const bot=document.createElement('div');bot.className='bot-card';
+  bot.innerHTML=`<span class="ttl">Botanical Research &amp; Metadata</span>
+    <div class="desc">${esc(def.desc)}</div>
+    <div class="bot-kv">
+      <div class="row"><span class="k">Family</span><span class="v">${esc(def.bot.family)}</span></div>
+      <div class="row"><span class="k">Native Range</span><span class="v">${esc(def.bot.native)}</span></div>
+      <div class="row"><span class="k">Max Height</span><span class="v">${esc(def.bot.maxHeight)}</span></div>
+      <div class="row"><span class="k">Longevity</span><span class="v">${esc(def.bot.longevity)}</span></div>
+      <div class="row"><span class="k">Ecological Uses</span><span class="v" style="font-size:10px;text-align:left;margin-top:2px">${esc(def.bot.eco)}</span></div>
+      <div class="row"><span class="k">Indigenous Uses</span><span class="v" style="font-size:10px;text-align:left;margin-top:2px">${esc(def.bot.uses)}</span></div>
+    </div>`;
+  insp.appendChild(bot);
+
+  // Presence controls
   const pres=document.createElement('div');pres.className='presence';
   const cells=[
     {k:'visible',icon:'eye',label:'Visible',acc:'#fff'},
-    {k:'solo',icon:'target',label:'Solo',acc:'#4da3ff'},
-    {k:'spin',icon:'spin',label:'Spin',acc:'#b48cff'},
-    {k:'shadow',icon:'shadow',label:'Shadow',acc:'#ffb454'},
+    {k:'solo',icon:'target',label:'Solo',acc:'#0a84ff'},
+    {k:'spin',icon:'spin',label:'Spin',acc:'#bf5af2'},
+    {k:'shadow',icon:'shadow',label:'Shadow',acc:'#ff9f0a'},
   ];
   for(const c of cells){
     const b=document.createElement('button');b.className='pcell'+(s[c.k]?' on':'');b.style.setProperty('--acc',c.acc);
@@ -1253,119 +1316,38 @@ function renderInspector(){
     pres.appendChild(b);
   }
   insp.appendChild(pres);
-  /* parameters */
-  const [secP,bodyP]=section('Parameters',def.id+' · live');
+
+  // Parameters
+  const [secP,bodyP]=section('Parameters','AAA procedural controls');
   const seedCtl=document.createElement('div');seedCtl.className='ctl';
-  seedCtl.innerHTML=`<div class="ctl-top"><span class="lab">Seed</span><span class="val" style="font-size:11px">${esc(s.seed)}</span></div>
-    <div class="seedrow"><div class="field"><input id="seedIn" value="${esc(s.seed)}" spellcheck="false" autocomplete="off"></div><button class="abtn" id="seedDice" title="random seed">${IC.dice}</button></div>`;
+  seedCtl.innerHTML=`<div class="ctl-top"><span class="lab">Seed</span></div><div class="seedrow"><div class="field"><input id="iSeed" value="${esc(s.seed)}" spellcheck="false" autocomplete="off"></div><button class="abtn" id="iDice" title="randomize">${IC.dice}</button></div>`;
   bodyP.appendChild(seedCtl);
-  $('#seedIn',seedCtl).addEventListener('change',e=>{reseedSpec(s,e.target.value.trim()||randSeed());clog(`reseeded ${s.name} → ${s.seed}`);});
-  $('#seedDice',seedCtl).addEventListener('click',()=>{reseedSpec(s);clog(`reseeded ${s.name} → ${s.seed}`);prompt('reseed',`${s.name} · ${s.seed}`);});
+  $('#iSeed',seedCtl).addEventListener('change',e=>reseedSpec(s,e.target.value));
+  $('#iDice',seedCtl).addEventListener('click',()=>reseedSpec(s,randSeed()));
+
   for(const p of def.params){
-    bodyP.appendChild(sliderRow(p.label,p.min,p.max,p.step,s.params[p.k],'',v=>{
-      s.params[p.k]=v;buildSpecimen(s);
-      hero.querySelector('.big .v').textContent=s.height.toFixed(2);
-      hero.querySelectorAll('.side .v2')[0].textContent=fmtK(s.tris);
-      hero.querySelectorAll('.side .v2')[1].textContent=s.parts;
-      layout();renderOutliner();updateVTitle();
-    },p.def));
+    bodyP.appendChild(sliderRow(p.label,p.min,p.max,p.step,s.params[p.k],'',v=>{s.params[p.k]=v;buildSpecimen(s);refresh();},p.def));
   }
   insp.appendChild(secP);
-  /* colours */
-  const [secC,bodyC]=section('Colours','vertex colours + atlas');
+
+  // Colors
+  const [secC,bodyC]=section('Color Profile','baked lighting');
   for(const c of def.colors){
     bodyC.appendChild(colorRow(c.label,s.colors[c.k],hex=>{s.colors[c.k]=hex;buildSpecimen(s);layout();}));
   }
   insp.appendChild(secC);
-  /* transform */
-  const [secT,bodyT]=section('Nursery offset','slot +');
-  bodyT.appendChild(stepperRow('X',s.off.x,-8,8,0.1,v=>{s.off.x=v;layout();}));
-  bodyT.appendChild(stepperRow('Z',s.off.z,-8,8,0.1,v=>{s.off.z=v;layout();}));
-  bodyT.appendChild(stepperRow('Rot°',s.off.ry*57.2958,-180,180,1,v=>{s.off.ry=v/57.2958;layout();}));
-  insp.appendChild(secT);
-  /* actions */
-  const a1=document.createElement('div');a1.className='actions';
-  a1.innerHTML=`<button class="abtn" id="aRegrow">${IC.dice}Regrow</button><button class="abtn" id="aDup">${IC.copy}Duplicate</button><button class="abtn danger" id="aDel">${IC.trash}Delete</button>`;
-  insp.appendChild(a1);
-  const a2=document.createElement('div');a2.className='actions';
-  a2.innerHTML=`<button class="abtn" id="aObj">${IC.down}OBJ</button><button class="abtn" id="aJson">${IC.down}JSON</button>`;
-  insp.appendChild(a2);
-  $('#aRegrow',insp).addEventListener('click',()=>{reseedSpec(s);clog(`regrew ${s.name} → ${s.seed}`);prompt('regrow',`${s.name} · ${s.seed}`);});
-  $('#aDup',insp).addEventListener('click',()=>{
-    const d=makeSpecimen(s.type,randSeed(),{...s.params},{...s.colors});
-    d.off={...s.off};G.sel=d.uid;layout();refresh();autosave();
-    clog(`duplicated → ${d.name}`);prompt('duplicate',d.name);
-  });
-  $('#aDel',insp).addEventListener('click',()=>{clog(`deleted ${s.name}`);removeSpecimen(s.uid);prompt('delete',s.name);});
-  $('#aObj',insp).addEventListener('click',()=>exportOBJ(s));
-  $('#aJson',insp).addEventListener('click',()=>exportJSON(s));
-  renderSceneAndConsole(insp);
-}
-function renderInspEmpty(insp){
-  const tris=G.specs.reduce((a,s)=>a+s.tris,0);
-  const hero=document.createElement('div');hero.className='hero';hero.style.setProperty('--acc','#4fd8e0');
-  hero.innerHTML=`<div class="c-top"><span class="ico">${IC.leaf}</span><span class="t"><span class="n">Nursery</span><span class="m">HQ geometry · atlas ready</span></span></div>
-    <div class="big"><span class="v">${G.specs.length}</span><span class="u">grown</span><span class="lab">click a plant<br>or a row</span></div>
-    <div class="side"><div><span class="k">tris</span><span class="v2">${fmtK(tris)}</span></div><div><span class="k">types</span><span class="v2">${PLANTS.length}</span></div><div><span class="k">visible</span><span class="v2">${visibleSpecs().length}</span></div></div>`;
-  insp.appendChild(hero);
-  const a1=document.createElement('div');a1.className='actions';
-  a1.innerHTML=`<button class="abtn primary" id="aGrow">${IC.spark}Grow…</button><button class="abtn" id="aAll">${IC.down}All OBJ</button>`;
-  insp.appendChild(a1);
-  $('#aGrow',insp).addEventListener('click',()=>openCat());
-  $('#aAll',insp).addEventListener('click',()=>exportAll());
-  renderSceneAndConsole(insp);
-}
-function renderSceneAndConsole(insp){
-  const [secS,bodyS]=section('Scene','global',false);
-  bodyS.appendChild(switchRow('Wind sway',G.scene.wind,v=>{G.scene.wind=v;autosave();}));
-  bodyS.appendChild(switchRow('Shadows',G.scene.shadows,v=>{G.scene.shadows=v;renderer.shadowMap.enabled=v;sun.castShadow=v;scene.traverse(o=>{if(o.material)o.material.needsUpdate=true;});autosave();}));
-  bodyS.appendChild(switchRow('Ground + grid',G.scene.ground,v=>{G.scene.ground=v;grid.visible=v;groundDisc.visible=v;autosave();}));
-  bodyS.appendChild(sliderRow('Nursery spacing',1.4,5,0.1,G.scene.spacing,'m',v=>{G.scene.spacing=v;layout();},2.6));
-  insp.appendChild(secS);
-  const c=document.createElement('div');c.className='console';c.id='consoleLog';c.innerHTML=`<div><span class="p">grow ›</span> florarc ready · ${PLANTS.length} plant types · Tab to grow</div>`;
-  insp.appendChild(c);
-}
 
-/* ═══════════════ viewport chrome ═══════════════ */
-function syncModeSeg(){$$('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===G.mode));}
-function syncShadeSeg(){$$('#shadeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.s===G.shade));}
-$('#modeSeg').addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
-  G.mode=b.dataset.m;
-  if(G.mode==='solo'&&selSpec())focusSpec(selSpec());
-  if(G.mode==='nursery')for(const s of G.specs)s.solo=false;
-  syncModeSeg();layout();refresh();
-});
-$('#shadeSeg').addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
-  setShade(b.dataset.s);
-});
-function setShade(s){
-  G.shade=s;syncShadeSeg();
-  for(const sp of G.specs)if(sp.mesh)sp.mesh.material=(s==='wire'?MAT_WIRE:MAT_FLAT);
-  refresh();
+  // Export Actions
+  const act=document.createElement('div');act.className='actions';
+  act.innerHTML=`<button class="abtn primary" id="eObj">${IC.down}Export .OBJ</button><button class="abtn" id="eJson">Save Presets</button><button class="abtn danger" id="eDel">${IC.trash}</button>`;
+  insp.appendChild(act);
+  $('#eObj',act).addEventListener('click',()=>exportOBJ(s));
+  $('#eJson',act).addEventListener('click',()=>exportJSON(s));
+  $('#eDel',act).addEventListener('click',()=>removeSpecimen(s.uid));
 }
-$('#viewSeg').addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
-  setView(b.dataset.v);
-});
-function setView(v){
-  $$('#viewSeg button').forEach(x=>x.classList.toggle('on',x===$(`#viewSeg [data-v="${v}"]`)));
-  if(v==='iso'){orb.gaz=0.7;orb.gel=0.5;}
-  if(v==='top'){orb.gel=1.45;}
-  if(v==='front'){orb.gaz=0;orb.gel=0.22;}
-}
-function updateVTitle(){
-  const s=selSpec();
-  if(s){$('#vname').textContent=s.name;$('#vmeta').textContent=`${s.seed} · ${fmtK(s.tris)} tris · ${plantOf(s.type).id}`;}
-  else{const v=visibleSpecs();$('#vname').textContent='Nursery';$('#vmeta').textContent=`${v.length} visible · ${fmtK(v.reduce((a,x)=>a+x.tris,0))} tris · procedural flora`;}
-  if(s){const p=s.group.position;$('#cx').textContent=p.x.toFixed(1);$('#cy').textContent=(s.height/2).toFixed(1);$('#cz').textContent=p.z.toFixed(1);}
-  else{$('#cx').textContent='—';$('#cy').textContent='—';$('#cz').textContent='—';}
-}
-function refresh(){renderOutliner();renderInspector();updateVTitle();}
 
 /* ═══════════════ catalogue ═══════════════ */
-const cat={open:false,cat:'grass',type:null,draft:{}};
+const cat={open:false,cat:'cacti',type:null,draft:{}};
 function draftFor(type){
   if(!cat.draft[type]){const d=defaultsOf(plantOf(type));cat.draft[type]={seed:randSeed(),...d};}
   return cat.draft[type];
@@ -1375,7 +1357,7 @@ function openCat(){
   $('#cat').classList.remove('opts');
   const c=$('#cat');
   if(!c.dataset.placed){
-    c.style.left=Math.max(8,(innerWidth-600)/2)+'px';c.style.top=Math.max(8,(innerHeight-470)/2)+'px';
+    c.style.left=Math.max(8,(innerWidth-660)/2)+'px';c.style.top=Math.max(8,(innerHeight-520)/2)+'px';
     c.dataset.placed='1';
   }
   renderCatHead();renderCatRail();renderCatGrid();
@@ -1383,83 +1365,66 @@ function openCat(){
 }
 function closeCat(){cat.open=false;$('#cat').classList.remove('show');}
 $('#catBtn').addEventListener('click',()=>cat.open?closeCat():openCat());
-$('#addBtn').addEventListener('click',()=>quickGrow(PLANTS[Math.floor(Math.random()*PLANTS.length)].id));
-$('#atlasBtn').addEventListener('click',openAtlas);
-$('#atlasX').addEventListener('click',closeAtlas);
-$('#atlasPNG').addEventListener('click',downloadAtlasPNG);
-$('#atlasJSON').addEventListener('click',downloadAtlasJSON);
-$('#atlas').addEventListener('click',e=>{if(e.target.id==='atlas')closeAtlas();});
+
 function renderCatHead(){
-  const n=cat.cat==='all'?PLANTS.length:PLANTS.filter(p=>p.cat===cat.cat).length;
-  const lbl=cat.cat==='all'?'everything':catOf(cat.cat).label.toLowerCase();
-  $('#catHead').innerHTML=`<span class="ttl"><span class="dot"></span>Grow catalogue</span><span class="sp"></span>
-    <span class="hint" style="font-family:var(--mono);font-size:10px;color:var(--t3)">${n} in ${lbl}</span>
+  $('#catHead').innerHTML=`<span class="ttl"><span class="dot"></span>Cacti &amp; Desert Plant Catalogue</span><span class="sp"></span>
+    <span class="hint" style="font-family:var(--mono);font-size:10px;color:var(--t3)">${PLANTS.length} species available</span>
     <button class="hbtn" id="catX" title="close (Esc)">${IC.x}</button>`;
   $('#catX').addEventListener('click',closeCat);
 }
 function renderCatRail(){
-  $('#catRail').innerHTML=CATS.map(c=>{const n=PLANTS.filter(p=>p.cat===c.id).length;
-    return `<div class="rail-item${cat.cat===c.id?' on':''}" data-c="${c.id}">${IC.leaf}<span>${c.label}</span><span class="n">${n}</span><button class="radd" data-c="${c.id}" title="quick-grow random ${c.label.toLowerCase()}">+</button></div>`;}).join('')
-    +`<div class="rail-item" data-c="all" style="margin-top:auto"><span>All</span><span class="n">${PLANTS.length}</span></div>`;
-  $$('#catRail .radd').forEach(b=>b.addEventListener('click',e=>{
-    e.stopPropagation();
-    const pool=PLANTS.filter(p=>p.cat===b.dataset.c);
-    if(pool.length)quickGrow(pool[Math.floor(Math.random()*pool.length)].id);
-  }));
-  $$('#catRail .rail-item').forEach(r=>r.addEventListener('click',()=>{
-    cat.cat=r.dataset.c==='all'?'all':r.dataset.c;
-    $$('#catRail .rail-item').forEach(x=>x.classList.toggle('on',x===r));
-    renderCatHead();renderCatGrid();
-  }));
-  const on=$(`#catRail [data-c="${cat.cat}"]`);if(on)$$('#catRail .rail-item').forEach(x=>x.classList.toggle('on',x===on));
+  $('#catRail').innerHTML=`<div class="rail-item on" data-c="cacti">${IC.leaf}<span>Cacti</span><span class="n">${PLANTS.length}</span></div>`;
 }
-const TILE_KEYS="123456789ABCDEFGHIJKLMNOPQ-=[],./;";
-function visibleTiles(){return PLANTS.filter(p=>cat.cat==='all'||p.cat===cat.cat);}
+const TILE_KEYS="1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 function renderCatGrid(){
-  const tiles=visibleTiles();
-  $('#catGrid').innerHTML=tiles.map((p,i)=>{const c=catOf(p.cat);
-    return `<div class="ctile" data-t="${p.id}" style="--acc:${c.acc}" title="${esc(p.desc)}"><span class="t-key">${TILE_KEYS[i]||''}</span>${IC[p.icon]}<span class="t-lbl">${esc(p.name.replace(/^(Common|Garden|Field|White|Spear|Oxeye) /,''))}</span></div>`;}).join('');
-  $('#catFoot').innerHTML=`<span><kbd>click</kbd> tune &amp; grow</span><span><kbd>2×click</kbd> quick grow</span><span><kbd>1–${tiles.length}</kbd> pick</span>`;
+  $('#catGrid').innerHTML=PLANTS.map((p,i)=>
+    `<div class="ctile" data-t="${p.id}" title="${esc(p.desc)}">
+      <span class="t-key">${TILE_KEYS[i]||''}</span>
+      <div class="ctile-head">${IC[p.icon]}<span class="t-lbl">${esc(p.name)}</span></div>
+      <span class="t-sub">${esc(p.latin)}</span>
+    </div>`).join('');
+  $('#catFoot').innerHTML=`<span><kbd>click</kbd> tune &amp; grow</span><span><kbd>2×click</kbd> quick grow</span><span><kbd>1–10</kbd> select species</span>`;
   $$('#catGrid .ctile').forEach(t=>{
     t.addEventListener('click',()=>openOpts(t.dataset.t));
     t.addEventListener('dblclick',()=>{quickGrow(t.dataset.t);});
   });
 }
-function renderCatHeadOpt(def){
-  const c=catOf(def.cat);
-  $('#catHead').innerHTML=`<span class="ttl"><span class="dot"></span>Grow catalogue</span><span class="sp"></span>
-    <span class="hint" style="font-family:var(--mono);font-size:10px;color:${c.acc}">${esc(def.id)}</span>
-    <button class="hbtn" id="catX" title="close (Esc)">${IC.x}</button>`;
-  $('#catX').addEventListener('click',closeCat);
-}
 function openOpts(type){
   cat.type=type;
-  const def=plantOf(type),c=catOf(def.cat),d=draftFor(type);
+  const def=plantOf(type),d=draftFor(type);
   $('#cat').classList.add('opts');
-  renderCatHeadOpt(def);
-  $('#optHead').innerHTML=`<button class="back" id="optBack">${IC.back}</button><span class="h-ic" style="--acc:${c.acc};color:${c.acc}">${IC[def.icon]}</span><span class="h-txt"><span class="n">${esc(def.name)}</span><span class="m">${esc(def.latin)}</span></span>`;
+  $('#catHead').innerHTML=`<span class="ttl"><span class="dot"></span>Tune Cactus Specimen</span><span class="sp"></span>
+    <span class="hint" style="font-family:var(--mono);font-size:10px;color:var(--desert)">${esc(def.id)}</span>
+    <button class="hbtn" id="catX" title="close (Esc)">${IC.x}</button>`;
+  $('#catX').addEventListener('click',closeCat);
+
+  $('#optHead').innerHTML=`<button class="back" id="optBack">${IC.back}</button><span class="h-ic">${IC[def.icon]}</span><span class="h-txt"><span class="n">${esc(def.name)}</span><span class="m">${esc(def.latin)}</span></span>`;
   $('#optBack').addEventListener('click',()=>{$('#cat').classList.remove('opts');renderCatHead();});
+
   const body=$('#optBody');body.innerHTML='';
   const desc=document.createElement('p');
-  desc.style.cssText='grid-column:span 2;font-size:12px;color:var(--t2);line-height:1.5;padding:8px 0 2px';
+  desc.style.cssText='grid-column:span 2;font-size:12px;color:var(--t2);line-height:1.5;padding:6px 0';
   desc.textContent=def.desc;
   const wrap=document.createElement('div');wrap.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:0 12px';
   wrap.appendChild(desc);
+
   const seedCtl=document.createElement('div');seedCtl.className='ctl';
-  seedCtl.innerHTML=`<div class="ctl-top"><span class="lab">Seed</span></div><div class="seedrow"><div class="field"><input id="dSeed" value="${esc(d.seed)}" spellcheck="false" autocomplete="off"></div><button class="abtn" id="dDice" title="random seed">${IC.dice}</button></div>`;
+  seedCtl.innerHTML=`<div class="ctl-top"><span class="lab">Seed</span></div><div class="seedrow"><div class="field"><input id="dSeed" value="${esc(d.seed)}" spellcheck="false" autocomplete="off"></div><button class="abtn" id="dDice">${IC.dice}</button></div>`;
   wrap.appendChild(seedCtl);
   $('#dSeed',seedCtl).addEventListener('input',e=>d.seed=e.target.value);
   $('#dDice',seedCtl).addEventListener('click',()=>{d.seed=randSeed();$('#dSeed',seedCtl).value=d.seed;});
+
   for(const p of def.params)wrap.appendChild(sliderRow(p.label,p.min,p.max,p.step,d.params[p.k],'',v=>d.params[p.k]=v,p.def));
   for(const cc of def.colors)wrap.appendChild(colorRow(cc.label,d.colors[cc.k],hex=>d.colors[cc.k]=hex));
   body.appendChild(wrap);
-  $('#optFoot').innerHTML=`<span class="hint">grows into the nursery</span><button class="abtn" id="optCancel">Back</button><button class="abtn primary" id="optGrow">${IC.spark}Grow</button>`;
+
+  $('#optFoot').innerHTML=`<span class="hint">grows directly into desert environment</span><button class="abtn" id="optCancel">Back</button><button class="abtn primary" id="optGrow">${IC.spark}Grow Cactus</button>`;
   $('#optCancel').addEventListener('click',()=>{$('#cat').classList.remove('opts');renderCatHead();});
   $('#optGrow').addEventListener('click',()=>{
     const s=makeSpecimen(type,d.seed,{...d.params},{...d.colors});
     G.sel=s.uid;layout();refresh();autosave();
     clog(`grew ${s.name} · ${s.seed}`);
-    closeCat();prompt('grown',`${s.name} · Tab grows more`);focusSpec(s);
+    closeCat();prompt('grown',`${s.name}`);focusSpec(s);
     d.seed=randSeed();
   });
 }
@@ -1468,404 +1433,145 @@ function quickGrow(type){
   const s=makeSpecimen(type,randSeed(),{...d.params},{...d.colors});
   G.sel=s.uid;layout();refresh();autosave();
   clog(`grew ${s.name} · ${s.seed}`);
-  closeCat();prompt('grown',`${s.name} · Tab grows more`);focusSpec(s);
+  closeCat();prompt('grown',`${s.name}`);focusSpec(s);
 }
 
-/* ═══════════════ export ═══════════════ */
+/* ═══════════════ export & save ═══════════════ */
 function download(name,text,mime){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([text],{type:mime||'text/plain'}));a.download=name;a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
-function objChunk(spec,{off=null,rotY=0,base=0}={}){
+function objChunk(spec,{off=null,base=0}={}){
   const g=spec.mesh.geometry,p=g.attributes.position,n=g.attributes.normal,c=g.attributes.color,ix=g.index.array;
-  const cy=Math.cos(rotY),sy=Math.sin(rotY);
-  const rot=(x,z)=>[x*cy+z*sy,-x*sy+z*cy];
   const ox=off?off[0]:0,oy=off?off[1]:0,oz=off?off[2]:0;
-  const sc=spec.group.scale.x||1;
   let s=`o ${spec.name.replace(/\s+/g,'_')}\n`;
-  for(let i=0;i<p.count;i++){const r=rot(p.getX(i)*sc,p.getZ(i)*sc);s+=`v ${(r[0]+ox).toFixed(4)} ${(p.getY(i)*sc+oy).toFixed(4)} ${(r[1]+oz).toFixed(4)} ${c.getX(i).toFixed(4)} ${c.getY(i).toFixed(4)} ${c.getZ(i).toFixed(4)}\n`;}
-  for(let i=0;i<n.count;i++){const r=rot(n.getX(i),n.getZ(i));s+=`vn ${r[0].toFixed(4)} ${n.getY(i).toFixed(4)} ${r[1].toFixed(4)}\n`;}
+  for(let i=0;i<p.count;i++){s+=`v ${(p.getX(i)+ox).toFixed(4)} ${(p.getY(i)+oy).toFixed(4)} ${(p.getZ(i)+oz).toFixed(4)} ${c.getX(i).toFixed(4)} ${c.getY(i).toFixed(4)} ${c.getZ(i).toFixed(4)}\n`;}
+  for(let i=0;i<n.count;i++){s+=`vn ${n.getX(i).toFixed(4)} ${n.getY(i).toFixed(4)} ${n.getZ(i).toFixed(4)}\n`;}
   for(let i=0;i<ix.length;i+=3)s+=`f ${base+ix[i]+1}//${base+ix[i]+1} ${base+ix[i+1]+1}//${base+ix[i+1]+1} ${base+ix[i+2]+1}//${base+ix[i+2]+1}\n`;
   return {text:s,count:p.count};
 }
 function exportOBJ(spec){
-  spec=spec||selSpec();if(!spec){clog('nothing selected','warn');return;}
+  spec=spec||selSpec();if(!spec)return;
   const {text}=objChunk(spec);
-  download(`${plantOf(spec.type).id}-${spec.seed}.obj`,`# FlorArc · ${spec.name} · seed ${spec.seed} · ${spec.tris} tris · HQ smooth\n`+text,'text/plain');
-  clog(`exported ${spec.name} · ${fmtK(spec.tris)} tris · .obj`);
-  prompt('export',`${spec.name}.obj`);
-}
-function exportAll(){
-  const vis=visibleSpecs();if(!vis.length){clog('nothing visible to export','warn');return;}
-  let s=`# FlorArc nursery · ${vis.length} specimens · vertex colours · nursery transforms baked\n`,base=0;
-  for(const sp of vis){
-    const gp=sp.group.position;
-    const {text,count}=objChunk(sp,{off:[gp.x,0,gp.z],rotY:sp.group.rotation.y,base});
-    s+=text;base+=count;
-  }
-  download('florarc-nursery.obj',s,'text/plain');
-  clog(`exported nursery · ${vis.length} specimens · .obj`);
-  prompt('export','nursery.obj');
+  download(`${plantOf(spec.type).id}-${spec.seed}.obj`,`# FlorArc AAA Cactus · ${spec.name} · ${spec.tris} tris\n`+text,'text/plain');
+  clog(`exported ${spec.name} .obj`);prompt('export',`${spec.name}.obj`);
 }
 function exportJSON(spec){
-  spec=spec||selSpec();if(!spec){clog('nothing selected','warn');return;}
-  download(`${plantOf(spec.type).id}-${spec.seed}.json`,JSON.stringify({app:'florarc',kind:'specimen',type:spec.type,name:spec.name,seed:spec.seed,params:spec.params,colors:spec.colors},null,2),'application/json');
-  clog(`exported ${spec.name} · .json`);prompt('export',`${spec.name}.json`);
+  spec=spec||selSpec();if(!spec)return;
+  download(`${plantOf(spec.type).id}-${spec.seed}.json`,JSON.stringify({app:'florarc',type:spec.type,name:spec.name,seed:spec.seed,params:spec.params,colors:spec.colors},null,2),'application/json');
+  clog(`exported ${spec.name} .json`);
 }
 
-/* ═══════════════ garden save / open / autosave ═══════════════ */
-const LS_G='florarc.garden.v1',LS_L='florarc.layout.v1';
-function gardenData(){
-  return {app:'florarc-garden',v:1,scene:G.scene,specs:G.specs.map(s=>({type:s.type,name:s.name,seed:s.seed,params:s.params,colors:s.colors,visible:s.visible,spin:s.spin,shadow:s.shadow,off:s.off}))};
+const LS_G='florarc.desert.v2';
+function autosave(){
+  try{
+    const data={specs:G.specs.map(s=>({type:s.type,name:s.name,seed:s.seed,params:s.params,colors:s.colors}))};
+    localStorage.setItem(LS_G,JSON.stringify(data));
+  }catch(e){}
 }
 function loadGarden(data){
   for(const s of [...G.specs])removeSpecimenSilent(s.uid);
-  G.sel=null;G.uidc=0;
-  if(data.scene)Object.assign(G.scene,data.scene);
-  for(const d of (data.specs||[])){
-    if(!plantOf(d.type))continue;
-    const s=makeSpecimenSilent(d.type,d.seed,d.params,d.colors,d.name);
-    s.visible=d.visible!==false;s.spin=!!d.spin;s.shadow=d.shadow!==false;
-    if(d.off)s.off={...s.off,...d.off};
-  }
-  grid.visible=G.scene.ground;groundDisc.visible=G.scene.ground;
-  renderer.shadowMap.enabled=G.scene.shadows;sun.castShadow=G.scene.shadows;
+  G.uidc=0;
+  for(const d of data.specs)makeSpecimenSilent(d.type,d.seed,d.params,d.colors,d.name);
+  if(G.specs.length)G.sel=G.specs[0].uid;
   layout();refresh();
 }
-function makeSpecimenSilent(type,seed,params,colors,name){
-  const def=plantOf(type),d=defaultsOf(def),uid='sp'+(++G.uidc);
-  const spec={uid,type,name:name||`${def.name}`,seed:seed||randSeed(),params:{...d.params,...(params||{})},colors:{...d.colors,...(colors||{})},
-    visible:true,solo:false,spin:false,shadow:true,off:{x:0,z:0,ry:0},phase:Math.random()*6.28,
-    group:new THREE.Group(),mesh:null,height:0,tris:0,parts:0,slot:{x:0,z:0},contact:null,contactR:0.4};
-  scene.add(spec.group);addContact(spec);buildSpecimen(spec);G.specs.push(spec);
-  return spec;
-}
-function removeSpecimenSilent(uid){
-  const i=G.specs.findIndex(s=>s.uid===uid);if(i<0)return;
-  const s=G.specs[i];if(s.mesh)s.mesh.geometry.dispose();if(s.contact)scene.remove(s.contact);scene.remove(s.group);G.specs.splice(i,1);
-}
-function autosave(){try{localStorage.setItem(LS_G,JSON.stringify(gardenData()));$('#dAuto').textContent='autosaved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){}}
-$('#dSave').addEventListener('click',()=>{
-  download('florarc-garden.json',JSON.stringify(gardenData(),null,2),'application/json');
-  clog(`saved garden · ${G.specs.length} specimens`);prompt('save','garden.json');
-});
-$('#dOpen').addEventListener('click',()=>$('#file').click());
-$('#dNew').addEventListener('click',()=>{starters();clog('new garden · 5 starters grown');prompt('new','garden reset');});
-$('#file').addEventListener('change',e=>{
-  const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=()=>{
-    try{
-      const d=JSON.parse(r.result);
-      if(d.app==='florarc-garden'||d.specs){loadGarden(d);autosave();clog(`opened garden · ${G.specs.length} specimens`);prompt('open',f.name);}
-      else if(d.type&&plantOf(d.type)){const s=makeSpecimen(d.type,d.seed,d.params,d.colors,d.name);G.sel=s.uid;layout();refresh();autosave();clog(`grew ${s.name} from preset`);}
-      else clog('not a florarc file','warn');
-    }catch(err){clog('could not parse '+f.name,'warn');}
-    e.target.value='';
-  };
-  r.readAsText(f);
-});
+
 function starters(){
   for(const s of [...G.specs])removeSpecimenSilent(s.uid);
-  G.sel=null;G.uidc=0;
-  makeSpecimenSilent('meadow','meadow-01');makeSpecimenSilent('reed','reed-02');
-  makeSpecimenSilent('tussock','tussock-03');makeSpecimenSilent('lawn','lawn-04');makeSpecimenSilent('fescue','fescue-05');
+  G.uidc=0;
+  makeSpecimenSilent('cardon','cardon-giant',{size:1.8,age:1.8,branching:1.2,fruits:16});
+  makeSpecimenSilent('saguaro','saguaro-01',{size:1.5,age:1.5,branching:1.0,fruits:12});
+  makeSpecimenSilent('organpipe','organpipe-02',{size:1.2,age:1.2,branching:1.2});
+  makeSpecimenSilent('barrel','barrel-03',{size:1.2,age:1.2,spines:1.5});
+  makeSpecimenSilent('nopal','nopal-04',{size:1.4,age:1.4,branching:1.2,fruits:15});
+  makeSpecimenSilent('agave','agave-05',{size:1.5,age:1.5});
   layout();refresh();autosave();
 }
 
-/* ═══════════════ command line ═══════════════ */
-const cmdHist=[];let cmdHi=-1;
-/* ═══════════════ texture atlas ═══════════════ */
-const ATLAS_CELLS=[
-  ['grassBlade','blade',{base:'#4d8a35',tip:'#8fd45a',vein:'#d5efa8'}],
-  ['reedBlade','blade',{base:'#3f7a4a',tip:'#6fb85a',vein:'#c9e89a'}],
-  ['fescueBlade','blade',{base:'#5a7a9a',tip:'#a8c4d4',vein:'#e0eef4'}],
-  ['tussockBlade','blade',{base:'#8a6d2a',tip:'#d4a83a',vein:'#f4e2a8'}],
-  ['pampasPlume','plume',{base:'#c9b890',tip:'#f4ecd8'}],
-  ['bambooLeaf','leaf',{base:'#2f7a35',tip:'#6fc25a',vein:'#d5efb0'}],
-  ['featherAwn','fluff',{base:'#b8a878',tip:'#f4ecd0'}],
-  ['bambooCulm','culm',{base:'#6a8a3a',tip:'#a8c45a'}],
-  ['stem','stem',{base:'#4a6a2a',tip:'#7ab84a'}],
-  ['soil','soil',{base:'#2c2018',tip:'#5a4a38'}],
-  ['mossySoil','soil',{base:'#2a3a20',tip:'#5a8a45'}],
-];
-const atlasPainters={
-  blade(g,x,y,s,p,R){
-    const gr=g.createLinearGradient(x,y,x+s,y);gr.addColorStop(0,p.base);gr.addColorStop(0.5,p.tip);gr.addColorStop(1,p.base);
-    g.fillStyle=gr;g.fillRect(x,y,s,s);
-    g.strokeStyle=p.vein;g.lineWidth=Math.max(1,s*0.012);g.globalAlpha=0.9;
-    g.beginPath();g.moveTo(x+s/2,y+s);g.quadraticCurveTo(x+s/2+s*0.06,y+s/2,x+s/2,y);g.stroke();
-    g.globalAlpha=0.25;g.lineWidth=1;
-    for(let i=0;i<9;i++){const xx=x+s*(0.08+0.84*i/8);g.beginPath();g.moveTo(xx,y+s);g.lineTo(xx+s*0.02,y);g.stroke();}
-    g.globalAlpha=1;
-    for(let i=0;i<40;i++){g.fillStyle=R()<0.5?p.base:p.tip;g.globalAlpha=0.12;g.fillRect(x+R()*s,y+R()*s,s*0.02,s*0.06);}
-    g.globalAlpha=1;
-  },
-  leaf(g,x,y,s,p,R){
-    const gr=g.createLinearGradient(x,y,x,y+s);gr.addColorStop(0,p.tip);gr.addColorStop(1,p.base);
-    g.fillStyle=gr;g.fillRect(x,y,s,s);
-    g.strokeStyle=p.vein;g.lineWidth=Math.max(1,s*0.014);
-    g.beginPath();g.moveTo(x+s/2,y+s*0.04);g.lineTo(x+s/2,y+s*0.96);g.stroke();
-    g.lineWidth=1;g.globalAlpha=0.7;
-    for(let i=0;i<7;i++){const yy=y+s*(0.14+0.72*i/6);
-      for(const d of[-1,1]){g.beginPath();g.moveTo(x+s/2,yy);g.quadraticCurveTo(x+s/2+d*s*0.2,yy-s*0.02,x+s/2+d*s*0.42,yy-s*0.12);g.stroke();}}
-    g.globalAlpha=1;
-    for(let i=0;i<50;i++){g.fillStyle=p.tip;g.globalAlpha=0.08;const r=s*0.01+R()*s*0.02;g.beginPath();g.arc(x+R()*s,y+R()*s,r,0,7);g.fill();}
-    g.globalAlpha=1;
-  },
-  petal(g,x,y,s,p,R){
-    const gr=g.createRadialGradient(x+s/2,y+s*0.9,s*0.05,x+s/2,y+s*0.9,s*1.1);gr.addColorStop(0,p.base);gr.addColorStop(1,p.tip);
-    g.fillStyle=gr;g.fillRect(x,y,s,s);
-    g.strokeStyle=p.vein;g.globalAlpha=0.55;g.lineWidth=1;
-    for(let i=0;i<11;i++){const t=i/10;g.beginPath();g.moveTo(x+s*(0.3+0.4*t),y+s);g.quadraticCurveTo(x+s*(0.2+0.6*t),y+s*0.5,x+s*t,y+s*0.03);g.stroke();}
-    g.globalAlpha=1;
-  },
-  clover(g,x,y,s,p,R){
-    g.fillStyle=p.base;g.fillRect(x,y,s,s);
-    g.fillStyle=p.tip;g.globalAlpha=0.9;
-    for(const[cx,cy]of[[0.35,0.36],[0.65,0.36],[0.5,0.62]]){g.beginPath();g.arc(x+s*cx,y+s*cy,s*0.2,0,7);g.fill();}
-    g.globalAlpha=1;g.strokeStyle=p.base;g.lineWidth=Math.max(1,s*0.02);
-    g.beginPath();g.moveTo(x+s*0.5,y+s*0.7);g.lineTo(x+s*0.5,y+s);g.stroke();
-  },
-  pinna(g,x,y,s,p,R){
-    g.fillStyle=p.base;g.fillRect(x,y,s,s);
-    g.strokeStyle=p.tip;g.lineWidth=Math.max(1,s*0.02);
-    g.beginPath();g.moveTo(x+s*0.5,y+s);g.lineTo(x+s*0.5,y);g.stroke();
-    g.lineWidth=Math.max(1,s*0.03);g.lineCap='round';
-    for(let i=0;i<14;i++){const yy=y+s*(0.06+0.88*i/13),w=s*0.36*(1-Math.abs(i-6.5)/9);
-      for(const d of[-1,1]){g.globalAlpha=0.85;g.beginPath();g.moveTo(x+s/2,yy);g.lineTo(x+s/2+d*w,yy-s*0.05);g.stroke();}}
-    g.globalAlpha=1;
-  },
-  plume(g,x,y,s,p,R){
-    g.fillStyle=p.base;g.fillRect(x,y,s,s);
-    for(let i=0;i<220;i++){g.strokeStyle=R()<0.6?p.tip:p.base;g.globalAlpha=0.5;g.lineWidth=1;
-      const xx=x+R()*s,yy=y+R()*s;g.beginPath();g.moveTo(xx,yy);g.lineTo(xx+R()*s*0.06-s*0.03,yy-R()*s*0.09);g.stroke();}
-    g.globalAlpha=1;
-  },
-  fluff(g,x,y,s,p,R){
-    g.fillStyle=p.base;g.fillRect(x,y,s,s);
-    g.strokeStyle=p.tip;g.globalAlpha=0.8;g.lineWidth=1;
-    for(let i=0;i<90;i++){const a=R()*6.28,r=s*(0.1+R()*0.4);
-      g.beginPath();g.moveTo(x+s/2,y+s/2);g.lineTo(x+s/2+Math.cos(a)*r,y+s/2+Math.sin(a)*r);g.stroke();}
-    g.globalAlpha=1;g.fillStyle=p.tip;g.beginPath();g.arc(x+s/2,y+s/2,s*0.05,0,7);g.fill();
-  },
-  buds(g,x,y,s,p,R){
-    const gr=g.createLinearGradient(x,y,x,y+s);gr.addColorStop(0,p.tip);gr.addColorStop(1,p.base);
-    g.fillStyle='#3a5a2a';g.fillRect(x,y,s,s);
-    g.strokeStyle='#4a7a35';g.lineWidth=Math.max(1,s*0.03);
-    g.beginPath();g.moveTo(x+s/2,y+s);g.lineTo(x+s/2,y);g.stroke();
-    for(let i=0;i<9;i++){const yy=y+s*(0.08+0.5*i/8);
-      for(const d of[-1,1]){g.fillStyle=i%2?p.tip:p.base;g.beginPath();g.ellipse(x+s/2+d*s*0.09,yy,s*0.06,s*0.09,d*0.5,0,7);g.fill();}}
-    g.fillStyle=p.tip;g.beginPath();g.arc(x+s/2,y+s*0.05,s*0.07,0,7);g.fill();
-  },
-  needles(g,x,y,s,p,R){
-    g.fillStyle=p.base;g.fillRect(x,y,s,s);
-    g.lineCap='round';
-    for(let i=0;i<120;i++){g.strokeStyle=R()<0.5?p.tip:p.base;g.globalAlpha=0.75;g.lineWidth=Math.max(1,s*0.012);
-      const xx=x+R()*s,yy=y+R()*s,a=R()*6.28,l=s*0.06+R()*s*0.1;
-      g.beginPath();g.moveTo(xx,yy);g.lineTo(xx+Math.cos(a)*l,yy+Math.sin(a)*l);g.stroke();}
-    g.globalAlpha=1;
-  },
-  moss(g,x,y,s,p,R){
-    g.fillStyle=p.base;g.fillRect(x,y,s,s);
-    for(let i=0;i<160;i++){g.fillStyle=R()<0.5?p.tip:p.base;g.globalAlpha=0.6;
-      const r=s*0.008+R()*s*0.025;g.beginPath();g.arc(x+R()*s,y+R()*s,r,0,7);g.fill();}
-    g.globalAlpha=1;
-  },
-  bark(g,x,y,s,p,R){
-    g.fillStyle=p.base;g.fillRect(x,y,s,s);
-    for(let i=0;i<26;i++){g.strokeStyle=R()<0.5?p.tip:p.base;g.globalAlpha=0.6;g.lineWidth=1+R()*s*0.02;
-      const xx=x+R()*s;g.beginPath();g.moveTo(xx,y);g.bezierCurveTo(xx+s*0.05,y+s*0.3,xx-s*0.05,y+s*0.6,xx+s*0.03,y+s);g.stroke();}
-    g.globalAlpha=1;
-  },
-  culm(g,x,y,s,p,R){
-    const gr=g.createLinearGradient(x,y,x+s,y);gr.addColorStop(0,p.base);gr.addColorStop(0.5,p.tip);gr.addColorStop(1,p.base);
-    g.fillStyle=gr;g.fillRect(x,y,s,s);
-    g.fillStyle=p.base;g.globalAlpha=0.85;g.fillRect(x,y+s*0.46,s,s*0.08);g.globalAlpha=1;
-    g.fillStyle=p.tip;g.fillRect(x,y+s*0.44,s,s*0.02);
-  },
-  stem(g,x,y,s,p,R){
-    const gr=g.createLinearGradient(x,y,x+s,y);gr.addColorStop(0,p.base);gr.addColorStop(0.5,p.tip);gr.addColorStop(1,p.base);
-    g.fillStyle=gr;g.fillRect(x,y,s,s);
-    g.globalAlpha=0.3;
-    for(let i=0;i<12;i++){g.strokeStyle=p.base;g.lineWidth=1;const xx=x+R()*s;g.beginPath();g.moveTo(xx,y);g.lineTo(xx+s*0.02,y+s);g.stroke();}
-    g.globalAlpha=1;
-  },
-  soil(g,x,y,s,p,R){
-    g.fillStyle=p.base;g.fillRect(x,y,s,s);
-    for(let i=0;i<200;i++){g.fillStyle=R()<0.4?p.tip:p.base;g.globalAlpha=0.7;
-      const r=s*0.006+R()*s*0.02;g.beginPath();g.arc(x+R()*s,y+R()*s,r,0,7);g.fill();}
-    g.globalAlpha=1;
-  },
-  berry(g,x,y,s,p,R){
-    g.fillStyle='#1a2a1a';g.fillRect(x,y,s,s);
-    for(let i=0;i<4;i++){const cx=x+s*(0.25+0.5*(i%2)),cy=y+s*(0.28+0.44*Math.floor(i/2)),r=s*0.16;
-      const gr=g.createRadialGradient(cx-r*0.3,cy-r*0.3,r*0.1,cx,cy,r);gr.addColorStop(0,p.tip);gr.addColorStop(1,p.base);
-      g.fillStyle=gr;g.beginPath();g.arc(cx,cy,r,0,7);g.fill();
-      g.fillStyle='rgba(255,255,255,.75)';g.beginPath();g.arc(cx-r*0.35,cy-r*0.35,r*0.18,0,7);g.fill();}
-  },
-};
-let atlasCache=null;
-function buildAtlas(){
-  if(atlasCache)return atlasCache;
-  const cell=128,cols=8,rows=4;
-  const cv=document.createElement('canvas');cv.width=cols*cell;cv.height=rows*cell;
-  const g=cv.getContext('2d');
-  g.fillStyle='#000';g.fillRect(0,0,cv.width,cv.height);
-  const manifest={meta:{name:'FlorArc flora atlas',version:1,size:[cv.width,cv.height],cell,cols,rows},cells:[]};
-  ATLAS_CELLS.forEach(([name,kind,pal],i)=>{
-    const cx=(i%cols)*cell,cy=Math.floor(i/cols)*cell;
-    g.save();g.beginPath();g.rect(cx,cy,cell,cell);g.clip();
-    atlasPainters[kind](g,cx,cy,cell,pal,mulberry32(hashSeed('atlas-'+name)));
-    g.restore();
-    manifest.cells.push({name,x:cx,y:cy,w:cell,h:cell});
-  });
-  atlasCache={canvas:cv,manifest};
-  return atlasCache;
+function setShade(mode){
+  G.shade=mode;
+  $$('#shadeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.s===mode));
+  for(const s of G.specs){
+    if(s.mesh)s.mesh.material=mode==='wire'?MAT_WIRE:MAT_FLAT;
+  }
 }
-const atlas={open:false};
-function openAtlas(){
-  const {canvas,manifest}=buildAtlas();
-  const img=$('#atlasImg');img.src=canvas.toDataURL('image/png');
-  $('#atlasMeta').textContent=`${canvas.width}×${canvas.height} · ${manifest.cells.length} cells · 128px`;
-  $('#atlasGrid').innerHTML=manifest.cells.map(c=>`<span title="${c.name}">${c.name}</span>`).join('');
-  atlas.open=true;$('#atlas').classList.add('show');
+function syncModeSeg(){
+  $$('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===G.mode));
 }
-function closeAtlas(){atlas.open=false;$('#atlas').classList.remove('show');}
-function downloadAtlasPNG(){
-  buildAtlas().canvas.toBlob(b=>{
-    const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='florarc-atlas.png';a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  });
-}
-function downloadAtlasJSON(){
-  download('florarc-atlas.json',JSON.stringify(buildAtlas().manifest,null,1),'application/json');
-}
-window.__atlas={build:()=>buildAtlas()};
 
+$('#modeSeg').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  G.mode=b.dataset.m;syncModeSeg();layout();refresh();
+  if(G.mode==='solo'&&selSpec())focusSpec(selSpec());
+});
+$('#shadeSeg').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  setShade(b.dataset.s);
+});
+
+/* ═══════════════ command line ═══════════════ */
 $('#cmdIn').addEventListener('keydown',e=>{
   if(e.key==='Enter'){execCmd(e.target.value);e.target.value='';}
-  if(e.key==='ArrowUp'){e.preventDefault();if(cmdHist.length){cmdHi=(cmdHi+1)%cmdHist.length;e.target.value=cmdHist[cmdHist.length-1-cmdHi];}}
-  if(e.key==='ArrowDown'){e.preventDefault();e.target.value='';cmdHi=-1;}
 });
 function execCmd(line){
   line=line.trim();if(!line)return;
-  cmdHist.push(line);cmdHi=-1;
   clog('› '+line);
-  const [cmd,...rest]=line.split(/\s+/),arg=rest.join(' ');
+  const [cmd,...rest]=line.split(/\s+/);
   const s=selSpec();
-  const needSel=()=>{if(!s){clog('nothing selected','warn');return true;}return false;};
   switch(cmd.toLowerCase()){
-    case 'help':clog('grow <type> [seed] · seed <s> · reseed · solo · nursery · flat · wire · top · front · iso · focus · hide · show · dup · del · export obj|json|all · save · new · clear · atlas');break;
+    case 'help':clog('grow <type> [seed] · reseed · solo · nursery · flat · wire · focus · delete · export');break;
     case 'grow':{
-      const t=(rest[0]||'').toLowerCase();
+      const t=(rest[0]||'cardon').toLowerCase();
       const def=PLANTS.find(p=>p.id===t||p.name.toLowerCase().includes(t));
-      if(!def){clog('unknown type · try: '+PLANTS.map(p=>p.id).join(', '),'warn');break;}
+      if(!def){clog('unknown cactus type','warn');break;}
       const sp=makeSpecimen(def.id,rest[1]||randSeed());
       G.sel=sp.uid;layout();refresh();autosave();focusSpec(sp);
-      clog(`grew ${sp.name} · ${sp.seed}`);break;}
-    case 'seed':if(needSel())break;reseedSpec(s,arg||randSeed());clog(`reseeded → ${s.seed}`);break;
-    case 'reseed':case 'r':if(needSel())break;reseedSpec(s);clog(`reseeded → ${s.seed}`);break;
-    case 'solo':if(G.sel){G.mode='solo';syncModeSeg();layout();focusSpec(selSpec());refresh();}break;
-    case 'nursery':case 'all':G.mode='nursery';syncModeSeg();layout();refresh();break;
+      clog(`grew ${sp.name}`);break;}
+    case 'reseed':if(s)reseedSpec(s);break;
+    case 'solo':G.mode='solo';syncModeSeg();layout();refresh();if(s)focusSpec(s);break;
+    case 'nursery':G.mode='nursery';syncModeSeg();layout();refresh();break;
     case 'flat':case 'wire':setShade(cmd.toLowerCase());break;
-    case 'top':case 'front':case 'iso':setView(cmd.toLowerCase());break;
-    case 'focus':case 'f':if(needSel())break;focusSpec(s);break;
-    case 'hide':case 'h':if(needSel())break;s.visible=false;layout();refresh();autosave();break;
-    case 'show':{const t=G.specs.find(x=>!x.visible);if(t){t.visible=true;layout();refresh();autosave();}break;}
-    case 'dup':if(needSel())break;{const d=makeSpecimen(s.type,randSeed(),{...s.params},{...s.colors});G.sel=d.uid;layout();refresh();autosave();clog(`duplicated → ${d.name}`);}break;
-    case 'del':case 'delete':if(needSel())break;removeSpecimen(s.uid);break;
-    case 'export':{
-      const w=(rest[0]||'obj').toLowerCase();
-      if(w==='all')exportAll();else if(w==='json')exportJSON(s);else exportOBJ(s);break;}
-    case 'save':$('#dSave').click();break;
-    case 'new':starters();break;
-    case 'clear':{const c=$('#consoleLog');if(c)c.innerHTML='';break;}
-    case 'atlas':openAtlas();break;
-    default:clog(`unknown · ${cmd} · try help`,'warn');
+    case 'focus':if(s)focusSpec(s);break;
+    case 'delete':if(s)removeSpecimen(s.uid);break;
+    case 'export':exportOBJ(s);break;
+    default:clog(`unknown cmd: ${cmd}`,'warn');
   }
 }
-
-/* ═══════════════ panel drag + layout ═══════════════ */
-function saveLayout(){
-  const L={};
-  for(const id of ['outliner','viewport','inspector']){
-    const el=document.getElementById(id);
-    if(el.classList.contains('free')){const r=el.getBoundingClientRect();L[id]={l:r.left,t:r.top,w:r.width,h:r.height};}
-  }
-  try{localStorage.setItem(LS_L,JSON.stringify(L));}catch(e){}
-}
-function restoreLayout(){
-  try{
-    const L=JSON.parse(localStorage.getItem(LS_L)||'{}');
-    for(const id of ['outliner','viewport','inspector']){
-      const el=document.getElementById(id),d=L[id];if(!d)continue;
-      el.classList.add('free');
-      el.style.left=d.l+'px';el.style.top=d.t+'px';el.style.width=d.w+'px';el.style.height=d.h+'px';
-      el.style.right='auto';el.style.bottom='auto';
-    }
-  }catch(e){}
-}
-function dragSetup(el,handle){
-  handle.addEventListener('pointerdown',e=>{
-    if(e.target.closest('button,input,.ctile,.row'))return;
-    e.preventDefault();
-    const r=el.getBoundingClientRect();
-    if(!el.classList.contains('free')&&el.classList.contains('panel')){
-      el.classList.add('free');
-      el.style.left=r.left+'px';el.style.top=r.top+'px';el.style.width=r.width+'px';el.style.height=r.height+'px';
-      el.style.right='auto';el.style.bottom='auto';
-    }
-    const ox=e.clientX-r.left,oy=e.clientY-r.top;
-    el.classList.add('dragging');handle.setPointerCapture(e.pointerId);
-    const mv=ev=>{el.style.left=(ev.clientX-ox)+'px';el.style.top=(ev.clientY-oy)+'px';};
-    const up=()=>{el.classList.remove('dragging');handle.removeEventListener('pointermove',mv);handle.removeEventListener('pointerup',up);saveLayout();};
-    handle.addEventListener('pointermove',mv);handle.addEventListener('pointerup',up);
-  });
-}
-dragSetup($('#outliner'),$('#outliner .panel-head'));
-dragSetup($('#inspector'),$('#inspector .panel-head'));
-dragSetup($('#viewport'),$('#vgrip'));
-dragSetup($('#cat'),$('#catHead'));
-$('#layoutBtn').addEventListener('click',()=>{
-  for(const id of ['outliner','viewport','inspector']){
-    const el=document.getElementById(id);
-    el.classList.remove('free');el.removeAttribute('style');
-  }
-  try{localStorage.removeItem(LS_L);}catch(e){}
-  prompt('layout','panels reset');
-});
 
 /* ═══════════════ keyboard ═══════════════ */
 addEventListener('keydown',e=>{
   const typing=/INPUT|TEXTAREA/.test(document.activeElement?.tagName||'');
-  if(e.key==='Escape'){if(atlas.open)closeAtlas();else if(cat.open)closeCat();return;}
+  if(e.key==='Escape'){if(cat.open)closeCat();return;}
   if(typing)return;
   if(e.key==='Tab'){e.preventDefault();cat.open?closeCat():openCat();return;}
   if(cat.open){
-    if($('#cat').classList.contains('opts'))return;
     const i=TILE_KEYS.indexOf(e.key.toUpperCase());
-    const tiles=visibleTiles();
-    if(i>=0&&i<tiles.length){openOpts(tiles[i].id);}
+    if(i>=0&&i<PLANTS.length)openOpts(PLANTS[i].id);
     return;
   }
   const s=selSpec();
-  if(e.key==='/'){e.preventDefault();$('#q').focus();return;}
-  if(e.key==='f'||e.key==='F'){if(s){if(G.mode!=='solo'){G.mode='solo';syncModeSeg();layout();}focusSpec(s);refresh();}return;}
+  if(e.key==='f'||e.key==='F'){if(s){G.mode='solo';syncModeSeg();layout();focusSpec(s);refresh();}return;}
+  if(e.key==='n'||e.key==='N'){G.mode='nursery';syncModeSeg();layout();refresh();return;}
   if(e.key==='h'||e.key==='H'){if(s){s.visible=!s.visible;layout();refresh();autosave();}return;}
-  if(e.key==='r'||e.key==='R'){if(s){reseedSpec(s);clog(`reseeded → ${s.seed}`);}return;}
+  if(e.key==='r'||e.key==='R'){if(s)reseedSpec(s);return;}
   if(e.key==='e'||e.key==='E'){exportOBJ(s);return;}
   if(e.key==='v'||e.key==='V'){setShade(G.shade==='wire'?'flat':'wire');return;}
-  if(e.key==='a'||e.key==='A'){openAtlas();return;}
-  if(e.key==='+'){quickGrow(PLANTS[Math.floor(Math.random()*PLANTS.length)].id);return;}
   if(e.key==='1')setView('front');
   if(e.key==='7')setView('top');
   if(e.key==='5')setView('iso');
   if((e.key==='Delete'||e.key==='Backspace')&&s){removeSpecimen(s.uid);prompt('delete',s.name);}
 });
 
-/* ═══════════════ resize + loop ═══════════════ */
+/* ═══════════════ main loop ═══════════════ */
+function updateVTitle(){
+  const s=selSpec();
+  if(s){$('#vname').textContent=s.name;$('#vmeta').textContent=`${s.seed} · ${fmtK(s.tris)} tris · ${plantOf(s.type).latin}`;}
+  else{const v=visibleSpecs();$('#vname').textContent='Desert Environment';$('#vmeta').textContent=`${v.length} visible cacti · ${fmtK(v.reduce((a,x)=>a+x.tris,0))} tris`;}
+}
+function refresh(){renderOutliner();renderInspector();updateVTitle();}
+
 function fit(){
   const w=$('#viewport').clientWidth,h=$('#viewport').clientHeight;
   if(!w||!h)return;
@@ -1873,6 +1579,7 @@ function fit(){
 }
 new ResizeObserver(fit).observe($('#viewport'));
 addEventListener('resize',fit);
+
 let lastT=performance.now(),fpsE=60;
 function loop(t){
   requestAnimationFrame(loop);
@@ -1882,11 +1589,8 @@ function loop(t){
   const tt=t/1000;
   for(const s of G.specs){
     if(!s.group.visible)continue;
-    if(s.spin)s.group.rotation.y+=dt*0.6;
-    if(G.scene.wind){s.group.rotation.z=Math.sin(tt*1.3+s.phase)*0.015;s.group.rotation.x=Math.cos(tt*1.1+s.phase)*0.01;}
-    else{s.group.rotation.z=0;s.group.rotation.x=0;}
+    if(s.spin)s.group.rotation.y+=dt*0.5;
   }
-  if(ring.visible)ring.material.opacity=0.55+Math.sin(tt*3)*0.25;
   renderer.render(scene,camera);
   if(!loop.f)loop.f=0;
   if(++loop.f%20===0){
@@ -1896,31 +1600,17 @@ function loop(t){
 }
 
 /* ═══════════════ boot ═══════════════ */
-restoreLayout();fit();
+fit();
 let restored=null;
 try{restored=JSON.parse(localStorage.getItem(LS_G)||'null');}catch(e){}
-const bootQ=new URLSearchParams(location.search),bootPlant=bootQ.get('plant');
-if(bootPlant&&plantOf(bootPlant)){
-  const bs=makeSpecimenSilent(bootPlant,bootQ.get('seed')||'showcase-01');
-  G.sel=bs.uid;G.mode='solo';syncModeSeg();layout();refresh();focusSpec(bs);
-  clog(`showcase · ${bs.name} · ?plant=${bootPlant}`);
-}else if(restored&&restored.specs&&restored.specs.length){
-  $('#startInfo').textContent=`${restored.specs.length} specimens · autosaved · HQ geometry · atlas included`;
-  $('#start').classList.add('show');
-  $('#startCont').addEventListener('click',()=>{loadGarden(restored);$('#start').classList.remove('show');clog(`restored ${G.specs.length} specimens from autosave`);});
-  $('#startNew').addEventListener('click',()=>{starters();$('#start').classList.remove('show');});
-  $('#startOpen').addEventListener('click',()=>{$('#start').classList.remove('show');$('#file').click();});
-  refresh();
+if(restored&&restored.specs&&restored.specs.length){
+  loadGarden(restored);
+  clog(`restored ${G.specs.length} desert cacti`);
 }else{
   starters();
 }
 window.__florarc=true;
-window.__florarcInfo=()=>({specs:G.specs.map(s=>({uid:s.uid,type:s.type,cat:plantOf(s.type).cat,kids:s.group.children.length,tris:s.tris})),sel:G.sel,mode:G.mode,shade:G.shade});
 requestAnimationFrame(loop);
-</script>
-</body>
-</html>
-stAnimationFrame(loop);
 </script>
 </body>
 </html>
