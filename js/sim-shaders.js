@@ -3,7 +3,7 @@
 // Anti-griefing rules baked in: capacity-limited detach, per-step voxel clamp,
 // resting timers with forced settle, sleep when clean+still, spawn rate limits.
 
-import { SIM_HEAD, FULLSCREEN_VERT, NOISE_GLSL, SDFLIB_GLSL } from "./glsl-lib.js";
+import { SIM_HEAD, FULLSCREEN_VERT, NOISE_GLSL, SDFLIB_GLSL } from "./glsl-lib.js?v=2";
 
 export { FULLSCREEN_VERT };
 

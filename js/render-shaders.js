@@ -1,7 +1,7 @@
 // Frontier SDF — render shaders: raymarched SDF terrain + current-following water,
 // river ribbons built from live particle trails, and small depth-tested sprites.
 
-import { SIM_HEAD, FULLSCREEN_VERT } from "./glsl-lib.js";
+import { SIM_HEAD, FULLSCREEN_VERT } from "./glsl-lib.js?v=2";
 
 export { FULLSCREEN_VERT };
 

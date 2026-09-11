@@ -1,11 +1,11 @@
 // Frontier SDF — GPU simulation driver (volumes, particles, passes, ledger).
 // Owns the WebGL2 context state for simulation; the renderer shares the context.
 
-import { ATLAS_W, ATLAS_H, PMAX, PSIZE } from "./glsl-lib.js";
+import { ATLAS_W, ATLAS_H, PMAX, PSIZE } from "./glsl-lib.js?v=2";
 import {
   FULLSCREEN_VERT, makeBaseFrag, MOTION_FRAG, EVENT_FRAG, SPLAT_VERT, SPLAT_FRAG,
   APPLY_FRAG, CARGO_FRAG, COUNT_FRAG, REDUCE1_FRAG, REDUCE2_FRAG, FLOW_FRAG,
-} from "./sim-shaders.js";
+} from "./sim-shaders.js?v=2";
 
 const REQ_SCALE = 32;
 
