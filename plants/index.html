@@ -543,7 +543,7 @@ function opuntiaPad(r,depth=1,segments=28,rings=14){
       const th=i/segments*Math.PI*2;
       const edge=1+0.035*Math.sin(th*6+ph*1.7);
       const rr=r*sy*edge;
-      pos.push(rr*1.18*Math.cos(th),r*1.02*cy,rr*depth*Math.sin(th));
+      pos.push(rr*1.52*Math.cos(th),r*0.84*cy,rr*depth*Math.sin(th));
     }
   }
   for(let j=0;j<rings;j++)for(let i=0;i<segments;i++){
@@ -1566,8 +1566,8 @@ const PLANTS=[
   for(let k=0;k<nfr;k++){
     const tb=tops[Math.floor(R(0,tops.length))];
     const fa=R(0,6.283),fr=R(0.09,0.16)*S;
-    const fp=[tb[0]+Math.sin(fa)*fr,tb[1]-0.015,tb[2]+Math.cos(fa)*fr];
-    B.ball({r:R(0.032,0.045)*S,smooth:true,pos:fp,c0:shade(P.extra,-0.06),c1:P.extra,jit:0});
+    const fp=[tb[0]+Math.sin(fa)*fr*0.18,tb[1]-0.05,tb[2]+Math.cos(fa)*fr*0.18];
+    B.ball({r:R(0.032,0.045)*S,smooth:true,pos:fp,s:[0.82,1.18,0.82],c0:shade(P.extra,-0.06),c1:P.extra,jit:0});
   }
 }},
 {id:'agave',cat:'cactus',name:'Agave',latin:'Agave americana',icon:'agave',desc:'Blue-grey sabre leaves in a phyllotactic rosette, each tipped with a thorn.',
@@ -1591,7 +1591,7 @@ const PLANTS=[
   });
 }},
 {id:'ocotillo',cat:'cactus',name:'Ocotillo',latin:'Fouquieria splendens',icon:'ocotillo',desc:'A fountain of spiny grey canes lit with red torch tips.',
- params:[...COMMON],colors:[CC('foliage','Canes','#5a6a45'),CC('accent','Thorns','#9a9a8a'),CC('extra','Torches','#e8542a'),CC('stem','Base','#4a3a28')] ,
+ params:[...COMMON],colors:[CC('foliage','Canes','#8a8166'),CC('accent','Thorns','#9a9a8a'),CC('extra','Torches','#e8542a'),CC('stem','Base','#4a3a28')] ,
  build(B,P,R){
   const H=P.height,S=P.spread;
   B.disc({r:0.35*S,r2:0.45*S,h:0.1,pos:[0,0.03,0],c0:'#8a6f4a',c1:'#b89a6a',jit:0,rs:12});
@@ -1600,7 +1600,7 @@ const PLANTS=[
     const ba=(i/nc)*6.28+R(-0.2,0.2);
     const base=[Math.sin(ba)*0.12*S,0.05,Math.cos(ba)*0.12*S];
     const ry=ba+R(-0.15,0.15),tilt=R(0.08,0.3),len=R(1.7,2.4)*H,bd=R(0.1,0.25)*P.bend;
-    B.stem({len,r0:0.022*S,r1:0.007*S,bend:bd,tilt,ry,pos:base,c0:shade(P.foliage,-0.08),c1:P.foliage,jit:P.variation,rad:6,segs:5});
+    B.stem({len,r0:0.04*S,r1:0.015*S,bend:bd,tilt,ry,pos:base,c0:shade(P.foliage,-0.08),c1:P.foliage,jit:P.variation,rad:6,segs:5});
     const nt=6+Math.floor(R(0,4));
     for(let k=0;k<nt;k++){
       const t=0.15+0.75*(k/nt);
@@ -1609,7 +1609,7 @@ const PLANTS=[
       const seat=0.023*S;
       const thornPos=[pp[0]+out[0]*seat,pp[1]+out[1]*seat,pp[2]+out[2]*seat];
       B.spike({r:0.007*S,h:0.035*S,rs:5,pos:thornPos,q:dirQuat(out,0),c0:P.accent,c1:P.accent,jit:0});
-      if(R()<0.3)B.leaf({len:0.045*S,w:0.02*S,segs:2,bend:0.3,tilt:R(0.6,1.0),ry:R(0,6.28),pos:pp,c0:P.foliage,c1:shade(P.foliage,0.1),jit:0});
+      if(R()<0.72)B.leaf({len:R(0.07,0.12)*S,w:R(0.025,0.045)*S,segs:4,bend:0.3,tilt:R(0.6,1.0),ry:R(0,6.28),pos:pp,c0:P.foliage,c1:shade(P.foliage,0.1),jit:0});
     }
     const tip=tiltPoint(len,bd*len,tilt,ry,base);
     for(let k=0;k<4;k++)
