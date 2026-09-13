@@ -160,11 +160,11 @@ export function createTerrainMaterial(shade: ShadeParams): THREE.MeshStandardMat
           vec3 rockB = fh_bandColor(bi + 1.0);
           float blend = smoothstep(0.75, 1.0, bf);
           vec3 alb = mix(rockA, rockB, blend);
-          float seam = smoothstep(0.0, 0.10, bf) * smoothstep(1.0, 0.90, bf);
+          float seam = smoothstep(0.0, 0.10, bf) * (1.0 - smoothstep(0.90, 1.0, bf));
           alb *= mix(0.72, 1.0, seam); // dark sedimentary seams
           // large patchiness
-          float patch = fh_fbm(wp * 0.02 + 7.0);
-          alb *= 0.88 + 0.24 * patch;
+          float patchN = fh_fbm(wp * 0.02 + 7.0);
+          alb *= 0.88 + 0.24 * patchN;
 
           // ---- 2. slope / elevation biomes --------------------------------
           float slope = clamp(1.0 - wN.y, 0.0, 1.5);
@@ -175,7 +175,7 @@ export function createTerrainMaterial(shade: ShadeParams): THREE.MeshStandardMat
           vec3 scree = vec3(0.55, 0.50, 0.44) * (0.9 + 0.2 * fh_vnoise(wp * 2.0));
           alb = mix(alb, scree, screeM * 0.7);
           // vegetation / scrub on gentle low ground
-          float vegM = (1.0 - smoothstep(0.15, 0.42, slope)) * smoothstep(uSnowline + 6.0, uSnowline - 14.0, elev);
+          float vegM = (1.0 - smoothstep(0.15, 0.42, slope)) * (1.0 - smoothstep(uSnowline - 14.0, uSnowline + 6.0, elev));
           vec3 lush = mix(vec3(0.16, 0.30, 0.10), vec3(0.35, 0.44, 0.16), moist);
           vec3 scrub = mix(vec3(0.42, 0.36, 0.22), vec3(0.50, 0.38, 0.24), fh_vnoise(wp * 0.6));
           vec3 veg = mix(lush, scrub, uArid);
