@@ -3,6 +3,7 @@
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { FlyControls } from './flyControls';
 import { MeshData } from '../mesher/surfaceNets';
 import { ParticlePool } from '../erosion/particles';
 import {
@@ -15,6 +16,7 @@ export class Viewport {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
+  fly: FlyControls;
   terrain: THREE.Mesh;
   terrainMat: THREE.MeshStandardMaterial;
   water: THREE.Mesh;
@@ -54,6 +56,7 @@ export class Viewport {
     this.controls.maxDistance = c * 4;
     this.controls.minDistance = c * 0.05;
     this.controls.update();
+    this.fly = new FlyControls(this.camera, this.controls);
 
     // Lights.
     this.sun = new THREE.DirectionalLight(0xfff2dd, 2.6);
@@ -125,6 +128,10 @@ export class Viewport {
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
+  }
+
+  attachFly(): void {
+    this.fly.attach(this.renderer.domElement);
   }
 
   resize(): void {

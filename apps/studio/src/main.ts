@@ -44,6 +44,12 @@ class App {
   constructor() {
     const canvas = document.getElementById('viewport') as HTMLCanvasElement;
     this.viewport = new Viewport(canvas, this.state.shade, WORLD_SIZE);
+    this.viewport.attachFly();
+    this.viewport.fly.syncSpeed(this.state.view.flySpeed);
+    this.viewport.fly.onSpeedChange = (spd) => {
+      this.state.view.flySpeed = spd;
+      this.ui.syncAll();
+    };
     this.syncPaint();
     this.ui = buildUI(this.state, {
       generate: () => this.generate(),
@@ -193,6 +199,7 @@ class App {
 
   private applyView(): void {
     const v = this.state.view;
+    this.viewport.fly.syncSpeed(v.flySpeed);
     this.viewport.setWater(this.state.shade.waterLevel, v.showWater);
     this.viewport.setWireframe(v.wireframe);
     this.viewport.setShadows(v.shadows);
@@ -263,14 +270,21 @@ class App {
         else this.viewport.hideBrush();
       }
     });
-    const end = () => {
-      if (this.painting) {
-        this.painting = false;
-        this.viewport.controls.enabled = true;
-      }
+    const end = (e: PointerEvent) => {
+      if (e.button === 0) this.painting = false;
+      // Only re-enable orbit when NO button is held (RMB-look may be active).
+      if (e.buttons === 0) this.viewport.controls.enabled = true;
     };
     canvas.addEventListener('pointerup', end);
     canvas.addEventListener('pointercancel', end);
+    canvas.addEventListener('dblclick', (e) => {
+      if (this.busy) return;
+      const hit = this.pickSDF(e.clientX, e.clientY);
+      if (hit) {
+        this.viewport.controls.target.copy(hit.p);
+        this.ui.setStatus('Orbit focus set.');
+      }
+    });
     canvas.addEventListener('pointerleave', () => { if (!this.painting) this.viewport.hideBrush(); });
   }
 
@@ -385,6 +399,7 @@ class App {
         simMs,
       });
     }
+    this.viewport.fly.update(dt);
     this.viewport.render(t / 1000);
   };
 }

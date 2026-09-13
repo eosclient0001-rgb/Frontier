@@ -83,6 +83,12 @@ select.scenario { max-width: 190px; }
   padding: 14px 26px; border-radius: var(--radius); font-size: 14px; letter-spacing: 0.04em;
 }
 .overlay-card.hidden { display: none; }
+.fly-hint {
+  position: absolute; left: 10px; bottom: 10px;
+  background: rgba(13, 17, 23, 0.72); border: 1px solid var(--line);
+  border-radius: 7px; padding: 4px 10px; font-size: 11px; color: var(--dim);
+  pointer-events: none; white-space: nowrap; z-index: 5;
+}
 
 /* ---- cards ---- */
 .card { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }

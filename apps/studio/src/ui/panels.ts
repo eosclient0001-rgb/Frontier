@@ -394,6 +394,8 @@ export function buildUI(
   toggleRow(vb, 'Auto remesh', TB(state.view), 'autoRemesh', cb.viewEdited);
   sliderRow(vb, T(state.view), { key: 'remeshMs', label: 'Remesh ms', min: 120, max: 2000, step: 10, fmt: fmtAuto(0) });
   sliderRow(vb, T(state.view), { key: 'simBudgetMs', label: 'Sim budget', min: 2, max: 24, step: 0.5, fmt: fmtAuto(1) });
+  sliderRow(vb, T(state.view), { key: 'flySpeed', label: 'Fly speed', min: 2, max: 80, step: 1, fmt: fmtAuto(0) }, cb.viewEdited);
+  vb.append(el('p', 'hint', 'Navigate: RIGHT-drag look · WASD/arrows fly · Q/E down/up · Shift boost · wheel speed while looking · double-click sets orbit focus.'));
   btn(vb, '◉ Remesh now (full bake)', 'wide', cb.remeshNow);
 
   const bb = card(mounts.right, 'Paint', 'masks → simulators', undefined, true);

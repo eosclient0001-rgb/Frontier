@@ -26,6 +26,7 @@ export interface ViewOptions {
   simBudgetMs: number;
   fullBakeEvery: number; // every Nth remesh does full AO+curvature bake
   paintArmed: boolean;
+  flySpeed: number;
 }
 
 export interface BrushState {
@@ -66,6 +67,7 @@ export function defaultState(): AppState {
       simBudgetMs: 7,
       fullBakeEvery: 4,
       paintArmed: true,
+      flySpeed: 20,
     },
     brush: { mode: 'rain', radius: 6, strength: 0.9 },
     playing: false,
