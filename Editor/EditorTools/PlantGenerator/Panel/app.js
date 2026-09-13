@@ -3,7 +3,7 @@ import * as THREE from './vendor/three.module.min.js';
 import { OrbitControls } from './vendor/jsm/controls/OrbitControls.js';
 import { GLTFExporter } from './vendor/jsm/exporters/GLTFExporter.js';
 import { OBJExporter } from './vendor/jsm/exporters/OBJExporter.js';
-import { SPECIES, PALETTE, CATALOGUE, generatePlant, randomParams, connectedComponents, variantOf, hex } from './plant.js';
+import { SPECIES, PALETTE, CATALOGUE, generatePlant, randomParams, connectedComponents, variantOf, hex } from './plant.js?v=1789312752';
 
 const $ = (s, r = document) => r.querySelector(s);
 const ICON = {
@@ -327,7 +327,7 @@ const catState = { fam: 'palm', entry: null, seed: '', count: 1, over: {} };
 function buildCat() {
   const rail = $('#catRail'), grid = $('#catGrid');
   const fams = Object.keys(SPECIES);
-  rail.innerHTML = fams.map(f => `<div class="rail-item ${f === catState.fam ? 'on' : ''}" data-f="${f}" style="--acc:${SPECIES[f].accent}">${ICON[f]}${SPECIES[f].label}s<span class="n">${Object.keys(SPECIES[f].variants).length}</span></div>`).join('') + `<div class="rail-item soon">Shrubs<span class="n">soon</span></div><div class="rail-item soon">Grasses<span class="n">soon</span></div>`;
+  rail.innerHTML = fams.map(f => `<div class="rail-item ${f === catState.fam ? 'on' : ''}" data-f="${f}" style="--acc:${SPECIES[f].accent}">${ICON[f]}${SPECIES[f].label}s<span class="n">${Object.keys(SPECIES[f].variants).length}</span></div>`).join('') + `<div class="rail-item soon">Grasses<span class="n">soon</span></div>`;
   const show = (f) => {
     catState.fam = f; rail.querySelectorAll('.rail-item').forEach(x => x.classList.toggle('on', x.dataset.f === f));
     const list = CATALOGUE.filter(c => c.species === f);
