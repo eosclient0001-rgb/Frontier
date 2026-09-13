@@ -43,7 +43,7 @@ export const DEFAULT_WIND: WindParams = {
   gravity: 9.8,
   restitution: 0.34,
   abrasionK: 1.0,
-  saltRadius: 0.4,
+  saltRadius: 0.7,
   hardnessResist: 0.8,
   pickup: 0.7,
   deflateK: 2.0,
@@ -183,7 +183,7 @@ export class WindSim {
         if (facing > 0.03 && speed > 0.5) {
           const mod = hardnessMod(vol, x, y, z, p.hardnessResist, 0);
           const sr = speed / vRef;
-          const r = clamp(p.saltRadius * (0.25 + 1.5 * facing) * Math.min(sr * sr, 4) * p.abrasionK * mod, vox * 0.3, vox * 2.2);
+          const r = clamp(p.saltRadius * (0.25 + 1.5 * facing) * Math.min(sr * sr, 4) * p.abrasionK * mod, vox * 0.6, vox * 3);
           const removed = carveSphere(vol, x, y, z, r, this.stats);
           pool.sed[i] += removed * p.pickup;
           // Deflation: strip loose fines first.

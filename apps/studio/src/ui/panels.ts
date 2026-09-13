@@ -23,7 +23,7 @@ export interface StatsSnapshot {
 export interface UICallbacks {
   generate: () => void;
   togglePlay: () => void;
-  stepBurst: () => void;
+  stepBurst: (seconds: number) => void;
   settleNow: () => void;
   resetSim: () => void;
   remeshNow: () => void;
@@ -212,7 +212,8 @@ export function buildUI(
   mounts.top.append(tb);
   const genBtn = btn(tb, '⟳ Generate', 'primary', cb.generate);
   const playBtn = btn(tb, '▶ Simulate', 'play', cb.togglePlay);
-  btn(tb, '⇥ +2s burst', '', cb.stepBurst);
+  btn(tb, '⇥ +2s', '', () => cb.stepBurst(2));
+  btn(tb, '⇥⇥ +10s', '', () => cb.stepBurst(10));
   btn(tb, '⛰ Settle', '', cb.settleNow);
   btn(tb, '✕ Reset sim', '', cb.resetSim);
   const scenSel = el('select', 'scenario') as HTMLSelectElement;
@@ -299,7 +300,7 @@ export function buildUI(
   const rDefs: SliderDef[] = [
     { key: 'rate', label: 'Drops / sec', min: 500, max: 30000, step: 500, fmt: fmtAuto(0) },
     { key: 'globalRain', label: 'Global rain', min: 0, max: 1, step: 0.01 },
-    { key: 'dropRadius', label: 'Drop radius', min: 0.1, max: 1.2, step: 0.02 },
+    { key: 'dropRadius', label: 'Drop radius', min: 0.2, max: 2.5, step: 0.05 },
     { key: 'gravity', label: 'Gravity', min: 1, max: 25, step: 0.1, fmt: fmtAuto(1) },
     { key: 'windX', label: 'Wind X', min: -6, max: 6, step: 0.1, fmt: fmtAuto(1) },
     { key: 'windZ', label: 'Wind Z', min: -6, max: 6, step: 0.1, fmt: fmtAuto(1) },
@@ -310,7 +311,7 @@ export function buildUI(
     { key: 'depositK', label: 'Deposit rate', min: 0, max: 14, step: 0.1, fmt: fmtAuto(1) },
     { key: 'manning', label: 'Friction', min: 0.2, max: 8, step: 0.1, fmt: fmtAuto(1) },
     { key: 'infiltrate', label: 'Infiltration', min: 0, max: 1, step: 0.01 },
-    { key: 'grooveR', label: 'Groove radius', min: 0.15, max: 1.6, step: 0.02 },
+    { key: 'grooveR', label: 'Groove radius', min: 0.2, max: 2.5, step: 0.05 },
     { key: 'hardnessResist', label: 'Hard resist', min: 0, max: 1, step: 0.01 },
   ];
   rDefs.forEach((d) => sliderRow(rb, T(state.rain), d));
@@ -322,7 +323,7 @@ export function buildUI(
     { key: 'speed', label: 'Wind speed', min: 1, max: 25, step: 0.2, fmt: fmtAuto(1) },
     { key: 'turbulence', label: 'Turbulence', min: 0, max: 6, step: 0.1, fmt: fmtAuto(1) },
     { key: 'abrasionK', label: 'Abrasion', min: 0, max: 3, step: 0.05 },
-    { key: 'saltRadius', label: 'Blast radius', min: 0.1, max: 1.4, step: 0.02 },
+    { key: 'saltRadius', label: 'Blast radius', min: 0.2, max: 2.2, step: 0.05 },
     { key: 'settleSpeed', label: 'Settle speed', min: 0.3, max: 8, step: 0.1, fmt: fmtAuto(1) },
     { key: 'depositK', label: 'Dune deposit', min: 0, max: 10, step: 0.1, fmt: fmtAuto(1) },
     { key: 'deflateK', label: 'Deflation', min: 0, max: 6, step: 0.1, fmt: fmtAuto(1) },

@@ -46,28 +46,28 @@ export interface RainParams {
 
 export const DEFAULT_RAIN: RainParams = {
   enabled: true,
-  rate: 9000,
+  rate: 12000,
   globalRain: 0.35,
-  dropRadius: 0.35,
-  parcelMult: 6,
+  dropRadius: 0.8,
+  parcelMult: 10,
   gravity: 9.8,
-  windX: 0.6, windZ: 0.2,
+  windX: 0.4, windZ: 0.2,
   drag: 0.12,
-  energyK: 0.10,
+  energyK: 0.14,
   restitution: 0.16,
   friction: 0.5,
   hardnessResist: 0.75,
   wetSoften: 0.6,
   pickup: 0.85,
   splashKeep: 0.86,
-  flowSpeed: 3.2,
-  manning: 2.2,
-  streamK: 2.5,
-  detachK: 4.0,
-  depositK: 6.0,
+  flowSpeed: 2.6,
+  manning: 1.6,
+  streamK: 4.5,
+  detachK: 6.0,
+  depositK: 8.0,
   infiltrate: 0.10,
   evaporate: 0.03,
-  grooveR: 0.5,
+  grooveR: 0.85,
   maxLife: 14,
   poolCap: 30000,
   maxSpeed: 34,
@@ -81,6 +81,7 @@ export class RainSim {
   stats: SimStats = newStats();
   cursor = 0;
   private spawnAcc = 0;
+  private colMax: Float32Array | null = null; // 2D column-max of painted rain
 
   constructor(params: RainParams = { ...DEFAULT_RAIN }) {
     this.params = params;
@@ -96,6 +97,51 @@ export class RainSim {
 
   syncCap(): void {
     if (this.pool.cap !== this.params.poolCap) this.pool.resize(this.params.poolCap);
+  }
+
+  /** Recompute column-max rain over a painted bbox (full rebuild if size changed). */
+  refreshColumns(vol: Volume, i0: number, i1: number, k0: number, k1: number): void {
+    const res = vol.res;
+    if (!this.colMax || this.colMax.length !== res * res) {
+      this.colMax = new Float32Array(res * res);
+      i0 = 0; i1 = res - 1; k0 = 0; k1 = res - 1;
+    }
+    const rain = vol.rain;
+    const a0 = Math.max(0, i0), a1 = Math.min(res - 1, i1);
+    const b0 = Math.max(0, k0), b1 = Math.min(res - 1, k1);
+    for (let k = b0; k <= b1; k++) {
+      for (let i = a0; i <= a1; i++) {
+        let m = 0;
+        for (let j = 0; j < res; j++) {
+          const v = rain[(k * res + j) * res + i];
+          if (v > m) m = v;
+        }
+        this.colMax[k * res + i] = m;
+      }
+    }
+  }
+
+  private sampleColMax(vol: Volume, x: number, z: number): number {
+    if (!this.colMax || this.colMax.length !== vol.res * vol.res) {
+      this.refreshColumns(vol, 0, vol.res - 1, 0, vol.res - 1);
+    }
+    const ci = Math.max(0, Math.min(vol.res - 1, Math.floor((x - vol.ox) / vol.vox)));
+    const ck = Math.max(0, Math.min(vol.res - 1, Math.floor((z - vol.oz) / vol.vox)));
+    return this.colMax![ck * vol.res + ci];
+  }
+
+  /** Sphere-trace downward to find the surface: drops spawn just above it. */
+  private findSurfaceY(vol: Volume, x: number, z: number): number {
+    const top = vol.oy + vol.size - vol.vox;
+    const vox = vol.vox;
+    let y = top;
+    for (let i = 0; i < 48; i++) {
+      const d = vol.sampleSdf(x, y, z);
+      if (d < vox) return y;
+      y -= Math.max(d * 0.85, vox * 0.5);
+      if (y <= vol.oy) return vol.oy;
+    }
+    return y;
   }
 
   dropVol(): number {
@@ -115,7 +161,7 @@ export class RainSim {
     let toSpawn = Math.floor(this.spawnAcc);
     this.spawnAcc -= Math.floor(this.spawnAcc);
     toSpawn = Math.min(toSpawn, 4000); // per-frame spawn cap keeps bursts smooth
-    const x0 = vol.ox, x1 = vol.ox + vol.size, z0 = vol.oz, z1 = vol.oz + vol.size;
+    const x0 = vol.ox, z0 = vol.oz;
     const topY = vol.oy + vol.size - vol.vox;
     const dv = this.dropVol();
     let guard = toSpawn * 4 + 8;
@@ -123,11 +169,15 @@ export class RainSim {
       if (performance.now() > deadline) { this.spawnAcc += toSpawn; toSpawn = 0; break; }
       const x = x0 + Math.random() * vol.size;
       const z = z0 + Math.random() * vol.size;
-      const mask = vol.sample(vol.rain, x, topY - vol.size * 0.25, z);
+      // Painted storms are 2D columns: any paint in the column seeds drops.
+      const mask = this.sampleColMax(vol, x, z);
       const accept = clamp01(p.globalRain * 0.55 + mask);
       if (Math.random() > accept) continue;
+      // Spawn just above the local surface: precise aim, no wasted skydive.
+      const sy = this.findSurfaceY(vol, x, z);
+      const y = Math.min(sy + 3 + Math.random() * 4, topY);
       const ok = this.pool.spawn(
-        x, topY - Math.random() * vol.vox * 2, z,
+        x, y, z,
         p.windX * 0.4, -1.5 - Math.random(), p.windZ * 0.4,
         dv, 0, p.maxLife * (0.6 + Math.random() * 0.7), P_BALLISTIC
       );
@@ -139,8 +189,8 @@ export class RainSim {
     // ---- step (round-robin under budget) ----------------------------------
     const pool = this.pool;
     const vox = vol.vox;
-    const maxR = vox * 5;
-    const minR = vox * 0.45;
+    const maxR = vox * 6;
+    const minR = vox * 0.8;
     if (pool.alive === 0) { this.stats.alive = 0; return; }
     if (this.cursor >= pool.alive) this.cursor = 0;
     const start = this.cursor;

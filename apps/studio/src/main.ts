@@ -54,7 +54,7 @@ class App {
     this.ui = buildUI(this.state, {
       generate: () => this.generate(),
       togglePlay: () => this.togglePlay(),
-      stepBurst: () => this.stepBurst(),
+      stepBurst: (s) => this.stepBurst(s),
       settleNow: () => this.settleNow(),
       resetSim: () => this.resetSim(),
       remeshNow: () => { if (!this.busy) this.remesh(true); },
@@ -131,12 +131,12 @@ class App {
   }
 
   /** Run ~2 simulated seconds synchronously, chunked to keep UI alive. */
-  private async stepBurst(): Promise<void> {
+  private async stepBurst(seconds = 2): Promise<void> {
     if (this.busy || this.state.playing) return;
     this.busy = true;
     this.ui.setBusy(true);
     try {
-      const steps = 60, dt = 1 / 30;
+      const steps = Math.round(seconds * 30), dt = 1 / 30;
       const b = this.state.view.simBudgetMs;
       for (let s = 0; s < steps; s++) {
         this.rain.update(this.vol, dt, b * 0.62);
@@ -150,7 +150,7 @@ class App {
       }
       this.vol.sanitize();
       this.remesh(true);
-      this.ui.setStatus('Burst complete (+2.0 s simulated).');
+      this.ui.setStatus(`Burst complete (+${seconds.toFixed(1)} s simulated).`);
     } finally {
       this.busy = false;
       this.ui.setBusy(false);
@@ -295,7 +295,11 @@ class App {
     const px = hit.p.x - hit.n.x * this.vol.vox * 0.5;
     const py = hit.p.y - hit.n.y * this.vol.vox * 0.5;
     const pz = hit.p.z - hit.n.z * this.vol.vox * 0.5;
-    if (this.paintTool.apply(this.vol, px, py, pz)) this.paintDirty = true;
+    const stamped = this.paintTool.apply(this.vol, px, py, pz);
+    if (stamped.touched) {
+      this.paintDirty = true;
+      this.rain.refreshColumns(this.vol, stamped.i0, stamped.i1, stamped.k0, stamped.k1);
+    }
     this.viewport.showBrush(hit.p, hit.n, this.paintTool.radius, PAINT_COLORS[this.paintTool.mode]);
   }
 

@@ -196,12 +196,12 @@ export function createTerrainMaterial(shade: ShadeParams): THREE.MeshStandardMat
 
           // ---- 3. drainage + process read ----------------------------------
           float chan = clamp(log(1.0 + flow * 3.0), 0.0, 1.5);
-          alb *= 1.0 - clamp(chan * 0.35, 0.0, 0.45);          // dark wet channels
+          alb *= 1.0 - clamp(chan * 0.5, 0.0, 0.55);           // dark wet channels
           alb += vec3(0.10, 0.09, 0.07) * clamp(chan - 0.5, 0.0, 0.5); // pale levees
           float fanM = clamp(sed * 0.9 - chan * 0.3, 0.0, 1.0) * (1.0 - smoothstep(0.25, 0.5, slope));
           alb = mix(alb, vec3(0.70, 0.62, 0.50), fanM * 0.6);  // alluvial fans
-          float fresh = clamp(erodeM * 0.8, 0.0, 1.0);
-          alb = mix(alb, alb * vec3(0.55, 0.42, 0.36) + vec3(0.08, 0.02, 0.0), fresh * 0.75); // fresh rock
+          float fresh = clamp(erodeM * 1.2, 0.0, 1.0);
+          alb = mix(alb, alb * vec3(0.55, 0.42, 0.36) + vec3(0.08, 0.02, 0.0), fresh * 0.85); // fresh rock
 
           // ---- 4. sculpt: AO / curvature / wetness --------------------------
           alb *= mix(1.0, ao, 0.78);

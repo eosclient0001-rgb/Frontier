@@ -23,7 +23,7 @@ export interface ChemicalParams {
 
 export const DEFAULT_CHEMICAL: ChemicalParams = {
   enabled: false,
-  rate: 0.25,
+  rate: 0.45,
   precipRate: 0.06,
   poreFreq: 26,
   poreAmp: 0.75,

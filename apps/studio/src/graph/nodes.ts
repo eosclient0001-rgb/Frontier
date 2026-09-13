@@ -63,15 +63,15 @@ export function defaultState(): AppState {
       wireframe: false,
       shadows: true,
       autoRemesh: true,
-      remeshMs: 450,
-      simBudgetMs: 7,
-      fullBakeEvery: 4,
+      remeshMs: 650,
+      simBudgetMs: 8,
+      fullBakeEvery: 6,
       paintArmed: true,
       flySpeed: 20,
     },
     brush: { mode: 'rain', radius: 6, strength: 0.9 },
     playing: false,
-    volumeRes: 96,
+    volumeRes: 128,
   };
 }
 
@@ -93,7 +93,7 @@ export const SCENARIOS: Scenario[] = [
     hint: 'Ridged peaks + heavy rain. Watch gullies carve live.',
     apply: (s) => {
       setLandform(s, 'alpine');
-      Object.assign(s.rain, { enabled: true, rate: 14000, globalRain: 0.55, energyK: 0.11, streamK: 3.0 });
+      Object.assign(s.rain, { enabled: true, rate: 14000, globalRain: 0.55, energyK: 0.15, streamK: 4.5 });
       Object.assign(s.wind, { enabled: false });
       Object.assign(s.thermal, { enabled: true, iterations: 4 });
       Object.assign(s.chemical, { enabled: false });
@@ -105,7 +105,7 @@ export const SCENARIOS: Scenario[] = [
     hint: 'Terraced canyon. Paint rain over the rim and breach it.',
     apply: (s) => {
       setLandform(s, 'canyon');
-      Object.assign(s.rain, { enabled: true, rate: 9000, globalRain: 0.2, energyK: 0.09, streamK: 3.5, detachK: 5 });
+      Object.assign(s.rain, { enabled: true, rate: 12000, globalRain: 0.2, energyK: 0.13, streamK: 5, detachK: 6 });
       Object.assign(s.wind, { enabled: false });
       Object.assign(s.thermal, { enabled: true, iterations: 6, talusDeg: 36 });
       Object.assign(s.chemical, { enabled: false });

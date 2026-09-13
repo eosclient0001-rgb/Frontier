@@ -20,8 +20,8 @@ export class PaintTool {
   radius = 6;
   strength = 0.9;
 
-  /** Stamp the current brush at a world point. Returns true if anything changed. */
-  apply(vol: Volume, cx: number, cy: number, cz: number): boolean {
+  /** Stamp the current brush at a world point. Returns touch flag + voxel bbox. */
+  apply(vol: Volume, cx: number, cy: number, cz: number): { touched: boolean; i0: number; i1: number; k0: number; k1: number } {
     const R = Math.max(this.radius, vol.vox);
     const s = this.strength;
     const { res, vox, ox, oy, oz } = vol;
@@ -65,6 +65,6 @@ export class PaintTool {
         }
       }
     }
-    return touched;
+    return { touched, i0, i1, k0, k1 };
   }
 }
