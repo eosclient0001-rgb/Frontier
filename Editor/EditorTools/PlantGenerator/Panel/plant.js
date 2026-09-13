@@ -862,56 +862,84 @@ export const ROSETTE_VARIANTS = {
 
 /* ───────────────────────── species: BAMBOO ───────────────────────── */
 function genBamboo(P, rnd, mb, V = BAMBOO_VARIANTS.golden) {
-  const C = { ...PALETTE.bamboo, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06;
-  const sides = 8; const nC = Math.round(P.culms);
-  // clump base: a low mound each culm is extruded from (single shell)
+  const C = { ...PALETTE.bamboo, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06; const det = P.detail;
+  const nC = Math.round(P.culms); const sides = P.culmRadius < .03 ? 8 : Math.round(lerp(10, 14, det));
+  const leafCol = () => shade(hex(C.leaf), hue + rnd.range(-.012, .012), 1, rnd.range(.88, 1.1)); const dens = Math.min(1, 7 / nC) * Math.min(1, 22 / Math.max(6, P.height / P.internode));
+  const midCol = shade(hex(C.leaf), hue, .55, 1.4);
+  /* clump base: low mound of old sheaths/soil each culm is extruded from (single shell) */
   mb.part('crown');
-  const mound = mb.tube([[-.04, 0], [0, 1], [.1, 1.05], [.22, .8], [.3, 0]].map(([y, r]) => ({ p: V3(0, y, 0), r: P.clumpRadius * r })), { sides: 16, color: hex(C.base) });
-  const leavesPer = Math.round(lerp(3, 6, P.detail));
+  const mound = mb.tube([[-.04, 0], [0, 1], [.06, 1.02], [.14, .85], [.2, 0]].map(([y, r]) => ({ p: V3(0, y, 0), r: P.clumpRadius * r + .02, rf: (th) => 1 + .07 * Math.sin(th * 4.3) + .04 * Math.cos(th * 9.1) })), { sides: 16, color: hex(C.base) });
+  const pickM = facePicker(16);
+  /* leaf fan at the tip of a twig: n lance leaves with a pale midrib, alternating sides, drooping */
+  const fan = (tw, n, L, W) => {
+    for (let l = 0; l < n; l++) {
+      const jj = Math.max(0, tw.length - 2 - (l >> 1)); const sgn = l % 2 ? 1 : -1;
+      const e = tw.sideEdge(jj, sgn); const fr = tw.frames[jj];
+      const dir = fr.B.clone().multiplyScalar(sgn * lerp(.9, .4, l / n)).addScaledVector(fr.T, lerp(.5, 1, l / n)).addScaledVector(UP, -.2 - .25 * (l / n)).normalize();
+      const side = dir.clone().cross(UP).normalize(); if (side.lengthSq() < .5) side.set(1, 0, 0); const nrm = side.clone().cross(dir).normalize();
+      simpleLeaf(mb, e.a, e.b, e.mid, dir, side, nrm, L * rnd.range(.8, 1.15), W, leafCol(), { shape: 'lance', rows: 5, across: 3, droop: .55, cup: .15, twist: rnd.range(-.3, .3), colMid: midCol });
+    }
+  };
+  /* a branch: jointed twig with its own small nodes; side twigs from the middle joints; each twig ends in a fan */
+  const branch = (ff, d, len, r0, depth) => {
+    const nJ = depth === 0 ? 5 : 3; const pts = arcPath(ff.center, d, len, depth === 0 ? .9 : .6, nJ);
+    mb.part('branch');
+    const path = pts.slice(1).map((p, k) => ({ p, r: r0 * (1 - .55 * k / nJ) + .0015, rf: (k % 2 === 0) ? ((th) => 1.12) : null }));
+    const br = mb.tube(path, { sides: 5, start: { ring: ff.ring, center: ff.center }, colorAt: (k) => k % 2 === 0 && k > 0 ? hex(C.node) : hex(C.branch) });
+    mb.part('leaf');
+    if (depth === 0) { // two side twigs off the branch's middle joints
+      for (let s = 0; s < (det > .6 && dens > .6 ? 2 : dens > .4 ? 1 : 0); s++) { let sf; try { sf = br.face(1 + s, s ? 1 : 3); } catch { continue; } const sd = sf.normal.clone().multiplyScalar(.8).addScaledVector(d, .8).addScaledVector(UP, -.1).normalize(); branch(sf, sd, len * .55, r0 * .55, 1); }
+    }
+    fan(br, Math.round(lerp(4, 7, det)) - depth * 2, P.leafLength, P.leafLength * .13);
+  };
   for (let c = 0; c < nC; c++) {
-    const az = c * GOLD; const ring = c % 2 ? 1 : 0; const slot = Math.round(az / (2 * Math.PI / 16) + c * 3) % 16;
+    const ring = c % 2 ? 2 : 1; const slot = pickM(ring, Math.round(c * GOLD * 16) % 16); if (slot == null) continue;
     let f; try { f = mound.face(ring, slot); } catch { continue; }
     const H = P.height * rnd.range(.7, 1.1), R = P.culmRadius * rnd.range(.8, 1.1);
     const leanDir = f.normal.clone().addScaledVector(UP, -f.normal.dot(UP)).normalize();
-    const lean = P.lean * rnd.range(.6, 1.2);
+    const lean = P.lean * rnd.range(.6, 1.2); const belly = V.belly || 0;
     const nodes = Math.max(6, Math.round(H / P.internode)); const path = [];
-    for (let k = 1; k <= nodes * 2; k++) {
-      const t = k / (nodes * 2); const y = H * t;
-      const p = f.center.clone().addScaledVector(UP, y).addScaledVector(leanDir, lean * H * t * t * .8).addScaledVector(V3(Math.sin(c * 2.1 + t * 3), 0, Math.cos(c * 1.3 + t * 2.4)), .03 * H * t);
-      const node = k % 2 === 0; path.push({ p, r: R * (1 - .55 * t) * (node ? 1.08 : 1) });
+    const wob = V3(Math.sin(c * 2.1), 0, Math.cos(c * 1.3));
+    const at = (t) => f.center.clone().addScaledVector(UP, H * t).addScaledVector(leanDir, lean * H * t * t * .8).addScaledVector(wob, .02 * H * t * Math.sin(t * 4 + c));
+    // per internode: [sheath scar (slightly narrower) | node ridge | mid internode (belly)]
+    for (let k = 1; k <= nodes; k++) {
+      const t0 = (k - 1) / nodes, t1 = k / nodes; const taper = (t) => R * (1 - .6 * t);
+      path.push({ p: at(lerp(t0, t1, .5)), r: taper(lerp(t0, t1, .5)) * (1 + belly * .5), rf: belly ? ((th) => 1 + .05 * Math.sin(th * 2)) : null });
+      path.push({ p: at(t1 - .012 / nodes * H), r: taper(t1) * .97 });
+      path.push({ p: at(t1), r: taper(t1) * 1.14 });
+      path.push({ p: at(t1 + .008 / nodes * H), r: taper(t1) * 1.0 });
     }
-    path.push({ p: path[path.length - 1].p.clone().addScaledVector(UP, .05), r: 0 });
+    const top = path[path.length - 1].p; path.push({ p: top.clone().addScaledVector(UP, P.internode * .8).addScaledVector(leanDir, P.internode * .4), r: R * .12 }); path.push({ p: top.clone().addScaledVector(UP, P.internode * 1.1).addScaledVector(leanDir, P.internode * .7), r: 0 });
     mb.part('culm');
-    const culm = mb.tube(path, { sides, start: { ring: f.ring, center: f.center }, colorAt: (j) => (j % 2 === 0 && j > 0 ? hex(C.node) : shade(hex(C.culm), hue, 1, rnd.range(.95, 1.05))) });
-    // branches with leaf fans from upper nodes
-    for (let j = Math.round(culm.length * .35); j < culm.length - 2; j += 2) {
-      const nb = rnd.int(2, 3);
+    const culmCol = shade(hex(C.culm), hue + rnd.range(-.01, .01), 1, rnd.range(.92, 1.06));
+    const culm = mb.tube(path, { sides, start: { ring: f.ring, center: f.center }, colorAt: (j) => { const m = (j - 1) % 4; if (j === 0) return culmCol; if (m === 2) return hex(C.node); if (m === 1) return shade(hex(C.node), 0, 1, 1.25); return culmCol; } });
+    // green stripe on golden culms: recolour every 4th side of internode rings
+    if (C.stripe) { for (let j = 1; j < culm.length - 2; j++) { if ((j - 1) % 4 !== 0 && (j - 1) % 4 !== 3) continue; const rg = culm.rings[j]; for (let i = 0; i < rg.length; i += Math.round(sides / 3)) { const vi = rg[i]; const cc = hex(C.stripe); mb.col[vi * 3] = cc[0]; mb.col[vi * 3 + 1] = cc[1]; mb.col[vi * 3 + 2] = cc[2]; } } }
+    // branches: from the nodes in the upper ~60%, alternating sides node to node, 1 dominant + 1–2 smaller
+    const firstNode = Math.max(2, Math.round(nodes * (V.bareFrac ?? .38)));
+    for (let k = firstNode; k <= nodes; k += (nodes - k > 3 ? (dens < .3 ? 4 : dens < .8 ? 3 : 2) : 1)) {
+      const j = 1 + (k - 1) * 4 + 2;                          // node ridge band index
+      const t = k / nodes; const base = (k % 2) * (sides >> 1) + Math.round(c * 3);
+      const nb = k === nodes ? (dens < .5 ? 2 : 3) : (dens < .5 ? 1 : rnd.int(1, 2));
       for (let b = 0; b < nb; b++) {
-        let ff; try { ff = culm.face(j, (b * 3 + j) % sides); } catch { continue; }
-        const d = ff.normal.clone().addScaledVector(UP, rnd.range(.6, 1.3)).normalize();
-        const bl = P.internode * rnd.range(1.8, 3);
-        const pts = arcPath(ff.center, d, bl, .7, 5);
-        mb.part('branch');
-        const br = mb.tube(pts.slice(1).map((p, k) => ({ p, r: R * .12 * (1 - .6 * k / 4) + .002 })), { sides: 4, start: { ring: ff.ring, center: ff.center }, color: hex(C.branch) });
-        mb.part('leaf');
-        for (let l = 0; l < leavesPer * 2; l++) {
-          const jj = 1 + (l % (br.length - 2)); const sgn = l % 2 ? 1 : -1;
-          const e = br.sideEdge(jj, sgn); const fr = br.frames[jj];
-          const dir = fr.B.clone().multiplyScalar(sgn).multiplyScalar(.8).addScaledVector(fr.T, .6).addScaledVector(UP, -.35 * l / leavesPer).normalize();
-          const side = dir.clone().cross(UP).normalize(); const nrm = side.clone().cross(dir).normalize();
-          simpleLeaf(mb, e.a, e.b, e.mid, dir, side, nrm, P.leafLength * rnd.range(.8, 1.15), P.leafLength * .2, shade(hex(C.leaf), hue + rnd.range(-.01, .01), 1, rnd.range(.9, 1.1)), { shape: 'lance', rows: 4, across: 3, droop: .5, cup: .1 });
-        }
+        let ff; try { ff = culm.face(j, (base + b * 2 + (b ? 1 : 0)) % sides); } catch { continue; }
+        const up = b === 0 ? rnd.range(.9, 1.4) : rnd.range(.5, .9);
+        const d = ff.normal.clone().addScaledVector(UP, up).normalize();
+        const bl = P.internode * (b === 0 ? rnd.range(2.6, 3.6) : rnd.range(1.6, 2.4)) * lerp(.8, 1.1, t);
+        branch(ff, d, bl, R * (b === 0 ? .16 : .11), 0);
       }
     }
+    // leafy tip
+    mb.part('leaf'); fan(culm, Math.round(lerp(4, 7, det)), P.leafLength, P.leafLength * .13);
   }
   return { latin: V.latin, common: V.common };
 }
 export const BAMBOO_VARIANTS = {
-  golden: { label: 'Golden bamboo', latin: 'Bambusa vulgaris "Vittata"', common: 'Golden bamboo', palette: { culm: '#d2b04a', node: '#a98a34', leaf: '#4f9a3a', branch: '#b09a40', base: '#5a4a32' } },
-  giant: { label: 'Giant bamboo', latin: 'Dendrocalamus giganteus', common: 'Giant timber bamboo', palette: { culm: '#6f8a4a', node: '#556a38', leaf: '#3f8a34', branch: '#7f9050' }, over: { height: [12, 20], culmRadius: [.1, .16], culms: [4, 8], internode: [.4, .6], clumpRadius: [.6, 1], leafLength: [.25, .35] } },
-  black: { label: 'Black bamboo', latin: 'Phyllostachys nigra', common: 'Black bamboo', palette: { culm: '#2a2226', node: '#3f3438', leaf: '#4a9a3c', branch: '#3a2f33' }, over: { height: [4, 8], culmRadius: [.02, .035], culms: [10, 20], internode: [.22, .3], clumpRadius: [.3, .6], lean: [.05, .2] } },
-  buddha: { label: "Buddha's belly", latin: 'Bambusa ventricosa', common: "Buddha's belly bamboo", palette: { culm: '#8fa84a', node: '#6f8a34', leaf: '#4f9a3a', branch: '#8f9a4a' }, over: { height: [3, 6], culmRadius: [.04, .06], culms: [6, 12], internode: [.15, .22], clumpRadius: [.3, .5] } },
-  lucky: { label: 'Green bamboo', latin: 'Bambusa multiplex', common: 'Hedge bamboo', palette: { culm: '#7fa84f', node: '#5f8a3a', leaf: '#5aa843', branch: '#7f9a4a' }, over: { height: [3, 6], culmRadius: [.015, .03], culms: [16, 30], internode: [.18, .26], clumpRadius: [.25, .5], leafLength: [.1, .15] } },
+  golden: { label: 'Golden bamboo', latin: 'Bambusa vulgaris "Vittata"', common: 'Golden bamboo', palette: { culm: '#e2c452', node: '#6f8a3a', leaf: '#4f9a3a', branch: '#b8a848', base: '#5a4a32', stripe: '#6f9a3a' } },
+  giant: { label: 'Giant bamboo', latin: 'Dendrocalamus giganteus', common: 'Giant timber bamboo', palette: { culm: '#6f8a4a', node: '#4a6030', leaf: '#3f8a34', branch: '#7f9050' }, over: { height: [12, 20], culmRadius: [.1, .16], culms: [4, 8], internode: [.4, .6], clumpRadius: [.6, 1], leafLength: [.25, .35] } },
+  black: { label: 'Black bamboo', latin: 'Phyllostachys nigra', common: 'Black bamboo', bareFrac: .3, palette: { culm: '#221b1f', node: '#4a3c42', leaf: '#4a9a3c', branch: '#3a2f33' }, over: { height: [4, 8], culmRadius: [.02, .035], culms: [10, 20], internode: [.22, .3], clumpRadius: [.3, .6], lean: [.05, .2] } },
+  buddha: { label: "Buddha's belly", latin: 'Bambusa ventricosa', common: "Buddha's belly bamboo", belly: .9, palette: { culm: '#9fb454', node: '#5f7a30', leaf: '#4f9a3a', branch: '#8f9a4a' }, over: { height: [3, 6], culmRadius: [.035, .05], culms: [6, 12], internode: [.12, .18], clumpRadius: [.3, .5] } },
+  lucky: { label: 'Green bamboo', latin: 'Bambusa multiplex', common: 'Hedge bamboo', bareFrac: .2, palette: { culm: '#7fa84f', node: '#4f7a2e', leaf: '#5aa843', branch: '#7f9a4a' }, over: { height: [3, 6], culmRadius: [.015, .03], culms: [16, 30], internode: [.18, .26], clumpRadius: [.25, .5], leafLength: [.1, .15] } },
 };
 
 /* ───────────────────────── species: BROADLEAF (tropical shrubs & small trees) ───────────────────────── */
