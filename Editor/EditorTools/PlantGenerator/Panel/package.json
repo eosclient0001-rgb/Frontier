@@ -1,0 +1,11 @@
+{
+  "name": "frontier-plant-generator-panel",
+  "private": true,
+  "type": "module",
+  "description": "SolidArc-themed procedural plant generator (ferns, bananas, palms). Single merged, texture-free, vertex-coloured meshes for game export.",
+  "scripts": {
+    "verify": "node Verification/plant_smoke.mjs",
+    "render": "node Verification/render.mjs",
+    "serve": "python3 -m http.server 8080"
+  }
+}
