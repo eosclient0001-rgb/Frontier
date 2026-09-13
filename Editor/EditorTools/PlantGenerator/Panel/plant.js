@@ -49,7 +49,11 @@ class Tube {
   face(j, i) {
     const A = this.rings[j], B = this.rings[j + 1]; const n = A.length;
     if (!B || B.length !== n) throw new Error('face(): ring counts differ');
-    i = ((i % n) + n) % n; this.skip.add(j * 4096 + i);
+    i = ((i % n) + n) % n;
+    if (this.skip.has(j * 4096 + i)) throw new Error('face(): already claimed');
+    let left = 0; for (let k = 0; k < n; k++) if (!this.skip.has(j * 4096 + k)) left++;
+    if (left <= 2) throw new Error('face(): band would lose its last faces');   // keeps every ring attached → single shell
+    this.skip.add(j * 4096 + i);
     const ring = [A[i], A[(i + 1) % n], B[(i + 1) % n], B[i]];
     const P = ring.map(k => this.mb.p(k));
     const center = P[0].clone().add(P[1]).add(P[2]).add(P[3]).multiplyScalar(.25);
@@ -176,6 +180,9 @@ const dirFrom = (az, el) => V3(Math.cos(el) * Math.cos(az), Math.sin(el), Math.c
 export const PALETTE = {
   palm: { trunk: '#8f8272', scar: '#776a5c', sheath: '#6f5b40', rachis: '#b6b64f', frond: '#3d7d2f', frondYoung: '#6fa93c', dead: '#8c6a3c', coconut: '#9cb34a', spear: '#b9c65b' },
   banana: { stem: '#aab86e', stemOld: '#8f8a5a', petiole: '#a5c355', midrib: '#d3d878', leaf: '#4f9c2c', leafYoung: '#7dc043', leafOld: '#7f9a3b', cigar: '#b7d36a', peduncle: '#6d8a3a', fruit: '#86b449', bud: '#7a2c4d' },
+  rosette: { core: '#5a4a38', leaf: '#3f8a36', leafYoung: '#62a64a', spine: '#4a3020', stalk: '#8a9a4a', fruitCol: '#c8a23a' },
+  bamboo: { base: '#5a4a32', culm: '#8fa84a', node: '#6f8a34', branch: '#8f9a4a', leaf: '#4f9a3a' },
+  broadleaf: { bark: '#7a6a58', twig: '#6a7a4a', leaf: '#2f7a2c', leafYoung: '#52a03f', flower: '#ffffff', flowerCenter: '#f5c842', fruit: '#6fa83a' },
   aroid: { crown: '#4a3a2a', petiole: '#5f8f3c', petioleDark: '#3f5a2a', vein: '#9ec86a', leaf: '#2f7a2c', leafYoung: '#5fae3f', leafBack: '#3f8a34', flower: '#f0eee0', spadix: '#e8d27a' },
   fern: { crown: '#3d2f22', stipe: '#4d3a2b', rachis: '#5d7a33', frond: '#2f7d2c', frondYoung: '#5fae3f', crozier: '#7aa84c' },
 };
@@ -242,7 +249,7 @@ function genPalm(P, rnd, mb, V = PALM_VARIANTS.coconut) {
   // ── fronds
   const N = Math.round(P.fronds), perRing = Math.ceil((N + P.coconuts) / crownRings);
   const used = new Set(); const facesInfo = [];
-  const pickFace = (ring, slot) => { for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
+  const pickFace = (ring, slot) => { let cnt = 0; for (let k = 0; k < sides; k++) if (used.has(ring * 64 + k)) cnt++; if (cnt >= sides - 2) return null; for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
   const dead = Math.round(P.deadFronds);
   const segs = Math.round(lerp(14, 26, P.detail)), leafletsPerStation = 1;
   for (let i = 0; i < N; i++) {
@@ -396,7 +403,7 @@ function genBanana(P, rnd, mb, V = BANANA_VARIANTS.cavendish) {
   mb.tube(cig, { sides, start: { ring: stem.rings[stem.length - 1], center: path[path.length - 1].p }, color: hex(C.cigar) });
 
   const used = new Set(); const j0 = nR;
-  const pickFace = (ring, slot) => { for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
+  const pickFace = (ring, slot) => { let cnt = 0; for (let k = 0; k < sides; k++) if (used.has(ring * 64 + k)) cnt++; if (cnt >= sides - 2) return null; for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
   const N = Math.round(P.leaves); const perRing = Math.ceil((N + 1) / crownRings);
   const segs = Math.round(lerp(14, 26, P.detail)), across = Math.round(lerp(3, 5, P.detail));
   for (let i = 0; i < N; i++) {
@@ -508,7 +515,7 @@ function genFern(P, rnd, mb, V = FERN_VARIANTS.wood) {
   const nTr = prof.length - 6; // last full-radius trunk ring; crown rings nTr+1 … nTr+4, then the cap
   const crown = mb.tube(prof.map(([y, r]) => ({ p: V3(rnd.range(-.02, .02) * y, y, rnd.range(-.02, .02) * y), r: cr * r })), { sides, color: hex(C.crown) });
   const used = new Set();
-  const pickFace = (ring, slot) => { for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
+  const pickFace = (ring, slot) => { let cnt = 0; for (let k = 0; k < sides; k++) if (used.has(ring * 64 + k)) cnt++; if (cnt >= sides - 2) return null; for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
   const N = Math.round(P.fronds), pairs = Math.round(P.pinnaPairs * lerp(.6, 1, P.detail)), pinn = Math.round(P.pinnules * lerp(.6, 1, P.detail));
   const perRing = Math.ceil(N / (crownRings - 1));
   for (let i = 0; i < N; i++) {
@@ -636,7 +643,7 @@ function genAroid(P, rnd, mb, V = AROID_VARIANTS.elephant) {
   const nTr = prof.length - 6;
   const crown = mb.tube(prof.map(([y, r]) => ({ p: V3(0, y, 0), r: cr * r })), { sides, color: hex(C.crown) });
   const used = new Set();
-  const pickFace = (ring, slot) => { for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
+  const pickFace = (ring, slot) => { let cnt = 0; for (let k = 0; k < sides; k++) if (used.has(ring * 64 + k)) cnt++; if (cnt >= sides - 2) return null; for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
   const N = Math.round(P.leaves); const perRing = Math.ceil(N / 3);
   const rings = Math.round(lerp(10, 18, P.detail)), spokes = Math.round(lerp(18, 34, P.detail));
   for (let i = 0; i < N; i++) {
@@ -752,6 +759,266 @@ export const AROID_VARIANTS = {
   blackmagic: { label: 'Black taro', latin: 'Colocasia "Black Magic"', common: 'Black elephant ear', shape: 'heart', peltate: .28, lobe: .32, sinus: .5, cup: .35, veins: 4, darkPetiole: true, palette: { leaf: '#2c2233', leafYoung: '#4a3550', vein: '#3d2f45', petioleDark: '#2a1e2f' }, over: { leafLength: [.6, .9] } },
 };
 
+/* ───────────────────────── shared leaf helper ─────────────────────────
+ * simpleLeaf: an entire (undivided) blade grown from a shared root edge [a,b] of the parent tube.
+ * shape: 'lance' (long narrow), 'ovate' (egg), 'obovate' (wide near tip), 'elliptic', 'strap' (yucca/bromeliad)
+ */
+function simpleLeaf(mb, rootA, rootB, root, fwd, side, nrm, L, W, col, opts = {}) {
+  const shape = opts.shape || 'ovate', nR = opts.rows || 5, across = opts.across || 3, droop = opts.droop ?? .35, cup = opts.cup ?? .15, twist = opts.twist || 0, colMid = opts.colMid || col;
+  const prof = (v) => {
+    switch (shape) {
+      case 'lance': return Math.sin(Math.PI * Math.pow(v, .55)) * Math.pow(1 - v, .25);
+      case 'strap': return v < .85 ? 1 : (1 - (v - .85) / .15);
+      case 'obovate': return Math.sin(Math.PI * Math.pow(v, 1.3));
+      case 'elliptic': return Math.sin(Math.PI * v);
+      case 'needle': return v < .9 ? .6 + .4 * (1 - v) : (1 - v) / .1 * .6;
+      default: return Math.sin(Math.PI * Math.pow(v, .8));
+    }
+  };
+  const rows = [[rootA, rootB]];
+  for (let q = 1; q <= nR; q++) {
+    const v = q / nR; const hw = W * .5 * prof(v) + .0006;
+    const c = root.clone().addScaledVector(fwd, L * v).addScaledVector(nrm, -droop * L * v * v);
+    if (q === nR) { rows.push([mb.v(c, col)]); break; }
+    const row = [];
+    for (let k = 0; k < across; k++) {
+      const t = across === 1 ? 0 : (k / (across - 1)) * 2 - 1;
+      const tw = twist * v; const s = side.clone().multiplyScalar(Math.cos(tw)).addScaledVector(nrm, Math.sin(tw));
+      const n2 = nrm.clone().multiplyScalar(Math.cos(tw)).addScaledVector(side, -Math.sin(tw));
+      row.push(mb.v(c.clone().addScaledVector(s, t * hw).addScaledVector(n2, cup * hw * (1 - t * t) * (opts.cupDown ? -1 : 1)), k === (across - 1) / 2 && across % 2 ? colMid : col));
+    }
+    rows.push(row);
+  }
+  mb.strip(rows);
+}
+/** generic pickFace closure for a tube with `sides` sides */
+const facePicker = (sides) => { const used = new Set(); return (ring, slot) => { let cnt = 0; for (let k = 0; k < sides; k++) if (used.has(ring * 64 + k)) cnt++; if (cnt >= sides - 2) return null; for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; }; };
+
+/* ───────────────────────── species: ROSETTE (bromeliads, agaves, yuccas, pineapple) ───────────────────────── */
+function genRosette(P, rnd, mb, V = ROSETTE_VARIANTS.bromeliad) {
+  const C = { ...PALETTE.rosette, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06;
+  const sides = 12; const cr = P.coreRadius; const trunkH = P.trunk || 0;
+  mb.part('crown');
+  const prof = [[-.03, 0], [0, 1.1]]; const n = Math.max(2, Math.round(trunkH / .15));
+  for (let k = 1; k <= n; k++) prof.push([trunkH * k / n, 1.1 - .15 * k / n]);
+  const rings = Math.round(lerp(4, 7, P.leaves / 40)); for (let k = 1; k <= rings; k++) prof.push([trunkH + .05 * k, 1 - .12 * k]); prof.push([trunkH + .05 * rings + .03, 0]);
+  const core = mb.tube(prof.map(([y, r]) => ({ p: V3(0, y, 0), r: cr * r })), { sides, color: hex(C.core) });
+  const pick = facePicker(sides); const N = Math.round(P.leaves); const first = n + 1;
+  for (let i = 0; i < N; i++) {
+    const age = i / Math.max(1, N - 1);
+    const ring = first + Math.min(rings - 2, Math.floor(age * (rings - 1)));
+    const az = i * GOLD; const slot = pick(ring, Math.round(az / (2 * Math.PI / sides))); if (slot === null) continue;
+    const f = core.face(ring, slot);
+    const faceAz = Math.atan2(f.normal.z, f.normal.x);
+    const el = lerp(V.elMin ?? 10, V.elMax ?? 80, Math.pow(age, .8)) * D2R + rnd.range(-5, 5) * D2R;
+    const d = dirFrom(faceAz + rnd.range(-.12, .12), el);
+    const side = d.clone().cross(UP).normalize(); const nrm = side.clone().cross(d).normalize();
+    const L = P.leafLength * rnd.range(.85, 1.1) * (age > .85 ? lerp(.5, 1, (1 - age) / .15) : 1), W = P.leafWidth * rnd.range(.9, 1.1);
+    const base = age > .8 ? hex(C.leafYoung) : hex(C.leaf);
+    let col = shade(base, hue + rnd.range(-.01, .01), 1, rnd.range(.92, 1.08));
+    if (V.stripe && i % 2) col = shade(col, 0, .6, 1.3);
+    mb.part('leaf');
+    simpleLeaf(mb, f.ring[0], f.ring[1], f.center, d, side, nrm, L, W, col, { shape: V.shape || 'strap', rows: Math.round(lerp(4, 8, P.detail)), across: 3, droop: P.droop * lerp(1.2, .4, age) * (V.stiff ? .25 : 1), cup: V.cup ?? .35, cupDown: false, colMid: V.midStripe ? shade(col, 0, .5, 1.35) : col });
+    // rigid spine tips on agaves
+  }
+  // central fruit / inflorescence
+  if (V.fruit && P.fruit > .5) {
+    const topRing = core.rings[core.length - 2], topC = core.frames[core.length - 2].p; mb.part('fruit');
+    const stalkH = V.fruit === 'pineapple' ? P.leafLength * .35 : P.leafLength * (V.fruit === 'agave' ? 4 : .9);
+    const stalk = mb.tube([1, 2, 3, 4].map(k => ({ p: topC.clone().addScaledVector(UP, stalkH * k / 4), r: cr * (V.fruit === 'agave' ? .25 : .3) * (1 - .3 * k / 4) })), { sides: 8, start: { ring: topRing, center: topC }, color: hex(C.stalk) });
+    const top = stalk.frames[stalk.length - 1].p, tr = stalk.rings[stalk.length - 1];
+    if (V.fruit === 'pineapple') {
+      const fh = P.leafLength * .45, frad = cr * 1.6;
+      const fr = mb.tube([[.05, .7], [.3, 1], [.6, 1], [.85, .8], [1, .45]].map(([t, r]) => ({ p: top.clone().addScaledVector(UP, fh * t), r: frad * r })), { sides: 8, start: { ring: tr, center: top }, color: hex(C.fruitCol) });
+      // eyes: bump each face outward
+      for (let j = 1; j < fr.length - 1; j++) for (let i = (j % 2); i < 8; i += 2) { let ff; try { ff = fr.face(j, i); } catch { continue; } mb.tube([{ p: ff.center.clone().addScaledVector(ff.normal, .012), r: .014 }, { p: ff.center.clone().addScaledVector(ff.normal, .02), r: 0 }], { sides: 4, start: { ring: ff.ring, center: ff.center }, color: shade(hex(C.fruitCol), 0, 1, .8) }); }
+      // crown tuft
+      const crownTop = fr.frames[fr.length - 1].p, crownRing = fr.rings[fr.length - 1];
+      const tuft = mb.tube([{ p: crownTop.clone().addScaledVector(UP, .02), r: frad * .4 }, { p: crownTop.clone().addScaledVector(UP, .06), r: frad * .3 }, { p: crownTop.clone().addScaledVector(UP, .08), r: 0 }], { sides: 8, start: { ring: crownRing, center: crownTop }, color: hex(C.core) });
+      for (let k = 0; k < 6; k++) { let f; try { f = tuft.face(0, k); } catch { continue; } const d = f.normal.clone().addScaledVector(UP, 1.8).normalize(); const side = d.clone().cross(UP).normalize(); simpleLeaf(mb, f.ring[0], f.ring[1], f.center, d, side, side.clone().cross(d).normalize(), P.leafLength * .3, .03, hex(C.leaf), { shape: 'lance', rows: 4, droop: .2 }); }
+    } else if (V.fruit === 'agave') {
+      // candelabra flower stalk
+      for (let k = 0; k < 4; k++) { let ff; try { ff = stalk.face(2 + (k % 2), k * 2); } catch { continue; } const d = ff.normal.clone().addScaledVector(UP, 1.2).normalize(); const b = mb.tube([1, 2, 3].map(q => ({ p: ff.center.clone().addScaledVector(d, .35 * q), r: .02 * (1 - .2 * q) })), { sides: 4, start: { ring: ff.ring, center: ff.center }, color: hex(C.stalk) }); const e = b.frames[b.length - 1].p; mb.tube([[.2, 1.5], [.6, 2.2], [1, 0]].map(([t, r]) => ({ p: e.clone().addScaledVector(UP, .12 * t), r: .02 * r })), { sides: 6, start: { ring: b.rings[b.length - 1], center: e }, color: hex(C.fruitCol) }); }
+      mb.tube([[.2, 1.5], [.6, 2.2], [1, 0]].map(([t, r]) => ({ p: top.clone().addScaledVector(UP, .14 * t), r: cr * .25 * r })), { sides: 6, start: { ring: tr, center: top }, color: hex(C.fruitCol) });
+    } else {
+      // bromeliad bract spike: coloured bracts around the stalk top
+      const bracts = 10;
+      const tip = mb.tube([{ p: top.clone().addScaledVector(UP, .15), r: cr * .18 }, { p: top.clone().addScaledVector(UP, .2), r: 0 }], { sides: 8, start: { ring: tr, center: top }, color: hex(C.stalk) });
+      for (let k = 0; k < bracts; k++) { const src = k < 8 ? stalk : tip; const j = k < 8 ? 3 : 0; let ff; try { ff = src.face(j, k % 8); } catch { continue; } const d = ff.normal.clone().addScaledVector(UP, k < 8 ? .9 : 2).normalize(); const side = d.clone().cross(UP).normalize(); simpleLeaf(mb, ff.ring[0], ff.ring[1], ff.center, d, side, side.clone().cross(d).normalize(), P.leafLength * .35, P.leafWidth * 1.2, hex(C.fruitCol), { shape: 'lance', rows: 4, droop: .1, cup: .5 }); }
+    }
+  }
+  return { latin: V.latin, common: V.common };
+}
+export const ROSETTE_VARIANTS = {
+  bromeliad: { label: 'Bromeliad', latin: 'Guzmania lingulata', common: 'Scarlet star', shape: 'strap', cup: .5, fruit: 'bract', elMin: 15, elMax: 80, palette: { leaf: '#3f8f36', leafYoung: '#62ac48', fruitCol: '#e0322a', stalk: '#d84a2a' }, over: { leaves: [18, 30], leafLength: [.35, .55], leafWidth: [.05, .07], coreRadius: [.03, .045], fruit: [1, 1], droop: [.3, .7] } },
+  pineapple: { label: 'Pineapple', latin: 'Ananas comosus', common: 'Pineapple', shape: 'strap', cup: .55, fruit: 'pineapple', stiff: true, elMin: 10, elMax: 80, palette: { leaf: '#5a8a3c', leafYoung: '#7aa64e', fruitCol: '#c8a23a', stalk: '#8a9a4a' }, over: { leaves: [28, 40], leafLength: [.6, 1], leafWidth: [.04, .06], coreRadius: [.04, .06], fruit: [1, 1], droop: [.3, .6] } },
+  agave: { label: 'Agave', latin: 'Agave americana', common: 'Century plant', shape: 'lance', cup: .45, stiff: true, spine: true, fruit: 'agave', elMin: 5, elMax: 75, palette: { leaf: '#7f9a86', leafYoung: '#94ad9a', spine: '#4a3020', stalk: '#8a7a5a', fruitCol: '#d8c84a' }, over: { leaves: [20, 34], leafLength: [1, 1.8], leafWidth: [.18, .26], coreRadius: [.1, .16], fruit: [0, 1], droop: [.05, .2] } },
+  yucca: { label: 'Yucca', latin: 'Yucca elephantipes', common: 'Spineless yucca', shape: 'lance', cup: .3, stiff: true, elMin: -30, elMax: 85, palette: { leaf: '#3f7f3a', leafYoung: '#5f9a4a', core: '#8a7a62' }, over: { trunk: [.5, 1.4], leaves: [36, 50], leafLength: [.7, 1], leafWidth: [.06, .08], coreRadius: [.08, .11], fruit: [0, 0], droop: [.1, .4] } },
+  dracaena: { label: 'Dragon tree', latin: 'Dracaena marginata', common: 'Madagascar dragon tree', shape: 'lance', cup: .2, elMin: -35, elMax: 80, midStripe: false, palette: { leaf: '#3a6f36', leafYoung: '#5a8f46', core: '#8f8272' }, over: { trunk: [.8, 1.8], leaves: [40, 50], leafLength: [.5, .7], leafWidth: [.03, .04], coreRadius: [.05, .07], fruit: [0, 0], droop: [.3, .8] } },
+  aechmea: { label: 'Urn plant', latin: 'Aechmea fasciata', common: 'Silver vase bromeliad', shape: 'strap', cup: .6, stripe: true, fruit: 'bract', elMin: 20, elMax: 80, palette: { leaf: '#6f9a80', leafYoung: '#8ab598', fruitCol: '#e88ab0', stalk: '#d87a9a' }, over: { leaves: [14, 22], leafLength: [.4, .6], leafWidth: [.07, .1], coreRadius: [.04, .06], fruit: [1, 1], droop: [.3, .6] } },
+};
+
+/* ───────────────────────── species: BAMBOO ───────────────────────── */
+function genBamboo(P, rnd, mb, V = BAMBOO_VARIANTS.golden) {
+  const C = { ...PALETTE.bamboo, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06;
+  const sides = 8; const nC = Math.round(P.culms);
+  // clump base: a low mound each culm is extruded from (single shell)
+  mb.part('crown');
+  const mound = mb.tube([[-.04, 0], [0, 1], [.1, 1.05], [.22, .8], [.3, 0]].map(([y, r]) => ({ p: V3(0, y, 0), r: P.clumpRadius * r })), { sides: 16, color: hex(C.base) });
+  const leavesPer = Math.round(lerp(3, 6, P.detail));
+  for (let c = 0; c < nC; c++) {
+    const az = c * GOLD; const ring = c % 2 ? 1 : 0; const slot = Math.round(az / (2 * Math.PI / 16) + c * 3) % 16;
+    let f; try { f = mound.face(ring, slot); } catch { continue; }
+    const H = P.height * rnd.range(.7, 1.1), R = P.culmRadius * rnd.range(.8, 1.1);
+    const leanDir = f.normal.clone().addScaledVector(UP, -f.normal.dot(UP)).normalize();
+    const lean = P.lean * rnd.range(.6, 1.2);
+    const nodes = Math.max(6, Math.round(H / P.internode)); const path = [];
+    for (let k = 1; k <= nodes * 2; k++) {
+      const t = k / (nodes * 2); const y = H * t;
+      const p = f.center.clone().addScaledVector(UP, y).addScaledVector(leanDir, lean * H * t * t * .8).addScaledVector(V3(Math.sin(c * 2.1 + t * 3), 0, Math.cos(c * 1.3 + t * 2.4)), .03 * H * t);
+      const node = k % 2 === 0; path.push({ p, r: R * (1 - .55 * t) * (node ? 1.08 : 1) });
+    }
+    path.push({ p: path[path.length - 1].p.clone().addScaledVector(UP, .05), r: 0 });
+    mb.part('culm');
+    const culm = mb.tube(path, { sides, start: { ring: f.ring, center: f.center }, colorAt: (j) => (j % 2 === 0 && j > 0 ? hex(C.node) : shade(hex(C.culm), hue, 1, rnd.range(.95, 1.05))) });
+    // branches with leaf fans from upper nodes
+    for (let j = Math.round(culm.length * .35); j < culm.length - 2; j += 2) {
+      const nb = rnd.int(2, 3);
+      for (let b = 0; b < nb; b++) {
+        let ff; try { ff = culm.face(j, (b * 3 + j) % sides); } catch { continue; }
+        const d = ff.normal.clone().addScaledVector(UP, rnd.range(.6, 1.3)).normalize();
+        const bl = P.internode * rnd.range(1.8, 3);
+        const pts = arcPath(ff.center, d, bl, .7, 5);
+        mb.part('branch');
+        const br = mb.tube(pts.slice(1).map((p, k) => ({ p, r: R * .12 * (1 - .6 * k / 4) + .002 })), { sides: 4, start: { ring: ff.ring, center: ff.center }, color: hex(C.branch) });
+        mb.part('leaf');
+        for (let l = 0; l < leavesPer * 2; l++) {
+          const jj = 1 + (l % (br.length - 2)); const sgn = l % 2 ? 1 : -1;
+          const e = br.sideEdge(jj, sgn); const fr = br.frames[jj];
+          const dir = fr.B.clone().multiplyScalar(sgn).multiplyScalar(.8).addScaledVector(fr.T, .6).addScaledVector(UP, -.35 * l / leavesPer).normalize();
+          const side = dir.clone().cross(UP).normalize(); const nrm = side.clone().cross(dir).normalize();
+          simpleLeaf(mb, e.a, e.b, e.mid, dir, side, nrm, P.leafLength * rnd.range(.8, 1.15), P.leafLength * .2, shade(hex(C.leaf), hue + rnd.range(-.01, .01), 1, rnd.range(.9, 1.1)), { shape: 'lance', rows: 4, across: 3, droop: .5, cup: .1 });
+        }
+      }
+    }
+  }
+  return { latin: V.latin, common: V.common };
+}
+export const BAMBOO_VARIANTS = {
+  golden: { label: 'Golden bamboo', latin: 'Bambusa vulgaris "Vittata"', common: 'Golden bamboo', palette: { culm: '#d2b04a', node: '#a98a34', leaf: '#4f9a3a', branch: '#b09a40', base: '#5a4a32' } },
+  giant: { label: 'Giant bamboo', latin: 'Dendrocalamus giganteus', common: 'Giant timber bamboo', palette: { culm: '#6f8a4a', node: '#556a38', leaf: '#3f8a34', branch: '#7f9050' }, over: { height: [12, 20], culmRadius: [.1, .16], culms: [4, 8], internode: [.4, .6], clumpRadius: [.6, 1], leafLength: [.25, .35] } },
+  black: { label: 'Black bamboo', latin: 'Phyllostachys nigra', common: 'Black bamboo', palette: { culm: '#2a2226', node: '#3f3438', leaf: '#4a9a3c', branch: '#3a2f33' }, over: { height: [4, 8], culmRadius: [.02, .035], culms: [10, 20], internode: [.22, .3], clumpRadius: [.3, .6], lean: [.05, .2] } },
+  buddha: { label: "Buddha's belly", latin: 'Bambusa ventricosa', common: "Buddha's belly bamboo", palette: { culm: '#8fa84a', node: '#6f8a34', leaf: '#4f9a3a', branch: '#8f9a4a' }, over: { height: [3, 6], culmRadius: [.04, .06], culms: [6, 12], internode: [.15, .22], clumpRadius: [.3, .5] } },
+  lucky: { label: 'Green bamboo', latin: 'Bambusa multiplex', common: 'Hedge bamboo', palette: { culm: '#7fa84f', node: '#5f8a3a', leaf: '#5aa843', branch: '#7f9a4a' }, over: { height: [3, 6], culmRadius: [.015, .03], culms: [16, 30], internode: [.18, .26], clumpRadius: [.25, .5], leafLength: [.1, .15] } },
+};
+
+/* ───────────────────────── species: BROADLEAF (tropical shrubs & small trees) ───────────────────────── */
+function genBroadleaf(P, rnd, mb, V = BROADLEAF_VARIANTS.plumeria) {
+  const C = { ...PALETTE.broadleaf, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06;
+  const sides = 8; const R = P.trunkRadius;
+  const leafShape = V.leafShape || 'ovate';
+  const colBark = hex(C.bark);
+  const leafAt = (tube, j, i, L, W, col, opts) => { let f; try { f = tube.face(j, i); } catch { return; } const d = f.normal.clone().addScaledVector(UP, opts.up ?? .3).normalize(); const side = d.clone().cross(UP).normalize(); if (side.lengthSq() < .5) side.set(1, 0, 0); const nrm = side.clone().cross(d).normalize(); simpleLeaf(mb, f.ring[0], f.ring[1], f.center, d, side, nrm, L, W, col, opts); };
+  // recursive branching from faces
+  const branch = (parent, j, i, depth, len, rad, dirHint) => {
+    let f; try { f = parent.face(j, i); } catch { return; }
+    const d = f.normal.clone().multiplyScalar(V.spread ?? .9).addScaledVector(UP, V.upright ?? 1).addScaledVector(dirHint || V3(), .3).normalize();
+    const n = 5; const pts = arcPath(f.center, d, len, V.droopBr ?? .15, n, 0);
+    const st = pts.slice(1).map((p, k) => ({ p, r: rad * (1 - .35 * k / n) + .003 }));
+    st.push({ p: st[st.length - 1].p.clone().addScaledVector(d, .02), r: 0 });   // always capped → no open ring can orphan
+    mb.part('branch');
+    const t = mb.tube(st, { sides: depth >= 2 ? 5 : sides, start: { ring: f.ring, center: f.center }, color: depth >= 2 ? hex(C.twig) : colBark });
+    const isTip = depth >= P.levels;
+    if (isTip || V.leavesOnAll) {
+      mb.part('leaf');
+      const nl = Math.round(P.leafDensity * lerp(.6, 1, P.detail));
+      const LS = t.length - 2;
+      for (let q = 0; q < nl; q++) {
+        const jj = isTip ? Math.max(0, LS - 1 - Math.floor(q / t.sides)) : rnd.int(1, LS - 1);
+        const ii = (q * 3 + jj) % t.sides;
+        const ageT = q / nl;
+        const col = shade(q < 2 ? hex(C.leafYoung) : hex(C.leaf), hue + rnd.range(-.012, .012), 1, rnd.range(.9, 1.08));
+        const colMid = V.midVein ? shade(col, 0, .8, 1.35) : col;
+        if (V.whorl && isTip && q === 0) {
+          // rosette of leaves at the shoot tip (plumeria, schefflera, papaya)
+          const tipRing = t.rings[LS - 1] || t.rings[LS]; const centre = t.frames[LS - 1].p;
+          for (let w = 0; w < nl; w++) {
+            let ff; try { ff = t.face(LS - 1 - (w % 2), (w * 2) % t.sides); } catch { continue; }
+            const d2 = ff.normal.clone().addScaledVector(UP, lerp(-.3, .6, (w % 4) / 3)).normalize(); const sd = d2.clone().cross(UP).normalize(); const nm = sd.clone().cross(d2).normalize();
+            if (V.palmate) palmateLeaf(mb, ff, d2, sd, nm, P.leafLength, col, V, P);
+            else simpleLeaf(mb, ff.ring[0], ff.ring[1], ff.center, d2, sd, nm, P.leafLength * rnd.range(.85, 1.1), P.leafLength * P.leafWidth, col, { shape: leafShape, rows: Math.round(lerp(4, 7, P.detail)), across: 3, droop: V.leafDroop ?? .3, cup: V.cup ?? .15, colMid, twist: V.twist || 0 });
+          }
+          break;
+        }
+        leafAt(t, jj, ii, P.leafLength * rnd.range(.85, 1.1), P.leafLength * P.leafWidth, col, { shape: leafShape, rows: Math.round(lerp(4, 7, P.detail)), across: 3, droop: V.leafDroop ?? .3, cup: V.cup ?? .15, up: V.leafUp ?? .3, colMid, twist: V.twist || 0 });
+      }
+      if (isTip && V.flower && P.flower > .5) flowerAt(t, LS - 1, C, V, mb, rnd);
+    }
+    if (!isTip) {
+      const kids = rnd.int(V.kidsMin ?? 2, V.kidsMax ?? 3);
+      for (let k = 0; k < kids; k++) branch(t, t.length - 3 - (k % 2), (k * Math.round(t.sides / kids) + j) % t.sides, depth + 1, len * (V.lenRatio ?? .72), rad * .65, d);
+    }
+  };
+  // trunk
+  const H = P.height; mb.part('trunk');
+  const nT = 8; const tp = []; const leanAz = rnd.range(0, 6.28);
+  for (let k = 0; k <= nT; k++) { const t = k / nT; tp.push({ p: V3(Math.cos(leanAz) * P.lean * H * t * t, H * t, Math.sin(leanAz) * P.lean * H * t * t), r: R * (1 - .3 * t) * (1 + .3 * Math.exp(-t * 6)) }); }
+  const single = V.singleStem;
+  if (!single) tp.push({ p: tp[nT].p.clone().addScaledVector(UP, .05), r: 0 });
+  const trunk = mb.tube(tp, { sides, color: colBark });
+  const kids0 = rnd.int(V.kidsMin ?? 2, V.kidsMax ?? 3) + (V.extraTop || 0);
+  if (single) {
+    // papaya-like: crown of leaves straight from the trunk top ring
+    const capTop = tp[nT].p.clone().addScaledVector(UP, .08); mb.tube([{ p: capTop, r: 0 }], { sides, start: { ring: trunk.rings[nT], center: tp[nT].p }, color: colBark });
+    mb.part('leaf');
+    const nl = Math.round(P.leafDensity);
+    for (let q = 0; q < nl; q++) { let ff; try { ff = trunk.face(nT - 1 - (q % 3), (q * 3) % sides); } catch { continue; } const age = q / nl; const d2 = ff.normal.clone().addScaledVector(UP, lerp(-.4, .9, age)).normalize(); const sd = d2.clone().cross(UP).normalize(); const nm = sd.clone().cross(d2).normalize();
+      // petiole then palmate blade
+      const pts = arcPath(ff.center, d2, P.leafLength * 1.2, .5, 4); const pet = mb.tube(pts.slice(1).map((p, k) => ({ p, r: R * .12 * (1 - .3 * k / 4) + .003 })), { sides: 4, start: { ring: ff.ring, center: ff.center }, color: hex(C.twig) });
+      const fr = pet.frames[pet.length - 1]; const flat = fr.T.clone().addScaledVector(UP, -fr.T.dot(UP)).normalize(); const fw = flat.clone().addScaledVector(UP, -.25).normalize(); const sd2 = fw.clone().cross(UP).normalize(); const nm2 = sd2.clone().cross(fw).normalize();
+      palmateLeaf(mb, { ring: pet.rings[pet.length - 1], center: fr.p }, fw, sd2, nm2, P.leafLength, shade(hex(C.leaf), hue, 1, rnd.range(.92, 1.08)), V, P, true);
+    }
+    if (V.fruit && P.flower > .5) { mb.part('fruit'); for (let q = 0; q < 7; q++) { let ff; try { ff = trunk.face(nT - 2 - (q % 2), (q * 5 + 1) % sides); } catch { continue; } const d = ff.normal.clone().addScaledVector(UP, -.3).normalize(); mb.tube([[.15, .8], [.5, 1], [.85, .8], [1, 0]].map(([t, r]) => ({ p: ff.center.clone().addScaledVector(d, .22 * t), r: .06 * r })), { sides: 7, start: { ring: ff.ring, center: ff.center }, color: shade(hex(C.fruit), 0, 1, rnd.range(.9, 1.1)) }); } }
+  } else {
+    for (let k = 0; k < kids0; k++) branch(trunk, nT - 1 - (k % 2), Math.round(k * sides / kids0), 1, P.branchLength, R * .6, null);
+  }
+  return { latin: V.latin, common: V.common };
+}
+/** palmately-lobed blade (papaya, schefflera compound leaf, castor bean) built as N radiating lance leaflets sharing the hub edge */
+function palmateLeaf(mb, f, fwd, side, nrm, L, col, V, P, hub = false) {
+  const n = V.lobes || 7; const span = (V.lobeSpan || 300) * D2R;
+  for (let k = 0; k < n; k++) {
+    const a = -span / 2 + span * k / (n - 1);
+    const d = fwd.clone().multiplyScalar(Math.cos(a)).addScaledVector(side, Math.sin(a)).normalize();
+    const sd = d.clone().cross(nrm).normalize();
+    const ia = k % f.ring.length, ib = (k + 1) % f.ring.length;
+    simpleLeaf(mb, f.ring[ia], f.ring[ib], f.center, d, sd, nrm, L * (.6 + .4 * Math.cos(a * .6)), L * (V.lobeW || .22), col, { shape: V.lobeShape || 'lance', rows: 4, across: 3, droop: V.leafDroop ?? .35, cup: .1 });
+  }
+}
+function flowerAt(t, j, C, V, mb, rnd) {
+  mb.part('flower');
+  const n = V.flowersPer || 3;
+  for (let q = 0; q < n; q++) {
+    let ff; try { ff = t.face(j - (q % 2), (q * 3 + 1) % t.sides); } catch { continue; }
+    const d = ff.normal.clone().addScaledVector(UP, .8).normalize();
+    const stalk = mb.tube([{ p: ff.center.clone().addScaledVector(d, .03), r: .004 }, { p: ff.center.clone().addScaledVector(d, .06), r: .006 }], { sides: 4, start: { ring: ff.ring, center: ff.center }, color: hex(C.twig) });
+    const c = stalk.frames[stalk.length - 1].p, ring = stalk.rings[stalk.length - 1];
+    const cone = mb.tube([{ p: c.clone().addScaledVector(d, .01), r: .008 }, { p: c.clone().addScaledVector(d, .02), r: 0 }], { sides: 4, start: { ring, center: c }, color: hex(C.flowerCenter || C.flower) });
+    const petals = V.petals || 5; const pr = V.petalLen || .05;
+    for (let p = 0; p < petals; p++) { const k = p % 4; let pf; try { pf = k < 4 ? cone.face(0, k) : null; } catch { pf = null; } if (!pf) continue; const pd = pf.normal.clone().multiplyScalar(.8).addScaledVector(d, .8).normalize(); const sd = pd.clone().cross(d).normalize(); simpleLeaf(mb, pf.ring[0], pf.ring[1], pf.center, pd, sd, d.clone(), pr, pr * .7, shade(hex(C.flower), 0, 1, rnd.range(.95, 1.05)), { shape: 'obovate', rows: 3, across: 3, droop: -.2, cup: .3 }); }
+  }
+}
+export const BROADLEAF_VARIANTS = {
+  plumeria: { label: 'Frangipani', latin: 'Plumeria rubra', common: 'Frangipani', leafShape: 'obovate', whorl: true, midVein: true, kidsMin: 2, kidsMax: 3, lenRatio: .8, upright: 1.2, spread: .8, flower: true, petals: 5, petalLen: .05, flowersPer: 4, palette: { bark: '#9a9284', twig: '#8a9a6a', leaf: '#3f8a34', leafYoung: '#62a64a', flower: '#fff3e0', flowerCenter: '#f5c842' }, over: { height: [1.2, 2.5], trunkRadius: [.08, .14], levels: [2, 3], branchLength: [.6, 1], leafLength: [.3, .45], leafWidth: [.28, .35], leafDensity: [7, 11], flower: [1, 1] } },
+  hibiscus: { label: 'Hibiscus', latin: 'Hibiscus rosa-sinensis', common: 'Chinese hibiscus', leafShape: 'ovate', leavesOnAll: true, kidsMin: 2, kidsMax: 4, lenRatio: .7, upright: 1.4, spread: 1, flower: true, petals: 5, petalLen: .07, flowersPer: 3, palette: { bark: '#6f5f4a', twig: '#5f7a3a', leaf: '#2f7a2c', leafYoung: '#4f9a3a', flower: '#e63946', flowerCenter: '#ffd166' }, over: { height: [.5, 1.2], trunkRadius: [.03, .05], levels: [3, 3], branchLength: [.4, .7], leafLength: [.08, .12], leafWidth: [.6, .75], leafDensity: [6, 10], flower: [1, 1] } },
+  croton: { label: 'Croton', latin: 'Codiaeum variegatum', common: 'Garden croton', leafShape: 'elliptic', leavesOnAll: true, kidsMin: 2, kidsMax: 3, lenRatio: .75, upright: 1.6, spread: .7, midVein: true, palette: { bark: '#6a5a48', twig: '#8a6a3a', leaf: '#7a4a2a', leafYoung: '#c8a02a', flower: '#fff' }, over: { height: [.4, .9], trunkRadius: [.025, .04], levels: [2, 3], branchLength: [.3, .5], leafLength: [.15, .25], leafWidth: [.3, .4], leafDensity: [8, 14], flower: [0, 0] } },
+  ti: { label: 'Ti plant', latin: 'Cordyline fruticosa', common: 'Hawaiian ti', leafShape: 'lance', whorl: true, kidsMin: 1, kidsMax: 2, lenRatio: .8, upright: 2, spread: .4, leafDroop: .45, twist: .3, palette: { bark: '#8a7a68', twig: '#7a4a5a', leaf: '#7a2a4a', leafYoung: '#c8506a', flower: '#fff' }, over: { height: [.6, 1.6], trunkRadius: [.03, .05], levels: [1, 2], branchLength: [.3, .6], leafLength: [.4, .6], leafWidth: [.18, .24], leafDensity: [10, 16], flower: [0, 0] } },
+  schefflera: { label: 'Umbrella tree', latin: 'Schefflera actinophylla', common: 'Queensland umbrella tree', whorl: true, palmate: true, lobes: 8, lobeSpan: 330, lobeW: .28, lobeShape: 'obovate', kidsMin: 2, kidsMax: 3, lenRatio: .75, upright: 1.5, spread: .7, palette: { bark: '#8a8272', twig: '#7a9a5a', leaf: '#2f7a2c', leafYoung: '#52a03f' }, over: { height: [1.5, 3], trunkRadius: [.07, .12], levels: [2, 3], branchLength: [.7, 1.1], leafLength: [.25, .35], leafDensity: [5, 8], flower: [0, 0] } },
+  papaya: { label: 'Papaya', latin: 'Carica papaya', common: 'Papaya', singleStem: true, palmate: true, lobes: 7, lobeSpan: 320, lobeW: .3, lobeShape: 'lance', fruit: true, palette: { bark: '#8f8a78', twig: '#a8b070', leaf: '#3f8a34', fruit: '#6fa83a' }, over: { height: [2, 4], trunkRadius: [.08, .13], leafLength: [.35, .5], leafDensity: [9, 14], flower: [1, 1] } },
+  rubberfig: { label: 'Rubber fig', latin: 'Ficus elastica', common: 'Rubber plant', leafShape: 'elliptic', leavesOnAll: true, midVein: true, kidsMin: 2, kidsMax: 3, extraTop: 1, lenRatio: .8, upright: 1.6, spread: .5, cup: .25, leafDroop: .25, palette: { bark: '#7a7060', twig: '#6a7a4a', leaf: '#1f4f26', leafYoung: '#8a3a4a' }, over: { height: [.8, 1.6], trunkRadius: [.04, .07], levels: [2, 3], branchLength: [.4, .7], leafLength: [.22, .3], leafWidth: [.45, .55], leafDensity: [10, 16], flower: [0, 0] } },
+  bougainvillea: { label: 'Bougainvillea', latin: 'Bougainvillea glabra', common: 'Paper flower', leafShape: 'ovate', leavesOnAll: true, kidsMin: 3, kidsMax: 4, lenRatio: .7, upright: .8, spread: 1.2, droopBr: .5, flower: true, petals: 3, petalLen: .04, flowersPer: 6, palette: { bark: '#6a5a4a', twig: '#7a6a3a', leaf: '#3f8a34', leafYoung: '#5fa348', flower: '#e0308a', flowerCenter: '#fff5d0' }, over: { height: [.6, 1.4], trunkRadius: [.03, .05], levels: [3, 3], branchLength: [.5, .9], leafLength: [.05, .08], leafWidth: [.6, .7], leafDensity: [8, 14], flower: [1, 1] } },
+};
+
 /* ───────────────────────── schema / api ───────────────────────── */
 export const SPECIES = {
   palm: {
@@ -801,6 +1068,50 @@ export const SPECIES = {
       { key: 'detail', label: 'Detail', min: .3, max: 1, step: .05, rnd: [.6, .85] },
     ],
   },
+  rosette: {
+    label: 'Rosette', accent: '#ff8a80', gen: genRosette, variants: ROSETTE_VARIANTS,
+    params: [
+      { key: 'leaves', label: 'Leaves', min: 8, max: 50, step: 1, rnd: [18, 30] },
+      { key: 'leafLength', label: 'Leaf length', min: .2, max: 2, step: .05, unit: 'm', rnd: [.4, .6] },
+      { key: 'leafWidth', label: 'Leaf width', min: .02, max: .3, step: .005, unit: 'm', rnd: [.05, .07] },
+      { key: 'coreRadius', label: 'Core radius', min: .02, max: .2, step: .005, unit: 'm', rnd: [.03, .05] },
+      { key: 'trunk', label: 'Trunk height', min: 0, max: 3, step: .05, unit: 'm', rnd: [0, 0] },
+      { key: 'droop', label: 'Droop', min: 0, max: 1, step: .05, rnd: [.3, .7] },
+      { key: 'fruit', label: 'Fruit / flower', min: 0, max: 1, step: 1, rnd: [1, 1] },
+      { key: 'hue', label: 'Hue shift', min: -1, max: 1, step: .05, rnd: [-.5, .5] },
+      { key: 'detail', label: 'Detail', min: .3, max: 1, step: .05, rnd: [.6, .85] },
+    ],
+  },
+  bamboo: {
+    label: 'Bamboo', accent: '#d8c84a', gen: genBamboo, variants: BAMBOO_VARIANTS,
+    params: [
+      { key: 'height', label: 'Height', min: 2, max: 20, step: .1, unit: 'm', rnd: [5, 9] },
+      { key: 'culms', label: 'Culms', min: 1, max: 30, step: 1, rnd: [6, 14] },
+      { key: 'culmRadius', label: 'Culm radius', min: .01, max: .16, step: .005, unit: 'm', rnd: [.035, .06] },
+      { key: 'internode', label: 'Internode', min: .1, max: .6, step: .01, unit: 'm', rnd: [.25, .4] },
+      { key: 'clumpRadius', label: 'Clump radius', min: .1, max: 1.2, step: .05, unit: 'm', rnd: [.3, .6] },
+      { key: 'lean', label: 'Lean', min: 0, max: .4, step: .01, rnd: [.05, .25] },
+      { key: 'leafLength', label: 'Leaf length', min: .08, max: .5, step: .01, unit: 'm', rnd: [.2, .3] },
+      { key: 'hue', label: 'Hue shift', min: -1, max: 1, step: .05, rnd: [-.5, .5] },
+      { key: 'detail', label: 'Detail', min: .3, max: 1, step: .05, rnd: [.5, .8] },
+    ],
+  },
+  broadleaf: {
+    label: 'Shrub & tree', accent: '#ffb454', gen: genBroadleaf, variants: BROADLEAF_VARIANTS,
+    params: [
+      { key: 'height', label: 'Trunk height', min: .3, max: 5, step: .05, unit: 'm', rnd: [1, 2] },
+      { key: 'trunkRadius', label: 'Trunk radius', min: .02, max: .2, step: .005, unit: 'm', rnd: [.05, .1] },
+      { key: 'lean', label: 'Lean', min: 0, max: .3, step: .01, rnd: [0, .12] },
+      { key: 'levels', label: 'Branch levels', min: 1, max: 3, step: 1, rnd: [2, 3] },
+      { key: 'branchLength', label: 'Branch length', min: .2, max: 1.5, step: .05, unit: 'm', rnd: [.5, .9] },
+      { key: 'leafLength', label: 'Leaf length', min: .04, max: .6, step: .01, unit: 'm', rnd: [.2, .35] },
+      { key: 'leafWidth', label: 'Width ratio', min: .15, max: .9, step: .05, rnd: [.3, .5] },
+      { key: 'leafDensity', label: 'Leaves / shoot', min: 3, max: 16, step: 1, rnd: [6, 10] },
+      { key: 'flower', label: 'Flowers / fruit', min: 0, max: 1, step: 1, rnd: [1, 1] },
+      { key: 'hue', label: 'Hue shift', min: -1, max: 1, step: .05, rnd: [-.5, .5] },
+      { key: 'detail', label: 'Detail', min: .3, max: 1, step: .05, rnd: [.6, .85] },
+    ],
+  },
   fern: {
     label: 'Fern', accent: '#4fd8e0', gen: genFern, variants: FERN_VARIANTS,
     params: [
@@ -830,7 +1141,7 @@ export function randomParams(species, seed, variant) {
 }
 
 export function plantName(species, seed) {
-  const syll = { palm: ['Ko', 'Pa', 'Lau', 'Ni', 'Ma'], banana: ['Mu', 'Sa', 'Ke', 'La', 'Pi'], fern: ['Fi', 'Dry', 'Ath', 'Pol', 'Ne'], aroid: ['Ta', 'Alo', 'Mon', 'Phi', 'Ca'] }[species];
+  const syll = { palm: ['Ko', 'Pa', 'Lau', 'Ni', 'Ma'], banana: ['Mu', 'Sa', 'Ke', 'La', 'Pi'], fern: ['Fi', 'Dry', 'Ath', 'Pol', 'Ne'], aroid: ['Ta', 'Alo', 'Mon', 'Phi', 'Ca'], rosette: ['Bro', 'Ana', 'Aga', 'Yu', 'Dra'], bamboo: ['Bam', 'Phy', 'Den', 'Tak', 'Chu'], broadleaf: ['Plu', 'Hib', 'Cro', 'Fic', 'Sch'] }[species];
   const rnd = makeRng(seed ^ 0x9e37); return syll[rnd.int(0, syll.length - 1)] + ['ra', 'lo', 'ni', 'ka', 'su'][rnd.int(0, 4)] + '-' + (seed % 4096).toString(16).toUpperCase().padStart(3, '0');
 }
 

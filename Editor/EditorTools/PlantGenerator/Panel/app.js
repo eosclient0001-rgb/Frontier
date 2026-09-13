@@ -10,6 +10,9 @@ const ICON = {
   palm: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21V9M12 9c-3-4-7-4-9-2 3 0 5 1 9 2M12 9c3-4 7-4 9-2-3 0-5 1-9 2M12 9c-1-4 0-7 3-8-1 3-1 5-3 8M12 9c1-4 0-7-3-8 1 3 1 5 3 8"/></svg>',
   banana: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21V8M12 8c-4-3-8-1-9 3 4-1 7 0 9-3M12 8c4-3 8-1 9 3-4-1-7 0-9-3M12 8c-2-4-1-6 0-7 1 1 2 3 0 7"/></svg>',
   aroid: '<svg class="i" viewBox="0 0 24 24"><path d="M12 22V10M12 10C7 10 3 7 4 3c4 0 7 2 8 7 1-5 4-7 8-7 1 4-3 7-8 7"/></svg>',
+  rosette: '<svg class="i" viewBox="0 0 24 24"><path d="M12 22V12M12 12 4 6M12 12l8-6M12 12 6 14M12 12l6 2M12 12V3M12 12 8 4M12 12l4-8"/></svg>',
+  bamboo: '<svg class="i" viewBox="0 0 24 24"><path d="M9 22V2M15 22V4M7 8h4M7 14h4M13 10h4M13 16h4M11 6l3-2M11 12l3-2"/></svg>',
+  broadleaf: '<svg class="i" viewBox="0 0 24 24"><path d="M12 22v-8M12 14 6 8M12 14l6-6M6 8C4 6 4 3 6 2c2 1 3 4 0 6M18 8c2-2 2-5 0-6-2 1-3 4 0 6M12 10V4"/></svg>',
   fern: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21C10 14 8 8 4 5M12 21c2-7 4-13 8-16M12 21V6M9 12l-3-1M9 9L7 7M15 12l3-1M15 9l2-2M12 10c-2 0-3-1-4-3M12 10c2 0 3-1 4-3"/></svg>',
 };
 const ICO_PART = { trunk: 'trunk', pseudostem: 'stem', crown: 'crown' };
@@ -54,7 +57,7 @@ function resize() { const r = canvas.parentElement.getBoundingClientRect(); rend
 new ResizeObserver(resize).observe(canvas.parentElement); resize();
 
 /* ───────── plants ───────── */
-const PART_COLORS = { flower: '#ffb454', boots: '#b48cff', trunk: '#b08a5a', pseudostem: '#b08a5a', crown: '#b08a5a', frond: '#34c759', leaf: '#34c759', deadFrond: '#ffb454', coconut: '#e5d33a', fruit: '#e5d33a', spear: '#4fd8e0', cigar: '#4fd8e0', crozier: '#4fd8e0' };
+const PART_COLORS = { flower: '#ffb454', boots: '#b48cff', culm: '#b08a5a', branch: '#b08a5a', trunk: '#b08a5a', pseudostem: '#b08a5a', crown: '#b08a5a', frond: '#34c759', leaf: '#34c759', deadFrond: '#ffb454', coconut: '#e5d33a', fruit: '#e5d33a', spear: '#4fd8e0', cigar: '#4fd8e0', crozier: '#4fd8e0' };
 function makePlant(species, params, opts = {}) {
   const r = generatePlant(species, params);
   const g = r.geometry;
@@ -302,7 +305,7 @@ $('#cmdIn').addEventListener('keydown', e => {
 let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
 
 /* ───────── construct catalogue (same widget as the sketcher: rail → tiles → options slide) ───────── */
-const FAMILY_BLURB = { palm: 'Arecaceae · tropical & subtropical', banana: 'Musaceae / Zingiberales · tropical', aroid: 'Araceae · giant-leaf tropical understory', fern: 'Polypodiopsida · tropical to temperate' };
+const FAMILY_BLURB = { palm: 'Arecaceae · tropical & subtropical', banana: 'Musaceae / Zingiberales · tropical', aroid: 'Araceae · giant-leaf tropical understory', rosette: 'Bromeliads · agaves · yuccas · dragon trees', bamboo: 'Bambusoideae · clumping & running bamboos', broadleaf: 'Tropical flowering shrubs & small trees', fern: 'Polypodiopsida · tropical to temperate' };
 const prevRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); prevRenderer.setSize(176, 176, false); prevRenderer.setPixelRatio(1); prevRenderer.outputColorSpace = THREE.SRGBColorSpace;
 const prevScene = new THREE.Scene(); prevScene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3a3326, 1.2)); const pl = new THREE.DirectionalLight(0xfff1dc, 2.2); pl.position.set(3, 6, 4); prevScene.add(pl);
 const prevCam = new THREE.PerspectiveCamera(30, 1, .05, 200);
