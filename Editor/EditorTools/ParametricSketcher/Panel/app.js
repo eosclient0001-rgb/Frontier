@@ -53,7 +53,7 @@ function rebuildBody(b){
   const segs=[].concat(...sks.map(s=>s.segs));
   const regs=K.profile(segs);
   if(!regs.length){b.err='profile is not closed';return null;}
-  let S=K.extrude(regs[b.region||0]||regs[0],frameOf(sks[0]),b.h);
+  let S=K.extrude(regs[b.region||0]||regs[0],frameOf(sks[0]),b.h,{caps:!b.shell});
   // transform placement
   if(b.xf&&(b.xf.t.some(x=>x)||b.xf.s!==1||b.xf.rz)){
     const cz=Math.cos(b.xf.rz||0),sz=Math.sin(b.xf.rz||0);
@@ -75,7 +75,7 @@ function rebuildBody(b){
 }
 function bodySolid(b){
   const c=meshCache.get(b.id);
-  const stamp=JSON.stringify([b.h,b.xf,b.edits,bodySources(b).map(s=>s.segs)]);
+  const stamp=JSON.stringify([b.h,b.xf,b.edits,b.shell,bodySources(b).map(s=>s.segs)]);
   if(c&&c.stamp===stamp)return c;
   const solid=rebuildBody(b);
   const mesh=solid?K.tessellate(solid):null;
@@ -230,6 +230,159 @@ function rebuildSelFaces(){
     if(f)selFaceIds.add(s.body+':'+f.id);
   }
 }
+/* ── shape pose editing: translate / rotate / scale the stored curves directly ── */
+function shapeBBox(sk){
+  let lo=[1/0,1/0],hi=[-1/0,-1/0];
+  const acc=(x,y)=>{if(x<lo[0])lo[0]=x;if(y<lo[1])lo[1]=y;if(x>hi[0])hi[0]=x;if(y>hi[1])hi[1]=y;};
+  for(const s of sk.segs){
+    if(s.full){acc(s.cx-s.r,s.cy-s.r);acc(s.cx+s.r,s.cy+s.r);}
+    else{acc(s.x0,s.y0);acc(s.x1,s.y1);}
+  }
+  if(lo[0]>hi[0])return {lo:[0,0],hi:[0,0],c:[0,0],w:0,h:0};
+  return {lo,hi,c:[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2],w:hi[0]-lo[0],h:hi[1]-lo[1]};
+}
+function shapePose(sk){if(!sk.pose)sk.pose={rot:0,sc:1};return sk.pose;}
+function applyShapeDelta(sk,d){ // d:{du,dv,rot(rad),ds} — rot/scale about the bbox centre
+  const c=shapeBBox(sk).c;
+  const cs=Math.cos(d.rot||0),sn=Math.sin(d.rot||0),sc=d.ds||1;
+  const map=(x,y)=>{
+    let px=x-c[0],py=y-c[1];
+    const rx=(px*cs-py*sn)*sc,ry=(px*sn+py*cs)*sc;
+    return [rx+c[0]+(d.du||0),ry+c[1]+(d.dv||0)];
+  };
+  for(const s of sk.segs){
+    if(s.full){const q=map(s.cx,s.cy);s.cx=q[0];s.cy=q[1];s.r*=sc;}
+    else{
+      const a=map(s.x0,s.y0),b=map(s.x1,s.y1);
+      s.x0=a[0];s.y0=a[1];s.x1=b[0];s.y1=b[1]; // bulge invariant under rigid+uniform scale
+    }
+  }
+  const pose=shapePose(sk);
+  pose.rot=(pose.rot+(d.rot||0))%(2*Math.PI);
+  pose.sc*=sc;
+}
+/* ── 2-D shape booleans (unite / subtract / intersect) ──
+   Polygonize each operand's regions, split segments at crossings, keep fragments by
+   midpoint classification, stitch back into closed loops. Result is a polyline shape. */
+function shapeLoops(sk){ // sampled loops (fixed kernel resolution — zoom independent)
+  const loops=[];
+  for(const reg of profileOf(sk))for(const loop of reg.loops){
+    let pts=[];
+    for(const s of loop){const pp=KM.segPts(s);pts=pts.concat(pp);}
+    if(pts.length>=3)loops.push(pts);
+  }
+  return loops;
+}
+function evenOddIn(loops,pt){
+  let inside=false;
+  for(const L of loops)for(let i=0,j=L.length-1;i<L.length;j=i++){
+    const yi=L[i][1],yj=L[j][1];
+    if((yi>pt[1])!==(yj>pt[1])&&pt[0]<(L[j][0]-L[i][0])*(pt[1]-yi)/(yj-yi)+L[i][0])inside=!inside;
+  }
+  return inside;
+}
+function boolLoops(A,B,op){ // A,B: loop lists → loop list
+  const cutAt=(loops,other)=>{ // split every edge at crossings with `other`
+    const out=[];
+    for(const L of loops){
+      const frag=[];
+      for(let i=0;i<L.length;i++){
+        const a=L[i],b=L[(i+1)%L.length];
+        const ts=[0,1];
+        for(const M of other)for(let k=0;k<M.length;k++){
+          const c=M[k],d=M[(k+1)%M.length];
+          const rx=b[0]-a[0],ry=b[1]-a[1],sx=d[0]-c[0],sy=d[1]-c[1];
+          const den=rx*sy-ry*sx;
+          if(Math.abs(den)<1e-12)continue;
+          const t=((c[0]-a[0])*sy-(c[1]-a[1])*sx)/den;
+          const u=((c[0]-a[0])*ry-(c[1]-a[1])*rx)/den;
+          if(t>1e-9&&t<1-1e-9&&u>=-1e-9&&u<=1+1e-9)ts.push(t);
+        }
+        ts.sort((x,y)=>x-y);
+        for(let k=0;k<ts.length-1;k++){
+          if(ts[k+1]-ts[k]<1e-9)continue;
+          frag.push([[a[0]+rx0(a,b)*ts[k],a[1]+ry0(a,b)*ts[k]],[a[0]+rx0(a,b)*ts[k+1],a[1]+ry0(a,b)*ts[k+1]]]);
+        }
+      }
+      out.push(...frag);
+    }
+    return out;
+  };
+  const rx0=(a,b)=>b[0]-a[0],ry0=(a,b)=>b[1]-a[1];
+  const fa=cutAt(A,B),fb=cutAt(B,A);
+  const keep=[];
+  for(const f of fa){
+    const m=[(f[0][0]+f[1][0])/2,(f[0][1]+f[1][1])/2];
+    const inB=evenOddIn(B,m);
+    if(op==='unite'?!inB:op==='intersect'?inB:!inB)keep.push(f);
+  }
+  for(const f of fb){
+    const m=[(f[0][0]+f[1][0])/2,(f[0][1]+f[1][1])/2];
+    const inA=evenOddIn(A,m);
+    if(op==='unite'?!inA:op==='intersect'?inA:inA)keep.push(op==='subtract'?[f[1],f[0]]:f);
+  }
+  // stitch fragments into closed loops by endpoint proximity
+  const tol=1e-6,used=new Array(keep.length).fill(false),loops=[];
+  const near=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1])<Math.max(tol,1e-4);
+  for(let i=0;i<keep.length;i++){
+    if(used[i])continue;
+    used[i]=true;
+    const chain=[keep[i][0].slice(),keep[i][1].slice()];
+    for(;;){
+      const tail=chain[chain.length-1];
+      if(near(tail,chain[0])&&chain.length>2){chain.pop();break;}
+      let f=-1,flip=false;
+      for(let j=0;j<keep.length;j++){
+        if(used[j])continue;
+        if(near(keep[j][0],tail)){f=j;flip=false;break;}
+        if(near(keep[j][1],tail)){f=j;flip=true;break;}
+      }
+      if(f<0)break;
+      used[f]=true;
+      chain.push(flip?keep[f][0].slice():keep[f][1].slice());
+      if(chain.length>20000)break;
+    }
+    if(chain.length>=3)loops.push(chain);
+  }
+  return loops;
+}
+function shapeBool(op,sks){ // fold over selected shapes; result replaces them
+  let acc=shapeLoops(sks[0]);
+  for(let i=1;i<sks.length;i++){
+    acc=boolLoops(acc,shapeLoops(sks[i]),op);
+    if(!acc.length)break;
+  }
+  snapshot(op);
+  const stem=op==='unite'?'Union':op==='subtract'?'Cut':'Intersect';
+  const segs=[];
+  for(const L of acc)for(let i=0;i<L.length;i++){
+    const a=L[i],b=L[(i+1)%L.length];
+    if(Math.hypot(b[0]-a[0],b[1]-a[1])>1e-9)segs.push({x0:a[0],y0:a[1],x1:b[0],y1:b[1],b:0});
+  }
+  const ids=new Set(sks.map(s=>s.id));
+  doc.figures=doc.figures.filter(f=>!ids.has(f.id));
+  if(segs.length){
+    const sk={id:doc.next++,kind:'sketch',shape:'polyline',name:figName(stem),plane:sks[0].plane,segs,vis:true,fill:sks[0].fill};
+    doc.figures.push(sk);
+    selection=[{type:'sketch',body:sk.id,key:null}];
+    log(op+' → '+sk.name+' ('+acc.length+' loop'+(acc.length===1?'':'s')+')');
+  }else{
+    selection=[];
+    log(op+': empty result');
+  }
+  refresh();
+}
+function shapeJoin(sks){ // merge curves into the first figure (even-odd fill applies)
+  snapshot('join');
+  const first=sks[0];
+  for(let i=1;i<sks.length;i++){first.segs.push(...sks[i].segs);}
+  const ids=new Set(sks.slice(1).map(s=>s.id));
+  doc.figures=doc.figures.filter(f=>!ids.has(f.id));
+  first.shape='polyline';
+  selection=[{type:'sketch',body:first.id,key:null}];
+  log('join → '+first.name);
+  refresh();
+}
 const profCache=new Map(); // sketchId → {stamp, regs}
 function profileOf(sk){
   const stamp=JSON.stringify(sk.segs);
@@ -241,25 +394,27 @@ function profileOf(sk){
   return regs;
 }
 function drawPlaneFill(plane,sks){
-  // closed regions of ALL shapes on the plane fill together (even-odd: holes stay empty)
-  const regs=planeProfile(plane,sks);
-  if(!regs.length)return;
+  // Boolean-look fill: every filled shape contributes its own closed loops to ONE even-odd
+  // path, so overlapping shapes render as a subtract (XOR) — crescents fill, lenses empty.
+  const filled=sks.filter(sk=>sk.fill!==false);
+  if(!filled.length)return;
   const F=PLANES[plane]||PLANES.XY;
   const P2=(x,y)=>project(V.add(F.o,V.add(V.mul(F.u,x),V.mul(F.v,y))));
-  const anySel=sks.some(sk=>selection.some(s=>s.body===sk.id&&(s.type==='sketch'||s.type==='curve')));
+  const anySel=filled.some(sk=>selection.some(s=>s.body===sk.id&&(s.type==='sketch'||s.type==='curve')));
   ctx.save();
   ctx.fillStyle=anySel?'rgba(255,180,84,.22)':'rgba(120,200,255,.16)';
   ctx.beginPath();
-  for(const reg of regs)for(const loop of reg.loops){
+  let any=false;
+  for(const sk of filled)for(const reg of profileOf(sk))for(const loop of reg.loops){
     let started=false;
     for(const s of loop)for(const q2 of segPoly(s)){
       const q=P2(q2[0],q2[1]);
       if(!q){started=false;continue;}
-      if(!started){ctx.moveTo(q[0],q[1]);started=true;}else ctx.lineTo(q[0],q[1]);
+      if(!started){ctx.moveTo(q[0],q[1]);started=true;any=true;}else ctx.lineTo(q[0],q[1]);
     }
     ctx.closePath();
   }
-  ctx.fill('evenodd');
+  if(any)ctx.fill('evenodd');
   ctx.restore();
 }
 function drawSketch(sk){
@@ -906,8 +1061,9 @@ function startExtrude(){
   xTool.commit=()=>{
     const h=xTool.h;
     snapshot('extrude');
+    const shell=xTool.sks.every(s=>s.fill===false); // unfilled profile → open shell
     const b={id:doc.next++,kind:'body',name:figName('Body'),sketch:xTool.sk.id,sketches:xTool.sks.map(s=>s.id),region:xTool.region,
-      h,xf:{t:[0,0,0],s:1,rz:0},edits:[],vis:true};
+      h,shell,xf:{t:[0,0,0],s:1,rz:0},edits:[],vis:true};
     doc.figures.push(b);
     selection=[{type:'body',body:b.id,key:null}];
     endExtrude();
@@ -1474,6 +1630,10 @@ function renderInspector(){
     el.innerHTML=`<div class="empty"><b>Nothing selected</b>Draw a profile (R rectangle · C circle · L line), then E to extrude.<br>B fillet · ⇧B chamfer · G move · S scale.</div>${consoleHtml}`;
     return;
   }
+  /* multi-select: operations that need more than one object */
+  const selFigs=[...new Set(selection.filter(s=>s.type==='sketch'||s.type==='body').map(s=>s.body))]
+    .map(fig).filter(Boolean);
+  if(selFigs.length>1){renderMultiPanel(el,badge,selFigs,consoleHtml);return;}
   const f=fig(first.body);
   if(!f){el.innerHTML='';return;}
   /* sub-entity selection: show the entity's own analytic properties */
@@ -1540,6 +1700,8 @@ function renderInspector(){
         <div class="sec-body">
           <div class="ctl"><div class="ctl-top"><span class="lab">height</span><span class="val">${f.h.toFixed(1)}<small>mm</small></span></div>
             <div class="trk-bar" data-h style="--p:${Math.min(100,f.h)}%"><div class="ticks"></div><div class="fill"></div><div class="thumb"></div></div></div>
+          <div class="ctl"><div class="ctl-top"><span class="lab">solid / shell</span>
+            <button class="abtn" data-tgl="shell" style="height:20px;padding:0 10px">${f.shell?'shell':'solid'}</button></div></div>
         </div></div>
       <div class="sec"><div class="sec-head">Edge edits<span class="hint">${(f.edits||[]).length}</span></div>
         <div class="sec-body"><div class="ctl"><div class="list">${edits||'<div class="li"><span class="t">none — press B / ⇧B on an edge</span></div>'}</div></div></div></div>
@@ -1551,6 +1713,8 @@ function renderInspector(){
       f.edits.forEach(e=>delete e.failed);
       refresh();
     });
+    const ts=el.querySelector('[data-tgl=shell]');
+    if(ts)ts.onclick=()=>{snapshot('shell');f.shell=!f.shell;refresh();};
     const trk=el.querySelector('[data-h]');
     if(trk)trk.onpointerdown=e0=>{
       trk.setPointerCapture(e0.pointerId);
@@ -1579,23 +1743,106 @@ function renderInspector(){
       return `<div class="li"><span class="dot"></span><span class="t">region ${i+1}${rg.loops.length>1?' · '+(rg.loops.length-1)+' hole'+(rg.loops.length>2?'s':''):''}</span>
         <span class="m">${fmtNum(p.area)} mm²</span></div>`;
     }).join('');
+    const bb=shapeBBox(f),pose=shapePose(f);
+    const closed=regs.length>0;
+    const filled=f.fill!==false;
     const skProps=[['curves',String(f.segs.length)],['closed regions',String(regs.length)],
       ['total area',fmtNum(area)+' mm²'],['perimeter',fmtMm(per)+' mm'],['plane',f.plane]];
+    const numIn=(k,val,step,unit)=>`
+      <div class="ctl half"><div class="ctl-top"><span class="lab">${k}</span></div>
+        <div class="ctl-top"><input class="pin" data-p="${k}" type="number" step="${step}" value="${val}"
+          style="width:100%;background:rgba(255,255,255,.05);border:1px solid var(--stroke);border-radius:6px;color:var(--text);font:inherit;font-size:11.5px;padding:3px 6px"><span class="val" style="font-size:10px;margin-left:4px">${unit}</span></div></div>`;
     el.innerHTML=`
       <div class="hero" style="--acc:var(--cyan)">
-        <div class="c-top"><span class="ico">✎</span><span class="t"><span class="n">${f.name}</span><span class="m">sketch · plane ${f.plane}</span></span></div>
+        <div class="c-top"><span class="ico">✎</span><span class="t"><span class="n">${f.name}</span><span class="m">${f.shape||'shape'} · plane ${f.plane}</span></span></div>
         <div class="big"><span class="v">${fmtNum(area)}</span><span class="u">mm²</span><span class="lab">${regs.length} closed region${regs.length===1?'':'s'}</span></div>
       </div>
+      <div class="sec"><div class="sec-head">Placement<span class="hint">edit · ⏎ applies</span></div>
+        <div class="sec-body">
+          ${numIn('X',bb.c[0].toFixed(2),1,'mm')}${numIn('Y',bb.c[1].toFixed(2),1,'mm')}
+          ${numIn('rotation',(pose.rot*180/Math.PI).toFixed(1),5,'°')}${numIn('scale',pose.sc.toFixed(3),0.1,'×')}
+          ${numIn('width',bb.w.toFixed(2),1,'mm')}${numIn('height',bb.h.toFixed(2),1,'mm')}
+        </div></div>
+      <div class="sec"><div class="sec-head">Profile</div>
+        <div class="sec-body">
+          <div class="ctl"><div class="ctl-top"><span class="lab">fill (solid when extruded)</span>
+            <button class="abtn" data-tgl="fill" style="height:20px;padding:0 10px">${filled?'on':'off'}</button></div></div>
+          <div class="ctl"><div class="ctl-top"><span class="lab">closed loop</span>
+            <span class="val" style="font-size:11.5px">${closed?'yes':'no — open curves'}</span></div></div>
+          <div class="ctl"><div class="ctl-top"><span class="lab">extrudes as</span>
+            <span class="val" style="font-size:11.5px">${closed?(filled?'solid':'shell (open walls)'):'—'}</span></div></div>
+        </div></div>
       ${propRows(skProps)}
       ${regs.length?`<div class="sec"><div class="sec-head">Regions<span class="hint">${regs.length}</span></div>
         <div class="sec-body"><div class="ctl"><div class="list">${regRows}</div></div></div></div>`:''}
-      <div class="actions"><button class="abtn" data-act="ext">extrude (E)</button><button class="abtn danger" data-act="del">delete</button></div>
+      <div class="actions"><button class="abtn" data-act="ext">extrude (E)</button><button class="abtn" data-act="dup">duplicate</button><button class="abtn danger" data-act="del">delete</button></div>
       ${consoleHtml}`;
     el.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{
       if(b.dataset.act==='del'){snapshot('delete');doc.figures=doc.figures.filter(x=>x.id!==f.id);selection=[];refresh();}
+      else if(b.dataset.act==='dup'){
+        snapshot('duplicate');
+        const c=JSON.parse(JSON.stringify(f));
+        c.id=doc.next++;c.name=figName((f.name.match(/^[A-Za-z]+/)||['Shape'])[0]);
+        applyShapeDelta(c,{du:10,dv:10});
+        doc.figures.push(c);selection=[{type:'sketch',body:c.id,key:null}];refresh();
+      }
       else startExtrude();
     });
+    const tf=el.querySelector('[data-tgl=fill]');
+    if(tf)tf.onclick=()=>{snapshot('fill');f.fill=f.fill===false;refresh();};
+    el.querySelectorAll('.pin').forEach(inp=>{
+      inp.onkeydown=ev2=>{
+        if(ev2.key!=='Enter')return;
+        const k=inp.dataset.p,v=parseFloat(inp.value);
+        if(!isFinite(v))return;
+        snapshot('edit '+k);
+        const bb2=shapeBBox(f),pose2=shapePose(f);
+        if(k==='X')applyShapeDelta(f,{du:v-bb2.c[0]});
+        else if(k==='Y')applyShapeDelta(f,{dv:v-bb2.c[1]});
+        else if(k==='rotation')applyShapeDelta(f,{rot:v*Math.PI/180-pose2.rot});
+        else if(k==='scale'){if(v>1e-6)applyShapeDelta(f,{ds:v/pose2.sc});}
+        else if(k==='width'){if(bb2.w>1e-6&&v>1e-6)applyShapeDelta(f,{ds:v/bb2.w});}
+        else if(k==='height'){if(bb2.h>1e-6&&v>1e-6)applyShapeDelta(f,{ds:v/bb2.h});}
+        refresh();
+      };
+    });
   }
+}
+/* multi-select panel: boolean / join / align / delete — operations needing >1 object */
+function renderMultiPanel(el,badge,figs,consoleHtml){
+  const shapes=figs.filter(f=>f.kind==='sketch');
+  const bodies=figs.filter(f=>f.kind==='body');
+  badge.textContent=figs.length+' selected';
+  const rows=figs.map(f=>`<div class="li"><span class="dot"></span><span class="t">${f.name}</span><span class="m">${f.kind}</span></div>`).join('');
+  const shapeOps=shapes.length>1&&shapes.every(s=>s.plane===shapes[0].plane);
+  el.innerHTML=`
+    <div class="hero" style="--acc:var(--violet)">
+      <div class="c-top"><span class="ico">⧉</span><span class="t"><span class="n">${figs.length} objects</span><span class="m">${shapes.length} shape${shapes.length===1?'':'s'} · ${bodies.length} bod${bodies.length===1?'y':'ies'}</span></span></div>
+    </div>
+    <div class="sec"><div class="sec-head">Selection<span class="hint">${figs.length}</span></div>
+      <div class="sec-body"><div class="ctl"><div class="list">${rows}</div></div></div></div>
+    ${shapeOps?`<div class="sec"><div class="sec-head">Boolean<span class="hint">shapes on ${shapes[0].plane}</span></div>
+      <div class="sec-body">
+        <div class="ctl"><div class="ctl-top" style="gap:6px">
+          <button class="abtn" data-mop="unite">unite</button>
+          <button class="abtn" data-mop="subtract">subtract</button>
+          <button class="abtn" data-mop="intersect">intersect</button>
+          <button class="abtn" data-mop="join">join</button>
+        </div></div>
+        <div class="ctl"><div class="ctl-top"><span class="lab" style="font-size:10.5px">subtract removes later picks from the first · join merges curves (even-odd)</span></div></div>
+      </div></div>`:''}
+    ${shapes.length>1?`<div class="sec"><div class="sec-head">Extrude</div>
+      <div class="sec-body"><div class="ctl"><div class="ctl-top">
+        <button class="abtn" data-mop="ext">extrude together (E)</button></div></div></div></div>`:''}
+    <div class="actions"><button class="abtn danger" data-mop="del">delete all</button></div>
+    ${consoleHtml}`;
+  el.querySelectorAll('[data-mop]').forEach(b2=>b2.onclick=()=>{
+    const op=b2.dataset.mop;
+    if(op==='del'){snapshot('delete');const ids=new Set(figs.map(f=>f.id));doc.figures=doc.figures.filter(x=>!ids.has(x.id));selection=[];refresh();}
+    else if(op==='join')shapeJoin(shapes);
+    else if(op==='ext')startExtrude();
+    else shapeBool(op,shapes);
+  });
 }
 function fmtNum(n){
   if(Math.abs(n)>=1e6)return (n/1e6).toFixed(2)+'M';
@@ -1838,6 +2085,8 @@ window.__SolidArcPanel={
   bodySolid:b=>bodySolid(b), fig, cmdRun, pick, startBlend, startExtrude, startTool, startModal,
   get blendTool(){return blendTool;}, blendCommit, snapshot, refresh, undo, redo, cam, draw:()=>draw(),
   get tool(){return tool;}, toolUV, mouseRay, rayPlane, project, frameOf, PLANES, TOOLS, slotSegs,
-  build:'shapes-as-figures r4 (ellipse, icons)',
+  shapeBBox, applyShapeDelta, shapeBool, shapeJoin, shapePose,
+  regionArea:reg=>regionProps(reg).area,
+  build:'booleans r5 (fill-xor, shell, pose-edit, multi-select)',
 };
-console.log('SolidArc panel build: shapes-as-figures r4 (ellipse, icons)');
+console.log('SolidArc panel build: booleans r5 (fill-xor, shell, pose-edit, multi-select)');

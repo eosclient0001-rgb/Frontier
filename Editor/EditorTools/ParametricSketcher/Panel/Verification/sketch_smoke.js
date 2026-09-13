@@ -211,6 +211,115 @@ key('Escape');
   }
 }
 
+console.log('== overlap fill renders as boolean (XOR) look ==');
+cmd('clear');
+topView();
+P.startTool('circle');
+click(380,300);click(440,300); // circle 1
+click(440,300);click(500,300); // circle 2 overlapping
+key('Escape');
+{
+  const cs=P.doc.figures.filter(f=>f.kind==='sketch');
+  chk('two overlapping circles drawn',cs.length===2,cs.length);
+  fillCalls=0;fillRule=null;P.draw();
+  chk('overlap fill still renders (single even-odd path)',fillCalls>0&&fillRule==='evenodd',[fillCalls,fillRule]);
+}
+
+console.log('== fill property & shell extrude ==');
+cmd('clear');
+topView();
+P.startTool('circle');
+click(400,300);click(450,300);
+key('Escape');
+{
+  const c1=P.doc.figures.find(f=>f.kind==='sketch');
+  c1.fill=false; // profile toggled to unfilled → extrude must make a shell
+  P.startExtrude();
+  cv.dispatchEvent(new w.MouseEvent('pointerdown',{clientX:400,clientY:200,bubbles:true,button:0}));
+  const b3=P.doc.figures.find(f=>f.kind==='body');
+  chk('unfilled profile extrudes as shell',!!b3&&b3.shell===true,b3&&b3.shell);
+  if(b3){
+    const bs=P.bodySolid(b3);
+    chk('shell solid valid (open rims allowed)',bs.solid&&K.validate(bs.solid).ok,bs.solid&&K.validate(bs.solid).msgs);
+    chk('shell has no caps',bs.solid&&!Object.keys(bs.solid.faces).some(k=>bs.solid.faces[k].key&&bs.solid.faces[k].key.startsWith('cap')),null);
+    chk('shell volume reported 0',K.measure(bs.solid).volume===0,K.measure(bs.solid).volume);
+  }
+}
+
+console.log('== shape pose editing (move / rotate / scale) ==');
+cmd('clear');
+topView();
+P.startTool('rect');
+click(300,340);click(400,240);
+key('Escape');
+{
+  const r1=P.doc.figures.find(f=>f.kind==='sketch');
+  const bb0=P.shapeBBox(r1);
+  P.applyShapeDelta(r1,{du:15,dv:-5});
+  const bb1=P.shapeBBox(r1);
+  chk('move shifts bbox centre exactly',
+    Math.abs(bb1.c[0]-bb0.c[0]-15)<1e-9&&Math.abs(bb1.c[1]-bb0.c[1]+5)<1e-9,[bb0.c,bb1.c]);
+  P.applyShapeDelta(r1,{ds:2});
+  const bb2=P.shapeBBox(r1);
+  chk('scale doubles width/height about centre',
+    Math.abs(bb2.w-2*bb1.w)<1e-6&&Math.abs(bb2.h-2*bb1.h)<1e-6&&Math.abs(bb2.c[0]-bb1.c[0])<1e-6,[bb1.w,bb2.w]);
+  P.applyShapeDelta(r1,{rot:Math.PI/2});
+  const bb3=P.shapeBBox(r1);
+  chk('90° rotation swaps width/height',
+    Math.abs(bb3.w-bb2.h)<1e-6&&Math.abs(bb3.h-bb2.w)<1e-6,[bb2.w,bb2.h,bb3.w,bb3.h]);
+  const regs=K.profile(r1.segs);
+  chk('shape still closed after pose edits',regs.length===1,regs.length);
+}
+
+console.log('== 2-D booleans: unite / subtract / intersect ==');
+cmd('clear');
+topView();
+// two overlapping axis-aligned rects via direct segs (exact areas)
+function addRect(x0,y0,x1,y1){
+  const sk={id:P.doc.next++,kind:'sketch',shape:'rect',name:'R'+P.doc.next,plane:'XY',vis:true,segs:[
+    {x0,y0,x1,y1:y0,b:0},{x0:x1,y0,x1,y1,b:0},{x0:x1,y0:y1,x1:x0,y1,b:0},{x0,y0:y1,x1:x0,y1:y0,b:0}]};
+  P.doc.figures.push(sk);return sk;
+}
+{
+  const A=addRect(0,0,40,30),B=addRect(20,10,60,40); // overlap 20×20=400; A=1200 B=1200
+  P.shapeBool('unite',[A,B]);
+  let out=P.doc.figures.filter(f=>f.kind==='sketch');
+  chk('unite replaces operands with one shape',out.length===1&&out[0].name.startsWith('Union'),out.map(f=>f.name));
+  let regs=K.profile(out[0].segs);
+  let area=regs.length?regs.reduce((a,rg)=>a+Math.abs(P.regionArea(rg)),0):0;
+  chk('unite area = 1200+1200-400 = 2000',Math.abs(area-2000)<1,area);
+  P.undo();
+  const A2=P.doc.figures.filter(f=>f.kind==='sketch')[0],B2=P.doc.figures.filter(f=>f.kind==='sketch')[1];
+  P.shapeBool('subtract',[A2,B2]);
+  out=P.doc.figures.filter(f=>f.kind==='sketch');
+  regs=K.profile(out[0].segs);
+  area=regs.length?regs.reduce((a,rg)=>a+Math.abs(P.regionArea(rg)),0):0;
+  chk('subtract area = 1200-400 = 800',Math.abs(area-800)<1,area);
+  P.undo();
+  const A3=P.doc.figures.filter(f=>f.kind==='sketch')[0],B3=P.doc.figures.filter(f=>f.kind==='sketch')[1];
+  P.shapeBool('intersect',[A3,B3]);
+  out=P.doc.figures.filter(f=>f.kind==='sketch');
+  regs=out.length?K.profile(out[0].segs):[];
+  area=regs.length?regs.reduce((a,rg)=>a+Math.abs(P.regionArea(rg)),0):0;
+  chk('intersect area = 400',Math.abs(area-400)<1,area);
+}
+
+console.log('== multi-select panel ==');
+cmd('clear');
+topView();
+{
+  const A=addRect(0,0,30,30),B=addRect(50,0,80,30);
+  P.selection=[{type:'sketch',body:A.id,key:null},{type:'sketch',body:B.id,key:null}];
+  P.refresh();
+  const html2=doc.querySelector('#insp').innerHTML;
+  chk('multi-select shows boolean ops',/unite/.test(html2)&&/subtract/.test(html2)&&/intersect/.test(html2)&&/join/.test(html2),null);
+  chk('multi-select shows delete all',/delete all/.test(html2));
+  chk('multi-select lists both objects',/2 objects/.test(html2));
+  P.shapeJoin([A,B]);
+  const after=P.doc.figures.filter(f=>f.kind==='sketch');
+  chk('join merges into one figure with 8 curves',after.length===1&&after[0].segs.length===8,after.map(f=>f.segs.length));
+}
+
 console.log('== inspector properties ==');
 cmd('clear');
 cmd('box 40 30 20');

@@ -368,8 +368,13 @@ function validate(S){
   const uses=edgeUses(S);
   for(const e of Object.values(S.edges)){
     const u=uses[e.id]||[];
-    if(u.length!==2)msgs.push(`edge ${e.key} used ${u.length}× (need 2)`);
-    else if(u[0].fwd===u[1].fwd)msgs.push(`edge ${e.key} used twice with the same sense`);
+    if(S.shell){ // open shell: rim edges legitimately used once
+      if(u.length<1||u.length>2)msgs.push(`edge ${e.key} used ${u.length}× (need 1–2)`);
+      else if(u.length===2&&u[0].fwd===u[1].fwd)msgs.push(`edge ${e.key} used twice with the same sense`);
+    }else{
+      if(u.length!==2)msgs.push(`edge ${e.key} used ${u.length}× (need 2)`);
+      else if(u[0].fwd===u[1].fwd)msgs.push(`edge ${e.key} used twice with the same sense`);
+    }
   }
   for(const f of Object.values(S.faces))
     for(const L of f.loops){
@@ -486,7 +491,8 @@ function normLoop(loop,ccw){ // force orientation: outer CCW, hole CW
 }
 /* ------------------------------------------------ extrude --------------------------------- */
 // frame {o,u,v,w} — sketch plane basis (w = u×v). region {loops:[[seg…]…]} first loop outer.
-function extrude(region,frame,h){
+function extrude(region,frame,h,opts){
+  const caps=!(opts&&opts.caps===false);
   const {o,u,v}=frame;let w=frame.w||cross(u,v);
   let O=o.slice(),H=h;
   if(H<0){O=add(O,mul(w,H));H=-H;}
@@ -563,9 +569,11 @@ function extrude(region,frame,h){
     capBotLoops.push(loop.map((s,i)=>({e:eb[i],fwd:false})).reverse());
     capTopLoops.push(loop.map((s,i)=>({e:et[i],fwd:true})));
   });
-  const bot=capBotLoops.filter(Boolean),top=capTopLoops.filter(Boolean);
-  addF(S,planeS(O,neg(w)),1,bot,'cap:b');
-  addF(S,planeS(add(O,mul(w,H)),w),1,top,'cap:t');
+  if(caps){
+    const bot=capBotLoops.filter(Boolean),top=capTopLoops.filter(Boolean);
+    addF(S,planeS(O,neg(w)),1,bot,'cap:b');
+    addF(S,planeS(add(O,mul(w,H)),w),1,top,'cap:t');
+  }else S.shell=true; // open shell — rim edges are used once by design
   return S;
 }
 /* exported below in part 2 (blend, tweaks, tessellation) */
@@ -1543,7 +1551,7 @@ function measure(S,mesh){
   }
   const nf=Object.keys(S.faces).length,ne=Object.keys(S.edges).length,nv=Object.keys(S.verts).length;
   const nSmooth=Object.values(S.edges).filter(e=>e.smooth).length;
-  return {volume:vol,area,faces:nf,edges:ne,tangentEdges:nSmooth,verts:nv};
+  return {volume:S.shell?0:vol,area,faces:nf,edges:ne,tangentEdges:nSmooth,verts:nv,shell:!!S.shell};
 }
 
 root.SolidArcKernel={
