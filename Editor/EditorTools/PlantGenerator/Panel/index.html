@@ -47,7 +47,7 @@ input{font:inherit;color:inherit;background:none;border:0;outline:0}
 #vgrip::before{content:"";width:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.5)}
 #layoutBtn{position:absolute;right:10px;top:10px;z-index:4;width:30px;height:30px;background:rgba(0,0,0,.35);border:1px solid var(--stroke)}
 /* ── construction catalogue ─────────────────────────────── */
-#cat{position:fixed;z-index:10000;width:560px;height:440px;min-width:420px;min-height:300px;border-radius:12px;display:none;flex-direction:column;overflow:hidden;color:var(--text);resize:both}
+#cat{position:fixed;z-index:10000;width:640px;height:470px;min-width:420px;min-height:300px;border-radius:12px;display:none;flex-direction:column;overflow:hidden;color:var(--text);resize:both}
 #cat .rsz{position:absolute;right:4px;bottom:4px;width:14px;height:14px;cursor:nwse-resize;z-index:2;opacity:.45;background:repeating-linear-gradient(135deg,transparent 0 3px,var(--t3) 3px 4px)}
 #cat.show{display:flex;animation:ddIn .16s var(--ease)}
 .cat-head{display:flex;align-items:center;gap:8px;height:44px;padding:0 8px 0 14px;border-bottom:1px solid var(--stroke);cursor:grab;flex-shrink:0;background:rgba(255,255,255,.03)}
@@ -336,7 +336,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 /* ── PlantGenerator additions (same tokens) ── */
 #viewport canvas#gl{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab}
 .sp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 12px 8px}
-.sp{height:58px;border-radius:14px;background:var(--g2);border:1px solid var(--stroke);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:11px;color:var(--t2);cursor:pointer;transition:all .2s var(--spring)}
+.sp{height:44px;border-radius:14px;background:var(--g2);border:1px solid var(--stroke);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:11px;color:var(--t2);cursor:pointer;transition:all .2s var(--spring)}
 .sp svg.i{width:20px;height:20px;color:var(--acc)} .sp:hover{background:var(--g3);color:var(--text);transform:translateY(-1px)}
 .sp.on{background:rgba(255,255,255,.09);border-color:var(--stroke2);color:var(--text);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--acc) 40%,transparent)}
 .seedrow{display:flex;gap:6px;margin:0 12px 8px;align-items:center}
@@ -352,6 +352,17 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 #toast{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);z-index:30;padding:8px 14px;border-radius:999px;font-size:12px;display:none;white-space:nowrap}
 #toast.show{display:block;animation:ddIn .16s var(--ease)}
 .grp-h .cnt{margin-left:auto}
+
+.tile .t-prev{width:44px;height:44px;place-self:center;border-radius:10px;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center}
+.tile .t-prev canvas{width:44px;height:44px;border-radius:10px}
+.tile .t-lat{font-size:9px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center;justify-self:center;font-style:italic}
+#cat .tile{grid-template-columns:1fr;grid-template-rows:1fr auto auto;aspect-ratio:1/1;padding:8px 4px 7px;gap:2px;align-items:center;border-radius:10px}
+.opt-row{display:flex;align-items:center;justify-content:space-between;min-height:34px;font-size:12px;color:var(--t2);border-top:1px solid rgba(255,255,255,.04)}
+.opt-row:first-child{border-top:0}
+.opt-row b{font-family:var(--mono);font-weight:400;color:var(--text)}
+.opt-row input{width:90px;height:24px;background:rgba(255,255,255,.06);border:1px solid var(--stroke);border-radius:6px;color:var(--text);font:12px var(--mono);padding:0 7px;text-align:right}
+.opt-prev{height:150px;border-radius:12px;background:rgba(0,0,0,.35);border:1px solid var(--stroke);margin:10px 0;overflow:hidden}
+.opt-prev canvas{width:100%;height:100%;display:block}
 </style>
 </head>
 <body>
@@ -368,6 +379,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
     <div class="tile" id="tTriT"><div class="l"><span class="tico"></span>Triangles</div><div class="s" id="tTriS">scene total</div><b id="tTri">0</b></div>
   </div>
   <div class="sp-grid" id="spGrid"></div>
+  <div class="seedrow" style="margin-top:-2px"><div class="stchip" id="curChip" title="current plant (from the Construct catalogue)"><span class="kd"></span><b>Coconut palm</b></div><span class="m" style="font-size:10.5px;color:var(--t3)">Tab · catalogue</span></div>
   <div class="seedrow">
     <div class="search"><span style="font-family:var(--mono);font-size:11px">seed</span><input id="seed" placeholder="auto" inputmode="numeric"></div>
     <button class="abtn pri" id="btnGen" title="G · generate a new plant of the selected species">generate</button>
@@ -387,6 +399,7 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 <section id="viewport" class="glass panel">
   <canvas id="gl"></canvas>
   <div id="vtop">
+    <button id="catBtn" title="Plant catalogue (Tab / right-click)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Construct</button>
     <div class="seg" id="shade">
       <button data-s="wire">Wire</button>
       <button data-s="flat" class="on" title="solid fill colours, flat shading">Flat</button>
@@ -418,14 +431,24 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
       <div class="navmeta"><b id="fps">60</b> fps</div>
     </div>
     <div class="nav glass">
+      <div class="keys"><span class="k">Tab</span><span class="k">catalogue</span></div>
       <div class="keys"><span class="k">G</span><span class="k">generate</span><span class="k">⇧G</span><span class="k">×6</span></div>
-      <div class="keys"><span class="k">1 2 3</span><span class="k">species</span></div>
+      <div class="keys"><span class="k">1 2 3</span><span class="k">family</span></div>
       <div class="keys"><span class="k">F</span><span class="k">focus</span><span class="k">⌫</span><span class="k">del</span><span class="k">E</span><span class="k">export</span></div>
     </div>
   </div>
   <div id="toast" class="glass"></div>
   <canvas id="triad"></canvas>
 </section>
+
+<div id="cat" class="glass">
+  <div class="cat-head" id="catHead"></div>
+  <div class="cat-track">
+    <div class="cat-slide"><div class="rail" id="catRail"></div><div class="grid-pane"><div class="grid-body" id="catGrid"></div><div class="grid-foot" id="catFoot"></div></div></div>
+    <div class="cat-slide"><div class="options-pane"><div class="pane-head" id="optHead"></div><div class="options-body" id="optBody"></div><div class="opt-foot" id="optFoot"></div></div></div>
+  </div>
+  <div class="rsz"></div>
+</div>
 
 <!-- ═══════════════ INSPECTOR ═══════════════ -->
 <aside id="inspector" class="glass panel">

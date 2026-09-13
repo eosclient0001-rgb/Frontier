@@ -3,7 +3,7 @@ import * as THREE from './vendor/three.module.min.js';
 import { OrbitControls } from './vendor/jsm/controls/OrbitControls.js';
 import { GLTFExporter } from './vendor/jsm/exporters/GLTFExporter.js';
 import { OBJExporter } from './vendor/jsm/exporters/OBJExporter.js';
-import { SPECIES, PALETTE, generatePlant, randomParams, connectedComponents, hex } from './plant.js';
+import { SPECIES, PALETTE, CATALOGUE, generatePlant, randomParams, connectedComponents, variantOf, hex } from './plant.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const ICON = {
@@ -14,8 +14,8 @@ const ICON = {
 const ICO_PART = { trunk: 'trunk', pseudostem: 'stem', crown: 'crown' };
 
 /* ───────── state ───────── */
-const S = { species: 'palm', plants: [], sel: null, shade: 'flat', layout: 'focus', wind: false, ref: true, filter: '' };
-const persist = () => { try { localStorage.setItem('flora.doc', JSON.stringify({ species: S.species, plants: S.plants.map(p => ({ species: p.species, params: p.params, name: p.info.name, hidden: !!p.hidden, colors: p.colors })) })); } catch { } };
+const S = { species: 'palm', variant: 'coconut', plants: [], sel: null, shade: 'flat', layout: 'focus', wind: false, ref: true, filter: '' };
+const persist = () => { try { localStorage.setItem('flora.doc', JSON.stringify({ species: S.species, variant: S.variant, plants: S.plants.map(p => ({ species: p.species, params: p.params, name: p.info.name, hidden: !!p.hidden, colors: p.colors })) })); } catch { } };
 
 /* ───────── three ───────── */
 const canvas = $('#gl');
@@ -25,7 +25,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure
 const scene = new THREE.Scene(); scene.background = null;
 const camera = new THREE.PerspectiveCamera(38, 1, .05, 500); camera.position.set(9, 6, 12);
 const controls = new OrbitControls(camera, canvas); controls.enableDamping = true; controls.dampingFactor = .08; controls.target.set(0, 3, 0); controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
-canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('contextmenu', e => { e.preventDefault(); if (!canvas._d || Math.hypot(e.clientX - canvas._d[0], e.clientY - canvas._d[1]) < 4) toggleCat(true, e.clientX, e.clientY); });
 const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x3a3326, .9); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1dc, 2.6); sun.position.set(10, 18, 8); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0004; sun.shadow.normalBias = .02; sun.shadow.camera.near = 1; sun.shadow.camera.far = 80;
 Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16 }); scene.add(sun); scene.add(sun.target);
@@ -94,10 +94,12 @@ function applyColors(p) {
   }
   g.attributes.color.needsUpdate = true;
 }
-function addPlant(species, seed, focus = true) {
+function addPlant(species, seed, focus = true, variant = S.variant, overrides = null) {
   seed = Number.isFinite(seed) ? seed : (Math.random() * 1e6 | 0);
-  const p = makePlant(species, randomParams(species, seed)); S.plants.push(p); S.sel = p.id;
-  layout(); refresh(); if (focus) focusSel(); persist(); toast(`${SPECIES[species].label} · seed ${seed} · ${p.stats.triangles.toLocaleString()} tris · ${p.components === 1 ? 'one merged mesh' : p.components + ' pieces'}`);
+  if (!SPECIES[species].variants[variant]) variant = Object.keys(SPECIES[species].variants)[0];
+  const params = randomParams(species, seed, variant); if (overrides) Object.assign(params, overrides);
+  const p = makePlant(species, params); S.plants.push(p); S.sel = p.id;
+  layout(); refresh(); if (focus) focusSel(); persist(); toast(`${variantOf(species, variant).label} · seed ${seed} · ${p.stats.triangles.toLocaleString()} tris · ${p.components === 1 ? 'one merged mesh' : p.components + ' pieces'}`);
   return p;
 }
 function deleteSel() { const i = S.plants.findIndex(p => p.id === S.sel); if (i < 0) return; const p = S.plants[i]; plantsGroup.remove(p.mesh); p.mesh.geometry.dispose(); S.plants.splice(i, 1); S.sel = S.plants[Math.min(i, S.plants.length - 1)]?.id || null; layout(); refresh(); persist(); }
@@ -125,7 +127,14 @@ function setView(v) {
 
 /* ───────── UI: species grid ───────── */
 const spGrid = $('#spGrid');
-for (const [k, d] of Object.entries(SPECIES)) { const b = document.createElement('div'); b.className = 'sp' + (k === S.species ? ' on' : ''); b.style.setProperty('--acc', d.accent); b.dataset.sp = k; b.innerHTML = ICON[k] + d.label; b.onclick = () => { S.species = k; document.querySelectorAll('.sp').forEach(x => x.classList.toggle('on', x.dataset.sp === k)); persist(); }; spGrid.appendChild(b); }
+for (const [k, d] of Object.entries(SPECIES)) { const b = document.createElement('div'); b.className = 'sp' + (k === S.species ? ' on' : ''); b.style.setProperty('--acc', d.accent); b.dataset.sp = k; b.innerHTML = ICON[k] + d.label; b.onclick = () => { setCurrent(k, S.species === k ? S.variant : Object.keys(d.variants)[0]); }; spGrid.appendChild(b); }
+function setCurrent(species, variant) {
+  S.species = species; S.variant = SPECIES[species].variants[variant] ? variant : Object.keys(SPECIES[species].variants)[0];
+  document.querySelectorAll('.sp').forEach(x => x.classList.toggle('on', x.dataset.sp === species));
+  const chip = $('#curChip'); chip.style.setProperty('--acc', SPECIES[species].accent); chip.querySelector('b').textContent = variantOf(species, S.variant).label;
+  persist();
+}
+$('#curChip').onclick = () => toggleCat(true);
 $('#btnGen').onclick = () => addPlant(S.species, parseInt($('#seed').value));
 $('#btnBatch').onclick = () => { const base = parseInt($('#seed').value); const l0 = S.layout; S.layout = 'lineup'; document.querySelectorAll('#layout button').forEach(b => b.classList.toggle('on', b.dataset.l === 'lineup')); for (let i = 0; i < 6; i++) addPlant(S.species, Number.isFinite(base) ? base + i : undefined, false); focusSel(); void l0; };
 $('#q').oninput = e => { S.filter = e.target.value.toLowerCase(); refresh(); };
@@ -144,7 +153,7 @@ function refresh() {
       tri += p.stats.triangles;
       if (S.filter && !(p.info.name + p.info.latin + sp).toLowerCase().includes(S.filter)) continue;
       const row = document.createElement('div'); row.className = 'row' + (p.id === S.sel ? ' sel' : '') + (p.hidden ? ' hid' : ''); row.style.setProperty('--acc', d.accent);
-      row.innerHTML = `<div class="ico">${ICON[sp]}</div><div class="txt"><div class="name">${p.info.name}</div><div class="meta">seed ${p.params.seed} · ${p.stats.triangles.toLocaleString()} tri · ${p.stats.height} m</div></div>
+      row.innerHTML = `<div class="ico">${ICON[sp]}</div><div class="txt"><div class="name">${p.info.name}</div><div class="meta">${variantOf(sp, p.params.variant).label} · seed ${p.params.seed} · ${p.stats.triangles.toLocaleString()} tri · ${p.stats.height} m</div></div>
         <div class="badges"><span class="st ${p.components === 1 ? 'ok' : 'err'}" title="${p.components === 1 ? 'single merged mesh' : p.components + ' disconnected pieces'}"><svg class="i" viewBox="0 0 24 24"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg></span></div>
         <button class="eye" title="hide / show"><svg class="i" viewBox="0 0 24 24">${p.hidden ? '<path d="M3 3l18 18M10 6a10 10 0 0 1 11 6 10 10 0 0 1-3 3.6M6.6 6.6A10 10 0 0 0 3 12a10 10 0 0 0 11 6"/>' : '<path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'}</svg></button>`;
       row.onclick = () => { S.sel = p.id; layout(); refresh(); if (S.layout === 'focus') focusSel(); };
@@ -164,7 +173,7 @@ function refresh() {
 
 /* ───────── UI: inspector ───────── */
 function inspector(p) {
-  const el = $('#insp'); $('#inspBadge').textContent = p ? `${SPECIES[p.species].label} · ${p.info.latin}` : 'nothing selected';
+  const el = $('#insp'); $('#inspBadge').textContent = p ? `${variantOf(p.species, p.params.variant).label} · ${p.info.latin}` : 'nothing selected';
   if (!p) { el.innerHTML = `<div class="empty"><b>Nothing selected</b>Generate or click a plant in the Outliner.</div>`; return; }
   const d = SPECIES[p.species]; const parts = Object.entries(p.stats.parts);
   el.innerHTML = `
@@ -180,13 +189,14 @@ function inspector(p) {
   <div class="sec closed"><div class="sec-head">Export<span class="hint">glb · obj · json</span><svg class="i car" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div><div class="sec-body" style="grid-template-columns:1fr 1fr 1fr;gap:6px;padding-top:8px"><button class="abtn" data-x="glb">.glb</button><button class="abtn" data-x="obj">.obj</button><button class="abtn" data-x="json">.json</button></div></div>`;
   el.querySelectorAll('.sec-head').forEach(h => h.onclick = () => h.parentElement.classList.toggle('closed'));
   $('#pname').onchange = e => { p.info.name = e.target.value || p.info.name; refresh(); persist(); };
-  $('#aRe').onclick = () => { p.params = randomParams(p.species, Math.random() * 1e6 | 0); p.info.name = generatePlant(p.species, p.params).info.name; regen(p); persist(); };
+  $('#aRe').onclick = () => { p.params = randomParams(p.species, Math.random() * 1e6 | 0, p.params.variant); p.info.name = generatePlant(p.species, p.params).info.name; regen(p); persist(); };
   $('#aDup').onclick = () => { const np = makePlant(p.species, { ...p.params }, { colors: p.colors }); np.info.name = p.info.name + ' copy'; S.plants.push(np); S.sel = np.id; layout(); refresh(); persist(); };
   $('#aDel').onclick = deleteSel; $('#aExp').onclick = () => exportPlant(p, 'glb');
   el.querySelectorAll('[data-x]').forEach(b => b.onclick = () => exportPlant(p, b.dataset.x));
   // property sliders (the SolidArc trk-bar control)
   const props = $('#props');
   for (const s of d.params) {
+    if (s.key === 'trunk' && !(variantOf(p.species, p.params.variant).over || {}).trunk) continue;
     const c = document.createElement('div'); c.className = 'ctl'; const v = p.params[s.key];
     const pct = 100 * (v - s.min) / (s.max - s.min);
     c.innerHTML = `<div class="ctl-top"><span class="lab">${s.label}</span><span class="val">${fmt(v, s)}<small>${s.unit || ''}</small></span></div><div class="trk-bar" style="--p:${pct}%"><div class="ticks"></div><div class="fill"></div><div class="thumb"></div></div>`;
@@ -241,6 +251,8 @@ canvas.addEventListener('pointerup', e => { if (!canvas._d || Math.hypot(e.clien
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') { if (e.key === 'Enter' && e.target.id === 'seed') addPlant(S.species, parseInt(e.target.value)); return; }
   const k = e.key.toLowerCase();
+  if (e.key === 'Tab') { e.preventDefault(); toggleCat(); return; }
+  if (e.key === 'Escape') { toggleCat(false); return; }
   if (k === 'g' && !e.shiftKey) addPlant(S.species, parseInt($('#seed').value));
   else if (k === 'g' && e.shiftKey) $('#btnBatch').click();
   else if (k === 'f') focusSel();
@@ -252,15 +264,92 @@ addEventListener('keydown', e => {
 $('#cmdIn').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return; const t = e.target.value.trim().split(/\s+/); e.target.value = ''; if (!t[0]) return;
   const c = t[0].toLowerCase();
-  if (SPECIES[c]) { S.species = c; document.querySelectorAll('.sp').forEach(x => x.classList.toggle('on', x.dataset.sp === c)); const p = addPlant(c, parseInt(t[1])); for (let i = 1; i + 1 < t.length; i += 2) if (isNaN(+t[i])) { p.params[t[i]] = +t[i + 1]; } regen(p); }
+  const hit = CATALOGUE.find(x => x.id === c || x.variant === c) || (SPECIES[c] && CATALOGUE.find(x => x.species === c));
+  if (hit) { setCurrent(hit.species, hit.variant); const p = addPlant(hit.species, parseInt(t[1]), true, hit.variant); let dirty = false; for (let i = 1; i + 1 < t.length; i += 2) if (isNaN(+t[i])) { p.params[t[i]] = +t[i + 1]; dirty = true; } if (dirty) regen(p); }
   else if (c === 'export') { const p = S.plants.find(x => x.id === S.sel); if (p) exportPlant(p, t[1] || 'glb'); }
   else if (c === 'clear') { while (S.plants.length) { S.sel = S.plants[0].id; deleteSel(); } }
   else if (c === 'set') { const p = S.plants.find(x => x.id === S.sel); if (p && t[1] in p.params) { p.params[t[1]] = +t[2]; regen(p); persist(); } }
-  else toast('unknown: ' + c);
+  else if (c === 'list') toast(CATALOGUE.map(x => x.variant).join(' · '));
+  else toast('unknown: ' + c + ' — try: ' + CATALOGUE.slice(0, 5).map(x => x.variant).join(', ') + '…');
 });
 let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
 
+/* ───────── construct catalogue (same widget as the sketcher: rail → tiles → options slide) ───────── */
+const FAMILY_BLURB = { palm: 'Arecaceae · tropical & subtropical', banana: 'Musaceae / Zingiberales · tropical', fern: 'Polypodiopsida · tropical to temperate' };
+const prevRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); prevRenderer.setSize(176, 176, false); prevRenderer.setPixelRatio(1); prevRenderer.outputColorSpace = THREE.SRGBColorSpace;
+const prevScene = new THREE.Scene(); prevScene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3a3326, 1.2)); const pl = new THREE.DirectionalLight(0xfff1dc, 2.2); pl.position.set(3, 6, 4); prevScene.add(pl);
+const prevCam = new THREE.PerspectiveCamera(30, 1, .05, 200);
+const prevCache = new Map();
+/** render a thumbnail for a catalogue entry onto a 2-D canvas (cached by id+seed) */
+function thumb(entry, seed, target, size = 88) {
+  const key = entry.id + ':' + seed + ':' + size; const ctx = target.getContext('2d'); target.width = target.height = size;
+  if (prevCache.has(key)) { ctx.drawImage(prevCache.get(key), 0, 0); return; }
+  const r = generatePlant(entry.species, randomParams(entry.species, seed, entry.variant));
+  const mesh = new THREE.Mesh(r.geometry, mats.flat); prevScene.add(mesh);
+  const bb = r.geometry.boundingBox, c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3()); const d = Math.max(sz.x, sz.y, sz.z) / (2 * Math.tan(prevCam.fov * Math.PI / 360)) * 1.15;
+  prevCam.position.copy(c).add(new THREE.Vector3(.7, .35, .65).normalize().multiplyScalar(d)); prevCam.lookAt(c); prevRenderer.setSize(size, size, false); prevRenderer.render(prevScene, prevCam);
+  prevScene.remove(mesh); r.geometry.dispose();
+  const snap = document.createElement('canvas'); snap.width = snap.height = size; snap.getContext('2d').drawImage(prevRenderer.domElement, 0, 0, size, size);
+  prevCache.set(key, snap); ctx.drawImage(snap, 0, 0);
+}
+const catState = { fam: 'palm', entry: null, seed: '', count: 1, over: {} };
+function buildCat() {
+  const rail = $('#catRail'), grid = $('#catGrid');
+  const fams = Object.keys(SPECIES);
+  rail.innerHTML = fams.map(f => `<div class="rail-item ${f === catState.fam ? 'on' : ''}" data-f="${f}" style="--acc:${SPECIES[f].accent}">${ICON[f]}${SPECIES[f].label}s<span class="n">${Object.keys(SPECIES[f].variants).length}</span></div>`).join('') + `<div class="rail-item soon">Shrubs<span class="n">soon</span></div><div class="rail-item soon">Grasses<span class="n">soon</span></div>`;
+  const show = (f) => {
+    catState.fam = f; rail.querySelectorAll('.rail-item').forEach(x => x.classList.toggle('on', x.dataset.f === f));
+    const list = CATALOGUE.filter(c => c.species === f);
+    grid.innerHTML = list.map((c, i) => `<div class="tile" data-id="${c.id}" title="${c.latin}"><span class="t-key">${i + 1}</span><div class="t-prev"><canvas></canvas></div><span class="t-lbl">${c.label}</span><span class="t-lat">${c.latin}</span></div>`).join('');
+    grid.querySelectorAll('.tile').forEach((tl, i) => {
+      const c = list[i]; requestAnimationFrame(() => thumb(c, 3, tl.querySelector('canvas'), 88));
+      tl.onclick = () => openOptions(c);
+      tl.ondblclick = () => { catState.entry = c; setCurrent(c.species, c.variant); addPlant(c.species, parseInt(catState.seed), true, c.variant); toggleCat(false); };
+    });
+    $('#catFoot').innerHTML = `<span>${FAMILY_BLURB[f]}</span><span style="flex:1"></span><span>click a tile for options · <kbd>dbl-click</kbd> adds straight to the Outliner</span>`;
+  };
+  rail.querySelectorAll('.rail-item[data-f]').forEach(r => r.onclick = () => show(r.dataset.f));
+  show(catState.fam);
+  $('#catHead').innerHTML = `<span class="ttl"><span class="dot"></span>Construct</span><span class="stchip" id="catCur" style="--acc:${SPECIES[S.species].accent}"><span class="kd"></span><b>${variantOf(S.species, S.variant).label}</b></span><span class="sp"></span><button class="hbtn" id="catClose" title="close (Esc)"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+  $('#catClose').onclick = () => toggleCat(false);
+  const head = $('#catHead'), cat = $('#cat'); head.onpointerdown = e => { if (e.target.closest('button,.stchip')) return; const r = cat.getBoundingClientRect(); const dx = e.clientX - r.left, dy = e.clientY - r.top; head.setPointerCapture(e.pointerId); head.onpointermove = ev => { cat.style.left = (ev.clientX - dx) + 'px'; cat.style.top = (ev.clientY - dy) + 'px'; }; head.onpointerup = () => head.onpointermove = null; };
+}
+function openOptions(c) {
+  catState.entry = c; catState.over = {}; const cat = $('#cat'); cat.classList.add('opts');
+  const V = variantOf(c.species, c.variant); const d = SPECIES[c.species];
+  $('#optHead').innerHTML = `<button class="back" id="optBack"><svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button><div class="h-ic" style="--acc:${d.accent}">${ICON[c.species]}</div><div class="h-txt"><span class="n">${c.label}</span><span class="m">${c.latin} · ${V.common}</span></div>`;
+  $('#optBack').onclick = () => cat.classList.remove('opts');
+  const seed0 = Number.isFinite(parseInt(catState.seed)) ? parseInt(catState.seed) : 3;
+  const P = randomParams(c.species, seed0, c.variant);
+  const keyParams = d.params.filter(p => p.key !== 'hue' && p.key !== 'detail' && (p.key !== 'trunk' || (V.over || {}).trunk)).slice(0, 6);
+  $('#optBody').innerHTML = `<div class="opt-prev"><canvas id="optPrev"></canvas></div>
+    <div class="opt-row"><span>seed</span><input id="optSeed" value="${catState.seed}" placeholder="auto"></div>
+    <div class="opt-row"><span>count</span><input id="optCount" value="${catState.count}"></div>
+    ${keyParams.map(p => `<div class="opt-row"><span>${p.label}</span><input data-k="${p.key}" value="${fmt(P[p.key], p)}" title="${p.min}–${p.max}${p.unit || ''}"></div>`).join('')}
+    <div class="opt-row" style="color:var(--t3);font-size:11px;border-top:0">values are randomised per seed within this plant's own range — edit to pin one. Everything stays live-editable in the Inspector.</div>`;
+  const prev = $('#optPrev'); const drawPrev = () => { const sd = parseInt($('#optSeed').value); thumb(c, Number.isFinite(sd) ? sd : 3, prev, 300); };
+  drawPrev();
+  $('#optSeed').oninput = e => { catState.seed = e.target.value; drawPrev(); const sd = parseInt(e.target.value); const P2 = randomParams(c.species, Number.isFinite(sd) ? sd : 3, c.variant); $('#optBody').querySelectorAll('input[data-k]').forEach(i => { if (!(i.dataset.k in catState.over)) i.value = fmt(P2[i.dataset.k], d.params.find(p => p.key === i.dataset.k)); }); };
+  $('#optCount').oninput = e => catState.count = Math.max(1, Math.min(12, parseInt(e.target.value) || 1));
+  $('#optBody').querySelectorAll('input[data-k]').forEach(i => i.onchange = () => { const v = parseFloat(i.value); if (Number.isFinite(v)) catState.over[i.dataset.k] = v; else delete catState.over[i.dataset.k]; });
+  $('#optFoot').innerHTML = `<span class="steps"><i class="on"></i><i class="on"></i>${c.label}</span><button class="abtn" id="optRnd">random seed</button><button class="abtn primary" id="optAdd">Add to Outliner</button>`;
+  $('#optRnd').onclick = () => { $('#optSeed').value = Math.random() * 1e6 | 0; $('#optSeed').oninput({ target: $('#optSeed') }); };
+  $('#optAdd').onclick = () => {
+    setCurrent(c.species, c.variant); const base = parseInt($('#optSeed').value); const n = catState.count;
+    if (n > 1) { S.layout = 'lineup'; document.querySelectorAll('#layout button').forEach(b => b.classList.toggle('on', b.dataset.l === 'lineup')); }
+    for (let i = 0; i < n; i++) addPlant(c.species, Number.isFinite(base) ? base + i : undefined, false, c.variant, Object.keys(catState.over).length ? catState.over : null);
+    focusSel(); toggleCat(false); cat.classList.remove('opts');
+  };
+}
+function toggleCat(force, x, y) {
+  const c = $('#cat'); const show = force !== undefined ? force : !c.classList.contains('show');
+  c.classList.toggle('show', show);
+  if (show) { const vp = $('#viewport').getBoundingClientRect(); c.style.left = (x ? Math.min(x, innerWidth - 660) : vp.left + 40) + 'px'; c.style.top = (y ? Math.min(y, innerHeight - 490) : vp.top + 60) + 'px'; const cur = $('#catCur'); if (cur) { cur.style.setProperty('--acc', SPECIES[S.species].accent); cur.querySelector('b').textContent = variantOf(S.species, S.variant).label; } }
+}
+$('#catBtn').onclick = () => toggleCat();
+
 /* ───────── triad ───────── */
+
 const triad = $('#triad'); const tctx = triad.getContext('2d'); triad.width = triad.height = 152;
 function drawTriad() {
   tctx.clearRect(0, 0, 152, 152); const q = camera.quaternion.clone().invert(); const ax = [['#ff6b6b', 'X', new THREE.Vector3(1, 0, 0)], ['#6fe38a', 'Y', new THREE.Vector3(0, 1, 0)], ['#5db3ff', 'Z', new THREE.Vector3(0, 0, 1)]];
@@ -283,8 +372,10 @@ requestAnimationFrame(tick);
 /* ───────── boot ───────── */
 (function boot() {
   let doc = null; try { doc = JSON.parse(localStorage.getItem('flora.doc') || 'null'); } catch { }
-  if (doc && doc.plants?.length) { S.species = doc.species || 'palm'; for (const d of doc.plants) { const p = makePlant(d.species, d.params, { name: d.name, hidden: d.hidden, colors: d.colors }); S.plants.push(p); } S.sel = S.plants[0].id; document.querySelectorAll('.sp').forEach(x => x.classList.toggle('on', x.dataset.sp === S.species)); layout(); refresh(); focusSel(); }
-  else { addPlant('palm', 1337); }
-  if (new URLSearchParams(location.search).has('demo')) { S.layout = 'lineup'; document.querySelectorAll('#layout button').forEach(b => b.classList.toggle('on', b.dataset.l === 'lineup')); addPlant('banana', 21, false); addPlant('fern', 8, false); focusSel(); }
+  if (doc && doc.plants?.length) { S.species = doc.species || 'palm'; S.variant = doc.variant || 'coconut'; for (const d of doc.plants) { const p = makePlant(d.species, d.params, { name: d.name, hidden: d.hidden, colors: d.colors }); S.plants.push(p); } S.sel = S.plants[0].id; document.querySelectorAll('.sp').forEach(x => x.classList.toggle('on', x.dataset.sp === S.species)); layout(); refresh(); focusSel(); }
+  else { addPlant('palm', 1337, true, 'coconut'); }
+  setCurrent(S.species, S.variant); buildCat();
+  if (new URLSearchParams(location.search).has('demo')) { S.layout = 'lineup'; document.querySelectorAll('#layout button').forEach(b => b.classList.toggle('on', b.dataset.l === 'lineup')); addPlant('banana', 21, false, 'cavendish'); addPlant('fern', 8, false, 'wood'); focusSel(); }
+  if (new URLSearchParams(location.search).has('all')) { S.layout = 'lineup'; document.querySelectorAll('#layout button').forEach(b => b.classList.toggle('on', b.dataset.l === 'lineup')); for (const c of CATALOGUE) addPlant(c.species, 3, false, c.variant); focusSel(); }
 })();
 window.flora = { S, addPlant, generatePlant, SPECIES };

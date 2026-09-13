@@ -5,7 +5,23 @@ UI as the SolidArc sketcher (`ParametricSketcher/Panel` — CSS tokens, panels, 
 `trk-bar` sliders and the command line are reused verbatim).
 
 Run: `python3 -m http.server 8080` in this folder → http://localhost:8080/ (`?demo` adds a banana and a
-fern next to the palm). No build step; three.js is vendored under `vendor/`.
+fern next to the palm, `?all` lines up the whole catalogue). No build step; three.js is vendored under `vendor/`.
+
+## Construct catalogue → Outliner
+
+`Tab`, right-click in the viewport, the **Construct** pill or the current-plant chip opens the same
+catalogue window as the sketcher (rail of families → tiles with live thumbnails → options slide).
+Click a tile for options (seed, count, key dimensions, preview) and **Add to Outliner**; double-click
+a tile to add it straight away. Command line also works: `date 42`, `heliconia`, `tree`, `list`.
+
+| Family | Plants (17) |
+|---|---|
+| **Palms** (Arecaceae, tropical/subtropical) | Coconut, Royal, Date (boots + date strands), Mexican fan (pleated fans, dead skirt), Areca clump (5 stems from one basal mound) |
+| **Bananas** (Musaceae / Zingiberales, tropical) | Cavendish banana, Plantain, Red banana, Ensete (red Abyssinian), Heliconia (lobster-claw), Traveller's palm (fan-planar) |
+| **Ferns** (tropical → temperate) | Wood fern, Boston/sword fern, Bird's-nest, Tree fern (trunked), Maidenhair, Staghorn |
+
+Every plant is `family + variant`: the variant sets its own parameter ranges, palette and growth rules;
+the seed randomises within them. All are still one merged mesh (verified per variant × 20 seeds).
 
 ## What comes out
 
@@ -35,8 +51,8 @@ Every generated plant:
 | `plant.js` | Generator. Pure geometry, no DOM (runs in Node). `MeshBuilder` (tube / face-extrusion / edge-strip), the three species, parameter schemas, `connectedComponents`. |
 | `app.js` | Panel wiring: WebGL viewport (flat / smooth / wire / parts shading, line-up, wind preview), outliner tree, inspector with live sliders + colour swatches, `.glb / .obj / .json` export, command line (`palm 42`, `fern`, `set height 1.2`, `export obj`, `clear`). |
 | `index.html` | SolidArc UI shell. |
-| `Verification/plant_smoke.mjs` | `node Verification/plant_smoke.mjs` — 3 species × 40 seeds: single connected mesh, finite positions, valid indices, height range, colour attribute present, no UVs, determinism, uniqueness. |
-| `Verification/render.mjs` | `node Verification/render.mjs palm 3 out.png [top]` — CPU rasteriser used to compare silhouettes against reference photos without a GPU. |
+| `Verification/plant_smoke.mjs` | `node Verification/plant_smoke.mjs` — 17 plants × 20 seeds: single connected mesh, finite positions, valid indices, height range, colour attribute present, no UVs, determinism, uniqueness. |
+| `Verification/render.mjs` | `node Verification/render.mjs palm.date 3 out.png [top]` — CPU rasteriser used to compare silhouettes against reference photos without a GPU. |
 
 ## Notes for the game pipeline
 

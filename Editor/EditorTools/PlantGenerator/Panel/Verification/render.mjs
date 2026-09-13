@@ -3,8 +3,9 @@
 import { generatePlant, randomParams } from '../plant.js';
 import { writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-const [sp = 'palm', seedS = '1', out = `/tmp/${sp}_${seedS}.png`, view = 'side'] = process.argv.slice(2);
-const r = generatePlant(sp, randomParams(sp, +seedS));
+const [id = 'palm.coconut', seedS = '1', out = `/tmp/${id}_${seedS}.png`, view = 'side'] = process.argv.slice(2);
+const [sp, variant] = id.split('.');
+const r = generatePlant(sp, randomParams(sp, +seedS, variant));
 const g = r.geometry, pos = g.attributes.position.array, col = g.attributes.color.array, nor = g.attributes.normal.array, idx = g.index.array;
 const W = 900, H = 900; const img = new Uint8Array(W * H * 3).fill(0); const z = new Float32Array(W * H).fill(Infinity);
 for (let i = 0; i < img.length; i += 3) { img[i] = 18; img[i + 1] = 19; img[i + 2] = 22; }
