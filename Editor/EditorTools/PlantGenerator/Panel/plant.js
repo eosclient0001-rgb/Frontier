@@ -1194,25 +1194,82 @@ function genVeg(P, rnd, mb, V = VEG_VARIANTS.tomato) {
       }
     }
   } else if (habit === 'head') {
-    // cabbage / lettuce: short thick core, tight head, wrapper leaves opening outward
+    /* cabbage / lettuce — built the way the plant grows: a short core, then concentric LAYERS of leaves.
+       Inner layers hug a sphere (the head), each layer sits a little further out and its tips peel back more,
+       the outermost layers lie open as large ruffled ground leaves. Every leaf has a raised pale midrib, lateral
+       veins and crinkled margins. Everything roots on the core / inner head so it stays a single shell. */
     const f = stemFrom(0, 1); if (!f) return { latin: V.latin, common: V.common };
-    mb.part('stem'); const headR = P.leafLength * .55 * P.fruitScale;
-    const core = mb.tube([{ p: f.center.clone().addScaledVector(UP, .015), r: P.stemRadius }, { p: f.center.clone().addScaledVector(UP, .03), r: P.stemRadius * 1.1 }, { p: f.center.clone().addScaledVector(UP, .045), r: P.stemRadius * 1.15 }, { p: f.center.clone().addScaledVector(UP, .055), r: P.stemRadius * .8 }], { sides: 12, start: { ring: f.ring, center: f.center }, color: hex(C.stem) });
+    const loose = !!V.loose; const headR = P.leafLength * .62 * P.fruitScale;
+    const base = hex(C.fruit), outerCol = hex(C.leaf), rib = hex(C.vein || '#e8f0d0');
+    mb.part('stem');
+    const core = mb.tube([{ p: f.center.clone().addScaledVector(UP, .012), r: P.stemRadius }, { p: f.center.clone().addScaledVector(UP, .025), r: P.stemRadius * 1.15 }, { p: f.center.clone().addScaledVector(UP, .04), r: P.stemRadius * 1.2 }, { p: f.center.clone().addScaledVector(UP, .05), r: P.stemRadius * .9 }], { sides: 12, start: { ring: f.ring, center: f.center }, color: hex(C.stem) });
     mb.part('fruit');
     const f2 = { ring: core.rings[3], center: core.frames[3].p, normal: UP.clone() };
-    const head = fruitAt(mb, f2, UP.clone(), headR * (V.loose ? 1.3 : 1.7), headR * 1.05, PROF.cabbage, Math.round(FS * 1.2), hex(C.fruit), { ribs: 7, ribAmp: .05, colorAt: (j) => shade(hex(C.fruit), 0, 1, .9 + .015 * j) });
-    // head-hugging wrapper leaves: strips that follow the head's sphere (lat/long patch slightly outside the surface), rooted on the head's lowest band
-    mb.part('leaf'); const nW = Math.round(lerp(8, 12, det)); const hc = f2.center.clone().addScaledVector(UP, headR * .85); const HR = headR * 1.02;
-    for (let k = 0; k < nW; k++) { let hf; try { hf = head.face(k % 2, Math.round(k * head.sides / nW)); } catch { continue; }
-      const az0 = Math.atan2(hf.center.z - hc.z, hf.center.x - hc.x); const wid = (1.6 - .3 * (k % 2)) * Math.PI / nW * 2.2; const top = lerp(.55, V.headTop || 1.15, ((k * 7) % nW) / nW); const off = (V.loose ? 1.08 : 1) + (V.loose ? .12 : .05) * (k % 3);
-      const rows = [[hf.ring[0], hf.ring[1]]]; const nRw = 8;
-      for (let q = 1; q <= nRw; q++) { const v = q / nRw; const el = lerp(-.75, top, v); const row = []; const across = q === nRw ? 1 : 5; const hw = wid * Math.sin(Math.PI * Math.pow(v, .7)) * .5;
-        for (let x = 0; x < across; x++) { const t = across === 1 ? 0 : (x / (across - 1)) * 2 - 1; const az = az0 + t * hw; const rr = HR * off * (1 + .06 * (1 - t * t) + .03 * Math.sin(q * 2.1 + t * 3)); row.push(mb.v(hc.clone().add(V3(Math.cos(el) * Math.cos(az) * rr, Math.sin(el) * rr, Math.cos(el) * Math.sin(az) * rr)), x === 2 ? colVein() : shade(hex(C.unripe || C.leaf), 0, 1, rnd.range(.95, 1.05)))); }
-        rows.push(row); }
-      mb.strip(rows); }
-    // outer rosette leaves from core
-    const N = Math.round(P.leaves);
-    for (let q = 0; q < N; q++) { const jj = 2 - (q % 3); const ii = Math.round(q * GOLD * 12) % 12; leafOn(core, jj, ii, P.leafLength * rnd.range(1.1, 1.4) * P.fruitScale, P.leafLength * P.leafWidth * 1.2 * P.fruitScale, colLeaf(), { shape: 'obovate', droop: lerp(.55, .25, q / N), cup: .12, up: lerp(1.3, .35, q / N), petiole: .12, wave: .35, serr: .3 }); }
+    const hc = f2.center.clone().addScaledVector(UP, headR * .92);                       // head centre
+    const inner = fruitAt(mb, f2, UP.clone(), headR * 1.85, headR * .95, PROF.cabbage, 24, base, { colorAt: (j) => shade(base, 0, .9, .82 + .02 * j) });
+    /* one leaf as a spherical patch around hc. az0 = azimuth, L = layer index (0 inner … nL-1 outer) */
+    const nL = 4, perL = Math.round(lerp(8, 11, det));
+    const leafPatch = (root, az0, L, k) => {
+      const u = L / (nL - 1);                                               // 0 inner → 1 outer
+      const off = 1 + (loose ? .08 : .035) * L + (loose ? .05 : .015) * (k % 2); // layer spacing
+      const top = lerp(loose ? 1.3 : 1.6, loose ? .55 : 1.1, u) + .08 * (k % 3);           // how far over the top the leaf reaches
+      const peel = lerp(0, loose ? 1.1 : .7, u * u * u);                       // tip curls outward
+      const hw0 = Math.PI / perL * (loose ? 2.3 : 2.1) * (1 + .3 * u);      // angular half-width (overlap)
+      const crin = headR * (loose ? .07 : .02) * (.3 + u);                 // crinkle amplitude
+      const col = shade(u < .35 ? base : outerCol, 0, 1, rnd.range(.94, 1.06) * (u < .35 ? lerp(1.15, 1, u / .35) : 1));
+      const rows = [[root.ring[0], root.ring[1]]]; const nRw = 9, across = 7;
+      for (let q = 1; q <= nRw; q++) {
+        const v = q / nRw; const el = lerp(-.8, top, v); const row = [];
+        const shapeW = (loose ? Math.pow(Math.sin(Math.PI * Math.pow(v, .6)), .6) : Math.min(1, 1.6 * Math.sin(Math.PI * Math.pow(v, .5)) + .15)) * (q === nRw ? (loose ? .35 : .6) : 1);
+        for (let x = 0; x < across; x++) {
+          const t = (x / (across - 1)) * 2 - 1; const az = az0 + t * hw0 * shapeW * (1 + .08 * Math.sin(q * 3.1 + k));
+          let rr = headR * off * (1 + .05 * (1 - t * t));
+          rr += headR * peel * Math.max(0, v - .7) ** 2 * 6;                                                   // peel-back
+          rr += crin * t * t * Math.sin(q * 2.9 + t * 6.3 + k * 1.7) + crin * .35 * Math.sin(q * 5.3 + t * 2 + k);   // crinkle
+          if (Math.abs(t) < .01) rr += headR * .02;                                                             // midrib ridge
+          const ce = Math.cos(el), p = hc.clone().add(V3(ce * Math.cos(az) * rr, Math.sin(el) * rr, ce * Math.sin(az) * rr));
+          const isRib = Math.abs(t) < .01, isVein = Math.abs(Math.abs(t) - .667) < .01 && q % 2 === 0;
+          row.push(mb.v(p, isRib ? rib : isVein ? shade(col, 0, .8, 1.15) : col));
+        }
+        rows.push(row);
+      }
+      mb.strip(rows);
+    };
+    mb.part('leaf');
+    const pkH = facePicker(24);
+    for (let L = 0; L < nL; L++) for (let k = 0; k < perL; k++) {
+      const band = L; const slot = pkH(band, Math.round((k + L * .5) * 24 / perL) % 24); if (slot == null) continue;
+      let hf; try { hf = inner.face(band, slot); } catch { continue; }
+      leafPatch(hf, Math.atan2(hf.center.z - hc.z, hf.center.x - hc.x), L, k + L * perL);
+    }
+    /* ground rosette: big open leaves with a thick pale midrib, ruffled margins, lying nearly flat */
+    const N = Math.round(P.leaves * 1.2); const pkC = facePicker(12);
+    for (let q = 0; q < N; q++) {
+      const band = 2 - (q % 3); const slot = pkC(band, Math.round(q * GOLD * 12) % 12); if (slot == null) continue;
+      let cf; try { cf = core.face(band, slot); } catch { continue; }
+      const d0 = cf.normal.clone().addScaledVector(UP, lerp(1.4, .5, q / N)).normalize(); const sd = d0.clone().cross(UP).normalize(); const nn = sd.clone().cross(d0).normalize();
+      const L = P.leafLength * P.fruitScale * rnd.range(1.25, 1.6), W = L * P.leafWidth * (loose ? 1.05 : 1);
+      // petiole/midrib stalk first
+      mb.part('stem'); const pp = arcPath(cf.center, d0, L * .18, .2, 2); const pet = mb.tube(pp.slice(1).map((p, i) => ({ p, r: P.stemRadius * .5 * (1 - .3 * i / 2) + .002 })), { sides: 6, start: { ring: cf.ring, center: cf.center }, color: rib });
+      const fr = pet.frames[pet.length - 1]; const fwd = fr.T.clone(); const side = fwd.clone().cross(UP).normalize(); const nrm = side.clone().cross(fwd).normalize();
+      mb.part('leaf'); const col = shade(outerCol, hue + rnd.range(-.01, .01), 1, rnd.range(.9, 1.05));
+      const rows = [pet.rings[pet.length - 1]]; const nRw = 10, across = 7; const droop = lerp(.7, .9, q / N) * (loose ? 1.1 : 1); const crin = W * (loose ? .11 : .07);
+      for (let r = 1; r <= nRw; r++) {
+        const v = r / nRw; const prof = Math.sin(Math.PI * Math.pow(v, .75)) * (r === nRw ? .3 : 1); const hw = W * .5 * prof * (1 + .06 * Math.sin(r * 2.7 + q));
+        const c = fr.p.clone().addScaledVector(fwd, L * v).addScaledVector(nrm, -droop * L * v * v * .8); const row = [];
+        for (let x = 0; x < across; x++) {
+          const t = (x / (across - 1)) * 2 - 1;
+          const cup = W * .18 * (1 - t * t) * (1 - v * .5);                         // gutter along the midrib
+          const ruf = crin * t * t * Math.sin(r * 3.3 + t * 5.1 + q * 2.1) * Math.min(1, v * 2) + crin * .3 * Math.sin(r * 6.1 + t * 3);
+          const ribUp = Math.abs(t) < .01 ? -W * .02 * (1 - v) : 0;                   // midrib stands proud underneath
+          const p = c.clone().addScaledVector(side, t * hw).addScaledVector(nrm, cup + ruf + ribUp); p.y = Math.max(p.y, .008 + .01 * Math.abs(t));
+          const isRib = Math.abs(t) < .01 && v < .85, isVein = Math.abs(Math.abs(t) - .667) < .01 && r % 2 === 0;
+          row.push(mb.v(p, isRib ? shade(rib, 0, 1, 1 - .25 * v) : isVein ? shade(col, 0, .8, 1.18) : col));
+        }
+        rows.push(row);
+      }
+      mb.strip(rows);
+    }
   } else if (habit === 'root') {
     // carrot / beet: root shoulder standing proud of the soil, tuft of leaves; fine roots at soil line
     mb.part('fruit'); const rr = V.fruitRad * P.fruitScale;
@@ -1243,8 +1300,8 @@ export const VEG_VARIANTS = {
   okra: { label: 'Okra', latin: 'Abelmoschus esculentus', common: 'Okra', habit: 'bush', leaf: { lobed: 5, span: 220, lobeW: .35, serr: .7 }, fruitKind: 'okra', fruitLen: .13, fruitRad: .015, fruitUp: 1.2, stalk: .015, fruitX: { ribs: 5, ribAmp: .14, sepals: 5, calyxLen: .9, calyxSpread: .6 }, flower: { col: '#f5e07a', petals: 5, petalLen: 1.1, petalW: .9, open: .45, stamens: 6, stamenSpread: .12, stamenLen: .6, anther: '#c8a030', filament: '#7a1f3a', pistilCol: '#7a1f3a', size: .035 }, palette: { stem: '#5f8a3a', leaf: '#3f8a34', vein: '#8a5a4a', fruit: '#5fa03a', calyx: '#5f8a3a' }, over: { height: [1, 1.8], stems: [1, 1], leaves: [8, 12], leafLength: [.18, .26], leafWidth: [.9, 1], fruit: [5, 9], stemRadius: [.012, .018] } },
   maize: { label: 'Maize', latin: 'Zea mays', common: 'Sweet corn', habit: 'stalk', tassel: true, fruitLen: .26, fruitRad: .045, palette: { stem: '#7fa84a', node: '#6a8a3a', leaf: '#4f9a3a', vein: '#a8c870', husk: '#8fb85a', fruit: '#e8c84a', flower: '#c8b46a', anther: '#e8d27a', silk: '#c8a860' }, over: { height: [1.8, 2.8], stems: [1, 3], leaves: [10, 14], leafLength: [.7, 1], leafWidth: [.1, .12], fruit: [1, 3], stemRadius: [.02, .028], spread: [.2, .5] } },
   sugarcane: { label: 'Sugar cane', latin: 'Saccharum officinarum', common: 'Sugar cane', habit: 'stalk', tassel: false, fruitLen: 0, fruitRad: 0, palette: { stem: '#b8a04a', node: '#8a6a2a', leaf: '#5fa03a', vein: '#d0d890' }, over: { height: [2.5, 4], stems: [4, 9], leaves: [12, 18], leafLength: [.9, 1.3], leafWidth: [.05, .06], fruit: [0, 0], stemRadius: [.018, .024], spread: [.4, .7] } },
-  cabbage: { label: 'Cabbage', latin: 'Brassica oleracea (Capitata)', common: 'Cabbage', habit: 'head', leaf: {}, headTop: 1.15, palette: { stem: '#9fbf8a', leaf: '#6f9a6a', vein: '#d0e0c0', fruit: '#a8c890', unripe: '#8fb47a' }, over: { height: [.3, .4], leaves: [10, 16], leafLength: [.22, .32], leafWidth: [.8, .9], fruitScale: [1.2, 1.8], stemRadius: [.02, .03] } },
-  lettuce: { label: 'Lettuce', latin: 'Lactuca sativa', common: 'Butterhead lettuce', habit: 'head', leaf: {}, headTop: 1.4, loose: true, palette: { stem: '#c8dca0', leaf: '#8fc850', vein: '#e0f0a0', fruit: '#c8e070', unripe: '#a8d860' }, over: { height: [.2, .3], leaves: [12, 18], leafLength: [.14, .2], leafWidth: [.9, 1], fruitScale: [.7, 1], stemRadius: [.015, .02] } },
+  cabbage: { label: 'Cabbage', latin: 'Brassica oleracea (Capitata)', common: 'Cabbage', habit: 'head', leaf: {}, palette: { stem: '#b8c8a0', leaf: '#5f8a62', vein: '#dfe9cc', fruit: '#b8cf9a', unripe: '#8fb47a' }, over: { height: [.3, .4], leaves: [8, 12], leafLength: [.22, .3], leafWidth: [.85, 1], fruitScale: [1.1, 1.5], stemRadius: [.02, .03] } },
+  lettuce: { label: 'Lettuce', latin: 'Lactuca sativa', common: 'Butterhead lettuce', habit: 'head', leaf: {}, loose: true, palette: { stem: '#d8e8b0', leaf: '#7fbf45', vein: '#eaf5c0', fruit: '#d0e880', unripe: '#a8d860' }, over: { height: [.2, .3], leaves: [10, 14], leafLength: [.14, .2], leafWidth: [1, 1.1], fruitScale: [.8, 1.1], stemRadius: [.015, .02] } },
   pumpkin: { label: 'Pumpkin', latin: 'Cucurbita maxima', common: 'Pumpkin vine', habit: 'vine', leaf: { lobed: 5, span: 240, lobeW: .45, lobeShape: 'ovate', up: 1.2, serr: .6 }, fruitKind: 'pumpkin', fruitLen: .2, fruitRad: .15, fruitUp: -.15, stalk: .04, fruitX: { ribs: 10, ribAmp: .07, calyx: false, pendant: true }, flower: { col: '#f5a41a', petals: 5, petalLen: 1.1, petalW: .8, petalShape: 'lance', open: .8, trumpet: true, stamens: 3, stamenSpread: .05, stamenLen: 1.2, anther: '#e8a020', filament: '#f0c060', pistil: false, size: .05, up: 1 }, palette: { stem: '#6f9a3a', leaf: '#3f8a34', vein: '#9ac070', fruit: '#e07a1a', unripe: '#7fa040', calyx: '#8aa050' }, over: { height: [2, 3.5], stems: [3, 5], leaves: [8, 12], leafLength: [.22, .3], leafWidth: [1, 1], fruit: [1, 3], stemRadius: [.012, .018], spread: [1, 1.6] } },
   cucumber: { label: 'Cucumber', latin: 'Cucumis sativus', common: 'Cucumber vine', habit: 'vine', leaf: { lobed: 3, span: 150, lobeW: .55, up: 1.2, serr: .6 }, fruitKind: 'cucumber', fruitLen: .2, fruitRad: .025, fruitUp: -.2, stalk: .025, fruitX: { ribs: 9, ribAmp: .06, bumps: true, bumpAmp: .05, sepals: 5, calyxLen: .8, nub: true, ground: true }, flower: { col: '#f5d442', petals: 5, petalLen: 1, petalW: .7, open: .7, trumpet: true, stamens: 3, stamenSpread: .05, stamenLen: 1, anther: '#e8a020', pistil: false, size: .03, up: 1 }, palette: { stem: '#6f9a3a', leaf: '#3f8a34', vein: '#9ac070', fruit: '#2f7a2a', unripe: '#5fa03a', calyx: '#6f9a3a' }, over: { height: [1.5, 2.5], stems: [2, 4], leaves: [10, 14], leafLength: [.14, .2], leafWidth: [1, 1], fruit: [3, 6], stemRadius: [.008, .012], spread: [.8, 1.2] } },
   sweetpotato: { label: 'Sweet potato', latin: 'Ipomoea batatas', common: 'Sweet potato vine', habit: 'vine', leaf: { lobed: 3, span: 120, lobeW: .6, up: 1.4, serr: 0 }, fruitKind: 'tuber', fruitLen: .16, fruitRad: .035, tubers: 3, flower: { col: '#d8a8e0', petals: 5, petalLen: .9, petalW: 1, open: .9, trumpet: true, stamens: 4, stamenSpread: .05, stamenLen: 1.1, anther: '#f7f0e0', filament: '#f7f0e0', pistil: false, size: .035, up: 1 }, palette: { stem: '#7a4a6a', leaf: '#4a8a3a', vein: '#8a5a7a', fruit: '#b04a3a', calyx: '#7a4a6a' }, over: { height: [1.2, 2], stems: [4, 7], leaves: [12, 18], leafLength: [.1, .14], leafWidth: [1, 1], fruit: [0, 0], stemRadius: [.006, .009], spread: [.7, 1.1] } },
