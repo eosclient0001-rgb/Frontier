@@ -183,6 +183,7 @@ export const PALETTE = {
   rosette: { core: '#5a4a38', leaf: '#3f8a36', leafYoung: '#62a64a', spine: '#4a3020', stalk: '#8a9a4a', fruitCol: '#c8a23a' },
   bamboo: { base: '#5a4a32', culm: '#8fa84a', node: '#6f8a34', branch: '#8f9a4a', leaf: '#4f9a3a' },
   broadleaf: { bark: '#7a6a58', twig: '#6a7a4a', leaf: '#2f7a2c', leafYoung: '#52a03f', flower: '#ffffff', flowerCenter: '#f5c842', fruit: '#6fa83a' },
+  veg: { soil: '#4a3a2a', stem: '#5f8a3a', node: '#4f7a2a', leaf: '#3f8a34', fruit: '#e03a2a', unripe: '#8fbf4a', flower: '#f5d442', husk: '#8fb85a' },
   aroid: { crown: '#4a3a2a', petiole: '#5f8f3c', petioleDark: '#3f5a2a', vein: '#9ec86a', leaf: '#2f7a2c', leafYoung: '#5fae3f', leafBack: '#3f8a34', flower: '#f0eee0', spadix: '#e8d27a' },
   fern: { crown: '#3d2f22', stipe: '#4d3a2b', rachis: '#5d7a33', frond: '#2f7d2c', frondYoung: '#5fae3f', crozier: '#7aa84c' },
 };
@@ -1019,6 +1020,146 @@ export const BROADLEAF_VARIANTS = {
   bougainvillea: { label: 'Bougainvillea', latin: 'Bougainvillea glabra', common: 'Paper flower', leafShape: 'ovate', leavesOnAll: true, kidsMin: 3, kidsMax: 4, lenRatio: .7, upright: .8, spread: 1.2, droopBr: .5, flower: true, petals: 3, petalLen: .04, flowersPer: 6, palette: { bark: '#6a5a4a', twig: '#7a6a3a', leaf: '#3f8a34', leafYoung: '#5fa348', flower: '#e0308a', flowerCenter: '#fff5d0' }, over: { height: [.6, 1.4], trunkRadius: [.03, .05], levels: [3, 3], branchLength: [.5, .9], leafLength: [.05, .08], leafWidth: [.6, .7], leafDensity: [8, 14], flower: [1, 1] } },
 };
 
+/* ───────────────────────── species: VEGETABLES (crop plants with their produce) ───────────────────────── */
+/** lathe a fruit from a parent face: profile [[t, r]] along direction d, length len, max radius rad */
+function fruitAt(mb, f, d, len, rad, prof, sides, col, extra = {}) {
+  const st = prof.map(([t, r]) => ({ p: f.center.clone().addScaledVector(d, len * t).addScaledVector(UP, (extra.sag || 0) * len * t * t), r: rad * r }));
+  return mb.tube(st, { sides, start: { ring: f.ring, center: f.center }, color: col });
+}
+const PROF = {
+  tomato: [[.08, .7], [.3, 1], [.62, 1], [.88, .75], [1, 0]],
+  chilli: [[.05, .8], [.2, 1], [.5, .85], [.8, .45], [.95, .15], [1, 0]],
+  pepper: [[.06, .85], [.25, 1], [.6, 1], [.85, .9], [.95, .7], [1, 0]],
+  aubergine: [[.08, .5], [.3, .65], [.6, .95], [.85, .9], [1, 0]],
+  okra: [[.05, .7], [.2, 1], [.6, .7], [.9, .3], [1, 0]],
+  cucumber: [[.05, .7], [.2, 1], [.8, 1], [.95, .7], [1, 0]],
+  pumpkin: [[.05, .7], [.2, 1], [.5, 1.05], [.8, 1], [.95, .7], [1, 0]],
+  cob: [[.05, .6], [.2, 1], [.75, 1], [.95, .6], [1, 0]],
+  carrotTop: [[.1, 1], [.4, .9], [1, 0]],
+  cabbage: [[.05, .6], [.25, .95], [.5, 1], [.75, .95], [.92, .7], [1, 0]],
+};
+
+function genVeg(P, rnd, mb, V = VEG_VARIANTS.tomato) {
+  const C = { ...PALETTE.veg, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06;
+  const colLeaf = () => shade(hex(C.leaf), hue + rnd.range(-.012, .012), 1, rnd.range(.9, 1.08));
+  const colFruit = () => shade(hex(C.fruit), rnd.range(-.01, .01), 1, rnd.range(.92, 1.08));
+  const colUnripe = () => shade(hex(C.unripe || C.fruit), 0, 1, rnd.range(.92, 1.08));
+  const sides = 6; const R = P.stemRadius;
+  const leafRows = Math.round(lerp(4, 7, P.detail));
+  const leafOn = (tube, j, i, L, W, col, opts = {}) => { let f; try { f = tube.face(j, i); } catch { return null; } const d = f.normal.clone().addScaledVector(UP, opts.up ?? .2).normalize(); const side = d.clone().cross(UP).normalize(); if (side.lengthSq() < .5) side.set(1, 0, 0); const nrm = side.clone().cross(d).normalize(); if (opts.compound) { pinnateLeaf(mb, f, d, side, nrm, L, W, col, opts); } else if (opts.lobed) palmateLeaf(mb, f, d, side, nrm, L, col, { lobes: opts.lobed, lobeSpan: opts.span || 200, lobeW: opts.lobeW || .3, lobeShape: opts.lobeShape || 'ovate', leafDroop: .2 }, P); else simpleLeaf(mb, f.ring[0], f.ring[1], f.center, d, side, nrm, L, W, col, { shape: opts.shape || 'ovate', rows: leafRows, across: 3, droop: opts.droop ?? .3, cup: opts.cup ?? .15, colMid: opts.colMid || col, twist: opts.twist || 0 }); return f; };
+  const fruitOn = (tube, j, i, kind, len, rad, col, extra = {}) => { let f; try { f = tube.face(j, i); } catch { return null; } const d = f.normal.clone().addScaledVector(UP, extra.up ?? -1.2).normalize(); if (extra.stalk) { const st = mb.tube([{ p: f.center.clone().addScaledVector(d, extra.stalk), r: R * .35 }], { sides: 4, start: { ring: f.ring, center: f.center }, color: hex(C.stem) }); f = { ring: st.rings[st.length - 1], center: st.frames[st.length - 1].p, normal: d }; }
+    return fruitAt(mb, f, d, len, rad, PROF[kind], extra.sides || 8, col, extra); };
+
+  /* ── base: a low soil mound every stem starts from (keeps clumps one shell) */
+  mb.part('crown');
+  const mound = mb.tube([[-.02, 0], [0, 1], [.015, .95], [.03, 0]].map(([y, r]) => ({ p: V3(0, y, 0), r: P.spread * .22 * r + .03 })), { sides: 12, color: hex(C.soil) });
+  const pickM = facePicker(12);
+  const stemFrom = (k, n) => { const slot = pickM(0, Math.round(k * 12 / n + 3)); return slot === null ? null : mound.face(0, slot); };
+
+  /* ── growth habits */
+  const habit = V.habit;
+  if (habit === 'bush' || habit === 'vine') {
+    // one or more upright (bush) / trailing (vine) stems with alternate leaves; fruit from stem faces
+    const nS = Math.round(P.stems);
+    for (let s = 0; s < nS; s++) {
+      const f = stemFrom(s, nS); if (!f) break;
+      const az = Math.atan2(f.normal.z, f.normal.x) + rnd.range(-.3, .3);
+      const el = habit === 'vine' ? rnd.range(5, 20) * D2R : lerp(85, 55, s / Math.max(1, nS)) * D2R;
+      const d = dirFrom(az, el); const H = P.height * rnd.range(.8, 1.1); const nSt = Math.max(8, Math.round(H / .08));
+      const pts = habit === 'vine' ? arcPath(f.center, d, H, .25, nSt) : arcPath(f.center, d, H, P.droop * .6, nSt, .1);
+      if (habit === 'vine') for (let k = 1; k < pts.length; k++) pts[k].y = Math.max(.03, .06 + .05 * Math.sin(k * .9));
+      const st = pts.slice(1).map((p, k) => ({ p, r: R * (1 - .5 * k / nSt) + .002 })); st.push({ p: st[st.length - 1].p.clone().addScaledVector(d, .02), r: 0 });
+      mb.part('stem');
+      const stem = mb.tube(st, { sides, start: { ring: f.ring, center: f.center }, color: hex(C.stem) });
+      mb.part('leaf');
+      const nl = Math.round(P.leaves * lerp(.6, 1, P.detail)); const L = P.leafLength;
+      for (let q = 0; q < nl; q++) {
+        const jj = 1 + Math.floor((q / nl) * (stem.length - 3)); const ii = (q * 2 + 1) % sides;
+        if (habit === 'vine') { let ff; try { ff = stem.face(jj, ii); } catch { continue; } const pd = ff.normal.clone().addScaledVector(UP, 2.5).normalize(); const pts2 = arcPath(ff.center, pd, L * 1.1, .8, 3); const pet = mb.tube(pts2.slice(1).map((p, k) => ({ p, r: R * .6 * (1 - .3 * k / 3) + .002 })), { sides: 4, start: { ring: ff.ring, center: ff.center }, color: hex(C.stem) }); const fr = pet.frames[pet.length - 1]; const flat = fr.T.clone().addScaledVector(UP, -fr.T.dot(UP)); if (flat.lengthSq() < 1e-4) flat.set(1, 0, 0); flat.normalize(); const fw = flat.clone().addScaledVector(UP, -.15).normalize(); const sd = fw.clone().cross(UP).normalize(); palmateLeaf(mb, { ring: pet.rings[pet.length - 1], center: fr.p }, fw, sd, sd.clone().cross(fw).normalize(), L * 1.2, colLeaf(), { lobes: V.leaf.lobed || 5, lobeSpan: (V.leaf.span || 240) + 60, lobeW: V.leaf.lobeW || .45, lobeShape: 'ovate', leafDroop: .3 }, P); }
+        else leafOn(stem, jj, ii, L * rnd.range(.8, 1.1), L * P.leafWidth, colLeaf(), { ...V.leaf, up: V.leaf.up ?? .25 });
+      }
+      mb.part('fruit');
+      const nf = Math.round(P.fruit); const ripe = P.ripeness;
+      for (let q = 0; q < nf; q++) {
+        const jj = habit === 'vine' ? 2 + Math.floor((q + .5) / nf * (stem.length - 5)) : Math.round(lerp(stem.length * .3, stem.length - 4, q / Math.max(1, nf - 1)));
+        const ii = (q * 3 + 2) % sides;
+        const col = q / Math.max(1, nf - 1) < ripe ? colFruit() : colUnripe();
+        fruitOn(stem, jj, ii, V.fruitKind, V.fruitLen * P.fruitScale * rnd.range(.85, 1.15), V.fruitRad * P.fruitScale * rnd.range(.85, 1.15), col, { up: V.fruitUp ?? -1.2, stalk: V.stalk, sides: V.fruitSides || 8, sag: habit === 'vine' ? 0 : 0 });
+        if (V.cluster) for (let c = 1; c < 3; c++) { const col2 = rnd() < ripe ? colFruit() : colUnripe(); fruitOn(stem, jj, (ii + c * 2) % sides, V.fruitKind, V.fruitLen * P.fruitScale * rnd.range(.8, 1), V.fruitRad * P.fruitScale * rnd.range(.8, 1), col2, { up: -1, stalk: V.stalk, sides: V.fruitSides || 8 }); }
+      }
+      if (V.flower) { mb.part('flower'); for (let q = 0; q < 3; q++) { let ff; try { ff = stem.face(stem.length - 4 - q, (q * 2) % sides); } catch { continue; } const d2 = ff.normal.clone().addScaledVector(UP, .5).normalize(); const sd = d2.clone().cross(UP).normalize(); for (let pI = 0; pI < 2; pI++) { const ring = ff.ring; simpleLeaf(mb, ring[pI * 2 % 4], ring[(pI * 2 + 1) % 4], ff.center, d2.clone().addScaledVector(sd, pI ? .5 : -.5).normalize(), sd, sd.clone().cross(d2).normalize(), .03, .022, hex(C.flower), { shape: 'obovate', rows: 3, droop: 0, cup: .2 }); } } }
+    }
+  } else if (habit === 'stalk') {
+    // maize / sugarcane: tall single culm(s), strap leaves clasping, cobs from nodes, tassel on top
+    const nS = Math.round(P.stems);
+    for (let s = 0; s < nS; s++) {
+      const f = stemFrom(s, nS); if (!f) break;
+      const H = P.height * rnd.range(.85, 1.1); const nodes = Math.max(6, Math.round(H / .25));
+      const leanD = f.normal.clone().addScaledVector(UP, -f.normal.dot(UP)).normalize();
+      const path = []; for (let k = 1; k <= nodes; k++) { const t = k / nodes; path.push({ p: f.center.clone().addScaledVector(UP, H * t).addScaledVector(leanD, P.droop * .15 * H * t * t), r: R * (1 - .45 * t) * (k % 2 ? 1 : 1.07) }); }
+      if (V.tassel) { path.push({ p: path[nodes - 1].p.clone().addScaledVector(UP, .04), r: R * .25 }); path.push({ p: path[nodes - 1].p.clone().addScaledVector(UP, .3), r: R * .12 }); path.push({ p: path[nodes - 1].p.clone().addScaledVector(UP, .34), r: 0 }); }
+      else path.push({ p: path[nodes - 1].p.clone().addScaledVector(UP, .05), r: 0 });
+      mb.part('stem');
+      const culm = mb.tube(path, { sides, start: { ring: f.ring, center: f.center }, colorAt: (j) => (j % 2 === 0 && j > 0 ? hex(C.node || C.stem) : hex(C.stem)) });
+      mb.part('leaf');
+      for (let j = 0; j < nodes - 1; j++) { const ii = (j % 2) * 3; leafOn(culm, j, ii, P.leafLength * rnd.range(.85, 1.1) * (j < 1 ? .6 : 1), P.leafLength * P.leafWidth, colLeaf(), { shape: 'strap', droop: .9, cup: .35, up: .9, twist: .2 }); }
+      if (V.tassel) { mb.part('flower'); const tj = culm.length - 3; for (let k = 0; k < 6; k++) { let ff; try { ff = culm.face(tj, k); } catch { continue; } const d = ff.normal.clone().addScaledVector(UP, 1.5).normalize(); mb.tube([{ p: ff.center.clone().addScaledVector(d, .1), r: .006 }, { p: ff.center.clone().addScaledVector(d, .3).addScaledVector(ff.normal, .1), r: .004 }, { p: ff.center.clone().addScaledVector(d, .4).addScaledVector(ff.normal, .18), r: 0 }], { sides: 3, start: { ring: ff.ring, center: ff.center }, color: hex(C.flower) }); } }
+      mb.part('fruit');
+      const nf = Math.round(P.fruit);
+      for (let q = 0; q < nf; q++) { const jj = Math.round(nodes * (.35 + .15 * q)); if (jj >= nodes - 2) break; const ii = (q * 3 + 4) % sides; let ff; try { ff = culm.face(jj, ii); } catch { continue; }
+        const d = ff.normal.clone().addScaledVector(UP, .9).normalize(); const cob = fruitAt(mb, ff, d, V.fruitLen * P.fruitScale, V.fruitRad * P.fruitScale, PROF.cob, 8, hex(C.husk));
+        // silk tuft
+        const tp = cob.frames[cob.length - 1].p; mb.tube([{ p: tp.clone().addScaledVector(d, .02), r: .012 }, { p: tp.clone().addScaledVector(d, .08).addScaledVector(UP, -.03), r: 0 }], { sides: 4, start: { ring: cob.rings[cob.length - 2], center: cob.frames[cob.length - 2].p }, color: hex(C.fruit) });
+      }
+    }
+  } else if (habit === 'head') {
+    // cabbage / lettuce: rosette of cupped leaves around a central head
+    const core = mb.tube([[0, .3], [.06, 1], [.12, 1.1], [.18, .9], [.22, 0]].map(([y, r]) => ({ p: V3(0, y + .05, 0), r: R * 2 * r })), { sides: 10, start: { ring: mound.rings[1], center: mound.frames[1].p }, color: hex(C.stem) });
+    mb.part('fruit');
+    const headR = P.fruitScale * .12;
+    const head = mb.tube(PROF.cabbage.map(([t, r]) => ({ p: V3(0, .27 + headR * 1.6 * t, 0), r: headR * r })), { sides: 12, start: { ring: core.rings[core.length - 2], center: core.frames[core.length - 2].p }, color: hex(C.fruit) });
+    // head wrapper leaves: cupped ovate blades from head faces, overlapping
+    mb.part('leaf');
+    for (let j = 0; j < head.length - 2; j++) for (let i = j % 2; i < 12; i += 3) { let ff; try { ff = head.face(j, i); } catch { continue; } const d = ff.normal.clone().addScaledVector(UP, .8 - j * .25).normalize(); const sd = d.clone().cross(UP).normalize(); simpleLeaf(mb, ff.ring[0], ff.ring[1], ff.center, d, sd, sd.clone().cross(d).normalize(), headR * 1.6, headR * 1.5, shade(hex(C.unripe || C.leaf), 0, 1, rnd.range(.95, 1.05)), { shape: 'obovate', rows: 4, across: 3, droop: .9, cup: -.4, cupDown: true }); }
+    // outer rosette leaves from core
+    const N = Math.round(P.leaves);
+    for (let q = 0; q < N; q++) { const jj = 1 + (q % 2); const ii = (q * 3) % 10; const f = leafOn(core, jj, ii, P.leafLength * rnd.range(.85, 1.1), P.leafLength * P.leafWidth, colLeaf(), { shape: 'obovate', droop: .45, cup: .45, up: lerp(.9, .1, q / N), colMid: shade(hex(C.leaf), 0, .5, 1.4) }); }
+  } else if (habit === 'root') {
+    // carrot / beet: root crown just visible above soil, tuft of pinnate/simple leaves
+    mb.part('fruit');
+    const top = mb.tube(PROF.carrotTop.map(([t, r]) => ({ p: V3(0, .03 + .05 * t, 0), r: V.fruitRad * P.fruitScale * r })), { sides: 8, start: { ring: mound.rings[1], center: mound.frames[1].p }, color: hex(C.fruit) });
+    const N = Math.round(P.leaves); mb.part('leaf');
+    const pk = facePicker(8); for (let q = 0; q < N; q++) { let ff; const jq = q % 3; const iq = pk(jq, Math.round(q * GOLD * 8) % 8); if (iq == null) continue; try { ff = top.face(jq, iq); } catch { continue; } const d = ff.normal.clone().addScaledVector(UP, lerp(2.5, .6, q / N)).normalize(); const pts = arcPath(ff.center, d, P.height * rnd.range(.8, 1.1), .5, 5); const pet = mb.tube(pts.slice(1).map((p, k) => ({ p, r: R * (1 - .4 * k / 5) + .002 })), { sides: 4, start: { ring: ff.ring, center: ff.center }, color: hex(C.stem) });
+      for (let j = (V.leaf.compound ? 1 : pet.length - 2); j < pet.length - 1; j++) for (const sg of (V.leaf.compound ? [1, -1] : [1])) { const e = pet.sideEdge(j, sg); const fr = pet.frames[j]; const dir = fr.B.clone().multiplyScalar(sg * .8).addScaledVector(fr.T, .6).normalize(); const sd = dir.clone().cross(UP).normalize(); if (V.leaf.compound) { for (let k = 0; k < 3; k++) { const dd = dir.clone().applyAxisAngle(fr.N, (k - 1) * .5).normalize(); simpleLeaf(mb, e.a, e.b, e.mid, dd, dd.clone().cross(UP).normalize(), UP.clone(), P.leafLength * .35, P.leafLength * .08, colLeaf(), { shape: 'lance', rows: 3, droop: .2 }); } } else { const dd = fr.T.clone(); const sd2 = dd.clone().cross(UP).normalize(); simpleLeaf(mb, e.a, e.b, e.mid, dd, sd2, sd2.clone().cross(dd).normalize(), P.leafLength * .7, P.leafLength * .45, colLeaf(), { shape: 'ovate', rows: 5, droop: .35, cup: .3, colMid: shade(hex(C.stem), 0, 1, 1.1) }); } }
+    }
+  }
+  return { latin: V.latin, common: V.common };
+}
+/** pinnate compound leaf (tomato/potato): rachis with pairs of ovate leaflets + terminal one */
+function pinnateLeaf(mb, f, d, side, nrm, L, W, col, opts) {
+  const n = 4; const pts = arcPath(f.center, d, L, .4, n);
+  const rach = mb.tube(pts.slice(1).map((p, k) => ({ p, r: .004 * (1 - .5 * k / n) + .001 })), { sides: 4, start: { ring: f.ring, center: f.center }, color: col });
+  for (let j = 0; j < rach.length - 1; j++) for (const sg of [1, -1]) { if (j === 0 && sg < 0) continue; const e = rach.sideEdge(j, sg); const fr = rach.frames[j]; const dir = fr.B.clone().multiplyScalar(sg).multiplyScalar(.85).addScaledVector(fr.T, .5).normalize(); const sd = dir.clone().cross(nrm).normalize(); simpleLeaf(mb, e.a, e.b, e.mid, dir, sd, nrm, L * .32 * (1 - .15 * j), L * .32 * .65, col, { shape: 'ovate', rows: 3, across: 3, droop: .25, cup: .1 }); }
+  const tip = rach.frames[rach.length - 1]; const e = rach.sideEdge(rach.length - 2, 1); simpleLeaf(mb, e.a, e.b, tip.p, tip.T, tip.B, nrm, L * .35, L * .22, col, { shape: 'ovate', rows: 3, droop: .3 });
+}
+export const VEG_VARIANTS = {
+  tomato: { label: 'Tomato', latin: 'Solanum lycopersicum', common: 'Tomato', habit: 'bush', leaf: { compound: true }, fruitKind: 'tomato', fruitLen: .06, fruitRad: .035, cluster: true, stalk: .02, flower: true, palette: { stem: '#5f8a3a', leaf: '#3f8a34', fruit: '#e03a2a', unripe: '#8fbf4a', flower: '#f5d442' }, over: { height: [.9, 1.6], stems: [1, 3], leaves: [8, 14], leafLength: [.18, .26], leafWidth: [.6, .7], fruit: [3, 6], stemRadius: [.008, .012] } },
+  chilli: { label: 'Chilli', latin: 'Capsicum annuum', common: 'Chilli pepper', habit: 'bush', leaf: { shape: 'ovate' }, fruitKind: 'chilli', fruitLen: .09, fruitRad: .012, stalk: .015, flower: true, palette: { stem: '#4f7a34', leaf: '#2f7a2c', fruit: '#d62828', unripe: '#4a8a2a', flower: '#f5f5f5' }, over: { height: [.5, .9], stems: [2, 4], leaves: [10, 18], leafLength: [.08, .12], leafWidth: [.5, .6], fruit: [5, 10], stemRadius: [.005, .008] } },
+  pepper: { label: 'Bell pepper', latin: 'Capsicum annuum (Grossum)', common: 'Bell pepper', habit: 'bush', leaf: { shape: 'ovate' }, fruitKind: 'pepper', fruitLen: .1, fruitRad: .045, stalk: .015, fruitSides: 7, palette: { stem: '#4f7a34', leaf: '#2f7a2c', fruit: '#e8b80f', unripe: '#3f8a2a' }, over: { height: [.5, .8], stems: [2, 3], leaves: [10, 16], leafLength: [.1, .14], leafWidth: [.55, .65], fruit: [3, 6], stemRadius: [.006, .01] } },
+  aubergine: { label: 'Aubergine', latin: 'Solanum melongena', common: 'Eggplant', habit: 'bush', leaf: { shape: 'ovate', cup: .2 }, fruitKind: 'aubergine', fruitLen: .18, fruitRad: .05, stalk: .02, palette: { stem: '#6a5a7a', leaf: '#4a7a3a', fruit: '#3a1f4a', unripe: '#5a3a6a', flower: '#b08ad8' }, over: { height: [.6, .9], stems: [1, 3], leaves: [8, 12], leafLength: [.15, .22], leafWidth: [.6, .7], fruit: [2, 4], stemRadius: [.008, .012] } },
+  okra: { label: 'Okra', latin: 'Abelmoschus esculentus', common: 'Okra', habit: 'bush', leaf: { lobed: 5, span: 220, lobeW: .35 }, fruitKind: 'okra', fruitLen: .12, fruitRad: .014, fruitUp: 1.2, stalk: .01, fruitSides: 5, flower: true, palette: { stem: '#5f8a3a', leaf: '#3f8a34', fruit: '#5fa03a', flower: '#f5e07a' }, over: { height: [1, 1.8], stems: [1, 1], leaves: [8, 12], leafLength: [.18, .26], leafWidth: [.9, 1], fruit: [5, 9], stemRadius: [.012, .018] } },
+  maize: { label: 'Maize', latin: 'Zea mays', common: 'Sweet corn', habit: 'stalk', tassel: true, fruitLen: .26, fruitRad: .045, palette: { stem: '#7fa84a', node: '#6a8a3a', leaf: '#4f9a3a', husk: '#8fb85a', fruit: '#e8c84a', flower: '#d8c26a' }, over: { height: [1.8, 2.8], stems: [1, 3], leaves: [10, 14], leafLength: [.7, 1], leafWidth: [.1, .12], fruit: [1, 3], stemRadius: [.02, .028], spread: [.2, .5] } },
+  sugarcane: { label: 'Sugar cane', latin: 'Saccharum officinarum', common: 'Sugar cane', habit: 'stalk', tassel: false, fruitLen: 0, fruitRad: 0, palette: { stem: '#b8a04a', node: '#8a6a2a', leaf: '#5fa03a' }, over: { height: [2.5, 4], stems: [4, 9], leaves: [12, 18], leafLength: [.9, 1.3], leafWidth: [.05, .06], fruit: [0, 0], stemRadius: [.018, .024], spread: [.4, .7] } },
+  cabbage: { label: 'Cabbage', latin: 'Brassica oleracea (Capitata)', common: 'Cabbage', habit: 'head', leaf: {}, palette: { stem: '#9fbf8a', leaf: '#6f9a6a', fruit: '#a8c890', unripe: '#8fb47a' }, over: { height: [.3, .4], leaves: [10, 16], leafLength: [.22, .32], leafWidth: [.8, .9], fruitScale: [1.2, 1.8], stemRadius: [.02, .03] } },
+  lettuce: { label: 'Lettuce', latin: 'Lactuca sativa', common: 'Butterhead lettuce', habit: 'head', leaf: {}, palette: { stem: '#c8dca0', leaf: '#8fc850', fruit: '#c8e070', unripe: '#a8d860' }, over: { height: [.2, .3], leaves: [12, 18], leafLength: [.14, .2], leafWidth: [.9, 1], fruitScale: [.7, 1], stemRadius: [.015, .02] } },
+  pumpkin: { label: 'Pumpkin', latin: 'Cucurbita maxima', common: 'Pumpkin vine', habit: 'vine', leaf: { lobed: 5, span: 240, lobeW: .45, lobeShape: 'ovate', up: 1.2 }, fruitKind: 'pumpkin', fruitLen: .24, fruitRad: .2, fruitUp: -.15, stalk: .03, fruitSides: 10, palette: { stem: '#6f9a3a', leaf: '#3f8a34', fruit: '#e07a1a', unripe: '#7fa040', flower: '#f5b41a' }, over: { height: [2, 3.5], stems: [3, 5], leaves: [8, 12], leafLength: [.22, .3], leafWidth: [1, 1], fruit: [1, 3], stemRadius: [.012, .018], spread: [1, 1.6] } },
+  cucumber: { label: 'Cucumber', latin: 'Cucumis sativus', common: 'Cucumber vine', habit: 'vine', leaf: { lobed: 3, span: 150, lobeW: .55, up: 1.2 }, fruitKind: 'cucumber', fruitLen: .2, fruitRad: .025, fruitUp: -.2, stalk: .02, flower: true, palette: { stem: '#6f9a3a', leaf: '#3f8a34', fruit: '#2f7a2a', unripe: '#5fa03a', flower: '#f5d442' }, over: { height: [1.5, 2.5], stems: [2, 4], leaves: [10, 14], leafLength: [.14, .2], leafWidth: [1, 1], fruit: [3, 6], stemRadius: [.008, .012], spread: [.8, 1.2] } },
+  sweetpotato: { label: 'Sweet potato', latin: 'Ipomoea batatas', common: 'Sweet potato vine', habit: 'vine', leaf: { lobed: 3, span: 120, lobeW: .6, up: 1.4 }, fruitKind: 'aubergine', fruitLen: 0, fruitRad: 0, palette: { stem: '#7a4a6a', leaf: '#4a8a3a', fruit: '#b04a3a' }, over: { height: [1.2, 2], stems: [4, 7], leaves: [12, 18], leafLength: [.1, .14], leafWidth: [1, 1], fruit: [0, 0], stemRadius: [.006, .009], spread: [.7, 1.1] } },
+  carrot: { label: 'Carrot', latin: 'Daucus carota', common: 'Carrot', habit: 'root', leaf: { compound: true }, fruitRad: .02, palette: { stem: '#5f9a3a', leaf: '#3f8a34', fruit: '#f07a1a' }, over: { height: [.25, .4], leaves: [6, 10], leafLength: [.25, .35], stemRadius: [.004, .006], spread: [.1, .15] } },
+  beetroot: { label: 'Beetroot', latin: 'Beta vulgaris', common: 'Beetroot', habit: 'root', leaf: {}, fruitRad: .045, palette: { stem: '#a02a4a', leaf: '#3a7a34', fruit: '#7a1f3a' }, over: { height: [.2, .3], leaves: [8, 12], leafLength: [.25, .32], stemRadius: [.005, .007], spread: [.12, .18] } },
+  cassava: { label: 'Cassava', latin: 'Manihot esculenta', common: 'Cassava', habit: 'bush', leaf: { lobed: 7, span: 260, lobeW: .18, lobeShape: 'lance', up: .1 }, fruitKind: 'okra', fruitLen: 0, fruitRad: 0, palette: { stem: '#8a7a5a', leaf: '#3f8a34', fruit: '#8a6a4a' }, over: { height: [1.5, 2.5], stems: [1, 3], leaves: [10, 16], leafLength: [.2, .3], leafWidth: [1, 1], fruit: [0, 0], stemRadius: [.015, .022], droop: [0, .2] } },
+};
+
 /* ───────────────────────── schema / api ───────────────────────── */
 export const SPECIES = {
   palm: {
@@ -1112,6 +1253,24 @@ export const SPECIES = {
       { key: 'detail', label: 'Detail', min: .3, max: 1, step: .05, rnd: [.6, .85] },
     ],
   },
+  veg: {
+    label: 'Vegetable', accent: '#ff3b30', gen: genVeg, variants: VEG_VARIANTS,
+    params: [
+      { key: 'height', label: 'Height / length', min: .15, max: 4, step: .05, unit: 'm', rnd: [.6, 1.2] },
+      { key: 'stems', label: 'Stems', min: 1, max: 9, step: 1, rnd: [1, 3] },
+      { key: 'spread', label: 'Spread', min: .1, max: 2, step: .05, unit: 'm', rnd: [.25, .5] },
+      { key: 'stemRadius', label: 'Stem radius', min: .003, max: .04, step: .001, unit: 'm', rnd: [.008, .012] },
+      { key: 'leaves', label: 'Leaves', min: 4, max: 24, step: 1, rnd: [8, 14] },
+      { key: 'leafLength', label: 'Leaf length', min: .05, max: 1.4, step: .01, unit: 'm', rnd: [.15, .25] },
+      { key: 'leafWidth', label: 'Width ratio', min: .05, max: 1, step: .05, rnd: [.5, .7] },
+      { key: 'fruit', label: 'Fruit count', min: 0, max: 12, step: 1, rnd: [3, 6] },
+      { key: 'fruitScale', label: 'Fruit size', min: .5, max: 2, step: .05, rnd: [.9, 1.2] },
+      { key: 'ripeness', label: 'Ripeness', min: 0, max: 1, step: .05, rnd: [.3, .9] },
+      { key: 'droop', label: 'Droop', min: 0, max: 1, step: .05, rnd: [.2, .6] },
+      { key: 'hue', label: 'Hue shift', min: -1, max: 1, step: .05, rnd: [-.4, .4] },
+      { key: 'detail', label: 'Detail', min: .3, max: 1, step: .05, rnd: [.6, .85] },
+    ],
+  },
   fern: {
     label: 'Fern', accent: '#4fd8e0', gen: genFern, variants: FERN_VARIANTS,
     params: [
@@ -1141,7 +1300,7 @@ export function randomParams(species, seed, variant) {
 }
 
 export function plantName(species, seed) {
-  const syll = { palm: ['Ko', 'Pa', 'Lau', 'Ni', 'Ma'], banana: ['Mu', 'Sa', 'Ke', 'La', 'Pi'], fern: ['Fi', 'Dry', 'Ath', 'Pol', 'Ne'], aroid: ['Ta', 'Alo', 'Mon', 'Phi', 'Ca'], rosette: ['Bro', 'Ana', 'Aga', 'Yu', 'Dra'], bamboo: ['Bam', 'Phy', 'Den', 'Tak', 'Chu'], broadleaf: ['Plu', 'Hib', 'Cro', 'Fic', 'Sch'] }[species];
+  const syll = { palm: ['Ko', 'Pa', 'Lau', 'Ni', 'Ma'], banana: ['Mu', 'Sa', 'Ke', 'La', 'Pi'], fern: ['Fi', 'Dry', 'Ath', 'Pol', 'Ne'], aroid: ['Ta', 'Alo', 'Mon', 'Phi', 'Ca'], rosette: ['Bro', 'Ana', 'Aga', 'Yu', 'Dra'], bamboo: ['Bam', 'Phy', 'Den', 'Tak', 'Chu'], broadleaf: ['Plu', 'Hib', 'Cro', 'Fic', 'Sch'], veg: ['Sol', 'Cap', 'Zea', 'Bra', 'Cuc'] }[species];
   const rnd = makeRng(seed ^ 0x9e37); return syll[rnd.int(0, syll.length - 1)] + ['ra', 'lo', 'ni', 'ka', 'su'][rnd.int(0, 4)] + '-' + (seed % 4096).toString(16).toUpperCase().padStart(3, '0');
 }
 

@@ -19,7 +19,7 @@ catalogue window as the sketcher (rail of families → tiles with live thumbnail
 Click a tile for options (seed, count, key dimensions, preview) and **Add to Outliner**; double-click
 a tile to add it straight away. Command line also works: `date 42`, `heliconia`, `tree`, `list`.
 
-| Family | Plants (52) |
+| Family | Plants (67) |
 |---|---|
 | **Palms** (Arecaceae, tropical/subtropical) | Coconut, Royal, Date (boots + date strands), Mexican fan, Bismarck (silver fan), Queen (drooping plumose), Sago (cycad rosette), Areca clump |
 | **Bananas** (Musaceae / Zingiberales, tropical) | Cavendish, Plantain, Red banana, Ensete, Heliconia, Bird of paradise (Strelitzia), Canna lily, Traveller's palm |
@@ -27,6 +27,7 @@ a tile to add it straight away. Command line also works: `date 42`, `heliconia`,
 | **Rosettes** | Bromeliad (Guzmania), Urn plant (Aechmea), Pineapple (with fruit + crown), Agave (century plant + flower stalk), Yucca, Dragon tree (Dracaena) |
 | **Bamboo** | Golden, Giant timber, Black, Buddha's belly, Hedge bamboo — clumps of noded culms with branch leaf-fans |
 | **Shrubs & trees** | Frangipani (flowers), Hibiscus (flowers), Croton, Ti plant, Umbrella tree (Schefflera), Papaya (fruit), Rubber fig, Bougainvillea |
+| **Vegetables** (crops with the produce on the plant) | Tomato (trusses), Chilli, Bell pepper, Aubergine, Okra, Maize (cobs + tassel), Sugarcane, Cabbage, Lettuce, Pumpkin vine, Cucumber vine, Sweet potato, Carrot, Beetroot, Cassava |
 | **Ferns** (tropical → temperate) | Wood, Boston, Bird's-nest, Tree fern, Maidenhair, Ostrich, Asparagus, Tassel, Staghorn |
 
 Every plant is `family + variant`: the variant sets its own parameter ranges, palette and growth rules;
@@ -60,7 +61,7 @@ Every generated plant:
 | `plant.js` | Generator. Pure geometry, no DOM (runs in Node). `MeshBuilder` (tube / face-extrusion / edge-strip), the three species, parameter schemas, `connectedComponents`. |
 | `app.js` | Panel wiring: WebGL viewport (flat / smooth / wire / parts shading, line-up, wind preview), outliner tree, inspector with live sliders + colour swatches, `.glb / .obj / .json` export, command line (`palm 42`, `fern`, `set height 1.2`, `export obj`, `clear`). |
 | `index.html` | SolidArc UI shell. |
-| `Verification/plant_smoke.mjs` | `node Verification/plant_smoke.mjs` — 52 plants × 20 seeds: single connected mesh, finite positions, valid indices, height range, colour attribute present, no UVs, determinism, uniqueness. |
+| `Verification/plant_smoke.mjs` | `node Verification/plant_smoke.mjs` — 67 plants × 20 seeds: single connected mesh, finite positions, valid indices, height range, colour attribute present, no UVs, determinism, uniqueness. |
 | `Verification/render.mjs` | `node Verification/render.mjs palm.date 3 out.png [top]` — CPU rasteriser used to compare silhouettes against reference photos without a GPU. |
 
 ## Notes for the game pipeline
