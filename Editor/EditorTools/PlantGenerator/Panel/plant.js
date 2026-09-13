@@ -176,6 +176,7 @@ const dirFrom = (az, el) => V3(Math.cos(el) * Math.cos(az), Math.sin(el), Math.c
 export const PALETTE = {
   palm: { trunk: '#8f8272', scar: '#776a5c', sheath: '#6f5b40', rachis: '#b6b64f', frond: '#3d7d2f', frondYoung: '#6fa93c', dead: '#8c6a3c', coconut: '#9cb34a', spear: '#b9c65b' },
   banana: { stem: '#aab86e', stemOld: '#8f8a5a', petiole: '#a5c355', midrib: '#d3d878', leaf: '#4f9c2c', leafYoung: '#7dc043', leafOld: '#7f9a3b', cigar: '#b7d36a', peduncle: '#6d8a3a', fruit: '#86b449', bud: '#7a2c4d' },
+  aroid: { crown: '#4a3a2a', petiole: '#5f8f3c', petioleDark: '#3f5a2a', vein: '#9ec86a', leaf: '#2f7a2c', leafYoung: '#5fae3f', leafBack: '#3f8a34', flower: '#f0eee0', spadix: '#e8d27a' },
   fern: { crown: '#3d2f22', stipe: '#4d3a2b', rachis: '#5d7a33', frond: '#2f7d2c', frondYoung: '#5fae3f', crozier: '#7aa84c' },
 };
 
@@ -539,22 +540,55 @@ function genFern(P, rnd, mb, V = FERN_VARIANTS.wood) {
         if (sgn < 0 && j === stipe) continue;            // alternate pinnae slightly
         const e = rach.sideEdge(j, sgn);
         const side = fr.B.clone().multiplyScalar(sgn);
-        const dir0 = side.clone().multiplyScalar(Math.cos(22 * D2R)).addScaledVector(fr.T, Math.sin(22 * D2R)).addScaledVector(fr.N, .18).normalize();
-        const acr = fr.T.clone();
-        const pw = pl * (V.pinnaW ?? .24);                              // pinna half-width at its widest
+        // frond lamina plane = (rachis tangent, side). Pinnae lie in it and sweep forward ~25°.
+        const sweep = (V.sweep ?? 25) * D2R;
+        const dir0 = side.clone().multiplyScalar(Math.cos(sweep)).addScaledVector(fr.T, Math.sin(sweep)).normalize();
+        const nrm = dir0.clone().cross(fr.T).normalize();          // lamina normal (for slight cupping)
+        if (nrm.dot(UP) < 0) nrm.negate();
+        const acr = fr.T.clone();                                   // "across" the pinna
+        const pinnaGap = rach.frames[j + 1].p.distanceTo(fr.p);    // spacing along rachis
+        const pw = Math.min(pl * (V.pinnaW ?? .24), pinnaGap * .95) * .5;  // half-width, never overlapping the neighbour
+        const droopP = P.arch * .3;
+        const at = (v) => e.mid.clone().addScaledVector(dir0, pl * v).addScaledVector(UP, -pl * v * v * droopP);
+        if (V.simple) {
+          // entire (undivided) pinna: a flat lanceolate blade — 3 verts across, tapered
+          const rows = [[e.a, e.b]]; const nR = 5;
+          for (let q = 1; q <= nR; q++) {
+            const v = q / nR; const w = pw * Math.sin(Math.PI * Math.pow(v, .8)) * 1.15 + .0005; const pt = at(v);
+            if (q === nR) rows.push([mb.v(pt, colF)]);
+            else rows.push([mb.v(pt.clone().addScaledVector(acr, -w), colF), mb.v(pt.clone().addScaledVector(nrm, w * .12), colF), mb.v(pt.clone().addScaledVector(acr, w), colF)]);
+          }
+          mb.strip(rows); continue;
+        }
+        // divided pinna: slender costa (midrib) strip with separate pinnule lobes on both sides
+        const nP = Math.max(4, Math.round(pinn * shape));
+        const costaW = pw * .12 + .0006;
         const rows = [[e.a, e.b]];
-        const nP = V.simple ? 2 : Math.max(4, Math.round(pinn * shape));
-        for (let q = 0; q < nP; q++) {
-          for (const [dv, wf] of (V.simple ? [[.15, .8], [.5, 1]] : [[.3, 1], [.8, .55]])) {
-            const v = (q + dv) / nP;
-            const taper = Math.pow(1 - v, .7) * (v < .12 ? lerp(.7, 1, v / .12) : 1);
-            const w = pw * wf * taper + .0008;
-            const pt = e.mid.clone().addScaledVector(dir0, pl * v).addScaledVector(UP, -pl * v * v * .35 * P.arch);
-            rows.push([mb.v(pt.clone().addScaledVector(acr, -w), colF), mb.v(pt.clone().addScaledVector(fr.N, w * .25), colF), mb.v(pt.clone().addScaledVector(acr, w), colF)]);
+        for (let q = 1; q <= nP; q++) { const v = q / nP; const pt = at(v); rows.push(q === nP ? [mb.v(pt, colRa)] : [mb.v(pt.clone().addScaledVector(acr, -costaW), colRa), mb.v(pt.clone().addScaledVector(acr, costaW), colRa)]); }
+        mb.strip(rows);
+        for (let q = 0; q < nP - 1; q++) {
+          const v0 = (q + .15) / nP, v1 = (q + .85) / nP;             // this pinnule's footprint along the costa
+          const taper = Math.pow(1 - (q + .5) / nP, .6);
+          const len = pw * 2 * taper * (V.pinnuleLen ?? 1);           // pinnule length (across)
+          if (len < .004) continue;
+          for (const sg of [1, -1]) {
+            const rowIdx = q + 1;                                      // costa row q+1 has [left,right]
+            const base = rows[rowIdx]; if (base.length < 2) continue;
+            const nb = rows[rowIdx + 1]; if (!nb || nb.length < 2) continue;
+            const rootA = sg > 0 ? base[1] : base[0], rootB = sg > 0 ? nb[1] : nb[0];
+            const p0 = mb.p(rootA), p1 = mb.p(rootB); const mid = p0.clone().add(p1).multiplyScalar(.5);
+            const out = acr.clone().multiplyScalar(sg).addScaledVector(dir0, .35).normalize();   // pinnules angle toward the pinna tip
+            const along = p1.clone().sub(p0).normalize();
+            const tip = mid.clone().addScaledVector(out, len).addScaledVector(nrm, len * .18);
+            const midP = mid.clone().addScaledVector(out, len * .5).addScaledVector(nrm, len * .1);
+            const hw = (p1.distanceTo(p0)) * .5 * (V.lobeW ?? .95);
+            // rounded lobe: root edge (shared with costa) → wide mid row → tip
+            const m0 = mb.v(midP.clone().addScaledVector(along, -hw), colF), m1 = mb.v(midP.clone().addScaledVector(along, hw), colF);
+            const t0 = mb.v(tip, colF);
+            mb.strip([[rootA, rootB], [m0, m1], [t0]]);
+            if (V.serrate) { const sp = midP.clone().addScaledVector(along, hw * 1.35).addScaledVector(out, len * .15); const sv = mb.v(sp, colF); mb.tri(m1, sv, t0); }
           }
         }
-        rows.push([mb.v(e.mid.clone().addScaledVector(dir0, pl).addScaledVector(UP, -pl * .35 * P.arch), colF)]);
-        mb.strip(rows);
       }
     }
   }
@@ -573,14 +607,149 @@ function genFern(P, rnd, mb, V = FERN_VARIANTS.wood) {
 }
 export const FERN_VARIANTS = {
   wood: { label: 'Wood fern', latin: 'Dryopteris filix-mas', common: 'Male fern' },
-  boston: { label: 'Boston fern', latin: 'Nephrolepis exaltata', common: 'Sword fern', simple: true, pinnaLen: .09, pinnaW: .5, palette: { frond: '#3f9a33', frondYoung: '#74c04a', rachis: '#8fb14a' }, over: { fronds: [14, 22], frondLength: [.6, 1.1], arch: [.6, 1.2], spread: [25, 60], pinnaPairs: [28, 34] } },
-  birdsnest: { label: "Bird's-nest fern", latin: 'Asplenium nidus', common: "Bird's-nest fern", simple: true, pinnaLen: .19, pinnaW: .9, palette: { frond: '#5fb040', frondYoung: '#8ed15c', rachis: '#2f2a24', stipe: '#2f2a24' }, over: { fronds: [9, 16], frondLength: [.6, 1.2], arch: [.15, .45], spread: [40, 70], pinnaPairs: [10, 14], pinnules: [5, 5], curl: [0, .2] } },
+  boston: { label: 'Boston fern', latin: 'Nephrolepis exaltata', common: 'Sword fern', simple: true, pinnaLen: .1, pinnaW: .9, sweep: 15, palette: { frond: '#3f9a33', frondYoung: '#74c04a', rachis: '#8fb14a' }, over: { fronds: [14, 22], frondLength: [.6, 1.1], arch: [.6, 1.2], spread: [25, 60], pinnaPairs: [28, 34] } },
+  birdsnest: { label: "Bird's-nest fern", latin: 'Asplenium nidus', common: "Bird's-nest fern", simple: true, pinnaLen: .19, pinnaW: 1.6, sweep: 60, palette: { frond: '#5fb040', frondYoung: '#8ed15c', rachis: '#2f2a24', stipe: '#2f2a24' }, over: { fronds: [9, 16], frondLength: [.6, 1.2], arch: [.15, .45], spread: [40, 70], pinnaPairs: [10, 14], pinnules: [5, 5], curl: [0, .2] } },
   tree: { label: 'Tree fern', latin: 'Cyathea cooperi', common: 'Australian tree fern', pinnaLen: .19, pinnaW: .26, palette: { crown: '#4a3a2a', stipe: '#5a4530', frond: '#3a8a30' }, over: { trunk: [1.5, 4], fronds: [10, 18], frondLength: [2, 3.2], arch: [.5, 1], spread: [20, 45], pinnaPairs: [22, 34] } },
-  maidenhair: { label: 'Maidenhair', latin: 'Adiantum raddianum', common: 'Maidenhair fern', pinnaLen: .3, pinnaW: .9, palette: { frond: '#69b84a', frondYoung: '#9ad86a', rachis: '#1d1a17', stipe: '#1d1a17' }, over: { fronds: [12, 22], frondLength: [.3, .55], arch: [.5, 1.1], spread: [30, 60], pinnaPairs: [8, 14], pinnules: [5, 8], detail: [.5, .7] } },
+  maidenhair: { label: 'Maidenhair', latin: 'Adiantum raddianum', common: 'Maidenhair fern', pinnaLen: .3, pinnaW: 1.2, lobeW: 1.2, pinnuleLen: .9, palette: { frond: '#69b84a', frondYoung: '#9ad86a', rachis: '#1d1a17', stipe: '#1d1a17' }, over: { fronds: [12, 22], frondLength: [.3, .55], arch: [.5, 1.1], spread: [30, 60], pinnaPairs: [8, 14], pinnules: [5, 8], detail: [.5, .7] } },
   ostrich: { label: 'Ostrich fern', latin: 'Matteuccia struthiopteris', common: 'Ostrich / shuttlecock fern', pinnaLen: .17, pinnaW: .3, palette: { frond: '#3c8f2f', frondYoung: '#6dbf47' }, over: { fronds: [9, 14], frondLength: [.9, 1.4], arch: [.25, .6], spread: [50, 70], pinnaPairs: [26, 34], pinnules: [8, 12] } },
-  asparagus: { label: 'Asparagus fern', latin: 'Asparagus setaceus', common: 'Lace fern', pinnaLen: .28, pinnaW: .18, palette: { frond: '#5aa63a', frondYoung: '#84c95a', rachis: '#4c6a2a', stipe: '#4c6a2a' }, over: { fronds: [10, 18], frondLength: [.5, .9], arch: [.6, 1.2], spread: [15, 45], pinnaPairs: [14, 22], pinnules: [10, 16], detail: [.4, .6] } },
-  tassel: { label: 'Tassel fern', latin: 'Polystichum polyblepharum', common: 'Japanese tassel fern', pinnaLen: .16, pinnaW: .3, palette: { frond: '#1f5e26', frondYoung: '#3f8a3a', stipe: '#3a2a1c', rachis: '#4c5a2a' }, over: { fronds: [10, 18], frondLength: [.5, .8], arch: [.5, .9], spread: [20, 45], pinnaPairs: [22, 30], curl: [.4, 1] } },
-  staghorn: { label: 'Staghorn', latin: 'Platycerium bifurcatum', common: 'Staghorn fern', simple: true, pinnaLen: .4, pinnaW: .55, palette: { frond: '#7fa86a', frondYoung: '#a4c58a', rachis: '#7fa86a', stipe: '#8a7f60', crown: '#8a7f60' }, over: { fronds: [5, 9], frondLength: [.5, .9], arch: [.6, 1.2], spread: [10, 35], pinnaPairs: [4, 6], pinnules: [5, 5] } },
+  asparagus: { label: 'Asparagus fern', latin: 'Asparagus setaceus', common: 'Lace fern', pinnaLen: .28, pinnaW: .5, lobeW: .5, pinnuleLen: .7, palette: { frond: '#5aa63a', frondYoung: '#84c95a', rachis: '#4c6a2a', stipe: '#4c6a2a' }, over: { fronds: [10, 18], frondLength: [.5, .9], arch: [.6, 1.2], spread: [15, 45], pinnaPairs: [14, 22], pinnules: [10, 16], detail: [.4, .6] } },
+  tassel: { label: 'Tassel fern', latin: 'Polystichum polyblepharum', common: 'Japanese tassel fern', pinnaLen: .16, pinnaW: .3, serrate: true, palette: { frond: '#1f5e26', frondYoung: '#3f8a3a', stipe: '#3a2a1c', rachis: '#4c5a2a' }, over: { fronds: [10, 18], frondLength: [.5, .8], arch: [.5, .9], spread: [20, 45], pinnaPairs: [22, 30], curl: [.4, 1] } },
+  staghorn: { label: 'Staghorn', latin: 'Platycerium bifurcatum', common: 'Staghorn fern', simple: true, pinnaLen: .4, pinnaW: 1.3, sweep: 40, palette: { frond: '#7fa86a', frondYoung: '#a4c58a', rachis: '#7fa86a', stipe: '#8a7f60', crown: '#8a7f60' }, over: { fronds: [5, 9], frondLength: [.5, .9], arch: [.6, 1.2], spread: [10, 35], pinnaPairs: [4, 6], pinnules: [5, 5] } },
+};
+
+/* ───────────────────────── species: AROIDS (giant-leaf tropicals) ───────────────────────── */
+/**
+ * Leaf = one strip mesh grown from the petiole's tip edge; the outline is a 2-D radial function
+ * r(θ) sampled around the leaf's attachment point:
+ *   'heart'  — cordate/sagittate (elephant ear, taro, philodendron): broad, deep basal lobes
+ *   'split'  — pinnatifid with fenestrations (Monstera, Thaumatophyllum): heart with deep side cuts
+ *   'oval'   — entire ovate (Calathea, Alocasia 'Amazonica' style is heart+veins)
+ */
+function genAroid(P, rnd, mb, V = AROID_VARIANTS.elephant) {
+  const C = { ...PALETTE.aroid, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06;
+  const sides = 10, crownRings = 4; const cr = P.stemRadius;
+  mb.part('crown');
+  const trunkH = P.trunk || 0;
+  const prof = [[-.03, 0], [0, .9], [trunkH * .5 + .04, 1]];
+  const n = Math.max(3, Math.round(trunkH / .15)); for (let k = 1; k <= n; k++) prof.push([trunkH * .5 + .04 + (trunkH * .5) * k / n, 1 - .1 * k / n]);
+  prof.push([trunkH + .07, .9], [trunkH + .1, .65], [trunkH + .12, 0]);
+  const nTr = prof.length - 6;
+  const crown = mb.tube(prof.map(([y, r]) => ({ p: V3(0, y, 0), r: cr * r })), { sides, color: hex(C.crown) });
+  const used = new Set();
+  const pickFace = (ring, slot) => { for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
+  const N = Math.round(P.leaves); const perRing = Math.ceil(N / 3);
+  const rings = Math.round(lerp(10, 18, P.detail)), spokes = Math.round(lerp(18, 34, P.detail));
+  for (let i = 0; i < N; i++) {
+    const age = i / Math.max(1, N - 1);
+    const ring = nTr + 1 + Math.min(2, Math.floor(i / perRing));
+    const az = i * GOLD + rnd.range(-.2, .2);
+    const slot = pickFace(ring, Math.round(az / (2 * Math.PI / sides))); if (slot === null) continue;
+    const f = crown.face(ring, slot);
+    const faceAz = Math.atan2(f.normal.z, f.normal.x);
+    const el = lerp(V.elMin ?? 20, V.elMax ?? 75, Math.pow(age, .9)) * D2R + rnd.range(-6, 6) * D2R;
+    const d = dirFrom(faceAz + rnd.range(-.2, .2), el);
+    const petL = P.petiole * rnd.range(.85, 1.1) * (age > .9 ? .7 : 1);
+    const nPet = 8; const pts = arcPath(f.center, d, petL, P.droop * .9, nPet);
+    const st = pts.slice(1).map((p, k) => ({ p, r: cr * .22 * (1 - .45 * k / nPet) + .004 }));
+    const colPet = shade(hex(V.darkPetiole ? C.petioleDark : C.petiole), hue, 1, rnd.range(.92, 1.06));
+    mb.part('leaf');
+    const pet = mb.tube(st, { sides: 4, start: { ring: f.ring, center: f.center }, color: colPet });
+    const fr = pet.frames[pet.length - 1];
+    // leaf frame: forward = petiole tangent flattened toward horizontal then tilted by 'hang'
+    const hang = lerp(V.hangMin ?? 10, V.hangMax ?? 55, P.droop) * D2R * lerp(.6, 1.2, age);
+    const flat = fr.T.clone().addScaledVector(UP, -fr.T.dot(UP)).normalize();
+    const fwd = flat.clone().multiplyScalar(Math.cos(hang)).addScaledVector(UP, -Math.sin(hang)).normalize();
+    const right = fwd.clone().cross(UP).normalize(); if (right.lengthSq() < .5) right.set(1, 0, 0);
+    const nrm = right.clone().cross(fwd).normalize();
+    const L = P.leafLength * rnd.range(.85, 1.1) * (age > .9 ? .6 : 1), W = L * P.leafWidth;
+    const colLeaf = shade(age > .85 ? hex(C.leafYoung) : hex(C.leaf), hue + rnd.range(-.01, .01), 1, rnd.range(.93, 1.07));
+    const colVein = shade(hex(C.vein), hue, 1, 1);
+    const peltate = V.peltate ?? 0;                      // attachment point moved inside the blade (elephant ear)
+    const lobe = V.lobe ?? .35;                           // basal lobe depth (fraction of L behind the attachment)
+    const splits = V.splits || 0, splitDepth = V.splitDepth ?? .55, holes = V.holes || 0;
+    // outline r(θ): θ=0 forward tip, ±π backward (basal lobes / sinus)
+    const outline = (th) => {
+      const a = Math.abs(th);
+      let r;
+      if (V.shape === 'oval') r = (L * .5) / Math.sqrt(Math.pow(Math.cos(th) / 1, 2) + Math.pow(Math.sin(th) / (W / L), 2)) * (1 + .1 * Math.cos(th));
+      else {
+        // cordate / sagittate: pointed (acuminate) tip, widest ~35% back, two rounded basal lobes with a sinus at θ=±π
+        const Lf = L * (1 - lobe), hw = W * .5;
+        // superellipse-ish front half with exponent < 2 → pointed tip
+        const cA = Math.cos(th), sA = Math.abs(Math.sin(th));
+        const pE = 1.55, front = 1 / Math.pow(Math.pow(Math.abs(cA) / Lf, pE) + Math.pow(sA / hw, pE), 1 / pE);
+        // basal lobes: circles of radius hw*.55 centred at (−lobe·L·.35, ±hw·.5)
+        const lr = hw * .55, lcx = -L * lobe * .35, lcy = hw * .5;
+        const ux = Math.cos(th), uy = Math.sin(th); const cy = uy > 0 ? lcy : -lcy;
+        const bq = -2 * (ux * lcx + uy * cy), cq = lcx * lcx + cy * cy - lr * lr; const disc = bq * bq - 4 * cq;
+        const lobeR = disc > 0 ? (-bq + Math.sqrt(disc)) / 2 : 0;
+        const sinusR = W * .06 * (1 - (V.sinus ?? .8)) + W * .05;
+        r = a < Math.PI * .5 ? front : Math.max(lobeR, sinusR, a < Math.PI * .62 ? front * (1 - (a - Math.PI * .5) / (Math.PI * .12)) : 0);
+        if (a >= Math.PI * .5) r = Math.max(r, front * Math.max(0, 1 - (a - Math.PI * .5) / (Math.PI * .2)));
+      }
+      if (splits) { const k = Math.abs(Math.sin(th * splits)); const cut = Math.pow(k, 8) * splitDepth * (a > .25 && a < Math.PI * .85 ? 1 : 0); r *= 1 - cut; }
+      return Math.max(r, .01);
+    };
+    const origin = fr.p.clone().addScaledVector(fwd, peltate * L);
+    const cup = V.cup ?? .25, ripple = V.ripple ?? 0;
+    const pointAt = (th, s) => {
+      const r = outline(th) * s;
+      const x = Math.cos(th) * r, y = Math.sin(th) * r;
+      // blade droops away from the midrib (cup) and along the tip
+      const sag = cup * Math.abs(y) * Math.abs(y) / (W * .5) + .35 * cup * Math.max(0, x) * Math.max(0, x) / L;
+      const rip = ripple ? Math.sin(th * spokes * .5) * .015 * L * s : 0;
+      return origin.clone().addScaledVector(fwd, x).addScaledVector(right, y).addScaledVector(nrm, -sag + rip);
+    };
+    const hubIdx = pet.rings[pet.length - 1]; const hubCenter = mb.v(origin, colVein);
+    const rowsR = [];
+    for (let q = 1; q <= rings; q++) {
+      const sr = q / rings; const row = [];
+      for (let k = 0; k <= spokes; k++) {
+        const th = -Math.PI + 2 * Math.PI * k / spokes;
+        let col = colLeaf;
+        const nearVein = Math.abs(Math.sin(th)) < .06 || (V.veins && Math.abs(Math.sin(th * V.veins)) < .05);
+        if (nearVein && sr < .9) col = colVein;
+        if (holes && sr > .35 && sr < .8) { const hk = Math.sin(th * holes * 2) * Math.sin(sr * Math.PI * 3); if (hk > .93) col = null; }
+        row.push(col ? mb.v(pointAt(th, sr), col) : null);
+      }
+      rowsR.push(row);
+    }
+    // stitch: hub → ring 1 (petiole tip ring vertices are part of the hub fan → single shell)
+    for (let k = 0; k < spokes; k++) { const a = rowsR[0][k], b = rowsR[0][k + 1]; if (a != null && b != null) mb.tri(hubCenter, a, b); }
+    for (let h = 0; h < hubIdx.length; h++) mb.tri(hubCenter, hubIdx[(h + 1) % hubIdx.length], hubIdx[h]);
+    // bridge the petiole ring to the hub centre + first-row point nearest to each ring vertex
+    for (let h = 0; h < hubIdx.length; h++) { const pv = mb.p(hubIdx[h]); let best = 0, bd = 1e9; for (let k = 0; k < spokes; k++) { const idx = rowsR[0][k]; if (idx == null) continue; const dd = mb.p(idx).distanceToSquared(pv); if (dd < bd) { bd = dd; best = idx; } } mb.tri(hubIdx[h], hubCenter, best); }
+    for (let q = 0; q < rings - 1; q++) for (let k = 0; k < spokes; k++) {
+      const a = rowsR[q][k], b = rowsR[q][k + 1], c = rowsR[q + 1][k], d2 = rowsR[q + 1][k + 1];
+      if (a != null && b != null && c != null) mb.tri(a, b, c); if (b != null && d2 != null && c != null) mb.tri(b, d2, c);
+    }
+  }
+  // spathe + spadix (peace-lily style inflorescence) for some
+  if (V.flower && P.flower > .5) {
+    const slot = pickFace(nTr + 3, rnd.int(0, sides - 1));
+    if (slot !== null) {
+      const f = crown.face(nTr + 3, slot); mb.part('flower');
+      const d = f.normal.clone().addScaledVector(UP, 2).normalize(); const h = P.petiole * .9;
+      const stalk = mb.tube([1, 2, 3, 4, 5].map(k => ({ p: f.center.clone().addScaledVector(d, h * k / 5), r: cr * .12 })), { sides: 4, start: { ring: f.ring, center: f.center }, color: hex(C.petiole) });
+      const top = stalk.frames[stalk.length - 1].p, tr = stalk.rings[stalk.length - 1];
+      const spadix = [[.3, 1.6], [.7, 1.4], [1, 0]].map(([t, r]) => ({ p: top.clone().addScaledVector(UP, .22 * t), r: cr * .12 * r }));
+      mb.tube(spadix, { sides: 6, start: { ring: tr, center: top }, color: hex(C.spadix) });
+      // spathe: a single cupped blade from a stalk face
+      let ff; try { ff = stalk.face(stalk.length - 3, 1); } catch { ff = null; }
+      if (ff) { const rows = [ff.ring.slice(0, 2)]; const back = ff.normal.clone(); for (let q = 1; q <= 5; q++) { const t = q / 5; const w = .11 * Math.sin(Math.PI * Math.pow(t, .7)) + .001; const c = ff.center.clone().addScaledVector(UP, .34 * t).addScaledVector(back, .06 * Math.sin(Math.PI * t)); const side = back.clone().cross(UP).normalize(); rows.push(q === 5 ? [mb.v(c, hex(C.flower))] : [mb.v(c.clone().addScaledVector(side, -w), hex(C.flower)), mb.v(c.clone().addScaledVector(back, -w * .5), hex(C.flower)), mb.v(c.clone().addScaledVector(side, w), hex(C.flower))]); } mb.strip(rows); }
+    }
+  }
+  return { latin: V.latin, common: V.common };
+}
+export const AROID_VARIANTS = {
+  elephant: { label: 'Elephant ear', latin: 'Colocasia esculenta', common: 'Taro / elephant ear', shape: 'heart', peltate: .2, lobe: .3, sinus: .5, cup: .3, veins: 4, hangMin: 25, hangMax: 65, over: { leaves: [6, 10], leafLength: [.7, 1.2] } },
+  giant: { label: 'Giant taro', latin: 'Alocasia macrorrhizos', common: 'Giant upright elephant ear', shape: 'heart', peltate: .05, lobe: .3, sinus: .9, cup: .15, veins: 5, elMin: 40, elMax: 80, hangMin: -25, hangMax: 10, palette: { leaf: '#3a8a30', vein: '#78b85a' }, over: { trunk: [.3, 1], leafLength: [1, 1.6], leafWidth: [.75, .95], petiole: [1, 1.8], leaves: [5, 8] } },
+  monstera: { label: 'Monstera', latin: 'Monstera deliciosa', common: 'Swiss-cheese plant', shape: 'heart', lobe: .25, sinus: .95, cup: .12, splits: 7, splitDepth: .5, holes: 3, veins: 7, elMin: 30, elMax: 80, hangMin: -5, hangMax: 30, palette: { leaf: '#2c6f2a', leafYoung: '#4f9a3a', petiole: '#4c7a36' }, over: { trunk: [.2, .8], leafLength: [.7, 1.1], leafWidth: [.8, 1], petiole: [.7, 1.2], leaves: [6, 10] } },
+  selloum: { label: 'Split-leaf philodendron', latin: 'Thaumatophyllum bipinnatifidum', common: 'Tree philodendron', shape: 'heart', lobe: .3, sinus: .7, cup: .2, splits: 11, splitDepth: .7, veins: 11, elMin: 10, elMax: 70, hangMin: 5, hangMax: 45, palette: { leaf: '#33802e', vein: '#7dbb60' }, over: { trunk: [.2, 1.2], leafLength: [.8, 1.3], leafWidth: [.75, .95], petiole: [.8, 1.4], leaves: [8, 14] } },
+  calathea: { label: 'Calathea', latin: 'Calathea orbifolia', common: 'Prayer plant', shape: 'oval', cup: .18, ripple: 1, veins: 12, elMin: 30, elMax: 85, hangMin: 5, hangMax: 35, palette: { leaf: '#4f9a4a', vein: '#c5dcc3', petiole: '#6f8a4a', crown: '#4a3a2a' }, over: { trunk: [0, 0], stemRadius: [.03, .05], leafLength: [.3, .45], leafWidth: [.8, 1], petiole: [.3, .5], leaves: [8, 14], droop: [.1, .4] } },
+  peacelily: { label: 'Peace lily', latin: 'Spathiphyllum wallisii', common: 'Peace lily', shape: 'oval', cup: .2, veins: 0, flower: true, elMin: 25, elMax: 80, hangMin: 0, hangMax: 30, palette: { leaf: '#2d6f2c', leafYoung: '#4f9a3a', petiole: '#3f6a30' }, over: { trunk: [0, 0], stemRadius: [.03, .05], leafLength: [.35, .55], leafWidth: [.35, .5], petiole: [.35, .6], leaves: [10, 16], droop: [.1, .4], flower: [1, 1] } },
+  xanadu: { label: 'Philodendron Xanadu', latin: 'Thaumatophyllum xanadu', common: 'Xanadu', shape: 'heart', lobe: .2, sinus: .6, cup: .15, splits: 9, splitDepth: .55, veins: 9, elMin: 15, elMax: 75, hangMin: 0, hangMax: 35, palette: { leaf: '#3c8a34', vein: '#88c26a' }, over: { trunk: [0, .2], stemRadius: [.05, .08], leafLength: [.35, .55], leafWidth: [.6, .8], petiole: [.4, .7], leaves: [10, 16] } },
+  blackmagic: { label: 'Black taro', latin: 'Colocasia "Black Magic"', common: 'Black elephant ear', shape: 'heart', peltate: .28, lobe: .32, sinus: .5, cup: .35, veins: 4, darkPetiole: true, palette: { leaf: '#2c2233', leafYoung: '#4a3550', vein: '#3d2f45', petioleDark: '#2a1e2f' }, over: { leafLength: [.6, .9] } },
 };
 
 /* ───────────────────────── schema / api ───────────────────────── */
@@ -617,6 +786,21 @@ export const SPECIES = {
       { key: 'detail', label: 'Detail', min: .3, max: 1, step: .05, rnd: [.7, .9] },
     ],
   },
+  aroid: {
+    label: 'Aroid', accent: '#b48cff', gen: genAroid, variants: AROID_VARIANTS,
+    params: [
+      { key: 'leaves', label: 'Leaves', min: 3, max: 16, step: 1, rnd: [5, 9] },
+      { key: 'leafLength', label: 'Leaf length', min: .25, max: 1.8, step: .05, unit: 'm', rnd: [.7, 1.2] },
+      { key: 'leafWidth', label: 'Width ratio', min: .3, max: 1.1, step: .05, rnd: [.75, .95] },
+      { key: 'petiole', label: 'Petiole length', min: .2, max: 2, step: .05, unit: 'm', rnd: [.6, 1.1] },
+      { key: 'stemRadius', label: 'Stem radius', min: .02, max: .2, step: .005, unit: 'm', rnd: [.06, .1] },
+      { key: 'trunk', label: 'Trunk height', min: 0, max: 2, step: .05, unit: 'm', rnd: [0, .15] },
+      { key: 'droop', label: 'Droop', min: 0, max: 1, step: .05, rnd: [.3, .8] },
+      { key: 'flower', label: 'Flower', min: 0, max: 1, step: 1, rnd: [0, 0] },
+      { key: 'hue', label: 'Hue shift', min: -1, max: 1, step: .05, rnd: [-.5, .5] },
+      { key: 'detail', label: 'Detail', min: .3, max: 1, step: .05, rnd: [.6, .85] },
+    ],
+  },
   fern: {
     label: 'Fern', accent: '#4fd8e0', gen: genFern, variants: FERN_VARIANTS,
     params: [
@@ -646,7 +830,7 @@ export function randomParams(species, seed, variant) {
 }
 
 export function plantName(species, seed) {
-  const syll = { palm: ['Ko', 'Pa', 'Lau', 'Ni', 'Ma'], banana: ['Mu', 'Sa', 'Ke', 'La', 'Pi'], fern: ['Fi', 'Dry', 'Ath', 'Pol', 'Ne'] }[species];
+  const syll = { palm: ['Ko', 'Pa', 'Lau', 'Ni', 'Ma'], banana: ['Mu', 'Sa', 'Ke', 'La', 'Pi'], fern: ['Fi', 'Dry', 'Ath', 'Pol', 'Ne'], aroid: ['Ta', 'Alo', 'Mon', 'Phi', 'Ca'] }[species];
   const rnd = makeRng(seed ^ 0x9e37); return syll[rnd.int(0, syll.length - 1)] + ['ra', 'lo', 'ni', 'ka', 'su'][rnd.int(0, 4)] + '-' + (seed % 4096).toString(16).toUpperCase().padStart(3, '0');
 }
 

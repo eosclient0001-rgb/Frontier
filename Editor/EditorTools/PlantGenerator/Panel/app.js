@@ -9,6 +9,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const ICON = {
   palm: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21V9M12 9c-3-4-7-4-9-2 3 0 5 1 9 2M12 9c3-4 7-4 9-2-3 0-5 1-9 2M12 9c-1-4 0-7 3-8-1 3-1 5-3 8M12 9c1-4 0-7-3-8 1 3 1 5 3 8"/></svg>',
   banana: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21V8M12 8c-4-3-8-1-9 3 4-1 7 0 9-3M12 8c4-3 8-1 9 3-4-1-7 0-9-3M12 8c-2-4-1-6 0-7 1 1 2 3 0 7"/></svg>',
+  aroid: '<svg class="i" viewBox="0 0 24 24"><path d="M12 22V10M12 10C7 10 3 7 4 3c4 0 7 2 8 7 1-5 4-7 8-7 1 4-3 7-8 7"/></svg>',
   fern: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21C10 14 8 8 4 5M12 21c2-7 4-13 8-16M12 21V6M9 12l-3-1M9 9L7 7M15 12l3-1M15 9l2-2M12 10c-2 0-3-1-4-3M12 10c2 0 3-1 4-3"/></svg>',
 };
 const ICO_PART = { trunk: 'trunk', pseudostem: 'stem', crown: 'crown' };
@@ -53,7 +54,7 @@ function resize() { const r = canvas.parentElement.getBoundingClientRect(); rend
 new ResizeObserver(resize).observe(canvas.parentElement); resize();
 
 /* ───────── plants ───────── */
-const PART_COLORS = { trunk: '#b08a5a', pseudostem: '#b08a5a', crown: '#b08a5a', frond: '#34c759', leaf: '#34c759', deadFrond: '#ffb454', coconut: '#e5d33a', fruit: '#e5d33a', spear: '#4fd8e0', cigar: '#4fd8e0', crozier: '#4fd8e0' };
+const PART_COLORS = { flower: '#ffb454', boots: '#b48cff', trunk: '#b08a5a', pseudostem: '#b08a5a', crown: '#b08a5a', frond: '#34c759', leaf: '#34c759', deadFrond: '#ffb454', coconut: '#e5d33a', fruit: '#e5d33a', spear: '#4fd8e0', cigar: '#4fd8e0', crozier: '#4fd8e0' };
 function makePlant(species, params, opts = {}) {
   const r = generatePlant(species, params);
   const g = r.geometry;
@@ -136,6 +137,7 @@ function setCurrent(species, variant) {
   persist();
 }
 $('#curChip').onclick = () => toggleCat(true);
+$('#btnAdd').onclick = () => toggleCat(true);
 $('#btnGen').onclick = () => addPlant(S.species, parseInt($('#seed').value));
 $('#btnBatch').onclick = () => { const base = parseInt($('#seed').value); const l0 = S.layout; S.layout = 'lineup'; document.querySelectorAll('#layout button').forEach(b => b.classList.toggle('on', b.dataset.l === 'lineup')); for (let i = 0; i < 6; i++) addPlant(S.species, Number.isFinite(base) ? base + i : undefined, false); focusSel(); void l0; };
 $('#q').oninput = e => { S.filter = e.target.value.toLowerCase(); if (S.filter) libOpen = true; refresh(); };
@@ -166,7 +168,7 @@ function libraryGroup() {
 }
 function setCurrentAndRefresh(c) { setCurrent(c.species, c.variant); refresh(); }
 function refresh() {
-  const tree = $('#tree'); tree.innerHTML = ''; tree.appendChild(libraryGroup());
+  const tree = $('#tree'); tree.innerHTML = '';
   const groups = {}; for (const p of S.plants) (groups[p.species] ||= []).push(p);
   let tri = 0;
   for (const [sp, arr] of Object.entries(groups)) {
@@ -187,7 +189,7 @@ function refresh() {
     }
     tree.appendChild(g);
   }
-  if (!S.plants.length) tree.insertAdjacentHTML('beforeend', `<div class="empty"><b>No plants in the scene yet</b>Click <b>+</b> on any Library plant, or press <i>generate</i> (G).</div>`);
+  if (!S.plants.length) tree.insertAdjacentHTML('beforeend', `<div class="empty"><b>Scene is empty</b>Open <b>Construct</b> (Tab) and click a plant — it lands here.</div>`);
   $('#tPl').textContent = S.plants.length; $('#tTri').textContent = tri > 999 ? (tri / 1000).toFixed(1) + 'k' : tri;
   $('#tTriT').className = 'tile' + (tri > 400000 ? ' warn' : tri ? ' ok' : '');
   const sel = S.plants.find(p => p.id === S.sel);
@@ -300,7 +302,7 @@ $('#cmdIn').addEventListener('keydown', e => {
 let toastT; function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
 
 /* ───────── construct catalogue (same widget as the sketcher: rail → tiles → options slide) ───────── */
-const FAMILY_BLURB = { palm: 'Arecaceae · tropical & subtropical', banana: 'Musaceae / Zingiberales · tropical', fern: 'Polypodiopsida · tropical to temperate' };
+const FAMILY_BLURB = { palm: 'Arecaceae · tropical & subtropical', banana: 'Musaceae / Zingiberales · tropical', aroid: 'Araceae · giant-leaf tropical understory', fern: 'Polypodiopsida · tropical to temperate' };
 const prevRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); prevRenderer.setSize(176, 176, false); prevRenderer.setPixelRatio(1); prevRenderer.outputColorSpace = THREE.SRGBColorSpace;
 const prevScene = new THREE.Scene(); prevScene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3a3326, 1.2)); const pl = new THREE.DirectionalLight(0xfff1dc, 2.2); pl.position.set(3, 6, 4); prevScene.add(pl);
 const prevCam = new THREE.PerspectiveCamera(30, 1, .05, 200);
@@ -325,13 +327,12 @@ function buildCat() {
   const show = (f) => {
     catState.fam = f; rail.querySelectorAll('.rail-item').forEach(x => x.classList.toggle('on', x.dataset.f === f));
     const list = CATALOGUE.filter(c => c.species === f);
-    grid.innerHTML = list.map((c, i) => `<div class="tile" data-id="${c.id}" title="${c.latin}"><span class="t-key">${i + 1}</span><div class="t-prev"><canvas></canvas></div><span class="t-lbl">${c.label}</span><span class="t-lat">${c.latin}</span></div>`).join('');
+    grid.innerHTML = list.map((c, i) => `<div class="tile" data-id="${c.id}" title="${c.latin} — click to add"><span class="t-key t-opt" title="options (seed, count, size)">⋯</span><div class="t-prev"><canvas></canvas></div><span class="t-lbl">${c.label}</span><span class="t-lat">${c.latin}</span></div>`).join('');
     grid.querySelectorAll('.tile').forEach((tl, i) => {
       const c = list[i]; requestAnimationFrame(() => thumb(c, 3, tl.querySelector('canvas'), 88));
-      tl.onclick = () => openOptions(c);
-      tl.ondblclick = () => { catState.entry = c; setCurrent(c.species, c.variant); addPlant(c.species, parseInt(catState.seed), true, c.variant); toggleCat(false); };
+      tl.onclick = (e) => { if (e.target.closest('.t-opt')) { openOptions(c); return; } setCurrent(c.species, c.variant); addPlant(c.species, undefined, true, c.variant); tl.classList.add('added'); setTimeout(() => tl.classList.remove('added'), 500); if (!e.shiftKey) toggleCat(false); };
     });
-    $('#catFoot').innerHTML = `<span>${FAMILY_BLURB[f]}</span><span style="flex:1"></span><span>click a tile for options · <kbd>dbl-click</kbd> adds straight to the Outliner</span>`;
+    $('#catFoot').innerHTML = `<span>${FAMILY_BLURB[f]}</span><span style="flex:1"></span><span><kbd>click</kbd> adds to the Outliner · <kbd>⇧click</kbd> keeps this open · <kbd>⋯</kbd> options</span>`;
   };
   rail.querySelectorAll('.rail-item[data-f]').forEach(r => r.onclick = () => show(r.dataset.f));
   show(catState.fam);

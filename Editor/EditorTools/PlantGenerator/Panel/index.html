@@ -355,6 +355,8 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
 
 .tile .t-prev{width:44px;height:44px;place-self:center;border-radius:10px;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center}
 .tile .t-prev canvas{width:44px;height:44px;border-radius:10px}
+.tile.added{background:rgba(52,199,89,.25);border-color:rgba(52,199,89,.6)}
+.tile .t-opt{cursor:pointer;font-size:12px;line-height:1;padding:2px 6px} .tile .t-opt:hover{background:rgba(255,255,255,.18);color:var(--text)}
 .tile .t-lat{font-size:9px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center;justify-self:center;font-style:italic}
 #cat .tile{grid-template-columns:1fr;grid-template-rows:1fr auto auto;aspect-ratio:1/1;padding:8px 4px 7px;gap:2px;align-items:center;border-radius:10px}
 .opt-row{display:flex;align-items:center;justify-content:space-between;min-height:34px;font-size:12px;color:var(--t2);border-top:1px solid rgba(255,255,255,.04)}
@@ -378,13 +380,13 @@ svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stro
     <div class="tile ok"><div class="l"><span class="tico"></span>Plants</div><div class="s" id="tPlS">in scene</div><b id="tPl">0</b></div>
     <div class="tile" id="tTriT"><div class="l"><span class="tico"></span>Triangles</div><div class="s" id="tTriS">scene total</div><b id="tTri">0</b></div>
   </div>
-  <div class="sp-grid" id="spGrid"></div>
-  <div class="seedrow" style="margin-top:-2px"><div class="stchip" id="curChip" title="current plant (from the Construct catalogue)"><span class="kd"></span><b>Coconut palm</b></div><span class="m" style="font-size:10.5px;color:var(--t3)">Tab · catalogue</span></div>
-  <div class="seedrow">
-    <div class="search"><span style="font-family:var(--mono);font-size:11px">seed</span><input id="seed" placeholder="auto" inputmode="numeric"></div>
-    <button class="abtn pri" id="btnGen" title="G · generate a new plant of the selected species">generate</button>
-    <button class="abtn" id="btnBatch" title="⇧G · generate 6 variants">×6</button>
+  <div class="seedrow"><button class="abtn pri" id="btnAdd" style="flex:1;height:38px;font-size:13px;gap:8px" title="Tab · open the plant catalogue"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Construct · add plant</button></div>
+  <div class="seedrow" style="margin-top:-2px"><div class="stchip" id="curChip" title="last used plant — 'generate' makes another one"><span class="kd"></span><b>Coconut palm</b></div>
+    <div class="search" style="flex:0 0 96px;height:28px;padding:0 10px"><span style="font-family:var(--mono);font-size:10px">seed</span><input id="seed" placeholder="auto" inputmode="numeric" style="font-size:11px"></div>
+    <button class="abtn" id="btnGen" style="height:28px" title="G · another of the current plant">generate</button>
+    <button class="abtn" id="btnBatch" style="height:28px;padding:0 8px" title="⇧G · 6 variants">×6</button>
   </div>
+  <div class="sp-grid" id="spGrid" style="display:none"></div>
   <div class="srow">
     <div class="search">
       <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg>
