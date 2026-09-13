@@ -1,0 +1,20 @@
+{
+  "name": "frontier-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Frontier — SDF open-world terrain studio (realtime 3D erosion, procedural sat-style shading)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0"
+  }
+}
