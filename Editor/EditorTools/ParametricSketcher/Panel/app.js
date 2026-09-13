@@ -252,7 +252,17 @@ function shapeBBox(sk){
   const acc=(x,y)=>{if(x<lo[0])lo[0]=x;if(y<lo[1])lo[1]=y;if(x>hi[0])hi[0]=x;if(y>hi[1])hi[1]=y;};
   for(const s of sk.segs){
     if(s.full){acc(s.cx-s.r,s.cy-s.r);acc(s.cx+s.r,s.cy+s.r);}
-    else{acc(s.x0,s.y0);acc(s.x1,s.y1);}
+    else{
+      acc(s.x0,s.y0);acc(s.x1,s.y1);
+      if(s.b){ // bulged arc: include any axis extreme that lies within the sweep
+        const {cx,cy,r,a0}=KM.arcOf(s),sw=4*Math.atan(s.b);
+        for(let q=0;q<4;q++){
+          const aq=q*Math.PI/2;
+          let d=(aq-a0)%(2*Math.PI);if(d<0)d+=2*Math.PI;
+          if(sw>0?d<=sw:d-2*Math.PI>=sw)acc(cx+r*Math.cos(aq),cy+r*Math.sin(aq));
+        }
+      }
+    }
   }
   if(lo[0]>hi[0])return {lo:[0,0],hi:[0,0],c:[0,0],w:0,h:0};
   return {lo,hi,c:[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2],w:hi[0]-lo[0],h:hi[1]-lo[1]};
@@ -280,6 +290,7 @@ function applyShapeDelta(sk,d){ // d:{du,dv,rot(rad),ds | dsu,dsv} — rot/scale
     if(s.full){
       if(uni){const q=map(s.cx,s.cy);out.push({...s,cx:q[0],cy:q[1],r:s.r*Math.abs(su)});continue;}
       // circle under non-uniform scale → ellipse: approximate with an arc spline
+      if(sk.shape==='circle')sk.shape='ellipse';
       const N=16;
       for(let i=0;i<N;i++){
         const t0=2*Math.PI*i/N,t1=2*Math.PI*(i+1)/N,tm=(t0+t1)/2;
@@ -302,10 +313,154 @@ function applyShapeDelta(sk,d){ // d:{du,dv,rot(rad),ds | dsu,dsv} — rot/scale
     }
   }
   sk.segs=out;
+  if(sk.prm&&sk.prm.spine){ // creation parameters (slot spine) follow the transform
+    sk.prm.spine=sk.prm.spine.map(p=>{const q=map(p.u,p.v);return {u:q[0],v:q[1]};});
+    if(sk.prm.r)sk.prm.r*=(Math.abs(su)+Math.abs(sv))/2;
+  }
   const pose=shapePose(sk);
   pose.rot=(pose.rot+(d.rot||0))%(2*Math.PI);
   pose.sc*=(su+sv)/2;
   pose.sx*=su;pose.sy*=sv;
+}
+function applyShapeScaleLocal(sk,su,sv){ // scale along the shape's OWN axes (respects rotation)
+  const a=shapePose(sk).rot||0;
+  if(Math.abs(a)>1e-12)applyShapeDelta(sk,{rot:-a});
+  applyShapeDelta(sk,{dsu:su,dsv:sv});
+  if(Math.abs(a)>1e-12)applyShapeDelta(sk,{rot:a});
+}
+function shapeLocalBBox(sk){ // bbox measured in the shape's own (unrotated) axes
+  const a=shapePose(sk).rot||0;
+  if(Math.abs(a)<1e-12){const b=shapeBBox(sk);return {w:b.w,h:b.h};}
+  const c=shapeBBox(sk).c,cs=Math.cos(-a),sn=Math.sin(-a);
+  let lo=[1/0,1/0],hi=[-1/0,-1/0];
+  const acc=(x,y)=>{
+    const px=x-c[0],py=y-c[1],rx=px*cs-py*sn,ry=px*sn+py*cs;
+    if(rx<lo[0])lo[0]=rx;if(ry<lo[1])lo[1]=ry;if(rx>hi[0])hi[0]=rx;if(ry>hi[1])hi[1]=ry;
+  };
+  for(const s of sk.segs){
+    if(s.full){acc(s.cx-s.r,s.cy-s.r);acc(s.cx+s.r,s.cy+s.r);}
+    else{acc(s.x0,s.y0);acc(s.x1,s.y1);}
+  }
+  if(lo[0]>hi[0])return {w:0,h:0};
+  return {w:hi[0]-lo[0],h:hi[1]-lo[1]};
+}
+/* ── shape-defining parameters, per shape kind — like proper CAD:
+   circle → radius/⌀, polygon → sides+radius, ellipse → two radii, arc → radius+sweep,
+   slot → length+width, line → length+angle; only box-like shapes get width/height. ── */
+function polyVertsOf(sk){ // regular polygon: circumcentre, radius, start angle
+  const vs=sk.segs.filter(s=>!s.full).map(s=>[s.x0,s.y0]);
+  if(vs.length<3)return null;
+  const c=[vs.reduce((a,p)=>a+p[0],0)/vs.length,vs.reduce((a,p)=>a+p[1],0)/vs.length];
+  return {c,n:vs.length,r:Math.hypot(vs[0][0]-c[0],vs[0][1]-c[1]),a0:Math.atan2(vs[0][1]-c[1],vs[0][0]-c[0])};
+}
+function slotPrmOf(sk){ // stored creation spine, or recover it from the two semicircle caps
+  if(sk.prm&&sk.prm.spine&&sk.prm.r)return sk.prm;
+  const caps=sk.segs.filter(s=>!s.full&&s.b&&Math.abs(Math.abs(4*Math.atan(s.b))-Math.PI)<0.03);
+  if(caps.length===2){
+    const cc=caps.map(s=>{const a=KM.arcOf(s);return {u:a.cx,v:a.cy};});
+    sk.prm={spine:cc,r:KM.arcOf(caps[0]).r};
+    return sk.prm;
+  }
+  return null;
+}
+const SHAPE_PARAMS={
+  circle:{
+    list(sk){const s=sk.segs.find(s=>s.full);if(!s)return null;
+      return [{k:'radius',v:s.r,step:1,unit:'mm'},{k:'diameter',v:2*s.r,step:1,unit:'mm'}];},
+    apply(sk,k,v){const s=sk.segs.find(s=>s.full);if(!s||!(v>0.01))return false;
+      if(k==='radius')s.r=v;else if(k==='diameter')s.r=v/2;else return false;return true;}
+  },
+  ellipse:{
+    list(sk){const b=shapeLocalBBox(sk);
+      return [{k:'radius X',v:b.w/2,step:1,unit:'mm'},{k:'radius Y',v:b.h/2,step:1,unit:'mm'}];},
+    apply(sk,k,v){const b=shapeLocalBBox(sk);if(!(v>0.01))return false;
+      if(k==='radius X'&&b.w>1e-6)applyShapeScaleLocal(sk,2*v/b.w,1);
+      else if(k==='radius Y'&&b.h>1e-6)applyShapeScaleLocal(sk,1,2*v/b.h);
+      else return false;return true;}
+  },
+  polygon:{
+    list(sk){const p=polyVertsOf(sk);if(!p)return null;
+      return [{k:'sides',v:p.n,step:1,unit:''},{k:'radius',v:p.r,step:1,unit:'mm'}];},
+    apply(sk,k,v){const p=polyVertsOf(sk);if(!p)return false;
+      if(k==='sides'){
+        const n=Math.max(3,Math.min(64,Math.round(v)));
+        sk.segs=polySegs({u:p.c[0],v:p.c[1]},{u:p.c[0]+p.r*Math.cos(p.a0),v:p.c[1]+p.r*Math.sin(p.a0)},n);
+      }else if(k==='radius'&&v>0.01){
+        sk.segs=polySegs({u:p.c[0],v:p.c[1]},{u:p.c[0]+v*Math.cos(p.a0),v:p.c[1]+v*Math.sin(p.a0)},p.n);
+      }else return false;return true;}
+  },
+  arc:{
+    list(sk){const s=sk.segs[0];if(!s||s.full||!s.b||sk.segs.length!==1)return null;
+      const a=KM.arcOf(s);
+      return [{k:'radius',v:a.r,step:1,unit:'mm'},{k:'sweep',v:Math.abs(4*Math.atan(s.b))*180/Math.PI,step:5,unit:'°'}];},
+    apply(sk,k,v){const s=sk.segs[0];if(!s||s.full||!s.b)return false;
+      const {cx,cy,r,a0}=KM.arcOf(s),sw=4*Math.atan(s.b);
+      if(k==='radius'&&v>0.01){
+        s.x0=cx+v*Math.cos(a0);s.y0=cy+v*Math.sin(a0);
+        s.x1=cx+v*Math.cos(a0+sw);s.y1=cy+v*Math.sin(a0+sw);
+      }else if(k==='sweep'&&v>1&&v<360){
+        const s2=Math.sign(sw)*v*Math.PI/180;
+        s.x1=cx+r*Math.cos(a0+s2);s.y1=cy+r*Math.sin(a0+s2);s.b=Math.tan(s2/4);
+      }else return false;return true;}
+  },
+  line:{
+    list(sk){const s=sk.segs[0];if(!s||s.full||sk.segs.length!==1)return null;
+      return [{k:'length',v:Math.hypot(s.x1-s.x0,s.y1-s.y0),step:1,unit:'mm'},
+              {k:'angle',v:Math.atan2(s.y1-s.y0,s.x1-s.x0)*180/Math.PI,step:5,unit:'°'}];},
+    apply(sk,k,v){const s=sk.segs[0];if(!s||s.full)return false;
+      const mx=(s.x0+s.x1)/2,my=(s.y0+s.y1)/2;
+      const len=Math.hypot(s.x1-s.x0,s.y1-s.y0),ang=Math.atan2(s.y1-s.y0,s.x1-s.x0);
+      if(k==='length'&&v>0.01){
+        s.x0=mx-Math.cos(ang)*v/2;s.y0=my-Math.sin(ang)*v/2;
+        s.x1=mx+Math.cos(ang)*v/2;s.y1=my+Math.sin(ang)*v/2;
+      }else if(k==='angle'){
+        const a2=v*Math.PI/180;
+        s.x0=mx-Math.cos(a2)*len/2;s.y0=my-Math.sin(a2)*len/2;
+        s.x1=mx+Math.cos(a2)*len/2;s.y1=my+Math.sin(a2)*len/2;
+      }else return false;return true;}
+  },
+  slot:{
+    list(sk){const p=slotPrmOf(sk);if(!p)return null;
+      const L=Math.hypot(p.spine[1].u-p.spine[0].u,p.spine[1].v-p.spine[0].v);
+      return [{k:'length',v:L,step:1,unit:'mm'},{k:'width',v:2*p.r,step:1,unit:'mm'}];},
+    apply(sk,k,v){const p=slotPrmOf(sk);if(!p)return false;
+      const [A,B]=p.spine;
+      const L=Math.hypot(B.u-A.u,B.v-A.v),mx=(A.u+B.u)/2,my=(A.v+B.v)/2;
+      const dx=L>1e-9?(B.u-A.u)/L:1,dy=L>1e-9?(B.v-A.v)/L:0;
+      if(k==='length'&&v>0.01){
+        p.spine=[{u:mx-dx*v/2,v:my-dy*v/2},{u:mx+dx*v/2,v:my+dy*v/2}];
+      }else if(k==='width'&&v>0.1){p.r=v/2;}
+      else return false;
+      const segs=slotSegs(p.spine,p.r);
+      if(!segs.length)return false;
+      sk.segs=segs;return true;}
+  },
+  pslot:{
+    list(sk){const p=sk.prm;if(!p||!p.spine||p.spine.length<2)return null;
+      let L=0;for(let i=0;i<p.spine.length-1;i++)L+=Math.hypot(p.spine[i+1].u-p.spine[i].u,p.spine[i+1].v-p.spine[i].v);
+      return [{k:'spine length',v:L,step:1,unit:'mm',ro:true},{k:'width',v:2*p.r,step:1,unit:'mm'}];},
+    apply(sk,k,v){const p=sk.prm;if(!p||!p.spine)return false;
+      if(k!=='width'||!(v>0.1))return false;
+      const segs=slotSegs(p.spine,v/2);
+      if(!segs.length)return false;
+      p.r=v/2;sk.segs=segs;return true;}
+  },
+};
+SHAPE_PARAMS.crect=SHAPE_PARAMS.rect; // both fall through to width/height below
+function shapeParams(sk){ // rows for the Inspector — shape-specific, else box size
+  const def=SHAPE_PARAMS[sk.shape];
+  const rows=def&&def.list?def.list(sk):null;
+  if(rows)return rows;
+  const b=shapeLocalBBox(sk); // rect / polyline / boolean results: plain box dimensions
+  return [{k:'width',v:b.w,step:1,unit:'mm'},{k:'height',v:b.h,step:1,unit:'mm'}];
+}
+function shapeParamApply(sk,k,v){
+  const def=SHAPE_PARAMS[sk.shape];
+  if(def&&def.apply&&def.apply(sk,k,v))return true;
+  const b=shapeLocalBBox(sk);
+  if(k==='width'&&b.w>1e-6&&v>0.01){applyShapeScaleLocal(sk,v/b.w,1);return true;}
+  if(k==='height'&&b.h>1e-6&&v>0.01){applyShapeScaleLocal(sk,1,v/b.h);return true;}
+  return false;
 }
 /* ── 2-D shape booleans (unite / subtract / intersect) ──
    Polygonize each operand's regions, split segments at crossings, keep fragments by
@@ -424,7 +579,7 @@ function shapeJoin(sks){ // merge curves into the first figure (even-odd fill ap
   for(let i=1;i<sks.length;i++){first.segs.push(...sks[i].segs);}
   const ids=new Set(sks.slice(1).map(s=>s.id));
   doc.figures=doc.figures.filter(f=>!ids.has(f.id));
-  first.shape='polyline';
+  first.shape='polyline';delete first.prm; // no single defining parameter set any more
   selection=[{type:'sketch',body:first.id,key:null}];
   log('join → '+first.name);
   refresh();
@@ -982,6 +1137,9 @@ function finishTool(){
     snapshot(T.label);
     const sk={id:doc.next++,kind:'sketch',shape:tool.kind,name:figName(T.stem||T.label.replace(/\b\w/g,c=>c.toUpperCase()).replace(/\s+/g,'')),
       plane:doc.activePlane,segs,vis:true};
+    // remember the defining parameters (slot spine/width) so the Inspector can edit them exactly
+    if(tool.kind==='slot')sk.prm={spine:[{u:pts[0].u,v:pts[0].v},{u:pts[1].u,v:pts[1].v}],r:distPtSeg2(pts[2],pts[0],pts[1])};
+    else if(tool.kind==='pslot'){const ex=toolExtra();sk.prm={spine:pts.map(p=>({u:p.u,v:p.v})),r:ex&&ex.r||0};}
     doc.figures.push(sk);
     log(T.label+' → '+sk.name);
   }
@@ -1814,12 +1972,18 @@ function renderInspector(){
         <div class="c-top"><span class="ico">✎</span><span class="t"><span class="n">${f.name}</span><span class="m">${f.shape||'shape'} · plane ${f.plane}</span></span></div>
         <div class="big"><span class="v">${fmtNum(area)}</span><span class="u">mm²</span><span class="lab">${regs.length} closed region${regs.length===1?'':'s'}</span></div>
       </div>
+      <div class="sec"><div class="sec-head">Dimensions<span class="hint">${f.shape||'shape'} · ⏎ applies</span></div>
+        <div class="sec-body">
+          ${shapeParams(f).map(r=>r.ro
+            ?`<div class="ctl half"><div class="ctl-top"><span class="lab">${r.k}</span></div>
+               <div class="ctl-top"><span class="val" style="font-size:11.5px">${r.v.toFixed(r.unit==='mm'?2:1)}<small>${r.unit}</small></span></div></div>`
+            :numIn(r.k,r.unit===''?String(Math.round(r.v)):r.v.toFixed(r.unit==='°'?1:2),r.step,r.unit)).join('')}
+        </div></div>
       <div class="sec"><div class="sec-head">Placement<span class="hint">edit · ⏎ applies</span></div>
         <div class="sec-body">
           ${triple('location','mm',[['X','X',bb.c[0].toFixed(2),1],['Y','Y',bb.c[1].toFixed(2),1],['Z','Z',(pose.tz||0).toFixed(2),1]])}
           ${triple('rotation','°',[['X','rotX',((pose.rx||0)*180/Math.PI).toFixed(1),5],['Y','rotY',((pose.ry||0)*180/Math.PI).toFixed(1),5],['Z','rotation',(pose.rot*180/Math.PI).toFixed(1),5]])}
           ${triple('scale','×',[['X','scaleX',(pose.sx||1).toFixed(3),0.1],['Y','scaleY',(pose.sy||1).toFixed(3),0.1],['Z','scaleZ',(pose.sz||1).toFixed(3),0.1]])}
-          ${numIn('width',bb.w.toFixed(2),1,'mm')}${numIn('height',bb.h.toFixed(2),1,'mm')}
         </div></div>
       <div class="sec"><div class="sec-head">Profile</div>
         <div class="sec-body">
@@ -1864,8 +2028,7 @@ function renderInspector(){
         else if(k==='scaleX'){if(v>1e-6)applyShapeDelta(f,{dsu:v/pose2.sx,dsv:1});}
         else if(k==='scaleY'){if(v>1e-6)applyShapeDelta(f,{dsu:1,dsv:v/pose2.sy});}
         else if(k==='scaleZ'){if(v>1e-6)pose2.sz=v;}             // scales extrude height
-        else if(k==='width'){if(bb2.w>1e-6&&v>1e-6)applyShapeDelta(f,{dsu:v/bb2.w,dsv:1});}
-        else if(k==='height'){if(bb2.h>1e-6&&v>1e-6)applyShapeDelta(f,{dsu:1,dsv:v/bb2.h});}
+        else shapeParamApply(f,k,v);                             // shape-defining dimensions
         refresh();
       };
     });
@@ -2148,8 +2311,8 @@ window.__SolidArcPanel={
   bodySolid:b=>bodySolid(b), fig, cmdRun, pick, startBlend, startExtrude, startTool, startModal,
   get blendTool(){return blendTool;}, blendCommit, snapshot, refresh, undo, redo, cam, draw:()=>draw(),
   get tool(){return tool;}, toolUV, mouseRay, rayPlane, project, frameOf, PLANES, TOOLS, slotSegs,
-  shapeBBox, applyShapeDelta, shapeBool, shapeJoin, shapePose,
+  shapeBBox, applyShapeDelta, shapeBool, shapeJoin, shapePose, shapeParams, shapeParamApply,
   regionArea:reg=>regionProps(reg).area,
-  build:'placement r6 (full-fill, xyz-placement)',
+  build:'dimensions r7 (shape params, full-fill, xyz-placement)',
 };
-console.log('SolidArc panel build: placement r6 (full-fill, xyz-placement)');
+console.log('SolidArc panel build: dimensions r7 (shape params, full-fill, xyz-placement)');

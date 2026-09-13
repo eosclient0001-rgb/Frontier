@@ -330,6 +330,93 @@ key('Escape');
 }
 function V3dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
 
+console.log('== shape-specific dimensions (proper CAD parameters per kind) ==');
+cmd('clear');
+topView();
+{
+  const D=P.doc;
+  const mk=(shape,segs,prm)=>{const s={id:D.next++,kind:'sketch',shape,name:shape+'P',plane:'XY',vis:true,segs};if(prm)s.prm=prm;D.figures.push(s);return s;};
+  // circle → radius / diameter (no width/height)
+  const ci=mk('circle',[{cx:0,cy:0,r:15,full:true}]);
+  let ps=P.shapeParams(ci);
+  chk('circle params are radius+diameter',ps.length===2&&ps[0].k==='radius'&&ps[1].k==='diameter',ps.map(r=>r.k));
+  P.shapeParamApply(ci,'diameter',50);
+  chk('setting ⌀50 gives r=25',Math.abs(ci.segs[0].r-25)<1e-9,ci.segs[0].r);
+  P.selection=[{type:'sketch',body:ci.id,key:null}];P.refresh();
+  let ih=doc.querySelector('#insp').innerHTML;
+  chk('circle inspector shows radius, not width/height',
+    /data-p="radius"/.test(ih)&&!/data-p="width"/.test(ih)&&!/data-p="height"/.test(ih));
+  // polygon → sides + radius
+  const hexSegs=[];
+  for(let i=0;i<6;i++){const a=2*Math.PI*i/6,b=2*Math.PI*(i+1)/6;
+    hexSegs.push({x0:20*Math.cos(a),y0:20*Math.sin(a),x1:20*Math.cos(b),y1:20*Math.sin(b),b:0});}
+  const pg=mk('polygon',hexSegs);
+  ps=P.shapeParams(pg);
+  chk('polygon params are sides+radius (6, 20)',
+    ps[0].k==='sides'&&ps[0].v===6&&ps[1].k==='radius'&&Math.abs(ps[1].v-20)<1e-9,ps);
+  P.shapeParamApply(pg,'sides',8);
+  chk('sides→8 rebuilds an octagon',pg.segs.length===8,pg.segs.length);
+  P.shapeParamApply(pg,'radius',30);
+  chk('radius→30 keeps 8 sides, new circumradius',
+    pg.segs.length===8&&Math.abs(Math.hypot(pg.segs[0].x0,pg.segs[0].y0)-30)<1e-9,
+    Math.hypot(pg.segs[0].x0,pg.segs[0].y0));
+  // line → length + angle
+  const ln=mk('line',[{x0:0,y0:0,x1:30,y1:40,b:0}]);
+  ps=P.shapeParams(ln);
+  chk('line params are length+angle (50, 53.1°)',
+    ps[0].k==='length'&&Math.abs(ps[0].v-50)<1e-9&&ps[1].k==='angle'&&Math.abs(ps[1].v-53.13)<0.01,ps);
+  P.shapeParamApply(ln,'length',100);
+  chk('length→100 keeps midpoint+direction',
+    Math.abs(Math.hypot(ln.segs[0].x1-ln.segs[0].x0,ln.segs[0].y1-ln.segs[0].y0)-100)<1e-9&&
+    Math.abs((ln.segs[0].x0+ln.segs[0].x1)/2-15)<1e-9,ln.segs[0]);
+  // arc → radius + sweep
+  const sw0=Math.PI/2;
+  const ar=mk('arc',[{x0:10,y0:0,x1:0,y1:10,b:Math.tan(sw0/4)}]);
+  ps=P.shapeParams(ar);
+  chk('arc params are radius+sweep (10, 90°)',
+    ps[0].k==='radius'&&Math.abs(ps[0].v-10)<1e-6&&ps[1].k==='sweep'&&Math.abs(ps[1].v-90)<1e-6,ps);
+  P.shapeParamApply(ar,'sweep',180);
+  chk('sweep→180° moves the arc end to (-10,0)',
+    Math.abs(ar.segs[0].x1+10)<1e-6&&Math.abs(ar.segs[0].y1)<1e-6,[ar.segs[0].x1,ar.segs[0].y1]);
+  // slot → length (between centres) + width
+  const sl=mk('slot',P.slotSegs([{u:0,v:0},{u:40,v:0}],5),{spine:[{u:0,v:0},{u:40,v:0}],r:5});
+  ps=P.shapeParams(sl);
+  chk('slot params are length+width (40, 10)',
+    ps[0].k==='length'&&Math.abs(ps[0].v-40)<1e-9&&ps[1].k==='width'&&Math.abs(ps[1].v-10)<1e-9,ps);
+  P.shapeParamApply(sl,'width',16);
+  chk('slot width→16 rebuilds outline (r=8 caps)',
+    K.profile(sl.segs).length===1&&Math.abs(sl.prm.r-8)<1e-9,sl.prm.r);
+  P.shapeParamApply(sl,'length',60);
+  const bbS=P.shapeBBox(sl);
+  chk('slot length→60 → overall 76 × 16 box',
+    Math.abs(bbS.w-76)<1e-6&&Math.abs(bbS.h-16)<1e-6,[bbS.w,bbS.h]);
+  // ellipse → radius X / radius Y
+  const el2=mk('circle',[{cx:0,cy:0,r:10,full:true}]);
+  P.applyShapeDelta(el2,{dsu:2,dsv:1}); // becomes ellipse 40×20
+  chk('non-uniform scaled circle re-labels as ellipse',el2.shape==='ellipse',el2.shape);
+  ps=P.shapeParams(el2);
+  chk('ellipse params are radius X/Y (20, 10)',
+    ps[0].k==='radius X'&&Math.abs(ps[0].v-20)<0.05&&ps[1].k==='radius Y'&&Math.abs(ps[1].v-10)<0.05,ps);
+  P.shapeParamApply(el2,'radius Y',15);
+  const bbE=P.shapeBBox(el2);
+  chk('radius Y→15 stretches height only',Math.abs(bbE.h-30)<0.1&&Math.abs(bbE.w-40)<0.1,[bbE.w,bbE.h]);
+  // rect keeps width/height (the correct params for a box)
+  const rc=mk('rect',[{x0:0,y0:0,x1:40,y1:0,b:0},{x0:40,y0:0,x1:40,y1:25,b:0},
+                      {x0:40,y0:25,x1:0,y1:25,b:0},{x0:0,y0:25,x1:0,y1:0,b:0}]);
+  ps=P.shapeParams(rc);
+  chk('rect params are width+height (40, 25)',
+    ps[0].k==='width'&&Math.abs(ps[0].v-40)<1e-9&&ps[1].k==='height'&&Math.abs(ps[1].v-25)<1e-9,ps);
+  P.shapeParamApply(rc,'width',80);
+  const bbR=P.shapeBBox(rc);
+  chk('rect width→80, height untouched',Math.abs(bbR.w-80)<1e-9&&Math.abs(bbR.h-25)<1e-9,[bbR.w,bbR.h]);
+  // rotated rect: width edits along the shape's OWN axis, not the world bbox
+  P.applyShapeDelta(rc,{rot:Math.PI/6});
+  P.shapeParamApply(rc,'height',50);
+  ps=P.shapeParams(rc);
+  chk('rotated rect: height→50 measured in local axes',
+    Math.abs(ps[1].v-50)<1e-6&&Math.abs(ps[0].v-80)<1e-6,ps);
+}
+
 console.log('== 2-D booleans: unite / subtract / intersect ==');
 cmd('clear');
 topView();
