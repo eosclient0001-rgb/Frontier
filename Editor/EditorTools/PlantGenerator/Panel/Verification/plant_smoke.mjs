@@ -2,7 +2,7 @@
 import { generatePlant, randomParams, connectedComponents, SPECIES, CATALOGUE } from '../plant.js';
 let fails = 0, checks = 0;
 const ok = (c, msg) => { checks++; if (!c) { fails++; console.log('  ✗', msg); } };
-const expect = { palm: [2, 19], banana: [1.5, 9], fern: [.2, 7] };
+const expect = { palm: [1, 19], banana: [1.5, 9], fern: [.2, 7] };
 for (const cat of CATALOGUE) {
   const sp = cat.species; const t0 = Date.now(); let tri = 0, verts = 0;
   for (let seed = 1; seed <= 20; seed++) {

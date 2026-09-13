@@ -132,21 +132,46 @@ function setCurrent(species, variant) {
   S.species = species; S.variant = SPECIES[species].variants[variant] ? variant : Object.keys(SPECIES[species].variants)[0];
   document.querySelectorAll('.sp').forEach(x => x.classList.toggle('on', x.dataset.sp === species));
   const chip = $('#curChip'); chip.style.setProperty('--acc', SPECIES[species].accent); chip.querySelector('b').textContent = variantOf(species, S.variant).label;
+  document.querySelectorAll('#tree .row.child').forEach(r => r.classList.toggle('sel', r.querySelector('.name')?.textContent === variantOf(species, S.variant).label));
   persist();
 }
 $('#curChip').onclick = () => toggleCat(true);
 $('#btnGen').onclick = () => addPlant(S.species, parseInt($('#seed').value));
 $('#btnBatch').onclick = () => { const base = parseInt($('#seed').value); const l0 = S.layout; S.layout = 'lineup'; document.querySelectorAll('#layout button').forEach(b => b.classList.toggle('on', b.dataset.l === 'lineup')); for (let i = 0; i < 6; i++) addPlant(S.species, Number.isFinite(base) ? base + i : undefined, false); focusSel(); void l0; };
-$('#q').oninput = e => { S.filter = e.target.value.toLowerCase(); refresh(); };
+$('#q').oninput = e => { S.filter = e.target.value.toLowerCase(); if (S.filter) libOpen = true; refresh(); };
+$('#q').placeholder = 'Search library & scene…';
 
 /* ───────── UI: outliner tree ───────── */
+let libOpen = true;
+function libraryGroup() {
+  const g = document.createElement('div'); g.className = 'grp' + (libOpen ? '' : ' closed');
+  g.innerHTML = `<div class="grp-h"><svg class="i car" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>Library · all plants<span class="cnt">${CATALOGUE.length}</span></div><div class="kids"></div>`;
+  g.querySelector('.grp-h').onclick = () => { libOpen = !libOpen; g.classList.toggle('closed', !libOpen); };
+  const kids = g.querySelector('.kids');
+  for (const f of Object.keys(SPECIES)) {
+    const list = CATALOGUE.filter(c => c.species === f); if (S.filter && !list.some(c => (c.label + c.latin + f).toLowerCase().includes(S.filter))) continue;
+    const h = document.createElement('div'); h.className = 'grp-h'; h.style.cssText = 'height:22px;padding-left:18px;color:' + SPECIES[f].accent; h.innerHTML = `${SPECIES[f].label}s<span class="cnt">${list.length}</span>`; kids.appendChild(h);
+    for (const c of list) {
+      if (S.filter && !(c.label + c.latin + f).toLowerCase().includes(S.filter)) continue;
+      const inScene = S.plants.filter(p => p.species === c.species && p.params.variant === c.variant).length;
+      const row = document.createElement('div'); row.className = 'row child' + (S.species === c.species && S.variant === c.variant ? ' sel' : ''); row.style.setProperty('--acc', c.accent); row.title = 'click: make current · double-click / + : add to scene';
+      row.innerHTML = `<div class="ico">${ICON[f]}</div><div class="txt"><div class="name">${c.label}</div><div class="meta">${c.latin}${inScene ? ' · ' + inScene + ' in scene' : ''}</div></div><button class="eye" style="opacity:1" title="add to scene"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>`;
+      row.onclick = () => setCurrentAndRefresh(c);
+      row.ondblclick = () => addPlant(c.species, undefined, true, c.variant);
+      row.querySelector('.eye').onclick = e => { e.stopPropagation(); setCurrent(c.species, c.variant); addPlant(c.species, parseInt($('#seed').value), true, c.variant); };
+      kids.appendChild(row);
+    }
+  }
+  return g;
+}
+function setCurrentAndRefresh(c) { setCurrent(c.species, c.variant); refresh(); }
 function refresh() {
-  const tree = $('#tree'); tree.innerHTML = '';
+  const tree = $('#tree'); tree.innerHTML = ''; tree.appendChild(libraryGroup());
   const groups = {}; for (const p of S.plants) (groups[p.species] ||= []).push(p);
   let tri = 0;
   for (const [sp, arr] of Object.entries(groups)) {
     const g = document.createElement('div'); g.className = 'grp'; const d = SPECIES[sp];
-    g.innerHTML = `<div class="grp-h"><svg class="i car" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>${d.label}s<span class="cnt">${arr.length}</span></div><div class="kids"></div>`;
+    g.innerHTML = `<div class="grp-h"><svg class="i car" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>Scene · ${d.label}s<span class="cnt">${arr.length}</span></div><div class="kids"></div>`;
     g.querySelector('.grp-h').onclick = () => g.classList.toggle('closed');
     const kids = g.querySelector('.kids');
     for (const p of arr) {
@@ -162,7 +187,7 @@ function refresh() {
     }
     tree.appendChild(g);
   }
-  if (!S.plants.length) tree.innerHTML = `<div class="empty"><b>No plants yet</b>Pick a species, then <i>generate</i> (G).<br>Every result is one merged, untextured mesh with solid vertex colours.</div>`;
+  if (!S.plants.length) tree.insertAdjacentHTML('beforeend', `<div class="empty"><b>No plants in the scene yet</b>Click <b>+</b> on any Library plant, or press <i>generate</i> (G).</div>`);
   $('#tPl').textContent = S.plants.length; $('#tTri').textContent = tri > 999 ? (tri / 1000).toFixed(1) + 'k' : tri;
   $('#tTriT').className = 'tile' + (tri > 400000 ? ' warn' : tri ? ' ok' : '');
   const sel = S.plants.find(p => p.id === S.sel);
