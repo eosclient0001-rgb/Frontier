@@ -3,13 +3,13 @@
 import { generatePlant, randomParams } from '../plant.js';
 import { writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-const [id = 'palm.coconut', seedS = '1', out = `/tmp/${id}_${seedS}.png`, view = 'side'] = process.argv.slice(2);
+const [id = 'palm.coconut', seedS = '1', out = `/tmp/${id}_${seedS}.png`, view = 'side', zoomS = '1', fy = '.5'] = process.argv.slice(2);
 const [sp, variant] = id.split('.');
 const r = generatePlant(sp, randomParams(sp, +seedS, variant));
 const g = r.geometry, pos = g.attributes.position.array, col = g.attributes.color.array, nor = g.attributes.normal.array, idx = g.index.array;
 const W = 900, H = 900; const img = new Uint8Array(W * H * 3).fill(0); const z = new Float32Array(W * H).fill(Infinity);
 for (let i = 0; i < img.length; i += 3) { img[i] = 18; img[i + 1] = 19; img[i + 2] = 22; }
-const bb = g.boundingBox; const c = bb.getCenter(new (await import('../vendor/three.module.min.js')).Vector3()); const s = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) * 1.08;
+const bb = g.boundingBox; const c = bb.getCenter(new (await import('../vendor/three.module.min.js')).Vector3()); const s = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) * 1.08 / +zoomS; c.y = bb.min.y + (bb.max.y - bb.min.y) * +fy;
 const L = [0.4, 0.8, 0.5]; const ll = Math.hypot(...L); L[0] /= ll; L[1] /= ll; L[2] /= ll;
 const proj = (x, y, zz) => {
   x -= c.x; y -= c.y; zz -= c.z;
