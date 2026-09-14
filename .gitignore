@@ -1,0 +1,12 @@
+# Build artefacts
+*.o
+*.d
+Projects/*/bin/
+bin/
+
+# Rendered frames. The PNGs are committed as proof; the intermediate PPMs are large and regenerable.
+*.ppm
+
+# Python
+__pycache__/
+*.pyc
