@@ -1,12 +1,12 @@
-﻿# ApplyImGuiPatches.ps1 — applies Slate's tab-shape patches to the vendored ImGui submodule.
+﻿# ApplyImGuiPatches.ps1 — applies Frontier's tab-shape patches to the vendored ImGui submodule.
 #
-# 🔴 `ExternalPackages/` is never edited by hand. The two patches below are the whole of Slate's
+# 🔴 `ExternalPackages/` is never edited by hand. The two patches below are the whole of Frontier's
 #    divergence from upstream ImGui, they are tracked in `Tools/Build/Patches/`, and this script is the only thing
 #    that applies them. A silently adjusted vendored dependency is a defect that reproduces on one
 #    machine only — `14` §2 — so the divergence is a file a reader can open rather than a local edit.
 #
 # 🔴 Both patches default every member they add to 0.0f. An unpatched build and a patched build with
-#    default style emit the same command stream, so applying these changes nothing until Slate opts in.
+#    default style emit the same command stream, so applying these changes nothing until Frontier opts in.
 #
 #     powershell -File Tools\Build\ApplyImGuiPatches.ps1
 #     powershell -File Tools\Build\ApplyImGuiPatches.ps1 -Revert
@@ -30,11 +30,11 @@ $PatchRoot      = Join-Path $RepositoryRoot 'Tools\Build\Patches'
 #    reverse-check would report A as absent on a fully patched tree and the script would try to apply it
 #    again, aborting a build whose tree was perfectly healthy. A sentinel is stable under stacking.
 $Declared = @(
-    @{ Name = 'PatchA-TrapezoidalTabs.patch';  Sentinel = 'SLATE PATCH A'; Witness = 'imgui_widgets.cpp' }
-    @{ Name = 'PatchB-TabOverlapZOrder.patch'; Sentinel = 'SLATE PATCH B'; Witness = 'imgui_widgets.cpp' }
-    @{ Name = 'PatchC-RoundTabButtons.patch';  Sentinel = 'SLATE PATCH C'; Witness = 'imgui_widgets.cpp' }
-    @{ Name = 'PatchD-TabAddButton.patch';     Sentinel = 'SLATE PATCH D'; Witness = 'imgui.cpp' }
-    @{ Name = 'PatchE-NoTabScrollButtons.patch'; Sentinel = 'SLATE PATCH E'; Witness = 'imgui.cpp' }
+    @{ Name = 'PatchA-TrapezoidalTabs.patch';  Sentinel = 'FRONTIER PATCH A'; Witness = 'imgui_widgets.cpp' }
+    @{ Name = 'PatchB-TabOverlapZOrder.patch'; Sentinel = 'FRONTIER PATCH B'; Witness = 'imgui_widgets.cpp' }
+    @{ Name = 'PatchC-RoundTabButtons.patch';  Sentinel = 'FRONTIER PATCH C'; Witness = 'imgui_widgets.cpp' }
+    @{ Name = 'PatchD-TabAddButton.patch';     Sentinel = 'FRONTIER PATCH D'; Witness = 'imgui.cpp' }
+    @{ Name = 'PatchE-NoTabScrollButtons.patch'; Sentinel = 'FRONTIER PATCH E'; Witness = 'imgui.cpp' }
 )
 
 # 🔴 The commit these patches were written against. `git apply` would fail loudly on a different tree,

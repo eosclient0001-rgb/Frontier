@@ -56,7 +56,7 @@ float EditorHost::QueryTabAddX() const noexcept
 #ifdef FRONTIER_DEVELOPMENT
     const ImGuiDockNode* Found = ImGui::DockBuilderGetNode(LeftColumn_);
     if (Found != nullptr)
-        return (Found->SlateAddRect.Min.x + Found->SlateAddRect.Max.x) * 0.5f;
+        return (Found->FrontierAddRect.Min.x + Found->FrontierAddRect.Max.x) * 0.5f;
     return -1.0f;
 #else
     return -1.0f;
@@ -68,7 +68,7 @@ float EditorHost::QueryTabAddY() const noexcept
 #ifdef FRONTIER_DEVELOPMENT
     const ImGuiDockNode* Found = ImGui::DockBuilderGetNode(LeftColumn_);
     if (Found != nullptr)
-        return (Found->SlateAddRect.Min.y + Found->SlateAddRect.Max.y) * 0.5f;
+        return (Found->FrontierAddRect.Min.y + Found->FrontierAddRect.Max.y) * 0.5f;
     return -1.0f;
 #else
     return -1.0f;

@@ -560,11 +560,11 @@ if (-not $UpdateOk)
 }
 Pop-Location
 
-# Apply Slate's ImGui divergence BEFORE anything is translated. `git submodule update` above restores the
+# Apply Frontier's ImGui divergence BEFORE anything is translated. `git submodule update` above restores the
 #    vendored tree to its pinned commit, which silently discards the patches -- that is exactly how the
 #    trapezoidal tabs disappeared once already. Re-applying here means the two steps can never be run out of
 #    order. The script is idempotent and every member it adds defaults to 0.0f, so a build that has already
-#    been patched skips, and an unpatched build is visually identical until Slate seats the style values.
+#    been patched skips, and an unpatched build is visually identical until Frontier seats the style values.
 Write-Building 'Applying ImGui patches (Tools/Build/Patches/) ...'
 Push-Location $RepositoryRoot
 $PatchScript = Join-Path $RepositoryRoot 'Tools\Build\ApplyImGuiPatches.ps1'

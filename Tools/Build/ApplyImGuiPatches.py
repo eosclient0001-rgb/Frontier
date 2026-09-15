@@ -7,11 +7,11 @@
 #    the .ps1's, line for line. Two patchers that disagree would leave the vendored tree in a state only one
 #    of them understands, which is the exact defect `14` §2 forbids.
 #
-# 🔴 `ExternalPackages/` is never edited by hand. The three patches are the whole of Slate's divergence from
+# 🔴 `ExternalPackages/` is never edited by hand. The three patches are the whole of Frontier's divergence from
 #    upstream ImGui, they are tracked in `Tools/Build/Patches/`, and this script is the only thing that applies them.
 #
 # 🔴 Both patches default every member they add to 0.0f. An unpatched build and a patched build with default
-#    style emit the same command stream, so applying these changes nothing until Slate opts in.
+#    style emit the same command stream, so applying these changes nothing until Frontier opts in.
 #
 #     python3 Tools/Build/ApplyImGuiPatches.py
 #     python3 Tools/Build/ApplyImGuiPatches.py --revert
@@ -31,11 +31,11 @@ PatchRoot      = os.path.join(RepositoryRoot, 'Tools', 'Build', 'Patches')
 #    would report A as absent on a fully patched tree and the script would try to apply it again, aborting a
 #    build whose tree was perfectly healthy. A sentinel is stable under stacking.
 Declared = [
-    {'Name': 'PatchA-TrapezoidalTabs.patch',  'Sentinel': 'SLATE PATCH A', 'Witness': 'imgui_widgets.cpp'},
-    {'Name': 'PatchB-TabOverlapZOrder.patch', 'Sentinel': 'SLATE PATCH B', 'Witness': 'imgui_widgets.cpp'},
-    {'Name': 'PatchC-RoundTabButtons.patch',  'Sentinel': 'SLATE PATCH C', 'Witness': 'imgui_widgets.cpp'},
-    {'Name': 'PatchD-TabAddButton.patch',     'Sentinel': 'SLATE PATCH D', 'Witness': 'imgui.cpp'},
-    {'Name': 'PatchE-NoTabScrollButtons.patch', 'Sentinel': 'SLATE PATCH E', 'Witness': 'imgui.cpp'},
+    {'Name': 'PatchA-TrapezoidalTabs.patch',  'Sentinel': 'FRONTIER PATCH A', 'Witness': 'imgui_widgets.cpp'},
+    {'Name': 'PatchB-TabOverlapZOrder.patch', 'Sentinel': 'FRONTIER PATCH B', 'Witness': 'imgui_widgets.cpp'},
+    {'Name': 'PatchC-RoundTabButtons.patch',  'Sentinel': 'FRONTIER PATCH C', 'Witness': 'imgui_widgets.cpp'},
+    {'Name': 'PatchD-TabAddButton.patch',     'Sentinel': 'FRONTIER PATCH D', 'Witness': 'imgui.cpp'},
+    {'Name': 'PatchE-NoTabScrollButtons.patch', 'Sentinel': 'FRONTIER PATCH E', 'Witness': 'imgui.cpp'},
 ]
 
 # 🔴 The commit these patches were written against. `git apply` would fail loudly on a different tree, but it

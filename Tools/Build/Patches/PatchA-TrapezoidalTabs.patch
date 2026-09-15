@@ -6,7 +6,7 @@ index 98db04810..d80d73391 100644
      ImageBorderSize             = 0.0f;             // Thickness of border around Image() calls.
      TabRounding                 = 5.0f;             // Radius of upper corners of a tab. Set to 0.0f to have rectangular tabs.
      TabBorderSize               = 0.0f;             // Thickness of border around tabs.
-+    TabSlant                    = 0.0f;             // [SLATE PATCH A] Tab corner slant. Zero keeps stock ImGui; Slate seats 14.0f to match DockWorkspace.html.
++    TabSlant                    = 0.0f;             // [FRONTIER PATCH A] Tab corner slant. Zero keeps stock ImGui; Frontier seats 14.0f to match DockWorkspace.html.
      TabMinWidthBase             = 1.0f;             // Minimum tab width, to make tabs larger than their contents. TabBar buttons are not affected.
      TabMinWidthShrink           = 80.0f;            // Minimum tab width after shrinking, when using ImGuiTabBarFlags_FittingPolicyMixed policy. FLT_MAX: never shrink, will behave like ImGuiTabBarFlags_FittingPolicyScroll.
      TabCloseButtonMinWidthSelected   = -1.0f;       // -1: always visible. 0.0f: visible when hovered. >0.0f: visible when hovered if minimum width.
@@ -26,7 +26,7 @@ index add91e829..53565e857 100644
      float       ImageBorderSize;            // Thickness of border around Image() calls.
      float       TabRounding;                // Radius of upper corners of a tab. Set to 0.0f to have rectangular tabs.
      float       TabBorderSize;              // Thickness of border around tabs.
-+    float       TabSlant;                   // [SLATE PATCH A] Horizontal inset of a tab's two upper corners, in display pixels. 0.0f restores ImGui's rectangular tab.
++    float       TabSlant;                   // [FRONTIER PATCH A] Horizontal inset of a tab's two upper corners, in display pixels. 0.0f restores ImGui's rectangular tab.
      float       TabMinWidthBase;            // Minimum tab width, to make tabs larger than their contents. TabBar buttons are not affected.
      float       TabMinWidthShrink;          // Minimum tab width after shrinking, when using ImGuiTabBarFlags_FittingPolicyMixed policy.
      float       TabCloseButtonMinWidthSelected;     // -1: always visible. 0.0f: visible when hovered. >0.0f: visible when hovered if minimum width. FLT_MAX: never shrink, will behave like ImGuiTabBarFlags_FittingPolicyScroll.
@@ -38,7 +38,7 @@ index 17968a54d..f93f37ca6 100644
      return TabItemCalcSize(window->Name, window->HasCloseButton || (window->Flags & ImGuiWindowFlags_UnsavedDocument));
  }
  
-+// [SLATE PATCH A] Trapezoidal tab silhouette, transcribed from References/DockWorkspace.html.
++// [FRONTIER PATCH A] Trapezoidal tab silhouette, transcribed from References/DockWorkspace.html.
 +//   tabPath(w,h): slant = min(14, w * 0.16); the outline is [0,h] [slant,0] [w-slant,0] [w,h],
 +//   with the two upper corners rounded at radius 5 and the two lower corners left square.
 +//   The sheet rounds a corner by insetting along both incident edges and joining the two inset
@@ -48,7 +48,7 @@ index 17968a54d..f93f37ca6 100644
 +//   fixed at 14 would be half as steep on a 2x display.
 +//   Hit-testing is untouched: ItemAdd() and every drag path use the rectangular bb, precisely as
 +//   the sheet's SVG is pointer-events:none over a rectangular <div>.
-+static void SlateTabOutline(ImDrawList* draw_list, const ImRect& bb, float slant, float rounding, float y1, float y2, float inset)
++static void FrontierTabOutline(ImDrawList* draw_list, const ImRect& bb, float slant, float rounding, float y1, float y2, float inset)
 +{
 +    const ImVec2 corner[4] = {
 +        ImVec2(bb.Min.x + inset,         y2),      // lower leading, square
@@ -93,15 +93,15 @@ index 17968a54d..f93f37ca6 100644
      const float rounding = ImMax(0.0f, ImMin((flags & ImGuiTabItemFlags_Button) ? g.Style.FrameRounding : g.Style.TabRounding, width * 0.5f - 1.0f));
      const float y1 = bb.Min.y + 1.0f; // Leave a bit of room in title bars.
      const float y2 = bb.Max.y - g.Style.TabBarBorderSize;
-+    // [SLATE PATCH A] A button is a button and keeps its rectangle; only a genuine tab is slanted.
++    // [FRONTIER PATCH A] A button is a button and keeps its rectangle; only a genuine tab is slanted.
 +    const float slant = (flags & ImGuiTabItemFlags_Button) ? 0.0f : ImMin(g.Style.TabSlant, width * 0.16f);
 +    if (slant > 0.0f)
 +    {
-+        SlateTabOutline(draw_list, bb, slant, rounding, y1, y2, 0.0f);
++        FrontierTabOutline(draw_list, bb, slant, rounding, y1, y2, 0.0f);
 +        draw_list->PathFillConvex(col);
 +        if (g.Style.TabBorderSize > 0.0f)
 +        {
-+            SlateTabOutline(draw_list, bb, slant, rounding, y1 + 0.5f, y2, 0.5f);
++            FrontierTabOutline(draw_list, bb, slant, rounding, y1 + 0.5f, y2, 0.5f);
 +            draw_list->PathStroke(GetColorU32(ImGuiCol_Border), ImDrawFlags_Closed, g.Style.TabBorderSize);
 +        }
 +        return;

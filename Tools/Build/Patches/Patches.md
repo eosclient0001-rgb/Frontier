@@ -1,4 +1,4 @@
-# Patches — Slate's divergence from vendored ImGui
+# Patches — Frontier's divergence from vendored ImGui
 
 Five patches, all against `ExternalPackages/imgui` on the **`docking`** branch at `83f6686` (`1.93.0 WIP`).
 
@@ -7,7 +7,7 @@ not — it is an `ocornut/master` commit, and it is an ancestor of `docking` onl
 master periodically. `ImGuiConfigFlags_DockingEnable` does not exist at that commit, so docking could not be
 enabled at all. `.gitmodules` now declares `branch = docking` so the pin cannot drift back to master
 unnoticed.
-They are the **whole** of Slate's divergence from upstream ImGui. `Tools/Build/ApplyImGuiPatches.ps1` applies
+They are the **whole** of Frontier's divergence from upstream ImGui. `Tools/Build/ApplyImGuiPatches.ps1` applies
 them on Windows and `Tools/Build/ApplyImGuiPatches.py` on Linux and macOS.
 
 Both build systems invoke the script themselves, immediately after `git submodule update` and before any unit
@@ -97,7 +97,7 @@ powershell -File Tools\Build\ApplyImGuiPatches.ps1 -Verify    # report which sta
 powershell -File Tools\Build\ApplyImGuiPatches.ps1 -Revert    # restore pristine, in reverse order
 ```
 
-🔴 Application is detected by the `SLATE PATCH A` / `SLATE PATCH B` sentinels, **not** by
+🔴 Application is detected by the `FRONTIER PATCH A` / `FRONTIER PATCH B` sentinels, **not** by
 `git apply --reverse --check`. B edits lines inside A's context, so once B is applied A no longer
 reverse-checks — a reverse-check would report A absent on a fully patched tree and re-apply it, aborting
 a build whose tree was perfectly healthy.
@@ -109,15 +109,15 @@ a build whose tree was perfectly healthy.
 rectangles: `CloseButton` fills a square hover mark, and a tab-bar button is a full-height slab.
 
 `Style.TabButtonRounding` is a **fraction** of the control's own extent, not a length — so it is the one
-Slate style member `ScaleAllSizes` must NOT scale. `0.0f` restores the vendor's rectangles exactly, which
+Frontier style member `ScaleAllSizes` must NOT scale. `0.0f` restores the vendor's rectangles exactly, which
 is what keeps a patched build with defaults byte-identical to an unpatched one.
 
 ## PatchD — the dock strip's add button
 
 PatchC built the runway for the sheet's `addBtn` — sort-last, disc, centred glyph — but nothing ever
 submitted one: a dock strip is begun and ended inside `DockNodeUpdate`, where the host cannot reach it.
-PatchD submits `TabItemButton("+", Trailing)` there, behind a per-column `SlateAddButton` switch the host
-seats (the left column alone carries it). The press latches into `SlateAddPressed` because a dock strip
+PatchD submits `TabItemButton("+", Trailing)` there, behind a per-column `FrontierAddButton` switch the host
+seats (the left column alone carries it). The press latches into `FrontierAddPressed` because a dock strip
 has no submitting caller to return it to; the host drains it through `DockNodeConsumeAddRequest`. With
 the switch off the strip submits exactly what it always did.
 

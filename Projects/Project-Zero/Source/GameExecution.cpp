@@ -185,7 +185,7 @@ int main(int argc, char** argv)
     }
 
     Frontier::ConfigurationRegistry Configuration;
-    if (!Configuration.Load("Projects/Project-Zero/Content/Slate.config.toml"))
+    if (!Configuration.Load("Projects/Project-Zero/Content/Frontier.config.toml"))
         std::cerr << "[Configuration] " << Configuration.QueryPath() << ": " << Configuration.QueryLastError() << " - using defaults\n";
 
     Frontier::SceneStructure Level;
@@ -443,7 +443,7 @@ int main(int argc, char** argv)
         true        // validation layers — set true for debugging
     };
 
-    // Slate.config.toml is read before the device comes up: [render] ray_tracing_tier decides which traversal backend
+    // Frontier.config.toml is read before the device comes up: [render] ray_tracing_tier decides which traversal backend
     //    the swapchain resolves (missing file = defaults = Auto).
 
     Frontier::SwapchainExchange Surface(SurfaceConfig);
@@ -831,7 +831,7 @@ int main(int argc, char** argv)
             Caption.CapHeight   =  0.016f;
             Caption.StrokeWidth =  0.0016f;
             Caption.Alignment   = Frontier::TextAlignment::Centre;
-            (void)Frontier::InterfaceTextProjection::Compose(InterfaceFigures, AboutRoot, "SLATE", Caption);
+            (void)Frontier::InterfaceTextProjection::Compose(InterfaceFigures, AboutRoot, "FRONTIER", Caption);
 
             Caption.OriginY   = -0.010f;
             Caption.CapHeight =  0.009f;

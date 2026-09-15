@@ -7,7 +7,7 @@ diff --git a/imgui.cpp b/imgui.cpp
      // Begin tab bar
 -    ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_AutoSelectNewTabs; // | ImGuiTabBarFlags_NoTabListScrollingButtons);
 +    ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_AutoSelectNewTabs;
-+    // [SLATE PATCH E] No scroll buttons on docked tab bars: tabs are grabbed and reordered, never
++    // [FRONTIER PATCH E] No scroll buttons on docked tab bars: tabs are grabbed and reordered, never
 +    //   scrolled through arrows.
 +    tab_bar_flags |= ImGuiTabBarFlags_NoTabListScrollingButtons;
      tab_bar_flags |= ImGuiTabBarFlags_SaveSettings | ImGuiTabBarFlags_DockNode;

@@ -2,7 +2,7 @@
 
 ## The scenarios, and the keys that drive them
 
-Every key is `SLATE_DEBUG` only and drives the **ordinary** path. A scenario with a route of its own
+Every key is `FRONTIER_DEBUG` only and drives the **ordinary** path. A scenario with a route of its own
 would test that route and nothing else.
 
 | Key  | Scenario           | What it exercises                                                    |
@@ -50,7 +50,7 @@ extent must stay unadopted so the restore re-establishes — but it is now state
 on that path clears `LoopStanding`.
 
 🔴 **Device loss was terminal at every site.** A driver reset, which is ordinary on a machine whose display
-driver updates while Slate runs, closed the application. `RecoverDevice` retires the device tier and
+driver updates while Frontier runs, closed the application. `RecoverDevice` retires the device tier and
 rebuilds it, leaving the window, instance and surface standing — `Construct` opens a window at step ②, so
 recovering through it would stand a second window in front of the artist. Bounded at
 `DeviceRecoveryCeiling`, because a device lost twice is a driver that is not coming back.

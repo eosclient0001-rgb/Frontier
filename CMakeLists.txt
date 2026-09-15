@@ -29,8 +29,8 @@ foreach(PKG imgui glfw thorvg tomlpp jolt cgltf tinybvh clipper2 earcut fast_obj
     endif()
 endforeach()
 
-# ─── ImGui patches — Slate's divergence, applied before anything is compiled ────────────────────────────────────────────────────────────────
-# Configure time, not build time: the patched headers declare the style members Slate's sources reference, so a
+# ─── ImGui patches — Frontier's divergence, applied before anything is compiled ────────────────────────────────────────────────────────────────
+# Configure time, not build time: the patched headers declare the style members Frontier's sources reference, so a
 #    build that compiled first and patched later would fail on the first translation unit. The script is
 #    idempotent, so re-running cmake on an already-patched tree is a no-op.
 find_package(Python3 COMPONENTS Interpreter QUIET)

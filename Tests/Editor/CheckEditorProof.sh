@@ -203,10 +203,10 @@ fi
 if ! grep -q "AssignNotchWidth" Engine/Editor/EditorHost.cpp; then
     echo "  the shade's pull is never narrowed"; Fail=1
 fi
-if ! grep -q "SLATE PATCH D" ExternalPackages/imgui/imgui.cpp; then
+if ! grep -q "FRONTIER PATCH D" ExternalPackages/imgui/imgui.cpp; then
     echo "  PatchD is not seated — run Tools/Build/ApplyImGuiPatches.py"; Fail=1
 fi
-if ! grep -q "SLATE PATCH E" ExternalPackages/imgui/imgui.cpp; then
+if ! grep -q "FRONTIER PATCH E" ExternalPackages/imgui/imgui.cpp; then
     echo "  PatchE is not seated — run Tools/Build/ApplyImGuiPatches.py"; Fail=1
 fi
 
