@@ -1,0 +1,7 @@
+{
+  "name": "frontier-canyon-forge",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Realistic procedural canyon generator (Three.js web app). No SDF, no low-poly: carved heightfields + droplet erosion + strata + procedural PBR."
+}

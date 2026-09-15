@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frontier · Canyon Forge — Realistic Procedural Canyons</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/build/three.module.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="viewport"></div>
+
+  <aside id="panel">
+    <div class="brand">
+      <h1>FRONTIER</h1>
+      <p>Canyon Forge · procedural geology</p>
+    </div>
+
+    <div class="group">
+      <label>Canyon type</label>
+      <div class="seg" id="typeSeg">
+        <button data-type="grand" class="active">Grand<span>wide · terraced</span></button>
+        <button data-type="slot">Slot<span>narrow · swirling</span></button>
+        <button data-type="wadi">Wadi<span>shallow · braided</span></button>
+      </div>
+    </div>
+
+    <div class="group">
+      <label>Seed</label>
+      <div class="row">
+        <input id="seed" type="number" value="2026" step="1" />
+        <button id="dice" title="Randomize seed">⚄</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <label>Mesh detail</label>
+      <select id="detail">
+        <option value="320">Fast · 320²</option>
+        <option value="512" selected>Balanced · 512²</option>
+        <option value="768">Ultra · 768²</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <label>Erosion <span class="val" id="erosionVal">100%</span></label>
+      <input id="erosion" type="range" min="0" max="150" value="100" />
+    </div>
+
+    <div class="group">
+      <label>Sun <span class="val">morning ↔ noon</span></label>
+      <input id="sun" type="range" min="0" max="100" value="35" />
+    </div>
+
+    <div class="group toggles">
+      <label class="pill"><input id="tRocks" type="checkbox" checked /><span>Boulders</span></label>
+      <label class="pill"><input id="tBushes" type="checkbox" checked /><span>Vegetation</span></label>
+      <label class="pill"><input id="tOrbit" type="checkbox" /><span>Auto-orbit</span></label>
+    </div>
+
+    <button id="generate">Generate canyon</button>
+
+    <div id="stats"><span>warming up…</span></div>
+
+    <p class="about">
+      No SDF, no low-poly: spline-carved heightfields, droplet + thermal
+      erosion, sedimentary strata and fully procedural PBR — computed live.
+    </p>
+  </aside>
+
+  <button id="collapse" title="Toggle panel">☰</button>
+
+  <div id="hint">drag · orbit &nbsp;&nbsp; wheel · zoom &nbsp;&nbsp; right-drag · pan</div>
+
+  <div id="loader" class="hidden">
+    <div class="card">
+      <div class="spinner"></div>
+      <div id="loadlabel">Starting…</div>
+      <div class="bar"><div id="loadbar"></div></div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
