@@ -13,11 +13,12 @@
 
 ## Repository layout (never add top-level folders without asking)
 
-- Seven top-level folders, no more: `Engine/`, `EngineContent/`,
+- Eight top-level folders, no more: `Engine/`, `EngineContent/`,
   `ExternalPackages/` (git submodules — never `git add` their contents;
   they seat via `git submodule update --init`), `Projects/`, `Tools/`
   (`Build/` for build-time steps incl. the imgui patch stack,
-  `Scripts/` for dev utilities), `Docs/`, `Exhibits/`.
+  `Scripts/` for dev utilities), `Docs/`, `Exhibits/`, `Experimental/`
+  (HTML-first prototypes: `Ocean/`, `Liquid/`, `Water/`).
 - The verification wing is `Exhibits/`: `Exhibits/Workbench/<topic>/`
   holds runnable proof harnesses, `Exhibits/Gallery/<topic>/` holds the
   kept proof sheets. New topics (Sun, Sky, LensFlare, …) follow the same
