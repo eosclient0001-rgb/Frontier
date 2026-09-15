@@ -94,9 +94,9 @@ visible foam):
   criterion, grown linearly / decayed exponentially on a texture
   (GodotOceanWaves foam maps; Crest foam).
 - Appearance: **particles only** — spray/whitewater/whitecap sprites
-  spawned/celled by the emission field (GodotOceanWaves culls spray
-  particles by foam amount + dissolve shader). Parberry's halftone dither
-  gives bubble-pop erosion *on the sprites*, not on the water.
+  spawned and culled by the emission field, with per-sprite dissolve.
+  Parberry's halftone dither gives bubble-pop erosion *on the sprites*,
+  not on the water.
 - OMYOG shoreline + "A Model for Real Time Ocean Breaking Waves"
   (wave-map + particles) confirm: particles-as-foam-density is the
   accepted surf representation.
@@ -175,3 +175,23 @@ blocks starting.
   https://ianparberry.com/pubs/GAMEON-NA_GRAPH_04.pdf
 - keithlantz.net FFT ocean series: currently DOWN (database error);
   use gikster + jbouny instead.
+
+## 5. Break style decision: spilling (decided)
+
+Default: **spilling beach break**. Three reasons, all load-bearing:
+
+1. **It matches the bathymetry.** Our beach (~14 m over 170 m, ≈1:12,
+   plus bar) sits in the spilling regime (Iribarren number well under
+   ~0.5). Plunging needs a steep bar or reef we do not have; faking it
+   on a gentle slope is exactly the kind of wrong that reads as fake.
+2. **It matches the particle architecture.** Spilling = foam cascading
+   down the face + whitewater mat behind + swash — precisely what
+   emission-gated sprites render well. No mesh surgery required.
+3. **Honest about heightfields.** FFT surfaces cannot overturn into
+   hollow barrels, full stop. A "plunging" default would promise
+   geometry the mesh cannot produce. Spilling is what looks most
+   realistic *within a heightfield*, which is the only honest target.
+
+A steep-face parameter may suggest pitching on the biggest sets (face
+steepening + dense lip-particle curtain), but there will be no
+hollow-barrel claims anywhere in v3.

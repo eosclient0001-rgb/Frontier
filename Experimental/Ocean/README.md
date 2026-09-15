@@ -16,6 +16,10 @@ Standing rules for whatever gets built next:
   particles off before any effect lands.
 - **One surface both sides read.** CPU spawn logic and GPU rendering
   share the same height field — never two mirrors that drift.
+- **Camera moves like Unreal.** Drag-look + WASD/QE fly, Shift boost,
+  wheel dolly. No orbit toys.
+- **Bar is film/Unreal, not sample projects.** No Godot-derived
+  approaches anywhere in the design.
 
 See `RESEARCH.md` for the full post-mortem, the literature survey
 (Tessendorf FFT ocean, Jacobian foam emission, precedents), and the
