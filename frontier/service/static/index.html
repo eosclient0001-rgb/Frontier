@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontier — terrain generator</title>
+<style>
+  :root{
+    --bg:#15171b; --panel:#1d2026; --panel2:#242830; --line:#31363f;
+    --fg:#e8eaee; --dim:#9aa2b1; --hot:#e0a04a; --cool:#5aa9e6; --ok:#69c46d; --bad:#e0655a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:13px/1.45 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);overflow:hidden}
+  #app{display:grid;grid-template-columns:300px 1fr 280px;height:100vh}
+  .col{overflow-y:auto;background:var(--panel);border-right:1px solid var(--line)}
+  .col.right{border-right:0;border-left:1px solid var(--line)}
+  h1{font-size:14px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line);letter-spacing:.04em}
+  h1 span{color:var(--hot)}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);margin:0;padding:10px 14px 4px}
+  .sect{padding:6px 14px 12px;border-bottom:1px solid var(--line)}
+  label{display:block;margin:7px 0 2px;color:var(--dim);font-size:11px;display:flex;justify-content:space-between}
+  label b{color:var(--fg);font-weight:500}
+  input[type=range]{width:100%;height:16px;background:transparent;-webkit-appearance:none}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;background:var(--line);border-radius:2px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;margin-top:-5px;border-radius:50%;background:var(--hot);cursor:grab}
+  select,input[type=number],input[type=text]{width:100%;background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:4px 6px;font:inherit}
+  button{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:5px 9px;font:inherit;cursor:pointer}
+  button:hover{border-color:#4a515e}
+  button.primary{background:linear-gradient(180deg,#e8b060,#cf8c33);color:#1b1408;border-color:#8c601f;font-weight:600}
+  button.on{background:#2f4152;border-color:var(--cool);color:#cfe6f7}
+  .row{display:flex;gap:6px}.row>*{flex:1}
+  .tools{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .tools button{padding:6px 4px;font-size:11px}
+  #stage{position:relative;background:#0e1013;display:flex;align-items:center;justify-content:center}
+  canvas{max-width:100%;max-height:100%;image-rendering:pixelated;box-shadow:0 0 0 1px var(--line)}
+  #hud{position:absolute;left:10px;top:10px;background:#0d0f13cc;border:1px solid var(--line);border-radius:5px;padding:7px 9px;font-size:11px;color:var(--dim);min-width:210px;backdrop-filter:blur(3px)}
+  #hud b{color:var(--fg);font-weight:500}
+  #hud .k{color:var(--hot)}
+  #log{position:absolute;left:10px;bottom:10px;right:10px;max-height:88px;overflow:auto;background:#0d0f13cc;border:1px solid var(--line);border-radius:5px;padding:6px 8px;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--dim);display:none}
+  .list{font-size:11px;max-height:150px;overflow:auto}
+  .item{display:flex;justify-content:space-between;gap:6px;padding:3px 6px;border:1px solid var(--line);border-radius:4px;margin-bottom:3px;background:var(--panel2)}
+  .item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item button{padding:1px 5px;font-size:10px}
+  .tag{display:inline-block;font-size:10px;padding:1px 5px;border-radius:3px;background:#2b3140;color:var(--dim);margin-right:4px}
+  .bar{height:4px;background:var(--line);border-radius:2px;overflow:hidden;margin-top:6px}
+  .bar>i{display:block;height:100%;width:0;background:var(--hot);transition:width .25s}
+  .hint{color:var(--dim);font-size:11px;margin-top:4px}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="col">
+    <h1>FRONTIER <span>terrain</span></h1>
+
+    <h2>Landscape</h2>
+    <div class="sect">
+      <label>Preset</label>
+      <select id="preset"></select>
+      <div class="row" style="margin-top:8px">
+        <div><label>Preview size</label>
+          <select id="res"><option>128</option><option selected>192</option><option>256</option><option>384</option></select></div>
+        <div><label>Domain (m)</label>
+          <select id="world"><option>2048</option><option>4096</option><option selected>8192</option><option>16384</option></select></div>
+      </div>
+      <div id="base"></div>
+    </div>
+
+    <h2>Erosion</h2>
+    <div class="sect" id="erosion"></div>
+
+    <h2>Satmap</h2>
+    <div class="sect" id="texture"></div>
+  </div>
+
+  <div id="stage">
+    <canvas id="cv" width="512" height="512"></canvas>
+    <div id="hud">no bake yet</div>
+    <div id="log"></div>
+  </div>
+
+  <div class="col right">
+    <h1>Author</h1>
+
+    <h2>Sculpt</h2>
+    <div class="sect">
+      <div class="tools" id="tools"></div>
+      <label>Radius (m) <b id="radv">400</b></label>
+      <input type="range" id="rad" min="40" max="2000" step="20" value="400">
+      <label>Strength <b id="strv">0.6</b></label>
+      <input type="range" id="str" min="0.05" max="1" step="0.05" value="0.6">
+      <label>Parameter (depth / height / step) <b id="parv">120</b></label>
+      <input type="range" id="par" min="0" max="400" step="5" value="120">
+      <div class="hint">Click the map to place the selected tool. Structure tools (mesa, arch, alcove, slot, hoodoos, rocks) edit the SDF volume and are merged back into the height field.</div>
+    </div>
+
+    <h2>Splines / paths</h2>
+    <div class="sect">
+      <select id="pathkind">
+        <option value="river">River (graded valley)</option>
+        <option value="canyon">Canyon (U-cut + SDF)</option>
+        <option value="ridge">Ridge (uplift crest)</option>
+        <option value="fault">Fault scarp</option>
+        <option value="levee">Levee</option>
+      </select>
+      <div class="row" style="margin-top:6px">
+        <button id="drawPath">Draw path</button>
+        <button id="clearPath">Cancel</button>
+      </div>
+      <div class="hint">Turn on “Draw path”, click waypoints on the map (they show as a polyline), then Finish. Rivers carve and the fluvial solver then integrates the valley into the drainage network.</div>
+      <div class="row" style="margin-top:6px">
+        <button id="finishPath" class="on">Finish path</button>
+      </div>
+      <label>Width (m) <b id="pwv">260</b></label>
+      <input type="range" id="pw" min="40" max="1600" step="20" value="260">
+      <label>Depth (m) <b id="pdv">90</b></label>
+      <input type="range" id="pd" min="5" max="400" step="5" value="90">
+      <label>Uplift (m, ridge/fault) <b id="puv">140</b></label>
+      <input type="range" id="pu" min="0" max="600" step="10" value="140">
+      <div class="list" id="pathlist" style="margin-top:8px"></div>
+    </div>
+
+    <h2>Strokes</h2>
+    <div class="sect">
+      <div class="list" id="strokelist"></div>
+    </div>
+
+    <h2>Run</h2>
+    <div class="sect">
+      <div class="row">
+        <button id="gen" class="primary">Bake</button>
+        <button id="full">Full</button>
+      </div>
+      <div class="bar"><i id="prog"></i></div>
+      <div class="row" style="margin-top:8px">
+        <button id="viewSat" class="on">Satmap</button>
+        <button id="viewShade">Hillshade</button>
+        <button id="viewSand">Sand</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <select id="expres">
+          <option>512</option><option selected>1024</option><option>2048</option><option>4096</option>
+        </select>
+        <button id="export">Export</button>
+      </div>
+      <div class="hint" id="expath"></div>
+      <div id="strata" style="margin-top:8px"></div>
+    </div>
+
+    <h2>Document</h2>
+    <div class="sect">
+      <div class="row"><button id="save">Save JSON</button><button id="loadBtn">Load JSON</button></div>
+      <input type="file" id="loadFile" style="display:none" accept=".json">
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const S = {
+  doc:null, schema:null, tools:null, strokes:[], paths:[], pathKind:'river',
+  draw:false, draft:[], imgSat:null, imgShade:null, imgSand:null, view:'sat',
+  res:128, world:8192, job:null, busy:false, strata:null
+};
+
+function log(msg){ const el=$('#log'); el.style.display='block';
+  el.innerHTML += msg + '<br>'; el.scrollTop = el.scrollHeight; }
+
+function setDoc(d){ S.doc=d; S.res=Math.min(192, d.nx);
+  $('#world').value = String(d.world_size);
+  S.strata = d.strat;
+  renderControls(); rebuildLists(); }
+
+// ---------------------------------------------------------------- controls
+function slider(obj, key, spec, host, onchange){
+  const [k,label,mn,mx,st,kind] = spec;
+  const wrap = document.createElement('div');
+  const cur = obj[k];
+  const lid = 'lb_'+k+'_'+(Math.random()*1e6|0);
+  wrap.innerHTML = `<label>${label} <b id="${lid}">${fmt(cur,kind)}</b></label>`;
+  const inp = document.createElement('input'); inp.type='range';
+  if(kind==='log'){ inp.min=Math.log10(mn); inp.max=Math.log10(mx); inp.step=(Math.log10(mx)-Math.log10(mn))/200; inp.value=Math.log10(Math.max(cur,mn)); }
+  else { inp.min=mn; inp.max=mx; inp.step=st; inp.value=cur; }
+  inp.oninput = ()=>{ const v = kind==='log' ? Math.pow(10, parseFloat(inp.value))
+                    : (kind==='int' ? parseInt(inp.value) : parseFloat(inp.value));
+    obj[k]=v; document.getElementById(lid).textContent=fmt(v,kind); onchange&&onchange(); };
+  wrap.appendChild(inp); host.appendChild(wrap);
+}
+const fmt = (v,kind)=> kind==='log' ? (v>=1e4 ? (v/1e4).toFixed(2)+'e4' : v.toExponential(2)) 
+                 : (kind==='int' ? v : (+v).toFixed(Math.abs(v)<1?2:(Math.abs(v)<100?2:0)));
+
+function renderControls(){
+  $('#base').innerHTML=''; $('#erosion').innerHTML=''; $('#texture').innerHTML='';
+  for(const spec of S.schema.base) slider(S.doc.base, spec[0], spec, $('#base'));
+  for(const spec of S.schema.erosion) slider(S.doc.erosion, spec[0], spec, $('#erosion'));
+  for(const spec of S.schema.texture) slider(S.doc.texture, spec[0], spec, $('#texture'));
+  const st = document.createElement('div'); st.innerHTML =
+    `<label>Stratigraphy</label><select id="stratSel">
+       <option value="colorado_plateau">Colorado plateau (layered sandstone)</option>
+       <option value="soft_sand">Soft sand / sabkha stack</option></select>
+     <label>Sun azimuth / elevation use the satmap sliders above</label>`;
+  $('#texture').appendChild(st);
+  $('#stratSel').value = S.doc.strat;
+  $('#stratSel').onchange = e => S.doc.strat = e.target.value;
+}
+
+function renderTools(){
+  const host=$('#tools'); host.innerHTML='';
+  const all = [...S.tools.brushes.map(t=>({...t,grp:'brush'})),
+               ...S.tools.structure.map(t=>({...t,grp:'sdf'}))];
+  all.forEach(t=>{
+    const b=document.createElement('button'); b.textContent=t.label; b.title=t.hint;
+    b.dataset.tool=t.id; if(S.tool===t.id) b.classList.add('on');
+    b.onclick=()=>{ S.tool=t.id; S.grp=t.grp; S.draw=false;
+      document.querySelectorAll('#tools button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); };
+    host.appendChild(b);
+  });
+  if(!S.tool){ S.tool=all[0].id; S.grp='brush'; host.firstChild.classList.add('on'); }
+}
+
+function rebuildLists(){
+  const sl=$('#strokelist'); sl.innerHTML = S.strokes.length?'':'<div class="hint">No strokes yet.</div>';
+  S.strokes.forEach((s,i)=>{
+    const d=document.createElement('div'); d.className='item';
+    d.innerHTML=`<span><span class="tag">${s.tool}</span>${(s.x/1000).toFixed(2)},${(s.y/1000).toFixed(2)} km · r${Math.round(s.radius)}</span>`;
+    const b=document.createElement('button'); b.textContent='×';
+    b.onclick=()=>{ S.strokes.splice(i,1); rebuildLists(); };
+    d.appendChild(b); sl.appendChild(d);
+  });
+  const pl=$('#pathlist'); pl.innerHTML = S.paths.length?'':'<div class="hint">No paths yet.</div>';
+  S.paths.forEach((p,i)=>{
+    const d=document.createElement('div'); d.className='item';
+    d.innerHTML=`<span><span class="tag">${p.kind}</span>${p.points.length} pts · w${Math.round(p.width)} d${Math.round(p.depth)}</span>`;
+    const b=document.createElement('button'); b.textContent='×';
+    b.onclick=()=>{ S.paths.splice(i,1); rebuildLists(); };
+    d.appendChild(b); pl.appendChild(d);
+  });
+}
+
+// ------------------------------------------------------------------ canvas
+const cv=$('#cv'), ctx=cv.getContext('2d');
+function draw(){
+  ctx.fillStyle='#0e1013'; ctx.fillRect(0,0,cv.width,cv.height);
+  const img = S.view==='sat'?S.imgSat : S.view==='shade'?S.imgShade : S.imgSand;
+  if(img){ ctx.imageSmoothingEnabled=false; ctx.drawImage(img,0,0,cv.width,cv.height); }
+  else { ctx.fillStyle='#2a2f38'; ctx.font='14px sans-serif';
+         ctx.fillText('Bake to generate terrain', 20, 30); }
+  // draft path
+  if(S.draft.length){
+    ctx.strokeStyle='#5aa9e6'; ctx.lineWidth=3; ctx.beginPath();
+    S.draft.forEach((p,i)=>{ const x=p[0]/S.world*cv.width, y=p[1]/S.world*cv.height;
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.stroke();
+    ctx.fillStyle='#5aa9e6';
+    S.draft.forEach(p=>{ ctx.beginPath(); ctx.arc(p[0]/S.world*cv.width,p[1]/S.world*cv.height,4,0,7); ctx.fill(); });
+  }
+  S.paths.forEach(p=>{
+    ctx.strokeStyle = p.kind==='river'?'#69c46d' : p.kind==='ridge'?'#e0a04a':'#e0655a';
+    ctx.lineWidth=2.5; ctx.beginPath();
+    p.points.forEach((q,i)=>{ const x=q[0]/S.world*cv.width, y=q[1]/S.world*cv.height;
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.stroke();
+  });
+  S.strokes.forEach(s=>{
+    ctx.strokeStyle = s.sdf ? '#c98ce6' : '#ffffff88';
+    ctx.beginPath(); ctx.arc(s.x/S.world*cv.width, s.y/S.world*cv.height,
+      Math.max(3,s.radius/S.world*cv.width),0,7); ctx.stroke();
+  });
+}
+function markCircle(x,y,r){ // visual feedback for a placed brush
+  S.strokes.push({tool:S.tool,x,y,radius:r,strength:+$('#str').value,param:+$('#par').value,
+                  seed:1+(Math.random()*999|0),sdf:S.grp==='sdf',mask:null});
+  rebuildLists(); draw();
+}
+
+cv.addEventListener('click', ev=>{
+  const rect=cv.getBoundingClientRect();
+  const xr=(ev.clientX-rect.left)/rect.width, yr=(ev.clientY-rect.top)/rect.height;
+  const x=Math.round(xr*S.world), y=Math.round(yr*S.world); // raster row 0 is the top edge
+  if(S.draw){ S.draft.push([x,y]); draw(); return; }
+  markCircle(x,y,+$('#rad').value);
+});
+cv.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
+
+// ------------------------------------------------------------------ actions
+async function api(path, body){
+  const r = await fetch(path, {method: body?'POST':'GET',
+    headers:{'Content-Type':'application/json'}, body: body?JSON.stringify(body):undefined});
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+function toast(msg,bad){ log((bad?'<span style="color:#e0655a">':'')+msg+(bad?'</span>':'')); }
+
+function loadPng(b64){ return new Promise(res=>{ const i=new Image();
+  i.onload=()=>res(i); i.src='data:image/png;base64,'+b64; }); }
+
+function terrainDoc(){
+  const d = JSON.parse(JSON.stringify(S.doc));
+  d.nx = S.res; d.ny = S.res; d.world_size = S.world;
+  d.strokes = S.strokes; d.paths = S.paths;
+  return d;
+}
+
+async function bake(){
+  if(S.busy) return; S.busy=true; $('#prog').style.width='10%';
+  $('#hud').innerHTML='baking…';
+  const t0=performance.now();
+  try{
+    const data = await api('/api/preview',{doc:terrainDoc(), nx:S.res, ny:S.res});
+    S.imgSat = await loadPng(data.satmap_png);
+    S.imgShade = await loadPng(data.hillshade_png);
+    if(data.sand_png) S.imgSand = await loadPng(data.sand_png);
+    draw();
+    const st=data.stats, ti=data.timings;
+    $('#hud').innerHTML =
+      `<b>${data.nx}×${data.ny}</b> · ${data.cell.toFixed(1)} m/px · ${(data.world_size/1000).toFixed(1)} km<br>`+
+      `relief <span class="k">${st.relief.toFixed(0)} m</span> · mean slope <span class="k">${st.mean_slope_deg.toFixed(1)}°</span><br>`+
+      `sand cover <span class="k">${(st.sand_fraction*100).toFixed(1)}%</span> · z ${st.z_min.toFixed(0)}…${st.z_max.toFixed(0)} m<br>`+
+      `bake <span class="k">${((performance.now()-t0)/1000).toFixed(1)} s</span>`;
+    toast(`baked ${data.nx}² in ${((performance.now()-t0)/1000).toFixed(1)} s — `+
+      Object.entries(ti).map(([k,v])=>`${k} ${v.toFixed(1)}`).join(', '));
+  }catch(e){ toast('bake failed: '+e.message, true); $('#hud').textContent='failed'; }
+  S.busy=false; $('#prog').style.width='0%';
+}
+
+async function fullBake(){
+  const N = +$('#expres').value;
+  toast('baking '+N+'² in the background …');
+  S.job = await api('/api/bake',{doc:terrainDoc(), nx:N, ny:N});
+  // poll the job so the progress bar tracks the real work
+  await new Promise(res=>{
+    const iv = setInterval(async ()=>{
+      try{
+        const j = await api('/api/jobs/'+S.job);
+        $('#prog').style.width = (j.progress*100).toFixed(0)+'%';
+        if(j.status!=='running'){ clearInterval(iv); res(); }
+      }catch(e){ clearInterval(iv); res(); }
+    }, 700);
+  });
+  const j = await api('/api/jobs/'+S.job);
+  $('#prog').style.width='0%';
+  if(j.status==='error'){ toast('bake failed: '+j.message,true); return null; }
+  toast('baked '+N+'² in '+ (j.message||''));
+  return S.job;
+}
+
+async function exportSet(){
+  const N = +$('#expres').value;
+  try{
+    let job=null;
+    if(N > 512){ job = await fullBake(); if(!job) return; }
+    toast('exporting at '+N+'² …'); $('#prog').style.width='55%';
+    const r = await api('/api/export',{doc:terrainDoc(), nx:N, job,
+      mesh:true, hillshade:true, name:(S.doc.name||'terrain')});
+    $('#prog').style.width='0%';
+    toast('exported '+Object.keys(r.files).length+' files to '+r.outdir+' ('+r.elapsed+' s)');
+    $('#expath').innerHTML = 'wrote <b>'+Object.keys(r.files).join(', ')+'</b>';
+  }catch(e){ $('#prog').style.width='0%'; toast('export failed: '+e.message, true); }
+}
+
+// ------------------------------------------------------------------ boot
+async function boot(){
+  S.schema = await api('/api/schema');
+  S.tools  = await api('/api/tools');
+  const presets = await api('/api/presets');
+  const sel=$('#preset');
+  Object.keys(presets).forEach(k=>{ const o=document.createElement('option');
+    o.value=k; o.textContent=k.replace(/_/g,' '); sel.appendChild(o); });
+  sel.onchange = ()=>{ setDoc(JSON.parse(JSON.stringify(presets[sel.value])));
+    S.strokes=[]; S.paths=[]; rebuildLists(); bake(); };
+  setDoc(JSON.parse(JSON.stringify(presets[Object.keys(presets)[0]])));
+  renderTools();
+  $('#res').onchange = e => S.res = +e.target.value;
+  $('#world').onchange = e => { S.world=+e.target.value; S.doc.world_size=S.world; draw(); };
+  ['rad','str','par','pw','pd','pu'].forEach(id=>{
+    const el=$('#'+id); el.oninput = ()=>{ $('#'+id+'v').textContent=el.value; };
+  });
+  $('#gen').onclick = bake;
+  $('#full').onclick = async ()=>{
+    // honest full-resolution bake through the job API, with progress
+    S.job = await api('/api/bake',{doc:terrainDoc(), nx:S.res, ny:S.res});
+    toast('full bake at '+S.res+'² started (job '+S.job+')');
+    const iv = setInterval(async ()=>{
+      try{ const j = await api('/api/jobs/'+S.job);
+        $('#prog').style.width=(j.progress*100).toFixed(0)+'%'; $('#hud').innerHTML=j.message;
+        if(j.status!=='running'){ clearInterval(iv); $('#prog').style.width='0%';
+          if(j.status==='done'){ S.imgSat=await loadPng(j.result.satmap_png);
+            S.imgShade=await loadPng(j.result.hillshade_png);
+            if(j.result.sand_png) S.imgSand=await loadPng(j.result.sand_png);
+            draw(); toast('full bake '+j.message);
+            const st=j.result.stats;
+            $('#hud').innerHTML=`<b>${j.result.nx}×${j.result.ny}</b> · ${j.result.cell.toFixed(1)} m/px<br>`+
+              `relief <span class="k">${st.relief.toFixed(0)} m</span> · mean slope <span class="k">${st.mean_slope_deg.toFixed(1)}°</span><br>`+
+              `sand cover <span class="k">${(st.sand_fraction*100).toFixed(1)}%</span>`;
+          } else { toast('full bake failed: '+j.message, true); } }
+      }catch(e){ clearInterval(iv); }
+    }, 700);
+  };
+  $('#export').onclick = exportSet;
+  $('#viewSat').onclick = ()=>{ S.view='sat'; markView(); };
+  $('#viewShade').onclick = ()=>{ S.view='shade'; markView(); };
+  $('#viewSand').onclick = ()=>{ S.view='sand'; markView(); };
+  $('#drawPath').onclick = ()=>{ S.draw=true; S.draft=[]; toast('click waypoints, then Finish path'); };
+  $('#clearPath').onclick = ()=>{ S.draw=false; S.draft=[]; draw(); };
+  $('#finishPath').onclick = ()=>{
+    if(S.draft.length>1){
+      S.paths.push({kind:$('#pathkind').value, points:S.draft.slice(),
+        width:+$('#pw').value, depth:+$('#pd').value, uplift:+$('#pu').value,
+        bank_width:+$('#pw').value*1.6, profile:'u', smooth:0.5, noise:6, noise_scale:220,
+        seed:1+(Math.random()*999|0), name:$('#pathkind').value});
+      toast('added '+$('#pathkind').value+' with '+S.draft.length+' waypoints');
+    }
+    S.draw=false; S.draft=[]; rebuildLists(); draw();
+  };
+  $('#save').onclick = ()=>{ const b=new Blob([JSON.stringify(terrainDoc(),null,1)],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+    a.download=(S.doc.name||'terrain').replace(/\s+/g,'_')+'.json'; a.click(); };
+  $('#loadBtn').onclick = ()=> $('#loadFile').click();
+  $('#loadFile').onchange = async e=>{ const f=e.target.files[0]; if(!f) return;
+    const d=JSON.parse(await f.text()); setDoc(d); rebuildLists(); bake(); };
+  markView(); draw();
+  await bake();
+}
+function markView(){
+  ['viewSat','viewShade','viewSand'].forEach(id=>$('#'+id).classList.remove('on'));
+  $('#viewSat').classList.add('on');
+  if(S.view!=='sat') $('#'+(S.view==='shade'?'viewShade':'viewSand')).classList.add('on');
+  draw();
+}
+boot().catch(e=>{ document.body.innerHTML='<pre style="color:#e0655a;padding:20px">'+e.message+'</pre>'; });
+</script>
+</body>
+</html>
