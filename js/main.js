@@ -1,15 +1,18 @@
 // ============================================================================
 // main.js — Frontier Canyon Forge: scene setup, UI wiring, render loop.
 // ============================================================================
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Sky } from 'three/addons/objects/Sky.js';
+import * as THREE from '../vendor/three/build/three.module.js';
+import { OrbitControls } from '../vendor/three/examples/jsm/controls/OrbitControls.js';
+import { Sky } from '../vendor/three/examples/jsm/objects/Sky.js';
 import {
   TYPES, generateCanyon, makeSampler, makeRiverFn, seedOffset,
   createErosionEngine, mulberry32, resolveStrata, STRATA_PRESETS,
 } from './terrain.js';
 import { buildTerrainMaterial, buildWaterMaterial, buildLakeMaterial } from './canyonMaterial.js';
 import { buildRocks, buildBushes, buildTrail } from './props.js';
+
+// First module statement: proves the whole import graph resolved + evaluated.
+if (typeof window !== 'undefined' && window.__boot) window.__boot.marks.push('module-eval');
 
 const MAT_OPTS = {
   grand: {
@@ -69,9 +72,10 @@ const baseAtmo = { sunI: 2.5, hemiI: 0.4, fogNear: 1000, fogFar: 8000 };
 
 // ------------------------------- helpers ------------------------------------
 const $ = (id) => document.getElementById(id);
-const BUILD = 'b4';
+const BUILD = 'b5';
+const _rawError = console.error.bind(console);
 function showError(msg) {
-  console.error('[CanyonForge]', msg);
+  _rawError('[CanyonForge]', msg);
   const box = document.getElementById('errbox');
   const txt = document.getElementById('errtext');
   if (box && txt) {
@@ -83,6 +87,17 @@ window.addEventListener('error', (e) => showError(e.message || e.error));
 window.addEventListener('unhandledrejection', (e) => {
   showError('Async: ' + ((e.reason && e.reason.message) || e.reason));
 });
+// Surface renderer/shader failures (three.js only logs them to the console).
+(() => {
+  let shown = 0;
+  console.error = (...a) => {
+    _rawError(...a);
+    if (shown < 3) {
+      shown++;
+      showError('Renderer: ' + a.map((x) => String(x)).join(' ').slice(0, 400));
+    }
+  };
+})();
 // null-safe binder: one missing element must never kill the whole panel
 function on(id, ev, fn) {
   const el = document.getElementById(id);
@@ -659,6 +674,10 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
   frame++;
+  if (typeof window !== 'undefined' && window.__boot && !window.__boot.firstFrame) {
+    window.__boot.firstFrame = true;
+    window.__boot.marks.push('frame1');
+  }
   waterTime += dt;
   const wsh = waterMesh && waterMesh.material && waterMesh.material.userData.shader;
   if (wsh) wsh.uniforms.uTime.value = waterTime;
@@ -752,6 +771,7 @@ try {
   bindUI();
   const jc = document.getElementById('jscheck');
   if (jc) jc.classList.add('hidden');
+  if (typeof window !== 'undefined' && window.__boot) window.__boot.ok = true;
 } catch (err) {
   let msg = 'Boot failed: ' + ((err && err.message) || err);
   if (/webgl/i.test(msg)) msg += ' — WebGL unavailable. Use Chrome/Edge with hardware acceleration enabled.';

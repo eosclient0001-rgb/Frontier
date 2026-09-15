@@ -5,15 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Frontier · Canyon Forge — Realistic Procedural Canyons</title>
   <!-- NOTE: bump ?v= on every release so browsers never mix old/new files -->
-  <link rel="stylesheet" href="./styles.css?v=b4" />
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "./vendor/three/build/three.module.js",
-        "three/addons/": "./vendor/three/examples/jsm/"
-      }
-    }
-  </script>
+  <link rel="stylesheet" href="./styles.css?v=b5" />
 </head>
 <body>
   <div id="viewport"></div>
@@ -99,7 +91,7 @@
       No SDF, no low-poly: spline-carved heightfields, droplet + thermal
       erosion, sedimentary strata and fully procedural PBR — computed live.
     </p>
-    <p class="build">build b4 · mesh-based heightfield, no SDF</p>
+    <p class="build">build b5 · mesh-based heightfield, no SDF</p>
   </aside>
 
   <button id="collapse" title="Toggle panel">☰</button>
@@ -114,8 +106,35 @@
     </div>
   </div>
 
+  <script>
+    // Boot tracer (classic script: runs even if ES modules fail).
+    window.__boot = { t0: Date.now(), marks: ['html'], ok: false, firstFrame: false };
+    window.__bootError = function (msg) {
+      var box = document.getElementById('errbox');
+      var txt = document.getElementById('errtext');
+      if (box && txt) {
+        txt.textContent += (txt.textContent ? '\n' : '') + String(msg).slice(0, 500);
+        box.classList.remove('hidden');
+      }
+    };
+    // Capture resource/evaluation failures (capture phase catches <script> errors).
+    window.addEventListener('error', function (e) {
+      var f = e.filename ? e.filename.split('/').pop().split('?')[0] : '';
+      window.__bootError('Load error: ' + (e.message || 'a script failed to load') + (f ? ' @ ' + f : ''));
+    }, true);
+    // Watchdog: if the app module never reports in, show environment facts.
+    setTimeout(function () {
+      if (window.__boot.ok) return;
+      var im = 'n/a';
+      try { im = (window.HTMLScriptElement && HTMLScriptElement.supports) ? String(HTMLScriptElement.supports('importmap')) : 'n/a'; } catch (x) { im = 'err'; }
+      var gl = 'no';
+      try { gl = document.createElement('canvas').getContext('webgl2') ? 'yes' : 'no'; } catch (x) { gl = 'err'; }
+      window.__bootError('Watchdog: app module never started. marks=[' + window.__boot.marks.join(',') +
+        '] importmap=' + im + ' webgl2=' + gl + ' UA=' + navigator.userAgent.slice(0, 90));
+    }, 9000);
+  </script>
   <div id="errbox" class="hidden"><b>Something broke.</b><pre id="errtext"></pre></div>
 
-  <script type="module" src="./js/main.js?v=b4"></script>
+  <script type="module" src="./js/main.js?v=b5"></script>
 </body>
 </html>

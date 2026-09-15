@@ -3,7 +3,7 @@
 // Placement is rule-based: rocks where slopes + cliff bases are, bushes near
 // water on gentle ground. Geometry is noise-displaced icosahedra.
 // ============================================================================
-import * as THREE from 'three';
+import * as THREE from '../vendor/three/build/three.module.js';
 import { Perlin2, mulberry32, lerp } from './terrain.js';
 
 function displacedBlob(rand, detail, jag) {

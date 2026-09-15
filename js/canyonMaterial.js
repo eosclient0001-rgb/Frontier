@@ -5,7 +5,7 @@
 // blending, wet river band, micro detail normals. Lighting/shadows/fog come
 // free from MeshStandardMaterial.
 // ============================================================================
-import * as THREE from 'three';
+import * as THREE from '../vendor/three/build/three.module.js';
 
 // NOTE: cnHash/cnNoise/cnFbm3 MUST match makeSharedNoise() in terrain.js
 // (integer-hash value noise; used for the strata warp so CPU erosion
