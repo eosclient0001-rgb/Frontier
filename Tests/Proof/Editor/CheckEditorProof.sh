@@ -23,7 +23,7 @@ fi
 echo "[EditorProof] compiling the patched vendor + Engine/Editor (headless: no Vulkan, no GLFW)"
 Binary="$(mktemp -u /tmp/EditorProof.XXXXXX)"
 if ! g++ -std=c++20 -O2 -Wall -Wextra -DFRONTIER_DEVELOPMENT \
-     -I ExternalPackages/imgui -I Engine/Editor -I Engine/DisplayPresentation -I ExternalPackages/tomlpp/include -I Tests/Editor -I Tests/Proof/Editor/HostShim -pthread \
+     -I ExternalPackages/imgui -I Engine/Editor -I Engine/DisplayPresentation -I ExternalPackages/tomlpp/include -I Tests/Proof/Editor -I Tests/Proof/Editor/HostShim -pthread \
      Tests/Proof/Editor/EditorProof.cpp \
      Engine/Editor/EditorHost.cpp \
      Engine/Editor/ControlPanel.cpp \
