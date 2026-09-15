@@ -567,7 +567,7 @@ int main()
 
     Rasterise();
 
-    const char* Sheet = "Gallery/Exhibits/Editor/EditorProof_Tabs.png";
+    const char* Sheet = "Exhibits/Gallery/Editor/EditorProof_Tabs.png";
     if (stbi_write_png(Sheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
     {
         std::fprintf(stderr, "[EditorProof] [FAIL] the sheet would not write\n");
@@ -808,7 +808,7 @@ int main()
     Rest(6);
     Rasterise();
     {
-        const char* MenuSheet = "Gallery/Exhibits/Editor/EditorProof_Menu.png";
+        const char* MenuSheet = "Exhibits/Gallery/Editor/EditorProof_Menu.png";
         if (stbi_write_png(MenuSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the pill sheet would not write\n");
@@ -836,7 +836,7 @@ int main()
     //    (t2 .56, below the old 150 bar), so this counts tree ink, not bright ink, over the tree's own rows.
     Rasterise();
     {
-        const char* NarrowSheet = "Gallery/Exhibits/Editor/EditorProof_Filtered.png";
+        const char* NarrowSheet = "Exhibits/Gallery/Editor/EditorProof_Filtered.png";
         if (stbi_write_png(NarrowSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the narrowed sheet would not write\n");
@@ -889,7 +889,7 @@ int main()
     Rest(3);
     Rasterise();
     {
-        const char* PaletteSheet = "Gallery/Exhibits/Editor/EditorProof_Palette.png";
+        const char* PaletteSheet = "Exhibits/Gallery/Editor/EditorProof_Palette.png";
         if (stbi_write_png(PaletteSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the palette sheet would not write\n");
@@ -939,7 +939,7 @@ int main()
     Rest(14);
     Rasterise();
     {
-        const char* ViewsSheet = "Gallery/Exhibits/Editor/EditorProof_Views.png";
+        const char* ViewsSheet = "Exhibits/Gallery/Editor/EditorProof_Views.png";
         if (stbi_write_png(ViewsSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the views sheet would not write\n");
@@ -1047,7 +1047,7 @@ int main()
     Rest(8);
     Rasterise();
     {
-        const char* InspectorSheet = "Gallery/Exhibits/Editor/EditorProof_Inspector.png";
+        const char* InspectorSheet = "Exhibits/Gallery/Editor/EditorProof_Inspector.png";
         if (stbi_write_png(InspectorSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the inspector sheet would not write\n");
@@ -1168,7 +1168,7 @@ int main()
             Failed = true;
         }
         Rasterise();
-        const char* ShadeSheet = "Gallery/Exhibits/Editor/EditorProof_Shade.png";
+        const char* ShadeSheet = "Exhibits/Gallery/Editor/EditorProof_Shade.png";
         if (stbi_write_png(ShadeSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the sheet would not write\n");
@@ -1290,7 +1290,7 @@ int main()
         if (Capture)
         {
             Rasterise();
-            const char* TabMenuSheet = "Gallery/Exhibits/Editor/EditorProof_TabMenu.png";
+            const char* TabMenuSheet = "Exhibits/Gallery/Editor/EditorProof_TabMenu.png";
             if (stbi_write_png(TabMenuSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
             {
                 std::fprintf(stderr, "[EditorProof] [FAIL] the sheet would not write\n");
