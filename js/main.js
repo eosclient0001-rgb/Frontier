@@ -72,7 +72,7 @@ const baseAtmo = { sunI: 2.5, hemiI: 0.4, fogNear: 1000, fogFar: 8000 };
 
 // ------------------------------- helpers ------------------------------------
 const $ = (id) => document.getElementById(id);
-const BUILD = 'b5';
+const BUILD = 'b6';
 const _rawError = console.error.bind(console);
 function showError(msg) {
   _rawError('[CanyonForge]', msg);

@@ -69,3 +69,15 @@ node test/canyon-test.mjs
 | `test/canyon-test.mjs` | Headless node tests for the generator |
 | `vendor/` | Vendored Three.js r160 (module, OrbitControls, Sky) |
 | `CANYON_PIPELINE.md` | The full “how to design a realistic canyon” guide |
+
+## Development
+
+`index.html` loads a single versioned bundle (`app-bN.js`) so browsers can
+never mix stale and fresh files. After editing `js/*`:
+
+```bash
+./build.sh b7   # new tag per release, deletes old bundles
+```
+
+then update the `<script>` ref + footer build tag in `index.html` and the
+`BUILD` const in `js/main.js` to match.

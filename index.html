@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Frontier · Canyon Forge — Realistic Procedural Canyons</title>
-  <!-- NOTE: bump ?v= on every release so browsers never mix old/new files -->
-  <link rel="stylesheet" href="./styles.css?v=b5" />
+  <!-- NOTE: app JS is a versioned bundle (app-bN.js). Rebuild via ./build.sh <tag>, then update this ref + the footer tag. -->
+  <link rel="stylesheet" href="./styles.css?v=b6" />
 </head>
 <body>
   <div id="viewport"></div>
@@ -91,7 +91,7 @@
       No SDF, no low-poly: spline-carved heightfields, droplet + thermal
       erosion, sedimentary strata and fully procedural PBR — computed live.
     </p>
-    <p class="build">build b5 · mesh-based heightfield, no SDF</p>
+    <p class="build">build b6 · mesh-based heightfield, no SDF</p>
   </aside>
 
   <button id="collapse" title="Toggle panel">☰</button>
@@ -135,6 +135,6 @@
   </script>
   <div id="errbox" class="hidden"><b>Something broke.</b><pre id="errtext"></pre></div>
 
-  <script type="module" src="./js/main.js?v=b5"></script>
+  <script type="module" src="./app-b6.js"></script>
 </body>
 </html>
