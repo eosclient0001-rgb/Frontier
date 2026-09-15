@@ -111,6 +111,20 @@ input[type="range"] {
   cursor: pointer;
 }
 
+.chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.chips button {
+  flex: 1 1 auto;
+  padding: 5px 4px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.chips button:hover { color: var(--txt); border-color: var(--accent); }
+
 .toggles { display: flex; gap: 6px; flex-wrap: wrap; }
 .pill {
   flex: 1 1 auto;

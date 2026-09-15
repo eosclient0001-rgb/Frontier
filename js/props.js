@@ -4,7 +4,7 @@
 // water on gentle ground. Geometry is noise-displaced icosahedra.
 // ============================================================================
 import * as THREE from 'three';
-import { Perlin2, mulberry32 } from './terrain.js';
+import { Perlin2, mulberry32, lerp } from './terrain.js';
 
 function displacedBlob(rand, detail, jag) {
   const geo = new THREE.IcosahedronGeometry(1, detail);
@@ -74,6 +74,75 @@ export function buildRocks(sampler, o) {
     group.add(mesh);
   }
   return group;
+}
+
+export function buildTrail(sampler, riverFn, o) {
+  // o: { mode, side, zFrac, rimHalf, bedHalf, waterY, world, width, color }
+  // modes: 'switchback' (rim -> river), 'rim' (along the rim), 'riverside'.
+  const pts = [];
+  const half = o.world / 2;
+  if (o.mode === 'switchback') {
+    const z0 = (o.zFrac - 0.5) * o.world;
+    const n = 140, nSw = 7;
+    const xStart = riverFn(z0) + o.side * (o.rimHalf + 40);
+    const xEnd = riverFn(z0) + o.side * o.bedHalf * 1.0;
+    for (let k = 0; k <= n; k++) {
+      const s = k / n;
+      const x = lerp(xStart, xEnd, Math.pow(s, 1.15));
+      const env = Math.pow(Math.sin(Math.PI * Math.min(s * 1.12, 1)), 0.6);
+      const z = z0 + Math.sin(s * Math.PI * 2 * nSw) * o.rimHalf * 0.10 * env;
+      const h = sampler.height(x, z);
+      if (s > 0.15 && h < o.waterY + 1.2) break; // stop at the water
+      pts.push({ x, z, h });
+    }
+  } else {
+    const off = o.mode === 'rim' ? o.rimHalf + 18 : o.bedHalf * 3.4;
+    const n = 160;
+    for (let k = 0; k <= n; k++) {
+      const s = k / n;
+      const z = -half * 0.9 + s * o.world * 0.9;
+      const wander = Math.sin(s * 21 + o.side * 3.0) * 7 + Math.sin(s * 47) * 3;
+      let x = riverFn(z) + o.side * (off + wander);
+      // nudge outward until dry
+      for (let t = 0; t < 6 && sampler.height(x, z) < o.waterY + 0.8; t++) {
+        x += o.side * 18;
+      }
+      if (Math.abs(x) > half * 0.96) continue;
+      const h = sampler.height(x, z);
+      if (h < o.waterY + 0.5) continue;
+      pts.push({ x, z, h });
+    }
+  }
+  if (pts.length < 4) return null;
+
+  const hw = o.width / 2;
+  const verts = new Float32Array(pts.length * 2 * 3);
+  const idx = [];
+  for (let k = 0; k < pts.length; k++) {
+    const p = pts[k];
+    const pn = pts[Math.min(k + 1, pts.length - 1)];
+    const pp = pts[Math.max(k - 1, 0)];
+    let tx = pn.x - pp.x, tz = pn.z - pp.z;
+    const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+    const y = p.h + 0.22;
+    verts[k * 6] = p.x - tz * hw; verts[k * 6 + 1] = y; verts[k * 6 + 2] = p.z + tx * hw;
+    verts[k * 6 + 3] = p.x + tz * hw; verts[k * 6 + 4] = y; verts[k * 6 + 5] = p.z - tx * hw;
+    if (k < pts.length - 1) {
+      const a = k * 2;
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({
+    color: o.color, roughness: 1, metalness: 0,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true;
+  return mesh;
 }
 
 export function buildBushes(sampler, o) {

@@ -104,13 +104,16 @@ export function sstep(a, b, x) {
   const t = clamp((x - a) / (b - a), 0, 1);
   return t * t * (3 - 2 * t);
 }
-function distToSeg(px, pz, ax, az, bx, bz) {
+function distToSegT(px, pz, ax, az, bx, bz) {
   const dx = bx - ax, dz = bz - az;
   const len2 = dx * dx + dz * dz;
   let t = len2 > 0 ? ((px - ax) * dx + (pz - az) * dz) / len2 : 0;
   t = clamp(t, 0, 1);
   const qx = ax + dx * t - px, qz = az + dz * t - pz;
-  return Math.sqrt(qx * qx + qz * qz);
+  return { d: Math.sqrt(qx * qx + qz * qz), t };
+}
+function distToSeg(px, pz, ax, az, bx, bz) {
+  return distToSegT(px, pz, ax, az, bx, bz).d;
 }
 
 // --------------------------- canyon configs ---------------------------------
@@ -123,6 +126,7 @@ export const TYPES = {
     wiggle: 0, tributary: true, buttes: 5, dunes: 0, braided: false,
     waterDepth: 2.4, warpAmp: 20, warpFreq: 0.004, aoStrength: 0.030, topY: 34,
     rocks: 900, rockMin: 0.8, rockMax: 6.0, bushes: 450,
+    lakeCount: 3, lakeRMin: 50, lakeRMax: 130, lakeDepth: 7,
     camPos: [980, 560, 1180], camTgt: [0, -140, 0],
   },
   slot: {
@@ -133,6 +137,7 @@ export const TYPES = {
     wiggle: 0.008, tributary: false, buttes: 0, dunes: 0, braided: false,
     waterDepth: 1.0, warpAmp: 4, warpFreq: 0.02, aoStrength: 0.14, topY: 14,
     rocks: 160, rockMin: 0.3, rockMax: 1.6, bushes: 0,
+    lakeCount: 0, lakeRMin: 0, lakeRMax: 0, lakeDepth: 0,
     camPos: [150, 72, 196], camTgt: [0, -16, 0],
   },
   wadi: {
@@ -143,44 +148,81 @@ export const TYPES = {
     wiggle: 0, tributary: false, buttes: 2, dunes: 7, braided: true,
     waterDepth: 0.5, warpAmp: 8, warpFreq: 0.006, aoStrength: 0.06, topY: 24,
     rocks: 350, rockMin: 0.5, rockMax: 3.0, bushes: 260,
+    lakeCount: 1, lakeRMin: 80, lakeRMax: 150, lakeDepth: 3,
     camPos: [700, 390, 920], camTgt: [0, -8, 0],
   },
 };
 
-// Sedimentary layers, BOTTOM (index 0) -> TOP (index 11).
-const STRATA = {
-  grand: {
-    frac: [0.06, 0.06, 0.07, 0.06, 0.11, 0.08, 0.10, 0.10, 0.06, 0.11, 0.08, 0.11],
+// Layer thickness fractions per canyon type (BOTTOM -> TOP, must sum to 1).
+const STRATA_FRAC = {
+  grand: [0.06, 0.06, 0.07, 0.06, 0.11, 0.08, 0.10, 0.10, 0.06, 0.11, 0.08, 0.11],
+  slot: [0.09, 0.07, 0.10, 0.06, 0.11, 0.08, 0.09, 0.07, 0.10, 0.06, 0.09, 0.08],
+  wadi: [0.08, 0.08, 0.09, 0.07, 0.10, 0.09, 0.08, 0.08, 0.09, 0.07, 0.09, 0.08],
+};
+
+// Choosable rock palettes. Layers BOTTOM (index 0) -> TOP (index 11).
+export const STRATA_PRESETS = {
+  classic: {
+    label: 'Canyon Classic',
     cols: [0x38312e, 0x5c4832, 0x6f7a52, 0xa67b5b, 0x7e2f26, 0x9c5636,
            0xb4663f, 0xc98a5a, 0x8e4438, 0xd9b48c, 0xb9a37e, 0xc9bfa8],
     hard: [0.95, 0.8, 0.3, 0.6, 0.9, 0.5, 0.45, 0.6, 0.25, 0.85, 0.7, 0.9],
     xbed: [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0],
   },
-  slot: {
-    frac: [0.09, 0.07, 0.10, 0.06, 0.11, 0.08, 0.09, 0.07, 0.10, 0.06, 0.09, 0.08],
+  antelope: {
+    label: 'Antelope Red',
     cols: [0x5e2018, 0x8e3222, 0xc65a35, 0xe8a56b, 0xa03a28, 0xd97b4a,
            0x7a2a20, 0xe3c08a, 0xb84a2e, 0xe8b878, 0xc97245, 0x8e3a24],
     hard: [0.8, 0.75, 0.7, 0.65, 0.8, 0.7, 0.85, 0.6, 0.75, 0.6, 0.7, 0.8],
     xbed: [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 0],
   },
-  wadi: {
-    frac: [0.08, 0.08, 0.09, 0.07, 0.10, 0.09, 0.08, 0.08, 0.09, 0.07, 0.09, 0.08],
+  sahara: {
+    label: 'Sahara Gold',
     cols: [0x7d6b55, 0x9a8567, 0xc9b183, 0xb99b6e, 0xd9c49a, 0xa98f66,
            0xd3bc92, 0xc4a87c, 0xe3d3ae, 0xb9a37e, 0xd9c49a, 0xcbb691],
     hard: [0.6, 0.5, 0.55, 0.45, 0.5, 0.4, 0.55, 0.5, 0.45, 0.5, 0.55, 0.6],
     xbed: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   },
+  painted: {
+    label: 'Painted Desert',
+    cols: [0x5e4f5e, 0x7a5f6e, 0x9a7386, 0xb98a8a, 0xd9a08a, 0xe8c39a,
+           0xc9a88a, 0xa8827a, 0x8a6a72, 0xb99aa0, 0xd9c2b2, 0xe8dcc8],
+    hard: [0.55, 0.45, 0.5, 0.4, 0.45, 0.5, 0.55, 0.45, 0.4, 0.5, 0.55, 0.6],
+    xbed: [0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+  },
+  bryce: {
+    label: 'Bryce Amphitheater',
+    cols: [0x8a4a3a, 0xb85a40, 0xd97a50, 0xe89a68, 0xf0b883, 0xf4d0a0,
+           0xe8b890, 0xd98a70, 0xc05a48, 0xe09a78, 0xf2cba4, 0xf7e3c4],
+    hard: [0.7, 0.5, 0.6, 0.45, 0.55, 0.4, 0.5, 0.6, 0.7, 0.5, 0.45, 0.55],
+    xbed: [1, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0],
+  },
+  basalt: {
+    label: 'Basalt Mono',
+    cols: [0x2e2c2c, 0x3a3735, 0x2a2828, 0x454240, 0x333131, 0x4a4642,
+           0x2e2c2a, 0x3f3b38, 0x363433, 0x4c4844, 0x383534, 0x54504a],
+    hard: [0.95, 0.9, 0.92, 0.85, 0.9, 0.88, 0.93, 0.86, 0.9, 0.85, 0.88, 0.9],
+    xbed: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  },
 };
 
-export function getStrata(type, bedBase) {
+export const TYPE_DEFAULT_STRATA = { grand: 'classic', slot: 'antelope', wadi: 'sahara' };
+
+export function resolveStrata(type, preset) {
+  if (preset && STRATA_PRESETS[preset]) return preset;
+  return TYPE_DEFAULT_STRATA[type] || 'classic';
+}
+
+export function getStrata(type, bedBase, preset) {
   const cfg = TYPES[type];
-  const s = STRATA[type];
+  const s = STRATA_PRESETS[resolveStrata(type, preset)];
+  const frac = STRATA_FRAC[type];
   const bottom = bedBase - 10;
   const top = cfg.topY;
   const bounds = [bottom];
   let acc = 0;
   for (let i = 0; i < 12; i++) {
-    acc += s.frac[i];
+    acc += frac[i];
     bounds.push(bottom + (top - bottom) * Math.min(acc, 1));
   }
   return { bounds, cols: s.cols.slice(), hard: s.hard.slice(), xbed: s.xbed.slice() };
@@ -208,8 +250,125 @@ function valleyProfile(d, rimHalf, bedHalf, pw, K, terrMix) {
   return smooth * (1 - terrMix) + terr * terrMix;
 }
 
+// --------------------------- erosion engine ---------------------------------
+// Reusable droplet erosion: used once during generation AND continuously for
+// live rain. Mutates the normalized grid G in place and records touched
+// cells in `dirty` so the mesh can be patched incrementally.
+export function createErosionEngine({ G, hardGrid, distMain, N, bedHalf, lakes }) {
+  const dirty = new Uint8Array(N * N);
+  const R = 2;
+  const brushOff = [], brushW = [];
+  for (let oz = -R; oz <= R; oz++) {
+    for (let ox = -R; ox <= R; ox++) {
+      const dd = ox * ox + oz * oz;
+      if (dd <= R * R) {
+        brushOff.push(oz * N + ox);
+        brushW.push(1 - Math.sqrt(dd) / (R + 1));
+      }
+    }
+  }
+  let wSum = 0;
+  for (let k = 0; k < brushW.length; k++) wSum += brushW[k];
+  for (let k = 0; k < brushW.length; k++) brushW[k] /= wSum;
+
+  function markDirty(cx, cz) {
+    const m = 3;
+    const i0 = Math.max(cx - m, 0), i1 = Math.min(cx + m, N - 1);
+    const j0 = Math.max(cz - m, 0), j1 = Math.min(cz + m, N - 1);
+    for (let j = j0; j <= j1; j++) {
+      const row = j * N;
+      for (let i = i0; i <= i1; i++) dirty[row + i] = 1;
+    }
+  }
+  // 0 = fully erodible ... 1 = protected (riverbed + lake bowls stay put)
+  function protection(ix, iz) {
+    let p = 0;
+    if (distMain) {
+      const d = distMain[iz * N + ix];
+      if (d < bedHalf * 3) p = Math.max(p, 1 - sstep(bedHalf, bedHalf * 3, d));
+    }
+    if (lakes) {
+      for (let L = 0; L < lakes.length; L++) {
+        const lk = lakes[L];
+        const ddx = ix - lk.gx, ddz = iz - lk.gz;
+        if (ddx * ddx + ddz * ddz < lk.gr * lk.gr) p = Math.max(p, 0.95);
+      }
+    }
+    return p;
+  }
+
+  function runDroplets(count, rand, storm = 1, protect = false, onChunk = null) {
+    const maxLife = 30, inertia = 0.05, capacity = 4.0;
+    const erodeSpeed = 0.3 * storm, depositSpeed = 0.3, evaporate = 0.01, gravity = 4.0;
+    const x0 = R, x1 = N - 1 - R;
+    const CHUNK = 6000;
+    for (let s = 0; s < count; s++) {
+      let px = x0 + rand() * (x1 - x0);
+      let pz = x0 + rand() * (x1 - x0);
+      let dx = 0, dz = 0, speed = 1, water = 1, sed = 0;
+      for (let life = 0; life < maxLife; life++) {
+        const ix = Math.floor(px), iz = Math.floor(pz);
+        const fx = px - ix, fz = pz - iz;
+        const i00 = iz * N + ix;
+        const h00 = G[i00], h10 = G[i00 + 1], h01 = G[i00 + N], h11 = G[i00 + N + 1];
+        const gx = (h10 - h00) * (1 - fz) + (h11 - h01) * fz;
+        const gz = (h01 - h00) * (1 - fx) + (h11 - h10) * fx;
+        const hOld = h00 + (h10 - h00) * fx + (h01 - h00) * fz + (h00 - h10 - h01 + h11) * fx * fz;
+        dx = dx * inertia - gx * (1 - inertia);
+        dz = dz * inertia - gz * (1 - inertia);
+        const len = Math.sqrt(dx * dx + dz * dz);
+        if (len < 1e-6) {
+          const a = rand() * Math.PI * 2;
+          dx = Math.cos(a); dz = Math.sin(a);
+        } else { dx /= len; dz /= len; }
+        const nx = px + dx, nz = pz + dz;
+        if (nx < x0 || nx > x1 - 1 || nz < x0 || nz > x1 - 1) break;
+        const nix = Math.floor(nx), niz = Math.floor(nz);
+        const nfx = nx - nix, nfz = nz - niz;
+        const j00 = niz * N + nix;
+        const g00 = G[j00];
+        const nh = g00 + (G[j00 + 1] - g00) * nfx + (G[j00 + N] - g00) * nfz
+                 + (g00 - G[j00 + 1] - G[j00 + N] + G[j00 + N + 1]) * nfx * nfz;
+        const dh = nh - hOld;
+        const hard = hardGrid[iz * N + ix];
+        const erod = (1.35 - hard) * storm;
+        let rate = 1;
+        if (protect) rate = 1 - protection(ix, iz) * 0.97;
+        const cap = Math.max(-dh * speed * water * capacity, 0.001);
+        if (sed > cap || dh > 0) {
+          const dep = (dh > 0 ? Math.min(dh, sed) : (sed - cap) * depositSpeed) * rate;
+          sed -= dep;
+          G[i00] += dep * (1 - fx) * (1 - fz);
+          G[i00 + 1] += dep * fx * (1 - fz);
+          G[i00 + N] += dep * (1 - fx) * fz;
+          G[i00 + N + 1] += dep * fx * fz;
+        } else {
+          let take = (cap - sed) * erodeSpeed * erod * rate;
+          const maxTake = -dh + 0.001;
+          if (take > maxTake) take = maxTake;
+          if (take < 0) take = 0;
+          sed += take;
+          for (let b = 0; b < brushOff.length; b++) {
+            const bi = i00 + brushOff[b];
+            const nv = G[bi] - take * brushW[b];
+            G[bi] = nv < 0 ? 0 : nv;
+          }
+        }
+        const sp2 = speed * speed + (-dh) * gravity;
+        speed = Math.sqrt(sp2 > 0 ? sp2 : 0);
+        water *= (1 - evaporate);
+        px = nx; pz = nz;
+        markDirty(ix, iz);
+      }
+      if (onChunk && (s % CHUNK) === CHUNK - 1) onChunk(s, count);
+    }
+  }
+
+  return { runDroplets, dirty, protection };
+}
+
 // ------------------------------ generator -----------------------------------
-export async function generateCanyon({ type = 'grand', seed = 2026, size = 512, erosion = 1.0, onProgress = null }) {
+export async function generateCanyon({ type = 'grand', seed = 2026, size = 512, erosion = 1.0, strata: strataPreset = null, onProgress = null }) {
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const cfg = TYPES[type];
   if (!cfg) throw new Error('Unknown canyon type: ' + type);
@@ -281,6 +440,39 @@ export async function generateCanyon({ type = 'grand', seed = 2026, size = 512, 
     }
   }
 
+  // --- tributary field: distance + downstream progress t (0 head -> 1 junction) ---
+  function tribField(x, z) {
+    if (!trib) return { d: 1e9, t: 0 };
+    const a = distToSegT(x, z, trib.ax, trib.az, trib.mx, trib.mz);
+    const b = distToSegT(x, z, trib.mx, trib.mz, trib.bx, trib.bz);
+    return a.d < b.d ? { d: a.d, t: a.t * 0.5 } : { d: b.d, t: 0.5 + b.t * 0.5 };
+  }
+
+  // --- lakes (positions now, bowls carved after erosion so they hold water) ---
+  const lakes = [];
+  if (cfg.lakeCount) {
+    let guard = 0;
+    while (lakes.length < cfg.lakeCount && guard++ < 120) {
+      const r = cfg.lakeRMin + rng() * (cfg.lakeRMax - cfg.lakeRMin);
+      const lx = (rng() * 2 - 1) * (half - r - 30);
+      const lz = (rng() * 2 - 1) * (half - r - 30);
+      if (Math.abs(lx - riverXAt(lz)) < cfg.rimHalf * 1.35 + r) continue;
+      const tf = tribField(lx, lz);
+      if (tf.d < cfg.rimHalf * 0.32 + r) continue;
+      let bad = false;
+      for (let b = 0; b < buttes.length; b++) {
+        const B = buttes[b];
+        if (Math.hypot(lx - B.x, lz - B.z) < B.r + r + 40) { bad = true; break; }
+      }
+      if (bad) continue;
+      for (let L = 0; L < lakes.length; L++) {
+        if (Math.hypot(lx - lakes[L].x, lz - lakes[L].z) < lakes[L].r + r + 60) { bad = true; break; }
+      }
+      if (bad) continue;
+      lakes.push({ x: lx, z: lz, r, depth: cfg.lakeDepth * (0.8 + rng() * 0.4), waterY: 0 });
+    }
+  }
+
   // --- carve ---
   const H = new Float32Array(N * N);
   const distMain = new Float32Array(N * N);
@@ -319,16 +511,23 @@ export async function generateCanyon({ type = 'grand', seed = 2026, size = 512, 
         if (g > 0) carve += cfg.gorgeDepth * Math.pow(g, 1.4);
       }
       if (trib) {
-        const d2 = Math.min(
-          distToSeg(x, z, trib.ax, trib.az, trib.mx, trib.mz),
-          distToSeg(x, z, trib.mx, trib.mz, trib.bx, trib.bz)
-        );
-        if (d2 < trib.rimHalf) {
-          const c2 = trib.depth * valleyProfile(d2, trib.rimHalf, trib.bedHalf, 1.2, 3, 0.6);
+        const tf = tribField(x, z);
+        // tributary deepens + widens toward the junction so beds meet
+        const rim2 = cfg.rimHalf * lerp(0.20, 0.32, tf.t);
+        const dep2 = lerp(150, depthTotal * depMod, Math.pow(tf.t, 0.75));
+        if (tf.d < rim2) {
+          const c2 = dep2 * valleyProfile(tf.d, rim2, trib.bedHalf, 1.2, 3, 0.6);
           if (c2 > carve) carve = c2;
         }
+        trib._d = tf.d; trib._t = tf.t; // reused below for confluence flatten
       }
       h -= carve;
+
+      // confluence: blend tributary bed into the main riverbed near junction
+      if (trib) {
+        const wj = sstep(0.8, 0.98, trib._t) * (1 - sstep(trib.bedHalf, trib.bedHalf * 3, trib._d));
+        if (wj > 0) h = lerp(h, bedBase + perlin.noise(x * 0.05 + 4.0, z * 0.05) * 0.5, wj);
+      }
 
       const bw = 1 - sstep(cfg.bedHalf * 0.9, cfg.bedHalf * 3.0, d);
       if (bw > 0) {
@@ -366,88 +565,19 @@ export async function generateCanyon({ type = 'grand', seed = 2026, size = 512, 
     if ((j & 127) === 127) { progress(0.34 + (0.02 * j) / N, 'Surveying rock hardness...'); await tick(); }
   }
 
-  // --- hydraulic droplet erosion (hardness-aware) ---
+  // --- hydraulic droplet erosion (hardness-aware, shared engine) ---
   const dropCount = Math.min(340000, Math.floor(N * N * 0.55 * erosion));
+  const engine = createErosionEngine({ G, hardGrid, distMain: null, N, bedHalf: cfg.bedHalf, lakes: null });
   if (dropCount > 0) {
-    const maxLife = 30, inertia = 0.05, capacity = 4.0;
-    const erodeSpeed = 0.3, depositSpeed = 0.3, evaporate = 0.01, gravity = 4.0;
-    const R = 2;
-    const brushOff = [], brushW = [];
-    for (let oz = -R; oz <= R; oz++) {
-      for (let ox = -R; ox <= R; ox++) {
-        const dd = ox * ox + oz * oz;
-        if (dd <= R * R) {
-          brushOff.push(oz * N + ox);
-          brushW.push(1 - Math.sqrt(dd) / (R + 1));
-        }
-      }
-    }
-    let wSum = 0;
-    for (let k = 0; k < brushW.length; k++) wSum += brushW[k];
-    for (let k = 0; k < brushW.length; k++) brushW[k] /= wSum;
-
     const drng = mulberry32((seed ^ 0x51ed2709) >>> 0);
-    const x0 = R, x1 = N - 1 - R;
-    const CHUNK = 6000;
-    for (let s = 0; s < dropCount; s++) {
-      let px = x0 + drng() * (x1 - x0);
-      let pz = x0 + drng() * (x1 - x0);
-      let dx = 0, dz = 0, speed = 1, water = 1, sed = 0;
-      for (let life = 0; life < maxLife; life++) {
-        const ix = Math.floor(px), iz = Math.floor(pz);
-        const fx = px - ix, fz = pz - iz;
-        const i00 = iz * N + ix;
-        const h00 = G[i00], h10 = G[i00 + 1], h01 = G[i00 + N], h11 = G[i00 + N + 1];
-        const gx = (h10 - h00) * (1 - fz) + (h11 - h01) * fz;
-        const gz = (h01 - h00) * (1 - fx) + (h11 - h10) * fx;
-        const hOld = h00 + (h10 - h00) * fx + (h01 - h00) * fz + (h00 - h10 - h01 + h11) * fx * fz;
-        dx = dx * inertia - gx * (1 - inertia);
-        dz = dz * inertia - gz * (1 - inertia);
-        const len = Math.sqrt(dx * dx + dz * dz);
-        if (len < 1e-6) {
-          const a = drng() * Math.PI * 2;
-          dx = Math.cos(a); dz = Math.sin(a);
-        } else { dx /= len; dz /= len; }
-        const nx = px + dx, nz = pz + dz;
-        if (nx < x0 || nx > x1 - 1 || nz < x0 || nz > x1 - 1) break;
-        const nix = Math.floor(nx), niz = Math.floor(nz);
-        const nfx = nx - nix, nfz = nz - niz;
-        const j00 = niz * N + nix;
-        const g00 = G[j00];
-        const nh = g00 + (G[j00 + 1] - g00) * nfx + (G[j00 + N] - g00) * nfz
-                 + (g00 - G[j00 + 1] - G[j00 + N] + G[j00 + N + 1]) * nfx * nfz;
-        const dh = nh - hOld;
-        const hard = hardGrid[iz * N + ix];
-        const erod = 1.35 - hard;
-        const cap = Math.max(-dh * speed * water * capacity, 0.001);
-        if (sed > cap || dh > 0) {
-          const dep = dh > 0 ? Math.min(dh, sed) : (sed - cap) * depositSpeed;
-          sed -= dep;
-          G[i00] += dep * (1 - fx) * (1 - fz);
-          G[i00 + 1] += dep * fx * (1 - fz);
-          G[i00 + N] += dep * (1 - fx) * fz;
-          G[i00 + N + 1] += dep * fx * fz;
-        } else {
-          let take = (cap - sed) * erodeSpeed * erod;
-          const maxTake = -dh + 0.001;
-          if (take > maxTake) take = maxTake;
-          if (take < 0) take = 0;
-          sed += take;
-          for (let b = 0; b < brushOff.length; b++) {
-            const bi = i00 + brushOff[b];
-            const nv = G[bi] - take * brushW[b];
-            G[bi] = nv < 0 ? 0 : nv;
-          }
-        }
-        const sp2 = speed * speed + (-dh) * gravity;
-        speed = Math.sqrt(sp2 > 0 ? sp2 : 0);
-        water *= (1 - evaporate);
-        px = nx; pz = nz;
-      }
-      if ((s % CHUNK) === CHUNK - 1) {
-        progress(0.36 + (0.40 * s) / dropCount, `Eroding with rain (${Math.round((100 * s) / dropCount)}%)`);
-        await tick();
-      }
+    // run in slices so the progress bar stays alive
+    let done = 0;
+    while (done < dropCount) {
+      const n = Math.min(12000, dropCount - done);
+      engine.runDroplets(n, drng, 1, false, null);
+      done += n;
+      progress(0.36 + (0.40 * done) / dropCount, `Eroding with rain (${Math.round((100 * done) / dropCount)}%)`);
+      await tick();
     }
   }
 
@@ -500,10 +630,51 @@ export async function generateCanyon({ type = 'grand', seed = 2026, size = 512, 
         let target = bedBase + perlin.noise(x * 0.05, z * 0.05) * 0.5;
         if (cfg.braided) target += (ridgedP(perlin, x * 0.015, z * 0.008 + 9.0, 2) - 0.55) * 3.2;
         const w = 1 - sstep(cfg.bedHalf * 0.9, cfg.bedHalf * 3, d);
-        H[idx] = lerp(H[idx], target, w * 0.9);
+        // full snap in the inner bed (underwater anyway): guarantees depth
+        // no matter how much sediment the storm dumped there
+        H[idx] = d < cfg.bedHalf ? target : lerp(H[idx], target, w * 0.9);
         if (!cfg.braided && d < cfg.bedHalf && H[idx] > waterY - 0.3) H[idx] = waterY - 0.3;
       }
     }
+  }
+
+  // confluence restore: keep the tributary mouth at riverbed level
+  if (trib) {
+    for (let j = 0; j < N; j++) {
+      const z = -half + (world * j) / (N - 1);
+      for (let i = 0; i < N; i++) {
+        const x = -half + (world * i) / (N - 1);
+        const tf = tribField(x, z);
+        if (tf.t < 0.8) continue;
+        const wj = sstep(0.8, 0.98, tf.t) * (1 - sstep(trib.bedHalf, trib.bedHalf * 3, tf.d));
+        if (wj > 0) {
+          const idx = j * N + i;
+          const snap = (tf.t > 0.93 && tf.d < trib.bedHalf) ? 1 : wj * 0.9;
+          H[idx] = lerp(H[idx], bedBase + perlin.noise(x * 0.05 + 4.0, z * 0.05) * 0.5, snap);
+        }
+      }
+    }
+  }
+
+  // lake bowls (carved after erosion so they hold water) + water levels
+  for (let L = 0; L < lakes.length; L++) {
+    const lk = lakes[L];
+    const gr = Math.ceil((lk.r / world) * (N - 1)) + 1;
+    const ci = Math.round(((lk.x + half) / world) * (N - 1));
+    const cj = Math.round(((lk.z + half) / world) * (N - 1));
+    lk.gx = ci; lk.gz = cj; lk.gr = gr;
+    for (let j = Math.max(cj - gr, 0); j <= Math.min(cj + gr, N - 1); j++) {
+      const z = -half + (world * j) / (N - 1);
+      for (let i = Math.max(ci - gr, 0); i <= Math.min(ci + gr, N - 1); i++) {
+        const x = -half + (world * i) / (N - 1);
+        const d = Math.hypot(x - lk.x, z - lk.z);
+        if (d < lk.r) {
+          const fall = 0.5 + 0.5 * Math.cos((Math.PI * d) / lk.r);
+          H[j * N + i] -= lk.depth * Math.pow(fall, 1.2);
+        }
+      }
+    }
+    lk.waterY = H[cj * N + ci] + lk.depth * 0.5;
   }
 
   // --- ambient occlusion / cavity bake (blur compare + depth) ---
@@ -541,11 +712,70 @@ export async function generateCanyon({ type = 'grand', seed = 2026, size = 512, 
     ao[k] = clamp(a, 0, 1);
   }
 
+  // --- flow map: direction (RG) + speed (B) + water depth (A) ---
+  progress(0.96, 'Tracing water flow...');
+  await tick();
+  const flow = new Uint8Array(N * N * 4);
+  const cell = world / (N - 1);
+  const depthScale = cfg.waterDepth * 3 + 1;
+  for (let j = 0; j < N; j++) {
+    const jm = j > 0 ? j - 1 : 0, jp = j < N - 1 ? j + 1 : N - 1;
+    let tdx = (cx[jp] - cx[jm]) / (Math.max(jp - jm, 1) * cell), tdz = 1;
+    const tl = Math.hypot(tdx, tdz) || 1; tdx /= tl; tdz /= tl;
+    const z = -half + (world * j) / (N - 1);
+    for (let i = 0; i < N; i++) {
+      const idx = j * N + i;
+      const hx0 = H[j * N + Math.max(i - 1, 0)], hx1 = H[j * N + Math.min(i + 1, N - 1)];
+      const hz0 = H[Math.max(j - 1, 0) * N + i], hz1 = H[Math.min(j + 1, N - 1) * N + i];
+      const gx = (hx1 - hx0) / (2 * cell), gz = (hz1 - hz0) / (2 * cell);
+      const gm = Math.hypot(gx, gz);
+      let dx = gm > 1e-6 ? -gx / gm : tdx;
+      let dz = gm > 1e-6 ? -gz / gm : tdz;
+      // in the channel, flow follows the river tangent
+      const wb = 1 - sstep(cfg.bedHalf * 1.5, cfg.bedHalf * 4, distMain[idx]);
+      if (wb > 0) {
+        dx = dx * (1 - wb) + tdx * wb;
+        dz = dz * (1 - wb) + tdz * wb;
+        const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      }
+      // tributary beds drain toward the junction
+      if (trib) {
+        const x = -half + (world * i) / (N - 1);
+        const tf = tribField(x, z);
+        const wt = 1 - sstep(trib.bedHalf, trib.bedHalf * 3, tf.d);
+        if (wt > 0) {
+          let jx = trib.bx - x, jz = trib.bz - z;
+          const jl = Math.hypot(jx, jz) || 1; jx /= jl; jz /= jl;
+          dx = dx * (1 - wt) + jx * wt;
+          dz = dz * (1 - wt) + jz * wt;
+          const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+        }
+      }
+      // lakes: nearly still water
+      let calm = 1;
+      for (let L = 0; L < lakes.length; L++) {
+        const lk = lakes[L];
+        const ddx = i - lk.gx, ddz = j - lk.gz;
+        if (ddx * ddx + ddz * ddz < lk.gr * lk.gr * 0.81) { calm = 0.06; break; }
+      }
+      const speed = clamp(clamp(gm * 1.5, 0, 1) * 0.5 + wb * 0.45 + 0.05, 0, 1) * calm;
+      const depth = clamp((waterY - H[idx]) / depthScale, 0, 1);
+      const o = idx * 4;
+      flow[o] = Math.round((dx * 0.5 + 0.5) * 255);
+      flow[o + 1] = Math.round((dz * 0.5 + 0.5) * 255);
+      flow[o + 2] = Math.round(speed * 255);
+      flow[o + 3] = Math.round(depth * 255);
+    }
+    if ((j & 127) === 127) { progress(0.96 + (0.03 * j) / N, 'Tracing water flow...'); await tick(); }
+  }
+
   const t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   progress(1, 'Done');
   return {
     heights: H, ao, distMain, size: N, world,
-    waterY, bedBase, rimY, strata, buttes,
+    waterY, bedBase, rimY, strata, buttes, lakes, riverCX: cx,
+    flow: { data: flow, size: N },
+    erosion: { G, hardGrid, minH, escale },
     stats: { minH, maxH, genMs: Math.round(t1 - t0), dropCount, thermIters },
   };
 }
@@ -576,5 +806,15 @@ export function makeSampler(data) {
       const dz = gridSample(H, x, z + e) - gridSample(H, x, z - e);
       return Math.sqrt(dx * dx + dz * dz) / (2 * e);
     },
+  };
+}
+
+// River center-X as a function of world z (for trails).
+export function makeRiverFn(data) {
+  const { riverCX: cx, size: N, world } = data;
+  return (z) => {
+    const fj = clamp(z / world + 0.5, 0, 1) * (N - 1);
+    const j0 = Math.floor(fj), jt = fj - j0;
+    return lerp(cx[j0], cx[Math.min(N - 1, j0 + 1)], jt);
   };
 }

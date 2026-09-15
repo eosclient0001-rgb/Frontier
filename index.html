@@ -38,6 +38,26 @@
         <input id="seed" type="number" value="2026" step="1" />
         <button id="dice" title="Randomize seed">⚄</button>
       </div>
+      <div class="chips" id="seedChips">
+        <button data-seed="2026">2026</button>
+        <button data-seed="117">117</button>
+        <button data-seed="4021">4021</button>
+        <button data-seed="7777">7777</button>
+        <button data-seed="31415">31415</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <label>Rock strata</label>
+      <select id="strata">
+        <option value="auto" selected>Auto (match canyon)</option>
+        <option value="classic">Canyon Classic</option>
+        <option value="antelope">Antelope Red</option>
+        <option value="sahara">Sahara Gold</option>
+        <option value="painted">Painted Desert</option>
+        <option value="bryce">Bryce Amphitheater</option>
+        <option value="basalt">Basalt Mono</option>
+      </select>
     </div>
 
     <div class="group">
@@ -62,6 +82,9 @@
     <div class="group toggles">
       <label class="pill"><input id="tRocks" type="checkbox" checked /><span>Boulders</span></label>
       <label class="pill"><input id="tBushes" type="checkbox" checked /><span>Vegetation</span></label>
+      <label class="pill"><input id="tLakes" type="checkbox" checked /><span>Lakes</span></label>
+      <label class="pill"><input id="tTrails" type="checkbox" checked /><span>Trails</span></label>
+      <label class="pill"><input id="tRain" type="checkbox" /><span>Rain</span></label>
       <label class="pill"><input id="tOrbit" type="checkbox" /><span>Auto-orbit</span></label>
     </div>
 

@@ -214,9 +214,15 @@ export function buildTerrainMaterial(strata, o) {
           alb *= 1.0 - wet * 0.45;
           float ring = 1.0 - smoothstep(0.0, 0.9, abs(wp.y - (uWaterY + 2.4)));
           alb += ring * vec3(0.05, 0.05, 0.045) * steep;
+          // rainstorm: everything darkens and glosses over when soaked
+          alb *= 1.0 - uRainWet * 0.30 * (0.4 + 0.6 * (1.0 - steep));
+          // rainstorm: everything darkens and glosses over when soaked
+          alb *= 1.0 - uRainWet * 0.30 * (0.4 + 0.6 * (1.0 - steep));
           cAlbedo = alb;
           gRough = mix(0.96, 0.8, steep) + (g2 - 0.5) * 0.1;
           gRough = mix(gRough, 0.22, clamp(wet, 0.0, 1.0));
+          gRough = mix(gRough, 0.32, uRainWet * 0.75);
+          gRough = mix(gRough, 0.32, uRainWet * 0.75);
         }
         diffuseColor.rgb = cAlbedo;
       `)
@@ -274,14 +280,20 @@ export function buildTerrainMaterial(strata, o) {
 }
 
 // ----------------------------------------------------------------- water ---
+// Flow-mapped river water. uFlowMap (RGBA): RG = flow dir, B = speed,
+// A = water depth. Normals advect along the flow, shores get soft alpha +
+// foam, shallows tint sandy.
 export function buildWaterMaterial(o) {
   const mat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.93, roughness: 0.15, metalness: 0.0,
+    color: 0xffffff, transparent: true, opacity: 1.0, roughness: 0.15, metalness: 0.0,
   });
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = { value: 0 };
     shader.uniforms.uWaterCol = { value: new THREE.Color(o.color) };
+    shader.uniforms.uShallowCol = { value: new THREE.Color(o.shallow) };
     shader.uniforms.uSkyTint = { value: new THREE.Color(o.skyTint) };
+    shader.uniforms.uFlowMap = { value: o.flowTex };
+    shader.uniforms.uWorldSize = { value: o.worldSize };
 
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', /* glsl */`
@@ -299,24 +311,57 @@ export function buildWaterMaterial(o) {
         varying vec3 vWPw;
         uniform float uTime;
         uniform vec3 uWaterCol;
+        uniform vec3 uShallowCol;
         uniform vec3 uSkyTint;
+        uniform sampler2D uFlowMap;
+        uniform float uWorldSize;
         ${NOISE_GLSL}
       `)
       .replace('#include <map_fragment>', /* glsl */`
-        diffuseColor.rgb = uWaterCol * (0.92 + 0.16 * cnFbm(vec2(vWPw.x * 0.05 - uTime * 0.25, vWPw.z * 0.03)));
+        float wRough = 0.12;
+        {
+          vec2 fuv = vWPw.xz / uWorldSize + 0.5;
+          vec4 flow = texture2D(uFlowMap, fuv);
+          vec2 fdir = flow.rg * 2.0 - 1.0;
+          float fspeed = flow.b;
+          float fdepth = flow.a;
+          float alpha = smoothstep(0.015, 0.10, fdepth);
+          if (alpha < 0.004) discard;
+          vec2 adv = fdir * (uTime * (0.35 + fspeed * 2.4));
+          vec2 P = vWPw.xz;
+          // depth-graded color
+          vec3 wcol = mix(uShallowCol, uWaterCol, smoothstep(0.0, 0.45, fdepth));
+          wcol *= 0.9 + 0.2 * cnFbm(P * 0.05 - adv * 0.4);
+          // shoreline foam + fast-water streaks
+          float foamBand = smoothstep(0.22, 0.0, fdepth);
+          float fn = cnFbm(P * 1.4 - adv * 1.3);
+          float foam = foamBand * smoothstep(0.42, 0.75, fn);
+          vec2 fperp = vec2(-fdir.y, fdir.x);
+          float streak = smoothstep(0.55, 0.9, fspeed)
+            * smoothstep(0.55, 0.8, cnFbm(vec2(dot(P, fdir) * 0.25 - uTime * 1.4, dot(P, fperp) * 1.1)));
+          foam = clamp(foam + streak * 0.7, 0.0, 1.0);
+          wcol = mix(wcol, vec3(0.92, 0.94, 0.93), foam * 0.85);
+          diffuseColor.rgb = wcol;
+          diffuseColor.a = alpha * 0.94;
+          wRough = mix(0.10, 0.55, foam);
+        }
       `)
       .replace('#include <roughnessmap_fragment>', /* glsl */`
-        float roughnessFactor = 0.12;
+        float roughnessFactor = wRough;
       `)
       .replace('#include <normal_fragment_maps>', /* glsl */`
         {
+          vec2 fuv = vWPw.xz / uWorldSize + 0.5;
+          vec4 flow = texture2D(uFlowMap, fuv);
+          vec2 fdir = flow.rg * 2.0 - 1.0;
+          float fspeed = flow.b;
+          vec2 adv = fdir * (uTime * (0.35 + fspeed * 2.4));
           vec3 Nw0 = inverseTransformDirection(normal, viewMatrix);
           vec2 P = vWPw.xz;
           float e = 0.6;
-          vec2 f1 = vec2(uTime * 0.7, uTime * 0.18);
-          float r0 = cnFbm3b(P * 0.8 + f1) + 0.5 * cnFbm3b(P * 2.3 - f1 * 1.7);
-          float rx = cnFbm3b((P + vec2(e, 0.0)) * 0.8 + f1) + 0.5 * cnFbm3b((P + vec2(e, 0.0)) * 2.3 - f1 * 1.7);
-          float rz = cnFbm3b((P + vec2(0.0, e)) * 0.8 + f1) + 0.5 * cnFbm3b((P + vec2(0.0, e)) * 2.3 - f1 * 1.7);
+          float r0 = cnFbm3b(P * 0.8 - adv) + 0.5 * cnFbm3b(P * 2.3 - adv * 1.7 + 3.1);
+          float rx = cnFbm3b((P + vec2(e, 0.0)) * 0.8 - adv) + 0.5 * cnFbm3b((P + vec2(e, 0.0)) * 2.3 - adv * 1.7 + 3.1);
+          float rz = cnFbm3b((P + vec2(0.0, e)) * 0.8 - adv) + 0.5 * cnFbm3b((P + vec2(0.0, e)) * 2.3 - adv * 1.7 + 3.1);
           vec3 grad = vec3(rx - r0, 0.0, rz - r0) / max(e, 1e-3);
           vec3 Nw2 = normalize(Nw0 - (grad - Nw0 * dot(grad, Nw0)) * 0.35);
           normal = normalize((viewMatrix * vec4(Nw2, 0.0)).xyz);
@@ -333,6 +378,89 @@ export function buildWaterMaterial(o) {
 
     mat.userData.shader = shader;
   };
-  mat.customProgramCacheKey = () => 'canyon-water-v1';
+  mat.customProgramCacheKey = () => 'canyon-water-v2';
+  return mat;
+}
+
+// ------------------------------------------------------------------- lake ---
+// Calm lake water: slow drift, soft radial shoreline, subtle edge foam.
+export function buildLakeMaterial(o) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, transparent: true, opacity: 1.0, roughness: 0.1, metalness: 0.0,
+  });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.uniforms.uWaterCol = { value: new THREE.Color(o.color) };
+    shader.uniforms.uShallowCol = { value: new THREE.Color(o.shallow) };
+    shader.uniforms.uSkyTint = { value: new THREE.Color(o.skyTint) };
+    shader.uniforms.uLakeC = { value: new THREE.Vector2(o.center[0], o.center[1]) };
+    shader.uniforms.uLakeR = { value: o.radius };
+
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', /* glsl */`
+        #include <common>
+        varying vec3 vWPw;
+      `)
+      .replace('#include <worldpos_vertex>', /* glsl */`
+        #include <worldpos_vertex>
+        vWPw = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      `);
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', /* glsl */`
+        #include <common>
+        varying vec3 vWPw;
+        uniform float uTime;
+        uniform vec3 uWaterCol;
+        uniform vec3 uShallowCol;
+        uniform vec3 uSkyTint;
+        uniform vec2 uLakeC;
+        uniform float uLakeR;
+        ${NOISE_GLSL}
+      `)
+      .replace('#include <map_fragment>', /* glsl */`
+        {
+          float er = length(vWPw.xz - uLakeC) / uLakeR;
+          float alpha = 1.0 - smoothstep(0.72, 0.97, er);
+          if (alpha < 0.004) discard;
+          vec2 P = vWPw.xz;
+          vec2 adv = vec2(uTime * 0.06, uTime * 0.04);
+          vec3 wcol = mix(uWaterCol, uShallowCol, smoothstep(0.55, 0.95, er));
+          wcol *= 0.93 + 0.14 * cnFbm(P * 0.06 - adv);
+          float foam = smoothstep(0.86, 0.985, er) * smoothstep(0.5, 0.8, cnFbm(P * 1.1 - adv * 2.0));
+          wcol = mix(wcol, vec3(0.9, 0.92, 0.9), foam * 0.6);
+          diffuseColor.rgb = wcol;
+          diffuseColor.a = alpha * 0.94;
+        }
+      `)
+      .replace('#include <roughnessmap_fragment>', /* glsl */`
+        float roughnessFactor = 0.08;
+      `)
+      .replace('#include <normal_fragment_maps>', /* glsl */`
+        {
+          vec3 Nw0 = inverseTransformDirection(normal, viewMatrix);
+          vec2 P = vWPw.xz;
+          vec2 adv = vec2(uTime * 0.06, uTime * 0.04);
+          float e = 0.9;
+          float r0 = cnFbm3b(P * 0.5 - adv);
+          float rx = cnFbm3b((P + vec2(e, 0.0)) * 0.5 - adv);
+          float rz = cnFbm3b((P + vec2(0.0, e)) * 0.5 - adv);
+          vec3 grad = vec3(rx - r0, 0.0, rz - r0) / max(e, 1e-3);
+          vec3 Nw2 = normalize(Nw0 - (grad - Nw0 * dot(grad, Nw0)) * 0.16);
+          normal = normalize((viewMatrix * vec4(Nw2, 0.0)).xyz);
+        }
+      `)
+      .replace('#include <emissivemap_fragment>', /* glsl */`
+        #include <emissivemap_fragment>
+        {
+          vec3 Vv = normalize(vViewPosition);
+          float fres = pow(1.0 - abs(dot(normalize(normal), Vv)), 3.0);
+          totalEmissiveRadiance += uSkyTint * fres * 0.6;
+        }
+      `);
+
+    mat.userData.shader = shader;
+  };
+  mat.customProgramCacheKey = () => 'canyon-lake-v1';
   return mat;
 }
