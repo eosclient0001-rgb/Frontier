@@ -39,6 +39,15 @@ ColorQuad HoverWash() noexcept
 
 float Luminance(ColorQuad C) noexcept { return 0.2126f * C.Red + 0.7152f * C.Green + 0.0722f * C.Blue; }
 
+// Linear blend between two theme colours, for the slots the theme does not name directly.
+ColorQuad Blend(ColorQuad From, ColorQuad To, float T) noexcept
+{
+    return ColorQuad{ From.Red   + (To.Red   - From.Red)   * T,
+                      From.Green + (To.Green - From.Green) * T,
+                      From.Blue  + (To.Blue  - From.Blue)  * T,
+                      From.Alpha + (To.Alpha - From.Alpha) * T };
+}
+
 } // namespace
 
 void ControlKit::AssignTheme(const ThemeStructure& Theme, ColorQuad WarningColour, ColorQuad SuccessColour, ColorQuad InfoColour, ColorQuad CautionColour) noexcept
@@ -49,7 +58,12 @@ void ControlKit::AssignTheme(const ThemeStructure& Theme, ColorQuad WarningColou
     K.LightSurface = Luminance(P.MainBackground) > 0.5f;
     K.Panel        = P.PanelBackground;
     K.Inset        = P.InputBackground;
-    K.Field        = P.MainBackground;
+    // 🔴 NOT MainBackground. The mock keeps --bg (#050505) and --field (#000000) as separate tokens, and a
+    //    value pill's number cell is --field: the darkest thing on the panel, so it reads as a well cut into the
+    //    card. Deriving it from the canvas made it #0e0e0e under the shipped theme — one step from the card
+    //    behind it — and the pill stopped looking like a control at all. The field is the floor of the palette:
+    //    black on a dark surface, and the canvas only on a light one where black would be the wrong extreme.
+    K.Field        = K.LightSurface ? P.MainBackground : ColorQuad{ 0.0f, 0.0f, 0.0f, 1.0f };
     K.Raised       = P.ActiveBackground;
     K.Selected     = P.CardSubBackground;
     K.Stroke       = P.PanelBorder;
@@ -68,13 +82,57 @@ void ControlKit::AssignTheme(const ThemeStructure& Theme, ColorQuad WarningColou
     K.AccentInk    = Luminance(K.Accent) > 0.8f ? ColorQuad{ 0x11 / 255.0f, 0x11 / 255.0f, 0x11 / 255.0f, 1.0f } : ColorQuad{ 1.0f, 1.0f, 1.0f, 1.0f };
     K.AccentSoft   = K.Accent; K.AccentSoft.Alpha = 0.12f;
     K.Highlight    = K.Accent;                     // dashboard pill fill follows the accent
-    K.SliderFill   = K.Accent;                     // Notch <Slider>: linear-gradient(accentColor …)
-    K.SliderThumb  = K.Accent;                     // --thumb-color: accentColor
+
+    // 🔴 The slider is NOT an accent bar. Both of these used to be the accent, which made every slider a solid
+    //    blue pill with a blue thumb on top of it — the thumb invisible against its own fill, and the control
+    //    reading as a progress bar rather than as something to grab. The rule is: the filled side stays dark
+    //    and close to the track, "so the thumb is what carries the eye". A slider says where a value SITS; a
+    //    bar says how full something is, and they should not look alike.
+    //
+    //    Derived from the theme rather than hard-coded, so both still follow it: the fill is the raised surface
+    //    lifted a little toward the text colour, which lands on the mock's #4a4a4a against a #222 track on the
+    //    dark theme and stays legible on a light one; the thumb is the text colour, which is the brightest thing
+    //    the theme owns and therefore the thing the eye goes to.
+    //    The three tones come from the reference project's own tokens — track #2f2f33, fill #8a8a8e, knob
+    //    #f4f4f5 — reached by blending theme colours rather than written as literals, so a light theme still
+    //    gets a dark knob on a light rail instead of an invisible one.
+    K.SliderTrack  = Blend(P.InputBackground, P.ActiveBackground, 0.55f);
+    K.SliderFill   = Blend(P.ActiveBackground, P.TextMain, 0.55f);
+    K.SliderThumb  = Blend(P.TextMain, K.LightSurface ? P.MainBackground : ColorQuad{ 1.0f, 1.0f, 1.0f, 1.0f }, 0.35f);
     K.SwitchKnobOff= K.LightSurface ? P.TextMuted : ColorQuad{ 0xBD / 255.0f, 0xBD / 255.0f, 0xBD / 255.0f, 1.0f };
     K.Warning      = WarningColour;
     K.Ok           = SuccessColour;
     K.Info         = InfoColour;
     K.Caution      = CautionColour;
+}
+
+void ControlKit::BlendPalette(const ControlKitPalette& From, const ControlKitPalette& To, float T) noexcept
+{
+    // Live theme preview: smoothstepped cross-fade so a tile tap reads as a morph, not a snap.
+    const float S = std::clamp(T, 0.0f, 1.0f);
+    const float E = S * S * (3.0f - 2.0f * S);
+    const auto Mix = [E](const ColorQuad& A, const ColorQuad& B) noexcept -> ColorQuad
+    {
+        return ColorQuad{ A.Red + (B.Red - A.Red) * E, A.Green + (B.Green - A.Green) * E,
+                          A.Blue + (B.Blue - A.Blue) * E, A.Alpha + (B.Alpha - A.Alpha) * E };
+    };
+    ControlKitPalette& K = ActivePalette;
+    K.Panel = Mix(From.Panel, To.Panel);                 K.Inset = Mix(From.Inset, To.Inset);
+    K.Field = Mix(From.Field, To.Field);                 K.Raised = Mix(From.Raised, To.Raised);
+    K.Selected = Mix(From.Selected, To.Selected);        K.Stroke = Mix(From.Stroke, To.Stroke);
+    K.StrokeStrong = Mix(From.StrokeStrong, To.StrokeStrong); K.Divider = Mix(From.Divider, To.Divider);
+    K.Card = Mix(From.Card, To.Card);                    K.CardSub = Mix(From.CardSub, To.CardSub);
+    K.Text = Mix(From.Text, To.Text);                    K.TextDim = Mix(From.TextDim, To.TextDim);
+    K.TextFaint = Mix(From.TextFaint, To.TextFaint);     K.Primary = Mix(From.Primary, To.Primary);
+    K.PrimaryInk = Mix(From.PrimaryInk, To.PrimaryInk);  K.Accent = Mix(From.Accent, To.Accent);
+    K.AccentInk = Mix(From.AccentInk, To.AccentInk);     K.AccentSoft = Mix(From.AccentSoft, To.AccentSoft);
+    K.Highlight = Mix(From.Highlight, To.Highlight);     K.Danger = Mix(From.Danger, To.Danger);
+    K.Ok = Mix(From.Ok, To.Ok);                          K.Info = Mix(From.Info, To.Info);
+    K.Warning = Mix(From.Warning, To.Warning);           K.Caution = Mix(From.Caution, To.Caution);
+    K.SliderTrack = Mix(From.SliderTrack, To.SliderTrack);
+    K.SliderFill = Mix(From.SliderFill, To.SliderFill);  K.SliderThumb = Mix(From.SliderThumb, To.SliderThumb);
+    K.SwitchKnobOff = Mix(From.SwitchKnobOff, To.SwitchKnobOff);
+    K.LightSurface = E < 0.5f ? From.LightSurface : To.LightSurface;
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -293,30 +351,101 @@ ControlHit ControlKit::Slider(PixelSpace& Surface, const PlaneExtent& Extent, fl
         OutValue = Minimum + T * Span;
     }
 
+    // A FLAT bar with a knob, like the inspector's SliderPill: the fill runs flush inside the rail and the
+    //    thumb rides on top with a drop shadow. (History: the fill used to sit in a 3 px groove inset into
+    //    the rail; the Control Centre sliders were unified with the inspector pattern instead. Travel, hit
+    //    band, and thumb sizes are unchanged — only the paint moved.)
     const float R = TrackH * 0.5f;
-    Surface.FillRectangle(Track, Faded(Palette().Raised, Opacity), R);
+    Surface.FillRectangle(Track, Faded(Palette().SliderTrack, Opacity), R);
+
     const float ThumbCx = Extent.MinimumX + Thumb * 0.5f + T * (Extent.Width() - Thumb);
-    if (ThumbCx - Extent.MinimumX > 0.5f)
-        Surface.FillRectangle(Spanning(Extent.MinimumX, Track.MinimumY, ThumbCx - Extent.MinimumX, TrackH), Faded(HighlightFill ? Palette().Highlight : Palette().SliderFill, Opacity), R);
-    const float ThumbR = Thumb * 0.5f * (Hit.Dragging && Pointer.Down ? 1.1f : 1.0f);   // :active scale(1.1)
+    const float FilledW = std::max(ThumbCx - Track.MinimumX, 0.0f);
+    if (FilledW > 1.0f)
+        Surface.FillRectangle(Spanning(Track.MinimumX, Track.MinimumY, std::min(FilledW, Track.Width()), Track.Height()),
+                              Faded(HighlightFill ? Palette().Highlight : Palette().SliderFill, Opacity), R);
+
+    const float ThumbR = Thumb * 0.5f * (Hit.Dragging && Pointer.Down ? 1.12f : 1.0f);   // held: × 1.12, like the inspector knob
+    FillCircle(Surface, ThumbCx, Cy + 1.0f, ThumbR, Faded(ColorQuad{ 0.0f, 0.0f, 0.0f, 0.5f }, Opacity));
     FillCircle(Surface, ThumbCx, Cy, ThumbR, Faded(Palette().SliderThumb, Opacity));
     return Hit;
 }
 
-void ControlKit::ValuePill(PixelSpace& Surface, float X, float Y, const char* Number, const char* Unit, float Opacity) noexcept
+void ControlKit::ValuePill(PixelSpace& Surface, float X, float Y, const char* Number, const char* Unit, float Opacity,
+                           float Width, float UnitWidth) noexcept
 {
     const float H = ControlKitTokens::ControlHeight;
-    const PlaneExtent Whole = Spanning(X, Y, ValuePillWidth, H);
-    const PlaneExtent Num   = Spanning(X, Y, ValuePillWidth - ValuePillUnitWidth, H);
-    const PlaneExtent Cell  = Spanning(X + ValuePillWidth - ValuePillUnitWidth, Y, ValuePillUnitWidth, H);
-    Surface.FillRectangle(Whole, Faded(Palette().Inset, Opacity), H * 0.5f);              // unit cell colour behind
-    Surface.FillRectangle(Spanning(X, Y, ValuePillWidth - ValuePillUnitWidth + H * 0.5f, H), Faded(Palette().Field, Opacity), H * 0.5f);   // number cell (left rounded)
-    Surface.FillRectangle(Spanning(Cell.MinimumX, Y, 1.0f, H), Faded(Palette().Stroke, Opacity));
-    // square the seam: repaint the unit cell's left edge over the number cell's right rounding
-    Surface.FillRectangle(Spanning(Cell.MinimumX, Y, H * 0.5f, H), Faded(Palette().Inset, Opacity));
-    OutlineRounded(Surface, Whole, Faded(Palette().Stroke, Opacity), H * 0.5f);
-    TextCentred(Surface, Num,  Faded(Palette().Text,      Opacity), Number, 15.0f);
-    TextCentred(Surface, Cell, Faded(Palette().TextFaint, Opacity), Unit,   12.5f);
+    // A pill narrower than its own unit cell has no number cell left to draw, and the seam arithmetic below goes
+    //    negative. Clamped rather than asserted: a cramped panel should still render something readable.
+    UnitWidth = std::clamp(UnitWidth, 12.0f, std::max(Width - 24.0f, 12.0f));
+    // 🔴 TWO CELLS butted together inside one fully-rounded outline — a black number cell and a grey unit
+    //    cell — NOT a chip floating inside a pill. From the mock, which is the spec:
+    //
+    //        .vpill { height:30px; border-radius:999px; overflow:hidden; border:1px solid --stroke }
+    //        .vpill .num  { flex:1;    background:--field  (#000000) }
+    //        .vpill .unit { width:36px; background:--inset (#1a1a1a); border-left:1px solid --stroke }
+    //
+    //    The cells fill the pill's full height and meet at a hard seam; the rounding is the PARENT's, applied
+    //    by clipping, so the number cell is round on the left and square on the right and the unit cell is the
+    //    reverse. Two earlier builds got this wrong in opposite directions — one drew a divider then painted
+    //    over it, the other inset a chip and lost the seam entirely.
+    //
+    // ⚠️ PixelSpace has no per-corner radius, so the square edge is made by overdrawing the rounded cell with
+    //    a plain rectangle in THE SAME COLOUR. That is safe precisely because it is the same colour; the
+    //    original bug was overdrawing a divider with a different one. The divider is drawn last, over both.
+    const float Radius = H * 0.5f;
+    UnitWidth = (Unit && Unit[0]) ? UnitWidth : 0.0f;
+    const float Seam  = X + Width - UnitWidth;
+
+    const PlaneExtent Whole = Spanning(X, Y, Width, H);
+    const PlaneExtent Num   = Spanning(X, Y, std::max(Width - UnitWidth, 1.0f), H);
+    const PlaneExtent UnitCell = Spanning(Seam, Y, UnitWidth, H);
+
+    // The grey unit colour underneath the whole pill, so the right-hand corners come out rounded for free.
+    Surface.FillRectangle(Whole, Faded(Palette().Inset, Opacity), Radius);
+
+    // The black number cell over it: rounded, then its right edge squared back with the same black.
+    Surface.FillRectangle(Num, Faded(Palette().Field, Opacity), Radius);
+    if (UnitWidth > 0.0f && Num.Width() > Radius)
+    {
+        Surface.FillRectangle(Spanning(X + Radius, Y, Num.Width() - Radius, H),
+                              Faded(Palette().Field, Opacity), 0.0f);
+
+        // The unit cell's border-left. Drawn after both fills, so nothing can erase it this time.
+        Surface.FillRectangle(Spanning(Seam, Y, 1.0f, H), Faded(Palette().Stroke, Opacity), 0.0f);
+    }
+
+    OutlineRounded(Surface, Whole, Faded(Palette().Stroke, Opacity), Radius);
+
+    TextCentred(Surface, Num, Faded(Palette().Text, Opacity), Number, 13.5f);
+    if (UnitWidth > 0.0f)
+        TextCentred(Surface, UnitCell, Faded(Palette().TextFaint, Opacity), Unit, 11.5f);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                       SCROLLING
+//------------------------------------------------------------------------------------------------------------------------
+
+float ControlKit::AdvanceScroll(float Offset, float Wheel, float ContentHeight, float ViewHeight) noexcept
+{
+    // 40 px a click, which is roughly a row and a half — the same order as every desktop list.
+    const float Travel  = std::max(ContentHeight - ViewHeight, 0.0f);
+    const float Moved   = Offset - Wheel * 40.0f;   // wheel away from the user moves the content up
+    return std::clamp(Moved, 0.0f, Travel);
+}
+
+void ControlKit::ScrollIndicator(PixelSpace& Surface, const PlaneExtent& View, float Offset,
+                                 float ContentHeight, float Opacity) noexcept
+{
+    const float ViewH = View.Height();
+    if (ContentHeight <= ViewH + 1.0f || ViewH <= 8.0f) return;   // nothing to scroll, nothing to say
+
+    const float Fraction = std::clamp(ViewH / ContentHeight, 0.06f, 1.0f);
+    const float ThumbH   = std::max(ViewH * Fraction, 24.0f);
+    const float Travel   = std::max(ContentHeight - ViewH, 1.0f);
+    const float ThumbY   = View.MinimumY + std::clamp(Offset / Travel, 0.0f, 1.0f) * (ViewH - ThumbH);
+
+    ColorQuad Ink = Palette().TextFaint; Ink.Alpha *= 0.55f;
+    Surface.FillRectangle(Spanning(View.MaximumX - 5.0f, ThumbY, 3.0f, ThumbH), Faded(Ink, Opacity), 1.5f);
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -422,6 +551,68 @@ PlaneExtent ControlKit::ControlRow(PixelSpace& Surface, float X, float Y, float 
     const PlaneExtent Row = Spanning(X, Y, Width, ControlKitTokens::ControlHeight);
     TextLeading(Surface, Spanning(X, Y, ControlKitTokens::LabelWidth, ControlKitTokens::ControlHeight), 0.0f, Faded(LabelInk, Opacity), Label, 13.5f);
     return PlaneExtent{ X + ControlKitTokens::LabelWidth + ControlKitTokens::RowGap, Y, Row.MaximumX, Row.MaximumY };
+}
+
+ControlHit ControlKit::TextEntry(PixelSpace& Surface, const PlaneExtent& Extent, TextEntryState& Entry,
+                                 const ControlPointer& Pointer, float FontSize, float Opacity) noexcept
+{
+    ControlHit Hit{};
+    Hit.Hovered = Over(Extent, Pointer);
+    Hit.Pressed = Hit.Hovered && Pointer.Pressed;
+    Hit.Clicked = Hit.Hovered && Pointer.Released;
+
+    const float R      = 6.0f;
+    const float PadX   = 6.0f;
+    const ColorQuad Edge = Entry.Active ? Palette().Highlight : Palette().Stroke;
+
+    Surface.FillRectangle(Extent, Faded(Palette().Field, Opacity), R);
+    OutlineRounded(Surface, Extent, Faded(Edge, Opacity), R, Entry.Active ? 1.5f : 1.0f);
+
+    // Everything below is clipped to the field: a long name must scroll inside its box, never paint over the
+    //    controls beside it.
+    Surface.PushClip(Extent);
+
+    const float TextY   = Extent.MinimumY + (Extent.Height() - FontSize) * 0.5f;
+    const float CaretPx = Surface.MeasureText(
+        [&]{ static char Head[TextEntryState::Capacity]; for (uint32_t I = 0u; I < Entry.Caret; ++I) Head[I] = Entry.Text[I];
+             Head[Entry.Caret] = '\0'; return Head; }(), FontSize).X;
+
+    // Keep the caret inside the visible span, scrolling only as far as needed in either direction.
+    const float Inner = Extent.Width() - PadX * 2.0f;
+    if (CaretPx - Entry.ScrollX > Inner) Entry.ScrollX = CaretPx - Inner;
+    if (CaretPx - Entry.ScrollX < 0.0f)  Entry.ScrollX = CaretPx;
+    if (Entry.ScrollX < 0.0f)            Entry.ScrollX = 0.0f;
+
+    const float OriginX = Extent.MinimumX + PadX - Entry.ScrollX;
+
+    if (Entry.Active && Entry.HasSelection())
+    {
+        static char Head[TextEntryState::Capacity];
+        const uint32_t From = Entry.SelectionStart(), To = Entry.SelectionEnd();
+        for (uint32_t I = 0u; I < From; ++I) Head[I] = Entry.Text[I];
+        Head[From] = '\0';
+        const float FromPx = Surface.MeasureText(Head, FontSize).X;
+        for (uint32_t I = 0u; I < To; ++I) Head[I] = Entry.Text[I];
+        Head[To] = '\0';
+        const float ToPx = Surface.MeasureText(Head, FontSize).X;
+        ColorQuad Wash = Palette().Highlight; Wash.Alpha *= 0.35f * Opacity;
+        Surface.FillRectangle(Spanning(OriginX + FromPx, Extent.MinimumY + 3.0f, ToPx - FromPx, Extent.Height() - 6.0f), Wash, 2.0f);
+    }
+
+    Surface.Text(OriginX, TextY, Faded(Palette().Text, Opacity), Entry.Text, FontSize);
+
+    // Blink at the kit period, always visible for the half-cycle right after a keystroke because Insert() resets
+    //    the phase — a caret that happens to be dark while you type reads as dropped input.
+    if (Entry.Active)
+    {
+        const float Phase = Entry.BlinkPhase - static_cast<float>(static_cast<int>(Entry.BlinkPhase / CaretBlinkSeconds)) * CaretBlinkSeconds;
+        if (Phase < CaretBlinkSeconds * 0.5f)
+            Surface.FillRectangle(Spanning(OriginX + CaretPx, Extent.MinimumY + 3.0f, 1.5f, Extent.Height() - 6.0f),
+                                  Faded(Palette().Text, Opacity));
+    }
+
+    Surface.PopClip();
+    return Hit;
 }
 
 } // namespace Frontier

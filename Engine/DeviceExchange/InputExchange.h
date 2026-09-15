@@ -174,6 +174,24 @@ public:
     void                    ReleaseAllInputs() noexcept;                     // focus loss: every key/button up
     void                    AssignGamepadAxis(float LeftX, float LeftY, float RightX, float RightY, float LeftTrig, float RightTrig) noexcept;
 
+    // ── Text composition ─────────────────────────────────────────────────────────────────────────────────────────
+    // Typing is a STREAM, not a state. A held key repeats, and two characters can arrive between two frames, so
+    //    IsKeyPressed() cannot express it: sampling per frame would drop the second character and repeat the first.
+    //    These are queues drained once per frame by whichever surface owns the keyboard.
+    //
+    //    Characters come from GLFW's character callback (already keymap- and IME-resolved, so they are correct on a
+    //    non-US layout); edit keys come from the key callback because they produce no character.
+    void                    PushCharacter(uint32_t Codepoint) noexcept;
+    void                    PushEditKey(uint32_t GlfwKey, bool Shift, bool Control) noexcept;
+    void                    ClearTextQueue() noexcept { CharacterCount = 0u; EditKeyCount = 0u; }
+
+    [[nodiscard]] uint32_t  QueryCharacterCount() const noexcept { return CharacterCount; }
+    [[nodiscard]] uint32_t  QueryCharacter(uint32_t Index) const noexcept { return Characters[Index]; }
+    [[nodiscard]] uint32_t  QueryEditKeyCount() const noexcept { return EditKeyCount; }
+    [[nodiscard]] uint32_t  QueryEditKey(uint32_t Index) const noexcept { return EditKeys[Index].Key; }
+    [[nodiscard]] bool      QueryEditKeyShift(uint32_t Index) const noexcept { return EditKeys[Index].Shift; }
+    [[nodiscard]] bool      QueryEditKeyControl(uint32_t Index) const noexcept { return EditKeys[Index].Control; }
+
     [[nodiscard]] bool      IsKeyPressed(VirtualKeyCategory Key) const noexcept;
     [[nodiscard]] bool      IsMouseButtonPressed(MouseButtonCategory Button) const noexcept;
     [[nodiscard]] float     QueryMouseScrollDelta() const noexcept { return MouseScrollDelta; }
@@ -195,6 +213,15 @@ private:
     float                   MouseScrollDelta;                   // [clicks] mouse scroll wheel increment
     std::array<bool, static_cast<size_t>(VirtualKeyCategory::Count)> KeyStates; // [keys] active pressed keys
     std::array<bool, static_cast<size_t>(MouseButtonCategory::Count)> MouseButtonStates; // [buttons] mouse buttons
+
+    // Bounded queues: a frame that somehow received more than this many keystrokes drops the excess rather than
+    //    growing, because the render loop must not allocate and a stuck key must not exhaust memory.
+    static constexpr uint32_t TextQueueCapacity = 32u;
+    struct EditKeyRecord { uint32_t Key; bool Shift; bool Control; };
+    std::array<uint32_t, TextQueueCapacity>     Characters{};   // [utf32] typed characters, in arrival order
+    std::array<EditKeyRecord, TextQueueCapacity> EditKeys{};    // [-]     Enter / Escape / arrows / Backspace …
+    uint32_t                CharacterCount = 0u;
+    uint32_t                EditKeyCount   = 0u;
 };
 
 template<>

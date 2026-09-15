@@ -85,7 +85,62 @@ enum class ControlCentreIconCategory : uint32_t
     CircleCheck                         = 21,                   // ✓ lucide "circle-check-big" — success tone
     CircleInfo                          = 22,                   // ⓘ lucide "info" — info tone
     OctagonAlert                        = 23,                   // ⛔ lucide "octagon-alert" — caution / danger tone
-    Count                               = 24
+
+    // ── Editor row columns and record furniture ────────────────────────────────────────────────────────────────────
+    // Added for the editor's record rows. Before these existed the register borrowed DisplayMonitor for
+    //    "visible" and ShieldInput for "locked", which is why a row read as a monitor and a shield rather than
+    //    an eye and a padlock. A borrowed glyph is worse than a missing one: it looks deliberate.
+    EyeVisible                          = 24,                   // 👁 lucide "eye" — row is visible
+    EyeHidden                           = 25,                   // 👁̸ lucide "eye-off" — row is hidden
+    LockClosed                          = 26,                   // 🔒 lucide "lock" — row is locked
+    LockOpen                            = 27,                   // 🔓 lucide "lock-open" — row is editable
+    MotionActivity                      = 28,                   // ∿ lucide "activity" — row is dynamic
+    FolderClosed                        = 29,                   // 🗀 lucide "folder" — container row
+    FolderOpen                          = 30,                   // 🗁 lucide "folder-open" — expanded container
+    CubeObject                          = 31,                   // ⬢ lucide "box" — mesh / geometry row
+    SearchGlass                         = 32,                   // 🔍 lucide "search" — the search field
+    PlusAdd                             = 33,                   // ＋ lucide "plus" — add a row
+    TrashDelete                         = 34,                   // 🗑 lucide "trash-2" — remove a row
+    LayoutSplit                         = 35,                   // ▥ lucide "columns-2" — split layout mode
+    LayoutPanelLeft                     = 36,                   // ▤ lucide "panel-left" — outliner-only mode
+    LayoutPanelRight                    = 37,                   // ▤ lucide "panel-right" — properties-only mode
+    CameraBody                          = 38,                   // 🎥 lucide "video" — camera row
+    Count                               = 39
+};
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                              OUTLINER ICON CATEGORY
+//------------------------------------------------------------------------------------------------------------------------
+// The celestial outliner's own glyph set — 24 × 24, stroke 1.6, round caps and joins, no fill. Ported stroke for
+//    stroke from the page's icon function; a glyph is several strokes because the page dims some of its
+//    children (opacity) and dashes others (stroke-dasharray), and one flat string cannot carry either.
+
+enum class OutlinerIconCategory : uint32_t
+{
+    Globe = 0, Cloud, VolumeClouds, LocalCloud, Rainbow, Wind, Rain, AerialFog, VolumeFog, Folder, Fog,
+    Atmosphere, Sun, Sky, Check, Dot, Warn, Shadow, Bounce, Collide, Stars, Moon, Camera, Effects, Eye,
+    EyeOff, Chevron, ChevronUp, Wave, Horizon, Orbit, Bulb, Palette, Ground, Lattice, Galaxy, Aperture,
+    Sliders, Flare, Up, Down, Flat, Plus, Plane, Key, Minus, Trash, Search, Compact,
+    Count
+};
+
+struct OutlinerGlyphStroke
+{
+    const char* SvgPathString;                              // [svg] one child, circles / rects rewritten as arcs
+    float       Opacity;                                    // [0..1] the child's own opacity attribute
+    float       DashOn;                                     // [viewBox units] 0 = solid
+    float       DashOff;                                    // [viewBox units]
+    bool        Filled;                                     // the one solid child (the standing dot)
+};
+
+constexpr uint32_t kOutlinerGlyphStrokes = 5u;
+
+struct OutlinerGlyphRecord
+{
+    const char*         IdentifierName;
+    OutlinerGlyphStroke Strokes[kOutlinerGlyphStrokes];
+    uint32_t            StrokeCount;
+    float               StrokeWidth;                        // [viewBox units] 1.6, the compact mark 1.8
 };
 
 // Lucide glyphs are authored as several <path>/<circle>/<rect> children. VectorGlyphRecord stores them
@@ -133,7 +188,11 @@ public:
     template<typename TargetType>
     [[nodiscard]] static TargetType Convert(ControlCentreIconCategory Icon) noexcept;
 
+    [[nodiscard]] static const OutlinerGlyphRecord& QueryOutlinerIcon(OutlinerIconCategory Icon) noexcept;
+    [[nodiscard]] static uint32_t                   QueryOutlinerIconCount() noexcept;
+
 private:
+    static const std::array<OutlinerGlyphRecord, static_cast<size_t>(OutlinerIconCategory::Count)> OutlinerGlyphTable;
     static const std::array<VectorGlyphRecord, static_cast<size_t>(NavigationIconCategory::Count)> NavigationGlyphTable;
     static const std::array<VectorGlyphRecord, static_cast<size_t>(ControlCentreIconCategory::Count)> ControlCentreGlyphTable;
 };

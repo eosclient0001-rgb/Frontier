@@ -24,12 +24,18 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <vector>
 
 #if defined(_WIN32)
-#   define WIN32_LEAN_AND_MEAN
-#   define NOMINMAX
+#   ifndef WIN32_LEAN_AND_MEAN
+#       define WIN32_LEAN_AND_MEAN
+#   endif
+#   ifndef NOMINMAX
+#       define NOMINMAX
+#   endif
 #   include <windows.h>
 #elif defined(__APPLE__)
 #   include <mach-o/dyld.h>
@@ -46,6 +52,27 @@ namespace Frontier {
 static constexpr uint32_t kCycleSlotCount  = 2u;
 static constexpr uint32_t kLocalGroupSizeX = 16u;
 static constexpr uint32_t kLocalGroupSizeY = 16u;
+// AtrousDenoise.slang declares 8×8, not the kernel's 16×16. Kept beside them so the difference is visible: they
+//    are different shaders and a dispatch must use the size of the shader it is actually dispatching.
+static constexpr uint32_t kDenoiseGroupSize = 8u;
+// A6b: exposure is a whole-frame property, so the reduction subsamples. 32 px gives ~2 000 taps at 1080p.
+static constexpr uint32_t kLuminanceSampleStride = 32u;
+// The Celestial sky uniform block (binding 21) is nine std140 rows — 144 B, pinned by static_assert in
+//    DisplayPresentation/SkyConstantRecord.h. DeviceExchange must not include DisplayPresentation (it is the
+//    layer below it), so the size is restated here and CheckSkyKernel.sh fails the build if the two disagree.
+static constexpr uint32_t kSkyRecordBytes = 144u;
+// The Celestial moon uniform block (binding 22) is eighteen std140 rows — 288 B, pinned by static_assert in
+//    DisplayPresentation/MoonConstantRecord.h. Same layering as the sky record above: restated here, and the moon
+//    gate fails the build if the two disagree.
+static constexpr uint32_t kMoonRecordBytes = 288u;
+// The Celestial post uniform block (binding 24) is eight std140 rows — 128 B, pinned by static_assert in
+//    DisplayPresentation/PostConstantRecord.h. Same restatement rule as the sky and moon records above.
+// The star tables (binding 23) are 1 024 cells of 8 B followed by N stars of 32 B — StarCellRecord and
+//    StarRecord, pinned in GeometricRaster/StarCatalogueIndex.h; the post gate fails the build on drift.
+static constexpr uint32_t kPostRecordBytes = 128u;
+static constexpr uint32_t kStarCellCount = 1024u;
+static constexpr uint32_t kStarCellBytes = 8u;
+static constexpr uint32_t kStarRecordBytes = 32u;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                              VULKAN RECORD DEFINITION
@@ -83,6 +110,21 @@ struct SwapchainExchange::VulkanRecord
     VkImage                  HistoryImage          = VK_NULL_HANDLE;
     VkDeviceMemory           HistoryMemory         = VK_NULL_HANDLE;
     VkImageView              HistoryImageView      = VK_NULL_HANDLE;
+    // R7a: the (normal, depth) of whatever the history pixel was shading, so the next frame can validate a
+    //    reprojection against the surface that produced the mean rather than against this frame's surface.
+    VkImage                  HistorySurfaceImage     = VK_NULL_HANDLE;
+    VkDeviceMemory           HistorySurfaceMemory    = VK_NULL_HANDLE;
+    VkImageView              HistorySurfaceImageView = VK_NULL_HANDLE;
+
+    // R7 denoiser. MomentImage persists across frames (it is reprojected with the mean); the two DenoiseImages
+    //    ping-pong between à-trous levels — level i reads one and writes the other.
+    VkImage                  MomentImage             = VK_NULL_HANDLE;
+    VkDeviceMemory           MomentMemory            = VK_NULL_HANDLE;
+    VkImageView              MomentImageView         = VK_NULL_HANDLE;
+    VkImage                  DenoiseImages[2]        = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkDeviceMemory           DenoiseMemory[2]        = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkImageView              DenoiseImageViews[2]    = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    bool                     DenoiseInitialised      = false;
     bool                     HistoryInitialised    = false;             // [-]  layout transitioned to GENERAL once
 
     // ── Scene SSBO geometry and materials ────────────────────────────────────────────────────────────────────────────
@@ -98,11 +140,56 @@ struct SwapchainExchange::VulkanRecord
     VkSampler                TextureSampler        = VK_NULL_HANDLE;
     ResidentTexture          ShadingTables[2];                       // R4b: 0 = GGX energy (A, B, E_avg), 1 = LTC sheen (aInv, bInv, R) — RGBA32F 32×32
     VkSampler                TableSampler          = VK_NULL_HANDLE; // linear, clamp-to-edge, no mips
+    // A6b luminance reduction. One accumulator per cycle slot: the CPU reads slot N's result while the GPU is
+    //    writing slot N+1, so nothing is ever read while it is being written and no extra fence is needed.
+    //    Persistently mapped — mapping and unmapping every frame is a driver round trip for eight bytes.
+    VkBuffer                 LuminanceBuffers[kCycleSlotCount] = {};
+    VkDeviceMemory           LuminanceMemory [kCycleSlotCount] = {};
+    void*                    LuminanceMapped [kCycleSlotCount] = {};
+    VkPipeline               LuminancePipeline   = VK_NULL_HANDLE;
+    VkPipelineLayout         LuminanceLayout     = VK_NULL_HANDLE;
+    VkDescriptorSetLayout    LuminanceSetLayout  = VK_NULL_HANDLE;
+    VkDescriptorPool         LuminancePool       = VK_NULL_HANDLE;
+    VkDescriptorSet          LuminanceSets[kCycleSlotCount] = {};
+
     bool                     DescriptorIndexing    = false;   // runtimeDescriptorArray + partially bound granted by the driver
     VkBuffer                 TraversalNodeBuffer   = VK_NULL_HANDLE;   // R3 CWBVH nodes (binding 8)
     VkDeviceMemory           TraversalNodeMemory   = VK_NULL_HANDLE;
     VkBuffer                 TraversalLeafBuffer   = VK_NULL_HANDLE;   // R3 CWBVH triangles (binding 9)
     VkDeviceMemory           TraversalLeafMemory   = VK_NULL_HANDLE;
+    // Celestial sky record (binding 21). One 144 B uniform buffer, host-visible and persistently mapped: the
+    //    project re-packs it every frame and RefreshSky is a memcpy, never a reallocation or a descriptor
+    //    rewrite. Zeroed at bring-up, which is the sky disabled (SunRadiance.w = 0) — a caller that never
+    //    pushes keeps the old no-environment-light behaviour rather than reading garbage.
+    VkBuffer                 SkyBuffer             = VK_NULL_HANDLE;
+    VkDeviceMemory           SkyMemory             = VK_NULL_HANDLE;
+    void*                    SkyMapped             = nullptr;
+    // Celestial moon record (binding 22). Same arrangement as the sky record: one 288 B uniform buffer,
+    //    host-visible and persistently mapped, re-packed by the project every frame.
+    VkBuffer                 MoonBuffer            = VK_NULL_HANDLE;
+    VkDeviceMemory           MoonMemory            = VK_NULL_HANDLE;
+    void*                    MoonMapped            = nullptr;
+    // Celestial post record (binding 24). Same arrangement as the sky and moon records: one 128 B uniform
+    //    buffer, host-visible and persistently mapped, re-packed by the project every frame.
+    VkBuffer                 PostBuffer            = VK_NULL_HANDLE;
+    VkDeviceMemory           PostMemory            = VK_NULL_HANDLE;
+    void*                    PostMapped            = nullptr;
+    // Star tables (binding 23). Cells then binned stars in ONE storage buffer, host-visible and persistently
+    //    mapped like the records. Bring-up allocates the cells alone (zeroed = no stars); UploadStarTables
+    //    reallocates for the catalogue once the project has loaded it, so the binding is never an unwritten hole.
+    VkBuffer                 StarBuffer            = VK_NULL_HANDLE;
+    VkDeviceMemory           StarMemory            = VK_NULL_HANDLE;
+    void*                    StarMapped            = nullptr;
+    // R6 temporal reservoirs: two W×H×64 B SSBOs (bindings 16/17), ping-ponged per presented frame. Record layout
+    //    (std430, mirrors GpuReservoir in ReSTIRViewport.slang): Sample(xyz point, w WeightSum) · Counts(M, light,
+    //    Visible, Age) · UvDepth(uv, W, view depth) · Normal(xyz geometric normal, w stride guard).
+    struct ReservoirBufferRecord { float Sample[4]; uint32_t Counts[4]; float UvDepth[4]; float Normal[4]; };
+    static_assert(sizeof(ReservoirBufferRecord) == 64u, "GpuReservoir stride must be 64 B (matches the shader)");
+    VkBuffer                 ReservoirBuffers[2]   = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkDeviceMemory           ReservoirMemories[2]  = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkDeviceSize             ReservoirBytes        = 0u;   // [B] per buffer (W×H×64)
+    bool                     ReservoirParity       = false;   // [-]  false: 0 = prev / 1 = curr; flipped per frame
+    bool                     ReservoirsInitialised = false;   // [-]  zero-filled once before first dispatch
     uint32_t                 TriangleCount         = 0u;
     uint32_t                 MaterialCount         = 0u;
 
@@ -113,18 +200,28 @@ struct SwapchainExchange::VulkanRecord
     VkPipelineLayout         ComputePipelineLayout   = VK_NULL_HANDLE;
     VkPipeline               ComputePipeline         = VK_NULL_HANDLE;
 
+    // R7 denoiser: its own pipeline and a small per-level descriptor set. Six sets are allocated (five à-trous
+    //    levels plus one spare) so a level's bindings can be written once at bring-up instead of every frame.
+    VkPipelineLayout         DenoisePipelineLayout   = VK_NULL_HANDLE;
+    VkPipeline               DenoisePipeline         = VK_NULL_HANDLE;
+    VkDescriptorSetLayout    DenoiseSetLayout        = VK_NULL_HANDLE;
+    VkDescriptorPool         DenoisePool             = VK_NULL_HANDLE;
+    VkDescriptorSet          DenoiseSets[kDenoiseLevelCount] = {};
+
     // ── Command recording ─────────────────────────────────────────────────────────────────────────────────────────────
     VkCommandPool                ComputeCommandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> ComputeCommands;
 
     // ── ImGui render pass and framebuffers ───────────────────────────────────────────────────────────────────────────
     VkDescriptorPool         ImGuiDescriptorPool   = VK_NULL_HANDLE;
+    VkDescriptorSet          SceneViewSet          = VK_NULL_HANDLE;
+    VkSampler                SceneViewSampler      = VK_NULL_HANDLE;   // linear, clamp: the panel scales the view to its rect   // the resolved scene as an ImGui texture (the editor's viewport panel)
     VkRenderPass             ImGuiRenderPass       = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> ImGuiFramebuffers;
 
     // ── Cycle slots (one fence + two semaphores per slot) ────────────────────────────────────────────────────────────
     std::array<VkSemaphore, kCycleSlotCount> AcquireSemaphores = {};
-    std::array<VkSemaphore, kCycleSlotCount> ReleaseSemaphores = {};
+    std::vector<VkSemaphore>                ReleaseSemaphores;   // [-] per-image render-complete semaphore
     std::array<VkFence,     kCycleSlotCount> CycleFences       = {};
     std::vector<VkFence>                     ImageOrdinalFences;  // [-]  per-image in-flight fence pointer
     uint32_t                                 ActiveSlot         = 0u;
@@ -325,6 +422,7 @@ bool SwapchainExchange::Bring() noexcept
 
     glfwSetWindowUserPointer      (GlfwWindow, this);
     glfwSetKeyCallback            (GlfwWindow, OnKey);
+    glfwSetCharCallback           (GlfwWindow, OnCharacter);
     glfwSetMouseButtonCallback    (GlfwWindow, OnMouseButton);
     glfwSetCursorPosCallback      (GlfwWindow, OnCursorMove);
     glfwSetScrollCallback         (GlfwWindow, OnScroll);
@@ -347,6 +445,19 @@ bool SwapchainExchange::Bring() noexcept
         { "BringStorageImage",     &SwapchainExchange::BringStorageImage     },
         { "BringCommandRecording", &SwapchainExchange::BringCommandRecording },
         { "BringComputePipeline",  &SwapchainExchange::BringComputePipeline  },
+        // ⚠️ The denoiser must be brought up BEFORE BringDescriptorSet: that stage ends by calling
+        //     WriteDescriptorSet(), which is also what populates the denoiser's per-level sets. With the order
+        //     reversed the sets existed but were never written, so the filter sampled unbound images.
+        { "BringDenoisePipeline",  &SwapchainExchange::BringDenoisePipeline  },
+        // A6b after BringStorageImage (it binds HistoryImageView) and before BringDescriptorSet, same as above.
+        { "BringLuminanceReduction", &SwapchainExchange::BringLuminanceReduction },
+        // The sky, moon, post and star buffers must exist before BringDescriptorSet: that stage ends by
+        //    calling WriteDescriptorSet(), which writes bindings 21-24 once the buffers are there and skips them
+        //    otherwise. The star write at bring-up covers the cells alone; UploadStarTables rewrites it.
+        { "BringSkyRecord",          &SwapchainExchange::BringSkyRecord          },
+        { "BringMoonRecord",         &SwapchainExchange::BringMoonRecord         },
+        { "BringPostRecord",         &SwapchainExchange::BringPostRecord         },
+        { "BringStarTables",         &SwapchainExchange::BringStarTables         },
         { "BringDescriptorSet",    &SwapchainExchange::BringDescriptorSet    },
         { "BringCycleSlots",       &SwapchainExchange::BringCycleSlots       },
         { "BringImGui",            &SwapchainExchange::BringImGui            },
@@ -376,6 +487,8 @@ void SwapchainExchange::Retire() noexcept
 
     vkDeviceWaitIdle(Vulkan->Device);
 
+    if (Vulkan->SceneViewSet) ImGui_ImplVulkan_RemoveTexture(Vulkan->SceneViewSet);
+    Vulkan->SceneViewSet = VK_NULL_HANDLE;
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -396,33 +509,76 @@ void SwapchainExchange::Retire() noexcept
     if (Vulkan->SlabMemory)      vkFreeMemory    (Vulkan->Device, Vulkan->SlabMemory, nullptr);
     DestroyTextures();
     if (Vulkan->TextureSampler)  vkDestroySampler(Vulkan->Device, Vulkan->TextureSampler, nullptr);
+    if (Vulkan->SceneViewSampler) vkDestroySampler(Vulkan->Device, Vulkan->SceneViewSampler, nullptr);
     for (VulkanRecord::ResidentTexture& T : Vulkan->ShadingTables)
     {
         if (T.View)   vkDestroyImageView(Vulkan->Device, T.View, nullptr);
         if (T.Image)  vkDestroyImage    (Vulkan->Device, T.Image, nullptr);
         if (T.Memory) vkFreeMemory      (Vulkan->Device, T.Memory, nullptr);
     }
+    for (uint32_t Slot = 0u; Slot < kCycleSlotCount; ++Slot)
+    {
+        if (Vulkan->LuminanceMapped[Slot]) vkUnmapMemory(Vulkan->Device, Vulkan->LuminanceMemory[Slot]);
+        if (Vulkan->LuminanceBuffers[Slot]) vkDestroyBuffer(Vulkan->Device, Vulkan->LuminanceBuffers[Slot], nullptr);
+        if (Vulkan->LuminanceMemory[Slot])  vkFreeMemory(Vulkan->Device, Vulkan->LuminanceMemory[Slot], nullptr);
+    }
+    if (Vulkan->LuminancePipeline)   vkDestroyPipeline(Vulkan->Device, Vulkan->LuminancePipeline, nullptr);
+    if (Vulkan->LuminanceLayout)     vkDestroyPipelineLayout(Vulkan->Device, Vulkan->LuminanceLayout, nullptr);
+    if (Vulkan->LuminanceSetLayout)  vkDestroyDescriptorSetLayout(Vulkan->Device, Vulkan->LuminanceSetLayout, nullptr);
+    if (Vulkan->LuminancePool)       vkDestroyDescriptorPool(Vulkan->Device, Vulkan->LuminancePool, nullptr);
+
     if (Vulkan->TableSampler)    vkDestroySampler(Vulkan->Device, Vulkan->TableSampler, nullptr);
     if (Vulkan->TraversalNodeBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TraversalNodeBuffer, nullptr);
     if (Vulkan->TraversalNodeMemory) vkFreeMemory   (Vulkan->Device, Vulkan->TraversalNodeMemory, nullptr);
     if (Vulkan->TraversalLeafBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TraversalLeafBuffer, nullptr);
     if (Vulkan->TraversalLeafMemory) vkFreeMemory   (Vulkan->Device, Vulkan->TraversalLeafMemory, nullptr);
+    // The sky record is permanent, not swapchain-sized: it is torn down here, in Retire, and never in
+    //    RetireSwapchain — a resize must not unbind the sky.
+    if (Vulkan->SkyMapped)  vkUnmapMemory (Vulkan->Device, Vulkan->SkyMemory);
+    if (Vulkan->SkyBuffer)  vkDestroyBuffer(Vulkan->Device, Vulkan->SkyBuffer, nullptr);
+    if (Vulkan->SkyMemory)  vkFreeMemory   (Vulkan->Device, Vulkan->SkyMemory, nullptr);
+    // The moon record shares the arrangement: permanent, retired here, never in RetireSwapchain.
+    if (Vulkan->MoonMapped) vkUnmapMemory (Vulkan->Device, Vulkan->MoonMemory);
+    if (Vulkan->MoonBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->MoonBuffer, nullptr);
+    if (Vulkan->MoonMemory) vkFreeMemory   (Vulkan->Device, Vulkan->MoonMemory, nullptr);
+    // The post record and the star tables share it too: permanent, retired here, never in RetireSwapchain.
+    if (Vulkan->PostMapped) vkUnmapMemory (Vulkan->Device, Vulkan->PostMemory);
+    if (Vulkan->PostBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->PostBuffer, nullptr);
+    if (Vulkan->PostMemory) vkFreeMemory   (Vulkan->Device, Vulkan->PostMemory, nullptr);
+    if (Vulkan->StarMapped) vkUnmapMemory (Vulkan->Device, Vulkan->StarMemory);
+    if (Vulkan->StarBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->StarBuffer, nullptr);
+    if (Vulkan->StarMemory) vkFreeMemory   (Vulkan->Device, Vulkan->StarMemory, nullptr);
 
     for (uint32_t Slot = 0u; Slot < kCycleSlotCount; ++Slot)
     {
         if (Vulkan->AcquireSemaphores[Slot]) vkDestroySemaphore(Vulkan->Device, Vulkan->AcquireSemaphores[Slot], nullptr);
-        if (Vulkan->ReleaseSemaphores[Slot]) vkDestroySemaphore(Vulkan->Device, Vulkan->ReleaseSemaphores[Slot], nullptr);
         if (Vulkan->CycleFences[Slot])       vkDestroyFence    (Vulkan->Device, Vulkan->CycleFences[Slot],       nullptr);
     }
+    for (VkSemaphore S : Vulkan->ReleaseSemaphores)
+    {
+        if (S) vkDestroySemaphore(Vulkan->Device, S, nullptr);
+    }
+    Vulkan->ReleaseSemaphores.clear();
 
     if (Vulkan->ComputeCommandPool)    vkDestroyCommandPool       (Vulkan->Device, Vulkan->ComputeCommandPool,    nullptr);
     if (Vulkan->ComputePipeline)       vkDestroyPipeline          (Vulkan->Device, Vulkan->ComputePipeline,       nullptr);
     if (Vulkan->ComputePipelineLayout) vkDestroyPipelineLayout    (Vulkan->Device, Vulkan->ComputePipelineLayout, nullptr);
+    if (Vulkan->DenoisePipeline)       vkDestroyPipeline          (Vulkan->Device, Vulkan->DenoisePipeline,       nullptr);
+    if (Vulkan->DenoisePipelineLayout) vkDestroyPipelineLayout    (Vulkan->Device, Vulkan->DenoisePipelineLayout, nullptr);
+    if (Vulkan->DenoiseSetLayout)      vkDestroyDescriptorSetLayout(Vulkan->Device, Vulkan->DenoiseSetLayout,     nullptr);
+    if (Vulkan->DenoisePool)           vkDestroyDescriptorPool    (Vulkan->Device, Vulkan->DenoisePool,           nullptr);
     if (Vulkan->ComputeDescriptorPool) vkDestroyDescriptorPool    (Vulkan->Device, Vulkan->ComputeDescriptorPool, nullptr);
     if (Vulkan->ComputeDescriptorLayout) vkDestroyDescriptorSetLayout(Vulkan->Device, Vulkan->ComputeDescriptorLayout, nullptr);
 
     if (Vulkan->Device)   vkDestroyDevice             (Vulkan->Device,             nullptr);
     if (Vulkan->Surface)  vkDestroySurfaceKHR          (Vulkan->Instance, Vulkan->Surface, nullptr);
+    if (Vulkan->DebugMessenger)
+    {
+        auto DestroyMessenger = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(Vulkan->Instance, "vkDestroyDebugUtilsMessengerEXT"));
+        if (DestroyMessenger) DestroyMessenger(Vulkan->Instance, Vulkan->DebugMessenger, nullptr);
+        Vulkan->DebugMessenger = VK_NULL_HANDLE;
+    }
     if (Vulkan->Instance) vkDestroyInstance            (Vulkan->Instance,           nullptr);
 
     tvg::Initializer::term();
@@ -448,14 +604,50 @@ void SwapchainExchange::RetireSwapchain() noexcept
     if (Vulkan->HistoryImageView)  vkDestroyImageView(Vulkan->Device, Vulkan->HistoryImageView,  nullptr);
     if (Vulkan->HistoryImage)      vkDestroyImage    (Vulkan->Device, Vulkan->HistoryImage,      nullptr);
     if (Vulkan->HistoryMemory)     vkFreeMemory      (Vulkan->Device, Vulkan->HistoryMemory,     nullptr);
+    if (Vulkan->HistorySurfaceImageView) vkDestroyImageView(Vulkan->Device, Vulkan->HistorySurfaceImageView, nullptr);
+    if (Vulkan->HistorySurfaceImage)     vkDestroyImage    (Vulkan->Device, Vulkan->HistorySurfaceImage,     nullptr);
+    if (Vulkan->HistorySurfaceMemory)    vkFreeMemory      (Vulkan->Device, Vulkan->HistorySurfaceMemory,    nullptr);
+    if (Vulkan->MomentImageView)         vkDestroyImageView(Vulkan->Device, Vulkan->MomentImageView,         nullptr);
+    if (Vulkan->MomentImage)             vkDestroyImage    (Vulkan->Device, Vulkan->MomentImage,             nullptr);
+    if (Vulkan->MomentMemory)            vkFreeMemory      (Vulkan->Device, Vulkan->MomentMemory,            nullptr);
+    for (uint32_t Slot = 0u; Slot < 2u; ++Slot)
+    {
+        if (Vulkan->DenoiseImageViews[Slot]) vkDestroyImageView(Vulkan->Device, Vulkan->DenoiseImageViews[Slot], nullptr);
+        if (Vulkan->DenoiseImages[Slot])     vkDestroyImage    (Vulkan->Device, Vulkan->DenoiseImages[Slot],     nullptr);
+        if (Vulkan->DenoiseMemory[Slot])     vkFreeMemory      (Vulkan->Device, Vulkan->DenoiseMemory[Slot],     nullptr);
+    }
     Vulkan->HistoryImageView   = VK_NULL_HANDLE;
+    Vulkan->HistorySurfaceImageView = VK_NULL_HANDLE;
+    Vulkan->HistorySurfaceImage     = VK_NULL_HANDLE;
+    Vulkan->HistorySurfaceMemory    = VK_NULL_HANDLE;
+    Vulkan->MomentImageView = VK_NULL_HANDLE; Vulkan->MomentImage = VK_NULL_HANDLE; Vulkan->MomentMemory = VK_NULL_HANDLE;
+    for (uint32_t Slot = 0u; Slot < 2u; ++Slot)
+    {
+        Vulkan->DenoiseImageViews[Slot] = VK_NULL_HANDLE;
+        Vulkan->DenoiseImages[Slot]     = VK_NULL_HANDLE;
+        Vulkan->DenoiseMemory[Slot]     = VK_NULL_HANDLE;
+    }
+    Vulkan->DenoiseInitialised = false;
     Vulkan->HistoryImage       = VK_NULL_HANDLE;
     Vulkan->HistoryMemory      = VK_NULL_HANDLE;
     Vulkan->HistoryInitialised = false;
 
+    for (uint32_t I = 0u; I < 2u; ++I)   // R6 temporal reservoirs (size-dependent, like storage/history)
+    {
+        if (Vulkan->ReservoirBuffers[I])  vkDestroyBuffer(Vulkan->Device, Vulkan->ReservoirBuffers[I], nullptr);
+        if (Vulkan->ReservoirMemories[I]) vkFreeMemory   (Vulkan->Device, Vulkan->ReservoirMemories[I], nullptr);
+        Vulkan->ReservoirBuffers[I]  = VK_NULL_HANDLE;
+        Vulkan->ReservoirMemories[I] = VK_NULL_HANDLE;
+    }
+    Vulkan->ReservoirsInitialised = false;
+
     for (auto& ImageView : Vulkan->SwapchainImageViews)
         if (ImageView) vkDestroyImageView(Vulkan->Device, ImageView, nullptr);
     Vulkan->SwapchainImageViews.clear();
+
+    for (VkSemaphore S : Vulkan->ReleaseSemaphores)
+        if (S) vkDestroySemaphore(Vulkan->Device, S, nullptr);
+    Vulkan->ReleaseSemaphores.clear();
 
     if (Vulkan->Swapchain) vkDestroySwapchainKHR(Vulkan->Device, Vulkan->Swapchain, nullptr);
     Vulkan->Swapchain = VK_NULL_HANDLE;
@@ -667,8 +859,15 @@ bool SwapchainExchange::BringLogicalDevice() noexcept
     Enabled12.descriptorBindingPartiallyBound           = Supported12.descriptorBindingPartiallyBound;
     Enabled12.shaderSampledImageArrayNonUniformIndexing = Supported12.shaderSampledImageArrayNonUniformIndexing;
     Enabled12.descriptorBindingVariableDescriptorCount  = Supported12.descriptorBindingVariableDescriptorCount;
+    Enabled12.descriptorBindingSampledImageUpdateAfterBind   = Supported12.descriptorBindingSampledImageUpdateAfterBind;
+    Enabled12.descriptorBindingStorageBufferUpdateAfterBind  = Supported12.descriptorBindingStorageBufferUpdateAfterBind;
+    Enabled12.descriptorBindingStorageImageUpdateAfterBind   = Supported12.descriptorBindingStorageImageUpdateAfterBind;
+    Enabled12.descriptorBindingUniformBufferUpdateAfterBind  = Supported12.descriptorBindingUniformBufferUpdateAfterBind;
+    Enabled12.descriptorBindingUpdateUnusedWhilePending     = Supported12.descriptorBindingUpdateUnusedWhilePending;
     if (!Vulkan->DescriptorIndexing) std::cerr << "[SwapchainExchange] descriptor indexing not offered - textures disabled (materials keep their constants).\n";
     DeviceFeatures.multiDrawIndirect = Supported2.features.multiDrawIndirect;
+    DeviceFeatures.geometryShader    = Supported2.features.geometryShader;
+    DeviceFeatures.shaderStorageImageWriteWithoutFormat = Supported2.features.shaderStorageImageWriteWithoutFormat;
 
     VkDeviceCreateInfo DeviceInfo{};
     DeviceInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -678,12 +877,6 @@ bool SwapchainExchange::BringLogicalDevice() noexcept
     DeviceInfo.enabledExtensionCount   = 1u;
     DeviceInfo.ppEnabledExtensionNames = DeviceExtensions;
     DeviceInfo.pEnabledFeatures        = &DeviceFeatures;
-
-    // Only request the feature when the driver actually offers it; requesting an unsupported
-    //    feature makes vkCreateDevice fail with VK_ERROR_FEATURE_NOT_PRESENT.
-    VkPhysicalDeviceFeatures Supported{};
-    vkGetPhysicalDeviceFeatures(Vulkan->PhysicalDevice, &Supported);
-    DeviceFeatures.shaderStorageImageWriteWithoutFormat = Supported.shaderStorageImageWriteWithoutFormat;
 
     const VkResult DeviceResult = vkCreateDevice(Vulkan->PhysicalDevice, &DeviceInfo, nullptr, &Vulkan->Device);
     if (DeviceResult != VK_SUCCESS)
@@ -823,6 +1016,14 @@ bool SwapchainExchange::BringSwapchain() noexcept
     }
 
     Vulkan->ImageOrdinalFences.assign(ActualImageCount, VK_NULL_HANDLE);
+    for (VkSemaphore S : Vulkan->ReleaseSemaphores)
+        if (S) vkDestroySemaphore(Vulkan->Device, S, nullptr);
+    Vulkan->ReleaseSemaphores.assign(ActualImageCount, VK_NULL_HANDLE);
+    for (uint32_t Index = 0u; Index < ActualImageCount; ++Index)
+    {
+        VkSemaphoreCreateInfo SemaphoreInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        (void)vkCreateSemaphore(Vulkan->Device, &SemaphoreInfo, nullptr, &Vulkan->ReleaseSemaphores[Index]);
+    }
     return true;
 }
 
@@ -892,8 +1093,11 @@ bool SwapchainExchange::BringStorageImage() noexcept
     const VkExtent2D Extent{ Configuration.Width, Configuration.Height };
 
     // ① Presentation image — the compute pass writes tone-mapped 8-bit colour, blitted to the swapchain.
+    // COLOR_ATTACHMENT_BIT is what lets the SpatialInterface overlay draw its figures straight onto the resolved
+    //    scene image (it begins its own render pass against this view) before the blit to the swapchain.
     if (!CreateStorageImage(Vulkan->Device, Vulkan->MemoryProperties, VK_FORMAT_R8G8B8A8_UNORM, Extent,
-                            VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                            VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                          | VK_IMAGE_USAGE_SAMPLED_BIT,   // the editor's viewport panel samples it through ImGui
                             Vulkan->StorageImage, Vulkan->StorageMemory, Vulkan->StorageImageView, "storage image"))
         return false;
 
@@ -902,6 +1106,43 @@ bool SwapchainExchange::BringStorageImage() noexcept
                             VK_IMAGE_USAGE_STORAGE_BIT,
                             Vulkan->HistoryImage, Vulkan->HistoryMemory, Vulkan->HistoryImageView, "history image"))
         return false;
+
+    // ②b R7a history surface — the normal and depth the history mean was shaded at. rgba16f is ample: the normal
+    //     is unit length and the depth only has to survive a 10 % relative comparison.
+    if (!CreateStorageImage(Vulkan->Device, Vulkan->MemoryProperties, VK_FORMAT_R16G16B16A16_SFLOAT, Extent,
+                            VK_IMAGE_USAGE_STORAGE_BIT,
+                            Vulkan->HistorySurfaceImage, Vulkan->HistorySurfaceMemory,
+                            Vulkan->HistorySurfaceImageView, "history surface image"))
+        return false;
+
+    // ②c R7 denoiser images. The moments persist (reprojected with the mean); the pair ping-pongs between levels.
+    if (!CreateStorageImage(Vulkan->Device, Vulkan->MemoryProperties, VK_FORMAT_R32G32B32A32_SFLOAT, Extent,
+                            VK_IMAGE_USAGE_STORAGE_BIT,
+                            Vulkan->MomentImage, Vulkan->MomentMemory, Vulkan->MomentImageView, "moment image"))
+        return false;
+    for (uint32_t Slot = 0u; Slot < 2u; ++Slot)
+    {
+        if (!CreateStorageImage(Vulkan->Device, Vulkan->MemoryProperties, VK_FORMAT_R32G32B32A32_SFLOAT, Extent,
+                                VK_IMAGE_USAGE_STORAGE_BIT,
+                                Vulkan->DenoiseImages[Slot], Vulkan->DenoiseMemory[Slot],
+                                Vulkan->DenoiseImageViews[Slot], "denoise image"))
+            return false;
+    }
+    Vulkan->DenoiseInitialised = false;
+
+    // ③ R6 temporal reservoirs — two full-extent 64 B/px SSBOs (bindings 16/17), device-local, zeroed on first dispatch.
+    {
+        Vulkan->ReservoirBytes =
+            static_cast<VkDeviceSize>(Extent.width) * static_cast<VkDeviceSize>(Extent.height) * sizeof(VulkanRecord::ReservoirBufferRecord);
+        for (uint32_t I = 0u; I < 2u; ++I)
+            AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, Vulkan->ReservoirBytes,
+                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                           Vulkan->ReservoirBuffers[I], Vulkan->ReservoirMemories[I]);
+        Vulkan->ReservoirParity       = false;
+        Vulkan->ReservoirsInitialised = false;
+        std::cerr << "[SwapchainExchange] Reservoirs: 2 x " << (Vulkan->ReservoirBytes >> 20u) << " MB (64 B/px temporal DI state).\n";
+    }
 
     Vulkan->HistoryInitialised = false;
     return true;
@@ -939,7 +1180,8 @@ bool SwapchainExchange::BringComputePipeline() noexcept
     //    R2: 4: surface image, 5: normal image, 6: instance SSBO, 7: luminaire SSBO
     //    R3: 8: CWBVH node SSBO, 9: CWBVH triangle SSBO
     //    R4a: 10: material slab SSBO
-    //    R4b: 11: vertex SSBO, 12: index SSBO, 13: GGX energy LUT, 14: LTC sheen LUT, 15: sampler2D Textures[] (bindless, partially bound, variable count — must be last)
+    //    R4b: 11: vertex SSBO, 12: index SSBO, 13: GGX energy LUT, 14: LTC sheen LUT
+    //    R6: 15: motion sampler, 16: prev-reservoir SSBO, 17: curr-reservoir SSBO · 21: sky UBO · 25: sampler2D Textures[] (bindless, partially bound, variable count — must be last)
     std::array<VkDescriptorSetLayoutBinding, kComputeBindingCount> LayoutBindings{};
     LayoutBindings[0].binding         = 0u;
     LayoutBindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
@@ -960,18 +1202,23 @@ bool SwapchainExchange::BringComputePipeline() noexcept
     for (uint32_t B = 4u; B < kComputeBindingCount - 1u; ++B)
     {
         LayoutBindings[B].binding         = B;
-        LayoutBindings[B].descriptorType  = B < 6u ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : (B == 13u || B == 14u) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        LayoutBindings[B].descriptorType  = (B < 6u || B == 18u || B == 19u || B == 20u) ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : (B == 13u || B == 14u || B == 15u) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : (B == 21u || B == 22u || B == 24u) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;   // 18 R7a surface · 19/20 R7 moments + denoise input · 21 live sky UBO (SkyRecords.slang) · 22 live moon UBO (MoonRecords.slang) · 23 star tables SSBO (PostRecords.slang) · 24 live post UBO (PostRecords.slang)
         LayoutBindings[B].descriptorCount = 1u;
         LayoutBindings[B].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    const uint32_t TextureBinding = kComputeBindingCount - 1u;   // 15
+    const uint32_t TextureBinding = kComputeBindingCount - 1u;   // 25 (must be the highest binding)
     LayoutBindings[TextureBinding].binding         = TextureBinding;
     LayoutBindings[TextureBinding].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     LayoutBindings[TextureBinding].descriptorCount = Vulkan->DescriptorIndexing ? kTextureSlotCapacity : 1u;
     LayoutBindings[TextureBinding].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
 
     std::array<VkDescriptorBindingFlags, kComputeBindingCount> BindingFlags{};
-    BindingFlags[TextureBinding] = Vulkan->DescriptorIndexing ? static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT) : 0u;
+    if (Vulkan->DescriptorIndexing)
+    {
+        BindingFlags[TextureBinding] = static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
+        BindingFlags[16u]            = static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
+        BindingFlags[17u]            = static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
+    }
     VkDescriptorSetLayoutBindingFlagsCreateInfo FlagsInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO };
     FlagsInfo.bindingCount  = kComputeBindingCount;
     FlagsInfo.pBindingFlags = BindingFlags.data();
@@ -1033,21 +1280,380 @@ bool SwapchainExchange::BringComputePipeline() noexcept
     return true;
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                            R7 DENOISER PIPELINE
+//------------------------------------------------------------------------------------------------------------------------
+// Deliberately a separate descriptor set from the ReSTIR kernel's. That set is already full to its variable-count
+//    bindless texture array, and a filter needing four images has no business forcing another renumber of it.
+
+struct DenoisePushRecord
+{
+    uint32_t Extent[2];        // [px]
+    uint32_t StepSize;         // [px] tap spacing for this level
+    uint32_t Enabled;          // [-]  0 = straight copy
+
+    float    NormalPower;      // [-]
+    float    DepthScale;       // [-]
+    float    LuminanceScale;   // [-]
+    float    Exposure;         // [-]
+
+    uint32_t FinalLevel;       // [-]  1 = also tone-map into the presentation image
+    float    ColourSaturation; // [-]  A7d: must match the kernel's, or toggling the denoiser changes colour
+};
+
+namespace {
+// Mirrors LuminanceConstants in LuminanceReduce.slang.
+struct LuminancePushRecord { uint32_t Width, Height, Stride, Padding; };
+} // namespace
+
+// A6b. The luminance reduction: one small compute pass that collapses the resolved HDR image to a single
+//    average log luminance, which drives adaptive exposure.
+float SwapchainExchange::QueryAverageLogLuminance() const noexcept
+{
+    if (!Vulkan || !Vulkan->LuminancePipeline) return -1.0e9f;
+
+    // Read the slot the GPU has FINISHED with, not the one being recorded. With two frames in flight that is
+    //    the other slot, and reading it needs no fence and cannot stall — the alternative, waiting for this
+    //    frame's own result, would serialise the CPU against the GPU for one scalar.
+    const uint32_t Slot = (Vulkan->ActiveSlot + 1u) % kCycleSlotCount;
+    const void* Mapped = Vulkan->LuminanceMapped[Slot];
+    if (!Mapped) return -1.0e9f;
+
+    std::array<uint32_t, kLuminanceHistogramBins> Bins{};
+    std::memcpy(Bins.data(), Mapped, kLuminanceHistogramBytes);
+
+    double Total = 0.0;
+    for (uint32_t Weight : Bins) Total += static_cast<double>(Weight);
+    if (Total <= 0.0) return -1.0e9f;   // first frames, before anything has been written
+
+    constexpr double BinWidth = (static_cast<double>(kLuminanceLog2High) - static_cast<double>(kLuminanceLog2Low))
+                              / static_cast<double>(kLuminanceHistogramBins);
+    const auto BinLog2 = [](uint32_t Index)
+    {
+        return static_cast<double>(kLuminanceLog2Low) + (static_cast<double>(Index) + 0.5) * BinWidth;
+    };
+
+    // ① Where the scene is. The median is the one statistic no minority of very bright or very dark pixels can
+    //    move, however extreme they are — which is exactly the property the anchor needs.
+    double Seen = 0.0;
+    uint32_t MedianIndex = 0u;
+    for (uint32_t Index = 0u; Index < kLuminanceHistogramBins; ++Index)
+    {
+        Seen += static_cast<double>(Bins[Index]);
+        if (Seen >= Total * 0.5) { MedianIndex = Index; break; }
+    }
+    const double Anchor = BinLog2(MedianIndex);
+
+    // ② Everything within a few stops of it, averaged. A distance in stops is what separates a bright OUTLIER
+    //    from a bright SUBJECT: sunlit ground sits about two stops from the sky it is lit by and belongs in the
+    //    reading, while a hole in a roof sits eleven stops above the room and is a light source in shot.
+    double WeightedLog2 = 0.0, Used = 0.0;
+    for (uint32_t Index = 0u; Index < kLuminanceHistogramBins; ++Index)
+    {
+        if (Bins[Index] == 0u) continue;
+        const double Centre = BinLog2(Index);
+        if (std::fabs(Centre - Anchor) > static_cast<double>(kLuminanceMedianStops)) continue;
+        WeightedLog2 += Centre * static_cast<double>(Bins[Index]);
+        Used         += static_cast<double>(Bins[Index]);
+    }
+    // The median's own bin always qualifies, so this cannot be empty — but a frame is not worth trusting to
+    //    that, and the anchor alone is the right answer if it ever were.
+    if (Used <= 0.0) { WeightedLog2 = Anchor; Used = 1.0; }
+
+    // The integrator speaks natural logs; the histogram is in log2.
+    constexpr double Ln2 = 0.6931471805599453;
+    return static_cast<float>(WeightedLog2 / Used * Ln2);
+}
+
+// 🔴 Separate from bring-up because a RESIZE invalidates what it writes. BringStorageImage destroys and
+//    recreates HistoryImageView, WriteDescriptorSet rewrites the main compute set — and this set, which binds
+//    the very same view, was left pointing at the destroyed one. The reduction then dispatched against a dead
+//    image view every frame: "SourceImage is using imageView 0x0 that is invalid or has been destroyed", and
+//    on the reporting hardware the whole renderer went black from the first resize onward.
+void SwapchainExchange::WriteLuminanceDescriptors() noexcept
+{
+    if (!Vulkan || !Vulkan->HistoryImageView) return;
+    for (uint32_t Slot = 0u; Slot < kCycleSlotCount; ++Slot)
+    {
+        if (!Vulkan->LuminanceSets[Slot]) continue;
+        // ⚠️ The HISTORY image, not the presentation image: the reduction must see LINEAR radiance. Measuring
+        //    the tone-mapped output would feed the curve its own result and the exposure would chase itself.
+        VkDescriptorImageInfo  ImageInfo{ VK_NULL_HANDLE, Vulkan->HistoryImageView, VK_IMAGE_LAYOUT_GENERAL };
+        VkDescriptorBufferInfo BufferInfo{ Vulkan->LuminanceBuffers[Slot], 0u, VK_WHOLE_SIZE };
+
+        std::array<VkWriteDescriptorSet, 2u> Writes{};
+        Writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        Writes[0].dstSet = Vulkan->LuminanceSets[Slot]; Writes[0].dstBinding = 0u;
+        Writes[0].descriptorCount = 1u; Writes[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        Writes[0].pImageInfo = &ImageInfo;
+        Writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        Writes[1].dstSet = Vulkan->LuminanceSets[Slot]; Writes[1].dstBinding = 1u;
+        Writes[1].descriptorCount = 1u; Writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        Writes[1].pBufferInfo = &BufferInfo;
+        vkUpdateDescriptorSets(Vulkan->Device, 2u, Writes.data(), 0u, nullptr);
+    }
+}
+
+bool SwapchainExchange::BringLuminanceReduction() noexcept
+{
+    // ① Two bindings: the HDR source to read, and the accumulator to atomically sum into.
+    std::array<VkDescriptorSetLayoutBinding, 2u> Bindings{};
+    Bindings[0].binding         = 0u;
+    Bindings[0].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    Bindings[0].descriptorCount = 1u;
+    Bindings[0].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+    Bindings[1].binding         = 1u;
+    Bindings[1].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    Bindings[1].descriptorCount = 1u;
+    Bindings[1].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutCreateInfo LayoutInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+    LayoutInfo.bindingCount = 2u;
+    LayoutInfo.pBindings    = Bindings.data();
+    if (vkCreateDescriptorSetLayout(Vulkan->Device, &LayoutInfo, nullptr, &Vulkan->LuminanceSetLayout) != VK_SUCCESS)
+        return false;
+
+    VkPushConstantRange PushRange{};
+    PushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    PushRange.size       = static_cast<uint32_t>(sizeof(LuminancePushRecord));
+
+    VkPipelineLayoutCreateInfo PipelineLayoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+    PipelineLayoutInfo.setLayoutCount         = 1u;
+    PipelineLayoutInfo.pSetLayouts            = &Vulkan->LuminanceSetLayout;
+    PipelineLayoutInfo.pushConstantRangeCount = 1u;
+    PipelineLayoutInfo.pPushConstantRanges    = &PushRange;
+    if (vkCreatePipelineLayout(Vulkan->Device, &PipelineLayoutInfo, nullptr, &Vulkan->LuminanceLayout) != VK_SUCCESS)
+        return false;
+
+    // ② One accumulator per cycle slot, host visible and persistently mapped. Eight bytes each — mapping them
+    //    once costs nothing and avoids a driver round trip every frame.
+    constexpr uint32_t HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    for (uint32_t Slot = 0u; Slot < kCycleSlotCount; ++Slot)
+    {
+        // ⚠️ TRANSFER_DST as well as STORAGE. The histogram is cleared with vkCmdFillBuffer, which is a transfer
+        //    command, and a buffer that does not declare the usage is a spec violation the validation layer
+        //    reports on every single frame. It happens to work on this driver; that is not a reason to keep it.
+        AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, kLuminanceHistogramBytes,
+                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, HostVisible,
+                       Vulkan->LuminanceBuffers[Slot], Vulkan->LuminanceMemory[Slot]);
+        if (!Vulkan->LuminanceBuffers[Slot]) return false;
+        if (vkMapMemory(Vulkan->Device, Vulkan->LuminanceMemory[Slot], 0u, kLuminanceHistogramBytes, 0u,
+                        &Vulkan->LuminanceMapped[Slot]) != VK_SUCCESS)
+            return false;
+        std::memset(Vulkan->LuminanceMapped[Slot], 0, kLuminanceHistogramBytes);
+    }
+
+    VkDescriptorPoolSize PoolSizes[2]{};
+    PoolSizes[0] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,  kCycleSlotCount };
+    PoolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kCycleSlotCount };
+    VkDescriptorPoolCreateInfo PoolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+    PoolInfo.maxSets       = kCycleSlotCount;
+    PoolInfo.poolSizeCount = 2u;
+    PoolInfo.pPoolSizes    = PoolSizes;
+    if (vkCreateDescriptorPool(Vulkan->Device, &PoolInfo, nullptr, &Vulkan->LuminancePool) != VK_SUCCESS) return false;
+
+    std::array<VkDescriptorSetLayout, kCycleSlotCount> SetLayouts{};
+    SetLayouts.fill(Vulkan->LuminanceSetLayout);
+    VkDescriptorSetAllocateInfo AllocateInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+    AllocateInfo.descriptorPool     = Vulkan->LuminancePool;
+    AllocateInfo.descriptorSetCount = kCycleSlotCount;
+    AllocateInfo.pSetLayouts        = SetLayouts.data();
+    if (vkAllocateDescriptorSets(Vulkan->Device, &AllocateInfo, Vulkan->LuminanceSets) != VK_SUCCESS) return false;
+
+    WriteLuminanceDescriptors();
+
+    // ③ Pipeline. Missing SPIR-V is not fatal: without it the exposure simply stays manual.
+    const std::vector<uint32_t> Spirv = LoadSpirv("Engine/Shaders/LuminanceReduce.spv");
+    if (Spirv.empty())
+    {
+        std::cerr << "[SwapchainExchange] LuminanceReduce.spv missing - adaptive exposure disabled.\n";
+        return true;
+    }
+
+    VkShaderModuleCreateInfo ModuleInfo{ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+    ModuleInfo.codeSize = Spirv.size() * 4u;
+    ModuleInfo.pCode    = Spirv.data();
+    VkShaderModule Module = VK_NULL_HANDLE;
+    if (vkCreateShaderModule(Vulkan->Device, &ModuleInfo, nullptr, &Module) != VK_SUCCESS) return false;
+
+    VkComputePipelineCreateInfo ComputeInfo{ VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
+    ComputeInfo.stage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ComputeInfo.stage.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
+    ComputeInfo.stage.module = Module;
+    ComputeInfo.stage.pName  = "main";
+    ComputeInfo.layout       = Vulkan->LuminanceLayout;
+    const VkResult Created = vkCreateComputePipelines(Vulkan->Device, VK_NULL_HANDLE, 1u, &ComputeInfo, nullptr,
+                                                      &Vulkan->LuminancePipeline);
+    vkDestroyShaderModule(Vulkan->Device, Module, nullptr);
+    return Created == VK_SUCCESS;
+}
+
+bool SwapchainExchange::BringDenoisePipeline() noexcept
+{
+    // ① Set layout: source, target, surface, presentation.
+    std::array<VkDescriptorSetLayoutBinding, 4u> Bindings{};
+    for (uint32_t B = 0u; B < 4u; ++B)
+    {
+        Bindings[B].binding         = B;
+        Bindings[B].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        Bindings[B].descriptorCount = 1u;
+        Bindings[B].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+
+    VkDescriptorSetLayoutCreateInfo LayoutInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+    LayoutInfo.bindingCount = 4u;
+    LayoutInfo.pBindings    = Bindings.data();
+    if (vkCreateDescriptorSetLayout(Vulkan->Device, &LayoutInfo, nullptr, &Vulkan->DenoiseSetLayout) != VK_SUCCESS)
+        return false;
+
+    VkPushConstantRange PushRange{};
+    PushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    PushRange.size       = static_cast<uint32_t>(sizeof(DenoisePushRecord));
+
+    VkPipelineLayoutCreateInfo PipelineLayoutInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+    PipelineLayoutInfo.setLayoutCount         = 1u;
+    PipelineLayoutInfo.pSetLayouts            = &Vulkan->DenoiseSetLayout;
+    PipelineLayoutInfo.pushConstantRangeCount = 1u;
+    PipelineLayoutInfo.pPushConstantRanges    = &PushRange;
+    if (vkCreatePipelineLayout(Vulkan->Device, &PipelineLayoutInfo, nullptr, &Vulkan->DenoisePipelineLayout) != VK_SUCCESS)
+        return false;
+
+    // ② Pool and one set per level.
+    VkDescriptorPoolSize PoolSize{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 4u * kDenoiseLevelCount };
+    VkDescriptorPoolCreateInfo PoolInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+    PoolInfo.maxSets       = kDenoiseLevelCount;
+    PoolInfo.poolSizeCount = 1u;
+    PoolInfo.pPoolSizes    = &PoolSize;
+    if (vkCreateDescriptorPool(Vulkan->Device, &PoolInfo, nullptr, &Vulkan->DenoisePool) != VK_SUCCESS) return false;
+
+    std::array<VkDescriptorSetLayout, kDenoiseLevelCount> SetLayouts{};
+    SetLayouts.fill(Vulkan->DenoiseSetLayout);
+    VkDescriptorSetAllocateInfo AllocateInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+    AllocateInfo.descriptorPool     = Vulkan->DenoisePool;
+    AllocateInfo.descriptorSetCount = kDenoiseLevelCount;
+    AllocateInfo.pSetLayouts        = SetLayouts.data();
+    if (vkAllocateDescriptorSets(Vulkan->Device, &AllocateInfo, Vulkan->DenoiseSets) != VK_SUCCESS) return false;
+
+    // ③ Pipeline.
+    const std::vector<uint32_t> Spirv = LoadSpirv("Engine/Shaders/AtrousDenoise.spv");
+    if (Spirv.empty())
+    {
+        std::cerr << "[SwapchainExchange] AtrousDenoise.spv missing - the denoiser cannot be enabled.\n";
+        return false;
+    }
+
+    VkShaderModuleCreateInfo ModuleInfo{ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+    ModuleInfo.codeSize = Spirv.size() * 4u;
+    ModuleInfo.pCode    = Spirv.data();
+    VkShaderModule Module = VK_NULL_HANDLE;
+    if (vkCreateShaderModule(Vulkan->Device, &ModuleInfo, nullptr, &Module) != VK_SUCCESS) return false;
+
+    VkComputePipelineCreateInfo ComputeInfo{ VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
+    ComputeInfo.stage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    ComputeInfo.stage.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
+    ComputeInfo.stage.module = Module;
+    ComputeInfo.stage.pName  = "main";
+    ComputeInfo.layout       = Vulkan->DenoisePipelineLayout;
+
+    const VkResult Result = vkCreateComputePipelines(Vulkan->Device, VK_NULL_HANDLE, 1u, &ComputeInfo, nullptr,
+                                                     &Vulkan->DenoisePipeline);
+    vkDestroyShaderModule(Vulkan->Device, Module, nullptr);
+    if (Result != VK_SUCCESS)
+    {
+        std::cerr << "[SwapchainExchange] denoiser vkCreateComputePipelines failed (VkResult "
+                  << static_cast<int>(Result) << ").\n";
+        return false;
+    }
+
+    std::cerr << "[SwapchainExchange] Denoiser: " << kDenoiseLevelCount << " a-trous levels.\n";
+    return true;
+}
+
+bool SwapchainExchange::BringSkyRecord() noexcept
+{
+    // One 128 B uniform buffer, host-visible and persistently mapped — the same arrangement as the A6b
+    //    luminance accumulators, for the same reason: mapping and unmapping a tiny buffer every frame is a
+    //    driver round trip for bytes that fit in two cache lines.
+    constexpr uint32_t HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, kSkyRecordBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                   HostVisible, Vulkan->SkyBuffer, Vulkan->SkyMemory);
+    if (!Vulkan->SkyBuffer) return false;
+    if (vkMapMemory(Vulkan->Device, Vulkan->SkyMemory, 0u, kSkyRecordBytes, 0u, &Vulkan->SkyMapped) != VK_SUCCESS)
+        return false;
+    // Zero is the sky disabled (SunRadiance.w = 0), so until the first RefreshSky the kernel behaves exactly
+    //    as it did when the binding was an unwritten hole — minus the validation error.
+    std::memset(Vulkan->SkyMapped, 0, kSkyRecordBytes);
+    return true;
+}
+
+bool SwapchainExchange::BringMoonRecord() noexcept
+{
+    // One 288 B uniform buffer, host-visible and persistently mapped — the same arrangement as the sky record.
+    constexpr uint32_t HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, kMoonRecordBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                   HostVisible, Vulkan->MoonBuffer, Vulkan->MoonMemory);
+    if (!Vulkan->MoonBuffer) return false;
+    if (vkMapMemory(Vulkan->Device, Vulkan->MoonMemory, 0u, kMoonRecordBytes, 0u, &Vulkan->MoonMapped) != VK_SUCCESS)
+        return false;
+    // Zero is no moons at all (MoonControl.x = 0), so until the first RefreshMoons the kernel behaves exactly
+    //    as it did when the binding was an unwritten hole — minus the validation error.
+    std::memset(Vulkan->MoonMapped, 0, kMoonRecordBytes);
+    return true;
+}
+
+bool SwapchainExchange::BringPostRecord() noexcept
+{
+    // One 128 B uniform buffer, host-visible and persistently mapped — the same arrangement as the sky record.
+    constexpr uint32_t HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, kPostRecordBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                   HostVisible, Vulkan->PostBuffer, Vulkan->PostMemory);
+    if (!Vulkan->PostBuffer) return false;
+    if (vkMapMemory(Vulkan->Device, Vulkan->PostMemory, 0u, kPostRecordBytes, 0u, &Vulkan->PostMapped) != VK_SUCCESS)
+        return false;
+    // Zero is everything off (star brightness 0, flare and bow disabled), so until the first RefreshPost the
+    //    kernel behaves exactly as it did when binding 24 was an unwritten hole — minus the validation error.
+    std::memset(Vulkan->PostMapped, 0, kPostRecordBytes);
+    return true;
+}
+
+bool SwapchainExchange::BringStarTables() noexcept
+{
+    // The cells alone, zeroed: every bucket is (First 0, Count 0), so the star loop walks nothing and the
+    //    binding is valid from the first frame. UploadStarTables reallocates for the catalogue once loaded.
+    constexpr uint32_t HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    const uint32_t CellBytes = kStarCellCount * kStarCellBytes;
+    AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, CellBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                   HostVisible, Vulkan->StarBuffer, Vulkan->StarMemory);
+    if (!Vulkan->StarBuffer) return false;
+    if (vkMapMemory(Vulkan->Device, Vulkan->StarMemory, 0u, CellBytes, 0u, &Vulkan->StarMapped) != VK_SUCCESS)
+        return false;
+    std::memset(Vulkan->StarMapped, 0, CellBytes);
+    return true;
+}
+
 bool SwapchainExchange::BringDescriptorSet() noexcept
 {
-    std::array<VkDescriptorPoolSize, 3u> PoolSizes{};
+    std::array<VkDescriptorPoolSize, 4u> PoolSizes{};
+    // Counted explicitly rather than derived from kComputeBindingCount: the mix of image and buffer bindings is
+    //    not a fixed offset from the total, and a wrong pool size fails allocation at bring-up with a message that
+    //    points nowhere near the cause.
     PoolSizes[0].type            = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    PoolSizes[0].descriptorCount = 4u;
+    PoolSizes[0].descriptorCount = 7u;                          // 0 out · 3 history · 4 surface · 5 normal · 18 R7a surface · 19 moments · 20 denoise
     PoolSizes[1].type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    PoolSizes[1].descriptorCount = kComputeBindingCount - 7u;   // 9 storage buffers (1, 2, 6-12)
+    // ⚠️ Counted, and the count includes 23. It said 11 and the layout asks for 12, so every run began with
+    //    "trying to allocate 12 ... but this pool only has a total of 11": allowed to succeed on this driver,
+    //    guaranteed to fail on another.
+    PoolSizes[1].descriptorCount = 12u;                         // 1, 2, 6-12, 16-17, 23 star tables
     PoolSizes[2].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    PoolSizes[2].descriptorCount = 2u + (Vulkan->DescriptorIndexing ? kTextureSlotCapacity : 1u);   // R4b: two LUTs + the bindless table
+    PoolSizes[2].descriptorCount = 3u + (Vulkan->DescriptorIndexing ? kTextureSlotCapacity : 1u);   // 13/14 material LUTs · 15 motion · the bindless table (22 left for the UBOs below)
 
     VkDescriptorPoolCreateInfo PoolInfo{};
     PoolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     PoolInfo.flags         = Vulkan->DescriptorIndexing ? static_cast<VkDescriptorPoolCreateFlags>(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT) : 0u;
     PoolInfo.maxSets       = 1u;
-    PoolInfo.poolSizeCount = 3u;
+    PoolSizes[3].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    PoolSizes[3].descriptorCount = 3u;                          // 21 live sky record · 22 live moon record · 24 live post record
+    PoolInfo.poolSizeCount = 4u;
     PoolInfo.pPoolSizes    = PoolSizes.data();
     (void)vkCreateDescriptorPool(Vulkan->Device, &PoolInfo, nullptr, &Vulkan->ComputeDescriptorPool);
 
@@ -1096,6 +1702,20 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
     HistoryInfo.imageView   = Vulkan->HistoryImageView;
     HistoryInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
+    VkDescriptorImageInfo HistorySurfaceInfo{};
+    HistorySurfaceInfo.imageView   = Vulkan->HistorySurfaceImageView;
+    HistorySurfaceInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkDescriptorImageInfo MomentInfo{};
+    MomentInfo.imageView   = Vulkan->MomentImageView;
+    MomentInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    // The kernel always writes denoise slot 0; the filter's first level reads it. Keeping the kernel's target fixed
+    //    means the ping-pong parity lives entirely inside the filter loop.
+    VkDescriptorImageInfo DenoiseInputInfo{};
+    DenoiseInputInfo.imageView   = Vulkan->DenoiseImageViews[0];
+    DenoiseInputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
     VkDescriptorImageInfo SurfaceInfo{ VK_NULL_HANDLE, static_cast<VkImageView>(Visibility.QuerySurfaceView()), VK_IMAGE_LAYOUT_GENERAL };
     VkDescriptorImageInfo NormalInfo { VK_NULL_HANDLE, static_cast<VkImageView>(Visibility.QueryNormalView()),  VK_IMAGE_LAYOUT_GENERAL };
     VkDescriptorBufferInfo InstanceInfo { static_cast<VkBuffer>(Visibility.QueryInstanceBuffer()),  0u, VK_WHOLE_SIZE };
@@ -1107,6 +1727,15 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
     VkDescriptorBufferInfo IndexInfo    { static_cast<VkBuffer>(Visibility.QueryIndexBuffer()),  0u, VK_WHOLE_SIZE };   // R4b
     VkDescriptorImageInfo  EnergyInfo   { Vulkan->TableSampler, Vulkan->ShadingTables[0].View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     VkDescriptorImageInfo  SheenInfo    { Vulkan->TableSampler, Vulkan->ShadingTables[1].View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+    VkDescriptorImageInfo  MotionInfo   { Vulkan->TableSampler, static_cast<VkImageView>(Visibility.QueryMotionView()), VK_IMAGE_LAYOUT_GENERAL };   // R6: texelFetch only; linear sampler harmless
+    // R6: prev = the buffer last frame wrote, curr = the one this frame writes (parity flips per presented frame).
+    const uint32_t PrevSlot = Vulkan->ReservoirParity ? 1u : 0u;
+    VkDescriptorBufferInfo PrevReservoirInfo{ Vulkan->ReservoirBuffers[PrevSlot],      0u, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo CurrReservoirInfo{ Vulkan->ReservoirBuffers[PrevSlot ^ 1u], 0u, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo SkyInfo{ Vulkan->SkyBuffer, 0u, VK_WHOLE_SIZE };   // Celestial sky record (binding 21)
+    VkDescriptorBufferInfo MoonInfo{ Vulkan->MoonBuffer, 0u, VK_WHOLE_SIZE }; // Celestial moon record (binding 22)
+    VkDescriptorBufferInfo StarInfo{ Vulkan->StarBuffer, 0u, VK_WHOLE_SIZE }; // Star tables (binding 23)
+    VkDescriptorBufferInfo PostInfo{ Vulkan->PostBuffer, 0u, VK_WHOLE_SIZE }; // Celestial post record (binding 24)
 
     std::array<VkWriteDescriptorSet, kComputeBindingCount> Writes{};
     uint32_t WriteCount = 0u;
@@ -1170,6 +1799,15 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
         Write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; Write.dstSet = Vulkan->ComputeDescriptorSet; Write.dstBinding = Binding;
         Write.descriptorCount = 1u; Write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; Write.pBufferInfo = &Info;
     };
+    // The sky record is the compute set's only UNIFORM buffer. A write's descriptorType must equal the layout's,
+    //    so this cannot go through WriteBuffer — one wrong constant here and binding 21 reads as the wrong kind.
+    const auto WriteUniform = [&](uint32_t Binding, const VkDescriptorBufferInfo& Info)
+    {
+        if (!Info.buffer) return;
+        VkWriteDescriptorSet& Write = Writes[WriteCount++];
+        Write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; Write.dstSet = Vulkan->ComputeDescriptorSet; Write.dstBinding = Binding;
+        Write.descriptorCount = 1u; Write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; Write.pBufferInfo = &Info;
+    };
     WriteImage (4u, SurfaceInfo);
     WriteImage (5u, NormalInfo);
     WriteBuffer(6u, InstanceInfo);
@@ -1188,6 +1826,16 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
     };
     WriteSampled(13u, EnergyInfo);
     WriteSampled(14u, SheenInfo);
+    WriteSampled(15u, MotionInfo);          // R6: skipped until the motion target + table sampler exist
+    WriteBuffer(16u, PrevReservoirInfo);    // R6: skipped until the reservoir SSBOs exist
+    WriteBuffer(17u, CurrReservoirInfo);
+    WriteImage (18u, HistorySurfaceInfo);   // R7a: history (normal, depth) for running-mean reprojection
+    WriteImage (19u, MomentInfo);           // R7:  luminance moments, for the variance estimate
+    WriteImage (20u, DenoiseInputInfo);     // R7:  linear radiance + variance, the à-trous input
+    WriteUniform(21u, SkyInfo);             // Celestial sky record, for the kernel's miss branches
+    WriteUniform(22u, MoonInfo);            // Celestial moon record, for the discs and the moonlight
+    WriteBuffer(23u, StarInfo);             // Star tables, for the catalogue (cells alone until UploadStarTables)
+    WriteUniform(24u, PostInfo);            // Celestial post record, for stars/flare/rainbow params
 
     // R4a: the texture table. Written in one go (partially bound: slots past the resident count stay undefined and are
     //    never indexed — the material records only reference resident slots).
@@ -1210,6 +1858,47 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
         vkUpdateDescriptorSets(Vulkan->Device, WriteCount, Writes.data(), 0u, nullptr);
     if (TextureWrite.descriptorCount > 0u)
         vkUpdateDescriptorSets(Vulkan->Device, 1u, &TextureWrite, 0u, nullptr);
+
+    // ── R7 denoiser sets ────────────────────────────────────────────────────────────────────────────────────────
+    // One set per à-trous level, written once here rather than per frame: the images never change, only the push
+    //    constants do. Level i reads slot (i & 1) and writes the other, so with an odd level count the final
+    //    result lands in slot 1 — but the last level also writes the presentation image, so nothing downstream
+    //    depends on which slot it ended in.
+    if (Vulkan->DenoiseSetLayout && Vulkan->DenoiseImageViews[0] && Vulkan->HistorySurfaceImageView)
+    {
+        std::array<VkDescriptorImageInfo,  4u * kDenoiseLevelCount> DenoiseInfos{};
+        std::array<VkWriteDescriptorSet,   4u * kDenoiseLevelCount> DenoiseWrites{};
+        uint32_t DenoiseCount = 0u;
+
+        for (uint32_t Level = 0u; Level < kDenoiseLevelCount; ++Level)
+        {
+            const uint32_t Source = Level & 1u;
+            const VkImageView Views[4] =
+            {
+                Vulkan->DenoiseImageViews[Source],        // 0 source
+                Vulkan->DenoiseImageViews[Source ^ 1u],   // 1 target
+                Vulkan->HistorySurfaceImageView,          // 2 normal + depth (shared with R7a)
+                Vulkan->StorageImageView                  // 3 presentation (written by the final level only)
+            };
+
+            for (uint32_t Binding = 0u; Binding < 4u; ++Binding)
+            {
+                VkDescriptorImageInfo& Info = DenoiseInfos[DenoiseCount];
+                Info.imageView   = Views[Binding];
+                Info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+                VkWriteDescriptorSet& Write = DenoiseWrites[DenoiseCount];
+                Write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                Write.dstSet          = Vulkan->DenoiseSets[Level];
+                Write.dstBinding      = Binding;
+                Write.descriptorCount = 1u;
+                Write.descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                Write.pImageInfo      = &Info;
+                ++DenoiseCount;
+            }
+        }
+        vkUpdateDescriptorSets(Vulkan->Device, DenoiseCount, DenoiseWrites.data(), 0u, nullptr);
+    }
 }
 
 bool SwapchainExchange::BringCycleSlots() noexcept
@@ -1221,7 +1910,6 @@ bool SwapchainExchange::BringCycleSlots() noexcept
     for (uint32_t Slot = 0u; Slot < kCycleSlotCount; ++Slot)
     {
         (void)vkCreateSemaphore(Vulkan->Device, &SemaphoreInfo, nullptr, &Vulkan->AcquireSemaphores[Slot]);
-        (void)vkCreateSemaphore(Vulkan->Device, &SemaphoreInfo, nullptr, &Vulkan->ReleaseSemaphores[Slot]);
         vkCreateFence    (Vulkan->Device, &FenceInfo,     nullptr, &Vulkan->CycleFences[Slot]);
     }
     return true;
@@ -1229,14 +1917,21 @@ bool SwapchainExchange::BringCycleSlots() noexcept
 
 bool SwapchainExchange::BringImGui() noexcept
 {
-    // ① ImGui descriptor pool
-    VkDescriptorPoolSize ImGuiPoolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10u };
+    // ① ImGui descriptor pool — include SAMPLER and SAMPLED_IMAGE for ImGui font/texture uploads
+    std::array<VkDescriptorPoolSize, 6u> ImGuiPoolSizes = {{
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16u },
+        { VK_DESCRIPTOR_TYPE_SAMPLER,                16u },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,          16u },
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          16u },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         16u },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         16u }
+    }};
     VkDescriptorPoolCreateInfo ImGuiPoolInfo{};
     ImGuiPoolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     ImGuiPoolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    ImGuiPoolInfo.maxSets       = 10u;
-    ImGuiPoolInfo.poolSizeCount = 1u;
-    ImGuiPoolInfo.pPoolSizes    = &ImGuiPoolSize;
+    ImGuiPoolInfo.maxSets       = 64u;
+    ImGuiPoolInfo.poolSizeCount = static_cast<uint32_t>(ImGuiPoolSizes.size());
+    ImGuiPoolInfo.pPoolSizes    = ImGuiPoolSizes.data();
     (void)vkCreateDescriptorPool(Vulkan->Device, &ImGuiPoolInfo, nullptr, &Vulkan->ImGuiDescriptorPool);
 
     // ② Render pass — loads compute output, ImGui renders on top, transitions to PRESENT
@@ -1296,6 +1991,29 @@ bool SwapchainExchange::BringImGui() noexcept
 #endif // IMGUI_HAS_DOCK
     ImGui::StyleColorsDark();
 
+    // 🔴 THE PATCHES WERE DEAD CODE UNTIL THIS. Patches/PatchA and PatchB add four style variables to the
+    //    vendored ImGui, and every one of them defaults to 0.0f, which is stock rectangular ImGui exactly —
+    //    that default is deliberate, so an unpatched build and a patched-but-unconfigured one are
+    //    byte-identical. Nothing in Slate had ever set them, so the build applied three patches on every run
+    //    and drew square tabs, and the patch report in the log said "already applied" while nothing about the
+    //    tabs had changed.
+    //
+    //    The figures are References/DockWorkspace.html's, which is what the patches were cut to reproduce:
+    //    slant = min(14, w × 0.16), a 24 px tab, 24 px of overlap so adjacent tabs interlock, and a 4 px strip
+    //    of node above them (the sheet's 28 px strip over a 24 px tab).
+    //
+    //    ⚠️ NOT guarded behind an #ifdef, deliberately. Without the patches these are not members of ImGuiStyle
+    //    and the build fails to compile — which is the right failure. A guard would let an unpatched build
+    //    succeed and draw square tabs, and that is the exact state this commit found: three patches applied on
+    //    every run, reported as applied, and nothing on screen different for it.
+    {
+        ImGuiStyle& TabStyle    = ImGui::GetStyle();
+        TabStyle.TabSlant       = 14.0f;
+        TabStyle.TabOverlap     = 24.0f;
+        TabStyle.TabHeight      = 24.0f;
+        TabStyle.TabStripPadTop =  4.0f;
+    }
+
     ImGui_ImplGlfw_InitForVulkan(GlfwWindow, true);
 
     ImGui_ImplVulkan_InitInfo ImGuiVulkanInfo{};
@@ -1310,6 +2028,7 @@ bool SwapchainExchange::BringImGui() noexcept
     ImGuiVulkanInfo.MinImageCount  = 2u;
     ImGuiVulkanInfo.ImageCount     = ImageCount;
     ImGui_ImplVulkan_Init(&ImGuiVulkanInfo);
+    BringSceneViewSet();
 
     // ⑤ Font upload — automatic since ImGui 1.80; ImGui_ImplVulkan_NewFrame() uploads on first call.
     // 💡 ImGui_ImplVulkan_CreateFontsTexture() was removed in ImGui 1.93 (2025-06-11).
@@ -1614,6 +2333,36 @@ void SwapchainExchange::UploadShadingTables(const float* Energy, const float* Sh
     vkDestroyBuffer(Vulkan->Device, Staging, nullptr);
     vkFreeMemory(Vulkan->Device, StagingMemory, nullptr);
     std::cerr << "[SwapchainExchange] Shading tables: GGX energy + LTC sheen, 2 x " << N << "x" << N << " RGBA32F resident (bindings 13/14).\n";
+    // The tables arrive after UploadScene's descriptor writes (the game and the harness both shade-table last),
+    //    so without this rewrite bindings 13/14 stay unbound while the kernel samples them every pixel — silent
+    //    garbage on forgiving drivers, a fault on strict ones. The rewrite is idempotent for every other binding.
+    WriteDescriptorSet();
+}
+
+void* SwapchainExchange::SwapReservoirParity() noexcept
+{
+    if (!Vulkan->Device || !Vulkan->ComputeDescriptorSet) return nullptr;
+    if (!Vulkan->ReservoirBuffers[0u] || !Vulkan->ReservoirBuffers[1u]) return nullptr;
+    Vulkan->ReservoirParity = !Vulkan->ReservoirParity;
+    // Rewrite only bindings 16/17 (the full WriteDescriptorSet also writes them — same values, harmless).
+    const uint32_t PrevSlot = Vulkan->ReservoirParity ? 1u : 0u;
+    VkDescriptorBufferInfo Infos[2] =
+    {
+        { Vulkan->ReservoirBuffers[PrevSlot],      0u, VK_WHOLE_SIZE },
+        { Vulkan->ReservoirBuffers[PrevSlot ^ 1u], 0u, VK_WHOLE_SIZE }
+    };
+    VkWriteDescriptorSet Writes[2] = {};
+    for (uint32_t I = 0u; I < 2u; ++I)
+    {
+        Writes[I].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        Writes[I].dstSet          = Vulkan->ComputeDescriptorSet;
+        Writes[I].dstBinding      = 16u + I;
+        Writes[I].descriptorCount = 1u;
+        Writes[I].descriptorType  = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        Writes[I].pBufferInfo     = &Infos[I];
+    }
+    vkUpdateDescriptorSets(Vulkan->Device, 2u, Writes, 0u, nullptr);
+    return Vulkan->ReservoirBuffers[PrevSlot];
 }
 
 void SwapchainExchange::UploadTraversal(const TraversalIndex& Traversal) noexcept
@@ -1638,8 +2387,124 @@ void SwapchainExchange::UploadTraversal(const TraversalIndex& Traversal) noexcep
     };
     Upload(Traversal.QueryNodeBlob(), Vulkan->TraversalNodeBuffer, Vulkan->TraversalNodeMemory);
     Upload(Traversal.QueryLeafBlob(), Vulkan->TraversalLeafBuffer, Vulkan->TraversalLeafMemory);
+    // Remember what was allocated so RefreshTraversal can refuse a blob that no longer fits instead of truncating.
+    TraversalNodeCapacity = static_cast<VkDeviceSize>(Traversal.QueryNodeBlob().size()) * sizeof(float);
+    TraversalLeafCapacity = static_cast<VkDeviceSize>(Traversal.QueryLeafBlob().size()) * sizeof(float);
     TraversalResident = true;
     WriteDescriptorSet();
+}
+
+bool SwapchainExchange::RefreshTraversal(const TraversalIndex& Traversal, const std::vector<TriangleIndex>& Facets) noexcept
+{
+    // D5 per-frame path. Unlike UploadTraversal this must NOT reallocate: no vkDeviceWaitIdle, no descriptor
+    //    rewrite, because the VkBuffer handles are unchanged. It only succeeds while the refitted blobs still fit
+    //    the allocations made at load — a refit preserves topology, so in practice they do, but a grown blob is
+    //    refused rather than truncated.
+    if (!Vulkan || !Vulkan->Device || !TraversalResident) return false;
+    if (!Vulkan->TraversalNodeBuffer || !Vulkan->TraversalLeafBuffer) return false;
+
+    const auto Refresh = [&](const std::vector<float>& Blob, VkDeviceMemory Memory, VkDeviceSize Capacity) -> bool
+    {
+        const VkDeviceSize ByteCount = static_cast<VkDeviceSize>(Blob.size()) * sizeof(float);
+        if (ByteCount == 0u || ByteCount > Capacity) return false;
+        void* Mapped = nullptr;
+        if (vkMapMemory(Vulkan->Device, Memory, 0u, ByteCount, 0u, &Mapped) != VK_SUCCESS || Mapped == nullptr) return false;
+        std::memcpy(Mapped, Blob.data(), static_cast<size_t>(ByteCount));
+        vkUnmapMemory(Vulkan->Device, Memory);
+        return true;
+    };
+
+    if (!Refresh(Traversal.QueryNodeBlob(), Vulkan->TraversalNodeMemory, TraversalNodeCapacity)) return false;
+    if (!Refresh(Traversal.QueryLeafBlob(), Vulkan->TraversalLeafMemory, TraversalLeafCapacity)) return false;
+
+    // The kernel resolves a hit's material and normal from Triangles[], so the flat triangles must move with the
+    //    acceleration structure or shading would read the body's old position.
+    UploadTriangles(Facets);
+    return true;
+}
+
+bool SwapchainExchange::RefreshSky(const void* Bytes, uint32_t ByteCount) noexcept
+{
+    // DeviceExchange must not include DisplayPresentation (it is the layer below it) — the caller packs with
+    //    SkyConstantRecord/PackSkyConstants and hands over the 144 bytes, the way UploadShadingTables receives
+    //    baked planes. The size is refused rather than trusted: a short write would leave half an old sky in
+    //    the buffer, and a long one would overrun the mapping.
+    if (!Vulkan->Device || !Vulkan->SkyMapped || !Bytes || ByteCount != kSkyRecordBytes) return false;
+    // One memcpy into the persistent mapping: no reallocation, no descriptor rewrite, no device stall — the
+    //    same per-frame shape as RefreshTraversal. The buffer is shared by both cycle slots, so a sufficiently
+    //    adversarial scheduler could show one frame a half-old sky; RefreshTraversal accepts that shape for
+    //    megabytes of BVH, which is where the argument ends for 144 coherent bytes.
+    std::memcpy(Vulkan->SkyMapped, Bytes, kSkyRecordBytes);
+    return true;
+}
+
+bool SwapchainExchange::RefreshMoons(const void* Bytes, uint32_t ByteCount) noexcept
+{
+    // DeviceExchange must not include DisplayPresentation (it is the layer below it) — the caller packs with
+    //    MoonConstantRecord/PackMoonConstants and hands over the 288 bytes, the way RefreshSky receives its 128.
+    //    The size is refused rather than trusted: a short write would leave half an old roster in the buffer,
+    //    and a long one would overrun the mapping.
+    if (!Vulkan->Device || !Vulkan->MoonMapped || !Bytes || ByteCount != kMoonRecordBytes) return false;
+    // One memcpy into the persistent mapping: no reallocation, no descriptor rewrite, no device stall — the
+    //    same per-frame shape as RefreshSky. The buffer is shared by both cycle slots, so a sufficiently
+    //    adversarial scheduler could show one frame a half-old roster; RefreshTraversal accepts that shape for
+    //    megabytes of BVH, which is where the argument ends for 288 coherent bytes.
+    std::memcpy(Vulkan->MoonMapped, Bytes, kMoonRecordBytes);
+    return true;
+}
+
+bool SwapchainExchange::RefreshPost(const void* Bytes, uint32_t ByteCount) noexcept
+{
+    // DeviceExchange must not include DisplayPresentation (it is the layer below it) — the caller packs with
+    //    PostConstantRecord/PackPostConstants and hands over the 128 bytes, the way RefreshSky receives its own.
+    //    The size is refused rather than trusted, for the same half-old-reading reason.
+    if (!Vulkan->Device || !Vulkan->PostMapped || !Bytes || ByteCount != kPostRecordBytes) return false;
+    // One memcpy into the persistent mapping: no reallocation, no descriptor rewrite, no device stall — the
+    //    same per-frame shape as RefreshSky and RefreshMoons.
+    std::memcpy(Vulkan->PostMapped, Bytes, kPostRecordBytes);
+    return true;
+}
+
+void SwapchainExchange::UploadStarTables(const void* CellBytes, uint32_t CellCount,
+                                         const void* StarBytes, uint32_t StarCount) noexcept
+{
+    // Raw bytes, not catalogue types: DeviceExchange takes void* the way RefreshSky does, so no layer above
+    //    leaks in. The caller skips the call entirely when the catalogue is empty — the bring-up zeros stand.
+    if (!Vulkan->Device || !Vulkan->ComputeDescriptorSet) return;
+    if (CellCount != kStarCellCount || !CellBytes || (StarCount > 0u && !StarBytes)) return;
+    constexpr uint32_t HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    const uint32_t TotalBytes = CellCount * kStarCellBytes + StarCount * kStarRecordBytes;
+    VkBuffer NewBuffer = VK_NULL_HANDLE; VkDeviceMemory NewMemory = VK_NULL_HANDLE; void* NewMapped = nullptr;
+    AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, TotalBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                   HostVisible, NewBuffer, NewMemory);
+    if (!NewBuffer) return;
+    if (vkMapMemory(Vulkan->Device, NewMemory, 0u, TotalBytes, 0u, &NewMapped) != VK_SUCCESS)
+    {
+        vkDestroyBuffer(Vulkan->Device, NewBuffer, nullptr);
+        vkFreeMemory(Vulkan->Device, NewMemory, nullptr);
+        return;
+    }
+    // Cells first, then the binned stars: the layout the shader's StarTable block declares.
+    std::memcpy(NewMapped, CellBytes, static_cast<size_t>(CellCount) * kStarCellBytes);
+    if (StarCount > 0u)
+        std::memcpy(static_cast<char*>(NewMapped) + static_cast<size_t>(CellCount) * kStarCellBytes,
+                    StarBytes, static_cast<size_t>(StarCount) * kStarRecordBytes);
+    // The old buffer dies only after the new one maps — a failure anywhere above keeps the previous tables
+    //    (or the zeroed cells) rather than an unwritten hole.
+    if (Vulkan->StarMapped) vkUnmapMemory(Vulkan->Device, Vulkan->StarMemory);
+    if (Vulkan->StarBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->StarBuffer, nullptr);
+    if (Vulkan->StarMemory) vkFreeMemory(Vulkan->Device, Vulkan->StarMemory, nullptr);
+    Vulkan->StarBuffer = NewBuffer; Vulkan->StarMemory = NewMemory; Vulkan->StarMapped = NewMapped;
+    // Re-point binding 23 at the reallocated buffer. A single write — re-running the whole set would stomp the
+    //    per-frame texture table state that UploadScene established after bring-up.
+    VkDescriptorBufferInfo StarInfo{ Vulkan->StarBuffer, 0u, VK_WHOLE_SIZE };
+    VkWriteDescriptorSet Write{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+    Write.dstSet = Vulkan->ComputeDescriptorSet;
+    Write.dstBinding = 23u;
+    Write.descriptorCount = 1u;
+    Write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    Write.pBufferInfo = &StarInfo;
+    vkUpdateDescriptorSets(Vulkan->Device, 1u, &Write, 0u, nullptr);
 }
 
 void SwapchainExchange::UploadScene(const SceneStructure& Scene, const TraversalIndex& Traversal, const TextureIndex* Textures) noexcept
@@ -1678,14 +2543,26 @@ void SwapchainExchange::RecordAndPresent(const DispatchConfiguration& Dispatch) 
 
     vkWaitForFences(Vulkan->Device, 1u, &Vulkan->CycleFences[ActiveSlot], VK_TRUE, UINT64_MAX);
 
+    // 🔴 A pending resize is handled BEFORE the acquire, not after it. Acquiring and then abandoning the frame
+    //    leaves the acquire semaphore SIGNALLED with nothing ever waiting on it, and the next acquire on the
+    //    same cycle slot is then illegal: "Semaphore must not be currently signaled". From there the slot's
+    //    fence and command buffer fall out of step with the queue and every frame after it is malformed — which
+    //    is the cascade of pending-fence and in-use-command-buffer errors that followed a window resize.
+    if (ResizePending)
+    {
+        ResizePending = false;
+        (void)RebuildSwapchain();
+        return;
+    }
+
     uint32_t ImageOrdinal = 0u;
     const VkResult AcquireResult = vkAcquireNextImageKHR(
         Vulkan->Device, Vulkan->Swapchain, UINT64_MAX,
         Vulkan->AcquireSemaphores[ActiveSlot], VK_NULL_HANDLE, &ImageOrdinal);
 
-    if (AcquireResult == VK_ERROR_OUT_OF_DATE_KHR || ResizePending)
+    // An out-of-date acquire does not signal, so rebuilding here is safe.
+    if (AcquireResult == VK_ERROR_OUT_OF_DATE_KHR)
     {
-        ResizePending = false;
         (void)RebuildSwapchain();
         return;
     }
@@ -1707,6 +2584,8 @@ void SwapchainExchange::RecordAndPresent(const DispatchConfiguration& Dispatch) 
         vkWaitForFences(Vulkan->Device, 1u, &Vulkan->ImageOrdinalFences[ImageOrdinal], VK_TRUE, UINT64_MAX);
     Vulkan->ImageOrdinalFences[ImageOrdinal] = Vulkan->CycleFences[ActiveSlot];
 
+    void* PrevReservoirs = SwapReservoirParity();   // R6: prev = last frame's curr before recording the new frame
+    Visibility.AssignReservoirView(PrevReservoirs);   // R6 row 3: resolve binding 13 follows the kernel's prev buffer (M/W/Age views)
     RecordComputeCommands(ImageOrdinal, Dispatch);
 
     vkResetFences(Vulkan->Device, 1u, &Vulkan->CycleFences[ActiveSlot]);
@@ -1720,12 +2599,12 @@ void SwapchainExchange::RecordAndPresent(const DispatchConfiguration& Dispatch) 
     Submit.commandBufferCount   = 1u;
     Submit.pCommandBuffers      = &Vulkan->ComputeCommands[ImageOrdinal];
     Submit.signalSemaphoreCount = 1u;
-    Submit.pSignalSemaphores    = &Vulkan->ReleaseSemaphores[ActiveSlot];
+    Submit.pSignalSemaphores    = &Vulkan->ReleaseSemaphores[ImageOrdinal];
     (void)vkQueueSubmit(Vulkan->GraphicsQueue, 1u, &Submit, Vulkan->CycleFences[ActiveSlot]);
 
     VkPresentInfoKHR PresentInfo{ VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
     PresentInfo.waitSemaphoreCount = 1u;
-    PresentInfo.pWaitSemaphores    = &Vulkan->ReleaseSemaphores[ActiveSlot];
+    PresentInfo.pWaitSemaphores    = &Vulkan->ReleaseSemaphores[ImageOrdinal];
     PresentInfo.swapchainCount     = 1u;
     PresentInfo.pSwapchains        = &Vulkan->Swapchain;
     PresentInfo.pImageIndices      = &ImageOrdinal;
@@ -1771,25 +2650,82 @@ void SwapchainExchange::RecordComputeCommands(uint32_t ImageOrdinal, const Dispa
             0u, 0u, nullptr, 0u, nullptr, 1u, &Barrier);
     }
 
-    // ①b History image → GENERAL; first use transitions from UNDEFINED, later uses order the previous frame's writes
+    // ①b History images → GENERAL; first use transitions from UNDEFINED, later uses order the previous frame's writes.
+    //    R7a adds the history surface image: same lifetime, same access pattern (read the previous frame's value, write
+    //    this frame's), so it rides the same barrier rather than a second one.
     {
-        VkImageMemoryBarrier Barrier{};
-        Barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        Barrier.oldLayout                       = Vulkan->HistoryInitialised ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
-        Barrier.newLayout                       = VK_IMAGE_LAYOUT_GENERAL;
-        Barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-        Barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
-        Barrier.image                           = Vulkan->HistoryImage;
-        Barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-        Barrier.subresourceRange.levelCount     = 1u;
-        Barrier.subresourceRange.layerCount     = 1u;
-        Barrier.srcAccessMask                   = Vulkan->HistoryInitialised ? static_cast<VkAccessFlags>(VK_ACCESS_SHADER_WRITE_BIT) : static_cast<VkAccessFlags>(0u);
-        Barrier.dstAccessMask                   = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        // R7 joins the same bracket: the moments persist exactly like the mean, and the two denoise images must
+        //    reach GENERAL before the kernel writes slot 0. All of them share the one HistoryInitialised latch
+        //    because they are created and destroyed together.
+        const std::array<VkImage, 5u> HistoryImages{ Vulkan->HistoryImage, Vulkan->HistorySurfaceImage,
+                                                     Vulkan->MomentImage,
+                                                     Vulkan->DenoiseImages[0], Vulkan->DenoiseImages[1] };
+        std::array<VkImageMemoryBarrier, 5u> Barriers{};
+        uint32_t BarrierCount = 0u;
+        for (VkImage Image : HistoryImages)
+        {
+            if (!Image) continue;
+            VkImageMemoryBarrier& Barrier           = Barriers[BarrierCount++];
+            Barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            Barrier.oldLayout                       = Vulkan->HistoryInitialised ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
+            Barrier.newLayout                       = VK_IMAGE_LAYOUT_GENERAL;
+            Barrier.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+            Barrier.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+            Barrier.image                           = Image;
+            Barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+            Barrier.subresourceRange.levelCount     = 1u;
+            Barrier.subresourceRange.layerCount     = 1u;
+            Barrier.srcAccessMask                   = Vulkan->HistoryInitialised ? static_cast<VkAccessFlags>(VK_ACCESS_SHADER_WRITE_BIT) : static_cast<VkAccessFlags>(0u);
+            Barrier.dstAccessMask                   = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        }
         vkCmdPipelineBarrier(Command,
             Vulkan->HistoryInitialised ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            0u, 0u, nullptr, 0u, nullptr, 1u, &Barrier);
+            0u, 0u, nullptr, 0u, nullptr, BarrierCount, Barriers.data());
         Vulkan->HistoryInitialised = true;
+    }
+
+    // ①c R6 reservoirs: zero-fill once, then order the previous frame's writes before this frame's access.
+    if (Vulkan->ReservoirBuffers[0u] && Vulkan->ReservoirBuffers[1u] && Vulkan->ReservoirBytes > 0u)
+    {
+        if (!Vulkan->ReservoirsInitialised)
+        {
+            for (uint32_t I = 0u; I < 2u; ++I)
+                vkCmdFillBuffer(Command, Vulkan->ReservoirBuffers[I], 0u, Vulkan->ReservoirBytes, 0u);
+            VkBufferMemoryBarrier FillBarrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER };
+            FillBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            FillBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            FillBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            FillBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            FillBarrier.buffer = Vulkan->ReservoirBuffers[0u];
+            FillBarrier.offset = 0u;
+            FillBarrier.size   = Vulkan->ReservoirBytes;
+            // Both buffers are filled together; one barrier per buffer (same parameters, different handle).
+            VkBufferMemoryBarrier FillBarriers[2] = { FillBarrier, FillBarrier };
+            FillBarriers[1u].buffer = Vulkan->ReservoirBuffers[1u];
+            vkCmdPipelineBarrier(Command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 0u, 0u, nullptr, 2u, FillBarriers, 0u, nullptr);
+            Vulkan->ReservoirsInitialised = true;
+        }
+        else
+        {
+            // Same-queue frames execute in submission order; this orders last frame's curr-writes (now prev)
+            //    before this frame's prev-reads and curr-writes.
+            VkBufferMemoryBarrier Barriers[2] = {};
+            for (uint32_t I = 0u; I < 2u; ++I)
+            {
+                Barriers[I].sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                Barriers[I].srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
+                Barriers[I].dstAccessMask       = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                Barriers[I].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                Barriers[I].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                Barriers[I].buffer              = Vulkan->ReservoirBuffers[I];
+                Barriers[I].offset              = 0u;
+                Barriers[I].size                = Vulkan->ReservoirBytes;
+            }
+            vkCmdPipelineBarrier(Command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 0u, 0u, nullptr, 2u, Barriers, 0u, nullptr);
+        }
     }
 
     // Render scale: every pass only covers Dispatch.ViewportWidth × ViewportHeight (the top-left sub-rectangle of
@@ -1804,7 +2740,24 @@ void SwapchainExchange::RecordComputeCommands(uint32_t ImageOrdinal, const Dispa
     Frame.RenderHeight = RenderHeight;
     Visibility.RecordFrame(Command, Vulkan->ActiveSlot, Frame);
 
-    if (Frame.DebugView == DebugViewCategory::Off)
+    // R10 ①d — the GI-off shadow stage. With Global Illumination off the ReSTIR kernel is not dispatched at all:
+    //    light visibility comes from shadow maps rasterised here, and ShadowResolve writes the presentation image
+    //    directly. The whole no-ray path lives in this branch, so with GI ON nothing below costs anything.
+    //
+    //    The fallback matters. If the stage cannot be recorded — no shadow SPIR-V, no emissive geometry in the
+    //    scene, an unsupported map size — we must NOT skip straight to present: the presentation image would keep
+    //    whatever the last frame left in it and the viewport would freeze on a stale picture. Dropping through to
+    //    the kernel is the honest failure, since that path always writes every pixel.
+    const bool GlobalIlluminationOff = (Dispatch.FeatureFlags & DispatchFeatureGlobalIllumination) == 0u;
+    bool ShadowStageRecorded = false;
+    if (Frame.DebugView == DebugViewCategory::Off && GlobalIlluminationOff && ShadowFrameValid && Visibility.IsShadowReady())
+    {
+        ShadowFrameConfiguration Shadow = ShadowFrame;
+        if (Visibility.PlaceShadowTaps(Shadow))
+            ShadowStageRecorded = Visibility.RecordShadowFrame(Command, Vulkan->ActiveSlot, Shadow);
+    }
+
+    if (Frame.DebugView == DebugViewCategory::Off && !ShadowStageRecorded)
     {
         // ② Dispatch ReSTIR compute
         vkCmdBindPipeline(Command, VK_PIPELINE_BIND_POINT_COMPUTE, Vulkan->ComputePipeline);
@@ -1814,9 +2767,189 @@ void SwapchainExchange::RecordComputeCommands(uint32_t ImageOrdinal, const Dispa
             VK_SHADER_STAGE_COMPUTE_BIT, 0u, sizeof(DispatchConfiguration), &Dispatch);
         const uint32_t GroupX = (RenderWidth  + kLocalGroupSizeX - 1u) / kLocalGroupSizeX;
         const uint32_t GroupY = (RenderHeight + kLocalGroupSizeY - 1u) / kLocalGroupSizeY;
+        // R10 ② — bracket the ReSTIR dispatch itself. The trailing span (query 10→11) also contains the à-trous
+        //    denoise and the luminance reduction, so without this pair "kernel" was really "kernel + denoise +
+        //    luminance" and no tier comparison could tell which of the three a change had moved.
+        Visibility.RecordRestirBegin(Command, Vulkan->ActiveSlot);
         vkCmdDispatch(Command, GroupX, GroupY, 1u);
+        Visibility.RecordRestirEnd(Command, Vulkan->ActiveSlot);
+
+        // ②a R7 à-trous denoise. The kernel wrote LINEAR radiance + variance into denoise slot 0 and, with the
+        //     feature on, skipped the tone map; the final level here performs it into the presentation image.
+        //     Each level reads what the previous one wrote, so they are strictly ordered by a barrier.
+        if ((Dispatch.FeatureFlags & DispatchFeatureDenoise) != 0u && Vulkan->DenoisePipeline)
+        {
+            const uint32_t DenoiseGroupX = (RenderWidth  + kDenoiseGroupSize - 1u) / kDenoiseGroupSize;
+            const uint32_t DenoiseGroupY = (RenderHeight + kDenoiseGroupSize - 1u) / kDenoiseGroupSize;
+
+            vkCmdBindPipeline(Command, VK_PIPELINE_BIND_POINT_COMPUTE, Vulkan->DenoisePipeline);
+
+            // The filter reads HistorySurfaceImage for its normal, depth and background tests, and that image is
+            //    written by the ReSTIR kernel dispatched immediately above. Without ordering the kernel's writes
+            //    against these reads, a tap can sample a surface texel that has not been written yet: depth reads
+            //    as 0, the tap is rejected as background, and those pixels filter with fewer taps than their
+            //    neighbours. Because workgroups retire roughly in linear ID order the incomplete frontier follows
+            //    column boundaries, so it shows up as vertical banding rather than isolated speckle.
+            {
+                VkImageMemoryBarrier KernelOutput{};
+                KernelOutput.sType                       = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                KernelOutput.oldLayout                   = VK_IMAGE_LAYOUT_GENERAL;
+                KernelOutput.newLayout                   = VK_IMAGE_LAYOUT_GENERAL;
+                KernelOutput.srcQueueFamilyIndex         = VK_QUEUE_FAMILY_IGNORED;
+                KernelOutput.dstQueueFamilyIndex         = VK_QUEUE_FAMILY_IGNORED;
+                KernelOutput.image                       = Vulkan->HistorySurfaceImage;
+                KernelOutput.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                KernelOutput.subresourceRange.levelCount = 1u;
+                KernelOutput.subresourceRange.layerCount = 1u;
+                KernelOutput.srcAccessMask               = VK_ACCESS_SHADER_WRITE_BIT;
+                KernelOutput.dstAccessMask               = VK_ACCESS_SHADER_READ_BIT;
+                vkCmdPipelineBarrier(Command,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    0u, 0u, nullptr, 0u, nullptr, 1u, &KernelOutput);
+            }
+
+            // R10 #8: how many levels run is tier-keyed. Descriptor sets exist for kDenoiseLevelCount, so a
+            //    shorter chain simply stops early — and because binding 3 (the presentation image) is written by
+            //    whichever level carries FinalLevel, the tone map still happens exactly once wherever we stop.
+            //    Clamped into 1..kDenoiseLevelCount: a 0 would leave the presentation image unwritten this frame,
+            //    and anything above the ceiling would index a descriptor set that was never allocated.
+            const uint32_t LiveDenoiseLevels =
+                std::clamp(Dispatch.DenoiseLevelCount == 0u ? kDenoiseLevelCount : Dispatch.DenoiseLevelCount,
+                           1u, kDenoiseLevelCount);
+            for (uint32_t Level = 0u; Level < LiveDenoiseLevels; ++Level)
+            {
+                // Both ping-pong slots must be ordered against the previous level, in BOTH directions:
+                //   · read-after-write  — this level reads what the previous level wrote;
+                //   · write-after-read  — this level OVERWRITES the slot the previous level was reading.
+                // Barriering only the source with WRITE→READ leaves the second hazard unordered, so a workgroup
+                //    of this level could clobber a texel a still-running workgroup of the previous level had not
+                //    yet consumed. That surfaces as a per-workgroup tile pattern across the image.
+                VkImageMemoryBarrier Barriers[2]{};
+                for (uint32_t Slot = 0u; Slot < 2u; ++Slot)
+                {
+                    Barriers[Slot].sType                       = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    Barriers[Slot].oldLayout                   = VK_IMAGE_LAYOUT_GENERAL;
+                    Barriers[Slot].newLayout                   = VK_IMAGE_LAYOUT_GENERAL;
+                    Barriers[Slot].srcQueueFamilyIndex         = VK_QUEUE_FAMILY_IGNORED;
+                    Barriers[Slot].dstQueueFamilyIndex         = VK_QUEUE_FAMILY_IGNORED;
+                    Barriers[Slot].image                       = Vulkan->DenoiseImages[Slot];
+                    Barriers[Slot].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    Barriers[Slot].subresourceRange.levelCount = 1u;
+                    Barriers[Slot].subresourceRange.layerCount = 1u;
+                    Barriers[Slot].srcAccessMask               = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+                    Barriers[Slot].dstAccessMask               = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+                }
+                vkCmdPipelineBarrier(Command,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    0u, 0u, nullptr, 0u, nullptr, 2u, Barriers);
+
+                DenoisePushRecord Push{};
+                Push.Extent[0]      = RenderWidth;
+                Push.Extent[1]      = RenderHeight;
+                Push.StepSize       = 1u << Level;          // 1, 2, 4, 8, 16 — the "holes" widen each level
+                Push.Enabled        = 1u;
+                Push.NormalPower    = 64.0f;
+                Push.DepthScale     = 0.05f;
+                Push.LuminanceScale = 4.0f;
+                Push.Exposure       = Dispatch.Exposure;    // the filter owns the tone map, so it needs the exposure
+                Push.FinalLevel     = (Level + 1u == LiveDenoiseLevels) ? 1u : 0u;
+                Push.ColourSaturation = Dispatch.ColourSaturation;
+
+                vkCmdPushConstants(Command, Vulkan->DenoisePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                                   0u, sizeof(Push), &Push);
+                vkCmdBindDescriptorSets(Command, VK_PIPELINE_BIND_POINT_COMPUTE, Vulkan->DenoisePipelineLayout,
+                                        0u, 1u, &Vulkan->DenoiseSets[Level], 0u, nullptr);
+                // ⚠️ The filter's workgroup is 8×8, NOT the kernel's 16×16. Reusing the kernel's group count here
+                //     covered only half the width and half the height — exactly the top-left quarter of the image.
+                vkCmdDispatch(Command, DenoiseGroupX, DenoiseGroupY, 1u);
+            }
+        }
+
+        // ②a2 A6b — measure the frame's average log luminance for adaptive exposure. Recorded INSIDE the
+        //      DebugView::Off branch: a debug view writes false colours into the presentation image, and
+        //      exposing for a normal-map visualisation would be meaningless.
+        if (Vulkan->LuminancePipeline)
+        {
+            // The kernel wrote HistoryImage this frame; the reduction reads it. Without this the reduction
+            //    races the kernel and measures a half-written frame, which would make the exposure jitter.
+            VkImageMemoryBarrier HistoryBarrier{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+            HistoryBarrier.oldLayout                   = VK_IMAGE_LAYOUT_GENERAL;
+            HistoryBarrier.newLayout                   = VK_IMAGE_LAYOUT_GENERAL;
+            HistoryBarrier.srcQueueFamilyIndex         = VK_QUEUE_FAMILY_IGNORED;
+            HistoryBarrier.dstQueueFamilyIndex         = VK_QUEUE_FAMILY_IGNORED;
+            HistoryBarrier.image                       = Vulkan->HistoryImage;
+            HistoryBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            HistoryBarrier.subresourceRange.levelCount = 1u;
+            HistoryBarrier.subresourceRange.layerCount = 1u;
+            HistoryBarrier.srcAccessMask               = VK_ACCESS_SHADER_WRITE_BIT;
+            HistoryBarrier.dstAccessMask               = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(Command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 0u, 0u, nullptr, 0u, nullptr, 1u, &HistoryBarrier);
+
+            // The accumulator is cleared on the GPU rather than the CPU: clearing the mapped pointer here would
+            //    race the previous frame's dispatch, which may still be adding to it.
+            vkCmdFillBuffer(Command, Vulkan->LuminanceBuffers[Vulkan->ActiveSlot], 0u, kLuminanceHistogramBytes, 0u);
+            VkBufferMemoryBarrier ClearBarrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER };
+            ClearBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            ClearBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            ClearBarrier.buffer              = Vulkan->LuminanceBuffers[Vulkan->ActiveSlot];
+            ClearBarrier.size                = VK_WHOLE_SIZE;
+            ClearBarrier.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+            ClearBarrier.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            vkCmdPipelineBarrier(Command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 0u, 0u, nullptr, 1u, &ClearBarrier, 0u, nullptr);
+
+            LuminancePushRecord Push{};
+            Push.Width  = RenderWidth;
+            Push.Height = RenderHeight;
+            // Exposure is a whole-frame property, so a subsample is plenty: at 1080p this is ~2 000 taps
+            //    rather than two million, and the pass does not appear in a frame time.
+            Push.Stride = kLuminanceSampleStride;
+
+            const uint32_t TapsX = (RenderWidth  + Push.Stride - 1u) / Push.Stride;
+            const uint32_t TapsY = (RenderHeight + Push.Stride - 1u) / Push.Stride;
+
+            vkCmdBindPipeline(Command, VK_PIPELINE_BIND_POINT_COMPUTE, Vulkan->LuminancePipeline);
+            vkCmdPushConstants(Command, Vulkan->LuminanceLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0u, sizeof(Push), &Push);
+            vkCmdBindDescriptorSets(Command, VK_PIPELINE_BIND_POINT_COMPUTE, Vulkan->LuminanceLayout,
+                                    0u, 1u, &Vulkan->LuminanceSets[Vulkan->ActiveSlot], 0u, nullptr);
+            vkCmdDispatch(Command, (TapsX + 7u) / 8u, (TapsY + 7u) / 8u, 1u);
+        }
     }
+
     Visibility.RecordKernelEnd(Command, Vulkan->ActiveSlot);
+
+    // ②b Project overlay (SpatialInterface) — draws world-space figures onto the resolved scene before the blit, so
+    //     the panel is part of the presented image rather than a screen-space sticker on top of it.
+    //     The overlay begins its own render pass expecting COLOR_ATTACHMENT_OPTIMAL, so the image is transitioned in
+    //     and back out; without the round trip the following blit would read an image in the wrong layout.
+    if (Overlay)
+    {
+        VkImageMemoryBarrier ToAttachment{};
+        ToAttachment.sType                       = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        ToAttachment.oldLayout                   = VK_IMAGE_LAYOUT_GENERAL;
+        ToAttachment.newLayout                   = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        ToAttachment.image                       = Vulkan->StorageImage;
+        ToAttachment.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        ToAttachment.subresourceRange.levelCount = 1u;
+        ToAttachment.subresourceRange.layerCount = 1u;
+        ToAttachment.srcAccessMask               = VK_ACCESS_SHADER_WRITE_BIT;
+        ToAttachment.dstAccessMask               = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        vkCmdPipelineBarrier(Command,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            0u, 0u, nullptr, 0u, nullptr, 1u, &ToAttachment);
+
+        Overlay(static_cast<void*>(Command), Vulkan->ActiveSlot);
+
+        VkImageMemoryBarrier ToGeneral = ToAttachment;
+        ToGeneral.oldLayout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        ToGeneral.newLayout     = VK_IMAGE_LAYOUT_GENERAL;
+        ToGeneral.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        ToGeneral.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(Command,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0u, 0u, nullptr, 0u, nullptr, 1u, &ToGeneral);
+    }
 
     // ③ Storage image → TRANSFER_SRC for blit
     {
@@ -1866,6 +2999,24 @@ void SwapchainExchange::RecordComputeCommands(uint32_t ImageOrdinal, const Dispa
         Vulkan->SwapchainImages[ImageOrdinal],   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         1u, &BlitRegion, Upscaling ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
 
+    // ⑤b Storage image → GENERAL again: the ImGui pass samples it for the editor's viewport panel, and the
+    //    scene view descriptor names the GENERAL layout.
+    {
+        VkImageMemoryBarrier Barrier{};
+        Barrier.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        Barrier.oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        Barrier.newLayout                       = VK_IMAGE_LAYOUT_GENERAL;
+        Barrier.image                           = Vulkan->StorageImage;
+        Barrier.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        Barrier.subresourceRange.levelCount     = 1u;
+        Barrier.subresourceRange.layerCount     = 1u;
+        Barrier.srcAccessMask                   = VK_ACCESS_TRANSFER_READ_BIT;
+        Barrier.dstAccessMask                   = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(Command,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0u, 0u, nullptr, 0u, nullptr, 1u, &Barrier);
+    }
+
     // ⑥ Swapchain image → COLOR_ATTACHMENT_OPTIMAL for ImGui
     {
         VkImageMemoryBarrier Barrier{};
@@ -1905,6 +3056,54 @@ void SwapchainExchange::RecordComputeCommands(uint32_t ImageOrdinal, const Dispa
 //============================================================================================================================================
 //                                             DISPLAY SETTINGS (present pacing · fullscreen)
 //============================================================================================================================================
+
+//============================================================================================================================================
+//                                        DEVICE SEAM (handles an overlay needs to record)
+//============================================================================================================================================
+// Deliberately thin: these hand back handles this class already owns so a project-side overlay can build its own
+//    resources against the same device and targets. There is no depth target in this renderer — the compute path
+//    resolves into a colour storage image — so QueryDepthView/Format report "none" and an overlay draws depthless.
+
+void*    SwapchainExchange::QueryDevice()         const noexcept { return Vulkan ? static_cast<void*>(Vulkan->Device)           : nullptr; }
+void*    SwapchainExchange::QueryPhysicalDevice() const noexcept { return Vulkan ? static_cast<void*>(Vulkan->PhysicalDevice)   : nullptr; }
+void*    SwapchainExchange::QueryColourView()     const noexcept { return Vulkan ? static_cast<void*>(Vulkan->StorageImageView) : nullptr; }
+uint64_t SwapchainExchange::QuerySceneViewTexture() const noexcept
+{
+    return Vulkan ? static_cast<uint64_t>(reinterpret_cast<uintptr_t>(Vulkan->SceneViewSet)) : 0u;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                          SCENE VIEW SET (the editor's viewport texture)
+//------------------------------------------------------------------------------------------------------------------------
+// One combined-image-sampler set over the resolved scene image, in the GENERAL layout the image rests in when the
+//    ImGui pass runs. Re-seated after every rebuild: the view it names is destroyed with the swapchain. Idle-waits
+//    first so no in-flight frame still reads the old set.
+
+void SwapchainExchange::BringSceneViewSet() noexcept
+{
+    if (!Vulkan || !Vulkan->Device || !Vulkan->StorageImageView) return;
+    if (Vulkan->SceneViewSet)
+    {
+        vkDeviceWaitIdle(Vulkan->Device);
+        ImGui_ImplVulkan_RemoveTexture(Vulkan->SceneViewSet);
+        Vulkan->SceneViewSet = VK_NULL_HANDLE;
+    }
+    if (!Vulkan->SceneViewSampler)
+    {
+        VkSamplerCreateInfo SamplerInfo{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
+        SamplerInfo.magFilter = SamplerInfo.minFilter = VK_FILTER_LINEAR;
+        SamplerInfo.mipmapMode   = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        SamplerInfo.addressModeU = SamplerInfo.addressModeV = SamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        SamplerInfo.maxLod       = 0.0f;
+        (void)vkCreateSampler(Vulkan->Device, &SamplerInfo, nullptr, &Vulkan->SceneViewSampler);
+    }
+    Vulkan->SceneViewSet = ImGui_ImplVulkan_AddTexture(Vulkan->SceneViewSampler, Vulkan->StorageImageView, VK_IMAGE_LAYOUT_GENERAL);
+}
+void*    SwapchainExchange::QueryDepthView()      const noexcept { return nullptr; }
+uint32_t SwapchainExchange::QueryColourFormat()   const noexcept { return static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM); }
+uint32_t SwapchainExchange::QueryDepthFormat()    const noexcept { return static_cast<uint32_t>(VK_FORMAT_UNDEFINED); }
+uint32_t SwapchainExchange::QueryCycleSlotCount() const noexcept { return kCycleSlotCount; }
+uint32_t SwapchainExchange::QueryCycleSlot()      const noexcept { return Vulkan ? Vulkan->ActiveSlot : 0u; }
 
 uint32_t SwapchainExchange::ResolvePresentMode() const noexcept
 {
@@ -1993,7 +3192,14 @@ bool SwapchainExchange::RebuildSwapchain() noexcept
     if (!BringSwapchain() || !BringStorageImage()) return false;
     if (!Visibility.Resize(Configuration.Width, Configuration.Height, Vulkan->StorageImageView)) return false;
 
+    // Every view handed out by the device seam has just been destroyed and recreated. Bumping the generation is how
+    //    an overlay learns it must re-Resize; without it, it would keep rendering into a stale VkImageView.
+    ++TargetGeneration;
+    BringSceneViewSet();
+
     WriteDescriptorSet();
+    // The reduction binds HistoryImageView, which BringStorageImage has just replaced.
+    WriteLuminanceDescriptors();
 
     const uint32_t ImageCount = static_cast<uint32_t>(Vulkan->SwapchainImages.size());
     Vulkan->ImGuiFramebuffers.resize(ImageCount);
@@ -2019,6 +3225,11 @@ bool SwapchainExchange::RebuildSwapchain() noexcept
 bool SwapchainExchange::CloseRequested() const noexcept
 {
     return GlfwWindow && glfwWindowShouldClose(GlfwWindow);
+}
+
+void SwapchainExchange::RequestClose() noexcept
+{
+    if (GlfwWindow) glfwSetWindowShouldClose(GlfwWindow, GLFW_TRUE);
 }
 
 void SwapchainExchange::PollInput(InputExchange& TargetInput) noexcept
@@ -2082,8 +3293,43 @@ void SwapchainExchange::OnKey(GLFWwindow* Window, int Key, int, int Action, int)
     MapKey(GLFW_KEY_RIGHT_SHIFT, VirtualKeyCategory::KeyRightShift);
     MapKey(GLFW_KEY_ESCAPE,      VirtualKeyCategory::KeyEscape);
 
-    if (Key == GLFW_KEY_ESCAPE && Action == GLFW_PRESS)
-        glfwSetWindowShouldClose(Window, GLFW_TRUE);
+    // Edit keys are queued as a STREAM for whichever overlay owns the keyboard. They produce no character, so the
+    //    character callback never sees them, and a held arrow must repeat — which a per-frame state sample cannot
+    //    express.
+    if (Pressed)
+    {
+        const bool Shift   = (glfwGetKey(Window, GLFW_KEY_LEFT_SHIFT)   == GLFW_PRESS)
+                          || (glfwGetKey(Window, GLFW_KEY_RIGHT_SHIFT)  == GLFW_PRESS);
+        const bool Control = (glfwGetKey(Window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)
+                          || (glfwGetKey(Window, GLFW_KEY_RIGHT_CONTROL)== GLFW_PRESS);
+        switch (Key)
+        {
+            case GLFW_KEY_ENTER: case GLFW_KEY_KP_ENTER: case GLFW_KEY_ESCAPE:
+            case GLFW_KEY_BACKSPACE: case GLFW_KEY_DELETE:
+            case GLFW_KEY_LEFT: case GLFW_KEY_RIGHT: case GLFW_KEY_HOME: case GLFW_KEY_END:
+                Self->ForwardInput->PushEditKey(static_cast<uint32_t>(Key), Shift, Control);
+                break;
+            case GLFW_KEY_A:
+                if (Control) Self->ForwardInput->PushEditKey(static_cast<uint32_t>(Key), Shift, true);
+                break;
+            default: break;
+        }
+    }
+
+    // ⚠️ Escape no longer quits here. A text field uses Escape to abandon an edit, and closing the window instead
+    //    would be unrecoverable — you would lose the session for mistyping a name. The host decides: it quits only
+    //    when nothing is holding the keyboard, and that decision needs state this callback cannot see.
+}
+
+void SwapchainExchange::OnCharacter(GLFWwindow* Window, unsigned int Codepoint) noexcept
+{
+    auto* Self = static_cast<SwapchainExchange*>(glfwGetWindowUserPointer(Window));
+    if (!Self || !Self->ForwardInput) return;
+
+    // GLFW hands us a codepoint that is already keymap- and IME-resolved, which is why text must come from here
+    //    rather than being reconstructed from key codes: a non-US layout would otherwise type the wrong letters.
+    if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureKeyboard) return;
+    Self->ForwardInput->PushCharacter(static_cast<uint32_t>(Codepoint));
 }
 
 void SwapchainExchange::OnMouseButton(GLFWwindow* Window, int Button, int Action, int) noexcept
@@ -2092,18 +3338,25 @@ void SwapchainExchange::OnMouseButton(GLFWwindow* Window, int Button, int Action
     if (!Self || !Self->ForwardInput) return;
 
     const bool Pressed = (Action == GLFW_PRESS);
+    const bool ImGuiWantsMouse = ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse;
 
-    // A press that lands on the overlay belongs to the overlay; releases always pass so nothing sticks.
-    if (Pressed && ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse) return;
+    // ⚠️ The LEFT button is always recorded, even when ImGui wants the mouse. Panels drawn inside an ImGui window
+    //    read their clicks from InputExchange, so swallowing the press here would make every control in the World
+    //    Browser dead the moment it became a real window — while still looking perfectly interactive. Those panels
+    //    decide for themselves whether the pointer is theirs, using the window's own hover state.
+    if (Button == GLFW_MOUSE_BUTTON_LEFT)
+        Self->ForwardInput->AssignMouseButton(MouseButtonCategory::ButtonLeft,  Pressed);
 
+    // The right button drives camera look, which must never begin on an overlay click. Releases always pass so a
+    //    button cannot stick down.
     if (Button == GLFW_MOUSE_BUTTON_RIGHT)
     {
+        if (Pressed && ImGuiWantsMouse) return;
         Self->ForwardInput->AssignMouseButton(MouseButtonCategory::ButtonRight, Pressed);
         glfwSetInputMode(Window, GLFW_CURSOR, Pressed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
         Self->CursorInitialised = false;
     }
-    if (Button == GLFW_MOUSE_BUTTON_LEFT)
-        Self->ForwardInput->AssignMouseButton(MouseButtonCategory::ButtonLeft,  Pressed);
+    if (Pressed && ImGuiWantsMouse) return;
     if (Button == GLFW_MOUSE_BUTTON_MIDDLE)
         Self->ForwardInput->AssignMouseButton(MouseButtonCategory::ButtonMiddle, Pressed);
 }

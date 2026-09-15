@@ -84,7 +84,13 @@ DispatchConfiguration ReSTIRIntegrator::BuildDispatch(
     Dispatch.CameraRightX          = Right.x;
     Dispatch.CameraRightY          = Right.y;
     Dispatch.CameraRightZ          = Right.z;
-    Dispatch.Exposure              = ActiveConfiguration.Exposure;
+    // A6b. ONE exposure value reaches the shader, whether it came from the slider or from adaptation. Manual
+    //    mode returns the configured value unchanged, so every pre-A6b image is still reproducible, and the two
+    //    modes cannot become two code paths that disagree about what the tone map receives.
+    Dispatch.Exposure              = Adaptation.QueryExposure();
+    // A7d. The eye's remaining colour at this adapted level. Taken from the same integrator as the exposure so
+    //    the two can never describe different light.
+    Dispatch.ColourSaturation      = Adaptation.QueryColourSaturation();
     Dispatch.CameraUpX             = Up.x;
     Dispatch.CameraUpY             = Up.y;
     Dispatch.CameraUpZ             = Up.z;
@@ -92,13 +98,22 @@ DispatchConfiguration ReSTIRIntegrator::BuildDispatch(
     Dispatch.ViewportWidth         = ViewportWidth;
     Dispatch.ViewportHeight        = ViewportHeight;
     Dispatch.AccumulationIndex     = AccumulationIndex;
-    Dispatch.SpatialPassCount      = ActiveConfiguration.SpatialPassCount;
+    Dispatch.ExtraCandidateCount      = ActiveConfiguration.ExtraCandidateCount;
+    Dispatch.SpatialTapCount       = ActiveConfiguration.SpatialTapCount;
+    Dispatch.DenoiseLevelCount     = ActiveConfiguration.DenoiseLevelCount;
     Dispatch.CandidatesPerPixel    = ActiveConfiguration.CandidatesPerPixel;
     Dispatch.AlphaMaskedMaterialCount = AlphaMaskedMaterialCount;   // R4b: 0 keeps the any-hit shadow path
     Dispatch.LuminaireTriangleCount = LuminaireTriangleCount;
     Dispatch.FeatureFlags          = (ActiveConfiguration.GlobalIllumination ? DispatchFeatureGlobalIllumination : 0u)
                                    | (ActiveConfiguration.AntiAliasing       ? DispatchFeatureAntiAliasing       : 0u)
-                                   | (ActiveConfiguration.AmbientFloor       ? DispatchFeatureAmbientFloor       : 0u);
+                                   | (ActiveConfiguration.AmbientFloor       ? DispatchFeatureAmbientFloor       : 0u)
+                                   | (ActiveConfiguration.TemporalReuse      ? DispatchFeatureTemporalReuse      : 0u)
+                                   | (ActiveConfiguration.SpatialReuse       ? DispatchFeatureSpatialReuse       : 0u)
+                                   | (ActiveConfiguration.AliasPick          ? DispatchFeatureAliasPick          : 0u)
+                                   | (ActiveConfiguration.TemporalReprojection ? DispatchFeatureTemporalReprojection : 0u)
+                                   | (ActiveConfiguration.Denoise            ? DispatchFeatureDenoise            : 0u);
+
+    for (uint32_t& Reserve : Dispatch.PushReserve) Reserve = 0u;
 
     return Dispatch;
 }
@@ -165,6 +180,8 @@ std::vector<MaterialDescriptor> ReSTIRIntegrator::BuildMaterialDescriptors(
     for (const auto& Material : Materials)
     {
         MaterialDescriptor D;
+        // The R2 fallback path keeps its pinned material_N names (see SceneCodecR4Test): object names ride the
+        //    spans, not the materials, so the null-spans encode stays byte-identical.
         D.Name = "material_" + std::to_string(Material.MaterialIdentifier);
         D.Slabs.emplace_back();
         MaterialSlabDescriptor& S = D.Slabs.back();
