@@ -623,11 +623,12 @@ int main()
     }
 
     // Gate 2 — the trapezoid: both upper corners of the outliner tab must sit inside the lower ones by
-    //    the seated slant. The tab spans y 37 … 63, below the notch; the scanlines sit 1 px off its
+    //    the seated slant. The tab spans y 1 … 27, at the top edge; the scanlines sit 1 px off its
     //    extremes, clear of the
     //    title glyphs that shred the mid-band runs, and the slant is linear, so each side must measure
     //    between 7 and 17 px against the seated 14. The rounded viewport corner leaves a seated sliver at
-    //    the strip's left edge, so the leftward scan only trusts runs twenty cells or longer.
+    //    the strip's left edge, so the leftward scan only trusts runs twenty cells or longer. The shade's
+    //    pull floats at the centre, clear of the left column's scans.
     {
         const auto IsGlyph = [&](const unsigned char* P) -> bool
         {
@@ -667,13 +668,13 @@ int main()
             }
             return Last;
         };
-        const int LoLeft = LeftEdge(62), HiLeft = LeftEdge(38);
+        const int LoLeft = LeftEdge(26), HiLeft = LeftEdge(2);
         std::fprintf(stderr, "[EditorProof] tab edges: lower-left %d, upper-left %d", LoLeft, HiLeft);
         bool Slanted = LoLeft >= 0 && HiLeft >= 0;
         int LeftInset = 0, RightInset = 0;
         if (Slanted)
         {
-            const int LoRight = RightEdge(62, LoLeft), HiRight = RightEdge(38, HiLeft);
+            const int LoRight = RightEdge(26, LoLeft), HiRight = RightEdge(2, HiLeft);
             std::fprintf(stderr, ", lower-right %d, upper-right %d\n", LoRight, HiRight);
             Slanted = LoRight > LoLeft && HiRight > HiLeft;
             LeftInset = HiLeft - LoLeft;
@@ -694,9 +695,11 @@ int main()
     // Gate 3 — titled strips: the tab band must carry glyph ink (the three titles).
     {
         int Glyphs = 0;
-        for (int Y = 36; Y < 68; ++Y)
+        for (int Y = 0; Y < 32; ++Y)
             for (int X = 0; X < kWidth; ++X)
             {
+                if (X >= 530 && X <= 750)
+                    continue;   // the shade's pull floats here; its brand is not a title
                 const unsigned char* P = At(X, Y);
                 if (P[0] >= 120u && P[1] >= 120u && P[2] >= 120u)
                     ++Glyphs;   // Outfit Light at 13 px: thin strokes, so the bar is the mid-greys
@@ -792,7 +795,7 @@ int main()
         const int ViewTop = FootTop(400, 1000);
         std::fprintf(stderr, "[EditorProof] foot tops: outliner %d, viewport %d (want 672, one line)\n",
                      OutTop, ViewTop);
-        if (OutTop < 668 || OutTop > 674 || ViewTop < 668 || ViewTop > 674 || std::abs(OutTop - ViewTop) > 2)
+        if (OutTop < 670 || OutTop > 676 || ViewTop < 670 || ViewTop > 676 || std::abs(OutTop - ViewTop) > 2)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the foot strips are not one height\n");
             Failed = true;
@@ -800,7 +803,7 @@ int main()
     }
 
     // Gate 5 — a narrowing pill lights: a click on Camera fills it (g3 over glass) and lifts its ink to white.
-    Click(46.0f, 295.0f);
+    Click(46.0f, 259.0f);
     Rest(6);
     Rasterise();
     {
@@ -811,7 +814,7 @@ int main()
             return 1;
         }
         int Lit = 0;
-        for (int Y = 283; Y < 308; ++Y)
+        for (int Y = 247; Y < 272; ++Y)
             for (int X = 16; X < 76; ++X)
             {
                 const unsigned char* P = At(X, Y);
@@ -839,7 +842,7 @@ int main()
             return 1;
         }
         int Rows = 0;
-        for (int Y = 320; Y < 660; ++Y)
+        for (int Y = 284; Y < 624; ++Y)
             for (int X = 40; X < 300; ++X)
             {
                 const unsigned char* P = At(X, Y);
@@ -847,7 +850,7 @@ int main()
                     ++Rows;   // name ink
             }
         int Green = 0;
-        for (int Y = 320; Y < 460; ++Y)
+        for (int Y = 284; Y < 424; ++Y)
             for (int X = 40; X < 90; ++X)
             {
                 const unsigned char* P = At(X, Y);
@@ -868,7 +871,7 @@ int main()
     }
 
     // The pill dismisses too: one click on it clears the narrowing for the passes below.
-    Click(46.0f, 295.0f);
+    Click(46.0f, 259.0f);
     Rest(5);
 
 
@@ -931,7 +934,7 @@ int main()
 
     // Gate 8 — the views menu opens and snaps: the pill raises eight rows, and each compass row poses
     //    the orbit (checked here against the solver's own euler).
-    Click(562.0f, 108.0f);
+    Click(562.0f, 72.0f);
     Rest(14);
     Rasterise();
     {
@@ -942,7 +945,7 @@ int main()
             return 1;
         }
         int Black = 0;
-        for (int Y = 140; Y < 380; ++Y)
+        for (int Y = 104; Y < 344; ++Y)
             for (int X = 560; X < 710; ++X)
             {
                 const unsigned char* P = At(X, Y);
@@ -976,17 +979,17 @@ int main()
                 Failed = true;
             }
             LastRev = Orbit.Revision;
-            Click(562.0f, 108.0f);   // the pill again: the next pick reopens the menu
+            Click(562.0f, 72.0f);   // the pill again: the next pick reopens the menu
             Rest(3);
         };
-        PickView(331.0f, 5u, 0.0f, -1.5707963f, false);
-        PickView(211.0f, 1u, 0.0f, 0.0f, false);
-        PickView(241.0f, 2u, 3.1415927f, 0.0f, false);
-        PickView(271.0f, 3u, -1.5707963f, 0.0f, false);
-        PickView(301.0f, 4u, 1.5707963f, 0.0f, false);
-        PickView(361.0f, 6u, 0.0f, 1.5707963f, false);
-        PickView(172.0f, 0u, 0.0f, 0.0f, true);
-        PickView(142.0f, 0u, 0.0f, 0.0f, false);
+        PickView(295.0f, 5u, 0.0f, -1.5707963f, false);
+        PickView(175.0f, 1u, 0.0f, 0.0f, false);
+        PickView(205.0f, 2u, 3.1415927f, 0.0f, false);
+        PickView(235.0f, 3u, -1.5707963f, 0.0f, false);
+        PickView(265.0f, 4u, 1.5707963f, 0.0f, false);
+        PickView(325.0f, 6u, 0.0f, 1.5707963f, false);
+        PickView(136.0f, 0u, 0.0f, 0.0f, true);
+        PickView(106.0f, 0u, 0.0f, 0.0f, false);
         Click(500.0f, 500.0f);   // dismiss the reopened menu off the empty view
         Rest(3);
     }
@@ -1079,7 +1082,7 @@ int main()
             }
         std::fprintf(stderr, "[EditorProof] inspector foot: top %d (viewport %d), %d bright cells\n",
                      InspTop, ViewTop, Ink);
-        if (InspTop < 668 || InspTop > 674 || std::abs(InspTop - ViewTop) > 2)
+        if (InspTop < 670 || InspTop > 676 || std::abs(InspTop - ViewTop) > 2)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the inspector foot strays off the shared row\n");
             Failed = true;
@@ -1090,6 +1093,180 @@ int main()
             Failed = true;
         }
     }
+
+    // Gate 11 — the pull survives: narrowing the strip must not take the shade's pull with it. Its
+    //    brand sits centred, so its glyph cells must read around the pull's own centre.
+    {
+        const int PullX = static_cast<int>(Editor.QueryNotchX() + 0.5f);
+        const int PullY = static_cast<int>(Editor.QueryNotchY() + 0.5f);
+        int Brand = 0;
+        for (int Y = PullY - 10; Y < PullY + 10; ++Y)
+            for (int X = PullX - 40; X < PullX + 40; ++X)
+            {
+                const unsigned char* P = At(X, Y);
+                if (P[0] > 60u || P[1] > 60u || P[2] > 60u)
+                    ++Brand;
+            }
+        std::fprintf(stderr, "[EditorProof] pull brand: %d bright cells\n", Brand);
+        if (Brand < 50)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the shade's pull is gone from the band\n");
+            Failed = true;
+        }
+    }
+
+    // Gate 12 — the pull slides: a horizontal drag carries it along the top edge.
+    {
+        const float StartX = Editor.QueryNotchX();
+        const float MidY = Editor.QueryNotchY();
+        Tick(StartX, MidY, false);
+        Tick(StartX, MidY, true);
+        for (int i = 1; i <= 12; ++i)
+            Tick(StartX + 10.0f * static_cast<float>(i), MidY, true);
+        Tick(StartX + 120.0f, MidY, false);
+        Rest(5);
+        const float EndX = Editor.QueryNotchX();
+        std::fprintf(stderr, "[EditorProof] pull slide: %.1f -> %.1f\n", StartX, EndX);
+        if (EndX - StartX < 90.0f || EndX - StartX > 150.0f)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the pull never slid\n");
+            Failed = true;
+        }
+    }
+
+    // Gate 13 — the pull opens the shade: a downward drag draws the sheet, a tap sends it home.
+    {
+        const float MidX = Editor.QueryNotchX();
+        const float MidY = Editor.QueryNotchY();
+        Tick(MidX, MidY, false);
+        Tick(MidX, MidY, true);
+        for (int i = 1; i <= 15; ++i)
+            Tick(MidX, MidY + 25.0f * static_cast<float>(i), true);
+        Tick(MidX, MidY + 375.0f, false);
+        Rest(40);
+        std::fprintf(stderr, "[EditorProof] shade after pull-down: %s\n", Editor.QueryShadeOpen() ? "open" : "shut");
+        if (!Editor.QueryShadeOpen())
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the pull never drew the shade\n");
+            Failed = true;
+        }
+        Rasterise();
+        const char* ShadeSheet = "Diagnostics/EditorProof_Shade.png";
+        if (stbi_write_png(ShadeSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the sheet would not write\n");
+            return 1;
+        }
+        const float ShutX = Editor.QueryNotchX();
+        const float ShutY = Editor.QueryNotchY();
+        Click(ShutX, ShutY);
+        Rest(40);
+        std::fprintf(stderr, "[EditorProof] shade after tap: %s\n", Editor.QueryShadeOpen() ? "open" : "shut");
+        if (Editor.QueryShadeOpen())
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the tap never shut the shade\n");
+            Failed = true;
+        }
+    }
+
+    // Gate 14 — the add control: a plus disc must sit past the left column's last tab. Fresh pixels:
+    //    the shade capture left the open sheet in the raster, and the shut pull sits under it.
+    {
+        Rest(3);
+        Rasterise();
+        const int SeamX = static_cast<int>(Editor.QueryTabAddX() + 0.5f);
+        const int SeamY = static_cast<int>(Editor.QueryTabAddY() + 0.5f);
+        int GlyphX = SeamX;
+        int Best = -1;
+        for (int X = SeamX - 30; X <= SeamX + 30; ++X)
+        {
+            int Column = 0;
+            for (int Y = SeamY - 12; Y < SeamY + 12; ++Y)
+            {
+                const unsigned char* P = At(X, Y);
+                if (P[0] > 60u || P[1] > 60u || P[2] > 60u)
+                    ++Column;
+            }
+            if (Column > Best)
+            {
+                Best = Column;
+                GlyphX = X;
+            }
+        }
+        int Plus = 0;
+        for (int Y = SeamY - 12; Y < SeamY + 12; ++Y)
+            for (int X = GlyphX - 12; X < GlyphX + 12; ++X)
+            {
+                const unsigned char* P = At(X, Y);
+                if (P[0] > 60u || P[1] > 60u || P[2] > 60u)
+                    ++Plus;
+            }
+        std::fprintf(stderr, "[EditorProof] add glyph hunts to %d (seam %.1f)\n", GlyphX,
+                     Editor.QueryTabAddX());
+        std::fprintf(stderr, "[EditorProof] add control: %d bright cells\n", Plus);
+        if (Plus < 12)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the add control never seated\n");
+            Failed = true;
+        }
+    }
+
+    // Gate 15 — close marks and the add menu: each tab shuts through its mark and seats again through
+    //    the menu. The inspector goes first, the outliner second, the viewport last.
+    auto CycleTab = [&](float MarkX, uint32_t Tab, uint32_t Row, bool Capture, float RaiseX = 0.0f)
+    {
+        if (RaiseX > 0.0f)
+        {
+            Click(RaiseX, 15.0f);
+            Rest(3);
+        }
+        Click(MarkX, 15.0f);
+        Rest(3);
+        std::fprintf(stderr, "[EditorProof] tab %u after its mark: %s\n", Tab,
+                     Editor.QueryTabOpen(Tab) ? "open" : "shut");
+        if (Editor.QueryTabOpen(Tab))
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] tab %u never shut\n", Tab);
+            Failed = true;
+        }
+        for (uint32_t Other = 0u; Other < 3u; ++Other)
+        {
+            if (Other != Tab && !Editor.QueryTabOpen(Other))
+            {
+                std::fprintf(stderr, "[EditorProof] [FAIL] tab %u shut alongside tab %u\n", Other,
+                             Tab);
+                Failed = true;
+            }
+        }
+        const float PlusX = Editor.QueryTabAddX();
+        const float PlusY = Editor.QueryTabAddY();
+        std::fprintf(stderr, "[EditorProof] add control seats at %.1f, %.1f\n", PlusX, PlusY);
+        Click(PlusX, PlusY);
+        Rest(3);
+        if (Capture)
+        {
+            Rasterise();
+            const char* TabMenuSheet = "Diagnostics/EditorProof_TabMenu.png";
+            if (stbi_write_png(TabMenuSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
+            {
+                std::fprintf(stderr, "[EditorProof] [FAIL] the sheet would not write\n");
+                Failed = true;
+            }
+        }
+        Click(PlusX + 70.0f, PlusY + 18.0f + 21.0f * static_cast<float>(Row));
+        Rest(3);
+        if (!Editor.QueryTabOpen(Tab))
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] tab %u never seated again\n", Tab);
+            Failed = true;
+        }
+    };
+    Rest(60);   // let the tab bar settle: a click must land where the mark rendered
+    CycleTab(189.0f, 2u, 2u, true, 130.0f);
+    CycleTab(103.0f, 0u, 0u, false, 90.0f);
+    Click(90.0f, 15.0f);   // raise the outliner again: later sheets open on it
+    Rest(3);
+    CycleTab(420.0f, 1u, 1u, false);
 
     if (Failed)
     {

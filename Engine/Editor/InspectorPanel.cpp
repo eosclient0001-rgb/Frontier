@@ -78,6 +78,11 @@ void InspectorPanel::AssignControls(ControlPanel* Controls) noexcept
     Controls_ = Controls;
 }
 
+void InspectorPanel::AssignTabOpen(bool* Open) noexcept
+{
+    TabOpen_ = Open;
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                           RECORD
 //------------------------------------------------------------------------------------------------------------------------
@@ -90,7 +95,7 @@ void InspectorPanel::AssignReadout(const EditorReadout* Readout) noexcept
 void InspectorPanel::Record(EditorInstance* Picked, uint32_t PickedIndex, EditorSheet* Sheet) noexcept
 {
     IM_ASSERT(Controls_ != nullptr);
-    if (!ImGui::Begin("Inspector", nullptr))
+    if (!ImGui::Begin("Inspector", TabOpen_, ImGuiWindowFlags_NoScrollbar))
     {
         ImGui::End();
         return;
@@ -109,7 +114,7 @@ void InspectorPanel::Record(EditorInstance* Picked, uint32_t PickedIndex, Editor
     if (Picked == nullptr || Sheet == nullptr)
     {
         RecordEmpty();
-        const float Gap = ImGui::GetContentRegionAvail().y - kEditorFooterH;
+        const float Gap = Controls_->QueryFootTop() - ImGui::GetCursorScreenPos().y;
         if (Gap > 0.0f)
         {
             ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, Gap));
@@ -122,7 +127,7 @@ void InspectorPanel::Record(EditorInstance* Picked, uint32_t PickedIndex, Editor
     RecordIdent(Picked, PickedIndex);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 2.0f));
-    ImGui::BeginChild("##props", ImVec2(0.0f, -kEditorFooterH), false);
+    ImGui::BeginChild("##props", ImVec2(0.0f, ImMax(0.0f, Controls_->QueryFootTop() - ImGui::GetCursorScreenPos().y)), false);
     for (uint32_t i = 0u; i < Sheet->GroupCount && i < kMaxEditorSheetGroups; ++i)
     {
         RecordCard(Sheet->Groups[i], i);

@@ -26,6 +26,9 @@ EditorHost::EditorHost() noexcept
     Viewport_.AssignControls(&Controls_);
     Inspector_.AssignControls(&Controls_);
     Viewport_.AssignShadeOpen(&ShadeOpen_);
+    Outliner_.AssignTabOpen(&OutlinerTabOpen_);
+    Viewport_.AssignTabOpen(&ViewportTabOpen_);
+    Inspector_.AssignTabOpen(&InspectorTabOpen_);
 }
 
 EditorHost::~EditorHost() noexcept
@@ -46,6 +49,64 @@ int EditorHost::QueryFontCount() const noexcept
 void EditorHost::PickInstance(uint32_t Index) noexcept
 {
     Outliner_.PickInstance(Index);
+}
+
+float EditorHost::QueryTabAddX() const noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    const ImGuiDockNode* Found = ImGui::DockBuilderGetNode(LeftColumn_);
+    if (Found != nullptr)
+        return (Found->SlateAddRect.Min.x + Found->SlateAddRect.Max.x) * 0.5f;
+    return -1.0f;
+#else
+    return -1.0f;
+#endif
+}
+
+float EditorHost::QueryTabAddY() const noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    const ImGuiDockNode* Found = ImGui::DockBuilderGetNode(LeftColumn_);
+    if (Found != nullptr)
+        return (Found->SlateAddRect.Min.y + Found->SlateAddRect.Max.y) * 0.5f;
+    return -1.0f;
+#else
+    return -1.0f;
+#endif
+}
+
+bool EditorHost::QueryTabOpen(uint32_t Tab) const noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    if (Tab == 0u)
+        return OutlinerTabOpen_;
+    if (Tab == 1u)
+        return ViewportTabOpen_;
+    if (Tab == 2u)
+        return InspectorTabOpen_;
+    return false;
+#else
+    (void)Tab;
+    return false;
+#endif
+}
+
+void EditorHost::RecordTabAdd() noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    // The left column's add control reports through the vendor's poll; a press raises the menu, whose
+    //    rows seat each tab open or shut. The menu is the only way back for a tab its close mark shut.
+    if (ImGui::DockNodeConsumeAddRequest(LeftColumn_))
+        ImGui::OpenPopup("##tabmenu");
+    if (ImGui::BeginPopup("##tabmenu"))
+    {
+        ImGui::MenuItem("Outliner", nullptr, &OutlinerTabOpen_);
+        ImGui::MenuItem("Viewport", nullptr, &ViewportTabOpen_);
+        ImGui::MenuItem("Inspector", nullptr, &InspectorTabOpen_);
+        ImGui::EndPopup();
+    }
+#else
+#endif
 }
 
 void EditorHost::SeatViewportOrbit(const ViewportOrbit& Seated) noexcept
@@ -94,6 +155,8 @@ bool EditorHost::SeatShade(uint32_t Width, uint32_t Height) noexcept
 {
 #ifdef FRONTIER_DEVELOPMENT
     ShadeSeated_ = Shade_.Initialize(Width, Height);
+    // The editor's pull is narrow: full width would sit on the viewport tab's close mark.
+    Shade_.AssignNotchWidth(200.0f);
     return ShadeSeated_;
 #else
     (void)Width; (void)Height;
@@ -269,8 +332,8 @@ void EditorHost::ApplyTheme() noexcept
     Applied.TabOverlap           = 24.0f;   // [px] neighbour interlock, so slanted edges overlap
     Applied.TabHeight            = 24.0f;   // [px] strip height
     Applied.TabStripPadTop       = 4.0f;    // [px] strip showing above the tabs
-    Applied.TabMinWidthBase      = 170.0f;  // [px] tab width floor
-    Applied.TabMinWidthShrink    = 170.0f;  // [px] tab width floor while shrinking
+    Applied.TabMinWidthBase      = 110.0f;  // [px] tab width floor: two tabs plus the pinned add
+    Applied.TabMinWidthShrink    = 110.0f;  // [px] disc seat inside the left column with no shrink
     Applied.TabRounding          = 0.0f;    // [px] the sheet's corners are cut, not rounded
     Applied.TabBorderSize        = 0.0f;    // [px] no tab outline
     Applied.TabBarBorderSize     = 0.0f;    // [px] no strip outline
@@ -419,6 +482,7 @@ void EditorHost::ConstructLayout() noexcept
     ImGui::DockBuilderDockWindow("Outliner", Left);
     ImGui::DockBuilderDockWindow("Inspector", Left);
     ImGui::DockBuilderDockWindow("Viewport", Centre);
+    LeftColumn_ = Left;   // seated for the add control
     ImGui::DockBuilderFinish(DockId);
 #endif
 }
@@ -431,9 +495,10 @@ void EditorHost::Record(EditorInstance* Instances, uint32_t InstanceCount, Edito
 {
 #ifdef FRONTIER_DEVELOPMENT
     ImGuiViewport* Main = ImGui::GetMainViewport();
-    // The dock host always leaves the shade its strip; the sheet slides over the columns from there.
-    ImGui::SetNextWindowPos(ImVec2(Main->Pos.x, Main->Pos.y + ControlCentreHost::NotchHeight));
-    ImGui::SetNextWindowSize(ImVec2(Main->Size.x, Main->Size.y - ControlCentreHost::NotchHeight));
+    // The columns run edge to edge; the shade's pull floats above the tab band and the sheet slides
+    //    over the columns from the top edge.
+    ImGui::SetNextWindowPos(ImVec2(Main->Pos.x, Main->Pos.y));
+    ImGui::SetNextWindowSize(ImVec2(Main->Size.x, Main->Size.y));
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -451,15 +516,17 @@ void EditorHost::Record(EditorInstance* Instances, uint32_t InstanceCount, Edito
     if (ImGui::Begin("FrontierDockHost", nullptr, Bare))
     {
         // 🔴 PassthruCentralNode so the render shows through where nothing is docked — without it the vendor
-        //    fills the whole column with its own colour. The two silencers remove the caret and close mark
-        //    the sheet has none of. Docking over the centre stays allowed: the central column HOLDS the
-        //    Viewport tab, so covering it means tabbing with the view, not losing it.
+        //    fills the whole column with its own colour. The silencer removes the caret the sheet has none
+        //    of; the close marks stay, one per tab, and the add control closes the left column's strip.
+        //    Docking over the centre stays allowed: the central column HOLDS the Viewport tab, so covering
+        //    it means tabbing with the view, not losing it.
         const ImGuiDockNodeFlags NodeFlags =
               static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_PassthruCentralNode)
-            | static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoWindowMenuButton)
-            | static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoCloseButton);
+            | static_cast<ImGuiDockNodeFlags>(ImGuiDockNodeFlags_NoWindowMenuButton);
 
         ConstructLayout();
+        // The add control belongs to the left column alone; seated every tick so a rebuilt column keeps it.
+        ImGui::DockNodeSetAddButton(LeftColumn_, true);
         ImGui::DockSpace(ImGui::GetID("FrontierDockSpace"), ImVec2(0.0f, 0.0f), NodeFlags);
     }
     ImGui::End();
@@ -477,6 +544,7 @@ void EditorHost::Record(EditorInstance* Instances, uint32_t InstanceCount, Edito
         ImGui::SetWindowFocus("Outliner");
         OutlinerRaised_ = true;
     }
+    RecordTabAdd();
 
     // The shade records last, above the dock columns: the FPS readout, the shade itself, and the
     //    toasts, all onto the foreground list — the Rig's order, kept.
@@ -486,11 +554,13 @@ void EditorHost::Record(EditorInstance* Instances, uint32_t InstanceCount, Edito
                                          0.5f, 2.0f);
         if (ShadeSurface_.Begin(SurfaceLayer::Above, Main->Size.x, Main->Size.y, UiScale))
         {
-            const float NotchLine = Shade_.QueryHandleHeight();
+            // No strip anymore: the readout and the toasts clear the tab band, whose height the style
+            //    carries (PatchB's two figures).
+            const float BandLine = ImGui::GetStyle().TabHeight + ImGui::GetStyle().TabStripPadTop;
             if (Shade_.QuerySettings().FrameRateOverlay)
-                Telemetry_.ConstructTelemetryLayout(ShadeSurface_, NotchLine);
+                Telemetry_.ConstructTelemetryLayout(ShadeSurface_, BandLine);
             Shade_.ConstructControlLayout(ShadeSurface_);
-            Toasts_.ConstructNotificationLayout(ShadeSurface_, NotchLine);
+            Toasts_.ConstructNotificationLayout(ShadeSurface_, BandLine);
         }
     }
 #else

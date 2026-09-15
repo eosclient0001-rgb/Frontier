@@ -1,6 +1,6 @@
 # Patches — Slate's divergence from vendored ImGui
 
-Three patches, all against `ExternalPackages/imgui` on the **`docking`** branch at `83f6686` (`1.93.0 WIP`).
+Five patches, all against `ExternalPackages/imgui` on the **`docking`** branch at `83f6686` (`1.93.0 WIP`).
 
 ⚠️ The pin was previously `12b7977`, which this document described as being on the `docking` branch. It was
 not — it is an `ocornut/master` commit, and it is an ancestor of `docking` only because that branch merges
@@ -24,7 +24,7 @@ reproduces on one machine only — `14` §2. The divergence lives here, as a fil
 `References/DockWorkspace.html` wants trapezoidal, interlocking tabs. Everything else it does —
 splitters, dock trees, five-way drop targets, floating windows, layout persistence, tab reordering — is
 already in ImGui's docking branch and is the hard, boring 95 % of a docking system. The divergence
-needed to reach the sheet's appearance is 120 lines across four files, because ImGui already separates
+needed to reach the sheet's appearance is 348 lines across four files, because ImGui already separates
 tab *shape* from tab *behaviour*: `ItemAdd()` and every drag path hit-test the rectangular `bb`, exactly
 as the sheet's SVG is `pointer-events:none` over a rectangular `<div>`.
 
@@ -35,6 +35,7 @@ as the sheet's SVG is `pointer-events:none` over a rectangular `<div>`.
 | `PatchA-TrapezoidalTabs.patch`  | `TabSlant` | `imgui.h`, `imgui.cpp`, `imgui_widgets.cpp` |
 
 | `PatchB-TabOverlapZOrder.patch` | `TabOverlap`, `TabHeight`, `TabStripPadTop` | all four files |
+| `PatchE-NoTabScrollButtons.patch` | `NoTabListScrollingButtons` on dock strips | `imgui.cpp` |
 
 `A` is independently applicable. `B` stacks on `A` and cannot apply first — its context includes A's
 lines.
@@ -87,8 +88,8 @@ slant plus overlap; raising the overlap without raising the padding runs adjacen
 
 `ApplyImGuiPatches.ps1` reports when the submodule stands at a commit other than `12b7977` rather than
 asserting, because a deliberate upgrade should reach a message naming both commits. After an upgrade,
-re-cut both patches against the new tree and re-check `TabItemBackground`, `TabBarLayout` and
-`BeginTabBar` — those three are the only functions either patch touches.
+re-cut the patches against the new tree and re-check `TabItemBackground`, `TabBarLayout`,
+`BeginTabBar` and `DockNodeUpdateTabBar` — those are the only functions the patches touch.
 
 ```powershell
 powershell -File Scripts\ApplyImGuiPatches.ps1            # apply, idempotent
@@ -110,3 +111,19 @@ rectangles: `CloseButton` fills a square hover mark, and a tab-bar button is a f
 `Style.TabButtonRounding` is a **fraction** of the control's own extent, not a length — so it is the one
 Slate style member `ScaleAllSizes` must NOT scale. `0.0f` restores the vendor's rectangles exactly, which
 is what keeps a patched build with defaults byte-identical to an unpatched one.
+
+## PatchD — the dock strip's add button
+
+PatchC built the runway for the sheet's `addBtn` — sort-last, disc, centred glyph — but nothing ever
+submitted one: a dock strip is begun and ended inside `DockNodeUpdate`, where the host cannot reach it.
+PatchD submits `TabItemButton("+", Trailing)` there, behind a per-column `SlateAddButton` switch the host
+seats (the left column alone carries it). The press latches into `SlateAddPressed` because a dock strip
+has no submitting caller to return it to; the host drains it through `DockNodeConsumeAddRequest`. With
+the switch off the strip submits exactly what it always did.
+
+## PatchE — no scroll buttons on dock strips
+
+A dock strip whose tabs overflow their column grows `◀ ▶` scroll buttons. The sheet has none: tabs are
+grabbed and reordered (`Reorderable` stays on), never scrolled through arrows. PatchE sets
+`ImGuiTabBarFlags_NoTabListScrollingButtons` where `DockNodeUpdateTabBar` seats the strip's flags, the
+same line upstream already names the flag in a comment.

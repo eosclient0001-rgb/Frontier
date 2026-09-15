@@ -96,7 +96,9 @@ ImFont* ControlPanel::QueryMono() const noexcept
 
 float ControlPanel::QueryFootTop() const noexcept
 {
-    return ImGui::GetWindowPos().y + ImGui::GetWindowContentRegionMax().y - kEditorFooterH;
+    // The window's own bottom edge, less the pad and the forty: size never moves under a scrollbar's
+    //    reservation the way the content rect does, so every column's foot lands on the same row.
+    return ImGui::GetWindowPos().y + ImGui::GetWindowSize().y - 8.0f - kEditorFooterH;
 }
 
 ImFont* ControlPanel::QueryMonoSmall() const noexcept

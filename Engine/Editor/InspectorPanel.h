@@ -20,6 +20,8 @@ class InspectorPanel final
 {
 public:
     void AssignControls(ControlPanel* Controls) noexcept;
+    // The tab's close mark writes through this; null leaves the tab without one.
+    void AssignTabOpen(bool* Open) noexcept;
 
     // The foot strip's live figures (realtime, triangle total); without a readout the strip prints its dashes.
     void AssignReadout(const EditorReadout* Readout) noexcept;
@@ -36,6 +38,7 @@ private:
     float RecordCaps(const char* Text, const ImVec2& At, ImU32 Tint) noexcept;
 
     ControlPanel*        Controls_ = nullptr;
+    bool*                TabOpen_ = nullptr;
     const EditorReadout* Readout_  = nullptr;
 
     bool     CardShut_[8] = {};                        // false reads open; sheet cards, then the notes card

@@ -108,6 +108,13 @@ public:
     // The test seam; the proof drives the pick through it.
     void PickInstance(uint32_t Index) noexcept;
 
+    // The tab seams; the proof shuts each tab through its close mark and seats it again through the
+    //    add menu. Tabs run outliner, viewport, inspector; anything else reads shut.
+    [[nodiscard]] bool QueryTabOpen(uint32_t Tab) const noexcept;
+    // The add control's last drawn centre; the proof taps it through these. -1 when the column never built.
+    [[nodiscard]] float QueryTabAddX() const noexcept;
+    [[nodiscard]] float QueryTabAddY() const noexcept;
+
 
     // The viewport's orbit in and out: the harness seats home from its camera, and reads the pose back
     //    for its trace (the game poses the fly camera off the same figures).
@@ -119,6 +126,9 @@ private:
     //    Runs with the host window open: the builder addresses the host, and without it there is nothing to
     //    build against.
     void ConstructLayout() noexcept;
+
+    // Polls the add control and draws its menu.
+    void RecordTabAdd() noexcept;
 
     ControlPanel      Controls_;          // first: the panels borrow it
     OutlinerPanel  Outliner_;
@@ -133,6 +143,10 @@ private:
 
     bool ShadeOpen_    = false;           // shut at boot, Android-style; shared with the viewport gear
     bool OpenEcho_     = false;           // the gear's last obeyed figure: only an edge moves the shade
+    bool OutlinerTabOpen_  = true;        // the outliner tab's close mark clears this; the add menu seats it
+    bool ViewportTabOpen_  = true;        // the viewport tab's close mark clears this; the add menu seats it
+    bool InspectorTabOpen_ = true;        // the inspector tab's close mark clears this; the add menu seats it
+    ImGuiID LeftColumn_    = 0u;          // the left column's address, for the add control and its poll
     bool ShadeSeated_  = false;           // SeatShade has opened the host's springs
     uint32_t ToastRevision_ = 0u;         // the settings revision the last toast answered
 

@@ -22,6 +22,8 @@ class OutlinerPanel final
 {
 public:
     void AssignControls(ControlPanel* Controls) noexcept;
+    // The tab's close mark writes through this; null leaves the tab without one.
+    void AssignTabOpen(bool* Open) noexcept;
 
     // The foot strip's five figures. Optional: without a readout the strip prints its resting figures.
     void AssignReadout(const EditorReadout* Readout) noexcept;
@@ -60,6 +62,7 @@ private:
     bool MoveRun(EditorInstance* Instances, uint32_t InstanceCount, uint32_t Lifted, uint32_t Target, bool Before) noexcept;
 
     ControlPanel*        Controls_ = nullptr;
+    bool*                TabOpen_ = nullptr;
     const EditorReadout* Readout_  = nullptr;
 
     char     QueryText_[64] = {};

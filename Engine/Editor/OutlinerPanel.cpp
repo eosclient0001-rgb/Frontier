@@ -618,6 +618,11 @@ void OutlinerPanel::AssignControls(ControlPanel* Controls) noexcept
     Controls_ = Controls;
 }
 
+void OutlinerPanel::AssignTabOpen(bool* Open) noexcept
+{
+    TabOpen_ = Open;
+}
+
 void OutlinerPanel::AssignReadout(const EditorReadout* Readout) noexcept
 {
     Readout_ = Readout;
@@ -866,7 +871,7 @@ void OutlinerPanel::Record(EditorInstance* Instances, uint32_t InstanceCount) no
     IM_ASSERT(Controls_ != nullptr);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(15.0f / 255.0f, 16.0f / 255.0f, 18.0f / 255.0f, 1.0f));
-    const bool Open = ImGui::Begin("Outliner", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    const bool Open = ImGui::Begin("Outliner", TabOpen_, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
     if (!Open)
@@ -1198,9 +1203,9 @@ uint32_t OutlinerPanel::RecordOutline(EditorInstance* Instances, uint32_t Instan
         }
     }
 
-    // The tree leaves exactly the shared forty for the foot strip below it.
-    const float FootH = kEditorFooterH;
-    const float Avail = ImGui::GetContentRegionAvail().y - FootH;
+    // The tree ends where the foot begins: the sill's own figure, not the content rect, which a
+    //    scrollbar's reservation can lift.
+    const float Avail = Controls_->QueryFootTop() - ImGui::GetCursorScreenPos().y;
     const float Width = ImGui::GetContentRegionAvail().x;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));

@@ -459,6 +459,11 @@ void ViewportPanel::AssignControls(ControlPanel* Controls) noexcept
     Controls_ = Controls;
 }
 
+void ViewportPanel::AssignTabOpen(bool* Open) noexcept
+{
+    TabOpen_ = Open;
+}
+
 void ViewportPanel::AssignView(const unsigned char* Rgba, uint32_t Width, uint32_t Height) noexcept
 {
     ViewRgba_    = (Rgba != nullptr && Width > 0u && Height > 0u) ? Rgba : nullptr;
@@ -492,7 +497,7 @@ void ViewportPanel::AssignReadout(const EditorReadout* Readout) noexcept
 void ViewportPanel::Record(EditorInstance* Instances, uint32_t InstanceCount) noexcept
 {
     IM_ASSERT(Controls_ != nullptr);
-    if (!ImGui::Begin("Viewport", nullptr))
+    if (!ImGui::Begin("Viewport", TabOpen_, ImGuiWindowFlags_NoScrollbar))
     {
         ImGui::End();
         return;

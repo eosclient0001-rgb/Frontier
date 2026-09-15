@@ -115,8 +115,8 @@ if [[ -n "$KitHit" ]]; then
     echo "  'kit' survives somewhere it must not:"; echo "$KitHit" | sed 's/^/    /'; Fail=1
 fi
 
-# 'Record' lives in the editor only as the drawing verb: sixteen method names and the two lowercase verb forms.
-#    Any seventeenth spelling is a noun sneaking back in.
+# 'Record' lives in the editor only as the drawing verb: seventeen method names and the two lowercase verb forms.
+#    Any eighteenth spelling is a noun sneaking back in.
 # shellcheck disable=SC2086
 RecordWant="Record
 RecordBar
@@ -133,6 +133,7 @@ RecordOutline
 RecordRow
 RecordSearch
 RecordStanding
+RecordTabAdd
 RecordTiles
 RecordView"
 RecordHave="$(grep -hoE 'Record[A-Za-z]*' $EditorFiles | sort -u || true)"
@@ -187,8 +188,26 @@ if [[ "$OpenPopups" != "$BeginPopups" ]]; then
     echo "  a popup opens that never begins, or begins that never opens:"; Fail=1
 fi
 OpenCount="$(echo "$OpenPopups" | grep -c 'OpenPopup')"
-if [[ "$OpenCount" != "3" ]]; then
-    echo "  the editor seats three popups, no more:"; echo "$OpenPopups" | sed 's/^/    /'; Fail=1
+if [[ "$OpenCount" != "4" ]]; then
+    echo "  the editor seats four popups, no more:"; echo "$OpenPopups" | sed 's/^/    /'; Fail=1
+fi
+
+# The strip era's silencers are gone: every tab carries its close mark, the add control closes the left
+#    column, and the shade's pull is narrow enough to clear the viewport tab.
+if grep -q "NoCloseButton" Engine/Editor/*.cpp Engine/Editor/*.h; then
+    echo "  a close mark is silenced — every tab carries one"; Fail=1
+fi
+if ! grep -q "DockNodeSetAddButton" Engine/Editor/EditorHost.cpp; then
+    echo "  the add control is never seated"; Fail=1
+fi
+if ! grep -q "AssignNotchWidth" Engine/Editor/EditorHost.cpp; then
+    echo "  the shade's pull is never narrowed"; Fail=1
+fi
+if ! grep -q "SLATE PATCH D" ExternalPackages/imgui/imgui.cpp; then
+    echo "  PatchD is not seated — run Scripts/ApplyImGuiPatches.py"; Fail=1
+fi
+if ! grep -q "SLATE PATCH E" ExternalPackages/imgui/imgui.cpp; then
+    echo "  PatchE is not seated — run Scripts/ApplyImGuiPatches.py"; Fail=1
 fi
 
 # No heap traffic while drawing: the panels must not allocate.

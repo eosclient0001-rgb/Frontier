@@ -322,10 +322,13 @@ void ControlCentreHost::GenerateHandleContour() noexcept
     AppendCubic(HandleContour, { 0.0f, 0.0f },   { 15.0f, 0.0f },  { 20.0f, 6.0f },   { 25.0f, 15.0f });  // C
     HandleContour.push_back({ 35.0f, 28.0f });                                                     // L 35 28
     AppendCubic(HandleContour, { 35.0f, 28.0f }, { 40.0f, 34.0f }, { 45.0f, 36.0f },  { 52.0f, 36.0f });  // C
-    HandleContour.push_back({ 348.0f, 36.0f });                                                    // L 348 36
-    AppendCubic(HandleContour, { 348.0f, 36.0f },{ 355.0f, 36.0f },{ 360.0f, 34.0f }, { 365.0f, 28.0f }); // C
-    HandleContour.push_back({ 375.0f, 15.0f });                                                    // L 375 15
-    AppendCubic(HandleContour, { 375.0f, 15.0f },{ 380.0f, 6.0f }, { 385.0f, 0.0f },  { 400.0f, 0.0f });  // C
+    // The shoulders keep the reference's figures; the right side hangs off the seated width, so a
+    //    narrow pull keeps the same curves with a shorter flat.
+    const float W = NotchWidth_;
+    HandleContour.push_back({ W - 52.0f, 36.0f });
+    AppendCubic(HandleContour, { W - 52.0f, 36.0f },{ W - 45.0f, 36.0f },{ W - 40.0f, 34.0f }, { W - 35.0f, 28.0f });
+    HandleContour.push_back({ W - 25.0f, 15.0f });
+    AppendCubic(HandleContour, { W - 25.0f, 15.0f },{ W - 20.0f, 6.0f }, { W - 15.0f, 0.0f },  { W, 0.0f });
     // Z — the polygon filler closes back to (0, 0)
 }
 
@@ -340,17 +343,17 @@ float ControlCentreHost::QueryCurrentHeight() const noexcept
 
 float ControlCentreHost::QueryHandleX() const noexcept
 {
-    return (static_cast<float>(DisplayWidth) - NotchWidth) * 0.5f + static_cast<float>(Motion.Spring(NotchChannel).Current);
+    return (static_cast<float>(DisplayWidth) - NotchWidth_) * 0.5f + static_cast<float>(Motion.Spring(NotchChannel).Current);
 }
 
 PlaneExtent ControlCentreHost::QueryHandleExtent() const noexcept
 {
-    return Spanning(QueryHandleX(), QueryCurrentHeight(), NotchWidth, NotchHeight);
+    return Spanning(QueryHandleX(), QueryCurrentHeight(), NotchWidth_, NotchHeight);
 }
 
 double ControlCentreHost::NotchAdmissible() const noexcept
 {
-    const double Limit = (static_cast<double>(DisplayWidth) - NotchWidth) * 0.5;
+    const double Limit = (static_cast<double>(DisplayWidth) - NotchWidth_) * 0.5;
     return Limit > 0.0 ? Limit : 0.0;
 }
 
@@ -793,10 +796,16 @@ void ControlCentreHost::ConstructControlLayout(PixelSpace& Surface) noexcept
         Outline.push_back(PlanePoint{ NotchX + P.X, ShadeY + P.Y });
     Surface.FillPolygon(Outline.data(), static_cast<uint32_t>(Outline.size()), Sheet);
 
+    // A hairline round the pull: on a dark strip the sheet-coloured trapezoid reads as dead space, and a
+    //    pull the user cannot see is a pull the user reports as missing.
+    ColorQuad Trim = Label;
+    Trim.Alpha *= 0.5f;
+    Surface.StrokePolyline(Outline.data(), static_cast<uint32_t>(Outline.size()), Trim, 1.0f, true);
+
     // ④ Project name centred in the handle (Notch: 13 px, font-medium, text-white/50, pb-1 → 4 px lift).
     constexpr float LabelSize = 13.0f;
     const PlanePoint Measured = Surface.MeasureText(ProjectName.c_str(), LabelSize);
-    const float TextX = NotchX + (NotchWidth  - Measured.X) * 0.5f;
+    const float TextX = NotchX + (NotchWidth_ - Measured.X) * 0.5f;
     const float TextY = ShadeY + (NotchHeight - Measured.Y) * 0.5f - 2.0f;
     Surface.Text(TextX, TextY, Label, ProjectName.c_str(), LabelSize);
 }

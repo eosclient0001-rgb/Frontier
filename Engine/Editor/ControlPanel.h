@@ -28,7 +28,7 @@ public:
     [[nodiscard]] ImFont* QueryTitle() const noexcept;
     [[nodiscard]] ImFont* QueryDisplay() const noexcept;
 
-    // The foot strips' shared top row: the window's content bottom less the forty every foot draws.
+    // The foot strips' shared top row: the window's bottom edge less the pad and the forty every foot draws.
     //    The panels pin their feet here, so the three hems draw one unbroken line whatever the content
     //    above ends at.
     [[nodiscard]] float QueryFootTop() const noexcept;

@@ -147,7 +147,6 @@ class ControlCentreHost
 {
 public:
     // ── Figures (all from the references; change here, nowhere else) ────────────────────────────────────────────────
-    static constexpr float  NotchWidth        = 400.0f;   // [px]
     static constexpr float  NotchHeight       =  36.0f;   // [px]
     static constexpr float  TapTravelLimit    =   6.0f;   // [px]   beyond this a contact is a drag
     static constexpr double TapDurationLimit  =   0.350;  // [s]    beyond this a contact is a press
@@ -306,7 +305,13 @@ public:
     [[nodiscard]] float     QueryCurrentHeight() const noexcept;                          // [px] shade Y (0 closed … H−36 open)
     [[nodiscard]] float     QueryHandleX() const noexcept;                                // [px] notch left edge
     [[nodiscard]] float     QueryHandleY() const noexcept { return QueryCurrentHeight(); }
-    [[nodiscard]] float     QueryHandleWidth()  const noexcept { return NotchWidth;  }
+    [[nodiscard]] float     QueryHandleWidth()  const noexcept { return NotchWidth_;  }
+    // Seats the pull's width (120..600) and redraws its outline; the game never calls this.
+    void AssignNotchWidth(float Width) noexcept
+    {
+        NotchWidth_ = Width < 120.0f ? 120.0f : (Width > 600.0f ? 600.0f : Width);
+        GenerateHandleContour();
+    }
     [[nodiscard]] float     QueryHandleHeight() const noexcept { return NotchHeight; }
     [[nodiscard]] PlaneExtent QueryHandleExtent() const noexcept;
     [[nodiscard]] const std::vector<BezierPointIndex>& QueryHandleContour() const noexcept { return HandleContour; }
@@ -444,7 +449,8 @@ private:
     ControlKitPalette       ThemeBlendTo;                        // [color] palette the cross-fade heads to
     float                   ThemeBlendT = 1.0f;                  // [-] 0 → 1 over ThemeBlendDuration; ≥1 = settled
     std::string             ProjectName;
-    std::vector<BezierPointIndex> HandleContour;   // [px] outline in notch-local space (0..400 × 0..36)
+    float                   NotchWidth_ = 400.0f;      // [px] seated pull width; the editor narrows it
+    std::vector<BezierPointIndex> HandleContour;   // [px] outline in notch-local space (0..W × 0..36)
     bool                    InitializedCondition;
 };
 
