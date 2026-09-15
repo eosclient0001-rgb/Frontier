@@ -1167,6 +1167,35 @@ int main()
             std::fprintf(stderr, "[EditorProof] [FAIL] the tap never shut the shade\n");
             Failed = true;
         }
+        // The page itself pulls up: a press on a tile that wanders upward carries the shade home,
+        //    and only a clean release still taps.
+        const float ReX = Editor.QueryNotchX();
+        const float ReY = Editor.QueryNotchY();
+        Tick(ReX, ReY, false);
+        Tick(ReX, ReY, true);
+        for (int i = 1; i <= 15; ++i)
+            Tick(ReX, ReY + 25.0f * static_cast<float>(i), true);
+        Tick(ReX, ReY + 375.0f, false);
+        Rest(40);
+        if (!Editor.QueryShadeOpen())
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the pull never drew the shade again\n");
+            Failed = true;
+        }
+        const float TileX = Editor.QueryGiTileX();
+        const float TileY = Editor.QueryGiTileY();
+        Tick(TileX, TileY, false);
+        Tick(TileX, TileY, true);
+        for (int i = 1; i <= 12; ++i)
+            Tick(TileX, TileY - 12.5f * static_cast<float>(i), true);
+        Tick(TileX, TileY - 150.0f, false);
+        Rest(40);
+        std::fprintf(stderr, "[EditorProof] shade after tile pull-up: %s\n", Editor.QueryShadeOpen() ? "open" : "shut");
+        if (Editor.QueryShadeOpen())
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the pull-up never shut the shade\n");
+            Failed = true;
+        }
     }
 
     // Gate 14 — the add control: a plus disc must sit past the left column's last tab. Fresh pixels:

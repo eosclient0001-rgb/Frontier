@@ -286,49 +286,23 @@ bool ControlCentreHost::IsSlideTransitionActive() const noexcept
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-//                                                 NOTCH OUTLINE TESSELLATION
+//                                                    NOTCH OUTLINE
 //------------------------------------------------------------------------------------------------------------------------
-// SVG (ArcNotch.tsx):  M 0 0  C 15 0, 20 6, 25 15  L 35 28  C 40 34, 45 36, 52 36  L 348 36
-//                      C 355 36, 360 34, 365 28  L 375 15  C 380 6, 385 0, 400 0  Z
-
-namespace {
-
-BezierPointIndex SampleCubic(BezierPointIndex P0, BezierPointIndex P1, BezierPointIndex P2, BezierPointIndex P3, float T) noexcept
-{
-    const float U  = 1.0f - T;
-    const float B0 = U * U * U;
-    const float B1 = 3.0f * U * U * T;
-    const float B2 = 3.0f * U * T * T;
-    const float B3 = T * T * T;
-    return BezierPointIndex{ B0 * P0.X + B1 * P1.X + B2 * P2.X + B3 * P3.X,
-                             B0 * P0.Y + B1 * P1.Y + B2 * P2.Y + B3 * P3.Y };
-}
-
-void AppendCubic(std::vector<BezierPointIndex>& Out, BezierPointIndex P0, BezierPointIndex P1, BezierPointIndex P2, BezierPointIndex P3) noexcept
-{
-    constexpr int Segments = 16;
-    for (int Step = 1; Step <= Segments; ++Step)
-        Out.push_back(SampleCubic(P0, P1, P2, P3, static_cast<float>(Step) / static_cast<float>(Segments)));
-}
-
-} // namespace
+// Slate's clipped tongue: the pull is a trapezoid, wide where it meets the sheet, each lower corner inset
+//    8 % of the seated width. Four convex corners fill cleanly; the tessellated curves threw miter spikes
+//    at every shoulder kink.
 
 void ControlCentreHost::GenerateHandleContour() noexcept
 {
     HandleContour.clear();
-    HandleContour.reserve(80);
+    HandleContour.reserve(4);
 
-    HandleContour.push_back({ 0.0f, 0.0f });                                                       // M 0 0
-    AppendCubic(HandleContour, { 0.0f, 0.0f },   { 15.0f, 0.0f },  { 20.0f, 6.0f },   { 25.0f, 15.0f });  // C
-    HandleContour.push_back({ 35.0f, 28.0f });                                                     // L 35 28
-    AppendCubic(HandleContour, { 35.0f, 28.0f }, { 40.0f, 34.0f }, { 45.0f, 36.0f },  { 52.0f, 36.0f });  // C
-    // The shoulders keep the reference's figures; the right side hangs off the seated width, so a
-    //    narrow pull keeps the same curves with a shorter flat.
     const float W = NotchWidth_;
-    HandleContour.push_back({ W - 52.0f, 36.0f });
-    AppendCubic(HandleContour, { W - 52.0f, 36.0f },{ W - 45.0f, 36.0f },{ W - 40.0f, 34.0f }, { W - 35.0f, 28.0f });
-    HandleContour.push_back({ W - 25.0f, 15.0f });
-    AppendCubic(HandleContour, { W - 25.0f, 15.0f },{ W - 20.0f, 6.0f }, { W - 15.0f, 0.0f },  { W, 0.0f });
+    const float Inset = W * 0.08f;
+    HandleContour.push_back({ 0.0f, 0.0f });
+    HandleContour.push_back({ W, 0.0f });
+    HandleContour.push_back({ W - Inset, NotchHeight });
+    HandleContour.push_back({ Inset, NotchHeight });
     // Z — the polygon filler closes back to (0, 0)
 }
 
@@ -348,7 +322,8 @@ float ControlCentreHost::QueryHandleX() const noexcept
 
 PlaneExtent ControlCentreHost::QueryHandleExtent() const noexcept
 {
-    return Spanning(QueryHandleX(), QueryCurrentHeight(), NotchWidth_, NotchHeight);
+    const float ParkedY = std::min(QueryCurrentHeight(), static_cast<float>(DisplayHeight) - NotchHeight);
+    return Spanning(QueryHandleX(), ParkedY, NotchWidth_, NotchHeight);
 }
 
 double ControlCentreHost::NotchAdmissible() const noexcept
@@ -438,13 +413,26 @@ void ControlCentreHost::Carry(float CursorX, float CursorY, float DeltaSeconds) 
         return;
     }
 
-    const bool CardCarry = GrabbedSubject == GrabSubject::Card;
+    bool CardCarry = GrabbedSubject == GrabSubject::Card;
     if (GrabbedSubject != GrabSubject::Notch && !CardCarry)
     {
-        // Tiles only care whether the press stayed put (tap) or wandered (cancel).
         if (!TravelExceeded && (std::fabs(TravelX) > TapTravelLimit || std::fabs(TravelY) > TapTravelLimit))
             TravelExceeded = true;
-        return;
+        // The page is pulled up by whatever the hand holds, tiles included: a wandered press transfers
+        //    to the body carry, and only a clean release still taps. Hub rows fire on press and the pill
+        //    owns its slider, so neither transfers.
+        if (TravelExceeded
+            && (GrabbedSubject == GrabSubject::Tile || GrabbedSubject == GrabSubject::Gear
+                || GrabbedSubject == GrabSubject::HubBack || GrabbedSubject == GrabSubject::PageClose
+                || GrabbedSubject == GrabSubject::PageTab || GrabbedSubject == GrabSubject::PageButton))
+        {
+            GrabbedSubject = GrabSubject::Card;
+            CardCarry = true;
+        }
+        else
+        {
+            return;
+        }
     }
 
     if (!TravelExceeded && (std::fabs(TravelX) > TapTravelLimit || std::fabs(TravelY) > TapTravelLimit))
@@ -741,8 +729,9 @@ void ControlCentreHost::ConstructControlLayout(PixelSpace& Surface) noexcept
 
     const float W      = static_cast<float>(DisplayWidth);
     const float H      = static_cast<float>(DisplayHeight);
-    const float ShadeY = QueryCurrentHeight();                    // lower edge of the sheet / top of the notch
+    const float ShadeY = QueryCurrentHeight();                    // lower edge of the sheet, full-bleed at open
     const float NotchX = QueryHandleX();
+    const float NotchY = std::min(ShadeY, H - NotchHeight);   // the pull parks over the sheet's foot
 
     // Chrome renders in the APPLIED typeface (Body role); nullptr → backend default until the registry is installed.
     Surface.PushTypeface(Appearance.QueryAppliedFace(3u));
@@ -789,11 +778,11 @@ void ControlCentreHost::ConstructControlLayout(PixelSpace& Surface) noexcept
 
     Pointer.Pressed = Pointer.Released = false;   // edges consumed by this frame's widgets
 
-    // ③ Notch handle: tessellated SVG outline translated to (NotchX, ShadeY).
+    // ③ Notch handle: the trapezoid translated to (NotchX, NotchY).
     std::vector<PlanePoint> Outline;
     Outline.reserve(HandleContour.size());
     for (const BezierPointIndex& P : HandleContour)
-        Outline.push_back(PlanePoint{ NotchX + P.X, ShadeY + P.Y });
+        Outline.push_back(PlanePoint{ NotchX + P.X, NotchY + P.Y });
     Surface.FillPolygon(Outline.data(), static_cast<uint32_t>(Outline.size()), Sheet);
 
     // A hairline round the pull: on a dark strip the sheet-coloured trapezoid reads as dead space, and a
@@ -806,7 +795,7 @@ void ControlCentreHost::ConstructControlLayout(PixelSpace& Surface) noexcept
     constexpr float LabelSize = 13.0f;
     const PlanePoint Measured = Surface.MeasureText(ProjectName.c_str(), LabelSize);
     const float TextX = NotchX + (NotchWidth_ - Measured.X) * 0.5f;
-    const float TextY = ShadeY + (NotchHeight - Measured.Y) * 0.5f - 2.0f;
+    const float TextY = NotchY + (NotchHeight - Measured.Y) * 0.5f - 2.0f;
     Surface.Text(TextX, TextY, Label, ProjectName.c_str(), LabelSize);
 }
 

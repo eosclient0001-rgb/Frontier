@@ -350,7 +350,8 @@ private:
     void                    Carry(float CursorX, float CursorY, float DeltaSeconds) noexcept;
     void                    Relinquish() noexcept;
     void                    Depart(bool Opening) noexcept;
-    [[nodiscard]] double    OpenTravel() const noexcept { return static_cast<double>(DisplayHeight) - NotchHeight; }
+    // The sheet drops full-bleed: at open its lower edge is the sill, and the pull parks over its foot.
+    [[nodiscard]] double    OpenTravel() const noexcept { return static_cast<double>(DisplayHeight); }
     [[nodiscard]] double    NotchAdmissible() const noexcept;
     [[nodiscard]] static double Constrain(double Value, double Minimum, double Maximum, double Elasticity) noexcept;
 
