@@ -482,6 +482,7 @@ int main()
         std::fprintf(stderr, "[EditorProof] traced the showcase: %ux%u, %u frames, %zu triangles, %zu spans\n",
                      kViewW, kViewH, Frames, Scene.QueryTriangles().size(), Scene.QuerySpans().size());
     }
+    Readout.Triangles = static_cast<uint32_t>(Scene.QueryTriangles().size());
     gSceneRgba = SceneRgba.data(); gSceneW = kViewW; gSceneH = kViewH;
     gSceneTexId = static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(gSceneRgba));
     Editor.AssignViewTexture(gSceneTexId, kViewW, kViewH);
@@ -541,6 +542,19 @@ int main()
     auto Type = [&](const char* Text)
     {
         IO.AddInputCharactersUTF8(Text);
+        Tick(-1.0f, -1.0f, false);
+    };
+    auto KeyChord = [&]()
+    {
+        // Ctrl+K the way the engine seats it: the mod key first (without it KeyCtrl never seats — the
+        //    left-Ctrl key alone leaves it false), then the chord ticks down, then up, with no repeats.
+        IO.AddKeyEvent(ImGuiMod_Ctrl, true);
+        IO.AddKeyEvent(ImGuiKey_LeftCtrl, true);
+        IO.AddKeyEvent(ImGuiKey_K, true);
+        Tick(-1.0f, -1.0f, false);
+        IO.AddKeyEvent(ImGuiKey_K, false);
+        IO.AddKeyEvent(ImGuiKey_LeftCtrl, false);
+        IO.AddKeyEvent(ImGuiMod_Ctrl, false);
         Tick(-1.0f, -1.0f, false);
     };
 
@@ -732,6 +746,59 @@ int main()
         }
     }
 
+    // Gate 4b — the console sleeps: shut till Ctrl+K, the command band carries the traced view, not the
+    //    console's black bar. The gizmo's pads sit right of x 1100, clear of this probe.
+    {
+        int Black = 0;
+        for (int Y = 620; Y < 670; ++Y)
+            for (int X = 360; X < 1100; ++X)
+            {
+                const unsigned char* P = At(X, Y);
+                if (P[0] == 0u && P[1] == 0u && P[2] == 0u)
+                    ++Black;
+            }
+        std::fprintf(stderr, "[EditorProof] shut console: %d black cells in the command band\n", Black);
+        if (Black > 800)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the console bar shows before Ctrl+K\n");
+            Failed = true;
+        }
+    }
+
+    // Gate 4c — one unbroken sill: the outliner foot and the viewport foot open on the same row. The
+    //    hairline itself will not rasterise, so this reads the wash bands' top step instead: the first
+    //    wash-mean row scanning down. The dock host insets the columns eight below the sill, so the
+    //    shared forty opens at 672, not 680.
+    {
+        const auto FootTop = [&](int X0, int X1) -> int
+        {
+            for (int Y = 666; Y <= 678; ++Y)
+            {
+                int Sum = 0;
+                for (int X = X0; X <= X1; ++X)
+                {
+                    const unsigned char* P = At(X, Y);
+                    Sum += static_cast<int>(P[0]) + static_cast<int>(P[1]) + static_cast<int>(P[2]);
+                }
+                const int Mean = Sum / (3 * (X1 - X0 + 1));
+                if (Mean >= 19 && Mean <= 32)
+                {
+                    return Y;
+                }
+            }
+            return -1;
+        };
+        const int OutTop  = FootTop(40, 280);
+        const int ViewTop = FootTop(400, 1000);
+        std::fprintf(stderr, "[EditorProof] foot tops: outliner %d, viewport %d (want 672, one line)\n",
+                     OutTop, ViewTop);
+        if (OutTop < 668 || OutTop > 674 || ViewTop < 668 || ViewTop > 674 || std::abs(OutTop - ViewTop) > 2)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the foot strips are not one height\n");
+            Failed = true;
+        }
+    }
+
     // Gate 5 — a narrowing pill lights: a click on Camera fills it (g3 over glass) and lifts its ink to white.
     Click(46.0f, 295.0f);
     Rest(6);
@@ -761,7 +828,8 @@ int main()
     }
 
     // Gate 6 — the narrowing works: with Camera lit the outline drops to the camera rows, so the World folder's
-    //    Atmosphere row (y ≈ 372) is gone and the first row under the pills is Camera.
+    //    Atmosphere row (y ≈ 372) is gone and the first row under the pills is Camera. The names print dim
+    //    (t2 .56, below the old 150 bar), so this counts tree ink, not bright ink, over the tree's own rows.
     Rasterise();
     {
         const char* NarrowSheet = "Diagnostics/EditorProof_Filtered.png";
@@ -771,11 +839,11 @@ int main()
             return 1;
         }
         int Rows = 0;
-        for (int Y = 320; Y < 700; ++Y)
+        for (int Y = 320; Y < 660; ++Y)
             for (int X = 40; X < 300; ++X)
             {
                 const unsigned char* P = At(X, Y);
-                if (P[0] >= 150u && P[1] >= 150u && P[2] >= 150u)
+                if (P[0] > 60u || P[1] > 60u || P[2] > 60u)
                     ++Rows;   // name ink
             }
         int Green = 0;
@@ -787,7 +855,7 @@ int main()
                     ++Green;   // the camera glyph in its #34c759
             }
         std::fprintf(stderr, "[EditorProof] narrowed: %d ink cells, %d camera-green cells\n", Rows, Green);
-        if (Rows < 50 || Rows > 2500)
+        if (Rows < 1000 || Rows > 2600)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the narrowed outline is the wrong size\n");
             Failed = true;
@@ -809,6 +877,8 @@ int main()
     Editor.PickInstance(SunRow);
     BuildMirrorSheet(2u, MirrorInstances + CelestialFirst, &PickedSheet);
     Rest(5);
+    KeyChord();   // the console opens: shut till Ctrl+K, full black past it
+    Rest(2);
     Click(700.0f, 648.0f);
     Rest(3);
     Type("p");
@@ -826,9 +896,7 @@ int main()
             for (int X = 355; X < 1240; ++X)
             {
                 const unsigned char* P = At(X, Y);
-                if (std::abs(static_cast<int>(P[0]) - 12) <= 3
-                    && std::abs(static_cast<int>(P[1]) - 12) <= 3
-                    && std::abs(static_cast<int>(P[2]) - 12) <= 3)
+                if (P[0] == 0u && P[1] == 0u && P[2] == 0u)
                     ++Box;
                 if (P[2] >= 60 && static_cast<int>(P[2]) - static_cast<int>(P[0]) >= 25)
                     ++Indigo;
@@ -842,6 +910,20 @@ int main()
         if (Indigo < 300)
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the standing row carries no indigo\n");
+            Failed = true;
+        }
+        int Bar = 0;
+        for (int Y = 642; Y < 676; ++Y)
+            for (int X = 360; X < 1235; ++X)
+            {
+                const unsigned char* P = At(X, Y);
+                if (P[0] == 0u && P[1] == 0u && P[2] == 0u)
+                    ++Bar;
+            }
+        std::fprintf(stderr, "[EditorProof] console bar: %d black cells\n", Bar);
+        if (Bar < 15000)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the console bar is not full black\n");
             Failed = true;
         }
     }
@@ -951,6 +1033,60 @@ int main()
         if (!(DistAfter < DistBefore))
         {
             std::fprintf(stderr, "[EditorProof] [FAIL] the wheel never dollied\n");
+            Failed = true;
+        }
+    }
+
+    // Gate 10 — the inspector rises: its tab raised, the foot strip sits forty above the sill, carrying
+    //    the picked instance's standing beside the live realtime and triangle figures.
+    ImGui::SetWindowFocus("Inspector");
+    Rest(8);
+    Rasterise();
+    {
+        const char* InspectorSheet = "Diagnostics/EditorProof_Inspector.png";
+        if (stbi_write_png(InspectorSheet, kWidth, kHeight, 3, Pixels.data(), kWidth * 3) == 0)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the inspector sheet would not write\n");
+            return 1;
+        }
+        const auto FootTop = [&](int X0, int X1) -> int
+        {
+            for (int Y = 666; Y <= 678; ++Y)
+            {
+                int Sum = 0;
+                for (int X = X0; X <= X1; ++X)
+                {
+                    const unsigned char* P = At(X, Y);
+                    Sum += static_cast<int>(P[0]) + static_cast<int>(P[1]) + static_cast<int>(P[2]);
+                }
+                const int Mean = Sum / (3 * (X1 - X0 + 1));
+                if (Mean >= 19 && Mean <= 32)
+                {
+                    return Y;
+                }
+            }
+            return -1;
+        };
+        const int InspTop = FootTop(40, 280);
+        const int ViewTop = FootTop(400, 1000);
+        int Ink = 0;
+        for (int Y = 676; Y < 710; ++Y)
+            for (int X = 14; X < 302; ++X)
+            {
+                const unsigned char* P = At(X, Y);
+                if (P[0] > 60u || P[1] > 60u || P[2] > 60u)
+                    ++Ink;
+            }
+        std::fprintf(stderr, "[EditorProof] inspector foot: top %d (viewport %d), %d bright cells\n",
+                     InspTop, ViewTop, Ink);
+        if (InspTop < 668 || InspTop > 674 || std::abs(InspTop - ViewTop) > 2)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the inspector foot strays off the shared row\n");
+            Failed = true;
+        }
+        if (Ink < 150)
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the inspector foot carries no figures\n");
             Failed = true;
         }
     }

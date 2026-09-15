@@ -152,6 +152,34 @@ for Word in REALTIME QUALITY SUN MOONS CAM; do
     fi
 done
 
+# One height across the three feet: every foot draws the shared forty, and the tree, the props
+#    child and the view each reserve exactly it.
+for Foot in OutlinerPanel InspectorPanel ViewportPanel; do
+    if ! grep -q "kEditorFooterH" Engine/Editor/$Foot.cpp; then
+        echo "  $Foot never draws the shared foot height"; Fail=1
+    fi
+done
+
+# The console sleeps till Ctrl+K: shut at boot, the chord toggles it, and the bar and the stack
+#    both draw full black.
+if ! grep -q "ConsoleOpen_.*= false" Engine/Editor/ViewportPanel.h; then
+    echo "  the console no longer boots shut"; Fail=1
+fi
+if ! grep -q "ConsoleOpen_.*= !ConsoleOpen_" Engine/Editor/ViewportPanel.cpp; then
+    echo "  Ctrl+K no longer raises the console"; Fail=1
+fi
+if [[ "$(grep -c "IM_COL32(0, 0, 0, 255)" Engine/Editor/ViewportPanel.cpp)" -lt 2 ]]; then
+    echo "  the console bar or stack is no longer full black"; Fail=1
+fi
+
+# The triangle total crosses the seam on the readout, seated from the live level each tick.
+if ! grep -q "uint32_t Triangles" Engine/Editor/EditorInstance.h; then
+    echo "  the readout lost its triangle total"; Fail=1
+fi
+if ! grep -q "EditorFooter.Triangles = Level.QueryTriangleCount()" Projects/Project-Zero/Source/GameExecution.cpp; then
+    echo "  the feed no longer seats the triangle total"; Fail=1
+fi
+
 # Every popup the editor opens, the editor begins: the Open set and the Begin set must be the same four ids.
 OpenPopups="$(grep -hoE 'OpenPopup\("##[a-z]+"\)' Engine/Editor/*.cpp | sort -u)"
 BeginPopups="$(grep -hoE 'BeginPopup\("##[a-z]+"\)' Engine/Editor/*.cpp | sed 's/BeginPopup/OpenPopup/' | sort -u)"
@@ -169,7 +197,7 @@ if grep -nE '(push_back|emplace_back|resize|reserve)[[:space:]]*\(|new[[:space:]
 fi
 
 echo
-for Sheet in Tabs Menu Filtered Palette Views; do
+for Sheet in Tabs Menu Filtered Palette Views Inspector; do
     if [[ ! -s Diagnostics/EditorProof_$Sheet.png ]]; then
         echo "  MISSING Diagnostics/EditorProof_$Sheet.png"; Fail=1
     else

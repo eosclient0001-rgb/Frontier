@@ -27,6 +27,31 @@ constexpr ImU32 kFaint  = IM_COL32(92, 92, 92, 255);
 constexpr ImU32 kStroke = IM_COL32(255, 255, 255, 13);
 constexpr ImU32 kStrong = IM_COL32(46, 46, 46, 255);
 constexpr ImU32 kWash   = IM_COL32(255, 255, 255, 5);
+constexpr ImU32 kGreen  = IM_COL32(0x34, 0xC7, 0x59, 255);
+constexpr ImU32 kAmber  = IM_COL32(245, 158, 11, 255);
+
+// The warning triangle the foot strips hang off a Poor realtime band: three strokes, the upright bar,
+//    and its dot. One painter, copied to each strip's file, so the three feet warn alike.
+void FootWarn(ImDrawList* Draw, const ImVec2& At, float Size, ImU32 Tint) noexcept
+{
+    Draw->AddTriangle(ImVec2(At.x + Size * 0.5f, At.y), ImVec2(At.x + Size, At.y + Size),
+        ImVec2(At.x, At.y + Size), Tint, 1.5f);
+    Draw->AddLine(ImVec2(At.x + Size * 0.5f, At.y + Size * 0.34f),
+        ImVec2(At.x + Size * 0.5f, At.y + Size * 0.62f), Tint, 1.5f);
+    Draw->AddCircleFilled(ImVec2(At.x + Size * 0.5f, At.y + Size * 0.78f), 1.2f, Tint);
+}
+
+float CapsAdvance(ImFont* Small, const char* Text) noexcept
+{
+    // RecordCaps' advance, without the paint: the right-hung figures measure before they draw.
+    float Advance = 0.0f;
+    for (const char* P = Text; *P != '\0'; ++P)
+    {
+        const char Upper[2] = { static_cast<char>(std::toupper(static_cast<unsigned char>(*P))), '\0' };
+        Advance += Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, Upper).x + 1.4f;
+    }
+    return Advance;
+}
 
 float ProwHeight(EditorPropertyCategory Category) noexcept
 {
@@ -57,6 +82,11 @@ void InspectorPanel::AssignControls(ControlPanel* Controls) noexcept
 //                                                           RECORD
 //------------------------------------------------------------------------------------------------------------------------
 
+void InspectorPanel::AssignReadout(const EditorReadout* Readout) noexcept
+{
+    Readout_ = Readout;
+}
+
 void InspectorPanel::Record(EditorInstance* Picked, uint32_t PickedIndex, EditorSheet* Sheet) noexcept
 {
     IM_ASSERT(Controls_ != nullptr);
@@ -79,12 +109,11 @@ void InspectorPanel::Record(EditorInstance* Picked, uint32_t PickedIndex, Editor
     if (Picked == nullptr || Sheet == nullptr)
     {
         RecordEmpty();
-        const float Gap = ImGui::GetContentRegionAvail().y - 30.0f;
+        const float Gap = ImGui::GetContentRegionAvail().y - kEditorFooterH;
         if (Gap > 0.0f)
         {
             ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, Gap));
         }
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
         RecordFooter(nullptr);
         ImGui::End();
         return;
@@ -93,7 +122,7 @@ void InspectorPanel::Record(EditorInstance* Picked, uint32_t PickedIndex, Editor
     RecordIdent(Picked, PickedIndex);
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 2.0f));
-    ImGui::BeginChild("##props", ImVec2(0.0f, -30.0f), false);
+    ImGui::BeginChild("##props", ImVec2(0.0f, -kEditorFooterH), false);
     for (uint32_t i = 0u; i < Sheet->GroupCount && i < kMaxEditorSheetGroups; ++i)
     {
         RecordCard(Sheet->Groups[i], i);
@@ -102,7 +131,6 @@ void InspectorPanel::Record(EditorInstance* Picked, uint32_t PickedIndex, Editor
     RecordNotes(Picked);
     ImGui::EndChild();
     ImGui::PopStyleVar();
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 8.0f);
     RecordFooter(Picked);
     ImGui::End();
 }
@@ -544,16 +572,23 @@ void InspectorPanel::RecordNotes(EditorInstance* Picked) noexcept
 void InspectorPanel::RecordFooter(EditorInstance* Picked) noexcept
 {
     const float RowWidth = ImGui::GetContentRegionAvail().x;
-    ImGui::Dummy(ImVec2(RowWidth, 30.0f));
+    // Pinned to the sill: whatever the content above ends at, the foot opens on the shared top row.
+    const float FootTop = Controls_->QueryFootTop();
+    if (ImGui::GetCursorScreenPos().y < FootTop)
+    {
+        ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, FootTop));
+    }
+    ImGui::Dummy(ImVec2(RowWidth, kEditorFooterH));
     const ImVec2 Cursor = ImGui::GetItemRectMin();
 
     ImDrawList* Draw = ImGui::GetWindowDrawList();
     const ImVec2 FootPos  = ImGui::GetWindowPos();
     const ImVec2 FootSize = ImGui::GetWindowSize();
     const float  FootX0   = FootPos.x;
-    const float  FootH    = FootPos.y + FootSize.y - Cursor.y;
-    Draw->AddRectFilled(ImVec2(FootX0, Cursor.y), ImVec2(FootX0 + FootSize.x, Cursor.y + FootH), kWash);
-    Draw->AddLine(ImVec2(FootX0, Cursor.y), ImVec2(FootX0 + FootSize.x, Cursor.y), kStroke);
+    const float  FootX1   = FootPos.x + FootSize.x;
+    const float  FootH    = kEditorFooterH;
+    Draw->AddRectFilled(ImVec2(FootX0, Cursor.y), ImVec2(FootX1, Cursor.y + FootH), kWash);
+    Draw->AddLine(ImVec2(FootX0, Cursor.y), ImVec2(FootX1, Cursor.y), kStroke);
 
     char Foot[64] = {};
     if (Picked == nullptr)
@@ -575,6 +610,54 @@ void InspectorPanel::RecordFooter(EditorInstance* Picked) noexcept
     const ImVec2 FootGlyph = Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, Foot);
     Draw->AddText(ImVec2(FootX0 + 14.0f, Cursor.y + (FootH - FootGlyph.y) * 0.5f), kFaint, Foot);
     ImGui::PopFont();
+
+    // The live figures, right-hung: the tinted realtime, the triangle total, and the warning
+    //    triangle off a Poor band. Unseated they read dashes, like the outliner's resting figures.
+    const char* Dash = "\xe2\x80\x94";
+    char FpsFig[12] = {}, TrisFig[16] = {};
+    const char*   FpsText  = Dash;
+    const char*   TrisText = Dash;
+    EditorFpsBand Band     = EditorFpsBand::Fair;
+    if (Readout_ != nullptr)
+    {
+        std::snprintf(FpsFig, sizeof(FpsFig), "%.0f", static_cast<double>(Readout_->Fps));
+        FpsText = FpsFig;
+        Band    = EditorFpsBandFor(Readout_->Fps);
+        if (Readout_->Triangles > 0u)
+        {
+            std::snprintf(TrisFig, sizeof(TrisFig), "%u", Readout_->Triangles);
+            TrisText = TrisFig;
+        }
+    }
+    const ImU32 FpsTint = (Readout_ == nullptr) ? kFaint
+        : (Band == EditorFpsBand::Good ? kGreen : (Band == EditorFpsBand::Poor ? kAmber : kText));
+    ImGui::PushFont(Small);
+    const float FpsW  = Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, FpsText).x;
+    const float TrisW = Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, TrisText).x;
+    const float SepW  = Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, " \xc2\xb7 ").x;
+    ImGui::PopFont();
+    const float FpsLabW  = CapsAdvance(Small, "FPS");
+    const float TrisLabW = CapsAdvance(Small, "TRIS");
+    const bool  Poor     = (Readout_ != nullptr) && (Band == EditorFpsBand::Poor);
+    const float BlockW = FpsLabW + 6.0f + FpsW + SepW + TrisLabW + 6.0f + TrisW + (Poor ? 13.0f : 0.0f);
+    float       RX     = FootX1 - 14.0f - BlockW;
+    const float TextY  = Cursor.y + (FootH - FootGlyph.y) * 0.5f;
+    RX += RecordCaps("FPS", ImVec2(RX, TextY), kFaint) + 6.0f;
+    ImGui::PushFont(Small);
+    Draw->AddText(ImVec2(RX, TextY), FpsTint, FpsText);
+    RX += FpsW;
+    Draw->AddText(ImVec2(RX, TextY), kFaint, " \xc2\xb7 ");
+    RX += SepW;
+    ImGui::PopFont();
+    RX += RecordCaps("TRIS", ImVec2(RX, TextY), kFaint) + 6.0f;
+    ImGui::PushFont(Small);
+    Draw->AddText(ImVec2(RX, TextY), (TrisText == Dash) ? kFaint : kText, TrisText);
+    ImGui::PopFont();
+    RX += TrisW;
+    if (Poor)
+    {
+        FootWarn(Draw, ImVec2(RX + 3.0f, Cursor.y + (FootH - 10.0f) * 0.5f), 10.0f, kAmber);
+    }
 }
 
 } // namespace Frontier

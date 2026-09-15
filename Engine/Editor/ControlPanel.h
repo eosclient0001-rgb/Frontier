@@ -28,6 +28,11 @@ public:
     [[nodiscard]] ImFont* QueryTitle() const noexcept;
     [[nodiscard]] ImFont* QueryDisplay() const noexcept;
 
+    // The foot strips' shared top row: the window's content bottom less the forty every foot draws.
+    //    The panels pin their feet here, so the three hems draw one unbroken line whatever the content
+    //    above ends at.
+    [[nodiscard]] float QueryFootTop() const noexcept;
+
     // The reference slider: a 92-pixel split pill beside a track pill as tall as the knob circle (26 over
     //    24). Thin drops the three figures to 18 over 10 over 18; the pill hides for the footer clock.
     bool SliderPill(const char* Id, float* Figure, float Minimum, float Maximum,

@@ -45,6 +45,7 @@ constexpr ImU32 kG2      = IM_COL32(255, 255, 255, 11);    // --g2 .045
 constexpr ImU32 kG3      = IM_COL32(255, 255, 255, 20);    // --g3 .08
 constexpr ImU32 kStroke  = IM_COL32(255, 255, 255, 18);    // --stroke .07
 constexpr ImU32 kStroke2 = IM_COL32(255, 255, 255, 33);    // --stroke2 .13
+constexpr ImU32 kWash    = IM_COL32(255, 255, 255, 5);     // the foot band, shared with its siblings
 constexpr ImU32 kSelBg   = IM_COL32(255, 255, 255, 23);    // .node.sel .09
 constexpr ImU32 kTileBg  = IM_COL32(255, 255, 255, 9);     // .ss .035
 constexpr ImU32 kTileIco = IM_COL32(255, 255, 255, 15);    // .ss-ico .06
@@ -279,6 +280,17 @@ void SeatFlat(FlatStroke& Out, std::string_view Path) noexcept
             F.Points[F.Count++] = ImVec2(P.X, P.Y);
         }
     }
+}
+
+// The warning triangle the foot strips hang off a Poor realtime band: three strokes, the upright bar,
+//    and its dot. One painter, copied to each strip's file, so the three feet warn alike.
+void FootWarn(ImDrawList* Draw, const ImVec2& At, float Size, ImU32 Tint) noexcept
+{
+    Draw->AddTriangle(ImVec2(At.x + Size * 0.5f, At.y), ImVec2(At.x + Size, At.y + Size),
+        ImVec2(At.x, At.y + Size), Tint, 1.5f);
+    Draw->AddLine(ImVec2(At.x + Size * 0.5f, At.y + Size * 0.34f),
+        ImVec2(At.x + Size * 0.5f, At.y + Size * 0.62f), Tint, 1.5f);
+    Draw->AddCircleFilled(ImVec2(At.x + Size * 0.5f, At.y + Size * 0.78f), 1.2f, Tint);
 }
 
 const FlatGlyph& FlatOf(OutlinerIconCategory Icon) noexcept
@@ -1186,7 +1198,8 @@ uint32_t OutlinerPanel::RecordOutline(EditorInstance* Instances, uint32_t Instan
         }
     }
 
-    const float FootH = Compact_ ? (8.0f + 3.0f * 26.0f + 2.0f * 4.0f + 10.0f) : (10.0f + 2.0f * 26.0f + 4.0f + 12.0f);
+    // The tree leaves exactly the shared forty for the foot strip below it.
+    const float FootH = kEditorFooterH;
     const float Avail = ImGui::GetContentRegionAvail().y - FootH;
     const float Width = ImGui::GetContentRegionAvail().x;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -1521,20 +1534,24 @@ void OutlinerPanel::RecordFooter() noexcept
     static const EditorReadout Resting = {};
     const EditorReadout& R = Readout_ != nullptr ? *Readout_ : Resting;
     const float RowWidth = ImGui::GetContentRegionAvail().x;
+    // Pinned to the sill: whatever the content above ends at, the foot opens on the shared top row.
+    const float FootTop = Controls_->QueryFootTop();
+    if (ImGui::GetCursorScreenPos().y < FootTop)
+    {
+        ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, FootTop));
+    }
     const float PadX = Compact_ ? 14.0f : 16.0f;
-    const float PadT = Compact_ ? 8.0f : 10.0f;
-    const float PadB = Compact_ ? 10.0f : 12.0f;
-    const uint32_t Cols = 5u;   // one line: every figure side by side
-    const float ItemH = 26.0f;
-    const uint32_t Items = 5u;
-    const uint32_t Lines = (Items + Cols - 1u) / Cols;
-    const float H = PadT + static_cast<float>(Lines) * ItemH + static_cast<float>(Lines - 1u) * 4.0f + PadB;
+    const float PadT = 7.0f;   // 7 + 26 + 7: the shared forty, compact or full
+    const float PadB = 7.0f;
+    const uint32_t Items = 5u;   // one line: every figure side by side
+    const float H = kEditorFooterH;
 
     ImGui::Dummy(ImVec2(RowWidth, H));
     const ImVec2 Cursor = ImGui::GetItemRectMin();
     ImDrawList* Draw = ImGui::GetWindowDrawList();
     ImFont*     Ui   = Controls_->QueryUi();
     ImFont*     Mono = Controls_->QueryMono();
+    Draw->AddRectFilled(ImVec2(Cursor.x, Cursor.y), ImVec2(Cursor.x + RowWidth, Cursor.y + H), kWash);
     Draw->AddLine(ImVec2(Cursor.x, Cursor.y), ImVec2(Cursor.x + RowWidth, Cursor.y), kStroke, 1.0f);
 
     // One line, five columns. The camera column is the widest figure, so it takes the room the others leave:
@@ -1555,6 +1572,7 @@ void OutlinerPanel::RecordFooter() noexcept
     const char* Units[5]   = { "fps", "", "", "", "" };
     float X = Cursor.x + PadX;
     const float Y = Cursor.y + PadT;
+    const EditorFpsBand FpsBand = EditorFpsBandFor(R.Fps);
     for (uint32_t i = 0u; i < Items; ++i)
     {
         const float Room = (i == 4u) ? CamW : NarrowW;
@@ -1562,10 +1580,19 @@ void OutlinerPanel::RecordFooter() noexcept
         const float FigPx = 12.0f;
         const float FigY  = Y + 12.0f;
         ImFont* FigFont = (i == 1u) ? Ui : Mono;
+        float FigX = X;
+        if (i == 0u && FpsBand == EditorFpsBand::Poor)
+        {
+            FootWarn(Draw, ImVec2(FigX, FigY + 5.0f), 10.0f, kOrange);
+            FigX += 13.0f;
+        }
+        const ImU32 FigTint = (i == 0u)
+            ? (FpsBand == EditorFpsBand::Good ? kGreen : (FpsBand == EditorFpsBand::Poor ? kOrange : kText))
+            : kText;
         const float FigW = MeasureSized(FigFont, FigPx, Figures[i]);
-        DrawClipped(Draw, FigFont, FigPx, X, FigY + 6.0f, Room, kText, Figures[i]);
-        if (Units[i][0] != '\0' && FigW + 3.0f + MeasureSized(Ui, 9.0f, Units[i]) < Room)
-            DrawSized(Draw, Ui, 9.0f, X + FigW + 3.0f, FigY + 8.0f, kT3, Units[i]);
+        DrawClipped(Draw, FigFont, FigPx, FigX, FigY + 6.0f, Room - (FigX - X), FigTint, Figures[i]);
+        if (Units[i][0] != '\0' && (FigX - X) + FigW + 3.0f + MeasureSized(Ui, 9.0f, Units[i]) < Room)
+            DrawSized(Draw, Ui, 9.0f, FigX + FigW + 3.0f, FigY + 8.0f, kT3, Units[i]);
         X += Room + Gap;
     }
 }

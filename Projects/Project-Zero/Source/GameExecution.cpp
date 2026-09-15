@@ -1194,6 +1194,7 @@ int main(int argc, char** argv)
             const Frontier::Vector3 Eye = Camera.Convert<Frontier::Vector3>();
             EditorFooter.Cam[0] = Eye.x; EditorFooter.Cam[1] = Eye.z; EditorFooter.Cam[2] = Eye.y;
             std::snprintf(EditorFooter.Scene, sizeof(EditorFooter.Scene), "%s", Level.QueryName().c_str());
+            EditorFooter.Triangles = Level.QueryTriangleCount();
             Panel.AssignEditorReadout(&EditorFooter);
         }
         if (Surface.QueryTargetGeneration() != EditorViewGeneration)

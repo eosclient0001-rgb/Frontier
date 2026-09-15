@@ -71,6 +71,8 @@ void EditorHost::AssignViewTexture(ImTextureID View, uint32_t Width, uint32_t He
 void EditorHost::AssignReadout(const EditorReadout* Readout) noexcept
 {
     Outliner_.AssignReadout(Readout);
+    Viewport_.AssignReadout(Readout);
+    Inspector_.AssignReadout(Readout);
 }
 
 uint32_t EditorHost::QueryOrderRevision() const noexcept

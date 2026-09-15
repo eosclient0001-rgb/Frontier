@@ -96,6 +96,32 @@ struct EditorInstance
     bool             Shut      = false;                     // the feed's opening pose (false reads open)
 };
 
+// The foot strips: one height across the outliner, the inspector and the viewport, so the three hems
+//    draw one unbroken line. Every foot reserves exactly this and draws exactly this.
+constexpr float kEditorFooterH = 40.0f;
+
+// The realtime band: Good holds 50 and up, Fair the middle, Poor below 24. The strips tint the figure
+//    by the band and hang the warning triangle off Poor.
+enum class EditorFpsBand : uint32_t
+{
+    Good = 0u,
+    Fair,
+    Poor
+};
+
+inline EditorFpsBand EditorFpsBandFor(float Fps) noexcept
+{
+    if (Fps < 24.0f)
+    {
+        return EditorFpsBand::Poor;
+    }
+    if (Fps < 50.0f)
+    {
+        return EditorFpsBand::Fair;
+    }
+    return EditorFpsBand::Good;
+}
+
 // The outliner's footer strip: five figures the tick refreshes — the page's Realtime / Quality / Sun / Moons / Cam.
 struct EditorReadout
 {
@@ -105,6 +131,7 @@ struct EditorReadout
     float    SunElevation   = 0.0f;                         // [deg]
     uint32_t MoonCount      = 1u;
     uint32_t MoonCap        = 4u;
+    uint32_t Triangles      = 0u;                            // live triangle total; 0 reads unknown — the strips print their dash
     float    Cam[3]         = { 0.0f, 2.0f, 0.0f };         // x, height, z — printed "0, 2.0, 0"
     char     Scene[24]      = "Scene";                       // level name — the outliner head prints it
 };

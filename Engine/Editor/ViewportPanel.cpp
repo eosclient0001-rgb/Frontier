@@ -25,6 +25,8 @@ namespace {
 //------------------------------------------------------------------------------------------------------------------------
 
 constexpr ImU32 kView   = IM_COL32(7, 9, 12, 255);
+constexpr ImU32 kGreen  = IM_COL32(0x34, 0xC7, 0x59, 255);
+constexpr float kConsoleH = 40.0f;   // the command bar's own height, reserved and drawn
 constexpr ImU32 kTile   = IM_COL32(34, 34, 34, 255);
 constexpr ImU32 kField  = IM_COL32(0, 0, 0, 255);
 constexpr ImU32 kText   = IM_COL32(240, 240, 240, 255);
@@ -103,6 +105,17 @@ ImVec2 GlyphDot(const ImVec2& Centre, float Size, float X, float Y) noexcept
 {
     const float S = Size / 24.0f;
     return ImVec2(Centre.x + (X - 12.0f) * S, Centre.y + (Y - 12.0f) * S);
+}
+
+// The warning triangle the foot strips hang off a Poor realtime band: three strokes, the upright bar,
+//    and its dot. One painter, copied to each strip's file, so the three feet warn alike.
+void FootWarn(ImDrawList* Draw, const ImVec2& At, float Size, ImU32 Tint) noexcept
+{
+    Draw->AddTriangle(ImVec2(At.x + Size * 0.5f, At.y), ImVec2(At.x + Size, At.y + Size),
+        ImVec2(At.x, At.y + Size), Tint, 1.5f);
+    Draw->AddLine(ImVec2(At.x + Size * 0.5f, At.y + Size * 0.34f),
+        ImVec2(At.x + Size * 0.5f, At.y + Size * 0.62f), Tint, 1.5f);
+    Draw->AddCircleFilled(ImVec2(At.x + Size * 0.5f, At.y + Size * 0.78f), 1.2f, Tint);
 }
 
 void PlayGlyph(ImDrawList* Draw, const ImVec2& Centre, float Size, ImU32 Tint) noexcept
@@ -469,6 +482,11 @@ void ViewportPanel::SeatViewportOrbit(const ViewportOrbit& Seated) noexcept
 {
     Orbit_ = Seated;
     Home_  = Seated;
+}
+
+void ViewportPanel::AssignReadout(const EditorReadout* Readout) noexcept
+{
+    Readout_ = Readout;
 }
 
 void ViewportPanel::Record(EditorInstance* Instances, uint32_t InstanceCount) noexcept
@@ -949,7 +967,9 @@ void ViewportPanel::RecordBar() noexcept
 void ViewportPanel::RecordView() noexcept
 {
     const float RowWidth = ImGui::GetContentRegionAvail().x;
-    const float ViewH    = ImGui::GetContentRegionAvail().y - 40.0f - 40.0f;
+    // The view reaches exactly the foot's top row, taking the room the shut console leaves.
+    const float ViewH =
+        Controls_->QueryFootTop() - ImGui::GetCursorScreenPos().y - (ConsoleOpen_ ? kConsoleH : 0.0f);
     if (ViewH < 40.0f)
     {
         return;
@@ -1100,12 +1120,18 @@ void ViewportPanel::RecordCommand(EditorInstance* Instances, uint32_t InstanceCo
 {
     if ((ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper) && ImGui::IsKeyPressed(ImGuiKey_K, false))
     {
-        FocusCommand_ = true;
+        // Ctrl+K raises the console and lands the caret; a second chord sends it home.
+        ConsoleOpen_  = !ConsoleOpen_;
+        FocusCommand_ = ConsoleOpen_;
         SugShut_      = false;
+    }
+    if (!ConsoleOpen_)
+    {
+        return;
     }
 
     const float RowWidth = ImGui::GetContentRegionAvail().x;
-    ImGui::Dummy(ImVec2(RowWidth, 40.0f));
+    ImGui::Dummy(ImVec2(RowWidth, kConsoleH));
     const ImVec2 Min = ImGui::GetItemRectMin();
     const ImVec2 Max = ImGui::GetItemRectMax();
 
@@ -1116,7 +1142,7 @@ void ViewportPanel::RecordCommand(EditorInstance* Instances, uint32_t InstanceCo
     const ImVec2 WinSize = ImGui::GetWindowSize();
     const float  WinX    = WinPos.x;
     const float  WinX1   = WinPos.x + WinSize.x;
-    Draw->AddRectFilled(ImVec2(WinX, Min.y), ImVec2(WinX1, Max.y), kWash);
+    Draw->AddRectFilled(ImVec2(WinX, Min.y), ImVec2(WinX1, Max.y), IM_COL32(0, 0, 0, 255));
     Draw->AddLine(ImVec2(WinX, Min.y), ImVec2(WinX1, Min.y), kStroke);
 
     if (std::strcmp(CommandText_, LastPaint_) != 0)
@@ -1138,7 +1164,7 @@ void ViewportPanel::RecordCommand(EditorInstance* Instances, uint32_t InstanceCo
     const ImVec2 KbdGlyph = Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, "K");
     ImGui::PopFont();
     const ImVec2 KbdSize(CmdGlyph.x + KbdGlyph.x + 12.0f, KbdGlyph.y + 4.0f);
-    const ImVec2 KbdMin(RunMin.x - 10.0f - KbdSize.x, Min.y + (40.0f - KbdSize.y) * 0.5f);
+    const ImVec2 KbdMin(RunMin.x - 10.0f - KbdSize.x, Min.y + (kConsoleH - KbdSize.y) * 0.5f);
     float EchoW = 0.0f;
     if (EchoOn)
     {
@@ -1212,7 +1238,7 @@ void ViewportPanel::RecordCommand(EditorInstance* Instances, uint32_t InstanceCo
         ImGui::PushFont(Small);
         const ImVec2 EchoGlyph = Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, CommandEcho_);
         Draw->PushClipRect(ImVec2(FieldX1 + 10.0f, Min.y), ImVec2(KbdMin.x - 10.0f, Max.y), true);
-        Draw->AddText(ImVec2(FieldX1 + 10.0f, Min.y + (40.0f - EchoGlyph.y) * 0.5f), kDim, CommandEcho_);
+        Draw->AddText(ImVec2(FieldX1 + 10.0f, Min.y + (kConsoleH - EchoGlyph.y) * 0.5f), kDim, CommandEcho_);
         Draw->PopClipRect();
         ImGui::PopFont();
     }
@@ -1264,7 +1290,7 @@ void ViewportPanel::RecordCommand(EditorInstance* Instances, uint32_t InstanceCo
         const float StackY1 = Min.y - 6.0f;
         const float StackY0 = StackY1 - StackH;
         Draw->AddRectFilled(ImVec2(StackX0, StackY0), ImVec2(StackX1, StackY1),
-            IM_COL32(12, 12, 12, 247), 18.0f);
+            IM_COL32(0, 0, 0, 255), 18.0f);
         Draw->AddRect(ImVec2(StackX0, StackY0), ImVec2(StackX1, StackY1), kStrong, 18.0f);
 
         const char* Head = (SugCount_ == 0u) ? "Nothing matches \xe2\x80\x94 try \xe2\x80\x9chelp\xe2\x80\x9d"
@@ -1623,7 +1649,13 @@ int ViewportPanel::ConsoleCallback(ImGuiInputTextCallbackData* Edit) noexcept
 void ViewportPanel::RecordFooter(EditorInstance* Instances, uint32_t InstanceCount) noexcept
 {
     const float RowWidth = ImGui::GetContentRegionAvail().x;
-    ImGui::Dummy(ImVec2(RowWidth, 40.0f));
+    // Pinned to the sill: whatever the content above ends at, the foot opens on the shared top row.
+    const float FootTop = Controls_->QueryFootTop();
+    if (ImGui::GetCursorScreenPos().y < FootTop)
+    {
+        ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, FootTop));
+    }
+    ImGui::Dummy(ImVec2(RowWidth, kEditorFooterH));
     const ImVec2 Cursor = ImGui::GetItemRectMin();
 
     ImDrawList* Draw  = ImGui::GetWindowDrawList();
@@ -1632,13 +1664,13 @@ void ViewportPanel::RecordFooter(EditorInstance* Instances, uint32_t InstanceCou
     const ImVec2 FootSize = ImGui::GetWindowSize();
     const float  FootX0 = FootPos.x;
     const float  FootX1 = FootPos.x + FootSize.x;
-    // The footer sits on the panel's own sill: its hem runs edge to edge and its wash pours to the
-    //    sill's foot, with no pad to float it.
-    Draw->AddRectFilled(ImVec2(FootX0, Cursor.y), ImVec2(FootX1, FootPos.y + FootSize.y), kWash);
+    // The footer sits on the panel's own sill: its hem runs edge to edge and its wash pours exactly
+    //    the shared forty, no further — the three panels' hems draw one unbroken line.
+    Draw->AddRectFilled(ImVec2(FootX0, Cursor.y), ImVec2(FootX1, Cursor.y + kEditorFooterH), kWash);
     Draw->AddLine(ImVec2(FootX0, Cursor.y), ImVec2(FootX1, Cursor.y), kStroke);
 
-    // The counters. Tris and camera wait on engine counters, so they keep the reference's own pre-paint
-    //    dash; physics and isolation hide at zero, under the reference's show rule.
+    // The counters. The triangle figure rides the readout the project seats; unseated it keeps the
+    //    reference's own resting dash, and physics and isolation hide at zero, under the show rule.
     const char* Dash = "\xe2\x80\x94";
     char PerfText[16] = {}, PerfSub[16] = {}, EntsText[16] = {}, EntsSub[32] = {};
     const float Fps = ImGui::GetIO().Framerate;
@@ -1668,9 +1700,18 @@ void ViewportPanel::RecordFooter(EditorInstance* Instances, uint32_t InstanceCou
     std::snprintf(CamText, sizeof(CamText), "%+.0f\xc2\xb0 %+.0f\xc2\xb0 %.1fm",
         static_cast<double>(Orbit_.Yaw * 57.29578f), static_cast<double>(Orbit_.Pitch * 57.29578f),
         static_cast<double>(Orbit_.Distance));
+    const uint32_t TriTotal = (Readout_ != nullptr) ? Readout_->Triangles : 0u;
+    char             TrisText[16] = {};
+    const char*      TrisFig = Dash;
+    if (TriTotal > 0u)
+    {
+        std::snprintf(TrisText, sizeof(TrisText), "%u", TriTotal);
+        TrisFig = TrisText;
+    }
+    const EditorFpsBand FpsBand = EditorFpsBandFor(Fps);
     const Counter Counters[4] = {
-        { "FPS", PerfText, PerfSub, Fps > 0.0f && Fps < 24.0f, false, false },
-        { "TRIS", Dash, "", false, false, false },
+        { "FPS", PerfText, PerfSub, FpsBand == EditorFpsBand::Poor, false, false },
+        { "TRIS", TrisFig, "", false, false, false },
         { "INSTANCES", EntsText, EntsSub, false, false, false },
         { "CAMERA", CamText, "", false, false, true },
     };
@@ -1682,6 +1723,10 @@ void ViewportPanel::RecordFooter(EditorInstance* Instances, uint32_t InstanceCou
     const auto CounterWidth = [&](const Counter& Cell, bool WithSub) -> float
     {
         float W = SpacedCapsWidth(Small, Cell.Label, 1.2f) + 6.0f;
+        if (Cell.Warn)
+        {
+            W += 13.0f;   // the warning triangle and its air
+        }
         ImGui::PushFont(Small);
         W += Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, Cell.Text).x;
         if (WithSub && Cell.Sub[0] != '\0')
@@ -1717,7 +1762,7 @@ void ViewportPanel::RecordFooter(EditorInstance* Instances, uint32_t InstanceCou
 
     const bool  KeepCam = (Mode == 0u);
     const bool  KeepSub = (Mode < 2u);
-    const float FootH   = FootPos.y + FootSize.y - Cursor.y;
+    const float FootH   = kEditorFooterH;
     const float TextY   = Cursor.y + (FootH - TextH) * 0.5f;
     const float MidY    = Cursor.y + FootH * 0.5f;
     float X = FootX0 + 4.0f;
@@ -1735,15 +1780,22 @@ void ViewportPanel::RecordFooter(EditorInstance* Instances, uint32_t InstanceCou
         First = false;
         const float LabelW = SpacedCapsWidth(Small, Counters[i].Label, 1.2f);
         SpacedCaps(Draw, Small, Counters[i].Label, ImVec2(X, TextY), kFaint, 1.2f);
-        const ImU32 TextTint = Counters[i].Warn ? kAmber : (Counters[i].Dim ? kDim : kText);
+        float FigX = X + LabelW + 6.0f;
+        if (Counters[i].Warn)
+        {
+            FootWarn(Draw, ImVec2(FigX, MidY - 5.0f), 10.0f, kAmber);
+            FigX += 13.0f;
+        }
+        const ImU32 TextTint = Counters[i].Warn ? kAmber
+            : ((i == 0u && FpsBand == EditorFpsBand::Good) ? kGreen : (Counters[i].Dim ? kDim : kText));
         ImGui::PushFont(Small);
-        Draw->AddText(ImVec2(X + LabelW + 6.0f, TextY), TextTint, Counters[i].Text);
+        Draw->AddText(ImVec2(FigX, TextY), TextTint, Counters[i].Text);
         const float TextW = Small->CalcTextSizeA(Small->LegacySize, FLT_MAX, 0.0f, Counters[i].Text).x;
         if (KeepSub && Counters[i].Sub[0] != '\0')
         {
             char Joined[48] = {};
             std::snprintf(Joined, sizeof(Joined), " \xc2\xb7 %s", Counters[i].Sub);
-            Draw->AddText(ImVec2(X + LabelW + 6.0f + TextW, TextY), kFaint, Joined);
+            Draw->AddText(ImVec2(FigX + TextW, TextY), kFaint, Joined);
         }
         ImGui::PopFont();
         X += CounterWidth(Counters[i], KeepSub) + 20.0f;

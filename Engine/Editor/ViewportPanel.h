@@ -17,6 +17,7 @@ namespace Frontier {
 
 class ControlPanel;
 struct EditorInstance;
+struct EditorReadout;
 
 // The viewport's orbit: yaw and pitch around a target at a distance, the projection in use, and which
 //    compass snap posed it (home reads free). The harness seats home from its own camera; the views menu,
@@ -47,6 +48,9 @@ public:
     // Shares the Control Centre shade's open figure with the bar's gear.
     void AssignShadeOpen(bool* Open) noexcept { ShadeOpen_ = Open; }
 
+    // The foot strip's live figures (triangle total); without a readout the strip prints its resting dash.
+    void AssignReadout(const EditorReadout* Readout) noexcept;
+
     // Seats the orbit's home from the harness camera (yaw, pitch, target, distance); the snaps and the
     //    gizmo work from there. Reads the orbit back for the harness trace and the game camera.
     void SeatViewportOrbit(const ViewportOrbit& Seated) noexcept;
@@ -73,7 +77,8 @@ private:
     void RunSugRow(uint32_t Row, EditorInstance* Instances, uint32_t InstanceCount) noexcept;
     static int ConsoleCallback(ImGuiInputTextCallbackData* Edit) noexcept;
 
-    ControlPanel* Controls_ = nullptr;
+    ControlPanel*        Controls_ = nullptr;
+    const EditorReadout* Readout_  = nullptr;
 
     const unsigned char* ViewRgba_    = nullptr;   // CPU rows; the seated texture id aliases them headless
     ImTextureID          ViewTexture_ = static_cast<ImTextureID>(0);
@@ -93,6 +98,7 @@ private:
     bool     DockLeft_  = true;
     bool     DockRight_ = true;
 
+    bool     ConsoleOpen_      = false;   // Ctrl+K raises the command console; shut till then
     char     CommandText_[128] = {};
     char     CommandEcho_[128] = {};
     double   EchoUntil_        = 0.0;   // the echo's 3.2-second lease

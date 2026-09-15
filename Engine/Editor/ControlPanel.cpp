@@ -94,6 +94,11 @@ ImFont* ControlPanel::QueryMono() const noexcept
     return Mono_ != nullptr ? Mono_ : ImGui::GetFont();
 }
 
+float ControlPanel::QueryFootTop() const noexcept
+{
+    return ImGui::GetWindowPos().y + ImGui::GetWindowContentRegionMax().y - kEditorFooterH;
+}
+
 ImFont* ControlPanel::QueryMonoSmall() const noexcept
 {
     return MonoSmall_ != nullptr ? MonoSmall_ : ImGui::GetFont();
