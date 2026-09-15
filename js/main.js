@@ -45,6 +45,7 @@ const state = {
   bushes: true,
   orbit: false,
   appliedType: null,
+  world: 2400,
 };
 
 let renderer, scene, camera, controls, clock;
@@ -100,6 +101,8 @@ function init() {
   controls.dampingFactor = 0.06;
   controls.maxPolarAngle = Math.PI * 0.495;
   controls.autoRotateSpeed = 0.5;
+  controls.enableZoom = false; // custom smooth zoom (see setupCameraControls)
+  setupCameraControls();
 
   sky = new Sky();
   sky.material.uniforms.turbidity.value = 6;
@@ -138,6 +141,104 @@ function onResize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
+}
+
+// --------------------- Unreal-style camera (fly + smooth zoom) --------------
+let zoomGoal = null;
+let pinchDist = 0;
+const flyKeys = new Set();
+const _fwd = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _move = new THREE.Vector3();
+const _off = new THREE.Vector3();
+
+function setupCameraControls() {
+  // Smooth wheel zoom: each tick adjusts an exponential distance goal,
+  // the camera eases toward it every frame (no stepping/snapping).
+  renderer.domElement.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (zoomGoal === null) zoomGoal = camera.position.distanceTo(controls.target);
+    const step = e.deltaMode === 1 ? 16 : 1; // line-mode wheels
+    zoomGoal *= Math.exp(e.deltaY * step * 0.0011);
+    zoomGoal = THREE.MathUtils.clamp(zoomGoal, controls.minDistance, controls.maxDistance);
+  }, { passive: false });
+
+  // Basic pinch zoom for touch (OrbitControls still handles rotate + pan).
+  const pinchGap = (t) => Math.hypot(
+    t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY
+  );
+  renderer.domElement.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) pinchDist = pinchGap(e.touches);
+  }, { passive: true });
+  renderer.domElement.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && pinchDist > 0) {
+      const d = pinchGap(e.touches);
+      if (zoomGoal === null) zoomGoal = camera.position.distanceTo(controls.target);
+      zoomGoal = THREE.MathUtils.clamp(
+        zoomGoal * (pinchDist / Math.max(d, 1)),
+        controls.minDistance, controls.maxDistance
+      );
+      pinchDist = d;
+    }
+  }, { passive: true });
+  renderer.domElement.addEventListener('touchend', () => { pinchDist = 0; });
+
+  // WASD / arrows + Q/E flight keys (ignored while typing in the panel).
+  window.addEventListener('keydown', (e) => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    flyKeys.add(e.code);
+  });
+  window.addEventListener('keyup', (e) => flyKeys.delete(e.code));
+  window.addEventListener('blur', () => flyKeys.clear());
+
+  // Manual orbiting cancels an in-flight zoom so they never fight.
+  controls.addEventListener('start', () => { zoomGoal = null; });
+}
+
+function updateCameraFlight(dt) {
+  // Ease toward the zoom goal.
+  if (zoomGoal !== null) {
+    _off.copy(camera.position).sub(controls.target);
+    const dist = _off.length();
+    if (dist > 1e-6) {
+      const k = 1 - Math.exp(-dt * 9);
+      const nd = THREE.MathUtils.lerp(dist, zoomGoal, k);
+      _off.setLength(nd);
+      camera.position.copy(controls.target).add(_off);
+      if (Math.abs(nd - zoomGoal) < Math.max(zoomGoal * 0.001, 1e-4)) zoomGoal = null;
+    } else {
+      zoomGoal = null;
+    }
+  }
+
+  // Fly: move camera AND orbit target together (Unreal viewport style).
+  let f = 0, r = 0, u = 0;
+  if (flyKeys.has('KeyW') || flyKeys.has('ArrowUp')) f += 1;
+  if (flyKeys.has('KeyS') || flyKeys.has('ArrowDown')) f -= 1;
+  if (flyKeys.has('KeyD') || flyKeys.has('ArrowRight')) r += 1;
+  if (flyKeys.has('KeyA') || flyKeys.has('ArrowLeft')) r -= 1;
+  if (flyKeys.has('KeyE')) u += 1;
+  if (flyKeys.has('KeyQ')) u -= 1;
+  if (f !== 0 || r !== 0 || u !== 0) {
+    camera.getWorldDirection(_fwd); // forward incl. pitch, like UE fly
+    _right.crossVectors(_fwd, _up).normalize();
+    _move.set(0, 0, 0)
+      .addScaledVector(_fwd, f)
+      .addScaledVector(_right, r)
+      .addScaledVector(_up, u)
+      .normalize();
+    // Speed scales with distance to target, like UE's viewport camera speed.
+    const dist = camera.position.distanceTo(controls.target);
+    const world = state.world || 2400;
+    let speed = THREE.MathUtils.clamp(dist * 0.9, world * 0.005, world * 0.6);
+    if (flyKeys.has('ShiftLeft') || flyKeys.has('ShiftRight')) speed *= 4;
+    _move.multiplyScalar(speed * dt);
+    camera.position.add(_move);
+    controls.target.add(_move);
+    zoomGoal = null;
+  }
 }
 
 function updateSun() {
@@ -312,6 +413,7 @@ function animate() {
   const wsh = waterMesh && waterMesh.material && waterMesh.material.userData.shader;
   if (wsh) wsh.uniforms.uTime.value = waterTime;
   controls.autoRotate = state.orbit;
+  updateCameraFlight(dt);
   controls.update();
   renderer.render(scene, camera);
 }
