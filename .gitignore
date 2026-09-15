@@ -1,0 +1,10 @@
+# exported asset sets (large; regenerate with the Export button)
+out/
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+# editor / os
+.DS_Store
+.idea/
+.vscode/
