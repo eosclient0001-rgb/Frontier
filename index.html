@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Frontier · Canyon Forge — Realistic Procedural Canyons</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <!-- NOTE: bump ?v= on every release so browsers never mix old/new files -->
+  <link rel="stylesheet" href="./styles.css?v=b4" />
   <script type="importmap">
     {
       "imports": {
@@ -16,6 +17,8 @@
 </head>
 <body>
   <div id="viewport"></div>
+
+  <div id="jscheck">starting JavaScript…</div>
 
   <aside id="panel">
     <div class="brand">
@@ -96,6 +99,7 @@
       No SDF, no low-poly: spline-carved heightfields, droplet + thermal
       erosion, sedimentary strata and fully procedural PBR — computed live.
     </p>
+    <p class="build">build b4 · mesh-based heightfield, no SDF</p>
   </aside>
 
   <button id="collapse" title="Toggle panel">☰</button>
@@ -110,6 +114,8 @@
     </div>
   </div>
 
-  <script type="module" src="./js/main.js"></script>
+  <div id="errbox" class="hidden"><b>Something broke.</b><pre id="errtext"></pre></div>
+
+  <script type="module" src="./js/main.js?v=b4"></script>
 </body>
 </html>

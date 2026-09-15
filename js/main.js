@@ -69,6 +69,26 @@ const baseAtmo = { sunI: 2.5, hemiI: 0.4, fogNear: 1000, fogFar: 8000 };
 
 // ------------------------------- helpers ------------------------------------
 const $ = (id) => document.getElementById(id);
+const BUILD = 'b4';
+function showError(msg) {
+  console.error('[CanyonForge]', msg);
+  const box = document.getElementById('errbox');
+  const txt = document.getElementById('errtext');
+  if (box && txt) {
+    txt.textContent += (txt.textContent ? '\n' : '') + String(msg).slice(0, 600);
+    box.classList.remove('hidden');
+  }
+}
+window.addEventListener('error', (e) => showError(e.message || e.error));
+window.addEventListener('unhandledrejection', (e) => {
+  showError('Async: ' + ((e.reason && e.reason.message) || e.reason));
+});
+// null-safe binder: one missing element must never kill the whole panel
+function on(id, ev, fn) {
+  const el = document.getElementById(id);
+  if (!el) { console.warn('[CanyonForge] missing #' + id); return; }
+  el.addEventListener(ev, fn);
+}
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 function showLoader(f, label) {
@@ -627,7 +647,9 @@ function updateStorm(dt) {
 function updateStats(data) {
   const tris = renderer.info.render.triangles;
   const sp = resolveStrata(state.type, state.strata === 'auto' ? null : state.strata);
-  $('stats').innerHTML =
+  const _stx = $('stats');
+  if (!_stx) return;
+  _stx.innerHTML =
     `<span><b>${TYPES[state.type].label}</b> · ${STRATA_PRESETS[sp].label} · seed ${state.seed}</span>` +
     `<span>${(tris / 1e6).toFixed(2)}M tris · gen ${(data.stats.genMs / 1000).toFixed(1)}s</span>`;
 }
@@ -663,11 +685,11 @@ function bindUI() {
       regenerate();
     });
   });
-  $('seed').addEventListener('change', () => {
+  on('seed', 'change', () => {
     const v = parseInt($('seed').value, 10);
     state.seed = Number.isFinite(v) ? v : 2026;
   });
-  $('dice').addEventListener('click', () => {
+  on('dice', 'click', () => {
     state.seed = Math.floor(Math.random() * 100000);
     $('seed').value = state.seed;
     regenerate();
@@ -679,26 +701,28 @@ function bindUI() {
       regenerate();
     });
   });
-  $('strata').addEventListener('change', () => { state.strata = $('strata').value; regenerate(); });
-  $('detail').addEventListener('change', () => {
+  on('strata', 'change', () => { state.strata = $('strata').value; regenerate(); });
+  on('detail', 'change', () => {
     state.size = parseInt($('detail').value, 10);
+    regenerate();
   });
-  $('erosion').addEventListener('input', () => {
+  on('erosion', 'input', () => {
     state.erosion = parseInt($('erosion').value, 10) / 100;
     $('erosionVal').textContent = `${$('erosion').value}%`;
   });
-  $('sun').addEventListener('input', () => {
+  on('erosion', 'change', () => regenerate()); // rebuild on release
+  on('sun', 'input', () => {
     state.sun = parseInt($('sun').value, 10) / 100;
     updateSun();
   });
-  $('tRocks').addEventListener('change', () => { state.rocks = $('tRocks').checked; regenerate(); });
-  $('tBushes').addEventListener('change', () => { state.bushes = $('tBushes').checked; regenerate(); });
-  $('tLakes').addEventListener('change', () => { state.lakes = $('tLakes').checked; regenerate(); });
-  $('tTrails').addEventListener('change', () => { state.trails = $('tTrails').checked; buildTrailsOnly(); });
-  $('tRain').addEventListener('change', () => { state.rain = $('tRain').checked; });
-  $('tOrbit').addEventListener('change', () => { state.orbit = $('tOrbit').checked; });
-  $('generate').addEventListener('click', regenerate);
-  $('collapse').addEventListener('click', () => {
+  on('tRocks', 'change', () => { state.rocks = $('tRocks').checked; regenerate(); });
+  on('tBushes', 'change', () => { state.bushes = $('tBushes').checked; regenerate(); });
+  on('tLakes', 'change', () => { state.lakes = $('tLakes').checked; regenerate(); });
+  on('tTrails', 'change', () => { state.trails = $('tTrails').checked; buildTrailsOnly(); });
+  on('tRain', 'change', () => { state.rain = $('tRain').checked; });
+  on('tOrbit', 'change', () => { state.orbit = $('tOrbit').checked; });
+  on('generate', 'click', regenerate);
+  on('collapse', 'click', () => {
     document.body.classList.toggle('panel-hidden');
   });
 
@@ -706,7 +730,9 @@ function bindUI() {
   setInterval(() => {
     if (terrainMesh && !generating) {
       const tris = renderer.info.render.triangles;
-      const el = $('stats').querySelectorAll('span')[1];
+      const _st = $('stats');
+      if (!_st) return;
+      const el = _st.querySelectorAll('span')[1];
       if (el) {
         el.textContent = storm > 0.02
           ? `${(tris / 1e6).toFixed(2)}M tris · storm +${(rainDrops / 1000).toFixed(1)}k drops`
@@ -717,8 +743,21 @@ function bindUI() {
 }
 
 // ---------------------------------- boot ------------------------------------
-init();
-bindUI();
+try {
+  const bootIds = ['viewport', 'loader', 'loadbar', 'loadlabel', 'stats', 'generate'];
+  const missing = bootIds.filter((id) => !document.getElementById(id));
+  if (missing.length) throw new Error('Page is stale (missing: ' + missing.join(', ') + '). Hard-refresh: Ctrl+Shift+R.');
+  console.log('%cCanyon Forge ' + BUILD + ' · mesh-based heightfield, no SDF', 'color:#e8a54b');
+  init();
+  bindUI();
+  const jc = document.getElementById('jscheck');
+  if (jc) jc.classList.add('hidden');
+} catch (err) {
+  let msg = 'Boot failed: ' + ((err && err.message) || err);
+  if (/webgl/i.test(msg)) msg += ' — WebGL unavailable. Use Chrome/Edge with hardware acceleration enabled.';
+  showError(msg);
+  throw err;
+}
 applyWorldScale(TYPES[state.type].world);
 updateSun();
 resetCamera();

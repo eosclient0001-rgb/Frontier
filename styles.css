@@ -235,3 +235,24 @@ body:not(.panel-hidden) #collapse { left: 328px; bottom: auto; top: 16px; }
   body:not(.panel-hidden) #collapse { left: auto; right: 10px; top: 10px; }
   #hint { display: none; }
 }
+
+/* --------------------------- boot/error badges --------------------------- */
+#jscheck {
+  position: fixed; top: 14px; right: 16px; z-index: 100;
+  font-size: 12px; color: #ffd9a0;
+  background: rgba(40, 26, 10, 0.92);
+  border: 1px solid rgba(232, 165, 75, 0.5);
+  padding: 8px 12px; border-radius: 10px;
+}
+#jscheck.hidden { display: none; }
+#errbox {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  max-width: min(560px, 90vw); z-index: 100;
+  background: rgba(60, 12, 10, 0.94);
+  border: 1px solid rgba(255, 110, 90, 0.6);
+  border-radius: 12px; padding: 12px 16px;
+  font-size: 12px; color: #ffd9d4;
+}
+#errbox.hidden { display: none; }
+#errbox pre { margin: 6px 0 0; white-space: pre-wrap; font-size: 11px; color: #ffb3ab; }
+.build { font-size: 10px; color: var(--dim); opacity: 0.7; margin: 8px 0 0; letter-spacing: 1px; }
