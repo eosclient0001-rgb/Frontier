@@ -1991,7 +1991,7 @@ bool SwapchainExchange::BringImGui() noexcept
 #endif // IMGUI_HAS_DOCK
     ImGui::StyleColorsDark();
 
-    // 🔴 THE PATCHES WERE DEAD CODE UNTIL THIS. Patches/PatchA and PatchB add four style variables to the
+    // 🔴 THE PATCHES WERE DEAD CODE UNTIL THIS. Tools/Build/Patches/PatchA and PatchB add four style variables to the
     //    vendored ImGui, and every one of them defaults to 0.0f, which is stock rectangular ImGui exactly —
     //    that default is deliberate, so an unpatched build and a patched-but-unconfigured one are
     //    byte-identical. Nothing in Slate had ever set them, so the build applied three patches on every run

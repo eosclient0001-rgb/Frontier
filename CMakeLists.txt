@@ -34,9 +34,9 @@ endforeach()
 #    build that compiled first and patched later would fail on the first translation unit. The script is
 #    idempotent, so re-running cmake on an already-patched tree is a no-op.
 find_package(Python3 COMPONENTS Interpreter QUIET)
-if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/Scripts/ApplyImGuiPatches.py")
+if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/Tools/Build/ApplyImGuiPatches.py")
     execute_process(
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Scripts/ApplyImGuiPatches.py"
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Tools/Build/ApplyImGuiPatches.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         RESULT_VARIABLE IMGUI_PATCH_RESULT
         OUTPUT_VARIABLE IMGUI_PATCH_OUTPUT
@@ -46,7 +46,7 @@ if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/Scripts/ApplyImGuiP
     endif()
     message(STATUS "[Frontier] ImGui patches applied")
 else()
-    message(WARNING "[Frontier] Python3 or Scripts/ApplyImGuiPatches.py absent - building against pristine ImGui")
+    message(WARNING "[Frontier] Python3 or Tools/Build/ApplyImGuiPatches.py absent - building against pristine ImGui")
 endif()
 
 # ─── GLFW — built from source submodule (Linux static) ──────────────────────────────────────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ target_link_libraries(FrontierEngine PRIVATE pthread)
 
 #============================================================================================================================================
 # Jolt Physics — compiled from the submodule as a static library, rigid-body subset (no GPU compute back ends / hair shaders)
-#   Flags mirror Scripts/BuildJolt.sh. Jolt derives JPH_USE_* / JPH_DEBUG from the compiler flags and RegisterTypes() aborts on a
+#   Flags mirror Tools/Build/BuildJolt.sh. Jolt derives JPH_USE_* / JPH_DEBUG from the compiler flags and RegisterTypes() aborts on a
 #   library/client mismatch, so FRONTIER_PHYSICS_FLAGS is applied to every target that includes <Jolt/Jolt.h> as well.
 #============================================================================================================================================
 

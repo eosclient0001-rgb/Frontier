@@ -565,9 +565,9 @@ Pop-Location
 #    trapezoidal tabs disappeared once already. Re-applying here means the two steps can never be run out of
 #    order. The script is idempotent and every member it adds defaults to 0.0f, so a build that has already
 #    been patched skips, and an unpatched build is visually identical until Slate seats the style values.
-Write-Building 'Applying ImGui patches (Patches/) ...'
+Write-Building 'Applying ImGui patches (Tools/Build/Patches/) ...'
 Push-Location $RepositoryRoot
-$PatchScript = Join-Path $RepositoryRoot 'Scripts\ApplyImGuiPatches.ps1'
+$PatchScript = Join-Path $RepositoryRoot 'Tools\Build\ApplyImGuiPatches.ps1'
 if (Test-Path $PatchScript)
 {
     & powershell -NoProfile -ExecutionPolicy Bypass -File $PatchScript
@@ -579,7 +579,7 @@ if (Test-Path $PatchScript)
 }
 else
 {
-    Write-Skipped 'Scripts\ApplyImGuiPatches.ps1 is absent - building against pristine ImGui'
+    Write-Skipped 'Tools\Build\ApplyImGuiPatches.ps1 is absent - building against pristine ImGui'
 }
 Pop-Location
 

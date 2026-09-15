@@ -5,7 +5,7 @@
 #include "RigidBodySolver.h"
 
 // Jolt.h must precede every other Jolt header; the library derives its feature/ISA defines from the compiler flags, so this
-//    translation unit has to be compiled with the same -m<isa> / NDEBUG set as libJolt (see Scripts/BuildJolt.*).
+//    translation unit has to be compiled with the same -m<isa> / NDEBUG set as libJolt (see Tools/Build/BuildJolt.*).
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>

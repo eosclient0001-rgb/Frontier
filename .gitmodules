@@ -24,7 +24,7 @@
 [submodule "ExternalPackages/imgui"]
 	path = ExternalPackages/imgui
 	url = https://github.com/ocornut/imgui.git
-	# The patches in Patches/ need the DOCKING branch: ImGuiConfigFlags_DockingEnable does not exist on master,
+	# The patches in Tools/Build/Patches/ need the DOCKING branch: ImGuiConfigFlags_DockingEnable does not exist on master,
 	#    and without it there are no dock nodes, no tab bars, and nothing for the trapezoid to be drawn on.
 	#    Declared so the pin cannot drift back to master unnoticed.
 	branch = docking

@@ -14,4 +14,6 @@ Projects/Project-Zero/bin/
 Projects/Project-Zero/build/
 Projects/Project-Zero/Diagnostics/*.ppm
 Projects/Project-Zero/Diagnostics/*.png
-Scratchpad/build/
+
+# Local ImGui window state (never commit)
+imgui.ini
