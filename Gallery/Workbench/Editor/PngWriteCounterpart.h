@@ -7,7 +7,7 @@
 #include <cstring>
 #include <vector>
 
-namespace PngWriteShim {
+namespace PngWriteCounterpart {
 
 inline uint32_t Crc32(const unsigned char* Bytes, size_t Count, uint32_t Seed = 0u)
 {
@@ -101,9 +101,9 @@ inline int WritePng(const char* Path, int Width, int Height, int Channels, const
     return 1;
 }
 
-} // namespace PngWriteShim
+} // namespace PngWriteCounterpart
 
 inline int stbi_write_png(const char* Path, int Width, int Height, int Channels, const void* Pixels, int Stride)
 {
-    return PngWriteShim::WritePng(Path, Width, Height, Channels, Pixels, Stride);
+    return PngWriteCounterpart::WritePng(Path, Width, Height, Channels, Pixels, Stride);
 }
