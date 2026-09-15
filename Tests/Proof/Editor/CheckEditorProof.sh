@@ -6,7 +6,7 @@
 #    engine does — the category menu opens, a Camera pick narrows the outline, the palette opens over the
 #    console, the views menu poses the orbit, the gizmo answers — and each phase rasterises its own sheet.
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 1
+cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 Fail=0
 mkdir -p Tests/VisualProofs/Editor
 
@@ -23,8 +23,8 @@ fi
 echo "[EditorProof] compiling the patched vendor + Engine/Editor (headless: no Vulkan, no GLFW)"
 Binary="$(mktemp -u /tmp/EditorProof.XXXXXX)"
 if ! g++ -std=c++20 -O2 -Wall -Wextra -DFRONTIER_DEVELOPMENT \
-     -I ExternalPackages/imgui -I Engine/Editor -I Engine/DisplayPresentation -I ExternalPackages/tomlpp/include -I Tests/Editor -I Tests/Editor/HostShim -pthread \
-     Tests/Editor/EditorProof.cpp \
+     -I ExternalPackages/imgui -I Engine/Editor -I Engine/DisplayPresentation -I ExternalPackages/tomlpp/include -I Tests/Editor -I Tests/Proof/Editor/HostShim -pthread \
+     Tests/Proof/Editor/EditorProof.cpp \
      Engine/Editor/EditorHost.cpp \
      Engine/Editor/ControlPanel.cpp \
      Engine/Editor/OutlinerPanel.cpp \
@@ -84,7 +84,7 @@ EditorFiles="Engine/Editor/EditorInstance.h Engine/Editor/ControlPanel.h Engine/
     Engine/Editor/OutlinerPanel.h Engine/Editor/OutlinerPanel.cpp
     Engine/Editor/ViewportPanel.h Engine/Editor/ViewportPanel.cpp
     Engine/Editor/InspectorPanel.h Engine/Editor/InspectorPanel.cpp
-    Tests/Editor/EditorProof.cpp"
+    Tests/Proof/Editor/EditorProof.cpp"
 # shellcheck disable=SC2086
 Bad="$(grep -nE '\b(Manager|Handler|Processor|Controller|Service|Utility|Helper|Node|Frame|Module|Core|System|Backend|Pass|Stage|Harness|Shell|Entity|Element|Subsystem|Hierarchy|Data|Info|Object|Item|Thing|Kind|Base|flag|state|value|Parent|Child|Sibling|Table|Map|Block|Digest|Model|Handle|Store|Bridge|Atlas|Substrate|Fabric|Cache|Evaluator|Evaluate|Journal|Resolver|Mesh|Pool|Registry|Catalog|Repository|Directory|Vault|Arena|Inventory|Ledger|Plan|Filter|Grid|Array|Dispatcher|Memory|Buffer|Pipeline|Flow|Composite|Compose|Composition|Allocation|Tier|Nesting|Stratum|Mip|Messenger|Probe|Blend|History|Bake|Stamp|Contract|Outcome|Prelude|Cadence|Binding|Submission|Footprint|Region|Tree|Vacancy|Ordinates|Draft|Draught|Paint|Depot|Ordinal|Actor|Source|API|Kit|kit|kind)\b' \
     $EditorFiles | grep -vE 'Im[A-Z]' || true)"
@@ -105,12 +105,12 @@ fi
 # 'kind' and 'kit' survive no boundary: the ##kindmenu rename proved a word-boundary scan blind to them, so the
 #    substrings themselves are tripwires — any casing, any position.
 # shellcheck disable=SC2086
-KindHit="$(grep -rni 'kind' Engine/Editor/ Tests/Editor/EditorProof.cpp || true)"
+KindHit="$(grep -rni 'kind' Engine/Editor/ Tests/Proof/Editor/EditorProof.cpp || true)"
 if [[ -n "$KindHit" ]]; then
     echo "  'kind' survives somewhere it must not:"; echo "$KindHit" | sed 's/^/    /'; Fail=1
 fi
 # shellcheck disable=SC2086
-KitHit="$(grep -rni 'kit' Engine/Editor/ Tests/Editor/EditorProof.cpp || true)"
+KitHit="$(grep -rni 'kit' Engine/Editor/ Tests/Proof/Editor/EditorProof.cpp || true)"
 if [[ -n "$KitHit" ]]; then
     echo "  'kit' survives somewhere it must not:"; echo "$KitHit" | sed 's/^/    /'; Fail=1
 fi
@@ -239,7 +239,7 @@ elif [ ! -f ExternalPackages/stb/stb_image.h ]; then
     echo "  KNOB CHECK SKIPPED - ExternalPackages/stb is not populated"
     echo "    the sheets above were still written and gated; only the pixel read-back is missing"
     echo "    run: git submodule update --init ExternalPackages/stb"
-elif ! g++ -O2 -I ExternalPackages/stb -o "$KnobCheck" Tests/Editor/EditorKnobCheck.cpp \
+elif ! g++ -O2 -I ExternalPackages/stb -o "$KnobCheck" Tests/Proof/Editor/EditorKnobCheck.cpp \
     2>/tmp/EditorKnobCheck.build; then
     echo "  KNOB CHECK COMPILE FAILED"; sed 's/^/    /' /tmp/EditorKnobCheck.build | head -10; Fail=1
 else
