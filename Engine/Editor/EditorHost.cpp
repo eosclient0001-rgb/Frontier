@@ -334,6 +334,8 @@ void EditorHost::ApplyTheme() noexcept
     Applied.TabStripPadTop       = 4.0f;    // [px] strip showing above the tabs
     Applied.TabMinWidthBase      = 110.0f;  // [px] tab width floor: two tabs plus the pinned add
     Applied.TabMinWidthShrink    = 110.0f;  // [px] disc seat inside the left column with no shrink
+    Applied.DockingNodeHasCloseButton = false; // [-] no close-all mark on the node: a tab's own mark
+                                                 //     shuts only its tab, and the add menu seats it back
     Applied.TabRounding          = 0.0f;    // [px] the sheet's corners are cut, not rounded
     Applied.TabBorderSize        = 0.0f;    // [px] no tab outline
     Applied.TabBarBorderSize     = 0.0f;    // [px] no strip outline
