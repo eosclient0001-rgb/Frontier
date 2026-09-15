@@ -182,7 +182,8 @@ addEventListener('resize',()=>{
 renderer.setSize(innerWidth,innerHeight,false);
 
 // ---------- Foam simulated texture (CPU sim, 256x256, advected) ----------
-const FOAM_RES=256;
+const FOAM_RES_D={low:64,med:96,high:128};
+let FOAM_RES=96; // will be updated by setTier
 let foamData=new Float32Array(FOAM_RES*FOAM_RES);
 let foamTex=new THREE.DataTexture(new Uint8Array(FOAM_RES*FOAM_RES*4), FOAM_RES, FOAM_RES, THREE.RGBAFormat);
 foamTex.needsUpdate=true;
@@ -270,12 +271,15 @@ function createRipple(wx,wz,amp,radius){
 }
 let ripples=[];
 let clock=new THREE.Clock();
+let foamFrame=0;
+function getFoamRes(){ return tier==='low'?64:tier==='high'?128:96; }
+
 
 // ---------- Ocean mesh (procedural, no texture needed) ----------
 let oceanMesh, oceanMat;
 const WORLD=220;
 function rebuildGrid(){
-  const segs= tier==='low'? 90 : tier==='med'? 160 : 220;
+  const segs= tier==='low'? 64 : tier==='med'? 110 : 160;
   const geo=new THREE.PlaneGeometry(WORLD,WORLD,segs,segs);
   geo.rotateX(-Math.PI/2);
   const vert=`
@@ -321,7 +325,8 @@ function rebuildGrid(){
       float hR=waveH(p + vec2(eps,0.0));
       float hD=waveH(p - vec2(0.0,eps));
       float hU=waveH(p + vec2(0.0,eps));
-      vec3 n=normalize(vec3(hL - hR, 2.0*eps, hD - hU));
+      float micro= sin(p.x*0.82 + uTime*2.1)*0.04 + sin(p.y*0.77 - uTime*1.7)*0.04;
+      vec3 n=normalize(vec3(hL - hR + micro, 2.0*eps, hD - hU + micro*0.7));
       pos.y+=h;
       vPos=pos;
       vNormal=n;
@@ -339,7 +344,12 @@ function rebuildGrid(){
       vec3 N=normalize(vNormal);
       vec3 V=normalize(uCamPos - vPos);
       vec3 L=normalize(uSunDir);
-      float fres=pow(1.0-max(0.0,dot(N,V)),5.0);
+      float F0=0.02; float cosTheta=max(0.0,dot(N,V)); float fres=F0 + (1.0-F0)*pow(1.0-cosTheta,5.0);
+      // sky reflection (procedural gradient, no cubemap needed)
+      vec3 R=reflect(-V,N);
+      float skyT=clamp(R.y*0.5+0.5,0.0,1.0);
+      vec3 skyCol=mix(vec3(0.68,0.84,0.96), vec3(0.04,0.12,0.28), pow(1.0-skyT,1.2));
+      skyCol+= vec3(1.0,0.95,0.78)*pow(max(0.0,dot(R, normalize(uSunDir))), 120.0)*1.4; // sun in reflection
       vec3 H=normalize(L+V);
       float spec=pow(max(0.0,dot(N,H)),180.0)*2.0 + pow(max(0.0,dot(N,H)),22.0)*0.33;
       float depth=clamp((vPos.y+4.0)/9.0,0.0,1.0);
@@ -356,7 +366,7 @@ function rebuildGrid(){
       float fe=pow(smoothstep(0.35,0.85,foam),0.95);
       vec3 col=mix(water, vec3(0.96,0.98,1.0), fe*0.72);
       col+= fe*pow(max(0.0,dot(N,H)),28.0)*0.5;
-      col=mix(col, vec3(0.58,0.78,0.92), fres*0.35*(1.0-fe*0.7));
+      col=mix(col, skyCol, fres*0.65*(1.0-fe*0.55));
       col+= spec*(1.0-fe*0.55)*1.0;
       float dist=length(vPos.xz - uCamPos.xz);
       float fog=1.0 - exp(-dist*0.0025);
@@ -543,7 +553,10 @@ function animate(){
 
   // foam step
   const t0=performance.now();
-  stepFoam(dt,time);
+  foamFrame++;
+  // throttle foam: LOW every 3 frames, MED every 2, HIGH every 1
+  const foamEvery = tier==='low'?3:tier==='high'?1:2;
+  if(foamFrame%foamEvery===0) stepFoam(dt,time); else { /* skip heavy CPU */ }
   const tFoam=performance.now()-t0;
 
   // cars
