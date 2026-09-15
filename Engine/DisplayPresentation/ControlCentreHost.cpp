@@ -322,8 +322,7 @@ float ControlCentreHost::QueryHandleX() const noexcept
 
 PlaneExtent ControlCentreHost::QueryHandleExtent() const noexcept
 {
-    const float ParkedY = std::min(QueryCurrentHeight(), static_cast<float>(DisplayHeight) - NotchHeight);
-    return Spanning(QueryHandleX(), ParkedY, NotchWidth_, NotchHeight);
+    return Spanning(QueryHandleX(), QueryCurrentHeight(), NotchWidth_, NotchHeight);
 }
 
 double ControlCentreHost::NotchAdmissible() const noexcept
@@ -382,10 +381,16 @@ void ControlCentreHost::Grab(GrabSubject Subject, float CursorX, float CursorY) 
         Motion.Spring(NotchChannel).Place(GrabNotchX);
         Pose = ControlCentreHostState::Dragging;
     }
-    else if (Subject == GrabSubject::Card)
+    else if (Subject == GrabSubject::Card || Subject == GrabSubject::Grip)
     {
         // Card drags carry the shade vertically (Android-sheet dismiss); the notch stays pinned.
+        // The grip resolves vertical at once — it never slides sideways.
         Motion.Spring(ShadeChannel).Place(GrabShadeY);
+        if (Subject == GrabSubject::Grip)
+        {
+            AxisResolved = true;
+            YDominant = true;
+        }
         Pose = ControlCentreHostState::Dragging;
     }
 }
@@ -413,7 +418,7 @@ void ControlCentreHost::Carry(float CursorX, float CursorY, float DeltaSeconds) 
         return;
     }
 
-    bool CardCarry = GrabbedSubject == GrabSubject::Card;
+    bool CardCarry = GrabbedSubject == GrabSubject::Card || GrabbedSubject == GrabSubject::Grip;
     if (GrabbedSubject != GrabSubject::Notch && !CardCarry)
     {
         if (!TravelExceeded && (std::fabs(TravelX) > TapTravelLimit || std::fabs(TravelY) > TapTravelLimit))
@@ -520,12 +525,14 @@ void ControlCentreHost::Relinquish() noexcept
             else if (IsPageDirty()) { LastDialoguePreset = DialoguePresetCategory::ConfirmDiscard; Dialogue.Open(DialoguePresetCategory::ConfirmDiscard); }
         }
     }
-    else if (GrabbedSubject == GrabSubject::Notch || GrabbedSubject == GrabSubject::Card)
+    else if (GrabbedSubject == GrabSubject::Notch || GrabbedSubject == GrabSubject::Card
+        || GrabbedSubject == GrabSubject::Grip)
     {
         if (Tap)
         {
             // A notch that cannot be tapped is a notch the user reports as dead. Card taps stay swallowed.
             if (GrabbedSubject == GrabSubject::Notch) { if (OpenBeforeGrab) RequestLeave(false); else Depart(true); }
+            else if (GrabbedSubject == GrabSubject::Grip) Depart(false);
         }
         else if (!YDominant && GrabbedSubject == GrabSubject::Notch)
         {
@@ -608,6 +615,7 @@ void ControlCentreHost::AdvanceInteraction(const InputExchange& Input, float Cur
         for (uint32_t Row = 0u; Row < 4u; ++Row)
             if (QueryHubRowExtent(Row).Encloses(CursorX, CursorY)) HoveredHubRow = static_cast<int>(Row);
 
+    const bool OverGrip = QueryGripExtent().Encloses(CursorX, CursorY);
     const bool OverCard = CardActive && QueryCardExtent().Encloses(CursorX, CursorY);
     const bool OverGear = CardActive && PageSettled && OnDashboard && QueryHeaderGearExtent().Encloses(CursorX, CursorY);
     const bool OverBack = CardActive && PageSettled && OnHub       && QueryHubBackExtent().Encloses(CursorX, CursorY);
@@ -635,6 +643,7 @@ void ControlCentreHost::AdvanceInteraction(const InputExchange& Input, float Cur
     if (Pressed && !BodyOwned && !OverBody)
     {
         if (Hovered)                       Grab(GrabSubject::Notch, CursorX, CursorY);
+        else if (OverGrip)                 Grab(GrabSubject::Grip, CursorX, CursorY);
         else if (OverGear)                 Grab(GrabSubject::Gear, CursorX, CursorY);
         else if (OverBack)                 Grab(GrabSubject::HubBack, CursorX, CursorY);
         else if (OverClose)                Grab(GrabSubject::PageClose, CursorX, CursorY);
@@ -729,9 +738,8 @@ void ControlCentreHost::ConstructControlLayout(PixelSpace& Surface) noexcept
 
     const float W      = static_cast<float>(DisplayWidth);
     const float H      = static_cast<float>(DisplayHeight);
-    const float ShadeY = QueryCurrentHeight();                    // lower edge of the sheet, full-bleed at open
+    const float ShadeY = QueryCurrentHeight();                    // lower edge of the sheet, the sill at open
     const float NotchX = QueryHandleX();
-    const float NotchY = std::min(ShadeY, H - NotchHeight);   // the pull parks over the sheet's foot
 
     // Chrome renders in the APPLIED typeface (Body role); nullptr → backend default until the registry is installed.
     Surface.PushTypeface(Appearance.QueryAppliedFace(3u));
@@ -778,24 +786,24 @@ void ControlCentreHost::ConstructControlLayout(PixelSpace& Surface) noexcept
 
     Pointer.Pressed = Pointer.Released = false;   // edges consumed by this frame's widgets
 
-    // ③ Notch handle: the trapezoid translated to (NotchX, NotchY).
+    // ②c Grip pill: Slate's rectangle handle, centred on the display, lifted off the travelling edge.
+    //    At open the pull has left the viewport, and this is what stays behind to close by. Position alone
+    //    gates it: shut, it sits above the top edge and draws nothing.
+    Surface.FillRectangle(QueryGripExtent(), ControlKit::Palette().TextDim);
+
+    // ③ Notch handle: the trapezoid translated to (NotchX, ShadeY). The pull is raised chrome, not sheet —
+    //    filled with the raised face, no outline; a pull the user cannot see is a pull the user reports missing.
     std::vector<PlanePoint> Outline;
     Outline.reserve(HandleContour.size());
     for (const BezierPointIndex& P : HandleContour)
-        Outline.push_back(PlanePoint{ NotchX + P.X, NotchY + P.Y });
-    Surface.FillPolygon(Outline.data(), static_cast<uint32_t>(Outline.size()), Sheet);
-
-    // A hairline round the pull: on a dark strip the sheet-coloured trapezoid reads as dead space, and a
-    //    pull the user cannot see is a pull the user reports as missing.
-    ColorQuad Trim = Label;
-    Trim.Alpha *= 0.5f;
-    Surface.StrokePolyline(Outline.data(), static_cast<uint32_t>(Outline.size()), Trim, 1.0f, true);
+        Outline.push_back(PlanePoint{ NotchX + P.X, ShadeY + P.Y });
+    Surface.FillPolygon(Outline.data(), static_cast<uint32_t>(Outline.size()), ControlKit::Palette().Raised);
 
     // ④ Project name centred in the handle (Notch: 13 px, font-medium, text-white/50, pb-1 → 4 px lift).
     constexpr float LabelSize = 13.0f;
     const PlanePoint Measured = Surface.MeasureText(ProjectName.c_str(), LabelSize);
     const float TextX = NotchX + (NotchWidth_ - Measured.X) * 0.5f;
-    const float TextY = NotchY + (NotchHeight - Measured.Y) * 0.5f - 2.0f;
+    const float TextY = ShadeY + (NotchHeight - Measured.Y) * 0.5f - 2.0f;
     Surface.Text(TextX, TextY, Label, ProjectName.c_str(), LabelSize);
 }
 
@@ -943,6 +951,15 @@ float ControlCentreHost::QueryCardOpacity() const noexcept
     const float Half = static_cast<float>(DisplayHeight) * 0.5f;
     if (Half <= 100.0f) return Y > 100.0f ? 1.0f : 0.0f;
     return std::clamp((Y - 100.0f) / (Half - 100.0f), 0.0f, 1.0f);
+}
+
+PlaneExtent ControlCentreHost::QueryGripExtent() const noexcept
+{
+    // Slate's grip, w-12 h-1.5 lifted bottom-6 off the travelling edge, centred on the display —
+    //    a rectangle, no rounding.
+    const float ShadeY = QueryCurrentHeight();
+    return Spanning((static_cast<float>(DisplayWidth) - GripWidth) * 0.5f,
+                    ShadeY - GripLift - GripHeight, GripWidth, GripHeight);
 }
 
 PlaneExtent ControlCentreHost::QueryCardExtent() const noexcept

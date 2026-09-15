@@ -91,6 +91,8 @@ public:
     // The harness seams; the preview taps and drags the shade through them.
     [[nodiscard]] float QueryGiTileX() const noexcept;
     [[nodiscard]] float QueryGiTileY() const noexcept;
+    [[nodiscard]] float QueryGripX() const noexcept;
+    [[nodiscard]] float QueryGripY() const noexcept;
     [[nodiscard]] float QueryNotchX() const noexcept;
     [[nodiscard]] float QueryNotchY() const noexcept;
     [[nodiscard]] float QueryPillX0() const noexcept;

@@ -464,6 +464,7 @@ int main()
     Readout.MoonCount = 1u;
     Readout.Cam[0] = 0.0f; Readout.Cam[1] = 2.0f; Readout.Cam[2] = 0.0f;
     Editor.AssignReadout(&Readout);
+    Editor.AssignProjectName("Project-Zero");   // production always names the project; the pull captions it
 
     // The scene the ReSTIR viewport renders, traced here on the CPU (the Vulkan build runs the same estimator on
     //    the GPU) and handed to the Viewport panel as its texture.
@@ -1134,8 +1135,24 @@ int main()
         }
     }
 
-    // Gate 13 — the pull opens the shade: a downward drag draws the sheet, a tap sends it home.
+    // Gate 13 — open and close: the pull toggles, the grip closes, drags carry both ways.
     {
+        Click(Editor.QueryNotchX(), Editor.QueryNotchY());
+        Rest(40);
+        std::fprintf(stderr, "[EditorProof] shade after pull tap: %s\n", Editor.QueryShadeOpen() ? "open" : "shut");
+        if (!Editor.QueryShadeOpen())
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the pull tap never drew the shade\n");
+            Failed = true;
+        }
+        Click(Editor.QueryGripX(), Editor.QueryGripY());
+        Rest(40);
+        std::fprintf(stderr, "[EditorProof] shade after grip tap: %s\n", Editor.QueryShadeOpen() ? "open" : "shut");
+        if (Editor.QueryShadeOpen())
+        {
+            std::fprintf(stderr, "[EditorProof] [FAIL] the grip tap never shut the shade\n");
+            Failed = true;
+        }
         const float MidX = Editor.QueryNotchX();
         const float MidY = Editor.QueryNotchY();
         Tick(MidX, MidY, false);
@@ -1157,14 +1174,12 @@ int main()
             std::fprintf(stderr, "[EditorProof] [FAIL] the sheet would not write\n");
             return 1;
         }
-        const float ShutX = Editor.QueryNotchX();
-        const float ShutY = Editor.QueryNotchY();
-        Click(ShutX, ShutY);
+        Click(Editor.QueryGripX(), Editor.QueryGripY());
         Rest(40);
-        std::fprintf(stderr, "[EditorProof] shade after tap: %s\n", Editor.QueryShadeOpen() ? "open" : "shut");
+        std::fprintf(stderr, "[EditorProof] shade after grip tap: %s\n", Editor.QueryShadeOpen() ? "open" : "shut");
         if (Editor.QueryShadeOpen())
         {
-            std::fprintf(stderr, "[EditorProof] [FAIL] the tap never shut the shade\n");
+            std::fprintf(stderr, "[EditorProof] [FAIL] the grip tap never shut the shade\n");
             Failed = true;
         }
         // The page itself pulls up: a press on a tile that wanders upward carries the shade home,

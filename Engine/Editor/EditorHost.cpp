@@ -304,6 +304,18 @@ float EditorHost::QueryNotchY() const noexcept
     return (Grip.MinimumY + Grip.MaximumY) * 0.5f;
 }
 
+float EditorHost::QueryGripX() const noexcept
+{
+    const PlaneExtent Grip = Shade_.QueryGripExtent();
+    return (Grip.MinimumX + Grip.MaximumX) * 0.5f;
+}
+
+float EditorHost::QueryGripY() const noexcept
+{
+    const PlaneExtent Grip = Shade_.QueryGripExtent();
+    return (Grip.MinimumY + Grip.MaximumY) * 0.5f;
+}
+
 float EditorHost::QueryGearX() const noexcept
 {
     const PlaneExtent Gear = Shade_.QueryHeaderGearExtent();

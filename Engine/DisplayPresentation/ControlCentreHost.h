@@ -148,6 +148,9 @@ class ControlCentreHost
 public:
     // ── Figures (all from the references; change here, nowhere else) ────────────────────────────────────────────────
     static constexpr float  NotchHeight       =  36.0f;   // [px]
+    static constexpr float  GripWidth         =  48.0f;   // [px] Slate w-12, the rectangle pill
+    static constexpr float  GripHeight        =   6.0f;   // [px] Slate h-1.5
+    static constexpr float  GripLift          =  24.0f;   // [px] Slate bottom-6 off the travelling edge
     static constexpr float  TapTravelLimit    =   6.0f;   // [px]   beyond this a contact is a drag
     static constexpr double TapDurationLimit  =   0.350;  // [s]    beyond this a contact is a press
     static constexpr double DragElasticity    =   0.05;   // [-]    fraction of overshoot accepted past a bound
@@ -242,6 +245,7 @@ public:
     [[nodiscard]] FidelityCriteria QueryEffectiveCriteria() const noexcept;
     [[nodiscard]] PlaneExtent QueryShadowDropdownExtent() const noexcept { return ShadowDropdownExtent; }
     [[nodiscard]] bool      IsShadowMenuOpen() const noexcept { return ShadowMenuOpen; }
+    [[nodiscard]] PlaneExtent QueryGripExtent() const noexcept;                      // [px] rectangle pill on the sheet
     [[nodiscard]] PlaneExtent QueryCardExtent() const noexcept;                      // [px] dashboard card on the display
     [[nodiscard]] PlaneExtent QueryTileDiscExtent(uint32_t Slot) const noexcept;     // [px] disc of grid slot 0..7
     [[nodiscard]] PlaneExtent QueryPillTrackExtent() const noexcept;                 // [px] render-scale track
@@ -321,7 +325,7 @@ public:
 
 private:
     enum class GrabSubject : uint32_t { Nothing = 0, Notch = 1, Scrim = 2, Tile = 3, Pill = 4, Card = 5,
-                                        Gear = 6, HubBack = 7, HubRow = 8, PageClose = 9, PageTab = 10, PageButton = 11 };
+                                        Gear = 6, HubBack = 7, HubRow = 8, PageClose = 9, PageTab = 10, PageButton = 11, Grip = 12 };
 
     [[nodiscard]] bool      IsSubPage(ControlCentrePageCategory Page) const noexcept
     {
@@ -350,7 +354,8 @@ private:
     void                    Carry(float CursorX, float CursorY, float DeltaSeconds) noexcept;
     void                    Relinquish() noexcept;
     void                    Depart(bool Opening) noexcept;
-    // The sheet drops full-bleed: at open its lower edge is the sill, and the pull parks over its foot.
+    // The sheet drops full-bleed: at open the pull has left the viewport, and the grip pill stays
+    //    behind on the sheet to close by.
     [[nodiscard]] double    OpenTravel() const noexcept { return static_cast<double>(DisplayHeight); }
     [[nodiscard]] double    NotchAdmissible() const noexcept;
     [[nodiscard]] static double Constrain(double Value, double Minimum, double Maximum, double Elasticity) noexcept;
