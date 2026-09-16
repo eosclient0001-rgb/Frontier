@@ -256,6 +256,11 @@ void ProofCoverageTable()
     const uint32_t Ul   = Select("ul", Frontier::MaterialFlagUnlit, [](auto&) {});
     const uint32_t Prio = Select("prio", 0u, [](auto& S) { S.TransmissionWeight = 0.5f; S.CoatWeight = 0.5f; });
     const uint32_t Lamp = Select("lamp", 0u, [](auto& S) { S.EmissionLuminance = 3.0f; });   // emits AND reflects → not EmissiveOnly
+    const uint32_t ClHaze  = Select("clhaze", 0u, [](auto& S) { S.FuzzWeight = 0.8f; S.SpecularWeight = 0.0f; S.SlateHazinessWeight = 0.3f; });
+    const uint32_t ClMetal = Select("clmetal", 0u, [](auto& S) { S.FuzzWeight = 0.8f; S.SpecularWeight = 0.0f; S.BaseMetalness = 0.5f; });
+    const uint32_t ClSpec  = Select("clspec", 0u, [](auto& S) { S.FuzzWeight = 0.8f; });   // SpecularWeight stays 1.0 (default)
+    const uint32_t ClCoat  = Select("clcoat", 0u, [](auto& S) { S.FuzzWeight = 0.8f; S.SpecularWeight = 0.0f; S.CoatWeight = 0.5f; });
+    const uint32_t ClAniso = Select("claniso", 0u, [](auto& S) { S.FuzzWeight = 0.8f; S.SpecularWeight = 0.0f; S.SpecularRoughnessAnisotropy = 0.5f; });
     SelIndex.Finalise(1u);
     auto SelOf = [&](uint32_t Id) {
         return static_cast<Frontier::MaterialReflectance>((SelIndex.QueryRecords()[Id].Flags & Frontier::kMaterialReflectanceMask)
@@ -272,8 +277,23 @@ void ProofCoverageTable()
     CHECK(SelOf(Ul) == MaterialReflectance::Unlit, "unlit flag → Unlit");
     CHECK(SelOf(Prio) == MaterialReflectance::Transmissive, "transmission beats coat (priority)");
     CHECK(SelOf(Lamp) == MaterialReflectance::Standard, "emissive lamp stays Standard");
+    CHECK(SelOf(ClHaze) == MaterialReflectance::Standard, "haze exits Cloth (M3: GGX-family weight)");
+    CHECK(SelOf(ClMetal) == MaterialReflectance::Standard, "metal exits Cloth");
+    CHECK(SelOf(ClSpec) == MaterialReflectance::Standard, "specular exits Cloth");
+    CHECK(SelOf(ClCoat) == MaterialReflectance::ClearCoated, "coat exits Cloth → ClearCoated");
+    CHECK(SelOf(ClAniso) == MaterialReflectance::Cloth, "cloth beats aniso (priority: sheen kept, aniso dropped)");
+    // Retained channels (Sultan-42 gate: channels for an unselected model are retained) — crossing the boundary
+    // strips nothing: the Cloth record keeps its unconsumed specular constants (the weak lobe's F0 + roughness
+    // source), and exited records keep their now-unconsumed fuzz/haze (shading as Standard's layers instead).
+    auto SlabOf = [&](uint32_t Id) -> const Frontier::MaterialSlabRecord& {
+        return SelIndex.QuerySlabRecords()[SelIndex.QueryRecords()[Id].SlabOffset];
+    };
+    CHECK(SlabOf(Cl).SpecularColorR == 1.0f && SlabOf(Cl).SpecularRoughness == 0.3f, "cloth retains specular constants");
+    CHECK(SlabOf(Cl).FuzzWeight == 0.8f, "cloth keeps fuzz");
+    CHECK(SlabOf(ClMetal).FuzzWeight == 0.8f && SlabOf(ClMetal).BaseMetalness == 0.5f, "exited record retains fuzz + metal");
+    CHECK(SlabOf(ClHaze).SlateHazinessWeight == 0.3f, "exited record retains haze");
     CHECK((SelIndex.QueryRecords()[Ul].Flags & Frontier::MaterialFlagUnlit) != 0u, "flag bit survives beside selection");
-    std::printf("    reflectance selection: WIRED (M1, 8/8 + priority + lamp)\n");
+    std::printf("    reflectance selection: WIRED (M1, 8/8 + priority + lamp; M3 cloth entry/exit/retention)\n");
 }
 
 } // namespace

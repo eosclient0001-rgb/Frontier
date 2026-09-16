@@ -36,6 +36,13 @@ inline vec3 FetchSheen(float mu, float alpha)
     return vec3(Out[0], Out[1], Out[2]);
 }
 
+inline vec4 FetchSheenFull(float mu, float alpha)   // M3: + E_charlie in .w
+{
+    float Out[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    Frontier::ShadingTableCodec::SampleSheenFull(*g_Tables, mu, alpha, Out);
+    return vec4(Out[0], Out[1], Out[2], Out[3]);
+}
+
 #include "MaterialEvaluation.slang"
 
 namespace {
@@ -82,6 +89,7 @@ ShadingRecord StandardMaterial(vec3 albedo, float roughness)
     m.CoatTangent = vec3(1.0f, 0.0f, 0.0f); m.CoatNormal = vec3(0.0f, 0.0f, 1.0f);   // M2 identity frame
     m.FuzzWeight = 0.0f; m.FuzzColor = vec3(1.0f); m.FuzzRoughness = 0.5f;
     m.Emission = vec3(0.0f);
+    m.Selection = 0u;   // M3: Standard — every pre-M3 test below must be unaffected by the cloth branch
     return m;
 }
 
@@ -440,6 +448,256 @@ void ProofAnisotropyFrames()
     }
 }
 
+// M3: the SheenLut .w bake (Charlie albedo) is range-safe and the cloth rescale can never leak — per texel AND
+// (by the same argument) per bilinear interpolation, since both clamp inputs stay in range under lerp.
+void ProofSheenTable()
+{
+    std::printf("[furnace] M3 Charlie bake + rescale safety\\n");
+    const uint32_t N = Frontier::ShadingTableSet::kResolution;
+    float maxEc = 0.0f, maxR = 0.0f, maxRescaled = 0.0f;
+    int hi = 0, lo = 0;
+    for (uint32_t i = 0; i < N * N; ++i)
+    {
+        const float* T = &g_Tables->Sheen[i * 4u];
+        CHECK(T[3] >= 0.0f && T[3] <= 1.0f, "E_c in [0,1] (texel %u: %.4f)", i, T[3]);
+        CHECK(T[2] >= 0.0f && T[2] <= 1.0f, "LTC R in [0,1] (texel %u: %.4f)", i, T[2]);
+        maxEc = max(maxEc, T[3]); maxR = max(maxR, T[2]);
+        float rescale = T[3] / max(T[2], 1e-4f);
+        rescale = rescale < 0.5f ? 0.5f : (rescale > 2.0f ? 2.0f : rescale);
+        if (rescale >= 2.0f) ++hi; else if (rescale <= 0.5f) ++lo;
+        maxRescaled = max(maxRescaled, rescale * T[2]);
+        CHECK(rescale * T[2] <= 1.0f + 1e-6f, "rescale·R <= 1 (texel %u)", i);
+    }
+    std::printf("    max E_c=%.4f max R=%.4f max rescale·R=%.4f clamps hi=%d lo=%d\\n", maxEc, maxR, maxRescaled, hi, lo);
+}
+
+// M3: the consumption table itself, compiled 1:1 from MaterialEvaluation.slang — bit C of the mask = channel C.
+// Base/opacity/emission bypass Consumes via never-gating (see the .slang preamble); their presence in Cloth's arm
+// declares Sultan-18 §3 membership, not fetch behaviour. Ch 8/9 read false everywhere until M4/M5 (locked here so
+// the flip is a deliberate test change, not drift); ch 15 (unassigned) reads false.
+void ProofConsumesTable()
+{
+    std::printf("[furnace] M3 consumption matrix (8 selections)\\n");
+    const uint32_t kExpect[8] = {
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 14),   // Standard: metal/rough/spec/normal/AO
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 13) | (1u << 14),   // + aniso dir
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 5) | (1u << 10) | (1u << 14),   // + coat/coat-normal
+        (1u << 0) | (1u << 2) | (1u << 4) | (1u << 7) | (1u << 11) | (1u << 14),   // Cloth: Sultan-18 §3 {1,3,5,6,8,14,15}
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 14),   // Subsurface (8 arrives M5)
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 14),   // Transmissive (9 arrives M4)
+        0u,   // EmissiveOnly
+        0u,   // Unlit
+    };
+    for (uint32_t s = 0; s < 8u; ++s)
+        for (uint32_t c = 0; c < 16u; ++c)
+            CHECK(ReflectanceConsumes(s, c) == ((kExpect[s] >> c & 1u) != 0u),
+                  "Consumes(sel=%u, ch=%u)", s, c);
+}
+
+// M3: the Cloth path — EON + LTC sheen (primary, albedo-corrected) + weak dielectric GGX (F0 ≈ 4 %).
+void ProofCloth()
+{
+    std::printf("[furnace] M3 cloth path\\n");
+    const float kHarnessPi = 3.14159265358979f;
+    auto ClothMaterial = [](vec3 albedo, float diffRough, float fuzzRough, float specRough = 0.5f) {
+        ShadingRecord m = StandardMaterial(albedo, specRough);
+        m.Selection = kReflectanceCloth;
+        m.SpecularWeight = 0.0f; m.DiffuseRoughness = diffRough;
+        m.FuzzWeight = 1.0f; m.FuzzColor = vec3(1.0f); m.FuzzRoughness = fuzzRough;
+        return m;
+    };
+
+    // ① Cloth furnace ≤ 1 (white velvet + felt: the max-energy configs; EON ≤ ρ and the sheen layer scales the
+    // stack below it, so this holds BY CONSTRUCTION — the proof guards the rescale + weak-lobe plumbing).
+    for (float fuzzRough : { 0.35f, 0.8f })
+        for (float muO : { 0.3f, 1.0f })
+        {
+            ShadingRecord m = ClothMaterial(vec3(1.0f), 1.0f, fuzzRough);
+            vec3 wo = vec3(sqrt(1.0f - muO * muO), 0.0f, muO);
+            ResolvedLayers L = ResolveLayers(m, wo);
+            float acc = 0.0f;
+            const int N = 80000;
+            for (int i = 0; i < N; ++i) acc += EvaluateBsdf(m, L, wo, CosineSample(Rand01(), Rand01())).x;
+            acc *= kHarnessPi / static_cast<float>(N);
+            CHECK(acc <= 1.01f, "cloth albedo ≤ 1 (fuzzR=%.2f mu=%.1f E=%.4f)", fuzzRough, muO, acc);
+        }
+
+    // ② Retroreflective ordering, component + stack (θi = θo = 60°). Config: rough EON (its own retro term helps),
+    // mid sheen (unclamped rescale), BROAD weak lobe — a mirror-smooth weak lobe forward-peaks by construction (silk
+    // streaks are physical), so the ordering is asserted for the broad-weak cloth-typical case only. The plan's ">1
+    // directionally" is permission, not mandate: ours stay < 0.35 (broad LTC + EON), and the binding bound is ①.
+    {
+        ShadingRecord m = ClothMaterial(vec3(1.0f), 1.0f, 0.65f, 1.0f);
+        vec3 wo = vec3(0.86602540f, 0.0f, 0.5f);
+        ResolvedLayers L = ResolveLayers(m, wo);
+        vec3 wiRetro = wo, wiSide = vec3(0.0f, 0.86602540f, 0.5f), wiFwd = vec3(-0.86602540f, 0.0f, 0.5f);
+        float sRetro = SheenEvaluate(vec3(1.0f), 0.65f, wo, wiRetro).x;
+        float sSide  = SheenEvaluate(vec3(1.0f), 0.65f, wo, wiSide).x;
+        float sFwd   = SheenEvaluate(vec3(1.0f), 0.65f, wo, wiFwd).x;
+        CHECK(sRetro > sSide && sSide > sFwd, "sheen lobe retro-ordered (%.4f > %.4f > %.4f)", sRetro, sSide, sFwd);
+        float eRetro = EvaluateBsdf(m, L, wo, wiRetro).x * 0.5f;
+        float eSide  = EvaluateBsdf(m, L, wo, wiSide).x * 0.5f;
+        float eFwd   = EvaluateBsdf(m, L, wo, wiFwd).x * 0.5f;
+        std::printf("    retro=%.4f side=%.4f fwd=%.4f (stack f·cosθ)\\n", eRetro, eSide, eFwd);
+        CHECK(eRetro > eSide && eRetro > eFwd, "cloth stack retro-dominant");
+    }
+
+    // ②b The velvet signature (analytic, no MC): the sheen layer's weight rises steeply toward grazing — the rim
+    // takes over from the diffuse, which is what reads as velvet. Compositional, so exact from the table.
+    for (float fuzzRough : { 0.35f, 0.65f, 0.8f })
+    {
+        ShadingRecord m = ClothMaterial(vec3(1.0f), 1.0f, fuzzRough);
+        float wGrazing = ResolveLayers(m, vec3(0.99498744f, 0.0f, 0.1f)).FuzzAlbedoO;
+        float wNormal  = ResolveLayers(m, vec3(0.43588990f, 0.0f, 0.9f)).FuzzAlbedoO;
+        std::printf("    fuzzR=%.2f sheen weight grazing=%.4f normal=%.4f (×%.1f)\\n",
+                    fuzzRough, wGrazing, wNormal, wGrazing / wNormal);
+        CHECK(wGrazing > 2.5f * wNormal, "velvet signature (fuzzR=%.2f)", fuzzRough);
+    }
+
+    // ③ Sampling consistency of the cloth mixture (EON + rescaled LTC + weak VNDF).
+    {
+        ShadingRecord m = ClothMaterial(vec3(0.7f), 0.8f, 0.4f);
+        vec3 wo = normalize(vec3(0.3f, 0.25f, 0.9f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        float ref = 0.0f;
+        const int N0 = 120000;
+        for (int i = 0; i < N0; ++i) ref += EvaluateBsdf(m, L, wo, CosineSample(Rand01(), Rand01())).x;
+        ref *= kHarnessPi / static_cast<float>(N0);
+        float acc = 0.0f;
+        const int N = 150000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SampleBsdf(m, L, wo, vec3(Rand01(), Rand01(), Rand01()));
+            if (s.w <= 0.0f) continue;
+            vec3 wi = s.xyz;
+            acc += EvaluateBsdf(m, L, wo, wi).x * wi.z / s.w;
+        }
+        acc /= static_cast<float>(N);
+        CHECK(std::fabs(acc - ref) / ref < 0.03f, "cloth mixture E[f·cos/pdf]=%.4f furnace=%.4f", acc, ref);
+    }
+
+    // ④ Per-lobe reciprocity (the full stack is non-reciprocal by design — same OpenPBR §3.10 scaling as M2 ④).
+    {
+        ShadingRecord m = ClothMaterial(vec3(0.6f), 0.7f, 0.5f);
+        float worstGgx = 0.0f, worstEon = 0.0f;
+        for (int i = 0; i < 2000; ++i)
+        {
+            vec3 wi = UniformHemisphere(Rand01(), Rand01());
+            vec3 wo = UniformHemisphere(Rand01(), Rand01());
+            ResolvedLayers lo = ResolveLayers(m, wo), li = ResolveLayers(m, wi);
+            vec3 g1 = EvaluateBaseSpecular(m, lo, wo, wi), g2 = EvaluateBaseSpecular(m, li, wi, wo);
+            worstGgx = max(worstGgx, std::fabs(g1.x - g2.x) / max(g1.x, 1e-3f));
+            vec3 e1 = EonEvaluate(vec3(0.6f), 0.7f, wi, wo), e2 = EonEvaluate(vec3(0.6f), 0.7f, wo, wi);
+            worstEon = max(worstEon, std::fabs(e1.x - e2.x) / max(e1.x, 1e-3f));
+        }
+        CHECK(worstGgx < 1e-3f, "weak-GGX reciprocal (worst %.2e)", worstGgx);
+        CHECK(worstEon < 1e-3f, "EON reciprocal (worst %.2e)", worstEon);
+        // Sheen: the TRUE Charlie D·V is reciprocal, but the LTC fetches coeffs at μo only — asymmetric by
+        // construction (pre-existing, untouched by M3), worst at grazing pairs. Fixed Fibonacci grid (not the
+        // shared RNG stream): worst-of over random pairs would drift whenever any earlier test is edited.
+        auto FibDir = [](int i, int n) {
+            float mu = 1.0f - (static_cast<float>(i) + 0.5f) / static_cast<float>(n);
+            float phi = 6.28318530718f * static_cast<float>(i) * 0.61803398875f;
+            float s = sqrt(1.0f - mu * mu);
+            return vec3(s * cos(phi), s * sin(phi), mu);
+        };
+        float worstSheen = 0.0f;
+        const int kFibN = 24;
+        for (int i = 0; i < kFibN; ++i)
+            for (int j = 0; j < kFibN; ++j)
+            {
+                if (i == j) continue;   // self-pairs are trivially reciprocal
+                vec3 wo = FibDir(i, kFibN), wi = FibDir(j, kFibN);
+                vec3 s1 = SheenEvaluate(vec3(1.0f), 0.5f, wo, wi), s2 = SheenEvaluate(vec3(1.0f), 0.5f, wi, wo);
+                worstSheen = max(worstSheen, std::fabs(s1.x - s2.x) / max(s1.x, 1e-3f));
+            }
+        std::printf("    sheen reciprocity worst (Fibonacci 24²): %.3f\\n", worstSheen);
+        CHECK(worstSheen < 1.6f, "LTC sheen asymmetry bounded (fit artifact, grazing-driven; grid-worst 1.24)");
+    }
+
+    // ⑤ The weak lobe's F0 is the true dielectric 0.04 (η = 1.5) — and the forcing is selection-gated (weight-0
+    // non-cloth still collapses to eta 1 / F0 0, exactly as before M3).
+    {
+        ShadingRecord m = ClothMaterial(vec3(0.5f), 0.5f, 0.5f);
+        ResolvedLayers L = ResolveLayers(m, vec3(0.0f, 0.0f, 1.0f));
+        CHECK(std::fabs(L.SpecularEta - 1.5f) < 1e-6f, "cloth eta unmodulated (%.7f)", L.SpecularEta);
+        CHECK(std::fabs(L.DielectricF0.x - 0.04f) < 1e-6f, "cloth F0 = 0.04 (%.7f)", L.DielectricF0.x);
+        ShadingRecord s = StandardMaterial(vec3(0.5f), 0.5f);
+        s.SpecularWeight = 0.0f;   // Selection 0, weight 0: pre-M3 behaviour bit-preserved
+        ResolvedLayers Ls = ResolveLayers(s, vec3(0.0f, 0.0f, 1.0f));
+        CHECK(Ls.SpecularEta == 1.0f && Ls.DielectricF0.x == 0.0f, "non-cloth weight-0 still collapses");
+        CHECK(Ls.SheenRescale == 1.0f, "non-cloth rescale exactly 1");
+    }
+
+    // ⑥ Rescale end-to-end: layer weight matches the baked texel, and the sheen (eval, pdf) pair integrates to it —
+    // in BOTH regimes (0.35: hi-clamped, 0.8: unclamped-lo). The ratio is near-constant per sample, hence the 0.5 %.
+    for (float fuzzRough : { 0.35f, 0.8f })
+    {
+        ShadingRecord m = ClothMaterial(vec3(0.7f), 0.8f, fuzzRough);
+        vec3 wo = vec3(0.8f, 0.0f, 0.6f);
+        ResolvedLayers L = ResolveLayers(m, wo);
+        float full[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        Frontier::ShadingTableCodec::SampleSheenFull(*g_Tables, 0.6f, fuzzRough, full);
+        float expect = full[3] / max(full[2], 1e-4f);
+        expect = expect < 0.5f ? 0.5f : (expect > 2.0f ? 2.0f : expect);
+        CHECK(std::fabs(L.SheenRescale - expect) < 1e-6f, "rescale matches bake (fuzzR=%.2f: %.6f)", fuzzRough, L.SheenRescale);
+        CHECK(std::fabs(L.FuzzAlbedoO - expect * full[2]) < 1e-6f, "layer weight = F·rescale·R (%.6f)", L.FuzzAlbedoO);
+        CHECK(L.FuzzAlbedoO <= 1.0f, "sheen layer weight ≤ 1");
+        float acc = 0.0f;
+        const int N = 50000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SheenSample(fuzzRough, wo, vec2(Rand01(), Rand01()));
+            vec3 wi = s.xyz;
+            acc += L.SheenRescale * SheenEvaluate(vec3(1.0f), fuzzRough, wo, wi).x * wi.z / s.w;
+        }
+        acc /= static_cast<float>(N);
+        CHECK(std::fabs(acc - expect * full[2]) / (expect * full[2]) < 0.005f,
+              "sheen E[f·cos/pdf]=%.5f albedo=%.5f (fuzzR=%.2f)", acc, expect * full[2], fuzzRough);
+    }
+
+    // ⑦ Anisotropy is ignored under Cloth (specular-aniso + angle forced out): isotropic alpha, identity basis,
+    // and bit-identical eval to the unrotated record.
+    {
+        ShadingRecord m = ClothMaterial(vec3(0.5f), 0.5f, 0.5f);
+        m.SpecularAnisotropy = 0.7f; m.AnisotropyAngle = 0.5f;
+        ShadingRecord m0 = ClothMaterial(vec3(0.5f), 0.5f, 0.5f);
+        vec3 wo = normalize(vec3(0.2f, 0.3f, 0.9f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        CHECK(L.SpecularAlpha.x == L.SpecularAlpha.y, "cloth specular alpha isotropic");
+        float worstBasis = 0.0f;
+        for (int i = 0; i < 100; ++i)
+        {
+            vec3 v = UniformHemisphere(Rand01(), Rand01());
+            vec3 t = L.AnisoBasis * v;
+            worstBasis = max(worstBasis, std::fabs(t.x - v.x) + std::fabs(t.y - v.y) + std::fabs(t.z - v.z));
+        }
+        CHECK(worstBasis < 1e-6f, "cloth aniso basis identity (worst %.2e)", worstBasis);
+        ResolvedLayers L0 = ResolveLayers(m0, wo);
+        bool identical = true;
+        for (int i = 0; i < 100; ++i)
+        {
+            vec3 wi = UniformHemisphere(Rand01(), Rand01());
+            vec3 f1 = EvaluateBsdf(m, L, wo, wi), f0 = EvaluateBsdf(m0, L0, wo, wi);
+            identical = identical && (f1.x == f0.x && f1.y == f0.y && f1.z == f0.z);
+        }
+        CHECK(identical, "aniso+angle bit-inert under Cloth");
+    }
+
+    // ⑧ The branch is live: identical weights shade differently by selection alone.
+    {
+        ShadingRecord m = ClothMaterial(vec3(0.5f), 0.5f, 0.5f);
+        ShadingRecord s = m; s.Selection = 0u;
+        vec3 wo = normalize(vec3(0.2f, 0.2f, 0.9f));
+        vec3 wi = normalize(vec3(-0.3f, 0.1f, 0.8f));
+        vec3 fc = EvaluateBsdf(m, ResolveLayers(m, wo), wo, wi);
+        vec3 fs = EvaluateBsdf(s, ResolveLayers(s, wo), wo, wi);
+        float d = std::fabs(fc.x - fs.x) + std::fabs(fc.y - fs.y) + std::fabs(fc.z - fs.z);
+        float r = std::fabs(fs.x) + std::fabs(fs.y) + std::fabs(fs.z);
+        CHECK(d / max(r, 1e-6f) > 1e-3f, "cloth ≠ standard by selection (rel %.2e)", d / max(r, 1e-6f));
+    }
+}
+
 } // namespace
 
 int main()
@@ -453,6 +711,9 @@ int main()
     ProofReciprocity();
     ProofSampling();
     ProofAnisotropyFrames();
+    ProofSheenTable();
+    ProofConsumesTable();
+    ProofCloth();
     std::printf(g_Fail == 0 ? "MATERIAL FURNACE: PASS\n" : "MATERIAL FURNACE: FAIL (%d)\n", g_Fail);
     return g_Fail == 0 ? 0 : 1;
 }

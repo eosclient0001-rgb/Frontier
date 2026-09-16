@@ -27,12 +27,48 @@ layout(binding = 13) uniform sampler2D EnergyLut;   // x = μ = cosθ, y = α : 
 layout(binding = 14) uniform sampler2D SheenLut;    // x = cosθ,    y = α : (aInv, bInv, R) — LtcSheenTable.h
 vec3  FetchEnergy(float mu, float alpha)     { return textureLod(EnergyLut, vec2(mu, alpha), 0.0).xyz; }
 vec3  FetchSheen (float mu, float alpha)     { return textureLod(SheenLut,  vec2(mu, alpha), 0.0).xyz; }
+vec4  FetchSheenFull(float mu, float alpha)  { return textureLod(SheenLut,  vec2(mu, alpha), 0.0); }   // M3: + E_charlie in .w
 #endif
 
 const float kPi         = 3.14159265358979;
 const float kInvPi      = 0.31830988618379;
 const float kMinAlpha   = 0.0025;                // [-] roughness² floor: keeps D/VNDF finite; mirror-like below this
 const float kMinCos     = 1.0e-4;
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                          SELECTION + CHANNEL CONSUMPTION (M1, moved M3)
+//------------------------------------------------------------------------------------------------------------------------
+// M3: this table lives HERE (not in ReSTIRViewport.slang) so the CPU port compiles and tests it 1:1 — the kernel uses
+// it through #include "MaterialEvaluation.slang", so there is exactly one source of truth. Canonical selection values:
+// SceneRecords.slang kMaterialReflectance* (GPU) = MaterialIndex.h MaterialReflectance (CPU).
+const uint kChannelBaseColor = 0u, kChannelMetalness = 1u, kChannelRoughness = 2u, kChannelSpecularColor = 3u, kChannelNormal = 4u,
+           kChannelCoatNormal = 5u, kChannelEmission = 6u, kChannelOpacity = 7u, kChannelCoat = 10u, kChannelFuzz = 11u,
+           kChannelThinFilm = 12u, kChannelAnisotropy = 13u, kChannelOcclusion = 14u;
+
+// M1: reflectance selection mirror (canonical: SceneRecords.slang kMaterialReflectance*). Sultan-18 §3's eight
+// shading selections, derived per material by MaterialIndex::DeriveReflectance from exact-zero weights.
+const uint kReflectanceStandard = 0u, kReflectanceAnisotropic = 1u, kReflectanceClearCoated = 2u, kReflectanceCloth = 3u,
+           kReflectanceSubsurface = 4u, kReflectanceTransmissive = 5u, kReflectanceEmissiveOnly = 6u, kReflectanceUnlit = 7u;
+
+// Sultan-18 §9: a selection samples only the channels it consumes. Emission (6) and opacity (7) are NEVER gated — they
+// feed the emission short-circuit and cutout, not just shading — and neither is base colour (Unlit reads it). Every
+// other fetch in ResolveMaterial runs iff (constant weight > 0 || Consumes), and since selection is derived from
+// exact-zero weights, the gate provably skips fetches only where the factor is the identity anyway (bound-but-zero
+// textures). Cloth = Sultan-18 §3 {1,3,5,6,8,14,15} (M3: opacity retained, so cutout works on cloth).
+bool ReflectanceConsumes(uint selection, uint channel)
+{
+    if (selection == kReflectanceUnlit || selection == kReflectanceEmissiveOnly) return false;
+    if (selection == kReflectanceCloth)
+        return channel == kChannelBaseColor || channel == kChannelRoughness || channel == kChannelNormal ||
+               channel == kChannelOpacity || channel == kChannelFuzz || channel == kChannelOcclusion;
+    if (channel == kChannelMetalness || channel == kChannelRoughness || channel == kChannelSpecularColor ||
+        channel == kChannelNormal || channel == kChannelOcclusion)
+        return true;   // Standard set, shared by every reflective selection
+    if (channel == kChannelCoat) return selection == kReflectanceClearCoated;
+    if (channel == kChannelAnisotropy) return selection == kReflectanceAnisotropic;
+    if (channel == kChannelCoatNormal) return selection == kReflectanceClearCoated;
+    return false;      // thin-film (12): extension, weight-gated only; 8/9 arrive in M4/M5
+}
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    SHADING RECORD
@@ -67,6 +103,7 @@ struct ShadingRecord
     vec3  FuzzColor;          // fuzz_color
     float FuzzRoughness;      // fuzz_roughness
     vec3  Emission;           // emission_luminance × emission_color [nit]
+    uint  Selection;          // M3: kReflectance* (drives the per-selection shading path; stack-local, NOT a layout field)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -414,7 +451,8 @@ struct ResolvedLayers   // per-(record, wo) constants shared by Evaluate / Sampl
     float CoatAlbedoO;        // directional albedo of the coat lobe (for the albedo-scaling layer)
     vec3  CoatAbsorptionO;    // T^(1/μto) for the outgoing leg
     vec3  BaseDarkening;      // lerp(1, Δ, C·δ)
-    float FuzzAlbedoO;        // R(α, μo) × weight
+    float FuzzAlbedoO;        // R(α, μo) × weight (× SheenRescale under Cloth)
+    float SheenRescale;       // M3: E_charlie/R albedo correction (Cloth only; 1.0 otherwise — non-cloth bit-identical)
     vec3  DielectricAlbedoO;  // E_spec(μo) for the diffuse albedo scaling
     LobeWeights Weights;
 };
@@ -437,6 +475,11 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
     ResolvedLayers L;
     float muO = max(wo.z, kMinCos);
     float c = m.CoatWeight;
+    // M3: the Cloth path is parameter forcing, not a second evaluator — EON diffuse + LTC sheen (primary) + a weak
+    // dielectric GGX (F0 = specular_color × f0(η) ≈ 4 %, the "low weight"), GGX-aniso suppressed by selection. Coat /
+    // haze / metal / specular-weight are structurally 0 here (DeriveReflectance excludes them from Cloth), so their
+    // guarded blocks skip on their own; only the eta modulation, the aniso frame and the sheen albedo need forcing.
+    bool cloth = (m.Selection == kReflectanceCloth);
 
     // Coat: IOR relative to air; base sees lerp(n_b/n_a, n_b/n_c, C) — OpenPBR eq. 60 with the TIR inversion (eq. 73).
     L.CoatEta = max(m.CoatIor, 1.0001);
@@ -444,7 +487,9 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
     float etaBaseCoat = etaBaseAir / L.CoatEta;
     if (etaBaseCoat < 1.0) etaBaseCoat = 1.0 / etaBaseCoat;
     float etaBase = mix(etaBaseAir, etaBaseCoat, c);
-    L.SpecularEta = ModulatedIor(etaBase, m.SpecularWeight);
+    // Cloth keeps the unmodulated dielectric eta (weight 0 would collapse it to 1.0): the weak lobe's F0 is the true
+    // dielectric f0(η) ≈ 0.04 × specular_color, MS-compensated like any GGX (Sultan-18 §9: wherever GGX is).
+    L.SpecularEta = cloth ? etaBase : ModulatedIor(etaBase, m.SpecularWeight);
     float f0Dielectric = (L.SpecularEta - 1.0) / (L.SpecularEta + 1.0); f0Dielectric *= f0Dielectric;
     L.DielectricF0 = m.SpecularColor * f0Dielectric;
     L.MetalF0 = m.BaseColor;
@@ -452,13 +497,15 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
 
     // Roughness after coat roughening (eq. 72) — base only; the coat keeps its own.
     float rSpec = CoatRoughen(m.SpecularRoughness, m.CoatRoughness, c);
-    L.SpecularAlpha = AnisotropicAlpha(rSpec, m.SpecularAnisotropy);
-    L.HazeAlpha     = AnisotropicAlpha(CoatRoughen(max(m.HazinessRoughness, m.SpecularRoughness), m.CoatRoughness, c), m.SpecularAnisotropy);
+    float anisoEff = cloth ? 0.0 : m.SpecularAnisotropy;   // Cloth doesn't consume ch 9/10: the weak lobe is isotropic
+    L.SpecularAlpha = AnisotropicAlpha(rSpec, anisoEff);
+    L.HazeAlpha     = AnisotropicAlpha(CoatRoughen(max(m.HazinessRoughness, m.SpecularRoughness), m.CoatRoughness, c), anisoEff);
     L.CoatAlpha     = AnisotropicAlpha(m.CoatRoughness, m.CoatAnisotropy);
 
     // M2: lobe frames. The aniso basis is a pure z-rotation; the coat basis is built from the resolve-provided
     // orthonormal pair (bitangent = N × T). Both are exact identities in the default case, so pre-M2 scenes are bit-stable.
-    float ca = cos(m.AnisotropyAngle), sa = sin(m.AnisotropyAngle);
+    float angEff = cloth ? 0.0 : m.AnisotropyAngle;   // exact identity (cos0 = 1, sin0 = +0), like the default case
+    float ca = cos(angEff), sa = sin(angEff);
     L.AnisoBasis = mat3(vec3(ca, -sa, 0.0), vec3(sa, ca, 0.0), vec3(0.0, 0.0, 1.0));
     vec3 coatBitangent = cross(m.CoatNormal, m.CoatTangent);
     L.CoatBasis = mat3(vec3(m.CoatTangent.x, coatBitangent.x, m.CoatNormal.x),
@@ -486,6 +533,17 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
 
     // Fuzz on top of everything: albedo R(α, μo) scales the layers below by (1 − F·R).
     L.FuzzAlbedoO = m.FuzzWeight * SheenAlbedo(clamp(m.FuzzRoughness, 0.0, 1.0), muO);
+    // Cloth: pull the sheen lobe's albedo toward the true Charlie value E_c (.w). The LTC fit diverges from Charlie
+    // by up to ~80× where it collapses (low α: R → 0 while E_c stays O(1)), so the correction is clamped to [0.5, 2] —
+    // always TOWARD E_c, never past it — and the layer below scales by the same rescaled value the lobe evaluates to,
+    // which keeps rescale·R ≤ 1 (hence the stack ≤ 1) for every texel AND every bilinear interpolation of them.
+    L.SheenRescale = 1.0;
+    if (cloth && m.FuzzWeight > 0.0)
+    {
+        vec4 sheenTex = FetchSheenFull(muO, clamp(m.FuzzRoughness, 0.0, 1.0));
+        L.SheenRescale = clamp(sheenTex.w / max(sheenTex.z, 1.0e-4), 0.5, 2.0);
+        L.FuzzAlbedoO = m.FuzzWeight * L.SheenRescale * sheenTex.z;
+    }
 
     // Dielectric specular albedo (for the diffuse albedo scaling, eq. 42): split-sum single scatter + Kulla–Conty term.
     vec3 eMain = GgxDirectionalAlbedo(L.DielectricF0, muO, L.SpecularAlpha);
@@ -575,7 +633,7 @@ vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
     // Fuzz on top of the coat.
     if (m.FuzzWeight > 0.0)
     {
-        vec3 fuzz = m.FuzzWeight * SheenEvaluate(m.FuzzColor, clamp(m.FuzzRoughness, 0.0, 1.0), wo, wi);
+        vec3 fuzz = m.FuzzWeight * L.SheenRescale * SheenEvaluate(m.FuzzColor, clamp(m.FuzzRoughness, 0.0, 1.0), wo, wi);
         base = fuzz + base * (1.0 - L.FuzzAlbedoO);
     }
     return base;

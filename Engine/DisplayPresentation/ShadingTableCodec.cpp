@@ -62,6 +62,60 @@ EnergyCellResult EnergyCell(float Mu, float Alpha, uint32_t Samples) noexcept
     return { static_cast<float>(SumA / Samples), static_cast<float>(SumB / Samples) };
 }
 
+// Gauss–Legendre nodes/weights on [-1, 1] (Numerical Recipes gauleg — deterministic, no tables). Newton converges in
+// a handful of iterations; called once per bake (nodes are α/μ-independent, hoisted into the caller's row loop).
+void GaussLegendre(int N, double* X, double* W) noexcept
+{
+    constexpr double kEps = 3.0e-14, kPiD = 3.14159265358979;
+    const int M = (N + 1) / 2;
+    for (int I = 1; I <= M; ++I)
+    {
+        double Z = std::cos(kPiD * (I - 0.25) / (N + 0.5)), Pp = 0.0;
+        for (int It = 0; It < 10; ++It)
+        {
+            double P1 = 1.0, P2 = 0.0;
+            for (int J = 1; J <= N; ++J) { const double P3 = P2; P2 = P1; P1 = ((2 * J - 1) * Z * P2 - (J - 1) * P3) / J; }
+            Pp = N * (Z * P1 - P2) / (Z * Z - 1.0);
+            const double Z1 = Z; Z = Z1 - P1 / Pp;
+            if (std::fabs(Z - Z1) <= kEps) break;
+        }
+        X[I - 1] = -Z; X[N - I] = Z;
+        W[I - 1] = W[N - I] = 2.0 / ((1.0 - Z * Z) * Pp * Pp);
+    }
+}
+
+// M3: true Charlie directional albedo E(μo, α) = ∫ D_charlie(α, θh)·V_neutral(μo, μi)·μi dωi — Sultan-18 §4.1's `.z`
+// (their bring-up integrates the same product; here on the sheen-α axis the LTC already uses, φ-halved by symmetry).
+// D from Estevez–Kulla 2017 (as in Sultan's ProjectSheenDistributionCharlie), V the neutral 1/(4(V+L−VL)) pairing
+// (their ProjectSheenVisibility — deliberately not Smith: Charlie has no closed Smith form). Double precision,
+// exp/log form (sin²^κ underflows denormally in pow at low α), clamped to [0, 1] like their E_avg.
+float CharlieCell(float Mu, float Alpha, const double* MuX, const double* MuW, int MuN,
+                  const double* PhiX, const double* PhiW, int PhiN) noexcept
+{
+    constexpr double kPiD = 3.14159265358979;
+    const double MuO = Mu, SinO = std::sqrt(std::max(0.0, 1.0 - MuO * MuO));
+    const double A = std::max<double>(Alpha, 1.0e-4);   // Sultan's DistributionParameterFloor (bake rows never reach it)
+    const double Kappa = 1.0 / A, Norm = (2.0 + Kappa) / (2.0 * kPiD), Expo = Kappa * 0.5;
+    double Sum = 0.0;
+    for (int J = 0; J < PhiN; ++J)
+    {
+        const double CosPhi = std::cos(kPiD * 0.5 * (PhiX[J] + 1.0));   // [−1,1] → [0,π]
+        const double WPhi = kPiD * 0.5 * PhiW[J];
+        for (int I = 0; I < MuN; ++I)
+        {
+            const double MuI = 0.5 * (MuX[I] + 1.0), WMu = 0.5 * MuW[I];   // [−1,1] → [0,1]
+            const double SinI = std::sqrt(std::max(0.0, 1.0 - MuI * MuI));
+            const double Agree = SinO * SinI * CosPhi + MuO * MuI;
+            const double MuH = (MuO + MuI) / std::sqrt(std::max(2.0 + 2.0 * Agree, 1.0e-12));
+            const double Sin2 = std::max(0.0, 1.0 - MuH * MuH);
+            const double Dist = Sin2 <= 0.0 ? 0.0 : Norm * std::exp(Expo * std::log(Sin2));
+            const double Div = 4.0 * (MuO + MuI - MuO * MuI);
+            Sum += Dist * (Div > 0.0 ? 1.0 / Div : 0.0) * MuI * WMu * WPhi;
+        }
+    }
+    return static_cast<float>(std::clamp(2.0 * Sum, 0.0, 1.0));   // ×2 = the φ-halving
+}
+
 } // namespace
 
 ShadingTableSet ShadingTableCodec::Bake(uint32_t SamplesPerCell) noexcept
@@ -85,10 +139,20 @@ ShadingTableSet ShadingTableCodec::Bake(uint32_t SamplesPerCell) noexcept
         for (uint32_t Column = 0; Column < N; ++Column)
             Set.Energy[(Row * N + Column) * 4u + 2u] = static_cast<float>(std::min(Average, 1.0));
     }
+    double MuX[64], MuW[64], PhiX[32], PhiW[32];   // M3: GL nodes once per bake (α/μ-independent)
+    GaussLegendre(64, MuX, MuW); GaussLegendre(32, PhiX, PhiW);
     for (uint32_t Row = 0; Row < N; ++Row)
+    {
+        const float Alpha = std::max((static_cast<float>(Row) + 0.5f) / N, 0.0025f);
         for (uint32_t Column = 0; Column < N; ++Column)
+        {
+            const float Mu = std::max((static_cast<float>(Column) + 0.5f) / N, 1.0e-3f);
+            float* Texel = &Set.Sheen[(Row * N + Column) * 4u];
             for (uint32_t K = 0; K < 3; ++K)
-                Set.Sheen[(Row * N + Column) * 4u + K] = kLtcSheenVolume[Row][Column][K];
+                Texel[K] = kLtcSheenVolume[Row][Column][K];
+            Texel[3] = CharlieCell(Mu, Alpha, MuX, MuW, 64, PhiX, PhiW, 32);
+        }
+    }
     return Set;
 }
 
@@ -121,6 +185,11 @@ void ShadingTableCodec::SampleSheen(const ShadingTableSet& Set, float CosTheta, 
 {
     float Four[4]; Bilinear<4>(Set.Sheen, CosTheta, Alpha, Four);
     Out[0] = Four[0]; Out[1] = Four[1]; Out[2] = Four[2];
+}
+
+void ShadingTableCodec::SampleSheenFull(const ShadingTableSet& Set, float CosTheta, float Alpha, float Out[4]) noexcept
+{
+    Bilinear<4>(Set.Sheen, CosTheta, Alpha, Out);
 }
 
 } // namespace Frontier

@@ -126,7 +126,16 @@ void ShaderBallStructure::Construct() noexcept
         D = MakeMaterial("eon_r1");
         SetColor(D.Slabs[0].BaseColor, 0.8f, 0.7f, 0.5f); D.Slabs[0].SpecularWeight = 0.0f; D.Slabs[0].BaseDiffuseRoughness = 1.0f; Materials.push_back(D);
     }
-    {   // 25 luminaire (last)
+    // 25–26 M3 cloth (placed on the fifth-row pitch below). velvet_cloth is an exact control for velvet_fuzz_10
+    // (same hues, same roughnesses — only SpecularWeight 0.2 → 0, flipping Standard → Cloth), so any render delta
+    // between the two balls IS the cloth path; felt_cloth shows the rough end (fuzz 0.9, unclamped rescale).
+    {
+        MaterialDescriptor D = MakeMaterial("velvet_cloth");
+        SetColor(D.Slabs[0].BaseColor, 0.35f, 0.02f, 0.08f); D.Slabs[0].SpecularWeight = 0.0f; D.Slabs[0].FuzzWeight = 1.0f; D.Slabs[0].FuzzRoughness = 0.8f; SetColor(D.Slabs[0].FuzzColor, 1.0f, 0.9f, 0.9f); Materials.push_back(D);
+        D = MakeMaterial("felt_cloth");
+        SetColor(D.Slabs[0].BaseColor, 0.5f, 0.5f, 0.48f); D.Slabs[0].SpecularWeight = 0.0f; D.Slabs[0].FuzzWeight = 1.0f; D.Slabs[0].FuzzRoughness = 0.9f; D.Slabs[0].BaseDiffuseRoughness = 1.0f; Materials.push_back(D);
+    }
+    {   // 27 luminaire (last)
         MaterialDescriptor D = MakeMaterial("luminaire");
         SetColor(D.Slabs[0].BaseColor, 1.0f, 1.0f, 1.0f); D.Slabs[0].SpecularWeight = 0.0f; D.Slabs[0].EmissionLuminance = 120.0f; Materials.push_back(D);
     }
@@ -157,10 +166,20 @@ void ShaderBallStructure::Construct() noexcept
             AppendSphere(Centre, Radius, Material, 24u, 48u);
         }
 
+    // M3 cloth row: fifth-row pitch (y = 3.6), first two columns.
+    {
+        const auto VelvetSpan = OpenSpan("Ball 25 (velvet_cloth)", true);
+        AppendSphere(Vector3{ -3.0f, 3.6f, Radius }, Radius, 25u, 24u, 48u);
+    }
+    {
+        const auto FeltSpan = OpenSpan("Ball 26 (felt_cloth)", true);
+        AppendSphere(Vector3{ -1.8f, 3.6f, Radius }, Radius, 26u, 24u, 48u);
+    }
+
     // Luminaire: 2×2 m at Z = 4 facing down (−Z) — LAST.
     {
         const auto LuminaireSpan = OpenSpan("Luminaire");
-        AppendQuad(Vector3{ -1.0f, 1.6f, 4.0f }, Vector3{ 1.0f, 1.6f, 4.0f }, Vector3{ 1.0f, -0.4f, 4.0f }, Vector3{ -1.0f, -0.4f, 4.0f }, 25u, 1.0f);
+        AppendQuad(Vector3{ -1.0f, 1.6f, 4.0f }, Vector3{ 1.0f, 1.6f, 4.0f }, Vector3{ 1.0f, -0.4f, 4.0f }, Vector3{ -1.0f, -0.4f, 4.0f }, 27u, 1.0f);
     }
 }
 

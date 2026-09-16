@@ -13,6 +13,8 @@
 
 #include <cmath>
 
+typedef unsigned int uint;   // M3: the selection/channel table in MaterialEvaluation.slang uses uint (native in GLSL)
+
 struct vec2
 {
     float x, y;

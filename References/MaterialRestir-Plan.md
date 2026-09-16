@@ -168,6 +168,30 @@ lobe, GGX suppressed by selection, F0 from `specular_color` at low weight), shad
 Proof: cloth furnace ≤ 1 (retroreflective peak allowed >1 *directionally*, albedo ≤ 1);
 velvet/felt ball renders; selection test covers Cloth entry/exit with retained channels.
 
+✅ **SHIPPED.** Cloth = parameter forcing in `ResolveLayers`, not a second evaluator: EON diffuse
+(same `P1.y` roughness lane as ever) + LTC sheen as primary + weak dielectric GGX
+(F0 = `specular_color` × f0(η) ≈ 4 %, MS-compensated per `18` §9), aniso forced out; coat/haze/
+/metal/spec-weight are structurally 0 under Cloth so their guarded blocks skip untouched (Pdf/Sample
+need NO changes — forcing flows through `ResolvedLayers`). `SheenLut.w` = true Charlie albedo
+(Gauss–Legendre product rule, φ-halved, +~60 ms bake); cloth-only rescale E_c/R ∈ [0.5, 2], always
+* toward* truth, rescale·R ≤ 1 per texel and per lerp (proven, not hoped). `ReflectanceConsumes`
+moved into `MaterialEvaluation.slang` (one source of truth, CPU-tested 1:1); Cloth arm += opacity.
+Per-selection rules, verified against Sultan's `ReflectanceIntegrator.cpp`: emission stays additive
+under ALL selections (their ambient recording writes it unconditionally — consumption governs
+reflectance only), metallic is 0 under Cloth (structural via derivation), opacity retained (cutout
+works). Entry gains `HazinessWeight == 0` (hazy fuzz → Standard, nothing silently dropped);
+priority cloth > aniso kept (sheen kept, aniso dropped — furnace ⑦ proves the drop bit-inert).
+Furnace: ① ≤ 1 (velvet + felt, white), ② retro ordering + velvet grazing signature (sheen weight
+×3.4–98.6 grazing/normal, analytic), ③ cloth sampling ±3 %, ④ per-lobe reciprocity (LTC asymmetry
+< 1.6 on a Fibonacci grid — pre-existing fit artifact, worst at grazing pairs; true Charlie is
+reciprocal), ⑤ weak F0 exactly 0.04 + non-cloth collapse intact, ⑥ rescale end-to-end 0.5 % both
+regimes, ⑦ aniso bit-inert, ⑧ branch live by selection; table proof (ranges + rescale·R ≤ 1 ∀
+texels); full 8×16 consumption matrix; coverage entry/exit/retention. Balls 25–26 (`velvet_cloth`
+= exact control for `velvet_fuzz_10` differing ONLY in specular weight, `felt_cloth` at fuzz 0.9;
+luminaire → 27) — user re-exports `--scene shaderball` and renders GPU-side. NO layout change
+(`Selection`/`SheenRescale` are stack-local). Deliberately untouched: thin-film (selection-
+-independent extension), Unlit+emission interaction, EON roughness source (stays `P1.y`).
+
 ### M4 — Transmission / refraction (the big one)
 Files: `MaterialEvaluation.slang` (BTDF: Walter et al. GGX transmission, VNDF sampling over
 the *transmission* hemisphere with η = `specular_ior`, exact-dielectric Fresnel split,

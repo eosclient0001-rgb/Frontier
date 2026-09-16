@@ -180,34 +180,9 @@ uint SlabTexture(GpuMaterialSlab S, uint C)
     uint Word = C < 8u ? S.TextureSlots0[C / 2u] : S.TextureSlots1[(C - 8u) / 2u];
     return (Word >> ((C & 1u) * 16u)) & 0xFFFFu;
 }
-const uint kChannelBaseColor = 0u, kChannelMetalness = 1u, kChannelRoughness = 2u, kChannelSpecularColor = 3u, kChannelNormal = 4u,
-           kChannelCoatNormal = 5u, kChannelEmission = 6u, kChannelOpacity = 7u, kChannelCoat = 10u, kChannelFuzz = 11u,
-           kChannelThinFilm = 12u, kChannelAnisotropy = 13u, kChannelOcclusion = 14u;
-
-// M1: reflectance selection mirror (canonical: SceneRecords.slang kMaterialReflectance*). Sultan-18 §3's eight
-// shading selections, derived per material by MaterialIndex::DeriveReflectance from exact-zero weights.
-const uint kReflectanceStandard = 0u, kReflectanceAnisotropic = 1u, kReflectanceClearCoated = 2u, kReflectanceCloth = 3u,
-           kReflectanceSubsurface = 4u, kReflectanceTransmissive = 5u, kReflectanceEmissiveOnly = 6u, kReflectanceUnlit = 7u;
+// M3: kChannel* / kReflectance* / ReflectanceConsumes live in MaterialEvaluation.slang now (single source of truth,
+// CPU-tested 1:1); visible here through #include "MaterialEvaluation.slang".
 uint MaterialSelection(GpuMaterial mat) { return (mat.Slabs.z >> 8u) & 0xFu; }
-
-// Sultan-18 §9: a selection samples only the channels it consumes. Emission (6) and opacity (7) are NEVER gated — they
-// feed the emission short-circuit and cutout, not just shading — and neither is base colour (Unlit reads it). Every
-// other fetch below runs iff (constant weight > 0 || Consumes), and since selection is derived from exact-zero weights,
-// the gate provably skips fetches only where the factor is the identity anyway (bound-but-zero textures).
-bool ReflectanceConsumes(uint selection, uint channel)
-{
-    if (selection == kReflectanceUnlit || selection == kReflectanceEmissiveOnly) return false;
-    if (selection == kReflectanceCloth)
-        return channel == kChannelBaseColor || channel == kChannelRoughness || channel == kChannelNormal ||
-               channel == kChannelFuzz || channel == kChannelOcclusion;
-    if (channel == kChannelMetalness || channel == kChannelRoughness || channel == kChannelSpecularColor ||
-        channel == kChannelNormal || channel == kChannelOcclusion)
-        return true;   // Standard set, shared by every reflective selection
-    if (channel == kChannelCoat) return selection == kReflectanceClearCoated;
-    if (channel == kChannelAnisotropy) return selection == kReflectanceAnisotropic;
-    if (channel == kChannelCoatNormal) return selection == kReflectanceClearCoated;
-    return false;      // thin-film (12): extension, weight-gated only; 8/9 arrive in M4/M5
-}
 
 struct SurfaceFrame         // everything the kernel needs at a hit besides the ShadingRecord
 {
@@ -293,6 +268,7 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
     m.CoatTangent = vec3(1.0, 0.0, 0.0); m.CoatNormal = vec3(0.0, 0.0, 1.0);   // M2: identity coat frame
     m.FuzzWeight = 0.0; m.FuzzColor = vec3(1.0); m.FuzzRoughness = 0.5;
     m.Emission = mat.Emissive.xyz;
+    m.Selection = MaterialSelection(mat);   // M3: per-selection shading path (covers the header path too)
     F.Emission = mat.Emissive.xyz; F.Opacity = 1.0; F.Occlusion = 1.0;
 
     if (mat.Slabs.y > 0u)

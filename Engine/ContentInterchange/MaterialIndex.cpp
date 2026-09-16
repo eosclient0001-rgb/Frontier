@@ -262,7 +262,10 @@ MaterialReflectance MaterialIndex::DeriveReflectance(const MaterialDescriptor& D
     if (S.EmissionLuminance > 0.0f && !Reflects) return MaterialReflectance::EmissiveOnly;
     if (S.TransmissionWeight > 0.0f) return MaterialReflectance::Transmissive;
     if (S.SubsurfaceWeight > 0.0f)   return MaterialReflectance::Subsurface;
-    if (S.FuzzWeight > 0.0f && S.SpecularWeight == 0.0f && S.CoatWeight == 0.0f && S.BaseMetalness == 0.0f)
+    // M3: haziness is a second GGX lobe — a hazy fuzz renders as Standard (nothing silently dropped) rather than
+    // Cloth-with-suppressed-haze. Cloth = fuzz-only: no GGX-family weight of any kind.
+    if (S.FuzzWeight > 0.0f && S.SpecularWeight == 0.0f && S.CoatWeight == 0.0f && S.BaseMetalness == 0.0f &&
+        S.SlateHazinessWeight == 0.0f)
         return MaterialReflectance::Cloth;
     if (S.CoatWeight > 0.0f) return MaterialReflectance::ClearCoated;
     if (S.SpecularRoughnessAnisotropy != 0.0f || S.Texture(MaterialTextureChannel::Anisotropy).IsBound())
