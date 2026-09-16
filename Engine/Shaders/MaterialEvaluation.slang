@@ -841,20 +841,27 @@ vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 float PdfBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
     if (wo.z <= 0.0) return 0.0;
-    if (wi.z <= 0.0)   // M4: only the specular lobe transmits (diffuse/coat/fuzz pdfs are 0 below by construction)
-    {
-        if (L.TransmitMix <= 0.0 || L.Weights.Specular <= 0.0) return 0.0;
-        return L.Weights.Specular * PdfTransmission(m, L, wo, wi);
-    }
+    if (wi.z <= 0.0 && L.TransmitMix <= 0.0) return 0.0;   // opaque: nothing below (bit-identical)
+    // Transmissive below the horizon: the FULL mixture. The sampler keeps R-branch samples landing below, EON
+    // CLTC leakage, and tilted-coat samples (valid T-region paths with f = f_T > 0), so the pdf must carry their
+    // mass to match the sampling density exactly. (Keeping vs rejecting is variance, not bias: the T-sampler alone
+    // already covers the full below-hemisphere, so rejection merely wastes samples — but the pdf must mirror the
+    // sampler either way, and the kept paths are free energy.)
     float pdf = L.Weights.Diffuse * EonPdfCltc(wo, wi, m.DiffuseRoughness);
     // Rotations preserve solid angle, so each lobe's pdf is evaluated in its own space (M2).
     vec3 woA = L.AnisoBasis * wo, wiA = L.AnisoBasis * wi;
     vec3 h = normalize(woA + wiA);
-    float jac = 1.0 / (4.0 * max(dot(woA, h), kMinCos));
-    float pSpec = GgxVndfPdf(woA, h, L.SpecularAlpha) * jac;
-    if (m.HazinessWeight > 0.0) pSpec = mix(pSpec, GgxVndfPdf(woA, h, L.HazeAlpha) * jac, m.HazinessWeight);
+    float pSpec = 0.0;
+    if (dot(woA, h) > 0.0)   // degenerate half-vector (wi ≈ −wo, reachable only below) carries no R density;
+    {                        // above the horizon wo·h > 0 strictly, so this gate never fires there (bit-identical)
+        float jac = 1.0 / (4.0 * max(dot(woA, h), kMinCos));
+        pSpec = GgxVndfPdf(woA, h, L.SpecularAlpha) * jac;
+        if (m.HazinessWeight > 0.0) pSpec = mix(pSpec, GgxVndfPdf(woA, h, L.HazeAlpha) * jac, m.HazinessWeight);
+    }
     pSpec *= 1.0 - TransmissionBranchProb(L.TransmitMix, FresnelDielectric(abs(dot(woA, h)), L.SpecularEta));   // M4: R-branch probability (×1 when opaque)
     pdf += L.Weights.Specular * pSpec;
+    if (wi.z <= 0.0 && L.Weights.Specular > 0.0)   // the T-arm adds its mass below (0 above by its own gate)
+        pdf += L.Weights.Specular * PdfTransmission(m, L, wo, wi);
     if (L.Weights.Coat > 0.0)
     {
         vec3 woC = L.CoatBasis * wo, wiC = L.CoatBasis * wi;
@@ -912,7 +919,8 @@ vec4 SampleBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec4 u)
     {
         wi = EonSampleCltc(wo, m.DiffuseRoughness, u.y, u.z).xyz;
     }
-    if (!transmitted && wi.z <= 0.0) return vec4(0.0);
+    if (!transmitted && wi.z <= 0.0 && L.TransmitMix <= 0.0) return vec4(0.0);   // opaque only: transmissive
+    // keeps below-horizon R/EON/coat samples — valid T-region paths (f = f_T > 0, pdf = full mixture > 0)
     if (transmitted && wi.z >= 0.0) return vec4(0.0);   // paranoia: exit refraction guarantees T·N = −√k < 0
     return vec4(wi, PdfBsdf(m, L, wo, wi));
 }

@@ -171,8 +171,11 @@ sampler-vs-pdf histogram (all 10 |cos| bins match to MC noise after the fix).
 - **M9 thick-glass tracking** — solid-glass interior traversal (exhibit renders the honest thin-wall look).
 - **M5 subsurface** (channels 16–17) · **M6 displacement** (channel 20, acked as none).
 - **Denoiser + motion vectors** — parked by direction; after the material system, not inside it.
-- **R-below-horizon mixture polish** (~0.5–1%, the only known un-acked bias): R/EON samples landing below
-  the horizon are rejected while pdf/f stay >0 there. All closures pass with margin regardless.
+- ~~R-below-horizon mixture~~ DONE 2026-09-16 (block ①c): transmissive keeps below-horizon R/EON/coat samples
+  with the full-mixture pdf (degenerate half-vector at wi = −wo guarded — old code NaN'd there). Post-fix
+  analysis showed rejection was unbiased all along (the T-sampler covers every below-wi), so this was variance
+  recovery, not a bias fix — confirmed: closures unchanged to 4 digits, exhibit cloth/coat panels bit-identical,
+  0.14 % of glass pixels shifted. Opaque still exactly 0 below / rejects below (regression-guarded).
 
 ## 4. Visual exhibit — shaderball sheet (kept in `Exhibits/Gallery/Materials/`)
 
@@ -181,7 +184,7 @@ sampler-vs-pdf histogram (all 10 |cos| bins match to MC noise after the fix).
 thin-wall glass (rough 0.06, η 1.5) · deep-red velvet (fuzz 0.65) · clearcoat car paint — under a
 3-softbox studio rig. 256 spp/panel, BSDF sampling + NEE with power-heuristic MIS, ACES + gamma 2.2,
 row striping with per-(panel, frame, pixel) seeds: **deterministic, byte-stable under regeneration**
-(`sha256 6b190fa6…f5ab814`, canonical `-strip` compression).
+(`sha256 2d6ddb48…9e66e2`, canonical `-strip` compression; re-rendered after the ①c polish).
 
 - Kept-sheet linear means: glass 0.1913 · cloth 0.1509 · coat 0.1434 · 0 non-finite pixels.
 - Harness `Exhibits/Workbench/Materials/ShaderballExhibit.cpp` + driver `RunShaderballExhibit.sh`
@@ -189,8 +192,7 @@ row striping with per-(panel, frame, pixel) seeds: **deterministic, byte-stable 
 
 ## 5. What's next
 
-1. **R-below-horizon mixture polish** (small) — fold into the next material pass.
-2. **T_ms** second-lobe model + furnace bounds.
-3. **M9 thick-glass tracking** + solid-glass shaderball panel.
-4. **M5 subsurface** (channels 16–17) and its ReSTIR/shaded wiring.
-5. **Denoiser + motion vectors** (parked per direction).
+1. **T_ms** second-lobe model + furnace bounds — the ≤4% rough-oblique transmission gap. ← NEXT
+2. **M9 thick-glass tracking** + solid-glass shaderball panel.
+3. **M5 subsurface** (channels 16–17) and its ReSTIR/shaded wiring.
+4. **Denoiser + motion vectors** (parked per direction).

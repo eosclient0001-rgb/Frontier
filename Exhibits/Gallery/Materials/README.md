@@ -11,3 +11,5 @@ pixel-for-pixel.
 - Mesh: `shaderball.obj` (15,554 tris after quad split) + `shaderball-CC0-LICENSE.txt` — CC0 1.0
   Universal, Pseudopode/UnityShaderBall, credited with thanks.
 - Kept-sheet values (linear means): glass 0.1913 · cloth 0.1509 · coat 0.1434 · 0 non-finite pixels.
+- `sha256 2d6ddb48…9e66e2` (2026-09-16 re-render after the below-horizon mixture polish: cloth/coat panels
+  bit-identical, 0.14 % of glass pixels shifted by the recovered paths).

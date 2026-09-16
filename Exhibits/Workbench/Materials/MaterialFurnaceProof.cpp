@@ -932,6 +932,72 @@ void ProofTransmissionThin()
         acc /= static_cast<float>(N);
         CHECK(std::fabs(acc - split) < 0.035f, "thin-wall smooth anchor E=%.4f split=%.4f", acc, split);
     }
+    // ①c Below-horizon mixture: transmissive keeps R/EON/coat samples landing below (valid T-region paths with
+    // f = f_T > 0) instead of rejecting them; the pdf carries the full mixture there so sampling density matches
+    // exactly. Rejection was unbiased (the T-sampler covers all below-wi) but wasteful — this recovers the paths.
+    // Opaque stays bit-identical (0 below, reject below).
+    {
+        vec3 wo = normalize(vec3(0.3f, 0.2f, 0.9f));
+        {   // opaque regression: pdf exactly 0 below, sampler never keeps below
+            ShadingRecord m = StandardMaterial(vec3(0.5f), 0.5f);
+            ResolvedLayers L = ResolveLayers(m, wo);
+            bool allZero = true;
+            for (int i = 0; i < 200; ++i)
+                if (PdfBsdf(m, L, wo, -CosineSample(Rand01(), Rand01())) != 0.0f) allZero = false;
+            CHECK(allZero, "opaque pdf exactly 0 below");
+            int keptBelow = 0;
+            for (int i = 0; i < 20000; ++i)
+            {
+                vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+                if (s.w > 0.0f && s.z < 0.0f) ++keptBelow;
+            }
+            CHECK(keptBelow == 0, "opaque sampler rejects below (%d kept)", keptBelow);
+        }
+        {   // transmissive: extra R+D mass below, finite everywhere (incl. wi = −wo), never under the T-arm
+            ShadingRecord m = GlassMaterial(0.5f);
+            ResolvedLayers L = ResolveLayers(m, wo);
+            float extraMax = 0.0f, extraMin = 1e30f;
+            bool finite = true;
+            for (int i = 0; i < 2000; ++i)
+            {
+                vec3 wi = -CosineSample(Rand01(), Rand01());
+                float p = PdfBsdf(m, L, wo, wi);
+                if (!(p >= 0.0f) || !(p <= 1e9f)) finite = false;
+                float extra = p - L.Weights.Specular * PdfTransmission(m, L, wo, wi);
+                extraMax = std::max(extraMax, extra);
+                extraMin = std::min(extraMin, extra);
+            }
+            float pBack = PdfBsdf(m, L, wo, -wo);   // the degenerate half-vector: old code NaN'd here
+            if (!(pBack >= 0.0f) || !(pBack <= 1e9f)) finite = false;
+            CHECK(finite, "below-horizon pdf finite everywhere (p(-wo)=%.4f)", pBack);
+            CHECK(extraMax > 0.0f, "below-horizon pdf carries R+D mass (max extra=%.5f)", extraMax);
+            CHECK(extraMin > -1e-5f, "below-horizon pdf never under the T-arm (min extra=%.2e)", extraMin);
+            // targeted R-lands-below sample: fix facet/branch uniforms until reflect lands below on the R-branch
+            vec2 a = AnisotropicAlpha(0.5f, 0.0f);
+            bool found = false;
+            vec4 kept = vec4(0.0f);
+            for (int t = 0; t < 5000 && !found; ++t)
+            {
+                vec2 u2 = vec2(Rand01(), Rand01());
+                vec3 h = SampleGgxVndf(wo, a, u2);
+                if (reflect(-wo, h).z >= 0.0f) continue;
+                float F = FresnelDielectric(std::fabs(dot(wo, h)), 1.5f);
+                float uw = 1.0f - 0.5f * (1.0f - F);   // mid-R-branch: u.w ≥ P(T|m) = 1−F
+                float pick = L.Weights.Fuzz + L.Weights.Coat + 0.5f * L.Weights.Specular;
+                vec4 q = SampleBsdf(m, L, wo, vec4(pick, u2.x, u2.y, uw));
+                if (q.w > 0.0f && q.z < 0.0f) { found = true; kept = q; }
+            }
+            CHECK(found, "R-branch below-horizon sample kept");
+            if (found)
+            {
+                float q = PdfBsdf(m, L, wo, kept.xyz);
+                float f = EvaluateBsdf(m, L, wo, kept.xyz).x;
+                CHECK(std::fabs(kept.w - q) / std::max(q, 1e-6f) < 1e-4f,
+                      "kept below-R pdf consistent (s.w=%.5f pdf=%.5f)", kept.w, q);
+                CHECK(f > 0.0f, "kept below-R evaluates f_T > 0 (f=%.5f)", f);
+            }
+        }
+    }
     // ①b Direct f/p identity on fixed pairs (no MC): f·|cos|/p = G₁(−d1)·(1−F_x)·Beer (separable entry-G₁(wo)
     // cancels D_vis; the /η² and the pdf's exit Jacobian reconcile through étendue).
     {
