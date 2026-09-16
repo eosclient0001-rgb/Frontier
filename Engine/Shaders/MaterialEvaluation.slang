@@ -16,7 +16,8 @@
 //    fuzz      Zeltner, Burley, Chiang 2022 LTC sheen (table on SheenLut: aInv, bInv, R by [α][cosθ])
 //    transmit  Walter 2007 GGX BTDF sampled through microfacet-Fresnel branch selection (exact R/T split), thin-walled
 //              by default via the tilted-entry + flat-exit compound (KHR_materials_volume semantics: Beer over the
-//              nominal thickness); the thick single-interface form is exposed for the furnace and M9's medium tracking.
+//              nominal thickness); solid mode (M4b) evaluates the bare single interface per boundary while the tracer
+//              walks the medium (true enter/exit + Beer over true segments; IncidentIor tracks the incident medium).
 //
 // Conventions: local shading frame, +Z = shading normal, wo = towards the viewer, wi = towards the light; both point
 //    away from the surface. Every Evaluate* returns f (no cosine). Sample* returns wi and the pdf of the whole mixture.
@@ -111,7 +112,7 @@ struct ShadingRecord
     float TransmissionWeight; // M4: transmission_weight (exact-zero gate: 0 = opaque)
     vec3  TransmissionColor;  // M4: attenuation colour (KHR volume attenuation_color; white = untinted)
     float TransmissionDepth;  // M4: attenuation distance [m] (0 = no absorption)
-    float TransmissionThickness; // M4: KHR volume thickness [m] — Beer path of the thin-wall slab (0 = foil)
+    float TransmissionThickness; // M4: KHR volume thickness [m] — Beer path of the thin-wall slab (0 = foil); solid mode traverses true geometry and only uses it as the no-exit fallback
     uint  Selection;          // M3: kReflectance* (drives the per-selection shading path; stack-local, NOT a layout field)
 };
 
@@ -602,6 +603,8 @@ struct ResolvedLayers   // per-(record, wo) constants shared by Evaluate / Sampl
     float SheenRescale;       // M3: E_charlie/R albedo correction (Cloth only; 1.0 otherwise — non-cloth bit-identical)
     vec3  DielectricAlbedoO;  // E_spec(μo) for the diffuse albedo scaling
     vec3  TransmissionSigma;  // M4: σ = −ln(color)/depth (0 when depth ≤ 0 or opaque)
+    bool  SolidInterface;     // M4b: bare single interface at this boundary (tracer walks the medium; Beer is tracer-side)
+    float IncidentIor;        // M4b: IOR of the incident-side medium (1.0 air outside; SpecularEta inside solid glass)
     float TransmitMix;        // M4: transmission_weight·(1 − metalness) — the T-branch gate
     float TransmitMacroT;     // M4: (1 − F_avg(η))·Beer(thickness) — macro transmittance (sampling mass)
     LobeWeights Weights;
@@ -705,6 +708,8 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
     // mass. specular_weight needs NO extra gate: it already modulates η (ModulatedIor), so weight → 0 collapses the
     // interface to a straight-through tinted film — physically coherent, no special case.
     L.TransmitMix = m.TransmissionWeight * (1.0 - m.Metalness);
+    L.SolidInterface = false;   // M4b: tracers opt in per hit (foil is the safe default for stack-less callers)
+    L.IncidentIor = 1.0;
     L.TransmissionSigma = vec3(0.0);
     if (m.TransmissionWeight > 0.0 && m.TransmissionDepth > 0.0)
         L.TransmissionSigma = -log(clamp(m.TransmissionColor, vec3(1.0e-6), vec3(1.0))) / m.TransmissionDepth;
@@ -728,6 +733,20 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+// M4b: media pair for the T interface (lives here: after ResolvedLayers for the CPU port, before its first
+// use in EvaluateBaseSpecular). Foil (default): air outside, SpecularEta within — etaI/etaO = SpecularEta/1.0
+// is bitwise SpecularEta (IEEE x/1.0 = x), so every legacy call below is bit-identical. Solid: the tracer sets
+// IncidentIor per hit (1.0 outside, SpecularEta inside) and SolidInterface = true; the transmitted side is the
+// other one (nesting is v1-out: a transmissive hit from inside another medium shades R-only, tracer-side).
+// v1 scope: entry/exit interfaces are bare glass (proven); coat / fuzz / diffuse layer terms ride along from the
+// outer resolve and are approximate at interior hits (the solid exhibits are bare glass).
+vec2 TransmitEtas(ResolvedLayers L)
+{
+    float etaO = L.IncidentIor;
+    float etaI = (etaO > 1.0) ? 1.0 : L.SpecularEta;
+    return vec2(etaO, etaI);
+}
+
 //                                                    EVALUATE
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -738,11 +757,13 @@ vec3 EvaluateBaseSpecular(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
     vec3 h = normalize(woA + wiA);
     float muH = max(dot(woA, h), 0.0);
 
-    // Fresnel of the two substrates.
-    float fD = FresnelDielectric(muH, L.SpecularEta);
+    // Fresnel of the two substrates. M4b: R follows the incident medium (etaI/etaO — TIR-aware from inside glass;
+    // foil: /1.0 is bitwise-neutral, so opaque + thin-wall are bit-identical).
+    vec2 etasT = TransmitEtas(L);
+    float fD = FresnelDielectric(muH, etasT.y / etasT.x);
     vec3  fDielectric = m.SpecularColor * fD;
     vec3  fMetal = m.SpecularWeight * FresnelF82(L.MetalF0, m.SpecularColor, muH);
-    if (m.ThinFilmWeight > 0.0)
+    if (m.ThinFilmWeight > 0.0 && etasT.x <= 1.0)   // M4b: films live on outer surfaces (foil: etaO = 1, gate inert)
     {
         float etaFilm = max(m.ThinFilmIor, 1.0001);
         float sinT2 = (1.0 - muH * muH) / (etaFilm * etaFilm);
@@ -769,10 +790,19 @@ vec3 EvaluateBaseSpecular(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
     return spec;
 }
 
-// M4: full thin-wall T contribution (f, no cosine) — transmitMix-scaled, haze-mixed. Called with wi.z < 0 only;
-// the tracers use the thin-wall path for thick glass too (M9's medium tracking renders true enter/exit exactly).
+// M4: full T contribution (f, no cosine) — transmitMix-scaled, haze-mixed. Called with wi.z < 0 only. Foil: the
+// thin-wall compound (entry+exit at one point, Beer over the nominal thickness). Solid (M4b): the bare single
+// interface — NO Beer here (the tracer applies it over the true interior segments; doubling it would double-count).
 vec3 EvaluateTransmission(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
+    if (L.SolidInterface)
+    {
+        vec2 etas = TransmitEtas(L);
+        vec3 ts = TransmissionEvaluateSingle(wo, wi, L.SpecularAlpha, etas.x, etas.y);
+        if (m.HazinessWeight > 0.0)
+            ts = mix(ts, TransmissionEvaluateSingle(wo, wi, L.HazeAlpha, etas.x, etas.y), m.HazinessWeight);
+        return L.TransmitMix * ts;
+    }
     vec3 t = TransmissionThinWallEvaluate(wo, wi, L.SpecularAlpha, L.SpecularEta, L.TransmissionSigma, m.TransmissionThickness);
     if (m.HazinessWeight > 0.0)
         t = mix(t, TransmissionThinWallEvaluate(wo, wi, L.HazeAlpha, L.SpecularEta, L.TransmissionSigma, m.TransmissionThickness), m.HazinessWeight);
@@ -782,6 +812,17 @@ vec3 EvaluateTransmission(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 // M4: T-branch lobe pdf (unscaled — PdfBsdf multiplies by Weights.Specular, mirroring the R arm).
 float PdfTransmission(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
+    if (L.SolidInterface)   // M4b: single-interface T density (branch F at the inverted facet, relative eta — the
+    {                       // sampler evaluates the same function at the same facet, so f·|cos|/p collapses exactly)
+        vec2 etas = TransmitEtas(L);
+        vec4 hv = TransmissionHalfVector(wo, wi, etas.x, etas.y);
+        if (hv.w < 1.0e-10) return 0.0;
+        float branchProb = TransmissionBranchProb(L.TransmitMix, FresnelDielectric(abs(dot(wo, hv.xyz)), etas.y / etas.x));
+        float ps = TransmissionPdfSingle(wo, wi, L.SpecularAlpha, etas.x, etas.y, branchProb);
+        if (m.HazinessWeight > 0.0)
+            ps = mix(ps, TransmissionPdfSingle(wo, wi, L.HazeAlpha, etas.x, etas.y, branchProb), m.HazinessWeight);
+        return ps;
+    }
     float p = TransmissionThinWallPdf(wo, wi, L.SpecularAlpha, L.SpecularEta, L.TransmitMix);
     if (m.HazinessWeight > 0.0)
         p = mix(p, TransmissionThinWallPdf(wo, wi, L.HazeAlpha, L.SpecularEta, L.TransmitMix), m.HazinessWeight);
@@ -858,7 +899,8 @@ float PdfBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
         pSpec = GgxVndfPdf(woA, h, L.SpecularAlpha) * jac;
         if (m.HazinessWeight > 0.0) pSpec = mix(pSpec, GgxVndfPdf(woA, h, L.HazeAlpha) * jac, m.HazinessWeight);
     }
-    pSpec *= 1.0 - TransmissionBranchProb(L.TransmitMix, FresnelDielectric(abs(dot(woA, h)), L.SpecularEta));   // M4: R-branch probability (×1 when opaque)
+    vec2 etasR = TransmitEtas(L);   // M4b: R-branch split follows the incident medium (foil: bitwise-neutral /1.0)
+    pSpec *= 1.0 - TransmissionBranchProb(L.TransmitMix, FresnelDielectric(abs(dot(woA, h)), etasR.y / etasR.x));   // M4: R-branch probability (×1 when opaque)
     pdf += L.Weights.Specular * pSpec;
     if (wi.z <= 0.0 && L.Weights.Specular > 0.0)   // the T-arm adds its mass below (0 above by its own gate)
         pdf += L.Weights.Specular * PdfTransmission(m, L, wo, wi);
@@ -898,17 +940,30 @@ vec4 SampleBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec4 u)
         vec3 woA = L.AnisoBasis * wo;   // M2: sample in aniso space, return to base space
         vec3 hA = SampleGgxVndf(woA, hazePick < m.HazinessWeight ? L.HazeAlpha : L.SpecularAlpha, u2);
         // M4: microfacet-Fresnel branch selection (exact split). The aniso basis is a z-rotation, so the flat exit
-        // normal survives it as +z and the double refraction runs in aniso space directly.
+        // normal survives it as +z and the double refraction runs in aniso space directly. M4b: solid mode branches
+        // on the relative eta (TIR-aware: F = 1 kills the T-branch exactly) and takes ONE refraction step — the
+        // tracer walks the medium from there. Foil keeps the guarded etaC path bitwise-identically.
+        vec2 etasS = TransmitEtas(L);
         float etaC = max(L.SpecularEta, 1.0001);
-        float fR = FresnelDielectric(abs(dot(woA, hA)), etaC);
+        float fR = FresnelDielectric(abs(dot(woA, hA)), L.SolidInterface ? etasS.y / etasS.x : etaC);
         if (L.TransmitMix > 0.0 && u.w < TransmissionBranchProb(L.TransmitMix, fR))
         {
-            vec4 entry = RefractDielectric(-woA, hA, 1.0 / etaC);
-            if (entry.w < 0.0) return vec4(0.0);   // unreachable air → glass (kept: guards η < 1 callers)
-            vec4 exit = RefractDielectric(entry.xyz, vec3(0.0, 0.0, 1.0), etaC);
-            if (exit.w < 0.0) return vec4(0.0);    // exit-TIR: trapped in the wall = absorbed (rejection is exact here)
-            wi = transpose(L.AnisoBasis) * exit.xyz;
-            transmitted = true;
+            if (L.SolidInterface)
+            {
+                vec4 step = RefractDielectric(-woA, hA, etasS.x / etasS.y);
+                if (step.w < 0.0) return vec4(0.0);   // TIR (paranoia: the branch already killed these with F = 1)
+                wi = transpose(L.AnisoBasis) * step.xyz;
+                transmitted = true;
+            }
+            else
+            {
+                vec4 entry = RefractDielectric(-woA, hA, 1.0 / etaC);
+                if (entry.w < 0.0) return vec4(0.0);   // unreachable air → glass (kept: guards η < 1 callers)
+                vec4 exit = RefractDielectric(entry.xyz, vec3(0.0, 0.0, 1.0), etaC);
+                if (exit.w < 0.0) return vec4(0.0);    // exit-TIR: trapped in the wall = absorbed (rejection is exact here)
+                wi = transpose(L.AnisoBasis) * exit.xyz;
+                transmitted = true;
+            }
         }
         else
         {

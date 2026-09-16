@@ -12,4 +12,11 @@ pixel-for-pixel.
   Universal, Pseudopode/UnityShaderBall, credited with thanks.
 - Kept-sheet values (linear means): glass 0.1913 · cloth 0.1509 · coat 0.1434 · 0 non-finite pixels.
 - `sha256 2d6ddb48…9e66e2` (2026-09-16 re-render after the below-horizon mixture polish: cloth/coat panels
-  bit-identical, 0.14 % of glass pixels shifted by the recovered paths).
+  bit-identical, 0.14 % of glass pixels shifted by the recovered paths; re-rendered again for M4b — bit-identical).
+
+`ShaderballSheet_SolidGlass.png` (1028×512): thin-vs-solid diptych — the same clear glass as the triptych's
+glass panel, once as foil and once traversed as solid glass (M4b medium tracking: true enter/exit + Beer +
+TIR). Rendered with `RunShaderballExhibit.sh 512 256 solid` (or `both` for both sheets).
+
+- Kept-sheet values (linear means): thin 0.1913 · solid 0.1886 · 0 non-finite pixels.
+- `sha256 b432c15389b62552faa4b523bedddfda062c69956c0073d2a7c74bfb3dcb20ac` (2026-09-16, new for M4b).

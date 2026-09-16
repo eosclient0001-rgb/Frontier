@@ -7,9 +7,11 @@
 //    lights every panel; the integrator is BSDF sampling + NEE with power-heuristic MIS, ACES + gamma 2.2, threaded
 //    over rows, deterministic per (panel, frame, pixel).
 //
-//    Thin-wall honesty: the shipped BSDF's T-branch models entry+exit of a zero-thickness wall at ONE point, so a
+//    Thin-wall honesty: the foil BSDF's T-branch models entry+exit of a zero-thickness wall at ONE point, so a
 //    transmitted ray continues past the ball interior (skip-ball segment) instead of intersecting the backface —
-//    intersecting it would shade a second wall. Thick-glass traversal is M9, not this exhibit.
+//    intersecting it would shade a second wall. Solid mode (M4b, --solid sheet) instead walks the medium for real:
+//    entry refraction at the frontface, Beer over the true interior segments, exit refraction/TIR at the backface
+//    (single medium, v1: no nesting; the BSDF resolves the bare single interface per boundary via SolidInterface).
 //
 //    Kept harness: Exhibits/Workbench/Materials/ShaderballExhibit.cpp, driven by RunShaderballExhibit.sh (NOT part
 //    of the materials gate — the full sheet is a ~5 min render). Mesh + sheet live in Exhibits/Gallery/Materials/.
@@ -348,6 +350,7 @@ ShadingRecord StandardMaterial(vec3 albedo, float roughness)
 }
 
 ShadingRecord g_Mats[8];
+bool g_SolidBall = false;   // M4b: the ball (slot 0) is traversed as solid glass (medium tracking, not skip-ball)
 
 void BuildMaterials(int Panel)
 {
@@ -368,12 +371,21 @@ void BuildMaterials(int Panel)
         m.FuzzWeight = 1.0f; m.FuzzColor = vec3(0.62f, 0.06f, 0.07f); m.FuzzRoughness = 0.65f;
         g_Mats[0] = m;
     }
-    else
+    else if (Panel == 2)
     {
         ShadingRecord m = StandardMaterial(vec3(0.020f, 0.075f, 0.330f), 0.30f);   // clearcoat car paint
         m.CoatWeight = 1.0f; m.CoatColor = vec3(1.0f); m.CoatRoughness = 0.06f;
         g_Mats[0] = m;
     }
+    else
+    {
+        ShadingRecord m = StandardMaterial(vec3(0.0f), 0.06f);   // solid clear glass: SAME bytes as panel 0 —
+        m.SpecularIor = 1.5f;                                    // only the tracer mode differs (true traversal)
+        m.TransmissionWeight = 1.0f;
+        m.Selection = kReflectanceTransmissive;
+        g_Mats[0] = m;
+    }
+    g_SolidBall = (Panel == 3);
     g_Mats[1] = StandardMaterial(vec3(0.32f), 1.0f);   // matte studio ground
     g_Mats[1].SpecularWeight = 0.25f;
 }
@@ -433,25 +445,38 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R)
     vec3 L(0.0f), Beta(1.0f);
     int Skip = -1;
     float LastPdf = 0.0f;   // BSDF pdf of the segment that arrived here (luminaire MIS)
-    for (int Depth = 0; Depth < 8; ++Depth)
+    bool Inside = false;      // M4b: the ray is inside solid glass (single medium — nesting is v1-out)
+    int EntryMat = -1;        // entered material slot (interior hits shade glass→air from inside)
+    vec3 EntrySigma(0.0f);    // absorption of the entered medium (captured at entry, Beer per interior segment)
+    bool NeeSkipped = false;  // previous vertex skipped NEE (interior: refracted NEE is future work)
+    for (int Depth = 0; Depth < 8; ++Depth)   // interior hits share the depth budget (~2-4 segs typical)
     {
         Hit H = Intersect(O, D, 1e30f, Skip);
         Skip = -1;
+        bool prevNeeSkipped = NeeSkipped; NeeSkipped = false;
         if (!H.Valid)
         {
+            if (Inside)   // open mesh / numeric leak: nominal-Beer fallback, then out (closed meshes never land here)
+            {
+                Beta = Beta * exp(-EntrySigma * g_Mats[EntryMat].TransmissionThickness);
+                Inside = false;
+            }
             L += Beta * EnvRadiance(D);
             break;
         }
         const Tri& T = g_Tris[H.TriId];
         vec3 P = O + D * H.T;
+        if (Inside) Beta = Beta * exp(-EntrySigma * H.T);   // Beer over the true interior segment just travelled
         if (T.Light >= 0)
         {
             // Luminaire seen along a BSDF-sampled direction: the NEE half of MIS. Camera rays (depth 0) take it
             // whole — the light strategy never generates camera paths.
             if (dot(D, T.Ng) < 0.0f)
             {
+                // Interior vertices take 0 light-strategy samples, so the power-heuristic weight there is exactly 1
+                // ((1·Pb)²/((0·Pl)² + (1·Pb)²)); everywhere else the two-strategy MIS below is exact as before.
                 float W = 1.0f;
-                if (Depth > 0)
+                if (Depth > 0 && !prevNeeSkipped)
                 {
                     const QuadLight& Q = g_Lights[T.Light];
                     float CosL = dot(-D, Q.N);
@@ -474,9 +499,24 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R)
         vec3 Tt, Bt;
         ShadingFrame(Ns, Tt, Bt);
         vec3 wo(dot(-D, Tt), dot(-D, Bt), dot(-D, Ns));
-        const ShadingRecord& m = g_Mats[T.Mat];
+        ShadingRecord m = g_Mats[T.Mat];   // local copy: the v1 nested fallback below may zero transmission
+        bool solidHit = g_SolidBall && T.Mat == 0 && m.TransmissionWeight > 0.0f;
+        bool fromInside = Inside && T.Mat == EntryMat;
+        if (Inside && T.Mat != EntryMat && m.TransmissionWeight > 0.0f)
+        {
+            m.TransmissionWeight = 0.0f;   // v1: no nested dielectrics — shade R-only, stay inside (dead in
+            solidHit = false;              // this scene: ball + opaque ground + lights cannot nest)
+        }
         ResolvedLayers Lr = ResolveLayers(m, wo);
-        L += Beta * DirectMIS(m, Lr, P, Ns, Tt, Bt, wo, R);
+        if (solidHit)   // tracer context: bare single interface; IncidentIor rides the medium stack
+        {
+            Lr.SolidInterface = true;
+            Lr.IncidentIor = fromInside ? Lr.SpecularEta : 1.0f;
+        }
+        if (!fromInside)
+            L += Beta * DirectMIS(m, Lr, P, Ns, Tt, Bt, wo, R);
+        else
+            NeeSkipped = true;   // interior: Occluded would block every NEE ray at the exit wall — skip it
         vec4 S = SampleBsdf(m, Lr, wo, vec4(R.Next(), R.Next(), R.Next(), R.Next()));
         if (S.w <= 0.0f) break;
         vec3 wi = S.xyz;
@@ -487,8 +527,18 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R)
         LastPdf = S.w;
         vec3 Dw = Tt * wi.x + Bt * wi.y + Ns * wi.z;
         if (wi.z < 0.0f)
-            Skip = T.Mat;   // thin-wall exit: continue past this wall's own interior (see header)
-        O = P + Ng * 1e-4f + Dw * 1e-4f;
+        {
+            if (solidHit)   // medium transition, both ways (entry AND exit; EON/coat-below included: f = f_T > 0)
+            {
+                if (!fromInside) { Inside = true; EntryMat = T.Mat; EntrySigma = Lr.TransmissionSigma; }
+                else { Inside = false; EntryMat = -1; }
+            }
+            else
+                Skip = T.Mat;   // thin-wall exit: continue past this wall's own interior (see header)
+        }
+        // Solid segments take a pure ray offset: the legacy mixed offset lands on-surface at near-normal exits
+        // (Ng ≈ −Dw) and risks re-hitting the exit face — the default path keeps its bytes bit-identically.
+        O = solidHit ? P + Dw * 3e-4f : P + Ng * 1e-4f + Dw * 1e-4f;
         D = normalize(Dw);
     }
     return L;
@@ -539,15 +589,18 @@ int main(int Argc, char** Argv)
     const char* MeshPath = "Exhibits/Gallery/Materials/shaderball.obj";
     const char* OutPath = "Exhibits/Gallery/Materials/ShaderballSheet_GlassClothCoat.png";
     int Size = 400, Spp = 128;
+    bool SolidSheet = false;   // --solid: thin-vs-solid diptych (same clear glass, traversal isolated)
+    bool OutGiven = false;     // --solid only sets the default path (an explicit --out always wins)
     float Exposure = 1.0f;
     for (int I = 1; I < Argc; ++I)
     {
         std::string A = Argv[I];
         if (A == "--mesh" && I + 1 < Argc) MeshPath = Argv[++I];
-        else if (A == "--out" && I + 1 < Argc) OutPath = Argv[++I];
+        else if (A == "--out" && I + 1 < Argc) { OutPath = Argv[++I]; OutGiven = true; }
         else if (A == "--size" && I + 1 < Argc) Size = std::atoi(Argv[++I]);
         else if (A == "--spp" && I + 1 < Argc) Spp = std::atoi(Argv[++I]);
         else if (A == "--exposure" && I + 1 < Argc) Exposure = static_cast<float>(std::atof(Argv[++I]));
+        else if (A == "--solid") { SolidSheet = true; if (!OutGiven) OutPath = "Exhibits/Gallery/Materials/ShaderballSheet_SolidGlass.png"; }
     }
 
     Frontier::ShadingTableSet Tables = Frontier::ShadingTableCodec::Bake(1024u);
@@ -580,12 +633,16 @@ int main(int Argc, char** Argv)
     C.TanHalf = std::tan(16.0f * 3.14159265358979f / 180.0f);
     C.Aspect = 1.0f;
 
-    const char* Names[3] = { "glass", "cloth", "coat" };
+    const char* Names[4] = { "glass", "cloth", "coat", "solid" };
+    int PanelList[4] = { 0, 1, 2, -1 };
+    int NPanels = 3;
+    if (SolidSheet) { PanelList[0] = 0; PanelList[1] = 3; NPanels = 2; }
     const int Gap = 4;
-    int SheetW = 3 * Size + 2 * Gap;
+    int SheetW = NPanels * Size + (NPanels - 1) * Gap;
     std::vector<unsigned char> Sheet(static_cast<size_t>(SheetW) * Size * 3u, 8u);
-    for (int P = 0; P < 3; ++P)
+    for (int Pi = 0; Pi < NPanels; ++Pi)
     {
+        int P = PanelList[Pi];
         BuildMaterials(P);
         std::vector<float> Film;
         RenderPanel(C, P, Size, Spp, Film);
@@ -599,7 +656,7 @@ int main(int Argc, char** Argv)
         }
         Mean /= Film.size();
         std::printf("[exhibit] panel %s: mean=%.4f bad=%ld\n", Names[P], Mean, Bad);
-        int X0 = P * (Size + Gap);
+        int X0 = Pi * (Size + Gap);
         for (int Y = 0; Y < Size; ++Y)
             for (int X = 0; X < Size; ++X)
                 for (int Ch = 0; Ch < 3; ++Ch)

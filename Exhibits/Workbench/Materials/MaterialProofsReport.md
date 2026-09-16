@@ -48,7 +48,7 @@ Proves the CPU `MaterialIndex` (records, flags, fold/mix, channel×stage registr
 - **Selection** — all 8 reflectance selections + priority (transmission beats coat, cloth beats aniso),
   M3 cloth entry/exit/retention, emissive lamp stays Standard.
 
-## 2. Furnace proof — `MaterialEvaluation.slang` compiled 1:1 as C++ (3479/3479)
+## 2. Furnace proof — `MaterialEvaluation.slang` compiled 1:1 as C++ (3528/3528)
 
 The shader under test is `#include`d as C++ through `SlangCpuShim.h`, so these numbers are the shipped
 shading code, not a model of it. Tables are baked fresh each run (32×32, 1024 spp/cell).
@@ -169,6 +169,32 @@ Caught & fixed this run: the glass-side inversion passed −d1 where Walter's ht
 direction d1 — f/p self-consistent but jointly wrong (+30% at r=0.5). Proven by Riemann ∫f·cos +
 sampler-vs-pdf histogram (all 10 |cos| bins match to MC noise after the fix).
 
+### M4b solid glass — single-interface entry/exit + slab walk + Beer (SHIPPED 2026-09-16)
+
+```
+ok solid-entry E=0.9833/0.9931 + gap=0.0425/0.0143 (mu=0.5/1.0 — EON fills underside-R + grazing-T)
+ok solid-exit E=0.8238/0.9434 (TIR-regime tracks Ess=0.8579; Enum=0.8468/0.9564, gap=0.0230/0.0130)
+ok solid-exit smooth anchors E=1.0008/1.0005 (mu=0.5 all-TIR, mu=1.0 sub-critical — both MUST be 1)
+ok slab clear T=0.8362/0.9234 R=0.1636/0.0766 (mu=0.5/1.0 — closed form incl. internal series, 4 digits)
+ok slab tinted T=0.355/0.537/0.733 R=0.103/0.120/0.147 (mu=0.5) · T=0.461/0.645/0.829 R=0.050/0.058/0.070 (mu=1.0)
+ok slab Beer sweep depth=0.5/1/2 T=0.4763/0.6452/0.7675 (the T(σ) curve through the −ln/depth resolve)
+ok rough-slab E=0.7834/0.9607 + trapped≈0 (TIR-loop shadowing + reachable-only drops compound at oblique)
+ok slab trapped=2.5e-4/1.5e-9/0/0 (rare smooth-TIR-loop; Beer-decayed when tinted; exact 0 at normal)
+ok single f/p identity entry+exit to 6 digits (exit: 5 pairs, 3 TIR-skips — T = 0 exactly there)
+```
+
+Solid mode = tracer context, not material data: `ResolvedLayers` gains `SolidInterface` + `IncidentIor`
+(stack-local, no layout change; foil defaults keep every legacy path bit-identical — the furnace log
+diffed byte-for-byte before/after). The R Fresnel follows the relative eta (TIR-aware from inside);
+thin-film gates to outer surfaces; Beer lives tracer-side over true segments (doubling it in the BSDF
+would double-count). v1 limits: one medium (nested transmissives shade R-only), no refracted NEE
+(interior vertices take 0 light samples — power-heuristic weight exactly 1, still unbiased), coat /
+fuzz / diffuse ride along approximately at interior hits (the solid exhibits are bare glass).
+Caught & fixed this run: the exit-TIR floor guess (0.90) was wrong — TIR energy tracks the F0 = 1
+albedo (E = 0.8238 vs Ess = 0.8579, bounded both sides); and two independent runs of the identical
+cosine numeric differ by 0.0105 (Snell-cone D-peak events, weights ~12 — σ_num ≈ 0.007, heavy-tailed),
+so the ② numeric/gap upper margins hardened to 3.4σ (1.05→1.06, 0.09→0.10; deterministic today).
+
 ## 3. Known gaps (acknowledged, by design)
 
 - ~~**T_ms**~~ TERMINATED 2026-09-16 (implemented, measured, reverted — SS-only is minimax-optimal). The full
@@ -183,7 +209,9 @@ sampler-vs-pdf histogram (all 10 |cos| bins match to MC noise after the fix).
   [0.968, 1.064] (centre 1.018) on width AND centring. Kept from the expedition: the numeric over-closure +
   invisible-mass bounds (block ②), the eta sweep (②c), the tw sweep (④b). Sheet re-rendered bit-identical
   (sha unchanged — the BSDF is back to its pre-expedition bytes).
-- **M9 thick-glass tracking** — solid-glass interior traversal (exhibit renders the honest thin-wall look).
+- ~~**M4b thick glass**~~ SHIPPED 2026-09-16 (was mislabelled M9 in this report — plan-M9 is the denoiser /
+  motion-vector re-enable, still parked per direction). True enter/exit + Beer over true segments + full
+  internal series, slab-analytic to 4 digits; thin-vs-solid diptych kept below.
 - **M5 subsurface** (channels 16–17) · **M6 displacement** (channel 20, acked as none).
 - **Denoiser + motion vectors** — parked by direction; after the material system, not inside it.
 - ~~R-below-horizon mixture~~ DONE 2026-09-16 (block ①c): transmissive keeps below-horizon R/EON/coat samples
@@ -199,7 +227,14 @@ sampler-vs-pdf histogram (all 10 |cos| bins match to MC noise after the fix).
 thin-wall glass (rough 0.06, η 1.5) · deep-red velvet (fuzz 0.65) · clearcoat car paint — under a
 3-softbox studio rig. 256 spp/panel, BSDF sampling + NEE with power-heuristic MIS, ACES + gamma 2.2,
 row striping with per-(panel, frame, pixel) seeds: **deterministic, byte-stable under regeneration**
-(`sha256 2d6ddb48…9e66e2`, canonical `-strip` compression; re-rendered after the ①c polish).
+(`sha256 2d6ddb48…9e66e2`, canonical `-strip` compression; re-rendered after the ①c polish;
+re-rendered again for M4b — bit-identical, the default path keeps its bytes exactly).
+
+`ShaderballSheet_SolidGlass.png` (1028×512 thin-vs-solid diptych, `sha256 b432c153…e20ac`): the SAME
+clear-glass bytes as the triptych's glass panel, once as foil (skip-ball) and once traversed as solid
+(entry refraction + Beer + exit refraction/TIR + TIR bounces). Traversal isolated: linear means thin
+0.1913 vs solid 0.1886 (13σ apart), per-pixel RMSE 0.058, 0 non-finite pixels. A throwaway tinted probe
+(not kept) confirmed Beer-over-true-distance in the exhibit loop (green solid vs clear thin).
 
 - Kept-sheet linear means: glass 0.1913 · cloth 0.1509 · coat 0.1434 · 0 non-finite pixels.
 - Harness `Exhibits/Workbench/Materials/ShaderballExhibit.cpp` + driver `RunShaderballExhibit.sh`
@@ -207,5 +242,6 @@ row striping with per-(panel, frame, pixel) seeds: **deterministic, byte-stable 
 
 ## 5. What's next
 
-1. **M9 thick-glass tracking** + solid-glass shaderball panel. ← NEXT
+1. **M5 subsurface** (channels 16–17) and its ReSTIR/shaded wiring. ← NEXT
+2. **M6 codec gap-fill** (thickness/attenuation sources, transmission/volume round-trips).
 3. **Denoiser + motion vectors** (parked per direction).
