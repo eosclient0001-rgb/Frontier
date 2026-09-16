@@ -164,19 +164,3 @@ inline float ReSTIRIntegrator::Convert<float>() const noexcept
 }
 
 } // namespace Frontier
-      // [px]  viewport height of the history
-};
-
-template<>
-inline uint32_t ReSTIRIntegrator::Convert<uint32_t>() const noexcept
-{
-    return AccumulationIndex;
-}
-
-template<>
-inline float ReSTIRIntegrator::Convert<float>() const noexcept
-{
-    return ActiveConfiguration.Exposure;
-}
-
-} // namespace Frontier

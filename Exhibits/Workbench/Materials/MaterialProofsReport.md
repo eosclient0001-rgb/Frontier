@@ -368,11 +368,57 @@ Full mapping table (interim §5): the `MaterialCodecProof.cpp` header.
 
 ---
 
-## 7. What's next
+## 7. Material inspector — M7a read-only UI (158/158, SHIPPED 2026-09-17)
+
+Gate: `bash Exhibits/Workbench/Materials/CheckMaterialInspector.sh` — compiles `MaterialInspectorProof.cpp` against
+the real engine TUs (`MaterialInspector` + `MaterialIndex` + `ControlCentreHost` + the inspector/UI cascade + imgui
+core) with header-only deps (`ExternalPackages/`, `$MATERIAL_INSPECTOR_EXT`, or `~/.cache/m7`: imgui, tomlplusplus,
+Vulkan-Headers — no GPU, no window, no Vulkan library; `VisibilityExchange.cpp` links under `--gc-sections` so only
+the `DebugViewName` table survives). Nine archetype materials (opaque, metal, folded glass, cloth, subsurface,
+emissive-only, unlit, coated+mask, one fully-loaded slab) walk the inspector per D4(a):
+
+- Selection resolves by persisted name (exact match, else material 0, else cleared); the reflectance selection and
+  complexity are cross-checked against `Finalise`'s own records for all nine (the inspector re-runs `Flatten` at
+  the scene limit and reads `Slabs.front()` — the slab the Tier A kernel samples — so the page can never disagree
+  with the records).
+- All 20 Sultan channels (names verbatim from the M0 coverage registry): exact value/source/texture on the loaded
+  slab, shared carriers pinned (09+10 anisotropy, 16+17 subsurface, 04+19 IOR), sub-parameters folded into per-row
+  detail lines (no extra rows), row 20 always `no carrier`; unread-but-retained values stay Constant (Sultan-42
+  §5), never Absent.
+- Fold attribution by the `material '<name>':` prefix (glass 3→1 keeps its line, the other eight keep none);
+  `[material]` registry round-trip (missing table → defaults, unknown keys ignored); the revision bumps only on
+  resolved-name change (steady Rebuilds and same-selects are silent).
+- Headless layout both ways: a recording surface (imgui context-only, CPU-side atlas, draw lists never presented)
+  and a never-begun surface lay out byte-identically; the selector menu flow runs on a synthetic pointer (open →
+  pick → revision → close, release-outside dismisses); the host gains hub row 5 (420×557 card, dashboard keeps
+  420×480), dimmed Apply/Discard pills, and a footer status line; the F-panel gains the material row (omitted,
+  not dashed, with no scene).
+
+Code changes: new `Engine/DisplayPresentation/MaterialInspector.{h,cpp}`; `ControlCentreHost` page 6 + hub row
+(`LayersSlabs` glyph, verbatim lucide `layers`); `ConfigurationRegistry` `[material]` keys (`selected`, `preview`);
+`MaterialIndex` fold-report retention (`QueryFoldReport`, behaviour-preserving); `DiagnosticInspector` 9th row;
+`GameExecution` ①h feed (per-frame `Rebuild`, persist-on-revision, F-panel summary — the runner also parses
+`GameExecution.cpp`, so the feed can't rot).
+
+Drive-by fix: `Engine/DisplayPresentation/ReSTIRIntegrator.h` carried a duplicated block at HEAD (committed in
+`9d4d2b3` — the class close + `Convert` specializations + namespace close appeared twice, so NO TU including it
+could compile, `DiagnosticInspector.cpp` included); removed the duplicate. The M7a proof is the first gate that
+compiles that header.
+
+**Honest scope.** No GPU in this sandbox: the page is layout-verified headless (extents, heights, menu flow), not
+screenshot-verified — pixels wait for a GPU runner. The plan's "Sponza walkthrough" is reduced to nine in-harness
+archetypes (only `CornellBox.gltf` is committed). M7b (editing, live re-Finalise, accumulation reset, shader-ball
+preview) is next; the `preview` key and dimmed pills are its hooks.
+
+---
+
+## 8. What's next
 
 1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped, superseded by the v2 dipole — see 3).
-2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §6; render-verification pending GPU).
+2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §5; render-verification pending GPU).
 3. ~~**M5 v2 dipole**~~ DONE 2026-09-16 (pushed `1d76fe2` — triptych + solid sheets byte-identical).
 4. ~~**M6 codec gap-fill**~~ DONE 2026-09-17 (211/211 — see §6).
-5. **Denoiser + motion vectors** (parked per direction).
-6. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych — needs a GPU runner). ← NEXT
+5. ~~**M7a read-only inspector**~~ DONE 2026-09-17 (158/158 — see §7).
+6. **M7b editable inspector** (constant editing + live re-Finalise + shader-ball preview). ← NEXT
+7. **Denoiser + motion vectors** (parked per direction).
+8. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a pixels — needs a GPU runner).

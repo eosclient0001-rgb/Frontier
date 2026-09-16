@@ -269,7 +269,9 @@ const std::array<VectorGlyphRecord, static_cast<size_t>(ControlCentreIconCategor
     // 37: LayoutPanelRight — lucide "panel-right". Properties-only mode.
     VectorGlyphRecord{ "LayoutPanelRight", "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM15 3v18", 24, 24, 2.0f },
     // 38: CameraBody — lucide "video". The camera row; VideoRenderScale is already spoken for by the dashboard.
-    VectorGlyphRecord{ "CameraBody", "M16 8a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2zM16 10l5.24-3.14a.5.5 0 0 1 .76.43v9.42a.5.5 0 0 1-.76.43L16 14", 24, 24, 2.0f }
+    VectorGlyphRecord{ "CameraBody", "M16 8a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2zM16 10l5.24-3.14a.5.5 0 0 1 .76.43v9.42a.5.5 0 0 1-.76.43L16 14", 24, 24, 2.0f },
+    // 39: LayersSlabs — lucide "layers" (verbatim: top diamond + two chevron layers). The Materials hub row.
+    VectorGlyphRecord{ "LayersSlabs", "M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83zM2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17", 24, 24, 2.0f }
 };
 
 //------------------------------------------------------------------------------------------------------------------------

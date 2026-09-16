@@ -150,6 +150,7 @@ void ControlCentreHost::NavigateToPage(ControlCentrePageCategory TargetPage) noe
     PageSwapProgress = 0.0f;
     BodyScrollY      = 0.0f;
     Appearance.CloseMenus();
+    Materials.CloseMenus();
     ShadowMenuOpen   = false;   // leaving the Render page dismisses its resolution menu
     Motion.Spring(SlideChannel).Place(0.0);
     ResizeCardForPage();
@@ -242,11 +243,15 @@ void ControlCentreHost::ResizeCardForPage() noexcept
     //    sub-pages instead fill the canvas to the PageMargin corner padding, the dashboard keeps its 420 × 480 card,
     //    and both shrink with the container (relevant once the UI scale shrinks the logical canvas).
     const bool Sub = IsSubPage(ActivePage);
-    // Sub-pages fill the canvas to the corner padding; the dashboard keeps its 420 × 480 card.
+    // Sub-pages fill the canvas to the corner padding; the dashboard keeps its 420 × 480 card; the hub grows by one
+    //    row (76 px + 1 px border) for the fifth Materials row.
     const float MaxW = static_cast<float>(DisplayWidth)  - PageMarginX * 2.0f;
     const float MaxH = static_cast<float>(DisplayHeight) - 35.0f - PageMarginY * 2.0f;
+    const double HubH = static_cast<double>(CardHeight + HubRowDisc + HubRowPadding * 2.0f + 1.0f);
     const double WantW = Sub ? static_cast<double>(MaxW) : std::min(static_cast<double>(CardWidth),  static_cast<double>(MaxW));
-    const double WantH = Sub ? static_cast<double>(MaxH) : std::min(static_cast<double>(CardHeight), static_cast<double>(MaxH));
+    const double WantH = Sub ? static_cast<double>(MaxH)
+        : (ActivePage == ControlCentrePageCategory::SettingsHub ? std::min(HubH, static_cast<double>(MaxH))
+                                                                : std::min(static_cast<double>(CardHeight), static_cast<double>(MaxH)));
     if (Motion.Spring(CardWidthChannel).Target == WantW && Motion.Spring(CardHeightChannel).Target == WantH) return;   // no restart
     Motion.Spring(CardWidthChannel ).Depart(WantW);
     Motion.Spring(CardHeightChannel).Depart(WantH);
@@ -604,7 +609,7 @@ void ControlCentreHost::AdvanceInteraction(const InputExchange& Input, float Cur
     const bool OverBody = CardActive && PageSettled && IsSubPage(ActivePage) && Body.Encloses(CursorX, CursorY);
     if (Pressed && OverBody) PressedInBody = true;
     if (Released) { /* cleared after this frame's recording — see AdvanceLocomotion */ }
-    const bool BodyOwned = PressedInBody || Appearance.HasOpenMenu() || InputPage.HasOpenMenu() || ShadowMenuOpen || Dialogue.IsVisible();
+    const bool BodyOwned = PressedInBody || Appearance.HasOpenMenu() || InputPage.HasOpenMenu() || Materials.HasOpenMenu() || ShadowMenuOpen || Dialogue.IsVisible();
     const bool OnDashboard = ActivePage == ControlCentrePageCategory::Dashboard;
     const bool OnHub       = ActivePage == ControlCentrePageCategory::SettingsHub;
     const bool OnSubPage   = IsSubPage(ActivePage);
@@ -612,7 +617,7 @@ void ControlCentreHost::AdvanceInteraction(const InputExchange& Input, float Cur
     HoveredSlot   = (CardActive && PageSettled && OnDashboard) ? SlotUnder(CursorX, CursorY) : -1;
     HoveredHubRow = -1;
     if (CardActive && PageSettled && OnHub)
-        for (uint32_t Row = 0u; Row < 4u; ++Row)
+        for (uint32_t Row = 0u; Row < 5u; ++Row)
             if (QueryHubRowExtent(Row).Encloses(CursorX, CursorY)) HoveredHubRow = static_cast<int>(Row);
 
     const bool OverGrip = QueryGripExtent().Encloses(CursorX, CursorY);
@@ -1118,13 +1123,14 @@ struct HubRowStructure
 };
 
 // Direction (supersedes ArcNotch.tsx's Appearance / Display & Workspace / Input & Keybindings / Telemetry rows):
-//    Render Settings · Appearance · Input · Notifications, in that order.
-constexpr HubRowStructure HubRows[4] =
+//    Render Settings · Appearance · Input · Notifications · Materials, in that order.
+constexpr HubRowStructure HubRows[5] =
 {
     { ControlCentreIconCategory::SlidersQuality,    "Render Settings", "Global illumination, anti-aliasing, quality" },
     { ControlCentreIconCategory::AppearancePalette, "Appearance",      "Theme, fonts, and system colors"             },
     { ControlCentreIconCategory::ShieldInput,       "Input",           "Shortcuts, mouse sensitivity, controllers"   },
     { ControlCentreIconCategory::NotificationsBell, "Notifications",   "RAM usage, FPS, baking complete alerts"      },
+    { ControlCentreIconCategory::LayersSlabs,       "Materials",       "Selections, channels, and fold report"       },
 };
 
 struct PageChromeStructure
@@ -1135,13 +1141,15 @@ struct PageChromeStructure
     const char* PrimaryButton;
 };
 
-// Titles / subtitles / footer pills verbatim from Notch OtherModals.tsx & SettingsModal.tsx.
-constexpr PageChromeStructure PageChrome[4] =
+// Titles / subtitles / footer pills verbatim from Notch OtherModals.tsx & SettingsModal.tsx (Materials is an engine
+//    addition in the same idiom; its pills stay dimmed until M7b wires Apply/Discard).
+constexpr PageChromeStructure PageChrome[5] =
 {
     { "Render Settings",            "Configure output rendering quality and passes.",       "Discard Changes", "Apply Render Settings" },
     { "Display Settings",           "Appearance & typography",                              "Reset",           "Apply"                 },
     { "Keybindings Setup",          "Configure navigation style and keyboard shortcuts.",   "Discard Changes", "Save keybindings"      },
     { "Telemetry & Notifications",  "System resource overlay and alert preferences.",       "Discard Changes", "Save Preferences"      },
+    { "Materials",                  "Per-material selections, channels, and fold report.",        "Discard Changes", "Apply"                 },
 };
 
 constexpr const char* AppearanceTabs[3] = { "Display", "Fonts", "Theme" };   // SettingsModal tabs, in order
@@ -1241,8 +1249,8 @@ PlaneExtent ControlCentreHost::QueryPageButtonExtent(bool Primary) const noexcep
     const float PillH = LineHeight(PageButtonSize) + PageButtonPadY * 2.0f;
     const float FooterTop = Card.MaximumY - PageFooterPad * 2.0f - PillH;
     const uint32_t Page = static_cast<uint32_t>(ActivePage) - static_cast<uint32_t>(ControlCentrePageCategory::RenderSettings);
-    const float PrimaryW   = (Page < 4u ? ButtonWidthCache[Page][1] : 0.0f) + PageButtonPadX * 2.0f;
-    const float SecondaryW = (Page < 4u ? ButtonWidthCache[Page][0] : 0.0f) + PageButtonPadX * 2.0f;
+    const float PrimaryW   = (Page < 5u ? ButtonWidthCache[Page][1] : 0.0f) + PageButtonPadX * 2.0f;
+    const float SecondaryW = (Page < 5u ? ButtonWidthCache[Page][0] : 0.0f) + PageButtonPadX * 2.0f;
     if (ActivePage == ControlCentrePageCategory::Input)
     {
         // Input modal: "Discard Changes" flush-left in the body, "Reset Defaults" + "Save keybindings" flush-right
@@ -1297,17 +1305,17 @@ void ControlCentreHost::ConstructHubLayout(PixelSpace& Surface, float Opacity) c
     Surface.Text(Back.MaximumX, Back.MinimumY + (HubBackGlyph - TitleSize.Y) * 0.5f, Faded(InkFull(), Opacity), "Settings", HubTitleSize);
 
     // List: bg-[#141415] rounded-[24px]; 4 rows.
-    const PlaneExtent First = QueryHubRowExtent(0u), Last = QueryHubRowExtent(3u);
+    const PlaneExtent First = QueryHubRowExtent(0u), Last = QueryHubRowExtent(4u);
     Surface.FillRectangle(PlaneExtent{ First.MinimumX, First.MinimumY, Last.MaximumX, Last.MaximumY }, Faded(HubList(), Opacity), HubListRadius);
 
     const uint32_t GroupMark = Surface.BeginGroup();   // rows are clipped visually by the rounded list via same colour; hover fill is inset
-    for (uint32_t Row = 0u; Row < 4u; ++Row)
+    for (uint32_t Row = 0u; Row < 5u; ++Row)
     {
         const PlaneExtent Extent = QueryHubRowExtent(Row);
         const HubRowStructure& Item = HubRows[Row];
 
         if (HoveredHubRow == static_cast<int>(Row))
-            Surface.FillRectangle(Extent, Faded(Ink05(), Opacity), Row == 0u || Row == 3u ? HubListRadius : 0.0f);
+            Surface.FillRectangle(Extent, Faded(Ink05(), Opacity), Row == 0u || Row == 4u ? HubListRadius : 0.0f);
 
         // Disc 44 px #09090A with a 20 px white/70 glyph (strokeWidth 2).
         const float DiscX = Extent.MinimumX + HubRowPadding, DiscY = Extent.MinimumY + HubRowPadding;
@@ -1334,7 +1342,7 @@ void ControlCentreHost::ConstructHubLayout(PixelSpace& Surface, float Opacity) c
         GlyphSpace::Stroke(Surface, VectorCodec::QueryControlCentreSvgPath(ControlCentreIconCategory::ChevronForward), Forward);
 
         // border-b border-white/5 (not on the last row)
-        if (Row < 3u)
+        if (Row < 4u)
             Surface.FillRectangle(Spanning(Extent.MinimumX, Extent.MaximumY, Extent.Width(), 1.0f), Faded(Ink05(), Opacity));
     }
     Surface.EndGroup(GroupMark, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);
@@ -1363,7 +1371,7 @@ void ControlCentreHost::ConstructPageBodyLayout(PixelSpace& Surface, ControlCent
     // Scrollable body: px-8 py-8 (Notch overflow-y-auto p-8). Content is clipped to the body.
     const PlaneExtent Inner = PlaneExtent{ Body.MinimumX + PagePadding, Body.MinimumY + PagePadding, Body.MaximumX - PagePadding, Body.MaximumY - PagePadding };
     ControlPointer Local = Pointer;
-    Local.Enabled = Pointer.Enabled && Live && !Dialogue.IsVisible() && (Body.Encloses(Pointer.X, Pointer.Y) || PressedInBody || Appearance.HasOpenMenu() || InputPage.HasOpenMenu() || ShadowMenuOpen);
+    Local.Enabled = Pointer.Enabled && Live && !Dialogue.IsVisible() && (Body.Encloses(Pointer.X, Pointer.Y) || PressedInBody || Appearance.HasOpenMenu() || InputPage.HasOpenMenu() || Materials.HasOpenMenu() || ShadowMenuOpen);
 
     Surface.PushClip(Body);
     float ContentHeight = 0.0f;
@@ -1380,6 +1388,7 @@ void ControlCentreHost::ConstructPageBodyLayout(PixelSpace& Surface, ControlCent
     else if (Page == ControlCentrePageCategory::RenderSettings) ContentHeight = ConstructRenderPageLayout(Surface, Inner, BodyScrollY, Local, Opacity);
     else if (Page == ControlCentrePageCategory::Input)         ContentHeight = InputPage.ConstructInputLayout(Surface, Inner, BodyScrollY, Local, Opacity);
     else if (Page == ControlCentrePageCategory::Notifications) ContentHeight = NotificationPage.ConstructNotificationLayout(Surface, Inner, BodyScrollY, Local, Opacity);
+    else if (Page == ControlCentrePageCategory::Materials)     ContentHeight = Materials.ConstructMaterialsLayout(Surface, Inner, BodyScrollY, Local, Opacity);
     Surface.PopClip();
     if (Live) BodyContentHeight = ContentHeight + PagePadding * 2.0f;
 
@@ -1490,7 +1499,7 @@ void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentr
 {
     const PlaneExtent Card = QueryCardExtent();
     const uint32_t Index = static_cast<uint32_t>(Page) - static_cast<uint32_t>(ControlCentrePageCategory::RenderSettings);
-    if (Index >= 4u) return;
+    if (Index >= 5u) return;
     const PageChromeStructure& Chrome = PageChrome[Index];
     const bool InputStyle = Page == ControlCentrePageCategory::Input;   // Notch's Input modal uses its own palette
 
@@ -1605,6 +1614,9 @@ void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentr
             }
             else Status = "Ready to apply changes.";   // GenericSettingsModal verbatim
             break;
+        case ControlCentrePageCategory::Materials:
+            Status = Materials.QueryStatusLine();   // M7a: never dirty, so the pills stay dimmed
+            break;
         default:
             Status = "Ready to apply changes.";   // GenericSettingsModal verbatim
             break;
@@ -1654,6 +1666,7 @@ void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentr
     {
         Appearance.ConstructFloatingLayout(Surface, Pointer, Opacity);
         InputPage.ConstructFloatingLayout(Surface, Pointer, Opacity);
+        Materials.ConstructFloatingLayout(Surface, Pointer, Opacity);
         ConstructRenderFloatingLayout(Surface, Opacity);
         Dialogue.ConstructDialogueLayout(Surface, Card, Pointer);
     }

@@ -641,6 +641,7 @@ int main(int argc, char** argv)
     ControlCentre.AccessAppearance().Seed(Configuration.Query().Appearance);
     ControlCentre.AccessInput().Seed(Configuration.Query().Input);
     ControlCentre.AccessNotifications().Seed(Configuration.Query().Notifications);
+    ControlCentre.AccessMaterials().SeedSelection(Configuration.Query().Material.Selected.c_str());
     Frontier::PixelSpace OverlaySurface;
 
     // R2 debug popup (F3) — seeded from [render] debug_view / occlusion_culling / alias_pick.
@@ -674,6 +675,7 @@ int main(int argc, char** argv)
     uint32_t FixedRenderHeight         = 0u;     // [px] 0 = native  (Display → Resolution)   // AppearanceInspector::Apply bumps its own revision
     uint32_t AppliedInputRevision      = 0u;
     uint32_t AppliedNotifyRevision     = 0u;
+    uint32_t AppliedMaterialsRevision  = 0u;
     Frontier::SkyConstantRecord  LastSky{};    // last sky bytes pushed (④d); a change restarts the accumulation
     Frontier::MoonConstantRecord LastMoons{};  // last moon bytes pushed (④e); a change restarts the accumulation
     Frontier::PostConstantRecord LastPost{};   // last post bytes pushed (④f); a change restarts the accumulation
@@ -1075,6 +1077,24 @@ int main(int argc, char** argv)
             }
         }
 
+        // ①h Materials page → [material] selected (M7a): the inspector snapshots the selection every frame so the
+        //    F-panel summary stays fresh without opening the page; a revision change persists the newly selected
+        //    name. Read-only — selection never restarts the accumulation and never toasts.
+        {
+            Frontier::MaterialInspector& M = ControlCentre.AccessMaterials();
+            M.Rebuild(&Level.QueryMaterials());
+            if (M.QueryRevision() != AppliedMaterialsRevision)
+            {
+                const bool First = AppliedMaterialsRevision == 0u;
+                AppliedMaterialsRevision = M.QueryRevision();
+                if (!First)
+                {
+                    Configuration.Access().Material.Selected = M.QuerySelectedName();
+                    if (!Configuration.Save()) std::cerr << "[Configuration] save failed: " << Configuration.QueryLastError() << "\n";
+                }
+            }
+        }
+
         // ①g Alert gates: "Autosave Errors" (preference writes), "Baking Complete" (accumulation converged),
         //    "Frame-rate Drops" (2 s average under 30 fps, once per episode).
         {
@@ -1225,7 +1245,8 @@ int main(int argc, char** argv)
                               Diagnostics.ConstructInspectorLayout(OverlaySurface, NotchLine, static_cast<float>(LogicalWidth),
                                                                    Surface.QueryVisibilityTelemetry(), Surface.QueryClusterCount(), Surface.QueryDrawIndirectCount(),
                                                                    Integrator.QueryConfiguration(), Level.QueryMaterials().QueryMetrics(),
-                                                                   Textures.QueryMetrics(), MaxTextureLevels);
+                                                                   Textures.QueryMetrics(), MaxTextureLevels,
+                                                                   ControlCentre.QueryMaterials().QuerySummaryLine());
                               ControlCentre.ConstructControlLayout(OverlaySurface);
                               Notifications.ConstructNotificationLayout(OverlaySurface, NotchLine);
                           }

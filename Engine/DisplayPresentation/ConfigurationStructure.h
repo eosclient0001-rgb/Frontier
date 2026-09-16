@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace Frontier {
 
@@ -69,6 +70,19 @@ struct NotificationPreferences
     bool  FrameRateDrops       = false;   // Alerts › "Frame-rate Drops" (engine addition)
     float HoldSeconds          = 3.5f;    // [s] toast dwell 1 … 10 (engine addition)
     [[nodiscard]] bool operator==(const NotificationPreferences&) const noexcept = default;
+};
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                  MATERIAL PREFERENCES
+//------------------------------------------------------------------------------------------------------------------------
+
+// M7a: which material the inspector shows and whether the (M7b) shader-ball preview renders. Selected is the material
+//    name persisted across runs; the inspector resolves it against the loaded scene (exact match, else first material).
+struct MaterialPreferences
+{
+    std::string Selected;                    // persisted material name; "" = scene default (first material)
+    bool        Preview = true;              // M7b: render the shader-ball preview on the Materials page
+    [[nodiscard]] bool operator==(const MaterialPreferences&) const noexcept = default;
 };
 
 } // namespace Frontier

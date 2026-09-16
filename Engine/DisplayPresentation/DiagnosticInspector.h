@@ -48,7 +48,7 @@ public:
     void ConstructInspectorLayout(PixelSpace& Surface, float TopInset, float DisplayWidth, const VisibilityTelemetry& Telemetry,
                                   uint32_t ClusterTotal, bool DrawIndirectCount, const ReSTIRIntegratorConfiguration& ReSTIR,
                                   const MaterialIndexMetrics& MaterialStats, const TextureIndexMetrics& TextureStats,
-                                  uint32_t MaxTextureLevels) const noexcept;
+                                  uint32_t MaxTextureLevels, const char* MaterialSummary = nullptr) const noexcept;
 
     [[nodiscard]] DebugViewCategory QueryView()      const noexcept { return View_; }
     [[nodiscard]] bool              QueryOcclusion() const noexcept { return Occlusion_; }

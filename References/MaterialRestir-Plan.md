@@ -233,7 +233,8 @@ Proof: per-extension fixture round-trips byte-stable where native, extras-stable
 Files: `Engine/DisplayPresentation/MaterialInspector.{h,cpp}` (new, ControlKit patterns),
 `ControlCentreHost` tab wiring, `ConfigurationRegistry` keys (`material.selected`,
 `material.preview`).
-- M7a read-only: selected material's selection + all 20 channels (value/source/texture),
+- M7a read-only (DONE 2026-09-17 — `MaterialInspectorProof` 158/158, report §7; Sponza walkthrough
+  reduced to nine in-harness archetypes): selected material's selection + all 20 channels (value/source/texture),
   complexity, slab count, fold report; F-panel hook. M7b editable: constant editing +
   selection switch (channels retained per `42` §5) + cutout threshold + live `Finalise` and
   accumulation reset; shader-ball preview hook (reuse `--scene shaderball`).

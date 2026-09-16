@@ -105,7 +105,8 @@ enum class ControlCentreIconCategory : uint32_t
     LayoutPanelLeft                     = 36,                   // ▤ lucide "panel-left" — outliner-only mode
     LayoutPanelRight                    = 37,                   // ▤ lucide "panel-right" — properties-only mode
     CameraBody                          = 38,                   // 🎥 lucide "video" — camera row
-    Count                               = 39
+    LayersSlabs                         = 39,                   // 🗂 lucide "layers" — Materials hub row (stacked slabs)
+    Count                               = 40
 };
 
 //------------------------------------------------------------------------------------------------------------------------

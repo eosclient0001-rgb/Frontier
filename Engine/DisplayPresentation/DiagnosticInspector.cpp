@@ -68,7 +68,7 @@ void Thousands(char* Out, size_t Capacity, uint32_t Value)
 void DiagnosticInspector::ConstructInspectorLayout(PixelSpace& Surface, float TopInset, float DisplayWidth, const VisibilityTelemetry& T,
                                                    uint32_t ClusterTotal, bool DrawIndirectCount, const ReSTIRIntegratorConfiguration& ReSTIR,
                                                    const MaterialIndexMetrics& MaterialStats, const TextureIndexMetrics& TextureStats,
-                                                   uint32_t MaxTextureLevels) const noexcept
+                                                   uint32_t MaxTextureLevels, const char* MaterialSummary) const noexcept
 {
     if (!Open_ || !Surface.IsRecording()) return;
 
@@ -87,10 +87,11 @@ void DiagnosticInspector::ConstructInspectorLayout(PixelSpace& Surface, float To
     Thousands(Two,     sizeof(Two),     T.PhaseTwoDraws);
     Thousands(Tris,    sizeof(Tris),    T.TrianglesDrawn);
 
-    // 8 rows since the Celestial port split the gpu line in two. Everything below derives the row COUNT from the
-    //    array rather than repeating the literal — the hint row's index and the card height were both hardcoded
-    //    7s, so adding a row silently dropped the last line and mis-sized the card until they were derived.
-    char Rows[8][160];
+    // 8 rows since the Celestial port split the gpu line in two, plus the M7a material row when a selection exists.
+    //    Everything below derives the row COUNT rather than repeating the literal — the hint row's index and the
+    //    card height were both hardcoded 7s, so adding a row silently dropped the last line and mis-sized the card
+    //    until they were derived.
+    char Rows[9][160];
     std::snprintf(Rows[0], sizeof(Rows[0]), "clusters   %s  \xE2\x86\x92  frustum %s  \xE2\x86\x92  cone %s  \xE2\x86\x92  visible %s", Total, Frustum, Cone, Visible);
     std::snprintf(Rows[1], sizeof(Rows[1]), "drawn      phase 1  %s   +   phase 2  %s   (%s triangles)", One, Two, Tris);
     std::snprintf(Rows[2], sizeof(Rows[2]), "indirect   %s   |   HiZ occlusion %s   |   rays: CWBVH (Tier A)", DrawIndirectCount ? "1 draw/phase" : "fixed-count", Occlusion_ ? "on" : "OFF");
@@ -123,15 +124,21 @@ void DiagnosticInspector::ConstructInspectorLayout(PixelSpace& Surface, float To
                   MaterialStats.ComplexityCount[0], MaterialStats.ComplexityCount[1],
                   MaterialStats.ComplexityCount[2], MaterialStats.ComplexityCount[3],
                   TextureStats.Count, static_cast<double>(TextureStats.ByteCount) / 1048576.0, MaxTextureLevels);
-    std::snprintf(Rows[7], sizeof(Rows[7]), "F3 next  \xC2\xB7  Shift+F3 previous  \xC2\xB7  F4 HiZ on/off  \xC2\xB7  F5 alias pick  \xC2\xB7  Esc close");
+    // The material row appears only while a material is selected (empty summary = no scene = omitted, not dashed).
+    uint32_t RowCount = 8u;
+    if (MaterialSummary && *MaterialSummary)
+    {
+        std::snprintf(Rows[7], sizeof(Rows[7]), "material   %s", MaterialSummary);
+        RowCount = 9u;
+    }
+    std::snprintf(Rows[RowCount - 1u], sizeof(Rows[RowCount - 1u]), "F3 next  \xC2\xB7  Shift+F3 previous  \xC2\xB7  F4 HiZ on/off  \xC2\xB7  F5 alias pick  \xC2\xB7  Esc close");
 
     const PlanePoint TitleSizePx = Surface.MeasureText(Title, TitleSize);
     float ContentWidth = std::max(Width - Padding * 2.0f, TitleSizePx.X);
     float RowHeight = 0.0f;
-    for (const char* Row : Rows) { const PlanePoint M = Surface.MeasureText(Row, RowSize); ContentWidth = std::max(ContentWidth, M.X); RowHeight = std::max(RowHeight, M.Y); }
+    for (uint32_t I = 0u; I < RowCount; ++I) { const PlanePoint M = Surface.MeasureText(Rows[I], RowSize); ContentWidth = std::max(ContentWidth, M.X); RowHeight = std::max(RowHeight, M.Y); }
 
     const float CardWidth  = ContentWidth + Padding * 2.0f;
-    constexpr uint32_t RowCount = static_cast<uint32_t>(sizeof(Rows) / sizeof(Rows[0]));
     const float CardHeight = Padding * 2.0f + TitleSizePx.Y + 8.0f + static_cast<float>(RowCount) * (RowHeight + RowGap) - RowGap;
     const PlaneExtent Card = Spanning(DisplayWidth - Inset - CardWidth, TopInset + Inset, CardWidth, CardHeight);
 

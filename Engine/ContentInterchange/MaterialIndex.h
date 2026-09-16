@@ -118,8 +118,8 @@ public:
     // Register one descriptor; returns its material id (the index the scene's InstanceRecord.MaterialIndex refers to).
     uint32_t Register(const MaterialDescriptor& Descriptor) noexcept;
 
-    // Flatten every descriptor to ≤ SlabLimit slabs and build the GPU records. Fold notes are appended to `Report`
-    //    (one line per folded material) when provided. Idempotent: may be called again with a different limit.
+    // Flatten every descriptor to ≤ SlabLimit slabs and build the GPU records. Fold notes are retained (one line per
+    //    folded material) and copied to `Report` when provided. Idempotent: may be called again with a different limit.
     void     Finalise(uint32_t SlabLimit, std::vector<std::string>* Report = nullptr) noexcept;
     void     Clear() noexcept;
 
@@ -128,6 +128,7 @@ public:
     [[nodiscard]] const std::vector<MaterialRecord>&     QueryRecords()     const noexcept { return Records; }
     [[nodiscard]] const std::vector<MaterialSlabRecord>& QuerySlabRecords() const noexcept { return SlabRecords; }
     [[nodiscard]] const MaterialIndexMetrics&            QueryMetrics()     const noexcept { return Metrics; }
+    [[nodiscard]] const std::vector<std::string>&        QueryFoldReport()  const noexcept { return FoldReport; }
     [[nodiscard]] uint32_t                               QueryCount()       const noexcept { return static_cast<uint32_t>(Descriptors.size()); }
 
     // Flatten one descriptor to ≤ Limit slabs (top first). Public so harnesses can inspect the fold; `Folded` counts
@@ -148,6 +149,7 @@ private:
     std::vector<MaterialRecord>     Records;
     std::vector<MaterialSlabRecord> SlabRecords;
     MaterialIndexMetrics            Metrics;
+    std::vector<std::string>        FoldReport;   // M7a: last Finalise's fold notes, retained for the inspector
 };
 
 } // namespace Frontier

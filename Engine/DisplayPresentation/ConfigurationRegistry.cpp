@@ -201,6 +201,10 @@ std::string ConfigurationRegistry::Serialise(const SlateConfiguration& P) noexce
         { "frame_rate_drops",        P.Notifications.FrameRateDrops },
         { "hold_seconds",            static_cast<double>(P.Notifications.HoldSeconds) },
     });
+    Root.insert("material", toml::table{
+        { "selected", P.Material.Selected },
+        { "preview",  P.Material.Preview },
+    });
 
     std::ostringstream Out;
     Out << "# Slate configuration - written by ConfigurationRegistry; edit freely, unknown keys are ignored.\n\n" << Root << "\n";
@@ -308,6 +312,11 @@ bool ConfigurationRegistry::Deserialise(std::string_view Toml, SlateConfiguratio
         S.Get("frame_rate_drops",        Out.Notifications.FrameRateDrops);
         S.Get("hold_seconds",            Out.Notifications.HoldSeconds);
         Out.Notifications.HoldSeconds = std::clamp(Out.Notifications.HoldSeconds, 1.0f, 10.0f);
+    }
+    {
+        Reader S = R.Sub("material");
+        S.Get("selected", Out.Material.Selected);
+        S.Get("preview",  Out.Material.Preview);
     }
     return true;
 }

@@ -287,7 +287,7 @@ uint32_t MaterialIndex::Register(const MaterialDescriptor& Descriptor) noexcept
 void MaterialIndex::Finalise(uint32_t SlabLimit, std::vector<std::string>* Report) noexcept
 {
     SlabLimit = std::clamp(SlabLimit, 1u, kMaterialSlabCeiling);
-    Records.clear(); SlabRecords.clear();
+    Records.clear(); SlabRecords.clear(); FoldReport.clear();
     Metrics = MaterialIndexMetrics{};
     Metrics.SlabLimit       = SlabLimit;
     Metrics.DescriptorCount = static_cast<uint32_t>(Descriptors.size());
@@ -296,7 +296,7 @@ void MaterialIndex::Finalise(uint32_t SlabLimit, std::vector<std::string>* Repor
     {
         uint32_t Folded = 0u;
         std::vector<float> MixWeights;
-        const std::vector<MaterialSlabDescriptor> Slabs = Flatten(D, SlabLimit, &Folded, Report, &MixWeights);
+        const std::vector<MaterialSlabDescriptor> Slabs = Flatten(D, SlabLimit, &Folded, &FoldReport, &MixWeights);
         Metrics.FoldedCount += Folded;
 
         MaterialRecord R{};
@@ -331,11 +331,12 @@ void MaterialIndex::Finalise(uint32_t SlabLimit, std::vector<std::string>* Repor
         Records.push_back(R);
     }
     Metrics.SlabCount = static_cast<uint32_t>(SlabRecords.size());
+    if (Report) *Report = FoldReport;
 }
 
 void MaterialIndex::Clear() noexcept
 {
-    Descriptors.clear(); Records.clear(); SlabRecords.clear(); Metrics = MaterialIndexMetrics{};
+    Descriptors.clear(); Records.clear(); SlabRecords.clear(); FoldReport.clear(); Metrics = MaterialIndexMetrics{};
 }
 
 } // namespace Frontier

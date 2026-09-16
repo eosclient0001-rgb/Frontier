@@ -46,6 +46,7 @@
 #include "ThemeStructure.h"
 #include "MotionIntegrator.h"
 #include "AppearanceInspector.h"
+#include "MaterialInspector.h"
 #include "ControlKit.h"
 #include "ConfigurationInspector.h"
 #include "DialogueHost.h"
@@ -77,12 +78,13 @@ struct BezierPointIndex
 enum class ControlCentrePageCategory : uint32_t
 {
     Dashboard      = 0,
-    SettingsHub    = 1,      // list of the four settings rows (420 × 480 card)
+    SettingsHub    = 1,      // list of the five settings rows (420 × 557 card: 480 + one hub row)
     RenderSettings = 2,      // sub-pages: card springs to 840 × 600
     Appearance     = 3,
     Input          = 4,
     Notifications  = 5,
-    Count          = 6
+    Materials      = 6,      // M7a: read-only material inspector (RenderSettings + hub row 4)
+    Count          = 7
 };
 
 // Notch SettingsModal tab order: Display · Fonts · Theme (Fonts is the initial tab).
@@ -261,7 +263,7 @@ public:
     [[nodiscard]] float     QuerySlideOffset() const noexcept;
     [[nodiscard]] bool      IsSlideTransitionActive() const noexcept;
     [[nodiscard]] float     QueryPageSwapProgress() const noexcept { return PageSwapProgress; }   // 0 → 1 over 200 ms
-    [[nodiscard]] PlaneExtent QueryHubRowExtent(uint32_t Row) const noexcept;                    // [px] rows 0..3
+    [[nodiscard]] PlaneExtent QueryHubRowExtent(uint32_t Row) const noexcept;                    // [px] rows 0..4
     [[nodiscard]] PlaneExtent QueryHubBackExtent() const noexcept;
     [[nodiscard]] PlaneExtent QueryHeaderGearExtent() const noexcept;
     [[nodiscard]] PlaneExtent QueryPageCloseExtent() const noexcept;
@@ -276,6 +278,8 @@ public:
     [[nodiscard]] const DialogueHost& QueryDialogue() const noexcept { return Dialogue; }
     [[nodiscard]] const AppearanceInspector& QueryAppearance() const noexcept { return Appearance; }
     AppearanceInspector&                     AccessAppearance() noexcept { return Appearance; }
+    [[nodiscard]] const MaterialInspector&   QueryMaterials()   const noexcept { return Materials; }
+    MaterialInspector&                       AccessMaterials()  noexcept { return Materials; }
     [[nodiscard]] const InputInspector&        QueryInput()        const noexcept { return InputPage; }
     InputInspector&                            AccessInput()       noexcept { return InputPage; }
     [[nodiscard]] const NotificationInspector& QueryNotifications() const noexcept { return NotificationPage; }
@@ -401,6 +405,7 @@ private:
     AppearanceInspector       Appearance;
     InputInspector            InputPage;
     NotificationInspector     NotificationPage;
+    MaterialInspector         Materials;
     ControlCentrePageCategory PendingLeave;     // page navigation deferred behind an Unsaved-changes dialogue
     bool                      PendingLeaveBack; // true: NavigateBack, false: close shade
     float                     BodyScrollY;      // [px] sub-page body scroll
@@ -436,7 +441,7 @@ private:
     int                     GrabbedPageButton;       // 0 secondary · 1 primary · 2 reset (Input page)
     float                   CloseResetTimer;         // [s]  Notch resets to the dashboard 300 ms after closing
     mutable float           TabWidthCache[3];        // [px] measured tab label widths (record → hit-test)
-    mutable float           ButtonWidthCache[4][2];  // [px] measured footer pill label widths per page
+    mutable float           ButtonWidthCache[5][2];  // [px] measured footer pill label widths per page
     mutable float           ResetWidthCache = 0.0f;  // [px] Input page "Reset Defaults" label width
     void                    ApplyActivePage()   noexcept;
     void                    DiscardActivePage() noexcept;

@@ -38,6 +38,7 @@ struct SlateConfiguration
     AppearanceSettings       Appearance;
     InputPreferences         Input;
     NotificationPreferences  Notifications;
+    MaterialPreferences      Material;       // [material] selected … (M7a: inspector selection + preview toggle)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
