@@ -127,4 +127,70 @@ ok LTC sheen asymmetry bounded (grid-worst 1.24 — documented fit artifact, gra
 ok cloth eta unmodulated (1.5) · cloth F0 = 0.04 · rescale matches bake · layer weight = F·rescale·R
 ok sheen E[f·cos/pdf]=0.04188 albedo=0.04189 / 0.24519 vs 0.24532  ← sampler reproduces albedo
 ok cloth spec
-...[truncated 4027 chars]
+ok cloth specular alpha isotropic · aniso basis identity · aniso+angle bit-inert under Cloth
+ok cloth ≠ standard by selection (rel 1.23e-01)
+```
+
+### M4 single-interface BTDF — η² reciprocity + R+T bounds + smooth anchor
+
+```
+ok eta2 reciprocity ior=1.1/1.5/2.0 worst-rel-diff=1.17e-07/9.77e-08/0.00e+00 (~4500 pairs each)
+ok R_ss+T_ss ceiling/floor r=0.15 mu=0.5 E=0.9997 Ess=0.9982 · mu=1.0 E=1.0000 Ess=0.9996
+ok R_ss+T_ss ceiling/floor r=0.50 mu=0.5 E=0.9600 Ess=0.8579 · mu=1.0 E=0.9921 Ess=0.9147
+ok single smooth anchor mu=0.5/1.0 E=1.0000/1.0000   ← G→1, micro→macro: MUST be 1, no tables
+ok T-branch dominates smooth glass (19182/20000) · smooth T clusters at Snell (19167/19182)
+```
+
+The `R+T=E_ss` equality was REJECTED by data+theory (transmitted rays bend toward the normal and shadow
+less, +4–12% at rough-oblique) and replaced by the rigorous ceiling + empirical floor above.
+
+### M4 thin-wall compound — sampling, Beer, smooth limit, weight sweep
+
+```
+ok thin-wall E[f·cos/p]=0.9596 Ess-split=0.9608 (r=0.15)   ← theory exact to 4 digits smooth-ish
+ok sampler ceiling/floor r=0.15 E=0.9596 · r=0.50 E=0.9434 (split=0.8747, T-shadows-less excess)
+ok exit-TIR trap rate sane (rej=0.000 / 0.012)
+ok numeric cross-check sampler=0.9434 furnace=0.9421 (r=0.50) · numeric ≤ 1 · trap-loss floor
+ok thin-wall smooth anchor E=0.9602 split=0.9612 (r=0.08, no tables)
+ok f/p identity G₁(−d1)·(1−F_x)·Beer on all 6 pairs (to 5 digits, with σ + thickness)
+ok smooth thin glass transmits (18792/20000) · antipodal (18764/18792)
+ok clear-glass throughput 0.9596 vs 0.9616
+ok Beer T-only, 3 channels × 3 depths, ratios match exp(−σt) to ≤0.003 (nT≈110k each)
+ok weight sweep sw=0/0.25/0.5/1: sampler E=1.0012/0.9889/0.9788/0.9592, all ≤ 1.01
+ok weight-0 film invisible (E=1.0012) + straight-through (19607/19607)
+ok u.w dead when opaque (2000/2000 bitwise) · metal kills the transmit mix · metal transmits nothing
+```
+
+Caught & fixed this run: the glass-side inversion passed −d1 where Walter's ht takes the outward
+direction d1 — f/p self-consistent but jointly wrong (+30% at r=0.5). Proven by Riemann ∫f·cos +
+sampler-vs-pdf histogram (all 10 |cos| bins match to MC noise after the fix).
+
+## 3. Known gaps (acknowledged, by design)
+
+- **T_ms** — transmission multiple scattering (≤4% at rough-oblique); needs a second-lobe model + bounds.
+- **M9 thick-glass tracking** — solid-glass interior traversal (exhibit renders the honest thin-wall look).
+- **M5 subsurface** (channels 16–17) · **M6 displacement** (channel 20, acked as none).
+- **Denoiser + motion vectors** — parked by direction; after the material system, not inside it.
+- **R-below-horizon mixture polish** (~0.5–1%, the only known un-acked bias): R/EON samples landing below
+  the horizon are rejected while pdf/f stay >0 there. All closures pass with margin regardless.
+
+## 4. Visual exhibit — shaderball sheet (kept in `Exhibits/Gallery/Materials/`)
+
+`ShaderballSheet_GlassClothCoat.png` (1544×512): the CC0 shaderball (Pseudopode/UnityShaderBall,
+15,554 tris) path-traced on the CPU through the same `MaterialEvaluation.slang` the furnace proves —
+thin-wall glass (rough 0.06, η 1.5) · deep-red velvet (fuzz 0.65) · clearcoat car paint — under a
+3-softbox studio rig. 256 spp/panel, BSDF sampling + NEE with power-heuristic MIS, ACES + gamma 2.2,
+row striping with per-(panel, frame, pixel) seeds: **deterministic, byte-stable under regeneration**
+(`sha256 6b190fa6…f5ab814`, canonical `-strip` compression).
+
+- Kept-sheet linear means: glass 0.1913 · cloth 0.1509 · coat 0.1434 · 0 non-finite pixels.
+- Harness `Exhibits/Workbench/Materials/ShaderballExhibit.cpp` + driver `RunShaderballExhibit.sh`
+  (build → smoke → full render; not part of the gate — the sheet is ~5 min).
+
+## 5. What's next
+
+1. **R-below-horizon mixture polish** (small) — fold into the next material pass.
+2. **T_ms** second-lobe model + furnace bounds.
+3. **M9 thick-glass tracking** + solid-glass shaderball panel.
+4. **M5 subsurface** (channels 16–17) and its ReSTIR/shaded wiring.
+5. **Denoiser + motion vectors** (parked per direction).
