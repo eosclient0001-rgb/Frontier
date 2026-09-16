@@ -54,6 +54,7 @@ Frontier::MaterialSlabDescriptor KitchenSink() noexcept
     S.GeometryOpacity = 0.95f;
     S.SlateHazinessWeight = 0.39f; S.SlateHazinessRoughness = 0.61f; S.SlateGlintDensity = 0.0f; S.SlateGlintUvScale = 2.0f;
     S.GeometryThinWalled = true;
+    S.SlateAnisotropyRotation = 0.7f;   // M2 (SlateDirectF0Weight stays 0: reserved until M6)
     for (uint32_t C = 0u; C < Frontier::kMaterialTextureChannelCount; ++C)
     {
         S.Textures[C].Texture = 100u + C;
@@ -105,6 +106,13 @@ void ProofRecordMirror()
     CHECK(S.SlabFlags == 1u, "thin-walled bit");
     CHECK(S.NormalScale == 0.75f && S.OcclusionStrength == 0.5f, "normal scale / occlusion strength scalars");
     CHECK(S.MixWeight == 1.0f, "vertical mix weight");
+    // M2 extension vec4 + offset regression (the shader mirrors are positional — field ORDER is load-bearing).
+    CHECK(S.AnisotropyRotation == 0.7f, "rotation lane");
+    CHECK(S.DirectF0Weight == 0.0f && S.Reserved0 == 0.0f && S.Reserved1 == 0.0f, "reserved lanes zero");
+    CHECK(sizeof(MaterialSlabRecord) == 304u, "record is 304 B");
+    CHECK(offsetof(MaterialSlabRecord, SlabFlags) == 58u * 4u, "SlabFlags offset pinned");
+    CHECK(offsetof(MaterialSlabRecord, MixWeight) == 284u, "MixWeight offset pinned");
+    CHECK(offsetof(MaterialSlabRecord, AnisotropyRotation) == 288u, "Slate2 appended, nothing renumbered");
 }
 
 void ProofFlagsAndComplexity()
@@ -157,6 +165,14 @@ void ProofFlatten()
     CHECK(!Report.empty(), "fold reported");
     CHECK(One.front().CoatWeight == 0.5f && One.front().CoatIor == 1.7f, "top coat carried down through the fold");
 
+    MaterialDescriptor Fold; Fold.Name = "foldrot"; Fold.Slabs.resize(2);
+    Fold.Slabs[0].SlateAnisotropyRotation = 0.5f;
+    auto FoldedRot = MaterialIndex::Flatten(Fold, 1u, nullptr, nullptr);
+    CHECK(FoldedRot.front().SlateAnisotropyRotation == 0.5f, "top rotation carried down when bottom has none");
+    Fold.Slabs[1].SlateAnisotropyRotation = 0.3f;
+    FoldedRot = MaterialIndex::Flatten(Fold, 1u, nullptr, nullptr);
+    CHECK(FoldedRot.front().SlateAnisotropyRotation == 0.3f, "bottom rotation wins when both set (first-nonzero)");
+
     MaterialDescriptor Mix; Mix.Name = "mix"; Mix.Slabs.resize(2);
     Mix.Slabs[0].BaseColor[0] = 1.0f; Mix.Slabs[1].BaseColor[0] = 0.0f;
     MaterialOperation Op; Op.Category = MaterialOperationCategory::HorizontalMix; Op.Left = 0u; Op.Right = 1u; Op.Weight = 0.25f;
@@ -196,11 +212,11 @@ void ProofCoverageTable()
         { "06 occlusion",            "WIRED", "WIRED", "floor-only",  "n/a(path)" },
         { "07 emission",             "WIRED", "WIRED", "WIRED",       "WIRED" },
         { "08 opacity",              "WIRED", "WIRED", "cutout",      "cutout" },
-        { "09 anisotropy",           "WIRED", "scalar", "WIRED(GGX)", "scalar" },
-        { "10 anisotropy direction", "WIRED", "ACK:M2", "ACK:M2",     "ACK:M2" },
+        { "09 anisotropy",           "WIRED", "WIRED", "WIRED(GGX)", "WIRED" },
+        { "10 anisotropy direction", "WIRED", "WIRED", "WIRED(rot)",  "WIRED" },
         { "11 clear coat",           "WIRED", "WIRED", "WIRED",       "WIRED" },
         { "12 coat roughness",       "WIRED", "WIRED", "WIRED",       "WIRED" },
-        { "13 coat orientation",     "WIRED", "ACK:M2", "ACK:M2",     "ACK:M2" },
+        { "13 coat orientation",     "WIRED", "WIRED", "WIRED(frame)","WIRED" },
         { "14 sheen colour",         "WIRED", "WIRED", "WIRED(LTC)",  "WIRED" },
         { "15 sheen roughness",      "WIRED", "WIRED", "WIRED(LTC)",  "WIRED" },
         { "16 subsurface colour",    "WIRED", "ACK:M5", "ACK:M5",     "ACK:M5" },

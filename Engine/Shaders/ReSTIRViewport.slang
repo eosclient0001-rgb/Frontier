@@ -53,12 +53,13 @@ struct GpuMaterial          // MaterialRecord (ContentInterchange/MaterialIndex.
     float NormalScale;
 };
 
-struct GpuMaterialSlab      // MaterialSlabRecord (288 B) — 18 vec4; field map in SceneRecords.slang. Read by R4b shading.
+struct GpuMaterialSlab      // MaterialSlabRecord (304 B) — 19 vec4; field map in SceneRecords.slang. Read by R4b shading.
 {
     vec4  Payload[15];
     uvec4 TextureSlots0;
     uvec4 TextureSlots1;
     uvec4 Runtime;
+    vec4  Slate2;           // M2: x = anisotropy_rotation [rad], y = direct_f0_weight (M6, 0), zw = 0
 };
 
 struct GpuInstance          // InstanceRecord (SceneStructure.h / SceneRecords.slang) — only MaterialIndex is read here
@@ -181,7 +182,7 @@ uint SlabTexture(GpuMaterialSlab S, uint C)
 }
 const uint kChannelBaseColor = 0u, kChannelMetalness = 1u, kChannelRoughness = 2u, kChannelSpecularColor = 3u, kChannelNormal = 4u,
            kChannelCoatNormal = 5u, kChannelEmission = 6u, kChannelOpacity = 7u, kChannelCoat = 10u, kChannelFuzz = 11u,
-           kChannelThinFilm = 12u, kChannelOcclusion = 14u;
+           kChannelThinFilm = 12u, kChannelAnisotropy = 13u, kChannelOcclusion = 14u;
 
 // M1: reflectance selection mirror (canonical: SceneRecords.slang kMaterialReflectance*). Sultan-18 §3's eight
 // shading selections, derived per material by MaterialIndex::DeriveReflectance from exact-zero weights.
@@ -203,7 +204,9 @@ bool ReflectanceConsumes(uint selection, uint channel)
         channel == kChannelNormal || channel == kChannelOcclusion)
         return true;   // Standard set, shared by every reflective selection
     if (channel == kChannelCoat) return selection == kReflectanceClearCoated;
-    return false;      // thin-film (12): extension, weight-gated only; 5/8/9/13 arrive in M2/M4/M5
+    if (channel == kChannelAnisotropy) return selection == kReflectanceAnisotropic;
+    if (channel == kChannelCoatNormal) return selection == kReflectanceClearCoated;
+    return false;      // thin-film (12): extension, weight-gated only; 8/9 arrive in M4/M5
 }
 
 struct SurfaceFrame         // everything the kernel needs at a hit besides the ShadingRecord
@@ -283,10 +286,11 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
 
     ShadingRecord m;
     m.BaseColor = mat.Albedo.xyz; m.Metalness = mat.Emissive.w; m.DiffuseRoughness = 0.0;
-    m.SpecularWeight = 1.0; m.SpecularColor = vec3(1.0); m.SpecularRoughness = mat.Albedo.w; m.SpecularAnisotropy = 0.0; m.SpecularIor = 1.5;
+    m.SpecularWeight = 1.0; m.SpecularColor = vec3(1.0); m.SpecularRoughness = mat.Albedo.w; m.SpecularAnisotropy = 0.0; m.AnisotropyAngle = 0.0; m.SpecularIor = 1.5;
     m.ThinFilmWeight = 0.0; m.ThinFilmThickness = 0.5; m.ThinFilmIor = 1.4;
     m.HazinessWeight = 0.0; m.HazinessRoughness = 0.5;
-    m.CoatWeight = 0.0; m.CoatColor = vec3(1.0); m.CoatRoughness = 0.0; m.CoatIor = 1.6; m.CoatDarkening = 1.0;
+    m.CoatWeight = 0.0; m.CoatColor = vec3(1.0); m.CoatRoughness = 0.0; m.CoatAnisotropy = 0.0; m.CoatIor = 1.6; m.CoatDarkening = 1.0;
+    m.CoatTangent = vec3(1.0, 0.0, 0.0); m.CoatNormal = vec3(0.0, 0.0, 1.0);   // M2: identity coat frame
     m.FuzzWeight = 0.0; m.FuzzColor = vec3(1.0); m.FuzzRoughness = 0.5;
     m.Emission = mat.Emissive.xyz;
     F.Emission = mat.Emissive.xyz; F.Opacity = 1.0; F.Occlusion = 1.0;
@@ -309,12 +313,19 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
                                P1.z > 0.0 || ReflectanceConsumes(selection, kChannelSpecularColor)).xyz;
         m.SpecularRoughness  = P2.z * SampleChannelGated(S, kChannelRoughness, uv, F.LodBias, vec4(1.0),
                                (P1.z > 0.0 && P2.z > 0.0) || ReflectanceConsumes(selection, kChannelRoughness)).y;   // glTF: G
-        m.SpecularAnisotropy = P2.w;
+        // M2: anisotropy — direction from RG (tangent space), strength scale from B (KHR_materials_anisotropy);
+        // the slab rotation composes additively. Fallback = +tangent, strength 1 (constant path).
+        vec4 anisoTex = SampleChannelGated(S, kChannelAnisotropy, uv, F.LodBias, vec4(1.0, 0.5, 1.0, 1.0),
+                            P2.w != 0.0 || ReflectanceConsumes(selection, kChannelAnisotropy));
+        m.SpecularAnisotropy = P2.w * anisoTex.z;
+        vec2 anisoDir = anisoTex.xy * 2.0 - 1.0;
+        m.AnisotropyAngle = dot(anisoDir, anisoDir) > 1e-12 ? atan(anisoDir.y, anisoDir.x) + S.Slate2.x : S.Slate2.x;
         m.SpecularIor        = P3.x;
         m.CoatWeight         = P8.y * SampleChannelGated(S, kChannelCoat, uv, F.LodBias, vec4(1.0),
                                P8.y > 0.0 || ReflectanceConsumes(selection, kChannelCoat)).x;
         m.CoatColor          = vec3(P8.zw, P9.x);
         m.CoatRoughness      = P9.y;
+        m.CoatAnisotropy     = P9.z;
         m.CoatIor            = P9.w;
         m.CoatDarkening      = P10.x;
         m.FuzzWeight         = P10.y;
@@ -341,6 +352,22 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
             vec3 nm = normalize(t * tn.x + b * tn.y + n * tn.z);
             if (dot(nm, ng) > 0.0) n = nm;                         // reject maps that push the normal below the surface
             t = normalize(t - n * dot(n, t)); b = cross(n, t) * handed;
+        }
+
+        // M2: independent coat frame (clearcoat_normal_texture), derived from the POST-normal-map base frame — the coat
+        // follows the base surface plus its own perturbation — then expressed in local (base-frame) coords for the lobes.
+        if (ReflectanceConsumes(selection, kChannelCoatNormal) && SlabTexture(S, kChannelCoatNormal) != 0xFFFFu)
+        {
+            vec3 cn = SampleChannel(S, kChannelCoatNormal, uv, F.LodBias, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
+            vec3 nCw = normalize(t * cn.x + b * cn.y + n * cn.z);
+            if (dot(nCw, ng) > 0.0)
+            {
+                vec3 tCw = t - nCw * dot(nCw, t);
+                tCw = dot(tCw, tCw) > 1e-12 ? normalize(tCw)
+                                            : normalize(abs(nCw.z) < 0.999 ? cross(vec3(0.0, 0.0, 1.0), nCw) : vec3(1.0, 0.0, 0.0));
+                m.CoatTangent = vec3(dot(tCw, t), dot(tCw, b), dot(tCw, n));
+                m.CoatNormal  = vec3(dot(nCw, t), dot(nCw, b), dot(nCw, n));
+            }
         }
     }
 

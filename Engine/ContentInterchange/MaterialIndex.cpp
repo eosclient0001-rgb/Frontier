@@ -68,6 +68,12 @@ MaterialSlabDescriptor FoldVertical(const MaterialSlabDescriptor& Top, const Mat
     {
         Out.ThinFilmWeight = Top.ThinFilmWeight; Out.ThinFilmThickness = Top.ThinFilmThickness; Out.ThinFilmIor = Top.ThinFilmIor;
     }
+    // M2: post-prefix scalars follow the same carry-down rule (rotation composes by addition in the exact case; the
+    // fold keeps the first nonzero contributor, consistent with every other carried lobe above).
+    if (Top.SlateAnisotropyRotation != 0.0f && Out.SlateAnisotropyRotation == 0.0f)
+        Out.SlateAnisotropyRotation = Top.SlateAnisotropyRotation;
+    if (Top.SlateDirectF0Weight != 0.0f && Out.SlateDirectF0Weight == 0.0f)
+        Out.SlateDirectF0Weight = Top.SlateDirectF0Weight;
     if (Top.SlateGlintDensity > 0.0f && Out.SlateGlintDensity == 0.0f)
     {
         Out.SlateGlintDensity = Top.SlateGlintDensity; Out.SlateGlintUvScale = Top.SlateGlintUvScale;
@@ -228,6 +234,10 @@ MaterialSlabRecord MaterialIndex::ConstructSlabRecord(const MaterialSlabDescript
     R.NormalScale         = S.Texture(MaterialTextureChannel::GeometryNormal).Scalar;
     R.OcclusionStrength   = S.Texture(MaterialTextureChannel::Occlusion).Scalar;
     R.MixWeight           = MixWeight;
+    R.AnisotropyRotation  = S.SlateAnisotropyRotation;
+    R.DirectF0Weight      = S.SlateDirectF0Weight;
+    R.Reserved0           = 0.0f;
+    R.Reserved1           = 0.0f;
     return R;
 }
 
@@ -237,7 +247,7 @@ uint32_t MaterialIndex::ClassifyComplexity(const std::vector<MaterialSlabDescrip
     const MaterialSlabDescriptor& S = Slabs.empty() ? MaterialSlabDescriptor{} : Slabs.front();
     const bool Special = S.TransmissionWeight > 0.0f || S.SubsurfaceWeight > 0.0f || S.SlateGlintDensity > 0.0f || S.ThinFilmWeight > 0.0f;
     if (Special) return MaterialComplexitySpecial;
-    const bool Extra = S.CoatWeight > 0.0f || S.FuzzWeight > 0.0f || S.SlateHazinessWeight > 0.0f || S.SpecularRoughnessAnisotropy > 0.0f;
+    const bool Extra = S.CoatWeight > 0.0f || S.FuzzWeight > 0.0f || S.SlateHazinessWeight > 0.0f || S.SpecularRoughnessAnisotropy != 0.0f;
     return Extra ? MaterialComplexitySingle : MaterialComplexitySimple;
 }
 

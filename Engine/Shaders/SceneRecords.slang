@@ -77,7 +77,7 @@ struct MaterialRecord          // 64 B — ContentInterchange/MaterialIndex.h (R
     float NormalScale;
 };
 
-struct MaterialSlabRecord      // 288 B — ContentInterchange/MaterialIndex.h (OpenPBR §5 order + slate_ + 16 texture slots)
+struct MaterialSlabRecord      // 304 B — ContentInterchange/MaterialIndex.h (OpenPBR §5 order + slate_ + 16 texture slots + M2 Slate2)
 {
     vec4 Base;                 // base_weight, base_color.rgb
     vec4 BaseSpecular;         // base_metalness, base_diffuse_roughness, specular_weight, specular_color.r
@@ -97,6 +97,7 @@ struct MaterialSlabRecord      // 288 B — ContentInterchange/MaterialIndex.h (
     uvec4 TextureSlots0;       // 8 × uint16: base_color, metalness | specular_roughness, specular_color | geometry_normal, geometry_coat_normal | emission, geometry_opacity
     uvec4 TextureSlots1;       // 8 × uint16: transmission, subsurface | coat, fuzz | thin_film, anisotropy | occlusion, mask
     uvec4 Runtime;             // x = TextureUvSets (16 × 2 bits), y = floatBits(NormalScale), z = floatBits(OcclusionStrength), w = floatBits(MixWeight)
+    vec4  Slate2;              // M2 extension: x = anisotropy_rotation [rad], y = direct_f0_weight (M6, 0), zw = 0
 };
 
 const uint kMaterialFlagDoubleSided  = 1u;

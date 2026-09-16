@@ -65,7 +65,7 @@ struct MaterialRecord                       // 64 B — header, Tier A fast path
 };
 static_assert(sizeof(MaterialRecord) == 64u, "MaterialRecord must be 64 bytes (std430 mirror)");
 
-struct MaterialSlabRecord                   // 288 B = 18 vec4 — float prefix mirrors MaterialSlabDescriptor exactly (memcpy)
+struct MaterialSlabRecord                   // 304 B = 19 vec4 — float prefix mirrors MaterialSlabDescriptor exactly (memcpy)
 {
     // OpenPBR §5 in spec order (58 floats — same order and count as MaterialSlabDescriptor's float prefix)
     float BaseWeight, BaseColorR, BaseColorG, BaseColorB, BaseMetalness, BaseDiffuseRoughness;
@@ -87,8 +87,12 @@ struct MaterialSlabRecord                   // 288 B = 18 vec4 — float prefix 
     uint32_t TextureUvSets;                 // 16 × 2 bits (uv set 0-3)
     float    NormalScale, OcclusionStrength;
     float    MixWeight;                     // constant HorizontalMix factor against the slab below (1 = vertical layer)
+    // M2 extension vec4 (appended — every earlier offset is unchanged, so pre-M2 readers keep working):
+    float    AnisotropyRotation;            // [rad] added to the anisotropy direction angle (SlateAnisotropyRotation)
+    float    DirectF0Weight;                // [-]   M6 reserved, always 0 until then (0 = IOR-derived F0)
+    float    Reserved0, Reserved1;          // zero
 };
-static_assert(sizeof(MaterialSlabRecord) == 288u, "MaterialSlabRecord must be 288 bytes = 18 vec4 (std430 mirror)");
+static_assert(sizeof(MaterialSlabRecord) == 304u, "MaterialSlabRecord must be 304 bytes = 19 vec4 (std430 mirror)");
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                     MATERIAL INDEX

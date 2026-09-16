@@ -27,11 +27,11 @@ payload pattern). Local baseline: R4b (this branch) + `MaterialSystemResearch-20
 | 6 | Ambient occlusion | `occlusion` ch14 | ✅ | ✅ | ⚠️ ambient-floor only | n/a — correct for a path tracer² |
 | 7 | Emission | `emission_*` + ch6 | ✅ | ✅ | ✅ direct | ✅ (+ emissive short-circuit) |
 | 8 | Opacity | `geometry_opacity` + ch7, `AlphaCutoff` | ✅ | ✅ | ✅ cutout | ✅ cutout; ❌ blend / transmissive |
-| 9 | Anisotropy | `specular_roughness_anisotropy` | ✅ | ✅ scalar | ✅ GGX aniso | ✅ scalar only |
-| 10 | Anisotropy direction | `anisotropy` ch13 tex + rotation in `Scalar` | ✅ | ❌ never sampled | ❌ | ❌ |
+| 9 | Anisotropy | `specular_roughness_anisotropy` | ✅ | ✅ signed (`!= 0`, M2) | ✅ GGX aniso | ✅ (M2) |
+| 10 | Anisotropy direction | `anisotropy` ch13 tex + `SlateAnisotropyRotation`→`Slate2.x` | ✅ | ✅ M2: RG dir × B strength + slab rotation | ✅ rotated frame | ✅ |
 | 11 | Clear coat | `coat_weight` + ch10 | ✅ | ✅ | ✅ | ✅ |
 | 12 | Clear coat roughness | `coat_roughness` | ✅ | ✅ | ✅ | ✅ |
-| 13 | Clear coat orientation | `geometry_coat_normal` ch5 | ✅ | ❌ never sampled | ❌ | ❌ |
+| 13 | Clear coat orientation | `geometry_coat_normal` ch5 | ✅ | ✅ M2: post-normal-map frame + ch5 | ✅ coat frame | ✅ |
 | 14 | Sheen colour | `fuzz_color` + ch11 (glTF sheen→fuzz mapped) | ✅ | ✅ | ✅ LTC sheen | ✅ |
 | 15 | Sheen roughness | `fuzz_roughness` | ✅ | ✅ | ✅ | ✅ |
 | 16 | Subsurface colour | `subsurface_color` + ch9 | ✅ | ❌ | ❌ R4b scope line | ❌ |
@@ -40,7 +40,7 @@ payload pattern). Local baseline: R4b (this branch) + `MaterialSystemResearch-20
 | 19 | IOR | `specular_ior` | ✅ | ✅ | ✅ Fresnel | ✅ reflection; ❌ refraction |
 | 20 | Displacement | — | ❌ | ❌ | ❌ | — (decision M6: bump-only, later) |
 
-¹ `ResolveMaterial` in `ReSTIRViewport.slang` samples ch 0,1,2,3,4,6,7,10,11,12,14 only.
+¹ `ResolveMaterial` in `ReSTIRViewport.slang` samples ch 0,1,2,3,4,5,6,7,10,11,12,13,14 (M2 wired +5,+13; ch 8/9 arrive with M4/M5).
 ² Doc `18` §7: occlusion attenuates ambient only. The kernel has no ambient term (only the
 debug floor), so occlusion correctly does nothing in the path — keep it that way.
 
@@ -149,6 +149,17 @@ CPU port + tests.
 Proof: furnace still 1.0 under rotation; aniso-highlight rotation render test (brushed-metal
 ball row); coat-normal-perturbation test; reciprocity holds in both frames.
 
+✅ **SHIPPED.** Kernel formula `strength = P2.w × tex.B`,
+`angle = atan(dir.y, dir.x) + Slate2.x` (fallback texel `(1, 0.5, 1, 1)` = +tangent);
+coat frame from the post-normal-map `(t, b, n)` + ch5, hemisphere flip-guarded, expressed
+in local coords; single layout bump 288→304 B (appended `Slate2`, float prefix untouched).
+Furnace: ① equivariance <1e-3, ② μo=1 energy invariance ±1.5%, ③ rotated sampling ±3%,
+④ isolated-specular reciprocity (full-stack dielectric BSDF is non-reciprocal by design,
+OpenPBR §3.10), ⑤/⑦ tilted-coat energy ≤1.01 + sampling ±3.5%, ⑥ 2° continuity ±3%.
+Signed anisotropy supported in shading; encode + complexity gate on `!= 0`. Identity frames
+are FP-exact, so pre-M2 scenes are bit-stable. (Codec: real-header `g++ -fsyntax-only` +
+one-off driver PASS for rotation/slots/native encode; the committed stub harness lands M6.)
+
 ### M3 — Cloth selection (sheen-primary)
 Files: `ShadingTableCodec.*` (bake Charlie directional albedo into `SheenLut.w`),
 `MaterialEvaluation.slang` (Cloth path: Charlie-or-EON diffuse + LTC sheen as the *primary*
@@ -236,8 +247,10 @@ selection-switch retention test.
 - Proofs per phase: white-furnace (R+T=1 for glass), η²-reciprocity, sampling consistency
   `E[f·cosθ/pdf]`, all in the `FRONTIER_CPU_PORT` harness on the *same* `.slang` text
   (established R4b discipline) + one shader-ball row + one proof scene each for M4/M5.
-- Records: one layout bump only (M1, 288→304 B + flag bits); std430 mirrors + `static_assert`
-  updated same-commit; `kSlabFloatCount` 58→59 assert updated.
+- Records: one layout bump only (landed M2, not M1: M1 shipped with no layout change;
+  M2 appended `Slate2`, 288→304 B); std430 mirrors + `static_assert` updated same-commit;
+  the append sits after the float prefix so `kSlabFloatCount` stays 58 (plan said 58→59 —
+  wrong guess, prefix untouched).
 
 ## 7. Order of work
 

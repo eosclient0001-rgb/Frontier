@@ -43,6 +43,7 @@ constexpr ParameterEntry kParameters[] = {
     SLATE_PARAM("geometry_opacity", GeometryOpacity, 1),
     SLATE_PARAM("slate_haziness_weight", SlateHazinessWeight, 1), SLATE_PARAM("slate_haziness_roughness", SlateHazinessRoughness, 1),
     SLATE_PARAM("slate_glint_density", SlateGlintDensity, 1), SLATE_PARAM("slate_glint_uv_scale", SlateGlintUvScale, 1),
+    SLATE_PARAM("slate_anisotropy_rotation", SlateAnisotropyRotation, 1), SLATE_PARAM("slate_direct_f0_weight", SlateDirectF0Weight, 1),
 };
 #undef SLATE_PARAM
 
@@ -54,6 +55,7 @@ constexpr const char* kGltfCoveredParameters[] = {
     "transmission_weight", "transmission_color", "transmission_depth", "transmission_dispersion_scale", "transmission_dispersion_abbe_number",
     "coat_weight", "coat_roughness", "fuzz_weight", "fuzz_color", "fuzz_roughness", "emission_luminance", "emission_color",
     "thin_film_weight", "thin_film_thickness", "thin_film_ior", "geometry_opacity",
+    "slate_anisotropy_rotation",   // M2: native anisotropyRotation carries it; extras must not duplicate it
 };
 bool IsGltfCovered(const char* Identifier)
 {
@@ -304,7 +306,7 @@ MaterialDescriptor MaterialCodec::DecodeGltf(const cgltf_material* M, const Mate
     {
         S.SpecularRoughnessAnisotropy = M->anisotropy.anisotropy_strength;
         S.Texture(MaterialTextureChannel::Anisotropy) = FromGltfView(M->anisotropy.anisotropy_texture, true, TextureChannelSelection::Rgb, Resolve);
-        S.Texture(MaterialTextureChannel::Anisotropy).Scalar = M->anisotropy.anisotropy_rotation;   // rotation rides in Scalar (radians)
+        S.SlateAnisotropyRotation = M->anisotropy.anisotropy_rotation;   // M2: canonical home (was Texture.Scalar — dropped before the GPU)
     }
     if (M->has_clearcoat)
     {
@@ -481,9 +483,11 @@ std::string MaterialCodec::EncodeGltf(const MaterialDescriptor& D, std::vector<s
         if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::SpecularColor), TextureIndexOf); !T.empty()) Body += ",\"specularColorTexture\":" + T;
         Extension("KHR_materials_specular", Body);
     }
-    if (S.SpecularRoughnessAnisotropy > 0.0f)
+    // M2: != 0 (not > 0) — Sultan-range negative anisotropy passes through as-is so the round-trip is exact.
+    // Strict glTF validators expect [0,1]; only Sultan-authored negatives trigger this, and cgltf parses them back.
+    if (S.SpecularRoughnessAnisotropy != 0.0f)
     {
-        std::string Body = "\"anisotropyStrength\":" + Number(S.SpecularRoughnessAnisotropy) + ",\"anisotropyRotation\":" + Number(S.Texture(MaterialTextureChannel::Anisotropy).Scalar);
+        std::string Body = "\"anisotropyStrength\":" + Number(S.SpecularRoughnessAnisotropy) + ",\"anisotropyRotation\":" + Number(S.SlateAnisotropyRotation);
         if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::Anisotropy), TextureIndexOf); !T.empty()) Body += ",\"anisotropyTexture\":" + T;
         Extension("KHR_materials_anisotropy", Body);
     }

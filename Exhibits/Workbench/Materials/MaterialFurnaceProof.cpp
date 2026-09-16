@@ -74,10 +74,12 @@ ShadingRecord StandardMaterial(vec3 albedo, float roughness)
     ShadingRecord m;
     m.BaseColor = albedo; m.Metalness = 0.0f; m.DiffuseRoughness = 0.0f;
     m.SpecularWeight = 1.0f; m.SpecularColor = vec3(1.0f); m.SpecularRoughness = roughness;
-    m.SpecularAnisotropy = 0.0f; m.SpecularIor = 1.5f;
+    m.SpecularAnisotropy = 0.0f; m.AnisotropyAngle = 0.0f; m.SpecularIor = 1.5f;
     m.ThinFilmWeight = 0.0f; m.ThinFilmThickness = 0.5f; m.ThinFilmIor = 1.4f;
     m.HazinessWeight = 0.0f; m.HazinessRoughness = 0.5f;
-    m.CoatWeight = 0.0f; m.CoatColor = vec3(1.0f); m.CoatRoughness = 0.0f; m.CoatIor = 1.6f; m.CoatDarkening = 1.0f;
+    m.CoatWeight = 0.0f; m.CoatColor = vec3(1.0f); m.CoatRoughness = 0.0f; m.CoatAnisotropy = 0.0f;
+    m.CoatIor = 1.6f; m.CoatDarkening = 1.0f;
+    m.CoatTangent = vec3(1.0f, 0.0f, 0.0f); m.CoatNormal = vec3(0.0f, 0.0f, 1.0f);   // M2 identity frame
     m.FuzzWeight = 0.0f; m.FuzzColor = vec3(1.0f); m.FuzzRoughness = 0.5f;
     m.Emission = vec3(0.0f);
     return m;
@@ -274,6 +276,170 @@ void ProofSampling()
     }
 }
 
+// M2: lobe frames — rotation equivariance, normal-incidence energy invariance, tilted-coat energy + sampling.
+void ProofAnisotropyFrames()
+{
+    std::printf("[furnace] M2 aniso rotation + coat frame\n");
+    const float kHarnessPi = 3.14159265358979f;
+    auto RotZ = [](vec3 v, float a) {
+        float c = cos(a), s = sin(a);
+        return vec3(c * v.x - s * v.y, s * v.x + c * v.y, v.z);
+    };
+
+    // ① Equivariance: rotating the material and both vectors together changes nothing (aniso 0.7, θ = 0.6).
+    {
+        ShadingRecord m0 = StandardMaterial(vec3(0.5f), 0.35f);
+        m0.SpecularAnisotropy = 0.7f; m0.AnisotropyAngle = 0.0f;
+        ShadingRecord m1 = m0; m1.AnisotropyAngle = 0.6f;
+        float worst = 0.0f;
+        for (int i = 0; i < 2000; ++i)
+        {
+            vec3 wo = UniformHemisphere(Rand01(), Rand01());
+            vec3 wi = UniformHemisphere(Rand01(), Rand01());
+            ResolvedLayers l0 = ResolveLayers(m0, wo);
+            vec3 rwo = RotZ(wo, 0.6f), rwi = RotZ(wi, 0.6f);
+            ResolvedLayers l1 = ResolveLayers(m1, rwo);
+            vec3 f0 = EvaluateBsdf(m0, l0, wo, wi), f1 = EvaluateBsdf(m1, l1, rwo, rwi);
+            float d = std::fabs(f0.x - f1.x) + std::fabs(f0.y - f1.y) + std::fabs(f0.z - f1.z);
+            float r = std::fabs(f0.x) + std::fabs(f0.y) + std::fabs(f0.z);
+            worst = max(worst, d / max(r, 1e-3f));
+        }
+        CHECK(worst < 1e-3f, "aniso equivariance (worst %.2e)", worst);
+    }
+
+    // ② Normal-incidence energy is rotation-invariant (exact by change of variables; tolerance is pure MC noise).
+    {
+        float e[3] = { 0.0f, 0.0f, 0.0f };
+        const float kAngles[3] = { 0.0f, kHarnessPi / 4.0f, kHarnessPi / 2.0f };
+        for (int k = 0; k < 3; ++k)
+        {
+            ShadingRecord m = StandardMaterial(vec3(0.5f), 0.35f);
+            m.SpecularAnisotropy = 0.7f; m.AnisotropyAngle = kAngles[k];
+            vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+            ResolvedLayers L = ResolveLayers(m, wo);
+            float acc = 0.0f;
+            const int N = 200000;
+            for (int i = 0; i < N; ++i)
+            {
+                vec3 wi = CosineSample(Rand01(), Rand01());
+                acc += EvaluateBsdf(m, L, wo, wi).x;
+            }
+            e[k] = acc * kHarnessPi / static_cast<float>(N);
+        }
+        CHECK(std::fabs(e[1] - e[0]) / e[0] < 0.015f, "aniso energy θ=45° (%.4f vs %.4f)", e[1], e[0]);
+        CHECK(std::fabs(e[2] - e[0]) / e[0] < 0.015f, "aniso energy θ=90° (%.4f vs %.4f)", e[2], e[0]);
+    }
+
+    // ③ Sampling consistency with rotation (validates the transpose-back + lobe-space pdfs).
+    {
+        ShadingRecord m = StandardMaterial(vec3(0.5f), 0.4f);
+        m.SpecularAnisotropy = 0.7f; m.AnisotropyAngle = 0.5f;
+        vec3 wo = normalize(vec3(0.3f, 0.25f, 0.9f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        float ref = 0.0f;
+        const int N0 = 120000;
+        for (int i = 0; i < N0; ++i) ref += EvaluateBsdf(m, L, wo, CosineSample(Rand01(), Rand01())).x;
+        ref *= kHarnessPi / static_cast<float>(N0);
+        float acc = 0.0f;
+        const int N = 150000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SampleBsdf(m, L, wo, vec3(Rand01(), Rand01(), Rand01()));
+            if (s.w <= 0.0f) continue;
+            vec3 wi = s.xyz;
+            acc += EvaluateBsdf(m, L, wo, wi).x * wi.z / s.w;
+        }
+        acc /= static_cast<float>(N);
+        CHECK(std::fabs(acc - ref) / ref < 0.03f, "rotated mixture E[f·cos/pdf]=%.4f furnace=%.4f", acc, ref);
+    }
+
+    // ④ Reciprocity survives rotation (dielectric + metal), tested on the isolated specular lobe: the full stack's
+    // diffuse × (1 − E(μo)) albedo scaling is non-reciprocal BY DESIGN (OpenPBR §3.10), so the stack as a whole
+    // is not — and must not be — asserted reciprocal here.
+    for (float metal : { 0.0f, 1.0f })
+    {
+        ShadingRecord m = StandardMaterial(vec3(0.6f), 0.4f);
+        m.Metalness = metal; m.SpecularAnisotropy = 0.6f; m.AnisotropyAngle = 0.5f;
+        float worst = 0.0f;
+        for (int i = 0; i < 2000; ++i)
+        {
+            vec3 wi = UniformHemisphere(Rand01(), Rand01());
+            vec3 wo = UniformHemisphere(Rand01(), Rand01());
+            ResolvedLayers lo = ResolveLayers(m, wo), li = ResolveLayers(m, wi);
+            vec3 f1 = EvaluateBaseSpecular(m, lo, wo, wi), f2 = EvaluateBaseSpecular(m, li, wi, wo);
+            float d = std::fabs(f1.x - f2.x);
+            worst = max(worst, d / max(f1.x, 1e-3f));
+        }
+        CHECK(worst < 1e-3f, "rotated specular reciprocity metal=%.0f (worst %.2e)", metal, worst);
+    }
+
+    // ⑤ Tilted-coat stack stays energy-safe (20° tilt about x; plain + coat-aniso configs).
+    for (float coatAniso : { 0.0f, 0.5f })
+    {
+        ShadingRecord m = StandardMaterial(vec3(0.5f), 0.4f);
+        m.CoatWeight = 0.6f; m.CoatRoughness = 0.15f; m.CoatAnisotropy = coatAniso;
+        m.CoatTangent = vec3(1.0f, 0.0f, 0.0f);
+        m.CoatNormal = vec3(0.0f, 0.34202014f, 0.93969261f);   // 20° about x
+        for (float muO : { 0.5f, 1.0f })
+        {
+            vec3 wo = vec3(sqrt(1.0f - muO * muO), 0.0f, muO);
+            ResolvedLayers L = ResolveLayers(m, wo);
+            float acc = 0.0f;
+            const int N = 100000;
+            for (int i = 0; i < N; ++i) acc += EvaluateBsdf(m, L, wo, CosineSample(Rand01(), Rand01())).x;
+            acc *= kHarnessPi / static_cast<float>(N);
+            CHECK(acc <= 1.01f, "tilted coat albedo ≤ 1 (aniso=%.1f mu=%.1f E=%.4f)", coatAniso, muO, acc);
+        }
+    }
+
+    // ⑥ Coat continuity: a 2° tilt barely moves the furnace (a wrong basis would jump).
+    {
+        ShadingRecord m0 = StandardMaterial(vec3(0.5f), 0.4f);
+        m0.CoatWeight = 0.6f; m0.CoatRoughness = 0.15f;
+        ShadingRecord m1 = m0;
+        m1.CoatNormal = vec3(0.0f, 0.03489950f, 0.99939083f);   // 2° about x
+        vec3 wo = normalize(vec3(0.0f, 0.5f, 0.7f));
+        float e0 = 0.0f, e1 = 0.0f;
+        const int N = 120000;
+        ResolvedLayers l0 = ResolveLayers(m0, wo), l1 = ResolveLayers(m1, wo);
+        for (int i = 0; i < N; ++i)
+        {
+            vec3 wi = CosineSample(Rand01(), Rand01());
+            e0 += EvaluateBsdf(m0, l0, wo, wi).x;
+            e1 += EvaluateBsdf(m1, l1, wo, wi).x;
+        }
+        e0 *= kHarnessPi / static_cast<float>(N);
+        e1 *= kHarnessPi / static_cast<float>(N);
+        CHECK(std::fabs(e1 - e0) / e0 < 0.03f, "coat continuity 2° (%.4f vs %.4f)", e1, e0);
+    }
+
+    // ⑦ Tilted-coat sampling consistency (validates coat sample-back + pdf guard; wo off-grazing keeps the
+    // below-coat-surface missing-mass bias ~1e-5, far inside the tolerance).
+    {
+        ShadingRecord m = StandardMaterial(vec3(0.5f), 0.4f);
+        m.CoatWeight = 0.6f; m.CoatRoughness = 0.15f;
+        m.CoatTangent = vec3(1.0f, 0.0f, 0.0f);
+        m.CoatNormal = vec3(0.0f, 0.25881905f, 0.96592583f);   // 15° about x
+        vec3 wo = normalize(vec3(0.2f, 0.2f, 0.8f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        float ref = 0.0f;
+        const int N0 = 120000;
+        for (int i = 0; i < N0; ++i) ref += EvaluateBsdf(m, L, wo, CosineSample(Rand01(), Rand01())).x;
+        ref *= kHarnessPi / static_cast<float>(N0);
+        float acc = 0.0f;
+        const int N = 150000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SampleBsdf(m, L, wo, vec3(Rand01(), Rand01(), Rand01()));
+            if (s.w <= 0.0f) continue;
+            vec3 wi = s.xyz;
+            acc += EvaluateBsdf(m, L, wo, wi).x * wi.z / s.w;
+        }
+        acc /= static_cast<float>(N);
+        CHECK(std::fabs(acc - ref) / ref < 0.035f, "tilted-coat mixture E[f·cos/pdf]=%.4f furnace=%.4f", acc, ref);
+    }
+}
+
 } // namespace
 
 int main()
@@ -286,6 +452,7 @@ int main()
     ProofFuzzAndCoat();
     ProofReciprocity();
     ProofSampling();
+    ProofAnisotropyFrames();
     std::printf(g_Fail == 0 ? "MATERIAL FURNACE: PASS\n" : "MATERIAL FURNACE: FAIL (%d)\n", g_Fail);
     return g_Fail == 0 ? 0 : 1;
 }

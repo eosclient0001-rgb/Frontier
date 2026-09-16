@@ -112,6 +112,9 @@ struct MaterialSlabDescriptor
     float SlateGlintUvScale              = 1.0f;
     // ── end of float prefix (58 floats; MaterialSlabRecord mirrors it byte for byte) ──
     bool  GeometryThinWalled             = false;
+    // Scalars outside the float prefix (copied explicitly by ConstructSlabRecord, carried by struct copy in Lerp).
+    float SlateAnisotropyRotation        = 0.0f;                  // [rad] M2: added to the anisotropy texture direction angle (KHR_materials_anisotropy)
+    float SlateDirectF0Weight            = 0.0f;                  // [-]   M6 (reserved): 0 = IOR-derived F0 (plan D-f0)
 
     TextureReference Textures[kMaterialTextureChannelCount];
 

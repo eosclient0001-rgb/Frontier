@@ -47,7 +47,8 @@ struct ShadingRecord
     float SpecularWeight;     // specular_weight (ξs)
     vec3  SpecularColor;      // specular_color (dielectric tint / F82 edge tint)
     float SpecularRoughness;  // specular_roughness r  (α = r²)
-    float SpecularAnisotropy; // specular_roughness_anisotropy
+    float SpecularAnisotropy; // specular_roughness_anisotropy (signed: negative flips the major axis)
+    float AnisotropyAngle;    // M2: rotation of the aniso axes vs local tangent [rad] (texture direction + rotation)
     float SpecularIor;        // specular_ior
     float ThinFilmWeight;     // thin_film_weight
     float ThinFilmThickness;  // thin_film_thickness [µm]
@@ -57,8 +58,11 @@ struct ShadingRecord
     float CoatWeight;         // coat_weight
     vec3  CoatColor;          // coat_color (T² at normal incidence)
     float CoatRoughness;      // coat_roughness
+    float CoatAnisotropy;     // M2: coat_roughness_anisotropy (same parametrisation, coat-frame axes)
     float CoatIor;            // coat_ior
     float CoatDarkening;      // coat_darkening
+    vec3  CoatTangent;        // M2: coat frame in LOCAL coords (orthonormal; identity (1,0,0) when unbound)
+    vec3  CoatNormal;         // M2: coat normal in local coords (identity (0,0,1) when unbound)
     float FuzzWeight;         // fuzz_weight
     vec3  FuzzColor;          // fuzz_color
     float FuzzRoughness;      // fuzz_roughness
@@ -399,6 +403,8 @@ struct ResolvedLayers   // per-(record, wo) constants shared by Evaluate / Sampl
     vec2  SpecularAlpha;      // after coat roughening
     vec2  HazeAlpha;
     vec2  CoatAlpha;
+    mat3  AnisoBasis;         // M2: local → aniso space (z-rotation; exact identity at angle 0)
+    mat3  CoatBasis;          // M2: local → coat space (orthonormal; exact identity when unbound)
     float SpecularEta;        // modulated by specular_weight, coat presence
     float CoatEta;
     vec3  MetalF0;
@@ -448,12 +454,23 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
     float rSpec = CoatRoughen(m.SpecularRoughness, m.CoatRoughness, c);
     L.SpecularAlpha = AnisotropicAlpha(rSpec, m.SpecularAnisotropy);
     L.HazeAlpha     = AnisotropicAlpha(CoatRoughen(max(m.HazinessRoughness, m.SpecularRoughness), m.CoatRoughness, c), m.SpecularAnisotropy);
-    L.CoatAlpha     = AnisotropicAlpha(m.CoatRoughness, 0.0);
+    L.CoatAlpha     = AnisotropicAlpha(m.CoatRoughness, m.CoatAnisotropy);
 
-    // Coat Fresnel / albedo for the layer operator (§3.10 albedo scaling, non-reciprocal form).
-    L.CoatFresnelO = FresnelDielectric(muO, L.CoatEta);
-    L.CoatAlbedoO = min(c * GgxDirectionalAlbedo(vec3(L.CoatF0), muO, L.CoatAlpha).x, c);
-    L.CoatAbsorptionO = mix(vec3(1.0), CoatAbsorption(m.CoatColor, muO, L.CoatEta), c);
+    // M2: lobe frames. The aniso basis is a pure z-rotation; the coat basis is built from the resolve-provided
+    // orthonormal pair (bitangent = N × T). Both are exact identities in the default case, so pre-M2 scenes are bit-stable.
+    float ca = cos(m.AnisotropyAngle), sa = sin(m.AnisotropyAngle);
+    L.AnisoBasis = mat3(vec3(ca, -sa, 0.0), vec3(sa, ca, 0.0), vec3(0.0, 0.0, 1.0));
+    vec3 coatBitangent = cross(m.CoatNormal, m.CoatTangent);
+    L.CoatBasis = mat3(vec3(m.CoatTangent.x, coatBitangent.x, m.CoatNormal.x),
+                       vec3(m.CoatTangent.y, coatBitangent.y, m.CoatNormal.y),
+                       vec3(m.CoatTangent.z, coatBitangent.z, m.CoatNormal.z));
+
+    // Coat Fresnel / albedo for the layer operator (§3.10 albedo scaling, non-reciprocal form) — in coat space, since
+    // the coat layer is traversed along the coat normal. Identical to base space for the identity frame.
+    float muOC = clamp((L.CoatBasis * wo).z, kMinCos, 1.0);
+    L.CoatFresnelO = FresnelDielectric(muOC, L.CoatEta);
+    L.CoatAlbedoO = min(c * GgxDirectionalAlbedo(vec3(L.CoatF0), muOC, L.CoatAlpha).x, c);
+    L.CoatAbsorptionO = mix(vec3(1.0), CoatAbsorption(m.CoatColor, muOC, L.CoatEta), c);
 
     // Coat darkening (eq. 63–68): Δ = (1 − K) / (1 − Eb K), K = lerp(Ks, Kr, r_b).
     float ef  = FresnelDielectricAverage(L.CoatEta);
@@ -497,8 +514,9 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
 // Base specular (dielectric + metal mix, thin film, haziness) — f only.
 vec3 EvaluateBaseSpecular(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
-    vec3 h = normalize(wo + wi);
-    float muH = max(dot(wo, h), 0.0);
+    vec3 woA = L.AnisoBasis * wo, wiA = L.AnisoBasis * wi;   // M2: the specular lobe lives in aniso space
+    vec3 h = normalize(woA + wiA);
+    float muH = max(dot(woA, h), 0.0);
 
     // Fresnel of the two substrates.
     float fD = FresnelDielectric(muH, L.SpecularEta);
@@ -518,12 +536,12 @@ vec3 EvaluateBaseSpecular(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 
     // Main GGX + haze GGX (mixed by weight), each single-scatter lobe plus its Kulla–Conty multiple-scatter term.
     vec3 f0 = mix(L.DielectricF0, m.SpecularWeight * L.MetalF0, m.Metalness);
-    float dMain = GgxD(h, L.SpecularAlpha) * GgxG2(wo, wi, L.SpecularAlpha) / (4.0 * max(wo.z, kMinCos) * max(wi.z, kMinCos));
-    vec3 spec = f * dMain + GgxMultiScatter(f0, wo.z, wi.z, L.SpecularAlpha);
+    float dMain = GgxD(h, L.SpecularAlpha) * GgxG2(woA, wiA, L.SpecularAlpha) / (4.0 * max(woA.z, kMinCos) * max(wiA.z, kMinCos));
+    vec3 spec = f * dMain + GgxMultiScatter(f0, woA.z, wiA.z, L.SpecularAlpha);
     if (m.HazinessWeight > 0.0)
     {
-        float dHaze = GgxD(h, L.HazeAlpha) * GgxG2(wo, wi, L.HazeAlpha) / (4.0 * max(wo.z, kMinCos) * max(wi.z, kMinCos));
-        spec = mix(spec, f * dHaze + GgxMultiScatter(f0, wo.z, wi.z, L.HazeAlpha), m.HazinessWeight);
+        float dHaze = GgxD(h, L.HazeAlpha) * GgxG2(woA, wiA, L.HazeAlpha) / (4.0 * max(woA.z, kMinCos) * max(wiA.z, kMinCos));
+        spec = mix(spec, f * dHaze + GgxMultiScatter(f0, woA.z, wiA.z, L.HazeAlpha), m.HazinessWeight);
     }
     return spec;
 }
@@ -531,20 +549,25 @@ vec3 EvaluateBaseSpecular(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
     if (wo.z <= 0.0 || wi.z <= 0.0) return vec3(0.0);
-    float muI = wi.z;
 
     // Bottom: diffuse, scaled by what the dielectric interface lets through (eq. 42, non-reciprocal albedo scaling).
     vec3 diffuse = (1.0 - m.Metalness) * (vec3(1.0) - L.DielectricAlbedoO) * EonEvaluate(m.BaseColor, m.DiffuseRoughness, wi, wo);
     vec3 base = diffuse + EvaluateBaseSpecular(m, L, wo, wi);
 
-    // Coat layer on top of the base.
+    // Coat layer on top of the base, evaluated in the coat frame (M2). A tilted coat frame can push either leg below
+    // its own surface — the specular coat lobe is undefined there (zero), while the base still shows through, scaled.
     if (m.CoatWeight > 0.0)
     {
-        vec3 h = normalize(wo + wi);
-        float fC = FresnelDielectric(max(dot(wo, h), 0.0), L.CoatEta);
-        float dC = GgxD(h, L.CoatAlpha) * GgxG2(wo, wi, L.CoatAlpha) / (4.0 * max(wo.z, kMinCos) * max(muI, kMinCos));
-        vec3 coat = vec3(fC * dC) + GgxMultiScatter(vec3(L.CoatF0), wo.z, muI, L.CoatAlpha);
-        vec3 absorptionI = CoatAbsorption(m.CoatColor, muI, L.CoatEta);
+        vec3 woC = L.CoatBasis * wo, wiC = L.CoatBasis * wi;
+        vec3 coat = vec3(0.0);
+        if (woC.z > 0.0 && wiC.z > 0.0)
+        {
+            vec3 h = normalize(woC + wiC);
+            float fC = FresnelDielectric(max(dot(woC, h), 0.0), L.CoatEta);
+            float dC = GgxD(h, L.CoatAlpha) * GgxG2(woC, wiC, L.CoatAlpha) / (4.0 * max(woC.z, kMinCos) * max(wiC.z, kMinCos));
+            coat = vec3(fC * dC) + GgxMultiScatter(vec3(L.CoatF0), woC.z, wiC.z, L.CoatAlpha);
+        }
+        vec3 absorptionI = CoatAbsorption(m.CoatColor, max(wiC.z, 0.0), L.CoatEta);
         vec3 under = base * L.BaseDarkening * (1.0 - L.CoatAlbedoO) * mix(vec3(1.0), L.CoatAbsorptionO * absorptionI, m.CoatWeight);
         base = m.CoatWeight * coat + under;
     }
@@ -565,13 +588,23 @@ vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 float PdfBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
     if (wo.z <= 0.0 || wi.z <= 0.0) return 0.0;
-    vec3 h = normalize(wo + wi);
-    float jac = 1.0 / (4.0 * max(dot(wo, h), kMinCos));
     float pdf = L.Weights.Diffuse * EonPdfCltc(wo, wi, m.DiffuseRoughness);
-    float pSpec = GgxVndfPdf(wo, h, L.SpecularAlpha) * jac;
-    if (m.HazinessWeight > 0.0) pSpec = mix(pSpec, GgxVndfPdf(wo, h, L.HazeAlpha) * jac, m.HazinessWeight);
+    // Rotations preserve solid angle, so each lobe's pdf is evaluated in its own space (M2).
+    vec3 woA = L.AnisoBasis * wo, wiA = L.AnisoBasis * wi;
+    vec3 h = normalize(woA + wiA);
+    float jac = 1.0 / (4.0 * max(dot(woA, h), kMinCos));
+    float pSpec = GgxVndfPdf(woA, h, L.SpecularAlpha) * jac;
+    if (m.HazinessWeight > 0.0) pSpec = mix(pSpec, GgxVndfPdf(woA, h, L.HazeAlpha) * jac, m.HazinessWeight);
     pdf += L.Weights.Specular * pSpec;
-    if (L.Weights.Coat > 0.0) pdf += L.Weights.Coat * GgxVndfPdf(wo, h, L.CoatAlpha) * jac;
+    if (L.Weights.Coat > 0.0)
+    {
+        vec3 woC = L.CoatBasis * wo, wiC = L.CoatBasis * wi;
+        if (woC.z > 0.0 && wiC.z > 0.0)
+        {
+            vec3 hC = normalize(woC + wiC);
+            pdf += L.Weights.Coat * GgxVndfPdf(woC, hC, L.CoatAlpha) / (4.0 * max(dot(woC, hC), kMinCos));
+        }
+    }
     if (L.Weights.Fuzz > 0.0) pdf += L.Weights.Fuzz * SheenPdf(clamp(m.FuzzRoughness, 0.0, 1.0), wo, wi);
     return pdf;
 }
@@ -587,14 +620,16 @@ vec4 SampleBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 u)
     }
     else if (pick < L.Weights.Fuzz + L.Weights.Coat)
     {
-        vec3 h = SampleGgxVndf(wo, L.CoatAlpha, u.yz);
-        wi = reflect(-wo, h);
+        vec3 woC = L.CoatBasis * wo;   // M2: sample in coat space, return to base space (transpose = inverse)
+        vec3 hC = SampleGgxVndf(woC, L.CoatAlpha, u.yz);
+        wi = transpose(L.CoatBasis) * reflect(-woC, hC);
     }
     else if (pick < L.Weights.Fuzz + L.Weights.Coat + L.Weights.Specular)
     {
         float hazePick = (pick - L.Weights.Fuzz - L.Weights.Coat) / max(L.Weights.Specular, 1.0e-6);
-        vec3 h = SampleGgxVndf(wo, hazePick < m.HazinessWeight ? L.HazeAlpha : L.SpecularAlpha, u.yz);
-        wi = reflect(-wo, h);
+        vec3 woA = L.AnisoBasis * wo;   // M2: sample in aniso space, return to base space
+        vec3 hA = SampleGgxVndf(woA, hazePick < m.HazinessWeight ? L.HazeAlpha : L.SpecularAlpha, u.yz);
+        wi = transpose(L.AnisoBasis) * reflect(-woA, hA);
     }
     else
     {

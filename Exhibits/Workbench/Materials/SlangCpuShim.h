@@ -132,6 +132,11 @@ inline float sqrt(float x) { return std::sqrt(x); }
 inline vec3  sqrt(vec3 x) { return vec3(std::sqrt(x.x), std::sqrt(x.y), std::sqrt(x.z)); }
 inline float cos(float x) { return std::cos(x); }
 inline vec3  cos(vec3 x) { return vec3(std::cos(x.x), std::cos(x.y), std::cos(x.z)); }
+inline float sin(float x) { return std::sin(x); }   // M2: aniso-basis construction
+inline vec3  cross(vec3 a, vec3 b)   // M2: coat bitangent
+{
+    return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
 inline float exp(float x) { return std::exp(x); }
 inline vec3  exp(vec3 x) { return vec3(std::exp(x.x), std::exp(x.y), std::exp(x.z)); }
 inline float pow(float x, float y) { return std::pow(x, y); }
