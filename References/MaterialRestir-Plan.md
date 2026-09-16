@@ -58,17 +58,21 @@ black background. Nothing about the new lobes depends on that branch's editor/sk
 transplant — but glass *proofs* are far more convincing with a sky behind them, and the new
 lobes must be validated under temporal/spatial reuse. Strategy: §1, decision D1.
 
-## 1. Branch strategy (decision D1 — recommended: stay + stay portable)
+## 1. Branch strategy (DECIDED — merged `01a0a578` in full, fbceb82)
 
-This session is fixed to `arena/01a0aa50-slate`. The material-relevant delta to `01a0a578`
-is ~1 line, so: implement all lobe/resolve/codec work **here**, in the files that are
-identical across branches (`MaterialEvaluation.slang`, `MaterialCodec.*`,
-`MaterialDescriptor.h`, `MaterialIndex.*`, `SceneRecords.slang` + CPU proofs), keeping them
-**cherry-pick-clean** onto `01a0a578`. Kernel wiring (`ReSTIRViewport.slang`,
-`SurfaceResolve.slang`) differs between branches and gets ported per phase (the resolve
-function is the same shape in both — same `SampleChannel` set — so ports are mechanical).
-Glass proofs run against black background + area lights here (Cornell-style: sufficient);
-the sky-backed outdoor glass proof waits for the ReSTIR-sync milestone (§7, step M9).
+This branch now continues directly from `arena/01a0a578-slate` (merge commit fbceb82):
+the R6/R7 ReSTIR (temporal + spatial reuse, alias pick, à-trous, adaptive exposure) and the
+sky/sun/atmosphere are in-tree. No cherry-pick portability discipline is needed anymore —
+but the kernel-wiring diffs vs the old R4b kernel are still recorded per phase where they matter.
+
+**Deferral (decided with the merge):** the à-trous **denoiser** and **motion-vector**
+temporal reprojection stay in-tree but default **off**
+(`ReSTIRIntegratorConfiguration::Denoise = false`, `TemporalReprojection = false`, with the
+previously-missing `AssignTemporalReprojection` setter added). Rationale: new lobes are
+validated on raw accumulated images so the filter can never hide or fake lobe energy; motion
+vectors are still *produced* by R2, only their consumption is off. Both re-enable at M9 with
+the A/B proofs (converged image must match with and without). M9 is therefore a
+re-enable-and-validate milestone, not a branch sync.
 
 ## 2. Scope line
 
@@ -207,11 +211,11 @@ selection-switch retention test.
   evaluate 2 slabs in-kernel. Either way: Sponza + Cornell + shaderball + glass-proof at
   `slab_limit` 1/2/8, fold-report review, perf budget (§6).
 
-### M9 — ReSTIR-sync milestone (with `01a0a578`)
-- Port kernel wiring (`ResolveMaterial` additions, shadow-tint walk, bounce gate) onto
-  `01a0a578`'s `ReSTIRViewport.slang`; validate new lobes under temporal + spatial reuse +
-  à-trous (revalidation re-evaluates the BSDF — must pick up BTDF/SSS automatically);
-  sky-backed outdoor glass proof. Then decide: merge direction / branch consolidation.
+### M9 — Re-enable milestone (denoiser + motion vectors back on)
+- Re-enable `Denoise` and `TemporalReprojection` (defaults back to true); validate the new
+  lobes under temporal + spatial reuse + à-trous (revalidation re-evaluates the BSDF — must
+  pick up BTDF/SSS automatically); A/B proofs (converged image identical with and without);
+  sky-backed outdoor glass proof.
 
 ## 5. How each channel meets ReSTIR (integration points, all phases)
 
@@ -222,7 +226,7 @@ selection-switch retention test.
 | Temporal/spatial reuse (01a0a578) | free via BSDF re-evaluation | DI reservoirs re-evaluate the target at neighbours — new lobes ride along; verify in M9, no Jacobian needed for DI |
 | Shadow rays | cutout re-trace (exists) + transmissive Beer-tint walk (M4, ≤4 steps) | Tinted shadows, not binary; thin-walled never flips the offset |
 | GI bounce | refract (M4), dipole branch (M5), SSS-v1 in throughput | The `dot>0` gate becomes selection-aware; one bounce stays one bounce |
-| Background | black until M9 | Glass shows lights + geometry only; documented, sky later |
+| Background | black until M9 | sky in-tree since the merge; glass proofs use sky and/or area-light Cornell scenes |
 | Accumulation/denoise | lobes are per-sample; reuse + à-trous agnostic | No per-lobe history; BTDF noise converges like specular |
 
 ## 6. Budgets and gates
@@ -254,3 +258,4 @@ come in under budget.
   (c) skip SSS, transmission only.
 - **D4 — M7 editor:** (a) read-only inspector now, editing later *(recommended)*;
   (b) full editable in this phase; (c) no UI work.
+ull editable in this phase; (c) no UI work.

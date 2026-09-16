@@ -107,6 +107,9 @@ public:
     //    deliberately does NOT reset accumulation — restarting would throw away a converged history to change a
     //    post-process, and the A/B comparison the switch exists for would be impossible.
     void AssignDenoise           (bool     On)    noexcept { ActiveConfiguration.Denoise = On; }
+    // R7a. Reprojection changes what is SAMPLED (which history texel feeds the mean), so unlike the denoise toggle
+    //    it resets accumulation — the same rule as every other sampling change.
+    void AssignTemporalReprojection(bool On)    noexcept { if (ActiveConfiguration.TemporalReprojection != On) { ActiveConfiguration.TemporalReprojection = On; ResetAccumulation(); } }
 
     // ⚠️ THE INCREMENT MUST NOT SWALLOW THE RESET. The frame loop reads the index for the dispatch,
     //    the §8 record comparisons reset it when the sky changes, and the loop unconditionally increments it
@@ -146,6 +149,22 @@ private:
     Vector3                       HistoryForward;       // [-]   camera forward the history was accumulated from
     uint32_t                      HistoryWidth;         // [px]  viewport width of the history
     uint32_t                      HistoryHeight;        // [px]  viewport height of the history
+};
+
+template<>
+inline uint32_t ReSTIRIntegrator::Convert<uint32_t>() const noexcept
+{
+    return AccumulationIndex;
+}
+
+template<>
+inline float ReSTIRIntegrator::Convert<float>() const noexcept
+{
+    return ActiveConfiguration.Exposure;
+}
+
+} // namespace Frontier
+      // [px]  viewport height of the history
 };
 
 template<>
