@@ -5,7 +5,19 @@
 //    specular, clearcoat, sheen, transmission, volume, dispersion, iridescence, anisotropy, diffuse_transmission, unlit}
 //    + KHR_texture_transform, and the Slate extras (`extras.slate_*` scalars, `extras.slate_slabs` full slab graph).
 //    FBX (ufbx PBR maps) and OBJ (.mtl) mappings live here too so every codec produces the same descriptor.
-//    Mapping table: MaterialSystemResearch-2026.md §5.
+//    Mapping table: MaterialSystemResearch-2026.md §5 (pending in-tree; interim: MaterialCodecProof.cpp header).
+//
+//    M6 DROP INVENTORY — sources with no slab carrier, decoded past and never re-encoded (each locked by a proof
+//    assert in MaterialCodecProof.cpp, so a future channel addition flips the assert instead of silently changing art):
+//      glTF KHR_materials_specular.specularTexture (factor .A) · KHR_materials_volume.thickness_texture (G/B — the
+//        thickness_factor scalar survives as MaterialDescriptor::VolumeThickness) ·
+//        KHR_materials_iridescence.iridescence_thickness_texture · KHR_materials_clearcoat.clearcoat_roughness_texture ·
+//        KHR_materials_sheen.sheen_roughness_texture · KHR_materials_diffuse_transmission.diffuse_transmission_color_texture.
+//      FBX: transmission_extra_roughness · subsurface_tint_color/type · matte_factor/color · indirect_diffuse/specular ·
+//        coat_rotation (specular_rotation IS mapped: Standard Surface turns × 2π → SlateAnisotropyRotation [rad]).
+//      OBJ: MapNs (shininess maps are white = smooth — binding one to roughness would invert it); MapD rides the opacity
+//        slot as BLEND coverage. Transparency (d, Tr folded by fast_obj) maps to transmission_weight, never to
+//        opacity/coverage (M6 plan correction — .mtl has no cutout concept).
 //
 // Texture slots: codecs pass a resolver that turns a glTF texture (image URI / sampler) into a TextureIndex slot, so
 //    this file never touches image files.

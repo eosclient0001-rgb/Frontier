@@ -338,6 +338,7 @@ MaterialDescriptor MaterialCodec::DecodeGltf(const cgltf_material* M, const Mate
         if (std::isfinite(S.TransmissionDepth) && S.TransmissionDepth > 0.0f)
             std::memcpy(S.TransmissionColor, M->volume.attenuation_color, sizeof(S.TransmissionColor));
         else S.TransmissionDepth = 0.0f;
+        D.VolumeThickness = M->volume.thickness_factor;   // M6: fidelity carry — re-encoded verbatim (no slab carrier)
         if (M->volume.thickness_factor <= 0.0f) D.Flags |= MaterialFlagThinWalled;
     }
     if (M->has_dispersion && M->dispersion.dispersion > 0.0f)
@@ -394,6 +395,12 @@ bool MaterialCodec::DecodeSlateExtras(const char* ExtrasJson, MaterialDescriptor
         if (E.Components == 1) { if (V->Kind == JsonValue::Number) { F[0] = V->Scalar(F[0]); Found = true; } }
         else if (V->Kind == JsonValue::Array && V->Items.size() >= E.Components) { for (uint8_t C = 0; C < E.Components; ++C) F[C] = V->Items[C].Scalar(F[C]); Found = true; }
     }
+    if (const JsonValue* T = Root.Find("geometry_thin_walled"); T && T->Kind == JsonValue::Bool)   // M6: single-slab thin (opaque-thin has no core carrier)
+    {
+        D.Slabs[0].GeometryThinWalled = T->Truth;   // extras override core, like the flat scalars
+        if (T->Truth) D.Flags |= MaterialFlagThinWalled; else D.Flags &= ~static_cast<uint32_t>(MaterialFlagThinWalled);
+        Found = true;
+    }
 
     const JsonValue* Slabs = Root.Find("slate_slabs");
     if (Slabs && Slabs->Kind == JsonValue::Array && !Slabs->Items.empty())
@@ -418,8 +425,9 @@ bool MaterialCodec::DecodeSlateExtras(const char* ExtrasJson, MaterialDescriptor
                     if (const JsonValue* T = Textures->Find(kTextureChannelNames[C])) S.Textures[C] = DecodeSlateTexture(*T, nullptr);
             Decoded.push_back(S);
         }
-        // Slab 0 of the graph inherits the texture slots the core glTF resolved (extras hold raw glTF texture indices
-        //    only when a codec wrote them; the resident slots come from the core block).
+        // The bottom slab of the graph inherits the texture slots the core glTF resolved (extras hold raw glTF texture
+        //    indices only when a codec wrote them; the resident slots come from the core block). Bottom = core: EncodeGltf
+        //    emits Slabs.back() as the plain-glTF material, so this is the slab a core-only reader sees.
         if (!D.Slabs.empty())
             for (uint32_t C = 0u; C < kMaterialTextureChannelCount; ++C)
                 if (!Decoded.back().Textures[C].IsBound() && D.Slabs[0].Textures[C].IsBound()) Decoded.back().Textures[C] = D.Slabs[0].Textures[C];
@@ -461,7 +469,10 @@ std::string MaterialCodec::EncodeGltf(const MaterialDescriptor& D, std::vector<s
       << Number(S.BaseColor[0]) << "," << Number(S.BaseColor[1]) << "," << Number(S.BaseColor[2]) << "," << Number(S.GeometryOpacity) << "],"
       << "\"metallicFactor\":" << Number(S.BaseMetalness) << ",\"roughnessFactor\":" << Number(S.SpecularRoughness);
     if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::BaseColor), TextureIndexOf); !T.empty()) J << ",\"baseColorTexture\":" << T;
-    if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::SpecularRoughness), TextureIndexOf); !T.empty()) J << ",\"metallicRoughnessTexture\":" << T;
+    // M6: the packed metallic-roughness texture survives single-sided binds (metalness-only or roughness-only).
+    const TextureReference& MetalRough = S.Texture(MaterialTextureChannel::SpecularRoughness).IsBound()
+        ? S.Texture(MaterialTextureChannel::SpecularRoughness) : S.Texture(MaterialTextureChannel::Metalness);
+    if (std::string T = EncodeTextureReference(MetalRough, TextureIndexOf); !T.empty()) J << ",\"metallicRoughnessTexture\":" << T;
     J << "}";
     if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::GeometryNormal), TextureIndexOf, "scale", S.Texture(MaterialTextureChannel::GeometryNormal).Scalar); !T.empty()) J << ",\"normalTexture\":" << T;
     if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::Occlusion), TextureIndexOf, "strength", S.Texture(MaterialTextureChannel::Occlusion).Scalar); !T.empty()) J << ",\"occlusionTexture\":" << T;
@@ -504,13 +515,16 @@ std::string MaterialCodec::EncodeGltf(const MaterialDescriptor& D, std::vector<s
         if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::Fuzz), TextureIndexOf); !T.empty()) Body += ",\"sheenColorTexture\":" + T;
         Extension("KHR_materials_sheen", Body);
     }
+    const bool Thin = S.GeometryThinWalled || (D.Flags & MaterialFlagThinWalled);   // M6: flag-only descriptors still encode thin
     if (S.TransmissionWeight > 0.0f)
     {
         std::string Body = "\"transmissionFactor\":" + Number(S.TransmissionWeight);
         if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::Transmission), TextureIndexOf); !T.empty()) Body += ",\"transmissionTexture\":" + T;
         Extension("KHR_materials_transmission", Body);
+        // M6: thicknessFactor prefers the imported VolumeThickness (exact fidelity); authored slabs fall back to the
+        //    attenuation depth as the volume length scale (documented lossy — thickness ≠ attenuation distance).
         if (S.TransmissionDepth > 0.0f)
-            Extension("KHR_materials_volume", "\"thicknessFactor\":" + Number(S.GeometryThinWalled ? 0.0f : S.TransmissionDepth) + ",\"attenuationDistance\":" + Number(S.TransmissionDepth)
+            Extension("KHR_materials_volume", "\"thicknessFactor\":" + Number(Thin ? 0.0f : (D.VolumeThickness > 0.0f ? D.VolumeThickness : S.TransmissionDepth)) + ",\"attenuationDistance\":" + Number(S.TransmissionDepth)
                       + ",\"attenuationColor\":[" + Number(S.TransmissionColor[0]) + "," + Number(S.TransmissionColor[1]) + "," + Number(S.TransmissionColor[2]) + "]");
         if (S.TransmissionDispersionScale > 0.0f && S.TransmissionDispersionAbbeNumber > 0.0f)
             Extension("KHR_materials_dispersion", "\"dispersion\":" + Number(20.0f * S.TransmissionDispersionScale / S.TransmissionDispersionAbbeNumber));
@@ -522,9 +536,13 @@ std::string MaterialCodec::EncodeGltf(const MaterialDescriptor& D, std::vector<s
         if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::ThinFilm), TextureIndexOf); !T.empty()) Body += ",\"iridescenceTexture\":" + T;
         Extension("KHR_materials_iridescence", Body);
     }
-    if (S.SubsurfaceWeight > 0.0f && S.GeometryThinWalled)
-        Extension("KHR_materials_diffuse_transmission", "\"diffuseTransmissionFactor\":" + Number(S.SubsurfaceWeight) + ",\"diffuseTransmissionColorFactor\":["
-                  + Number(S.SubsurfaceColor[0]) + "," + Number(S.SubsurfaceColor[1]) + "," + Number(S.SubsurfaceColor[2]) + "]");
+    if (S.SubsurfaceWeight > 0.0f && Thin)
+    {
+        std::string Body = "\"diffuseTransmissionFactor\":" + Number(S.SubsurfaceWeight) + ",\"diffuseTransmissionColorFactor\":["
+                         + Number(S.SubsurfaceColor[0]) + "," + Number(S.SubsurfaceColor[1]) + "," + Number(S.SubsurfaceColor[2]) + "]";
+        if (std::string T = EncodeTextureReference(S.Texture(MaterialTextureChannel::Subsurface), TextureIndexOf); !T.empty()) Body += ",\"diffuseTransmissionTexture\":" + T;
+        Extension("KHR_materials_diffuse_transmission", Body);
+    }
     if (D.Flags & MaterialFlagUnlit) Extension("KHR_materials_unlit", "");
     if (X.tellp() > 0) J << ",\"extensions\":{" << X.str() << "}";
 
@@ -548,6 +566,7 @@ std::string MaterialCodec::EncodeGltf(const MaterialDescriptor& D, std::vector<s
             else { Text += "["; for (uint8_t C = 0; C < E.Components; ++C) { if (C) Text += ","; Text += Number(F[C]); } Text += "]"; }
             Member(Text);
         }
+        if (Thin) Member("\"geometry_thin_walled\":true");   // M6: opaque-thin has no core carrier
     }
     else
     {
@@ -611,7 +630,7 @@ void FbxMap(const ufbx_material_map& Map, float* Out, int Components, const FbxT
 {
     if (Map.has_value)
     {
-        if (Components == 1) Out[0] = static_cast<float>(Map.value_components >= 3 ? (Map.value_vec3.x + Map.value_vec3.y + Map.value_vec3.z) / 3.0 : Map.value_real);
+        if (Components == 1) Out[0] = static_cast<float>(Map.value_components >= 3 ? (Map.value_vec3.x + Map.value_vec3.y + Map.value_vec3.z) / 3.0 : Map.value_real);   // M6: vec3 -> scalar is the xyz mean (luminance-blind, documented lossy)
         else if (Map.value_components >= 3) { Out[0] = static_cast<float>(Map.value_vec3.x); Out[1] = static_cast<float>(Map.value_vec3.y); Out[2] = static_cast<float>(Map.value_vec3.z); }
         else Out[0] = Out[1] = Out[2] = static_cast<float>(Map.value_real);
     }
@@ -652,6 +671,8 @@ MaterialDescriptor MaterialCodec::DecodeFbx(const ufbx_material* M, const Materi
     FbxMap(P.specular_color,  S.SpecularColor,    3, Resolve, &S.Texture(MaterialTextureChannel::SpecularColor), false);
     FbxMap(P.specular_ior,    &S.SpecularIor,     1, Resolve, nullptr, true);
     FbxMap(P.specular_anisotropy, &S.SpecularRoughnessAnisotropy, 1, Resolve, &S.Texture(MaterialTextureChannel::Anisotropy), true);
+    FbxMap(P.specular_rotation, &S.SlateAnisotropyRotation, 1, Resolve, nullptr, true);
+    if (P.specular_rotation.has_value) S.SlateAnisotropyRotation *= 6.283185307179586f;   // M6: Standard Surface turns (1 = 360°) → radians
     if (P.roughness.has_value || P.roughness.texture)
         FbxMap(P.roughness, &S.SpecularRoughness, 1, Resolve, &S.Texture(MaterialTextureChannel::SpecularRoughness), true, TextureChannelSelection::R);
     else if (P.glossiness.has_value) { FbxMap(P.glossiness, Scratch, 1, Resolve, nullptr, true); S.SpecularRoughness = 1.0f - Scratch[0]; }
@@ -725,12 +746,16 @@ MaterialDescriptor MaterialCodec::DecodeObj(const ObjMaterialSource& Src, const 
         S.SpecularColor[0] = Src.Ks[0] / KsPeak; S.SpecularColor[1] = Src.Ks[1] / KsPeak; S.SpecularColor[2] = Src.Ks[2] / KsPeak;
     }
     else S.SpecularWeight = 0.0f;
-    S.GeometryOpacity = std::clamp(Src.d, 0.0f, 1.0f);
+    // M6: .mtl transparency (d; Tr is folded into d by fast_obj) is transmission, never coverage - opaque alpha with a
+    //    cutout flag used to swallow glass whole (plan correction: .mtl has no cutout concept).
+    S.GeometryOpacity = 1.0f;
+    const float Dissolve = std::clamp(Src.d, 0.0f, 1.0f);
     if (Src.Illum >= 4 && Src.Illum <= 7)   // glass models
     {
-        S.TransmissionWeight = 1.0f - S.GeometryOpacity; S.GeometryOpacity = 1.0f;
+        S.TransmissionWeight = 1.0f - Dissolve;
         std::memcpy(S.TransmissionColor, Src.Tf, sizeof(S.TransmissionColor));
     }
+    else if (Dissolve < 1.0f) S.TransmissionWeight = 1.0f - Dissolve;
     const float E[3] = { Src.Ke[0] * Config.EmissiveRadiance, Src.Ke[1] * Config.EmissiveRadiance, Src.Ke[2] * Config.EmissiveRadiance };
     const float Peak = std::max({ E[0], E[1], E[2], 0.0f });
     if (Peak > 0.0f) { S.EmissionLuminance = Peak; S.EmissionColor[0] = E[0] / Peak; S.EmissionColor[1] = E[1] / Peak; S.EmissionColor[2] = E[2] / Peak; }
@@ -746,8 +771,9 @@ MaterialDescriptor MaterialCodec::DecodeObj(const ObjMaterialSource& Src, const 
     Bind(Src.MapKe,   MaterialTextureChannel::Emission,        false, TextureChannelSelection::Rgb);
     Bind(Src.MapD,    MaterialTextureChannel::GeometryOpacity, true,  TextureChannelSelection::R);
     Bind(Src.MapBump, MaterialTextureChannel::GeometryNormal,  true,  TextureChannelSelection::Rgb);
-    Bind(Src.MapNs,   MaterialTextureChannel::SpecularRoughness, true, TextureChannelSelection::R);
-    if (S.GeometryOpacity < 1.0f || !Src.MapD.empty()) D.Flags |= MaterialFlagAlphaMask;
+    // MapNs intentionally unbound (M6): shininess maps are white = smooth, the roughness slot is white = rough, and the
+    //    slab has no invert flag - binding it would render inverted roughness (drop inventory in MaterialCodec.h).
+    if (Resolve && !Src.MapD.empty()) D.Flags |= MaterialFlagAlphaTranslucent;   // dissolve variation as BLEND coverage
     D.Flags |= MaterialFlagDoubleSided;   // OBJ has no winding guarantee; every OBJ importer renders two-sided
     return D;
 }

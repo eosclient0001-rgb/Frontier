@@ -1,13 +1,13 @@
 # Material Proofs Report — GREEN
 
-Date: 2026-09-16 · Branch: `arena/01a0aa50-slate` · Gate: `bash Exhibits/Workbench/Materials/CheckMaterialsProof.sh`
+Date: 2026-09-17 · Branch: `arena/01a0aa50-slate` · Gates: `CheckMaterialsProof.sh` (dependency-free) + `CheckMaterialCodec.sh` (needs the interchange headers)
 
 The gate compiles the two dependency-free CPU proofs with the system compiler (no Vulkan, no submodules) and
 runs them with a fixed splitmix64 seed, so every number below is **deterministic** — re-running the gate
 reproduces this transcript bit-for-bit (full logs: `/tmp/MaterialsProof.coverage.log`,
 `/tmp/MaterialsProof.furnace.log`).
 
-**Score: 3,548 furnace checks + 110 coverage checks, 0 failures.**
+**Score: 3,556 furnace checks + 110 coverage checks + 211 codec checks, 0 failures.**
 
 ---
 
@@ -342,10 +342,37 @@ CPU-mirrors of furnace-proven code, gated so opaque paths are bit-identical by c
   render-verification (glass pane through-path, solid-ball exit, wax backlight) is pending a GPU runner. The
   T/SSS paths are line-mirrors of CPU code the furnace + kept sheets prove, but in-kernel they are UNRENDERED.
 
-## 6. What's next
+## 6. Codec proof — M6 interchange round-trips (211/211, SHIPPED 2026-09-17)
+
+Gate: `bash Exhibits/Workbench/Materials/CheckMaterialCodec.sh` — compiles `MaterialCodecProof.cpp` against the real
+`MaterialCodec.cpp` plus the interchange headers (`ExternalPackages/`, `$MATERIAL_CODEC_EXT`, or `~/.cache/m6`).
+Before M6 the codecs had **zero** tests; the proof now pins every mapping with per-extension fixtures in two tiers:
+TIER-1 value-exact (`operator==` after decode→encode→decode, plus a BYTE-identical second encode — the normalising
+mappings converge in one pass) and TIER-2 relative-1e-6 across two round-trips for the four renormalising folds
+(sheen / emission peak, iridescence nm↔µm, dispersion 20/Abbe — bounded, no drift).
+
+Code changes (all in `Engine/ContentInterchange/`): `VolumeThickness` fidelity carry on `MaterialDescriptor`
+(thickness_factor re-encoded verbatim — the plan's "thicknessTexture → subsurface thickness" was redirected here:
+no slab carrier exists for a thickness texture and the tracer computes the SSS chord geometrically, so the FACTOR
+survives exactly and the texture is a documented drop); metallic-roughness single-sided fallback;
+`diffuseTransmissionTexture` re-encoded; thin normalisation (flag-only descriptors encode thin);
+`geometry_thin_walled` single-slab extras bool both ways; OBJ transparency → transmission_weight at every illum
+(opacity stays 1, cutout flag gone — it used to swallow glass whole); FBX `specular_rotation` turns × 2π. The Tr
+fold (fast_obj `Tr` → `d`) is proved through the real parser (T36). The proof also certifies the M2 codec state
+(anisotropy rotation home, `!= 0` Sultan negatives). Drop inventory (each locked
+by a proof assert): specular factor-texture, volume thickness-texture, iridescence thickness-texture, clearcoat /
+sheen roughness-textures, diffuse-transmission colour-texture, FBX extra-roughness / tint / matte / indirect /
+coat-rotation, OBJ MapNs — see `MaterialCodec.h`. Lossy-but-documented: authored slabs encode thicknessFactor =
+attenuation depth; FBX vec3→scalar is the xyz mean; the emissive config-fold; spec-gloss + shininess inversions.
+Full mapping table (interim §5): the `MaterialCodecProof.cpp` header.
+
+---
+
+## 7. What's next
 
 1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped, superseded by the v2 dipole — see 3).
 2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §6; render-verification pending GPU).
-3. **M5 v2 dipole** (view-dependent, reuses the chord exit finder; deliberately updates the ③ lock). ← NEXT
-4. **M6 codec gap-fill** (thickness/attenuation sources, transmission/volume round-trips).
+3. ~~**M5 v2 dipole**~~ DONE 2026-09-16 (pushed `1d76fe2` — triptych + solid sheets byte-identical).
+4. ~~**M6 codec gap-fill**~~ DONE 2026-09-17 (211/211 — see §6).
 5. **Denoiser + motion vectors** (parked per direction).
+6. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych — needs a GPU runner). ← NEXT

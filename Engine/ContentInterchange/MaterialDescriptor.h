@@ -172,6 +172,8 @@ struct MaterialDescriptor
     std::vector<MaterialOperation>      Operations;    // post-order; empty = implicit vertical chain
     uint32_t                            Flags       = 0u;
     float                               AlphaCutoff = 0.5f;
+    float                               VolumeThickness = 0.0f;   // [m] M6: KHR_materials_volume thickness_factor, carried for
+                                                                 // interchange fidelity (0 = unknown / authored slab). CPU-side only.
 
     [[nodiscard]] bool operator==(const MaterialDescriptor&) const noexcept = default;
 };
