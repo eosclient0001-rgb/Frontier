@@ -298,11 +298,41 @@ and the BVH fix revealed the fill softbox grazing 4px in-frame in every sheet (n
 - Harness `Exhibits/Workbench/Materials/ShaderballExhibit.cpp` + driver `RunShaderballExhibit.sh`
   (build → smoke → full render; not part of the gate — the sheet is ~5 min).
 
-## 5. What's next
+## 5. Kernel integration — K0–K5 (SHIPPED 2026-09-16, compile-verified, render pending GPU)
+
+`ReSTIRViewport` never compiled post-M4 (K1) and read garbage transmission state (K2). All fixes are
+CPU-mirrors of furnace-proven code, gated so opaque paths are bit-identical by construction.
+
+- **K0 compile story.** No SDK in the sandbox (Vulkan SDK / slangc / glslc all absent; release-asset egress
+  blocked). `glslang` built from source (KhronosGroup/glslang @ 31b9aac, cmake+ninja from PyPI) — the same
+  frontend `glslc` uses. All 13 CMake-table shaders lower to SPIR-V clean (`-V --target-env vulkan1.2`,
+  same `-D`/`-I` as the build). Note: the files are pure GLSL dialect (`#version 460`); the CMake `slangc`
+  path passes no `-source glsl`, so it cannot lower them — the `glslc` path is the working one.
+- **K1** call-site: `SampleBsdf` takes `vec4 u` (u.w seeds the M4 R/T branch) but got `vec3` → hard error
+  (negative control: reverting one site fails with `no matching overloaded function found`).
+- **K2** transmission/SSS: the `ShadingRecord` transmission quartet was never set (garbage `TransmitMix`).
+  Defaults added, then the full slab resolve — P3.yzw/P4 (weight × `kChannelTransmission.x`, colour, depth)
+  and P6/P7 (SSS weight × `kChannelSubsurface.x`, colour, radius, scale) were already resident, zero CPU
+  change. Limits: thickness is not in the slab (foil Beer = 1); scatter/dispersion/anisotropy v1-out.
+- **K3** below-horizon transport: `|cosθ|` throughput (was signed — negative for T-samples), ray-side ray
+  offset, above-horizon gates dropped on bounce escape/hit. Primary-DI-below deliberately deferred (variance
+  only — T-direct converges via the bounce; touching the reservoir unverified was the bigger risk).
+- **K4** medium stack: `ThinWalled` from `SlabFlags` bit0 (P14.z) → solid entry (one-step refraction),
+  `enteredSolid` carry (below-horizon exit, EON/coat-below included — CPU-mirrored), interior Beer over the
+  true segment, exit override (`IncidentIor` = entry eta), embedded-transmissive R-only (v1 no-nesting),
+  interior NEE skip (shadow rays treat glass as opaque), nominal-Thickness miss fallback, firefly clamp 8.
+- **K5** SSS: ch9 = K2's resolve (verified indices); `SssChord` inward raycast per hit (SSS-gated, double-sided
+  traversal catches backfaces); **open-plane rule**: a chord with no exit misses → t = 1e30 → Beer 0 (no volume
+  behind an open sheet — the arm goes dark, correctly); below-stratum NEE (primary + endpoint, sun + lamps,
+  NO shadow ray — chord Beer is the visibility; interior-SSS future work).
+- **Honest scope.** Compile-verified only — no GPU in this sandbox, so no kernel frame has rendered; the
+  render-verification (glass pane through-path, solid-ball exit, wax backlight) is pending a GPU runner. The
+  T/SSS paths are line-mirrors of CPU code the furnace + kept sheets prove, but in-kernel they are UNRENDERED.
+
+## 6. What's next
 
 1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped; v2 dipole queued).
-2. **Kernel milestone** (K0 compile story → K1–K5: unbreak + wire M4/M4b/M5 into `ReSTIRViewport`). ← NEXT
-   (recommended: the kernel is broken-or-UB post-M4 (K1/K2) — fix before more shared-file work compounds it).
-3. **M5 v2 dipole** (view-dependent, reuses the chord exit finder; deliberately updates the ③ lock).
+2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §6; render-verification pending GPU).
+3. **M5 v2 dipole** (view-dependent, reuses the chord exit finder; deliberately updates the ③ lock). ← NEXT
 4. **M6 codec gap-fill** (thickness/attenuation sources, transmission/volume round-trips).
 5. **Denoiser + motion vectors** (parked per direction).

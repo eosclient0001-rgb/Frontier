@@ -194,6 +194,7 @@ struct SurfaceFrame         // everything the kernel needs at a hit besides the 
     float Opacity;          // geometry_opacity × texture alpha
     float Occlusion;        // baked AO — multiplies the ambient fills (debug floor, moonlight), never the direct light
     float LodBias;          // ½ log2(uvArea / worldArea) + log2(coneWidth / |n·d|): add ½ log2(texW·texH) per texture
+    bool  ThinWalled;       // K4: SlabFlags bit0 (P14.z) — foil (thin-wall compound) vs solid (tracer walks the medium)
 };
 
 vec3 ToLocal(SurfaceFrame F, vec3 w)   { return vec3(dot(w, F.Tangent), dot(w, F.Bitangent), dot(w, F.Normal)); }
@@ -270,14 +271,17 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
     m.Emission = mat.Emissive.xyz;
     m.Selection = MaterialSelection(mat);   // M3: per-selection shading path (covers the header path too)
     m.SssWeight = 0.0; m.SssColor = vec3(1.0); m.SssRadius = 0.0; m.SssRadiusScale = vec3(0.0); m.SssThickness = 0.0;   // M5: SSS off (branch-gated, never read at 0; slab resolve in the kernel milestone)
-    F.Emission = mat.Emissive.xyz; F.Opacity = 1.0; F.Occlusion = 1.0;
+    m.TransmissionWeight = 0.0; m.TransmissionColor = vec3(1.0); m.TransmissionDepth = 0.0; m.TransmissionThickness = 0.0;   // K2: was UNSET (garbage TransmitMix → random T-branch). Opaque default; the slab resolve below reads P3.yzw/P4 (resident — no CPU change was needed)
+    F.Emission = mat.Emissive.xyz; F.Opacity = 1.0; F.Occlusion = 1.0; F.ThinWalled = true;   // K4: header path (no slab) is always foil — TransmitMix = 0 there anyway, so the flag is inert
 
     if (mat.Slabs.y > 0u)
     {
         GpuMaterialSlab S = MaterialSlabs[mat.Slabs.x];   // Tier A: the FIRST slab (top-most after flatten; multi-slab stacks arrive with R5)
         uint selection = MaterialSelection(mat);   // M1: Sultan-18 §9 gate — unread channels are not sampled
         vec4 P0 = S.Payload[0], P1 = S.Payload[1], P2 = S.Payload[2], P3 = S.Payload[3];
+        vec4 P4 = S.Payload[4], P6 = S.Payload[6], P7 = S.Payload[7];   // K2: P5 (transmission scatter/dispersion) is v1-out — surface BTDF only, never declared
         vec4 P8 = S.Payload[8], P9 = S.Payload[9], P10 = S.Payload[10], P11 = S.Payload[11], P12 = S.Payload[12], P13 = S.Payload[13];
+        vec4 P14 = S.Payload[14];   // K4: .z = SlabFlags bit0 thin-walled (floats 56–59 = glint pair + flags + mask)
         float normalScale = uintBitsToFloat(S.Runtime.y), occlusionStrength = uintBitsToFloat(S.Runtime.z);
 
         vec4 baseTex = SampleChannel(S, kChannelBaseColor, uv, F.LodBias, vec4(1.0));   // never gated: Unlit reads it
@@ -298,6 +302,23 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
         vec2 anisoDir = anisoTex.xy * 2.0 - 1.0;
         m.AnisotropyAngle = dot(anisoDir, anisoDir) > 1e-12 ? atan(anisoDir.y, anisoDir.x) + S.Slate2.x : S.Slate2.x;
         m.SpecularIor        = P3.x;
+        // K2: M4 slab resolve — the payload already carries the volume pair (resident, no CPU change); the kernel
+        // just never read it. Weight × kChannelTransmission.x (KHR: R = transmissionFactor; unbound → ×1.0).
+        // Thickness is NOT in the slab (OpenPBR §5 has none): foil Beer = 1 (documented limit); solid traverses
+        // true geometry (K4) and treats 0 as the no-exit fallback.
+        m.TransmissionWeight = P3.y * SampleChannelGated(S, kChannelTransmission, uv, F.LodBias, vec4(1.0),
+                               P3.y > 0.0 || ReflectanceConsumes(selection, kChannelTransmission)).x;
+        m.TransmissionColor  = vec3(P3.z, P3.w, P4.x);
+        m.TransmissionDepth  = P4.y;
+        // K2: M5 slab resolve — weight × kChannelSubsurface.x (no KHR standard; .x by the weight-texture
+        // convention; unbound → ×1.0). RadiusScale .yzw; P8.x (scatter anisotropy g) has no ShadingRecord field —
+        // M5 v1 wrap doesn't consume g (v2 dipole: CPU-side first, kernel field then). Thickness is tracer-side
+        // (K5 sets it per hit; the 0 default = unset).
+        m.SssWeight          = P6.x * SampleChannelGated(S, kChannelSubsurface, uv, F.LodBias, vec4(1.0),
+                               P6.x > 0.0 || ReflectanceConsumes(selection, kChannelSubsurface)).x;
+        m.SssColor           = vec3(P6.y, P6.z, P6.w);
+        m.SssRadius          = P7.x;
+        m.SssRadiusScale     = vec3(P7.y, P7.z, P7.w);
         m.CoatWeight         = P8.y * SampleChannelGated(S, kChannelCoat, uv, F.LodBias, vec4(1.0),
                                P8.y > 0.0 || ReflectanceConsumes(selection, kChannelCoat)).x;
         m.CoatColor          = vec3(P8.zw, P9.x);
@@ -316,6 +337,7 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
         m.ThinFilmIor        = P13.x;
         m.HazinessWeight     = P13.z;
         m.HazinessRoughness  = P13.w;
+        F.ThinWalled = (floatBitsToUint(P14.z) & 1u) != 0u;   // K4: SlabFlags bit0 (exact bit-cast — the record is a memcpy mirror)
         F.Emission  = m.Emission;
         F.Opacity   = P13.y * SampleChannel(S, kChannelOpacity, uv, F.LodBias, vec4(1.0)).w;   // glTF: A of base colour
         F.Occlusion = mix(1.0, SampleChannelGated(S, kChannelOcclusion, uv, F.LodBias, vec4(1.0),
@@ -560,6 +582,21 @@ bool TraceShadow(vec3 origin, vec3 target)
         if (tMax <= 0.0) return false;
     }
     return true;   // more cut-out layers than the limit: treat as occluded (conservative, never leaks light)
+}
+
+// K5: the SSS geometric chord (CPU SssChord mirror) — an inward raycast from just below the surface along −N; t is
+// the first exit the double-sided traversal catches (backface for convex balls — the MT has no det-sign cull, so
+// backfaces hit). Miss ⟹ t = 1e30 (Beer 0): the ray crossed the whole volume. THE OPEN-PLANE RULE: an open sheet
+// has no exit — its chord misses, Beer = 0, the SSS arm goes dark. Correct: there is no volume behind an open
+// plane to backlight through. The chord runs along −N (shading normal), not the view ray, matching the wrap's
+// view-independence; concave partial-chords fold into t as medium (v1 honest approximation, CPU-mirrored).
+float SssChord(vec3 P, vec3 N)
+{
+    Ray chordRay;
+    chordRay.origin = P - N * 3e-4;   // pure ray offset below the surface (M4b-analog: never lands on-surface)
+    chordRay.dir = -N;
+    Hit h = TraceScene(chordRay);
+    return h.valid ? h.t : 1e30;
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -1021,7 +1058,16 @@ void main()
     vec3 hitNormal = frame.Geometric;                             // shadow-ray offsets and the DI target function stay geometric
     vec3 woLocal   = ToLocal(frame, viewDir);
     if (woLocal.z <= 0.0) woLocal = vec3(woLocal.xy, 1e-3);      // grazing normal-mapped case: keep the BSDF defined
+    // K5: per-hit SSS chord (CPU mirror — before the resolve like the CPU, though the resolve never reads thickness;
+    // the wrap's Beer needs the true exit. 0 default = unset; 1e30 = missed/open = Beer 0. SSS-off mats skip the
+    // raycast entirely, so opaque/SSS-off panels keep their bytes exactly.)
+    if (shading.SssWeight > 0.0) shading.SssThickness = SssChord(hitPos, frame.Normal);
     ResolvedLayers layers = ResolveLayers(shading, woLocal);
+    // K4: solid entry — the primary ray comes from air (IncidentIor = 1.0 default), so the entry interface is the
+    // bare single step, not the foil double-refraction (CPU mirror: solidHit ⟹ SolidInterface, IncidentIor = 1.0
+    // outside). Inert for DI (above-horizon only — the T arm never fires there) and for opaque/foil.
+    bool solidPrimary = !frame.ThinWalled && layers.TransmitMix > 0.0;
+    if (solidPrimary) layers.SolidInterface = true;
     vec3 albedo    = shading.BaseColor;                           // debug ambient floor only
 
     vec3 accumulatedRadiance = vec3(0.0);
@@ -1224,6 +1270,52 @@ void main()
     }
 
     //------------------------------------------------------------------------------------------------------------------
+    // K5: SSS below-stratum NEE (CPU DirectMISsss mirror) — the ONLY direct term the wrap can see. The reservoir
+    // above owns wi.z ≥ 0 (partition — no double count) and the BSDF never lands below for SSS mats (TransmitMix =
+    // 0 keeps the opaque-below rule, pdf exactly 0 there), so without this stratum SSS-direct would be exactly 0.
+    // Single-strategy, NO shadow ray — the chord Beer replaces the visibility test: light behind the surface shines
+    // THROUGH, attenuated, not blocked. Sun + lamps by the same coin the bounce NEE uses (same pdfs, same forms).
+    //------------------------------------------------------------------------------------------------------------------
+    if (layers.SssMix > 0.0 && (sunUp || LightTriangleCount > 0u))
+    {
+        bool sunBelow = sunUp && (LightTriangleCount == 0u || RandFloat(seed) < kSunPickProbability);
+        if (sunBelow)
+        {
+            vec3 sSunDir = SampleSunDirection(SkySunDirection.xyz, RandFloat(seed), RandFloat(seed));
+            float sCos = -dot(hitNormal, sSunDir);   // world-below cosine (the measure's |cos|)
+            vec3  sWi  = ToLocal(frame, sSunDir);
+            if (sCos > 0.0 && sWi.z < 0.0)
+            {
+                vec3  sF = EvaluateBsdf(shading, layers, woLocal, sWi);   // below-branch: SSS (+ T when mixed)
+                float pPick = LightTriangleCount > 0u ? kSunPickProbability : 1.0;
+                accumulatedRadiance += sF * SunEmission() * sCos * SunSolidAngle() / pPick;
+            }
+        }
+        else
+        {
+            const uint sSlots = LightTriangleCount;
+            uint  sLi  = min(uint(RandFloat(seed) * float(sSlots)), sSlots - 1u);
+            vec3  sLp  = SampleLightPointFor(sLi, RandFloat(seed), RandFloat(seed));
+            vec3  sToL = sLp - hitPos;
+            float sDist = length(sToL);
+            vec3  sLDir = sToL / sDist;
+            float sCos  = -dot(hitNormal, sLDir);
+            float sCosL = dot(LightNormal(sLi), -sLDir);
+            vec3  sWi   = ToLocal(frame, sLDir);
+            // Grazing-epsilon on cosL (CPU mirror — the MIS-less stratum NEEDS it: W = 1 can't bound the 1/Pl blowup
+            // the above-stratum's MIS absorbs).
+            if (sCos > 0.0 && sCosL > 1e-3 && sWi.z < 0.0)
+            {
+                float sDist2 = sDist * sDist;
+                vec3  sF = EvaluateBsdf(shading, layers, woLocal, sWi);
+                float pMesh = sunUp ? 1.0 - kSunPickProbability : 1.0;
+                accumulatedRadiance += sF * LightEmission(sLi) * sCos * sCosL
+                                     * Luminaires[sLi].Area * float(sSlots) / ((sDist2 + 0.01) * pMesh);
+            }
+        }
+    }
+
+    //------------------------------------------------------------------------------------------------------------------
     // 4. One-bounce indirect (plain path tracing with NEE, no GI reservoir); skipped when the GI feature is off
     //------------------------------------------------------------------------------------------------------------------
     if ((FeatureFlags & kFeatureGlobalIllumination) != 0u)
@@ -1231,13 +1323,19 @@ void main()
         // R4b: BSDF-sampled bounce (EON CLTC / VNDF / LTC per lobe). ⚠️ For Cornell (specular_weight 0, r_d 0) the CLTC
         //    sample IS a cosine sample, but one extra random number is drawn for the lobe pick — the converged image is
         //    unchanged, the per-frame noise pattern is not.
-        vec4 bounce = SampleBsdf(shading, layers, woLocal, vec3(RandFloat(seed), RandFloat(seed), RandFloat(seed)));
+        vec4 bounce = SampleBsdf(shading, layers, woLocal, vec4(RandFloat(seed), RandFloat(seed), RandFloat(seed), RandFloat(seed)));   // K1: u.w seeds the M4 R/T branch — vec3 never compiled
         if (bounce.w > 0.0)
         {
             vec3 bounceDir = FromLocal(frame, bounce.xyz);
-            vec3 throughput = EvaluateBsdf(shading, layers, woLocal, bounce.xyz) * bounce.z / bounce.w;   // f · cosθ / pdf
+            // K4: medium entry — below-horizon exit from a solid primary crosses into the glass (CPU mirror: wi.z < 0
+            // + solidHit, EON/coat-below included since f = f_T > 0 there). Foil crossings stay outside (no inside).
+            bool enteredSolid = solidPrimary && bounce.z < 0.0;
+            vec3 throughput = EvaluateBsdf(shading, layers, woLocal, bounce.xyz) * abs(bounce.z) / bounce.w;   // K3: f · |cosθ| / pdf — the full-sphere T measure is symmetric (R: wi.z > 0, bit-identical)
+            throughput = min(throughput, vec3(8.0));   // K4: firefly clamp (CPU mirror — softboxes through smooth glass)
             Ray  bounceRay;
-            bounceRay.origin = hitPos + hitNormal * kEps;
+            // K4: solid segments take a pure ray offset (CPU mirror — the normal term lands on-surface at near-normal
+            // exits and re-hits the exit face); foil/R keep the K3 ray-side normal offset.
+            bounceRay.origin = enteredSolid ? hitPos + bounceDir * 3e-4 : hitPos + hitNormal * (dot(bounceDir, hitNormal) > 0.0 ? kEps : -kEps);
             bounceRay.dir    = bounceDir;
 
             Hit bounceHit = TraceScene(bounceRay);
@@ -1250,18 +1348,34 @@ void main()
             //
             //    The throughput already carries the BSDF and the cosine from the bounce, so the sky enters
             //    exactly as any other emitter would — no separate ambient term, no second light path.
-            if (!bounceHit.valid && dot(bounceDir, hitNormal) > 0.0)
+            // K3: no above-horizon gate — below-horizon w > 0 bounces exist only when TransmitMix > 0 (opaque kills
+            // them in SampleBsdf), so opaque is untouched and T-paths collect the environment / endpoints below.
+            if (!bounceHit.valid)
             {
+                // K4: entered solid but never exited (open mesh / numeric leak — CPU mirror): nominal-Beer fallback
+                // over the slab thickness, then out. Thickness is 0 (not in the slab) so this is ×1 today — live
+                // the day the slab carries it. Closed meshes never land here.
+                if (enteredSolid) throughput *= exp(-layers.TransmissionSigma * shading.TransmissionThickness);
                 accumulatedRadiance += throughput * SkyAlong(bounceDir);
             }
-            if (bounceHit.valid && dot(bounceDir, hitNormal) > 0.0)
+            if (bounceHit.valid)
             {
+                // K4: Beer over the true interior segment just travelled (CPU mirror — EntrySigma captured at entry,
+                // here the primary resolve's sigma; the segment is entry→endpoint for exits AND embedded hits).
+                if (enteredSolid) throughput *= exp(-layers.TransmissionSigma * bounceHit.t);
                 GpuMaterial   bMat  = Materials[bounceHit.matIdx];
                 // D2: TraceScene already resolved the instance — reuse it rather than repeating the search here.
                 GpuInstance   bInstance = Instances[bounceHit.instance];
                 SurfaceFrame  bFrame;
                 float         bCone = coneWidth + bounceHit.t * PixelSpreadAngle();
                 ShadingRecord bShading = ResolveMaterial(bMat, bInstance, LocalPrimitive(bounceHit.primitive, bounceHit.instance), bounceHit.pos, -bounceDir, bCone, bFrame);
+                // K4: medium context at the endpoint (CPU mirror). A same-material hit from inside is the exit
+                // backface (glass→air override below); a DIFFERENT transmissive object embedded in the glass
+                // shades R-only (v1: no nested dielectrics — and the ray stays inside).
+                bool bFromInside = enteredSolid && bounceHit.matIdx == primaryInstance.MaterialIndex;
+                if (enteredSolid && !bFromInside && bShading.TransmissionWeight > 0.0) bShading.TransmissionWeight = 0.0;
+                // K5: endpoint chord (CPU mirror — interior-SSS is future work, and NEE skips inside anyway).
+                if (!bFromInside && bShading.SssWeight > 0.0) bShading.SssThickness = SssChord(bounceHit.pos, bFrame.Normal);
 
                 // M1: an unlit bounce endpoint contributes its base colour exactly like an emitter (constant radiance).
                 vec3 bUnlit = MaterialSelection(bMat) == kReflectanceUnlit ? bShading.BaseColor : vec3(0.0);
@@ -1269,13 +1383,19 @@ void main()
                 {
                     accumulatedRadiance += throughput * (bFrame.Emission + bUnlit);
                 }
-                else if (sunUp || LightTriangleCount > 0u)
+                // K4: interior endpoints skip NEE (CPU mirror) — shadow rays treat glass as opaque, so every NEE
+                // ray from inside would block at the exit wall; refracted NEE is future work. Emitters above still
+                // collect (with the interior Beer already in the throughput).
+                else if ((sunUp || LightTriangleCount > 0u) && !bFromInside)
                 {
                     vec3  bHitPos    = bounceHit.pos;
                     vec3  bHitNormal = bFrame.Geometric;
                     vec3  bWo        = ToLocal(bFrame, -bounceDir);
                     if (bWo.z <= 0.0) bWo = vec3(bWo.xy, 1e-3);
                     ResolvedLayers bLayers = ResolveLayers(bShading, bWo);
+                    // K4: exit interface — the transmitted side is air (IncidentIor rides the medium stack: the
+                    // primary glass's eta captured at entry; CPU mirror).
+                    if (bFromInside) { bLayers.SolidInterface = true; bLayers.IncidentIor = layers.SpecularEta; }
 
                     // The bounce draws one light the same way the reservoir candidates do — sun or lamp by the same
                     //    coin — because a single unweighted sample is a one-candidate reservoir and the pdfs are the
@@ -1321,6 +1441,44 @@ void main()
                             float pMesh = sunUp ? 1.0 - kSunPickProbability : 1.0;
                             accumulatedRadiance += throughput * bF * bLEmit * bCos * bCosL
                                                  * Luminaires[bLi].Area * float(bSlots) / ((bDist2 + 0.01) * pMesh);
+                        }
+                    }
+                    // K5: endpoint below-stratum (the same SSS mirror in the bounce frame; inside the !bFromInside
+                    // gate — interior endpoints skip both strata. v-prefix: the bounce frame's below-stratum draws).
+                    if (bLayers.SssMix > 0.0)
+                    {
+                        bool sunBelowV = sunUp && (LightTriangleCount == 0u || RandFloat(seed) < kSunPickProbability);
+                        if (sunBelowV)
+                        {
+                            vec3 vSunDir = SampleSunDirection(SkySunDirection.xyz, RandFloat(seed), RandFloat(seed));
+                            float vCos = -dot(bHitNormal, vSunDir);
+                            vec3  vWi  = ToLocal(bFrame, vSunDir);
+                            if (vCos > 0.0 && vWi.z < 0.0)
+                            {
+                                vec3  vF = EvaluateBsdf(bShading, bLayers, bWo, vWi);
+                                float vPick = LightTriangleCount > 0u ? kSunPickProbability : 1.0;
+                                accumulatedRadiance += throughput * vF * SunEmission() * vCos * SunSolidAngle() / vPick;
+                            }
+                        }
+                        else
+                        {
+                            const uint vSlots = LightTriangleCount;
+                            uint  vLi  = min(uint(RandFloat(seed) * float(vSlots)), vSlots - 1u);
+                            vec3  vLp  = SampleLightPointFor(vLi, RandFloat(seed), RandFloat(seed));
+                            vec3  vToL = vLp - bHitPos;
+                            float vDist = length(vToL);
+                            vec3  vLDir = vToL / vDist;
+                            float vCos  = -dot(bHitNormal, vLDir);
+                            float vCosL = dot(LightNormal(vLi), -vLDir);
+                            vec3  vWi   = ToLocal(bFrame, vLDir);
+                            if (vCos > 0.0 && vCosL > 1e-3 && vWi.z < 0.0)
+                            {
+                                float vDist2 = vDist * vDist;
+                                vec3  vF = EvaluateBsdf(bShading, bLayers, bWo, vWi);
+                                float vMesh = sunUp ? 1.0 - kSunPickProbability : 1.0;
+                                accumulatedRadiance += throughput * vF * LightEmission(vLi) * vCos * vCosL
+                                                     * Luminaires[vLi].Area * float(vSlots) / ((vDist2 + 0.01) * vMesh);
+                            }
                         }
                     }
                 }
