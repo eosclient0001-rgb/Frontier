@@ -48,7 +48,7 @@ Proves the CPU `MaterialIndex` (records, flags, fold/mix, channel×stage registr
 - **Selection** — all 8 reflectance selections + priority (transmission beats coat, cloth beats aniso),
   M3 cloth entry/exit/retention, emissive lamp stays Standard.
 
-## 2. Furnace proof — `MaterialEvaluation.slang` compiled 1:1 as C++ (3548/3548)
+## 2. Furnace proof — `MaterialEvaluation.slang` compiled 1:1 as C++ (3556/3556)
 
 The shader under test is `#include`d as C++ through `SlangCpuShim.h`, so these numbers are the shipped
 shading code, not a model of it. Tables are baked fresh each run (32×32, 1024 spp/cell).
@@ -195,29 +195,37 @@ albedo (E = 0.8238 vs Ess = 0.8579, bounded both sides); and two independent run
 cosine numeric differ by 0.0105 (Snell-cone D-peak events, weights ~12 — σ_num ≈ 0.007, heavy-tailed),
 so the ② numeric/gap upper margins hardened to 3.4σ (1.05→1.06, 0.09→0.10; deterministic today).
 
-### M5 subsurface wrap — Beer, normalisation, view-independence, gates (SHIPPED 2026-09-16)
+### M5 subsurface dipole — C-B transport, exit shape, sampler branch, MIS (v2 SHIPPED 2026-09-16, supersedes v1 wrap)
 
 ```
-ok Beer per-channel MFP (0.606531 0.367879 0.135335) · opaque at r=0 (0/0 guarded) · foil at t=0 · miss→0 · scale≤0 opaque
-ok front-glow f = mix·ρ·Beer·6/(5π) (0.173758 vs 0.173758)   ← direct-eval, 6 digits, no MC
-ok SSS view-independent (288/288 bitwise identical)          ← locks the non-reciprocal-by-design decision
-ok uniform-backlight E = mix·ρ·Beer (0.3576 0.0888 0.0109)   ← the N_B = 5/6 normalisation, proved not assumed
+ok dipole CCDF per-channel d (0.786494 0.629368 0.418897) · opaque at r=0 (0/0 guarded) · foil at t=0 (bitwise 1) · miss→0 · scale≤0 opaque
+ok front-glow f = mix·ρ·T·6/(5π)·T_exit (0.216301 vs 0.216301)   ← direct-eval, 6 digits, no MC
+ok SSS follows the exit-transmission shape (288/288) · SSS view-dependent (288/288 differ — v1 lock superseded)
+ok uniform-backlight E = mix·ρ·T·T_exit (0.4964 0.1839 0.0536)   ← per-view exact close, proved not assumed
 ok SSS-off below-branch exactly 0 (2000/2000, NaN-poisoned fields untouched) · above stack finite under NaN-poison
 ok metal kills the SSS mix · metal scatters nothing below
 ok dielectric albedo SSS-blind (bitwise) · diffuse ×(1−w) partition (200/200) · specular SSS-blind (200/200 bitwise)
 ok coat scale non-vacuous (0.0533) · coated SSS takes the exit scale (200/200)
-ok SSS sampler never lands below (20000/20000) · SSS pdf 0 below (2000/2000 bitwise)
+ok dipole mass positive (0.9167) · lands below at wSss (0.9182 vs 0.9167) · pdf = wSss·|cos|/π (2000/2000 bitwise)
+ok SSS-off pdf 0 below (2000/2000 bitwise) · SSS-off sampler never lands below (20000/20000, v1 negative kept)
+ok mixed T+SSS dipole mass 0 (exclusivity, bitwise) · mixed below-samples are T-real (18816/20000)
+ok dipole E[f·|cos|/p] closes (0.4957 0.1836 0.0535) · dipole MIS two-stratum closes (0.4965 0.1839 0.0536)
 ```
 
-v1 = thickness-wrap backlight, eval-only: f_sss = mix·ρ·Beer(t,r,s)·B(μi)/(π·N_B), B = (1−μ)/2, N_B = 5/6
-(a uniform below-hemisphere backlight closes EXACTLY). View-independent by design (wo never enters — the exit
-integral is folded into B; non-reciprocal, coat-albedo-scaling class, excluded from the reciprocity proofs with
-it). Sample/Pdf textually untouched (the opaque-below rule keeps TransmitMix = 0 mats above — the exhibit's
-single-strategy NEE-below at MIS 1 rests on the ⑧ locks). Thickness is a tracer-side per-hit chord (M4b-style,
-in `ShadingRecord`); r·s ≤ 0 is opaque (no transport without a scattering length — the r = 0 limit is Lambert,
-not foil); missed chords attenuate to exactly 0. The v2 dipole (view-dependent) will deliberately update the ③
-lock. (A stale design draft claimed a front-glow value of ρ·Beer/5 — re-derivation at implementation time gave
-6/(5π) ≈ 0.382·ρ·Beer; the furnace asserts the corrected value. Drafts are cheap, proofs are not.)
+v2 = Christensen–Burley dipole, full lobe: f_sss = mix·ρ·T_dip(t,r,s)·B(μi)·T_exit(μo)·6/(5π), B = (1−μ)/2,
+T_dip = ¼e^{−t/d} + ¾e^{−t/3d} (the normalised profile's CCDF at the chord — foil-transparent at t = 0, null
+at t = +∞), T_exit(μo) = 1 − F(μo, η) (view-dependent slab exit through the base interface). A uniform
+below-hemisphere backlight closes EXACTLY per view (E(wo) = mix·ρ·T·T_exit(μo)); still non-reciprocal
+(coat-albedo-scaling class, excluded with it). The sampler gains the dipole branch (5th lobe weight, cosine-below
+for pure-SSS mats; mixed T+SSS keeps the T arm owning below by exact-zero exclusivity — no flag needed, the
+dipole eval rides along in f); the opaque-below rule is selection-aware. The exhibit consumes dipole-virtuals
+by translucent see-through (skip non-emitters, bound 4, then environment — the BSDF-sampled twin of the
+light-sampled NEE-below, meeting in MIS); the kernel kills virtuals (its K5 light-stratum owns SSS-direct —
+collecting both without MIS would double-count; kernel MIS is M9+). v1's wrap is fully superseded (SssBeer /
+SssWrapBacklight removed — git keeps them); v1's ③ view-independence lock is deliberately replaced by the
+exit-shape lock. Bonus fix: v1's NEE-below ran at MIS 1, which silently double-counted mixed T+SSS (the T
+stratum also sampled below) — v2's two-strategy MIS closes that hole. Thickness stays the tracer-side per-hit
+chord (reused unchanged, open-plane rule intact); r·s ≤ 0 stays opaque (the r = 0 limit is Lambert, not foil).
 
 ## 3. Known gaps (acknowledged, by design)
 
@@ -282,19 +290,24 @@ exits through the missing back-half, so solid rendered near-transparent and ≈ 
 solid panel runs BRIGHTER (TIR bounces collect the previously-missing lights). A throwaway tinted probe
 (not kept) confirmed Beer-over-true-distance in the exhibit loop (green solid vs clear thin).)
 
-`ShaderballSheet_Subsurface.png` (2060×512 SSS quad, `sha256 0efad7fc…e5e5c`): opaque-red reference
+`ShaderballSheet_Subsurface.png` (2060×512 SSS quad, `sha256 4af6d23e…9a8e672`): opaque-red reference
 (byte-twin base of skin — subsurface isolated) + skin (r = 0.45, red-shifted MFP scale (1, 0.37, 0.3)) + wax
 (r = 1.0, spectrally neutral) + jade (r = 0.25, green) under the studio rig plus an out-of-frame tungsten
-backlight high behind the ball. The v1 wrap fires through a single-strategy below-horizon NEE stratum
-(MIS 1 — the sampler never lands below for SSS mats, furnace-⑧) with no occlusion test (the geometric
-chord's Beer replaces visibility); thickness is one inward raycast per SSS hit, miss ⟹ Beer 0. Linear
-means ref 0.3493 · skin 0.2686 · wax 0.3345 · jade 0.2531, 0 non-finite pixels. Caught & fixed this run:
-a 1/Pl firefly ridge along the backlight's silhouette locus (the MIS-less below-stratum can't bound
-CosL→0+ — both NEE strata now take a 1e-3 grazing-epsilon (a ~0.06° sliver, ≈1e-6 of solid angle — bias negligible);
-and the BVH fix revealed the fill softbox grazing 4px in-frame in every sheet (nudged out, all re-rendered).
+backlight high behind the ball. The v2 dipole fires through TWO below-strata in MIS — the light-sampled
+NEE-below (no occlusion test: the chord transport replaces visibility) and the sampler's dipole branch
+(consumed by translucent see-through: skip non-emitters, bound 4, then environment). Thickness stays one
+inward raycast per SSS hit, miss ⟹ transport 0 (open-plane rule). Linear means ref 0.3493 · skin 0.3173 ·
+wax 0.5515 · jade 0.2744, 0 non-finite pixels. v1's means (0efad7fc…: 0.3493/0.2686/0.3345/0.2531) are
+SUPERSEDED — the dipole CCDF tail transports far more than single-exp Beer at t/d ≳ 1 (wax nearly doubles),
+and the exit transmission reshapes every view; the ref panel reproduces 0.3493 exactly (SSS-off paths are
+bit-identical by construction — same proof the triptych/solid SHAs verify at the file level). Caught & fixed
+this run (v1): a 1/Pl firefly ridge along the backlight's silhouette locus (the MIS-less below-stratum can't
+bound CosL→0+ — both NEE strata now take a 1e-3 grazing-epsilon (a ~0.06° sliver, ≈1e-6 of solid angle — bias
+negligible); and the BVH fix revealed the fill softbox grazing 4px in-frame in every sheet (nudged out,
+all re-rendered).
 
 - Kept-sheet linear means: glass 0.2845 · cloth 0.1723 · coat 0.1707 · solid 0.3230 · sss ref 0.3493 ·
-  skin 0.2686 · wax 0.3345 · jade 0.2531 · 0 non-finite pixels.
+  skin 0.3173 · wax 0.5515 · jade 0.2744 · 0 non-finite pixels.
 - Harness `Exhibits/Workbench/Materials/ShaderballExhibit.cpp` + driver `RunShaderballExhibit.sh`
   (build → smoke → full render; not part of the gate — the sheet is ~5 min).
 
@@ -331,7 +344,7 @@ CPU-mirrors of furnace-proven code, gated so opaque paths are bit-identical by c
 
 ## 6. What's next
 
-1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped; v2 dipole queued).
+1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped, superseded by the v2 dipole — see 3).
 2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §6; render-verification pending GPU).
 3. **M5 v2 dipole** (view-dependent, reuses the chord exit finder; deliberately updates the ③ lock). ← NEXT
 4. **M6 codec gap-fill** (thickness/attenuation sources, transmission/volume round-trips).

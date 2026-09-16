@@ -498,10 +498,11 @@ float SssChord(const vec3& P, const vec3& N)
     return H.Valid ? H.T : 1e30f;
 }
 
-// M5: below-horizon NEE for the SSS wrap — single-strategy (the BSDF never lands below for SSS mats, TransmitMix
-// = 0 keeps the opaque-below rule and the pdf reads exactly 0 there (furnace-⑧), so MIS = 1 exactly), and NO
-// Occluded() — the chord Beer replaces the visibility test: light behind the surface shines THROUGH, attenuated,
-// not blocked. Returns 0 before touching the RNG for SSS-off mats (panels 0–3 keep their bytes exactly).
+// M5 v2: below-horizon NEE for the SSS dipole — the light-sampled stratum (the BSDF-sampled twin is the sampler's
+// dipole branch; the two meet in MIS, furnace-⑩), and NO Occluded() — the chord transport replaces the visibility
+// test: light behind the surface shines THROUGH, attenuated, not blocked. Returns 0 before touching the RNG for
+// SSS-off mats (panels 0–3 keep their bytes exactly). (The MIS also fixes mixed T+SSS, where v1's W = 1 silently
+// double-counted the T-stratum's share of the below integral.)
 vec3 DirectMISsss(const ShadingRecord& m, const ResolvedLayers& L, const vec3& P, const vec3& N,
                   const vec3& T, const vec3& B, const vec3& wo, Rng& R)
 {
@@ -519,9 +520,11 @@ vec3 DirectMISsss(const ShadingRecord& m, const ResolvedLayers& L, const vec3& P
                                             // can't bound the 1/Pl blowup the above-stratum's MIS absorbs)
     vec3 wi(dot(Dw, T), dot(Dw, B), dot(Dw, N));
     if (wi.z >= 0.0f) return vec3(0.0f);   // above-stratum owns wi.z ≥ 0 (partition — no double count)
-    vec3 F = EvaluateBsdf(m, L, wo, wi);   // below-branch: SSS (+ T when mixed — 0 for the SSS panels)
+    vec3 F = EvaluateBsdf(m, L, wo, wi);   // below-branch: dipole SSS (+ T when mixed)
     float Pl = (1.0f / g_Lights.size()) * (1.0f / Q.Area) * D2 / CosL;
-    return F * ((-wi.z) / max(Pl, 1e-12f)) * Q.Radiance;
+    float Pb = PdfBsdf(m, L, wo, wi);   // v2: the dipole branch reads > 0 below (furnace-⑧) — two-strategy MIS
+    float W = (Pl * Pl) / (Pl * Pl + Pb * Pb + 1e-12f);
+    return F * ((-wi.z) * W / max(Pl, 1e-12f)) * Q.Radiance;
 }
 
 vec3 Radiance(vec3 O, vec3 D, Rng& R)
@@ -612,6 +615,26 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R)
         Beta = min(Beta, vec3(8.0f, 8.0f, 8.0f));   // firefly clamp (softboxes through smooth glass)
         LastPdf = S.w;
         vec3 Dw = Tt * wi.x + Bt * wi.y + Ns * wi.z;
+        if (wi.z < 0.0f && Lr.TransmitMix <= 0.0f && Lr.SssMix > 0.0f)   // M5 v2 dipole-virtual: a BSDF-sampled
+        {   // backlight direction, not a transport vertex — translucent see-through (skip non-emitters, bound 4
+            // like the M4 shadow-walk, then the environment), consume into the throughput and terminate. The
+            // light-sampled twin (DirectMISsss) meets this stratum in MIS; middle geometry is skipped exactly as
+            // v1's no-Occluded rule ignored it (floor-bounce-through-volume is out of scope in both).
+            vec3 Vo = P + Dw * 3e-4f;   // pure ray offset (M4b-analog)
+            vec3 Vl(0.0f);
+            bool Vhit = false;
+            for (int Vs = 0; Vs < 4 && !Vhit; ++Vs)
+            {
+                Hit Vh = Intersect(Vo, Dw, 1e30f, -1);
+                if (!Vh.Valid) break;
+                const Tri& Vt = g_Tris[Vh.TriId];
+                if (Vt.Light >= 0 && dot(Dw, Vt.Ng) < 0.0f) { Vl = g_Lights[Vt.Light].Radiance; Vhit = true; }
+                else Vo = Vo + Dw * (Vh.T + 3e-4f);
+            }
+            if (!Vhit) Vl = EnvRadiance(Dw);
+            L += Beta * Vl;
+            break;
+        }
         if (wi.z < 0.0f)
         {
             if (solidHit)   // medium transition, both ways (entry AND exit; EON/coat-below included: f = f_T > 0)

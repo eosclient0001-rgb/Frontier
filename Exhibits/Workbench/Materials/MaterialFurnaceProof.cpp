@@ -1603,48 +1603,55 @@ void ProofTransmissionThin()
     }
 }
 
-// M5 v1: thickness-wrap backlight — eval-only (Sample/Pdf untouched), view-independent by design, metals exempt.
-// The wrap normalisation (N_B = 5/6) is proved, not assumed: a uniform below-hemisphere backlight must close
-// EXACTLY (E = mix·ρ·Beer), and the front-glow value 6/(5π) at μ = −1 is asserted to 6 digits by direct eval.
+// M5 v2: Christensen–Burley dipole — full lobe (Sample/Pdf dipole branch), view-dependent by design (exit
+// transmission), metals exempt. The normalisation (N = 6/5π) is proved, not assumed: a uniform below-hemisphere
+// backlight must close EXACTLY per view (E(wo) = mix·ρ·T·T_exit(μo)), the front-glow value at μi = −1, μo = 1 is
+// asserted to 6 digits by direct eval, and the sampler + pdf + MIS close against the same integral (⑨⑩).
 void ProofSss()
 {
-    std::printf("[furnace] M5 subsurface wrap (Beer, normalisation, view-independence, gates)\n");
+    std::printf("[furnace] M5 subsurface dipole (transport, exit-shape, branch, consistency, MIS)\n");
     const float kHarnessPi = 3.14159265358979f;
     const float kNaN = std::numeric_limits<float>::quiet_NaN();
 
-    {   // ① Beer unit checks (direct, no MC): per-channel MFP, opaque at r ≤ 0, foil at t = 0, null on miss.
-        vec3 b = SssBeer(0.5f, 1.0f, vec3(1.0f, 0.5f, 0.25f));
-        CHECK(std::fabs(b.x - std::exp(-0.5f)) < 1e-6f && std::fabs(b.y - std::exp(-1.0f)) < 1e-6f &&
-              std::fabs(b.z - std::exp(-2.0f)) < 1e-6f, "Beer per-channel MFP (%.6f %.6f %.6f)", b.x, b.y, b.z);
-        vec3 b0 = SssBeer(0.0f, 0.0f, vec3(1.0f));   // r = 0 AND t = 0: no transport (the 0/0 guard, no NaN)
-        CHECK(b0.x == 0.0f && b0.y == 0.0f && b0.z == 0.0f, "Beer opaque at r=0 (0/0 guarded)");
-        vec3 bf = SssBeer(0.0f, 1.0f, vec3(1.0f));   // foil: t = 0, r > 0 → full transmission
-        CHECK(std::fabs(bf.x - 1.0f) < 1e-6f && std::fabs(bf.y - 1.0f) < 1e-6f && std::fabs(bf.z - 1.0f) < 1e-6f,
-              "Beer foil at t=0");
-        vec3 bm = SssBeer(1e30f, 1.0f, vec3(1.0f));   // missed chord: t = +∞ → exactly 0
-        CHECK(bm.x == 0.0f && bm.y == 0.0f && bm.z == 0.0f, "Beer miss attenuates to 0");
-        vec3 bn = SssBeer(1.0f, 1.0f, vec3(1.0f, 0.0f, -1.0f));   // sick scale channels: guarded per channel
-        CHECK(std::fabs(bn.x - std::exp(-1.0f)) < 1e-6f && bn.y == 0.0f && bn.z == 0.0f, "Beer scale<=0 opaque");
+    {   // ① Dipole-transport unit checks (direct, no MC): C-B CCDF per-channel, opaque at r ≤ 0, foil at t = 0, null on miss.
+        vec3 t = SssDipoleTransport(0.5f, 1.0f, vec3(1.0f, 0.5f, 0.25f));
+        float w0 = 0.25f * std::exp(-0.5f) + 0.75f * std::exp(-0.5f / 3.0f);   // d = 1: independent std::exp, ±1e-6
+        float w1 = 0.25f * std::exp(-1.0f) + 0.75f * std::exp(-1.0f / 3.0f);   // d = 0.5
+        float w2 = 0.25f * std::exp(-2.0f) + 0.75f * std::exp(-2.0f / 3.0f);   // d = 0.25
+        CHECK(std::fabs(t.x - w0) < 1e-6f && std::fabs(t.y - w1) < 1e-6f &&
+              std::fabs(t.z - w2) < 1e-6f, "dipole CCDF per-channel d (%.6f %.6f %.6f)", t.x, t.y, t.z);
+        vec3 t0 = SssDipoleTransport(0.0f, 0.0f, vec3(1.0f));   // r = 0 AND t = 0: no transport (the 0/0 guard, no NaN)
+        CHECK(t0.x == 0.0f && t0.y == 0.0f && t0.z == 0.0f, "dipole opaque at r=0 (0/0 guarded)");
+        vec3 tf = SssDipoleTransport(0.0f, 1.0f, vec3(1.0f));   // foil: t = 0, r > 0 → .25+.75 = 1 bitwise (exact halves)
+        CHECK(tf.x == 1.0f && tf.y == 1.0f && tf.z == 1.0f, "dipole foil at t=0 (bitwise 1)");
+        vec3 tm = SssDipoleTransport(1e30f, 1.0f, vec3(1.0f));   // missed chord: t = +∞ → exactly 0
+        CHECK(tm.x == 0.0f && tm.y == 0.0f && tm.z == 0.0f, "dipole miss attenuates to 0");
+        vec3 tn = SssDipoleTransport(1.0f, 1.0f, vec3(1.0f, 0.0f, -1.0f));   // sick scale channels: guarded per channel
+        CHECK(std::fabs(tn.x - (0.25f * std::exp(-1.0f) + 0.75f * std::exp(-1.0f / 3.0f))) < 1e-6f &&
+              tn.y == 0.0f && tn.z == 0.0f, "dipole scale<=0 opaque");
     }
 
-    {   // ② Front-glow analytic value: wi = (0,0,−1), B = 1, f = mix·ρ·Beer·6/(5π) — direct-eval, ±2e-6.
+    {   // ② Front-glow analytic value: wi = (0,0,−1) (B = 1), wo = (0,0,1), f = mix·ρ·T·6/(5π)·T_exit(1) — direct-eval, ±2e-6.
         ShadingRecord m = SssMaterial(vec3(0.5f), vec3(1.0f, 0.5f, 0.25f), 2.0f, vec3(1.0f), 1.0f, 0.75f);
         vec3 wo = vec3(0.0f, 0.0f, 1.0f);
         ResolvedLayers L = ResolveLayers(m, wo);
         vec3 f = EvaluateBsdf(m, L, wo, vec3(0.0f, 0.0f, -1.0f));
-        float beer = std::exp(-0.5f);   // t/r = 1/2, scale 1
-        vec3 want = 0.75f * vec3(1.0f, 0.5f, 0.25f) * beer * (6.0f / (5.0f * kHarnessPi));
+        float trans = 0.25f * std::exp(-0.5f) + 0.75f * std::exp(-0.5f / 3.0f);   // t/d = 1/2, scale 1
+        float f0 = (1.5f - 1.0f) / (1.5f + 1.0f); f0 *= f0;   // hand-F0(1.5) = 0.04 — independent of shared Fresnel
+        vec3 want = 0.75f * vec3(1.0f, 0.5f, 0.25f) * trans * (6.0f / (5.0f * kHarnessPi)) * (1.0f - f0);
         CHECK(std::fabs(f.x - want.x) < 2e-6f && std::fabs(f.y - want.y) < 2e-6f && std::fabs(f.z - want.z) < 2e-6f,
-              "front-glow f = mix·ρ·Beer·6/(5π) (%.6f vs %.6f)", f.x, want.x);
+              "front-glow f = mix·ρ·T·6/(5π)·T_exit (%.6f vs %.6f)", f.x, want.x);
     }
 
-    {   // ③ View-independence, BITWISE: wo never enters the arm — this locks the non-reciprocal-by-design
-        // decision (coat-albedo-scaling class). The v2 dipole IS view-dependent and will deliberately update this.
+    {   // ③ View-DEPENDENCE (v2 deliberately supersedes the v1 view-independence lock): wo enters ONLY through
+        // the exit transmission — f(μo)/f(1) = T_exit(μo)/T_exit(1) with T_exit from the shared (proven) Fresnel,
+        // and every off-normal view differs (the bare mat has no coat/fuzz exit scales, so nothing else varies).
         ShadingRecord m = SssMaterial(vec3(0.5f), vec3(0.9f, 0.4f, 0.3f), 1.5f, vec3(1.0f, 0.37f, 0.3f), 0.8f, 0.6f);
         vec3 wi = normalize(vec3(0.3f, -0.2f, -0.9f));
         vec3 woRef = vec3(0.0f, 0.0f, 1.0f);
         vec3 ref = EvaluateBsdf(m, ResolveLayers(m, woRef), woRef, wi);
-        bool identical = true;
+        float exitRef = 1.0f - FresnelDielectric(1.0f, 1.5f);
+        bool shaped = true, varied = true;
         for (int a = 0; a < 12; ++a)
             for (int p = 0; p < 24; ++p)
             {
@@ -1653,12 +1660,16 @@ void ProofSss()
                 float s = std::sqrt(1.0f - mu * mu);
                 vec3 wo = vec3(s * std::cos(phi), s * std::sin(phi), mu);
                 vec3 f = EvaluateBsdf(m, ResolveLayers(m, wo), wo, wi);
-                identical = identical && f.x == ref.x && f.y == ref.y && f.z == ref.z;
+                float want = (1.0f - FresnelDielectric(mu, 1.5f)) / exitRef;
+                shaped = shaped && std::fabs(f.x / ref.x - want) < 1e-5f &&
+                         std::fabs(f.y / ref.y - want) < 1e-5f && std::fabs(f.z / ref.z - want) < 1e-5f;
+                varied = varied && (f.x != ref.x || f.y != ref.y || f.z != ref.z);
             }
-        CHECK(identical, "SSS view-independent (288/288 bitwise identical)");
+        CHECK(shaped, "SSS follows the exit-transmission shape (288/288)");
+        CHECK(varied, "SSS view-dependent (288/288 differ off-normal — v1 lock superseded)");
     }
 
-    {   // ④ Uniform-backlight closure: cosine-below MC, E == mix·ρ·Beer ±0.005 (the N_B = 5/6 proof).
+    {   // ④ Uniform-backlight closure: cosine-below MC, E(wo) == mix·ρ·T·T_exit(μo) ±0.005 (per-view exact close).
         ShadingRecord m = SssMaterial(vec3(0.5f), vec3(0.8f, 0.4f, 0.2f), 1.0f, vec3(1.0f, 0.5f, 0.25f), 0.7f, 0.9f);
         vec3 wo = vec3(0.0f, 0.0f, 1.0f);
         ResolvedLayers L = ResolveLayers(m, wo);
@@ -1670,10 +1681,12 @@ void ProofSss()
             acc = acc + EvaluateBsdf(m, L, wo, wi);
         }
         vec3 E = acc * (kHarnessPi / static_cast<float>(N));
-        vec3 want = 0.9f * vec3(0.8f, 0.4f, 0.2f) *
-                    vec3(std::exp(-0.7f), std::exp(-1.4f), std::exp(-2.8f));
+        vec3 trans = vec3(0.25f * std::exp(-0.7f) + 0.75f * std::exp(-0.7f / 3.0f),
+                          0.25f * std::exp(-1.4f) + 0.75f * std::exp(-1.4f / 3.0f),
+                          0.25f * std::exp(-2.8f) + 0.75f * std::exp(-2.8f / 3.0f));
+        vec3 want = 0.9f * vec3(0.8f, 0.4f, 0.2f) * trans * 0.96f;   // T_exit(1) = 1 − F0(1.5) = 0.96
         CHECK(std::fabs(E.x - want.x) < 0.005f && std::fabs(E.y - want.y) < 0.005f && std::fabs(E.z - want.z) < 0.005f,
-              "uniform-backlight E = mix·ρ·Beer (%.4f %.4f %.4f)", E.x, E.y, E.z);
+              "uniform-backlight E = mix·ρ·T·T_exit (%.4f %.4f %.4f)", E.x, E.y, E.z);
     }
 
     {   // ⑤ Gates, all bitwise: w = 0 ⟹ exactly 0 below (NaN-poisoned SSS fields prove the branch-gate never
@@ -1755,23 +1768,109 @@ void ProofSss()
         CHECK(scaled, "coated SSS takes the exit scale (200/200)");
     }
 
-    {   // ⑧ Sample/Pdf untouched below: the sampler never lands below for SSS mats (TransmitMix = 0 keeps the
-        // opaque-below rule) and the pdf reads exactly 0 there — the exhibit's single-strategy NEE-below (MIS 1)
-        // rests on both (no realised BSDF-below paths, no queried density).
+    {   // ⑧ The dipole branch (v2 supersedes the v1 never-below lock): pure-SSS lands below with frequency ≈ wSss,
+        // the pdf below reads EXACTLY wSss·|cos|/π (bitwise — the shared kInvPi both sides), SSS-off still reads
+        // exactly 0 below, and mixed T+SSS keeps wSss = 0 (exclusivity — the T arm owns below).
         ShadingRecord m = SssMaterial(vec3(0.5f), vec3(1.0f), 1.0f, vec3(1.0f), 1.0f, 1.0f);
         vec3 wo = vec3(0.0f, 0.0f, 1.0f);
         ResolvedLayers L = ResolveLayers(m, wo);
-        bool noneBelow = true;
-        for (int i = 0; i < 20000; ++i)
+        CHECK(L.Weights.Sss > 0.02f, "dipole mass positive (%.4f)", L.Weights.Sss);
+        const int NB = 20000;
+        int below = 0;
+        for (int i = 0; i < NB; ++i)
         {
             vec4 S = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
-            noneBelow = noneBelow && (S.w <= 0.0f || S.z > 0.0f);
+            if (S.w > 0.0f && S.z < 0.0f) ++below;
         }
-        CHECK(noneBelow, "SSS sampler never lands below (20000/20000)");
+        float freq = static_cast<float>(below) / static_cast<float>(NB);
+        float sig = std::sqrt(L.Weights.Sss * (1.0f - L.Weights.Sss) / static_cast<float>(NB));
+        CHECK(std::fabs(freq - L.Weights.Sss) < 4.0f * sig + 0.002f, "dipole lands below at wSss (%.4f vs %.4f)",
+              freq, L.Weights.Sss);
+        bool pdfExact = true;
+        for (int i = 0; i < 2000; ++i)
+        {
+            vec3 wi = -CosineSample(Rand01(), Rand01());
+            pdfExact = pdfExact && PdfBsdf(m, L, wo, wi) == L.Weights.Sss * (-wi.z) * kInvPi;
+        }
+        CHECK(pdfExact, "dipole pdf = wSss·|cos|/π below (2000/2000 bitwise)");
+        ShadingRecord mo = StandardMaterial(vec3(0.5f), 0.4f);   // SSS-off negative (the v1 lock, kept)
+        ResolvedLayers Lo = ResolveLayers(mo, wo);
         bool pdfZero = true;
         for (int i = 0; i < 2000; ++i)
-            pdfZero = pdfZero && PdfBsdf(m, L, wo, -CosineSample(Rand01(), Rand01())) == 0.0f;
-        CHECK(pdfZero, "SSS pdf 0 below (2000/2000 bitwise)");
+            pdfZero = pdfZero && PdfBsdf(mo, Lo, wo, -CosineSample(Rand01(), Rand01())) == 0.0f;
+        CHECK(pdfZero, "SSS-off pdf 0 below (2000/2000 bitwise)");
+        bool noneBelow = true;
+        for (int i = 0; i < NB; ++i)
+        {
+            vec4 S = SampleBsdf(mo, Lo, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            noneBelow = noneBelow && (S.w <= 0.0f || S.z > 0.0f);
+        }
+        CHECK(noneBelow, "SSS-off sampler never lands below (20000/20000)");
+        ShadingRecord mx = GlassMaterial(0.4f);   // mixed T+SSS: exclusivity — T owns below, dipole mass exactly 0
+        mx.SssWeight = 1.0f; mx.SssColor = vec3(1.0f); mx.SssRadius = 1.0f;
+        mx.SssRadiusScale = vec3(1.0f); mx.SssThickness = 1.0f;
+        ResolvedLayers Lx = ResolveLayers(mx, wo);
+        CHECK(Lx.Weights.Sss == 0.0f, "mixed T+SSS dipole mass 0 (exclusivity, bitwise)");
+        int mixedBelow = 0;
+        for (int i = 0; i < NB; ++i)
+        {
+            vec4 S = SampleBsdf(mx, Lx, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            if (S.w > 0.0f && S.z < 0.0f) ++mixedBelow;
+        }
+        CHECK(mixedBelow > 10, "mixed below-samples are T-real (%d/20000)", mixedBelow);
+    }
+
+    {   // ⑨ Dipole sampling consistency: E[f·|cos|/p] over the REAL sampler = the ④ closure (branch + pdf agree).
+        ShadingRecord m = SssMaterial(vec3(0.5f), vec3(0.8f, 0.4f, 0.2f), 1.0f, vec3(1.0f, 0.5f, 0.25f), 0.7f, 0.9f);
+        vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+        ResolvedLayers L = ResolveLayers(m, wo);
+        vec3 acc = vec3(0.0f);
+        const int N = 200000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 S = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            if (S.w <= 0.0f || S.z >= 0.0f) continue;   // above-stratum owns ≥ 0 (partition — 0-contribution)
+            vec3 f = EvaluateBsdf(m, L, wo, S.xyz);
+            acc = acc + f * (-S.z) / std::max(S.w, 1e-12f);
+        }
+        vec3 E = acc / static_cast<float>(N);   // /N over ALL draws (above + killed + below) — the ∫_below estimator
+        vec3 trans = vec3(0.25f * std::exp(-0.7f) + 0.75f * std::exp(-0.7f / 3.0f),
+                          0.25f * std::exp(-1.4f) + 0.75f * std::exp(-1.4f / 3.0f),
+                          0.25f * std::exp(-2.8f) + 0.75f * std::exp(-2.8f / 3.0f));
+        vec3 want = 0.9f * vec3(0.8f, 0.4f, 0.2f) * trans * 0.96f;   // the ④ want (same mat, same view)
+        CHECK(std::fabs(E.x - want.x) < 0.01f && std::fabs(E.y - want.y) < 0.01f && std::fabs(E.z - want.z) < 0.01f,
+              "dipole E[f·|cos|/p] closes (%.4f %.4f %.4f)", E.x, E.y, E.z);
+    }
+
+    {   // ⑩ Two-stratum MIS closure (the maths the exhibit's DirectMISsss implements): light-stratum (cosine-below,
+        // pdfA = |cos|/π) + BSDF-stratum (the dipole branch) under the balance heuristic reproduce the ④ closure.
+        ShadingRecord m = SssMaterial(vec3(0.5f), vec3(0.8f, 0.4f, 0.2f), 1.0f, vec3(1.0f, 0.5f, 0.25f), 0.7f, 0.9f);
+        vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+        ResolvedLayers L = ResolveLayers(m, wo);
+        vec3 accA = vec3(0.0f), accB = vec3(0.0f);
+        const int N = 100000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec3 wi = -CosineSample(Rand01(), Rand01());
+            float pdfA = (-wi.z) / kHarnessPi, pdfB = PdfBsdf(m, L, wo, wi);
+            float wA = (pdfA * pdfA) / (pdfA * pdfA + pdfB * pdfB + 1e-12f);
+            accA = accA + EvaluateBsdf(m, L, wo, wi) * (-wi.z) * wA / std::max(pdfA, 1e-12f);
+        }
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 S = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            if (S.w <= 0.0f || S.z >= 0.0f) continue;
+            float pdfA = (-S.z) / kHarnessPi;
+            float wB = (S.w * S.w) / (S.w * S.w + pdfA * pdfA + 1e-12f);
+            accB = accB + EvaluateBsdf(m, L, wo, S.xyz) * (-S.z) * wB / std::max(S.w, 1e-12f);
+        }
+        vec3 E = (accA + accB) / static_cast<float>(N);   // MIS sum: (1/N)Σ_A w·f/p + (1/N)Σ_B w·f/p (no /2 — each stratum estimates its weight-fraction, not the whole)
+        vec3 trans = vec3(0.25f * std::exp(-0.7f) + 0.75f * std::exp(-0.7f / 3.0f),
+                          0.25f * std::exp(-1.4f) + 0.75f * std::exp(-1.4f / 3.0f),
+                          0.25f * std::exp(-2.8f) + 0.75f * std::exp(-2.8f / 3.0f));
+        vec3 want = 0.9f * vec3(0.8f, 0.4f, 0.2f) * trans * 0.96f;   // the ④ want (same mat, same view)
+        CHECK(std::fabs(E.x - want.x) < 0.012f && std::fabs(E.y - want.y) < 0.012f && std::fabs(E.z - want.z) < 0.012f,
+              "dipole MIS two-stratum closes (%.4f %.4f %.4f)", E.x, E.y, E.z);
     }
 }
 

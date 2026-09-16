@@ -1324,7 +1324,12 @@ void main()
         //    sample IS a cosine sample, but one extra random number is drawn for the lobe pick — the converged image is
         //    unchanged, the per-frame noise pattern is not.
         vec4 bounce = SampleBsdf(shading, layers, woLocal, vec4(RandFloat(seed), RandFloat(seed), RandFloat(seed), RandFloat(seed)));   // K1: u.w seeds the M4 R/T branch — vec3 never compiled
-        if (bounce.w > 0.0)
+        // M5 v2: dipole-virtuals die here — a below-bounce from a pure-SSS mat is a BSDF-sampled backlight
+        // direction, not a transport vertex, and the K5 light-sampled below-stratum already estimates that same
+        // integral every primary. Using one estimator and dropping the other is unbiased (just no variance
+        // reduction); collecting both without MIS would double-count. The CPU exhibit runs both strata WITH MIS
+        // (furnace-⑩) — the kernel follows when it grows MIS (M9+). One wasted sample, no ray traced.
+        if (bounce.w > 0.0 && !(bounce.z < 0.0 && layers.TransmitMix <= 0.0 && layers.SssMix > 0.0))
         {
             vec3 bounceDir = FromLocal(frame, bounce.xyz);
             // K4: medium entry — below-horizon exit from a solid primary crosses into the glass (CPU mirror: wi.z < 0

@@ -586,6 +586,7 @@ struct LobeWeights
     float Fuzz;         // probability mass of the fuzz lobe
     float Coat;         // … coat GGX
     float Specular;     // … base GGX (dielectric + metal, incl. haziness)
+    float Sss;          // M5 v2: … the dipole branch (pure-SSS below-sampling; 0 for opaque AND mixed — exclusivity)
     float Diffuse;      // … EON
 };
 
@@ -628,6 +629,22 @@ vec3 CoatAbsorption(vec3 coatColor, float mu, float eta)   // T^(1/μt) for one 
     float sinT2 = (1.0 - mu * mu) / (eta * eta);
     float muT = sqrt(max(1.0e-4, 1.0 - sinT2));
     return pow(max(coatColor, vec3(1.0e-6)), vec3(0.5 / muT));
+}
+
+// M5 v2: Christensen–Burley dipole slab transport — the normalised profile's complementary CDF at the chord:
+// T(t) = ¼e^{−t/d} + ¾e^{−t/3d} (1 − cdf(r) of R(r) = (e^{−r/d} + e^{−r/3d})/(8πdr); the profile integrates to 1
+// over the plane, so its CCDF is 1 at t = 0 (foil-transparent) and 0 at t = +∞). Per-channel diffusion length
+// d = r·s. d ≤ 0 is opaque (no transport without a scattering length, even at t = 0: the r = 0 limit is the
+// Lambert surface, not the foil). A missed chord (tracer found no exit) passes t = +∞ and attenuates to
+// exactly 0 — the ray crossed the whole volume. Lives up here: the resolve needs it for the dipole mass.
+vec3 SssDipoleTransport(float thickness, float radius, vec3 scale)
+{
+    vec3 dd = radius * scale;
+    vec3 trans;
+    trans.x = dd.x > 0.0 ? 0.25 * exp(-thickness / dd.x) + 0.75 * exp(-thickness / dd.x / 3.0) : 0.0;
+    trans.y = dd.y > 0.0 ? 0.25 * exp(-thickness / dd.y) + 0.75 * exp(-thickness / dd.y / 3.0) : 0.0;
+    trans.z = dd.z > 0.0 ? 0.25 * exp(-thickness / dd.z) + 0.75 * exp(-thickness / dd.z / 3.0) : 0.0;
+    return trans;
 }
 
 ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
@@ -732,10 +749,18 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
     float transMass = underCoat * L.TransmitMix * L.TransmitMacroT;   // M4: without its own mass, glass is never sampled (diffuse vanishes at weight 1, R mass ≈ F0)
     float specMass  = underCoat * mix(lumDiel, min(1.0, lumMetal + 0.04), m.Metalness) + transMass;
     float diffMass  = underCoat * (1.0 - m.Metalness) * (1.0 - L.TransmitMix) * (1.0 - L.SssMix) * (1.0 - lumDiel) * dot(EonAlbedo(m.BaseColor, m.DiffuseRoughness, muO), vec3(0.2126, 0.7152, 0.0722));   // M5: sampling mass follows the eval partition (SssMix 0 ⟹ ×1.0, bit-identical)
+    // M5 v2: the dipole branch owns below-sampling for pure-SSS mats — mixed T+SSS keeps the T arm owning below
+    // (the dipole eval rides along in f, no flag needed: exact-zero TransmitMix is the switch). Mass ∝ the
+    // transmitted energy (mix·ρ·T, luminance); the 0.02 floor (SSS-on only — 0 at SssMix 0 keeps opaque
+    // bit-identical) keeps the pdf > 0 below whenever f > 0 below.
+    bool sssSolo = L.SssMix > 0.0 && L.TransmitMix <= 0.0;
+    vec3 sssTrans = SssDipoleTransport(m.SssThickness, m.SssRadius, m.SssRadiusScale);
+    float sssMass = sssSolo ? underCoat * L.SssMix * dot(m.SssColor * sssTrans, vec3(0.2126, 0.7152, 0.0722)) : 0.0;
     LobeWeights w;
     w.Fuzz = L.FuzzAlbedoO; w.Coat = underFuzz * L.CoatAlbedoO; w.Specular = max(specMass, 0.02 * underCoat); w.Diffuse = max(diffMass, (1.0 - m.Metalness) * 0.02 * underCoat);
-    float total = w.Fuzz + w.Coat + w.Specular + w.Diffuse;
-    w.Fuzz /= total; w.Coat /= total; w.Specular /= total; w.Diffuse /= total;
+    w.Sss = sssSolo ? max(sssMass, 0.02 * underCoat) : 0.0;
+    float total = w.Fuzz + w.Coat + w.Specular + w.Sss + w.Diffuse;
+    w.Fuzz /= total; w.Coat /= total; w.Specular /= total; w.Sss /= total; w.Diffuse /= total;
     L.Weights = w;
     return L;
 }
@@ -837,34 +862,19 @@ float PdfTransmission(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
     return p;
 }
 
-// M5: Beer transmittance of the SSS chord — per-channel mean free path r·s. r·s ≤ 0 is opaque (no transport
-// without a scattering length, even at t = 0: the r = 0 limit is the Lambert surface, not the foil). A missed
-// chord (tracer found no exit) passes t = +∞ and attenuates to exactly 0 — the ray crossed the whole volume.
-vec3 SssBeer(float thickness, float radius, vec3 scale)
-{
-    vec3 re = radius * scale;
-    vec3 beer;
-    beer.x = re.x > 0.0 ? exp(-thickness / re.x) : 0.0;
-    beer.y = re.y > 0.0 ? exp(-thickness / re.y) : 0.0;
-    beer.z = re.z > 0.0 ? exp(-thickness / re.z) : 0.0;
-    return beer;
-}
-
-// M5 v1: thickness-wrap backlight — view-independent BY DESIGN (the exit integral is folded into B, so wo never
-// enters; non-reciprocal like the coat albedo-scaling, and excluded from the reciprocity proofs with it).
-// B(μ) = ((1−μ)/2)^p, p = 1; N_B = 5/6 normalises the wrap so a uniform below-hemisphere backlight closes
-// EXACTLY (E = mix·ρ·Beer — the furnace asserts this, plus the front-glow value 6/(5π) at μ = −1).
-vec3 SssWrapBacklight(vec3 rho, vec3 beer, float muI)
-{
-    float B = 0.5 * (1.0 - muI);
-    return rho * beer * (B * (6.0 / 5.0) * kInvPi);
-}
-
-vec3 EvaluateSubsurface(ShadingRecord m, ResolvedLayers L, vec3 wi)
+// M5 v2: dipole backlight — view-DEPENDENT (the v1 wrap's view-independence lock is deliberately superseded).
+// Dipole CCDF transport at the chord × entry wrap B(μi) = (1−μi)/2 × view-dependent exit transmission
+// T(μo) = 1 − F(μo, η) (oblique exits reflect more, transmit less — the slab-correct exit through the base
+// interface) × N = 6/5π: a uniform below-hemisphere backlight closes EXACTLY per view,
+// E(wo) = mix·ρ·T·T_exit(μo) (the furnace asserts this, plus the front-glow value at μi = −1, μo = 1).
+// Non-reciprocal like the coat albedo-scaling (excluded from the reciprocity proofs with it).
+vec3 EvaluateSubsurface(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
     if (L.SssMix <= 0.0) return vec3(0.0);
-    vec3 beer = SssBeer(m.SssThickness, m.SssRadius, m.SssRadiusScale);
-    return L.SssMix * SssWrapBacklight(m.SssColor, beer, wi.z);
+    vec3 trans = SssDipoleTransport(m.SssThickness, m.SssRadius, m.SssRadiusScale);
+    float B = 0.5 * (1.0 - wi.z);
+    float exitT = 1.0 - FresnelDielectric(wo.z, m.SpecularIor);
+    return L.SssMix * m.SssColor * trans * (B * (6.0 / 5.0) * kInvPi) * exitT;
 }
 
 vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
@@ -877,7 +887,7 @@ vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
         if (L.TransmitMix <= 0.0 && L.SssMix <= 0.0) return vec3(0.0);   // exact-zero gates: opaque is bit-identical
         vec3 below = vec3(0.0);
         if (L.TransmitMix > 0.0) below = EvaluateTransmission(m, L, wo, wi);
-        if (L.SssMix > 0.0) below = below + EvaluateSubsurface(m, L, wi);
+        if (L.SssMix > 0.0) below = below + EvaluateSubsurface(m, L, wo, wi);
         if (m.CoatWeight > 0.0)   // a single coat pass on exit (no darkening: Δ belongs to the base albedo)
             below = below * (1.0 - L.CoatAlbedoO) * mix(vec3(1.0), L.CoatAbsorptionO, m.CoatWeight);
         if (m.FuzzWeight > 0.0)   // the fuzz lobe itself is 0 below (SheenEvaluate gates); only the layer scales
@@ -922,10 +932,25 @@ vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 //                                                  SAMPLE / PDF
 //------------------------------------------------------------------------------------------------------------------------
 
+// M5 v2: cosine-weighted below-hemisphere sample (the dipole branch's sampler; pdf = |cosθ|/π — exactly the
+// density PdfBsdf's SSS arm returns). Mirrors the harness CosineSample negated.
+vec3 SampleCosineBelow(vec2 u)
+{
+    float r = sqrt(u.x);
+    float phi = 2.0 * kPi * u.y;
+    return vec3(r * cos(phi), r * sin(phi), -sqrt(max(0.0, 1.0 - u.x)));
+}
+
 float PdfBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
     if (wo.z <= 0.0) return 0.0;
-    if (wi.z <= 0.0 && L.TransmitMix <= 0.0) return 0.0;   // opaque: nothing below (bit-identical)
+    if (wi.z <= 0.0 && L.TransmitMix <= 0.0)   // below with no T arm: the dipole density, or nothing (opaque)
+    {
+        if (L.SssMix <= 0.0) return 0.0;   // opaque: nothing below (bit-identical)
+        return L.Weights.Sss * max(-wi.z, 0.0) * kInvPi;   // M5 v2: SSS-arm-only — every other branch's
+        // below-landing is killed by the sampler, so counting their mass here would bias the estimator LOW
+        // (realised density ≠ reported density on the support). Mixed mats never land here (T arm owns below).
+    }
     // Transmissive below the horizon: the FULL mixture. The sampler keeps R-branch samples landing below, EON
     // CLTC leakage, and tilted-coat samples (valid T-region paths with f = f_T > 0), so the pdf must carry their
     // mass to match the sampling density exactly. (Keeping vs rejecting is variance, not bias: the T-sampler alone
@@ -965,6 +990,7 @@ vec4 SampleBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec4 u)
 {
     vec3 wi;
     bool transmitted = false;
+    bool sssBelow = false;   // M5 v2: the dipole branch (below-sampling for pure SSS — exempt from the kill rule)
     float pick = u.x;
     vec2 u2 = vec2(u.y, u.z);
     if (pick < L.Weights.Fuzz)
@@ -1013,12 +1039,18 @@ vec4 SampleBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec4 u)
             wi = transpose(L.AnisoBasis) * reflect(-woA, hA);
         }
     }
+    else if (pick < L.Weights.Fuzz + L.Weights.Coat + L.Weights.Specular + L.Weights.Sss)
+    {
+        wi = SampleCosineBelow(u2);   // M5 v2: dipole branch — cosine-weighted below (the BSDF-sampled twin of
+        sssBelow = true;              // the exhibit's light-sampled NEE-below; the two meet in MIS)
+    }
     else
     {
         wi = EonSampleCltc(wo, m.DiffuseRoughness, u.y, u.z).xyz;
     }
-    if (!transmitted && wi.z <= 0.0 && L.TransmitMix <= 0.0) return vec4(0.0);   // opaque only: transmissive
-    // keeps below-horizon R/EON/coat samples — valid T-region paths (f = f_T > 0, pdf = full mixture > 0)
+    if (!transmitted && !sssBelow && wi.z <= 0.0 && L.TransmitMix <= 0.0) return vec4(0.0);   // opaque only:
+    // transmissive keeps below-horizon R/EON/coat samples (valid T-region paths: f = f_T > 0, pdf = full mixture
+    // > 0); M5 v2 makes the gate selection-aware — the dipole branch survives below for pure-SSS mats
     if (transmitted && wi.z >= 0.0) return vec4(0.0);   // paranoia: exit refraction guarantees T·N = −√k < 0
     return vec4(wi, PdfBsdf(m, L, wo, wi));
 }
