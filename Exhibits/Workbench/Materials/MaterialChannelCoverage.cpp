@@ -221,8 +221,8 @@ void ProofCoverageTable()
         { "15 sheen roughness",      "WIRED", "WIRED", "WIRED(LTC)",  "WIRED" },
         { "16 subsurface colour",    "WIRED", "ACK:M5", "ACK:M5",     "ACK:M5" },
         { "17 subsurface thickness", "WIRED", "ACK:M5", "ACK:M5",     "ACK:M5" },
-        { "18 transmission",         "WIRED", "ACK:M4", "ACK:M4",     "ACK:M4" },
-        { "19 IOR (refraction)",     "WIRED", "ACK:M4", "ACK:M4",     "ACK:M4" },
+        { "18 transmission",         "WIRED", "WIRED", "WIRED(BTDF)", "WIRED" },
+        { "19 IOR (refraction)",     "WIRED", "WIRED", "WIRED(Snell)","WIRED" },
         { "20 displacement",         "ACK:M6-none", "ACK:M6-none", "ACK:M6-none", "ACK:M6-none" },
     };
     std::printf("[coverage] channel × stage registry (plan §0)\n");

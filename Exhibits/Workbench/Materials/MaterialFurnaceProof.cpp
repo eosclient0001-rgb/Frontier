@@ -89,7 +89,18 @@ ShadingRecord StandardMaterial(vec3 albedo, float roughness)
     m.CoatTangent = vec3(1.0f, 0.0f, 0.0f); m.CoatNormal = vec3(0.0f, 0.0f, 1.0f);   // M2 identity frame
     m.FuzzWeight = 0.0f; m.FuzzColor = vec3(1.0f); m.FuzzRoughness = 0.5f;
     m.Emission = vec3(0.0f);
+    m.TransmissionWeight = 0.0f; m.TransmissionColor = vec3(1.0f);   // M4: opaque defaults (bit-identical R4b)
+    m.TransmissionDepth = 0.0f; m.TransmissionThickness = 0.0f;
     m.Selection = 0u;   // M3: Standard — every pre-M3 test below must be unaffected by the cloth branch
+    return m;
+}
+
+ShadingRecord GlassMaterial(float roughness, float ior = 1.5f)
+{
+    ShadingRecord m = StandardMaterial(vec3(0.0f), roughness);   // black base: diffuse is dead at weight 1 anyway
+    m.SpecularIor = ior;
+    m.TransmissionWeight = 1.0f;
+    m.Selection = kReflectanceTransmissive;
     return m;
 }
 
@@ -274,7 +285,7 @@ void ProofSampling()
         const int N = 150000;
         for (int i = 0; i < N; ++i)
         {
-            vec4 s = SampleBsdf(m, L, wo, vec3(Rand01(), Rand01(), Rand01()));
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
             if (s.w <= 0.0f) continue;
             vec3 wi = s.xyz;
             acc += EvaluateBsdf(m, L, wo, wi).x * wi.z / s.w;
@@ -352,7 +363,7 @@ void ProofAnisotropyFrames()
         const int N = 150000;
         for (int i = 0; i < N; ++i)
         {
-            vec4 s = SampleBsdf(m, L, wo, vec3(Rand01(), Rand01(), Rand01()));
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
             if (s.w <= 0.0f) continue;
             vec3 wi = s.xyz;
             acc += EvaluateBsdf(m, L, wo, wi).x * wi.z / s.w;
@@ -438,7 +449,7 @@ void ProofAnisotropyFrames()
         const int N = 150000;
         for (int i = 0; i < N; ++i)
         {
-            vec4 s = SampleBsdf(m, L, wo, vec3(Rand01(), Rand01(), Rand01()));
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
             if (s.w <= 0.0f) continue;
             vec3 wi = s.xyz;
             acc += EvaluateBsdf(m, L, wo, wi).x * wi.z / s.w;
@@ -483,8 +494,8 @@ void ProofConsumesTable()
         (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 13) | (1u << 14),   // + aniso dir
         (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 5) | (1u << 10) | (1u << 14),   // + coat/coat-normal
         (1u << 0) | (1u << 2) | (1u << 4) | (1u << 7) | (1u << 11) | (1u << 14),   // Cloth: Sultan-18 §3 {1,3,5,6,8,14,15}
-        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 14),   // Subsurface (8 arrives M5)
-        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 14),   // Transmissive (9 arrives M4)
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 14),   // Subsurface (9 arrives M5)
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 8) | (1u << 14),   // Transmissive (8 WIRED M4)
         0u,   // EmissiveOnly
         0u,   // Unlit
     };
@@ -567,7 +578,7 @@ void ProofCloth()
         const int N = 150000;
         for (int i = 0; i < N; ++i)
         {
-            vec4 s = SampleBsdf(m, L, wo, vec3(Rand01(), Rand01(), Rand01()));
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
             if (s.w <= 0.0f) continue;
             vec3 wi = s.xyz;
             acc += EvaluateBsdf(m, L, wo, wi).x * wi.z / s.w;
@@ -698,6 +709,399 @@ void ProofCloth()
     }
 }
 
+// M4: Walter-2007 single-interface transmission — η² reciprocity + the exact R/T split (thick form, furnace-only).
+void ProofTransmissionSingle()
+{
+    std::printf("[furnace] M4 single-interface BTDF (eta2 reciprocity + R+T=1)\n");
+    // ① η² reciprocity: f(wo→wi)/ηi² is invariant under the full exchange (wo↔wi, ηo↔ηi) — arbitrates the η² numerator.
+    // The formula is only valid over Snell-consistent pairs, so TIR pairs (fwd = 0) and near-zero-lobe pairs are
+    // skipped: beyond-critical internal rays correspond to no real air-side ray (evanescent), not to a violation.
+    for (float ior : { 1.1f, 1.5f, 2.0f })
+    {
+        float worst = 0.0f;
+        int tested = 0, skipped = 0;
+        const int N = 5000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec3 wo = UniformHemisphere(Rand01(), Rand01());
+            if (wo.z < 0.05f) { ++skipped; continue; }
+            vec3 wiB = UniformHemisphere(Rand01(), Rand01()); wiB.z = -wiB.z;
+            if (wiB.z > -0.05f) { ++skipped; continue; }
+            vec2 a = AnisotropicAlpha(0.15f + 0.7f * Rand01(), 0.4f * Rand01() - 0.2f);
+            vec3 fwd = TransmissionEvaluateSingle(wo, wiB, a, 1.0f, ior);
+            if (fwd.x <= 0.0f) { ++skipped; continue; }   // TIR-side pair: unreachable, not a violation
+            vec4 hv = TransmissionHalfVector(wo, wiB, 1.0f, ior);
+            float fSide = FresnelDielectric(std::fabs(dot(wiB, hv.xyz)), 1.0f / ior);
+            if (fSide > 0.999f) { ++skipped; continue; }   // near-TIR: (1−F) float cancellation, not physics
+            vec3 woS = vec3(-wiB.x, -wiB.y, -wiB.z);
+            vec3 wiS = vec3(-wo.x, -wo.y, -wo.z);
+            vec3 bwd = TransmissionEvaluateSingle(woS, wiS, a, ior, 1.0f);
+            float lhs = fwd.x / (ior * ior), rhs = bwd.x;
+            float denom = std::fabs(lhs) + std::fabs(rhs);
+            if (denom < 1e-6f) { ++skipped; continue; }
+            worst = std::max(worst, std::fabs(lhs - rhs) / denom);
+            ++tested;
+        }
+        CHECK(tested > 500, "eta2 reciprocity ran (ior=%.1f tested=%d skipped=%d)", ior, tested, skipped);
+        CHECK(worst < 2e-3f, "eta2 reciprocity ior=%.1f worst-rel-diff=%.2e", ior, worst);
+    }
+    // ② Macro closure through the branch estimator (VNDF facet + microfacet-Fresnel R/T pick). The micro-split is
+    // exact BY CONSTRUCTION (P(R|m) + P(T|m) = 1 per facet); the macro statement is the rigorous two-sided bound
+    // E_ss − 0.02 ≤ R_ss+T_ss ≤ 1.005. The ceiling is hard (branch weights ≤ 1, VNDF normalised); the floor is
+    // empirical but principled — transmitted rays bend toward the normal and shadow LESS than reflected ones, so T
+    // systematically exceeds its (1−F)·E_ss share (measured +4–12 % at rough-oblique, → 0 smooth). The missing
+    // 1 − (R+T) is multiple scattering (exits glass mostly as T: the documented T_ms gap).
+    for (float rough : { 0.15f, 0.5f })
+    {
+        vec2 a = AnisotropicAlpha(rough, 0.0f);
+        for (float muO : { 0.5f, 1.0f })
+        {
+            vec3 wo = vec3(std::sqrt(1.0f - muO * muO), 0.0f, muO);
+            const float ior = 1.5f;
+            vec3 eTab = FetchEnergy(muO, rough * rough);
+            float Ess = eTab.x + eTab.y;
+            float acc = 0.0f;
+            const int N = 200000;
+            for (int i = 0; i < N; ++i)
+            {
+                vec3 h = SampleGgxVndf(wo, a, vec2(Rand01(), Rand01()));
+                float F = FresnelDielectric(std::fabs(dot(wo, h)), ior);
+                float dvis = GgxVndfPdf(wo, h, a);
+                if (Rand01() < 1.0f - F)   // T-branch: refract into glass (air → glass never TIRs)
+                {
+                    vec4 r = RefractDielectric(-wo, h, 1.0f / ior);
+                    vec3 wi = r.xyz;
+                    float dnom = dot(wo, h) + ior * dot(wi, h);
+                    float jac = (ior * ior) * std::fabs(dot(wi, h)) / (dnom * dnom + 1e-12f);
+                    float pdf = (1.0f - F) * dvis * jac;
+                    vec3 f = TransmissionEvaluateSingle(wo, wi, a, 1.0f, ior);
+                    acc += f.x * std::fabs(wi.z) / std::max(pdf, 1e-12f);
+                }
+                else   // R-branch (below-horizon reflects contribute 0 — kept, not skipped: unbiased)
+                {
+                    vec3 wi = reflect(-wo, h);
+                    if (wi.z <= 0.0f) continue;
+                    float pdf = F * dvis / (4.0f * std::max(dot(wo, h), 1e-4f));
+                    float d = F * GgxD(h, a) * GgxG2(wo, wi, a) / (4.0f * wo.z * wi.z);
+                    acc += d * wi.z / std::max(pdf, 1e-12f);
+                }
+            }
+            float E = acc / static_cast<float>(N);
+            CHECK(E <= 1.005f, "R_ss+T_ss ceiling (r=%.2f mu=%.1f E=%.4f)", rough, muO, E);
+            CHECK(E >= Ess - 0.02f, "R_ss+T_ss floor (r=%.2f mu=%.1f E=%.4f Ess=%.4f)", rough, muO, E, Ess);
+        }
+    }
+    // ②b Smooth absolute anchor: at roughness 0.05 the lobe is delta-ish (G → 1, micro-Fresnel → macro), so the
+    // branch estimator MUST return 1 — no tables, no approximations, the strongest scale check on Single.
+    {
+        vec2 a = AnisotropicAlpha(0.05f, 0.0f);
+        for (float muO : { 0.5f, 1.0f })
+        {
+            vec3 wo = vec3(std::sqrt(1.0f - muO * muO), 0.0f, muO);
+            const float ior = 1.5f;
+            float acc = 0.0f;
+            const int N = 200000;
+            for (int i = 0; i < N; ++i)
+            {
+                vec3 h = SampleGgxVndf(wo, a, vec2(Rand01(), Rand01()));
+                float F = FresnelDielectric(std::fabs(dot(wo, h)), ior);
+                float dvis = GgxVndfPdf(wo, h, a);
+                if (Rand01() < 1.0f - F)
+                {
+                    vec4 r = RefractDielectric(-wo, h, 1.0f / ior);
+                    vec3 wi = r.xyz;
+                    float dnom = dot(wo, h) + ior * dot(wi, h);
+                    float jac = (ior * ior) * std::fabs(dot(wi, h)) / (dnom * dnom + 1e-12f);
+                    float pdf = (1.0f - F) * dvis * jac;
+                    vec3 f = TransmissionEvaluateSingle(wo, wi, a, 1.0f, ior);
+                    acc += f.x * std::fabs(wi.z) / std::max(pdf, 1e-12f);
+                }
+                else
+                {
+                    vec3 wi = reflect(-wo, h);
+                    if (wi.z <= 0.0f) continue;
+                    float pdf = F * dvis / (4.0f * std::max(dot(wo, h), 1e-4f));
+                    float d = F * GgxD(h, a) * GgxG2(wo, wi, a) / (4.0f * wo.z * wi.z);
+                    acc += d * wi.z / std::max(pdf, 1e-12f);
+                }
+            }
+            float E = acc / static_cast<float>(N);
+            CHECK(std::fabs(E - 1.0f) < 0.02f, "single smooth anchor (mu=%.1f E=%.4f)", muO, E);
+        }
+    }
+    // ③ Smooth limit: T-samples cluster at the Snell direction.
+    {
+        vec2 a = AnisotropicAlpha(0.08f, 0.0f);
+        vec3 wo = normalize(vec3(0.3f, 0.15f, 0.9f));
+        vec3 snell = RefractDielectric(-wo, vec3(0.0f, 0.0f, 1.0f), 1.0f / 1.5f).xyz;
+        int nT = 0, okT = 0;
+        const int N = 20000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec3 h = SampleGgxVndf(wo, a, vec2(Rand01(), Rand01()));
+            float F = FresnelDielectric(std::fabs(dot(wo, h)), 1.5f);
+            if (Rand01() >= 1.0f - F) continue;
+            vec3 wi = RefractDielectric(-wo, h, 1.0f / 1.5f).xyz;
+            ++nT;
+            if (dot(wi, snell) > 0.996f) ++okT;   // within 5° of Snell
+        }
+        CHECK(nT > N / 2, "T-branch dominates smooth glass (nT=%d/%d)", nT, N);
+        CHECK(static_cast<float>(okT) / std::max(nT, 1) > 0.9f, "smooth T clusters at Snell (%d/%d)", okT, nT);
+    }
+}
+
+// M4: the thin-wall compound (tilted entry + flat exit) — sampling consistency, Beer, smooth limit, weight sweep.
+void ProofTransmissionThin()
+{
+    std::printf("[furnace] M4 thin-wall compound (sampling + Beer + smooth limit)\n");
+    // ① Full-mixture sampling anchored at E_ss × macro-split. The Ess-split theory is essentially EXACT smooth-ish
+    // (r = 0.15: matched to 4 digits) but undercounts at r = 0.5 — transmitted rays bend toward the normal and shadow
+    // less than the E_ss-per-lobe factorisation assumes (same direction as the single-interface excess, +4–12 %).
+    // So: TIGHT split-compare at r = 0.15, rigorous floor/ceiling at r = 0.5, and the cosine-furnace cross-check only
+    // where the lobe is broad enough to integrate quietly (r = 0.5; at r = 0.15 a sharp lobe makes it ±10 % noise).
+    for (float rough : { 0.15f, 0.5f })
+    {
+        ShadingRecord m = GlassMaterial(rough);
+        vec3 wo = normalize(vec3(0.3f, 0.2f, 0.9f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        vec3 eTab = FetchEnergy(wo.z, rough * rough);
+        float Ess = eTab.x + eTab.y;
+        float fMacro = FresnelDielectric(wo.z, 1.5f);
+        float sinI = std::sqrt(std::max(1.0f - wo.z * wo.z, 0.0f));
+        float cosT = std::sqrt(std::max(1.0f - sinI * sinI / 2.25f, 0.0f));
+        float fExit = FresnelDielectric(cosT, 1.0f / 1.5f);
+        float expect = Ess * (fMacro + (1.0f - fMacro) * (1.0f - fExit));
+        float acc = 0.0f;
+        int rej = 0;
+        const int N = 150000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            if (s.w <= 0.0f) { ++rej; continue; }   // exit-TIR rejection: trapped = absorbed, energy-consistent
+            vec3 wi = s.xyz;
+            acc += EvaluateBsdf(m, L, wo, wi).x * std::fabs(wi.z) / s.w;
+        }
+        acc /= static_cast<float>(N);
+        if (rough < 0.3f)
+            CHECK(std::fabs(acc - expect) < 0.035f,
+                  "thin-wall E[f·cos/p]=%.4f Ess-split=%.4f (r=%.2f)", acc, expect, rough);
+        CHECK(acc <= 1.005f, "thin-wall sampler ceiling (r=%.2f E=%.4f)", rough, acc);
+        CHECK(acc >= expect - 0.02f, "thin-wall sampler floor (r=%.2f E=%.4f split=%.4f)", rough, acc, expect);
+        CHECK(static_cast<float>(rej) / N < 0.20f, "exit-TIR trap rate sane (r=%.2f rej=%.3f)", rough, rej / (float)N);
+        if (rough > 0.3f)   // broad lobe only: cosine-furnace cross-check, ceiling, trap-loss floor
+        {
+            float refR = 0.0f, refT = 0.0f;
+            const int N0 = 200000;
+            for (int i = 0; i < N0; ++i)
+            {
+                vec3 up = CosineSample(Rand01(), Rand01());
+                refR += EvaluateBsdf(m, L, wo, up).x;
+                vec3 dn = -CosineSample(Rand01(), Rand01());
+                refT += EvaluateBsdf(m, L, wo, dn).x;
+            }
+            float ref = 3.14159265358979f * (refR + refT) / static_cast<float>(N0);
+            CHECK(std::fabs(acc - ref) / std::max(ref, 1e-3f) < 0.06f,
+                  "thin-wall numeric cross-check sampler=%.4f furnace=%.4f (r=%.2f)", acc, ref, rough);
+            CHECK(ref <= 1.02f, "thin-wall numeric never exceeds 1 (r=%.2f E=%.4f)", rough, ref);
+            // The floor is NOT 1: exit-reflected light ((1−F0)·F0 ≈ 3.8 % at normal incidence) bounces inside the wall
+            // and the single-interface model absorbs it instead of re-emitting it — a documented model limit, invisible
+            // at display-glass energies (92 % vs 96 % transmission).
+            CHECK(ref >= 0.88f, "thin-wall trap-loss floor (r=%.2f E=%.4f)", rough, ref);
+        }
+    }
+    // ①a Smooth absolute anchor: at roughness 0.08 the wall is a macro Fresnel sandwich (G → 1, micro → macro), so
+    // the full-mixture sampler MUST return F(μo) + (1−F(μo))(1−F_x) — no tables, the strongest scale check on thin-wall.
+    {
+        ShadingRecord m = GlassMaterial(0.08f);
+        vec3 wo = normalize(vec3(0.3f, 0.2f, 0.9f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        float fMacro = FresnelDielectric(wo.z, 1.5f);
+        float sinI = std::sqrt(std::max(1.0f - wo.z * wo.z, 0.0f));
+        float cosT = std::sqrt(std::max(1.0f - sinI * sinI / 2.25f, 0.0f));
+        float split = fMacro + (1.0f - fMacro) * (1.0f - FresnelDielectric(cosT, 1.0f / 1.5f));
+        float acc = 0.0f;
+        const int N = 150000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            if (s.w <= 0.0f) continue;
+            vec3 wi = s.xyz;
+            acc += EvaluateBsdf(m, L, wo, wi).x * std::fabs(wi.z) / s.w;
+        }
+        acc /= static_cast<float>(N);
+        CHECK(std::fabs(acc - split) < 0.035f, "thin-wall smooth anchor E=%.4f split=%.4f", acc, split);
+    }
+    // ①b Direct f/p identity on fixed pairs (no MC): f·|cos|/p = G₁(−d1)·(1−F_x)·Beer (separable entry-G₁(wo)
+    // cancels D_vis; the /η² and the pdf's exit Jacobian reconcile through étendue).
+    {
+        vec2 a = AnisotropicAlpha(0.35f, 0.0f);
+        vec3 sigma = vec3(0.4f, 0.2f, 0.1f);
+        int tested = 0;
+        for (vec3 wo : { normalize(vec3(0.0f, 0.0f, 1.0f)), normalize(vec3(0.4f, 0.2f, 0.9f)) })
+        {
+            for (vec3 raw : { vec3(0.05f, 0.02f, 1.0f), vec3(0.3f, -0.2f, 1.0f), vec3(-0.25f, 0.35f, 1.0f) })
+            {
+                vec3 facet = normalize(raw);
+                vec4 entry = RefractDielectric(-wo, facet, 1.0f / 1.5f);
+                if (entry.w < 0.0f) continue;
+                vec4 exit = RefractDielectric(entry.xyz, vec3(0.0f, 0.0f, 1.0f), 1.5f);
+                if (exit.w < 0.0f) continue;
+                vec3 wi = exit.xyz;
+                vec3 d1 = entry.xyz;
+                float f = TransmissionThinWallEvaluate(wo, wi, a, 1.5f, sigma, 0.5f).x;
+                float pp = TransmissionThinWallPdf(wo, wi, a, 1.5f, 1.0f);
+                float g1t = GgxG1(-d1, a);
+                float fx = FresnelDielectric(std::fabs(d1.z), 1.0f / 1.5f);
+                float beer = std::exp(-sigma.x * (0.5f / std::fabs(d1.z)));
+                float wGot = f * std::fabs(wi.z) / std::max(pp, 1e-12f);
+                float wWant = g1t * (1.0f - fx) * beer;
+                CHECK(std::fabs(wGot - wWant) / std::max(wWant, 1e-6f) < 1e-3f,
+                      "thin-wall f/p identity got=%.5f want=%.5f", wGot, wWant);
+                ++tested;
+            }
+        }
+        CHECK(tested == 6, "f/p identity ran on all 6 pairs (%d)", tested);
+    }
+    // ② Smooth limit: T-samples go antipodal (wi ≈ −wo — the exit face unbends the entry refraction exactly).
+    {
+        ShadingRecord m = GlassMaterial(0.05f);
+        vec3 wo = normalize(vec3(0.2f, 0.1f, 1.0f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        vec3 antipode = -wo;
+        int nT = 0, okT = 0;
+        const int N = 20000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            if (s.w <= 0.0f) continue;
+            vec3 wi = s.xyz;
+            if (wi.z >= 0.0f) continue;
+            ++nT;
+            if (dot(wi, antipode) > 0.9994f) ++okT;   // within 2° of antipodal
+        }
+        CHECK(nT > N / 2, "smooth thin glass transmits (nT=%d/%d)", nT, N);
+        CHECK(static_cast<float>(okT) / std::max(nT, 1) > 0.9f, "smooth T is antipodal (%d/%d)", okT, nT);
+    }
+    // ③ Beer-vs-depth: normal incidence, per-channel T-ONLY throughput ratios track exp(−σ·t) (the untinted R lobe
+    // would dilute the ratio, so below-hemisphere samples accumulate separately); the absolute clear-glass throughput
+    // is E_ss × [F0 + (1−F0)²] (entry reflection + double-transmitted — the exit reflection is the §① loss).
+    {
+        const float F0 = 0.04f;   // ((1.5 − 1) / (1.5 + 1))²
+        vec3 color = vec3(0.2f, 0.5f, 0.8f);
+        float sigma[3] = { -std::log(0.2f), -std::log(0.5f), -std::log(0.8f) };   // depth = 1 m
+        vec3 eTab = FetchEnergy(1.0f, 0.01f);
+        float Ess = eTab.x + eTab.y;
+        float baseT[3] = { 0.0f, 0.0f, 0.0f };
+        for (float t : { 0.0f, 0.5f, 1.0f, 2.0f })
+        {
+            ShadingRecord m = GlassMaterial(0.1f);
+            m.TransmissionColor = color; m.TransmissionDepth = 1.0f; m.TransmissionThickness = t;
+            vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+            ResolvedLayers L = ResolveLayers(m, wo);
+            float acc = 0.0f, accT[3] = { 0.0f, 0.0f, 0.0f };
+            int nT = 0;
+            const int N = 120000;
+            for (int i = 0; i < N; ++i)
+            {
+                vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+                if (s.w <= 0.0f) continue;
+                vec3 wi = s.xyz;
+                vec3 f = EvaluateBsdf(m, L, wo, wi);
+                acc += f.x * std::fabs(wi.z) / s.w;
+                if (wi.z >= 0.0f) continue;
+                accT[0] += f.x * std::fabs(wi.z) / s.w;
+                accT[1] += f.y * std::fabs(wi.z) / s.w;
+                accT[2] += f.z * std::fabs(wi.z) / s.w;
+                ++nT;
+            }
+            acc /= N; accT[0] /= N; accT[1] /= N; accT[2] /= N;
+            if (t == 0.0f)
+            {
+                baseT[0] = accT[0]; baseT[1] = accT[1]; baseT[2] = accT[2];
+                float expect = Ess * (F0 + (1.0f - F0) * (1.0f - F0));
+                CHECK(std::fabs(acc - expect) < 0.04f, "clear-glass throughput %.4f vs %.4f", acc, expect);
+            }
+            else
+            {
+                for (int c = 0; c < 3; ++c)
+                {
+                    float ratio = accT[c] / std::max(baseT[c], 1e-6f);
+                    float expect = std::exp(-sigma[c] * t);
+                    CHECK(std::fabs(ratio - expect) < 0.02f + 0.1f * expect,
+                          "Beer ch=%d t=%.1f ratio=%.4f exp=%.4f (nT=%d)", c, t, ratio, expect, nT);
+                }
+            }
+        }
+    }
+    // ④ specular_weight sweep: energy holds at every weight (numeric loose — the grazing-J spike inflates cosine
+    // variance — plus the tight sampler check, where J cancels); weight 0 = invisible film, measured via the sampler
+    // (cosine sampling cannot see a delta lobe: straight-through + Beer).
+    for (float sw : { 0.0f, 0.25f, 0.5f, 1.0f })
+    {
+        ShadingRecord m = GlassMaterial(0.3f);
+        m.SpecularWeight = sw;
+        vec3 wo = normalize(vec3(0.2f, 0.0f, 1.0f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        float ref = 0.0f;
+        const int N0 = 200000;
+        for (int i = 0; i < N0; ++i)
+        {
+            ref += EvaluateBsdf(m, L, wo, CosineSample(Rand01(), Rand01())).x;
+            ref += EvaluateBsdf(m, L, wo, -CosineSample(Rand01(), Rand01())).x;
+        }
+        ref *= 3.14159265358979f / static_cast<float>(N0);
+        // Gross-guard ceiling only: at r = 0.3 the lobe peak (~30×) makes cosine-numeric ±5 % noise; the sampler
+        // check below is the tight one.
+        CHECK(ref <= 1.06f, "weight-sweep numeric energy (sw=%.2f E=%.4f)", sw, ref);
+        float acc = 0.0f;
+        const int N = 150000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            if (s.w <= 0.0f) continue;
+            vec3 wi = s.xyz;
+            acc += EvaluateBsdf(m, L, wo, wi).x * std::fabs(wi.z) / s.w;
+        }
+        acc /= static_cast<float>(N);
+        CHECK(acc <= 1.01f, "weight-sweep sampler energy (sw=%.2f E=%.4f)", sw, acc);
+        if (sw == 0.0f)
+        {
+            CHECK(std::fabs(acc - 1.0f) < 0.03f, "weight-0 film is invisible (E=%.4f)", acc);
+            int nT = 0, okT = 0;
+            for (int i = 0; i < 20000; ++i)
+            {
+                vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+                if (s.w <= 0.0f) continue;
+                vec3 wi = s.xyz;
+                if (wi.z >= 0.0f) continue;
+                ++nT;
+                if (dot(wi, -wo) > 0.9999f) ++okT;
+            }
+            CHECK(nT > 10000, "weight-0 film transmits (nT=%d)", nT);
+            CHECK(static_cast<float>(okT) / std::max(nT, 1) > 0.9f, "weight-0 T is straight-through (%d/%d)", okT, nT);
+        }
+    }
+    // ⑤ R4b regression: the 4th uniform is dead when opaque (bitwise), and metal kills T exactly.
+    {
+        ShadingRecord m = StandardMaterial(vec3(0.5f), 0.4f);
+        vec3 wo = normalize(vec3(0.3f, 0.25f, 0.9f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        bool identical = true;
+        for (int i = 0; i < 2000; ++i)
+        {
+            float x = Rand01(), y = Rand01(), z = Rand01();
+            vec4 s0 = SampleBsdf(m, L, wo, vec4(x, y, z, 0.0f));
+            vec4 s1 = SampleBsdf(m, L, wo, vec4(x, y, z, 0.999f));
+            identical = identical && s0.x == s1.x && s0.y == s1.y && s0.z == s1.z && s0.w == s1.w;
+        }
+        CHECK(identical, "u.w dead when opaque (2000/2000 bitwise identical)");
+        ShadingRecord mt = m; mt.Metalness = 1.0f; mt.TransmissionWeight = 1.0f;
+        ResolvedLayers Lt = ResolveLayers(mt, wo);
+        CHECK(Lt.TransmitMix == 0.0f, "metal kills the transmit mix");
+        CHECK(EvaluateBsdf(mt, Lt, wo, vec3(0.1f, 0.1f, -0.9f)).x == 0.0f, "metal transmits nothing");
+    }
+}
+
 } // namespace
 
 int main()
@@ -714,6 +1118,8 @@ int main()
     ProofSheenTable();
     ProofConsumesTable();
     ProofCloth();
+    ProofTransmissionSingle();
+    ProofTransmissionThin();
     std::printf(g_Fail == 0 ? "MATERIAL FURNACE: PASS\n" : "MATERIAL FURNACE: FAIL (%d)\n", g_Fail);
     return g_Fail == 0 ? 0 : 1;
 }

@@ -129,6 +129,9 @@ inline vec2  min(vec2 a, vec2 b) { return vec2(min(a.x, b.x), min(a.y, b.y)); }
 inline vec2  max(vec2 a, vec2 b) { return vec2(max(a.x, b.x), max(a.y, b.y)); }
 inline vec3  min(vec3 a, vec3 b) { return vec3(min(a.x, b.x), min(a.y, b.y), min(a.z, b.z)); }
 inline vec3  max(vec3 a, vec3 b) { return vec3(max(a.x, b.x), max(a.y, b.y), max(a.z, b.z)); }
+inline float abs(float x) { return x < 0.0f ? -x : x; }   // M4: |cos| in the transmission half-vector (GLSL abs, 1:1)
+inline vec3  abs(vec3 x) { return vec3(abs(x.x), abs(x.y), abs(x.z)); }
+inline vec3  log(vec3 x) { return vec3(std::log(x.x), std::log(x.y), std::log(x.z)); }   // M4: σ = −ln(color)/depth
 
 inline float sqrt(float x) { return std::sqrt(x); }
 inline vec3  sqrt(vec3 x) { return vec3(std::sqrt(x.x), std::sqrt(x.y), std::sqrt(x.z)); }

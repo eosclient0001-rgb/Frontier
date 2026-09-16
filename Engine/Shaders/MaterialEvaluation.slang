@@ -14,10 +14,13 @@
 //    coat      dielectric GGX on top; base darkened per OpenPBR §5.6 (K = lerp(Ks, Kr, r_b)), roughened (r⁴ + 2 r_c⁴)^¼,
 //              view-dependent absorption T^(1/μti + 1/μto)
 //    fuzz      Zeltner, Burley, Chiang 2022 LTC sheen (table on SheenLut: aInv, bInv, R by [α][cosθ])
+//    transmit  Walter 2007 GGX BTDF sampled through microfacet-Fresnel branch selection (exact R/T split), thin-walled
+//              by default via the tilted-entry + flat-exit compound (KHR_materials_volume semantics: Beer over the
+//              nominal thickness); the thick single-interface form is exposed for the furnace and M9's medium tracking.
 //
 // Conventions: local shading frame, +Z = shading normal, wo = towards the viewer, wi = towards the light; both point
 //    away from the surface. Every Evaluate* returns f (no cosine). Sample* returns wi and the pdf of the whole mixture.
-//    Colours linear Rec.709. Not evaluated here (R4b scope line): transmission, subsurface, dispersion, glints.
+//    Colours linear Rec.709. Not evaluated here: subsurface (M5), dispersion (M4c), glints (M6).
 
 #ifndef FRONTIER_MATERIAL_EVALUATION
 #define FRONTIER_MATERIAL_EVALUATION
@@ -42,7 +45,8 @@ const float kMinCos     = 1.0e-4;
 // it through #include "MaterialEvaluation.slang", so there is exactly one source of truth. Canonical selection values:
 // SceneRecords.slang kMaterialReflectance* (GPU) = MaterialIndex.h MaterialReflectance (CPU).
 const uint kChannelBaseColor = 0u, kChannelMetalness = 1u, kChannelRoughness = 2u, kChannelSpecularColor = 3u, kChannelNormal = 4u,
-           kChannelCoatNormal = 5u, kChannelEmission = 6u, kChannelOpacity = 7u, kChannelCoat = 10u, kChannelFuzz = 11u,
+           kChannelCoatNormal = 5u, kChannelEmission = 6u, kChannelOpacity = 7u, kChannelTransmission = 8u,
+           kChannelSubsurface = 9u, kChannelCoat = 10u, kChannelFuzz = 11u,
            kChannelThinFilm = 12u, kChannelAnisotropy = 13u, kChannelOcclusion = 14u;
 
 // M1: reflectance selection mirror (canonical: SceneRecords.slang kMaterialReflectance*). Sultan-18 §3's eight
@@ -67,7 +71,8 @@ bool ReflectanceConsumes(uint selection, uint channel)
     if (channel == kChannelCoat) return selection == kReflectanceClearCoated;
     if (channel == kChannelAnisotropy) return selection == kReflectanceAnisotropic;
     if (channel == kChannelCoatNormal) return selection == kReflectanceClearCoated;
-    return false;      // thin-film (12): extension, weight-gated only; 8/9 arrive in M4/M5
+    if (channel == kChannelTransmission) return selection == kReflectanceTransmissive;   // M4 (DeriveReflectance: weight > 0 ⟹ Transmissive, so the gate is behaviour-free)
+    return false;      // thin-film (12): extension, weight-gated only; 9 arrives in M5
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -103,6 +108,10 @@ struct ShadingRecord
     vec3  FuzzColor;          // fuzz_color
     float FuzzRoughness;      // fuzz_roughness
     vec3  Emission;           // emission_luminance × emission_color [nit]
+    float TransmissionWeight; // M4: transmission_weight (exact-zero gate: 0 = opaque)
+    vec3  TransmissionColor;  // M4: attenuation colour (KHR volume attenuation_color; white = untinted)
+    float TransmissionDepth;  // M4: attenuation distance [m] (0 = no absorption)
+    float TransmissionThickness; // M4: KHR volume thickness [m] — Beer path of the thin-wall slab (0 = foil)
     uint  Selection;          // M3: kReflectance* (drives the per-selection shading path; stack-local, NOT a layout field)
 };
 
@@ -289,6 +298,144 @@ vec3 GgxDirectionalAlbedo(vec3 f0, float muO, vec2 a)
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                          TRANSMISSION (M4: Walter-2007 GGX BTDF)
+//------------------------------------------------------------------------------------------------------------------------
+// Single-interface microfacet transmission + the thin-wall compound (rough entry, flat exit). Directions are unit
+// outward-pointing local vectors; media IORs ride along explicitly so the η² reciprocity proof can swap them.
+// Achromatic throughout — absorption (Beer) is applied by the caller from ResolvedLayers. No `out` params anywhere:
+// like the rest of this file, multi-value returns ride in vec4s so the CPU port compiles.
+
+// Snell refraction with an explicit TIR flag. I = incident TRAVEL direction (unit, dot(I, N) < 0), N = interface
+// normal (unit, opposing I), eta = n_incident / n_transmitted. xyz = transmitted travel direction (unit when w ≥ 0,
+// meaningless when w < 0 — the caller MUST check); w = k = 1 − η²(1 − cos²θi), negative ⟺ total internal reflection.
+vec4 RefractDielectric(vec3 I, vec3 N, float eta)
+{
+    float cosI = dot(I, N);
+    float k = 1.0 - eta * eta * (1.0 - cosI * cosI);
+    if (k < 0.0) return vec4(0.0, 0.0, 0.0, k);
+    return vec4(I * eta - N * (eta * cosI + sqrt(max(k, 0.0))), k);
+}
+
+// M4: conditioned dielectric Fresnel for transmission. FresnelDielectric evaluated from the DENSE side goes
+// ill-conditioned near-TIR (μT = sqrt of a cancelled subtraction → 1e-3 absolute F noise → 10 % η² violation),
+// so the VALUE always comes from the RARE side (entering denser: μT ≥ sqrt(1 − 1/eta²) > 0, bounded away from 0)
+// while TIR is detected from the dense side by comparison only (exact, no sqrt). Equal to FresnelDielectric
+// wherever the latter is well-conditioned (Stokes), exact at TIR — and bit-identical under media swap, which is
+// what makes the η² proof tight. muO/muI = |cos| on wo's / wi's side.
+float TransmissionFresnel(float muO, float muI, float etaO, float etaI)
+{
+    float eta = (etaO <= etaI) ? (etaI / etaO) : (etaO / etaI);   // η_dense / η_rare ≥ 1
+    float muRare = (etaO <= etaI) ? muO : muI;
+    float muDense = (etaO <= etaI) ? muI : muO;
+    if ((1.0 - muDense * muDense) * eta * eta >= 1.0) return 1.0;   // dense-side TIR, comparison-only
+    return FresnelDielectric(muRare, eta);
+}
+
+// Walter-2007 §5 transmission half-vector: ht = −(ηo·wo + ηi·wi)/‖…‖, z-flipped positive (D is z-symmetric and
+// every signed use enters squared, so the flip is free). w = ‖…‖² before normalisation; w ≈ 0 (an antipodal
+// η-balanced pair — only reachable at ηo = ηi, where the interface vanishes anyway) ⟺ degenerate, and every
+// caller returns 0 there.
+vec4 TransmissionHalfVector(vec3 wo, vec3 wi, float etaO, float etaI)
+{
+    vec3 h = etaO * wo + etaI * wi;
+    float l2 = dot(h, h);
+    if (l2 < 1.0e-12) return vec4(0.0, 0.0, 1.0, 0.0);
+    vec3 ht = -(h / sqrt(l2));
+    if (ht.z < 0.0) ht = -ht;
+    return vec4(ht, l2);
+}
+
+// EXACT single-interface BTDF (Walter-2007 eq. 21): f_t = |wo·m||wi·m|/(|coso||cosi|) · ηi²(1−F)·G₂·D/d² with
+// d = ηo(wo·m) + ηi(wi·m) and m = transmission half-vector. Masking is SEPARABLE Smith (G₁(wo)·G₁(wi), Walter-2007),
+// not the height-correlated form shared with reflection: opposite-side rays traverse independent height ranges
+// ([h,∞) above vs (−∞,h] below), so the joint probability factorises — height-correlation assumes same-side bundles
+// and over-counts T by ~8 % at rough-oblique (furnace-measured). GxLambda reads w.z², so G₁ extends below unchanged.
+// Single-scatter macro closure is R_ss+T_ss = E_ss(F0 = 1) — the missing 1 − E_ss is multiple scattering, which exits
+// glass mostly as T (unmodelled T_ms gap, ≤ 4 % at rough-oblique, < 1 % typical); the R-side Kulla–Conty term is
+// scaled by (1 − wT) so it never double-counts it. F is TransmissionFresnel (conditioned, TIR-exact): TIR pairs —
+// beyond-critical internal rays — get F = 1, T = 0. etaO/etaI = IOR of wo's / wi's medium.
+// NOTE: no |ηo − ηi| early-out — etaO = etaI = 1 is the valid straight-through film limit (specular_weight 0),
+// and exact-degenerate (antipodal + equal-eta) pairs are measure-zero; the hv.w guard below catches them.
+vec3 TransmissionEvaluateSingle(vec3 wo, vec3 wi, vec2 a, float etaO, float etaI)
+{
+    vec4 hv = TransmissionHalfVector(wo, wi, etaO, etaI);
+    if (hv.w < 1.0e-10) return vec3(0.0);
+    vec3 m = hv.xyz;
+    float cosO = max(abs(wo.z), kMinCos), cosI = max(abs(wi.z), kMinCos);
+    float woM = abs(dot(wo, m)), wiM = abs(dot(wi, m));
+    float dnom = etaO * dot(wo, m) + etaI * dot(wi, m);
+    float F = TransmissionFresnel(woM, wiM, etaO, etaI);
+    float d = GgxD(m, a);
+    float g = GgxG1(wo, a) * GgxG1(wi, a);
+    float j = (etaI * etaI) / (dnom * dnom + 1.0e-12);
+    return vec3(woM * wiM / (cosO * cosI) * (1.0 - F) * g * d * j);
+}
+
+// Pdf of wi under T-branch VNDF sampling: p = branchProb · D_vis(m) · ηi²|wi·m|/d². branchProb = P(T | m) is passed
+// IN (computed identically at sample and pdf time — see TransmissionBranchProb), so f·|cos|/p collapses to G₂/G₁
+// whenever the branch and eval Fresnel agree (Stokes: equal for Snell-paired rays to float precision).
+float TransmissionPdfSingle(vec3 wo, vec3 wi, vec2 a, float etaO, float etaI, float branchProb)
+{
+    if (branchProb <= 0.0) return 0.0;
+    vec4 hv = TransmissionHalfVector(wo, wi, etaO, etaI);
+    if (hv.w < 1.0e-10) return vec3(0.0).x;
+    vec3 m = hv.xyz;
+    float dnom = etaO * dot(wo, m) + etaI * dot(wi, m);
+    float jac = (etaI * etaI) * abs(dot(wi, m)) / (dnom * dnom + 1.0e-12);
+    return branchProb * GgxVndfPdf(wo, m, a) * jac;
+}
+
+// Branch probability P(T | m) — the exact Fresnel split, gated by the transmit mix: a sampled facet reflects with
+// probability 1 − P and transmits with P. Sample and Pdf MUST call this same function: the pdf identity needs the
+// sampling distribution, not an independent estimate.
+float TransmissionBranchProb(float transmitMix, float fresnel)
+{
+    return transmitMix * (1.0 - fresnel);
+}
+
+// Thin-wall compound (tilted rough entry + flat exit — KHR_materials_volume semantics with a real refracted lobe):
+// entry refraction at the VNDF facet bends the ray into the wall, the flat exit face unbends it toward
+// straight-through (EXACTLY straight-through in the smooth limit). INVERSION (eval/pdf): the internal ray d1 is
+// recovered by refracting −wi back through the flat exit face; exit-TIR ⟺ the pair is unreachable ⟺ f = p = 0 (the
+// light is trapped in the wall — absorbed, so rejection sampling stays energy-consistent).
+// f_thin = f_entry(wo, −d1) · (1 − F_exit) · Beer(σ·thickness/|d1.z|) / η²: power conservation across the exit —
+// power multiplies by (1−F_exit)·Beer with no eta and no cosine (Fresnel/Beer are power ratios; the exit Jacobian
+// cancels against the radiance→power measure cosines), leaving only the glass→air radiance drop 1/η². p_thin =
+// p_entry · J with J = |dd1/dwi| = |wi.z|/(η²|d1.z|) (Snell solid-angle, étendue-checked: η²·cosD1·dd1 = cos_w·dwi —
+// pdfs are densities and transform WITH the Jacobian), so the sampling weight is G₁(−d1)·(1−F_exit)·Beer ≤ 1 (the
+// separable entry-G₁(wo) cancels against D_vis).
+vec3 TransmissionThinWallEvaluate(vec3 wo, vec3 wi, vec2 a, float eta, vec3 sigma, float thickness)
+{
+    if (wi.z >= 0.0 || wo.z <= 0.0) return vec3(0.0);
+    float etaC = max(eta, 1.0001);   // specular_weight → 0 collapses η to 1 (tinted film): keep the lobe finite
+    vec4 back = RefractDielectric(-wi, vec3(0.0, 0.0, -1.0), 1.0 / etaC);   // inverse exit: −wi (up-travel) air → glass
+    if (back.w < 0.0) return vec3(0.0);
+    vec3 d1 = -back.xyz;   // internal travel direction (down into the wall — the glass-side OUTWARD direction)
+    float cosD1 = max(abs(d1.z), kMinCos);
+    vec3 fEntry = TransmissionEvaluateSingle(wo, d1, a, 1.0, etaC);
+    float fExit = FresnelDielectric(cosD1, 1.0 / etaC);
+    vec3 beer = exp(-sigma * (max(thickness, 0.0) / cosD1));
+    return fEntry * ((1.0 - fExit) / (etaC * etaC)) * beer;
+}
+
+float TransmissionThinWallPdf(vec3 wo, vec3 wi, vec2 a, float eta, float transmitMix)
+{
+    if (wi.z >= 0.0 || wo.z <= 0.0 || transmitMix <= 0.0) return 0.0;
+    float etaC = max(eta, 1.0001);
+    vec4 back = RefractDielectric(-wi, vec3(0.0, 0.0, -1.0), 1.0 / etaC);
+    if (back.w < 0.0) return 0.0;
+    vec3 d1 = -back.xyz;
+    vec4 hv = TransmissionHalfVector(wo, d1, 1.0, etaC);   // d1 (down-outward), NOT −d1: ht takes both sides outward
+    if (hv.w < 1.0e-10) return 0.0;
+    float F = FresnelDielectric(abs(dot(wo, hv.xyz)), etaC);   // air side, like the sampler — NOT the eval side
+    float branchProb = TransmissionBranchProb(transmitMix, F);
+    if (branchProb <= 0.0) return 0.0;
+    float cosD1 = max(abs(d1.z), kMinCos), cosI = max(abs(wi.z), kMinCos);
+    float jac = cosI / (etaC * etaC * cosD1);
+    return TransmissionPdfSingle(wo, d1, a, 1.0, etaC, branchProb) * jac;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                   EON DIFFUSE (Listing 1–3)
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -454,6 +601,9 @@ struct ResolvedLayers   // per-(record, wo) constants shared by Evaluate / Sampl
     float FuzzAlbedoO;        // R(α, μo) × weight (× SheenRescale under Cloth)
     float SheenRescale;       // M3: E_charlie/R albedo correction (Cloth only; 1.0 otherwise — non-cloth bit-identical)
     vec3  DielectricAlbedoO;  // E_spec(μo) for the diffuse albedo scaling
+    vec3  TransmissionSigma;  // M4: σ = −ln(color)/depth (0 when depth ≤ 0 or opaque)
+    float TransmitMix;        // M4: transmission_weight·(1 − metalness) — the T-branch gate
+    float TransmitMacroT;     // M4: (1 − F_avg(η))·Beer(thickness) — macro transmittance (sampling mass)
     LobeWeights Weights;
 };
 
@@ -550,13 +700,25 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
     if (m.HazinessWeight > 0.0) eMain = mix(eMain, GgxDirectionalAlbedo(L.DielectricF0, muO, L.HazeAlpha), m.HazinessWeight);
     L.DielectricAlbedoO = min(vec3(1.0), eMain);
 
+    // M4: transmission resolve. σ from the KHR volume pair (attenuation colour AT attenuation distance); the thin
+    // wall's macro transmittance (mean-σ Beer over the nominal thickness, Fresnel-averaged) sizes the T sampling
+    // mass. specular_weight needs NO extra gate: it already modulates η (ModulatedIor), so weight → 0 collapses the
+    // interface to a straight-through tinted film — physically coherent, no special case.
+    L.TransmitMix = m.TransmissionWeight * (1.0 - m.Metalness);
+    L.TransmissionSigma = vec3(0.0);
+    if (m.TransmissionWeight > 0.0 && m.TransmissionDepth > 0.0)
+        L.TransmissionSigma = -log(clamp(m.TransmissionColor, vec3(1.0e-6), vec3(1.0))) / m.TransmissionDepth;
+    float beerMacro = exp(-(L.TransmissionSigma.x + L.TransmissionSigma.y + L.TransmissionSigma.z) * (1.0 / 3.0) * max(m.TransmissionThickness, 0.0));
+    L.TransmitMacroT = (1.0 - FresnelDielectricAverage(L.SpecularEta)) * beerMacro;
+
     // Lobe selection probabilities from the same albedo estimates (never zero for an enabled lobe).
     float underFuzz = 1.0 - L.FuzzAlbedoO;
     float underCoat = underFuzz * (1.0 - L.CoatAlbedoO);
     float lumMetal  = dot(L.MetalF0, vec3(0.2126, 0.7152, 0.0722));
     float lumDiel   = dot(L.DielectricAlbedoO, vec3(0.2126, 0.7152, 0.0722));
-    float specMass  = underCoat * mix(lumDiel, min(1.0, lumMetal + 0.04), m.Metalness);
-    float diffMass  = underCoat * (1.0 - m.Metalness) * (1.0 - lumDiel) * dot(EonAlbedo(m.BaseColor, m.DiffuseRoughness, muO), vec3(0.2126, 0.7152, 0.0722));
+    float transMass = underCoat * L.TransmitMix * L.TransmitMacroT;   // M4: without its own mass, glass is never sampled (diffuse vanishes at weight 1, R mass ≈ F0)
+    float specMass  = underCoat * mix(lumDiel, min(1.0, lumMetal + 0.04), m.Metalness) + transMass;
+    float diffMass  = underCoat * (1.0 - m.Metalness) * (1.0 - L.TransmitMix) * (1.0 - lumDiel) * dot(EonAlbedo(m.BaseColor, m.DiffuseRoughness, muO), vec3(0.2126, 0.7152, 0.0722));
     LobeWeights w;
     w.Fuzz = L.FuzzAlbedoO; w.Coat = underFuzz * L.CoatAlbedoO; w.Specular = max(specMass, 0.02 * underCoat); w.Diffuse = max(diffMass, (1.0 - m.Metalness) * 0.02 * underCoat);
     float total = w.Fuzz + w.Coat + w.Specular + w.Diffuse;
@@ -593,23 +755,56 @@ vec3 EvaluateBaseSpecular(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
     vec3 f = mix(fDielectric, fMetal, m.Metalness);
 
     // Main GGX + haze GGX (mixed by weight), each single-scatter lobe plus its Kulla–Conty multiple-scatter term.
+    // M4: the MS addend scales by (1 − wT) — multiple-scattered energy inside glass exits through T instead of R, so
+    // keeping the full R-side compensation would double-count it (the R+T=1 proof arbitrates; ×1 when opaque).
     vec3 f0 = mix(L.DielectricF0, m.SpecularWeight * L.MetalF0, m.Metalness);
+    vec3 msScale = vec3(1.0 - L.TransmitMix);
     float dMain = GgxD(h, L.SpecularAlpha) * GgxG2(woA, wiA, L.SpecularAlpha) / (4.0 * max(woA.z, kMinCos) * max(wiA.z, kMinCos));
-    vec3 spec = f * dMain + GgxMultiScatter(f0, woA.z, wiA.z, L.SpecularAlpha);
+    vec3 spec = f * dMain + msScale * GgxMultiScatter(f0, woA.z, wiA.z, L.SpecularAlpha);
     if (m.HazinessWeight > 0.0)
     {
         float dHaze = GgxD(h, L.HazeAlpha) * GgxG2(woA, wiA, L.HazeAlpha) / (4.0 * max(woA.z, kMinCos) * max(wiA.z, kMinCos));
-        spec = mix(spec, f * dHaze + GgxMultiScatter(f0, woA.z, wiA.z, L.HazeAlpha), m.HazinessWeight);
+        spec = mix(spec, f * dHaze + msScale * GgxMultiScatter(f0, woA.z, wiA.z, L.HazeAlpha), m.HazinessWeight);
     }
     return spec;
 }
 
+// M4: full thin-wall T contribution (f, no cosine) — transmitMix-scaled, haze-mixed. Called with wi.z < 0 only;
+// the tracers use the thin-wall path for thick glass too (M9's medium tracking renders true enter/exit exactly).
+vec3 EvaluateTransmission(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
+{
+    vec3 t = TransmissionThinWallEvaluate(wo, wi, L.SpecularAlpha, L.SpecularEta, L.TransmissionSigma, m.TransmissionThickness);
+    if (m.HazinessWeight > 0.0)
+        t = mix(t, TransmissionThinWallEvaluate(wo, wi, L.HazeAlpha, L.SpecularEta, L.TransmissionSigma, m.TransmissionThickness), m.HazinessWeight);
+    return L.TransmitMix * t;
+}
+
+// M4: T-branch lobe pdf (unscaled — PdfBsdf multiplies by Weights.Specular, mirroring the R arm).
+float PdfTransmission(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
+{
+    float p = TransmissionThinWallPdf(wo, wi, L.SpecularAlpha, L.SpecularEta, L.TransmitMix);
+    if (m.HazinessWeight > 0.0)
+        p = mix(p, TransmissionThinWallPdf(wo, wi, L.HazeAlpha, L.SpecularEta, L.TransmitMix), m.HazinessWeight);
+    return p;
+}
+
 vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
-    if (wo.z <= 0.0 || wi.z <= 0.0) return vec3(0.0);
+    if (wo.z <= 0.0) return vec3(0.0);
+    if (wi.z <= 0.0)   // M4: the transmission arm — lights behind the surface (exact-zero gate: opaque is bit-identical)
+    {
+        if (L.TransmitMix <= 0.0) return vec3(0.0);
+        vec3 t = EvaluateTransmission(m, L, wo, wi);
+        if (m.CoatWeight > 0.0)   // a single coat pass on exit (no darkening: Δ belongs to the base albedo)
+            t = t * (1.0 - L.CoatAlbedoO) * mix(vec3(1.0), L.CoatAbsorptionO, m.CoatWeight);
+        if (m.FuzzWeight > 0.0)   // the fuzz lobe itself is 0 below (SheenEvaluate gates); only the layer scales
+            t = t * (1.0 - L.FuzzAlbedoO);
+        return t;
+    }
 
     // Bottom: diffuse, scaled by what the dielectric interface lets through (eq. 42, non-reciprocal albedo scaling).
-    vec3 diffuse = (1.0 - m.Metalness) * (vec3(1.0) - L.DielectricAlbedoO) * EonEvaluate(m.BaseColor, m.DiffuseRoughness, wi, wo);
+    // M4: the (1 − wT) is the macro half of the exact split — transmitted light replaces diffuse (KHR behaviour).
+    vec3 diffuse = (1.0 - m.Metalness) * (1.0 - L.TransmitMix) * (vec3(1.0) - L.DielectricAlbedoO) * EonEvaluate(m.BaseColor, m.DiffuseRoughness, wi, wo);
     vec3 base = diffuse + EvaluateBaseSpecular(m, L, wo, wi);
 
     // Coat layer on top of the base, evaluated in the coat frame (M2). A tilted coat frame can push either leg below
@@ -645,7 +840,12 @@ vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 
 float PdfBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
-    if (wo.z <= 0.0 || wi.z <= 0.0) return 0.0;
+    if (wo.z <= 0.0) return 0.0;
+    if (wi.z <= 0.0)   // M4: only the specular lobe transmits (diffuse/coat/fuzz pdfs are 0 below by construction)
+    {
+        if (L.TransmitMix <= 0.0 || L.Weights.Specular <= 0.0) return 0.0;
+        return L.Weights.Specular * PdfTransmission(m, L, wo, wi);
+    }
     float pdf = L.Weights.Diffuse * EonPdfCltc(wo, wi, m.DiffuseRoughness);
     // Rotations preserve solid angle, so each lobe's pdf is evaluated in its own space (M2).
     vec3 woA = L.AnisoBasis * wo, wiA = L.AnisoBasis * wi;
@@ -653,6 +853,7 @@ float PdfBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
     float jac = 1.0 / (4.0 * max(dot(woA, h), kMinCos));
     float pSpec = GgxVndfPdf(woA, h, L.SpecularAlpha) * jac;
     if (m.HazinessWeight > 0.0) pSpec = mix(pSpec, GgxVndfPdf(woA, h, L.HazeAlpha) * jac, m.HazinessWeight);
+    pSpec *= 1.0 - TransmissionBranchProb(L.TransmitMix, FresnelDielectric(abs(dot(woA, h)), L.SpecularEta));   // M4: R-branch probability (×1 when opaque)
     pdf += L.Weights.Specular * pSpec;
     if (L.Weights.Coat > 0.0)
     {
@@ -667,33 +868,52 @@ float PdfBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
     return pdf;
 }
 
-// u = 3 uniforms (lobe pick + 2D). Returns wi in .xyz, pdf in .w (0 = failed sample).
-vec4 SampleBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 u)
+// u = 4 uniforms (lobe pick + 2D + the R/T branch pick). Returns wi in .xyz, pdf in .w (0 = failed sample).
+vec4 SampleBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec4 u)
 {
     vec3 wi;
+    bool transmitted = false;
     float pick = u.x;
+    vec2 u2 = vec2(u.y, u.z);
     if (pick < L.Weights.Fuzz)
     {
-        wi = SheenSample(clamp(m.FuzzRoughness, 0.0, 1.0), wo, u.yz).xyz;
+        wi = SheenSample(clamp(m.FuzzRoughness, 0.0, 1.0), wo, u2).xyz;
     }
     else if (pick < L.Weights.Fuzz + L.Weights.Coat)
     {
         vec3 woC = L.CoatBasis * wo;   // M2: sample in coat space, return to base space (transpose = inverse)
-        vec3 hC = SampleGgxVndf(woC, L.CoatAlpha, u.yz);
+        vec3 hC = SampleGgxVndf(woC, L.CoatAlpha, u2);
         wi = transpose(L.CoatBasis) * reflect(-woC, hC);
     }
     else if (pick < L.Weights.Fuzz + L.Weights.Coat + L.Weights.Specular)
     {
         float hazePick = (pick - L.Weights.Fuzz - L.Weights.Coat) / max(L.Weights.Specular, 1.0e-6);
         vec3 woA = L.AnisoBasis * wo;   // M2: sample in aniso space, return to base space
-        vec3 hA = SampleGgxVndf(woA, hazePick < m.HazinessWeight ? L.HazeAlpha : L.SpecularAlpha, u.yz);
-        wi = transpose(L.AnisoBasis) * reflect(-woA, hA);
+        vec3 hA = SampleGgxVndf(woA, hazePick < m.HazinessWeight ? L.HazeAlpha : L.SpecularAlpha, u2);
+        // M4: microfacet-Fresnel branch selection (exact split). The aniso basis is a z-rotation, so the flat exit
+        // normal survives it as +z and the double refraction runs in aniso space directly.
+        float etaC = max(L.SpecularEta, 1.0001);
+        float fR = FresnelDielectric(abs(dot(woA, hA)), etaC);
+        if (L.TransmitMix > 0.0 && u.w < TransmissionBranchProb(L.TransmitMix, fR))
+        {
+            vec4 entry = RefractDielectric(-woA, hA, 1.0 / etaC);
+            if (entry.w < 0.0) return vec4(0.0);   // unreachable air → glass (kept: guards η < 1 callers)
+            vec4 exit = RefractDielectric(entry.xyz, vec3(0.0, 0.0, 1.0), etaC);
+            if (exit.w < 0.0) return vec4(0.0);    // exit-TIR: trapped in the wall = absorbed (rejection is exact here)
+            wi = transpose(L.AnisoBasis) * exit.xyz;
+            transmitted = true;
+        }
+        else
+        {
+            wi = transpose(L.AnisoBasis) * reflect(-woA, hA);
+        }
     }
     else
     {
         wi = EonSampleCltc(wo, m.DiffuseRoughness, u.y, u.z).xyz;
     }
-    if (wi.z <= 0.0) return vec4(0.0);
+    if (!transmitted && wi.z <= 0.0) return vec4(0.0);
+    if (transmitted && wi.z >= 0.0) return vec4(0.0);   // paranoia: exit refraction guarantees T·N = −√k < 0
     return vec4(wi, PdfBsdf(m, L, wo, wi));
 }
 
