@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shaderball exhibit driver — builds the kept harness and renders the sheets. NOT part of
 # CheckMaterialsProof.sh (the full sheets are minutes, not seconds); run on demand or before material milestones.
-# Usage: RunShaderballExhibit.sh [Size=512] [Spp=256] [sheet=triptych|solid|both]
+# Usage: RunShaderballExhibit.sh [Size=512] [Spp=256] [sheet=triptych|solid|sss|both]
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 Size="${1:-512}" Spp="${2:-256}" Sheet="${3:-triptych}"
@@ -28,9 +28,11 @@ Render() { # $1 = extra args, $2 = dest file
 }
 Smoke "" "triptych"
 Smoke "--solid" "solid"
+Smoke "--sss" "sss"
 case "$Sheet" in
     triptych) Render "" "ShaderballSheet_GlassClothCoat.png" ;;
     solid)    Render "--solid" "ShaderballSheet_SolidGlass.png" ;;
+    sss)      Render "--sss" "ShaderballSheet_Subsurface.png" ;;
     both)     Render "" "ShaderballSheet_GlassClothCoat.png"; Render "--solid" "ShaderballSheet_SolidGlass.png" ;;
     *)        echo "unknown sheet '$Sheet' (triptych|solid|both)"; rm -f "$Bin"; exit 1 ;;
 esac

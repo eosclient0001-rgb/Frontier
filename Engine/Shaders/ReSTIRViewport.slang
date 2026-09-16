@@ -269,6 +269,7 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
     m.FuzzWeight = 0.0; m.FuzzColor = vec3(1.0); m.FuzzRoughness = 0.5;
     m.Emission = mat.Emissive.xyz;
     m.Selection = MaterialSelection(mat);   // M3: per-selection shading path (covers the header path too)
+    m.SssWeight = 0.0; m.SssColor = vec3(1.0); m.SssRadius = 0.0; m.SssRadiusScale = vec3(0.0); m.SssThickness = 0.0;   // M5: SSS off (branch-gated, never read at 0; slab resolve in the kernel milestone)
     F.Emission = mat.Emissive.xyz; F.Opacity = 1.0; F.Occlusion = 1.0;
 
     if (mat.Slabs.y > 0u)

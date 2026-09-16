@@ -7,7 +7,7 @@ runs them with a fixed splitmix64 seed, so every number below is **deterministic
 reproduces this transcript bit-for-bit (full logs: `/tmp/MaterialsProof.coverage.log`,
 `/tmp/MaterialsProof.furnace.log`).
 
-**Score: 3,451 furnace checks + 110 coverage checks, 0 failures.**
+**Score: 3,548 furnace checks + 110 coverage checks, 0 failures.**
 
 ---
 
@@ -20,7 +20,7 @@ Proves the CPU `MaterialIndex` (records, flags, fold/mix, channel×stage registr
 - **Flags + complexity** — plain→Simple, coat→Single, transmission→Special, 2 slabs→Complex.
 - **Retention (Sultan-42 §5)** — `Finalise` never mutates the descriptor (unread channels retained).
 - **Flatten** — 3→1 folds two, top coat/rotation carried down, fractional mix at limit 2, Weight/Coverage ops.
-- **Channel × stage registry** — 17 wired-or-partial, 3 acked gaps (verbatim):
+- **Channel × stage registry** — 19 wired-or-partial, 1 acked gap (verbatim):
 
 ```
 01 base colour           record=WIRED resolve=WIRED     shaded=WIRED(EON) restir=WIRED
@@ -38,8 +38,8 @@ Proves the CPU `MaterialIndex` (records, flags, fold/mix, channel×stage registr
 13 coat orientation      record=WIRED resolve=WIRED     shaded=WIRED(frame) restir=WIRED
 14 sheen colour          record=WIRED resolve=WIRED     shaded=WIRED(LTC) restir=WIRED
 15 sheen roughness       record=WIRED resolve=WIRED     shaded=WIRED(LTC) restir=WIRED
-16 subsurface colour     record=WIRED resolve=ACK:M5    shaded=ACK:M5     restir=ACK:M5
-17 subsurface thickness  record=WIRED resolve=ACK:M5    shaded=ACK:M5     restir=ACK:M5
+16 subsurface colour     record=WIRED resolve=WIRED     shaded=WIRED(wrap) restir=WIRED
+17 subsurface thickness  record=WIRED resolve=WIRED     shaded=WIRED(ray) restir=WIRED
 18 transmission          record=WIRED resolve=WIRED     shaded=WIRED(BTDF) restir=WIRED
 19 IOR (refraction)      record=WIRED resolve=WIRED     shaded=WIRED(Snell) restir=WIRED
 20 displacement          record=ACK:M6-none resolve=ACK:M6-none shaded=ACK:M6-none restir=ACK:M6-none
@@ -48,7 +48,7 @@ Proves the CPU `MaterialIndex` (records, flags, fold/mix, channel×stage registr
 - **Selection** — all 8 reflectance selections + priority (transmission beats coat, cloth beats aniso),
   M3 cloth entry/exit/retention, emissive lamp stays Standard.
 
-## 2. Furnace proof — `MaterialEvaluation.slang` compiled 1:1 as C++ (3528/3528)
+## 2. Furnace proof — `MaterialEvaluation.slang` compiled 1:1 as C++ (3548/3548)
 
 The shader under test is `#include`d as C++ through `SlangCpuShim.h`, so these numbers are the shipped
 shading code, not a model of it. Tables are baked fresh each run (32×32, 1024 spp/cell).
@@ -195,6 +195,30 @@ albedo (E = 0.8238 vs Ess = 0.8579, bounded both sides); and two independent run
 cosine numeric differ by 0.0105 (Snell-cone D-peak events, weights ~12 — σ_num ≈ 0.007, heavy-tailed),
 so the ② numeric/gap upper margins hardened to 3.4σ (1.05→1.06, 0.09→0.10; deterministic today).
 
+### M5 subsurface wrap — Beer, normalisation, view-independence, gates (SHIPPED 2026-09-16)
+
+```
+ok Beer per-channel MFP (0.606531 0.367879 0.135335) · opaque at r=0 (0/0 guarded) · foil at t=0 · miss→0 · scale≤0 opaque
+ok front-glow f = mix·ρ·Beer·6/(5π) (0.173758 vs 0.173758)   ← direct-eval, 6 digits, no MC
+ok SSS view-independent (288/288 bitwise identical)          ← locks the non-reciprocal-by-design decision
+ok uniform-backlight E = mix·ρ·Beer (0.3576 0.0888 0.0109)   ← the N_B = 5/6 normalisation, proved not assumed
+ok SSS-off below-branch exactly 0 (2000/2000, NaN-poisoned fields untouched) · above stack finite under NaN-poison
+ok metal kills the SSS mix · metal scatters nothing below
+ok dielectric albedo SSS-blind (bitwise) · diffuse ×(1−w) partition (200/200) · specular SSS-blind (200/200 bitwise)
+ok coat scale non-vacuous (0.0533) · coated SSS takes the exit scale (200/200)
+ok SSS sampler never lands below (20000/20000) · SSS pdf 0 below (2000/2000 bitwise)
+```
+
+v1 = thickness-wrap backlight, eval-only: f_sss = mix·ρ·Beer(t,r,s)·B(μi)/(π·N_B), B = (1−μ)/2, N_B = 5/6
+(a uniform below-hemisphere backlight closes EXACTLY). View-independent by design (wo never enters — the exit
+integral is folded into B; non-reciprocal, coat-albedo-scaling class, excluded from the reciprocity proofs with
+it). Sample/Pdf textually untouched (the opaque-below rule keeps TransmitMix = 0 mats above — the exhibit's
+single-strategy NEE-below at MIS 1 rests on the ⑧ locks). Thickness is a tracer-side per-hit chord (M4b-style,
+in `ShadingRecord`); r·s ≤ 0 is opaque (no transport without a scattering length — the r = 0 limit is Lambert,
+not foil); missed chords attenuate to exactly 0. The v2 dipole (view-dependent) will deliberately update the ③
+lock. (A stale design draft claimed a front-glow value of ρ·Beer/5 — re-derivation at implementation time gave
+6/(5π) ≈ 0.382·ρ·Beer; the furnace asserts the corrected value. Drafts are cheap, proofs are not.)
+
 ## 3. Known gaps (acknowledged, by design)
 
 - ~~**T_ms**~~ TERMINATED 2026-09-16 (implemented, measured, reverted — SS-only is minimax-optimal). The full
@@ -212,7 +236,25 @@ so the ② numeric/gap upper margins hardened to 3.4σ (1.05→1.06, 0.09→0.10
 - ~~**M4b thick glass**~~ SHIPPED 2026-09-16 (was mislabelled M9 in this report — plan-M9 is the denoiser /
   motion-vector re-enable, still parked per direction). True enter/exit + Beer over true segments + full
   internal series, slab-analytic to 4 digits; thin-vs-solid diptych kept below.
-- **M5 subsurface** (channels 16–17) · **M6 displacement** (channel 20, acked as none).
+- ~~**M5 subsurface v1**~~ SHIPPED 2026-09-16: thickness-wrap backlight (eval-only) + furnace normalisation /
+  gate proofs + backlit SSS quad exhibit (opaque-red ref + skin/wax/jade). v2 dipole queued (view-dependent,
+  reuses the chord exit finder). Kernel slab-resolve deferred to the kernel milestone (K5 below); the kernel
+  carries SSS-off defaults (branch-gated, behaviour-free).
+- ~~**Exhibit BVH corruption**~~ CAUGHT+FIXED 2026-09-16 (M5): `BuildBvh` held a node reference across
+  `emplace_back` — `root.Right` was silently lost (capacity 1→2 realloc) and half the scene (the y>0 half:
+  backfaces + the blue/fill/backlight softboxes) was invisible to every ray. Camera rays only ever needed
+  frontfaces so no sheet showed it; M4b's "open mesh / numeric leak" fallback was actually firing on the lost
+  back-half (the mesh audits closed to a 3-edge crack). Fixed (index-based child assignment) + an always-on
+  BVH audit (reachable-tris == total, else exit 1). ALL kept sheets re-rendered (brighter honest indirect —
+  half the lights were missing from bounce rays); M4b's thin-vs-solid numbers below are SUPERSEDED (recomputed
+  post-fix).
+- **Kernel milestone backlog** (shared-file work has outrun the kernel — it needs its own milestone WITH a
+  slangc compile story first, else flying blind again): K0 get slangc (no binary in the sandbox — every
+  `.slang` kernel edit since M2 is compile-unverified); K1 `ReSTIRViewport:1233` passes vec3 to `SampleBsdf`'s
+  vec4 (M4-signature fallout — likely a compile error); K2 `m.Transmission*` never defaulted in the kernel's
+  `ResolveMaterial` (garbage-read UB); K3 below-horizon bounce gate + NEE-below for T; K4 M4b medium-stack
+  tracing; K5 SSS/ch9 resolve + thickness raycast + the open-plane thickness rule.
+- **M6 displacement** (channel 20, acked as none).
 - **Denoiser + motion vectors** — parked by direction; after the material system, not inside it.
 - ~~R-below-horizon mixture~~ DONE 2026-09-16 (block ①c): transmissive keeps below-horizon R/EON/coat samples
   with the full-mixture pdf (degenerate half-vector at wi = −wo guarded — old code NaN'd there). Post-fix
@@ -227,21 +269,40 @@ so the ② numeric/gap upper margins hardened to 3.4σ (1.05→1.06, 0.09→0.10
 thin-wall glass (rough 0.06, η 1.5) · deep-red velvet (fuzz 0.65) · clearcoat car paint — under a
 3-softbox studio rig. 256 spp/panel, BSDF sampling + NEE with power-heuristic MIS, ACES + gamma 2.2,
 row striping with per-(panel, frame, pixel) seeds: **deterministic, byte-stable under regeneration**
-(`sha256 2d6ddb48…9e66e2`, canonical `-strip` compression; re-rendered after the ①c polish;
-re-rendered again for M4b — bit-identical, the default path keeps its bytes exactly).
+(`sha256 f84f6ac3…40358`, canonical `-strip` compression; re-rendered after the ①c polish; re-rendered
+again for M4b — bit-identical; re-rendered for M5's BVH fix — brighter honest indirect; re-rendered once
+more when the fill light was nudged out of frame — see below).
 
-`ShaderballSheet_SolidGlass.png` (1028×512 thin-vs-solid diptych, `sha256 b432c153…e20ac`): the SAME
+`ShaderballSheet_SolidGlass.png` (1028×512 thin-vs-solid diptych, `sha256 45cb1069…61c4fb`): the SAME
 clear-glass bytes as the triptych's glass panel, once as foil (skip-ball) and once traversed as solid
 (entry refraction + Beer + exit refraction/TIR + TIR bounces). Traversal isolated: linear means thin
-0.1913 vs solid 0.1886 (13σ apart), per-pixel RMSE 0.058, 0 non-finite pixels. A throwaway tinted probe
-(not kept) confirmed Beer-over-true-distance in the exhibit loop (green solid vs clear thin).
+0.2845 vs solid 0.3230 (≈230σ apart — Δ = 0.0385 vs SEM ≈ 1.7e-4), per-pixel RMSE 0.118, 0 non-finite
+pixels. (M4b's numbers — 0.1913 vs 0.1886, RMSE 0.058 — are SUPERSEDED: the BVH bug leaked most solid
+exits through the missing back-half, so solid rendered near-transparent and ≈ thin; with real exits the
+solid panel runs BRIGHTER (TIR bounces collect the previously-missing lights). A throwaway tinted probe
+(not kept) confirmed Beer-over-true-distance in the exhibit loop (green solid vs clear thin).)
 
-- Kept-sheet linear means: glass 0.1913 · cloth 0.1509 · coat 0.1434 · 0 non-finite pixels.
+`ShaderballSheet_Subsurface.png` (2060×512 SSS quad, `sha256 0efad7fc…e5e5c`): opaque-red reference
+(byte-twin base of skin — subsurface isolated) + skin (r = 0.45, red-shifted MFP scale (1, 0.37, 0.3)) + wax
+(r = 1.0, spectrally neutral) + jade (r = 0.25, green) under the studio rig plus an out-of-frame tungsten
+backlight high behind the ball. The v1 wrap fires through a single-strategy below-horizon NEE stratum
+(MIS 1 — the sampler never lands below for SSS mats, furnace-⑧) with no occlusion test (the geometric
+chord's Beer replaces visibility); thickness is one inward raycast per SSS hit, miss ⟹ Beer 0. Linear
+means ref 0.3493 · skin 0.2686 · wax 0.3345 · jade 0.2531, 0 non-finite pixels. Caught & fixed this run:
+a 1/Pl firefly ridge along the backlight's silhouette locus (the MIS-less below-stratum can't bound
+CosL→0+ — both NEE strata now take a 1e-3 grazing-epsilon (a ~0.06° sliver, ≈1e-6 of solid angle — bias negligible);
+and the BVH fix revealed the fill softbox grazing 4px in-frame in every sheet (nudged out, all re-rendered).
+
+- Kept-sheet linear means: glass 0.2845 · cloth 0.1723 · coat 0.1707 · solid 0.3230 · sss ref 0.3493 ·
+  skin 0.2686 · wax 0.3345 · jade 0.2531 · 0 non-finite pixels.
 - Harness `Exhibits/Workbench/Materials/ShaderballExhibit.cpp` + driver `RunShaderballExhibit.sh`
   (build → smoke → full render; not part of the gate — the sheet is ~5 min).
 
 ## 5. What's next
 
-1. **M5 subsurface** (channels 16–17) and its ReSTIR/shaded wiring. ← NEXT
-2. **M6 codec gap-fill** (thickness/attenuation sources, transmission/volume round-trips).
-3. **Denoiser + motion vectors** (parked per direction).
+1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped; v2 dipole queued).
+2. **Kernel milestone** (K0 compile story → K1–K5: unbreak + wire M4/M4b/M5 into `ReSTIRViewport`). ← NEXT
+   (recommended: the kernel is broken-or-UB post-M4 (K1/K2) — fix before more shared-file work compounds it).
+3. **M5 v2 dipole** (view-dependent, reuses the chord exit finder; deliberately updates the ③ lock).
+4. **M6 codec gap-fill** (thickness/attenuation sources, transmission/volume round-trips).
+5. **Denoiser + motion vectors** (parked per direction).

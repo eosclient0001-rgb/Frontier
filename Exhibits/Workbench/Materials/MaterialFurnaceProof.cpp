@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 
 namespace {
 
@@ -94,6 +95,8 @@ ShadingRecord StandardMaterial(vec3 albedo, float roughness)
     m.TransmissionWeight = 0.0f; m.TransmissionColor = vec3(1.0f);   // M4: opaque defaults (bit-identical R4b)
     m.TransmissionDepth = 0.0f; m.TransmissionThickness = 0.0f;
     m.Selection = 0u;   // M3: Standard — every pre-M3 test below must be unaffected by the cloth branch
+    m.SssWeight = 0.0f; m.SssColor = vec3(1.0f);   // M5: SSS off — every pre-M5 test below must be unaffected
+    m.SssRadius = 0.0f; m.SssRadiusScale = vec3(0.0f); m.SssThickness = 0.0f;
     return m;
 }
 
@@ -103,6 +106,15 @@ ShadingRecord GlassMaterial(float roughness, float ior = 1.5f)
     m.SpecularIor = ior;
     m.TransmissionWeight = 1.0f;
     m.Selection = kReflectanceTransmissive;
+    return m;
+}
+
+ShadingRecord SssMaterial(vec3 base, vec3 rho, float radius, vec3 scale, float thickness, float weight = 1.0f)
+{
+    ShadingRecord m = StandardMaterial(base, 0.5f);
+    m.SssWeight = weight; m.SssColor = rho;
+    m.SssRadius = radius; m.SssRadiusScale = scale; m.SssThickness = thickness;
+    m.Selection = kReflectanceSubsurface;
     return m;
 }
 
@@ -486,8 +498,8 @@ void ProofSheenTable()
 
 // M3: the consumption table itself, compiled 1:1 from MaterialEvaluation.slang — bit C of the mask = channel C.
 // Base/opacity/emission bypass Consumes via never-gating (see the .slang preamble); their presence in Cloth's arm
-// declares Sultan-18 §3 membership, not fetch behaviour. Ch 8/9 read false everywhere until M4/M5 (locked here so
-// the flip is a deliberate test change, not drift); ch 15 (unassigned) reads false.
+// declares Sultan-18 §3 membership, not fetch behaviour. Ch 8/9 were locked false until M4/M5 wired them (the flip
+// is a deliberate test change, not drift); ch 15 (unassigned) reads false.
 void ProofConsumesTable()
 {
     std::printf("[furnace] M3 consumption matrix (8 selections)\n");
@@ -496,7 +508,7 @@ void ProofConsumesTable()
         (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 13) | (1u << 14),   // + aniso dir
         (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 5) | (1u << 10) | (1u << 14),   // + coat/coat-normal
         (1u << 0) | (1u << 2) | (1u << 4) | (1u << 7) | (1u << 11) | (1u << 14),   // Cloth: Sultan-18 §3 {1,3,5,6,8,14,15}
-        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 14),   // Subsurface (9 arrives M5)
+        (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 9) | (1u << 14),   // Subsurface (9 WIRED M5)
         (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 8) | (1u << 14),   // Transmissive (8 WIRED M4)
         0u,   // EmissiveOnly
         0u,   // Unlit
@@ -1591,6 +1603,178 @@ void ProofTransmissionThin()
     }
 }
 
+// M5 v1: thickness-wrap backlight — eval-only (Sample/Pdf untouched), view-independent by design, metals exempt.
+// The wrap normalisation (N_B = 5/6) is proved, not assumed: a uniform below-hemisphere backlight must close
+// EXACTLY (E = mix·ρ·Beer), and the front-glow value 6/(5π) at μ = −1 is asserted to 6 digits by direct eval.
+void ProofSss()
+{
+    std::printf("[furnace] M5 subsurface wrap (Beer, normalisation, view-independence, gates)\n");
+    const float kHarnessPi = 3.14159265358979f;
+    const float kNaN = std::numeric_limits<float>::quiet_NaN();
+
+    {   // ① Beer unit checks (direct, no MC): per-channel MFP, opaque at r ≤ 0, foil at t = 0, null on miss.
+        vec3 b = SssBeer(0.5f, 1.0f, vec3(1.0f, 0.5f, 0.25f));
+        CHECK(std::fabs(b.x - std::exp(-0.5f)) < 1e-6f && std::fabs(b.y - std::exp(-1.0f)) < 1e-6f &&
+              std::fabs(b.z - std::exp(-2.0f)) < 1e-6f, "Beer per-channel MFP (%.6f %.6f %.6f)", b.x, b.y, b.z);
+        vec3 b0 = SssBeer(0.0f, 0.0f, vec3(1.0f));   // r = 0 AND t = 0: no transport (the 0/0 guard, no NaN)
+        CHECK(b0.x == 0.0f && b0.y == 0.0f && b0.z == 0.0f, "Beer opaque at r=0 (0/0 guarded)");
+        vec3 bf = SssBeer(0.0f, 1.0f, vec3(1.0f));   // foil: t = 0, r > 0 → full transmission
+        CHECK(std::fabs(bf.x - 1.0f) < 1e-6f && std::fabs(bf.y - 1.0f) < 1e-6f && std::fabs(bf.z - 1.0f) < 1e-6f,
+              "Beer foil at t=0");
+        vec3 bm = SssBeer(1e30f, 1.0f, vec3(1.0f));   // missed chord: t = +∞ → exactly 0
+        CHECK(bm.x == 0.0f && bm.y == 0.0f && bm.z == 0.0f, "Beer miss attenuates to 0");
+        vec3 bn = SssBeer(1.0f, 1.0f, vec3(1.0f, 0.0f, -1.0f));   // sick scale channels: guarded per channel
+        CHECK(std::fabs(bn.x - std::exp(-1.0f)) < 1e-6f && bn.y == 0.0f && bn.z == 0.0f, "Beer scale<=0 opaque");
+    }
+
+    {   // ② Front-glow analytic value: wi = (0,0,−1), B = 1, f = mix·ρ·Beer·6/(5π) — direct-eval, ±2e-6.
+        ShadingRecord m = SssMaterial(vec3(0.5f), vec3(1.0f, 0.5f, 0.25f), 2.0f, vec3(1.0f), 1.0f, 0.75f);
+        vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+        ResolvedLayers L = ResolveLayers(m, wo);
+        vec3 f = EvaluateBsdf(m, L, wo, vec3(0.0f, 0.0f, -1.0f));
+        float beer = std::exp(-0.5f);   // t/r = 1/2, scale 1
+        vec3 want = 0.75f * vec3(1.0f, 0.5f, 0.25f) * beer * (6.0f / (5.0f * kHarnessPi));
+        CHECK(std::fabs(f.x - want.x) < 2e-6f && std::fabs(f.y - want.y) < 2e-6f && std::fabs(f.z - want.z) < 2e-6f,
+              "front-glow f = mix·ρ·Beer·6/(5π) (%.6f vs %.6f)", f.x, want.x);
+    }
+
+    {   // ③ View-independence, BITWISE: wo never enters the arm — this locks the non-reciprocal-by-design
+        // decision (coat-albedo-scaling class). The v2 dipole IS view-dependent and will deliberately update this.
+        ShadingRecord m = SssMaterial(vec3(0.5f), vec3(0.9f, 0.4f, 0.3f), 1.5f, vec3(1.0f, 0.37f, 0.3f), 0.8f, 0.6f);
+        vec3 wi = normalize(vec3(0.3f, -0.2f, -0.9f));
+        vec3 woRef = vec3(0.0f, 0.0f, 1.0f);
+        vec3 ref = EvaluateBsdf(m, ResolveLayers(m, woRef), woRef, wi);
+        bool identical = true;
+        for (int a = 0; a < 12; ++a)
+            for (int p = 0; p < 24; ++p)
+            {
+                float mu = 0.05f + 0.95f * (static_cast<float>(a) + 0.5f) / 12.0f;
+                float phi = 2.0f * kHarnessPi * (static_cast<float>(p) + 0.5f) / 24.0f;
+                float s = std::sqrt(1.0f - mu * mu);
+                vec3 wo = vec3(s * std::cos(phi), s * std::sin(phi), mu);
+                vec3 f = EvaluateBsdf(m, ResolveLayers(m, wo), wo, wi);
+                identical = identical && f.x == ref.x && f.y == ref.y && f.z == ref.z;
+            }
+        CHECK(identical, "SSS view-independent (288/288 bitwise identical)");
+    }
+
+    {   // ④ Uniform-backlight closure: cosine-below MC, E == mix·ρ·Beer ±0.005 (the N_B = 5/6 proof).
+        ShadingRecord m = SssMaterial(vec3(0.5f), vec3(0.8f, 0.4f, 0.2f), 1.0f, vec3(1.0f, 0.5f, 0.25f), 0.7f, 0.9f);
+        vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+        ResolvedLayers L = ResolveLayers(m, wo);
+        vec3 acc = vec3(0.0f);
+        const int N = 200000;
+        for (int i = 0; i < N; ++i)   // pdf = |cos|/π below → E[f·|cos|/p] = π·mean(f)
+        {
+            vec3 wi = -CosineSample(Rand01(), Rand01());
+            acc = acc + EvaluateBsdf(m, L, wo, wi);
+        }
+        vec3 E = acc * (kHarnessPi / static_cast<float>(N));
+        vec3 want = 0.9f * vec3(0.8f, 0.4f, 0.2f) *
+                    vec3(std::exp(-0.7f), std::exp(-1.4f), std::exp(-2.8f));
+        CHECK(std::fabs(E.x - want.x) < 0.005f && std::fabs(E.y - want.y) < 0.005f && std::fabs(E.z - want.z) < 0.005f,
+              "uniform-backlight E = mix·ρ·Beer (%.4f %.4f %.4f)", E.x, E.y, E.z);
+    }
+
+    {   // ⑤ Gates, all bitwise: w = 0 ⟹ exactly 0 below (NaN-poisoned SSS fields prove the branch-gate never
+        // touches them — a multiply-gate would propagate NaN); metal kills the mix exactly.
+        ShadingRecord m = StandardMaterial(vec3(0.5f), 0.4f);
+        m.SssColor = vec3(kNaN); m.SssRadius = kNaN; m.SssRadiusScale = vec3(kNaN); m.SssThickness = kNaN;
+        vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+        ResolvedLayers L = ResolveLayers(m, wo);
+        CHECK(L.SssMix == 0.0f, "SSS mix 0 at weight 0");
+        bool zero = true;
+        for (int i = 0; i < 2000; ++i)
+        {
+            vec3 f = EvaluateBsdf(m, L, wo, -CosineSample(Rand01(), Rand01()));
+            zero = zero && f.x == 0.0f && f.y == 0.0f && f.z == 0.0f;
+        }
+        CHECK(zero, "SSS-off below-branch exactly 0 (2000/2000, NaN-poisoned fields untouched)");
+        bool finite = true;   // above: the partition ×(1−0) = ×1.0 is exact, NaN cannot leak into the R stack
+        for (int i = 0; i < 2000; ++i)
+        {
+            vec3 f = EvaluateBsdf(m, L, wo, CosineSample(Rand01(), Rand01()));
+            finite = finite && std::isfinite(f.x) && std::isfinite(f.y) && std::isfinite(f.z);
+        }
+        CHECK(finite, "SSS-off above stack finite under NaN-poison");
+        ShadingRecord mm = SssMaterial(vec3(0.5f), vec3(1.0f), 1.0f, vec3(1.0f), 1.0f, 1.0f);
+        mm.Metalness = 1.0f;
+        ResolvedLayers Lm = ResolveLayers(mm, wo);
+        CHECK(Lm.SssMix == 0.0f, "metal kills the SSS mix");
+        CHECK(EvaluateBsdf(mm, Lm, wo, vec3(0.1f, 0.1f, -0.9f)).x == 0.0f, "metal scatters nothing below");
+    }
+
+    {   // ⑥ Partition: diffuse loses exactly (1 − w) — (f0 − f1) vs w·diffuse0, specular cancels bitwise.
+        ShadingRecord m0 = StandardMaterial(vec3(0.5f), 0.4f);
+        ShadingRecord m1 = SssMaterial(vec3(0.5f), vec3(1.0f), 1.0f, vec3(1.0f), 1.0f, 0.3f);
+        m1.SpecularRoughness = 0.4f;   // match m0 — SssMaterial defaults to 0.5, the partition pair must be twins
+        vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+        ResolvedLayers L0 = ResolveLayers(m0, wo), L1 = ResolveLayers(m1, wo);
+        CHECK(L0.DielectricAlbedoO.x == L1.DielectricAlbedoO.x && L0.DielectricAlbedoO.y == L1.DielectricAlbedoO.y &&
+              L0.DielectricAlbedoO.z == L1.DielectricAlbedoO.z, "dielectric albedo SSS-blind (bitwise)");
+        bool parted = true;
+        for (int i = 0; i < 200; ++i)
+        {
+            vec3 wi = CosineSample(Rand01(), Rand01());
+            vec3 f0 = EvaluateBsdf(m0, L0, wo, wi), f1 = EvaluateBsdf(m1, L1, wo, wi);
+            vec3 d0 = (vec3(1.0f) - L0.DielectricAlbedoO) * EonEvaluate(m0.BaseColor, m0.DiffuseRoughness, wi, wo);
+            vec3 delta = f0 - f1, want = 0.3f * d0;
+            parted = parted && std::fabs(delta.x - want.x) < 1e-5f &&
+                     std::fabs(delta.y - want.y) < 1e-5f && std::fabs(delta.z - want.z) < 1e-5f;
+        }
+        CHECK(parted, "diffuse ×(1−w) partition (200/200)");
+        ShadingRecord m0m = m0, m1m = m1;   // metal pair: diffuse dead both sides, specular must be bitwise equal
+        m0m.Metalness = 1.0f; m1m.Metalness = 1.0f;
+        ResolvedLayers L0m = ResolveLayers(m0m, wo), L1m = ResolveLayers(m1m, wo);
+        bool specSame = true;
+        for (int i = 0; i < 200; ++i)
+        {
+            vec3 wi = CosineSample(Rand01(), Rand01());
+            vec3 f0 = EvaluateBsdf(m0m, L0m, wo, wi), f1 = EvaluateBsdf(m1m, L1m, wo, wi);
+            specSame = specSame && f0.x == f1.x && f0.y == f1.y && f0.z == f1.z;
+        }
+        CHECK(specSame, "specular SSS-blind above (200/200 bitwise identical)");
+    }
+
+    {   // ⑦ The shared exit stack: coated SSS dims by the coat pass (white coat ⟹ pure (1 − CoatAlbedoO) scale).
+        ShadingRecord bare = SssMaterial(vec3(0.5f), vec3(0.9f, 0.5f, 0.35f), 1.0f, vec3(1.0f), 0.6f, 0.8f);
+        ShadingRecord coat = bare;
+        coat.CoatWeight = 1.0f;
+        vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+        ResolvedLayers Lb = ResolveLayers(bare, wo), Lc = ResolveLayers(coat, wo);
+        CHECK(Lc.CoatAlbedoO > 0.01f && Lc.CoatAlbedoO < 0.2f, "coat scale non-vacuous (%.4f)", Lc.CoatAlbedoO);
+        bool scaled = true;
+        for (int i = 0; i < 200; ++i)
+        {
+            vec3 wi = -CosineSample(Rand01(), Rand01());
+            vec3 fb = EvaluateBsdf(bare, Lb, wo, wi), fc = EvaluateBsdf(coat, Lc, wo, wi);
+            vec3 want = fb * (1.0f - Lc.CoatAlbedoO) * Lc.CoatAbsorptionO;   // mix(1, A, 1) = A (white: ≈1)
+            scaled = scaled && std::fabs(fc.x - want.x) < 1e-5f &&
+                     std::fabs(fc.y - want.y) < 1e-5f && std::fabs(fc.z - want.z) < 1e-5f;
+        }
+        CHECK(scaled, "coated SSS takes the exit scale (200/200)");
+    }
+
+    {   // ⑧ Sample/Pdf untouched below: the sampler never lands below for SSS mats (TransmitMix = 0 keeps the
+        // opaque-below rule) and the pdf reads exactly 0 there — the exhibit's single-strategy NEE-below (MIS 1)
+        // rests on both (no realised BSDF-below paths, no queried density).
+        ShadingRecord m = SssMaterial(vec3(0.5f), vec3(1.0f), 1.0f, vec3(1.0f), 1.0f, 1.0f);
+        vec3 wo = vec3(0.0f, 0.0f, 1.0f);
+        ResolvedLayers L = ResolveLayers(m, wo);
+        bool noneBelow = true;
+        for (int i = 0; i < 20000; ++i)
+        {
+            vec4 S = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            noneBelow = noneBelow && (S.w <= 0.0f || S.z > 0.0f);
+        }
+        CHECK(noneBelow, "SSS sampler never lands below (20000/20000)");
+        bool pdfZero = true;
+        for (int i = 0; i < 2000; ++i)
+            pdfZero = pdfZero && PdfBsdf(m, L, wo, -CosineSample(Rand01(), Rand01())) == 0.0f;
+        CHECK(pdfZero, "SSS pdf 0 below (2000/2000 bitwise)");
+    }
+}
+
 } // namespace
 
 int main()
@@ -1610,6 +1794,7 @@ int main()
     ProofTransmissionSingle();
     ProofTransmissionSolid();
     ProofTransmissionThin();
+    ProofSss();
     std::printf(g_Fail == 0 ? "MATERIAL FURNACE: PASS\n" : "MATERIAL FURNACE: FAIL (%d)\n", g_Fail);
     return g_Fail == 0 ? 0 : 1;
 }

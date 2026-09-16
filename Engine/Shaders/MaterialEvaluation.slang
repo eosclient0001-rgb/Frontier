@@ -73,7 +73,8 @@ bool ReflectanceConsumes(uint selection, uint channel)
     if (channel == kChannelAnisotropy) return selection == kReflectanceAnisotropic;
     if (channel == kChannelCoatNormal) return selection == kReflectanceClearCoated;
     if (channel == kChannelTransmission) return selection == kReflectanceTransmissive;   // M4 (DeriveReflectance: weight > 0 ⟹ Transmissive, so the gate is behaviour-free)
-    return false;      // thin-film (12): extension, weight-gated only; 9 arrives in M5
+    if (channel == kChannelSubsurface) return selection == kReflectanceSubsurface;     // M5 (weight > 0 ⟹ Subsurface — same proof)
+    return false;      // thin-film (12): extension, weight-gated only
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -114,6 +115,11 @@ struct ShadingRecord
     float TransmissionDepth;  // M4: attenuation distance [m] (0 = no absorption)
     float TransmissionThickness; // M4: KHR volume thickness [m] — Beer path of the thin-wall slab (0 = foil); solid mode traverses true geometry and only uses it as the no-exit fallback
     uint  Selection;          // M3: kReflectance* (drives the per-selection shading path; stack-local, NOT a layout field)
+    float SssWeight;          // M5: subsurface_weight (exact-zero gate: 0 = no SSS arm, branch-skipped)
+    vec3  SssColor;           // M5: subsurface_color ρ (single-scatter albedo tint of the wrap term)
+    float SssRadius;          // M5: subsurface_radius r [m] (mean free path scale; ≤ 0 = opaque, no transport)
+    vec3  SssRadiusScale;     // M5: subsurface_radius_scale.rgb (per-channel MFP multiplier; skin ≈ (1, 0.37, 0.3))
+    float SssThickness;       // M5: geometric chord t [m] at THIS hit (tracer-side, M4b-style; +∞ on miss = Beer 0)
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -607,6 +613,7 @@ struct ResolvedLayers   // per-(record, wo) constants shared by Evaluate / Sampl
     float IncidentIor;        // M4b: IOR of the incident-side medium (1.0 air outside; SpecularEta inside solid glass)
     float TransmitMix;        // M4: transmission_weight·(1 − metalness) — the T-branch gate
     float TransmitMacroT;     // M4: (1 − F_avg(η))·Beer(thickness) — macro transmittance (sampling mass)
+    float SssMix;             // M5: subsurface_weight·(1 − metalness) — the SSS arm gate + diffuse partition factor
     LobeWeights Weights;
 };
 
@@ -708,6 +715,7 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
     // mass. specular_weight needs NO extra gate: it already modulates η (ModulatedIor), so weight → 0 collapses the
     // interface to a straight-through tinted film — physically coherent, no special case.
     L.TransmitMix = m.TransmissionWeight * (1.0 - m.Metalness);
+    L.SssMix = m.SssWeight * (1.0 - m.Metalness);   // M5: metals don't scatter below (mirror of the T gate)
     L.SolidInterface = false;   // M4b: tracers opt in per hit (foil is the safe default for stack-less callers)
     L.IncidentIor = 1.0;
     L.TransmissionSigma = vec3(0.0);
@@ -723,7 +731,7 @@ ResolvedLayers ResolveLayers(ShadingRecord m, vec3 wo)
     float lumDiel   = dot(L.DielectricAlbedoO, vec3(0.2126, 0.7152, 0.0722));
     float transMass = underCoat * L.TransmitMix * L.TransmitMacroT;   // M4: without its own mass, glass is never sampled (diffuse vanishes at weight 1, R mass ≈ F0)
     float specMass  = underCoat * mix(lumDiel, min(1.0, lumMetal + 0.04), m.Metalness) + transMass;
-    float diffMass  = underCoat * (1.0 - m.Metalness) * (1.0 - L.TransmitMix) * (1.0 - lumDiel) * dot(EonAlbedo(m.BaseColor, m.DiffuseRoughness, muO), vec3(0.2126, 0.7152, 0.0722));
+    float diffMass  = underCoat * (1.0 - m.Metalness) * (1.0 - L.TransmitMix) * (1.0 - L.SssMix) * (1.0 - lumDiel) * dot(EonAlbedo(m.BaseColor, m.DiffuseRoughness, muO), vec3(0.2126, 0.7152, 0.0722));   // M5: sampling mass follows the eval partition (SssMix 0 ⟹ ×1.0, bit-identical)
     LobeWeights w;
     w.Fuzz = L.FuzzAlbedoO; w.Coat = underFuzz * L.CoatAlbedoO; w.Specular = max(specMass, 0.02 * underCoat); w.Diffuse = max(diffMass, (1.0 - m.Metalness) * 0.02 * underCoat);
     float total = w.Fuzz + w.Coat + w.Specular + w.Diffuse;
@@ -829,23 +837,58 @@ float PdfTransmission(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
     return p;
 }
 
+// M5: Beer transmittance of the SSS chord — per-channel mean free path r·s. r·s ≤ 0 is opaque (no transport
+// without a scattering length, even at t = 0: the r = 0 limit is the Lambert surface, not the foil). A missed
+// chord (tracer found no exit) passes t = +∞ and attenuates to exactly 0 — the ray crossed the whole volume.
+vec3 SssBeer(float thickness, float radius, vec3 scale)
+{
+    vec3 re = radius * scale;
+    vec3 beer;
+    beer.x = re.x > 0.0 ? exp(-thickness / re.x) : 0.0;
+    beer.y = re.y > 0.0 ? exp(-thickness / re.y) : 0.0;
+    beer.z = re.z > 0.0 ? exp(-thickness / re.z) : 0.0;
+    return beer;
+}
+
+// M5 v1: thickness-wrap backlight — view-independent BY DESIGN (the exit integral is folded into B, so wo never
+// enters; non-reciprocal like the coat albedo-scaling, and excluded from the reciprocity proofs with it).
+// B(μ) = ((1−μ)/2)^p, p = 1; N_B = 5/6 normalises the wrap so a uniform below-hemisphere backlight closes
+// EXACTLY (E = mix·ρ·Beer — the furnace asserts this, plus the front-glow value 6/(5π) at μ = −1).
+vec3 SssWrapBacklight(vec3 rho, vec3 beer, float muI)
+{
+    float B = 0.5 * (1.0 - muI);
+    return rho * beer * (B * (6.0 / 5.0) * kInvPi);
+}
+
+vec3 EvaluateSubsurface(ShadingRecord m, ResolvedLayers L, vec3 wi)
+{
+    if (L.SssMix <= 0.0) return vec3(0.0);
+    vec3 beer = SssBeer(m.SssThickness, m.SssRadius, m.SssRadiusScale);
+    return L.SssMix * SssWrapBacklight(m.SssColor, beer, wi.z);
+}
+
 vec3 EvaluateBsdf(ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 wi)
 {
     if (wo.z <= 0.0) return vec3(0.0);
-    if (wi.z <= 0.0)   // M4: the transmission arm — lights behind the surface (exact-zero gate: opaque is bit-identical)
+    // M4: the below-horizon arm — lights behind the surface. M5: the SSS wrap joins it (same gate, same exit
+    // stack — both leave through the coat/fuzz above the substrate, so the layer scales apply once to the sum).
+    if (wi.z <= 0.0)
     {
-        if (L.TransmitMix <= 0.0) return vec3(0.0);
-        vec3 t = EvaluateTransmission(m, L, wo, wi);
+        if (L.TransmitMix <= 0.0 && L.SssMix <= 0.0) return vec3(0.0);   // exact-zero gates: opaque is bit-identical
+        vec3 below = vec3(0.0);
+        if (L.TransmitMix > 0.0) below = EvaluateTransmission(m, L, wo, wi);
+        if (L.SssMix > 0.0) below = below + EvaluateSubsurface(m, L, wi);
         if (m.CoatWeight > 0.0)   // a single coat pass on exit (no darkening: Δ belongs to the base albedo)
-            t = t * (1.0 - L.CoatAlbedoO) * mix(vec3(1.0), L.CoatAbsorptionO, m.CoatWeight);
+            below = below * (1.0 - L.CoatAlbedoO) * mix(vec3(1.0), L.CoatAbsorptionO, m.CoatWeight);
         if (m.FuzzWeight > 0.0)   // the fuzz lobe itself is 0 below (SheenEvaluate gates); only the layer scales
-            t = t * (1.0 - L.FuzzAlbedoO);
-        return t;
+            below = below * (1.0 - L.FuzzAlbedoO);
+        return below;
     }
 
     // Bottom: diffuse, scaled by what the dielectric interface lets through (eq. 42, non-reciprocal albedo scaling).
     // M4: the (1 − wT) is the macro half of the exact split — transmitted light replaces diffuse (KHR behaviour).
-    vec3 diffuse = (1.0 - m.Metalness) * (1.0 - L.TransmitMix) * (vec3(1.0) - L.DielectricAlbedoO) * EonEvaluate(m.BaseColor, m.DiffuseRoughness, wi, wo);
+    // M5: the (1 − wS) is the same for subsurface — scattered light replaces diffuse (OpenPBR behaviour).
+    vec3 diffuse = (1.0 - m.Metalness) * (1.0 - L.TransmitMix) * (1.0 - L.SssMix) * (vec3(1.0) - L.DielectricAlbedoO) * EonEvaluate(m.BaseColor, m.DiffuseRoughness, wi, wo);
     vec3 base = diffuse + EvaluateBaseSpecular(m, L, wo, wi);
 
     // Coat layer on top of the base, evaluated in the coat frame (M2). A tilted coat frame can push either leg below

@@ -13,6 +13,13 @@
 //    entry refraction at the frontface, Beer over the true interior segments, exit refraction/TIR at the backface
 //    (single medium, v1: no nesting; the BSDF resolves the bare single interface per boundary via SolidInterface).
 //
+//    SSS honesty (M5, --sss sheet — opaque-red ref + skin/wax/jade under the studio rig plus a tungsten backlight):
+//    the v1 wrap is eval-only (the sampler never lands below for SSS mats, furnace-⑧), so a single-strategy NEE
+//    stratum fires it at MIS 1 with NO occlusion test — the geometric chord's Beer replaces visibility (light
+//    behind the surface shines through, attenuated, not blocked). The chord is one inward raycast along −N per
+//    SSS hit (miss ⟹ Beer 0 — the ray crossed the whole volume); concave partial-chords fold in as medium (v1
+//    approximation, documented at SssChord). Interior hits skip both NEE strata, as before.
+//
 //    Kept harness: Exhibits/Workbench/Materials/ShaderballExhibit.cpp, driven by RunShaderballExhibit.sh (NOT part
 //    of the materials gate — the full sheet is a ~5 min render). Mesh + sheet live in Exhibits/Gallery/Materials/.
 //    Build: g++ -std=c++20 -O2 -DFRONTIER_CPU_PORT -I Exhibits/Workbench/Materials -I Engine/DisplayPresentation
@@ -134,10 +141,14 @@ void BuildBvh(int Node, int Start, int Count)
             float VB = Axis == 0 ? CB.x : (Axis == 1 ? CB.y : CB.z);
             return VA < VB;
         });
-    N.Left = static_cast<int>(g_Nodes.size()); g_Nodes.emplace_back();
-    N.Right = static_cast<int>(g_Nodes.size()); g_Nodes.emplace_back();
-    BuildBvh(N.Left, Start, Mid - Start);
-    BuildBvh(N.Right, Mid, Start + Count - Mid);
+    // M5: never hold N across emplace_back — the vector can reallocate and leave the reference dangling (this
+    // exact bug silently dropped root.Right (capacity 1→2), hiding half the scene from every ray: camera rays only
+    // ever needed frontfaces so no sheet showed it, but chords/exits into the lost half missed 89% of the time.
+    int L = static_cast<int>(g_Nodes.size()); g_Nodes.emplace_back();
+    int R = static_cast<int>(g_Nodes.size()); g_Nodes.emplace_back();
+    g_Nodes[Node].Left = L; g_Nodes[Node].Right = R;
+    BuildBvh(L, Start, Mid - Start);
+    BuildBvh(R, Mid, Start + Count - Mid);
 }
 
 struct Hit
@@ -345,6 +356,8 @@ ShadingRecord StandardMaterial(vec3 albedo, float roughness)
     m.Emission = vec3(0.0f);
     m.TransmissionWeight = 0.0f; m.TransmissionColor = vec3(1.0f);
     m.TransmissionDepth = 0.0f; m.TransmissionThickness = 0.0f;
+    m.SssWeight = 0.0f; m.SssColor = vec3(1.0f);   // M5: SSS off (panels 0–3 keep their bytes exactly)
+    m.SssRadius = 0.0f; m.SssRadiusScale = vec3(0.0f); m.SssThickness = 0.0f;
     m.Selection = 0u;
     return m;
 }
@@ -354,7 +367,7 @@ bool g_SolidBall = false;   // M4b: the ball (slot 0) is traversed as solid glas
 
 void BuildMaterials(int Panel)
 {
-    // Slots: 0 ball (per panel) · 1 ground · 2/3/4 softboxes (emissive, never BRDF-shaded).
+    // Slots: 0 ball (per panel) · 1 ground · 2/3/4 softboxes (+ 5 tungsten backlight on --sss; emissive, never BRDF-shaded).
     if (Panel == 0)
     {
         ShadingRecord m = StandardMaterial(vec3(0.0f), 0.06f);   // thin-wall clear glass
@@ -377,13 +390,45 @@ void BuildMaterials(int Panel)
         m.CoatWeight = 1.0f; m.CoatColor = vec3(1.0f); m.CoatRoughness = 0.06f;
         g_Mats[0] = m;
     }
-    else
+    else if (Panel == 3)
     {
         ShadingRecord m = StandardMaterial(vec3(0.0f), 0.06f);   // solid clear glass: SAME bytes as panel 0 —
         m.SpecularIor = 1.5f;                                    // only the tracer mode differs (true traversal)
         m.TransmissionWeight = 1.0f;
         m.Selection = kReflectanceTransmissive;
         g_Mats[0] = m;
+    }
+    else   // M5: 4 opaque-red reference (byte-twin base of 5 — subsurface isolated) · 5 skin · 6 wax · 7 jade
+    {
+        if (Panel == 4)
+        {
+            ShadingRecord ref = StandardMaterial(vec3(0.55f, 0.30f, 0.24f), 0.5f);
+            ref.Selection = kReflectanceStandard;
+            g_Mats[0] = ref;
+        }
+        else
+        {
+            ShadingRecord m = StandardMaterial(vec3(0.55f, 0.30f, 0.24f), 0.5f);   // byte-twin of panel 4 —
+            if (Panel == 6) m = StandardMaterial(vec3(0.85f, 0.78f, 0.66f), 0.5f);  // breadth, own bases
+            if (Panel == 7) m = StandardMaterial(vec3(0.10f, 0.28f, 0.14f), 0.35f);
+            if (Panel == 5)   // skin: red-shifted scatter (the (1, 0.37, 0.3) MFP scale IS the skin look)
+            {
+                m.SssWeight = 0.65f; m.SssColor = vec3(1.0f, 0.42f, 0.30f);
+                m.SssRadius = 0.45f; m.SssRadiusScale = vec3(1.0f, 0.37f, 0.3f);
+            }
+            else if (Panel == 6)   // wax: pale, deep, spectrally neutral (scale 1s — the anti-skin control)
+            {
+                m.SssWeight = 0.8f; m.SssColor = vec3(1.0f, 0.93f, 0.80f);
+                m.SssRadius = 1.00f; m.SssRadiusScale = vec3(1.0f);
+            }
+            else   // jade: short green scatter — mostly opaque, thin rims glow
+            {
+                m.SssWeight = 0.55f; m.SssColor = vec3(0.35f, 0.85f, 0.45f);
+                m.SssRadius = 0.25f; m.SssRadiusScale = vec3(1.0f);
+            }
+            m.Selection = kReflectanceSubsurface;
+            g_Mats[0] = m;
+        }
     }
     g_SolidBall = (Panel == 3);
     g_Mats[1] = StandardMaterial(vec3(0.32f), 1.0f);   // matte studio ground
@@ -428,7 +473,8 @@ vec3 DirectMIS(const ShadingRecord& m, const ResolvedLayers& L, const vec3& P, c
     float Dist = sqrt(D2);
     Dw = Dw / Dist;
     float CosL = dot(-Dw, Q.N);
-    if (CosL <= 0.0f) return vec3(0.0f);
+    if (CosL <= 1e-3f) return vec3(0.0f);   // M5: grazing-epsilon — CosL→0+ is a 1/Pl firefly ridge along the
+                                            // quad silhouette locus; rejected solid angle ≈ 0 (bias negligible)
     vec3 wi(dot(Dw, T), dot(Dw, B), dot(Dw, N));
     if (wi.z <= 0.0f) return vec3(0.0f);
     vec3 Origin = P + N * 1e-4f;
@@ -438,6 +484,44 @@ vec3 DirectMIS(const ShadingRecord& m, const ResolvedLayers& L, const vec3& P, c
     float Pb = PdfBsdf(m, L, wo, wi);
     float W = (Pl * Pl) / (Pl * Pl + Pb * Pb + 1e-12f);
     return F * (wi.z * W / max(Pl, 1e-12f)) * Q.Radiance;
+}
+
+// M5: the SSS geometric chord — an inward BVH raycast from just below the surface; t is the first exit the
+// double-sided MT catches (backface for convex balls). Miss ⟹ t = +∞ (Beer 0, furnace-①): the ray crossed the
+// whole volume. v1 honest approximations: concave partial-chords and air-to-ground segments past an open bottom
+// are folded into t as medium (interior-visible, bottom-hidden — both negligible here); the chord runs along −N,
+// not the view ray, matching the wrap's view-independence. The v2 dipole reuses this exit finder.
+float SssChord(const vec3& P, const vec3& N)
+{
+    vec3 O = P - N * 3e-4f;   // pure ray offset below the surface (M4b-analog: never lands on-surface)
+    Hit H = Intersect(O, -N, 1e30f, -1);
+    return H.Valid ? H.T : 1e30f;
+}
+
+// M5: below-horizon NEE for the SSS wrap — single-strategy (the BSDF never lands below for SSS mats, TransmitMix
+// = 0 keeps the opaque-below rule and the pdf reads exactly 0 there (furnace-⑧), so MIS = 1 exactly), and NO
+// Occluded() — the chord Beer replaces the visibility test: light behind the surface shines THROUGH, attenuated,
+// not blocked. Returns 0 before touching the RNG for SSS-off mats (panels 0–3 keep their bytes exactly).
+vec3 DirectMISsss(const ShadingRecord& m, const ResolvedLayers& L, const vec3& P, const vec3& N,
+                  const vec3& T, const vec3& B, const vec3& wo, Rng& R)
+{
+    if (g_Lights.empty() || L.SssMix <= 0.0f) return vec3(0.0f);
+    int Li = static_cast<int>(R.Next() * g_Lights.size()) % static_cast<int>(g_Lights.size());
+    const QuadLight& Q = g_Lights[Li];
+    float Su = R.Next() * 2.0f - 1.0f, Sv = R.Next() * 2.0f - 1.0f;
+    vec3 Lp = Q.Center + Q.U * Su + Q.V * Sv;
+    vec3 Dw = Lp - P;
+    float D2 = dot(Dw, Dw);
+    float Dist = sqrt(D2);
+    Dw = Dw / Dist;
+    float CosL = dot(-Dw, Q.N);
+    if (CosL <= 1e-3f) return vec3(0.0f);   // grazing-epsilon (see above — the MIS-less stratum NEEDS it: W = 1
+                                            // can't bound the 1/Pl blowup the above-stratum's MIS absorbs)
+    vec3 wi(dot(Dw, T), dot(Dw, B), dot(Dw, N));
+    if (wi.z >= 0.0f) return vec3(0.0f);   // above-stratum owns wi.z ≥ 0 (partition — no double count)
+    vec3 F = EvaluateBsdf(m, L, wo, wi);   // below-branch: SSS (+ T when mixed — 0 for the SSS panels)
+    float Pl = (1.0f / g_Lights.size()) * (1.0f / Q.Area) * D2 / CosL;
+    return F * ((-wi.z) / max(Pl, 1e-12f)) * Q.Radiance;
 }
 
 vec3 Radiance(vec3 O, vec3 D, Rng& R)
@@ -507,6 +591,8 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R)
             m.TransmissionWeight = 0.0f;   // v1: no nested dielectrics — shade R-only, stay inside (dead in
             solidHit = false;              // this scene: ball + opaque ground + lights cannot nest)
         }
+        if (!fromInside && m.SssWeight > 0.0f)   // M5: per-hit chord (opaque mats skip the raycast entirely;
+            m.SssThickness = SssChord(P, Ns);              // interior-SSS is future work (NEE skips inside anyway))
         ResolvedLayers Lr = ResolveLayers(m, wo);
         if (solidHit)   // tracer context: bare single interface; IncidentIor rides the medium stack
         {
@@ -514,9 +600,9 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R)
             Lr.IncidentIor = fromInside ? Lr.SpecularEta : 1.0f;
         }
         if (!fromInside)
-            L += Beta * DirectMIS(m, Lr, P, Ns, Tt, Bt, wo, R);
+            L += Beta * (DirectMIS(m, Lr, P, Ns, Tt, Bt, wo, R) + DirectMISsss(m, Lr, P, Ns, Tt, Bt, wo, R));
         else
-            NeeSkipped = true;   // interior: Occluded would block every NEE ray at the exit wall — skip it
+            NeeSkipped = true;   // interior: Occluded would block every NEE ray at the exit wall — skip both strata
         vec4 S = SampleBsdf(m, Lr, wo, vec4(R.Next(), R.Next(), R.Next(), R.Next()));
         if (S.w <= 0.0f) break;
         vec3 wi = S.xyz;
@@ -590,6 +676,7 @@ int main(int Argc, char** Argv)
     const char* OutPath = "Exhibits/Gallery/Materials/ShaderballSheet_GlassClothCoat.png";
     int Size = 400, Spp = 128;
     bool SolidSheet = false;   // --solid: thin-vs-solid diptych (same clear glass, traversal isolated)
+    bool SssSheet = false;     // --sss: subsurface quad (opaque-red ref + skin/wax/jade, backlit rig)
     bool OutGiven = false;     // --solid only sets the default path (an explicit --out always wins)
     float Exposure = 1.0f;
     for (int I = 1; I < Argc; ++I)
@@ -601,6 +688,7 @@ int main(int Argc, char** Argv)
         else if (A == "--spp" && I + 1 < Argc) Spp = std::atoi(Argv[++I]);
         else if (A == "--exposure" && I + 1 < Argc) Exposure = static_cast<float>(std::atof(Argv[++I]));
         else if (A == "--solid") { SolidSheet = true; if (!OutGiven) OutPath = "Exhibits/Gallery/Materials/ShaderballSheet_SolidGlass.png"; }
+        else if (A == "--sss") { SssSheet = true; if (!OutGiven) OutPath = "Exhibits/Gallery/Materials/ShaderballSheet_Subsurface.png"; }
     }
 
     Frontier::ShadingTableSet Tables = Frontier::ShadingTableCodec::Bake(1024u);
@@ -614,8 +702,11 @@ int main(int Argc, char** Argv)
                1.1f, 0.8f, vec3(16.0f, 15.5f, 15.0f), 2);
     AddSoftbox(vec3(2.8f, 0.8f, 1.2f), Subject - vec3(2.8f, 0.8f, 1.2f), vec3(0.0f, 0.0f, 1.0f),
                0.35f, 1.5f, vec3(9.0f, 11.0f, 14.0f), 3);
-    AddSoftbox(vec3(0.8f, 3.2f, 0.6f), Subject - vec3(0.8f, 3.2f, 0.6f), vec3(0.0f, 0.0f, 1.0f),
-               1.25f, 1.25f, vec3(3.5f, 2.8f, 2.2f), 4);
+    AddSoftbox(vec3(1.2f, 3.6f, 0.6f), Subject - vec3(1.2f, 3.6f, 0.6f), vec3(0.0f, 0.0f, 1.0f),
+               1.25f, 1.25f, vec3(3.5f, 2.8f, 2.2f), 4);   // M5: nudged out (the BVH fix revealed a 4px graze in-frame)
+    if (SssSheet)   // M5: tungsten backlight high behind (bottom edge 1.7× clear of the frame top; SSS-sheet only)
+        AddSoftbox(vec3(-0.5f, 4.0f, 5.5f), Subject - vec3(-0.5f, 4.0f, 5.5f), vec3(0.0f, 0.0f, 1.0f),
+                   2.0f, 1.4f, vec3(27.0f, 18.0f, 12.0f), 5);
 
     g_Order.resize(g_Tris.size());
     for (size_t I = 0; I < g_Tris.size(); ++I) g_Order[I] = static_cast<int>(I);
@@ -623,6 +714,24 @@ int main(int Argc, char** Argv)
     BuildBvh(0, 0, static_cast<int>(g_Tris.size()));
     std::printf("[exhibit] scene: %d tris, %d bvh nodes, %d lights\n",
                 (int)g_Tris.size(), (int)g_Nodes.size(), (int)g_Lights.size());
+    {   // BVH audit, always on (M5: BuildBvh once dropped root.Right silently and hid half the scene — every
+        // ray only ever needed frontfaces so no sheet showed it. Reachable-tris must equal total, or fail loud).
+        long bad = 0, reach = 0;
+        std::vector<int> st; st.push_back(0);
+        std::vector<char> seen(g_Nodes.size(), 0);
+        while (!st.empty())
+        {
+            int ni = st.back(); st.pop_back();
+            if (ni < 0 || ni >= (int)g_Nodes.size()) { ++bad; continue; }
+            if (seen[ni]) continue; seen[ni] = 1;
+            const BvhNode& N = g_Nodes[ni];
+            if (N.Count > 0) reach += N.Count;
+            else { st.push_back(N.Left); st.push_back(N.Right); }
+        }
+        std::printf("[exhibit] bvh audit: nodes=%d badchild=%ld reachtris=%ld/%d\n",
+                    (int)g_Nodes.size(), bad, reach, (int)g_Tris.size());
+        if (bad != 0 || reach != (long)g_Tris.size()) { std::printf("[exhibit] BVH CORRUPT\n"); return 1; }
+    }
 
     Camera C;
     C.O = vec3(2.35f, -3.05f, 1.35f);
@@ -633,10 +742,11 @@ int main(int Argc, char** Argv)
     C.TanHalf = std::tan(16.0f * 3.14159265358979f / 180.0f);
     C.Aspect = 1.0f;
 
-    const char* Names[4] = { "glass", "cloth", "coat", "solid" };
+    const char* Names[8] = { "glass", "cloth", "coat", "solid", "ref", "skin", "wax", "jade" };
     int PanelList[4] = { 0, 1, 2, -1 };
     int NPanels = 3;
     if (SolidSheet) { PanelList[0] = 0; PanelList[1] = 3; NPanels = 2; }
+    if (SssSheet) { PanelList[0] = 4; PanelList[1] = 5; PanelList[2] = 6; PanelList[3] = 7; NPanels = 4; }
     const int Gap = 4;
     int SheetW = NPanels * Size + (NPanels - 1) * Gap;
     std::vector<unsigned char> Sheet(static_cast<size_t>(SheetW) * Size * 3u, 8u);
