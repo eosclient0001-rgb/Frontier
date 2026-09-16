@@ -50,7 +50,8 @@ namespace {
 int g_Fail = 0;
 
 #define CHECK(Cond, ...)                                                                                        \
-    do { if (!(Cond)) { ++g_Fail; std::printf("  FAIL "); std::printf(__VA_ARGS__); std::printf("\n"); } } while (0)
+    do { if (!(Cond)) { ++g_Fail; std::printf("  FAIL "); std::printf(__VA_ARGS__); std::printf("\n"); }  \
+         else { std::printf("  ok "); std::printf(__VA_ARGS__); std::printf("\n"); } } while (0)
 
 uint64_t g_Rng = 0x9E3779B97F4A7C15ull;   // splitmix64 state (fixed seed → deterministic)
 
@@ -463,7 +464,7 @@ void ProofAnisotropyFrames()
 // (by the same argument) per bilinear interpolation, since both clamp inputs stay in range under lerp.
 void ProofSheenTable()
 {
-    std::printf("[furnace] M3 Charlie bake + rescale safety\\n");
+    std::printf("[furnace] M3 Charlie bake + rescale safety\n");
     const uint32_t N = Frontier::ShadingTableSet::kResolution;
     float maxEc = 0.0f, maxR = 0.0f, maxRescaled = 0.0f;
     int hi = 0, lo = 0;
@@ -479,7 +480,7 @@ void ProofSheenTable()
         maxRescaled = max(maxRescaled, rescale * T[2]);
         CHECK(rescale * T[2] <= 1.0f + 1e-6f, "rescale·R <= 1 (texel %u)", i);
     }
-    std::printf("    max E_c=%.4f max R=%.4f max rescale·R=%.4f clamps hi=%d lo=%d\\n", maxEc, maxR, maxRescaled, hi, lo);
+    std::printf("    max E_c=%.4f max R=%.4f max rescale·R=%.4f clamps hi=%d lo=%d\n", maxEc, maxR, maxRescaled, hi, lo);
 }
 
 // M3: the consumption table itself, compiled 1:1 from MaterialEvaluation.slang — bit C of the mask = channel C.
@@ -488,7 +489,7 @@ void ProofSheenTable()
 // the flip is a deliberate test change, not drift); ch 15 (unassigned) reads false.
 void ProofConsumesTable()
 {
-    std::printf("[furnace] M3 consumption matrix (8 selections)\\n");
+    std::printf("[furnace] M3 consumption matrix (8 selections)\n");
     const uint32_t kExpect[8] = {
         (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 14),   // Standard: metal/rough/spec/normal/AO
         (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 13) | (1u << 14),   // + aniso dir
@@ -508,7 +509,7 @@ void ProofConsumesTable()
 // M3: the Cloth path — EON + LTC sheen (primary, albedo-corrected) + weak dielectric GGX (F0 ≈ 4 %).
 void ProofCloth()
 {
-    std::printf("[furnace] M3 cloth path\\n");
+    std::printf("[furnace] M3 cloth path\n");
     const float kHarnessPi = 3.14159265358979f;
     auto ClothMaterial = [](vec3 albedo, float diffRough, float fuzzRough, float specRough = 0.5f) {
         ShadingRecord m = StandardMaterial(albedo, specRough);
@@ -549,7 +550,7 @@ void ProofCloth()
         float eRetro = EvaluateBsdf(m, L, wo, wiRetro).x * 0.5f;
         float eSide  = EvaluateBsdf(m, L, wo, wiSide).x * 0.5f;
         float eFwd   = EvaluateBsdf(m, L, wo, wiFwd).x * 0.5f;
-        std::printf("    retro=%.4f side=%.4f fwd=%.4f (stack f·cosθ)\\n", eRetro, eSide, eFwd);
+        std::printf("    retro=%.4f side=%.4f fwd=%.4f (stack f·cosθ)\n", eRetro, eSide, eFwd);
         CHECK(eRetro > eSide && eRetro > eFwd, "cloth stack retro-dominant");
     }
 
@@ -560,7 +561,7 @@ void ProofCloth()
         ShadingRecord m = ClothMaterial(vec3(1.0f), 1.0f, fuzzRough);
         float wGrazing = ResolveLayers(m, vec3(0.99498744f, 0.0f, 0.1f)).FuzzAlbedoO;
         float wNormal  = ResolveLayers(m, vec3(0.43588990f, 0.0f, 0.9f)).FuzzAlbedoO;
-        std::printf("    fuzzR=%.2f sheen weight grazing=%.4f normal=%.4f (×%.1f)\\n",
+        std::printf("    fuzzR=%.2f sheen weight grazing=%.4f normal=%.4f (×%.1f)\n",
                     fuzzRough, wGrazing, wNormal, wGrazing / wNormal);
         CHECK(wGrazing > 2.5f * wNormal, "velvet signature (fuzzR=%.2f)", fuzzRough);
     }
@@ -622,7 +623,7 @@ void ProofCloth()
                 vec3 s1 = SheenEvaluate(vec3(1.0f), 0.5f, wo, wi), s2 = SheenEvaluate(vec3(1.0f), 0.5f, wi, wo);
                 worstSheen = max(worstSheen, std::fabs(s1.x - s2.x) / max(s1.x, 1e-3f));
             }
-        std::printf("    sheen reciprocity worst (Fibonacci 24²): %.3f\\n", worstSheen);
+        std::printf("    sheen reciprocity worst (Fibonacci 24²): %.3f\n", worstSheen);
         CHECK(worstSheen < 1.6f, "LTC sheen asymmetry bounded (fit artifact, grazing-driven; grid-worst 1.24)");
     }
 

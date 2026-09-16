@@ -22,7 +22,8 @@ int g_Fail = 0;
 
 #define CHECK(Cond, ...)                                                                                        \
     do { if (!(Cond)) { ++g_Fail; std::printf("  FAIL %s:%d  ", __FILE__, __LINE__); std::printf(__VA_ARGS__);   \
-                          std::printf("\n"); } } while (0)
+                          std::printf("\n"); }                                                        \
+         else { std::printf("  ok "); std::printf(__VA_ARGS__); std::printf("\n"); } } while (0)
 
 constexpr size_t kFloats = offsetof(Frontier::MaterialSlabDescriptor, GeometryThinWalled) / sizeof(float);
 
