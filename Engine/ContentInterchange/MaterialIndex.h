@@ -24,6 +24,30 @@ static constexpr uint32_t kMaterialSlabCeiling = 8u;   // hard ceiling of the GP
 
 enum MaterialComplexityClass : uint32_t { MaterialComplexitySimple = 0u, MaterialComplexitySingle = 1u, MaterialComplexityComplex = 2u, MaterialComplexitySpecial = 3u };
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                               REFLECTANCE SELECTION (M1)
+//------------------------------------------------------------------------------------------------------------------------
+// Sultan-42 §5 / Sultan-18 §3's eight shading selections: which of the twenty channels the kernel samples for a material.
+// DERIVED per material at Finalise (DeriveReflectance, from the resolved slab's exact-zero weights — never per texel),
+// packed into MaterialRecord.Flags bits 8–11. Cost is still ComplexityClass's job; selection is *which channels*.
+// Unread channels are retained on the descriptor (Finalise never mutates Descriptors) and un-sampled by the kernel.
+
+enum class MaterialReflectance : uint32_t
+{
+    Standard     = 0u,   // Sultan-18 §3 channels 1–8 (+ extensions by weight)
+    Anisotropic  = 1u,   // Standard + anisotropy direction (M2)
+    ClearCoated  = 2u,   // Standard + coat weight/roughness + coat orientation (M2)
+    Cloth        = 3u,   // fuzz-dominant, no specular (M3: Charlie + sheen-primary)
+    Subsurface   = 4u,   // Standard + subsurface colour/thickness (M5)
+    Transmissive = 5u,   // Standard + transmission + refractive IOR (M4)
+    EmissiveOnly = 6u,   // emission + opacity only; provably nothing reflective
+    Unlit        = 7u,   // base colour is the radiance (KHR_materials_unlit)
+    Count        = 8u
+};
+
+static constexpr uint32_t kMaterialReflectanceShift = 8u;
+static constexpr uint32_t kMaterialReflectanceMask  = 0xF00u;
+
 struct MaterialRecord                       // 64 B — header, Tier A fast path
 {
     float    AlbedoR, AlbedoG, AlbedoB;     // [0..1] flattened base colour (linear Rec.709)
@@ -103,11 +127,17 @@ public:
     [[nodiscard]] uint32_t                               QueryCount()       const noexcept { return static_cast<uint32_t>(Descriptors.size()); }
 
     // Flatten one descriptor to ≤ Limit slabs (top first). Public so harnesses can inspect the fold; `Folded` counts
-    //    slabs removed. Implements plan §3.
-    [[nodiscard]] static std::vector<MaterialSlabDescriptor> Flatten(const MaterialDescriptor& Descriptor, uint32_t Limit, uint32_t* Folded, std::vector<std::string>* Report) noexcept;
+    //    slabs removed. Implements plan §3. `MixWeights` (M1, optional) receives the per-slab HorizontalMix factor
+    //    against the slab below (1 = vertical layer) so surviving fractional pairs keep their factor in the record.
+    [[nodiscard]] static std::vector<MaterialSlabDescriptor> Flatten(const MaterialDescriptor& Descriptor, uint32_t Limit, uint32_t* Folded,
+                                                                     std::vector<std::string>* Report, std::vector<float>* MixWeights = nullptr) noexcept;
 
-    [[nodiscard]] static MaterialSlabRecord ConstructSlabRecord(const MaterialSlabDescriptor& Slab) noexcept;
+    [[nodiscard]] static MaterialSlabRecord ConstructSlabRecord(const MaterialSlabDescriptor& Slab, float MixWeight = 1.0f) noexcept;
     [[nodiscard]] static uint32_t           ClassifyComplexity(const std::vector<MaterialSlabDescriptor>& Slabs) noexcept;
+
+    // Derive the reflectance selection from the RESOLVED slab (Slabs.front — the one the Tier A kernel samples).
+    // Exact-zero weight comparisons, so gating (skip iff weight == 0 and unconsumed) can never skip a contribution.
+    [[nodiscard]] static MaterialReflectance DeriveReflectance(const MaterialDescriptor& Descriptor, const MaterialSlabDescriptor& Resolved) noexcept;
 
 private:
     std::vector<MaterialDescriptor> Descriptors;

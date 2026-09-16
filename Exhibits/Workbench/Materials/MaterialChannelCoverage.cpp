@@ -133,6 +133,17 @@ void ProofFlagsAndComplexity()
     CHECK(Index.QueryMetrics().SlabCount == 6u, "resident slabs = 1+1+1+2+1");
 }
 
+void ProofRetention()
+{
+    using namespace Frontier;
+    std::printf("[coverage] retention (Sultan-42 §5: unread channels are retained, never discarded)\n");
+    MaterialDescriptor D; D.Name = "retain"; D.Slabs.push_back(KitchenSink());
+    MaterialDescriptor Before = D;
+    MaterialIndex Index; Index.Register(D);
+    Index.Finalise(1u); Index.Finalise(2u);   // re-finalise at another limit, as the editor will
+    CHECK(Index.QueryDescriptors().front() == Before, "Finalise never mutates the descriptor");
+}
+
 void ProofFlatten()
 {
     using namespace Frontier;
@@ -152,11 +163,12 @@ void ProofFlatten()
     Mix.Operations.push_back(Op);
     auto Two = MaterialIndex::Flatten(Mix, 2u, nullptr, nullptr);
     CHECK(Two.size() == 2u, "fractional mix survives at limit 2");
-    // ACKNOWLEDGED (Tier-B/M8): the surviving pair's mix factor is dropped — ConstructSlabRecord hardcodes
-    // MixWeight 1.0. Latent today (the kernel resolves slab 0 only); the assert pins the behaviour so a silent
-    // change fails loudly instead of subtly changing blends.
+    // M1 WIRED (was the acknowledged Tier-B gap): the surviving pair's factor reaches the record. The kernel still
+    // resolves slab 0 only, so multi-slab blending stays latent — but the data is exact when Tier B arrives.
     MaterialIndex Idx; Idx.Register(Mix); Idx.Finalise(2u);
-    CHECK(Idx.QuerySlabRecords()[0].MixWeight == 1.0f, "fractional mix weight currently dropped (ACKED Tier-B gap)");
+    CHECK(Idx.QuerySlabRecords().size() == 2u, "pair resident");
+    CHECK(Idx.QuerySlabRecords()[0].MixWeight == 0.25f, "fractional mix factor in the record (M1)");
+    CHECK(Idx.QuerySlabRecords()[1].MixWeight == 1.0f, "bottom slab keeps 1.0");
 
     MaterialDescriptor W; W.Name = "w"; W.Slabs.emplace_back();
     MaterialOperation WOp; WOp.Category = MaterialOperationCategory::Weight; WOp.Left = 0u; WOp.Weight = 0.5f;
@@ -210,11 +222,42 @@ void ProofCoverageTable()
     }
     std::printf("    wired-or-partial=%d  acked-gaps=%d\n", 20 - Acked, Acked);
 
-    // M1 owns Flags bits 8–11 (reflectance selection). M0 pins them at zero; M1 flips this check to assert packing.
-    Frontier::MaterialIndex Index;
-    Frontier::MaterialDescriptor D; D.Name = "sel"; D.Slabs.emplace_back();
-    Index.Register(D); Index.Finalise(1u);
-    CHECK((Index.QueryRecords().front().Flags & 0xF00u) == 0u, "selection bits zero pre-M1 (M1 flips)");
+    Frontier::MaterialIndex SelIndex;
+    auto Select = [&](const char* Name, uint32_t Flags, auto Tweak) {
+        Frontier::MaterialDescriptor D; D.Name = Name; D.Flags = Flags; D.Slabs.emplace_back(); Tweak(D.Slabs.back());
+        return SelIndex.Register(D);
+    };
+    const uint32_t Std  = Select("std", 0u, [](auto&) {});
+    const uint32_t An   = Select("an", 0u, [](auto& S) { S.SpecularRoughnessAnisotropy = 0.5f; });
+    const uint32_t Cc   = Select("cc", 0u, [](auto& S) { S.CoatWeight = 0.5f; });
+    const uint32_t Cl   = Select("cl", 0u, [](auto& S) { S.FuzzWeight = 0.8f; S.SpecularWeight = 0.0f; });
+    const uint32_t Ss   = Select("ss", 0u, [](auto& S) { S.SubsurfaceWeight = 0.5f; });
+    const uint32_t Tr   = Select("tr", 0u, [](auto& S) { S.TransmissionWeight = 0.5f; });
+    const uint32_t Eo   = Select("eo", 0u, [](auto& S) {
+        S.EmissionLuminance = 3.0f;
+        S.BaseWeight = 0.0f; S.SpecularWeight = 0.0f; S.CoatWeight = 0.0f; S.FuzzWeight = 0.0f;
+    });
+    const uint32_t Ul   = Select("ul", Frontier::MaterialFlagUnlit, [](auto&) {});
+    const uint32_t Prio = Select("prio", 0u, [](auto& S) { S.TransmissionWeight = 0.5f; S.CoatWeight = 0.5f; });
+    const uint32_t Lamp = Select("lamp", 0u, [](auto& S) { S.EmissionLuminance = 3.0f; });   // emits AND reflects → not EmissiveOnly
+    SelIndex.Finalise(1u);
+    auto SelOf = [&](uint32_t Id) {
+        return static_cast<Frontier::MaterialReflectance>((SelIndex.QueryRecords()[Id].Flags & Frontier::kMaterialReflectanceMask)
+                                                           >> Frontier::kMaterialReflectanceShift);
+    };
+    using Frontier::MaterialReflectance;
+    CHECK(SelOf(Std) == MaterialReflectance::Standard, "plain → Standard");
+    CHECK(SelOf(An) == MaterialReflectance::Anisotropic, "anisotropy → Anisotropic");
+    CHECK(SelOf(Cc) == MaterialReflectance::ClearCoated, "coat → ClearCoated");
+    CHECK(SelOf(Cl) == MaterialReflectance::Cloth, "fuzz-only → Cloth");
+    CHECK(SelOf(Ss) == MaterialReflectance::Subsurface, "sss → Subsurface");
+    CHECK(SelOf(Tr) == MaterialReflectance::Transmissive, "transmission → Transmissive");
+    CHECK(SelOf(Eo) == MaterialReflectance::EmissiveOnly, "emit-only → EmissiveOnly");
+    CHECK(SelOf(Ul) == MaterialReflectance::Unlit, "unlit flag → Unlit");
+    CHECK(SelOf(Prio) == MaterialReflectance::Transmissive, "transmission beats coat (priority)");
+    CHECK(SelOf(Lamp) == MaterialReflectance::Standard, "emissive lamp stays Standard");
+    CHECK((SelIndex.QueryRecords()[Ul].Flags & Frontier::MaterialFlagUnlit) != 0u, "flag bit survives beside selection");
+    std::printf("    reflectance selection: WIRED (M1, 8/8 + priority + lamp)\n");
 }
 
 } // namespace
@@ -223,6 +266,7 @@ int main()
 {
     ProofRecordMirror();
     ProofFlagsAndComplexity();
+    ProofRetention();
     ProofFlatten();
     ProofCoverageTable();
     std::printf(g_Fail == 0 ? "MATERIAL COVERAGE: PASS\n" : "MATERIAL COVERAGE: FAIL (%d)\n", g_Fail);

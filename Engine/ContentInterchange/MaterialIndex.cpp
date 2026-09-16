@@ -121,7 +121,8 @@ MaterialSlabDescriptor Collapse(const Stack& St)
 //                                                         FLATTEN
 //------------------------------------------------------------------------------------------------------------------------
 
-std::vector<MaterialSlabDescriptor> MaterialIndex::Flatten(const MaterialDescriptor& D, uint32_t Limit, uint32_t* Folded, std::vector<std::string>* Report) noexcept
+std::vector<MaterialSlabDescriptor> MaterialIndex::Flatten(const MaterialDescriptor& D, uint32_t Limit, uint32_t* Folded,
+                                                             std::vector<std::string>* Report, std::vector<float>* MixWeights) noexcept
 {
     Limit = std::clamp(Limit, 1u, kMaterialSlabCeiling);
     if (Folded) *Folded = 0u;
@@ -200,6 +201,7 @@ std::vector<MaterialSlabDescriptor> MaterialIndex::Flatten(const MaterialDescrip
     // Surviving horizontal pairs carry their weight / mask in the slab record (MixWeight / MaskTexture).
     for (size_t I = 0; I < Result.Slabs.size(); ++I)
         if (Result.MixWeight[I] < 1.0f) Result.Slabs[I].Texture(MaterialTextureChannel::Mask) = Result.MixMask[I];
+    if (MixWeights) *MixWeights = Result.MixWeight;
     return Result.Slabs;
 }
 
@@ -207,7 +209,7 @@ std::vector<MaterialSlabDescriptor> MaterialIndex::Flatten(const MaterialDescrip
 //                                                      RECORD CONSTRUCTION
 //------------------------------------------------------------------------------------------------------------------------
 
-MaterialSlabRecord MaterialIndex::ConstructSlabRecord(const MaterialSlabDescriptor& S) noexcept
+MaterialSlabRecord MaterialIndex::ConstructSlabRecord(const MaterialSlabDescriptor& S, float MixWeight) noexcept
 {
     MaterialSlabRecord R{};
     std::memcpy(&R, SlabFloats(S), kSlabFloatCount * sizeof(float));   // identical prefix order by construction
@@ -225,7 +227,7 @@ MaterialSlabRecord MaterialIndex::ConstructSlabRecord(const MaterialSlabDescript
     R.MaskTexturePacked   = (Mask.IsBound() ? std::min(Mask.Texture, 0xFFFEu) : 0xFFFFu) | (static_cast<uint32_t>(Mask.UvSet & 3u) << 16u);
     R.NormalScale         = S.Texture(MaterialTextureChannel::GeometryNormal).Scalar;
     R.OcclusionStrength   = S.Texture(MaterialTextureChannel::Occlusion).Scalar;
-    R.MixWeight           = 1.0f;
+    R.MixWeight           = MixWeight;
     return R;
 }
 
@@ -237,6 +239,25 @@ uint32_t MaterialIndex::ClassifyComplexity(const std::vector<MaterialSlabDescrip
     if (Special) return MaterialComplexitySpecial;
     const bool Extra = S.CoatWeight > 0.0f || S.FuzzWeight > 0.0f || S.SlateHazinessWeight > 0.0f || S.SpecularRoughnessAnisotropy > 0.0f;
     return Extra ? MaterialComplexitySingle : MaterialComplexitySimple;
+}
+
+MaterialReflectance MaterialIndex::DeriveReflectance(const MaterialDescriptor& D, const MaterialSlabDescriptor& S) noexcept
+{
+    // Priority order: the first matching rule wins. All weight tests are exact-zero so the kernel's gating rule
+    // (skip a texture fetch iff weight == 0 and the selection doesn't consume the channel) is provably behaviour-free:
+    // a nonzero weight always selects a consuming selection.
+    if ((D.Flags & MaterialFlagUnlit) != 0u) return MaterialReflectance::Unlit;
+    const bool Reflects = S.BaseWeight > 0.0f || S.SpecularWeight > 0.0f || S.CoatWeight > 0.0f || S.FuzzWeight > 0.0f ||
+                          S.TransmissionWeight > 0.0f || S.SubsurfaceWeight > 0.0f || S.ThinFilmWeight > 0.0f;
+    if (S.EmissionLuminance > 0.0f && !Reflects) return MaterialReflectance::EmissiveOnly;
+    if (S.TransmissionWeight > 0.0f) return MaterialReflectance::Transmissive;
+    if (S.SubsurfaceWeight > 0.0f)   return MaterialReflectance::Subsurface;
+    if (S.FuzzWeight > 0.0f && S.SpecularWeight == 0.0f && S.CoatWeight == 0.0f && S.BaseMetalness == 0.0f)
+        return MaterialReflectance::Cloth;
+    if (S.CoatWeight > 0.0f) return MaterialReflectance::ClearCoated;
+    if (S.SpecularRoughnessAnisotropy != 0.0f || S.Texture(MaterialTextureChannel::Anisotropy).IsBound())
+        return MaterialReflectance::Anisotropic;
+    return MaterialReflectance::Standard;
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -261,13 +282,15 @@ void MaterialIndex::Finalise(uint32_t SlabLimit, std::vector<std::string>* Repor
     for (const MaterialDescriptor& D : Descriptors)
     {
         uint32_t Folded = 0u;
-        const std::vector<MaterialSlabDescriptor> Slabs = Flatten(D, SlabLimit, &Folded, Report);
+        std::vector<float> MixWeights;
+        const std::vector<MaterialSlabDescriptor> Slabs = Flatten(D, SlabLimit, &Folded, Report, &MixWeights);
         Metrics.FoldedCount += Folded;
 
         MaterialRecord R{};
         R.SlabOffset = static_cast<uint32_t>(SlabRecords.size());
         R.SlabCount  = static_cast<uint32_t>(Slabs.size());
-        for (const MaterialSlabDescriptor& S : Slabs) SlabRecords.push_back(ConstructSlabRecord(S));
+        for (size_t I = 0; I < Slabs.size(); ++I)
+            SlabRecords.push_back(ConstructSlabRecord(Slabs[I], I < MixWeights.size() ? MixWeights[I] : 1.0f));
 
         // Header = the bottom-most slab (the material's identity); for single-slab glTF materials this is exactly the
         //    R2/R3 RadianceStructure content.
@@ -282,6 +305,10 @@ void MaterialIndex::Finalise(uint32_t SlabLimit, std::vector<std::string>* Repor
         R.Flags      = D.Flags & ~MaterialFlagEmissive;
         if (Emission[0] + Emission[1] + Emission[2] > 0.0f) R.Flags |= MaterialFlagEmissive;
         if (Bottom.GeometryThinWalled) R.Flags |= MaterialFlagThinWalled;
+        // Selection follows the RESOLVED slab (Slabs.front — the Tier A kernel samples SlabOffset + 0), not the header
+        // slab (Slabs.back). The two agree for every single-slab material; multi-slab Tier A shading is top-first by
+        // construction (the kernel comment claiming "bottom" is corrected in ReSTIRViewport.slang).
+        R.Flags     |= static_cast<uint32_t>(DeriveReflectance(D, Slabs.front())) << kMaterialReflectanceShift;
         R.Complexity = ClassifyComplexity(Slabs);
         Metrics.ComplexityCount[R.Complexity & 3u] += 1u;   // R6 row 3: complexity histogram for the F3 popup
         R.BaseColourTexture = Bottom.Texture(MaterialTextureChannel::BaseColor).Texture;

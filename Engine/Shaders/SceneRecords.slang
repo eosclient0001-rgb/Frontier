@@ -105,6 +105,18 @@ const uint kMaterialFlagAlphaBlend   = 4u;
 const uint kMaterialFlagUnlit        = 8u;
 const uint kMaterialFlagThinWalled   = 16u;
 const uint kMaterialFlagEmissive     = 32u;
+
+// M1: reflectance selection (MaterialReflectance, ContentInterchange/MaterialIndex.h) packed in Flags bits 8–11 —
+// which of the twenty channels the kernel samples. Per material, never per texel (Sultan-42 §5).
+const uint kMaterialReflectanceShift       = 8u;
+const uint kMaterialReflectanceStandard    = 0u;
+const uint kMaterialReflectanceAnisotropic = 1u;
+const uint kMaterialReflectanceClearCoated = 2u;
+const uint kMaterialReflectanceCloth       = 3u;
+const uint kMaterialReflectanceSubsurface  = 4u;
+const uint kMaterialReflectanceTransmissive = 5u;
+const uint kMaterialReflectanceEmissiveOnly = 6u;
+const uint kMaterialReflectanceUnlit       = 7u;
 const uint kMaterialTextureNone      = 0xFFFFFFFFu;
 
 // Texture slot of channel C (0-15) of a slab, 0xFFFF = none.

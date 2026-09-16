@@ -183,6 +183,29 @@ const uint kChannelBaseColor = 0u, kChannelMetalness = 1u, kChannelRoughness = 2
            kChannelCoatNormal = 5u, kChannelEmission = 6u, kChannelOpacity = 7u, kChannelCoat = 10u, kChannelFuzz = 11u,
            kChannelThinFilm = 12u, kChannelOcclusion = 14u;
 
+// M1: reflectance selection mirror (canonical: SceneRecords.slang kMaterialReflectance*). Sultan-18 §3's eight
+// shading selections, derived per material by MaterialIndex::DeriveReflectance from exact-zero weights.
+const uint kReflectanceStandard = 0u, kReflectanceAnisotropic = 1u, kReflectanceClearCoated = 2u, kReflectanceCloth = 3u,
+           kReflectanceSubsurface = 4u, kReflectanceTransmissive = 5u, kReflectanceEmissiveOnly = 6u, kReflectanceUnlit = 7u;
+uint MaterialSelection(GpuMaterial mat) { return (mat.Slabs.z >> 8u) & 0xFu; }
+
+// Sultan-18 §9: a selection samples only the channels it consumes. Emission (6) and opacity (7) are NEVER gated — they
+// feed the emission short-circuit and cutout, not just shading — and neither is base colour (Unlit reads it). Every
+// other fetch below runs iff (constant weight > 0 || Consumes), and since selection is derived from exact-zero weights,
+// the gate provably skips fetches only where the factor is the identity anyway (bound-but-zero textures).
+bool ReflectanceConsumes(uint selection, uint channel)
+{
+    if (selection == kReflectanceUnlit || selection == kReflectanceEmissiveOnly) return false;
+    if (selection == kReflectanceCloth)
+        return channel == kChannelBaseColor || channel == kChannelRoughness || channel == kChannelNormal ||
+               channel == kChannelFuzz || channel == kChannelOcclusion;
+    if (channel == kChannelMetalness || channel == kChannelRoughness || channel == kChannelSpecularColor ||
+        channel == kChannelNormal || channel == kChannelOcclusion)
+        return true;   // Standard set, shared by every reflective selection
+    if (channel == kChannelCoat) return selection == kReflectanceClearCoated;
+    return false;      // thin-film (12): extension, weight-gated only; 5/8/9/13 arrive in M2/M4/M5
+}
+
 struct SurfaceFrame         // everything the kernel needs at a hit besides the ShadingRecord
 {
     vec3  Normal;           // shading normal (interpolated + normal map), facing the viewer side
@@ -205,6 +228,14 @@ vec4 SampleChannel(GpuMaterialSlab S, uint channel, vec2 uv, float lodBias, vec4
     ivec2 size = textureSize(Textures[nonuniformEXT(slot)], 0);
     float lod = lodBias + 0.5 * log2(float(size.x * size.y));
     return textureLod(Textures[nonuniformEXT(slot)], uv, lod);
+}
+
+// M1: the selection gate — skips the texture op entirely when the channel is dead (explicit LOD keeps this legal
+// in non-uniform control flow). `live` is per material (constant weight / selection), never per texel.
+vec4 SampleChannelGated(GpuMaterialSlab S, uint channel, vec2 uv, float lodBias, vec4 fallback, bool live)
+{
+    if (!live) return fallback;
+    return SampleChannel(S, channel, uv, lodBias, fallback);
 }
 
 // Resolve the material at a hit. `viewDir` points from the hit towards the viewer / previous vertex; `coneWidth` is the
@@ -262,40 +293,48 @@ ShadingRecord ResolveMaterial(GpuMaterial mat, GpuInstance instance, uint primit
 
     if (mat.Slabs.y > 0u)
     {
-        GpuMaterialSlab S = MaterialSlabs[mat.Slabs.x];   // Tier A: the bottom slab only (multi-slab stacks arrive with R5)
+        GpuMaterialSlab S = MaterialSlabs[mat.Slabs.x];   // Tier A: the FIRST slab (top-most after flatten; multi-slab stacks arrive with R5)
+        uint selection = MaterialSelection(mat);   // M1: Sultan-18 §9 gate — unread channels are not sampled
         vec4 P0 = S.Payload[0], P1 = S.Payload[1], P2 = S.Payload[2], P3 = S.Payload[3];
         vec4 P8 = S.Payload[8], P9 = S.Payload[9], P10 = S.Payload[10], P11 = S.Payload[11], P12 = S.Payload[12], P13 = S.Payload[13];
         float normalScale = uintBitsToFloat(S.Runtime.y), occlusionStrength = uintBitsToFloat(S.Runtime.z);
 
-        vec4 baseTex = SampleChannel(S, kChannelBaseColor, uv, F.LodBias, vec4(1.0));
+        vec4 baseTex = SampleChannel(S, kChannelBaseColor, uv, F.LodBias, vec4(1.0));   // never gated: Unlit reads it
         m.BaseColor          = P0.x * P0.yzw * baseTex.xyz;
-        m.Metalness          = P1.x * SampleChannel(S, kChannelMetalness, uv, F.LodBias, vec4(1.0)).z;   // glTF: B
+        m.Metalness          = P1.x * SampleChannelGated(S, kChannelMetalness, uv, F.LodBias, vec4(1.0),
+                               P1.x > 0.0 || ReflectanceConsumes(selection, kChannelMetalness)).z;   // glTF: B
         m.DiffuseRoughness   = P1.y;
         m.SpecularWeight     = P1.z;
-        m.SpecularColor      = vec3(P1.w, P2.xy) * SampleChannel(S, kChannelSpecularColor, uv, F.LodBias, vec4(1.0)).xyz;
-        m.SpecularRoughness  = P2.z * SampleChannel(S, kChannelRoughness, uv, F.LodBias, vec4(1.0)).y;   // glTF: G
+        m.SpecularColor      = vec3(P1.w, P2.xy) * SampleChannelGated(S, kChannelSpecularColor, uv, F.LodBias, vec4(1.0),
+                               P1.z > 0.0 || ReflectanceConsumes(selection, kChannelSpecularColor)).xyz;
+        m.SpecularRoughness  = P2.z * SampleChannelGated(S, kChannelRoughness, uv, F.LodBias, vec4(1.0),
+                               (P1.z > 0.0 && P2.z > 0.0) || ReflectanceConsumes(selection, kChannelRoughness)).y;   // glTF: G
         m.SpecularAnisotropy = P2.w;
         m.SpecularIor        = P3.x;
-        m.CoatWeight         = P8.y * SampleChannel(S, kChannelCoat, uv, F.LodBias, vec4(1.0)).x;
+        m.CoatWeight         = P8.y * SampleChannelGated(S, kChannelCoat, uv, F.LodBias, vec4(1.0),
+                               P8.y > 0.0 || ReflectanceConsumes(selection, kChannelCoat)).x;
         m.CoatColor          = vec3(P8.zw, P9.x);
         m.CoatRoughness      = P9.y;
         m.CoatIor            = P9.w;
         m.CoatDarkening      = P10.x;
         m.FuzzWeight         = P10.y;
-        m.FuzzColor          = vec3(P10.zw, P11.x) * SampleChannel(S, kChannelFuzz, uv, F.LodBias, vec4(1.0)).xyz;
+        m.FuzzColor          = vec3(P10.zw, P11.x) * SampleChannelGated(S, kChannelFuzz, uv, F.LodBias, vec4(1.0),
+                               P10.y > 0.0 || ReflectanceConsumes(selection, kChannelFuzz)).xyz;
         m.FuzzRoughness      = P11.y;
-        m.Emission           = P11.z * vec3(P11.w, P12.xy) * SampleChannel(S, kChannelEmission, uv, F.LodBias, vec4(1.0)).xyz;
-        m.ThinFilmWeight     = P12.z * SampleChannel(S, kChannelThinFilm, uv, F.LodBias, vec4(1.0)).x;
+        m.Emission           = P11.z * vec3(P11.w, P12.xy) * SampleChannel(S, kChannelEmission, uv, F.LodBias, vec4(1.0)).xyz;   // never gated: short-circuit + cutout read it
+        m.ThinFilmWeight     = P12.z * SampleChannelGated(S, kChannelThinFilm, uv, F.LodBias, vec4(1.0),
+                               P12.z > 0.0 || ReflectanceConsumes(selection, kChannelThinFilm)).x;
         m.ThinFilmThickness  = P12.w;
         m.ThinFilmIor        = P13.x;
         m.HazinessWeight     = P13.z;
         m.HazinessRoughness  = P13.w;
         F.Emission  = m.Emission;
         F.Opacity   = P13.y * SampleChannel(S, kChannelOpacity, uv, F.LodBias, vec4(1.0)).w;   // glTF: A of base colour
-        F.Occlusion = mix(1.0, SampleChannel(S, kChannelOcclusion, uv, F.LodBias, vec4(1.0)).x, occlusionStrength);
+        F.Occlusion = mix(1.0, SampleChannelGated(S, kChannelOcclusion, uv, F.LodBias, vec4(1.0),
+                               ReflectanceConsumes(selection, kChannelOcclusion)).x, occlusionStrength);
 
         uint normalSlot = SlabTexture(S, kChannelNormal);
-        if (normalSlot != 0xFFFFu)
+        if (normalSlot != 0xFFFFu && ReflectanceConsumes(selection, kChannelNormal))
         {
             vec3 tn = SampleChannel(S, kChannelNormal, uv, F.LodBias, vec4(0.5, 0.5, 1.0, 1.0)).xyz * 2.0 - 1.0;
             tn.x *= normalScale; tn.y *= normalScale;
@@ -960,10 +999,18 @@ void main()
     SurfaceFrame  frame;
     ShadingRecord shading = ResolveMaterial(mat, primaryInstance, VisibilityPrimitive(visibility), hitPos, viewDir, coneWidth, frame);
 
-    // If we directly hit an emitter — return its radiance (slab emission × texture; the header's radiance drives the luminaire table)
+    // If we directly hit an emitter — return its radiance (slab emission × texture; the header's radiance drives the luminaire table).
+    // EmissiveOnly selections always land here: their derivation guarantees luminance > 0 with nothing reflective.
     if (dot(frame.Emission, frame.Emission) > 0.0)
     {
         Resolve(pixel, frame.Emission);
+        return;
+    }
+
+    // M1: Unlit (KHR_materials_unlit) — base colour is the radiance, no lighting evaluated.
+    if (MaterialSelection(mat) == kReflectanceUnlit)
+    {
+        Resolve(pixel, shading.BaseColor);
         return;
     }
 
@@ -1212,9 +1259,11 @@ void main()
                 float         bCone = coneWidth + bounceHit.t * PixelSpreadAngle();
                 ShadingRecord bShading = ResolveMaterial(bMat, bInstance, LocalPrimitive(bounceHit.primitive, bounceHit.instance), bounceHit.pos, -bounceDir, bCone, bFrame);
 
-                if (dot(bFrame.Emission, bFrame.Emission) > 0.0)
+                // M1: an unlit bounce endpoint contributes its base colour exactly like an emitter (constant radiance).
+                vec3 bUnlit = MaterialSelection(bMat) == kReflectanceUnlit ? bShading.BaseColor : vec3(0.0);
+                if (dot(bFrame.Emission, bFrame.Emission) > 0.0 || dot(bUnlit, bUnlit) > 0.0)
                 {
-                    accumulatedRadiance += throughput * bFrame.Emission;
+                    accumulatedRadiance += throughput * (bFrame.Emission + bUnlit);
                 }
                 else if (sunUp || LightTriangleCount > 0u)
                 {
