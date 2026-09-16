@@ -1,25 +1,19 @@
-# Build artifacts and binaries
-*.o
-*.obj
-*.exe
-*.a
-*.lib
-*.ppm
-bin/
-build/
-Projects/**/bin/
-Projects/**/build/
-Scratchpad/GenerateDialogueProofs
-Scratchpad/GenerateFontSectionProofs
-Scratchpad/GenerateThemeSectionProofs
-Scratchpad/GenerateCarouselProofs
-Scratchpad/GenerateControlPanelProof
-Scratchpad/VectorGlyphTest
-.DS_Store
+# Project-Zero build + regenerable artifacts
+Projects/Project-Zero/Host/SkyViewport
+Projects/Project-Zero/Host/CpuPortDiff
+Projects/Project-Zero/Host/MediaProbe
+Projects/Project-Zero/Host/ReSTIRConvergence
+Projects/Project-Zero/Diagnostics/Proof/*.ppm
+Projects/Project-Zero/Diagnostics/Proof/media.csv
+Projects/Project-Zero/Host/FogProbe
+Projects/Project-Zero/Host/FogViewport
+Projects/Project-Zero/Diagnostics/Proof/fog.csv
+# Union merge: regenerable + build outputs (never commit)
+EngineContent/CelestialTextures/Moons/
+Projects/Project-Zero/bin/
+Projects/Project-Zero/build/
+Projects/Project-Zero/Diagnostics/*.ppm
+Projects/Project-Zero/Diagnostics/*.png
 
-# Per-user Control Centre preferences (written by ConfigurationRegistry at runtime)
-Projects/*/Content/Slate.config.toml
-
-# Fetched test levels (Projects/Project-Zero/Build/FetchSponza.ps1) - never committed
-Projects/*/Content/Scenes/Sponza/
-Projects/*/Content/Scenes/ShaderBall.gltf
+# Local ImGui window state (never commit)
+imgui.ini

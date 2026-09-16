@@ -5,13 +5,25 @@
 #     powershell -File Projects\Project-Zero\Build\ToolchainSequence.ps1
 #     powershell -File Projects\Project-Zero\Build\ToolchainSequence.ps1 -Configuration Debug
 #     powershell -File Projects\Project-Zero\Build\ToolchainSequence.ps1 -Rebuild -Run
+#     powershell -File Projects\Project-Zero\Build\ToolchainSequence.ps1 -Development:$false   # ship build: no editor
 
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')] [string] $Configuration = 'Release',
     [switch] $Rebuild,
     [switch] $Run,
-    [int]    $Parallel = 0
+    [int]    $Parallel = 0,
+    # Instruction set of the OLDEST machine this binary must run on — not the machine compiling it.
+    #    SSE2    baseline x64: runs anywhere. Use this when unsure.
+    #    AVX     Sandy Bridge i5/i7 and later. ⚠️ Sandy Bridge Core i3 (e.g. i3-2120) has NO AVX — it will
+    #            crash at launch with 0xc000001d STATUS_ILLEGAL_INSTRUCTION on the first VEX instruction.
+    #    AVX2    Haswell (2013) and later.
+    # This must match Scripts/BuildJolt.ps1 and every other project script: Jolt derives JPH_USE_AVX/SSE4_2/SSE4_1
+    #    from the compiler's __AVX__ macros and RegisterTypes() aborts on a library/client mismatch.
+    [ValidateSet('SSE2', 'AVX', 'AVX2')] [string] $Isa = 'SSE2',
+    # Development editor (outliner / viewport / inspector over the live scene). On by default; pass
+    #    -Development:$false for a ship build — the editor compiles out and the game runs without it.
+    [switch] $Development = $true
 )
 
 $ErrorActionPreference = 'Stop'
@@ -119,7 +131,7 @@ function Resolve-VulkanRoot
 #                                         COMPILATION FLAGS
 #---
 
-function Get-CompilationFlags([string] $Selection)
+function Get-CompilationFlags([string] $Selection, [bool] $Development)
 {
     $MpFlag = '/MP'
     if ($Parallel -gt 0) { $MpFlag = "/MP$Parallel" }
@@ -138,11 +150,16 @@ function Get-CompilationFlags([string] $Selection)
         '/Zc:__cplusplus'
         '/DWIN32_LEAN_AND_MEAN'
         '/DNOMINMAX'
+        '/D_CRT_SECURE_NO_WARNINGS'   # third-party C (cgltf) uses fopen/strcpy; deprecation warnings are noise
         '/DGLFW_DLL'
-        '/DFRONTIER_DEVELOPMENT'
         '/DFRONTIER_ENABLE_GLFW'
-        '/arch:AVX2'    # tinybvh build + CWBVH CPU reference trace (GTX 1060 era hosts are all Haswell+); scalar fallback otherwise
     )
+    # The editor lives behind FRONTIER_DEVELOPMENT: defined, the panels record over the live scene;
+    #    undefined, the host compiles to empty shells and the game runs without them.
+    if ($Development) { $Common += '/DFRONTIER_DEVELOPMENT' }
+    # Baseline SSE2 emits no /arch at all (it is the x64 default); anything else is opt-in via -Isa.
+    #    tinybvh falls back to its scalar path cleanly when AVX is absent.
+    if ($Isa -ne 'SSE2') { $Common += "/arch:$Isa" }
 
     if ($Selection -eq 'Debug')
     {
@@ -163,6 +180,8 @@ function Get-IncludePaths([string] $VulkanRoot)
         "/I$EngineRoot"
         "/I$(Join-Path $ProjectRoot 'Source')"
         "/I$(Join-Path $VulkanRoot  'Include')"
+        "/I$(Join-Path $PackageRoot 'miniaudio')"
+        "/I$(Join-Path $RepositoryRoot 'Projects\Project-Dyno\Source')"
         "/I$(Join-Path $PackageRoot 'imgui')"
         "/I$(Join-Path $PackageRoot 'imgui\backends')"
         "/I$(Join-Path $PackageRoot 'glfw\include')"
@@ -347,11 +366,15 @@ $ShaderTable = @(
     @{ Source = 'ReSTIRViewport.slang';        Stage = 'compute';  Output = 'ReSTIRViewport.spv' }
     @{ Source = 'ClusterCull.slang';           Stage = 'compute';  Output = 'ClusterCull.spv' }
     @{ Source = 'HiZReduce.slang';             Stage = 'compute';  Output = 'HiZReduce.spv' }
+    @{ Source = 'AtrousDenoise.slang';         Stage = 'compute';  Output = 'AtrousDenoise.spv' }
+    @{ Source = 'LuminanceReduce.slang';       Stage = 'compute';  Output = 'LuminanceReduce.spv' }
     @{ Source = 'SurfaceResolve.slang';        Stage = 'compute';  Output = 'SurfaceResolve.spv' }
     @{ Source = 'VisibilityRaster.vert.slang'; Stage = 'vertex';   Output = 'VisibilityRaster.vert.spv' }
     @{ Source = 'VisibilityRaster.frag.slang'; Stage = 'fragment'; Output = 'VisibilityRaster.frag.spv' }
+    @{ Source = 'InterfaceRaster.vert.slang';  Stage = 'vertex';   Output = 'InterfaceRaster.vert.spv' }
+    @{ Source = 'InterfaceRaster.frag.slang';  Stage = 'fragment'; Output = 'InterfaceRaster.frag.spv' }
 )
-$ShaderIncludeNames = @('SceneRecords.slang', 'RayGeneration.slang', 'TraversalCWBVH.slang')
+$ShaderIncludeNames = @('SceneRecords.slang', 'RayGeneration.slang', 'TraversalCWBVH.slang', 'InterfaceRecords.slang', 'InterfaceSignedDistance.slang', 'SkyRecords.slang', 'MoonRecords.slang', 'PostRecords.slang', 'MaterialEvaluation.slang')
 
 function Invoke-ShaderLowering([string] $VulkanRoot)
 {
@@ -537,6 +560,29 @@ if (-not $UpdateOk)
 }
 Pop-Location
 
+# Apply Frontier's ImGui divergence BEFORE anything is translated. `git submodule update` above restores the
+#    vendored tree to its pinned commit, which silently discards the patches -- that is exactly how the
+#    trapezoidal tabs disappeared once already. Re-applying here means the two steps can never be run out of
+#    order. The script is idempotent and every member it adds defaults to 0.0f, so a build that has already
+#    been patched skips, and an unpatched build is visually identical until Frontier seats the style values.
+Write-Building 'Applying ImGui patches (Tools/Build/Patches/) ...'
+Push-Location $RepositoryRoot
+$PatchScript = Join-Path $RepositoryRoot 'Tools\Build\ApplyImGuiPatches.ps1'
+if (Test-Path $PatchScript)
+{
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $PatchScript
+    if ($LASTEXITCODE -ne 0)
+    {
+        Pop-Location
+        throw 'ApplyImGuiPatches.ps1 failed; refusing to build against a half-patched ImGui'
+    }
+}
+else
+{
+    Write-Skipped 'Tools\Build\ApplyImGuiPatches.ps1 is absent - building against pristine ImGui'
+}
+Pop-Location
+
 # Build GLFW DLL if absent
 $GlfwLib = Join-Path $PackageRoot 'glfw\lib-vc2022\glfw3dll.lib'
 if ((-not (Test-Path $GlfwLib)) -and (-not $script:GlfwBuilt))
@@ -557,6 +603,17 @@ if ((-not (Test-Path $ThorVGLib)) -and (-not $script:ThorVGBuilt))
     $script:ThorVGBuilt = $true
 }
 
+# Build Jolt static lib if absent (D4: rigid bodies drive instance transforms)
+#    -Isa is forwarded: Jolt derives JPH_USE_AVX/SSE4_2/SSE4_1 from the compiler macros and RegisterTypes()
+#    aborts at run time if the library and this client disagree.
+$JoltLib = Join-Path $PackageRoot "jolt\lib\$Configuration\Jolt.lib"
+if (-not (Test-Path $JoltLib))
+{
+    Write-Building 'Jolt library absent - invoking BuildJolt.ps1'
+    $ExitCode = Invoke-DependencyScript (Join-Path $ScriptRoot 'BuildJolt.ps1') @('-Configuration', $Configuration, '-Isa', $Isa)
+    if ($ExitCode -ne 0) { throw 'BuildJolt.ps1 failed' }
+}
+
 # Lower shaders
 Invoke-ShaderLowering $VulkanRoot
 
@@ -568,7 +625,7 @@ if ($Rebuild -and (Test-Path $OutputRoot))
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 $ObjectRoot = Join-Path $OutputRoot 'Object'
 
-$Flags        = Get-CompilationFlags $Configuration
+$Flags        = Get-CompilationFlags $Configuration $Development
 $IncludePaths = Get-IncludePaths $VulkanRoot
 
 # Collect sources
@@ -582,46 +639,49 @@ $ImGuiSources = @(
 )
 
 $EngineRelative = @(
+    # NOTE: this list must match the .cpp files actually in the tree (branch arena/01a06c54-slate, 2026-09-04).
+    # Phantom entries from a foreign module layout were removed and the two missing DisplayPresentation files
+    # added; the existence guard below fails fast with names if the list ever rots again.
     'Engine\DeviceExchange\SwapchainExchange.cpp'
     'Engine\DeviceExchange\RayTracingCapabilitySet.cpp'
-    'Engine\DeviceExchange\VulkanExchange.cpp'
-    'Engine\DeviceExchange\ByteSpace.cpp'
-    'Engine\DeviceExchange\TaskScheduler.cpp'
-    'Engine\DeviceExchange\ExecutionQueue.cpp'
-    'Engine\DeviceExchange\VendorClassifier.cpp'
-    'Engine\DeviceExchange\OrientationClassifier.cpp'
-    'Engine\DeviceExchange\WindowExchange.cpp'
     'Engine\DeviceExchange\InputExchange.cpp'
-    'Engine\DeviceExchange\RenderTargetExchange.cpp'
     'Engine\DeviceExchange\DiagnosticMetrics.cpp'
+    'Engine\DeviceExchange\OrientationClassifier.cpp'
     'Engine\DisplayPresentation\ReSTIRIntegrator.cpp'
     'Engine\DisplayPresentation\ShadingTableCodec.cpp'
     'Engine\DisplayPresentation\RenderScheduler.cpp'
     'Engine\DisplayPresentation\ThemeStructure.cpp'
     'Engine\DisplayPresentation\VectorCodec.cpp'
-    'Engine\DisplayPresentation\FontCodec.cpp'
     'Engine\DisplayPresentation\ControlCentreHost.cpp'
+    'Engine\DisplayPresentation\FontCodec.cpp'
     'Engine\DisplayPresentation\PixelSpace.cpp'
     'Engine\DisplayPresentation\MotionIntegrator.cpp'
     'Engine\DisplayPresentation\GlyphSpace.cpp'
     'Engine\DisplayPresentation\NotificationQueue.cpp'
     'Engine\DisplayPresentation\TelemetryMetrics.cpp'
     'Engine\DisplayPresentation\ControlKit.cpp'
+    'Engine\DisplayPresentation\TextEntryState.cpp'
+    'Engine\Editor\EditorHost.cpp'
+    'Engine\Editor\ControlPanel.cpp'
+    'Engine\Editor\OutlinerPanel.cpp'
+    'Engine\Editor\ViewportPanel.cpp'
+    'Engine\Editor\InspectorPanel.cpp'
+    'Engine\Editor\ShadeTick.cpp'
+    'Engine\DisplayPresentation\CelestialSolver.cpp'
+    'Engine\DisplayPresentation\ExposureIntegrator.cpp'
     'Engine\DisplayPresentation\DialogueHost.cpp'
     'Engine\DisplayPresentation\AppearanceInspector.cpp'
+    'Engine\DisplayPresentation\ConfigurationInspector.cpp'
+    'Engine\DisplayPresentation\ConfigurationRegistry.cpp'
     'Engine\DisplayPresentation\TypefaceRegistry.cpp'
-    'Engine\DisplayPresentation\WorkspaceHost.cpp'
-    'Engine\DisplayPresentation\CycleScheduler.cpp'
     'Engine\DisplayPresentation\FidelityClassifier.cpp'
-    'Engine\DisplayPresentation\FrontierHost.cpp'
-    'Engine\GeometricRaster\GeometryStructure.cpp'
     'Engine\GeometricRaster\CameraProjection.cpp'
+    'Engine\GeometricRaster\GeometryStructure.cpp'
     'Engine\GeometricRaster\SceneStructure.cpp'
+    'Engine\GeometricRaster\StarCatalogueIndex.cpp'
     'Engine\GeometricRaster\TraversalIndex.cpp'
     'Engine\DeviceExchange\VisibilityExchange.cpp'
     'Engine\DisplayPresentation\DiagnosticInspector.cpp'
-    'Engine\GeometricRaster\VisibilityProjection.cpp'
-    'Engine\GeometricRaster\RasterSequence.cpp'
     'Engine\ContentInterchange\MaterialIndex.cpp'
     'Engine\ContentInterchange\MaterialCodec.cpp'
     'Engine\ContentInterchange\TextureIndex.cpp'
@@ -631,23 +691,31 @@ $EngineRelative = @(
     'Engine\ContentInterchange\ObjCodec.cpp'
     'Engine\ContentInterchange\ContentCodec.cpp'
     'Engine\ContentInterchange\UfbxTranslation.cpp'
-    'Engine\PhotometricIllumination\ClusteredSpace.cpp'
-    'Engine\PhotometricIllumination\DirectIlluminationIntegrator.cpp'
-    'Engine\PhotometricIllumination\GlobalIlluminationIntegrator.cpp'
-    'Engine\PhotometricIllumination\AtmosphereIntegrator.cpp'
+    'Engine\SpatialInterface\InterfaceStructure.cpp'
+    'Engine\SpatialInterface\InterfaceSequence.cpp'
+    'Engine\SpatialInterface\InterfaceLayoutCodec.cpp'
+    'Engine\SpatialInterface\PaletteConfiguration.cpp'
+    'Engine\SpatialInterface\InterfacePointerProjection.cpp'
+    'Engine\SpatialInterface\InterfaceTextProjection.cpp'
+    'Engine\SpatialInterface\InterfaceScreenSequence.cpp'
+    'Engine\SpatialInterface\InterfaceVectorCodec.cpp'
+    'Engine\SpatialInterface\InterfaceLightProjection.cpp'
+    'Engine\DeviceExchange\InterfaceExchange.cpp'
+    'Projects\Project-Zero\Source\InterfaceTrialSequence.cpp'
+    'Projects\Project-Zero\Source\InstanceMotionSequence.cpp'
+    'Projects\Project-Zero\Source\PhysicsInstanceSequence.cpp'
+    'Projects\Project-Zero\Source\InterfaceAudioSequence.cpp'
+    'Projects\Project-Dyno\Source\CrankClickIntegrator.cpp'
+    'Projects\Project-Dyno\Source\DynoSequence.cpp'
+    'Engine\PlatformInterchange\AudioExchange.cpp'
+    'Engine\PlatformInterchange\MiniaudioTranslation.cpp'
+    'Engine\PlatformInterchange\WaveCodec.cpp'
     'Engine\PhysicalDynamics\RigidBodySolver.cpp'
-    'Engine\PhysicalDynamics\DeformableSolver.cpp'
-    'Engine\PhysicalDynamics\LocomotionSolver.cpp'
-    'Engine\PhysicalDynamics\WorldSpace.cpp'
-    'Engine\VolumetricDynamics\LevelSetSpace.cpp'
-    'Engine\VolumetricDynamics\FluidSolver.cpp'
-    'Engine\VolumetricDynamics\ParticleIntegrator.cpp'
-    'Engine\PlatformInterchange\AcousticStructure.cpp'
-    'Engine\PlatformInterchange\AcousticIntegrator.cpp'
-    'Engine\PlatformInterchange\VoiceExchange.cpp'
-    'Engine\PlatformInterchange\OnlineInterchange.cpp'
+    'Projects\Project-Zero\Source\CelestialSequence.cpp'
+    'Projects\Project-Zero\Source\ShowroomStructure.cpp'
     'Projects\Project-Zero\Source\RayTracingSolver.cpp'
     'Projects\Project-Zero\Source\FlyThroughSolver.cpp'
+    'Projects\\Project-Zero\\Source\\EditorFeedSequence.cpp'
     'Projects\Project-Zero\Source\GameExecution.cpp'
 )
 
@@ -656,6 +724,10 @@ foreach ($Rel in $EngineRelative)
 {
     $EngineSources.Add((Join-Path $RepositoryRoot $Rel))
 }
+
+# Fail fast with NAMES if the source list ever rots again (was: 73 cascading c1xx C1083s, 2026-09-04).
+$MissingSources = @($EngineSources | Where-Object { -not (Test-Path $_) }) + @($ImGuiSources | Where-Object { -not (Test-Path $_) })
+if ($MissingSources.Count -gt 0) { throw ('missing source files in the translation batch:' + [Environment]::NewLine + ($MissingSources -join [Environment]::NewLine)) }
 
 $AllSources = New-Object System.Collections.Generic.List[string]
 foreach ($S in $EngineSources) { $AllSources.Add($S) }
@@ -672,7 +744,11 @@ $ExePath = Join-Path $BinaryRoot 'Project-Zero.exe'
 
 # Copy GLFW DLL beside executable
 $GlfwDll = Join-Path $PackageRoot 'glfw\lib-vc2022\glfw3.dll'
-if (Test-Path $GlfwDll) { Copy-Item $GlfwDll $BinaryRoot -Force }
+if (Test-Path $GlfwDll)
+{
+    try { Copy-Item $GlfwDll $BinaryRoot -Force -ErrorAction Stop }
+    catch { if (-not (Test-Path (Join-Path $BinaryRoot 'glfw3.dll'))) { throw $_ } }
+}
 
 # Copy the lowered shaders beside the executable so double-clicking the .exe works
 # (the runtime searches <cwd>\Engine\Shaders first, then <exe dir>\Engine\Shaders and its parents).
@@ -693,10 +769,24 @@ if (Test-Path $ExePath)
     }
     catch
     {
+        # ⚠️ The running copy may refuse to die — another user's session, a debugger attached, or simply a
+        #    process this shell has no right to touch. Stop-Process then throws, the throw escapes the catch,
+        #    and a build that had already succeeded reports failure at the very last step. Reported from a real
+        #    run: "Cannot stop process Project-Zero (19756) ... Access is denied".
+        #
+        #    So the kill is best-effort and the DELETE is what decides. If the file still cannot be replaced,
+        #    say plainly why rather than surfacing a Stop-Process stack trace that names the wrong problem.
         $Running = Get-Process -Name 'Project-Zero' -ErrorAction SilentlyContinue
-        if ($Running) { $Running | Stop-Process -Force }
-        Start-Sleep -Milliseconds 200
-        Remove-Item $ExePath -Force -ErrorAction Stop
+        if ($Running) { $Running | Stop-Process -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Milliseconds 400
+        try
+        {
+            Remove-Item $ExePath -Force -ErrorAction Stop
+        }
+        catch
+        {
+            throw "Cannot replace $ExePath - it is still running and could not be closed. Close Project-Zero and build again."
+        }
     }
 }
 
@@ -710,6 +800,7 @@ foreach ($Obj in $ObjectFiles)                    { $LinkArgs.Add($Obj) }
 $LinkArgs.Add((Join-Path $VulkanRoot 'Lib\vulkan-1.lib'))
 $LinkArgs.Add((Join-Path $PackageRoot 'glfw\lib-vc2022\glfw3dll.lib'))
 $LinkArgs.Add((Join-Path $PackageRoot 'thorvg\lib\thorvg.lib'))
+$LinkArgs.Add($JoltLib)
 $LinkArgs.Add('gdi32.lib')
 $LinkArgs.Add('user32.lib')
 $LinkArgs.Add('shell32.lib')
@@ -725,6 +816,27 @@ if ($LASTEXITCODE -ne 0)
 }
 
 Write-Produced $ExePath
+
+# Mirror the freshly linked binary to <repo>\Build\ so `.\Build\Project-Zero.exe` works from the repository root,
+#    which is the command References/RunningTheShowroom.md documents. Copying (rather than only linking here) is what
+#    prevents the classic "I rebuilt but the old UI is still there" report: a stale copy from an earlier session would
+#    otherwise sit at that path forever, since nothing else ever writes to it.
+$RootBinary = Join-Path $RepositoryRoot 'Build'
+New-Item -ItemType Directory -Force -Path $RootBinary | Out-Null
+foreach ($Payload in @('Project-Zero.exe', 'Project-Zero.pdb', 'glfw3.dll'))
+{
+    $From = Join-Path $BinaryRoot $Payload
+    if (Test-Path $From) { Copy-Item $From $RootBinary -Force -ErrorAction SilentlyContinue }
+}
+# The runtime searches <cwd>\Engine\Shaders first, so the mirrored copy needs the lowered SPIR-V beside it too.
+$RootShaders = Join-Path $RootBinary 'Engine\Shaders'
+New-Item -ItemType Directory -Force -Path $RootShaders | Out-Null
+foreach ($Entry in $ShaderTable)
+{
+    $SpirvSource = Join-Path $EngineRoot ('Shaders\' + $Entry.Output)
+    if (Test-Path $SpirvSource) { Copy-Item $SpirvSource $RootShaders -Force }
+}
+Write-Produced (Join-Path $RootBinary 'Project-Zero.exe')
 
 if ($Run)
 {

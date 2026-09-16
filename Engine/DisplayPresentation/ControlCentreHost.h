@@ -46,6 +46,7 @@
 #include "ThemeStructure.h"
 #include "MotionIntegrator.h"
 #include "AppearanceInspector.h"
+#include "ControlKit.h"
 #include "ConfigurationInspector.h"
 #include "DialogueHost.h"
 #include "PixelSpace.h"
@@ -119,6 +120,9 @@ struct ControlCentreSettings
     bool             Notifications      = true;
     FidelityCategory Quality            = FidelityCategory::StandardFidelity;
     float            RenderScale        = 1.0f;     // [-] 0.25 … 1.0
+    // Shadow map side, chosen on the Render page. Auto follows the Quality tier (256 … 2048); any other entry
+    //    pins the map at that side and outranks the tier. The filter itself is always the tier's.
+    ShadowResolutionCategory ShadowResolution = ShadowResolutionCategory::FollowQualityTier;
     uint32_t         Revision           = 0u;       // [-] bumps on every change; projects compare to react
 };
 
@@ -143,8 +147,10 @@ class ControlCentreHost
 {
 public:
     // ── Figures (all from the references; change here, nowhere else) ────────────────────────────────────────────────
-    static constexpr float  NotchWidth        = 400.0f;   // [px]
     static constexpr float  NotchHeight       =  36.0f;   // [px]
+    static constexpr float  GripWidth         =  48.0f;   // [px] Slate w-12, the rectangle pill
+    static constexpr float  GripHeight        =   6.0f;   // [px] Slate h-1.5
+    static constexpr float  GripLift          =  24.0f;   // [px] Slate bottom-6 off the travelling edge
     static constexpr float  TapTravelLimit    =   6.0f;   // [px]   beyond this a contact is a drag
     static constexpr double TapDurationLimit  =   0.350;  // [s]    beyond this a contact is a press
     static constexpr double DragElasticity    =   0.05;   // [-]    fraction of overshoot accepted past a bound
@@ -177,8 +183,8 @@ public:
     static constexpr float  RenderScaleMinimum=   0.25f;  // [-]
 
     // Settings hub / sub-page figures (Notch ArcNotch.tsx, SettingsModal.tsx, GenericSettingsModal)
-    static constexpr float  PageCardWidth     = 840.0f;   // [px]  maxWidth when a sub-page is active
-    static constexpr float  PageCardHeight    = 600.0f;   // [px]
+    static constexpr float  PageMarginX       =  24.0f;   // [px]  sub-pages fill the canvas to this side padding…
+    static constexpr float  PageMarginY       =  24.0f;   // [px]  …and this top/bottom padding (corners are the only limit)
     static constexpr float  PageRadius        =  32.0f;   // [px]  rounded-[32px]
     static constexpr float  HubTitleSize      =  22.0f;   // [px]  text-[22px] font-bold
     static constexpr float  HubBackGlyph      =  24.0f;   // [px]  ChevronLeft size 24
@@ -204,6 +210,7 @@ public:
     static constexpr float  PageButtonPadY    =   8.0f;   // [px]  py-2
     static constexpr float  PageButtonGap     =  12.0f;   // [px]  gap-3
     static constexpr float  PageSwapDuration  =   0.20f;  // [s]   transition duration 0.2
+    static constexpr float  ThemeBlendDuration =  0.25f;  // [s]   live theme preview cross-fade (tile tap → palette morph)
 
     ControlCentreHost() noexcept;
     ~ControlCentreHost() noexcept = default;
@@ -232,7 +239,13 @@ public:
     void                    AssignSettings(const ControlCentreSettings& Desired) noexcept { Settings = Desired; ++Settings.Revision; }
     void                    ToggleTile(QuickTileCategory Tile) noexcept;             // toggles, or advances Quality
     void                    AssignRenderScale(float Scale) noexcept;
+    void                    AssignShadowResolution(ShadowResolutionCategory Resolution) noexcept;
     [[nodiscard]] bool      IsTileActive(QuickTileCategory Tile) const noexcept;
+    // The criteria the renderer should run with: the active tier, with the Render page's shadow override applied.
+    [[nodiscard]] FidelityCriteria QueryEffectiveCriteria() const noexcept;
+    [[nodiscard]] PlaneExtent QueryShadowDropdownExtent() const noexcept { return ShadowDropdownExtent; }
+    [[nodiscard]] bool      IsShadowMenuOpen() const noexcept { return ShadowMenuOpen; }
+    [[nodiscard]] PlaneExtent QueryGripExtent() const noexcept;                      // [px] rectangle pill on the sheet
     [[nodiscard]] PlaneExtent QueryCardExtent() const noexcept;                      // [px] dashboard card on the display
     [[nodiscard]] PlaneExtent QueryTileDiscExtent(uint32_t Slot) const noexcept;     // [px] disc of grid slot 0..7
     [[nodiscard]] PlaneExtent QueryPillTrackExtent() const noexcept;                 // [px] render-scale track
@@ -296,7 +309,13 @@ public:
     [[nodiscard]] float     QueryCurrentHeight() const noexcept;                          // [px] shade Y (0 closed … H−36 open)
     [[nodiscard]] float     QueryHandleX() const noexcept;                                // [px] notch left edge
     [[nodiscard]] float     QueryHandleY() const noexcept { return QueryCurrentHeight(); }
-    [[nodiscard]] float     QueryHandleWidth()  const noexcept { return NotchWidth;  }
+    [[nodiscard]] float     QueryHandleWidth()  const noexcept { return NotchWidth_;  }
+    // Seats the pull's width (120..600) and redraws its outline; the game never calls this.
+    void AssignNotchWidth(float Width) noexcept
+    {
+        NotchWidth_ = Width < 120.0f ? 120.0f : (Width > 600.0f ? 600.0f : Width);
+        GenerateHandleContour();
+    }
     [[nodiscard]] float     QueryHandleHeight() const noexcept { return NotchHeight; }
     [[nodiscard]] PlaneExtent QueryHandleExtent() const noexcept;
     [[nodiscard]] const std::vector<BezierPointIndex>& QueryHandleContour() const noexcept { return HandleContour; }
@@ -306,7 +325,7 @@ public:
 
 private:
     enum class GrabSubject : uint32_t { Nothing = 0, Notch = 1, Scrim = 2, Tile = 3, Pill = 4, Card = 5,
-                                        Gear = 6, HubBack = 7, HubRow = 8, PageClose = 9, PageTab = 10, PageButton = 11 };
+                                        Gear = 6, HubBack = 7, HubRow = 8, PageClose = 9, PageTab = 10, PageButton = 11, Grip = 12 };
 
     [[nodiscard]] bool      IsSubPage(ControlCentrePageCategory Page) const noexcept
     {
@@ -319,6 +338,10 @@ private:
     void                    ConstructHubLayout(PixelSpace& Surface, float Opacity) const noexcept;
     void                    ConstructSubPageLayout(PixelSpace& Surface, ControlCentrePageCategory Page, float Opacity, bool Live) noexcept;
     void                    ConstructPageBodyLayout(PixelSpace& Surface, ControlCentrePageCategory Page, const PlaneExtent& Body, float Opacity, bool Live) noexcept;
+    // Render page body: the Shadows section (technique read-out + resolution dropdown). Returns the content height.
+    float                   ConstructRenderPageLayout(PixelSpace& Surface, const PlaneExtent& Body, float ScrollY, const ControlPointer& Local, float Opacity) noexcept;
+    // Floating layer for the Render page's own dropdown, drawn above the footer like the inspectors' menus.
+    void                    ConstructRenderFloatingLayout(PixelSpace& Surface, float Opacity) noexcept;
     void                    RequestLeave(bool Back) noexcept;    // X / back / shade-close with dirty-check
     void                    ResolveDialogueVerdict() noexcept;
     void                    ConstructDashboardLayout(PixelSpace& Surface, float Opacity) const noexcept;
@@ -331,13 +354,17 @@ private:
     void                    Carry(float CursorX, float CursorY, float DeltaSeconds) noexcept;
     void                    Relinquish() noexcept;
     void                    Depart(bool Opening) noexcept;
-    [[nodiscard]] double    OpenTravel() const noexcept { return static_cast<double>(DisplayHeight) - NotchHeight; }
+    // The sheet drops full-bleed: at open the pull has left the viewport, and the grip pill stays
+    //    behind on the sheet to close by.
+    [[nodiscard]] double    OpenTravel() const noexcept { return static_cast<double>(DisplayHeight); }
     [[nodiscard]] double    NotchAdmissible() const noexcept;
     [[nodiscard]] static double Constrain(double Value, double Minimum, double Maximum, double Elasticity) noexcept;
 
     // ── Display ───────────────────────────────────────────────────────────────────────────────────────────────────
     uint32_t                DisplayWidth;
     uint32_t                DisplayHeight;
+    uint32_t                LastResizeWidth  = 0u;          // [px] Resize() re-targets springs only when these change…
+    uint32_t                LastResizeHeight = 0u;          // [px] …so per-frame calls never restart a settled spring
 
     // ── Motion ────────────────────────────────────────────────────────────────────────────────────────────────────
     MotionIntegrator        Motion;
@@ -390,6 +417,13 @@ private:
     int                     GrabbedSlot;             // [-] slot the press landed on
     bool                    PillGrabbed;
 
+    // ── Render page ───────────────────────────────────────────────────────────────────────────────────────────────
+    // The shadow-resolution dropdown lives directly on the host (the Render page has no inspector of its own: it
+    //    edits ControlCentreSettings live, with no Applied/Draft pair, exactly as the dashboard tiles do).
+    bool                    ShadowMenuOpen = false;      // [-]  the resolution menu owns the pointer while open
+    PlaneExtent             ShadowDropdownExtent{};      // [px] its button, recorded for the floating layer
+    int                     ShadowMenuPick = -1;         // [-]  choice made in the floating layer, consumed next frame
+
     // ── Pages ─────────────────────────────────────────────────────────────────────────────────────────────────────
     uint32_t                CardWidthChannel;        // [px] spring: 420 ↔ 840
     uint32_t                CardHeightChannel;       // [px] spring: 480 ↔ 600
@@ -410,10 +444,19 @@ private:
 
     // ── Appearance ────────────────────────────────────────────────────────────────────────────────────────────────
     ThemeStructure          ActiveTheme;
-    uint32_t                ThemeRevision = ~0u;                 // [-] Appearance revision last pushed into ActiveTheme / ControlKit
-    void                    SynchroniseTheme() noexcept;         // applied Appearance → ThemeStructure → ControlKit palette
+    void                    SynchroniseTheme() noexcept;         // draft Appearance → live preview (blended) → ControlKit palette
+    // Live theme preview: a tile tap re-targets the rendered palette immediately (dirty/Apply still commit it;
+    //    Discard re-targets back, so the Unsaved-changes dialogue now asks about a change the user can already see).
+    bool                    ThemePreviewSeeded = false;          // [-] first sync snaps instead of blending
+    ThemeCategory           PushedTheme = ThemeCategory::Oled;   // [-] draft theme last pushed toward the palette
+    AccentCategory          PushedAccent = AccentCategory::Blue; // [-] draft accent last pushed
+    uint32_t                PushedSwatches[4] = { 0u, 0u, 0u, 0u }; // [-] draft semantic swatches last pushed
+    ControlKitPalette       ThemeBlendFrom;                      // [color] palette the cross-fade started from
+    ControlKitPalette       ThemeBlendTo;                        // [color] palette the cross-fade heads to
+    float                   ThemeBlendT = 1.0f;                  // [-] 0 → 1 over ThemeBlendDuration; ≥1 = settled
     std::string             ProjectName;
-    std::vector<BezierPointIndex> HandleContour;   // [px] outline in notch-local space (0..400 × 0..36)
+    float                   NotchWidth_ = 400.0f;      // [px] seated pull width; the editor narrows it
+    std::vector<BezierPointIndex> HandleContour;   // [px] outline in notch-local space (0..W × 0..36)
     bool                    InitializedCondition;
 };
 

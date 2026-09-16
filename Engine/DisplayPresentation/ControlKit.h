@@ -58,7 +58,8 @@ struct ControlKitPalette
     ColorQuad Info         { 0x3B / 255.0f, 0x82 / 255.0f, 0xF6 / 255.0f, 1.0f };   // info             ← Info swatch
     ColorQuad Warning      { 0xF5 / 255.0f, 0x9E / 255.0f, 0x0B / 255.0f, 1.0f };   // amber-500        ← Warning swatch
     ColorQuad Caution      { 0xEA / 255.0f, 0xB3 / 255.0f, 0x08 / 255.0f, 1.0f };   // yellow-500       ← Caution swatch
-    ColorQuad SliderFill   { 0x7A / 255.0f, 0x7A / 255.0f, 0x7A / 255.0f, 1.0f };   // slider filled side (kit default; Notch = accent)
+    ColorQuad SliderTrack  { 0x2F / 255.0f, 0x2F / 255.0f, 0x33 / 255.0f, 1.0f };   // slider rail, around the groove
+    ColorQuad SliderFill   { 0x8A / 255.0f, 0x8A / 255.0f, 0x8E / 255.0f, 1.0f };   // slider filled side, inside it
     ColorQuad SliderThumb  { 0xE0 / 255.0f, 0xE0 / 255.0f, 0xE0 / 255.0f, 1.0f };   // slider thumb
     ColorQuad SwitchKnobOff{ 0xBD / 255.0f, 0xBD / 255.0f, 0xBD / 255.0f, 1.0f };   // switch knob (off)
     bool      LightSurface = false;                                                    // true for Light / Sepia: hover tints go black instead of white
@@ -77,6 +78,47 @@ struct ControlPointer
     bool  Pressed    = false;  // [-] transitioned up → down this frame
     bool  Released   = false;  // [-] transitioned down → up this frame
     bool  Enabled    = true;   // [-] false while the page is mid-swap or a dialogue covers it
+    float Wheel      = 0.0f;   // [clicks] scroll this frame, + is away from the user (content moves up)
+};
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                     TEXT ENTRY
+//------------------------------------------------------------------------------------------------------------------------
+
+// One editable text site. The host creates it, hands it keystrokes, and reads Text back when Committed goes true.
+//    Editing is deliberately modal: Active is false until the host opens it (a double click, typically), so a tree of
+//    a hundred rows costs a hundred small records and no per-frame work until one is actually being typed into.
+struct TextEntryState
+{
+    static constexpr uint32_t Capacity = 128u;   // [ch] longest name we accept; refusal is better than truncation
+
+    char     Text[Capacity]   = {};   // [utf8] live buffer, always NUL terminated
+    char     Restore[Capacity]= {};   // [utf8] value on Begin(), used by Escape
+    uint32_t Length           = 0u;   // [ch] bytes in Text, excluding the NUL
+    uint32_t Caret            = 0u;   // [ch] insertion point, 0 … Length
+    uint32_t SelectionAnchor  = 0u;   // [ch] the other end of the selection; equal to Caret means no selection
+    bool     Active           = false;// [-] currently being edited
+    bool     Committed        = false;// [-] set for the single frame an Enter / focus-loss accepted the value
+    bool     Cancelled        = false;// [-] set for the single frame an Escape reverted it
+    float    BlinkPhase       = 0.0f; // [s] caret blink accumulator
+    float    ScrollX          = 0.0f; // [px] horizontal scroll when the text is wider than the field
+
+    void Begin(const char* Initial) noexcept;                    // copy in, select all, Active = true
+    void Insert(const char* Utf8) noexcept;                      // replaces the selection
+    void Backspace() noexcept;
+    void Delete() noexcept;
+    void MoveCaret(int Delta, bool Extend) noexcept;
+    void MoveHome(bool Extend) noexcept;
+    void MoveEnd(bool Extend) noexcept;
+    void SelectAll() noexcept;
+    void Commit() noexcept;                                      // Active = false, Committed = true
+    void Cancel() noexcept;                                      // restore, Active = false, Cancelled = true
+    void Advance(float DeltaSeconds) noexcept { BlinkPhase += DeltaSeconds; }
+
+    [[nodiscard]] bool     HasSelection() const noexcept { return SelectionAnchor != Caret; }
+    [[nodiscard]] uint32_t SelectionStart() const noexcept { return Caret < SelectionAnchor ? Caret : SelectionAnchor; }
+    [[nodiscard]] uint32_t SelectionEnd()   const noexcept { return Caret < SelectionAnchor ? SelectionAnchor : Caret; }
+    void DeleteSelection() noexcept;
 };
 
 enum class ButtonToneCategory : uint32_t { Primary = 0, Secondary = 1, Ghost = 2, Danger = 3, Tinted = 4 };
@@ -113,6 +155,9 @@ public:
     //    ResetPalette restores the UIComponents dark defaults.
     [[nodiscard]] static const ControlKitPalette& Palette() noexcept { return ActivePalette; }
     static void AssignTheme(const ThemeStructure& Theme, ColorQuad WarningColour, ColorQuad SuccessColour, ColorQuad InfoColour, ColorQuad CautionColour) noexcept;
+    static void AssignPalette(const ControlKitPalette& Explicit) noexcept { ActivePalette = Explicit; }
+    // BlendPalette lerps every colour slot From → To (smoothstepped T) for live theme transitions.
+    static void BlendPalette(const ControlKitPalette& From, const ControlKitPalette& To, float T) noexcept;
     static void ResetPalette() noexcept { ActivePalette = ControlKitPalette{}; }
 
     // ── Primitives ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -148,8 +193,26 @@ public:
     static constexpr float SliderHeight = 28.0f, SliderThinHeight = 10.0f, SliderThumb = 26.0f, SliderThinThumb = 18.0f;
 
     // .vpill  118 px: number cell (field) + 44 px unit cell (inset).
-    static void ValuePill(PixelSpace& Surface, float X, float Y, const char* Number, const char* Unit, float Opacity = 1.0f) noexcept;
     static constexpr float ValuePillWidth = 118.0f, ValuePillUnitWidth = 44.0f;
+    // The editor's property rows: .vpill is 104 px with a 36 px unit cell.
+    static constexpr float PropertyPillWidth = 104.0f, PropertyPillUnitWidth = 36.0f;
+
+    // Width is a parameter because the editor's property rows use a 104 px pill with a 36 px unit cell while the
+    //    Notch inspectors use the wider 118/44. Drawing one width while the caller reserves another is what put
+    //    the slider on top of the unit cell and pushed the whole row off the edge of the card.
+    static void ValuePill(PixelSpace& Surface, float X, float Y, const char* Number, const char* Unit, float Opacity = 1.0f,
+                          float Width = ValuePillWidth, float UnitWidth = ValuePillUnitWidth) noexcept;
+
+    // ── Scrolling ────────────────────────────────────────────────────────────────────────────────────────────────
+    // Applies the wheel to Offset and clamps it to what the content actually needs, returning the clamped value.
+    //    The clamp is the whole job: an unclamped offset scrolls a short list into empty space and the pane looks
+    //    broken rather than merely scrolled.
+    [[nodiscard]] static float AdvanceScroll(float Offset, float Wheel, float ContentHeight, float ViewHeight) noexcept;
+
+    // A slim indicator, drawn only when there IS something to scroll. The mock hides its scrollbars, but a
+    //    desktop pane with no hint that content continues below the fold is a control nobody finds.
+    static void ScrollIndicator(PixelSpace& Surface, const PlaneExtent& View, float Offset,
+                                float ContentHeight, float Opacity = 1.0f) noexcept;
 
     // .dd-btn  pill with split caret cell. Returns Clicked when the button is clicked (host opens the menu).
     static ControlHit Dropdown(PixelSpace& Surface, const PlaneExtent& Extent, const char* Current, bool Open, const ControlPointer& Pointer, float Opacity = 1.0f) noexcept;
@@ -177,6 +240,16 @@ public:
     // Notch 32 px round bordered icon button (w-8 h-8 rounded-full border, hover white/5).
     static ControlHit RoundIconButton(PixelSpace& Surface, float CentreX, float CentreY, ControlCentreIconCategory Icon, const ControlPointer& Pointer, float Opacity = 1.0f) noexcept;
     static constexpr float RoundIconDiameter = 32.0f;
+
+    // ── Text entry ───────────────────────────────────────────────────────────────────────────────────────────────────
+    // UIComponents has no text-entry widget: .field is a static shape with no caret, selection or key handling.
+    //    TextEntryState is that missing piece. The host owns one per editable site and feeds it keys; the widget only
+    //    draws and hit-tests, so it stays immediate-mode like the rest of the kit.
+    static ControlHit TextEntry(PixelSpace& Surface, const PlaneExtent& Extent, struct TextEntryState& Entry,
+                                const ControlPointer& Pointer, float FontSize = 12.5f, float Opacity = 1.0f) noexcept;
+
+    // Caret blink period; exposed so a host can align other animations to it.
+    static constexpr float CaretBlinkSeconds = 1.06f;
 
     // .crow  110 px dim label; returns the control extent to the right of the label.
     [[nodiscard]] static PlaneExtent ControlRow(PixelSpace& Surface, float X, float Y, float Width, const char* Label, ColorQuad LabelInk, float Opacity = 1.0f) noexcept;

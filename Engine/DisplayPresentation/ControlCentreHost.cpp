@@ -121,12 +121,15 @@ void ControlCentreHost::Terminate() noexcept
 
 void ControlCentreHost::Resize(uint32_t DesiredWidth, uint32_t DesiredHeight) noexcept
 {
-    const bool WasOpen = (Pose == ControlCentreHostState::Open);
     DisplayWidth  = std::max(1u, DesiredWidth);
     DisplayHeight = std::max(1u, DesiredHeight);
+    if (DisplayWidth == LastResizeWidth && DisplayHeight == LastResizeHeight) return;   // steady state: never restart a settled spring
+    LastResizeWidth  = DisplayWidth;
+    LastResizeHeight = DisplayHeight;
 
-    // Keep an open shade open at the new height and the notch inside the new admissible travel.
-    if (WasOpen) Motion.Spring(ShadeChannel).Place(OpenTravel());
+    // Keep an open shade open at the new height (Opening included: its depart target went stale with the old height).
+    //    Closing/Closed target 0 and a dragged shade (pointer-owned) need no re-targeting.
+    if (Pose == ControlCentreHostState::Open || Pose == ControlCentreHostState::Opening) Depart(true);
     if (InitializedCondition) ResizeCardForPage();   // card max-size follows the (logical) canvas
     SpringChannel& Notch = Motion.Spring(NotchChannel);
     const double Admissible = NotchAdmissible();
@@ -147,6 +150,7 @@ void ControlCentreHost::NavigateToPage(ControlCentrePageCategory TargetPage) noe
     PageSwapProgress = 0.0f;
     BodyScrollY      = 0.0f;
     Appearance.CloseMenus();
+    ShadowMenuOpen   = false;   // leaving the Render page dismisses its resolution menu
     Motion.Spring(SlideChannel).Place(0.0);
     ResizeCardForPage();
 }
@@ -234,14 +238,18 @@ void ControlCentreHost::ResolveDialogueVerdict() noexcept
 
 void ControlCentreHost::ResizeCardForPage() noexcept
 {
-    // ArcNotch.tsx: animate={{ maxWidth: activeSetting ? 840 : 420, height: activeSetting ? 600 : 480 }}
-    //    maxWidth is a max — the card shrinks with the container (relevant once the UI scale shrinks the logical canvas);
-    //    height is clamped to the visible content box (viewport − notch 35 px − 24 px breathing room) the same way.
+    // ArcNotch.tsx had animate={{ maxWidth: activeSetting ? 840 : 420, height: activeSetting ? 600 : 480 }}; here
+    //    sub-pages instead fill the canvas to the PageMargin corner padding, the dashboard keeps its 420 × 480 card,
+    //    and both shrink with the container (relevant once the UI scale shrinks the logical canvas).
     const bool Sub = IsSubPage(ActivePage);
-    const float MaxW = static_cast<float>(DisplayWidth)  - 32.0f;
-    const float MaxH = static_cast<float>(DisplayHeight) - 35.0f - 24.0f;
-    Motion.Spring(CardWidthChannel ).Depart(std::min(Sub ? PageCardWidth  : CardWidth,  MaxW));
-    Motion.Spring(CardHeightChannel).Depart(std::min(Sub ? PageCardHeight : CardHeight, MaxH));
+    // Sub-pages fill the canvas to the corner padding; the dashboard keeps its 420 × 480 card.
+    const float MaxW = static_cast<float>(DisplayWidth)  - PageMarginX * 2.0f;
+    const float MaxH = static_cast<float>(DisplayHeight) - 35.0f - PageMarginY * 2.0f;
+    const double WantW = Sub ? static_cast<double>(MaxW) : std::min(static_cast<double>(CardWidth),  static_cast<double>(MaxW));
+    const double WantH = Sub ? static_cast<double>(MaxH) : std::min(static_cast<double>(CardHeight), static_cast<double>(MaxH));
+    if (Motion.Spring(CardWidthChannel).Target == WantW && Motion.Spring(CardHeightChannel).Target == WantH) return;   // no restart
+    Motion.Spring(CardWidthChannel ).Depart(WantW);
+    Motion.Spring(CardHeightChannel).Depart(WantH);
 }
 
 void ControlCentreHost::NavigateBack() noexcept
@@ -278,46 +286,23 @@ bool ControlCentreHost::IsSlideTransitionActive() const noexcept
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-//                                                 NOTCH OUTLINE TESSELLATION
+//                                                    NOTCH OUTLINE
 //------------------------------------------------------------------------------------------------------------------------
-// SVG (ArcNotch.tsx):  M 0 0  C 15 0, 20 6, 25 15  L 35 28  C 40 34, 45 36, 52 36  L 348 36
-//                      C 355 36, 360 34, 365 28  L 375 15  C 380 6, 385 0, 400 0  Z
-
-namespace {
-
-BezierPointIndex SampleCubic(BezierPointIndex P0, BezierPointIndex P1, BezierPointIndex P2, BezierPointIndex P3, float T) noexcept
-{
-    const float U  = 1.0f - T;
-    const float B0 = U * U * U;
-    const float B1 = 3.0f * U * U * T;
-    const float B2 = 3.0f * U * T * T;
-    const float B3 = T * T * T;
-    return BezierPointIndex{ B0 * P0.X + B1 * P1.X + B2 * P2.X + B3 * P3.X,
-                             B0 * P0.Y + B1 * P1.Y + B2 * P2.Y + B3 * P3.Y };
-}
-
-void AppendCubic(std::vector<BezierPointIndex>& Out, BezierPointIndex P0, BezierPointIndex P1, BezierPointIndex P2, BezierPointIndex P3) noexcept
-{
-    constexpr int Segments = 16;
-    for (int Step = 1; Step <= Segments; ++Step)
-        Out.push_back(SampleCubic(P0, P1, P2, P3, static_cast<float>(Step) / static_cast<float>(Segments)));
-}
-
-} // namespace
+// Slate's clipped tongue: the pull is a trapezoid, wide where it meets the sheet, each lower corner inset
+//    8 % of the seated width. Four convex corners fill cleanly; the tessellated curves threw miter spikes
+//    at every shoulder kink.
 
 void ControlCentreHost::GenerateHandleContour() noexcept
 {
     HandleContour.clear();
-    HandleContour.reserve(80);
+    HandleContour.reserve(4);
 
-    HandleContour.push_back({ 0.0f, 0.0f });                                                       // M 0 0
-    AppendCubic(HandleContour, { 0.0f, 0.0f },   { 15.0f, 0.0f },  { 20.0f, 6.0f },   { 25.0f, 15.0f });  // C
-    HandleContour.push_back({ 35.0f, 28.0f });                                                     // L 35 28
-    AppendCubic(HandleContour, { 35.0f, 28.0f }, { 40.0f, 34.0f }, { 45.0f, 36.0f },  { 52.0f, 36.0f });  // C
-    HandleContour.push_back({ 348.0f, 36.0f });                                                    // L 348 36
-    AppendCubic(HandleContour, { 348.0f, 36.0f },{ 355.0f, 36.0f },{ 360.0f, 34.0f }, { 365.0f, 28.0f }); // C
-    HandleContour.push_back({ 375.0f, 15.0f });                                                    // L 375 15
-    AppendCubic(HandleContour, { 375.0f, 15.0f },{ 380.0f, 6.0f }, { 385.0f, 0.0f },  { 400.0f, 0.0f });  // C
+    const float W = NotchWidth_;
+    const float Inset = W * 0.08f;
+    HandleContour.push_back({ 0.0f, 0.0f });
+    HandleContour.push_back({ W, 0.0f });
+    HandleContour.push_back({ W - Inset, NotchHeight });
+    HandleContour.push_back({ Inset, NotchHeight });
     // Z — the polygon filler closes back to (0, 0)
 }
 
@@ -332,17 +317,17 @@ float ControlCentreHost::QueryCurrentHeight() const noexcept
 
 float ControlCentreHost::QueryHandleX() const noexcept
 {
-    return (static_cast<float>(DisplayWidth) - NotchWidth) * 0.5f + static_cast<float>(Motion.Spring(NotchChannel).Current);
+    return (static_cast<float>(DisplayWidth) - NotchWidth_) * 0.5f + static_cast<float>(Motion.Spring(NotchChannel).Current);
 }
 
 PlaneExtent ControlCentreHost::QueryHandleExtent() const noexcept
 {
-    return Spanning(QueryHandleX(), QueryCurrentHeight(), NotchWidth, NotchHeight);
+    return Spanning(QueryHandleX(), QueryCurrentHeight(), NotchWidth_, NotchHeight);
 }
 
 double ControlCentreHost::NotchAdmissible() const noexcept
 {
-    const double Limit = (static_cast<double>(DisplayWidth) - NotchWidth) * 0.5;
+    const double Limit = (static_cast<double>(DisplayWidth) - NotchWidth_) * 0.5;
     return Limit > 0.0 ? Limit : 0.0;
 }
 
@@ -396,6 +381,18 @@ void ControlCentreHost::Grab(GrabSubject Subject, float CursorX, float CursorY) 
         Motion.Spring(NotchChannel).Place(GrabNotchX);
         Pose = ControlCentreHostState::Dragging;
     }
+    else if (Subject == GrabSubject::Card || Subject == GrabSubject::Grip)
+    {
+        // Card drags carry the shade vertically (Android-sheet dismiss); the notch stays pinned.
+        // The grip resolves vertical at once — it never slides sideways.
+        Motion.Spring(ShadeChannel).Place(GrabShadeY);
+        if (Subject == GrabSubject::Grip)
+        {
+            AxisResolved = true;
+            YDominant = true;
+        }
+        Pose = ControlCentreHostState::Dragging;
+    }
 }
 
 void ControlCentreHost::Carry(float CursorX, float CursorY, float DeltaSeconds) noexcept
@@ -421,12 +418,26 @@ void ControlCentreHost::Carry(float CursorX, float CursorY, float DeltaSeconds) 
         return;
     }
 
-    if (GrabbedSubject != GrabSubject::Notch)
+    bool CardCarry = GrabbedSubject == GrabSubject::Card || GrabbedSubject == GrabSubject::Grip;
+    if (GrabbedSubject != GrabSubject::Notch && !CardCarry)
     {
-        // Tiles and the card only care whether the press stayed put (tap) or wandered (cancel).
         if (!TravelExceeded && (std::fabs(TravelX) > TapTravelLimit || std::fabs(TravelY) > TapTravelLimit))
             TravelExceeded = true;
-        return;
+        // The page is pulled up by whatever the hand holds, tiles included: a wandered press transfers
+        //    to the body carry, and only a clean release still taps. Hub rows fire on press and the pill
+        //    owns its slider, so neither transfers.
+        if (TravelExceeded
+            && (GrabbedSubject == GrabSubject::Tile || GrabbedSubject == GrabSubject::Gear
+                || GrabbedSubject == GrabSubject::HubBack || GrabbedSubject == GrabSubject::PageClose
+                || GrabbedSubject == GrabSubject::PageTab || GrabbedSubject == GrabSubject::PageButton))
+        {
+            GrabbedSubject = GrabSubject::Card;
+            CardCarry = true;
+        }
+        else
+        {
+            return;
+        }
     }
 
     if (!TravelExceeded && (std::fabs(TravelX) > TapTravelLimit || std::fabs(TravelY) > TapTravelLimit))
@@ -441,6 +452,7 @@ void ControlCentreHost::Carry(float CursorX, float CursorY, float DeltaSeconds) 
     }
 
     if (!AxisResolved) return;
+    if (CardCarry && !YDominant) return;   // the card ignores horizontal drags; the notch stays where it is
 
     if (YDominant)
     {
@@ -513,14 +525,16 @@ void ControlCentreHost::Relinquish() noexcept
             else if (IsPageDirty()) { LastDialoguePreset = DialoguePresetCategory::ConfirmDiscard; Dialogue.Open(DialoguePresetCategory::ConfirmDiscard); }
         }
     }
-    else if (GrabbedSubject == GrabSubject::Notch)
+    else if (GrabbedSubject == GrabSubject::Notch || GrabbedSubject == GrabSubject::Card
+        || GrabbedSubject == GrabSubject::Grip)
     {
         if (Tap)
         {
-            // A notch that cannot be tapped is a notch the user reports as dead.
-            if (OpenBeforeGrab) RequestLeave(false); else Depart(true);
+            // A notch that cannot be tapped is a notch the user reports as dead. Card taps stay swallowed.
+            if (GrabbedSubject == GrabSubject::Notch) { if (OpenBeforeGrab) RequestLeave(false); else Depart(true); }
+            else if (GrabbedSubject == GrabSubject::Grip) Depart(false);
         }
-        else if (!YDominant)
+        else if (!YDominant && GrabbedSubject == GrabSubject::Notch)
         {
             // Horizontal slide: settle inside the admissible band (undo the elastic overshoot).
             SpringChannel& Notch = Motion.Spring(NotchChannel);
@@ -590,7 +604,7 @@ void ControlCentreHost::AdvanceInteraction(const InputExchange& Input, float Cur
     const bool OverBody = CardActive && PageSettled && IsSubPage(ActivePage) && Body.Encloses(CursorX, CursorY);
     if (Pressed && OverBody) PressedInBody = true;
     if (Released) { /* cleared after this frame's recording — see AdvanceLocomotion */ }
-    const bool BodyOwned = PressedInBody || Appearance.HasOpenMenu() || InputPage.HasOpenMenu() || Dialogue.IsVisible();
+    const bool BodyOwned = PressedInBody || Appearance.HasOpenMenu() || InputPage.HasOpenMenu() || ShadowMenuOpen || Dialogue.IsVisible();
     const bool OnDashboard = ActivePage == ControlCentrePageCategory::Dashboard;
     const bool OnHub       = ActivePage == ControlCentrePageCategory::SettingsHub;
     const bool OnSubPage   = IsSubPage(ActivePage);
@@ -601,6 +615,7 @@ void ControlCentreHost::AdvanceInteraction(const InputExchange& Input, float Cur
         for (uint32_t Row = 0u; Row < 4u; ++Row)
             if (QueryHubRowExtent(Row).Encloses(CursorX, CursorY)) HoveredHubRow = static_cast<int>(Row);
 
+    const bool OverGrip = QueryGripExtent().Encloses(CursorX, CursorY);
     const bool OverCard = CardActive && QueryCardExtent().Encloses(CursorX, CursorY);
     const bool OverGear = CardActive && PageSettled && OnDashboard && QueryHeaderGearExtent().Encloses(CursorX, CursorY);
     const bool OverBack = CardActive && PageSettled && OnHub       && QueryHubBackExtent().Encloses(CursorX, CursorY);
@@ -628,6 +643,7 @@ void ControlCentreHost::AdvanceInteraction(const InputExchange& Input, float Cur
     if (Pressed && !BodyOwned && !OverBody)
     {
         if (Hovered)                       Grab(GrabSubject::Notch, CursorX, CursorY);
+        else if (OverGrip)                 Grab(GrabSubject::Grip, CursorX, CursorY);
         else if (OverGear)                 Grab(GrabSubject::Gear, CursorX, CursorY);
         else if (OverBack)                 Grab(GrabSubject::HubBack, CursorX, CursorY);
         else if (OverClose)                Grab(GrabSubject::PageClose, CursorX, CursorY);
@@ -722,7 +738,7 @@ void ControlCentreHost::ConstructControlLayout(PixelSpace& Surface) noexcept
 
     const float W      = static_cast<float>(DisplayWidth);
     const float H      = static_cast<float>(DisplayHeight);
-    const float ShadeY = QueryCurrentHeight();                    // lower edge of the sheet / top of the notch
+    const float ShadeY = QueryCurrentHeight();                    // lower edge of the sheet, the sill at open
     const float NotchX = QueryHandleX();
 
     // Chrome renders in the APPLIED typeface (Body role); nullptr → backend default until the registry is installed.
@@ -770,17 +786,23 @@ void ControlCentreHost::ConstructControlLayout(PixelSpace& Surface) noexcept
 
     Pointer.Pressed = Pointer.Released = false;   // edges consumed by this frame's widgets
 
-    // ③ Notch handle: tessellated SVG outline translated to (NotchX, ShadeY).
+    // ②c Grip pill: Slate's rectangle handle, centred on the display, lifted off the travelling edge.
+    //    At open the pull has left the viewport, and this is what stays behind to close by. Position alone
+    //    gates it: shut, it sits above the top edge and draws nothing.
+    Surface.FillRectangle(QueryGripExtent(), ControlKit::Palette().TextDim);
+
+    // ③ Notch handle: the trapezoid translated to (NotchX, ShadeY). The pull is raised chrome, not sheet —
+    //    filled with the raised face, no outline; a pull the user cannot see is a pull the user reports missing.
     std::vector<PlanePoint> Outline;
     Outline.reserve(HandleContour.size());
     for (const BezierPointIndex& P : HandleContour)
         Outline.push_back(PlanePoint{ NotchX + P.X, ShadeY + P.Y });
-    Surface.FillPolygon(Outline.data(), static_cast<uint32_t>(Outline.size()), Sheet);
+    Surface.FillPolygon(Outline.data(), static_cast<uint32_t>(Outline.size()), ControlKit::Palette().Raised);
 
     // ④ Project name centred in the handle (Notch: 13 px, font-medium, text-white/50, pb-1 → 4 px lift).
     constexpr float LabelSize = 13.0f;
     const PlanePoint Measured = Surface.MeasureText(ProjectName.c_str(), LabelSize);
-    const float TextX = NotchX + (NotchWidth  - Measured.X) * 0.5f;
+    const float TextX = NotchX + (NotchWidth_ - Measured.X) * 0.5f;
     const float TextY = ShadeY + (NotchHeight - Measured.Y) * 0.5f - 2.0f;
     Surface.Text(TextX, TextY, Label, ProjectName.c_str(), LabelSize);
 }
@@ -829,17 +851,47 @@ const QuickTileStructure& ControlCentreHost::QueryTile(uint32_t Slot) noexcept
 
 void ControlCentreHost::SynchroniseTheme() noexcept
 {
-    if (ThemeRevision == Appearance.QueryRevision()) return;
-    ThemeRevision = Appearance.QueryRevision();
-    const AppearanceSettings& A = Appearance.QueryApplied();
-    ActiveTheme.AssignTheme(A.Theme);
-    ActiveTheme.AssignAccent(A.Accent);
-    ActiveTheme.AssignCornerRadius(A.CornerRadius);
-    ControlKit::AssignTheme(ActiveTheme,
-                            AppearanceInspector::QuerySemanticColour(0u, A.WarningSwatch),
-                            AppearanceInspector::QuerySemanticColour(1u, A.SuccessSwatch),
-                            AppearanceInspector::QuerySemanticColour(2u, A.InfoSwatch),
-                            AppearanceInspector::QuerySemanticColour(3u, A.CautionSwatch));
+    // Live preview: the rendered palette follows the DRAFT (tile taps re-target immediately with a cross-fade);
+    //    Apply commits what is already showing, Discard re-targets back — so the Unsaved-changes dialogue now asks
+    //    about a change the user can already see.
+    const AppearanceSettings& D = Appearance.QueryDraft();
+    const bool Retargeted = !ThemePreviewSeeded || D.Theme != PushedTheme || D.Accent != PushedAccent
+        || D.WarningSwatch != PushedSwatches[0u] || D.SuccessSwatch != PushedSwatches[1u]
+        || D.InfoSwatch != PushedSwatches[2u] || D.CautionSwatch != PushedSwatches[3u];
+    if (Retargeted)
+    {
+        // Non-colour state applies instantly; colours cross-fade so the change reads as a morph, not a snap.
+        ActiveTheme.AssignTheme(D.Theme);
+        ActiveTheme.AssignAccent(D.Accent);
+        ActiveTheme.AssignCornerRadius(D.CornerRadius);
+        const ControlKitPalette Saved = ControlKit::Palette();
+        ControlKit::AssignTheme(ActiveTheme,
+                                AppearanceInspector::QuerySemanticColour(0u, D.WarningSwatch),
+                                AppearanceInspector::QuerySemanticColour(1u, D.SuccessSwatch),
+                                AppearanceInspector::QuerySemanticColour(2u, D.InfoSwatch),
+                                AppearanceInspector::QuerySemanticColour(3u, D.CautionSwatch));
+        ThemeBlendTo = ControlKit::Palette();
+        ControlKit::AssignPalette(Saved);
+        PushedTheme = D.Theme; PushedAccent = D.Accent;
+        PushedSwatches[0u] = D.WarningSwatch; PushedSwatches[1u] = D.SuccessSwatch;
+        PushedSwatches[2u] = D.InfoSwatch;    PushedSwatches[3u] = D.CautionSwatch;
+        if (!ThemePreviewSeeded)
+        {
+            // First frame: snap to the canonical palette (parity with the old instant push), blend after that.
+            ThemePreviewSeeded = true;
+            ThemeBlendT = 1.0f;
+            ControlKit::AssignPalette(ThemeBlendTo);
+            return;
+        }
+        ThemeBlendFrom = Saved;
+        ThemeBlendT = 0.0f;
+    }
+    if (ThemeBlendT < 1.0f)
+    {
+        ThemeBlendT = std::min(ThemeBlendT + LastDeltaSeconds / ThemeBlendDuration, 1.0f);
+        if (ThemeBlendT >= 1.0f) ControlKit::AssignPalette(ThemeBlendTo);
+        else ControlKit::BlendPalette(ThemeBlendFrom, ThemeBlendTo, ThemeBlendT);
+    }
 }
 
 bool ControlCentreHost::IsTileActive(QuickTileCategory Tile) const noexcept
@@ -877,6 +929,21 @@ void ControlCentreHost::AssignRenderScale(float Scale) noexcept
     ++Settings.Revision;
 }
 
+void ControlCentreHost::AssignShadowResolution(ShadowResolutionCategory Resolution) noexcept
+{
+    if (Resolution == Settings.ShadowResolution) return;
+    Settings.ShadowResolution = Resolution;
+    ++Settings.Revision;
+}
+
+FidelityCriteria ControlCentreHost::QueryEffectiveCriteria() const noexcept
+{
+    // One place resolves "tier plus override" so the CPU raster and the GPU shadow pass cannot disagree.
+    FidelityClassifier Classifier;
+    Classifier.AssignCategory(Settings.Quality);
+    return WithShadowResolution(Classifier.QueryActiveCriteria(), Settings.ShadowResolution);
+}
+
 float ControlCentreHost::QueryCardOpacity() const noexcept
 {
     // Notch: useTransform(y, [100, screenHeight * 0.5], [0, 1])
@@ -884,6 +951,15 @@ float ControlCentreHost::QueryCardOpacity() const noexcept
     const float Half = static_cast<float>(DisplayHeight) * 0.5f;
     if (Half <= 100.0f) return Y > 100.0f ? 1.0f : 0.0f;
     return std::clamp((Y - 100.0f) / (Half - 100.0f), 0.0f, 1.0f);
+}
+
+PlaneExtent ControlCentreHost::QueryGripExtent() const noexcept
+{
+    // Slate's grip, w-12 h-1.5 lifted bottom-6 off the travelling edge, centred on the display —
+    //    a rectangle, no rounding.
+    const float ShadeY = QueryCurrentHeight();
+    return Spanning((static_cast<float>(DisplayWidth) - GripWidth) * 0.5f,
+                    ShadeY - GripLift - GripHeight, GripWidth, GripHeight);
 }
 
 PlaneExtent ControlCentreHost::QueryCardExtent() const noexcept
@@ -1009,8 +1085,16 @@ void ControlCentreHost::ConstructPillLayout(PixelSpace& Surface, float Opacity) 
 
     Surface.FillRectangle(Track, Faded(TrackBlack50(), Opacity), PillTrack * 0.5f);
     const float T = (Settings.RenderScale - RenderScaleMinimum) / (1.0f - RenderScaleMinimum);
-    Surface.FillRectangle(Spanning(Track.MinimumX, Track.MinimumY, Track.Width() * std::clamp(T, 0.0f, 1.0f), PillTrack),
+    const float ClampedT = std::clamp(T, 0.0f, 1.0f);
+    Surface.FillRectangle(Spanning(Track.MinimumX, Track.MinimumY, Track.Width() * ClampedT, PillTrack),
                           Faded(TrackFill(), Opacity), PillTrack * 0.5f);
+    // The inspector knob: a thumb with a drop shadow riding the fill edge. The gaps beside the track are
+    //    16 px, so the 12 px knob never touches the glyph or the readout, even held (× 1.12) at the ends.
+    const float KnobR = 12.0f * (PillGrabbed ? 1.12f : 1.0f);
+    const float KnobX = Track.MinimumX + Track.Width() * ClampedT;
+    const float KnobY = (Track.MinimumY + Track.MaximumY) * 0.5f;
+    ControlKit::FillCircle(Surface, KnobX, KnobY + 1.0f, KnobR, Faded(ColorQuad{ 0.0f, 0.0f, 0.0f, 0.5f }, Opacity));
+    ControlKit::FillCircle(Surface, KnobX, KnobY, KnobR, Faded(ControlKit::Palette().SliderThumb, Opacity));
 
     char Value[8];
     std::snprintf(Value, sizeof(Value), "%d%%", static_cast<int>(std::lround(Settings.RenderScale * 100.0f)));
@@ -1279,7 +1363,7 @@ void ControlCentreHost::ConstructPageBodyLayout(PixelSpace& Surface, ControlCent
     // Scrollable body: px-8 py-8 (Notch overflow-y-auto p-8). Content is clipped to the body.
     const PlaneExtent Inner = PlaneExtent{ Body.MinimumX + PagePadding, Body.MinimumY + PagePadding, Body.MaximumX - PagePadding, Body.MaximumY - PagePadding };
     ControlPointer Local = Pointer;
-    Local.Enabled = Pointer.Enabled && Live && !Dialogue.IsVisible() && (Body.Encloses(Pointer.X, Pointer.Y) || PressedInBody || Appearance.HasOpenMenu() || InputPage.HasOpenMenu());
+    Local.Enabled = Pointer.Enabled && Live && !Dialogue.IsVisible() && (Body.Encloses(Pointer.X, Pointer.Y) || PressedInBody || Appearance.HasOpenMenu() || InputPage.HasOpenMenu() || ShadowMenuOpen);
 
     Surface.PushClip(Body);
     float ContentHeight = 0.0f;
@@ -1293,6 +1377,7 @@ void ControlCentreHost::ConstructPageBodyLayout(PixelSpace& Surface, ControlCent
             default: break;
         }
     }
+    else if (Page == ControlCentrePageCategory::RenderSettings) ContentHeight = ConstructRenderPageLayout(Surface, Inner, BodyScrollY, Local, Opacity);
     else if (Page == ControlCentrePageCategory::Input)         ContentHeight = InputPage.ConstructInputLayout(Surface, Inner, BodyScrollY, Local, Opacity);
     else if (Page == ControlCentrePageCategory::Notifications) ContentHeight = NotificationPage.ConstructNotificationLayout(Surface, Inner, BodyScrollY, Local, Opacity);
     Surface.PopClip();
@@ -1309,6 +1394,98 @@ void ControlCentreHost::ConstructPageBodyLayout(PixelSpace& Surface, ControlCent
     }
 }
 
+float ControlCentreHost::ConstructRenderPageLayout(PixelSpace& Surface, const PlaneExtent& Body, float ScrollY,
+                                                   const ControlPointer& Local, float Opacity) noexcept
+{
+    // Shadows section, in the inspector idiom (SectionCard + heading + ControlRow rows). Unlike the Appearance and
+    //    Input pages this one has no Applied/Draft pair: the Render page edits the live dashboard record, the way
+    //    the quick tiles do, so a pick takes effect the moment it is made and the footer stays enabled.
+    const float Radius = std::clamp(ActiveTheme.QueryCornerRadius(), 0.0f, 32.0f);
+    const float X = Body.MinimumX, W = Body.Width();
+    float Y = Body.MinimumY - ScrollY;
+    const float RowH = ControlKitTokens::ControlHeight, RowGap = 16.0f;
+
+    ControlPointer Inner = Local;
+    if (ShadowMenuOpen) Inner.Enabled = false;   // the floating menu owns the pointer while it is open
+
+    const FidelityCriteria Tier   = QueryEffectiveCriteria();
+    const FidelityCriteria Native = FidelityClassifier{}.ConstructCriteria(Settings.Quality);
+
+    const float HeadingH = 24.0f + 16.0f + 24.0f;   // title + description + mb-6
+    const float SectionH = ControlKit::SectionPadding * 2.0f + HeadingH + RowH * 3.0f + RowGap * 2.0f;
+    const PlaneExtent Card    = Spanning(X, Y, W, SectionH);
+    const PlaneExtent Content = ControlKit::SectionCard(Surface, Card, Radius, Opacity);
+    ControlKit::SectionHeading(Surface, Content.MinimumX, Content.MinimumY, Content.Width(),
+                               "Shadows", "Filter follows the quality tier; resolution can override it", Ink90(), Ink50(), Opacity);
+
+    float RowY = Content.MinimumY + HeadingH;
+
+    // Row 1 — the technique the active tier selected. Read-only: the tier owns it (Minimal hard · Economy PCF ·
+    //    Standard and above PCSS), so showing it here explains what the dropdown below is sizing.
+    {
+        const PlaneExtent Ctl = ControlKit::ControlRow(Surface, Content.MinimumX, RowY, Content.Width(), "Technique",
+                                                       ControlKit::Palette().TextDim, Opacity);
+        const char* Name = Tier.ShadowTechnique == ShadowTechniqueCategory::HardShadowMap ? "Hard shadow map"
+                         : Tier.ShadowTechnique == ShadowTechniqueCategory::WidePercentageCloserFilter ? "Wide PCF"
+                         : "PCSS (soft, contact-hardening)";
+        char Line[80];
+        std::snprintf(Line, sizeof(Line), "%s - %u tap%s", Name, Tier.ShadowFilterTapCount,
+                      Tier.ShadowFilterTapCount == 1u ? "" : "s");
+        const PlanePoint Size = Surface.MeasureText(Line, 13.0f);
+        Surface.Text(Ctl.MinimumX, RowY + (RowH - Size.Y) * 0.5f, Faded(Ink70(), Opacity), Line, 13.0f);
+        RowY += RowH + RowGap;
+    }
+
+    // Row 2 — the resolution dropdown. Auto reports the tier's own side in the button so the reader always knows
+    //    what "Auto" resolved to; the pinned entries outrank the tier entirely.
+    {
+        const PlaneExtent Ctl = ControlKit::ControlRow(Surface, Content.MinimumX, RowY, Content.Width(), "Resolution",
+                                                       ControlKit::Palette().TextDim, Opacity);
+        ShadowDropdownExtent = Spanning(Ctl.MinimumX, RowY, std::min(Ctl.Width(), 260.0f), RowH);
+
+        if (ShadowMenuPick >= 0)
+        {
+            AssignShadowResolution(static_cast<ShadowResolutionCategory>(ShadowMenuPick));
+            ShadowMenuPick = -1;
+        }
+
+        char Auto[32];
+        std::snprintf(Auto, sizeof(Auto), "Auto (%u)", Native.ShadowMapSide);
+        const char* Current = Settings.ShadowResolution == ShadowResolutionCategory::FollowQualityTier
+                            ? Auto : ShadowResolutionLabel(Settings.ShadowResolution);
+        if (ControlKit::Dropdown(Surface, ShadowDropdownExtent, Current, ShadowMenuOpen, Inner, Opacity).Clicked)
+            ShadowMenuOpen = true;
+        RowY += RowH + RowGap;
+    }
+
+    // Row 3 — the resolved map, in texels and in memory, so an override's cost is visible where it is chosen.
+    {
+        const PlaneExtent Ctl = ControlKit::ControlRow(Surface, Content.MinimumX, RowY, Content.Width(), "Map",
+                                                       ControlKit::Palette().TextDim, Opacity);
+        const double Bytes = static_cast<double>(Tier.ShadowMapSide) * static_cast<double>(Tier.ShadowMapSide) * 4.0;
+        char Line[96];
+        std::snprintf(Line, sizeof(Line), "%u x %u - %.1f MB per light tap", Tier.ShadowMapSide, Tier.ShadowMapSide,
+                      Bytes / (1024.0 * 1024.0));
+        const PlanePoint Size = Surface.MeasureText(Line, 13.0f);
+        Surface.Text(Ctl.MinimumX, RowY + (RowH - Size.Y) * 0.5f, Faded(Ink50(), Opacity), Line, 13.0f);
+    }
+
+    return SectionH;
+}
+
+void ControlCentreHost::ConstructRenderFloatingLayout(PixelSpace& Surface, float Opacity) noexcept
+{
+    if (!ShadowMenuOpen) return;
+    static const char* const Options[] = { "Auto (tier)", "256 x 256", "512 x 512", "1024 x 1024", "2048 x 2048" };
+    uint32_t Chosen = static_cast<uint32_t>(Settings.ShadowResolution);
+    const ControlHit Hit = ControlKit::DropdownMenu(Surface, ShadowDropdownExtent, Options,
+                                                    static_cast<uint32_t>(ShadowResolutionCategory::Count),
+                                                    Chosen, Pointer, Chosen, Opacity);
+    if (Hit.Clicked) { ShadowMenuPick = static_cast<int>(Chosen); ShadowMenuOpen = false; return; }
+    // Release outside the menu and its button closes it, as with every other dropdown.
+    if (Pointer.Released && !Hit.Hovered && !ShadowDropdownExtent.Encloses(Pointer.X, Pointer.Y)) ShadowMenuOpen = false;
+}
+
 void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentrePageCategory Page, float Opacity, bool Live) noexcept
 {
     const PlaneExtent Card = QueryCardExtent();
@@ -1321,7 +1498,7 @@ void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentr
     Surface.FillRectangle(Card, Faded(PageSheet(), Opacity), PageRadius);
     ControlKit::OutlineRounded(Surface, Card, Faded(Ink05(), Opacity), PageRadius);
 
-    // Header p-8 pb-4: title text-2xl semibold (mb-2) + subtitle text-sm muted; X button top-right.
+    // Header p-8 pb-4: title text-2xl semibold (mb-2) + subtitle text-sm muted; back chevron top-right (RequestLeave → previous page, dirty-checked).
     const ColorQuad TextInk  = InputStyle ? InputInk   : Ink90();
     const ColorQuad MutedInk = InputStyle ? InputMuted : Ink50();
     const float HeaderX = Card.MinimumX + PagePadding;
@@ -1338,7 +1515,7 @@ void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentr
         const bool Hover = Live && Close.Encloses(Pointer.X, Pointer.Y) && !Dialogue.IsVisible();
         if (Hover) Surface.FillRectangle(Close, Faded(Ink05(), Opacity), Close.Width() * 0.5f);   // hover:bg-white/5
         ControlKit::OutlineRounded(Surface, Close, Faded(InputStyle ? Ink10() : Ink06(), Opacity), Close.Width() * 0.5f);
-        ControlKit::GlyphCentred(Surface, Close, PageCloseGlyph, Faded(MutedInk, Opacity), ControlCentreIconCategory::CloseCross);
+        ControlKit::GlyphCentred(Surface, Close, PageCloseGlyph, Faded(MutedInk, Opacity), ControlCentreIconCategory::ChevronBack);
     }
 
     // Appearance only: tab bar Display · Fonts · Theme with a 2 px white underline under the active tab.
@@ -1389,6 +1566,12 @@ void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentr
                 char Scale[16];
                 std::snprintf(Scale, sizeof(Scale), " - %d%%", static_cast<int>(std::lround(Settings.RenderScale * 100.0f)));
                 Status += Scale;
+                // The shadow read-out names the resolved map, not the dropdown entry, so Auto is never ambiguous.
+                const FidelityCriteria Effective = QueryEffectiveCriteria();
+                char Shadow[48];
+                std::snprintf(Shadow, sizeof(Shadow), " - %s shadows %u",
+                              ShadowTechniqueLabel(Effective.ShadowTechnique), Effective.ShadowMapSide);
+                Status += Shadow;
             }
             break;
         case ControlCentrePageCategory::Appearance:
@@ -1471,6 +1654,7 @@ void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentr
     {
         Appearance.ConstructFloatingLayout(Surface, Pointer, Opacity);
         InputPage.ConstructFloatingLayout(Surface, Pointer, Opacity);
+        ConstructRenderFloatingLayout(Surface, Opacity);
         Dialogue.ConstructDialogueLayout(Surface, Card, Pointer);
     }
 }

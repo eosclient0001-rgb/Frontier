@@ -5,11 +5,13 @@
 //       • primary visibility from the R2 visibility raster (SurfaceImage / NormalImage, no primary rays),
 //       • shadow / bounce rays traverse the R3 CWBVH (TraversalCWBVH.slang, bindings 8-9) — O(log N), not O(N),
 //       • ReSTIR-DI *initial candidates only*: M light samples resampled with a weighted reservoir (correct RIS),
-//         with SpatialPassCount extra candidates folded in — there is NO temporal and NO spatial neighbour reuse (R5),
+//         with ExtraCandidateCount further same-pixel candidates folded in, plus temporal (R6 row 2) and
+//         spatiotemporal neighbour reuse (R6 row 3),
 //       • one BSDF-sampled bounce with next-event estimation — plain 1-bounce path tracing, no GI reservoir (R6),
 //       • R4b: surfaces are shaded with the OpenPBR lobe set of MaterialEvaluation.slang (one resolved slab, interpolated
 //         normals + normal maps from the VertexRecord buffer, ray-cone texture LOD, GGX energy / LTC sheen LUTs),
-//       • a running-mean accumulation that restarts on camera motion; motion vectors exist (R2) but are not consumed yet (R5), no denoiser (R6).
+//       • a running-mean accumulation that restarts on camera motion; motion vectors exist (R2) but are consumed only
+//         by the R6 temporal reservoir (row 2), no denoiser (R7).
 //    It is kept as the reference image source until the staged frame graph replaces it.
 // NOTE: GLSL source lowered to SPIR-V by the build scripts (glslc -fshader-stage=compute --target-env=vulkan1.2 -I Engine).
 //       World space is right-handed Z-up (CLAUDE.md §7); the pixel→ray mapping (Shaders/RayGeneration.slang) is applied by
@@ -103,7 +105,47 @@ struct GpuVertex            // VertexRecord (SceneRecords.slang, 64 B) — R4b: 
 layout(std430, binding = 11) readonly buffer VertexExtent { GpuVertex Vertices[]; };   // R4b: shared with the R2 raster set
 layout(std430, binding = 12) readonly buffer IndexExtent  { uint      Indices[];  };   // R4b
 // 13 = EnergyLut, 14 = SheenLut (declared in MaterialEvaluation.slang)
-layout(binding = 15) uniform sampler2D Textures[];   // R4a bindless table — ⚠️ moved 11 → 15 in R4b: a variable-count binding must be the last one in the set
+layout(binding = 15) uniform sampler2D MotionImage;   // R6: R2 motion (CurrentUv − PreviousUv, [0,1] uv units) — texelFetch only
+struct GpuReservoir   // 64 B stride — mirrors ReservoirBufferRecord in SwapchainExchange.cpp
+{
+    vec4  Sample;    // xyz = light sample point, w = WeightSum
+    uvec4 Counts;    // x = M, y = SelectedLight, z = Visible, w = Age
+    vec4  UvDepth;   // xy = SelectedUv, z = W, w = view depth at the build pixel [m]
+    vec4  Normal;    // xyz = viewer-facing geometric normal at the build pixel, w = stride guard (ViewportWidth)
+};
+layout(std430, binding = 16) readonly buffer PrevReservoirExtent { GpuReservoir PrevReservoirs[]; };
+layout(std430, binding = 17) writeonly buffer CurrReservoirExtent { GpuReservoir CurrReservoirs[]; };
+layout(rgba16f, binding = 18) uniform image2D HistorySurfaceImage;   // R7a: xyz = normal, w = depth the history mean was shaded at (w ≤ 0 = no surface)
+layout(rgba32f, binding = 19) uniform image2D MomentImage;           // R7: x = E[luma], y = E[luma²], reprojected with the mean
+layout(rgba32f, binding = 20) uniform writeonly image2D DenoiseImage; // R7: xyz = linear radiance, w = variance — the à-trous input
+// ── Bindings 21-24 are the Celestial sky, moons, star tables and post record, declared in
+//    Shaders/SkyRecords.slang, Shaders/MoonRecords.slang and Shaders/PostRecords.slang below. Round 9 vacated
+//    21-24 when the sun/sky system was removed (947b8b9); all four are now filled, each written at bring-up —
+//    a declared-but-never-written descriptor is a validation error rather than free space.
+//    ⚠️ The bindless table is declared BEFORE the includes: MoonAlong samples it, and SkyAlong calls MoonAlong,
+//    so the table and the moons must both be visible where the sky is defined. 25 is still the highest binding
+//    NUMBER in the set, which is what the variable-count rule constrains — source order is free.
+layout(binding = 25) uniform sampler2D Textures[];   // R4a bindless table — ⚠️ moved 11 → 15 in R4b → 18 in R6 → 19 in R7a → 21 in R7 → 23 in A2 → 25 in A7: a variable-count binding must be the last one in the set
+#include "Shaders/MoonRecords.slang"
+#include "Shaders/PostRecords.slang"
+#include "Shaders/SkyRecords.slang"
+#include "Shaders/CloudShadow.slang"
+
+const float kTemporalNormalCos = 0.906308;   // cos(25°): temporal/spatial normal validation
+const float kTemporalDepthTol  = 0.10;       // 10% relative depth validation
+const uint  kTemporalMClamp    = 20u;        // prev M capped at 20× current M (ReSTIR M-clamp)
+const uint  kSpatialTapCeiling = 4u;         // R6 row 3: the widest cross the kernel will walk; SpatialTapCount picks how many of them run.
+                                             //    R10: the COUNT is now tier-keyed (Minimal 0 … Reference 4) because a hardcoded 4 made the
+                                             //    cheapest tier spend two thirds of its lighting budget — 12 of 18 full-BSDF target-function
+                                             //    evaluations per pixel — on spatial reuse. The ceiling stays 4 so the 90° tap spacing below is
+                                             //    unchanged for any tier that asks for the full cross.
+// ⚠️ The cross is ROTATED and its radius JITTERED per pixel per frame. A fixed offset set makes the reuse graph static:
+//    pixel (x,y) could only ever exchange reservoirs with (x±r,y) and (x,y±r), which partitions the image into r²
+//    residue classes that never share a sample. Each class converges to its own estimate and temporal accumulation
+//    cements the difference instead of averaging it away, so a fixed r = 11 lattice stayed visible at any frame count.
+//    Measured: 121 isolated pools versus 1 when jittered, and a 30 % class-to-class bias that never decayed.
+const float kSpatialRadiusMinPx = 4.0;       // [px] at 1280 px width — scaled by RenderWidth/1280 for resolution independence
+const float kSpatialRadiusMaxPx = 16.0;      // [px] the band's mean matches the old fixed radius, so reuse reach is unchanged
 
 const uint kMaterialTextureNone = 0xFFFFFFFFu;
 
@@ -149,7 +191,7 @@ struct SurfaceFrame         // everything the kernel needs at a hit besides the 
     vec3  Geometric;        // face normal facing the viewer side (ray offsets, shadow rays)
     vec3  Emission;         // slab emission × texture [nit]
     float Opacity;          // geometry_opacity × texture alpha
-    float Occlusion;        // baked AO — multiplies the debug ambient floor only
+    float Occlusion;        // baked AO — multiplies the ambient fills (debug floor, moonlight), never the direct light
     float LodBias;          // ½ log2(uvArea / worldArea) + log2(coneWidth / |n·d|): add ½ log2(texW·texH) per texture
 };
 
@@ -290,16 +332,33 @@ layout(push_constant) uniform ReSTIRConstants
     uint    ViewportWidth;          // [px]  render width
     uint    ViewportHeight;         // [px]  render height
     uint    FrameIndex;             // [cnt] temporal accumulation index
-    uint    SpatialPassCount;       // [cnt] ReSTIR spatial resampling passes
+    uint    ExtraCandidateCount;  // [cnt] extra same-pixel RIS candidates (R6 row 3: renamed; true spatial reuse is the fixed kSpatialTaps cross)
     uint    SamplesPerPixel;        // [cnt] primary DI candidates per pixel
     uint    AlphaMaskedMaterialCount; // [cnt] R4b: materials flagged kMaterialFlagAlphaMask (0 ⇒ any-hit shadow rays) — was TriangleCount (unused here)
     uint    LightTriangleCount;     // [cnt] emissive triangles for DI sampling
     uint    FeatureFlags;           // [bit] kFeatureGlobalIllumination | kFeatureAntiAliasing
+    // Push constants stay within 128 bytes, which is Vulkan’s GUARANTEED MINIMUM. Growing past it works on a
+    //    card offering 256 and fails on one offering only the guarantee — a defect that appears on someone
+    //    else’s machine. Anything that does not fit goes into a uniform buffer rather than growing this block.
+    // A7d. How much colour the eye still has at the adapted luminance: 1 in daylight, 0 under starlight.
+    float   ColourSaturation;       // [-]   taken from one of the reserves, so the block is still 128 B
+    uint    SpatialTapCount;        // [cnt] R10: spatial-reuse neighbours per pixel, tier-keyed (0 = cross off)
+    uint    PushReserve2;
+    uint    PushReserve3;
+    uint    PushReserve4;
+    uint    PushReserve5;
+    uint    PushReserve6;
+    uint    PushReserve7;
 };
 
 const uint kFeatureGlobalIllumination = 1u;   // bit 0: trace the secondary bounce (section 4)
 const uint kFeatureAntiAliasing       = 2u;   // bit 1: sub-pixel jitter — applied by the R2 raster/resolve, not here
 const uint kFeatureAmbientFloor       = 4u;   // bit 2: add albedo × AmbientStrength (debug fill light; default OFF)
+const uint kFeatureTemporalReuse      = 8u;   // bit 3: R6 row 2 — temporal reservoir reuse (back-projection + validation)
+const uint kFeatureSpatialReuse       = 16u;  // bit 4: R6 row 3 — spatiotemporal neighbour reuse (pairwise MIS)
+const uint kFeatureAliasPick          = 32u;  // bit 5: R6 row 3 — Walker-alias light pick (off = uniform, the R0 identity proof)
+const uint kFeatureTemporalReprojection = 64u;  // bit 6: R7a — reproject the running mean through the R2 motion vectors
+const uint kFeatureDenoise            = 128u; // bit 7: R7 — the à-trous filter runs, so the kernel defers the tone map to it
 
 float PixelSpreadAngle() { return 2.0 * FieldOfViewTanHalf / float(ViewportHeight); }   // [rad] R4b ray-cone spread per pixel
 
@@ -332,7 +391,7 @@ uint MakeSeed(uvec2 pixel, uint frame)
 const uint kMaterialFlagAlphaMask = 2u;      // MaterialRecord.Flags bit (SceneRecords.slang)
 const uint kAlphaMaskRetraceLimit = 4u;      // cut-out layers a shadow / bounce ray may pass through before giving up
 struct Ray    { vec3 origin; vec3 dir; };
-struct Hit    { bool valid; float t; vec3 pos; vec3 normal; uint matIdx; uint primitive; };
+struct Hit    { bool valid; float t; vec3 pos; vec3 normal; uint matIdx; uint primitive; uint instance; };
 
 const float kEps = 1e-4;
 const float kInf = 1e30;
@@ -357,6 +416,52 @@ bool AlphaMaskCutOut(uint primitive, vec3 hitPos)
         opacity *= textureLod(Textures[nonuniformEXT(mat.Textures.x)], uv, 0.0).a;
     }
     return opacity < mat.AlphaCutoff;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                        HIT IDENTITY  (D2 — one definition, one place)
+//------------------------------------------------------------------------------------------------------------------------
+// A hit is identified by the PAIR (instance, primitive). Today Triangles[] is one flat world-space array and the
+//    traversal returns a flat slot, so the instance is recovered from the layout. Once instances carry transforms
+//    (D3) the traversal will return the pair directly and only these two helpers change — every caller already
+//    speaks in terms of the pair, so nothing downstream has to be revisited.
+//
+// ⚠️ Why this is worth a helper rather than an inline loop: the search below used to be copy-pasted at the bounce
+//    site. Two copies of an identity rule is how (instance, primitive) silently disagree between the primary hit
+//    and the bounce hit — and because ReSTIR reuses hits across frames, a disagreement decorrelates the reservoir
+//    instead of crashing. One definition removes that whole class of bug.
+
+// Instance owning a flat primitive slot. Triangles[] is laid out per instance in FlatTriangleOffset order —
+//    SceneStructure::Finalise assigns each offset from the size of a growing vector, walking instances in order,
+//    so the sequence is non-decreasing — and the answer is the LAST instance whose offset does not exceed the
+//    slot. That is a sorted search, so it is done in log₂(N) steps rather than by walking.
+//
+//    Why "last" and not "first": an instance with no triangles repeats its predecessor's offset, and the walk it
+//    replaces kept advancing over equal offsets, so it settled on the last of a run. This binary search converges
+//    to the same element by moving `low` on every `<=`, which keeps empty instances resolving exactly as before
+//    instead of handing the primitive to whichever duplicate the search happened to land on first.
+//
+//    Cornell has two instances, where this is a wash. It is O(instances) per ray hit that matters: every closest
+//    hit on every candidate and bounce ray pays it, so on a real scene the walk is a per-ray tax proportional to
+//    scene complexity.
+uint InstanceOfPrimitive(uint flatPrimitive)
+{
+    uint low  = 0u;
+    uint high = uint(Instances.length()) - 1u;      // Instances is never empty: a hit implies geometry
+    while (low < high)
+    {
+        // Bias the midpoint UP so that `low = mid` always advances and the loop cannot stall on high == low + 1.
+        uint mid = low + (high - low + 1u) / 2u;
+        if (Instances[mid].FlatTriangleOffset <= flatPrimitive) low  = mid;
+        else                                                    high = mid - 1u;
+    }
+    return low;
+}
+
+// Primitive index WITHIN its instance — what ResolveMaterial expects for vertex/uv lookup.
+uint LocalPrimitive(uint flatPrimitive, uint instance)
+{
+    return flatPrimitive - Instances[instance].FlatTriangleOffset;
 }
 
 Hit TraceScene(Ray ray)
@@ -385,6 +490,7 @@ Hit TraceScene(Ray ray)
         closest.normal = normalize(cross(tri.v1.xyz - tri.v0.xyz, tri.v2.xyz - tri.v0.xyz));   // R4a: face normal from the edges (slot now carries UVs)
         closest.matIdx = floatBitsToUint(tri.v0.w);
         closest.primitive = h.primitive;
+        closest.instance  = InstanceOfPrimitive(h.primitive);   // D2: identity is the (instance, primitive) pair
         return closest;
     }
     return closest;
@@ -436,8 +542,9 @@ vec3 SampleCosineHemisphere(vec3 normal, float u1, float u2)
 //                             LIGHT TRIANGLE AREA SAMPLING (uniform area pick)
 //------------------------------------------------------------------------------------------------------------------------
 
-// Light triangles come from the luminaire table (R2); the pick stays UNIFORM over luminaires so the Cornell image is
-//    bit-for-bit the R0 estimator. The table also carries a Walker alias entry + area-power pdf — R5 switches to it.
+// Light triangles come from the luminaire table (R2), which carries a Walker alias entry + area-power pdf per
+//    luminaire — R6 row 3 picks through it (PickLight) for many-light scenes. Uniform stays behind the F5 toggle
+//    for the R0 identity proof.
 uint LightTriangle(uint lightIdx) { return Luminaires[lightIdx].TriangleSlot; }
 
 vec3 SampleLightPoint(uint lightTriIdx, float u1, float u2)
@@ -451,28 +558,211 @@ vec3 SampleLightPoint(uint lightTriIdx, float u1, float u2)
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                          LIGHT EMISSION + POSITION ACCESSORS
+//------------------------------------------------------------------------------------------------------------------------
+// Every read of a light's emission or position goes through these two accessors, so the shading, reservoir and
+//    reuse paths cannot disagree about what a light is.
+
+vec3 LightEmission(uint lightIndex)
+{
+    return Materials[floatBitsToUint(Triangles[LightTriangle(lightIndex)].v0.w)].Emissive.xyz;
+}
+
+vec3 SampleLightPointFor(uint lightIndex, float u1, float u2)
+{
+    return SampleLightPoint(lightIndex, u1, u2);
+}
+
+// Face normal of a light triangle, winding side — the emitter cosine (CPU parity: VisibilityRaster's LdotL).
+//    A luminaire is single-sided: a sample seen from behind its face emits nothing.
+vec3 LightNormal(uint lightIndex)
+{
+    uint idx = LightTriangle(lightIndex);
+    vec3 e1 = Triangles[idx].v1.xyz - Triangles[idx].v0.xyz;
+    vec3 e2 = Triangles[idx].v2.xyz - Triangles[idx].v0.xyz;
+    vec3 n = cross(e1, e2);
+    float len = length(n);
+    return len > 0.0 ? n / len : vec3(0.0, 0.0, 1.0);
+}
+
+// ── The sun as a direct light ──────────────────────────────────────────────────────────────────────────
+// The light set used to be emissive mesh triangles only: sunlight entered through the sky integral on escaped
+//    rays plus the flat indoor fill, so no surface ever caught direct sun and nothing cast a sun shadow. The sun
+//    now joins the reservoir as a first-class candidate — a distant disc sampled uniformly in solid angle,
+//    shadowed by the same TraceShadow every mesh sample takes. It rides the SAME reservoir (not a side
+//    estimator), so temporal/spatial reuse, M-clamp and W apply to sunlight unchanged — the reservoir algebra
+//    only ever asks w = p̂/p, and both light kinds now answer it exactly.
+const float kSunPickProbability = 0.5;   // when sun and lamps coexist, each candidate flips this coin
+const uint  kSunLightIndex      = 0xFFFFFFFFu;   // SelectedLight sentinel: the sample is a sun direction, not a triangle
+const float kSunShadowDistance  = 1.0e4;   // [m] the far point sun samples are stored as — past any scene, inside float range
+
+// Solid angle of the solar disc. Half-angle form, not 2π(1−cosθ): at 0.0046 rad the subtraction cancels to a
+//    1 % error in float, and this Ω divides every sun weight — the bias would land directly on the sunlight.
+float SunSolidAngle()
+{
+    const float kPi = 3.14159265358979323846;
+    float s = sin(kSunAngularRadius * 0.5);
+    return 4.0 * kPi * s * s;
+}
+
+// Uniform direction within the sun's disc cone (pdf 1/Ω). The basis excludes the dominant axis, so it cannot
+//    degenerate wherever the sun stands — zenith included.
+vec3 SampleSunDirection(vec3 sunDir, float u1, float u2)
+{
+    float cosMax = cos(kSunAngularRadius);
+    float cosT = mix(1.0, cosMax, u1);
+    float sinT = sqrt(max(0.0, 1.0 - cosT * cosT));
+    float phi = 6.28318530718 * u2;
+    vec3 up = abs(sunDir.x) < 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+    vec3 t = normalize(cross(up, sunDir));
+    vec3 b = cross(sunDir, t);
+    return normalize(t * (sinT * cos(phi)) + b * (sinT * sin(phi)) + sunDir * cosT);
+}
+
+// Effective disc radiance: the record carries the panel's direct-sun factor Q (0.11·gain·colour·T), and the
+//    estimator needs radiance — L·Ω must equal the panel's formula, so L = Q/Ω. One Ω, from the shared radius,
+//    which is also why the sun's d² is 1: the far point is a shadow-ray target, not a distance.
+vec3 SunEmission()
+{
+    return SkySunDirect.xyz / SunSolidAngle();
+}
+
+// R6 row 3: light-triangle pick. Alias ON (F5, default): one Walker-alias probe — col uniform, accept on
+//    Threshold else redirect to AliasSlot, source pdf = Probability[z] (power/total, SceneStructure.cpp).
+//    Alias OFF: uniform over luminaires with p = 1/N — bit-for-bit the R0 estimator (identity proof).
+//    Any positive pSource keeps RIS unbiased: the converged image is unchanged, only the noise differs.
+uint PickLight(inout uint seed, out float pSource)
+{
+    if ((FeatureFlags & kFeatureAliasPick) != 0u)
+    {
+        uint col = uint(RandFloat(seed) * float(LightTriangleCount));
+        col = min(col, LightTriangleCount - 1u);
+        uint z = RandFloat(seed) < Luminaires[col].Threshold ? col : Luminaires[col].AliasSlot;
+        pSource = Luminaires[z].Probability;
+        return z;
+    }
+    pSource = 1.0 / float(LightTriangleCount);
+    return min(uint(RandFloat(seed) * float(LightTriangleCount)), LightTriangleCount - 1u);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                  RIS DIRECT LIGHTING — WEIGHTED RESERVOIR SAMPLING (initial candidates)
 //------------------------------------------------------------------------------------------------------------------------
+
+// R6 row 2: full-BSDF target — f(wo,wi)·Le·cosθ·cosφ/d², both cosines. The emitter cosine is the CPU raster's
+//    LdotL: a lamp quad is single-sided, and without it the room's edges catch light the fixture never threw.
+//    Any positive target keeps RIS unbiased (converged image unchanged); the BSDF-weighted one is required for
+//    correct re-evaluation at foreign pixels on reuse.
+float PHatFull(SurfaceFrame F, ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 emit, vec3 toLight, float dist2, vec3 lightNormal)
+{
+    float dist = max(sqrt(dist2), 1e-9);
+    vec3  lDir = toLight / dist;
+    float cosT = max(0.0, dot(F.Geometric, lDir));
+    if (cosT <= 0.0) return 0.0;
+    float cosL = max(0.0, dot(lightNormal, -lDir));
+    if (cosL <= 0.0) return 0.0;
+    vec3  wi = ToLocal(F, lDir);
+    if (wi.z <= 0.0) return 0.0;
+    return max(dot(EvaluateBsdf(m, L, wo, wi), emit), 0.0) * cosT * cosL / (dist2 + 0.001);
+}
+
+// Sun target: f·L·cos — the sun is at infinity, so no d². L is the record's attenuated direct radiance, which
+//    is zero at night and when the sun hides, so dead sun candidates carry p̂ = 0 and can never be selected.
+float PHatSun(SurfaceFrame F, ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 sunEmit, vec3 sunDir)
+{
+    float cosT = max(0.0, dot(F.Geometric, sunDir));
+    if (cosT <= 0.0) return 0.0;
+    vec3 wi = ToLocal(F, sunDir);
+    if (wi.z <= 0.0) return 0.0;
+    return max(dot(EvaluateBsdf(m, L, wo, wi), sunEmit), 0.0) * cosT;
+}
+
+// p̂ of a STORED sample — the one question every merge asks, answered for both light kinds. A sun sample's
+//    direction is rebuilt from its far point, exactly: the point is 1e4 m out, so the rebuild differs from the
+//    sampled direction by ~1e-4 rad — inside the disc, where the pdf is still 1/Ω.
+float PHatSelected(SurfaceFrame F, ShadingRecord m, ResolvedLayers L, vec3 wo, uint light, vec3 toLight, vec3 hitPos)
+{
+    if (light == kSunLightIndex)
+    {
+        vec3 sunDir = normalize(toLight);
+        return PHatSun(F, m, L, wo, SunEmission() * CloudShadowTransmittance(hitPos, sunDir), sunDir);
+    }
+    return PHatFull(F, m, L, wo, LightEmission(light), toLight, dot(toLight, toLight), LightNormal(light));
+}
 
 struct Reservoir
 {
     vec3  SelectedPoint;    // chosen light sample position
-    float WeightSum;        // running sum of candidate weights
+    float WeightSum;        // running sum of candidate weights (Σ p̂/p_source)
     uint  SampleCount;      // M: number of considered candidates
-    float UnbiasedWeight;   // W: final unbiased contribution weight
+    float UnbiasedWeight;   // W: final unbiased contribution weight (WeightSum / (M · p̂(z)))
+    uint  SelectedLight;    // R6: luminaire-table index of the chosen sample (kills the O(L) nearest-emissive searches)
+    vec2  SelectedUv;       // R6: area-sample uv of the chosen sample on its triangle (p̂ re-evaluation on reuse)
+    uint  Visible;          // R6: visibility of the chosen sample at the shading pixel (1 = lit; re-traced on reuse)
 };
 
-void ResampleCandidate(inout Reservoir res, vec3 point, float weight, inout uint seed)
+void ResampleCandidate(inout Reservoir res, vec3 point, uint light, vec2 uv, float weight, inout uint seed)
 {
     res.WeightSum    += weight;
     res.SampleCount  += 1u;
     if (RandFloat(seed) * res.WeightSum <= weight)
+    {
         res.SelectedPoint = point;
+        res.SelectedLight = light;
+        res.SelectedUv    = uv;
+    }
+}
+
+// One direct-light candidate, sun or lamp — the initial loop and the extras loop both draw through here, so the
+//    two cannot drift into different estimators. Weights answer w = p̂/p EXACTLY, both continuous pdfs included:
+//    a mesh sample's pdf is p_coin·p_light·(1/area) and a sun sample's is p_coin·(1/Ω). The kernel used to divide
+//    by the pick alone, which paid every lamp's contribution divided by its area (the Cornell lamp rendered 2.5x
+//    too bright) — the CPU raster never had this bug (Tap.Weight carries the area), and the SunDirectProof pins
+//    the corrected scale against quadrature. HitPos anchors the sun's far point; SunUp (any direct radiance)
+//    decides whether the coin is flipped at all.
+void DrawDirectCandidate(SurfaceFrame F, ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 hitPos, bool sunUp,
+                         out vec3 point, out uint light, out vec2 uv, out float weight, inout uint seed)
+{
+    bool sun = sunUp && (LightTriangleCount == 0u || RandFloat(seed) < kSunPickProbability);
+    if (sun)
+    {
+        float u1 = RandFloat(seed);
+        float u2 = RandFloat(seed);
+        vec3 sunDir = SampleSunDirection(SkySunDirection.xyz, u1, u2);
+        point  = hitPos + sunDir * kSunShadowDistance;
+        light  = kSunLightIndex;
+        uv     = vec2(u1, u2);
+        float pHat = PHatSun(F, m, L, wo, SunEmission() * CloudShadowTransmittance(hitPos, sunDir), sunDir);
+        float pPick = LightTriangleCount > 0u ? kSunPickProbability : 1.0;
+        weight = pHat * SunSolidAngle() / pPick;
+    }
+    else
+    {
+        float  pSource;
+        uint   li = PickLight(seed, pSource);
+        float  u1 = RandFloat(seed);
+        float  u2 = RandFloat(seed);
+        point = SampleLightPointFor(li, u1, u2);
+        light = li;
+        uv    = vec2(u1, u2);
+        vec3 toLight = point - hitPos;
+        float pHat = PHatFull(F, m, L, wo, LightEmission(li), toLight, dot(toLight, toLight), LightNormal(li));
+        float pPick = sunUp ? 1.0 - kSunPickProbability : 1.0;
+        weight = pHat * Luminaires[li].Area / (pSource * pPick);
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                              ACES FILMIC TONE MAPPING
 //------------------------------------------------------------------------------------------------------------------------
+
+// Rec. 709 luma. Must match AtrousDenoise.slang exactly: the kernel measures the variance of THIS quantity and the
+//    filter compares neighbours by it, so a mismatch would make the filter's noise estimate describe a different
+//    signal from the one it is filtering.
+float Luminance(vec3 colour)
+{
+    return dot(colour, vec3(0.2126, 0.7152, 0.0722));
+}
 
 float AcesFilm(float x)
 {
@@ -482,6 +772,16 @@ float AcesFilm(float x)
 
 vec3 ToneMap(vec3 hdr)
 {
+    // A7d ⚠️ Desaturate BEFORE the exposure and the curve, in linear radiance, because that is where the colour
+    //    physically is. Doing it afterwards would mix display values, and a channel that had already clipped
+    //    would drag the grey it is mixed toward.
+    //
+    //    Below about 3 cd/m² the cones give out before the rods do, so colour drains from what the eye sees and
+    //    by 0.003 it is gone. Rendering full saturation down there is what turns a faint pre-dawn glow into a
+    //    lurid orange band: at 15° below the horizon the glow is 0.078 cd/m² and almost entirely red, so red
+    //    clips while blue stays black. Mixed to grey it reads as the pale band it actually is.
+    const float Grey = dot(hdr, vec3(0.2126, 0.7152, 0.0722));
+    hdr = mix(vec3(Grey), hdr, clamp(ColourSaturation, 0.0, 1.0));
     hdr *= Exposure;
     float r = AcesFilm(hdr.r);
     float g = AcesFilm(hdr.g);
@@ -493,17 +793,119 @@ vec3 ToneMap(vec3 hdr)
 //------------------------------------------------------------------------------------------------------------------------
 //                                              TEMPORAL ACCUMULATION RESOLVE
 //------------------------------------------------------------------------------------------------------------------------
-// Running mean in linear radiance. AccumulationIndex == 0 restarts the history (camera moved / parameter changed);
-//    every later frame folds the new estimate in with weight 1/(n+1). Tone mapping is applied to the mean only.
+// Running mean in linear radiance, REPROJECTED through the R2 motion vectors (R7a).
+//
+// Before R7a the mean was read from the pixel's own address and the whole history was thrown away the instant the
+//    camera moved: the image went to one sample per pixel while moving and only resolved once the camera stopped.
+//    The motion vectors needed to do better already existed — R2 writes them and R6 back-projects temporal
+//    reservoirs through them — they simply were not consumed by the accumulator. This reads the history from where
+//    the surface WAS, so a pan keeps its samples.
+//
+// Validation is deliberately the same rule R6 row 2 uses for reservoirs — 25° normal, 10 % relative depth — rather
+//    than a second, subtly different one. A pixel that fails it is disocclusion: new geometry with no history, and
+//    the honest answer there is to restart rather than smear a neighbour's colour across the silhouette.
+//
+// The history's alpha channel carries the sample count. Reprojection preserves it, so a surface tracked across a
+//    pan keeps converging instead of restarting at n = 1; disocclusion resets it to 1. HistorySurfaceImage stores the
+//    matching (normal, depth) so the next frame can validate against what this frame actually shaded.
 
+const float kReprojectNormalCos = kTemporalNormalCos;   // 25°, identical to the reservoir rule
+const float kReprojectDepthTol  = kTemporalDepthTol;    // 10 % relative
+
+// Depth < 0 marks "no surface" (background); such a pixel never reprojects and never becomes a valid source.
+void ResolveSurface(uvec2 pixel, vec3 radiance, vec3 normal, float depth)
+{
+    vec4  history   = vec4(0.0);
+    float count     = 0.0;
+    bool  resolved  = false;   // did we already establish where this pixel's history comes from?
+
+    const bool reproject = depth > 0.0 && (FeatureFlags & kFeatureTemporalReprojection) != 0u;
+
+    vec2 moments = vec2(0.0);   // R7: x = E[luma], y = E[luma²], carried alongside the mean
+
+    if (FrameIndex > 0u && reproject)
+    {
+        vec2 extent = vec2(float(ViewportWidth), float(ViewportHeight));
+        vec2 cuv    = (vec2(pixel) + 0.5) / extent;
+        vec2 motion = texelFetch(MotionImage, ivec2(pixel), 0).rg;
+        ivec2 prevPx = ivec2(floor((cuv - motion) * extent));
+
+        if (all(greaterThanEqual(prevPx, ivec2(0))) && prevPx.x < int(ViewportWidth) && prevPx.y < int(ViewportHeight))
+        {
+            vec4 prevSurface = imageLoad(HistorySurfaceImage, prevPx);
+            // prevSurface.w <= 0 means that pixel held no surface last frame, so there is nothing to inherit.
+            if (prevSurface.w > 0.0
+                && dot(normal, prevSurface.xyz) > kReprojectNormalCos
+                && abs(depth - prevSurface.w) / max(depth, 1e-3) < kReprojectDepthTol)
+            {
+                history  = imageLoad(HistoryImage, prevPx);
+                count    = history.a;
+                moments  = imageLoad(MomentImage, prevPx).xy;   // the moments follow the same reprojection
+                resolved = true;
+            }
+            // Failing validation is a real disocclusion: leave count at 0 so the mean restarts at n = 1 rather
+            //    than smearing the surface that used to be behind this pixel.
+            else resolved = true;
+        }
+        else resolved = true;   // back-projected off screen — also a disocclusion
+    }
+
+    if (FrameIndex > 0u && !resolved)
+    {
+        // Either reprojection is disabled, or this pixel has no surface to reproject through (background, direct
+        //    emitters). Both read the pixel's own history, which is exactly the pre-R7a behaviour — so with the
+        //    feature bit clear this function is byte-identical to the accumulator it replaced.
+        history = imageLoad(HistoryImage, ivec2(pixel));
+        count   = history.a;
+        moments = imageLoad(MomentImage, ivec2(pixel)).xy;
+    }
+
+    // The lens's answer to the sun, added to the SAMPLE before the running mean reads it — every frame's sample
+    //    carries exactly one flare, so the mean converges to E[radiance] + flare, bounded at any frame count.
+    //    (It used to be added to the MEAN after the update, which stored the flare into the history and added a
+    //    fresh one every frame — the flare grew as (n+1)/2, flooding the frame white within seconds and burying
+    //    the disc. Analytic, so no variance is booked for it: a constant offset leaves E[x²]−E[x]² unchanged.)
+    {
+        vec2 extent = vec2(float(ViewportWidth), float(ViewportHeight));
+        radiance += FlareAlong((vec2(pixel) + 0.5) / extent, extent.x / max(extent.y, 1.0));
+    }
+
+    count      = count + 1.0;
+    vec3 mean  = history.rgb + (radiance - history.rgb) / count;
+
+    // R7: the same incremental mean applied to the first two luminance moments. Variance is E[x²] − E[x]², which is
+    //    the noise estimate the à-trous filter divides by; a pixel with many samples reports a small variance and
+    //    is therefore barely filtered, which is how the denoiser fades out as the image converges.
+    float luma = Luminance(radiance);
+    moments   += (vec2(luma, luma * luma) - moments) / count;
+    // Clamped at zero: with one sample the estimator is exactly zero and float error can push it slightly negative.
+    float sampleVariance = max(moments.y - moments.x * moments.x, 0.0);
+
+    // ⚠️ The image being filtered is the MEAN of n samples, not one sample, so the noise the filter must reason
+    //    about is the variance OF THE MEAN — the sample variance divided by n. Handing it the raw sample variance
+    //    reports a noise level that never falls as the estimate converges, so the filter stays maximally
+    //    permissive forever and keeps blurring an image that no longer needs it.
+    float variance = sampleVariance / count;
+
+    // A single sample carries no information about its own spread. Reporting its luminance squared keeps the
+    //    filter permissive on brand-new pixels (disocclusions), which is exactly where smoothing is needed most.
+    if (count < 2.0) variance = luma * luma;
+
+    imageStore(HistoryImage,     ivec2(pixel), vec4(mean, count));
+    imageStore(HistorySurfaceImage, ivec2(pixel), vec4(normal, depth));
+    imageStore(MomentImage,      ivec2(pixel), vec4(moments, 0.0, 0.0));
+
+    // With the denoiser on, the filter owns the tone map: it needs LINEAR radiance, and tone mapping before a blur
+    //    would average display-space values and darken every gradient. The final à-trous level writes OutputImage.
+    imageStore(DenoiseImage, ivec2(pixel), vec4(mean, variance));
+    if ((FeatureFlags & kFeatureDenoise) == 0u)
+        imageStore(OutputImage, ivec2(pixel), vec4(ToneMap(mean), 1.0));
+}
+
+// Background and other surface-less writes: no normal, no depth, never a reprojection source.
 void Resolve(uvec2 pixel, vec3 radiance)
 {
-    vec4 history = (FrameIndex == 0u) ? vec4(0.0) : imageLoad(HistoryImage, ivec2(pixel));
-    float count  = history.a + 1.0;
-    vec3  mean   = history.rgb + (radiance - history.rgb) / count;
-
-    imageStore(HistoryImage, ivec2(pixel), vec4(mean, count));
-    imageStore(OutputImage,  ivec2(pixel), vec4(ToneMap(mean), 1.0));
+    ResolveSurface(pixel, radiance, vec3(0.0, 0.0, 1.0), -1.0);
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -529,9 +931,20 @@ void main()
 
     if (visibility == kVisibilityInvalid)
     {
-        // Background: pure black. There is no sky and no environment light; anything the raster did not cover must
-        // read as a miss, never as a colour.
-        Resolve(pixel, vec3(0.0));
+        // A missed primary ray sees the sky. This used to contribute nothing, which was correct only while the
+        //    renderer had no environment light — with a real atmosphere it is the background of every outdoor
+        //    frame. SkyAlong returns black when the sky is disabled, so the old behaviour is still reachable.
+        // The kernel reads pre-resolved surfaces and never builds a primary ray, so the direction for a MISSED
+        //    pixel has to be reconstructed here from the same camera basis SurfaceResolve used.
+        vec2  extent = vec2(float(ViewportWidth), float(ViewportHeight));
+        vec2  ndc    = ((vec2(pixel) + 0.5) / extent) * 2.0 - 1.0;
+        float aspect = extent.x / max(extent.y, 1.0);
+        vec3  direction = normalize(CameraForward
+                                  + CameraRight * (ndc.x * FieldOfViewTanHalf * aspect)
+                                  - CameraUp    * (ndc.y * FieldOfViewTanHalf));
+        // A missed ray crosses the whole rain column, so it earns the full bow (the large distance saturates
+        //    the path fraction exactly as the model prescribes for the sky).
+        Resolve(pixel, SkyAlong(direction) + RainbowAlong(direction, SkySunDirection.xyz, 1.0e6));
         return;
     }
 
@@ -563,10 +976,15 @@ void main()
     vec3 accumulatedRadiance = vec3(0.0);
 
     //------------------------------------------------------------------------------------------------------------------
-    // 3. RIS direct lighting — per-pixel initial candidates (+ extra candidates); no temporal/spatial reuse yet
+    // 3. ReSTIR direct lighting — initial candidates (+ extra same-pixel passes), R6 temporal merge, R6 row 3
+    //    spatiotemporal neighbour taps, shade.
     //------------------------------------------------------------------------------------------------------------------
 
-    if (LightTriangleCount > 0u)
+    // Sunlight counts as direct light: the block runs when EITHER light kind exists (a lamp-less outdoor scene
+    //    used to skip it entirely and shade with skylight alone). The sun switch is the record's direct row, so
+    //    night, a hidden sun and a disabled sky all take the lamps-only path with no flag to flip.
+    bool sunUp = dot(SkySunDirect.xyz, vec3(1.0)) > 0.0;
+    if (sunUp || LightTriangleCount > 0u)
     {
         // Initial reservoir from M = SamplesPerPixel candidates
         Reservoir res;
@@ -574,107 +992,182 @@ void main()
         res.WeightSum      = 0.0;
         res.SampleCount    = 0u;
         res.UnbiasedWeight = 0.0;
+        res.SelectedLight  = 0u;
+        res.SelectedUv     = vec2(0.0);
+        res.Visible        = 0u;
 
         for (uint s = 0u; s < SamplesPerPixel; ++s)
         {
-            uint   li          = uint(RandFloat(seed) * float(LightTriangleCount));
-            vec3   lp          = SampleLightPoint(li, RandFloat(seed), RandFloat(seed));
-            vec3   toLight     = lp - hitPos;
-            float  dist        = length(toLight);
-            vec3   lDir        = toLight / dist;
-            float  cosTheta    = max(0.0, dot(hitNormal, lDir));
-
-            // Get light material
-            uint lMatIdx = floatBitsToUint(
-                Triangles[LightTriangle(li)].v0.w);
-            vec3 lEmissive = Materials[lMatIdx].Emissive.xyz;
-
-            // Target function: unshadowed direct contribution
-            float pHat = cosTheta * length(lEmissive) / (dist * dist + 0.001);
-            float w    = pHat / (1.0 / float(LightTriangleCount));
-
-            ResampleCandidate(res, lp, w, seed);
+            vec3  lp; uint li; vec2 luv; float w;
+            DrawDirectCandidate(frame, shading, layers, woLocal, hitPos, sunUp, lp, li, luv, w, seed);
+            ResampleCandidate(res, lp, li, luv, w, seed);
         }
 
-        // Compute unbiased weight W
+        // Compute unbiased weight W (R6: the chosen light comes from the reservoir — no nearest-emissive search)
         if (res.WeightSum > 0.0 && res.SampleCount > 0u)
         {
-            vec3  toSel    = res.SelectedPoint - hitPos;
-            float selDist  = length(toSel);
-            vec3  selDir   = toSel / selDist;
-            float cosTheta = max(0.0, dot(hitNormal, selDir));
+            // p̂ OF THE CURRENT SELECTION, carried from here on.
+            //
+            //    Every later stage needs this same quantity — the target function evaluated at whichever sample
+            //    the reservoir currently holds — and each used to re-derive it with a fresh PHatFull, which is a
+            //    full OpenPBR EvaluateBsdf (GGX D and G2, Fresnel, EON diffuse, coat, sheen). But the selection
+            //    only ever changes at a resample, and when it does the winner's p̂ was JUST computed as part of
+            //    deciding it won. So the value can simply be carried: pSelected below is updated at each point
+            //    the selection can change, and read everywhere the old code called PHatFull again.
+            //
+            //    The pre-R10 code also computed a pHatSel here purely to set UnbiasedWeight, which the block at
+            //    the end of the extras loop then overwrote unconditionally — nothing read it in between. That
+            //    evaluation was dead in every path and is simply gone.
+            float pSelected = 0.0;
 
-            // Find emissive of selected light triangle (nearest emissive)
-            // We stored selected point — lookup which light triangle it came from via brute-force closest match
-            vec3 selEmissive = vec3(0.0);
-            float bestD = kInf;
-            for (uint li = 0u; li < LightTriangleCount; ++li)
-            {
-                uint idx = LightTriangle(li);
-                vec3 triCenter = (Triangles[idx].v0.xyz + Triangles[idx].v1.xyz + Triangles[idx].v2.xyz) / 3.0;
-                float d = distance(triCenter, res.SelectedPoint);
-                if (d < bestD) { bestD = d; selEmissive = Materials[floatBitsToUint(Triangles[idx].v0.w)].Emissive.xyz; }
-            }
-
-            float pHatSel = cosTheta * length(selEmissive) / (selDist * selDist + 0.001);
-            if (pHatSel > 0.0)
-                res.UnbiasedWeight = res.WeightSum / (float(res.SampleCount) * pHatSel);
-
-            // Extra candidates (formerly mislabelled "spatial resampling"): SpatialPassCount further light samples
+            // Extra same-pixel candidates (R6 row 3: renamed from SpatialPassCount): ExtraCandidateCount further light samples
             //    from THIS pixel, resampled with the same target function so the reservoir stays a valid RIS estimate.
-            //    True spatial reuse (neighbour reservoirs + validation) arrives with R5.
-            for (uint sp = 0u; sp < SpatialPassCount; ++sp)
+            for (uint sp = 0u; sp < ExtraCandidateCount; ++sp)
             {
-                uint   nli    = uint(RandFloat(seed) * float(LightTriangleCount));
-                vec3   nlp    = SampleLightPoint(nli, RandFloat(seed), RandFloat(seed));
-                vec3   nToL   = nlp - hitPos;
-                float  nDist  = length(nToL);
-                float  nCos   = max(0.0, dot(hitNormal, nToL / nDist));
-                uint   nMIdx  = floatBitsToUint(Triangles[LightTriangle(nli)].v0.w);
-                vec3   nEmit  = Materials[nMIdx].Emissive.xyz;
-                float  nPHat  = nCos * length(nEmit) / (nDist * nDist + 0.001);
-                float  nW     = nPHat / (1.0 / float(LightTriangleCount));   // p̂ / p_source, same as the initial loop
-                ResampleCandidate(res, nlp, nW, seed);
+                vec3  nlp; uint nli; vec2 nuv; float nW;
+                DrawDirectCandidate(frame, shading, layers, woLocal, hitPos, sunUp, nlp, nli, nuv, nW, seed);
+                ResampleCandidate(res, nlp, nli, nuv, nW, seed);
             }
-            // Recompute W for the final selection (the selected point may have changed).
+            // W for the final selection (the selected point may have changed in the loop above). This is the one
+            //    evaluation that establishes pSelected; everything downstream carries it. PHatSelected answers for
+            //    whichever light kind the reservoir holds — the old code's emit2 temp only knew mesh lights.
             {
-                vec3  toSel2   = res.SelectedPoint - hitPos;
-                float selDist2 = length(toSel2);
-                float cos2     = max(0.0, dot(hitNormal, toSel2 / selDist2));
-                vec3  emit2    = vec3(0.0);
-                float bd       = kInf;
-                for (uint li = 0u; li < LightTriangleCount; ++li)
-                {
-                    uint idx = LightTriangle(li);
-                    vec3 c = (Triangles[idx].v0.xyz + Triangles[idx].v1.xyz + Triangles[idx].v2.xyz) / 3.0;
-                    float d = distance(c, res.SelectedPoint);
-                    if (d < bd) { bd = d; emit2 = Materials[floatBitsToUint(Triangles[idx].v0.w)].Emissive.xyz; }
-                }
-                float pHat2 = cos2 * length(emit2) / (selDist2 * selDist2 + 0.001);
-                res.UnbiasedWeight = pHat2 > 0.0 ? res.WeightSum / (float(res.SampleCount) * pHat2) : 0.0;
+                vec3 toSel2 = res.SelectedPoint - hitPos;
+                pSelected   = PHatSelected(frame, shading, layers, woLocal, res.SelectedLight, toSel2, hitPos);
+                res.UnbiasedWeight = pSelected > 0.0 ? res.WeightSum / (float(res.SampleCount) * pSelected) : 0.0;
             }
 
-            // Evaluate visibility and shade
-            if (!TraceShadow(hitPos + hitNormal * kEps, res.SelectedPoint))
+            // R6 row 2: temporal reuse — back-project by the R2 motion vector, validate the previous surface
+            //    (25° normal, 10% depth, stride guard), pairwise-MIS merge with M-clamp, then re-trace visibility
+            //    at the current pixel (standard ReSTIR — keeps W unbiased after reuse).
+            uint resAge = 0u;
+            if ((FeatureFlags & kFeatureTemporalReuse) != 0u && FrameIndex > 0u)
+            {
+                vec2 cuv = (vec2(pixel) + 0.5) / vec2(float(ViewportWidth), float(ViewportHeight));
+                vec2 motion = texelFetch(MotionImage, ivec2(pixel), 0).rg;
+                vec2 puv = cuv - motion;
+                ivec2 prevPx = ivec2(floor(puv * vec2(float(ViewportWidth), float(ViewportHeight))));
+                if (all(greaterThanEqual(prevPx, ivec2(0))) && prevPx.x < int(ViewportWidth) && prevPx.y < int(ViewportHeight))
+                {
+                    GpuReservoir prev = PrevReservoirs[prevPx.y * int(ViewportWidth) + prevPx.x];
+                    uint prevM = prev.Counts.x;
+                    bool valid = prevM > 0u
+                        && prev.Normal.w == float(ViewportWidth)   // stride guard (render-scale change)
+                        && dot(hitNormal, prev.Normal.xyz) > kTemporalNormalCos
+                        && abs(primaryT - prev.UvDepth.w) / max(primaryT, 1e-3) < kTemporalDepthTol;
+                    if (valid)
+                    {
+                        uint mPrevCapped = min(prevM, kTemporalMClamp * res.SampleCount);
+                        vec3 prevToL  = prev.Sample.xyz - hitPos;
+                        float pPrev = PHatSelected(frame, shading, layers, woLocal, prev.Counts.y, prevToL, hitPos);
+                        // pCur is p̂ at the current selection, and res has not been touched since pSelected was
+                        //    established — so it IS pSelected, not something to evaluate again.
+                        float pCur  = pSelected;
+                        float wCur  = pCur * res.UnbiasedWeight * float(res.SampleCount);
+                        float wPrev = pPrev * prev.UvDepth.z * float(mPrevCapped);
+                        float total = wCur + wPrev;
+                        if (total > 0.0 && RandFloat(seed) * total <= wPrev)
+                        {
+                            res.SelectedPoint = prev.Sample.xyz;
+                            res.SelectedLight = prev.Counts.y;
+                            res.SelectedUv    = prev.UvDepth.xy;
+                            pSelected         = pPrev;   // the winner's p̂, already in hand from the merge test
+                        }
+                        res.SampleCount = res.SampleCount + mPrevCapped;
+                        res.WeightSum   = total;
+                        resAge = prev.Counts.w + 1u;
+                        // pFin is p̂ of whichever sample survived the merge, and both candidates' p̂ were computed
+                        //    to decide it — so it is a selection between two known values, never a new evaluation.
+                        res.UnbiasedWeight = pSelected > 0.0 ? total / (float(res.SampleCount) * pSelected) : 0.0;
+                    }
+                }
+            }
+
+            // R6 row 3: spatiotemporal neighbour reuse — K taps read the STABLE prev-frame buffer at neighbouring
+            //    pixels of the current frame (same-frame Curr reads would race within the dispatch). Each valid tap
+            //    merges by the same pairwise-MIS algebra as temporal: validation, per-tap M-clamp, winner age+1.
+            //    Gated on kFeatureSpatialReuse and FrameIndex > 0 (no prev frame on the first accumulation frame).
+            if ((FeatureFlags & kFeatureSpatialReuse) != 0u && FrameIndex > 0u)
+            {
+                // Rotation and radius are drawn from a SEPARATE stream, seeded from the pixel and frame, so the
+                //    main `seed` sequence used by resampling is untouched — the R6 identity proofs still hold.
+                uint  tapSeed = PcgHash(MakeSeed(pixel, FrameIndex) ^ 0x9E3779B9u);
+                float scale   = float(ViewportWidth) / 1280.0;
+                float angle   = RandFloat(tapSeed) * 6.28318531;
+                float radius  = mix(kSpatialRadiusMinPx, kSpatialRadiusMaxPx, RandFloat(tapSeed)) * scale;
+
+                uint spatialTaps = min(SpatialTapCount, kSpatialTapCeiling);
+                for (uint tap = 0u; tap < spatialTaps; ++tap)
+                {
+                    // The cross keeps its 90° spacing — it is still four taps of equal reach, just aimed
+                    //    differently each frame, so no direction is systematically favoured over time.
+                    float  theta  = angle + float(tap) * (6.28318531 / float(spatialTaps));
+                    ivec2  offset = ivec2(int(round(radius * cos(theta))), int(round(radius * sin(theta))));
+                    if (offset.x == 0 && offset.y == 0) continue;   // a rounded-to-zero tap is the pixel itself
+                    ivec2 npx = ivec2(pixel) + offset;
+                    if (any(lessThan(npx, ivec2(0))) || npx.x >= int(ViewportWidth) || npx.y >= int(ViewportHeight)) continue;
+                    GpuReservoir neigh = PrevReservoirs[npx.y * int(ViewportWidth) + npx.x];
+                    uint neighM = neigh.Counts.x;
+                    bool nValid = neighM > 0u
+                        && neigh.Normal.w == float(ViewportWidth)   // stride guard (render-scale change)
+                        && dot(hitNormal, neigh.Normal.xyz) > kTemporalNormalCos
+                        && abs(primaryT - neigh.UvDepth.w) / max(primaryT, 1e-3) < kTemporalDepthTol;
+                    if (!nValid) continue;
+                    uint mNeighCapped = min(neighM, kTemporalMClamp * res.SampleCount);
+                    vec3 neighToL  = neigh.Sample.xyz - hitPos;
+                    float pNeigh = PHatSelected(frame, shading, layers, woLocal, neigh.Counts.y, neighToL, hitPos);
+                    // Same identity as the temporal merge: p̂ at the current selection is the carried value.
+                    float pSelf  = pSelected;
+                    float wSelf  = pSelf * res.UnbiasedWeight * float(res.SampleCount);
+                    float wNeigh = pNeigh * neigh.UvDepth.z * float(mNeighCapped);
+                    float nTotal = wSelf + wNeigh;
+                    uint  takeAge = resAge;
+                    if (nTotal > 0.0 && RandFloat(seed) * nTotal <= wNeigh)
+                    {
+                        res.SelectedPoint = neigh.Sample.xyz;
+                        res.SelectedLight = neigh.Counts.y;
+                        res.SelectedUv    = neigh.UvDepth.xy;
+                        takeAge = neigh.Counts.w + 1u;
+                        pSelected         = pNeigh;   // the winner's p̂, already in hand
+                    }
+                    res.SampleCount = res.SampleCount + mNeighCapped;
+                    res.WeightSum   = nTotal;
+                    resAge = takeAge;
+                    res.UnbiasedWeight = pSelected > 0.0 ? nTotal / (float(res.SampleCount) * pSelected) : 0.0;
+                }
+            }
+
+            // Visibility re-traced at the current pixel; an occluded merged sample contributes nothing.
+            res.Visible = TraceShadow(hitPos + hitNormal * kEps, res.SelectedPoint) ? 0u : 1u;
+            if (res.Visible == 0u) res.UnbiasedWeight = 0.0;
+
+            // Publish the final reservoir for next frame's temporal reuse (always — even occluded, M still counts).
+            GpuReservoir outRes;
+            outRes.Sample  = vec4(res.SelectedPoint, res.WeightSum);
+            outRes.Counts  = uvec4(res.SampleCount, res.SelectedLight, res.Visible, resAge);
+            outRes.UvDepth = vec4(res.SelectedUv, res.UnbiasedWeight, primaryT);
+            outRes.Normal  = vec4(hitNormal, float(ViewportWidth));
+            CurrReservoirs[pixel.y * ViewportWidth + pixel.x] = outRes;
+
+            // Shade (R6: the stored selection carries its light — no search). The sun divides by nothing: it is at
+            //    infinity, so its d² is 1 by definition and the stored far point's is meaningless. Mesh lights pay
+            //    the emitter cosine the target pays (same quantity, same value — shade and target must agree).
+            if (res.Visible == 1u)
             {
                 vec3 shadeDir = normalize(res.SelectedPoint - hitPos);
                 float shadeCos = max(0.0, dot(hitNormal, shadeDir));
 
-                // Re-fetch emissive of chosen point
-                vec3 chosenEmit = vec3(0.0);
-                float bd2 = kInf;
-                for (uint li = 0u; li < LightTriangleCount; ++li)
-                {
-                    uint idx = LightTriangle(li);
-                    vec3 c = (Triangles[idx].v0.xyz + Triangles[idx].v1.xyz + Triangles[idx].v2.xyz) / 3.0;
-                    float d = distance(c, res.SelectedPoint);
-                    if (d < bd2) { bd2 = d; chosenEmit = Materials[floatBitsToUint(Triangles[idx].v0.w)].Emissive.xyz; }
-                }
-
-                float dist2 = dot(res.SelectedPoint - hitPos, res.SelectedPoint - hitPos);
                 vec3  wiLocal = ToLocal(frame, shadeDir);
                 vec3  f = wiLocal.z > 0.0 ? EvaluateBsdf(shading, layers, woLocal, wiLocal) : vec3(0.0);   // R4b: full lobe stack
-                accumulatedRadiance += f * chosenEmit * shadeCos * res.UnbiasedWeight / (dist2 + 0.01);
+                if (res.SelectedLight == kSunLightIndex)
+                    accumulatedRadiance += f * SunEmission() * shadeCos * res.UnbiasedWeight;
+                else
+                {
+                    vec3 chosenEmit = LightEmission(res.SelectedLight);
+                    float shadeCosL = max(0.0, dot(LightNormal(res.SelectedLight), -shadeDir));
+                    float dist2 = dot(res.SelectedPoint - hitPos, res.SelectedPoint - hitPos);
+                    accumulatedRadiance += f * chosenEmit * shadeCos * shadeCosL * res.UnbiasedWeight / (dist2 + 0.01);
+                }
             }
         }
     }
@@ -697,23 +1190,33 @@ void main()
             bounceRay.dir    = bounceDir;
 
             Hit bounceHit = TraceScene(bounceRay);
+
+            // ⚠️ An escaped bounce ray now collects the sky, and this is the half that changes the LIGHTING
+            //    rather than the background. In an outdoor scene the sky is the largest emitter present: it is
+            //    what makes an upward-facing surface read cool and an unlit face take the colour of the air
+            //    above it. Dropping it was correct when there was no environment light and is a missing light
+            //    source now.
+            //
+            //    The throughput already carries the BSDF and the cosine from the bounce, so the sky enters
+            //    exactly as any other emitter would — no separate ambient term, no second light path.
+            if (!bounceHit.valid && dot(bounceDir, hitNormal) > 0.0)
+            {
+                accumulatedRadiance += throughput * SkyAlong(bounceDir);
+            }
             if (bounceHit.valid && dot(bounceDir, hitNormal) > 0.0)
             {
                 GpuMaterial   bMat  = Materials[bounceHit.matIdx];
-                uint          bInst = 0u;   // the flat primitive index already addresses Triangles[]; find its instance for the vertex range
-                // Triangles[] is laid out per instance in FlatTriangleOffset order; binary search would need a count — linear over
-                //    instances is bounded (Sponza: 105) and only runs once per bounce.
-                for (uint i = 0u; i + 1u < uint(Instances.length()); ++i) if (Instances[i + 1u].FlatTriangleOffset <= bounceHit.primitive) bInst = i + 1u; else break;
-                GpuInstance   bInstance = Instances[bInst];
+                // D2: TraceScene already resolved the instance — reuse it rather than repeating the search here.
+                GpuInstance   bInstance = Instances[bounceHit.instance];
                 SurfaceFrame  bFrame;
                 float         bCone = coneWidth + bounceHit.t * PixelSpreadAngle();
-                ShadingRecord bShading = ResolveMaterial(bMat, bInstance, bounceHit.primitive - bInstance.FlatTriangleOffset, bounceHit.pos, -bounceDir, bCone, bFrame);
+                ShadingRecord bShading = ResolveMaterial(bMat, bInstance, LocalPrimitive(bounceHit.primitive, bounceHit.instance), bounceHit.pos, -bounceDir, bCone, bFrame);
 
                 if (dot(bFrame.Emission, bFrame.Emission) > 0.0)
                 {
                     accumulatedRadiance += throughput * bFrame.Emission;
                 }
-                else if (LightTriangleCount > 0u)
+                else if (sunUp || LightTriangleCount > 0u)
                 {
                     vec3  bHitPos    = bounceHit.pos;
                     vec3  bHitNormal = bFrame.Geometric;
@@ -721,22 +1224,51 @@ void main()
                     if (bWo.z <= 0.0) bWo = vec3(bWo.xy, 1e-3);
                     ResolvedLayers bLayers = ResolveLayers(bShading, bWo);
 
-                    uint  bLi  = uint(RandFloat(seed) * float(LightTriangleCount));
-                    vec3  bLp  = SampleLightPoint(bLi, RandFloat(seed), RandFloat(seed));
-                    vec3  bToL = bLp - bHitPos;
-                    float bDist = length(bToL);
-                    vec3  bLDir = bToL / bDist;
-                    float bCos  = max(0.0, dot(bHitNormal, bLDir));
-                    vec3  bWi   = ToLocal(bFrame, bLDir);
-
-                    uint  bLMatIdx = floatBitsToUint(Triangles[LightTriangle(bLi)].v0.w);
-                    vec3 bLEmit = Materials[bLMatIdx].Emissive.xyz;
-
-                    if (bCos > 0.0 && bWi.z > 0.0 && !TraceShadow(bHitPos + bHitNormal * kEps, bLp))
+                    // The bounce draws one light the same way the reservoir candidates do — sun or lamp by the same
+                    //    coin — because a single unweighted sample is a one-candidate reservoir and the pdfs are the
+                    //    same ones DrawDirectCandidate divides by. (The old mesh-only line divided by the slot count
+                    //    but not the area: the same 1/A bias the reservoir had, fixed here too.)
+                    bool sunBounce = sunUp && (LightTriangleCount == 0u || RandFloat(seed) < kSunPickProbability);
+                    if (sunBounce)
                     {
-                        float bDist2 = bDist * bDist;
-                        vec3  bF = EvaluateBsdf(bShading, bLayers, bWo, bWi);
-                        accumulatedRadiance += throughput * bF * bLEmit * bCos / ((bDist2 + 0.01) * float(LightTriangleCount));
+                        vec3 bSunDir = SampleSunDirection(SkySunDirection.xyz, RandFloat(seed), RandFloat(seed));
+                        float bCos = max(0.0, dot(bHitNormal, bSunDir));
+                        vec3  bWi  = ToLocal(bFrame, bSunDir);
+                        if (bCos > 0.0 && bWi.z > 0.0
+                            && !TraceShadow(bHitPos + bHitNormal * kEps, bHitPos + bSunDir * kSunShadowDistance))
+                        {
+                            vec3  bF = EvaluateBsdf(bShading, bLayers, bWo, bWi);
+                            float pPick = LightTriangleCount > 0u ? kSunPickProbability : 1.0;
+                            accumulatedRadiance += throughput * bF * SunEmission() * bCos * SunSolidAngle() / pPick;
+                        }
+                    }
+                    else
+                    {
+                        const uint bSlots = LightTriangleCount;
+                        uint  bLi  = min(uint(RandFloat(seed) * float(bSlots)), bSlots - 1u);
+                        vec3  bLp  = SampleLightPointFor(bLi, RandFloat(seed), RandFloat(seed));
+                        vec3  bToL = bLp - bHitPos;
+                        float bDist = length(bToL);
+                        vec3  bLDir = bToL / bDist;
+                        float bCos  = max(0.0, dot(bHitNormal, bLDir));
+                        float bCosL = max(0.0, dot(LightNormal(bLi), -bLDir));
+                        vec3  bWi   = ToLocal(bFrame, bLDir);
+
+                        vec3 bLEmit = LightEmission(bLi);
+
+                        if (bCos > 0.0 && bCosL > 0.0 && bWi.z > 0.0 && !TraceShadow(bHitPos + bHitNormal * kEps, bLp))
+                        {
+                            float bDist2 = bDist * bDist;
+                            vec3  bF = EvaluateBsdf(bShading, bLayers, bWo, bWi);
+                            // ⚠️ MULTIPLY by the slot count: the pick above chose one of bSlots uniformly (pdf
+                            //    1/bSlots) and the point uniformly on its triangle (pdf 1/area), so the sample's
+                            //    pdf is pMesh/(bSlots·area) and the estimate divides by the PDF — i.e. multiplies
+                            //    by slots·area. The old line divided by bSlots (a defended-in-comment inversion),
+                            //    which paid the whole second bounce divided by N² and forgot the area too.
+                            float pMesh = sunUp ? 1.0 - kSunPickProbability : 1.0;
+                            accumulatedRadiance += throughput * bF * bLEmit * bCos * bCosL
+                                                 * Luminaires[bLi].Area * float(bSlots) / ((bDist2 + 0.01) * pMesh);
+                        }
                     }
                 }
             }
@@ -749,5 +1281,18 @@ void main()
     if ((FeatureFlags & kFeatureAmbientFloor) != 0u)
         accumulatedRadiance += albedo * frame.Occlusion * AmbientStrength;
 
-    Resolve(pixel, accumulatedRadiance);
+    // Moonlight, and it is NOT debug-only. The reference panel adds its moon loop to every shaded surface
+    //    unconditionally, and the CPU raster learned why: a scene lit only by the sky renders as black geometry
+    //    against a correct sky unless the environment light reaches the surfaces too. Escaped bounce rays collect
+    //    the discs through SkyAlong (the GI moonlight); this is the direct fill for the primary hit, so one
+    //    bounce is enough for moonlight to read. Zero when no moon is up, by the count in the block.
+    accumulatedRadiance += albedo * frame.Occlusion * MoonAmbient();
+    // The bow in the air the view ray crossed: primary rays only (a rasterizer's placement — the escaped bounce
+    //    is a transport path, not a view). The view direction runs camera-ward reversed, and the primary travel
+    //    is the rain column — short rays earn no bow, which keeps the arc off nearby geometry.
+    accumulatedRadiance += RainbowAlong(-viewDir, SkySunDirection.xyz, primaryT);
+
+    // R7a: the primary hit's geometric normal and camera distance are what the next frame validates its
+    //    back-projection against — the same pair R6 row 2 uses to validate reprojected reservoirs.
+    ResolveSurface(pixel, accumulatedRadiance, hitNormal, primaryT);
 }

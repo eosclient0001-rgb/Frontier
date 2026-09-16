@@ -52,6 +52,11 @@ void RenderScheduler::ApplyTheme() noexcept
     Colours[ImGuiCol_Tab]             = ImVec4(0.08f, 0.20f, 0.36f, 0.86f);
     Colours[ImGuiCol_TabHovered]      = ImVec4(0.14f, 0.36f, 0.62f, 1.00f);
     Colours[ImGuiCol_TabActive]       = ImVec4(0.18f, 0.44f, 0.74f, 1.00f);
+
+    // The development editor seats the trapezoid tab sheet over the entries above.
+#ifdef FRONTIER_DEVELOPMENT
+    Editor_.ApplyTheme();
+#endif
 }
 
 //============================================================================================================================================
@@ -64,45 +69,129 @@ void RenderScheduler::Present(
     const ProjectZero::RayTracingSolver& Scene,
     uint32_t                             ViewportWidth,
     uint32_t                             ViewportHeight,
+    EditorInstance*                        Instances,
+    uint32_t                             InstanceCount,
+    EditorSheet*                         PickedSheet,
     const OverlayHook&                   Overlay) noexcept
 {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    const float PanelWidth  = 320.0f;
-    const float PanelHeight = static_cast<float>(ViewportHeight);
+    // 🔴 The development editor owns the dockspace: EditorHost records a fullscreen host window, the
+    //    dockspace, and the three docked panels (outliner / viewport / inspector) with the trapezoidal tabs
+    //    Patches A/B/C switch on. Without FRONTIER_DEVELOPMENT there is no dockspace and no editor — the F3
+    //    popup below still floats, and the Control Centre overlay still records through the hook.
+#ifdef FRONTIER_DEVELOPMENT
+    Editor_.Record(Instances, InstanceCount, PickedSheet);
+#else
+    (void)Instances; (void)InstanceCount; (void)PickedSheet;
+#endif
 
-    ImGui::SetNextWindowPos (ImVec2(static_cast<float>(ViewportWidth) - PanelWidth, 0.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(PanelWidth, PanelHeight), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.93f);
-
-    constexpr ImGuiWindowFlags PanelFlags =
-        ImGuiWindowFlags_NoMove            |
-        ImGuiWindowFlags_NoResize          |
-        ImGuiWindowFlags_NoCollapse        |
-        ImGuiWindowFlags_NoBringToFrontOnFocus;
-
-    ImGui::Begin("Control Centre", nullptr, PanelFlags);
-
-    SectionCamera(Camera);
-    ImGui::Spacing();
-    SectionReSTIR(Integrator, ViewportWidth, ViewportHeight);
-    ImGui::Spacing();
-    SectionScene(Scene);
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    if (ImGui::Button("Quit", ImVec2(-1.0f, 0.0f)))
-        QuitRequested = true;
-
-    ImGui::End();
+    // ⚠️ The scene / render inspector that used to live here is gone: it is now Engine/Editor, recorded above.
+    //    This still owns the ImGui tick because the Control Centre overlay records itself between NewFrame and
+    //    Render through the hook below, and the F3 diagnostic popup is still an ImGui window.
+    //
+    //    SectionCamera / SectionReSTIR / SectionScene are retained but unreferenced by design: they are the
+    //    fallback if the editor has to be disabled, and deleting them would make that a rewrite rather than a
+    //    one-line change.
+    (void)Integrator; (void)Camera; (void)Scene; (void)ViewportWidth; (void)ViewportHeight;
 
     if (Overlay) Overlay();
 
     ImGui::Render();
+}
+
+bool RenderScheduler::QueryEditorCapturesPointer() const noexcept
+{
+    return ImGui::GetIO().WantCaptureMouse;
+}
+
+bool RenderScheduler::QueryEditorCapturesKeyboard() const noexcept
+{
+    return ImGui::GetIO().WantCaptureKeyboard;
+}
+
+uint32_t RenderScheduler::QueryPickedInstance() const noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    return Editor_.QueryPickedInstance();
+#else
+    return kNoEditorInstance;
+#endif
+}
+
+void RenderScheduler::PickInstance(uint32_t Index) noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    Editor_.PickInstance(Index);
+#else
+    (void)Index;
+#endif
+}
+
+void RenderScheduler::AssignEditorView(uint64_t Texture, uint32_t Width, uint32_t Height) noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    Editor_.AssignViewTexture(static_cast<ImTextureID>(Texture), Width, Height);
+#else
+    (void)Texture; (void)Width; (void)Height;
+#endif
+}
+
+float RenderScheduler::QueryEditorViewWidth() const noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    return Editor_.QueryViewWidth();
+#else
+    return 0.0f;
+#endif
+}
+
+float RenderScheduler::QueryEditorViewHeight() const noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    return Editor_.QueryViewHeight();
+#else
+    return 0.0f;
+#endif
+}
+
+void RenderScheduler::AssignEditorReadout(const EditorReadout* Readout) noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    Editor_.AssignReadout(Readout);
+#else
+    (void)Readout;
+#endif
+}
+
+uint32_t RenderScheduler::QueryEditorOrderRevision() const noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    return Editor_.QueryOrderRevision();
+#else
+    return 0u;
+#endif
+}
+
+void RenderScheduler::SeatViewportOrbit(const ViewportOrbit& Seated) noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    Editor_.SeatViewportOrbit(Seated);
+#else
+    (void)Seated;
+#endif
+}
+
+const ViewportOrbit& RenderScheduler::QueryViewportOrbit() const noexcept
+{
+#ifdef FRONTIER_DEVELOPMENT
+    return Editor_.QueryViewportOrbit();
+#else
+    static const ViewportOrbit kIdle{};
+    return kIdle;
+#endif
 }
 
 //============================================================================================================================================
@@ -155,18 +244,28 @@ void RenderScheduler::SectionReSTIR(
 
     const ReSTIRIntegratorConfiguration& Config = Integrator.QueryConfiguration();
 
-    int Candidates    = static_cast<int>(Config.CandidatesPerPixel);
-    int SpatialPasses = static_cast<int>(Config.SpatialPassCount);
-    float Exposure    = Config.Exposure;
+    int Candidates = static_cast<int>(Config.CandidatesPerPixel);
+    int Extra      = static_cast<int>(Config.ExtraCandidateCount);
+    float Exposure = Config.Exposure;
 
     if (ImGui::SliderInt("Candidates / px", &Candidates, 1, 32))
         Integrator.AssignCandidatesPerPixel(static_cast<uint32_t>(std::clamp(Candidates, 1, 32)));
 
-    if (ImGui::SliderInt("Spatial passes",  &SpatialPasses, 0, 8))
-        Integrator.AssignSpatialPassCount(static_cast<uint32_t>(std::clamp(SpatialPasses, 0, 8)));
+    if (ImGui::SliderInt("Extra candidates", &Extra, 0, 8))   // R6 row 3: renamed (was "Spatial passes" — these never left the pixel)
+        Integrator.AssignExtraCandidateCount(static_cast<uint32_t>(std::clamp(Extra, 0, 8)));
 
     if (ImGui::SliderFloat("Exposure", &Exposure, 0.1f, 4.0f, "%.2f"))
         Integrator.AssignExposure(Exposure);
+
+    bool Temporal = Config.TemporalReuse;   // R6: off-switches for the A/B proofs (converged image must match)
+    bool Spatial  = Config.SpatialReuse;
+    bool Alias    = Config.AliasPick;       // R6 row 3: off = uniform pick (R0 identity); F5 in the F3 popup flips the same flag
+    if (ImGui::Checkbox("Temporal reuse", &Temporal))
+        Integrator.AssignTemporalReuse(Temporal);
+    if (ImGui::Checkbox("Spatial reuse", &Spatial))
+        Integrator.AssignSpatialReuse(Spatial);
+    if (ImGui::Checkbox("Alias pick", &Alias))
+        Integrator.AssignAliasPick(Alias);
 
     ImGui::Spacing();
     ImGui::Text("Frame      %u", Integrator.QueryAccumulationIndex());

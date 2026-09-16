@@ -89,6 +89,21 @@ void InputExchange::ReleaseAllInputs() noexcept
     MouseButtonStates.fill(false);
     CursorDelta      = Vector3{ 0.0f, 0.0f, 0.0f };
     MouseScrollDelta = 0.0f;
+    // Focus loss discards pending text too: characters typed into another window must not appear in a field here
+    //    when focus comes back.
+    ClearTextQueue();
+}
+
+void InputExchange::PushCharacter(uint32_t Codepoint) noexcept
+{
+    if (CharacterCount >= TextQueueCapacity) return;   // drop rather than grow; the loop must not allocate
+    Characters[CharacterCount++] = Codepoint;
+}
+
+void InputExchange::PushEditKey(uint32_t GlfwKey, bool Shift, bool Control) noexcept
+{
+    if (EditKeyCount >= TextQueueCapacity) return;
+    EditKeys[EditKeyCount++] = EditKeyRecord{ GlfwKey, Shift, Control };
 }
 
 void InputExchange::AssignGamepadAxis(float LeftX, float LeftY, float RightX, float RightY, float LeftTrig, float RightTrig) noexcept
