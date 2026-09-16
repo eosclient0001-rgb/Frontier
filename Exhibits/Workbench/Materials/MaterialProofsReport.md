@@ -48,7 +48,7 @@ Proves the CPU `MaterialIndex` (records, flags, fold/mix, channel×stage registr
 - **Selection** — all 8 reflectance selections + priority (transmission beats coat, cloth beats aniso),
   M3 cloth entry/exit/retention, emissive lamp stays Standard.
 
-## 2. Furnace proof — `MaterialEvaluation.slang` compiled 1:1 as C++ (3451/3451)
+## 2. Furnace proof — `MaterialEvaluation.slang` compiled 1:1 as C++ (3479/3479)
 
 The shader under test is `#include`d as C++ through `SlangCpuShim.h`, so these numbers are the shipped
 shading code, not a model of it. Tables are baked fresh each run (32×32, 1024 spp/cell).
@@ -139,10 +139,13 @@ ok R_ss+T_ss ceiling/floor r=0.15 mu=0.5 E=0.9997 Ess=0.9982 · mu=1.0 E=1.0000 
 ok R_ss+T_ss ceiling/floor r=0.50 mu=0.5 E=0.9600 Ess=0.8579 · mu=1.0 E=0.9921 Ess=0.9147
 ok single smooth anchor mu=0.5/1.0 E=1.0000/1.0000   ← G→1, micro→macro: MUST be 1, no tables
 ok T-branch dominates smooth glass (19182/20000) · smooth T clusters at Snell (19167/19182)
+ok single numeric over-closure E=1.0363/1.0179 + invisible-facet gap=0.0763/0.0257 (mu=0.5/1.0, r=0.5)
+ok off-eta bounded ior=1.1/2.0 E=0.9627/0.9558 (single-eta approx: bounded, not tight)
 ```
 
 The `R+T=E_ss` equality was REJECTED by data+theory (transmitted rays bend toward the normal and shadow
 less, +4–12% at rough-oblique) and replaced by the rigorous ceiling + empirical floor above.
+The numeric bounds pin the invisible-facet mass (opposed-facet T + underside-facet R — see the T_ms note).
 
 ### M4 thin-wall compound — sampling, Beer, smooth limit, weight sweep
 
@@ -157,6 +160,7 @@ ok smooth thin glass transmits (18792/20000) · antipodal (18764/18792)
 ok clear-glass throughput 0.9596 vs 0.9616
 ok Beer T-only, 3 channels × 3 depths, ratios match exp(−σt) to ≤0.003 (nT≈110k each)
 ok weight sweep sw=0/0.25/0.5/1: sampler E=1.0012/0.9889/0.9788/0.9592, all ≤ 1.01
+ok tw sweep tw=0/0.25/0.5/0.75/1: numeric E=0.0399/0.2746/0.5037/0.7175/1.0722 (tw=1 sees wall-level invisible mass)
 ok weight-0 film invisible (E=1.0012) + straight-through (19607/19607)
 ok u.w dead when opaque (2000/2000 bitwise) · metal kills the transmit mix · metal transmits nothing
 ```
@@ -167,7 +171,18 @@ sampler-vs-pdf histogram (all 10 |cos| bins match to MC noise after the fix).
 
 ## 3. Known gaps (acknowledged, by design)
 
-- **T_ms** — transmission multiple scattering (≤4% at rough-oblique); needs a second-lobe model + bounds.
+- ~~**T_ms**~~ TERMINATED 2026-09-16 (implemented, measured, reverted — SS-only is minimax-optimal). The full
+  story: a second lobe WAS built (M(μ,α) baked into `Energy.w`, S(μo)·S(μi)·η²/(π·Q) shape, η²-exact to 1e-7,
+  ①b MS-decomposition identity proven) — then killed by measurement. The T-sampler covers only VNDF-reachable
+  wi (p_T = 0 where wo·ht < 0); the D·G lobe form assigns ~6.8 % to unreachable wi (opposed-facet T +
+  underside-facet R — the η²-required |wo·m|·|wi·m| symmetry FORBIDS gating it out, and any μo-dependent
+  normaliser breaks the η² exchange too). Rendering energy is therefore environment-dependent: BSDF-only
+  paths see E ≈ 0.96 while a furnace environment (NEE covering unreachable wi at MIS weight exactly 1) sees
+  E_num ≈ 1.036 (gap 0.0763 at r=0.5/mu=0.5, 25σ). A uniform second lobe adds to the over-end 4× faster than
+  to the under-end (reachable fraction ≈ 0.23) — SS-only spread [0.959, 1.028] (centre 0.993) beats SS+MS
+  [0.968, 1.064] (centre 1.018) on width AND centring. Kept from the expedition: the numeric over-closure +
+  invisible-mass bounds (block ②), the eta sweep (②c), the tw sweep (④b). Sheet re-rendered bit-identical
+  (sha unchanged — the BSDF is back to its pre-expedition bytes).
 - **M9 thick-glass tracking** — solid-glass interior traversal (exhibit renders the honest thin-wall look).
 - **M5 subsurface** (channels 16–17) · **M6 displacement** (channel 20, acked as none).
 - **Denoiser + motion vectors** — parked by direction; after the material system, not inside it.
@@ -192,7 +207,5 @@ row striping with per-(panel, frame, pixel) seeds: **deterministic, byte-stable 
 
 ## 5. What's next
 
-1. **T_ms** second-lobe model + furnace bounds — the ≤4% rough-oblique transmission gap. ← NEXT
-2. **M9 thick-glass tracking** + solid-glass shaderball panel.
-3. **M5 subsurface** (channels 16–17) and its ReSTIR/shaded wiring.
-4. **Denoiser + motion vectors** (parked per direction).
+1. **M9 thick-glass tracking** + solid-glass shaderball panel. ← NEXT
+3. **Denoiser + motion vectors** (parked per direction).

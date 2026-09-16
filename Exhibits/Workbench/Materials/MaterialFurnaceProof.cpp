@@ -43,6 +43,7 @@ inline vec4 FetchSheenFull(float mu, float alpha)   // M3: + E_charlie in .w
     return vec4(Out[0], Out[1], Out[2], Out[3]);
 }
 
+
 #include "MaterialEvaluation.slang"
 
 namespace {
@@ -750,8 +751,15 @@ void ProofTransmissionSingle()
     // exact BY CONSTRUCTION (P(R|m) + P(T|m) = 1 per facet); the macro statement is the rigorous two-sided bound
     // E_ss − 0.02 ≤ R_ss+T_ss ≤ 1.005. The ceiling is hard (branch weights ≤ 1, VNDF normalised); the floor is
     // empirical but principled — transmitted rays bend toward the normal and shadow LESS than reflected ones, so T
-    // systematically exceeds its (1−F)·E_ss share (measured +4–12 % at rough-oblique, → 0 smooth). The missing
-    // 1 − (R+T) is multiple scattering (exits glass mostly as T: the documented T_ms gap).
+    // systematically exceeds its (1−F)·E_ss share (measured +4–12 % at rough-oblique, → 0 smooth).
+    // REACHABLE vs FULL (T_ms termination note): the branch estimator integrates over VNDF-reachable wi only
+    // (p_T = 0 where wo·ht(wo,wi) < 0 — opposed facets carry no VNDF mass). The D·G lobe form still assigns ~6.8 %
+    // there (opposed-facet T + underside-facet R — the η²-required |wo·m|·|wi·m| symmetry FORBIDS gating it out:
+    // any wo·m > 0 gate breaks the η² exchange, and a μo-dependent normaliser breaks it too). So rendering energy
+    // is environment-dependent: BSDF-only paths see E ≈ 0.96, while a furnace environment (NEE covering unreachable
+    // wi with MIS weight exactly 1) sees E_num ≈ 1.03. A uniform second lobe provably cannot close both (it adds to
+    // the over-end 4× faster than to the under-end — reachable fraction ≈ 0.23); SS-only is minimax-optimal
+    // (spread [0.959, 1.028], centre 0.993). The numeric bounds below pin the invisible-facet mass so any drift fails.
     for (float rough : { 0.15f, 0.5f })
     {
         vec2 a = AnisotropicAlpha(rough, 0.0f);
@@ -790,7 +798,62 @@ void ProofTransmissionSingle()
             float E = acc / static_cast<float>(N);
             CHECK(E <= 1.005f, "R_ss+T_ss ceiling (r=%.2f mu=%.1f E=%.4f)", rough, muO, E);
             CHECK(E >= Ess - 0.02f, "R_ss+T_ss floor (r=%.2f mu=%.1f E=%.4f Ess=%.4f)", rough, muO, E, Ess);
+            if (rough > 0.3f)   // broad lobe: the cosine furnace is quiet; pins the invisible-facet over-closure
+            {
+                float numR = 0.0f, numT = 0.0f;
+                const int N0 = 400000;
+                for (int i = 0; i < N0; ++i)
+                {
+                    vec3 up = CosineSample(Rand01(), Rand01());
+                    vec3 hr = normalize(wo + up);
+                    float fr = FresnelDielectric(std::fabs(dot(wo, hr)), ior);
+                    numR += fr * GgxD(hr, a) * GgxG2(wo, up, a) / (4.0f * wo.z * up.z);
+                    vec3 dn = -CosineSample(Rand01(), Rand01());
+                    numT += TransmissionEvaluateSingle(wo, dn, a, 1.0f, ior).x;
+                }
+                float Enum = 3.14159265358979f * (numR + numT) / static_cast<float>(N0);
+                float gap = Enum - E;
+                CHECK(Enum > 1.005f && Enum < 1.05f,
+                      "single numeric over-closure (r=%.2f mu=%.1f E=%.4f)", rough, muO, Enum);
+                CHECK(gap > 0.01f && gap < 0.09f,
+                      "invisible-facet mass bounded (r=%.2f mu=%.1f gap=%.4f)", rough, muO, gap);
+            }
         }
+    }
+    // ②c Eta-sweep: the single-interface lobe carries no baked tables, so off-eta behaviour is bounded, not tight.
+    for (float ior : { 1.1f, 2.0f })
+    {
+        vec2 a = AnisotropicAlpha(0.5f, 0.0f);
+        vec3 wo = vec3(std::sqrt(1.0f - 0.25f), 0.0f, 0.5f);
+        float acc = 0.0f;
+        const int N = 100000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec3 h = SampleGgxVndf(wo, a, vec2(Rand01(), Rand01()));
+            float F = FresnelDielectric(std::fabs(dot(wo, h)), ior);
+            float dvis = GgxVndfPdf(wo, h, a);
+            if (Rand01() < 1.0f - F)
+            {
+                vec4 r = RefractDielectric(-wo, h, 1.0f / ior);
+                vec3 wi = r.xyz;
+                float dnom = dot(wo, h) + ior * dot(wi, h);
+                float jac = (ior * ior) * std::fabs(dot(wi, h)) / (dnom * dnom + 1e-12f);
+                float pdf = (1.0f - F) * dvis * jac;
+                vec3 f = TransmissionEvaluateSingle(wo, wi, a, 1.0f, ior);
+                acc += f.x * std::fabs(wi.z) / std::max(pdf, 1e-12f);
+            }
+            else
+            {
+                vec3 wi = reflect(-wo, h);
+                if (wi.z <= 0.0f) continue;
+                float pdf = F * dvis / (4.0f * std::max(dot(wo, h), 1e-4f));
+                float d = F * GgxD(h, a) * GgxG2(wo, wi, a) / (4.0f * wo.z * wi.z);
+                acc += d * wi.z / std::max(pdf, 1e-12f);
+            }
+        }
+        float E = acc / static_cast<float>(N);
+        CHECK(E <= 1.01f, "off-eta ceiling (ior=%.1f E=%.4f)", ior, E);
+        CHECK(std::fabs(E - 1.0f) < 0.05f, "off-eta closure (ior=%.1f E=%.4f)", ior, E);
     }
     // ②b Smooth absolute anchor: at roughness 0.05 the lobe is delta-ish (G → 1, micro-Fresnel → macro), so the
     // branch estimator MUST return 1 — no tables, no approximations, the strongest scale check on Single.
@@ -998,8 +1061,8 @@ void ProofTransmissionThin()
             }
         }
     }
-    // ①b Direct f/p identity on fixed pairs (no MC): f·|cos|/p = G₁(−d1)·(1−F_x)·Beer (separable entry-G₁(wo)
-    // cancels D_vis; the /η² and the pdf's exit Jacobian reconcile through étendue).
+    // ①b Direct f/p identity on fixed pairs (no MC): f·|cos|/p = (G₁(−d1) + MS_entry·cos_w/(η²·p))·(1−F_x)·Beer —
+    // the SS part (separable entry-G₁(wo) cancels D_vis; /η² and the exit Jacobian reconcile through étendue) plus
     {
         vec2 a = AnisotropicAlpha(0.35f, 0.0f);
         vec3 sigma = vec3(0.4f, 0.2f, 0.1f);
@@ -1146,6 +1209,43 @@ void ProofTransmissionThin()
             }
             CHECK(nT > 10000, "weight-0 film transmits (nT=%d)", nT);
             CHECK(static_cast<float>(okT) / std::max(nT, 1) > 0.9f, "weight-0 T is straight-through (%d/%d)", okT, nT);
+        }
+    }
+    // ④b transmit_weight sweep: partial transmission blends diffuse + KC×(1−wT) + T_ss across the wT range.
+    // Ceiling-only (energy VARIES by design: tw = 0 is a dark dielectric, tw = 1 closes near 1); tw = 0 asserts
+    // dark in BOTH estimators (T dead in eval AND sample — a leak in either trips one of them).
+    for (float tw : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+    {
+        ShadingRecord m = GlassMaterial(0.3f);
+        m.TransmissionWeight = tw;
+        vec3 wo = normalize(vec3(0.2f, 0.0f, 1.0f));
+        ResolvedLayers L = ResolveLayers(m, wo);
+        float ref = 0.0f;
+        const int N0 = 100000;
+        for (int i = 0; i < N0; ++i)
+        {
+            ref += EvaluateBsdf(m, L, wo, CosineSample(Rand01(), Rand01())).x;
+            ref += EvaluateBsdf(m, L, wo, -CosineSample(Rand01(), Rand01())).x;
+        }
+        ref *= 3.14159265358979f / static_cast<float>(N0);
+        // Wall-level invisible-entry-mass: the full-mixture numeric sees the opposed-facet entry mass (~+6 %
+        // through the exit composition — the ② note composed through the wall), so tw = 1 over-closes ≈ 1.07.
+        CHECK(ref <= 1.10f, "tw-sweep numeric energy (tw=%.2f E=%.4f)", tw, ref);
+        float acc = 0.0f;
+        const int N = 100000;
+        for (int i = 0; i < N; ++i)
+        {
+            vec4 s = SampleBsdf(m, L, wo, vec4(Rand01(), Rand01(), Rand01(), Rand01()));
+            if (s.w <= 0.0f) continue;
+            vec3 wi = s.xyz;
+            acc += EvaluateBsdf(m, L, wo, wi).x * std::fabs(wi.z) / s.w;
+        }
+        acc /= static_cast<float>(N);
+        CHECK(acc <= 1.01f, "tw-sweep sampler energy (tw=%.2f E=%.4f)", tw, acc);
+        if (tw == 0.0f)
+        {
+            CHECK(acc < 0.15f, "tw-0 sampler dark (E=%.4f)", acc);
+            CHECK(ref < 0.15f, "tw-0 numeric dark (E=%.4f)", ref);
         }
     }
     // ⑤ R4b regression: the 4th uniform is dead when opaque (bitwise), and metal kills T exactly.
