@@ -617,6 +617,132 @@ export function hydraulicCarve({
 }
 
 /**
+ * STREAM POWER LAW (SPL) erosion — the replacement engine.
+ *
+ *   dh/dt = -K · Q^m · S^n   (fluvial incision)  +  sediment diffusion
+ *
+ * Q = water discharge (D8 contributing area, meander-biased),
+ * S = downslope gradient. Because incision scales with Q^m, a channel
+ * carrying 100× the discharge cuts 5-15× faster — the network
+ * self-organizes into a true river-order hierarchy, which particle
+ * carving can't produce (it cuts everything at one rate, hence the
+ * parallel-stripe look):
+ *   · deep U-shaped main-stem canyons (high Q, sustained cutting)
+ *   · progressively shallower tributary systems
+ *   · smooth hillslopes between channels — no rill carpet
+ * Diffusion relaxes over-steep canyon walls (V → U), builds terrace
+ * shelves, and spreads bedload. Same physical model as Gaea's
+ * dendritic canyon systems, applied directly to the SDF field.
+ *
+ * @returns {{carvedM3:number, depositedM3:number, flow:Float32Array,
+ *            flowMax:number, pits:Uint8Array}}
+ */
+export function streamPowerCarve({
+  h, N, voxel, rng, seed,
+  iterations, K = 2.5e-4, m = 0.55, n = 1.4,
+  cutFraction, erodibility, seaLevel, bedrock,
+  mScale = 0.035, mAmp = 1.8,
+  erosionMap, depositMap, valley = null,
+}) {
+  const size = N * N;
+  const cellArea = voxel * voxel;
+  const cutPerStep = voxel * cutFraction * 0.9; // voxel-matched cut cap
+  let carved = 0, deposited = 0, flowMax = 1;
+
+  let ff = computeFlow(h, N, voxel, rng, seed, mScale, mAmp);
+
+  for (let it = 0; it < iterations; it++) {
+    const { flow, pits, order, downIdx } = ff;
+
+    // ---- incision + bedload (highest → lowest so upflow is settled) ----
+    for (let ii = 0; ii < size; ii++) {
+      const idx = order[ii];
+      if (pits[idx]) continue;
+      const cur = h[idx];
+      if (cur < seaLevel + 0.4) continue; // keep the coastline clean
+      const down = downIdx[idx];
+      if (down < 0) continue;
+      const cx = idx % N, cy = (idx / N) | 0;
+      const dx = (down % N) - cx, dy = ((down / N) | 0) - cy;
+      const dist = (dx !== 0 && dy !== 0) ? voxel * Math.SQRT2 : voxel;
+      const drop = cur - h[down];
+      if (drop <= 0) continue;
+      const S = drop / dist;
+      const Q = flow[idx];
+
+      // flow gate (in contributing-cell units, scale independent):
+      // only cells draining a real catchment (Q ≳ 30 cells) incise as
+      // tributaries; the broad low-flow hillslopes stay smooth (grass).
+      const gate = smooth(30, 300, Q);
+
+      // CANYON ATTRACTOR: the base terrain's drainage valleys are cut
+      // hard and deep — deterministic main canyons exactly where the
+      // basins are (Gaea's guided channels). This term is independent
+      // of the flow gate so the canyons establish even before the flow
+      // network converges into them.
+      const cany = valley ? valley[idx] : 0;
+
+      // stream power: incision volume (m³) for this cell this iteration
+      let v = K * Math.pow(Q, m) * Math.pow(S, n) * erodibility * gate;
+      const aboveSea = cur - seaLevel;
+      if (aboveSea < 4) v *= smooth(aboveSea, -2, 4);
+      if (cany > 0.02) v += cutPerStep * 2.0 * cany * cellArea;
+      if (v <= 1e-9) continue;
+      let e = v / cellArea;
+      if (e > cutPerStep * (1 + 2.5 * cany)) e = cutPerStep * (1 + 2.5 * cany);
+      if (e > drop * 0.85) e = drop * 0.85; // never invert the profile
+      const avail = cur - bedrock;
+      if (e > avail) e = avail;
+      if (e > 1e-9) {
+        h[idx] -= e;
+        erosionMap[idx] += e;
+        carved += e * cellArea;
+        // bedload: inside the canyon the load is EXPORTED downstream
+        // (a canyon floor that fills in stops cutting — and shallow
+        // channels don't look like canyons). On open ground the load
+        // settles as the cell gradient relaxes → alluvial fans form
+        // at canyon mouths / piedmont, not mid-canyon.
+        const inCanyon = valley && valley[down] > 0.15;
+        const dep = e * (inCanyon ? 0.12 : 0.55);
+        h[down] += dep;
+        depositMap[down] += dep;
+        deposited += dep * cellArea;
+      }
+    }
+
+    // ---- diffusion: relax over-steep walls (V → U canyons, terraces) ----
+    const eq = voxel * 0.5; // equilibrium drop per step (~26°)
+    for (let ii = 0; ii < size; ii++) {
+      const idx = order[ii];
+      const cur = h[idx];
+      if (cur <= bedrock) continue;
+      let lowN = -1, lowH = cur;
+      for (let k = 0; k < 8; k++) {
+        const nx = (idx % N) + NEI[k][0], ny = ((idx / N) | 0) + NEI[k][1];
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+        const ni = ny * N + nx;
+        if (h[ni] < lowH) { lowH = h[ni]; lowN = ni; }
+      }
+      if (lowN < 0) continue;
+      const drop = cur - lowH;
+      if (drop > eq) {
+        const moved = (drop - eq) * 0.10;
+        h[idx] -= moved;
+        h[lowN] += moved;
+      }
+    }
+
+    // the drainage network evolves slowly — recompute flow every 2 iters
+    if ((it & 1) === 1 || it === iterations - 1) {
+      ff = computeFlow(h, N, voxel, rng, seed, mScale, mAmp);
+      for (let f = 0; f < size; f++) if (ff.flow[f] > flowMax) flowMax = ff.flow[f];
+    }
+  }
+
+  return { carvedM3: carved, depositedM3: deposited, flow: ff.flow, flowMax, pits: ff.pits };
+}
+
+/**
  * Mass wasting (talus / debris) — Gaea's "Debris" analogue.
  * Sandpile relaxation: any cell steeper than the angle of repose sheds
  * material downhill until the slope relaxes. This is what real mountains
@@ -668,7 +794,7 @@ function talusRelax(h, N, voxel, bedrock, { iterations = 3, tanAngle = 0.78, k =
  *            lakeCount:number, riverCount:number}}
  */
 export function detectWaterBodies(h, N, flow, seaLevel,
-  { minLakeArea = 15, minLakeDepth = 0.20, riverPercentile = 0.998 } = {}) {
+  { minLakeArea = 15, minLakeDepth = 0.20, riverPercentile = 0.996 } = {}) {
   const size = N * N;
   const river = new Float32Array(size);
   const lake = new Float32Array(size);
@@ -801,7 +927,7 @@ export function detectWaterBodies(h, N, flow, seaLevel,
 }
 
 /** One-click full hydraulic pass. Mutates h; returns stats + fields. */
-export function runErosion({ h, N, voxel, seed, thermalOn, hydOn, drops, dropSize, erodibility, traversal, cutFraction, flowPasses, flowExp, sedimentOn, seaLevel, meanderScale = 0.035, meanderAmp = 1.8 }) {
+export function runErosion({ h, N, voxel, seed, thermalOn, hydOn, drops, dropSize, erodibility, traversal, cutFraction, flowPasses, flowExp, sedimentOn, seaLevel, meanderScale = 0.035, meanderAmp = 1.8, solver = 'stream', valley = null }) {
   const rngT = mulberry32((seed ^ 0x2f6e2b1) >>> 0);
   const rngH = mulberry32((seed ^ 0x9e3779b9) >>> 0);
   const bedrock = Math.min(seaLevel - 14, -40);
@@ -824,7 +950,17 @@ export function runErosion({ h, N, voxel, seed, thermalOn, hydOn, drops, dropSiz
     });
   }
   let flow = null, pits = null, flowMax = 0;
-  if (hydOn) {
+  if (solver === 'stream') {
+    // REPLACEMENT ENGINE: stream power law (Gaea-class dendritic canyons)
+    const res = streamPowerCarve({
+      h, N, voxel, rng: rngH, seed,
+      iterations: flowPasses, cutFraction, erodibility,
+      seaLevel, bedrock, mScale: meanderScale, mAmp: meanderAmp,
+      erosionMap, depositMap, valley,
+    });
+    stats.hydraulic = { carvedM3: res.carvedM3, depositedM3: res.depositedM3, flowMax: res.flowMax };
+    flow = res.flow; pits = res.pits; flowMax = res.flowMax;
+  } else if (hydOn) {
     const res = hydraulicCarve({
       h, N, voxel, rng: rngH,
       passes: flowPasses, cutFraction, erodibility, flowExp,
