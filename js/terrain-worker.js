@@ -15,8 +15,17 @@ const state = {
   sizeM: 100
 };
 
+/* Only ArrayBuffers/MessagePorts are guaranteed-valid entries of a
+ * postMessage transfer list (typed arrays are NOT accepted by every
+ * engine), so normalise every transferable to its underlying buffer. */
+function toTransferable(x) {
+  if (x instanceof ArrayBuffer) return x;
+  if (ArrayBuffer.isView(x)) return x.buffer;
+  return x;
+}
+
 function post(msg, transfer) {
-  self.postMessage(msg, transfer || []);
+  self.postMessage(msg, (transfer || []).map(toTransferable));
 }
 
 self.onmessage = function (e) {
