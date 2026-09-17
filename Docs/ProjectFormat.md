@@ -51,9 +51,9 @@ what the file *is*. A `.geometry` is a container whose required table is `MESH`;
 | `.solution` | **Solution** | a bundle of projects: engine revision pin, content roots, toolchain, the list of `.projectspace` files | repo / CI | yes |
 | `.geometry` | **Geometry** | vertices, indices, normals, tangents, bounds, LOD/cluster ranges | modelling / import | yes |
 | `.uvspace` | **UV Space** | UV islands, seams, packing, texel density, the mapping a paint layer is authored against | UV editor | yes |
-| `.material` | **Material** | a BASE material: one `MaterialRecord` + its 288 B slab graph (the M10 descriptors), plus refs to `.pigment` maps once painting lands. Per-object variation is not stored here — see `REFN` in §4 | material editor | yes |
-| `.pigment` | **Pigment** | a texture-paint document: layers, strokes, channels, resolution, brush refs; bakes to an image blob for the GPU | paint editor | yes |
-| `.instance` | **Instance** | one placed object: transform + reference to a `.geometry` + a reference to a `.material` + an optional **refinement** (the per-object material, §4) | editor | yes |
+| `.material` | **Material** | **one self-contained material**: its parameters (the `MaterialRecord` + 288 B slab graph) *and* its textures — either embedded blobs or references to `.pigment`/image files. An object uses it by copying it in or referencing it (§4.2) | material editor | yes |
+| `.pigment` | **Pigment** | a texture-paint document: layers, strokes, channels, resolution, brush refs; bakes into the `.material` that uses it | paint editor | yes |
+| `.instance` | **Instance** | one placed object: transform + a `.geometry` + exactly one `.material`, copied or referenced (§4.2) | editor | yes |
 | `.environment` | **Environment** | world staging: sun hour, fog scenario, atmosphere/moon/star settings, terrain heightfield and its material refs, the baked sky probe | terrain / sky editor | yes |
 | `.script` | **Script** | code automation, one source or a small module | user | yes |
 | `.workflow` | **Workflow** | an automation graph: import → bake → validate → package, its steps referencing `.script`s | user / engine | yes |
@@ -75,9 +75,11 @@ Four notes on the naming, because three pairs were close enough to collide:
   recorded in §11 so it is not re-litigated by accident when it lands.
 - **`.runtime` stays its own kind** because it is not state: it is the *resolved* launch configuration the host
   writes at startup, and it is the one thing an editor, a game build and a crash report all want to read.
-- **`.material` is the one addition** to the list — the family needs a material kind, and the M10 work *is* material
-  descriptors. `.slate` is deliberately avoided: the material domain's `slate_*` glTF extras already own that word.
-  The refinement that came back from the owner — *"material still needs to be refined per object"* — is §4.2.
+- **`.material` is a file, not a facet of the object.** The owner's correction, and it is the better design: a
+  material is one self-contained file — parameters *and* textures — and an object **copies it in or references it**
+  ("sphere 1 uses Clear Glass, sphere 2 uses Gold"). There is no per-object override list and no base/refinement
+  split; §4.2 has the mechanism, and identical copies cost nothing in bytes because payloads are content-addressed.
+  `.slate` stays avoided: the material domain's `slate_*` glTF extras already own that word.
 
 Case: extensions are all-lowercase (`.uvspace`, not `.UVspace`). Git and Linux treat `.Geometry` and `.geometry` as
 different files while macOS and Windows do not; a format family cannot afford that ambiguity.
@@ -123,27 +125,28 @@ Rules that fall out of the layout, and that the gate checks:
 | `MESH` | unique vertex/index buffers (`VertexRecord` + indices) | `.geometry` |
 | `CLST` | cluster/LOD ranges (`ClusterRecord`) | `.geometry` |
 | `UVSP` | UV islands: per-island vertex ranges, seams, texel density | `.uvspace` |
-| `MATL` | `MaterialRecord` + 288 B slab graph | `.material` |
+| `MATL` | `MaterialRecord` + 288 B slab graph — the material's parameters | `.material` |
 | `PIGM` | paint layers, strokes, channels, resolution | `.pigment` |
 | `INST` | `InstanceRecord` rows (transform + mesh/material slot) | `.instance`, `.projectspace` |
 | `SCEN` | level table: names, instance ranges, node hierarchy (`PlacementRecord`), default camera | `.projectspace` |
 | `CAMA` | `CameraRecord` rows | `.projectspace` |
 | `LITE` | `PunctualLuminaireRecord` rows + the luminaire alias table | `.projectspace` |
 | `ENVR` | world staging + terrain + the baked sky probe reference | `.environment` |
-| `REFN` | per-object material refinement: base material reference + sparse slot overrides + resolution rules (§4.2) | `.instance`, `.material` |
+| `MSLT` | material slots: the `MaterialSlot` rows an `INST` table or a `.projectspace` names (§4.2) | `.instance`, `.projectspace` |
 | `FLOW` | workflow steps (kind, operands, refs) | `.workflow` |
 | `STAT` | the state family's one payload: `{domain, revision, payload}` with domain = session · work · save · capture | `.state` |
 | `ARCH` | archive directory: hash → offset/length, chunked for streaming | `.archive` |
 | `REFS` | the reference table (§5) | every container kind |
-| `TEXR` | texture index rows: URI/ref slot or blob index | `.geometry`, `.material`, `.pigment` |
+| `TEXR` | texture index rows: URI/ref slot or blob index (a material's own maps) | `.geometry`, `.material`, `.pigment` |
 | `BLOB` | raw embedded payloads, addressed by 64-bit content hash | any file that embeds |
 
 ### 3.2 One file per project, not per level
 
 `Project-Zero.projectspace` holds every Project-Zero level as a `SCEN` row over one shared asset pool — which is also
-where the dedup becomes visible: Showroom and Showcase draw the same chrome sphere, so there is one `.geometry` and
-one `.material`, and one `INST` row per copy. Per-level files would duplicate exactly the content the owner asked to
-deduplicate; the directory makes the multi-level case free.
+where the dedup becomes visible: Showroom and Showcase draw the same chrome sphere, so there is one `MESH` payload,
+one chrome material payload (named by both rows, referenced or copied — same bytes either way), and one `INST` row
+per placed copy. Per-level files would duplicate exactly the content the owner asked to deduplicate; the directory
+makes the multi-level case free.
 
 ## 4. The object model — "like an object"
 
@@ -153,77 +156,88 @@ A project is a tree of spaces, and the leaf edges are references:
     ├─ KIND  projectspace · META  name, revisions, policies
     ├─ SCEN  levels: Showroom · Showcase · Materials · CornellBox
     ├─ ENVR  → Assets/Studio.environment          (sibling file, referenced)
-    ├─ INST  rows … each row = transform + Reference{kind, mode, hash}
-    │     ├─ → Assets/Sphere.geometry             (one geometry, shared by every copy)
-    │     │     └─ → Assets/Sphere.uvspace        (its UV space)
-    │     ├─ → Assets/Chrome.material             (the BASE material: one 58-float descriptor + slabs, shared)
-    │     ├─   REFN  refinement of that base for THIS object (§4.2): sparse overrides, resolved at load
-    │     ├─ → Assets/Checkers.pigment            (EMBEDDED, blob #3)
+    ├─ INST  rows … each row = transform + one geometry + one material (§4.1)
+    │     ├─ Sphere_01   → Assets/Sphere.geometry (shared) · → Assets/ClearGlass.material  (REFERENCED)
+    │     ├─ Sphere_02   → Assets/Sphere.geometry (shared) · → Assets/Gold.material        (REFERENCED)
+    │     ├─ Sphere_03   → Assets/Sphere.geometry (shared) · → BLOB #7 = a full .material  (COPIED IN)
+    │     │     └─ → Assets/Sphere.uvspace        (the geometry's UV space)
     │     └─ → EngineContent/…/panel.geometry     (engine content, referenced)
-    └─ BLOB[] embedded payloads, keyed by content hash
+    └─ BLOB[] embedded payloads, keyed by content hash — a blob may itself be a whole space container
 
 Two consequences worth stating plainly:
 
-- **An instance is a reference, not a copy.** Twelve identical spheres are twelve `.instance` rows (transform) over
-  one `.geometry` and one `.material`; a sphere that differs carries a `REFN` over the same base rather than a
-  duplicated descriptor. Dedup keys on bytes, not on resemblance.
+- **Geometry is shared; materials are the object's own.** Twelve identical spheres are twelve rows over one
+  `.geometry` — but each row names its own material, either a shared `.material` file or a copy carried inside the
+  object. "Sphere 1 uses Clear Glass, sphere 2 uses Gold" is the row, not a lookup table somewhere else.
 - **Pieces know their neighbours by kind, not by name.** A `.geometry` does not name its UV file; the pair is bound
   by a reference row from whichever file owns the pairing (the instance, or the project). Rename or move a file and
   nothing is stale except the reference path — which is why every reference also carries a content hash.
 
 ### 4.1 The instance row
 
-    InstanceRow                         // 96 B + references
+    InstanceRow                         // 96 B
     ────────────────────────────────
-    char     Name[32];                  // the outliner's label ("Swatch_17", "DropSphere_04")
+    char     Name[32];                  // the outliner's label ("Swatch_17", "Sphere_02")
     float    Transform[16];             // object → world, column-major (the InstanceRecord's World)
-    uint64_t GeometryHash;              // dedup key: the .geometry payload this row instantiates
-    uint64_t MaterialHash;              // dedup key: the base .material
-    uint32_t RefinementIndex;           // index into REFN, or 0xFFFFFFFF = the base as-is
+    ReferenceRecord Geometry;           // 32 B — the .geometry this object instantiates (usually shared)
+    MaterialSlot    Material;           // 24 B — the object's ONE material: copied in or referenced (§4.2)
     uint32_t LevelIndex;                // which SCEN level owns this row
     uint32_t Flags;                     // per-row bits (hidden, locked, cast-shadow, …)
 
-### 4.2 Material refinement — the per-object material
+### 4.2 The material — a self-contained file, copied or referenced per object
 
-*"Material still needs to be refined per object"*: the base may be shared, but the object's material must be its own.
-The M10 rule (every grid cell owns its own `MaterialDescriptor`) and the dedup rule (one chrome material for twelve
-spheres) are not in conflict — they are the same rule seen from two sides, and the split is **base vs refinement**:
+*"`.material` should rather be a single file that contains the texture/parameters of the material; the object just
+copies the embedded material/file — sphere 1 uses Clear Glass, sphere 2 uses Gold."* That is the model, and it is
+simpler than what this document had before (a base plus a per-object override list), so the override list is gone.
 
-- **`.material` is the base.** A full `MaterialRecord` + its 288 B slab graph, authored once in the material editor.
-  Byte-identical bases are one entry; that is where dedup lives.
-- **`REFN` is the refinement**, owned by the *instance* (or by a `.material` that refines another base). It carries
-  the object's own values as a **sparse override list over slots**, not a second full descriptor:
+**A material is one file.** `.material` carries everything the material *is*:
 
-      RefinementHeader                 // 16 B
-      ────────────────────────────────
-      uint64_t BaseMaterialHash;       // which base this refines
-      uint16_t OverrideCount;
-      uint16_t Flags;                  // bit0 = inherit unmatched slots (always set in v1)
-      uint16_t SchemaRevision;
-      uint16_t Reserved;
+    ClearGlass.material                  one file, one material
+    ├─ KIND  material · META  name, revisions
+    ├─ MATL  the parameters: MaterialRecord + 288 B slab graph — the 58 floats, the lobes, the IOR, the coat
+    ├─ TEXR  the texture slots that point at its maps (base colour, roughness, normal, …)
+    ├─ BLOB[] the maps themselves — a `.pigment` bake, an imported image, an engine texture copied in
+    └─ REFS  …or references instead of blobs: EngineContent/Textures/…, Assets/Checkers.pigment
 
-      RefinementOverride               // 8 B per override
-      ────────────────────────────────
-      uint16_t Slab;                   // 0xFFFF = the header's scalar channels (roughness, metallic, tint…)
-      uint16_t Channel;                // the slot inside that slab (MaterialSlabRecord's own field order)
-      uint32_t PackedValue;            // float, or an index for enum-valued channels
+So a material file is self-contained exactly the way a font file is: parameters and pixels in one place, no sidecar
+required, and every part of it can be embedded or referenced independently (§5). A material with constants only (all
+of M10 today) is just `MATL` and no blobs; a painted one carries its baked maps.
 
-  Resolution at load: copy the base's 58 floats + slabs, apply the overrides in `(Slab, Channel)` order, then run
-  the same `DeriveReflectance` precedence the codec uses (Unlit → EmissiveOnly → Transmissive → Subsurface → Cloth →
-  ClearCoated → Anisotropic → Standard) — so a refinement that, say, sets transmission on a coated base resolves
-  through exactly the path a `.material` authored with those values would.
+**The object names one material, and the slot says how it got it:**
 
-- **Why per-object rows rather than per-object files.** A refinement is 8–100 bytes; making each one a `.material`
-  file would turn a 49-swatch grid into 49 small files with 49 references, which is the duplication the family
-  exists to remove. The refinement rides the instance; the instance file is still the *object*, so "the object's
-  material" travels wherever the object does.
-- **The uniqueness guarantee is testable**: resolve N instances against one base and the census must show N distinct
-  `MaterialDescriptor`s with the base counted once — the M10 census (Standard 17 · Aniso 2 · ClearCoated 7 ·
-  Cloth 2 · Subsurface 7 · Transmissive 8 · EmissiveOnly 1 · Unlit 1) unchanged, and the file flat in N. §8 claim 7.
-- **Chain depth is two** (a base and the object's refinement) and no deeper: the "refine from a refined base" case
-  is served by a `.material` that itself carries `REFN`, so an author who wants a family of variants writes one base
-  plus one refined variant that others reference. Load resolves a chain by hashing the base first and refusing a
-  base whose hash is not already resolved, which makes a cycle impossible by construction rather than by a check.
+    MaterialSlot                        // 24 B — inside InstanceRow.Material
+    ────────────────────────────────
+    uint8_t  Mode;                      // 0 Shared · 1 Copied · 2 CopyOnWrite
+    uint8_t  Flags;                     // bit0 = shared-only (never fork this material) · bit1 = maps embedded
+    uint16_t Reserved;
+    uint64_t MaterialHash;              // FNV-1a 64 of the material's payload — identity, dedup, integrity
+    uint32_t PathOffset;                // string table (Mode = Shared)
+    uint32_t BlobIndex;                 // directory entry holding a full .material (Mode = Copied)
+
+- **Shared** — the object references `Assets/ClearGlass.material`. Edit the file, every object pointing at it moves.
+- **Copied** — the object carries its *own* material: `BlobIndex` points at a blob whose bytes are a complete
+  `.material` container. This is exactly the "the object just copies the embedded material/file" behaviour: assign
+  Gold to sphere 2 and sphere 2 holds its own Gold, frozen at the moment of assignment.
+- **CopyOnWrite** — starts Shared; the first edit in the editor writes the copy in and flips the mode. This is the
+  mode the editor defaults to, so a deliberate tweak never silently changes the other objects.
+
+**Dedup is unaffected, because it keys on bytes.** Ten objects each holding their own copy of Clear Glass write *one*
+blob and ten slot rows that name it: `MaterialHash` is the content address, so identical material payloads collapse
+at every level — including the maps inside them. What is per-object is the *relationship* (each object owns its
+material, may edit it, may not); what is shared is the *bytes*. The M10 census survives untouched: 49 grid cells,
+49 material files (or copies), 49 distinct `MaterialDescriptor`s — which is exactly the uniqueness the level was
+built to have, now stated in content terms rather than by a rule.
+
+Copies nest for free: a copied material is a container inside a blob, and if its maps are embedded they are blobs
+inside that blob. Reading a container is recursive, and the content hash of a copy is the hash of the bytes it was
+copied from — so `Copied(ClearGlass.material)` has the same `MaterialHash` as the file it came from, and the two are
+byte-identical by construction. That is what makes the last gate claim (§8, claim 8) checkable in one `cmp` — and a
+copy that *is* edited simply re-hashes on save, so the slot always names the bytes that are actually there.
+
+**Assignment defaults** (the one thing worth an explicit answer, §10 q4): the editor *assigns* a copy by default —
+the owner's model above — while a project can mark a material **shared-only** (engine content, or a palette material
+deliberately global), and any object can be switched back to Shared in the inspector. Nothing about the file format
+depends on which default wins; the mode byte records what actually happened.
 
 ## 5. Embedded, referenced, or engine content
 
@@ -249,7 +263,10 @@ question by itself:
 - **engine content is referenced** (fonts, audio archives, star catalogues, celestial textures) unless the packager
   was told `-Embed=Fonts` or the entry is marked required-embedded;
 - **state is never embedded in an asset** — a hard line, so deleting a `.state` (any domain, including a crash
-  `work` file) can never touch content.
+  `work` file) can never touch content;
+- **a copy is a nested container**, not a special case: `MaterialSlot.Mode = Copied` points at a blob that is itself
+  a complete `.material` (with its own directory, checksums and possibly its own blobs). Recursion terminates on
+  `Kind`, and a container that names itself as its own blob is refused by name.
 
 Two lossless tools fall out of this, and both are provable:
 
@@ -302,8 +319,9 @@ Every claim is checkable on this machine, with no GPU:
    Extends to `Pack(Explode(X)) == X` for the whole family.
 2. **The scene is the same scene** — the M10 material level loaded from a `.projectspace` renders bit-identical to
    the glTF path: `compare -metric AE` against `Exhibits/Gallery/Materials/MaterialLibrary_Wide.png`.
-3. **Dedup is real** — N duplicate spheres report 1 `MESH`/`MATL` entry and N `INST` rows, and the file size is flat
-   in N above the first copy.
+3. **Dedup is real, and copies do not duplicate bytes** — N duplicate spheres report 1 `MESH` entry, N `INST` rows and
+   N material slots that all content-address the same `MATL` bytes; the file size is flat in N whether those slots are
+   `Shared` (one referenced `.material`) or `Copied` (N private copies of one blob).
 4. **References resolve, and fail loudly** — with `EngineContent/FontArchives/Inter` present the level loads; with
    the folder renamed the error names the path; with `-Embed=Fonts` the same level loads with the folder still
    renamed.
@@ -311,14 +329,15 @@ Every claim is checkable on this machine, with no GPU:
    payload is a named failure, not a corrupt render.
 6. **The CLI is the same session** — `-Project=Project-Zero -Level=Materials +Location=(0,-5.0,2.6)` renders the same
    image as today's `--scene materials` invocation (AE = 0).
-7. **Refinement is exact and pays for itself** — the M10 grid carried as 1 base `.material` + 49 `REFN` rows
-   resolves 49 distinct descriptors, byte-identical to the 49 standalone descriptors the level builds today (the
-   census unchanged), with the file flat in N; and a refinement resolved from the file matches a `.material` authored
-   with those same values byte for byte.
-8. **Refinements are isolated** — editing one instance's `REFN` changes no other instance's resolved descriptor (the
-   reference census before/after differs in exactly one row), and a refinement whose base hash is missing fails by
-   name rather than silently loading the base.
-
+7. **A material file is self-contained and exact** — the M10 level carried as 49 `.material` files resolves 49
+   distinct descriptors, byte-identical to the 49 the level builds today (census unchanged: Standard 17 · Aniso 2 ·
+   ClearCoated 7 · Cloth 2 · Subsurface 7 · Transmissive 8 · EmissiveOnly 1 · Unlit 1); a constants-only material is
+   `MATL` with zero blobs; a textured one resolves its maps from its own `BLOB`/`TEXR` with no sidecar present.
+8. **Copied == referenced, byte for byte, and copying is free** — `Copied(ClearGlass.material)` compares equal (`cmp`)
+   to the file it was copied from and carries the same `MaterialHash`; ten objects holding their own copies of one
+   material produce one blob and ten slot rows (file size flat in N); editing a `Shared` material moves every
+   referencing object, editing a `Copied`/`CoW` one moves exactly one (reference census differs in exactly one row),
+   and a slot whose blob is missing fails by name rather than silently rendering the base colour.
 One gate, `Exhibits/Workbench/ProjectFormat/CheckSpaceFamily.sh`, same shape as `CheckMaterialDenoise.sh`: PASS/FAIL
 per claim, exits on the first red.
 
@@ -327,7 +346,7 @@ per claim, exits on the first red.
 | phase | deliverable | gate |
 |---|---|---|
 | P1 | header + directory + `KIND`/`META`; reader, writer, checksum; the gate itself | round trip, truncation, unknown table |
-| P2 | asset kinds: `.geometry`, `.material`, `.instance` + `REFN` — enough for every existing level | bit-identical to the glTF path on the M10 level; claims 7–8 |
+| P2 | asset kinds: `.geometry`, `.material`, `.instance` + `MaterialSlot` (shared / copied / copy-on-write) — enough for every existing level | bit-identical to the glTF path on the M10 level; claims 7–8 |
 | P3 | `REFS` + `BLOB` + the five modes, `-Pack` / `-Explode` | dedup, engine-content resolution, embed fallback, pack/explode round trip |
 | P4 | `-Project/-Level/-Build/-Config/+Location` in both hosts; `-Export`; migrate Project-Zero; glTF stays as interchange | CPU parity: package run == `--scene` run |
 | P5 | `.runtime` only; the `.state` family (four domains in one kind) is **deferred** (§11) | `.runtime` records are written and read back; no state ever embeds into an asset |
@@ -343,21 +362,26 @@ per claim, exits on the first red.
    so no format change.
 3. **One `.projectspace` per project, or one per level?** Plan assumes one per project (§3.2); a very large project
    might want to split levels into sibling `.projectspace` files joined by a `.solution`.
-4. **Refinement depth.** v1 allows base → refinement, and sharing a refinement through a `.material` that carries
-   `REFN` (one level). Two levels is the plan; three is where "why is this object green?" gets expensive — should the
-   limit be a hard two, or one with a warning?
-5. **Refinement keys: slot names or the slab's field order?** Plan assumes `(Slab, Channel)` indices, so a renamed
-   channel cannot silently retarget an override; the cost is that reordering a slab's fields is a schema revision.
-   The alternative (hash-of-name keys) is friendlier to authors and slower to resolve.
+4. **Assignment default: copy or share?** The plan takes the owner's model — assigning a material *copies* it in,
+   so every object owns its material — with `Shared` available per object and a `shared-only` flag for palettes and
+   engine content. The trade-off is a decision, not a format detail: copy-by-default means editing a material no
+   longer moves the twelve spheres that were given the same material (you would re-assign them); share-by-default
+   means an "edit one object's material" needs the inspector to fork it first. Plan assumes **CopyOnWrite** as the
+   editor default, which behaves like copy for edits and like share for bytes — and it is the one open question worth
+   an explicit answer, because it is the only part of this design a user ever feels.
+5. **Does a material file embed its maps or reference them?** Plan assumes both are allowed and the policy is §5's
+   (embed small, reference large; `-Pack` inlines). A material whose maps are always embedded is a self-contained
+   font-like artefact that survives being copied anywhere; one that references `EngineContent` is smaller and updates
+   when the engine does.
 6. **Terrain in `.environment` or its own kind?** Plan assumes `.environment` holds the heightfield reference plus
    the sky staging, with the heightfield itself a `MESH`-shaped blob — a separate `.terrain` kind is easy later.
-7. **Textures / paint bake.** Keep `TEXR` URIs for referenced textures and embed only project-specific images, or
-   always embed? Plan assumes the former, with the embed policy shared with fonts and audio; `.pigment` bakes to an
-   image blob at pack time, so the GPU never reads a stroke list.
-8. **Does a refinement belong to the *instance* or to the *object*?** Plan puts `REFN` on the instance row (§4.2), so
-   the same `.geometry` can be used twice with two different materials. A `.geometry` that is only ever one object
-   could instead carry its refinement, which reads better in a folder listing ("Sphere.geometry + Sphere.material")
-   at the cost of binding an object to one material. Open; the instance is the default.
+7. **Paint bake timing.** `.pigment` is the editable source and the `.material` carries the baked maps; the question
+   is whether the bake runs on save (a material is always renderable) or at pack time (iterate fast, bake once).
+   Plan assumes save, with the bake's input hash recorded so a stale bake is detectable; either way the GPU never
+   reads a stroke list.
+8. **Where does an *object's* material live when the object is a file?** Plan puts the `MaterialSlot` on the
+   instance row (§4.1), so one `.geometry` can be instantiated twice with two different materials. A `.instance`
+   file carries its own slot, so "the object's material" travels with the object; a bare `.geometry` has none.
 
 ## 11. Deferred, in writing (so it is not re-litigated by accident)
 
@@ -374,3 +398,8 @@ per claim, exits on the first red.
    improvement, never a correctness gap.
 3. **Editors.** `.uvspace`, `.pigment`, `.environment` terrain authoring and `.workflow`/`.script` authoring are
    format-defined here and editor-defined later; each gets its own exhibit pair when its editor lands (P6).
+4. **Material *parameters* as a shared layer over a copied material** (deferred, and the idea the owner replaced).
+   An earlier revision of this plan had a base `.material` plus a sparse per-object override list; the owner chose
+   self-contained material files that objects copy instead. If a real need appears later — one gold with 20 slightly
+   different roughnesses — the addition is a new *kind* (a variant file that names its parent and lists overrides),
+   never a quiet change to `MaterialSlot`; v1 has no such table and no such field.
