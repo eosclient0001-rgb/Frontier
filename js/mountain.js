@@ -223,7 +223,7 @@ export function buildMountain(p) {
       const detailAmp = p.peakHeight * 0.055 * m * det * 2.0 * floorClean;
       // gully seeds keep their own mid-flank envelope (see massif note)
       const gullyEnv = smoothstep(0.25, 0.45, d1) * (1 - smoothstep(0.90, 1.10, d1)) * (1 - mCore * 0.6);
-      const gullyAmp = p.peakHeight * 0.05 * gullyEnv * gully * 2.0 * floorClean;
+      const gullyAmp = p.peakHeight * 0.035 * gullyEnv * gully * 2.0 * floorClean;
 
       // ---- broad low foothills across the whole map ----
       // Low-frequency relief that keeps most of the 100 m patch dry

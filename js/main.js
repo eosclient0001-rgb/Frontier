@@ -25,7 +25,7 @@ const P = {
   peakHeight: 50, peakRadius: 28, peakSharp: 1.5, warp: 0.55, tilt: 0.42, seaLevel: -7,
   // erosion — stream power + hillslope diffusion, run on the SDF field
   erodeSeed: 42, iterations: 64, diffusion: 0.15, mExp: 0.45, nExp: 1.2,
-  erodibility: 0.60, cutFrac: 0.22, sedimentOn: true,
+  erodibility: 0.60, cutFrac: 0.22, sedimentOn: true, microDetail: 0.65,
   // splats
   preview: 'blended', snowLine: 28, material: 'alpine',
   // view
@@ -100,7 +100,7 @@ const C = {}; // control registry
     options: [
       ['blended', 'Blended albedo'], ['height', 'Height'], ['slope', 'Slope'],
       ['curvature', 'Curvature'], ['flow', 'Flow'], ['erosion', 'Erosion'],
-      ['sediment', 'Sediment'], ['peaks', 'Peaks'], ['points', 'Points'],
+      ['sediment', 'Sediment'], ['channels', 'Fine channels'], ['peaks', 'Peaks'], ['points', 'Points'],
       ['water', 'Water bodies'],
     ],
   });
@@ -145,6 +145,7 @@ const C = {}; // control registry
   C.cutFrac = mkSlider(b, { id: 'cutFrac', label: 'Max cut / step', min: 0.05, max: 0.45, step: 0.01, value: P.cutFrac, fmt: (v) => (v * 100).toFixed(0) + '% vox' });
   C.cutRo = mkReadout(b, 'Cut ↔ voxel match');
   C.sedimentOn = mkCheck(b, { id: 'sedimentOn', label: 'Sedimentation', value: P.sedimentOn, hint: 'capacity routing + alluvial fans' });
+  C.microDetail = mkSlider(b, { id: 'microDetail', label: 'Micro channels', min: 0, max: 1, step: 0.05, value: P.microDetail, fmt: (v) => Math.round(v * 100) + '%', unit: '' });
 }
 
 // ---- View section ----
@@ -355,6 +356,7 @@ async function runErosionPipeline() {
     erodibility: P.erodibility,
     cutFraction: P.cutFrac,
     sedimentOn: P.sedimentOn, seaLevel: P.seaLevel, valley: S.valley,
+    detail: P.microDetail,
     yieldControl: (i, n) => { setBusy(`stream power: ${i}/${n}…`); return nextFrame(); },
   });
   S.erodeMs = performance.now() - t0;
@@ -370,6 +372,7 @@ async function runErosionPipeline() {
     h: S.h, N: S.N, voxel: S.voxel,
     flow: res.flow, flowMax: res.flowMax, pits: res.pits,
     erosionMap: res.erosionMap, depositMap: res.depositMap, pointsMap: res.pointsMap,
+    channelsMap: res.channelsMap,
   });
   rebuildMesh();
   updateErosionStats();
@@ -443,6 +446,7 @@ bindChange('diffusion');
 bindChange('mExp');
 bindChange('nExp');
 bindChange('erodibility');
+bindChange('microDetail');
 bindChange('cutFrac', () => updateVoxelReadouts());
 bindChange('sedimentOn');
 bindChange('preview', () => { if (S.h) rebuildMesh(); });

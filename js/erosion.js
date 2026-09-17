@@ -46,7 +46,7 @@
  *    iterations for a mature landscape
  * ============================================================ */
 
-import { mulberry32, Perlin2D, subseed } from './noise.js';
+import { mulberry32, Perlin2D, subseed, fbm01 } from './noise.js';
 
 const NEI = [
   [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
@@ -262,10 +262,11 @@ export async function streamPowerErode({
   cutFraction = 0.22,
   erodibility = 0.6,
   sedimentOn = true,
+  minFlowA = 0,
   seaLevel, bedrock,
   mScale = 0.06, mAmp = 0.4,
   valley = null,
-  erosionMap, depositMap, pointsMap,
+  erosionMap, depositMap, pointsMap, channelsMap,
   yieldControl = null,
 }) {
   const size = N * N;
@@ -299,6 +300,16 @@ export async function streamPowerErode({
       if (drop <= 0) continue;
       const S = drop / dist;
       const A = flow[idx] * cellArea; // drainage area, m²
+
+      // micro-scale pass: diffuse runoff (A below minFlowA) does NOT
+      // cut — only cells where the water has concentrated into a
+      // thread erode. Stream-power feedback (lower cell → more flow →
+      // cuts more) then amplifies those threads into a branching rill
+      // network. The incoming load is passed through unchanged.
+      if (minFlowA > 0 && A < minFlowA) {
+        if (load) load[down] += load[idx];
+        continue;
+      }
 
       // stream power incision depth (m per iteration) — fully
       // slope-controlled: where the gradient relaxes the channel
@@ -351,6 +362,23 @@ export async function streamPowerErode({
         h[idx] -= e;
         erosionMap[idx] += e;
         carved += e * cellArea;
+        // V-profile: shave the two banks perpendicular to the flow
+        // direction so channels read as ~3-cell gullies with shaded
+        // walls (what real rivers cut) instead of 1-cell slits —
+        // and so a breached rim becomes a notch, not a pit
+        if (channelsMap) channelsMap[idx] += e;
+        const p1x = -dy, p1y = dx, p2x = dy, p2y = -dx;
+        for (let s = 0; s < 2; s++) {
+          const px = s === 0 ? p1x : p2x, py = s === 0 ? p1y : p2y;
+          const nx2 = cx + px, ny2 = cy + py;
+          if (nx2 < 0 || ny2 < 0 || nx2 >= N || ny2 >= N) continue;
+          const si = ny2 * N + nx2;
+          const se = e * 0.5;
+          h[si] -= se;
+          erosionMap[si] += se;
+          carved += se * cellArea;
+          if (channelsMap) channelsMap[si] += se;
+        }
         // heavy, concentrated cutting = "impact points" (Gaea points
         // layer analog: where the flow hit hard, over and over)
         if (pointsMap && e > cutPerStep * 0.5) pointsMap[idx] += e;
@@ -600,6 +628,7 @@ export function drainSmallBasins(h, N, voxel, seaLevel, maxLakeAreaM2 = 1500) {
           while (guard++ < 150) {
             level -= 0.2 * voxel;
             if (h[cur] <= level + 1e-9) break; // terrain takes over
+            const cutAmt = h[cur] - level;
             h[cur] = level;
             let next = -1, nextH = Infinity;
             const x0 = cur % N, y0 = (cur / N) | 0;
@@ -610,6 +639,17 @@ export function drainSmallBasins(h, N, voxel, seaLevel, maxLakeAreaM2 = 1500) {
               if (h[ni] < nextH) { nextH = h[ni]; next = ni; }
             }
             if (next < 0 || next === c) break;
+            // V-profile banks on the breach channel: a 3-cell-wide
+            // notch instead of a 1-cell slit (which would stay a
+            // metre-deep pit forever)
+            const stx = (next % N) - x0, sty = ((next / N) | 0) - y0;
+            for (let s = 0; s < 2; s++) {
+              const px = s === 0 ? -sty : sty, py = s === 0 ? stx : -stx;
+              const bx = x0 + px, by = y0 + py;
+              if (bx < 1 || by < 1 || bx >= N - 1 || by >= N - 1) continue;
+              const bi = by * N + bx;
+              h[bi] = Math.min(h[bi], level + Math.max(0.5 * cutAmt, 0.3 * voxel));
+            }
             cur = next;
           }
           breached = true;
@@ -620,17 +660,40 @@ export function drainSmallBasins(h, N, voxel, seaLevel, maxLakeAreaM2 = 1500) {
   }
 }
 
+/** Fill shallow single-cell micro-pits to their lowest rim.
+ * A 1-cell pit that is more than a voxel or two deep is a real
+ * channel floor (breach notch, rill) and is left alone. */
+export function fillMicroPits(h, N, voxel, maxDepthVoxels = 1.5) {
+  for (let j = 1; j < N - 1; j++) {
+    for (let i = 1; i < N - 1; i++) {
+      const c = j * N + i, hc = h[c];
+      let mn = Infinity;
+      for (let k = 0; k < 8; k++) {
+        const nx = i + NEI[k][0], ny = j + NEI[k][1];
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+        const nh = h[ny * N + nx];
+        if (nh < mn) mn = nh;
+      }
+      if (mn >= hc - 1e-9 && (mn - hc) < maxDepthVoxels * voxel) {
+        h[c] = mn;
+      }
+    }
+  }
+}
+
 /** One-click erosion pass on the SDF field. Mutates h; returns stats + fields. */
 export async function runErosion({
   h, N, voxel, seed,
   iterations, cutFraction, erodibility, diffusion, mExp, nExp,
-  sedimentOn, seaLevel, valley = null, yieldControl = null,
+  sedimentOn, seaLevel, valley = null, detail = 0.65, yieldControl = null,
 }) {
   const bedrock = Math.min(seaLevel - 14, -40);
   const size = N * N;
   const erosionMap = new Float32Array(size);
   const depositMap = new Float32Array(size);
   const pointsMap = new Float32Array(size);
+
+  const channelsMap = new Float32Array(size); // fine-channel layer (micro pass)
 
   const res = await streamPowerErode({
     h, N, voxel, seed,
@@ -641,6 +704,71 @@ export async function runErosion({
 
   // ---- drain small enclosed basins (potholes don't persist) ----
   drainSmallBasins(h, N, voxel, seaLevel);
+  fillMicroPits(h, N, voxel);
+
+  // ---- micro-erosion: the fine rill network (Gaea multi-pass
+  // layering) ----
+  // The main pass's maturity diffusion has already erased everything
+  // finer than ~2 voxels — a mature landscape keeps only its big
+  // rivers, which is why single-pass erosion looks smooth. Real
+  // landscapes are multi-scale, so a second pass with DIFFERENT
+  // physics etches the dense small-channel texture:
+  //   fresh 2 m relief   → real branching choices for the flow
+  //   high K             → tiny drainage areas still incise
+  //   tiny cut cap       → shallow etches, never deep gullies
+  //   low diffusion      → rills don't decay between iterations
+  //   no canyon attractor → branches wander everywhere, off-axis
+  // Stream-power's positive feedback (lower cell → more flow → cuts
+  // more) amplifies the tiny asymmetries into a coherent rill tree.
+  //
+  // The branching seed is a VIRTUAL relief layer: 2 m-scale bumps are
+  // added to a working copy of the field, the pass erodes on the copy,
+  // then the bump field is subtracted — the rill network stays in the
+  // terrain, the bumps themselves never appear (no "boiling" surface).
+  if (detail > 0.01) {
+    const microIters = Math.max(16, Math.round(iterations * 1.2 * detail));
+    const nMicro = new Perlin2D(subseed((seed ^ 0x4b9d1e) >>> 0, 55));
+    const c2 = (N - 1) / 2;
+    const hm = h.slice();
+    const bumps = new Float32Array(size);
+    for (let j = 0; j < N; j++) {
+      const z = (j - c2) * voxel;
+      for (let i = 0; i < N; i++) {
+        const x = (i - c2) * voxel;
+        const c = j * N + i;
+        const land = smooth(seaLevel + 0.3, seaLevel + 1.8, h[c]);
+        if (land <= 0) continue;
+        const g = fbm01(nMicro, x * 0.30 + 17.3, z * 0.30 - 31.8,
+          { octaves: 3, lacunarity: 2.3, gain: 0.5 }) - 0.5;
+        const b = 2.8 * detail * g * land;   // ±1.4 m · detail
+        bumps[c] = b;
+        hm[c] += b;
+      }
+    }
+    const micro = await streamPowerErode({
+      h: hm, N, voxel, seed: (seed ^ 0x2c3f) >>> 0,
+      iterations: microIters,
+      K: 0.15, m: 0.45, n: 0.9, D: 0.02,
+      cutFraction: 0.085,
+      erodibility, sedimentOn: true,
+      minFlowA: 0.7,
+      seaLevel, bedrock,
+      mScale: 0.12, mAmp: 0.5,
+      valley: null,
+      erosionMap, depositMap, pointsMap, channelsMap,
+      yieldControl: yieldControl
+        ? (i, n) => yieldControl(i + iterations, n + iterations)
+        : null,
+    });
+    // strip the virtual seed — rills remain, bumps vanish
+    for (let i = 0; i < size; i++) hm[i] -= bumps[i];
+    h.set(hm);
+    res.carvedM3 += micro.carvedM3;
+    res.depositedM3 += micro.depositedM3;
+    // fine etching can mint fresh micro-pits — drain them too
+    drainSmallBasins(h, N, voxel, seaLevel);
+    fillMicroPits(h, N, voxel);
+  }
 
   // the drain pass may have opened new outlets — refresh the flow
   const rng2 = mulberry32((seed ^ 0x9e3779b9) >>> 0);
@@ -653,7 +781,7 @@ export async function runErosion({
   const wb = detectWaterBodies(h, N, flow2, seaLevel, { voxel });
 
   return {
-    erosionMap, depositMap, pointsMap,
+    erosionMap, depositMap, pointsMap, channelsMap,
     flow: flow2, pits: ff2.pits, flowMax: flowMax2,
     water: wb.water, lakeCount: wb.lakeCount, riverCount: wb.riverCount,
     stats: { carvedM3: res.carvedM3, depositedM3: res.depositedM3, flowMax: flowMax2, iterations },

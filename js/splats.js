@@ -11,7 +11,7 @@
 import { smoothstep, clamp01 } from './mountain.js';
 
 /** All analysis channels, normalized to [0,1] for preview & blending. */
-export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, depositMap, pointsMap }) {
+export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, depositMap, pointsMap, channelsMap }) {
   const size = N * N;
 
   // ---- height ----
@@ -76,6 +76,10 @@ export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, 
   };
   const erosionN = normField(blur3(erosionMap || new Float32Array(size)));
   const sedimentN = normField(blur3(depositMap || new Float32Array(size)));
+  // fine-channel layer: the micro-erosion pass's rill network, kept
+  // separate from the big-river erosion so it reads as dense dark
+  // branching lines (Gaea's separate Channels layer)
+  const channelsN = channelsMap ? normField(blur3(channelsMap)) : new Float32Array(size);
 
   // ---- points: drop impact density, soft-boxed ----
   const pointsRaw = pointsMap || new Float32Array(size);
@@ -154,9 +158,9 @@ export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, 
   }
 
   return {
-    height, slope, curvature, flowN, erosionN, sedimentN, peaks, pointsN,
+    height, slope, curvature, flowN, erosionN, sedimentN, channelsN, peaks, pointsN,
     hMin, hMax, slopeRef,
-    raw: { erosionMap, depositMap, pointsMap },
+    raw: { erosionMap, depositMap, pointsMap, channelsMap },
   };
 }
 
@@ -169,6 +173,7 @@ export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, 
 export function computeSplatWeights({ channels, h, N, seaLevel, snowLine, mat }) {
   const size = N * N;
   const { slope, flowN, erosionN, sedimentN, peaks, pointsN, slopeRef } = channels;
+  const channelsN = channels.channelsN || new Float32Array(size);
   const R = (mat && mat.rules) || {
     grassSlope: [0.15, 0.52], grassFlow: [0.55, 0.95], grassAlt: [34, 58],
     rockSlope: [0.84, 0.96], rockPeak: 0.85, dirtBelt: [0.40, 0.60],
@@ -191,6 +196,10 @@ export function computeSplatWeights({ channels, h, N, seaLevel, snowLine, mat })
     const rockSlope = smoothstep(R.rockSlope[0], R.rockSlope[1], sl);
     const rockPeak = peaks[i] * R.rockPeak;
     let rock = Math.max(rockSlope, rockPeak);
+    // fine-channel banks carry debris, not bare wall: the micro-rill
+    // network is a few cells of 1 m-scale steepness, which would
+    // otherwise speckle the whole flank with rock dots
+    rock *= 1 - 0.85 * channelsN[i];
 
     // sand: narrow beach band hugging the waterline on the dry side
     const band = 1 - smoothstep(0.10, 0.85, aboveSea);
@@ -198,8 +207,10 @@ export function computeSplatWeights({ channels, h, N, seaLevel, snowLine, mat })
     let sand = band * flat;
 
     // dirt: broad mid-slope soil/scree belt + carved/sedimented ground
+    // + the fine-channel layer (dense dark branching lines, Gaea-style)
     const soilEroded = clamp01(erosionN[i] * R.soilErode[0]
-      + sedimentN[i] * R.soilErode[1] + flowN[i] * R.soilErode[2]);
+      + sedimentN[i] * R.soilErode[1] + flowN[i] * R.soilErode[2]
+      + channelsN[i] * 0.85);
     const dirtBelt = smoothstep(R.dirtBelt[0], R.dirtBelt[1], sl) * (1 - smoothstep(0.75, 0.90, sl));
     let dirt = clamp01(Math.max(dirtBelt * 0.85, soilEroded * 1.05 + sedimentN[i] * 0.30))
       * (1 - sand) * (1 - snow) * (1 - rockSlope * 0.7);
@@ -247,6 +258,7 @@ export function previewField(mode, channels) {
     case 'flow': return channels.flowN;
     case 'erosion': return channels.erosionN;
     case 'sediment': return channels.sedimentN;
+    case 'channels': return channels.channelsN;
     case 'peaks': return channels.peaks;
     case 'points': return channels.pointsN;
     default: return null;
