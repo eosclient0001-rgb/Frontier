@@ -706,6 +706,65 @@ export async function runErosion({
   drainSmallBasins(h, N, voxel, seaLevel);
   fillMicroPits(h, N, voxel);
 
+  // ---- thermal weathering (Gaea-style) ----
+  // Steep faces weather into jagged, irregular rock and shed debris;
+  // a smooth cliff is a dead giveaway of CG. 1 m-scale jaggedness is
+  // applied only where the surface is already steep, plus a slight
+  // back-cut of over-steep faces. The raggedness also hands the micro
+  // pass below fresh small-scale structure to branch from.
+  const steepF = new Float32Array(size);
+  {
+    const jag = new Perlin2D(subseed((seed ^ 0x8e2f) >>> 0, 31));
+    const c2 = (N - 1) / 2;
+    for (let j = 1; j < N - 1; j++) {
+      for (let i = 1; i < N - 1; i++) {
+        const c = j * N + i;
+        const gx = (h[c + 1] - h[c - 1]) / (2 * voxel);
+        const gz = (h[c + N] - h[c - N]) / (2 * voxel);
+        const sl = Math.hypot(gx, gz);
+        const steep = smooth(1.1, 1.9, sl);
+        if (steep <= 0) continue;
+        const x = (i - c2) * voxel, z = (j - c2) * voxel;
+        const n = fbm01(jag, x * 0.9 + 57.1, z * 0.9 - 13.6,
+          { octaves: 2, lacunarity: 2.3, gain: 0.55 }) - 0.5;
+        h[c] += 0.7 * n * steep;             // ±0.35 m, ~1.1 m scale
+        h[c] -= 0.06 * (sl - 1.1) * steep;   // relax over-steep faces
+        if (steep > 0) steepF[c] = steep;
+      }
+    }
+  }
+
+  // ---- scree: debris shed from steep walls piles at their base ----
+  // A talus band of loose rock at the foot of every cliff is one of
+  // the things that makes a mountain read as real. Deposit (splat)
+  // weight is added to moderate-slope cells sitting against a steep
+  // one, modulated by noise so the aprons look organic, not banded.
+  {
+    const talusN = new Perlin2D(subseed((seed ^ 0x3d4c) >>> 0, 91));
+    const c2 = (N - 1) / 2;
+    for (let j = 1; j < N - 1; j++) {
+      for (let i = 1; i < N - 1; i++) {
+        const c = j * N + i;
+        const gx = (h[c + 1] - h[c - 1]) / (2 * voxel);
+        const gz = (h[c + N] - h[c - N]) / (2 * voxel);
+        const sl = Math.hypot(gx, gz);
+        // only the apron: moderate slope, not the wall itself, not flat
+        if (sl < 0.18 || sl > 1.05) continue;
+        let wall = 0;
+        for (let k = 0; k < 8; k++) {
+          const nx = i + NEI[k][0], ny = j + NEI[k][1];
+          if (nx < 1 || ny < 1 || nx >= N - 1 || ny >= N - 1) continue;
+          const wv = steepF[ny * N + nx];
+          if (wv > wall) wall = wv;
+        }
+        if (wall <= 0.05) continue;
+        const x = (i - c2) * voxel, z = (j - c2) * voxel;
+        const t = 0.5 + 0.5 * talusN.noise(x * 0.35 + 21.7, z * 0.35 - 8.2);
+        depositMap[c] += 0.30 * wall * t;
+      }
+    }
+  }
+
   // ---- micro-erosion: the fine rill network (Gaea multi-pass
   // layering) ----
   // The main pass's maturity diffusion has already erased everything
@@ -726,8 +785,9 @@ export async function runErosion({
   // then the bump field is subtracted — the rill network stays in the
   // terrain, the bumps themselves never appear (no "boiling" surface).
   if (detail > 0.01) {
-    const microIters = Math.max(16, Math.round(iterations * 1.2 * detail));
+    const microIters = Math.max(16, Math.round(iterations * 1.5 * detail));
     const nMicro = new Perlin2D(subseed((seed ^ 0x4b9d1e) >>> 0, 55));
+    const nMicro2 = new Perlin2D(subseed((seed ^ 0x77aa3c) >>> 0, 77));
     const c2 = (N - 1) / 2;
     const hm = h.slice();
     const bumps = new Float32Array(size);
@@ -738,9 +798,13 @@ export async function runErosion({
         const c = j * N + i;
         const land = smooth(seaLevel + 0.3, seaLevel + 1.8, h[c]);
         if (land <= 0) continue;
+        // two virtual scales: ~3.3 m ridges (primary rill corridors)
+        // + ~1.6 m ridges (the fine, intricate branching layer)
         const g = fbm01(nMicro, x * 0.30 + 17.3, z * 0.30 - 31.8,
           { octaves: 3, lacunarity: 2.3, gain: 0.5 }) - 0.5;
-        const b = 2.8 * detail * g * land;   // ±1.4 m · detail
+        const g2 = fbm01(nMicro2, x * 0.62 + 9.9, z * 0.62 - 44.4,
+          { octaves: 2, lacunarity: 2.3, gain: 0.55 }) - 0.5;
+        const b = (2.8 * g + 2.0 * g2) * detail * land;   // ±~2 m · detail
         bumps[c] = b;
         hm[c] += b;
       }
@@ -749,9 +813,9 @@ export async function runErosion({
       h: hm, N, voxel, seed: (seed ^ 0x2c3f) >>> 0,
       iterations: microIters,
       K: 0.15, m: 0.45, n: 0.9, D: 0.02,
-      cutFraction: 0.085,
+      cutFraction: 0.11,
       erodibility, sedimentOn: true,
-      minFlowA: 0.7,
+      minFlowA: 0.5,
       seaLevel, bedrock,
       mScale: 0.12, mAmp: 0.5,
       valley: null,

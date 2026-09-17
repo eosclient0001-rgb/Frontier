@@ -210,7 +210,7 @@ export function computeSplatWeights({ channels, h, N, seaLevel, snowLine, mat })
     // + the fine-channel layer (dense dark branching lines, Gaea-style)
     const soilEroded = clamp01(erosionN[i] * R.soilErode[0]
       + sedimentN[i] * R.soilErode[1] + flowN[i] * R.soilErode[2]
-      + channelsN[i] * 0.85);
+      + channelsN[i] * 1.4);
     const dirtBelt = smoothstep(R.dirtBelt[0], R.dirtBelt[1], sl) * (1 - smoothstep(0.75, 0.90, sl));
     let dirt = clamp01(Math.max(dirtBelt * 0.85, soilEroded * 1.05 + sedimentN[i] * 0.30))
       * (1 - sand) * (1 - snow) * (1 - rockSlope * 0.7);

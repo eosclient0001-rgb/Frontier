@@ -77,7 +77,7 @@ const C = {}; // control registry
   C.seed = mkSeed(b, { id: 'seed', label: 'Seed', value: P.seed });
   C.N = mkSelect(b, {
     id: 'N', label: 'Grid (100 m × 100 m)', value: P.N,
-    options: [[160, '160 × 160'], [224, '224 × 224'], [320, '320 × 320'], [384, '384 × 384'], [448, '448 × 448']],
+    options: [[160, '160 × 160'], [224, '224 × 224'], [320, '320 × 320'], [384, '384 × 384'], [448, '448 × 448'], [512, '512 × 512 (fine)']],
   });
   C.voxelRo = mkReadout(b, 'Voxel size');
   C.frequency = mkSlider(b, { id: 'frequency', label: 'Feature frequency', min: 1, max: 8, step: 0.1, value: P.frequency });
