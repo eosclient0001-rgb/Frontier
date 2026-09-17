@@ -2,9 +2,10 @@
  * Frontier · SDF Terrain Lab — main pipeline
  *
  *   MULTIFRACTAL MOUNTAIN   →  HYDRAULIC SDF EROSION   →  SPLATMAPS
- *   (fBm + ridge + peak     (thermal drops + D8 flow   (height/slope/curve/
- *    gradient mask)          accumulation, voxel-matched  flow/erosion/sediment/
- *                             cut depth)                 peaks/points → 5 layers)
+ *   (fBm + ridge + peak     (stream power + hillslope  (height/slope/curve/
+ *    gradient mask)          diffusion on the SDF     flow/erosion/sediment/
+ *                             field, voxel-matched      peaks/points → 5 layers)
+ *                             cut depth)
  * ============================================================ */
 
 import { buildMountain } from './mountain.js';
@@ -22,10 +23,9 @@ const P = {
   // mountain
   N: 320, seed: 1337, frequency: 2.4, octaves: 5, gain: 0.48, ridge: 0.38,
   peakHeight: 50, peakRadius: 28, peakSharp: 1.5, warp: 0.55, tilt: 0.42, seaLevel: -7,
-  // erosion
-  erodeSeed: 42, drops: 8192, dropSize: 1.6, erodibility: 0.60,
-  traversal: 90, cutFrac: 0.22,
-  thermalOn: false, hydOn: true, solver: 'stream', flowPasses: 12, flowExp: 1.55, sedimentOn: true,
+  // erosion — stream power + hillslope diffusion, run on the SDF field
+  erodeSeed: 42, iterations: 64, diffusion: 0.15, mExp: 0.45, nExp: 1.2,
+  erodibility: 0.60, cutFrac: 0.22, sedimentOn: true,
   // splats
   preview: 'blended', snowLine: 28, material: 'alpine',
   // view
@@ -135,25 +135,16 @@ const C = {}; // control registry
 
 // ---- Erosion section ----
 {
-  const b = mkSection(left, 'HYDRAULIC EROSION', 'SDF-domain · stream power + drops');
-  C.solver = mkSelect(b, {
-    id: 'solver', label: 'Erosion solver', value: P.solver,
-    options: [
-      ['stream', 'Stream power (Gaea-class)'],
-      ['particle', 'Particle drops (classic)'],
-    ],
-  });
-  C.thermalOn = mkCheck(b, { id: 'thermalOn', label: 'Thermal drops', value: P.thermalOn, hint: 'water particles' });
+  const b = mkSection(left, 'HYDRAULIC EROSION', 'SDF-domain · stream power + hillslope diffusion');
   C.erodeSeed = mkSeed(b, { id: 'erodeSeed', label: 'Erosion seed', value: P.erodeSeed });
-  C.drops = mkSlider(b, { id: 'drops', label: 'Drop count', min: 2048, max: 24576, step: 512, value: P.drops, fmt: (v) => v.toLocaleString() });
-  C.dropSize = mkSlider(b, { id: 'dropSize', label: 'Drop size', min: 0.5, max: 4, step: 0.1, value: P.dropSize });
+  C.iterations = mkSlider(b, { id: 'iterations', label: 'Iterations (maturity)', min: 16, max: 160, step: 4, value: P.iterations, fmt: (v) => v + '×' });
+  C.diffusion = mkSlider(b, { id: 'diffusion', label: 'Hillslope diffusion', min: 0.02, max: 0.40, step: 0.01, value: P.diffusion, fmt: (v) => v.toFixed(2) });
+  C.mExp = mkSlider(b, { id: 'mExp', label: 'Discharge exponent (m)', min: 0.20, max: 0.80, step: 0.01, value: P.mExp, fmt: (v) => v.toFixed(2) });
+  C.nExp = mkSlider(b, { id: 'nExp', label: 'Slope exponent (n)', min: 0.50, max: 2.00, step: 0.05, value: P.nExp, fmt: (v) => v.toFixed(2) });
   C.erodibility = mkSlider(b, { id: 'erodibility', label: 'Erodibility', min: 0.1, max: 1, step: 0.05, value: P.erodibility });
-  C.traversal = mkSlider(b, { id: 'traversal', label: 'Drop path length', min: 20, max: 140, step: 2, value: P.traversal, unit: ' m' });
   C.cutFrac = mkSlider(b, { id: 'cutFrac', label: 'Max cut / step', min: 0.05, max: 0.45, step: 0.01, value: P.cutFrac, fmt: (v) => (v * 100).toFixed(0) + '% vox' });
   C.cutRo = mkReadout(b, 'Cut ↔ voxel match');
-  C.flowPasses = mkSlider(b, { id: 'flowPasses', label: 'Iterations / passes', min: 2, max: 20, step: 1, value: P.flowPasses });
-  C.flowExp = mkSlider(b, { id: 'flowExp', label: 'Flow exponent', min: 0.5, max: 2, step: 0.05, value: P.flowExp });
-  C.sedimentOn = mkCheck(b, { id: 'sedimentOn', label: 'Sedimentation', value: P.sedimentOn, hint: 'bedload + alluvial fans' });
+  C.sedimentOn = mkCheck(b, { id: 'sedimentOn', label: 'Sedimentation', value: P.sedimentOn, hint: 'capacity routing + alluvial fans' });
 }
 
 // ---- View section ----
@@ -179,7 +170,7 @@ const stats = {};
   const e = mkSection(right, 'HYDRAULIC EROSION');
   stats.carved = mkStat(e, 'Carved');
   stats.deposited = mkStat(e, 'Deposited');
-  stats.stops = mkStat(e, 'Drop stops');
+  stats.iters = mkStat(e, 'Iterations');
   stats.flowMax = mkStat(e, 'Max flow (cells)');
   stats.water = mkStat(e, 'Water bodies');
   stats.genMs = mkStat(e, 'Mountain time');
@@ -212,8 +203,7 @@ function updateVoxelReadouts() {
   const voxel = WORLD / (P.N - 1);
   C.voxelRo.set((voxel * 100).toFixed(2) + ' cm');
   const cut = voxel * P.cutFrac;
-  const steps = Math.max(16, Math.round(P.traversal / voxel));
-  C.cutRo.set(`${(cut * 100).toFixed(1)} cm = ${(P.cutFrac * 100).toFixed(0)}% · path ${steps} steps`);
+  C.cutRo.set(`${(cut * 100).toFixed(1)} cm = ${(P.cutFrac * 100).toFixed(0)}% of voxel`);
 }
 
 function baseChannels() {
@@ -261,8 +251,8 @@ function updateErosionStats() {
   const s = S.erodeStats;
   stats.carved.set(s ? s.carvedM3.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' m³' : '—');
   stats.deposited.set(s ? s.depositedM3.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' m³' : '—');
-  stats.stops.set(s && s.thermal ? s.thermal.stops.toLocaleString() : '—');
-  stats.flowMax.set(s && s.hydraulic ? s.hydraulic.flowMax.toLocaleString() : '—');
+  stats.iters.set(s && s.iterations ? s.iterations + '×' : '—');
+  stats.flowMax.set(s && s.flowMax ? s.flowMax.toLocaleString() : '—');
   const wi = S.waterInfo;
   stats.water.set(wi ? `${wi.lakes} lakes · ${wi.rivers} rivers` : '—');
   stats.genMs.set(S.genMs ? S.genMs.toFixed(0) + ' ms' : '—');
@@ -352,22 +342,20 @@ async function generateMountain() {
 
 async function runErosionPipeline() {
   if (!S.h) return;
-  if (!P.thermalOn && P.solver === 'particle' && !P.hydOn) { clearBusy(); return; }
   // always erode from the fresh mountain so runs are reproducible
   S.h = S.baseH.slice();
 
-  setBusy(P.solver === 'stream'
-    ? `stream power: ${P.flowPasses} iterations…`
-    : `thermal: ${P.drops.toLocaleString()} drops…`);
+  setBusy(`stream power: 0/${P.iterations}…`);
   await nextFrame();
   const t0 = performance.now();
-  const res = runErosion({
+  const res = await runErosion({
     h: S.h, N: S.N, voxel: S.voxel, seed: P.erodeSeed,
-    thermalOn: P.thermalOn, hydOn: P.hydOn, solver: P.solver,
-    drops: P.drops, dropSize: P.dropSize, erodibility: P.erodibility,
-    traversal: P.traversal, cutFraction: P.cutFrac,
-    flowPasses: P.flowPasses, flowExp: P.flowExp,
+    iterations: P.iterations, diffusion: P.diffusion,
+    mExp: P.mExp, nExp: P.nExp,
+    erodibility: P.erodibility,
+    cutFraction: P.cutFrac,
     sedimentOn: P.sedimentOn, seaLevel: P.seaLevel, valley: S.valley,
+    yieldControl: (i, n) => { setBusy(`stream power: ${i}/${n}…`); return nextFrame(); },
   });
   S.erodeMs = performance.now() - t0;
   S.erodeStats = res.stats;
@@ -450,15 +438,12 @@ bindChange('warp');
 bindChange('tilt');
 bindChange('seaLevel', () => { view.setWaterVisible(P.waterOn); if (S.h) rebuildMesh(); });
 bindChange('erodeSeed');
-bindChange('thermalOn');
-bindChange('solver');
-bindChange('drops');
-bindChange('dropSize');
+bindChange('iterations');
+bindChange('diffusion');
+bindChange('mExp');
+bindChange('nExp');
 bindChange('erodibility');
-bindChange('traversal', () => updateVoxelReadouts());
 bindChange('cutFrac', () => updateVoxelReadouts());
-bindChange('flowPasses');
-bindChange('flowExp');
 bindChange('sedimentOn');
 bindChange('preview', () => { if (S.h) rebuildMesh(); });
 bindChange('snowLine', liveRebuild);

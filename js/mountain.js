@@ -128,7 +128,12 @@ export function buildMountain(p) {
         (z * sRidge + rw2 * 1.8) * (1.0 - p.tilt * 0.35),
         { octaves: 3, lacunarity: 2.1, gain: 0.5 });
       const spineSharp = Math.pow(spine, 1.3);           // sharpen crests, keep valleys low
-      const flank = mEnv * (0.60 + 0.40 * spineSharp) * (1 - mCore * 0.8);
+      // Strong world-space spurs: the flank height swings ±30% around
+      // the radial profile. This is what bends the drainage: on a pure
+      // radial dome every stream runs straight out (parallel spokes —
+      // the #1 fake tell). Ridged structure gives each stream a
+      // structurally-defined azimuth, so the network reads dendritic.
+      const flank = mEnv * (0.35 + 0.65 * spineSharp) * (1 - mCore * 0.8);
 
       // ---- radial drainage valleys (dendritic basins) ----
       // ~5 noise-perturbed radial VALLEYS cut into the flank as real
@@ -141,24 +146,28 @@ export function buildMountain(p) {
       // principle: the base must already look like a mountain).
       // The window keeps the summit core clean (stable peak height)
       // and the lowland plain intact.
-      // exactly 5 radial valleys from a 5th-order harmonic (a plain
-      // noise sample on the circle lumps into one giant dip); a per-seed
-      // phase keeps them off-axis, and a seamless per-valley noise
-      // varies each gorge's depth so the five are NOT identical.
+      // The mask defines 5 compass sectors (5th-order harmonic — a
+      // plain noise sample on the circle lumps into one giant dip; a
+      // per-seed phase keeps them off-axis, and seamless per-sector
+      // noise varies each sector's strength). It guides the erosion
+      // engine's canyon attractor and modulates the lowland below;
+      // it is deliberately NOT cut into the height (see note below).
       const nSect = 5;
       const vPhase = nStruct.noise(5.5, 9.1) * 2.0;
       const vCos = Math.cos(theta * nSect + vPhase);
       const vIrreg = 0.72 + 0.56 * fbm01(nStruct,
         Math.cos(theta) * 2.3 + 1.2, Math.sin(theta) * 2.3 - 0.7,
         { octaves: 2, lacunarity: 2.1, gain: 0.5 });
-      const valleyMask = Math.pow(Math.max(0, -vCos), 2.5) * vIrreg;
+      // exponent 5 → a sharp V: the axis dominates the local gradient
+      // (restoring slope > relief noise), so routed flow STAYS on the
+      // valley axis instead of wandering onto the flank
+      const valleyMask = Math.pow(Math.max(0, -vCos), 5.0) * vIrreg;
       // Valleys run ALL the way to the coast (bays) — this is what makes
       // them capture drainage: the interfluves (valleyMask≈0) stay high
       // at the shoreline as headlands, so radial runoff can't escape
       // around the valleys and must run down them to the sea.
       // The window keeps the summit core clean (stable peak height).
       const vWindow = smoothstep(0.30, 0.55, d1) * (1 - mCore * 0.85);
-      const valleyDepth = p.peakHeight * 0.28 * valleyMask * vWindow;
 
       let m = 0.85 * mCore + flank;
       // only the last sliver at the map rim is softened — the terrain
@@ -183,8 +192,13 @@ export function buildMountain(p) {
       // can concentrate it — clean slopes + strong valleys let the
       // erosion do the detailing (real mountains: smooth hillsides,
       // detailed drainage).
-      const reliefAmp = p.peakHeight * 0.10 * m * midRelief * 2.0;
-      const detailAmp = p.peakHeight * 0.055 * m * det * 2.0;
+      // The valley FLOOR is kept clean: relief noise there rivals the
+      // floor's restoring gradient and scatters the flow off-axis.
+      // Outside the valleys the full relief stays (the hillslopes
+      // need it for interfluve structure).
+      const floorClean = 1 - 0.75 * Math.min(1, valleyMask);
+      const reliefAmp = p.peakHeight * 0.10 * m * midRelief * 2.0 * floorClean;
+      const detailAmp = p.peakHeight * 0.055 * m * det * 2.0 * floorClean;
 
       // ---- broad low foothills across the whole map ----
       // Low-frequency relief that keeps most of the 100 m patch dry
@@ -212,7 +226,7 @@ export function buildMountain(p) {
 
       // shelf sits well below the waterline so the lowland plain crosses
       // the waterline → an irregular coastline with bays + beach.
-      const hv = (p.seaLevel - 5.5) + peakAmp + plainAmp + reliefAmp + detailAmp + shoreAmp - valleyDepth;
+      const hv = (p.seaLevel - 5.5) + peakAmp + plainAmp + reliefAmp + detailAmp + shoreAmp;
       h[j * N + i] = hv;
       valley[j * N + i] = valleyMask * vWindow;
       if (hv < minH) minH = hv;
