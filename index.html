@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Frontier — SDF Terrain Studio</title>
+<link rel="stylesheet" href="css/app.css"/>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./node_modules/three/build/three.module.js",
+    "three/addons/": "./node_modules/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">▲</span>
+    <div class="brand-text">
+      <h1>FRONTIER</h1>
+      <span>SDF Terrain Studio · multi-fractal · hydraulic erosion · splat maps</span>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="btn-generate" class="btn" title="Rebuild the mountain from noise (step 1)">⛰ &nbsp;Generate Mountain</button>
+    <button id="btn-erode" class="btn btn-primary" title="Run SDF particle hydraulic erosion (step 2)">💧 &nbsp;Hydraulic Erosion</button>
+    <button id="btn-splat" class="btn" title="Bake splat-map material channels (step 3)">🎨 &nbsp;Bake Splat Maps</button>
+    <button id="btn-pipeline" class="btn btn-accent" title="Generate → Erode → Bake">⚡ &nbsp;Full Pipeline</button>
+  </div>
+</header>
+
+<div class="main">
+
+  <aside class="panel">
+
+    <section class="group">
+      <h2><span class="gnum">01</span> Generation <span class="hint">multi-fractal · gradient noise</span></h2>
+      <div class="row split">
+        <label for="gen-seed">Seed</label>
+        <div class="seed-row">
+          <input id="gen-seed" class="num" type="number" step="1" value="1337"/>
+          <button id="gen-seed-rand" class="btn-ghost" title="Random seed">🎲</button>
+        </div>
+      </div>
+      <div class="row split">
+        <label for="gen-grid">Grid resolution</label>
+        <select id="gen-grid" class="num">
+          <option value="256">256 × 256</option>
+          <option value="512" selected>512 × 512</option>
+          <option value="1024">1024 × 1024</option>
+        </select>
+      </div>
+      <div class="row"><label>Peak height <span class="val" id="v-gen-heightM"></span></label>
+        <input id="gen-heightM" type="range" min="5" max="80" step="1" value="38"/></div>
+      <div class="row"><label>Octaves <span class="val" id="v-gen-octaves"></span></label>
+        <input id="gen-octaves" type="range" min="3" max="8" step="1" value="6"/></div>
+      <div class="row"><label>Persistence <span class="val" id="v-gen-persistence"></span></label>
+        <input id="gen-persistence" type="range" min="0.3" max="0.7" step="0.01" value="0.5"/></div>
+      <div class="row"><label>Ridged mix <span class="val" id="v-gen-ridgedMix"></span></label>
+        <input id="gen-ridgedMix" type="range" min="0" max="1" step="0.01" value="0.55"/></div>
+      <div class="row"><label>Ridge sharpness <span class="val" id="v-gen-ridgeExp"></span></label>
+        <input id="gen-ridgeExp" type="range" min="1.2" max="4" step="0.05" value="2.2"/></div>
+      <div class="row"><label>Domain warp <span class="val" id="v-gen-warp"></span></label>
+        <input id="gen-warp" type="range" min="0" max="1.5" step="0.01" value="0.55"/></div>
+      <div class="row"><label>Peak falloff <span class="val" id="v-gen-sharpness"></span></label>
+        <input id="gen-sharpness" type="range" min="0.8" max="4" step="0.05" value="1.9"/></div>
+      <div class="row"><label>Base frequency <span class="val" id="v-gen-baseFreq"></span></label>
+        <input id="gen-baseFreq" type="range" min="1.5" max="5" step="0.1" value="2.6"/></div>
+    </section>
+
+    <section class="group">
+      <h2><span class="gnum">02</span> Hydraulic Erosion <span class="hint">SDF particles · no mesh</span></h2>
+      <div class="row"><label>Particles <span class="val" id="v-ero-particles"></span></label>
+        <input id="ero-particles" type="range" min="20000" max="1000000" step="10000" value="300000"/></div>
+      <div class="row"><label>Iterations <span class="val" id="v-ero-iterations"></span></label>
+        <input id="ero-iterations" type="range" min="1" max="120" step="1" value="24"/></div>
+      <div class="row"><label>Steps / iteration <span class="val" id="v-ero-stepsPerIter"></span></label>
+        <input id="ero-stepsPerIter" type="range" min="1" max="4" step="1" value="2"/></div>
+      <div class="row"><label>Rainfall <span class="val" id="v-ero-rain"></span></label>
+        <input id="ero-rain" type="range" min="0.2" max="3" step="0.05" value="1"/></div>
+      <div class="row"><label>Capacity K <span class="val" id="v-ero-capacityK"></span></label>
+        <input id="ero-capacityK" type="range" min="0.1" max="2" step="0.05" value="0.9"/></div>
+      <div class="row"><label>Max cut / step <span class="val" id="v-ero-cutVoxels"></span></label>
+        <input id="ero-cutVoxels" type="range" min="0.05" max="1" step="0.01" value="0.25"/></div>
+      <div class="row"><label>Max deposit / step <span class="val" id="v-ero-depVoxels"></span></label>
+        <input id="ero-depVoxels" type="range" min="0.05" max="1" step="0.01" value="0.35"/></div>
+      <div class="row"><label>Particle step <span class="val" id="v-ero-stepVoxels"></span></label>
+        <input id="ero-stepVoxels" type="range" min="0.5" max="2" step="0.05" value="1"/></div>
+      <div class="row"><label>Evaporation <span class="val" id="v-ero-evap"></span></label>
+        <input id="ero-evap" type="range" min="0.98" max="0.999" step="0.001" value="0.995"/></div>
+      <div class="row"><label>Respawn / iter <span class="val" id="v-ero-respawnFrac"></span></label>
+        <input id="ero-respawnFrac" type="range" min="0" max="1" step="0.05" value="0.25"/></div>
+      <div class="row"><label>Slope limit <span class="val" id="v-ero-slideLimit"></span></label>
+        <input id="ero-slideLimit" type="range" min="0.5" max="2" step="0.05" value="1.1"/></div>
+      <div class="row"><label>Mass-waste passes <span class="val" id="v-ero-massWaste"></span></label>
+        <input id="ero-massWaste" type="range" min="0" max="8" step="1" value="2"/></div>
+      <div class="voxel-note" id="voxel-note"></div>
+    </section>
+
+    <section class="group">
+      <h2><span class="gnum">03</span> Splat Maps <span class="hint">material channels</span></h2>
+      <div class="row"><label><i class="dot" style="background:#5a5145"></i> Flow (wetness) <span class="val" id="v-splat-flow"></span></label>
+        <input id="splat-flow" type="range" min="0" max="2.5" step="0.05" value="1.4"/></div>
+      <div class="row"><label><i class="dot" style="background:#c4ac7e"></i> Sediment <span class="val" id="v-splat-sediment"></span></label>
+        <input id="splat-sediment" type="range" min="0" max="2.5" step="0.05" value="1.2"/></div>
+      <div class="row"><label><i class="dot" style="background:#8b8578"></i> Peak (rock) <span class="val" id="v-splat-peak"></span></label>
+        <input id="splat-peak" type="range" min="0" max="2.5" step="0.05" value="1"/></div>
+      <div class="row"><label><i class="dot" style="background:#3c5a38"></i> Pines <span class="val" id="v-splat-pines"></span></label>
+        <input id="splat-pines" type="range" min="0" max="2.5" step="0.05" value="1"/></div>
+      <div class="row"><label><i class="dot" style="background:#6a7d4a"></i> Height (grass) <span class="val" id="v-splat-base"></span></label>
+        <input id="splat-base" type="range" min="0" max="2.5" step="0.05" value="1"/></div>
+    </section>
+
+    <section class="group">
+      <h2><span class="gnum">04</span> View <span class="hint">camera &amp; overlays</span></h2>
+      <div class="toggles">
+        <label class="tog"><input id="view-autoRotate" type="checkbox"/><span>Auto-orbit</span></label>
+        <label class="tog"><input id="view-contours" type="checkbox" checked/><span>Contours</span></label>
+        <label class="tog"><input id="view-splatView" type="checkbox"/><span>Splat view</span></label>
+        <label class="tog"><input id="view-wireframe" type="checkbox"/><span>Wireframe</span></label>
+        <label class="tog"><input id="view-shadows" type="checkbox" checked/><span>Shadows</span></label>
+      </div>
+      <div class="row"><label>Contour interval <span class="val" id="v-view-contourStep"></span></label>
+        <input id="view-contourStep" type="range" min="0.5" max="10" step="0.5" value="2"/></div>
+      <button id="btn-shot" class="btn wide">📷 &nbsp;Save Screenshot (PNG)</button>
+    </section>
+
+    <div class="progress-wrap">
+      <div class="progress-label"><span id="progress-label">idle</span><span id="progress-pct"></span></div>
+      <div class="bar"><div id="progress-bar"></div></div>
+    </div>
+
+    <div class="console" id="console" title="Session log"></div>
+  </aside>
+
+  <div class="viewport" id="viewport">
+    <div class="hud" id="hud">
+      <div class="hud-title">TERRAIN STATE</div>
+      <div class="hud-line" id="hud-line1">—</div>
+      <div class="hud-line" id="hud-line2">—</div>
+      <div class="hud-line" id="hud-line3">—</div>
+      <div class="hud-line" id="hud-line4">—</div>
+    </div>
+    <div class="viewport-badge">SDF&nbsp;&nbsp;d(x, y, z) = z − h(x, y)&nbsp;&nbsp;·&nbsp;&nbsp;100 m × 100 m test domain</div>
+    <div class="minimaps">
+      <div class="mini"><span>HEIGHT</span><canvas id="mini-height" width="168" height="168"></canvas></div>
+      <div class="mini"><span>SPLAT · R flow / G sed / B peak / A pines</span><canvas id="mini-splat" width="168" height="168"></canvas></div>
+      <div class="mini"><span>Δ EROSION · − cut / + deposit</span><canvas id="mini-delta" width="168" height="168"></canvas></div>
+    </div>
+  </div>
+
+</div>
+
+<footer class="statusbar">
+  <span id="sb-grid">grid —</span>
+  <span id="sb-voxel">—</span>
+  <span id="sb-vol">—</span>
+  <span id="sb-peak">—</span>
+  <span id="sb-time">—</span>
+</footer>
+
+<script src="js/terrain-core.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

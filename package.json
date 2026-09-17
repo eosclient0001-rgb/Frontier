@@ -1,0 +1,13 @@
+{
+  "name": "frontier-sdf-terrain",
+  "version": "1.0.0",
+  "description": "Frontier — SDF Terrain Studio: multi-fractal mountain generation, SDF particle hydraulic erosion, splat-map material baking (flow / sediment / peak / pines / height).",
+  "private": true,
+  "scripts": {
+    "start": "python3 -m http.server 8123 --bind 0.0.0.0",
+    "test": "node test/smoke.js"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}
