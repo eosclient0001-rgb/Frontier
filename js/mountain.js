@@ -51,6 +51,9 @@ export function buildMountain(p) {
   const tiltAngle = (seed % 628) / 100;          // deterministic per seed
   const tiltCos = Math.cos(tiltAngle);
   const tiltSin = Math.sin(tiltAngle);
+  // per-seed major-ridge orientation for the flank massif
+  const ridgeAng = (((seed >> 9) % 628) / 100) + 0.4;
+  const rCos = Math.cos(ridgeAng), rSin = Math.sin(ridgeAng);
   // per-seed summit offset so peaks land organically, not dead-centre
   const peakX = (((seed >> 3) % 25) - 12) * 0.9;
   const peakZ = (((seed >> 7) % 25) - 12) * 0.9;
@@ -128,45 +131,54 @@ export function buildMountain(p) {
         (z * sRidge + rw2 * 1.8) * (1.0 - p.tilt * 0.35),
         { octaves: 3, lacunarity: 2.1, gain: 0.5 });
       const spineSharp = Math.pow(spine, 1.3);           // sharpen crests, keep valleys low
-      // Strong world-space spurs: the flank height swings ±30% around
-      // the radial profile. This is what bends the drainage: on a pure
-      // radial dome every stream runs straight out (parallel spokes —
-      // the #1 fake tell). Ridged structure gives each stream a
-      // structurally-defined azimuth, so the network reads dendritic.
-      const flank = mEnv * (0.35 + 0.65 * spineSharp) * (1 - mCore * 0.8);
+      // Sub-structure spurs (mid-scale texture on the flank)
+      const flank = mEnv * (0.45 + 0.55 * spineSharp) * (1 - mCore * 0.8);
 
-      // ---- radial drainage valleys (dendritic basins) ----
-      // ~5 noise-perturbed radial VALLEYS cut into the flank as real
-      // incised grooves (sampled seamlessly on the compass circle).
-      // Amplitude modulation alone does NOT funnel flow — only an
-      // actual height deficit makes water migrate sideways into the
-      // valley and run down it. With real interfluves, any erosion
-      // solver carves 5-7 main valleys + dendritic tributaries and
-      // the hillslopes between stay clean (Gaea's pre-erosion
-      // principle: the base must already look like a mountain).
-      // The window keeps the summit core clean (stable peak height)
-      // and the lowland plain intact.
-      // The mask defines 5 compass sectors (5th-order harmonic — a
-      // plain noise sample on the circle lumps into one giant dip; a
-      // per-seed phase keeps them off-axis, and seamless per-sector
-      // noise varies each sector's strength). It guides the erosion
-      // engine's canyon attractor and modulates the lowland below;
-      // it is deliberately NOT cut into the height (see note below).
+      // ---- 5-fold flow corridors (computed early: the massif below
+      // must not dam them) ----
+      // 5th-order harmonic on the compass circle: a per-seed phase
+      // keeps them off-axis, seamless per-sector noise varies each
+      // corridor's strength. NOT cut into the height — they guide the
+      // erosion attractor, clear the massif, and modulate the lowland.
       const nSect = 5;
       const vPhase = nStruct.noise(5.5, 9.1) * 2.0;
       const vCos = Math.cos(theta * nSect + vPhase);
       const vIrreg = 0.72 + 0.56 * fbm01(nStruct,
         Math.cos(theta) * 2.3 + 1.2, Math.sin(theta) * 2.3 - 0.7,
         { octaves: 2, lacunarity: 2.1, gain: 0.5 });
-      // exponent 5 → a sharp V: the axis dominates the local gradient
-      // (restoring slope > relief noise), so routed flow STAYS on the
-      // valley axis instead of wandering onto the flank
       const valleyMask = Math.pow(Math.max(0, -vCos), 5.0) * vIrreg;
-      // Valleys run ALL the way to the coast (bays) — this is what makes
-      // them capture drainage: the interfluves (valleyMask≈0) stay high
-      // at the shoreline as headlands, so radial runoff can't escape
-      // around the valleys and must run down them to the sea.
-      // The window keeps the summit core clean (stable peak height).
+
+      // ---- ridge massif: the main drainage structure ----
+      // Long, coherent ridges running in a per-seed direction, spaced
+      // ~19 m apart, ±8.5 m high. A pure radial dome can NEVER drain
+      // dendritically — on a convex radial flank every local gradient
+      // points outward, so streams always run straight off (parallel
+      // spokes). Real mountains are masses of long ridges: the crests
+      // force the flow to follow the valleys BETWEEN them tangentially
+      // for tens of metres before it reaches the coast, and the cross
+      // roughness (gully seeds) branches it into a tree. The ridge
+      // lines drift slowly along their length (the u terms) so the
+      // valleys meander over long distances — real rivers.
+      // NOT gated by `m` (which is small on the mid-flank — exactly
+      // where the structure must dominate); its own envelope fades it
+      // out at the summit core and beyond the flank.
+      const u = x * rCos + z * rSin;      // along-ridge coordinate
+      const v = -x * rSin + z * rCos;     // cross-ridge coordinate
+      const massifProf = ridged(nStruct, v * 0.052 + u * 0.011 + 41.7, u * 0.019 - 23.3,
+        { octaves: 2, lacunarity: 2.1, gain: 0.5 });
+      const massifEnv = smoothstep(0.30, 0.55, d1) * (1 - smoothstep(0.85, 1.10, d1)) * (1 - mCore * 0.9);
+      // CRITICAL: carve the massif out of the flow corridors. A ridge
+      // crossing a corridor dams it — the upstream side becomes a
+      // closed bowl and every such bowl becomes a pothole lake. With
+      // the corridors clear, the valleys run unobstructed to the
+      // coast and the massif only structures the interfluves.
+      const corridor = 1 - 0.85 * Math.min(1, valleyMask);
+      const massifAmp = p.peakHeight * 0.20 * (2 * massifProf - 1) * massifEnv * corridor;
+
+      // Valleys run ALL the way to the coast (bays) — the interfluves
+      // (valleyMask≈0) stay high at the shoreline as headlands, so
+      // runoff must run down the corridors to the sea. The window
+      // keeps the summit core clean (stable peak height).
       const vWindow = smoothstep(0.30, 0.55, d1) * (1 - mCore * 0.85);
 
       let m = 0.85 * mCore + flank;
@@ -180,6 +192,16 @@ export function buildMountain(p) {
       // crosses the radial profile like real mountain structure,
       // instead of wrapping around the peak like bumps on a ball.
       const det = fbm01(nDet, x * s * 3.4 + 91.2, z * s * 3.4 - 47.5, {
+        octaves: 3, lacunarity: 2.3, gain: 0.5,
+      }) - 0.5;
+      // gully-seed roughness: 3 m-scale, ±2.5 m relief. This is what
+      // gives the D8 flow real branching choices — without relief
+      // whose gradient rivals the radial dome gradient, streams run
+      // straight out in parallel spokes (the #1 fake tell). The seed
+      // is strong early (it carves the dendritic network), and
+      // hillslope diffusion erases ~90% of it by the final
+      // iterations — the network stays, the bumps don't.
+      const gully = fbm01(nDet, x * s * 12 + 23.7, z * s * 12 - 88.4, {
         octaves: 3, lacunarity: 2.3, gain: 0.5,
       }) - 0.5;
       const midRelief = fbm01(nDet, x * s * 1.35 - 33.7, z * s * 1.35 + 21.2, {
@@ -199,6 +221,9 @@ export function buildMountain(p) {
       const floorClean = 1 - 0.75 * Math.min(1, valleyMask);
       const reliefAmp = p.peakHeight * 0.10 * m * midRelief * 2.0 * floorClean;
       const detailAmp = p.peakHeight * 0.055 * m * det * 2.0 * floorClean;
+      // gully seeds keep their own mid-flank envelope (see massif note)
+      const gullyEnv = smoothstep(0.25, 0.45, d1) * (1 - smoothstep(0.90, 1.10, d1)) * (1 - mCore * 0.6);
+      const gullyAmp = p.peakHeight * 0.05 * gullyEnv * gully * 2.0 * floorClean;
 
       // ---- broad low foothills across the whole map ----
       // Low-frequency relief that keeps most of the 100 m patch dry
@@ -226,7 +251,7 @@ export function buildMountain(p) {
 
       // shelf sits well below the waterline so the lowland plain crosses
       // the waterline → an irregular coastline with bays + beach.
-      const hv = (p.seaLevel - 5.5) + peakAmp + plainAmp + reliefAmp + detailAmp + shoreAmp;
+      const hv = (p.seaLevel - 5.5) + peakAmp + plainAmp + reliefAmp + detailAmp + gullyAmp + massifAmp + shoreAmp;
       h[j * N + i] = hv;
       valley[j * N + i] = valleyMask * vWindow;
       if (hv < minH) minH = hv;

@@ -74,7 +74,7 @@ function smooth(a, b, x) {
  * Returns flow (contributing area in cells), pits, ascending-height
  * order, and downIdx (chosen downhill neighbour per cell).
  */
-export function computeFlow(h, N, voxel, jitterRng, seed = 1, mScale = 0.035, mAmp = 0.55, seaLevel = -Infinity) {
+export function computeFlow(h, N, voxel, jitterRng, seed = 1, mScale = 0.06, mAmp = 0.4, seaLevel = -Infinity) {
   const size = N * N;
   const flow = new Float32Array(size);
   const pits = new Uint8Array(size);
@@ -99,6 +99,61 @@ export function computeFlow(h, N, voxel, jitterRng, seed = 1, mScale = 0.035, mA
   const meanderN = new Perlin2D(subseed((seed ^ 0x51ab77) >>> 0, 77));
   const ANG = new Float32Array(8);
   for (let k = 0; k < 8; k++) ANG[k] = Math.atan2(NEI[k][1], NEI[k][0]);
+  // cells receiving flow routed over a pit spill (breach candidates)
+  const spillMark = new Uint8Array(size);
+
+  // ---- depression routing (O'Callaghan & Mark extension, à la
+  // Landlab DepressionFinderAndRouter) ----
+  // On a closed island every enclosed pit becomes a lake unless the
+  // flow is routed OVER the lowest surrounding spill (pour-water
+  // level). Routing over spits lets the erosion cut the rim, drain
+  // the basin and mature it — what actually happens in nature.
+  // fill[] is computed with a bucket (radix) Dijkstra: pour levels
+  // are bounded by the terrain's height span, so 2048 height buckets
+  // give an O(N²) pass at a tiny constant.
+  const fill = new Float64Array(size).fill(Infinity);
+  {
+    const B = 2048;
+    const spanF = Math.max(hMax - hMin, 1e-6);
+    const bucketOf = (v) => {
+      const b = ((v - hMin) / spanF * B) | 0;
+      return b < 0 ? 0 : b >= B ? B - 1 : b;
+    };
+    const q = new Array(B);
+    for (let b = 0; b < B; b++) q[b] = [];
+    const push = (v, i) => q[bucketOf(v)].push(i);
+    const done = new Uint8Array(size);
+    let qmin = 0;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      if (i === 0 || j === 0 || i === N - 1 || j === N - 1) {
+        const idx = j * N + i;
+        fill[idx] = h[idx];
+        push(h[idx], idx);
+      }
+    }
+    for (;;) {
+      while (qmin < B && q[qmin].length === 0) qmin++;
+      if (qmin >= B) break;
+      const idx = q[qmin].pop();
+      if (done[idx]) continue;
+      done[idx] = 1;
+      const fv = fill[idx];
+      const cx = idx % N, cy = (idx / N) | 0;
+      for (let k = 0; k < 4; k++) {
+        const ox = k === 0 ? 1 : k === 1 ? -1 : 0;
+        const oy = k === 2 ? 1 : k === 3 ? -1 : 0;
+        const nx = cx + ox, ny = cy + oy;
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+        const ni = ny * N + nx;
+        if (done[ni]) continue;
+        const nf = h[ni] > fv ? h[ni] : fv;
+        if (nf < fill[ni] - 1e-9) {
+          fill[ni] = nf;
+          push(nf, ni);
+        }
+      }
+    }
+  }
 
   const flatEps = 0.015 * voxel;
   // process strictly from highest cell to lowest so upflow is settled first
@@ -127,7 +182,23 @@ export function computeFlow(h, N, voxel, jitterRng, seed = 1, mScale = 0.035, mA
       const score = (cur - nh) * (1 + 0.5 * amp * Math.cos(ANG[k] - phi));
       if (best < 0 || score > bestScore) { best = ny * N + nx; bestScore = score; bestH = nh; }
     }
-    if (best < 0) { pits[idx] = 1; continue; }
+    if (best < 0) {
+      // pit: route over the lowest surrounding spill (lowest pour-
+      // water level) so the basin drains and the erosion can cut it
+      pits[idx] = 1;
+      let spill = -1, spillF = Infinity;
+      for (let k = 0; k < 8; k++) {
+        const nx = cx + NEI[k][0], ny = cy + NEI[k][1];
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+        const ni = ny * N + nx;
+        if (fill[ni] < spillF) { spillF = fill[ni]; spill = ni; }
+      }
+      if (spill < 0) continue;
+      best = spill;
+      spillMark[best] = 1;
+      flow[best] += flow[idx];
+      continue;
+    }
     // near-flat jitter (full land only): among neighbours within
     // flatEps of the min, pick one at random — breaks symmetry on
     // plateaus without letting coastal shelves random-walk
@@ -154,7 +225,7 @@ export function computeFlow(h, N, voxel, jitterRng, seed = 1, mScale = 0.035, mA
     downIdx[idx] = best;
     flow[best] += flow[idx];
   }
-  return { flow, pits, order, downIdx };
+  return { flow, pits, order, downIdx, spillMark };
 }
 
 /**
@@ -192,7 +263,7 @@ export async function streamPowerErode({
   erodibility = 0.6,
   sedimentOn = true,
   seaLevel, bedrock,
-  mScale = 0.035, mAmp = 0.55,
+  mScale = 0.06, mAmp = 0.4,
   valley = null,
   erosionMap, depositMap, pointsMap,
   yieldControl = null,
@@ -206,7 +277,7 @@ export async function streamPowerErode({
   let ff = computeFlow(h, N, voxel, rng, seed, mScale, mAmp, seaLevel);
 
   for (let it = 0; it < iterations; it++) {
-    const { flow, pits, order, downIdx } = ff;
+    const { flow, pits, order, downIdx, spillMark } = ff;
     const load = sedimentOn ? new Float32Array(size) : null;
 
     // ---- 1) incision + sediment routing (highest → lowest) ----
@@ -241,7 +312,10 @@ export async function streamPowerErode({
       if (cany > 0.02) e *= (1 + 0.8 * cany);
       const aboveSea = cur - seaLevel;
       if (aboveSea < 4) e *= smooth(aboveSea, -2, 4);
-      let eCap = cutPerStep * (1 + 1.5 * cany);
+      // breach boost: cells carrying a pit's routed flow over a rim
+      // cut much faster — an overtopped lake cuts its outlet fast,
+      // which is what drains enclosed basins into real catchments
+      let eCap = cutPerStep * (1 + 1.5 * cany) * (spillMark[idx] ? 2.2 : 1);
       if (e > eCap) e = eCap;
       const avail = cur - bedrock;
       if (e > avail) e = avail;
@@ -329,10 +403,13 @@ export async function streamPowerErode({
  *            lakeCount:number, riverCount:number}}
  */
 export function detectWaterBodies(h, N, flow, seaLevel,
-  { minLakeArea = 15, minLakeDepth = 0.20, riverPercentile = 0.996 } = {}) {
+  { voxel, minLakeM2 = 18, minLakeDepth = 0.30, riverPercentile = 0.996 } = {}) {
   const size = N * N;
   const river = new Float32Array(size);
   const lake = new Float32Array(size);
+  // minimum lake SIZE in m² (resolution-independent): micro-basins
+  // stay as invisible terrain texture, only real water bodies fill
+  const minLakeArea = Math.max(12, minLakeM2 / (voxel * voxel));
 
   // ---- pour water: fill[i] = water surface if the terrain were flooded.
   // Dijkstra from the rim (rim cells drain to sea/edge, fill = own height).
@@ -461,6 +538,88 @@ export function detectWaterBodies(h, N, flow, seaLevel,
   return { river, lake, water, lakeCount, riverCount };
 }
 
+/**
+ * Drain small enclosed basins by cutting their lowest spill rim.
+ * On a closed island every enclosed pit becomes a lake, and a short
+ * erosion run can't breach every one — so small basins (potholes,
+ * dead-end spur bowls) are cut through explicitly: in nature they
+ * don't persist; only basins larger than `maxLakeAreaM2` survive and
+ * become the landscape's lakes.
+ */
+export function drainSmallBasins(h, N, voxel, seaLevel, maxLakeAreaM2 = 1500) {
+  const size = N * N;
+  const maxCells = Math.max(50, maxLakeAreaM2 / (voxel * voxel));
+  for (let pass = 0; pass < 10; pass++) {
+    let breached = false;
+    const seen = new Uint8Array(size);
+    const stack = new Int32Array(size);
+    for (let j = 1; j < N - 1; j++) {
+      for (let i = 1; i < N - 1; i++) {
+        const c = j * N + i;
+        const hc = h[c];
+        // only on-land basins can become visible lakes
+        if (hc < seaLevel + 0.3) continue;
+        // is it a pit (no strictly lower 8-neighbour)? and what is
+        // the lowest rim neighbour (the spill)?
+        let isPit = true, spill = Infinity, spillIdx = -1;
+        for (let k = 0; k < 8; k++) {
+          const nx = i + NEI[k][0], ny = j + NEI[k][1];
+          if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+          const ni = ny * N + nx, nh = h[ni];
+          if (nh < hc - 1e-9) isPit = false;
+          if (nh < spill) { spill = nh; spillIdx = ni; }
+        }
+        if (!isPit || spillIdx < 0) continue;
+        // basin size: everything below the spill rim that is reachable
+        // from the pit (flood fill, 4-connected)
+        let count = 0, sp = 0;
+        stack[sp++] = c;
+        seen[c] = 1;
+        while (sp > 0 && count < maxCells) {
+          const x = stack[--sp];
+          count++;
+          const x0 = x % N, y0 = (x / N) | 0;
+          for (let k = 0; k < 4; k++) {
+            const nx = x0 + (k === 0 ? 1 : k === 1 ? -1 : 0);
+            const ny = y0 + (k === 2 ? 1 : k === 3 ? -1 : 0);
+            if (nx < 1 || ny < 1 || nx >= N - 1 || ny >= N - 1) continue;
+            const ni = ny * N + nx;
+            if (seen[ni] || h[ni] > spill + 1e-9) continue;
+            seen[ni] = 1;
+            stack[sp++] = ni;
+          }
+        }
+        if (count < maxCells) {
+          // cut an outlet ramp: from the lowest rim cell, walk to the
+          // lowest neighbour, lowering each step by 0.2 × voxel
+          // below the previous, until the terrain itself drops below
+          // the ramp (the outer flank slopes to the coast, so the
+          // descent continues on its own from there)
+          let cur = spillIdx, guard = 0;
+          let level = hc;
+          while (guard++ < 150) {
+            level -= 0.2 * voxel;
+            if (h[cur] <= level + 1e-9) break; // terrain takes over
+            h[cur] = level;
+            let next = -1, nextH = Infinity;
+            const x0 = cur % N, y0 = (cur / N) | 0;
+            for (let k = 0; k < 8; k++) {
+              const nx = x0 + NEI[k][0], ny = y0 + NEI[k][1];
+              if (nx < 1 || ny < 1 || nx >= N - 1 || ny >= N - 1) continue;
+              const ni = ny * N + nx;
+              if (h[ni] < nextH) { nextH = h[ni]; next = ni; }
+            }
+            if (next < 0 || next === c) break;
+            cur = next;
+          }
+          breached = true;
+        }
+      }
+    }
+    if (!breached) break;
+  }
+}
+
 /** One-click erosion pass on the SDF field. Mutates h; returns stats + fields. */
 export async function runErosion({
   h, N, voxel, seed,
@@ -480,16 +639,23 @@ export async function runErosion({
     valley, erosionMap, depositMap, pointsMap, yieldControl,
   });
 
-  const flow = res.flow;
-  const pits = res.pits;
-  const flowMax = res.flowMax;
+  // ---- drain small enclosed basins (potholes don't persist) ----
+  drainSmallBasins(h, N, voxel, seaLevel);
+
+  // the drain pass may have opened new outlets — refresh the flow
+  const rng2 = mulberry32((seed ^ 0x9e3779b9) >>> 0);
+  const ff2 = computeFlow(h, N, voxel, rng2, seed, 0.06, 0.4, seaLevel);
+  const flow2 = ff2.flow;
+  let flowMax2 = 1;
+  for (let f = 0; f < size; f++) if (flow2[f] > flowMax2) flowMax2 = flow2[f];
 
   // ---- water bodies (lakes filled + rivers) ----
-  const wb = detectWaterBodies(h, N, flow, seaLevel);
+  const wb = detectWaterBodies(h, N, flow2, seaLevel, { voxel });
 
   return {
-    erosionMap, depositMap, pointsMap, flow, pits, flowMax,
+    erosionMap, depositMap, pointsMap,
+    flow: flow2, pits: ff2.pits, flowMax: flowMax2,
     water: wb.water, lakeCount: wb.lakeCount, riverCount: wb.riverCount,
-    stats: { carvedM3: res.carvedM3, depositedM3: res.depositedM3, flowMax, iterations },
+    stats: { carvedM3: res.carvedM3, depositedM3: res.depositedM3, flowMax: flowMax2, iterations },
   };
 }
