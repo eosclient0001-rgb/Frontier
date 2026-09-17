@@ -733,3 +733,53 @@ proof of the *product*; these four sheets are the visual proof of the content.
     ReSTIR + denoiser at interactive rates — not the content.
 11. Optional/deferred: M4c dispersion hero sampling, glints (`slate_glint_*` stored-unread), geometric displacement
     (channel 20), Tier B in-kernel multi-slab (post-M9 revisit).
+12. **Environment lighting — bake the sky, and let the sky be a light** (deferred; recorded here because the
+    question "does the ray tracer / ReSTIR also sample the sun, sky, moon, and if so can we sample it as an image
+    instead" has a measured answer and a concrete plan).
+
+    What the kernel does today (`ReSTIRViewport.slang` with `SkyRecords`, `MoonRecords`, `PostRecords`):
+
+    - the **sun is a first-class light**. Candidates cone-sample it (`SampleSunDirection`), the reservoir stores
+      `kSunLightIndex` with the sampled direction as its point, p̂ = f·L·cos, and the committed selection is
+      validated by one BVH shadow ray (plus an 8-tap cloud-shadow march when cloud shadows are staged). Its
+      *radiance* is not integrated per ray: `SkyConstantRecord` packs `SunDirect` on the host once per frame from a
+      single atmosphere march. So the sun costs a cone sample and a shadow ray per candidate, and it reuses
+      through the merges like any other light;
+    - the **sky, moons, stars and twilight are not lights**. They are what an *escaped* ray sees: a missed primary
+      ray, or a bounce ray that leaves the scene, calls `SkyAlong`, which marches the atmosphere
+      (`Control.x × Control.y` = **16 × 6 = up to 96 segments at Standard**, each with an `exp` and a
+      ray/sphere intersect per light sample), then adds the star catalogue, the twilight glow, the moons (texture +
+      phase) and the sun's disc. Nothing above the DI block reuses any of it — a `kFeatureSpatialReuse` tap does
+      not carry sky radiance;
+    - **measured** (scratch bench, 20 000 directions through `SkyFogIntegrator::ComputeSkyRadiance` at the
+      product's staging, single core, `-O2`): **6.7 µs per escaped ray at 06 h, 6.5 µs at 12 h, 7.0 µs at
+      17.93 h, 3.4 µs at 21 h** (after sunset the lit march is skipped). For scale, the whole 480×270 / 80 spp
+      wide render of the M10 level costs ≈ 12 µs of CPU **per path sample** — one escaped ray pays about a third
+      of an entire path. A GPU's absolute numbers differ, but the shape is the same: it is a per-ray loop, and a
+      fetch would not be;
+    - the consequence that matters for pictures: because the sky is not in the reservoir, sky-visibility variance
+      has no reuse at all. A smooth or glass surface whose reflection lands on sky is estimated by BSDF sampling
+      alone — which is exactly what the "sky-backed glass" A/B on the render-verification backlog is waiting to
+      show, and why a probe is worth more than the µs it saves.
+
+    The plan, in two stages that can ship independently:
+
+    **A. Bake the environment to a probe.** Precompute sky + moons + stars + twilight (the sun's *disc* stays
+    analytic — cone sampling and soft shadows are the reason the sun is a light) into a mipmapped 256²
+    octahedral (or cubemap) probe per staging: sun hour, fog scenario, moon phase, star rotation, atmosphere
+    constants. Escaped rays then take one prefiltered fetch instead of 96 taps, and the probe's total power gives
+    the pick probability stage B needs. Key the cache on a hash of the staging and store the bake in the project
+    package (`.environment` — the world-environment kind in `Docs/ProjectFormat.md` — carrying a `BLOB`), so a
+    bake travels with the project and never runs twice for the same sky. *Acceptance:* probe radiance vs the
+    analytic march on a direction grid (mean and max relative error printed), plus the escaping-bounce panel of
+    the M10 viewport comparing fetch-lit against march-lit within the sheet's own RMSE tolerance.
+
+    **B. Make the sky a light in the reservoir.** Add a sky candidate beside the sun and the emissive triangles,
+    sampled by a luminance CDF/alias table over the probe (the engine already builds a Walker table for
+    luminaires) with p̂ from a probe fetch — one fetch per candidate instead of an integral. Sky direct lighting
+    then reuses through the temporal and spatial merges like every other light, which is the actual fix for the
+    glass/specular variance above. *Acceptance:* the ReSTIR sheet's RMSE table on a sky-backed glass scene, with
+    the existing `--taps` A/B unchanged — a reuse win, not a new variance source.
+
+    Smallest version that pays: bake the probe, use it only for escaped rays (A), and leave the reservoir alone.
+    That is a pure replacement of the march with a fetch and is measurable on this CPU alone.
