@@ -698,10 +698,20 @@ a viewer effect, not level radiance), the fog march (the studio is 3–15 m deep
 and lens flare. Below the sky's horizon the level shows the atmosphere's dark planet ground, which is what the engine
 returns there too — the studio floor simply does not extend to the frame's edges.
 
+Kept-sheet values (driver defaults, 0 non-finite samples in all four): film mean 1.6455 / 1.3387 / 1.6166 / 1.3047 for
+View / GlassRow / Specials / Wide; `sha256 9761cdfb…` · `7a4ea7b9…` · `fcf22e2d…` · `44007e3e…`. What the sheets
+show, checked against the census rather than admired: the amber bottle carries its Beer tint and the frosted sphere
+its diffuse transmission (row 3, specimen 2), lead crystal leaves the checker-sharp edges only a high-IOR medium can,
+the metals reflect the fill luminaire's rectangular highlight, the coated paints carry the coat's own highlight over a
+darker base, velvet and felt read as sheen rather than gloss next to mercury's mirror (row 5), and the three sign
+panels — cutout, unlit, emissive-only — sit on the backdrop where the level puts them.
+
 **Honest scope.** Textures are not bound (constants only), the alpha test is resolved per material rather than per
 texel (the level has no texture assets, so the two coincide), and one medium is tracked at a time while walking glass
-(M4b's v1 rule — the level never nests dielectrics). The GPU's first render of this level is still the visual proof of
-the *product*; this sheet is the visual proof of the content.
+(M4b's v1 rule — the level never nests dielectrics). At 80–128 spp the sheets still carry visible CPU-traced speckle in
+the mats and the floor's caustic-free shading — the exhibit sheets run 256 spp because a shaderball panel is 1/250th of
+this pixel count, and two cores is the whole machine here. The GPU's first render of this level is still the visual
+proof of the *product*; these four sheets are the visual proof of the content.
 
 ---
 

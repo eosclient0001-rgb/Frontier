@@ -69,7 +69,8 @@ same shader text, same lights, same radiance.
   driver: `Exhibits/Workbench/Materials/RunMaterialLibraryViewport.sh [fast|full]` (builds, renders, gates on
   non-finite samples and a plausible film mean, prints the sha256 of each sheet).
 - Deterministic: fixed per (pixel, sample) seeds, no time-dependent state; re-running the driver reproduces each sheet
-  bit-for-bit.
+  bit-for-bit. Kept-sheet hashes (2026-09-17, driver defaults): `View 9761cdfb…` · `GlassRow 7a4ea7b9…` ·
+  `Specials fcf22e2d…` · `Wide 44007e3e…`, film means 1.65 / 1.34 / 1.62 / 1.30, 0 non-finite samples in all four.
 - Deliberately absent: the sky core's panel post (vignette/flare), the fog march (the level's scenario is Clear), and
   textures (the level is constants-only by design — see the M10 section of the proofs report). Below the sky horizon
   the atmosphere's dark planet ground shows, exactly as the engine returns it.
