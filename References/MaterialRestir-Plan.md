@@ -248,6 +248,8 @@ selection-switch retention test.
 - Decide with data: keep Tier A + fold (recommended unless a scene needs true 2-slab) or
   evaluate 2 slabs in-kernel. Either way: Sponza + Cornell + shaderball + glass-proof at
   `slab_limit` 1/2/8, fold-report review, perf budget (§6).
+  (DONE 2026-09-17 — `MaterialSceneProof` 102/102, report §9: verdict keep Tier A + fold,
+  0 multi-slab in 44 real materials; Sponza validate-if-present, absent here.)
 
 ### M9 — Re-enable milestone (denoiser + motion vectors back on)
 - Re-enable `Denoise` and `TemporalReprojection` (defaults back to true); validate the new

@@ -465,7 +465,54 @@ set with equivalent flags, and the missing-sources guard catches path typos at c
 
 ---
 
-## 9. What's next
+## 9. Tier B decision + full-scene validation — M8 (102/102, SHIPPED 2026-09-17)
+
+Gate: `bash Exhibits/Workbench/Materials/CheckMaterialScenes.sh` — compiles `MaterialSceneProof.cpp` against the real
+interchange TUs (`ContentCodec` + `SceneCodec` + `MaterialCodec` + `ObjCodec` + `FbxCodec` + `UfbxTranslation` +
+`SceneStructure` + `GeometryStructure` + `OrientationClassifier` + `TextureIndex` + `MaterialIndex` +
+`ShaderBallStructure` + the M7b preview TU) with the M6/M7 header candidates plus stb (`ExternalPackages/stb`,
+`$MATERIAL_SCENES_EXT/stb`, `~/.cache/m8/stb`, `~/.cache/sweep/stb` — `TextureIndex`'s only third-party include;
+this branch carries zero gitlinks, so the submodule path is aspirational and the caches do the work). CornellBox
+(committed), GlassProof (committed, new — 4 quads: clear/frosted panes, emissive panel, diffuse wall), and the
+generated R4b shaderball level (headless `ShaderBallStructure` export → `ContentCodec::Decode`, the same
+export-once path `GameExecution` uses) decode → `Finalise` at slab_limit 1/2/8 → census + fold review; Sponza
+validates when present, skipped otherwise (absent here — `raw.githubusercontent` egress blocked, `curl` exit 35).
+
+- **A loads** — Cornell 9+fallback, GlassProof 4+fallback, shaderball 28+fallback; Sponza skipped (conditional).
+  Caught by the gate: my pre-count said 25 — three materials live past line 130 (`velvet_cloth`, `felt_cloth`,
+  `luminaire`), so the pin is 29 and the census below is the ground truth.
+- **B limit matrix** — zero folds on all real content at 1/2/8, every record resident 1 slab. GlassProof pins
+  exactly (both panes Transmissive, clear 1.0/0.06, frosted 0.8/0.4 + 0.1 m volume, panel Standard + 3 nit —
+  `BaseWeight` defaults 1 so `EmissiveOnly` stays unreachable from glTF, the M0-known trap). Shaderball
+  encode→decode fidelity: clearcoat exact + uncoated-twin discrimination, sheen TIER-2, metal F0 exact, film
+  TIER-2, emission TIER-2, mask+cutoff exact, EON exact. Selection census: coat twins ClearCoated, cloth pair
+  Cloth (first end-to-end Cloth decode), everything else Standard.
+- **C fold probes** — three synthetic multi-slab materials pin what Tier B would serve: all three report at
+  limit 1 (verbatim `material '<name>': N slab(s) folded into M (slab_limit L, albedo scaling)` — the evaluated
+  mix reports too); bottom-up identity (bottom transmission 0.3 survives exactly, tops absorbed — transmission
+  has no carry-down); coat carried down exactly; mix → purple exact; at limit 2 only the 3-chain folds (the mix
+  survives as a weighted pair, silently); at 8 nothing folds and flatten returns the slabs verbatim
+  (`operator==`). Albedo scaling pinned to its closed form (`Keep = 1 − TopAlbedo(top) = 0.908876`, rel-1e-6 —
+  the F0(1.6)+F0(1.5) chain, double-precision shadow).
+- **D preview sweep** — all 44 materials shade through the M7b entry at 64 px/2 spp (Bad 0, lit, full mesh);
+  clear-glass re-render byte-identical.
+- **E consumption tripwire** — the M3 128-cell table re-pinned verbatim (0 drift) — the fetch-skipping half of
+  the §6 perf budget; gated fetches 5/6/7/6/6/6/0/0 (+3 unconditional base/emission/opacity).
+- **F Tier verdict** — printed AND asserted: **keep Tier A + fold** — 0 multi-slab materials in 44 real
+  materials. Tier B kernel work stays out (§2); the deliverable is the data + the decision.
+
+Census (limit 1): cornell 9+fallback all Standard/Simple; glass 2× Transmissive/Special + 2× Standard/Simple +
+fallback; ball 28 authored (coat×2 ClearCoated/Single, cloth×2 Cloth/Single, film×2 Standard/Special, fuzz×2 +
+haze×2 Standard/Single, 18 Standard/Simple) + fallback.
+
+**Honest scope.** Sponza never decoded here (fetch blocked — A8 is validate-if-present and the verdict line says
+so). The verdict rests on 44 materials across three scenes; a production corpus could still surface authored
+multi-slab content — the C probes prove the fold handles it deterministically when it does. Kernel-ms half of
+§6 still needs a GPU runner (same caveat as §5). No GPU, no window.
+
+---
+
+## 10. What's next
 
 1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped, superseded by the v2 dipole — see 3).
 2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §5; render-verification pending GPU).
@@ -473,6 +520,6 @@ set with equivalent flags, and the missing-sources guard catches path typos at c
 4. ~~**M6 codec gap-fill**~~ DONE 2026-09-17 (211/211 — see §6).
 5. ~~**M7a read-only inspector**~~ DONE 2026-09-17 (158/158 — see §7).
 6. ~~**M7b editable inspector**~~ DONE 2026-09-17 (229/229 — see §8).
-7. **M8 Tier B + full-scene validation** (next).
+7. ~~**M8 Tier B + full-scene validation**~~ DONE 2026-09-17 (102/102 — see §9).
 8. **Denoiser + motion vectors** (parked per direction).
 9. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a/M7b pixels — needs a GPU runner).
