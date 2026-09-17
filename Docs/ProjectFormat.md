@@ -51,32 +51,33 @@ what the file *is*. A `.geometry` is a container whose required table is `MESH`;
 | `.solution` | **Solution** | a bundle of projects: engine revision pin, content roots, toolchain, the list of `.projectspace` files | repo / CI | yes |
 | `.geometry` | **Geometry** | vertices, indices, normals, tangents, bounds, LOD/cluster ranges | modelling / import | yes |
 | `.uvspace` | **UV Space** | UV islands, seams, packing, texel density, the mapping a paint layer is authored against | UV editor | yes |
-| `.material` | **Material** | one `MaterialRecord` + its 288 B slab graph (the M10 descriptors), plus refs to `.pigment` maps once painting lands | material editor | yes |
+| `.material` | **Material** | a BASE material: one `MaterialRecord` + its 288 B slab graph (the M10 descriptors), plus refs to `.pigment` maps once painting lands. Per-object variation is not stored here — see `REFN` in §4 | material editor | yes |
 | `.pigment` | **Pigment** | a texture-paint document: layers, strokes, channels, resolution, brush refs; bakes to an image blob for the GPU | paint editor | yes |
-| `.instance` | **Instance** | one placed object: transform + reference to a `.geometry` + a `.material` (+ per-instance overrides) | editor | yes |
+| `.instance` | **Instance** | one placed object: transform + reference to a `.geometry` + a reference to a `.material` + an optional **refinement** (the per-object material, §4) | editor | yes |
 | `.environment` | **Environment** | world staging: sun hour, fog scenario, atmosphere/moon/star settings, terrain heightfield and its material refs, the baked sky probe | terrain / sky editor | yes |
 | `.script` | **Script** | code automation, one source or a small module | user | yes |
 | `.workflow` | **Workflow** | an automation graph: import → bake → validate → package, its steps referencing `.script`s | user / engine | yes |
 | `.archive` | **Archive** | a shipping pack: content-addressed blobs with the directory at the end (streamable) | packager | build artifact |
 | `.runtime` | **Runtime** | the *resolved* launch configuration: level, tier, feature flags, backend, resolved content roots | the host, at launch | generated |
-| `.context` | **Context** | editor context: open documents, selection, per-viewport cameras, inspector state, undo position | editor | session |
-| `.workstate` | **Work State** | crash-safe unsaved work: dirty buffers, autosaves | editor, continuously | deleted on clean exit |
-| `.state` | **State** | a resumable world state: entities, component values, simulation time (a save) | the game | user-saved |
-| `.snapshot` | **Snapshot** | a point-in-time capture of buffers/tables/counters for comparison — proofs, bug reports | editor / harness | immutable |
+| `.state` | **State** | **one** kind for the whole state family, told apart by a `domain` field inside `STAT`: `session` (where was I), `work` (unsaved buffers, crash recovery), `save` (a resumable world), `capture` (a read-only snapshot for comparison). **Deferred — see §11** | editor / game / harness | varies by domain |
 
-Three notes on the naming, because three pairs are close enough to collide and the fix is worth writing down:
+Four notes on the naming, because three pairs were close enough to collide:
 
-- **`.environment` is the world, not the config.** The list offered "`.environment` — dev.environment" for
-  runtime/editor configuration *and* "`.enviromnt`" for the terrain editor. Both are the same word, so one job has to
-  move: the world's staging (sky, atmosphere, moons, terrain) is what an engine calls an environment, and the runtime
-  configuration already has **`.runtime`** and **`.context`** waiting. That leaves `.environment` free for the
-  terrain/sky file, which is also where the baked sky probe from the deferred environment-lighting plan lives. Flip
-  it if you disagree — but do not keep both names for two meanings.
-- **State, snapshot, workstate** are three different lifetimes, not three words for one thing: `.state` is *resume
-  and keep playing*, `.snapshot` is *look and compare* (read-only), `.workstate` is *recover a crash*. `.context` is
-  *where was I in the editor* — genuinely a fourth thing, and the one that can be deleted without losing an edit.
-- **`.material` is the one addition** to the list — the family needs a material kind, and the M10 work is material
+- **`.environment` is the world, not the config** (settled). The list offered `.environment` for dev/runtime
+  configuration *and* `.enviromnt` for the terrain editor — one word, two jobs. In an engine "environment" is the
+  world (sky, atmosphere, moons, terrain), and runtime configuration already has `.runtime`; so `.environment` is the
+  terrain/sky file, which is also where the baked sky probe from the deferred environment-lighting plan lives. The
+  config sense is `.runtime`, and nothing else.
+- **The state family is one kind, `.state`.** It was four (`.context`, `.workstate`, `.state`, `.snapshot`) because
+  four lifetimes were distinguishable — *where was I*, *unsaved work*, *resume the world*, *a read-only capture* —
+  but a lifetime is a field, not a file type: the `STAT` table carries `{domain, revision, payload}` and the four
+  domains ride that one extension. Fewer extensions, no lost meaning, and a single reader. **Skipped for now** —
+  recorded in §11 so it is not re-litigated by accident when it lands.
+- **`.runtime` stays its own kind** because it is not state: it is the *resolved* launch configuration the host
+  writes at startup, and it is the one thing an editor, a game build and a crash report all want to read.
+- **`.material` is the one addition** to the list — the family needs a material kind, and the M10 work *is* material
   descriptors. `.slate` is deliberately avoided: the material domain's `slate_*` glTF extras already own that word.
+  The refinement that came back from the owner — *"material still needs to be refined per object"* — is §4.2.
 
 Case: extensions are all-lowercase (`.uvspace`, not `.UVspace`). Git and Linux treat `.Geometry` and `.geometry` as
 different files while macOS and Windows do not; a format family cannot afford that ambiguity.
@@ -129,9 +130,9 @@ Rules that fall out of the layout, and that the gate checks:
 | `CAMA` | `CameraRecord` rows | `.projectspace` |
 | `LITE` | `PunctualLuminaireRecord` rows + the luminaire alias table | `.projectspace` |
 | `ENVR` | world staging + terrain + the baked sky probe reference | `.environment` |
+| `REFN` | per-object material refinement: base material reference + sparse slot overrides + resolution rules (§4.2) | `.instance`, `.material` |
 | `FLOW` | workflow steps (kind, operands, refs) | `.workflow` |
-| `STAT` | a state blob: `{domain, revision, payload}` for `.runtime`/`.context`/`.workstate`/`.state` | state kinds |
-| `SNAP` | a capture: named buffers + tables + counters | `.snapshot` |
+| `STAT` | the state family's one payload: `{domain, revision, payload}` with domain = session · work · save · capture | `.state` |
 | `ARCH` | archive directory: hash → offset/length, chunked for streaming | `.archive` |
 | `REFS` | the reference table (§5) | every container kind |
 | `TEXR` | texture index rows: URI/ref slot or blob index | `.geometry`, `.material`, `.pigment` |
@@ -153,9 +154,10 @@ A project is a tree of spaces, and the leaf edges are references:
     ├─ SCEN  levels: Showroom · Showcase · Materials · CornellBox
     ├─ ENVR  → Assets/Studio.environment          (sibling file, referenced)
     ├─ INST  rows … each row = transform + Reference{kind, mode, hash}
-    │     ├─ → Assets/Sphere.geometry             (one geometry)
+    │     ├─ → Assets/Sphere.geometry             (one geometry, shared by every copy)
     │     │     └─ → Assets/Sphere.uvspace        (its UV space)
-    │     ├─ → Assets/Chrome.material             (one 58-float descriptor + slabs)
+    │     ├─ → Assets/Chrome.material             (the BASE material: one 58-float descriptor + slabs, shared)
+    │     ├─   REFN  refinement of that base for THIS object (§4.2): sparse overrides, resolved at load
     │     ├─ → Assets/Checkers.pigment            (EMBEDDED, blob #3)
     │     └─ → EngineContent/…/panel.geometry     (engine content, referenced)
     └─ BLOB[] embedded payloads, keyed by content hash
@@ -163,12 +165,65 @@ A project is a tree of spaces, and the leaf edges are references:
 Two consequences worth stating plainly:
 
 - **An instance is a reference, not a copy.** Twelve identical spheres are twelve `.instance` rows (transform) over
-  one `.geometry` and one `.material` — and the M10 rule that every grid cell owns its *own* `MaterialDescriptor`
-  still holds, because a cell whose material differs in one float simply references a different `.material`. Dedup
-  keys on bytes, not on resemblance.
+  one `.geometry` and one `.material`; a sphere that differs carries a `REFN` over the same base rather than a
+  duplicated descriptor. Dedup keys on bytes, not on resemblance.
 - **Pieces know their neighbours by kind, not by name.** A `.geometry` does not name its UV file; the pair is bound
   by a reference row from whichever file owns the pairing (the instance, or the project). Rename or move a file and
   nothing is stale except the reference path — which is why every reference also carries a content hash.
+
+### 4.1 The instance row
+
+    InstanceRow                         // 96 B + references
+    ────────────────────────────────
+    char     Name[32];                  // the outliner's label ("Swatch_17", "DropSphere_04")
+    float    Transform[16];             // object → world, column-major (the InstanceRecord's World)
+    uint64_t GeometryHash;              // dedup key: the .geometry payload this row instantiates
+    uint64_t MaterialHash;              // dedup key: the base .material
+    uint32_t RefinementIndex;           // index into REFN, or 0xFFFFFFFF = the base as-is
+    uint32_t LevelIndex;                // which SCEN level owns this row
+    uint32_t Flags;                     // per-row bits (hidden, locked, cast-shadow, …)
+
+### 4.2 Material refinement — the per-object material
+
+*"Material still needs to be refined per object"*: the base may be shared, but the object's material must be its own.
+The M10 rule (every grid cell owns its own `MaterialDescriptor`) and the dedup rule (one chrome material for twelve
+spheres) are not in conflict — they are the same rule seen from two sides, and the split is **base vs refinement**:
+
+- **`.material` is the base.** A full `MaterialRecord` + its 288 B slab graph, authored once in the material editor.
+  Byte-identical bases are one entry; that is where dedup lives.
+- **`REFN` is the refinement**, owned by the *instance* (or by a `.material` that refines another base). It carries
+  the object's own values as a **sparse override list over slots**, not a second full descriptor:
+
+      RefinementHeader                 // 16 B
+      ────────────────────────────────
+      uint64_t BaseMaterialHash;       // which base this refines
+      uint16_t OverrideCount;
+      uint16_t Flags;                  // bit0 = inherit unmatched slots (always set in v1)
+      uint16_t SchemaRevision;
+      uint16_t Reserved;
+
+      RefinementOverride               // 8 B per override
+      ────────────────────────────────
+      uint16_t Slab;                   // 0xFFFF = the header's scalar channels (roughness, metallic, tint…)
+      uint16_t Channel;                // the slot inside that slab (MaterialSlabRecord's own field order)
+      uint32_t PackedValue;            // float, or an index for enum-valued channels
+
+  Resolution at load: copy the base's 58 floats + slabs, apply the overrides in `(Slab, Channel)` order, then run
+  the same `DeriveReflectance` precedence the codec uses (Unlit → EmissiveOnly → Transmissive → Subsurface → Cloth →
+  ClearCoated → Anisotropic → Standard) — so a refinement that, say, sets transmission on a coated base resolves
+  through exactly the path a `.material` authored with those values would.
+
+- **Why per-object rows rather than per-object files.** A refinement is 8–100 bytes; making each one a `.material`
+  file would turn a 49-swatch grid into 49 small files with 49 references, which is the duplication the family
+  exists to remove. The refinement rides the instance; the instance file is still the *object*, so "the object's
+  material" travels wherever the object does.
+- **The uniqueness guarantee is testable**: resolve N instances against one base and the census must show N distinct
+  `MaterialDescriptor`s with the base counted once — the M10 census (Standard 17 · Aniso 2 · ClearCoated 7 ·
+  Cloth 2 · Subsurface 7 · Transmissive 8 · EmissiveOnly 1 · Unlit 1) unchanged, and the file flat in N. §8 claim 7.
+- **Chain depth is two** (a base and the object's refinement) and no deeper: the "refine from a refined base" case
+  is served by a `.material` that itself carries `REFN`, so an author who wants a family of variants writes one base
+  plus one refined variant that others reference. Load resolves a chain by hashing the base first and refusing a
+  base whose hash is not already resolved, which makes a cycle impossible by construction rather than by a check.
 
 ## 5. Embedded, referenced, or engine content
 
@@ -193,7 +248,8 @@ question by itself:
 - **assets are referenced** (sibling files) otherwise — that is the "individual file" half of the ask;
 - **engine content is referenced** (fonts, audio archives, star catalogues, celestial textures) unless the packager
   was told `-Embed=Fonts` or the entry is marked required-embedded;
-- **state kinds are never embedded in asset kinds** — a hard line, so deleting a `.workstate` can never touch content.
+- **state is never embedded in an asset** — a hard line, so deleting a `.state` (any domain, including a crash
+  `work` file) can never touch content.
 
 Two lossless tools fall out of this, and both are provable:
 
@@ -220,7 +276,7 @@ hosts the engine already has (`EditorHost`, `GameExecution`), so the flags are a
 | `-Config=Debug\|Development\|Shipping` | switches + assert level | the existing `FRONTIER_DEBUG` build knobs |
 | `+Location=(x,y,z)`, `+Rotation=(pitch,yaw,roll)` | transform override applied **after** the level loads | the level's default camera, so "play from here" is reproducible |
 | `-Pack` / `-Explode` | family tools (§5) | the container writer |
-| `-Bake=Sky` | produce the `.environment` sky probe | the deferred environment-lighting plan |
+| `-Bake=Sky` | produce the `.environment` sky probe | the deferred environment-lighting plan (§11.2) |
 | `-Export[=All\|<Level>]` | (re)write the project from the code-built levels | replaces export-on-first-run in `GameExecution.cpp` |
 
 `+`-prefixed trailing arguments stay last and take no `-` name, as written. The existing `--scene <file.gltf>` and
@@ -255,6 +311,13 @@ Every claim is checkable on this machine, with no GPU:
    payload is a named failure, not a corrupt render.
 6. **The CLI is the same session** — `-Project=Project-Zero -Level=Materials +Location=(0,-5.0,2.6)` renders the same
    image as today's `--scene materials` invocation (AE = 0).
+7. **Refinement is exact and pays for itself** — the M10 grid carried as 1 base `.material` + 49 `REFN` rows
+   resolves 49 distinct descriptors, byte-identical to the 49 standalone descriptors the level builds today (the
+   census unchanged), with the file flat in N; and a refinement resolved from the file matches a `.material` authored
+   with those same values byte for byte.
+8. **Refinements are isolated** — editing one instance's `REFN` changes no other instance's resolved descriptor (the
+   reference census before/after differs in exactly one row), and a refinement whose base hash is missing fails by
+   name rather than silently loading the base.
 
 One gate, `Exhibits/Workbench/ProjectFormat/CheckSpaceFamily.sh`, same shape as `CheckMaterialDenoise.sh`: PASS/FAIL
 per claim, exits on the first red.
@@ -264,10 +327,10 @@ per claim, exits on the first red.
 | phase | deliverable | gate |
 |---|---|---|
 | P1 | header + directory + `KIND`/`META`; reader, writer, checksum; the gate itself | round trip, truncation, unknown table |
-| P2 | asset kinds: `.geometry`, `.material`, `.instance` — enough for every existing level | bit-identical to the glTF path on the M10 level |
+| P2 | asset kinds: `.geometry`, `.material`, `.instance` + `REFN` — enough for every existing level | bit-identical to the glTF path on the M10 level; claims 7–8 |
 | P3 | `REFS` + `BLOB` + the five modes, `-Pack` / `-Explode` | dedup, engine-content resolution, embed fallback, pack/explode round trip |
 | P4 | `-Project/-Level/-Build/-Config/+Location` in both hosts; `-Export`; migrate Project-Zero; glTF stays as interchange | CPU parity: package run == `--scene` run |
-| P5 | state kinds: `.runtime`, `.context`, `.workstate`, `.state`, `.snapshot` | state never embeds into asset kinds; a deleted `.workstate` changes no pixels |
+| P5 | `.runtime` only; the `.state` family (four domains in one kind) is **deferred** (§11) | `.runtime` records are written and read back; no state ever embeds into an asset |
 | P6 | `.environment` (terrain + sky probe, per the deferred lighting plan), `.pigment` + `.uvspace` with the paint/UV editors, `.workflow`/`.script`, `.archive` | each gets its own exhibit pair when it lands |
 
 ## 10. Open questions — the ones worth answering before P2
@@ -280,8 +343,34 @@ per claim, exits on the first red.
    so no format change.
 3. **One `.projectspace` per project, or one per level?** Plan assumes one per project (§3.2); a very large project
    might want to split levels into sibling `.projectspace` files joined by a `.solution`.
-4. **Terrain in `.environment` or its own kind?** Plan assumes `.environment` holds the heightfield reference plus
+4. **Refinement depth.** v1 allows base → refinement, and sharing a refinement through a `.material` that carries
+   `REFN` (one level). Two levels is the plan; three is where "why is this object green?" gets expensive — should the
+   limit be a hard two, or one with a warning?
+5. **Refinement keys: slot names or the slab's field order?** Plan assumes `(Slab, Channel)` indices, so a renamed
+   channel cannot silently retarget an override; the cost is that reordering a slab's fields is a schema revision.
+   The alternative (hash-of-name keys) is friendlier to authors and slower to resolve.
+6. **Terrain in `.environment` or its own kind?** Plan assumes `.environment` holds the heightfield reference plus
    the sky staging, with the heightfield itself a `MESH`-shaped blob — a separate `.terrain` kind is easy later.
-5. **Textures / paint bake.** Keep `TEXR` URIs for referenced textures and embed only project-specific images, or
+7. **Textures / paint bake.** Keep `TEXR` URIs for referenced textures and embed only project-specific images, or
    always embed? Plan assumes the former, with the embed policy shared with fonts and audio; `.pigment` bakes to an
    image blob at pack time, so the GPU never reads a stroke list.
+8. **Does a refinement belong to the *instance* or to the *object*?** Plan puts `REFN` on the instance row (§4.2), so
+   the same `.geometry` can be used twice with two different materials. A `.geometry` that is only ever one object
+   could instead carry its refinement, which reads better in a folder listing ("Sphere.geometry + Sphere.material")
+   at the cost of binding an object to one material. Open; the instance is the default.
+
+## 11. Deferred, in writing (so it is not re-litigated by accident)
+
+1. **The `.state` family** — one kind, four domains (`session` · `work` · `save` · `capture`), skipped by the
+   owner's call. The container already carries it (`STAT`); what is deferred is the payload format for each domain,
+   the autosave cadence, and which domains are ever embedded. Nothing else in the plan depends on it, which is why
+   P5 ships `.runtime` alone.
+2. **Environment lighting — bake the sky, and let the sky be a light.** The measured answer to *"does the ray tracer
+   / ReSTIR sample the sun, sky, moon?"* lives in `Exhibits/Workbench/Materials/MaterialProofsReport.md` §13.12
+   rather than here, together with the two-stage plan (bake a mipmapped probe per staging into the project's
+   `.environment`; then add a sky candidate to the reservoir so sky direct lighting reuses). One number from it is
+   worth repeating because it is what makes the deferral safe: an escaped ray currently costs **6.5–7.0 µs** on this
+   CPU against ~12 µs for a whole path sample, so the cost is real but bounded — this is a performance and variance
+   improvement, never a correctness gap.
+3. **Editors.** `.uvspace`, `.pigment`, `.environment` terrain authoring and `.workflow`/`.script` authoring are
+   format-defined here and editor-defined later; each gets its own exhibit pair when its editor lands (P6).
