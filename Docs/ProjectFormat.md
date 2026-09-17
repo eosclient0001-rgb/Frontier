@@ -1,4 +1,4 @@
-# The Space family — one container format, many kinds of file
+# The Space family — one container format, one file per part of a project
 
 *Status: plan. Nothing here is implemented yet.*
 
@@ -59,7 +59,7 @@ what the file *is*. A `.geometry` is a container whose required table is `MESH`;
 | `.workflow` | **Workflow** | an automation graph: import → bake → validate → package, its steps referencing `.script`s | user / engine | yes |
 | `.archive` | **Archive** | a shipping pack: content-addressed blobs with the directory at the end (streamable) | packager | build artifact |
 | `.runtime` | **Runtime** | the *resolved* launch configuration: level, tier, feature flags, backend, resolved content roots | the host, at launch | generated |
-| `.state` | **State** | **one** kind for the whole state family, told apart by a `domain` field inside `STAT`: `session` (where was I), `work` (unsaved buffers, crash recovery), `save` (a resumable world), `capture` (a read-only snapshot for comparison). **Deferred — see §11** | editor / game / harness | varies by domain |
+| `.state` | **State** | **one** file for the whole state family, told apart by a `domain` field inside `STAT`: `session` (where was I), `work` (unsaved buffers, crash recovery), `save` (a resumable world), `capture` (a read-only snapshot for comparison). **Deferred — see §11** | editor / game / harness | varies by domain |
 
 Four notes on the naming, because three pairs were close enough to collide:
 
@@ -68,12 +68,12 @@ Four notes on the naming, because three pairs were close enough to collide:
   world (sky, atmosphere, moons, terrain), and runtime configuration already has `.runtime`; so `.environment` is the
   terrain/sky file, which is also where the baked sky probe from the deferred environment-lighting plan lives. The
   config sense is `.runtime`, and nothing else.
-- **The state family is one kind, `.state`.** It was four (`.context`, `.workstate`, `.state`, `.snapshot`) because
+- **The state family is one file type, `.state`.** It was four (`.context`, `.workstate`, `.state`, `.snapshot`) because
   four lifetimes were distinguishable — *where was I*, *unsaved work*, *resume the world*, *a read-only capture* —
   but a lifetime is a field, not a file type: the `STAT` table carries `{domain, revision, payload}` and the four
   domains ride that one extension. Fewer extensions, no lost meaning, and a single reader. **Skipped for now** —
   recorded in §11 so it is not re-litigated by accident when it lands.
-- **`.runtime` stays its own kind** because it is not state: it is the *resolved* launch configuration the host
+- **`.runtime` stays its own file type** because it is not state: it is the *resolved* launch configuration the host
   writes at startup, and it is the one thing an editor, a game build and a crash report all want to read.
 - **`.material` is a file, not a facet of the object.** The owner's correction, and it is the better design: a
   material is one self-contained file — parameters *and* textures — and an object **copies it in or references it**
@@ -99,15 +99,15 @@ heard of a tag, can walk it. Copy that, byte for byte where it helps:
 
     TableRecord                         // 16 B — the sfnt record, verbatim
     ────────────────────────────────
-    char     Tag[4];                    // "MESH", "MATL", "PIGM", …  (the file KIND is a tag too, see below)
+    char     Tag[4];                    // "MESH", "MATL", "PIGM", …  (the file's own TYPE is a tag too, see below)
     uint32_t Checksum;                  // FNV-1a 32 over the payload
     uint32_t Offset, Length;            // 4-byte aligned (4 is all std430 needs)
 
 Rules that fall out of the layout, and that the gate checks:
 
-- **One signature for the whole family** (`FSPC`), with the file's *kind* as a mandatory `KIND` table holding a
-  four-byte kind tag + a schema revision. A reader walks any file in the family with the same code, then asks "is
-  there a table I know for this kind?" — which is exactly how `.geometry` and `.projectspace` share a reader.
+- **One signature for the whole family** (`FSPC`), with the file's own *type* as a mandatory `TYPE` table holding a
+  four-byte type tag + a schema revision. A reader walks any file in the family with the same code, then asks "do I
+  know this type?" — which is exactly how `.geometry` and `.projectspace` share a reader.
 - **Unknown tables are skipped, not refused.** A newer exporter may add `NAVI`; an older reader still loads the file.
 - **A checksum mismatch is fatal for that table and named in the message.**
 - **The payloads are the resident records, not a description of them.** `VertexRecord` 64 B, `InstanceRecord` 160 B,
@@ -120,7 +120,7 @@ Rules that fall out of the layout, and that the gate checks:
 
 | tag | holds | lives in |
 |---|---|---|
-| `KIND` | four-byte kind tag + schema revision (what this file *is*) | every file |
+| `TYPE` | four-byte type tag + schema revision (what this file *is*) | every file |
 | `META` | name, exporter + revision, build config, source list, pack/embed policy | every file |
 | `MESH` | unique vertex/index buffers (`VertexRecord` + indices) | `.geometry` |
 | `CLST` | cluster/LOD ranges (`ClusterRecord`) | `.geometry` |
@@ -133,10 +133,10 @@ Rules that fall out of the layout, and that the gate checks:
 | `LITE` | `PunctualLuminaireRecord` rows + the luminaire alias table | `.projectspace` |
 | `ENVR` | world staging + terrain + the baked sky probe reference | `.environment` |
 | `MSLT` | material slots: the `MaterialSlot` rows an `INST` table or a `.projectspace` names (§4.2) | `.instance`, `.projectspace` |
-| `FLOW` | workflow steps (kind, operands, refs) | `.workflow` |
+| `FLOW` | workflow steps (step type, operands, refs) | `.workflow` |
 | `STAT` | the state family's one payload: `{domain, revision, payload}` with domain = session · work · save · capture | `.state` |
 | `ARCH` | archive directory: hash → offset/length, chunked for streaming | `.archive` |
-| `REFS` | the reference table (§5) | every container kind |
+| `REFS` | the reference table (§5) | every container in the family |
 | `TEXR` | texture index rows: URI/ref slot or blob index (a material's own maps) | `.geometry`, `.material`, `.pigment` |
 | `BLOB` | raw embedded payloads, addressed by 64-bit content hash | any file that embeds |
 
@@ -153,7 +153,7 @@ makes the multi-level case free.
 A project is a tree of spaces, and the leaf edges are references:
 
     Project-Zero.projectspace                    ← what `-Project=` opens
-    ├─ KIND  projectspace · META  name, revisions, policies
+    ├─ TYPE  projectspace · META  name, revisions, policies
     ├─ SCEN  levels: Showroom · Showcase · Materials · CornellBox
     ├─ ENVR  → Assets/Studio.environment          (sibling file, referenced)
     ├─ INST  rows … each row = transform + one geometry + one material (§4.1)
@@ -169,7 +169,7 @@ Two consequences worth stating plainly:
 - **Geometry is shared; materials are the object's own.** Twelve identical spheres are twelve rows over one
   `.geometry` — but each row names its own material, either a shared `.material` file or a copy carried inside the
   object. "Sphere 1 uses Clear Glass, sphere 2 uses Gold" is the row, not a lookup table somewhere else.
-- **Pieces know their neighbours by kind, not by name.** A `.geometry` does not name its UV file; the pair is bound
+- **Pieces know their neighbours by type, not by name.** A `.geometry` does not name its UV file; the pair is bound
   by a reference row from whichever file owns the pairing (the instance, or the project). Rename or move a file and
   nothing is stale except the reference path — which is why every reference also carries a content hash.
 
@@ -193,7 +193,7 @@ simpler than what this document had before (a base plus a per-object override li
 **A material is one file.** `.material` carries everything the material *is*:
 
     ClearGlass.material                  one file, one material
-    ├─ KIND  material · META  name, revisions
+    ├─ TYPE  material · META  name, revisions
     ├─ MATL  the parameters: MaterialRecord + 288 B slab graph — the 58 floats, the lobes, the IOR, the coat
     ├─ TEXR  the texture slots that point at its maps (base colour, roughness, normal, …)
     ├─ BLOB[] the maps themselves — a `.pigment` bake, an imported image, an engine texture copied in
@@ -245,7 +245,7 @@ One record shape answers all three:
 
     ReferenceRecord                     // 32 B
     ────────────────────────────────
-    char     Kind[4];                   // what kind of space this is
+    char     Type[4];                   // which member of the family this reference names
     uint8_t  Mode;                      // 0 Embedded · 1 Sibling · 2 ProjectContent · 3 EngineContent · 4 ExternalSpace
     uint8_t  Flags;                     // bit0 = required (fail the load if unresolved) · bit1 = prefer embedded
     uint16_t Reserved;
@@ -266,7 +266,7 @@ question by itself:
   `work` file) can never touch content;
 - **a copy is a nested container**, not a special case: `MaterialSlot.Mode = Copied` points at a blob that is itself
   a complete `.material` (with its own directory, checksums and possibly its own blobs). Recursion terminates on
-  `Kind`, and a container that names itself as its own blob is refused by name.
+  the type tag, and a container that names itself as its own blob is refused by name.
 
 Two lossless tools fall out of this, and both are provable:
 
@@ -301,7 +301,7 @@ hosts the engine already has (`EditorHost`, `GameExecution`), so the flags are a
 
 ## 7. Where the code goes (no new top-level folders)
 
-- `Engine/ContentInterchange/SpaceCodec.{h,cpp}` — header + directory reader/writer, kind registry, table
+- `Engine/ContentInterchange/SpaceCodec.{h,cpp}` — header + directory reader/writer, type registry, table
   (de)serialisation into `SceneStructure`/`TextureIndex`. Sits beside `SceneCodec`; `ContentCodec::Classify` gains
   `ContentFormatCategory::FrontierSpace` so every existing caller accepts a member of the family unchanged.
 - `Engine/ContentInterchange/SpaceResolver.{h,cpp}` — `ReferenceRecord` resolution and the content-root scan (the
@@ -345,17 +345,17 @@ per claim, exits on the first red.
 
 | phase | deliverable | gate |
 |---|---|---|
-| P1 | header + directory + `KIND`/`META`; reader, writer, checksum; the gate itself | round trip, truncation, unknown table |
-| P2 | asset kinds: `.geometry`, `.material`, `.instance` + `MaterialSlot` (shared / copied / copy-on-write) — enough for every existing level | bit-identical to the glTF path on the M10 level; claims 7–8 |
+| P1 | header + directory + `TYPE`/`META`; reader, writer, checksum; the gate itself | round trip, truncation, unknown table |
+| P2 | asset files: `.geometry`, `.material`, `.instance` + `MaterialSlot` (shared / copied / copy-on-write) — enough for every existing level | bit-identical to the glTF path on the M10 level; claims 7–8 |
 | P3 | `REFS` + `BLOB` + the five modes, `-Pack` / `-Explode` | dedup, engine-content resolution, embed fallback, pack/explode round trip |
 | P4 | `-Project/-Level/-Build/-Config/+Location` in both hosts; `-Export`; migrate Project-Zero; glTF stays as interchange | CPU parity: package run == `--scene` run |
-| P5 | `.runtime` only; the `.state` family (four domains in one kind) is **deferred** (§11) | `.runtime` records are written and read back; no state ever embeds into an asset |
+| P5 | `.runtime` only; the `.state` family (four domains in one file type) is **deferred** (§11) | `.runtime` records are written and read back; no state ever embeds into an asset |
 | P6 | `.environment` (terrain + sky probe, per the deferred lighting plan), `.pigment` + `.uvspace` with the paint/UV editors, `.workflow`/`.script`, `.archive` | each gets its own exhibit pair when it lands |
 
 ## 10. Open questions — the ones worth answering before P2
 
 1. **Layout revision.** The records are GPU-facing and have moved every milestone (R4a widened `MaterialRecord`).
-   Store the revision in `KIND`/`META` and refuse a mismatch, or write up-conversion steps? Plan assumes refuse, with
+   Store the revision in `TYPE`/`META` and refuse a mismatch, or write up-conversion steps? Plan assumes refuse, with
    the message naming both revisions.
 2. **Compression.** v1 stores payloads raw so a container can be memory-mapped. If size becomes a problem, a
    per-table flag (`ZSTD`) copies WOFF's per-table compression — the directory already carries the lengths it needs,
@@ -373,8 +373,8 @@ per claim, exits on the first red.
    (embed small, reference large; `-Pack` inlines). A material whose maps are always embedded is a self-contained
    font-like artefact that survives being copied anywhere; one that references `EngineContent` is smaller and updates
    when the engine does.
-6. **Terrain in `.environment` or its own kind?** Plan assumes `.environment` holds the heightfield reference plus
-   the sky staging, with the heightfield itself a `MESH`-shaped blob — a separate `.terrain` kind is easy later.
+6. **Terrain in `.environment` or its own file type?** Plan assumes `.environment` holds the heightfield reference
+   plus the sky staging, with the heightfield itself a `MESH`-shaped blob — a separate `.terrain` file is easy later.
 7. **Paint bake timing.** `.pigment` is the editable source and the `.material` carries the baked maps; the question
    is whether the bake runs on save (a material is always renderable) or at pack time (iterate fast, bake once).
    Plan assumes save, with the bake's input hash recorded so a stale bake is detectable; either way the GPU never
@@ -385,7 +385,7 @@ per claim, exits on the first red.
 
 ## 11. Deferred, in writing (so it is not re-litigated by accident)
 
-1. **The `.state` family** — one kind, four domains (`session` · `work` · `save` · `capture`), skipped by the
+1. **The `.state` family** — one file type, four domains (`session` · `work` · `save` · `capture`), skipped by the
    owner's call. The container already carries it (`STAT`); what is deferred is the payload format for each domain,
    the autosave cadence, and which domains are ever embedded. Nothing else in the plan depends on it, which is why
    P5 ships `.runtime` alone.
@@ -401,5 +401,5 @@ per claim, exits on the first red.
 4. **Material *parameters* as a shared layer over a copied material** (deferred, and the idea the owner replaced).
    An earlier revision of this plan had a base `.material` plus a sparse per-object override list; the owner chose
    self-contained material files that objects copy instead. If a real need appears later — one gold with 20 slightly
-   different roughnesses — the addition is a new *kind* (a variant file that names its parent and lists overrides),
+   different roughnesses — the addition is a new *file type* (a variant that names its parent and lists overrides),
    never a quiet change to `MaterialSlot`; v1 has no such table and no such field.

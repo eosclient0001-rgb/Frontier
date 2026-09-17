@@ -30,6 +30,16 @@
   Counterparts (never "shims", "mocks", or "stubs"). The project is
   Frontier; the material domain's `slate_*` (glTF extras terms) is a
   different slate and stays untouched.
+- Banned words, in code, docs, comments and commit messages alike:
+  **"kind"** (and "kinds") — it is vague about a thing that is always
+  nameable more precisely. Say what the thing actually is: a file type, a
+  table, a file, a value, a record, a member of the family, a variant. A
+  table or field that would have been `KIND`/`Kind` is `TYPE`/`Type` (or a
+  precise name like `MaterialSlot`), and a sentence that would have said
+  "a different kind of X" names the X. "Type" is the sanctioned stand-in;
+  a name that says more is better still. Existing uses predate the ban
+  (`MaterialCodec.cpp`'s JSON parser field, a few comments) and are swept
+  when those files are next touched — never introduce a new one.
 - `Scratchpad/` is permanent transient space: experiments live there
   untracked while in use; graduates move to `Exhibits/Workbench/` or
   `Exhibits/Gallery/`. Never commit stale one-off proofs or byproduct

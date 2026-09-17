@@ -769,7 +769,7 @@ proof of the *product*; these four sheets are the visual proof of the content.
     octahedral (or cubemap) probe per staging: sun hour, fog scenario, moon phase, star rotation, atmosphere
     constants. Escaped rays then take one prefiltered fetch instead of 96 taps, and the probe's total power gives
     the pick probability stage B needs. Key the cache on a hash of the staging and store the bake in the project
-    package (`.environment` — the world-environment kind in `Docs/ProjectFormat.md` — carrying a `BLOB`), so a
+    package (`.environment` — the world-environment file in `Docs/ProjectFormat.md` — carrying a `BLOB`), so a
     bake travels with the project and never runs twice for the same sky. *Acceptance:* probe radiance vs the
     analytic march on a direction grid (mean and max relative error printed), plus the escaping-bounce panel of
     the M10 viewport comparing fetch-lit against march-lit within the sheet's own RMSE tolerance.
