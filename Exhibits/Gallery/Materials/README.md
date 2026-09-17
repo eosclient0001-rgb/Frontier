@@ -173,5 +173,10 @@ companion to the product sheet above, and the A/B for both faults in §14 of the
   *Candidates / px* (1–32) and *Extra candidates* (0–8) up, *Spatial taps* (0–4, new slider) down, and the *Indirect
   reuse (GI pool)* checkbox off for the indirect half. Tiers: Minimal 0.5×/1 cand/0 taps · Economy 0.75×/2/1 ·
   Standard 1.0×/4/2 · High 1.0×/8/3 · Ultra 1.0×/16/4 (`FidelityClassifier`).
+- **Where brute force still wins (measured, not spun)**: at the same one-sample-per-frame resolve rate, plain path
+  tracing lands 971.89 from the 512-spp reference while the ReSTIR arm lands 7 553.24 — 7.8× further. The reference
+  shares the plain path's seed stream (that is why ② ≡ ①), so the exact ratio is approximate; the direction is not.
+  Why, and what would change it (16 % indirect coverage, occluded-selection weight loss, sun-coin variance, replay +
+  shift mapping): report §14.3.
 - Harness: `Exhibits/Workbench/Materials/RunRestirConvergence.sh [fast|full]` (builds, renders, gates on non-finite
   samples, prints the RMSE table and the sheet's sha256). Kept-sheet hash: `fbcc5382…`.

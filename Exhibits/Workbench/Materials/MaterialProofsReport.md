@@ -920,3 +920,41 @@ Measured (240×135, 4 candidates, 2 taps, vs the same 512-spp reference):
   Vulkan, so the kernel side of §14.2 is text-verified (every symbol, signature and binding checked against the
   file) and the *numbers* in the table above are the CPU mirror's. The mirror is the same algorithm, line for line,
   which is what makes the port reviewable — not what makes it measured on hardware.
+
+### 14.3 Brute force against the reservoir, at the same resolve rate — the honest reading
+
+The user's hunch that raw path tracing may be the better use of cycles on this scene is **confirmed by the mirror**,
+and it is worth stating plainly rather than burying it. Both arms below are compared to the same ① (the 512-spp
+reference at 240×135, `/tmp/ref240.png`), and both resolve one shaded sample per pixel per frame:
+
+| arm (240×135, 128 frames, vs the 512-spp reference) | rays per pixel per frame | RMSE |
+|---|---|---|
+| plain path, 1 spp × 128 frames (one resolve/frame — ReSTIR's own rate) | 1 path + NEE | **971.89 (0.0148)** |
+| ReSTIR, 4 candidates × 128 frames, 4 taps | 1 path + 4 candidates × 2 NEE + 4 tap ray tests | **7 553.24 (0.1153)** |
+
+The reservoir path lands **7.8× further** from the converged image than plain tracing does at the same resolve rate.
+Two honest qualifications, both measured rather than assumed:
+
+- The reference is the *same* plain estimator with 4× the samples per pixel — 4 spp × 128 frames walks exactly the 512
+  seeds of the one-frame 512-spp render, which is why ② ≡ ① measures **AE 0** (and is the harness's own sanity gate).
+  So the plain figure above is a partial-mean-vs-full-mean discrepancy on a shared seed stream, which flatters plain by
+  at most ~15 % (variance algebra for (1/128)Σ_{i≤128} − (1/512)Σ_{i≤512}); the direction of the comparison is not in
+  doubt, the exact ratio is not to be quoted to three digits.
+- `--spp 4 --frames 128` (512 samples/px) is byte-identical to the 512-spp single-frame render, so "brute force at this
+  budget" and "the reference" are the same image by construction — there is no fourth panel to add here.
+
+Why the reuse does not pay on *this* level yet, in order of measured weight:
+- **The indirect pool exists on 16 % of surface pixels** (the share whose primary BSDF sample hits geometry; 41 % escape
+  to the sky). The other 84 % get no GI reuse by construction: a light-sample pool cannot estimate a sky vertex, and
+  real ReSTIR GI needs the replay + shift mapping rather than a proximity test.
+- **One shaded sample per frame into the running mean.** The reservoir concentrates samples within a frame; the running
+  mean then spends 128 frames of them, so the residual is dominated by what the pool did *not* fix — sun/coin variance,
+  the 12–25 % of selections that are occluded and dropped, and the sparse indirect coverage.
+- **The level is sun-dominated** with a handful of small lamps, which is the regime where per-pixel NEE is already a
+  decent estimator and reuse has the least to buy. ReSTIR's advantage is a claim about scenes with many luminaires and
+  high DI variance — the next scene, not this one. That is why fixing the two faults above was worth doing even though
+  the headline RMSE is not yet favourable.
+
+Open items this reading names (all cheap, none assumed): sun-coin variance in the candidate pool, weight loss from
+dropped occluded selections, an independent reference (a second seed stream, so the floor can be measured rather than
+shared), and a 100 %-coverage indirect estimator (replay + shift mapping).
