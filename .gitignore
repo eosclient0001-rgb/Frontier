@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+exports/
+*.obj
+*.mtl
+.pytest_cache/
+.numba_cache/

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Frontier — SDF Terrain Studio</title>
+<link rel="stylesheet" href="/static/styles.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <!-- ══════════ TOP BAR ══════════ -->
+  <header id="topbar">
+    <div class="brand">
+      <div class="logo">▲</div>
+      <div class="brand-text">
+        <div class="brand-name">FRONTIER</div>
+        <div class="brand-sub">SDF Terrain Studio · 100 m test tile</div>
+      </div>
+    </div>
+    <div class="top-controls">
+      <select id="preset-select" title="Load a preset"></select>
+      <button id="btn-pipeline" class="btn primary" title="Mountain → SDF erosion → SATMAPs → texture">
+        ▶ Generate Terrain
+      </button>
+      <button id="btn-noerosion" class="btn ghost" title="Skip hydraulic erosion (raw multifractal mountain)">
+        Raw Peak
+      </button>
+      <button id="btn-retexture" class="btn ghost" title="Re-render albedo from current SATMAPs (instant)">
+        Retexture
+      </button>
+      <div class="dropdown">
+        <button id="btn-export" class="btn ghost">Export ▾</button>
+        <div id="export-menu" class="dropdown-menu hidden">
+          <button data-export="obj">Textured OBJ mesh</button>
+          <button data-export="heightmap">Heightmap PNG (16-bit)</button>
+          <button data-export="albedo">Albedo PNG</button>
+          <button data-export="satmaps">All SATMAPs</button>
+          <button data-export="sdf-volume">SDF volume (128³ NPY)</button>
+          <button data-export="meta">Run metadata JSON</button>
+        </div>
+      </div>
+      <div id="voxel-badge" class="voxel-badge idle" title="Voxel/detail match status">
+        <span class="dot"></span><span id="voxel-badge-text">no run</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══════════ MAIN ══════════ -->
+  <div id="main">
+    <!-- LEFT: parameters -->
+    <aside id="left-panel">
+      <div class="panel-scroll">
+        <section class="ctl-section" data-section="mountain">
+          <button class="section-head">⛰ MOUNTAIN <span class="chev">▾</span></button>
+          <div class="section-body" id="sec-mountain"></div>
+        </section>
+        <section class="ctl-section" data-section="erosion">
+          <button class="section-head">🌊 SDF EROSION <span class="chev">▾</span></button>
+          <div class="section-body" id="sec-erosion"></div>
+        </section>
+        <section class="ctl-section" data-section="satmaps">
+          <button class="section-head">🛰 SATMAPS <span class="chev">▾</span></button>
+          <div class="section-body" id="sec-satmaps"></div>
+        </section>
+        <section class="ctl-section" data-section="texture">
+          <button class="section-head">🎨 TEXTURE <span class="chev">▾</span></button>
+          <div class="section-body" id="sec-texture"></div>
+        </section>
+      </div>
+    </aside>
+
+    <!-- CENTER: 3D viewport -->
+    <div id="viewport-wrap">
+      <div id="view-toolbar">
+        <div class="view-modes" id="view-modes"></div>
+        <div class="view-opts">
+          <label title="Vertical exaggeration">H× <input id="opt-hscale" type="range" min="0.25" max="2.5" step="0.05" value="1" /></label>
+          <button id="opt-wire" class="toggle" title="Wireframe overlay">▦</button>
+          <button id="opt-rotate" class="toggle" title="Auto-orbit">⟳</button>
+          <button id="opt-shadow" class="toggle on" title="Shadows">☀</button>
+          <button id="opt-sdf" class="toggle wide" title="Show SDF cross-section">SDF ⬒</button>
+        </div>
+      </div>
+      <div id="viewport"></div>
+      <div id="empty-state">
+        <div class="empty-card">
+          <div class="empty-logo">▲</div>
+          <h2>No terrain yet</h2>
+          <p>Pick a preset and hit <b>Generate Terrain</b> — a 100×100&nbsp;m multifractal
+          peak will be synthesized, carved by SDF hydraulic erosion, and textured
+          from SATMAPs in a few seconds.</p>
+          <button class="btn primary big" id="btn-pipeline-2">▶ Generate Terrain</button>
+        </div>
+      </div>
+      <div id="progress-overlay" class="hidden">
+        <div class="progress-card">
+          <div class="spinner"></div>
+          <div id="progress-stage">working…</div>
+          <div class="progress-track"><div id="progress-fill"></div></div>
+          <div id="progress-pct">0%</div>
+        </div>
+      </div>
+      <div id="sdf-overlay" class="hidden">
+        <div class="sdf-card">
+          <div class="sdf-head">
+            <span>SDF cross-section — vertical slice through the tile (amber line = surface, bands = 2 m of signed distance)</span>
+            <button id="sdf-close" class="btn ghost small">✕</button>
+          </div>
+          <img id="sdf-img" alt="SDF slice" />
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: voxel + stats + satmaps -->
+    <aside id="right-panel">
+      <div class="panel-scroll">
+        <section class="info-card" id="voxel-card">
+          <h3>◈ VOXEL / CUT MATCHING</h3>
+          <div id="voxel-body"><p class="muted">Run the pipeline to measure how erosion cuts line up with the voxel grid.</p></div>
+        </section>
+        <section class="info-card" id="stats-card">
+          <h3>◔ RUN STATISTICS</h3>
+          <div id="stats-body"><p class="muted">—</p></div>
+        </section>
+        <section class="info-card" id="satmap-card">
+          <h3>🛰 SATMAP STACK <span class="hint">click to preview in 3D</span></h3>
+          <div id="satmap-grid"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ══════════ BOTTOM: log ══════════ -->
+  <footer id="bottombar">
+    <button id="log-toggle">▲ console</button>
+    <div id="log-line">ready.</div>
+    <div id="log-full" class="hidden"></div>
+  </footer>
+</div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
