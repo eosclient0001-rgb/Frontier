@@ -104,6 +104,9 @@ DispatchConfiguration ReSTIRIntegrator::BuildDispatch(
     Dispatch.CandidatesPerPixel    = ActiveConfiguration.CandidatesPerPixel;
     Dispatch.AlphaMaskedMaterialCount = AlphaMaskedMaterialCount;   // R4b: 0 keeps the any-hit shadow path
     Dispatch.LuminaireTriangleCount = LuminaireTriangleCount;
+    // D6/D7: 0 for every single-blob scene (the pre-D6 path, unchanged instructions), non-zero once the project has
+    //    uploaded a two-level structure — the kernel then reserves the object-space arm for the same feature flags.
+    Dispatch.TlasInstanceCount     = ResidentInstanceCount;
     Dispatch.FeatureFlags          = (ActiveConfiguration.GlobalIllumination ? DispatchFeatureGlobalIllumination : 0u)
                                    | (ActiveConfiguration.AntiAliasing       ? DispatchFeatureAntiAliasing       : 0u)
                                    | (ActiveConfiguration.AmbientFloor       ? DispatchFeatureAmbientFloor       : 0u)

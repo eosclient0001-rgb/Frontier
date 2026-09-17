@@ -135,6 +135,13 @@ public:
     //    (or a resized viewport) restarts accumulation so no stale radiance is blended in.
     void ObserveCamera(const ProjectZero::FlyThroughSolver& Camera, uint32_t ViewportWidth, uint32_t ViewportHeight) noexcept;
 
+    // D6/D7 — how many top-level instances the resident two-level structure carries. The integrator never holds the
+    //    structure itself (DisplayPresentation sits above DeviceExchange and below the project), so the project assigns
+    //    the count after a successful RefreshInstanceTraversal and BuildDispatch passes it through: 0 keeps the kernel's
+    //    single world-space-blob path, which is what every scene before D6 uploads.
+    void AssignInstanceCount(uint32_t Count) noexcept { ResidentInstanceCount = Count; }
+    [[nodiscard]] uint32_t QueryInstanceCount() const noexcept { return ResidentInstanceCount; }
+
     [[nodiscard]] const ReSTIRIntegratorConfiguration& QueryConfiguration() const noexcept
     {
         return ActiveConfiguration;
@@ -150,6 +157,8 @@ private:
     ReSTIRIntegratorConfiguration ActiveConfiguration;  // [-]  live-tunable parameters
     ExposureIntegrator Adaptation{};  // A6b: adaptive exposure
     uint32_t                      AccumulationIndex;    // [-]  temporal frame counter (incremented per frame)
+    uint32_t                      ResidentInstanceCount = 0u;   // [cnt] D6/D7: top-level instances the kernel should walk
+                                                          //       (0 = the single-blob path; see AssignInstanceCount)
     bool                          ResetPending = false; // [-]  a reset landed after the dispatch read the index
 
     Vector3                       HistoryOrigin;        // [m]   camera position the history was accumulated from

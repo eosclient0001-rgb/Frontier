@@ -97,6 +97,16 @@ public:
     // Reference CPU trace (tinybvh's own CWBVH traversal) — used by the self-test / proofs, never per frame.
     [[nodiscard]] bool TraceClosest(const float Origin[3], const float Direction[3], float& OutDistance, uint32_t& OutPrimitive) const noexcept;
 
+    // D6 — the OBJECT-SPACE variant, and the one a two-level trace must use: the direction is taken EXACTLY as given,
+    //    where tinybvh's Ray constructor would normalise it. That changes two things, both wanted here:
+    //      · t comes back in the parameterisation of the direction passed in (t = 1 lands one direction-length along
+    //        the ray), which is the convention TraversalCWBVH.slang's TraverseClosest works in via rD = 1/D;
+    //      · an already-normalised world direction handed to an identity-transformed instance is not round-tripped
+    //        through a second normalisation, so the trace is bit-identical to TraceClosest() — the D6 identity gate.
+    //    MaxDistance is in the same units (pass a unit direction and everything is metres, as the world path is).
+    [[nodiscard]] bool TraceClosestObjectSpace(const float Origin[3], const float Direction[3], float MaxDistance,
+                                               float& OutDistance, uint32_t& OutPrimitive) const noexcept;
+
 private:
     struct Implementation;
     std::unique_ptr<Implementation> Impl;

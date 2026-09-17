@@ -13,6 +13,22 @@
 //    layout(std430, binding = ?) readonly buffer TraversalNodeExtent { vec4 CwbvhNodes[]; };
 //    layout(std430, binding = ?) readonly buffer TraversalLeafExtent { vec4 CwbvhTris[];  };
 // before including this file, and calls TraverseClosest / TraverseOccluded.
+//
+// D6/D7 — TWO-LEVEL SCENES. An including shader that also declares the four instance buffers
+//    layout(std430, binding = ?) readonly buffer TraversalTlasNodeExtent      { TraversalTlasNode      TlasNodes[];            };
+//    layout(std430, binding = ?) readonly buffer TraversalTlasPrimitiveExtent { uint                   TlasPrimitives[];       };
+//    layout(std430, binding = ?) readonly buffer TraversalInstanceExtent      { TraversalTlasInstance TlasInstances[];        };
+//    layout(std430, binding = ?) readonly buffer TraversalBlasPlacementExtent { TraversalBlasPlacement BlasPlacements[];     };
+// (#include "TraversalRecords.slang" first — the structs) defines FRONTIER_TRAVERSAL_INSTANCES and gets
+// TraverseInstancesClosest / TraverseInstancesOccluded. Those walk the top level over the instances' world AABBs and,
+// at each candidate leaf, transform the ray into that instance's OBJECT space, walk its BLAS (the shared CwbvhNodes /
+// CwbvhTris blobs, addressed through BlasPlacements[].NodeOffset/LeafOffset) and keep the nearest hit.
+//
+//    ⚠️ t IS THE SAME IN BOTH SPACES. Transforming O and D by M⁻¹ maps the ray onto the object-space copy of the same
+//    world ray, and M·(O' + t·D') = O + t·(M·D') = O + t·D — so a hit at parameter t in object space is at t in world
+//    space, in metres when the caller's direction is unit. Nothing rescales, nothing re-normalises: the walkers below
+//    use the direction exactly as given (rD = 1/D), which is the convention tinybvh's own kernels use and the reason
+//    the CPU mirror (InstanceAcceleration::TraceClosest) reaches bit-identical results for identity instances.
 
 #ifndef FRONTIER_TRAVERSAL_CWBVH
 #define FRONTIER_TRAVERSAL_CWBVH
@@ -79,8 +95,10 @@ void TraverseChildren(in vec4 n0, in vec4 n1, in vec4 n2, in vec4 n3, in vec4 n4
     }
 }
 
-// Closest hit. O, D world space; rD = 1/D (caller computes once). tmax bounds the search.
-TraversalHit TraverseClosest(vec3 O, vec3 D, vec3 rD, float tmax)
+// Closest hit inside ONE BLAS. O, D in that BLAS' own space; rD = 1/D (caller computes once). tmax bounds the
+//    search. NodeBase/LeafBase are the BLAS' starts inside the shared blobs, in vec4 blocks — both zero for a
+//    single-blob scene, where the arithmetic is exactly what it was before this parameter existed.
+TraversalHit TraceBlasClosest(vec3 O, vec3 D, vec3 rD, float tmax, uint NodeBase, uint LeafBase)
 {
     TraversalHit hit; hit.t = tmax; hit.u = 0.0; hit.v = 0.0; hit.primitive = 0xFFFFFFFFu;
 
@@ -101,7 +119,7 @@ TraversalHit TraverseClosest(vec3 O, vec3 D, vec3 rD, float tmax)
 
             uint slotIndex      = (childBitIndex - 24u) ^ (octinv4 & 255u);
             uint relativeIndex  = bitCount(imask & ~(0xFFFFFFFFu << slotIndex));
-            uint childNodeIndex = (childNodeBaseIndex + relativeIndex) * 5u;
+            uint childNodeIndex = (childNodeBaseIndex + relativeIndex) * 5u + NodeBase;
             vec4 n0 = CwbvhNodes[childNodeIndex + 0u], n1 = CwbvhNodes[childNodeIndex + 1u], n2 = CwbvhNodes[childNodeIndex + 2u];
             vec4 n3 = CwbvhNodes[childNodeIndex + 3u], n4 = CwbvhNodes[childNodeIndex + 4u];
             ngroup.x = floatBitsToUint(n1.x);
@@ -117,7 +135,7 @@ TraversalHit TraverseClosest(vec3 O, vec3 D, vec3 rD, float tmax)
         {
             // Möller–Trumbore, iquilezles form; tinybvh stores e1 = v2 − v0, e2 = v1 − v0.
             uint triangleIndex = uint(findMSB(tgroup.y));
-            uint triAddr = tgroup.x + triangleIndex * 3u;
+            uint triAddr = tgroup.x + triangleIndex * 3u + LeafBase;
             vec3 e1 = CwbvhTris[triAddr].xyz;
             vec3 e2 = CwbvhTris[triAddr + 1u].xyz;
             vec4 v0 = CwbvhTris[triAddr + 2u];
@@ -144,8 +162,15 @@ TraversalHit TraverseClosest(vec3 O, vec3 D, vec3 rD, float tmax)
     return hit;
 }
 
-// Any hit in (0, tmax): early-out shadow query.
-bool TraverseOccluded(vec3 O, vec3 D, vec3 rD, float tmax)
+// Closest hit in a single-blob (one BLAS covering the whole scene) structure — the path every scene before D6 used,
+//    and still the path a scene without instance transforms takes.
+TraversalHit TraverseClosest(vec3 O, vec3 D, vec3 rD, float tmax)
+{
+    return TraceBlasClosest(O, D, rD, tmax, 0u, 0u);
+}
+
+// Any hit in (0, tmax) inside ONE BLAS: early-out shadow query.
+bool TraceBlasOccluded(vec3 O, vec3 D, vec3 rD, float tmax, uint NodeBase, uint LeafBase)
 {
     uvec2 stack[kTraversalStackSize];
     uint  stackPtr = 0u;
@@ -164,7 +189,7 @@ bool TraverseOccluded(vec3 O, vec3 D, vec3 rD, float tmax)
 
             uint slotIndex      = (childBitIndex - 24u) ^ (octinv4 & 255u);
             uint relativeIndex  = bitCount(imask & ~(0xFFFFFFFFu << slotIndex));
-            uint childNodeIndex = (childNodeBaseIndex + relativeIndex) * 5u;
+            uint childNodeIndex = (childNodeBaseIndex + relativeIndex) * 5u + NodeBase;
             vec4 n0 = CwbvhNodes[childNodeIndex + 0u], n1 = CwbvhNodes[childNodeIndex + 1u], n2 = CwbvhNodes[childNodeIndex + 2u];
             vec4 n3 = CwbvhNodes[childNodeIndex + 3u], n4 = CwbvhNodes[childNodeIndex + 4u];
             ngroup.x = floatBitsToUint(n1.x);
@@ -179,7 +204,7 @@ bool TraverseOccluded(vec3 O, vec3 D, vec3 rD, float tmax)
         while (tgroup.y != 0u)
         {
             uint triangleIndex = uint(findMSB(tgroup.y));
-            uint triAddr = tgroup.x + triangleIndex * 3u;
+            uint triAddr = tgroup.x + triangleIndex * 3u + LeafBase;
             vec3 e1 = CwbvhTris[triAddr].xyz;
             vec3 e2 = CwbvhTris[triAddr + 1u].xyz;
             vec4 v0 = CwbvhTris[triAddr + 2u];
@@ -204,5 +229,130 @@ bool TraverseOccluded(vec3 O, vec3 D, vec3 rD, float tmax)
     }
     return false;
 }
+
+// Any hit in a single-blob structure (see TraverseClosest above).
+bool TraverseOccluded(vec3 O, vec3 D, vec3 rD, float tmax)
+{
+    return TraceBlasOccluded(O, D, rD, tmax, 0u, 0u);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                      D6/D7 — TWO-LEVEL TRAVERSAL (instances)
+//------------------------------------------------------------------------------------------------------------------------
+#ifdef FRONTIER_TRAVERSAL_INSTANCES
+
+struct InstanceTraversalHit
+{
+    TraversalHit hit;        // t / u / v / primitive are the OBJECT-space, LOCAL triangle's
+    uint         instance;   // [-] top-level instance that was hit, 0xFFFFFFFF when the ray missed everything
+};
+
+// Closest hit through the top level: slab-test the instance AABBs (32 B nodes, 2 vec4), then for every candidate
+//    instance walk its BLAS in that instance's object space. tmax is in world metres; the bound handed to each BLAS is
+//    the same tmax (t does not change between the spaces — see the header note), so a nearer instance prunes the rest.
+InstanceTraversalHit TraverseInstancesClosest(vec3 O, vec3 D, vec3 rD, float tmax)
+{
+    InstanceTraversalHit result;
+    result.hit.t = tmax; result.hit.u = 0.0; result.hit.v = 0.0; result.hit.primitive = 0xFFFFFFFFu;
+    result.instance = 0xFFFFFFFFu;
+
+    uint  stack[64];
+    uint  stackPtr = 0u;
+    stack[stackPtr++] = 0u;   // the top level's root is always node 0
+
+    while (stackPtr > 0u)
+    {
+        const uint nodeIndex = stack[--stackPtr];
+        vec4 n0 = TlasNodes[nodeIndex].MinAndLeftFirst;
+        vec4 n1 = TlasNodes[nodeIndex].MaxAndPrimCount;
+        {
+            // The same slab test the CWBVH children use, without the quantisation: these bounds are full floats.
+            float tx1 = (n0.x - O.x) * rD.x, tx2 = (n1.x - O.x) * rD.x;
+            float ty1 = (n0.y - O.y) * rD.y, ty2 = (n1.y - O.y) * rD.y;
+            float tz1 = (n0.z - O.z) * rD.z, tz2 = (n1.z - O.z) * rD.z;
+            float tmin = max(max(min(tx1, tx2), min(ty1, ty2)), min(tz1, tz2));
+            float tmaxn = min(min(max(tx1, tx2), max(ty1, ty2)), max(tz1, tz2));
+            if (!(tmin <= min(tmaxn, result.hit.t) && tmaxn >= 0.0)) continue;
+        }
+
+        const uint leftFirst = floatBitsToUint(n0.w);
+        const uint primCount = floatBitsToUint(n1.w);
+        if (primCount == 0u)
+        {
+            stack[stackPtr++] = leftFirst;         // interior: two children, the same layout tinybvh builds
+            stack[stackPtr++] = leftFirst + 1u;
+            continue;
+        }
+
+        for (uint k = 0u; k < primCount; ++k)
+        {
+            const uint instanceIndex = TlasPrimitives[leftFirst + k];
+            TraversalTlasInstance instance = TlasInstances[instanceIndex];
+            TraversalBlasPlacement placement = BlasPlacements[instance.BlasIndex];
+
+            // Object space, through the record's own helpers (TraversalRecords.slang) so the convention lives in
+            //    exactly one place. No normalisation: rD' = 1/D' below is the reciprocal of that same transformed
+            //    direction, which is what keeps t identical in both spaces.
+            vec3 objectO = InstanceWorldToObject(instance, O);
+            vec3 objectD = InstanceWorldToObjectDirection(instance, D);
+            vec3 objectR = 1.0 / objectD;
+
+            TraversalHit h = TraceBlasClosest(objectO, objectD, objectR, result.hit.t, placement.NodeOffset, placement.LeafOffset);
+            if (h.primitive == 0xFFFFFFFFu || !(h.t < result.hit.t)) continue;
+            result.hit = h;
+            result.instance = instanceIndex;
+        }
+    }
+    return result;
+}
+
+// Any hit in (0, tmax) through the top level — the shadow query's fast path. An instance whose BLAS reports a hit ends
+//    the walk immediately: this is an occlusion test, not a closest-hit one.
+bool TraverseInstancesOccluded(vec3 O, vec3 D, vec3 rD, float tmax)
+{
+    uint  stack[64];
+    uint  stackPtr = 0u;
+    stack[stackPtr++] = 0u;
+
+    while (stackPtr > 0u)
+    {
+        const uint nodeIndex = stack[--stackPtr];
+        vec4 n0 = TlasNodes[nodeIndex].MinAndLeftFirst;
+        vec4 n1 = TlasNodes[nodeIndex].MaxAndPrimCount;
+        {
+            float tx1 = (n0.x - O.x) * rD.x, tx2 = (n1.x - O.x) * rD.x;
+            float ty1 = (n0.y - O.y) * rD.y, ty2 = (n1.y - O.y) * rD.y;
+            float tz1 = (n0.z - O.z) * rD.z, tz2 = (n1.z - O.z) * rD.z;
+            float tmin = max(max(min(tx1, tx2), min(ty1, ty2)), min(tz1, tz2));
+            float tmaxn = min(min(max(tx1, tx2), max(ty1, ty2)), max(tz1, tz2));
+            if (!(tmin <= min(tmaxn, tmax) && tmaxn >= 0.0)) continue;
+        }
+
+        const uint leftFirst = floatBitsToUint(n0.w);
+        const uint primCount = floatBitsToUint(n1.w);
+        if (primCount == 0u)
+        {
+            stack[stackPtr++] = leftFirst;
+            stack[stackPtr++] = leftFirst + 1u;
+            continue;
+        }
+
+        for (uint k = 0u; k < primCount; ++k)
+        {
+            const uint instanceIndex = TlasPrimitives[leftFirst + k];
+            TraversalTlasInstance instance = TlasInstances[instanceIndex];
+            TraversalBlasPlacement placement = BlasPlacements[instance.BlasIndex];
+
+            vec3 objectO = InstanceWorldToObject(instance, O);
+            vec3 objectD = InstanceWorldToObjectDirection(instance, D);
+            vec3 objectR = 1.0 / objectD;
+
+            if (TraceBlasOccluded(objectO, objectD, objectR, tmax, placement.NodeOffset, placement.LeafOffset)) return true;
+        }
+    }
+    return false;
+}
+
+#endif // FRONTIER_TRAVERSAL_INSTANCES
 
 #endif // FRONTIER_TRAVERSAL_CWBVH

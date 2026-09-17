@@ -25,7 +25,8 @@ struct GLFWwindow;
 namespace Frontier {
 
 class SceneStructure;
-class TraversalIndex;   // GeometricRaster/TraversalIndex.h (R3 CWBVH)
+class TraversalIndex;      // GeometricRaster/TraversalIndex.h (R3 CWBVH)
+class InstanceAcceleration; // GeometricRaster/InstanceAcceleration.h (D6/D7 two-level: BLASes + instance TLAS)
 class TextureIndex;     // ContentInterchange/TextureIndex.h (R4a)
 // R7 à-trous levels. Five doublings reach an 81x81 pixel footprint (1+2+4+8+16 taps either side of centre) for
 //    5 x 25 taps instead of 6561 — the whole point of the "with holes" formulation.
@@ -66,7 +67,7 @@ static constexpr float    kLuminanceLog2High      =  30.0f;   // 1e9 cd/m², abo
 static constexpr float    kLuminanceMedianStops   = 6.0f;
 static constexpr uint32_t kLuminanceHistogramBytes = kLuminanceHistogramBins * 4u;
 
-static constexpr uint32_t kComputeBindingCount  = 28u;    // compute set 0: 0 out · 1 tris · 2 materials · 3 history · 4 surface · 5 normal · 6 instances · 7 luminaires · 8/9 CWBVH · 10 slabs · 11 vertices · 12 indices · 13 energy LUT · 14 sheen LUT · 15 motion · 16 prev reservoir · 17 curr reservoir · 18 history normal+depth (R7a) · 19 luminance moments (R7) · 20 denoise input (R7) · 21 sky record · 22 moon record · 23 star tables · 24 post record · 25/26 GI prev/curr reservoir (kFeatureGiReuse) · 27 Textures[] (variable-count binding MUST stay last — Vulkan requires it on the highest binding number)
+static constexpr uint32_t kComputeBindingCount  = 32u;    // compute set 0: 0 out · 1 tris · 2 materials · 3 history · 4 surface · 5 normal · 6 instances · 7 luminaires · 8/9 CWBVH · 10 slabs · 11 vertices · 12 indices · 13 energy LUT · 14 sheen LUT · 15 motion · 16 prev reservoir · 17 curr reservoir · 18 history normal+depth (R7a) · 19 luminance moments (R7) · 20 denoise input (R7) · 21 sky record · 22 moon record · 23 star tables · 24 post record · 25/26 GI prev/curr reservoir (kFeatureGiReuse) · 27-30 D6/D7 two-level traversal (TLAS nodes · instance list · instance rows · BLAS placements) · 31 Textures[] (variable-count binding MUST stay last — Vulkan requires it on the highest binding number)
 static constexpr uint32_t kTextureSlotCapacity  = 1024u;  // bindless sampler2D[] size (variable-count binding; Pascal maxPerStageDescriptorSamplers ≥ 4000)
 class MaterialIndex;    // ContentInterchange/MaterialIndex.h (R4a)
 
@@ -161,7 +162,10 @@ struct DispatchConfiguration
     float    ColourSaturation;                                     // [-] A7d: 1 in daylight, 0 under starlight
     uint32_t SpatialTapCount;                                      // [-] spatial-reuse neighbours per pixel (0 = cross off); taken from the reserve, block still 128 B
     uint32_t DenoiseLevelCount;                                    // [-] a-trous levels to dispatch, 1..kDenoiseLevelCount (tier-keyed); also from the reserve
-    uint32_t PushReserve[5];                                       // [-] keeps the block 128 B and 16-B aligned
+    uint32_t PushReserve[4];                                       // [-] keeps the block 128 B and 16-B aligned
+    uint32_t TlasInstanceCount;                                    // [cnt] D6/D7: resident top-level instances (0 = single
+                                                                   //       world-space blob, the pre-D6 path). Mirrors
+                                                                   //       ReSTIRViewport.slang's last reserve slot.
 };
 
 // Bits of DispatchConfiguration::FeatureFlags — mirror kFeature* in ReSTIRViewport.slang.
@@ -231,6 +235,18 @@ public:
     //    material and normal through them and they must not lag the structure. False if a blob outgrew its
     //    allocation, in which case the caller should fall back to a full UploadTraversal.
     [[nodiscard]] bool          RefreshTraversal(const TraversalIndex& Traversal, const std::vector<TriangleIndex>& Facets) noexcept;
+
+    // D6/D7 — the two-level structure → bindings 27 (top-level nodes), 28 (the instance list its leaves index),
+    //    29 (the instance rows: inverse + world AABB + BLAS index) and 30 (BLAS placements: where each BLAS' blobs start
+    //    inside bindings 8/9). Taken at load beside UploadTraversal; the kernel walks them only when the dispatcher's
+    //    TlasInstanceCount is non-zero, so a scene uploaded without this call keeps the single-blob path unchanged.
+    void                        UploadInstanceTraversal(const InstanceAcceleration& Instances) noexcept;
+
+    // D7 — per-frame refresh: the instance rows, the rebuilt top level and the instance list are rewritten in place.
+    //    No reallocation and no descriptor rewrite, like RefreshTraversal. False when nothing is resident or a payload
+    //    outgrew its allocation; a rebuild over the same instance count never does (the top level is bounded by
+    //    2 × instances).
+    [[nodiscard]] bool          RefreshInstanceTraversal(const InstanceAcceleration& Instances) noexcept;
     // Celestial sky record → binding 21, safe every frame: a memcpy into the persistently mapped uniform buffer,
     //    no reallocation and no descriptor rewrite. DeviceExchange must not include DisplayPresentation (it is the
     //    layer below it), so the caller packs with SkyConstantRecord/PackSkyConstants and hands over plain bytes —
@@ -388,6 +404,13 @@ private:
     bool                    TraversalResident = false;
     uint64_t                TraversalNodeCapacity = 0u;   // [B] allocation size, so a refit refresh cannot overrun
     uint64_t                TraversalLeafCapacity = 0u;   // [B]   // [-]   R3 CWBVH uploaded (kernel refuses to run without it)
+
+    // D6/D7 two-level traversal (bindings 27-30): what was allocated, so a per-frame refresh cannot overrun.
+    bool                    InstanceTraversalResident = false;
+    uint64_t                TlasNodeCapacity      = 0u;   // [B] 8 floats per top-level node
+    uint64_t                TlasPrimitiveCapacity = 0u;   // [B] instance list
+    uint64_t                TlasInstanceCapacity  = 0u;   // [B] TlasInstanceRecord rows
+    uint64_t                BlasPlacementCapacity = 0u;   // [B] BlasPlacement rows
     VisibilityFrameConfiguration VisibilityFrame{};
     bool                    VisibilityFrameValid = false;
     ShadowFrameConfiguration ShadowFrame{};        // R10: GI-off shadow settings (tier technique + resolution override)

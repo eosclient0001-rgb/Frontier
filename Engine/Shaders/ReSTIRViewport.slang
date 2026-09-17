@@ -117,8 +117,18 @@ layout(std430, binding = 1) readonly buffer TriangleExtent  { GpuTriangle  Trian
 layout(std430, binding = 2) readonly buffer MaterialExtent  { GpuMaterial  Materials[];  };
 layout(std430, binding = 6) readonly buffer InstanceExtent  { GpuInstance  Instances[];  };
 layout(std430, binding = 7) readonly buffer LuminaireExtent { GpuLuminaire Luminaires[]; };
-layout(std430, binding = 8) readonly buffer TraversalNodeExtent { vec4 CwbvhNodes[]; };   // R3: TraversalIndex node blob
-layout(std430, binding = 9) readonly buffer TraversalLeafExtent { vec4 CwbvhTris[];  };   // R3: TraversalIndex triangle blob
+#include "TraversalRecords.slang"   // D6/D7: the two-level traversal's device records (must precede the buffers below)
+layout(std430, binding = 8) readonly buffer TraversalNodeExtent { vec4 CwbvhNodes[]; };   // R3: shared CWBVH node blob (all BLASes)
+layout(std430, binding = 9) readonly buffer TraversalLeafExtent { vec4 CwbvhTris[];  };   // R3: shared CWBVH triangle blob
+// D6/D7 — the two-level set. Present in every dispatch; whether they are WALKED depends on TlasInstanceCount, which the
+//    host sets to the resident instance count (0 = the scene is one world-space blob, ie every scene before D6). The
+//    bindings are written unconditionally by SwapchainExchange (empty buffers until UploadInstances), so a scene
+//    without instances reads nothing and the single-blob arithmetic is what it always was.
+layout(std430, binding = 27) readonly buffer TraversalTlasNodeExtent      { TraversalTlasNode      TlasNodes[];      };
+layout(std430, binding = 28) readonly buffer TraversalTlasPrimitiveExtent { uint                   TlasPrimitives[]; };
+layout(std430, binding = 29) readonly buffer TraversalInstanceExtent      { TraversalTlasInstance TlasInstances[];  };
+layout(std430, binding = 30) readonly buffer TraversalBlasPlacementExtent { TraversalBlasPlacement BlasPlacements[]; };
+#define FRONTIER_TRAVERSAL_INSTANCES   // the four buffers above are declared: TraversalCWBVH.slang's two-level walkers compile
 layout(std430, binding = 10) readonly buffer MaterialSlabExtent { GpuMaterialSlab MaterialSlabs[]; };
 
 struct GpuVertex            // VertexRecord (SceneRecords.slang, 64 B) — R4b: interpolated normals / tangents / UVs
@@ -159,7 +169,7 @@ layout(rgba32f, binding = 20) uniform writeonly image2D DenoiseImage; // R7: xyz
 //    ⚠️ The bindless table is declared BEFORE the includes: MoonAlong samples it, and SkyAlong calls MoonAlong,
 //    so the table and the moons must both be visible where the sky is defined. 27 is still the highest binding
 //    NUMBER in the set, which is what the variable-count rule constrains — source order is free.
-layout(binding = 27) uniform sampler2D Textures[];   // R4a bindless table — ⚠️ moved 11 → 15 → 18 → 19 → 21 → 23 → 25 → 27 (the GI reservoir pair took 25/26): a variable-count binding must be the last one in the set
+layout(binding = 31) uniform sampler2D Textures[];   // R4a bindless table — ⚠️ moved 11 → 15 → 18 → 19 → 21 → 23 → 25 → 27 → 31 (the GI reservoir pair took 25/26, D6/D7's four instance buffers took 27-30): a variable-count binding must be the last one in the set
 #include "Shaders/MoonRecords.slang"
 #include "Shaders/PostRecords.slang"
 #include "Shaders/SkyRecords.slang"
@@ -446,7 +456,8 @@ layout(push_constant) uniform ReSTIRConstants
     uint    PushReserve4;
     uint    PushReserve5;
     uint    PushReserve6;
-    uint    PushReserve7;
+    uint    TlasInstanceCount;  // [cnt] D6/D7: resident top-level instances (0 ⇒ single world-space blob, the pre-D6 path)
+                                 //       — the last reserve slot, so the block is still 128 B and no other field moved
 };
 
 const uint kFeatureGlobalIllumination = 1u;   // bit 0: trace the secondary bounce (section 4)
@@ -566,9 +577,54 @@ uint LocalPrimitive(uint flatPrimitive, uint instance)
     return flatPrimitive - Instances[instance].FlatTriangleOffset;
 }
 
+// D6/D7 — the two-level arm of the trace, factored out so the alpha-mask retrace loop below is shared. `hit` is local
+//    to the instance that was found; `instance` is the top-level row, which the caller resolves to the flat triangle
+//    index through FirstTriangle. Both arms fill the same four values, so the caller cannot tell them apart.
+struct TraversalResult
+{
+    float t;
+    uint  primitive;   // [-] LOCAL triangle index inside the instance
+    uint  instance;    // [idx] top-level instance, 0xFFFFFFFF on a miss
+    bool  valid;
+};
+
+TraversalResult TraceTraversal(vec3 origin, vec3 dir, vec3 rD, float tmax)
+{
+    TraversalResult result;
+    result.t = kInf; result.primitive = 0xFFFFFFFFu; result.instance = 0xFFFFFFFFu; result.valid = false;
+
+    if (TlasInstanceCount == 0u)   // pre-D6 path: one world-space blob, primitive is already the flat index
+    {
+        TraversalHit h = TraverseClosest(origin, dir, rD, tmax);
+        if (h.primitive == 0xFFFFFFFFu) return result;
+        result.t = h.t; result.primitive = h.primitive; result.instance = 0u; result.valid = true;
+        return result;
+    }
+
+    InstanceTraversalHit ih = TraverseInstancesClosest(origin, dir, rD, tmax);
+    if (ih.instance == 0xFFFFFFFFu) return result;
+    result.t = ih.hit.t; result.primitive = ih.hit.primitive; result.instance = ih.instance; result.valid = true;
+    return result;
+}
+
+bool TraceTraversalOccluded(vec3 origin, vec3 dir, vec3 rD, float tmax)
+{
+    return TlasInstanceCount == 0u ? TraverseOccluded(origin, dir, rD, tmax)
+                                   : TraverseInstancesOccluded(origin, dir, rD, tmax);
+}
+
+// D6 — the flat index a traversal result resolves to: the instance's own triangles are contiguous in Triangles[], so the
+//    local primitive plus the instance's FirstTriangle is the world-space index the material / uv / normal lookups use.
+uint FlatPrimitiveOf(TraversalResult result)
+{
+    return TlasInstanceCount == 0u ? result.primitive : TlasInstances[result.instance].FirstTriangle + result.primitive;
+}
+
 Hit TraceScene(Ray ray)
 {
     // R3: closest hit through the CWBVH; the primitive index addresses the flat Triangles[] for material and normal.
+    // D6/D7: with instances resident the walk is two-level and the triangle read is the instance's OBJECT-space copy,
+    //    so its face normal is taken to world space by the instance's inverse transpose.
     // R4b: a hit on a cut-out texel of an alpha-masked material is skipped and the ray re-traced from just past it.
     Hit closest;
     closest.valid = false;
@@ -580,19 +636,27 @@ Hit TraceScene(Ray ray)
     uint  passes = AlphaMaskedMaterialCount == 0u ? 0u : kAlphaMaskRetraceLimit;
     for (uint pass = 0u; pass <= passes; ++pass)
     {
-        TraversalHit h = TraverseClosest(origin, ray.dir, rD, kInf);
-        if (h.primitive == 0xFFFFFFFFu || h.t <= kEps) return closest;
-        vec3 pos = origin + h.t * ray.dir;
-        if (passes != 0u && AlphaMaskCutOut(h.primitive, pos)) { origin = pos + ray.dir * kEps; tBase += h.t + kEps; continue; }
+        TraversalResult r = TraceTraversal(origin, ray.dir, rD, kInf);
+        if (!r.valid || r.t <= kEps) return closest;
+        // `flat` is a GLSL keyword (interpolation qualifier), so this identifier is `flatIndex`: the repo's fallback
+        //    toolchain (glslc) rejects the reserved word, and both compilers are expected to accept this file.
+        const uint flatIndex = FlatPrimitiveOf(r);
+        vec3 pos = origin + r.t * ray.dir;
+        if (passes != 0u && AlphaMaskCutOut(flatIndex, pos)) { origin = pos + ray.dir * kEps; tBase += r.t + kEps; continue; }
 
-        GpuTriangle tri = Triangles[h.primitive];
+        GpuTriangle tri = Triangles[flatIndex];
+        vec3 objectNormal = normalize(cross(tri.v1.xyz - tri.v0.xyz, tri.v2.xyz - tri.v0.xyz));   // R4a: face normal from the edges (slot now carries UVs)
         closest.valid  = true;
-        closest.t      = tBase + h.t;
+        closest.t      = tBase + r.t;
         closest.pos    = pos;
-        closest.normal = normalize(cross(tri.v1.xyz - tri.v0.xyz, tri.v2.xyz - tri.v0.xyz));   // R4a: face normal from the edges (slot now carries UVs)
+        // ⚠️ The instance case is the inverse transpose: a rotation/scale appears in the object-space triangle, and a
+        //    face normal carried out by the forward matrix would tilt the wrong way under a non-uniform instance
+        //    scale. With no instances resident this is the same expression the pre-D6 kernel used.
+        closest.normal = TlasInstanceCount == 0u ? objectNormal
+                        : normalize(InstanceNormalToWorld(TlasInstances[r.instance], objectNormal));
         closest.matIdx = floatBitsToUint(tri.v0.w);
-        closest.primitive = h.primitive;
-        closest.instance  = InstanceOfPrimitive(h.primitive);   // D2: identity is the (instance, primitive) pair
+        closest.primitive = flatIndex;
+        closest.instance  = InstanceOfPrimitive(flatIndex);   // D2: identity is the (instance, primitive) pair
         return closest;
     }
     return closest;
@@ -605,17 +669,18 @@ bool TraceShadow(vec3 origin, vec3 target)
     dir = normalize(dir);
     vec3 rD = vec3(1.0) / dir;
     if (AlphaMaskedMaterialCount == 0u)
-        return TraverseOccluded(origin + dir * kEps, dir, rD, tMax);   // R3 fast path: any-hit, no material fetch (Cornell unchanged)
+        return TraceTraversalOccluded(origin + dir * kEps, dir, rD, tMax);   // R3 fast path: any-hit, no material fetch (Cornell unchanged)
 
     // R4b: closest-hit walk that steps through cut-out texels (foliage cards); an opaque hit before the light occludes.
+    //    D6/D7: the same walk over the two-level traversal when instances are resident (TraceTraversal picks the arm).
     vec3 o = origin + dir * kEps;
     for (uint pass = 0u; pass <= kAlphaMaskRetraceLimit; ++pass)
     {
-        TraversalHit h = TraverseClosest(o, dir, rD, tMax);
-        if (h.primitive == 0xFFFFFFFFu) return false;
-        vec3 pos = o + h.t * dir;
-        if (!AlphaMaskCutOut(h.primitive, pos)) return true;
-        o = pos + dir * kEps; tMax -= h.t + kEps;
+        TraversalResult r = TraceTraversal(o, dir, rD, tMax);
+        if (!r.valid) return false;
+        vec3 pos = o + r.t * dir;
+        if (!AlphaMaskCutOut(FlatPrimitiveOf(r), pos)) return true;
+        o = pos + dir * kEps; tMax -= r.t + kEps;
         if (tMax <= 0.0) return false;
     }
     return true;   // more cut-out layers than the limit: treat as occluded (conservative, never leaks light)
@@ -1424,7 +1489,7 @@ void main()
             // The temporal reservoir is what the history takes (see the publish block at the end of the DI block):
             //    snapshot the four quantities the reservoir is made of before the spatial taps touch them.
             vec3     histPoint     = res.SelectedPoint;
-            vec3     histUv        = res.SelectedUv;
+            vec2     histUv        = res.SelectedUv;   // vec2: UvDepth packs (uv, W, view depth) as one vec4 below
             uint     histLight     = res.SelectedLight;
             uint     histCount     = res.SampleCount;
             uint     histVisible   = res.Visible;

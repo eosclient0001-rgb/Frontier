@@ -153,4 +153,31 @@ bool TraversalIndex::TraceClosest(const float Origin[3], const float Direction[3
     return true;
 }
 
+bool TraversalIndex::TraceClosestObjectSpace(const float Origin[3], const float Direction[3], float MaxDistance,
+                                             float& OutDistance, uint32_t& OutPrimitive) const noexcept
+{
+    if (!IsReady()) return false;
+
+    // Filled by hand rather than through tinybvh::Ray's constructor: that constructor writes
+    //    `D = tinybvh_normalize( direction )`, and for a two-level trace the direction is already the object-space one
+    //    the transform produced — normalising it again would both rescale t and perturb a grazing ray by an ulp.
+    //    Field for field the same setup otherwise (zero-initialised Ray, O, D, rD = 1/D, hit.t = the upper bound,
+    //    full mask).
+    tinybvh::Ray Ray{};
+    Ray.O = tinybvh::bvhvec3(Origin[0], Origin[1], Origin[2]);
+    Ray.D = tinybvh::bvhvec3(Direction[0], Direction[1], Direction[2]);
+    // ⚠️ tinybvh_rcp, NOT 1/x: tinybvh's helper clamps near-zero components to ±FLT_MAX, where 1/0 would give ±inf
+    //    and `0 * inf` (a slab test on an exactly axis-aligned ray) would give NaN and silently drop subtrees.
+    Ray.rD = tinybvh::tinybvh_rcp(Ray.D);
+    Ray.hit.t = MaxDistance;
+    Ray.mask = 0xFFFFu;
+
+    Impl->Tree.bvh8.bvh.Intersect(Ray);
+    // The walker leaves hit.t at its initial value when it finds nothing, so the bound IS the miss sentinel here.
+    if (!(Ray.hit.t < MaxDistance)) return false;
+    OutDistance  = Ray.hit.t;
+    OutPrimitive = Ray.hit.prim;
+    return true;
+}
+
 } // namespace Frontier

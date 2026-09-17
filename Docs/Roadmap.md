@@ -29,14 +29,14 @@ the report keeps the evidence, this file keeps the queue. Percentages are engine
 | 12 | Owner's fullscale blur + fireflies report closed | ❌ | 0 % | Needs commit + tier + denoise setting from the test |
 | 13 | Brute-force-vs-reservoir budget study on GPU | ❌ | 0 % | Mirror says plain wins 7.8× at equal resolve rate (§14.3) |
 
-## C. Dynamic geometry (BVH for moving and animated objects) — plan written, nothing built
+## C. Dynamic geometry (BVH for moving and animated objects) — D6/D7 delivered
 
 See `Docs/DynamicGeometry.md` for the plan, the measured budget table and the decision record.
 
 | # | Item | | % | What's left → next step |
 |---|---|---|:--:|---|
-| 14 | D6 object-space BLAS + per-instance transforms in the kernel | ❌ | 10 % | `BuildBottomLevel` and the transform rows exist; the kernel still traces one world-space tree |
-| 15 | D7 TLAS over instances (build at load, rebuild per frame) | ❌ | 0 % | CPU rebuild measured cheap (0.16 ms / 256 inst, 2.9 ms / 4 096) |
+| 14 | D6 object-space BLAS + per-instance transforms in the kernel | ⚠️ | 90 % | Built and CPU-proven (`Exhibits/Workbench/Traversal`, 103 gates: identity bit-identical, transform agreement, payload, wiring pins). Left: **one GPU run** |
+| 15 | D7 TLAS over instances (build at load, rebuild per frame) | ⚠️ | 85 % | Measured **0.07 / 0.32 / 1.42 ms** at 256 / 1 024 / 4 096 all-moving instances (TLAS alone 0.05 / 0.23 / 1.06). ⚠️ 4 096 misses the ≤1 ms plan number on the 2-core proof host |
 | 16 | D8 dynamic BLAS update path (refit for deforming meshes) | ❌ | 0 % | Layout decision first: the packed CWBVH re-quantize is the cost (5.2 ms per 16 k-tri character) |
 | 17 | D9 GPU refit / GPU build kernels (wide-AABB refit; H-PLOC for topology changes) | ❌ | 0 % | Needs the layout from D8 and a GPU runner |
 | 18 | D10 ReSTIR/temporal integration for moving geometry | ❌ | 0 % | Motion vectors exist (`PreviousWorld`); identity-based validation is the new part |
@@ -60,14 +60,15 @@ See `Docs/DynamicGeometry.md` for the plan, the measured budget table and the de
 
 - Renderer/ReSTIR ≈ 86 % — everything left is GPU-verified or a deliberate research step (#5–7).
 - GPU verification ≈ 5 % — nothing in the sandbox can move it; it gates all remaining confidence.
-- Dynamic geometry ≈ 4 % — plan + measured budgets exist; no code path yet.
+- Dynamic geometry ≈ 40 % — D6/D7 are built, CPU-proven and wired end to end; the remainder is D8/D9 (deformation and
+  GPU build) plus the GPU run that closes D6/D7.
 - Project format ≈ 8 % — deliberately unstarted; blocked on decisions, not on code.
-- Whole product ≈ 58 %.
+- Whole product ≈ 62 %.
 
 ## Next three, in order
 
 1. 🔎 Run the current tip on the GPU with the HUD's ReSTIR row open ("indirect pool on/off · N taps") and report
    commit + tier + whether the blur/fireflies survive — closes #4 and #12 together.
 2. 📝 Answer the §10 questions (the one that matters: material assignment copy vs share / CopyOnWrite) — unlocks P1/P2.
-3. 🧭 Pick the next CPU-measurable build: replay + shift mapping (indirect 16 % → 100 %), the sky probe bake, or the
-   D6/D7 two-level BVH (measured cheap in `Docs/DynamicGeometry.md`) — all three can be proven without a GPU.
+3. 🧭 Pick the next CPU-measurable build: **D8/D9** (dynamic BLAS update policy + GPU build for topology changes, next
+   per `Docs/DynamicGeometry.md` §6), replay + shift mapping (indirect 16 % → 100 %), or the sky probe bake.

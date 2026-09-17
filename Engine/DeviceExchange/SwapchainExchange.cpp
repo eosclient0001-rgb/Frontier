@@ -18,6 +18,7 @@
 #include "../ContentInterchange/MaterialIndex.h"
 #include "../ContentInterchange/TextureIndex.h"
 #include "../GeometricRaster/TraversalIndex.h"
+#include "../GeometricRaster/InstanceAcceleration.h"   // D6/D7 two-level: what bindings 27-30 are uploaded from
 #include "../GeometricRaster/SceneStructure.h"
 #include <algorithm>
 #include <array>
@@ -157,6 +158,17 @@ struct SwapchainExchange::VulkanRecord
     VkDeviceMemory           TraversalNodeMemory   = VK_NULL_HANDLE;
     VkBuffer                 TraversalLeafBuffer   = VK_NULL_HANDLE;   // R3 CWBVH triangles (binding 9)
     VkDeviceMemory           TraversalLeafMemory   = VK_NULL_HANDLE;
+    // D6/D7 two-level traversal (bindings 27-30). Allocated by UploadInstanceTraversal, rewritten in place every frame
+    //    by RefreshInstanceTraversal: the top level is rebuilt from the instances' world AABBs on the CPU (the same
+    //    work the CPU mirror measures) and re-uploaded as 8 floats a node.
+    VkBuffer                 TlasNodeBuffer        = VK_NULL_HANDLE;   // 8 floats per top-level node (binding 27)
+    VkDeviceMemory           TlasNodeMemory        = VK_NULL_HANDLE;
+    VkBuffer                 TlasPrimitiveBuffer   = VK_NULL_HANDLE;   // instance list the leaves index (binding 28)
+    VkDeviceMemory           TlasPrimitiveMemory   = VK_NULL_HANDLE;
+    VkBuffer                 TlasInstanceBuffer    = VK_NULL_HANDLE;   // TlasInstanceRecord rows (binding 29)
+    VkDeviceMemory           TlasInstanceMemory    = VK_NULL_HANDLE;
+    VkBuffer                 BlasPlacementBuffer   = VK_NULL_HANDLE;   // BlasPlacement rows (binding 30)
+    VkDeviceMemory           BlasPlacementMemory   = VK_NULL_HANDLE;
     // Celestial sky record (binding 21). One 144 B uniform buffer, host-visible and persistently mapped: the
     //    project re-packs it every frame and RefreshSky is a memcpy, never a reallocation or a descriptor
     //    rewrite. Zeroed at bring-up, which is the sky disabled (SunRadiance.w = 0) — a caller that never
@@ -537,9 +549,17 @@ void SwapchainExchange::Retire() noexcept
 
     if (Vulkan->TableSampler)    vkDestroySampler(Vulkan->Device, Vulkan->TableSampler, nullptr);
     if (Vulkan->TraversalNodeBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TraversalNodeBuffer, nullptr);
+    if (Vulkan->TlasNodeBuffer)      vkDestroyBuffer(Vulkan->Device, Vulkan->TlasNodeBuffer, nullptr);
+    if (Vulkan->TlasPrimitiveBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TlasPrimitiveBuffer, nullptr);
+    if (Vulkan->TlasInstanceBuffer)  vkDestroyBuffer(Vulkan->Device, Vulkan->TlasInstanceBuffer, nullptr);
+    if (Vulkan->BlasPlacementBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->BlasPlacementBuffer, nullptr);
     if (Vulkan->TraversalNodeMemory) vkFreeMemory   (Vulkan->Device, Vulkan->TraversalNodeMemory, nullptr);
     if (Vulkan->TraversalLeafBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TraversalLeafBuffer, nullptr);
     if (Vulkan->TraversalLeafMemory) vkFreeMemory   (Vulkan->Device, Vulkan->TraversalLeafMemory, nullptr);
+    if (Vulkan->TlasNodeMemory)      vkFreeMemory   (Vulkan->Device, Vulkan->TlasNodeMemory, nullptr);
+    if (Vulkan->TlasPrimitiveMemory) vkFreeMemory   (Vulkan->Device, Vulkan->TlasPrimitiveMemory, nullptr);
+    if (Vulkan->TlasInstanceMemory)  vkFreeMemory   (Vulkan->Device, Vulkan->TlasInstanceMemory, nullptr);
+    if (Vulkan->BlasPlacementMemory) vkFreeMemory   (Vulkan->Device, Vulkan->BlasPlacementMemory, nullptr);
     // The sky record is permanent, not swapchain-sized: it is torn down here, in Retire, and never in
     //    RetireSwapchain — a resize must not unbind the sky.
     if (Vulkan->SkyMapped)  vkUnmapMemory (Vulkan->Device, Vulkan->SkyMemory);
@@ -1204,6 +1224,42 @@ bool SwapchainExchange::BringCommandRecording() noexcept
     return true;
 }
 
+// ─── What lives at each compute binding ────────────────────────────────────────────────────────────────────────
+// 🔴 ONE table. The descriptor set layout and the descriptor pool are both derived from it, because two hand-kept
+//    lists is how the pool came up short twice: 11 buffers against a layout that asked for 12 (the star tables), and
+//    then 14 against a layout that asked for 16 (25/26's GI reservoir pair was never added). A pool that is too small
+//    is not always fatal — one driver let the allocation through with a validation error, the next one will not — and
+//    the failure message points nowhere near the cause. The binding numbers are the set 0 map in SwapchainExchange.h.
+[[nodiscard]] static constexpr VkDescriptorType ComputeBindingType(uint32_t B) noexcept
+{
+    if (B <= 5u && B != 1u && B != 2u) return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;   // 0 output · 3 history · 4 surface · 5 normal
+    if (B == 18u || B == 19u || B == 20u) return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;   // R7a surface · R7 moments · denoise input
+    if (B == 13u || B == 14u) return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;   // GGX energy LUT · LTC sheen LUT
+    if (B == 15u) return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;   // R6 motion
+    if (B == 21u || B == 22u || B == 24u) return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;   // live sky · moon · post records
+    return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;   // 1 tris · 2 materials · 6 instances · 7 luminaires · 8/9 CWBVH · 10 slabs · 11 vertices · 12 indices · 16/17 reservoirs · 23 star tables · 25/26 GI reservoirs · 27-30 two-level
+}
+
+// The variable-count bindless table lives at the highest binding and is counted by its own capacity, never here.
+[[nodiscard]] static constexpr uint32_t ComputeBindingTypeCount(VkDescriptorType Type) noexcept
+{
+    uint32_t Total = 0u;
+    for (uint32_t B = 0u; B + 1u < kComputeBindingCount; ++B)
+        if (ComputeBindingType(B) == Type) ++Total;
+    return Total;
+}
+
+// Compile-time proof that the pool cannot drift from the layout again. If a binding is added, re-classified, or the
+//    table's last slot moves, this fails the build instead of failing descriptor allocation on somebody's driver.
+static_assert(ComputeBindingTypeCount(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) == 18u,
+              "compute set 0 storage buffers: 1 · 2 · 6 · 7 · 8 · 9 · 10 · 11 · 12 · 16 · 17 · 23 · 25 · 26 · 27 · 28 · 29 · 30");
+static_assert(ComputeBindingTypeCount(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) == 7u,
+              "compute set 0 storage images: 0 · 3 · 4 · 5 · 18 · 19 · 20");
+static_assert(ComputeBindingTypeCount(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) == 3u,
+              "compute set 0 uniform buffers: 21 sky · 22 moon · 24 post");
+static_assert(ComputeBindingTypeCount(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) == 3u,
+              "compute set 0 fixed samplers: 13 energy LUT · 14 sheen LUT · 15 motion (31 is the variable-count table)");
+
 bool SwapchainExchange::BringComputePipeline() noexcept
 {
     // ① Descriptor set layout — 0: output image, 1: triangle SSBO, 2: material SSBO, 3: history image,
@@ -1232,7 +1288,7 @@ bool SwapchainExchange::BringComputePipeline() noexcept
     for (uint32_t B = 4u; B < kComputeBindingCount - 1u; ++B)
     {
         LayoutBindings[B].binding         = B;
-        LayoutBindings[B].descriptorType  = (B < 6u || B == 18u || B == 19u || B == 20u) ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : (B == 13u || B == 14u || B == 15u) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : (B == 21u || B == 22u || B == 24u) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;   // 18 R7a surface · 19/20 R7 moments + denoise input · 21 live sky UBO (SkyRecords.slang) · 22 live moon UBO (MoonRecords.slang) · 23 star tables SSBO (PostRecords.slang) · 24 live post UBO (PostRecords.slang)
+        LayoutBindings[B].descriptorType  = ComputeBindingType(B);   // 18 R7a surface · 19/20 R7 moments + denoise input · 21 live sky UBO (SkyRecords.slang) · 22 live moon UBO (MoonRecords.slang) · 23 star tables SSBO (PostRecords.slang) · 24 live post UBO (PostRecords.slang)
         LayoutBindings[B].descriptorCount = 1u;
         LayoutBindings[B].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
     }
@@ -1664,25 +1720,22 @@ bool SwapchainExchange::BringStarTables() noexcept
 bool SwapchainExchange::BringDescriptorSet() noexcept
 {
     std::array<VkDescriptorPoolSize, 4u> PoolSizes{};
-    // Counted explicitly rather than derived from kComputeBindingCount: the mix of image and buffer bindings is
-    //    not a fixed offset from the total, and a wrong pool size fails allocation at bring-up with a message that
-    //    points nowhere near the cause.
+    // Derived from the same table the layout is built from (ComputeBindingTypeCount above), so the two cannot drift —
+    //    the hand-kept counts had gone stale twice, most recently by the GI reservoir pair (25/26) and D6/D7's four
+    //    two-level buffers (27-30), which together are six buffers the 16 did not cover.
     PoolSizes[0].type            = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    PoolSizes[0].descriptorCount = 7u;                          // 0 out · 3 history · 4 surface · 5 normal · 18 R7a surface · 19 moments · 20 denoise
+    PoolSizes[0].descriptorCount = ComputeBindingTypeCount(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);   // 0 out · 3 history · 4 surface · 5 normal · 18 R7a surface · 19 moments · 20 denoise
     PoolSizes[1].type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    // ⚠️ Counted, and the count includes 23. It said 11 and the layout asks for 12, so every run began with
-    //    "trying to allocate 12 ... but this pool only has a total of 11": allowed to succeed on this driver,
-    //    guaranteed to fail on another.
-    PoolSizes[1].descriptorCount = 12u;                         // 1, 2, 6-12, 16-17, 23 star tables
+    PoolSizes[1].descriptorCount = ComputeBindingTypeCount(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);   // 1, 2, 6-12, 16-17, 23 star tables, 25/26 GI reservoirs, 27-30 D6/D7
     PoolSizes[2].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    PoolSizes[2].descriptorCount = 3u + (Vulkan->DescriptorIndexing ? kTextureSlotCapacity : 1u);   // 13/14 material LUTs · 15 motion · the bindless table (22 left for the UBOs below)
+    PoolSizes[2].descriptorCount = ComputeBindingTypeCount(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) + (Vulkan->DescriptorIndexing ? kTextureSlotCapacity : 1u);   // 13/14 material LUTs · 15 motion · the bindless table
 
     VkDescriptorPoolCreateInfo PoolInfo{};
     PoolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     PoolInfo.flags         = Vulkan->DescriptorIndexing ? static_cast<VkDescriptorPoolCreateFlags>(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT) : 0u;
     PoolInfo.maxSets       = 1u;
     PoolSizes[3].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    PoolSizes[3].descriptorCount = 3u;                          // 21 live sky record · 22 live moon record · 24 live post record
+    PoolSizes[3].descriptorCount = ComputeBindingTypeCount(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);   // 21 live sky record · 22 live moon record · 24 live post record
     PoolInfo.poolSizeCount = 4u;
     PoolInfo.pPoolSizes    = PoolSizes.data();
     (void)vkCreateDescriptorPool(Vulkan->Device, &PoolInfo, nullptr, &Vulkan->ComputeDescriptorPool);
@@ -1751,6 +1804,10 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
     VkDescriptorBufferInfo InstanceInfo { static_cast<VkBuffer>(Visibility.QueryInstanceBuffer()),  0u, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo LuminaireInfo{ static_cast<VkBuffer>(Visibility.QueryLuminaireBuffer()), 0u, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo NodeInfo     { Vulkan->TraversalNodeBuffer, 0u, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo TlasNodeInfo  { Vulkan->TlasNodeBuffer,      0u, VK_WHOLE_SIZE };   // D6/D7 (binding 27)
+    VkDescriptorBufferInfo TlasPrimInfo  { Vulkan->TlasPrimitiveBuffer, 0u, VK_WHOLE_SIZE };   //              28
+    VkDescriptorBufferInfo TlasInstInfo  { Vulkan->TlasInstanceBuffer,  0u, VK_WHOLE_SIZE };   //              29
+    VkDescriptorBufferInfo BlasPlaceInfo { Vulkan->BlasPlacementBuffer, 0u, VK_WHOLE_SIZE };   //              30
     VkDescriptorBufferInfo LeafInfo     { Vulkan->TraversalLeafBuffer, 0u, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo SlabInfo     { Vulkan->SlabBuffer, 0u, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo VertexInfo   { static_cast<VkBuffer>(Visibility.QueryVertexBuffer()), 0u, VK_WHOLE_SIZE };   // R4b
@@ -1871,6 +1928,15 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
     WriteUniform(24u, PostInfo);            // Celestial post record, for stars/flare/rainbow params
     WriteBuffer(25u, GiPrevReservoirInfo);  // kFeatureGiReuse: the indirect pool's history (read)
     WriteBuffer(26u, GiCurrReservoirInfo);  // kFeatureGiReuse: the indirect pool's write target
+    // D6/D7 two-level traversal. Written only when UploadInstanceTraversal has allocated them; the kernel reads them
+    //    only when the dispatch's TlasInstanceCount is non-zero, so an un-uploaded scene walks bindings 8/9 alone.
+    //    ⚠️ Guarded: before the first UploadInstanceTraversal there is no buffer to point at, and a descriptor write
+    //    with VK_NULL_HANDLE is invalid rather than merely useless. Leaving them unwritten is sound because the kernel
+    //    reads them only where TlasInstanceCount is non-zero, and that count is only ever set after an upload.
+    if (Vulkan->TlasNodeBuffer)      WriteBuffer(27u, TlasNodeInfo);      // top-level nodes, 8 floats each
+    if (Vulkan->TlasPrimitiveBuffer) WriteBuffer(28u, TlasPrimInfo);      // the instance list the top-level leaves index
+    if (Vulkan->TlasInstanceBuffer)  WriteBuffer(29u, TlasInstInfo);      // per-instance inverse + world AABB + BLAS index
+    if (Vulkan->BlasPlacementBuffer) WriteBuffer(30u, BlasPlaceInfo);     // per-BLAS blob offsets inside bindings 8/9
 
     // R4a: the texture table. Written in one go (partially bound: slots past the resident count stay undefined and are
     //    never indexed — the material records only reference resident slots).
@@ -2424,11 +2490,21 @@ void SwapchainExchange::UploadTraversal(const TraversalIndex& Traversal) noexcep
     if (!Vulkan->Device || !Traversal.IsReady()) return;
     vkDeviceWaitIdle(Vulkan->Device);
     if (Vulkan->TraversalNodeBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TraversalNodeBuffer, nullptr);
+    if (Vulkan->TlasNodeBuffer)      vkDestroyBuffer(Vulkan->Device, Vulkan->TlasNodeBuffer, nullptr);
+    if (Vulkan->TlasPrimitiveBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TlasPrimitiveBuffer, nullptr);
+    if (Vulkan->TlasInstanceBuffer)  vkDestroyBuffer(Vulkan->Device, Vulkan->TlasInstanceBuffer, nullptr);
+    if (Vulkan->BlasPlacementBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->BlasPlacementBuffer, nullptr);
     if (Vulkan->TraversalNodeMemory) vkFreeMemory   (Vulkan->Device, Vulkan->TraversalNodeMemory, nullptr);
     if (Vulkan->TraversalLeafBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TraversalLeafBuffer, nullptr);
     if (Vulkan->TraversalLeafMemory) vkFreeMemory   (Vulkan->Device, Vulkan->TraversalLeafMemory, nullptr);
+    if (Vulkan->TlasNodeMemory)      vkFreeMemory   (Vulkan->Device, Vulkan->TlasNodeMemory, nullptr);
+    if (Vulkan->TlasPrimitiveMemory) vkFreeMemory   (Vulkan->Device, Vulkan->TlasPrimitiveMemory, nullptr);
+    if (Vulkan->TlasInstanceMemory)  vkFreeMemory   (Vulkan->Device, Vulkan->TlasInstanceMemory, nullptr);
+    if (Vulkan->BlasPlacementMemory) vkFreeMemory   (Vulkan->Device, Vulkan->BlasPlacementMemory, nullptr);
     Vulkan->TraversalNodeBuffer = Vulkan->TraversalLeafBuffer = VK_NULL_HANDLE;
     Vulkan->TraversalNodeMemory = Vulkan->TraversalLeafMemory = VK_NULL_HANDLE;
+    // The two-level buffers are NOT reset here: they are a separate upload (UploadInstanceTraversal) and a re-upload of
+    //    the single-blob pair must not orphan them. Their own upload path resets them, keeping the two lifetimes apart.
 
     constexpr uint32_t HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     const auto Upload = [&](const std::vector<float>& Blob, VkBuffer& Buffer, VkDeviceMemory& Memory)
@@ -2474,6 +2550,83 @@ bool SwapchainExchange::RefreshTraversal(const TraversalIndex& Traversal, const 
     // The kernel resolves a hit's material and normal from Triangles[], so the flat triangles must move with the
     //    acceleration structure or shading would read the body's old position.
     UploadTriangles(Facets);
+    return true;
+}
+
+void SwapchainExchange::UploadInstanceTraversal(const InstanceAcceleration& Instances) noexcept
+{
+    // D6/D7 → bindings 27-30. The single-blob pair above and this pair are uploaded independently: a scene keeps its
+    //    world-space CWBVH either way, and only the dispatcher's TlasInstanceCount decides which one the kernel walks.
+    if (!Vulkan || !Vulkan->Device) return;
+    if (Vulkan->TlasNodeBuffer)      vkDestroyBuffer(Vulkan->Device, Vulkan->TlasNodeBuffer, nullptr);
+    if (Vulkan->TlasPrimitiveBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->TlasPrimitiveBuffer, nullptr);
+    if (Vulkan->TlasInstanceBuffer)  vkDestroyBuffer(Vulkan->Device, Vulkan->TlasInstanceBuffer, nullptr);
+    if (Vulkan->BlasPlacementBuffer) vkDestroyBuffer(Vulkan->Device, Vulkan->BlasPlacementBuffer, nullptr);
+    if (Vulkan->TlasNodeMemory)      vkFreeMemory(Vulkan->Device, Vulkan->TlasNodeMemory, nullptr);
+    if (Vulkan->TlasPrimitiveMemory) vkFreeMemory(Vulkan->Device, Vulkan->TlasPrimitiveMemory, nullptr);
+    if (Vulkan->TlasInstanceMemory)  vkFreeMemory(Vulkan->Device, Vulkan->TlasInstanceMemory, nullptr);
+    if (Vulkan->BlasPlacementMemory) vkFreeMemory(Vulkan->Device, Vulkan->BlasPlacementMemory, nullptr);
+    Vulkan->TlasNodeBuffer = Vulkan->TlasPrimitiveBuffer = Vulkan->TlasInstanceBuffer = Vulkan->BlasPlacementBuffer = VK_NULL_HANDLE;
+    Vulkan->TlasNodeMemory = Vulkan->TlasPrimitiveMemory = Vulkan->TlasInstanceMemory = Vulkan->BlasPlacementMemory = VK_NULL_HANDLE;
+
+    const std::vector<float>&    Nodes      = Instances.QueryTlasNodePayload();
+    const std::vector<uint32_t>& Primitives = Instances.QueryTlasPrimitiveList();
+    const std::vector<TlasInstanceRecord>& Rows = Instances.QueryInstances();
+    const std::vector<BlasPlacement>&      Places = Instances.QueryBlasPlacements();
+    if (Nodes.empty() || Primitives.empty() || Rows.empty() || Places.empty()) return;
+
+    constexpr uint32_t HostVisible = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    const auto Upload = [&](const void* Source, VkDeviceSize ByteCount, VkBuffer& Buffer, VkDeviceMemory& Memory)
+    {
+        AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, ByteCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, HostVisible, Buffer, Memory);
+        void* Mapped = nullptr;
+        (void)vkMapMemory(Vulkan->Device, Memory, 0u, ByteCount, 0u, &Mapped);
+        if (Mapped) { std::memcpy(Mapped, Source, static_cast<size_t>(ByteCount)); vkUnmapMemory(Vulkan->Device, Memory); }
+    };
+    Upload(Nodes.data(),      static_cast<VkDeviceSize>(Nodes.size()) * sizeof(float), Vulkan->TlasNodeBuffer, Vulkan->TlasNodeMemory);
+    Upload(Primitives.data(), static_cast<VkDeviceSize>(Primitives.size()) * sizeof(uint32_t), Vulkan->TlasPrimitiveBuffer, Vulkan->TlasPrimitiveMemory);
+    Upload(Rows.data(),       static_cast<VkDeviceSize>(Rows.size()) * sizeof(TlasInstanceRecord), Vulkan->TlasInstanceBuffer, Vulkan->TlasInstanceMemory);
+    Upload(Places.data(),     static_cast<VkDeviceSize>(Places.size()) * sizeof(BlasPlacement), Vulkan->BlasPlacementBuffer, Vulkan->BlasPlacementMemory);
+
+    // What was allocated, so the per-frame refresh can refuse a payload that no longer fits rather than truncate.
+    TlasNodeCapacity      = static_cast<VkDeviceSize>(Nodes.size()) * sizeof(float);
+    TlasPrimitiveCapacity = static_cast<VkDeviceSize>(Primitives.size()) * sizeof(uint32_t);
+    TlasInstanceCapacity  = static_cast<VkDeviceSize>(Rows.size()) * sizeof(TlasInstanceRecord);
+    BlasPlacementCapacity = static_cast<VkDeviceSize>(Places.size()) * sizeof(BlasPlacement);
+    InstanceTraversalResident = true;
+    WriteDescriptorSet();
+    std::cout << "[SwapchainExchange] Instances: " << Rows.size() << " rows, " << Places.size() << " BLASes, "
+              << Instances.QueryMetrics().TlasNodeCount << " top-level nodes (bindings 27-30)\n";
+}
+
+bool SwapchainExchange::RefreshInstanceTraversal(const InstanceAcceleration& Instances) noexcept
+{
+    // D7 per-frame path. Same shape as RefreshTraversal: no reallocation, no descriptor rewrite, no device stall. Every
+    //    payload is bounds-checked against the allocation instead of trusted — a rebuild over the same instances fits
+    //    by construction (a binary tree over N instances never exceeds 2N nodes), and anything larger is refused.
+    if (!Vulkan || !Vulkan->Device || !InstanceTraversalResident) return false;
+    if (!Vulkan->TlasNodeBuffer || !Vulkan->TlasPrimitiveBuffer || !Vulkan->TlasInstanceBuffer || !Vulkan->BlasPlacementBuffer) return false;
+
+    const auto Refresh = [&](const void* Source, size_t Count, VkDeviceSize ElementBytes,
+                             VkDeviceMemory Memory, VkDeviceSize Capacity) -> bool
+    {
+        const VkDeviceSize ByteCount = static_cast<VkDeviceSize>(Count) * ElementBytes;
+        if (ByteCount == 0u || ByteCount > Capacity) return false;
+        void* Mapped = nullptr;
+        if (vkMapMemory(Vulkan->Device, Memory, 0u, ByteCount, 0u, &Mapped) != VK_SUCCESS || Mapped == nullptr) return false;
+        std::memcpy(Mapped, Source, static_cast<size_t>(ByteCount));
+        vkUnmapMemory(Vulkan->Device, Memory);
+        return true;
+    };
+
+    const std::vector<float>&    Nodes      = Instances.QueryTlasNodePayload();
+    const std::vector<uint32_t>& Primitives = Instances.QueryTlasPrimitiveList();
+    const std::vector<TlasInstanceRecord>& Rows = Instances.QueryInstances();
+    const std::vector<BlasPlacement>&      Places = Instances.QueryBlasPlacements();
+    if (!Refresh(Nodes.data(), Nodes.size(), sizeof(float), Vulkan->TlasNodeMemory, TlasNodeCapacity)) return false;
+    if (!Refresh(Primitives.data(), Primitives.size(), sizeof(uint32_t), Vulkan->TlasPrimitiveMemory, TlasPrimitiveCapacity)) return false;
+    if (!Refresh(Rows.data(), Rows.size(), sizeof(TlasInstanceRecord), Vulkan->TlasInstanceMemory, TlasInstanceCapacity)) return false;
+    if (!Refresh(Places.data(), Places.size(), sizeof(BlasPlacement), Vulkan->BlasPlacementMemory, BlasPlacementCapacity)) return false;
     return true;
 }
 

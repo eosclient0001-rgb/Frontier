@@ -134,10 +134,13 @@ int main()
         ProjectZero::FlyThroughSolver Camera(Flight);
 
         const DispatchConfiguration Dispatch = Integrator.BuildDispatch(Camera, 1280u, 720u, 0u, 4u);
+        // kFeatureGiReuse (bit 8, the indirect half's pool) is ON by default since the kernel port landed, so the
+        //    default mask carries it too — the check names every bit rather than comparing against "the reuse bits",
+        //    which is exactly how this expectation went stale for one commit when the pool arrived.
         const uint32_t Expected = DispatchFeatureGlobalIllumination | DispatchFeatureAntiAliasing | DispatchFeatureTemporalReuse
                                 | DispatchFeatureSpatialReuse | DispatchFeatureAliasPick | DispatchFeatureTemporalReprojection
-                                | DispatchFeatureDenoise;
-        Check(Dispatch.FeatureFlags == Expected, "A5 default dispatch carries exactly the R6/R7 feature bits");
+                                | DispatchFeatureDenoise | DispatchFeatureGiReuse;
+        Check(Dispatch.FeatureFlags == Expected, "A5 default dispatch carries exactly the R6/R7/GI feature bits (8 bits named)");
         Check((Dispatch.FeatureFlags & DispatchFeatureDenoise) != 0u, "A6 DispatchFeatureDenoise set (kernel defers the tone map)");
         Check((Dispatch.FeatureFlags & DispatchFeatureTemporalReprojection) != 0u, "A7 DispatchFeatureTemporalReprojection set");
         Check(Dispatch.DenoiseLevelCount == kDenoiseLevelCount, "A8 dispatch carries the 5-level chain");
@@ -223,7 +226,9 @@ int main()
             { "ReSTIRViewport", "const uint kFeatureTemporalReprojection = 64u;", 1u, "B1 kernel bit 6 = reprojection (64)" },
             { "ReSTIRViewport", "const uint kFeatureDenoise            = 128u;", 1u, "B2 kernel bit 7 = denoise (128)" },
             { "ReSTIRViewport", "const bool reproject = depth > 0.0 && (FeatureFlags & kFeatureTemporalReprojection) != 0u;", 1u, "B3 reprojection gated by the feature bit and a surface" },
-            { "ReSTIRViewport", "vec2 motion = texelFetch(MotionImage, ivec2(pixel), 0).rg;", 2u, "B4 motion vector read at both reuse sites (accumulator + reservoir)" },
+            // Three sites since the GI pool landed: the running-mean accumulator, the DIRECT reservoir and the
+            //    indirect (GI) reservoir — the indirect pool reprojects by the same pixel motion the direct one does.
+            { "ReSTIRViewport", "vec2 motion = texelFetch(MotionImage, ivec2(pixel), 0).rg;", 3u, "B4 motion vector read at all three reuse sites (accumulator + direct reservoir + GI reservoir)" },
             { "ReSTIRViewport", "ivec2 prevPx = ivec2(floor((cuv - motion) * extent));", 1u, "B5 back-projection rule (§D mirrors this line)" },
             { "ReSTIRViewport", "count      = count + 1.0;", 1u, "B6 running-mean sample count" },
             { "ReSTIRViewport", "vec3 mean  = history.rgb + (radiance - history.rgb) / count;", 1u, "B7 running mean" },

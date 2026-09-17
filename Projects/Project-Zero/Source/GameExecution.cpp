@@ -31,6 +31,7 @@
 #include "../../../Engine/ContentInterchange/ContentCodec.h"
 #include "../../../Engine/GeometricRaster/SceneStructure.h"
 #include "../../../Engine/GeometricRaster/TraversalIndex.h"
+#include "../../../Engine/GeometricRaster/InstanceAcceleration.h"   // D6/D7 two-level: BLASes + instance top level
 #include "FlyThroughSolver.h"
 #include "RayTracingSolver.h"
 #include "../../../Engine/ContentInterchange/ShaderballPreview.h"
@@ -580,6 +581,76 @@ int main(int argc, char** argv)
                                  ? "Scripted instance motion on: " + std::to_string(InstanceMotion.QueryDrivenCount()) +
                                    " of " + std::to_string(AnimatedInstances.size()) + " instances animated."
                                  : "Scripted instance motion requested but no instances could be driven.");
+    }
+
+    //──────────────────────────────────────────────────────────────────────────
+    // D6/D7 — the two-level acceleration structure (object-space BLASes + an instance top level)
+    //──────────────────────────────────────────────────────────────────────────
+    // Built beside the world-space CWBVH, never instead of it. Each instance of the level becomes its own BLAS over
+    //    that instance's REST-pose triangles (the flat soup exactly as the scene builder baked it — nothing is
+    //    rewritten per frame, which is the difference to D5), and the top level is a thin tree over the instances'
+    //    world AABBs. The frame then writes one 112 B row per moved instance and rebuilds that top level; the measured
+    //    cost of moving EVERY instance is in Exhibits/Workbench/Traversal (CheckTwoLevelBvh.sh): 0.07 ms at 256
+    //    instances, 0.32 ms at 1 024, 1.42 ms at 4 096 instances on the two-core proof host.
+    //
+    //    Uploaded only when the build succeeds, and the dispatcher's TlasInstanceCount is what makes the kernel walk it:
+    //    a refusal (or a level with a single instance) leaves the single-blob path exactly as it was before D6.
+    Frontier::InstanceAcceleration InstanceStructure;
+    std::vector<Frontier::InstanceRow> InstanceRows;
+    // The REST world matrix of each instance — the transform its triangles were baked with (SceneStructure::Finalise
+    //    writes the flat soup through it). A row therefore carries the RELATIVE transform World_now · World_rest⁻¹,
+    //    not World: the BLAS is built from the baked soup, so re-applying the absolute matrix would place the geometry
+    //    twice. A static instance's relative transform is EXACTLY identity (bit-compared below), which is what keeps
+    //    the two-level path byte-identical to the single world-space tree for everything that does not move.
+    struct RestTransform { float World[16]; };
+    std::vector<RestTransform> RestWorlds;
+    bool InstancesResident = false;
+    if (AnimatedInstances.size() > 1u)
+    {
+        std::vector<Frontier::MeshPrototype> Prototypes;
+        Prototypes.reserve(AnimatedInstances.size());
+        InstanceRows.reserve(AnimatedInstances.size());
+        bool RowsValid = true;
+        for (uint32_t I = 0u; I < AnimatedInstances.size(); ++I)
+        {
+            const Frontier::InstanceRecord& Row = AnimatedInstances[I];
+            if (Row.FlatTriangleOffset + Row.TriangleCount > TracedFacets.size()) { RowsValid = false; break; }
+            // One BLAS per instance. Two instances sharing a mesh could share a BLAS too, but the level's instances are
+            //    distinct placements with their own material and triangle range, so the shared-mesh case is a later
+            //    optimisation rather than something the structure must assume. The prototypes read the REST soup.
+            Prototypes.push_back(Frontier::MeshPrototype{ TracedFacets.data() + Row.FlatTriangleOffset, Row.TriangleCount });
+            RestTransform Rest{};
+            std::memcpy(Rest.World, Row.World, sizeof(Rest.World));
+            RestWorlds.push_back(Rest);
+
+            // Build time IS the rest pose: World_now == World_rest, so every row starts as the exact identity and the
+            //    kernel's first frame is the single-blob path's numbers, not merely close to them.
+            Frontier::InstanceRow Instance{};
+            for (uint32_t E = 0u; E < 16u; ++E) Instance.Transform[E] = 0.0f;
+            Instance.Transform[0] = Instance.Transform[5] = Instance.Transform[10] = Instance.Transform[15] = 1.0f;
+            Instance.BlasIndex     = I;
+            Instance.FirstTriangle = Row.FlatTriangleOffset;
+            Instance.Flags         = Row.Flags;
+            InstanceRows.push_back(Instance);
+        }
+        if (RowsValid && InstanceStructure.Build(Prototypes, InstanceRows, false))
+        {
+            Surface.UploadInstanceTraversal(InstanceStructure);
+            Integrator.AssignInstanceCount(static_cast<uint32_t>(InstanceRows.size()));
+            InstancesResident = true;
+            const Frontier::InstanceAccelerationMetrics& M = InstanceStructure.QueryMetrics();
+            char Line[256];
+            std::snprintf(Line, sizeof(Line), "Two-level: %u instances -> %u BLASes over %u triangles, top level %u nodes, "
+                                              "shared blobs %.1f KB + %.1f KB, built in %.1f ms",
+                          M.InstanceCount, M.BlasCount, M.PrimitiveCount, M.TlasNodeCount,
+                          double(M.NodeBytes) / 1024.0, double(M.LeafBytes) / 1024.0, double(M.BuildMilliseconds));
+            Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Traversal", Line);
+        }
+        else
+        {
+            Logger.RecordMessage(Frontier::DiagnosticSeverity::Warning, "Traversal",
+                                 "Two-level build refused - the kernel keeps the single world-space structure.");
+        }
     }
 
     //──────────────────────────────────────────────────────────────────────────
@@ -1560,10 +1631,49 @@ int main(int argc, char** argv)
                                      "RefreshInstances refused the row set - physics disabled.");
             }
 
-            // D5 — move the traced geometry too. Without this the bodies are DRAWN in their new places while
-            //     their shadows and reflections stay where the structure was built, which reads as the bodies
-            //     floating free of their own shadows.
-            if (TraceMovingBodies && PhysicsReady)
+            // D6/D7 — move the bodies for the TRACER by moving their instances, not their triangles. The rows are the
+            //     same ones RefreshInstances just uploaded, so the drawn pose and the traced pose cannot disagree; the
+            //     BLASes are untouched (the proof hashes them), and the top level is rebuilt from the rows.
+            if (InstancesResident)
+            {
+                bool RowsComposed = true;
+                for (size_t I = 0u; I < InstanceRows.size() && RowsComposed; ++I)
+                {
+                    // Relative to the bake: World_now · World_rest⁻¹. Unchanged instances take the exact-identity
+                    //    branch so that a scene at rest keeps the pre-D6 numbers bit for bit — the composed matrix,
+                    //    though mathematically identity, is not bitwise identity and would move grazing hits by an ulp.
+                    if (std::memcmp(AnimatedInstances[I].World, RestWorlds[I].World, sizeof(RestWorlds[I].World)) == 0)
+                    {
+                        for (uint32_t E = 0u; E < 16u; ++E) InstanceRows[I].Transform[E] = 0.0f;
+                        InstanceRows[I].Transform[0] = InstanceRows[I].Transform[5] = 1.0f;
+                        InstanceRows[I].Transform[10] = InstanceRows[I].Transform[15] = 1.0f;
+                    }
+                    else
+                    {
+                        RowsComposed = Frontier::RelativeMatrix(AnimatedInstances[I].World, RestWorlds[I].World,
+                                                                InstanceRows[I].Transform);
+                    }
+                }
+                if (RowsComposed && InstanceStructure.UpdateTopLevel(InstanceRows) && Surface.RefreshInstanceTraversal(InstanceStructure))
+                {
+                    RefitMillisecondsPeak = std::max(RefitMillisecondsPeak, InstanceStructure.QueryMetrics().UpdateMilliseconds);
+                }
+                else
+                {
+                    // The structure refused a frame (a grown payload) — fall back to the world-space path rather than
+                    //     leaving shadows behind the bodies.
+                    InstancesResident = false;
+                    Integrator.AssignInstanceCount(0u);
+                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Warning, "Traversal",
+                                         "Two-level refresh refused - falling back to the world-space structure.");
+                }
+            }
+
+            // D5 — the world-space fallback: rewrite the bodies' triangles and refit the whole structure. Kept as the
+            //     arm a scene without a successful two-level build still uses (and the bit-identity reference for the
+            //     two-level path: with D6/D7 live, this must NOT also run — it would rewrite the rest soup the BLASes
+            //     were built from).
+            if (TraceMovingBodies && PhysicsReady && !InstancesResident)
             {
                 BodyBridge.RefreshBodyFacets(TracedFacets, AnimatedInstances);
                 if (Traversal.RefitBottomLevel(TracedFacets) && Surface.RefreshTraversal(Traversal, TracedFacets))

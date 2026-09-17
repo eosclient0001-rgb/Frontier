@@ -142,13 +142,85 @@ deformed vertices and refits; the animation system owns everything before that b
 
 ## 6. Milestones
 
-- **D6 — object-space BLAS + instance transforms in the kernel.** Bind per-instance `transform`/`invTransform` and a
-  BLAS list; transform the ray into object space at the instance leaf and the hit back to world (normal via the
-  inverse-transpose). `TraversalCWBVH.slang` walks a BLAS exactly as it does today; the change is the entry/exit
-  trampoline. Acceptance: the identity case is bit-identical to today's world-space blobs on the M10 level
-  (the D1 identity gate establishes the same for the builder).
-- **D7 — TLAS.** Build at load over instance AABBs; rebuild per frame when any instance row changed (measured budget in
-  §3). Fat-AABB incremental update later if the rebuild ever shows in a profile.
+- **D6 — object-space BLAS + instance transforms in the kernel — DELIVERED (CPU half measured, GPU half audited).**
+  `Engine/GeometricRaster/InstanceAcceleration.{h,cpp}` builds one object-space BLAS per prototype into ONE shared pair
+  of CWBVH blobs, emits the device records (`TlasInstanceRecord` 112 B, `BlasPlacement` 16 B) and a CPU reference trace;
+  `Engine/Shaders/TraversalRecords.slang` mirrors those records; `TraversalCWBVH.slang` gained
+  `TraceBlasClosest/TraceBlasOccluded(…, NodeBase, LeafBase)` (the old `TraverseClosest/TraverseOccluded` are those with
+  zero bases, ie the pre-D6 instructions) plus `TraverseInstancesClosest/TraverseInstancesOccluded`, which transform the
+  ray into each candidate instance's object space and back out with the inverse-transpose for normals;
+  `TraversalIndex::TraceClosestObjectSpace` is the walker those use (it does NOT normalise the direction, where
+  `TraceClosest` does — t is then the caller's own parameterisation, which is what makes the transform free of any
+  rescale). Evidence, all CPU-measured (`Exhibits/Workbench/Traversal/CheckTwoLevelBvh.sh`, 61/61 gates):
+  - identity instance vs today's world-space tree: blobs **byte-identical** (FNV-1a), and **20 000/20 000 rays
+    bit-identical** (10 162 hits, 9 838 misses) — an identity instance IS the old path;
+  - 8 chunked identity instances (a different tree SHAPE): 20 000/20 000 rays agree, hits bit-identical;
+  - a rigidly moved instance (rotate 30° · scale 1.25 · translate) vs D5's transformed-triangle rewrite: the derived
+    world AABB equals the transformed soup's bounds **exactly**; of 10 088 hits, 10 087 hit the same triangle (2 257 of
+    them bit-identical t) and 1 is a grazing ray resolving to the neighbouring triangle of a shared tessellation edge —
+    0 unrelated surfaces, 0 hit/miss disagreements;
+  - the kernel's payload, walked by an INDEPENDENT walker written from the uploaded layout: 10 086 hits + 9 914 misses
+    bit-identical to the builder's own tree.
+- **D7 — TLAS — DELIVERED (CPU measured).** *(Plan wording: build at load over instance AABBs; rebuild per frame when
+  any instance row changed; fat-AABB incremental update later if the rebuild ever shows in a profile. )* `InstanceAcceleration::UpdateTopLevel` recomputes the instance AABBs from
+  the stored object AABBs and rebuilds the top level (a TLAS is never refitted — tinybvh hard-errors on it), then emits
+  the kernel's payload (8 floats a node, integer fields bit-cast) and the instance list. Measured on this 2-core host,
+  **every** instance moving every frame: 256 instances **0.07 ms** (top level alone 0.05), 1 024 **0.32 ms** (0.23),
+  4 096 **1.42 ms** (1.09) — and the BLAS blobs are hashed before and after the frame loop to prove the updates never
+  touch them. ⚠️ The D7 gate in the plan ("4 096 moving instances under 1 ms") is met at 1 024 instances on this host
+  and missed at 4 096 (1.42 ms), where the top-level rebuild is 77 % of the cost; the number to watch on the user's
+  machine is the TLAS build, not the row update.
+  Host side: `SwapchainExchange::UploadInstanceTraversal`/`RefreshInstanceTraversal` (bindings 27-30, capacity-checked,
+  no reallocation, no descriptor rewrite), the dispatcher's set grew 28 → 32 with the bindless table moved 27 → 31 so it
+  stays the highest binding, and the push block's last reserve slot is now `TlasInstanceCount` — the selector that makes
+  the kernel walk the two-level pair (0 = the pre-D6 single-blob path, byte-identical). `GameExecution` builds and
+  uploads the pair beside the world-space structure and, in the drop scene, moves **rows** per frame instead of
+  rewriting the flat soup (D5 stands down while the two-level path is live, because that rewrite would corrupt the rest
+  pose the BLASes were built from).
+  ⚠️ **Not verified here:** the shader and the dispatcher cannot be compiled in this sandbox (no shader compiler, no
+  Vulkan device). What IS verified is the wiring: the check script's §⑦ pins 43 exact strings across the shader, the
+  dispatcher, the integrator and the project (bindings, the table's last-place rule, the push slot, the object-space
+  call sites, the inverse-transpose arm, the payload's float order) and computes the record offsets the shader's std430
+  layout would produce. Running the kernel is the user's GPU build.
+### What building it actually turned up (three defects, all now gated)
+
+1. **The kernel applied the stored inverse TRANSPOSED.** `dot(Inv0.xyz, P) + Inv0.w` reads the record's *rows* out of
+   the *columns* of a column-major inverse: correct for an identity (Iᵀ = I), correct for a pure translation (the
+   translation of a column-major matrix is symmetric), wrong the moment an instance rotates. It cannot be caught by any
+   layout or binding check. The fix lives in exactly one place now — `InstanceWorldToObject` /
+   `InstanceWorldToObjectDirection` in `TraversalRecords.slang` — and gate ③c transcribes both forms into C++ and
+   compares them against the CPU mirror, so a GPU is not needed to catch it (the transposed form is 5.99 m off on the
+   M10 level's own geometry, 0.00 m for the corrected one).
+2. **The row's transform must be RELATIVE, not absolute.** `SceneStructure::Finalise` bakes each instance's `World` into
+   the flat soup, so a BLAS built over that soup already sits in the baked frame; carrying `World_now` as the row
+   transform applies the bake twice. The row is `World_now · World_rest⁻¹` (`RelativeMatrix`), which is also the reason
+   the drop scene looked fine — its rest transform is identity. Gate ③b builds a prototype over a *baked* soup and moves
+   it with a non-identity relative transform, against a world tree over the moved soup.
+3. **Descriptor pool vs layout, for the second time.** The pool's storage-buffer count was hand-kept and had gone stale:
+   14 for a layout asking 18 (the GI reservoir pair 25/26 and D6/D7's four were never added). One driver let that
+   through with a validation error; the next would not. Both the set layout and the pool are now derived from one
+   `ComputeBindingType` table with `static_assert`s on the counts, and the four new descriptor writes are guarded on
+   their buffers existing (a `VK_NULL_HANDLE` write is invalid, not merely useless).
+
+Two further notes worth keeping:
+
+- **The ray-to-object transform needs no re-normalisation.** `M·(O' + t·D') = O + t·D`, so `t` survives; the CPU walker
+  (`TraceClosestObjectSpace`) takes the caller's direction verbatim, and the kernel divides twice (`rD' = 1/D'`). This is
+  what makes an identity instance bit-identical rather than merely close.
+- **The BLAS is quantised in object space.** Under a non-uniform bake-to-world scale the object-space tree is a
+  *different, axis-sensitive* quantisation of the same geometry, so two trees can disagree by an ulp at a grazing hit
+  (measured: one ray in 20 000, |det| ≈ 0.03 on that triangle). Both orders are legitimate; a disagreement is only a
+  defect if the ray meets the triangle well inside it. The proof adjudicates every disagreement with a
+  double-precision Möller–Trumbore oracle rather than assuming.
+
+### Shader compilation is now a gate
+
+`Tools/Build/CheckShaders.sh` lowers every entry of CMakeLists' `SHADER_TABLE` and fails on the first error. It exists
+because two defects sat in `Engine/Shaders/` for a whole milestone: `flat` used as an identifier in
+`ReSTIRViewport.slang` (a GLSL keyword — the `glslc` fallback path cannot compile that file, though the Slang path can),
+and a `vec3 histUv = res.SelectedUv;` followed by a `vec4(histUv, w, depth)` (five components from two). Installing the
+Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`/`glslangValidator` it runs as-is.
+
 - **D8 — dynamic update path.** Rigid: nothing (D6/D7 already cover it). Deforming: refit kernel over the wide layout,
   plus the displacement-driven rebuild policy. Acceptance: a moving/deforming scene renders correct shadows and
   reflections with the frame budget printed, and the CPU mirror reproduces the same images.
@@ -166,5 +238,6 @@ deformed vertices and refits; the animation system owns everything before that b
 | CPU or GPU for a rigid object move? | **Either**; CPU TLAS rebuild is ~0.2–3 ms and can hide on a worker | the work is instance AABBs, not triangles |
 | CPU or GPU for deformation? | **GPU refit**, CPU for a few actors | CPU refit of a 16 k character is 0.17 ms, but the shipped packed re-emit is 5.2 ms and 30× the refit |
 | Which format for dynamic BLASes? | **wide, unquantized (refittable)**, compressed CWBVH for static | packed/quantized formats cannot be partially updated; the re-quantize is the cost |
-| Keep one world-space tree? | **No** — two-level from here on | the whole-scene re-emit is the ceiling that blocks every dynamic feature |
+| Keep one world-space tree? | **No** — two-level from here on (D6/D7 delivered; the single-blob path stays as the fallback and as the bit-identity reference) | the whole-scene re-emit is the ceiling that blocks every dynamic feature |
+| Must the object-space ray be re-normalised after `M⁻¹`? | **No** — transform O and D, take t as-is | `M·(O' + t·D') = O + t·(M·D')`, so t survives the transform; re-normalising would both rescale t and perturb grazing rays by an ulp |
 | Animation without a rig? | per-frame deformed vertices + refit; VAT as the authoring route | the renderer never needs bone data; refit needs fixed topology, which skinning/VAT give |
