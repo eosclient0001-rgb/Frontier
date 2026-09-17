@@ -190,6 +190,14 @@ struct SwapchainExchange::VulkanRecord
     VkDeviceSize             ReservoirBytes        = 0u;   // [B] per buffer (W×H×64)
     bool                     ReservoirParity       = false;   // [-]  false: 0 = prev / 1 = curr; flipped per frame
     bool                     ReservoirsInitialised = false;   // [-]  zero-filled once before first dispatch
+    // kFeatureGiReuse: the indirect pool's own pair (bindings 25/26), same 64 B record, same ping-pong. Separate from
+    //    the DI pair because the two pools reproject the same pixel but hold different quantities (this one's Sample
+    //    is a light point sampled at the FIRST-BOUNCE VERTEX), so a DI reservoir can never be read as a GI one.
+    VkBuffer                 GiReservoirBuffers[2]   = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkDeviceMemory           GiReservoirMemories[2]  = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkDeviceSize             GiReservoirBytes        = 0u;
+    bool                     GiReservoirParity       = false;
+    bool                     GiReservoirsInitialised = false;
     uint32_t                 TriangleCount         = 0u;
     uint32_t                 MaterialCount         = 0u;
 
@@ -640,6 +648,14 @@ void SwapchainExchange::RetireSwapchain() noexcept
         Vulkan->ReservoirMemories[I] = VK_NULL_HANDLE;
     }
     Vulkan->ReservoirsInitialised = false;
+    for (uint32_t I = 0u; I < 2u; ++I)   // kFeatureGiReuse: the indirect pool's pair (bindings 25/26)
+    {
+        if (Vulkan->GiReservoirBuffers[I])  vkDestroyBuffer(Vulkan->Device, Vulkan->GiReservoirBuffers[I], nullptr);
+        if (Vulkan->GiReservoirMemories[I]) vkFreeMemory   (Vulkan->Device, Vulkan->GiReservoirMemories[I], nullptr);
+        Vulkan->GiReservoirBuffers[I]  = VK_NULL_HANDLE;
+        Vulkan->GiReservoirMemories[I] = VK_NULL_HANDLE;
+    }
+    Vulkan->GiReservoirsInitialised = false;
 
     for (auto& ImageView : Vulkan->SwapchainImageViews)
         if (ImageView) vkDestroyImageView(Vulkan->Device, ImageView, nullptr);
@@ -1142,6 +1158,20 @@ bool SwapchainExchange::BringStorageImage() noexcept
         Vulkan->ReservoirParity       = false;
         Vulkan->ReservoirsInitialised = false;
         std::cerr << "[SwapchainExchange] Reservoirs: 2 x " << (Vulkan->ReservoirBytes >> 20u) << " MB (64 B/px temporal DI state).\n";
+
+        // kFeatureGiReuse — the indirect pool's pair. Allocated unconditionally, like the DI pair: it is the same
+        //    64 B/px record, the cost is one more 64 B/px buffer pair, and a buffer that only exists when a flag is
+        //    set is a buffer the descriptor write has to branch on.
+        Vulkan->GiReservoirBytes = Vulkan->ReservoirBytes;
+        for (uint32_t I = 0u; I < 2u; ++I)
+            AllocateBuffer(Vulkan->Device, Vulkan->MemoryProperties, Vulkan->GiReservoirBytes,
+                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                           Vulkan->GiReservoirBuffers[I], Vulkan->GiReservoirMemories[I]);
+        Vulkan->GiReservoirParity       = false;
+        Vulkan->GiReservoirsInitialised = false;
+        std::cerr << "[SwapchainExchange] Indirect pool: 2 x " << (Vulkan->GiReservoirBytes >> 20u)
+                  << " MB (64 B/px first-bounce-vertex state, kFeatureGiReuse).\n";
     }
 
     Vulkan->HistoryInitialised = false;
@@ -1732,6 +1762,9 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
     const uint32_t PrevSlot = Vulkan->ReservoirParity ? 1u : 0u;
     VkDescriptorBufferInfo PrevReservoirInfo{ Vulkan->ReservoirBuffers[PrevSlot],      0u, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo CurrReservoirInfo{ Vulkan->ReservoirBuffers[PrevSlot ^ 1u], 0u, VK_WHOLE_SIZE };
+    const uint32_t GiPrevSlot = Vulkan->GiReservoirParity ? 1u : 0u;
+    VkDescriptorBufferInfo GiPrevReservoirInfo{ Vulkan->GiReservoirBuffers[GiPrevSlot],      0u, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo GiCurrReservoirInfo{ Vulkan->GiReservoirBuffers[GiPrevSlot ^ 1u], 0u, VK_WHOLE_SIZE };
     VkDescriptorBufferInfo SkyInfo{ Vulkan->SkyBuffer, 0u, VK_WHOLE_SIZE };   // Celestial sky record (binding 21)
     VkDescriptorBufferInfo MoonInfo{ Vulkan->MoonBuffer, 0u, VK_WHOLE_SIZE }; // Celestial moon record (binding 22)
     VkDescriptorBufferInfo StarInfo{ Vulkan->StarBuffer, 0u, VK_WHOLE_SIZE }; // Star tables (binding 23)
@@ -1836,6 +1869,8 @@ void SwapchainExchange::WriteDescriptorSet() noexcept
     WriteUniform(22u, MoonInfo);            // Celestial moon record, for the discs and the moonlight
     WriteBuffer(23u, StarInfo);             // Star tables, for the catalogue (cells alone until UploadStarTables)
     WriteUniform(24u, PostInfo);            // Celestial post record, for stars/flare/rainbow params
+    WriteBuffer(25u, GiPrevReservoirInfo);  // kFeatureGiReuse: the indirect pool's history (read)
+    WriteBuffer(26u, GiCurrReservoirInfo);  // kFeatureGiReuse: the indirect pool's write target
 
     // R4a: the texture table. Written in one go (partially bound: slots past the resident count stay undefined and are
     //    never indexed — the material records only reference resident slots).
@@ -2362,6 +2397,25 @@ void* SwapchainExchange::SwapReservoirParity() noexcept
         Writes[I].pBufferInfo     = &Infos[I];
     }
     vkUpdateDescriptorSets(Vulkan->Device, 2u, Writes, 0u, nullptr);
+
+    // The indirect pool rides the same presented-frame boundary: its pair flips with the DI pair, in the same call,
+    //    so the two histories can never describe different frames.
+    if (Vulkan->GiReservoirBuffers[0u] && Vulkan->GiReservoirBuffers[1u])
+    {
+        Vulkan->GiReservoirParity = !Vulkan->GiReservoirParity;
+        const uint32_t GiPrev = Vulkan->GiReservoirParity ? 1u : 0u;
+        VkDescriptorBufferInfo GiInfos[2] =
+        {
+            { Vulkan->GiReservoirBuffers[GiPrev],      0u, VK_WHOLE_SIZE },
+            { Vulkan->GiReservoirBuffers[GiPrev ^ 1u], 0u, VK_WHOLE_SIZE }
+        };
+        for (uint32_t I = 0u; I < 2u; ++I)
+        {
+            Writes[I].dstBinding  = 25u + I;
+            Writes[I].pBufferInfo = &GiInfos[I];
+        }
+        vkUpdateDescriptorSets(Vulkan->Device, 2u, Writes, 0u, nullptr);
+    }
     return Vulkan->ReservoirBuffers[PrevSlot];
 }
 
@@ -2685,46 +2739,58 @@ void SwapchainExchange::RecordComputeCommands(uint32_t ImageOrdinal, const Dispa
         Vulkan->HistoryInitialised = true;
     }
 
-    // ①c R6 reservoirs: zero-fill once, then order the previous frame's writes before this frame's access.
+    // ①c R6 reservoirs: zero-fill once, then order the previous frame's writes before this frame's access. The
+    //    indirect pool's pair (kFeatureGiReuse) is filled and ordered in the same two calls — same record, same
+    //    lifetime, and a pair that missed either would be read uninitialised on the very first frame.
     if (Vulkan->ReservoirBuffers[0u] && Vulkan->ReservoirBuffers[1u] && Vulkan->ReservoirBytes > 0u)
     {
+        VkBuffer ReservoirSet[4] =
+        {
+            Vulkan->ReservoirBuffers[0u], Vulkan->ReservoirBuffers[1u],
+            Vulkan->GiReservoirBuffers[0u], Vulkan->GiReservoirBuffers[1u]
+        };
+        uint32_t ReservoirCount = 2u;
+        if (Vulkan->GiReservoirBuffers[0u] && Vulkan->GiReservoirBuffers[1u] && Vulkan->GiReservoirBytes > 0u)
+            ReservoirCount = 4u;
         if (!Vulkan->ReservoirsInitialised)
         {
-            for (uint32_t I = 0u; I < 2u; ++I)
-                vkCmdFillBuffer(Command, Vulkan->ReservoirBuffers[I], 0u, Vulkan->ReservoirBytes, 0u);
-            VkBufferMemoryBarrier FillBarrier{ VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER };
-            FillBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            FillBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-            FillBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            FillBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            FillBarrier.buffer = Vulkan->ReservoirBuffers[0u];
-            FillBarrier.offset = 0u;
-            FillBarrier.size   = Vulkan->ReservoirBytes;
-            // Both buffers are filled together; one barrier per buffer (same parameters, different handle).
-            VkBufferMemoryBarrier FillBarriers[2] = { FillBarrier, FillBarrier };
-            FillBarriers[1u].buffer = Vulkan->ReservoirBuffers[1u];
+            for (uint32_t I = 0u; I < ReservoirCount; ++I)
+                vkCmdFillBuffer(Command, ReservoirSet[I], 0u, Vulkan->ReservoirBytes, 0u);
+            VkBufferMemoryBarrier FillBarriers[4] = {};
+            for (uint32_t I = 0u; I < ReservoirCount; ++I)
+            {
+                FillBarriers[I].sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                FillBarriers[I].srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+                FillBarriers[I].dstAccessMask       = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                FillBarriers[I].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                FillBarriers[I].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                FillBarriers[I].buffer              = ReservoirSet[I];
+                FillBarriers[I].offset              = 0u;
+                FillBarriers[I].size                = Vulkan->ReservoirBytes;
+            }
             vkCmdPipelineBarrier(Command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 0u, 0u, nullptr, 2u, FillBarriers, 0u, nullptr);
-            Vulkan->ReservoirsInitialised = true;
+                                 0u, 0u, nullptr, ReservoirCount, FillBarriers, 0u, nullptr);
+            Vulkan->ReservoirsInitialised   = true;
+            Vulkan->GiReservoirsInitialised = ReservoirCount > 2u;
         }
         else
         {
             // Same-queue frames execute in submission order; this orders last frame's curr-writes (now prev)
             //    before this frame's prev-reads and curr-writes.
-            VkBufferMemoryBarrier Barriers[2] = {};
-            for (uint32_t I = 0u; I < 2u; ++I)
+            VkBufferMemoryBarrier Barriers[4] = {};
+            for (uint32_t I = 0u; I < ReservoirCount; ++I)
             {
                 Barriers[I].sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
                 Barriers[I].srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
                 Barriers[I].dstAccessMask       = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
                 Barriers[I].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 Barriers[I].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                Barriers[I].buffer              = Vulkan->ReservoirBuffers[I];
+                Barriers[I].buffer              = ReservoirSet[I];
                 Barriers[I].offset              = 0u;
                 Barriers[I].size                = Vulkan->ReservoirBytes;
             }
             vkCmdPipelineBarrier(Command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 0u, 0u, nullptr, 2u, Barriers, 0u, nullptr);
+                                 0u, 0u, nullptr, ReservoirCount, Barriers, 0u, nullptr);
         }
     }
 

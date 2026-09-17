@@ -900,8 +900,23 @@ Measured (240×135, 4 candidates, 2 taps, vs the same 512-spp reference):
   direct pool's taps do. With proximity in place, **6 989 of 20 831** temporal attempts failed on distance alone and
   the pool bought almost nothing. The stricter form belongs with a replay + shift mapping (ReSTIR GI proper), which is
   the next step if the indirect half is to be covered at 100 % rather than 16 %.
-- **Kernel status**: §14.1 is in `Engine/Shaders/ReSTIRViewport.slang` (the split and the pre-merge cap, with the
-  measured numbers in the comment). §14.2 is in the CPU mirror only — the pool needs a second reservoir pair and a
-  per-pixel vertex record, and the kernel is one dispatch, so the shader carries the design and the binding plan
-  (18/19 reservoirs, 20 vertex image) rather than a half-wired change. The Vulkan artefacts in this repository are
-  compiled by the project's own toolchain; nothing in this sandbox can compile SPIR-V, so this one is text-verified.
+- **Kernel status**: both are in `Engine/Shaders/ReSTIRViewport.slang`. §14.1 is the history split plus the
+  pre-merge tap cap, with the measured numbers in the comment; §14.2 is `GiPoolShade()` (section 4b), wired into the
+  bounce's NEE by `giPoolOwns` — the pool **replaces** that vertex's single-sample NEE and the deeper bounces carry
+  on from the same vertex direction, so nothing is counted twice. Two host-side facts complete it: the pool needs no
+  vertex buffer at all (the receiving vertex is in registers — this kernel is one dispatch — and a neighbour's
+  *validity* is already carried by `Counts.x > 0`, exactly the mirror's `Vertex[].Valid` gate), and it needs the
+  second 64 B/px reservoir pair, which the host now owns as bindings **25/26** (the bindless table moved 25 → **27**,
+  `kComputeBindingCount` 26 → 28, zero-filled with the DI pair on the first frame and ping-ponged in the same
+  `SwapReservoirParity()` call). The toggle is `kFeatureGiReuse` (bit 8) with
+  `ReSTIRIntegratorConfiguration::GlobalIlluminationReuse = true` — ON by default, exposed as the Control Centre's
+  **"Indirect reuse (GI pool)"** checkbox — and the diagnostic HUD's ReSTIR row prints it alongside temporal/spatial.
+- **Two deliberate deviations from the mirror, both forced by one dispatch** (recorded rather than hidden): a
+  spatial tap reads the *previous* frame's pool (a same-frame neighbour read would race inside a dispatch, the same
+  deviation the direct pool has had since R6), and the deeper bounces keep the kernel's existing second-vertex MIS
+  bookkeeping instead of the mirror's explicit `DeeperBeta` / `LastPdf` carry — the estimator form is the same, the
+  MIS pairing at the second vertex is not bit-equal. Both want one GPU A/B before the numbers are quoted as equal.
+- **GPU verification is pending, and that is the whole caveat**: nothing in this sandbox compiles SPIR-V or runs
+  Vulkan, so the kernel side of §14.2 is text-verified (every symbol, signature and binding checked against the
+  file) and the *numbers* in the table above are the CPU mirror's. The mirror is the same algorithm, line for line,
+  which is what makes the port reviewable — not what makes it measured on hardware.

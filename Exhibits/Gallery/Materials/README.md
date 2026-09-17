@@ -163,5 +163,15 @@ companion to the product sheet above, and the A/B for both faults in §14 of the
   deeper path continues from the vertex with the same BSDF sample. The pool exists on ~16 % of surface pixels (the
   share whose primary BSDF sample hits geometry; 41 % escape to the sky), which is why the gain is small but
   consistent: 7 387 vs 7 508 at 32 frames, 7 223 vs 7 295 at 64, 7 632 vs 7 680 at 128.
+- **Kernel side (R11)**: both fixes and the pool are in `Engine/Shaders/ReSTIRViewport.slang`. The pool is
+  `kFeatureGiReuse` (bit 8) — **ON by default**, with the Control Centre's *Indirect reuse (GI pool)* checkbox, and
+  it rides a second 64 B/px reservoir pair at bindings **25/26** (the bindless table moved 25 → 27,
+  `kComputeBindingCount` 26 → 28; the host zero-fills and ping-pongs them with the DI pair). No vertex buffer was
+  needed: the receiving vertex is in registers (one dispatch) and a neighbour's *validity* is carried by M > 0.
+  GPU verification is still pending — nothing here compiles SPIR-V — so those numbers remain the mirror's.
+- **Dials for "more ray tracing, less ReSTIR"**: render scale (config `render_scale`, 25–100 % — more traced pixels),
+  *Candidates / px* (1–32) and *Extra candidates* (0–8) up, *Spatial taps* (0–4, new slider) down, and the *Indirect
+  reuse (GI pool)* checkbox off for the indirect half. Tiers: Minimal 0.5×/1 cand/0 taps · Economy 0.75×/2/1 ·
+  Standard 1.0×/4/2 · High 1.0×/8/3 · Ultra 1.0×/16/4 (`FidelityClassifier`).
 - Harness: `Exhibits/Workbench/Materials/RunRestirConvergence.sh [fast|full]` (builds, renders, gates on non-finite
   samples, prints the RMSE table and the sheet's sha256). Kept-sheet hash: `fbcc5382…`.

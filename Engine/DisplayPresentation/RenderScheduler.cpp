@@ -259,11 +259,22 @@ void RenderScheduler::SectionReSTIR(
 
     bool Temporal = Config.TemporalReuse;   // R6: off-switches for the A/B proofs (converged image must match)
     bool Spatial  = Config.SpatialReuse;
+    bool GiReuse  = Config.GlobalIlluminationReuse;   // the indirect pool's off-switch (kFeatureGiReuse, ON by default)
     bool Alias    = Config.AliasPick;       // R6 row 3: off = uniform pick (R0 identity); F5 in the F3 popup flips the same flag
     if (ImGui::Checkbox("Temporal reuse", &Temporal))
         Integrator.AssignTemporalReuse(Temporal);
     if (ImGui::Checkbox("Spatial reuse", &Spatial))
         Integrator.AssignSpatialReuse(Spatial);
+    if (ImGui::Checkbox("Indirect reuse (GI pool)", &GiReuse))
+        Integrator.AssignGlobalIlluminationReuse(GiReuse);
+
+    // R11 — the "more ray tracing, less ReSTIR" dial. Candidates are the light samples a pixel really traces; taps
+    //    are neighbours it *reuses* instead. Pushing candidates up and taps down is the direct trade, and it is the
+    //    only place the tier's tap count can be overridden without changing tier (0 = the cross is off entirely and
+    //    every pixel shades only what it sampled itself).
+    int Taps = static_cast<int>(Config.SpatialTapCount);
+    if (ImGui::SliderInt("Spatial taps", &Taps, 0, 4))
+        Integrator.AssignSpatialTapCount(static_cast<uint32_t>(std::clamp(Taps, 0, 4)));
     if (ImGui::Checkbox("Alias pick", &Alias))
         Integrator.AssignAliasPick(Alias);
 

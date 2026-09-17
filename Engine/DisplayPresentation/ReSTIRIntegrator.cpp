@@ -109,6 +109,9 @@ DispatchConfiguration ReSTIRIntegrator::BuildDispatch(
                                    | (ActiveConfiguration.AmbientFloor       ? DispatchFeatureAmbientFloor       : 0u)
                                    | (ActiveConfiguration.TemporalReuse      ? DispatchFeatureTemporalReuse      : 0u)
                                    | (ActiveConfiguration.SpatialReuse       ? DispatchFeatureSpatialReuse       : 0u)
+                                   // ON by default (the configuration's initialiser), so the shipped pipeline reuses the
+                                   //    indirect half unless something turns it off — the mirror's measured arm.
+                                   | (ActiveConfiguration.GlobalIlluminationReuse ? DispatchFeatureGiReuse        : 0u)
                                    | (ActiveConfiguration.AliasPick          ? DispatchFeatureAliasPick          : 0u)
                                    | (ActiveConfiguration.TemporalReprojection ? DispatchFeatureTemporalReprojection : 0u)
                                    | (ActiveConfiguration.Denoise            ? DispatchFeatureDenoise            : 0u);

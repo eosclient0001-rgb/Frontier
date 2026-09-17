@@ -66,7 +66,7 @@ static constexpr float    kLuminanceLog2High      =  30.0f;   // 1e9 cd/m², abo
 static constexpr float    kLuminanceMedianStops   = 6.0f;
 static constexpr uint32_t kLuminanceHistogramBytes = kLuminanceHistogramBins * 4u;
 
-static constexpr uint32_t kComputeBindingCount  = 26u;    // compute set 0: 0 out · 1 tris · 2 materials · 3 history · 4 surface · 5 normal · 6 instances · 7 luminaires · 8/9 CWBVH · 10 slabs · 11 vertices · 12 indices · 13 energy LUT · 14 sheen LUT · 15 motion · 16 prev reservoir · 17 curr reservoir · 18 history normal+depth (R7a) · 19 luminance moments (R7) · 20 denoise input (R7) · 21 sky record · 22/24 retired holes · 25 Textures[] (variable-count binding MUST stay last — Vulkan requires it on the highest binding number)
+static constexpr uint32_t kComputeBindingCount  = 28u;    // compute set 0: 0 out · 1 tris · 2 materials · 3 history · 4 surface · 5 normal · 6 instances · 7 luminaires · 8/9 CWBVH · 10 slabs · 11 vertices · 12 indices · 13 energy LUT · 14 sheen LUT · 15 motion · 16 prev reservoir · 17 curr reservoir · 18 history normal+depth (R7a) · 19 luminance moments (R7) · 20 denoise input (R7) · 21 sky record · 22 moon record · 23 star tables · 24 post record · 25/26 GI prev/curr reservoir (kFeatureGiReuse) · 27 Textures[] (variable-count binding MUST stay last — Vulkan requires it on the highest binding number)
 static constexpr uint32_t kTextureSlotCapacity  = 1024u;  // bindless sampler2D[] size (variable-count binding; Pascal maxPerStageDescriptorSamplers ≥ 4000)
 class MaterialIndex;    // ContentInterchange/MaterialIndex.h (R4a)
 
@@ -175,6 +175,9 @@ enum DispatchFeature : uint32_t
     DispatchFeatureAliasPick          = 1u << 5,   // R6 row 3: Walker-alias light pick (off = uniform, R0 identity)
     DispatchFeatureTemporalReprojection = 1u << 6, // R7a: reproject the running mean through the R2 motion vectors
     DispatchFeatureDenoise            = 1u << 7,   // R7:  à-trous filter runs; the kernel defers the tone map to it
+    DispatchFeatureGiReuse            = 1u << 8,   // the indirect half's pool: ReSTIR GI-style reuse of the first-bounce
+                                                   //     vertex's NEE stratum (temporal + the spatial cross). ON by
+                                                   //     default — see ReSTIRIntegratorConfiguration::GlobalIlluminationReuse.
 };
 
 // Mirrors `layout(push_constant) uniform ReSTIRConstants` in Engine/Shaders/ReSTIRViewport.slang.
