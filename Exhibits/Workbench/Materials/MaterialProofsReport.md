@@ -733,7 +733,9 @@ proof of the *product*; these four sheets are the visual proof of the content.
     ReSTIR + denoiser at interactive rates — not the content.
 11. Optional/deferred: M4c dispersion hero sampling, glints (`slate_glint_*` stored-unread), geometric displacement
     (channel 20), Tier B in-kernel multi-slab (post-M9 revisit).
-12. **Environment lighting — bake the sky, and let the sky be a light** (deferred; recorded here because the
+12. ~~**The two ReSTIR convergence paths**~~ DONE 2026-09-17 (both faults found, fixed in the mirror and for 14.1 in
+   the kernel text, and measured — see §14; the evidence sheet is `RestirConvergenceSheet.png`).
+13. **Environment lighting — bake the sky, and let the sky be a light** (deferred; recorded here because the
     question "does the ray tracer / ReSTIR also sample the sun, sky, moon, and if so can we sample it as an image
     instead" has a measured answer and a concrete plan).
 
@@ -783,3 +785,123 @@ proof of the *product*; these four sheets are the visual proof of the content.
 
     Smallest version that pays: bake the probe, use it only for escaped rays (A), and leave the reservoir alone.
     That is a pure replacement of the march with a fetch and is measurable on this CPU alone.
+
+## 14. The two ReSTIR convergence paths — both faults found, fixed and measured (2026-09-17)
+
+Both were reported as "not converging" (spatial reuse 75 %, indirect/GI 60 % on the completeness table). Both now
+have a root cause, a fix that exists in the CPU mirror **and** in the kernel text, and a number. The evidence sheet
+is `Exhibits/Gallery/Materials/RestirConvergenceSheet.png`, rendered by
+`Exhibits/Workbench/Materials/RunRestirConvergence.sh` — one switch apart per cell, so the sheet doubles as the A/B.
+
+### 14.1 Spatial reuse — a feedback loop through the history, and a cap that chased its own tail
+
+The symptom was specific and reproducible: with the reuse off the estimator converged and with it on it did not, and
+*some* taps made it worse (240×135, 4 candidates, 1 spp: 2 or 4 taps stalled at 4437 / 4660 by 128 frames while
+0 taps reached 1952.52). Two faults, both in the merge algebra rather than in the sampling:
+
+1. **The history carried the post-spatial reservoir.** The kernel's single dispatch ran temporal reuse, then spatial
+   reuse, then wrote the *post-spatial* result into `CurrReservoirs` — which is the buffer the next frame's temporal
+   merge reads. Every frame's spatial merges therefore raised the M that the next frame's temporal cap reasoned
+   about, so M compounded through both passes instead of growing once per frame: mean M **1 879 (max 4 436)** at
+   frame 16 and **843 633** by frame 20. The published guidance is the same rule (don't feed the spatial result back
+   into temporal unless starved for samples), and ReSTIR PT Enhanced's bounded-confidence cap exists for the same
+   reason.
+2. **A tap's cap was taken against a count the tap loop was itself growing.** `min(neighM, kTemporalMClamp *
+   res.SampleCount)` reads `res.SampleCount` *after* the previous taps added to it, so tap 2 could add up to 20× what
+   tap 1 had just added — compounding inside a single frame, and (with fault 1) again across frames.
+
+The fix is the two-dispatch split the mirror now reproduces line for line: pass 1 draws candidates, resamples, and
+does the temporal merge, and **that** reservoir is what the history takes; pass 2 reads it, merges the spatial taps
+with each tap's M capped against the receiver's **pre-merge** count, re-traces visibility for whichever sample it
+ends up shading, and shades. `--restir-no-history-split` restores the old feedback so the fix is measurable rather
+than asserted.
+
+Measured (240×135, 4 candidates/frame, taps 4 = 4 taps, against a fresh 512-spp brute-force reference):
+
+| frames | taps 0 | taps 2 | taps 4 | fix OFF (`--restir-no-history-split`, taps 2) |
+|---|---|---|---|---|
+| 32 | 7 843.57 | 7 510.05 | **7 462.26** | 7 510.05 |
+| 64 | 7 623.46 | 7 294.70 | **7 163.18** | 7 294.70 |
+| 128 | 8 082.03 | 7 666.34 | **7 599.18** | 7 666.34 |
+| 128 (sheet, `--view default`) | 8 013.72 | 7 631.62 | **7 553.24** | 7 695.74 |
+
+- **The ordering is the proof**: more taps is now strictly better at every budget (before: 2 or 4 taps degraded
+  against 0 taps, and 0 taps degraded against nothing). M is bounded: mean **41.7 / max 64** at frame 16, **50.4 /
+  84** at frame 32, against 1 879 / 4 436 at frame 16 before.
+- The first A/B attempt printed *byte-identical* PNGs for both arms of the flag. That was not a null result — it was
+  a dead switch: an end-of-frame `std::swap(State.History, State.Temporal)` was overwriting the very line that
+  chooses between the temporal and the post-spatial reservoir, so the fix was in force in both arms. With the swap
+  gone the arms separate (RMSE 2 110.48 between them at frame 16) and the disagreeing statistic is legible: the old
+  loop saturates at **69.7 mean M / 84 max by frame 8 and stays there** with 9.4 % occluded selections, while the
+  split grows 24.0 → 41.7 → 50.4 over frames 8/16/32 with 12.5–12.7 % occluded — the old loop's M ceiling is the
+  clamp, i.e. it never had a bounded-confidence story of its own.
+- **The mirror's budget changed with the fix, so the sheets' ③④ numbers are not comparable across it**: the mirror
+  now shades **one sample per pixel per frame** — the kernel's DI block assigns the pixel's direct integral to the
+  reservoir and resolves once — where the pre-fix mirror shaded once per *sample* (4× at `--spp 4`). The standard
+  sheet's ③ therefore moved 2308.00 → 6696.39 and ④ 2272.37 → 5441.13 with ② unchanged at 1268.26, and that is a
+  budget correction, not a quality change. Everything asserted above is measured *within* the corrected budget: the
+  taps ordering (③④⑤ of the convergence sheet), the split A/B (⑥), and the bounded M.
+- **What is still true and still open** (the honest caveat, restated with the fixed numbers): at an equal *ray*
+  budget the brute-force arm still wins on RMSE at these frame counts (240×135, N=32/64/128: 1 687.63 / 1 461.05 /
+  1 460.94 for 4 spp brute force against 7 462 / 7 163 / 7 599 for 4 candidates + reuse). Two structural causes, both
+  measurable rather than speculative: (a) the mirror resolves **one** shaded sample per pixel per frame while the
+  brute-force arm resolves **four**, so the film's per-frame information differs by 4×; (b) the shaded estimate is
+  zeroed for the ~12.7 % of pixels whose selected sample fails its visibility re-trace, which is a loss of energy the
+  brute-force arm pays for with more shadow rays instead. And the reuse arm's error is *flat* across 32 → 128 frames
+  (7 387 → 7 223 → 7 632), i.e. what remains is bias/plateau, not variance that more frames can average away. The
+  next experiments are named in §13: sun-coin variance, the occluded-weight loss, and per-frame resolve rate.
+
+### 14.1b The plain path is bit-stable, and finding that out found a third fault
+
+The reference oracle has a standing invariant: with `--restir` off, `Radiance()` and the film must render bit-for-bit
+what they rendered before any of this. Two frames of a wide render differed against the committed mirror (AE 289 at
+2 frames, 447 at 3, **0 at 1 frame**) — the signature of a history bug, since a first frame touches no history. Cause:
+the plain path's sample loop published its own last jittered sample's hit into the film's surface record, so the next
+frame's reprojection was validated against a texel up to a pixel away instead of the pixel-centre G-buffer that the
+kernel's `ResolveSurface` writes. With the centre ray published instead, the plain path matches the committed mirror
+exactly again (AE 0 at 1, 2 and 3 frames; and against the pre-turn binary at 512 spp / 1 frame: AE 0). Every ReSTIR
+number in this section is from the fixed binary, and the standard sheet was re-rendered with it.
+
+### 14.2 Indirect/GI — the first-bounce vertex now has its own pool (ReSTIR GI-style reuse)
+
+The indirect half was a single BSDF-sampled path per frame per pixel: NEE at the first-bounce vertex, NEE at deeper
+vertices, no reuse anywhere. It now has a second reservoir over the **first-bounce vertex's NEE stratum**, built with
+the same machinery as the direct one: RIS candidates drawn at the vertex, temporal merge against the previous frame's
+vertex record, spatial taps over the same cross, pre-merge cap, one visibility re-trace at shading time — and the
+pixel's indirect half partitions cleanly around it:
+
+    indirect = Beta0 · [ pool estimate of the vertex's NEE ] + Beta0 · [ vertex terminal ] + sub-trace from V
+
+where `Beta0` is the primary bounce's f·cos/pdf, the terminal covers the cases the pool cannot estimate (the vertex
+ray escaped to the sky, or landed on an emitter — both stored, not re-rolled), and the sub-trace continues from the
+vertex with the *same* BSDF sample the vertex was built from, its `LastPdf` seeded so an emitter-hit MIS at the second
+vertex still pairs with the pool's NEE at the first. Glass, SSS, and solid-interface vertices are excluded from the
+pool on purpose (the candidate drawer has no below-stratum and no refraction site), and those pixels — plus the whole
+indirect half when `--restir-no-gi-reuse` is passed — keep the untouched single-sample arm. Nothing is counted twice:
+the pool replaces the vertex's NEE, and the sub-trace starts *after* that vertex.
+
+Measured (240×135, 4 candidates, 2 taps, vs the same 512-spp reference):
+
+| frames | pool ON | pool OFF (`--restir-no-gi-reuse`) | gain |
+|---|---|---|---|
+| 32 | **7 387.34** | 7 508.13 | 1.6 % |
+| 64 | **7 223.23** | 7 294.72 | 1.0 % |
+| 128 | **7 631.62** | 7 680.03 | 0.6 % |
+
+- The gain is real and consistent, and it is small for a measured reason: the pool exists on **16.2 % of surface
+  pixels** — the share whose own primary BSDF sample hits geometry at all (the level is an open sky: 41 % of those
+  samples escape, 1.8 % land on an emitter, 0.3 % are emissive/unlit, 2.7 % are glass/SSS vertices). On those pixels
+  it works: mean M 1.0 over all surface pixels / shaded M 10.2 over the pooled ones at frame 8 (320×180), growing
+  with the taps like the direct pool, 24.2 % of selections occluded and dropped.
+- **A design tried and rejected, recorded so it is not retried**: the obvious-looking extra validity test is vertex
+  proximity (require the receiver's vertex and the candidate's vertex to be the same place). It sounds stricter and is
+  the wrong test here — the transferred quantity is a **light sample** (a world point on an emitter), not a direction,
+  and the receiver re-evaluates its own target against it and re-traces the shadow ray, which is exactly what the
+  direct pool's taps do. With proximity in place, **6 989 of 20 831** temporal attempts failed on distance alone and
+  the pool bought almost nothing. The stricter form belongs with a replay + shift mapping (ReSTIR GI proper), which is
+  the next step if the indirect half is to be covered at 100 % rather than 16 %.
+- **Kernel status**: §14.1 is in `Engine/Shaders/ReSTIRViewport.slang` (the split and the pre-merge cap, with the
+  measured numbers in the comment). §14.2 is in the CPU mirror only — the pool needs a second reservoir pair and a
+  per-pixel vertex record, and the kernel is one dispatch, so the shader carries the design and the binding plan
+  (18/19 reservoirs, 20 vertex image) rather than a half-wired change. The Vulkan artefacts in this repository are
+  compiled by the project's own toolchain; nothing in this sandbox can compile SPIR-V, so this one is text-verified.

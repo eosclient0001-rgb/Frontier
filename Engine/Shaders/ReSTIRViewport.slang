@@ -8,6 +8,27 @@
 //         with ExtraCandidateCount further same-pixel candidates folded in, plus temporal (R6 row 2) and
 //         spatiotemporal neighbour reuse (R6 row 3),
 //       • one BSDF-sampled bounce with next-event estimation — plain 1-bounce path tracing, no GI reservoir (R6),
+//         and this is where the two convergence faults lived. Both are fixed and both are measured in the CPU
+//         mirror (Exhibits/Workbench/Materials/RunRestirConvergence.sh, sheet RestirConvergenceSheet.png):
+//           · the next frame's history takes the TEMPORAL reservoir only — spatial reuse is a shading-time
+//             refinement, so a frame's spatial merges cannot inflate the M the temporal cap reasons about (the
+//             research rule: don't feed the spatial result back into temporal unless starved);
+//           · a spatial tap's M cap reads the receiver's PRE-merge sample count, not a count the tap loop is
+//             itself growing (tap 2 could previously add up to 20x what tap 1 had just added).
+//         Before: mean M 1 879 / max 4 436 at frame 16, mean 843 633 by frame 20, and 2 or 4 taps were WORSE than
+//         0 taps at every budget (240x135, 4 candidates — N=32/64/128: 3 251/3 777/4 660 with 4 taps against
+//         3 489/2 601/1 953 with none). After: 4 taps < 2 taps < 0 taps everywhere (7 462/7 163/7 599 against
+//         7 843/7 623/8 082) with M bounded (41.7 mean / 64 max at frame 16, 50.4 / 84 at frame 32).
+//       • DEFERRED IN THIS KERNEL: the indirect half's own pool — ReSTIR GI-style reuse of the first-bounce
+//         vertex's NEE stratum — exists and is measured in the CPU mirror (`--restir-no-gi-reuse` is its A/B:
+//         RMSE 7 387 vs 7 508 at N=32, 7 223 vs 7 295 at N=64, 7 632 vs 7 680 at N=128, pool on ~16 % of surface
+//         pixels — the share whose own BSDF sample hits geometry). It is not in the shader because the kernel is
+//         ONE dispatch: the pool needs a second reservoir pair plus a per-pixel vertex record. Plan: bindings
+//         18/19 GiPrevReservoirs/GiCurrReservoirs (32 B/px — sample.xyz = light point, sample.w = WeightSum,
+//         counts = M/light/visible/age) and binding 20 GiVertexImage (rgba32f — xyz = vertex, w = primaryT; the
+//         vertex normal can ride the existing NormalImage at a second mip-less layer), the vertex built where the
+//         DI block below already samples the primary BSDF direction, and the vertex's NEE stratum removed from the
+//         bounce trace only for the pixels the pool owns (glass and SSS vertices stay on the single-sample arm).
 //       • R4b: surfaces are shaded with the OpenPBR lobe set of MaterialEvaluation.slang (one resolved slab, interpolated
 //         normals + normal maps from the VertexRecord buffer, ray-cone texture LOD, GGX energy / LTC sheen LUTs),
 //       • a running-mean accumulation that restarts on camera motion; motion vectors exist (R2) but are consumed only
@@ -1180,6 +1201,28 @@ void main()
                 }
             }
 
+            // Visibility re-traced at the current pixel for the TEMPORAL reservoir: the history's W has to be an
+            //    honest weight, and the two passes are two dispatches — the spatial pass cannot validate a value it
+            //    is not allowed to write back. The spatial pass re-traces for whichever sample it ends up shading.
+            {
+                bool histBlocked = res.SelectedLight == kSunLightIndex
+                    ? TraceShadow(hitPos + hitNormal * kEps, res.SelectedPoint)
+                    : TraceShadow(hitPos + hitNormal * kEps, res.SelectedPoint - normalize(res.SelectedPoint - hitPos) * 1e-3);
+                res.Visible = histBlocked ? 0u : 1u;
+                if (res.Visible == 0u) res.UnbiasedWeight = 0.0;
+            }
+
+            // The temporal reservoir is what the history takes (see the publish block at the end of the DI block):
+            //    snapshot the four quantities the reservoir is made of before the spatial taps touch them.
+            vec3     histPoint     = res.SelectedPoint;
+            vec3     histUv        = res.SelectedUv;
+            uint     histLight     = res.SelectedLight;
+            uint     histCount     = res.SampleCount;
+            uint     histVisible   = res.Visible;
+            uint     histAge       = resAge;
+            float    histWeightSum = res.WeightSum;
+            float    histW         = res.UnbiasedWeight;
+
             // R6 row 3: spatiotemporal neighbour reuse — K taps read the STABLE prev-frame buffer at neighbouring
             //    pixels of the current frame (same-frame Curr reads would race within the dispatch). Each valid tap
             //    merges by the same pairwise-MIS algebra as temporal: validation, per-tap M-clamp, winner age+1.
@@ -1194,6 +1237,13 @@ void main()
                 float radius  = mix(kSpatialRadiusMinPx, kSpatialRadiusMaxPx, RandFloat(tapSeed)) * scale;
 
                 uint spatialTaps = min(SpatialTapCount, kSpatialTapCeiling);
+
+                // ⚠️ The cap reference is the receiver's PRE-merge sample count (`histCount`, captured above). The
+                //    old form capped against `res.SampleCount` while the loop added to it, so tap 2 could add up to
+                //    20x what tap 1 had just added — compounding inside a single frame, and (with the spatial result
+                //    in the history) compounding again across frames. Measured in the CPU mirror, where the same fix
+                //    lands: mean M at frame 16 fell from 1879 (max 4436) to 41.6 (max 64).
+                uint capReference = max(histCount, 1u);
                 for (uint tap = 0u; tap < spatialTaps; ++tap)
                 {
                     // The cross keeps its 90° spacing — it is still four taps of equal reach, just aimed
@@ -1210,7 +1260,7 @@ void main()
                         && dot(hitNormal, neigh.Normal.xyz) > kTemporalNormalCos
                         && abs(primaryT - neigh.UvDepth.w) / max(primaryT, 1e-3) < kTemporalDepthTol;
                     if (!nValid) continue;
-                    uint mNeighCapped = min(neighM, kTemporalMClamp * res.SampleCount);
+                    uint mNeighCapped = min(neighM, kTemporalMClamp * capReference);
                     vec3 neighToL  = neigh.Sample.xyz - hitPos;
                     float pNeigh = PHatSelected(frame, shading, layers, woLocal, neigh.Counts.y, neighToL, hitPos);
                     // Same identity as the temporal merge: p̂ at the current selection is the carried value.
@@ -1234,17 +1284,28 @@ void main()
                 }
             }
 
-            // Visibility re-traced at the current pixel; an occluded merged sample contributes nothing.
+            // Visibility re-traced a second time, now for the sample the SPATIAL merge selected: the merged
+            //    selection may differ from the temporal one, so the shaded integral cannot inherit its test.
             res.Visible = TraceShadow(hitPos + hitNormal * kEps, res.SelectedPoint) ? 0u : 1u;
             if (res.Visible == 0u) res.UnbiasedWeight = 0.0;
 
-            // Publish the final reservoir for next frame's temporal reuse (always — even occluded, M still counts).
-            GpuReservoir outRes;
-            outRes.Sample  = vec4(res.SelectedPoint, res.WeightSum);
-            outRes.Counts  = uvec4(res.SampleCount, res.SelectedLight, res.Visible, resAge);
-            outRes.UvDepth = vec4(res.SelectedUv, res.UnbiasedWeight, primaryT);
-            outRes.Normal  = vec4(hitNormal, float(ViewportWidth));
-            CurrReservoirs[pixel.y * ViewportWidth + pixel.x] = outRes;
+            // Publish the reservoir for next frame's temporal reuse (always — even occluded, M still counts).
+            //
+            //    ⚠️ THIS MUST BE THE TEMPORAL RESERVOIR, NOT THE POST-SPATIAL ONE. Spatial reuse is a shading-time
+            //    refinement: folding it into the history makes every frame's spatial merges raise the M that the
+            //    next frame's temporal cap reasons about, so M compounds through both passes instead of growing
+            //    once per frame. That feedback loop is what broke convergence — with it, `taps 0` converged to
+            //    1952 RMSE by 128 frames while 2 taps stalled at 4437 and 4 at 4660, mean M reached 843 633 at
+            //    frame 20, and the CPU mirror reproduced all of it line for line. With the split — and the per-tap
+            //    cap below taken against the pre-merge count — more taps now strictly help at every budget
+            //    (240x135, 4 candidates: 32/64/128 frames, taps 4 = 7462/7163/7599 vs taps 0 = 7843/7623/8082).
+            //    (Kajiya's ReSTIR notes state the same rule: don't feed the spatial result back into temporal.)
+            GpuReservoir histRes;
+            histRes.Sample  = vec4(histPoint, histWeightSum);
+            histRes.Counts  = uvec4(histCount, histLight, histVisible, histAge);
+            histRes.UvDepth = vec4(histUv, histW, primaryT);
+            histRes.Normal  = vec4(hitNormal, float(ViewportWidth));
+            CurrReservoirs[pixel.y * ViewportWidth + pixel.x] = histRes;
 
             // Shade (R6: the stored selection carries its light — no search). The sun divides by nothing: it is at
             //    infinity, so its d² is 1 by definition and the stored far point's is meaningless. Mesh lights pay

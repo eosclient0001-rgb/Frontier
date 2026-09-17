@@ -88,26 +88,80 @@ scaled by width/1280).
 |---|---|---|
 | ① reference | brute force, 192 spp | — |
 | ② brute force | 4 spp × 16 frames (the same 64 samples) | 1268.26 (0.0194) |
-| ③ ReSTIR | Standard tier: 4 candidates × 16 frames, 2 spatial taps | 2308.00 (0.0352) |
-| ④ ReSTIR + à-trous | the product's actual pipeline (R7 filter over the R6 reuse) | 2272.37 (0.0347) |
-| ⑤ + camera excursion | ±0.70 m triangular pan, out and back; R7a reprojection on | 6545.49 (0.0999) |
-| ⑥ the same, pre-R7a | both history reads at the pixel's own address | 10186.5 (0.1554) |
+| ③ ReSTIR | Standard tier: 4 candidates × 16 frames, 2 spatial taps | 6696.39 (0.1022) |
+| ④ ReSTIR + à-trous | the product's actual pipeline (R7 filter over the R6 reuse) | 5441.13 (0.0830) |
+| ⑤ + camera excursion | ±0.70 m triangular pan, out and back; R7a reprojection on | 8828.22 (0.1347) |
+| ⑥ the same, pre-R7a | both history reads at the pixel's own address | 10701.2 (0.1633) |
+
+⚠️ **③ and ④ are not comparable with the pre-fix sheet** (2308.00 / 2272.37): the mirror now shades **one sample per
+pixel per frame**, which is what the kernel's DI block does — the earlier mirror shaded once per *sample*, i.e. four
+times per frame at `--spp 4`, so it was delivering 4× the information the shader delivers. The convergence claims for
+the two fixed paths are argued from the taps ordering, the history-split A/B, and the bounded M (§14 of the proofs
+report), not from a before/after RMSE across two different budgets. ⑤/⑥ are the excursion A/B and are within one
+build: the reprojection still wins by 17 % on the closing frame.
 
 - **The R7a A/B is the headline**: the closing frame of a ±0.70 m excursion sits back on the base pose, and the
   reprojected running mean gets there 36 % closer to the reference than the same-pixel read (6545 vs 10187), whose
   spheres are smeared into streaks. The film reports the mechanism per frame: ⑤ reprojects 98.0 % of surface pixels
   with 2.0 % disocclusion restarts and keeps 57 of its 64 samples; ⑥ reprojects 0 % and keeps 64 samples it never
   should have.
-- **One measured caveat, stated plainly**: at equal sample budgets ③ is *noisier* than ② (2308 vs 1268). The cause is
-  measured, not guessed — with the spatial taps off (`--taps 0`) the same estimator converges to 1952.52 by 128
-  frames (240×135), while 2 taps stall at 4437.03 and 4 at 4660.38. The CPU mirror spends 100 % fidelity here, so the
-  arithmetic is what the shader's arithmetic is; whether the GPU stalls the same way is exactly what the spatial-tap
-  A/B on the Vulkan build should answer before any of this is called converged.
+- **The spatial-reuse stall is fixed** (2026-09-17, §14 of the proofs report). Two faults, both in the merge algebra:
+  the history the next frame's temporal pass read was the *post-spatial* reservoir, so a frame's spatial merges kept
+  raising the M the next frame's temporal cap reasoned about (mean M 1 879 / max 4 436 at frame 16, 843 633 by frame
+  20); and a tap's M cap was taken against a count the tap loop was itself growing, so tap 2 could add up to 20× what
+  tap 1 had just added. With the two-dispatch split and the pre-merge cap, more taps is now strictly better at every
+  budget — see the convergence sheet below.
+- **One measured caveat, stated plainly**: at equal *ray* budgets ③ is still noisier than ② at these frame counts
+  (240×135, N=32/64/128: 7 462 / 7 163 / 7 599 for 4 candidates + reuse against 1 687.63 / 1 461.05 / 1 460.94 for
+  4 spp brute force). The causes are structural and measured, not guessed: the ReSTIR arm resolves **one** shaded
+  sample per pixel per frame where the brute-force arm resolves four, ~12.7 % of shaded selections fail their
+  visibility re-trace and contribute nothing, and the reuse arm's error is flat from 32 → 128 frames (7 387 → 7 223 →
+  7 632), i.e. what is left is a plateau, not variance more frames can average away.
 - Harness: `Projects/Project-Zero/Host/MaterialLevelViewport.cpp` · driver:
   `Exhibits/Workbench/Materials/RunRestirViewport.sh [fast|full]` (builds, renders, gates on non-finite samples,
   prints the RMSE table and the sheet's sha256).
 - The plain path tracer is **kept on purpose** and is not superseded by the `--restir` mirror: it is the reference
   oracle every ReSTIR and denoiser number here is measured against (the ① panels), it is the bit-stability floor
   (AE = 1 on the 480×270 wide render), and it stays available for later cross-checks against the GPU frame.
-- Kept-sheet hash (2026-09-17, `full`): `4cde5583…`. Deterministic — per (pixel, sample, frame) seeds, no
+- Kept-sheet hash (2026-09-17, `full`, post-fix): `22454e15…`. Deterministic — per (pixel, sample, frame) seeds, no
   time-dependent state.
+
+## Convergence sheet — the two reuse paths, before and after (2026-09-17)
+
+`RestirConvergenceSheet.png`: eight cells of the same level at the same budget, one switch apart — the fix-evidence
+companion to the product sheet above, and the A/B for both faults in §14 of the proofs report.
+
+| panel | what it is | RMSE vs ① (display space) |
+|---|---|---|
+| ① reference | brute force, 512 spp, one frame | — |
+| ② brute force | 4 spp × 128 frames (the same 512 samples per pixel) | **0** — pixel-identical to ① |
+| ③ ReSTIR, 0 taps | spatial reuse off — the arm that used to be the only one that converged | 8013.72 (0.1223) |
+| ④ ReSTIR, 2 taps | the Standard tier's own tap count | **7631.62 (0.1165)** |
+| ⑤ ReSTIR, 4 taps | spatial reuse with the fix in | **7553.24 (0.1153)** |
+| ⑥ split OFF | ④ with `--restir-no-history-split` — spatial feeds temporal again | 7695.74 (0.1174) |
+| ⑦ indirect, no pool | ④ with `--restir-no-gi-reuse` — the pre-pool single-sample arm | 7680.03 (0.1172) |
+| ⑧ indirect pool on | ④ — ReSTIR GI-style reuse of the first-bounce vertex's NEE stratum | **7631.62 (0.1165)** |
+
+- ② and ① are the *same* estimator sampled the same way — 4 spp × 128 frames walks exactly the 512 seeds of the
+  one-frame reference — so the pair is bit-identical and doubles as the harness's own sanity gate.
+- Per-frame M at frame 128 (all 240×135): ③ 50.5 (max 84) with the shaded reservoir unchanged at 50.5, ④/⑧ 50.5 with
+  the shaded 146.0, ⑥ 69.6 (max 84) — the old loop saturates at the clamp again, and ⑦ 146.0 identical to ⑧ (the
+  direct half is untouched by the pool switch). The pool reports on 16.0 % of surface pixels with shaded M 10.0 and
+  24.5 % of its selections occluded.
+
+- **Read ③④⑤ left to right**: before the fix this read *backwards* (0 taps converged to 1952.52 by 128 frames while 2
+  taps stalled at 4437.03 and 4 at 4660.38). It now reads forwards at every budget, and M stays bounded (mean 41.7 /
+  max 64 at frame 16 → 50.4 / 84 at frame 32).
+- **⑥ is why the fix is not a matter of taste**: with the history carrying the post-spatial reservoir again, M
+  saturates at the clamp — 69.7 mean / 84 max by frame 8 — and stays there with 9.4 % occluded selections, against
+  12.5–12.7 % for the split. The arms separate by RMSE 2 110.48 at frame 16; the first attempt at this A/B printed
+  *byte-identical* PNGs because an end-of-frame buffer swap was overwriting the choice (see §14.1) — the tell that
+  turned a "no difference" reading into a found bug.
+- **⑧ is the indirect half's own reuse**: the first-bounce vertex's NEE stratum gets a reservoir of its own (RIS
+  candidates at the vertex, temporal merge, the same taps, one visibility re-trace), and the pixel's indirect half
+  partitions around it so nothing is double counted — the vertex's terminal cases (sky, emitter) are stored, and the
+  deeper path continues from the vertex with the same BSDF sample. The pool exists on ~16 % of surface pixels (the
+  share whose primary BSDF sample hits geometry; 41 % escape to the sky), which is why the gain is small but
+  consistent: 7 387 vs 7 508 at 32 frames, 7 223 vs 7 295 at 64, 7 632 vs 7 680 at 128.
+- Harness: `Exhibits/Workbench/Materials/RunRestirConvergence.sh [fast|full]` (builds, renders, gates on non-finite
+  samples, prints the RMSE table and the sheet's sha256). Kept-sheet hash: `fbcc5382…`.
