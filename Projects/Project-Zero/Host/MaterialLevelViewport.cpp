@@ -24,6 +24,16 @@
 //        channels as acknowledged gaps), so every SampleChannel call resolves to its documented constant;
 //      · one medium at a time while walking glass (M4b's v1 rule: no nested dielectrics), which the level never hits.
 //
+//    KEPT ON PURPOSE — the pure path tracer. Without `--restir` this file is a plain brute-force estimator: NEE with
+//    power-heuristic MIS, BSDF sampling, the 8.0 firefly clamp, no reservoirs, no reuse, no history. It is not dead
+//    code and is not to be removed when the ReSTIR path grows: it is the reference oracle. Every ReSTIR/denoiser number
+//    in this repository is measured against it (the driver's ① panel is 192 spp of exactly this path, and the RMSE
+//    table against it is the sheet's claim), and it stays available for whatever cross-check the GPU side needs later —
+//    a converged image to A/B against the Vulkan frame, a per-material truth render, or a variance baseline for a new
+//    reuse rule. It is also the bit-stability floor: 480×270 at 80 spp reproduces MaterialLibrary_Wide.png to a single
+//    pixel (AE = 1, the standing PNG-metadata difference), which is how a change to the shared code is shown not to
+//    have touched the physics.
+//
 //    Build/run: Projects/Project-Zero/Host/Makefile target `MaterialLevelViewport`, or
 //    `Exhibits/Workbench/Materials/RunMaterialLevelViewport.sh` (which seats the third-party headers, renders the kept
 //    sheets and prints their sha256).
@@ -34,6 +44,7 @@
 
 #include "SlangCpuShim.h"
 #include "ShadingTableCodec.h"
+#include "AtrousDenoiseMirror.h"
 
 #include <algorithm>
 #include <cmath>
@@ -42,6 +53,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -398,6 +410,417 @@ void ShadingFrame(const vec3& N, vec3& T, vec3& B)
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                              RESTIR DIRECT LIGHTING — CPU MIRROR OF THE KERNEL'S DI BLOCK
+//------------------------------------------------------------------------------------------------------------------------
+// ReSTIRViewport.slang is not compilable off-GPU (bindless tables, a BVH in buffers, storage images), so this is the
+//    same move the M9 proof made for the filter: a line-for-line mirror of the kernel's direct-lighting block, checked
+//    against the shader text by the driver (it prints the constants it mirrors). What is mirrored:
+//
+//      · DrawDirectCandidate — the lamp/sun coin flip (kSunPickProbability 0.5), the sun's disc sample, w = p̂/p with
+//        BOTH continuous pdfs (a mesh sample pays area/(p_source·p_pick), a sun sample pays Ω/p_pick);
+//      · ResampleCandidate — the streaming RIS resample, weightSum/count accumulation, 1-in-M selection;
+//      · the temporal merge — back-projection, the 25° normal and 10 % depth validation, the stride guard, the 20×
+//        M-clamp, pairwise MIS on w = p̂·W·M, and the p̂ re-evaluation of the stored sample at THIS pixel (the
+//        "revalidation re-evaluates the BSDF" claim: no Jacobian, no per-lobe history, just the same target function);
+//      · the spatial merge — K taps on a rotated cross at radius 4…16 px (scaled by width/1280), read from the previous
+//        frame's buffer, same validation and the same pairwise algebra;
+//      · visibility re-traced at the shading pixel, an occluded reservoir contributing nothing (but still counting for
+//        M next frame), and the shade step's own f·L·cos·cosL·W/dist² form;
+//      · the running mean + first two luminance moments of ResolveSurface, so the filter downstream reads the variance
+//        of the mean the kernel would have handed it.
+//
+//    Deviations, all deliberate and all because this is a harness and not the dispatch (printed by the driver):
+//      · the reprojection is computed from the previous camera pose, not read from the R2 motion image: on the CPU the
+//        pose is exact, and the kernel's rule (a back-projection off screen is a disocclusion, not a clamp) is kept;
+//      · a pixel that missed geometry clears its reservoir slot; the kernel leaves the stale one for the M/stride
+//        guards to reject (same outcome, one fewer way to read uninitialised memory);
+//      · no cloud-shadow transmittance (the level's scenario is Clear) and no R2 raster jitter: the primary ray is the
+//        pixel's own camera ray with the pixel's own sub-pixel offset.
+//
+//    Gated by --restir. With it off, Radiance() below is untouched: the sheets' reference and plain-accumulation
+//    panels are the same estimator that produced the kept MaterialLibrary_Viewport sheets, bit for bit.
+
+const float    kRestirNormalCos     = 0.906308f;   // cos(25°) — kTemporalNormalCos
+const float    kRestirDepthTol      = 0.10f;       // kTemporalDepthTol
+const uint32_t kRestirMClamp        = 20u;         // kTemporalMClamp
+uint32_t g_RestirSpatialTaps = 4u;  // SpatialTapCount: the shipped default (R6 row 3 cross)
+const uint32_t kRestirTapCeiling    = 4u;          // kSpatialTapCeiling
+const float    kRestirRadiusMinPx   = 4.0f;        // kSpatialRadiusMinPx
+const float    kRestirRadiusMaxPx   = 16.0f;       // kSpatialRadiusMaxPx
+const float    kRestirSunPick       = 0.5f;        // kSunPickProbability
+const float    kRestirSunDistance   = 1.0e4f;      // kSunShadowDistance
+const uint32_t kRestirSunLight      = 0xFFFFFFFFu; // kSunLightIndex
+
+struct CpuReservoir
+{
+    vec3     SelectedPoint   = vec3(0.0f);
+    uint32_t SelectedLight   = 0u;
+    float    SelectedUvU     = 0.0f;
+    float    SelectedUvV     = 0.0f;
+    float    WeightSum       = 0.0f;
+    uint32_t SampleCount     = 0u;
+    float    UnbiasedWeight  = 0.0f;
+    uint32_t Visible         = 0u;
+    uint32_t Age             = 0u;
+    vec3     Normal          = vec3(0.0f, 0.0f, 1.0f);   // geometric normal of the reservoir's pixel
+    float    Depth           = 0.0f;                      // primaryT there
+    float    StrideWidth     = 0.0f;                      // the kernel's prev.Normal.w stride guard
+    float    MotionU         = 0.0f, MotionV = 0.0f;      // what the R2 image would have carried
+};
+
+bool g_RestirNoReproject = false;   // [-] the pre-R7a same-pixel history read (the D9 switch, for the A/B sheet)
+bool g_RestirBounceMis = false;   // [-] DIAGNOSTIC: exclude the first-bounce emitter hit (see Radiance)
+bool g_RestirNoSunCoin = false;   // [-] DIAGNOSTIC: lamps-only candidates (what the sun coin costs in this scene)
+uint32_t g_RestirMCap = 0u;         // [-] 0 = the kernel's own rules (no absolute cap); >0 = a candidate ceiling, to
+                                    //     measure what one would buy (the shipped kernel has only the 20x relative clamp)
+
+// The camera pose, captured once per frame: the previous frame's copy is what reprojection projects into.
+struct CameraPose
+{
+    vec3 Origin, Forward, Right, Up;
+    float TanHalf = 0.0f, Aspect = 1.0f;
+};
+
+CameraPose CapturePose(const Frontier::CameraProjection& Camera)
+{
+    CameraPose Pose;
+    const Frontier::Vector3 O = Camera.QuerySpatialLocation();
+    const Frontier::Vector3 F = Camera.QueryForwardVector();
+    const Frontier::Vector3 R = Camera.QueryRightVector();
+    const Frontier::Vector3 U = Camera.QueryUpwardVector();
+    Pose.Origin  = vec3(O.x, O.y, O.z);
+    Pose.Forward = normalize(vec3(F.x, F.y, F.z));
+    Pose.Right   = normalize(vec3(R.x, R.y, R.z));
+    Pose.Up      = normalize(vec3(U.x, U.y, U.z));
+    Pose.TanHalf = tanf(Camera.QueryFieldOfViewRadians() * 0.5f);
+    Pose.Aspect  = Camera.QueryAspectRatio();
+    return Pose;
+}
+
+// CameraProjection::ConstructRay's own maths, inverted: the pixel a world point lands on in THIS pose.
+bool ProjectPoint(const CameraPose& Pose, const vec3& P, float& OutU, float& OutV)
+{
+    const vec3 D = P - Pose.Origin;
+    const float Z = dot(D, Pose.Forward);
+    if (Z <= 1.0e-4f) return false;
+    const float ScreenX = dot(D, Pose.Right) / Z;
+    const float ScreenY = dot(D, Pose.Up) / Z;
+    OutU = 0.5f * (ScreenX / (Pose.TanHalf * Pose.Aspect) + 1.0f);
+    OutV = 0.5f * (1.0f - ScreenY / Pose.TanHalf);
+    return true;
+}
+
+float PHatSurface(const ShadingRecord& m, const ResolvedLayers& L, const vec3& Ng, const vec3& T, const vec3& B,
+                  const vec3& Ns, const vec3& wo, const vec3& Emit, const vec3& ToLight, const vec3& LightNormal)
+{
+    const float Dist2 = dot(ToLight, ToLight);
+    const float Dist  = sqrtf(max(Dist2, 1.0e-18f));
+    const vec3  Ld    = ToLight / Dist;
+    const float CosT  = max(0.0f, dot(Ng, Ld));
+    if (CosT <= 0.0f) return 0.0f;
+    const float CosL = max(0.0f, dot(LightNormal, -Ld));
+    if (CosL <= 0.0f) return 0.0f;
+    const vec3 wi(dot(Ld, T), dot(Ld, B), dot(Ld, Ns));
+    if (wi.z <= 0.0f) return 0.0f;
+    return max(dot(EvaluateBsdf(m, L, wo, wi), Emit), 0.0f) * CosT * CosL / (Dist2 + 0.001f);
+}
+
+float PHatSun(const ShadingRecord& m, const ResolvedLayers& L, const vec3& Ng, const vec3& T, const vec3& B,
+              const vec3& Ns, const vec3& wo, const vec3& SunEmit, const vec3& SunDir)
+{
+    const float CosT = max(0.0f, dot(Ng, SunDir));
+    if (CosT <= 0.0f) return 0.0f;
+    const vec3 wi(dot(SunDir, T), dot(SunDir, B), dot(SunDir, Ns));
+    if (wi.z <= 0.0f) return 0.0f;
+    return max(dot(EvaluateBsdf(m, L, wo, wi), SunEmit), 0.0f) * CosT;
+}
+
+vec3 SunEmissionRender() { return SkyRadianceWorld(g_SunDirRender); }
+
+float SunSolidAngleRender()
+{
+    const float S = sinf(g_SunAngularRadius * 0.5f);
+    return 4.0f * kPi * S * S;
+}
+
+// An ABSOLUTE cap on M, applied consistently: the weight sum is scaled with the count, so W (the estimate) is
+//    untouched and only this reservoir's future *confidence* shrinks. The shipped kernel has no such cap — only the
+//    20x relative clamp — which is exactly what the driver's --m-cap sweep measures (see RunRestirViewport.sh).
+void ClampReservoirM(CpuReservoir& Res)
+{
+    if (g_RestirMCap == 0u || Res.SampleCount <= g_RestirMCap) return;
+    Res.WeightSum *= static_cast<float>(g_RestirMCap) / static_cast<float>(Res.SampleCount);
+    Res.SampleCount = g_RestirMCap;
+}
+
+void ResampleCandidate(CpuReservoir& Res, const vec3& Point, uint32_t Light, float UvU, float UvV, float Weight, Rng& R)
+{
+    Res.WeightSum   += Weight;
+    Res.SampleCount += 1u;
+    if (R.Next() * Res.WeightSum <= Weight)
+    {
+        Res.SelectedPoint = Point;
+        Res.SelectedLight = Light;
+        Res.SelectedUvU = UvU;
+        Res.SelectedUvV = UvV;
+    }
+}
+
+// DrawDirectCandidate: one candidate, lamp or sun, w = p̂/p with every continuous pdf included.
+void DrawDirectCandidate(const ShadingRecord& m, const ResolvedLayers& L, const vec3& Ng, const vec3& T, const vec3& B,
+                         const vec3& Ns, const vec3& wo, const vec3& HitPos, bool SunUp, Rng& R,
+                         vec3& OutPoint, uint32_t& OutLight, float& OutU, float& OutV, float& OutWeight)
+{
+    const bool Sun = SunUp && !g_RestirNoSunCoin && (g_Lights.empty() || R.Next() < kRestirSunPick);
+    if (Sun)
+    {
+        const float U1 = R.Next(), U2 = R.Next();
+        // Uniform in the sun's cone (pdf 1/Ω) around the sun direction, basis excluding the dominant axis.
+        const float CosMax = cosf(g_SunAngularRadius);
+        const float CosT   = 1.0f - U1 * (1.0f - CosMax);
+        const float SinT   = sqrtf(max(0.0f, 1.0f - CosT * CosT));
+        const float Phi    = 2.0f * kPi * U2;
+        vec3 St, Sb;
+        ShadingFrame(g_SunDirRender, St, Sb);
+        const vec3 SunDir = normalize(St * (SinT * cosf(Phi)) + Sb * (SinT * sinf(Phi)) + g_SunDirRender * CosT);
+        OutPoint = HitPos + SunDir * kRestirSunDistance;
+        OutLight = kRestirSunLight;
+        OutU = U1; OutV = U2;
+        const float PHat = PHatSun(m, L, Ng, T, B, Ns, wo, SunEmissionRender(), SunDir);
+        const float PPick = g_Lights.empty() ? 1.0f : kRestirSunPick;
+        OutWeight = PHat * SunSolidAngleRender() / PPick;
+        return;
+    }
+    float Pl = 0.0f, Area = 0.0f;
+    vec3 Radiance(0.0f);
+    const int Li = PickLight(R, Pl, Area, Radiance);
+    if (Li < 0) { OutPoint = vec3(0.0f); OutLight = 0u; OutU = OutV = 0.0f; OutWeight = 0.0f; return; }
+    const float U1 = R.Next(), U2 = R.Next();
+    float Su = U1, Sv = U2;
+    if (Su + Sv > 1.0f) { Su = 1.0f - Su; Sv = 1.0f - Sv; }
+    const EmissiveTriangle& Q = g_Lights[Li];
+    OutPoint = Q.P0 * (1.0f - Su - Sv) + Q.P1 * Su + Q.P2 * Sv;
+    OutLight = static_cast<uint32_t>(Li);
+    OutU = Su; OutV = Sv;
+    const vec3 ToLight = OutPoint - HitPos;
+    const float PHat = PHatSurface(m, L, Ng, T, B, Ns, wo, Q.Radiance, ToLight, Q.Ng);
+    const float PPick = (SunUp && !g_RestirNoSunCoin) ? 1.0f - kRestirSunPick : 1.0f;
+    OutWeight = PHat * Area / (Pl * PPick);
+}
+
+// p̂ of a STORED sample — the one question every merge asks.
+float PHatSelected(const ShadingRecord& m, const ResolvedLayers& L, const vec3& Ng, const vec3& T, const vec3& B,
+                   const vec3& Ns, const vec3& wo, uint32_t Light, const vec3& ToLight)
+{
+    if (Light == kRestirSunLight)
+    {
+        const float Dist = max(sqrtf(dot(ToLight, ToLight)), 1.0e-9f);
+        return PHatSun(m, L, Ng, T, B, Ns, wo, SunEmissionRender(), ToLight / Dist);
+    }
+    if (Light >= g_Lights.size()) return 0.0f;
+    const EmissiveTriangle& Q = g_Lights[Light];
+    return PHatSurface(m, L, Ng, T, B, Ns, wo, Q.Radiance, ToLight, Q.Ng);
+}
+
+struct RestirFrameState
+{
+    std::vector<CpuReservoir> Current;      // written this frame
+    std::vector<CpuReservoir> Previous;     // the stable buffer the merges read
+    CameraPose PreviousPose;
+    CameraPose LastPose;
+    int        FrameIndex  = 0;
+    bool       HasPrevious = false;
+};
+
+// The kernel's DI block, per pixel. Returns the direct-lighting radiance the reservoir estimates and writes the
+//    reservoir this pixel publishes for next frame's reuse. `Accumulated` is the running mean the pixel already holds
+//    (the kernel's ResolveSurface recursion), which sets the variance the filter will read.
+vec3 RestirDirect(const vec3& O, const vec3& D, Rng& R, int Spp, bool SunUp, RestirFrameState& State, int Width, int Height,
+                  int X, int Y, float& OutDepth, vec3& OutNormal)
+{
+    OutDepth = 0.0f;
+    OutNormal = vec3(0.0f, 0.0f, 1.0f);
+    CpuReservoir& Slot = State.Current[static_cast<size_t>(Y) * Width + X];
+    Slot = CpuReservoir();
+
+    const Hit H = Intersect(O, D, 1.0e30f, -1);
+    if (!H.Valid) return vec3(0.0f);                       // sky: the kernel returns before the DI block
+    const RenderTriangle& Tri = g_Tris[H.TriId];
+    const vec3 P = O + D * H.T;
+    OutDepth = H.T;
+    if (Tri.Light >= 0) return vec3(0.0f);                 // a directly hit emitter: emission, no BSDF
+    const ShadingRecord& Mat = g_Mat[Tri.Material];
+    if (Mat.Selection == static_cast<uint>(kReflectanceEmissiveOnly)) return vec3(0.0f);
+    if (Mat.Selection == static_cast<uint>(kReflectanceUnlit)) return vec3(0.0f);
+
+    vec3 Ng = normalize(cross(Tri.P1 - Tri.P0, Tri.P2 - Tri.P0));
+    if (dot(Ng, D) > 0.0f) Ng = -Ng;
+    vec3 Ns = normalize(Tri.N0 * (1.0f - H.U - H.V) + Tri.N1 * H.U + Tri.N2 * H.V);
+    if (dot(Ns, D) > 0.0f) Ns = -Ns;
+    OutNormal = Ng;
+    vec3 T, B;
+    ShadingFrame(Ns, T, B);
+    const vec3 wo(dot(-D, T), dot(-D, B), dot(-D, Ns));
+
+    ShadingRecord m = Mat;
+    ResolvedLayers L = ResolveLayers(m, wo);
+    const bool SolidHit = m.TransmissionWeight > 0.0f && (g_MatFlags[Tri.Material] & Frontier::MaterialFlagThinWalled) == 0u;
+    if (SolidHit) { L.SolidInterface = true; L.IncidentIor = 1.0f; }
+
+    CpuReservoir Res;
+    Res.StrideWidth = static_cast<float>(Width);   // the kernel's prev.Normal.w stride guard, carried on the reservoir
+    for (int S = 0; S < Spp; ++S)
+    {
+        vec3 Point; uint32_t Light; float U1, U2, Weight;
+        DrawDirectCandidate(m, L, Ng, T, B, Ns, wo, P, SunUp, R, Point, Light, U1, U2, Weight);
+        ResampleCandidate(Res, Point, Light, U1, U2, Weight, R);
+    }
+
+    float SelectedPHat = 0.0f;
+    if (Res.WeightSum > 0.0f && Res.SampleCount > 0u)
+    {
+        SelectedPHat = PHatSelected(m, L, Ng, T, B, Ns, wo, Res.SelectedLight, Res.SelectedPoint - P);
+        Res.UnbiasedWeight = SelectedPHat > 0.0f ? Res.WeightSum / (static_cast<float>(Res.SampleCount) * SelectedPHat) : 0.0f;
+
+        // Motion: the pixel this surface point lands on in the PREVIOUS pose (the R2 image's content, computed exactly).
+        float PrevU = 0.0f, PrevV = 0.0f;
+        if (State.HasPrevious && ProjectPoint(State.PreviousPose, P, PrevU, PrevV))
+        {
+            const float CurU = (static_cast<float>(X) + 0.5f) / static_cast<float>(Width);
+            const float CurV = (static_cast<float>(Y) + 0.5f) / static_cast<float>(Height);
+            Res.MotionU = CurU - PrevU;
+            Res.MotionV = CurV - PrevV;
+        }
+        Res.Normal = Ng;
+        Res.Depth = H.T;
+
+        if (State.HasPrevious)
+        {
+            // Temporal reuse.
+            {
+                const float CurU = (static_cast<float>(X) + 0.5f) / static_cast<float>(Width);
+                const float CurV = (static_cast<float>(Y) + 0.5f) / static_cast<float>(Height);
+                const float PU = g_RestirNoReproject ? CurU : CurU - Res.MotionU;
+                const float PV = g_RestirNoReproject ? CurV : CurV - Res.MotionV;
+                const int PrevX = static_cast<int>(floorf(PU * static_cast<float>(Width)));
+                const int PrevY = static_cast<int>(floorf(PV * static_cast<float>(Height)));
+                if (PrevX >= 0 && PrevY >= 0 && PrevX < Width && PrevY < Height)
+                {
+                    const CpuReservoir& Prev = State.Previous[static_cast<size_t>(PrevY) * Width + PrevX];
+                    const uint32_t PrevM = Prev.SampleCount;
+                    const bool Valid = PrevM > 0u
+                        && Prev.StrideWidth == static_cast<float>(Width)
+                        && dot(Ng, Prev.Normal) > kRestirNormalCos
+                        && fabsf(H.T - Prev.Depth) / max(H.T, 1.0e-3f) < kRestirDepthTol;
+                    if (Valid)
+                    {
+                        const uint32_t PrevCapped = std::min(PrevM, kRestirMClamp * Res.SampleCount);
+                        const float PPrev = PHatSelected(m, L, Ng, T, B, Ns, wo, Prev.SelectedLight, Prev.SelectedPoint - P);
+                        const float PCur = SelectedPHat;
+                        const float WCur = PCur * Res.UnbiasedWeight * static_cast<float>(Res.SampleCount);
+                        const float WPrev = PPrev * Prev.UnbiasedWeight * static_cast<float>(PrevCapped);
+                        const float Total = WCur + WPrev;
+                        if (Total > 0.0f && R.Next() * Total <= WPrev)
+                        {
+                            Res.SelectedPoint = Prev.SelectedPoint;
+                            Res.SelectedLight = Prev.SelectedLight;
+                            Res.SelectedUvU = Prev.SelectedUvU;
+                            Res.SelectedUvV = Prev.SelectedUvV;
+                            SelectedPHat = PPrev;
+                        }
+                        Res.SampleCount += PrevCapped;
+                        Res.WeightSum = Total;
+                        ClampReservoirM(Res);
+                        Res.Age = Prev.Age + 1u;
+                        // W from the reservoir's own sum, not the local `Total`: ClampReservoirM may have rescaled it,
+                        //    and W must stay the estimate the sum encodes. (Without a cap the two are equal to the bit.)
+                        Res.UnbiasedWeight = SelectedPHat > 0.0f ? Res.WeightSum / (static_cast<float>(Res.SampleCount) * SelectedPHat) : 0.0f;
+                    }
+                }
+            }
+
+            // Spatial reuse: K taps on a rotated cross, read from the stable previous buffer (a separate RNG stream,
+            //    seeded from pixel and frame, exactly like the kernel's tapSeed).
+            {
+                // Seeded from the pixel AND the frame, like the kernel's tapSeed (MakeSeed(pixel, FrameIndex)): the
+                //    cross is re-aimed and re-reached every frame, so no direction is systematically favoured over time.
+                Rng TapRng((static_cast<uint32_t>(Y) * 73856093u) ^ (static_cast<uint32_t>(X) * 19349663u)
+                           ^ (static_cast<uint32_t>(State.FrameIndex + 1) * 83492791u) ^ 0x9E3779B9u);
+                const float Scale = static_cast<float>(Width) / 1280.0f;
+                const float Angle = TapRng.Next() * 6.28318531f;
+                const float Radius = (kRestirRadiusMinPx + (kRestirRadiusMaxPx - kRestirRadiusMinPx) * TapRng.Next()) * Scale;
+                const uint32_t Taps = std::min<uint32_t>(g_RestirSpatialTaps, kRestirTapCeiling);
+                for (uint32_t Tap = 0u; Tap < Taps; ++Tap)
+                {
+                    const float Theta = Angle + static_cast<float>(Tap) * (6.28318531f / static_cast<float>(Taps));
+                    const int OffX = static_cast<int>(lroundf(Radius * cosf(Theta)));
+                    const int OffY = static_cast<int>(lroundf(Radius * sinf(Theta)));
+                    if (OffX == 0 && OffY == 0) continue;
+                    const int NX = X + OffX, NY = Y + OffY;
+                    if (NX < 0 || NY < 0 || NX >= Width || NY >= Height) continue;
+                    const CpuReservoir& Neigh = State.Previous[static_cast<size_t>(NY) * Width + NX];
+                    const uint32_t NeighM = Neigh.SampleCount;
+                    const bool NValid = NeighM > 0u
+                        && Neigh.StrideWidth == static_cast<float>(Width)
+                        && dot(Ng, Neigh.Normal) > kRestirNormalCos
+                        && fabsf(H.T - Neigh.Depth) / max(H.T, 1.0e-3f) < kRestirDepthTol;
+                    if (!NValid) continue;
+                    const uint32_t NeighCapped = std::min(NeighM, kRestirMClamp * Res.SampleCount);
+                    const float PNeigh = PHatSelected(m, L, Ng, T, B, Ns, wo, Neigh.SelectedLight, Neigh.SelectedPoint - P);
+                    const float PSelf = SelectedPHat;
+                    const float WSelf = PSelf * Res.UnbiasedWeight * static_cast<float>(Res.SampleCount);
+                    const float WNeigh = PNeigh * Neigh.UnbiasedWeight * static_cast<float>(NeighCapped);
+                    const float NTotal = WSelf + WNeigh;
+                    uint32_t TakeAge = Res.Age;
+                    if (NTotal > 0.0f && R.Next() * NTotal <= WNeigh)
+                    {
+                        Res.SelectedPoint = Neigh.SelectedPoint;
+                        Res.SelectedLight = Neigh.SelectedLight;
+                        Res.SelectedUvU = Neigh.SelectedUvU;
+                        Res.SelectedUvV = Neigh.SelectedUvV;
+                        TakeAge = Neigh.Age + 1u;
+                        SelectedPHat = PNeigh;
+                    }
+                    Res.SampleCount += NeighCapped;
+                    Res.WeightSum = NTotal;
+                    ClampReservoirM(Res);
+                    Res.Age = TakeAge;
+                    Res.UnbiasedWeight = SelectedPHat > 0.0f ? Res.WeightSum / (static_cast<float>(Res.SampleCount) * SelectedPHat) : 0.0f;
+                }
+            }
+        }
+
+        // Visibility re-traced at the current pixel; an occluded merged sample contributes nothing.
+        const bool Blocked = Res.SelectedLight == kRestirSunLight
+            ? Occluded(P + Ng * 1.0e-4f, P + normalize(Res.SelectedPoint - P) * 1.0e4f)
+            : Occluded(P + Ng * 1.0e-4f, Res.SelectedPoint - normalize(Res.SelectedPoint - P) * 1.0e-3f);
+        Res.Visible = Blocked ? 0u : 1u;
+        if (Res.Visible == 0u) Res.UnbiasedWeight = 0.0f;
+    }
+
+    Slot = Res;
+
+    vec3 Acc(0.0f);
+    if (Res.Visible == 1u && Res.SampleCount > 0u)
+    {
+        const vec3 ShadeDir = normalize(Res.SelectedPoint - P);
+        const float ShadeCos = max(0.0f, dot(Ng, ShadeDir));
+        const vec3 Wi(dot(ShadeDir, T), dot(ShadeDir, B), dot(ShadeDir, Ns));
+        const vec3 F = Wi.z > 0.0f ? EvaluateBsdf(m, L, wo, Wi) : vec3(0.0f);
+        if (Res.SelectedLight == kRestirSunLight)
+            Acc = F * SunEmissionRender() * ShadeCos * Res.UnbiasedWeight;
+        else
+        {
+            const EmissiveTriangle& Q = g_Lights[Res.SelectedLight];
+            const float ShadeCosL = max(0.0f, dot(Q.Ng, -ShadeDir));
+            const float Dist2 = dot(Res.SelectedPoint - P, Res.SelectedPoint - P);
+            Acc = F * Q.Radiance * ShadeCos * ShadeCosL * Res.UnbiasedWeight / (Dist2 + 0.01f);
+        }
+    }
+    return Acc;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    INTEGRATOR
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -492,7 +915,7 @@ float SssChord(const vec3& P, const vec3& N)
     return H.Valid ? H.T : 1e30f;
 }
 
-vec3 Radiance(vec3 O, vec3 D, Rng& R, int Bounces)
+vec3 Radiance(vec3 O, vec3 D, Rng& R, int Bounces, bool SkipPrimaryDirect = false)
 {
     vec3 L(0.0f), Beta(1.0f);
     int Skip = -1;
@@ -503,6 +926,7 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R, int Bounces)
     bool NeeSkipped = false;
     for (int Depth = 0; Depth < Bounces + 4; ++Depth)
     {
+        const bool ReservoirOwnsDirect = SkipPrimaryDirect && Depth == 0;
         Hit H = Intersect(O, D, 1e30f, Skip);
         Skip = -1;
         const bool PrevNeeSkipped = NeeSkipped;
@@ -534,6 +958,10 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R, int Bounces)
 
         if (T.Light >= 0)
         {
+            // DIAGNOSTIC (--restir-bounce-mis): with the reservoir owning the primary pixel's direct integral, a
+            //    first-bounce emitter hit is that same integral seen through the BSDF strategy a second time. The
+            //    kernel adds it unweighted; this switch measures what excluding it does.
+            if (g_RestirBounceMis && SkipPrimaryDirect && Depth == 1) break;
             const vec3 Ng = normalize(cross(T.P1 - T.P0, T.P2 - T.P0));
             if (dot(D, Ng) < 0.0f)
             {
@@ -586,8 +1014,14 @@ vec3 Radiance(vec3 O, vec3 D, Rng& R, int Bounces)
             Lr.SolidInterface = true;
             Lr.IncidentIor = FromInside ? Lr.SpecularEta : 1.0f;
         }
-        if (!FromInside) L += Beta * (DirectMIS(m, Lr, P, Ns, Tt, Bt, wo, R) + DirectMISsss(m, Lr, P, Ns, Tt, Bt, wo, R)
-                                      + SunNee(m, Lr, P, Ns, Tt, Bt, wo, R));
+        if (!FromInside)
+        {
+            if (ReservoirOwnsDirect)
+                L += Beta * DirectMISsss(m, Lr, P, Ns, Tt, Bt, wo, R);   // the below-stratum stays outside the reservoir
+            else
+                L += Beta * (DirectMIS(m, Lr, P, Ns, Tt, Bt, wo, R) + DirectMISsss(m, Lr, P, Ns, Tt, Bt, wo, R)
+                             + SunNee(m, Lr, P, Ns, Tt, Bt, wo, R));     // untouched: the reference/plain panels' estimator
+        }
         else
             NeeSkipped = true;   // interior: an occlusion test would hit the exit wall — skip the light strata
 
@@ -764,6 +1198,300 @@ bool BuildLevel()
     return true;
 }
 
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                    SEQUENCE RENDER — frames, the running mean, and the filter
+//------------------------------------------------------------------------------------------------------------------------
+// The app renders one frame per dispatch and accumulates in ResolveSurface; a sheet needs the same thing off-GPU, so
+//    this is that loop: N frames, a camera that may drift (to put the reprojection to work), the kernel's own
+//    accumulator per pixel, and — when asked — the shipped à-trous chain over the result, level by level, exactly as
+//    SwapchainExchange dispatches it.
+
+struct SequenceResult
+{
+    std::vector<float> Mean;        // [W*H*3] the running mean, linear radiance (what ResolveSurface publishes)
+    std::vector<float> Surface;     // [W*H*4] normal xyz + depth in w (0 = sky): the filter's geometry buffer
+    std::vector<float> Variance;    // [W*H]   the variance of the mean the kernel's recursion reports
+    long               NonFinite = 0;
+    double             ReservoirCoverage = 0.0;   // [%] pixels whose reservoir survived the frame
+    double             MeanReservoirM = 0.0;      // [-] mean M over the surface pixels (reuse is visible here)
+};
+
+SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Spp, int Bounces, int Frames,
+                              float PanPerFrame, bool UseRestir, unsigned Threads, bool Verbose)
+{
+    SequenceResult Out;
+    Out.Mean.assign(static_cast<size_t>(Width) * Height * 3u, 0.0f);
+    Out.Surface.assign(static_cast<size_t>(Width) * Height * 4u, 0.0f);
+    Out.Variance.assign(static_cast<size_t>(Width) * Height, 0.0f);
+
+    // The running mean. The kernel keeps it in HistoryImage/HistorySurfaceImage and REPROJECTS it through the R2
+    //    motion vectors (ResolveSurface, R7a), so the CPU mirror does too: read the previous frame's texel the motion
+    //    points at, validate with the 25° / 10 % rule, write this frame's mean back at the pixel's own address.
+    //    Double-buffered — the shader reads and writes one image in a single dispatch, which is a read-write hazard on
+    //    a GPU (a neighbour's write can land before a reprojected read); the mirror reads a stable previous frame.
+    const size_t PixelCount = static_cast<size_t>(Width) * Height;
+    std::vector<DenoiseMirror::Accumulator> FilmPrevious(PixelCount), FilmCurrent(PixelCount);
+    std::vector<float> FilmSurfacePrevious(PixelCount * 4u, 0.0f), FilmSurfaceCurrent(PixelCount * 4u, 0.0f);
+    std::mutex TallyMutex;   // the row threads' per-frame tallies land here
+    RestirFrameState State;
+    State.Current.resize(PixelCount);
+    State.Previous.resize(PixelCount);
+
+    // The base camera, then one pose per frame: `PanPerFrame` metres along the view's right vector, out and back —
+    //    a TRIANGULAR excursion, so the last frame sits exactly on the base pose again. That is what makes the pan
+    //    A/B measurable: with the reprojection on, the running mean follows the surface out and back and the closing
+    //    frame is the base view with its samples intact; with the pre-R7a same-pixel read, the closing frame is a
+    //    blend of every pose the pixel passed through (and the error against ① shows it).
+    Frontier::CameraProjection Base;
+    Base.AssignSpatialLocation(VP.Position);
+    Base.AssignOrientationEuler(VP.PitchDegrees * kPi / 180.0f, VP.YawDegrees * kPi / 180.0f, 0.0f);
+    Base.AssignFieldOfView(VP.FieldOfView);
+    Base.AssignAspectRatio(static_cast<float>(Width) / static_cast<float>(Height));
+
+    bool SunUp = false;
+    for (const EmissiveTriangle& L : g_Lights) (void)L;
+    SunUp = dot(g_SunDirRender, g_SunDirRender) > 0.0f && SkyRadianceWorld(g_SunDirRender).y > 0.0f;
+
+    for (int F = 0; F < Frames; ++F)
+    {
+        Frontier::CameraProjection Camera = Base;
+        if (PanPerFrame != 0.0f)
+        {
+            const int Peak = (Frames - 1) / 2;                       // 0 … Peak … 0: the excursion returns home
+            const int Drift = F <= Peak ? F : (Frames - 1 - F);
+            const Frontier::Vector3 R = Base.QueryRightVector();
+            Camera.AssignSpatialLocation(Frontier::Vector3{ VP.Position.x + R.x * PanPerFrame * static_cast<float>(Drift),
+                                                            VP.Position.y + R.y * PanPerFrame * static_cast<float>(Drift),
+                                                            VP.Position.z + R.z * PanPerFrame * static_cast<float>(Drift) });
+        }
+        const CameraPose Pose = CapturePose(Camera);
+        if (UseRestir)
+        {
+            State.FrameIndex = F;
+            State.HasPrevious = F > 0;
+            if (F > 0) State.PreviousPose = State.LastPose;
+            State.LastPose = Pose;
+        }
+
+        double CoverageSum = 0.0, MSum = 0.0;
+        double OccludedSum = 0.0;   // surface pixels whose merged selection failed its shadow re-trace this frame
+        double ReprojectedSum = 0.0, MovedSum = 0.0, DisocclusionSum = 0.0;   // the film's R7a history read, by outcome
+        double SurfaceSum = 0.0, CountSum = 0.0;   // the film's own tallies: surface pixels, mean samples behind them
+        uint32_t MaxM = 0u;
+        long FrameNonFinite = 0;
+        std::vector<std::thread> Pool;
+        for (unsigned Th = 0u; Th < Threads; ++Th)
+            Pool.emplace_back([&, Th]()
+            {
+                long LocalBad = 0;
+                double LocalCoverage = 0.0, LocalM = 0.0, LocalOccluded = 0.0;
+                double LocalReprojected = 0.0, LocalMoved = 0.0, LocalDisocclusion = 0.0;
+                double LocalSurfaces = 0.0, LocalCountSum = 0.0;
+                uint32_t LocalMaxM = 0u;
+                for (int Y = static_cast<int>(Th); Y < Height; Y += static_cast<int>(Threads))
+                    for (int X = 0; X < Width; ++X)
+                    {
+                        const size_t Pixel = static_cast<size_t>(Y) * Width + X;
+                        DenoiseMirror::Accumulator& Accumulator = FilmCurrent[Pixel];
+                        Accumulator = DenoiseMirror::Accumulator();
+
+                        // Primary visibility at the pixel CENTRE: the app's G-buffer (ray-traced on the GPU), what
+                        //    Out.Surface publishes to the filter, and the normal/depth ResolveSurface validates the
+                        //    film's reprojected read against.
+                        const float CurU = (static_cast<float>(X) + 0.5f) / static_cast<float>(Width);
+                        const float CurV = (static_cast<float>(Y) + 0.5f) / static_cast<float>(Height);
+                        float Depth = 0.0f;
+                        vec3 Normal(0.0f, 0.0f, 1.0f);
+                        float MotionU = 0.0f, MotionV = 0.0f;
+                        {
+                            const Frontier::ViewRay CentreRay = Camera.ConstructRay(CurU, CurV);
+                            const vec3 CO(CentreRay.OriginLocation.x, CentreRay.OriginLocation.y, CentreRay.OriginLocation.z);
+                            const vec3 CD = normalize(vec3(CentreRay.UnitDirection.x, CentreRay.UnitDirection.y,
+                                                           CentreRay.UnitDirection.z));
+                            const Hit CentreHit = Intersect(CO, CD, 1.0e30f, -1);
+                            if (CentreHit.Valid)
+                            {
+                                const RenderTriangle& Tri = g_Tris[CentreHit.TriId];
+                                Depth = CentreHit.T;
+                                Normal = normalize(cross(Tri.P1 - Tri.P0, Tri.P2 - Tri.P0));
+                                if (dot(Normal, CD) > 0.0f) Normal = -Normal;
+                                if (State.HasPrevious)
+                                {
+                                    float PrevU = 0.0f, PrevV = 0.0f;
+                                    const vec3 HitPoint = CO + CD * CentreHit.T;
+                                    if (ProjectPoint(State.PreviousPose, HitPoint, PrevU, PrevV))
+                                    {
+                                        MotionU = CurU - PrevU;
+                                        MotionV = CurV - PrevV;
+                                    }
+                                }
+                            }
+                        }
+
+                        // ResolveSurface's history read: reproject the mean through the motion vectors, validated with
+                        //    the SAME rule the reservoirs use. A failure is disocclusion — restart at n = 1 rather than
+                        //    smear a neighbour's colour across the silhouette. With the feature off, or on a background
+                        //    pixel (no surface, so no motion), the read is the pixel's own address: the pre-R7a rule.
+                        if (F > 0)
+                        {
+                            bool Resolved = false;
+                            if (Depth > 0.0f && !g_RestirNoReproject)
+                            {
+                                const float PU = CurU - MotionU, PV = CurV - MotionV;
+                                const int PrevX = static_cast<int>(floorf(PU * static_cast<float>(Width)));
+                                const int PrevY = static_cast<int>(floorf(PV * static_cast<float>(Height)));
+                                if (PrevX >= 0 && PrevY >= 0 && PrevX < Width && PrevY < Height)
+                                {
+                                    const size_t PrevPixel = static_cast<size_t>(PrevY) * Width + PrevX;
+                                    const float* PrevSurf = &FilmSurfacePrevious[PrevPixel * 4u];
+                                    if (PrevSurf[3] > 0.0f
+                                        && dot(Normal, vec3(PrevSurf[0], PrevSurf[1], PrevSurf[2])) > kRestirNormalCos
+                                        && fabsf(Depth - PrevSurf[3]) / max(Depth, 1.0e-3f) < kRestirDepthTol)
+                                    {
+                                        Accumulator = FilmPrevious[PrevPixel];
+                                        LocalReprojected += 1.0;
+                                        if (PrevPixel != Pixel) LocalMoved += 1.0;
+                                        Resolved = true;
+                                    }
+                                    else { LocalDisocclusion += 1.0; Resolved = true; }   // a real disocclusion: count restarts at 0
+                                }
+                                else { LocalDisocclusion += 1.0; Resolved = true; }       // off screen — also a disocclusion
+                            }
+                            if (!Resolved) Accumulator = FilmPrevious[Pixel];
+                        }
+                        for (int S = 0; S < Spp; ++S)
+                        {
+                            Rng R((static_cast<uint32_t>(Y) * 73856093u) ^ (static_cast<uint32_t>(X) * 19349663u)
+                                  ^ (static_cast<uint32_t>(F * Spp + S + 1) * 83492791u));
+                            const float U = (static_cast<float>(X) + R.Next()) / static_cast<float>(Width);
+                            const float V = (static_cast<float>(Y) + R.Next()) / static_cast<float>(Height);
+                            const Frontier::ViewRay Ray = Camera.ConstructRay(U, V);
+                            const vec3 O(Ray.OriginLocation.x, Ray.OriginLocation.y, Ray.OriginLocation.z);
+                            const vec3 D = normalize(vec3(Ray.UnitDirection.x, Ray.UnitDirection.y, Ray.UnitDirection.z));
+                            vec3 L;
+                            if (UseRestir)
+                            {
+                                float SampleDepth = 0.0f;
+                                vec3 SampleNormal(0.0f, 0.0f, 1.0f);
+                                const vec3 Direct = RestirDirect(O, D, R, 1, SunUp, State, Width, Height, X, Y,
+                                                                 SampleDepth, SampleNormal);
+                                L = Direct + Radiance(O, D, R, Bounces, true);
+                            }
+                            else
+                            {
+                                L = Radiance(O, D, R, Bounces, false);
+                            }
+                            const float Sample[3] = { L.x, L.y, L.z };
+                            float RadianceOut[3], VarianceOut = 0.0f;
+                            Accumulator.Resolve(Sample, RadianceOut, &VarianceOut);
+                            for (int C = 0; C < 3; ++C)
+                                if (!(RadianceOut[C] >= 0.0f) || RadianceOut[C] > 1.0e7f) ++LocalBad;
+                            Out.Mean[(static_cast<size_t>(Y) * Width + X) * 3u + 0u] = RadianceOut[0];
+                            Out.Mean[(static_cast<size_t>(Y) * Width + X) * 3u + 1u] = RadianceOut[1];
+                            Out.Mean[(static_cast<size_t>(Y) * Width + X) * 3u + 2u] = RadianceOut[2];
+                            Out.Variance[static_cast<size_t>(Y) * Width + X] = VarianceOut;
+                        }
+                        float* Surf = &Out.Surface[Pixel * 4u];
+                        Surf[0] = Normal.x; Surf[1] = Normal.y; Surf[2] = Normal.z; Surf[3] = Depth;
+                        float* FilmSurf = &FilmSurfaceCurrent[Pixel * 4u];
+                        FilmSurf[0] = Normal.x; FilmSurf[1] = Normal.y; FilmSurf[2] = Normal.z; FilmSurf[3] = Depth;
+                        if (Depth > 0.0f)
+                        {
+                            LocalCountSum += static_cast<double>(Accumulator.Count);
+                            LocalSurfaces += 1.0;
+                        }
+                        if (UseRestir && Depth > 0.0f)
+                        {
+                            const CpuReservoir& Res = State.Current[Pixel];
+                            LocalCoverage += 1.0;
+                            LocalM += static_cast<double>(Res.SampleCount);
+                            if (Res.SampleCount > LocalMaxM) LocalMaxM = Res.SampleCount;
+                            if (Res.Visible == 0u) LocalOccluded += 1.0;
+                        }
+                    }
+                {
+                    std::lock_guard<std::mutex> Guard(TallyMutex);
+                    FrameNonFinite += LocalBad;
+                    CoverageSum += LocalCoverage;
+                    MSum += LocalM;
+                    OccludedSum += LocalOccluded;
+                    ReprojectedSum += LocalReprojected;
+                    MovedSum += LocalMoved;
+                    DisocclusionSum += LocalDisocclusion;
+                    SurfaceSum += LocalSurfaces;
+                    CountSum += LocalCountSum;
+                    if (LocalMaxM > MaxM) MaxM = LocalMaxM;
+                }
+            });
+        for (std::thread& T : Pool) T.join();
+        Out.NonFinite += FrameNonFinite;
+        const bool FrameSurface = SurfaceSum > 0.0;
+        if (Verbose && (UseRestir || PanPerFrame != 0.0f))
+            std::printf("[film]   frame %3d: running mean reprojected on %.1f%% of surface pixels (%.1f%% of those to a "
+                        "moved texel), %.1f%% restarted on disocclusion, %.0f samples behind the mean\n",
+                        F + 1, FrameSurface ? 100.0 * ReprojectedSum / SurfaceSum : 0.0,
+                        ReprojectedSum > 0.0 ? 100.0 * MovedSum / ReprojectedSum : 0.0,
+                        FrameSurface ? 100.0 * DisocclusionSum / SurfaceSum : 0.0,
+                        FrameSurface ? CountSum / SurfaceSum : 0.0);
+        if (UseRestir)
+        {
+            long SurfacePixels = 0;
+            for (size_t I = 0; I < Out.Variance.size(); ++I) if (Out.Surface[I * 4u + 3u] > 0.0f) ++SurfacePixels;
+            Out.ReservoirCoverage = SurfacePixels > 0 ? 100.0 * CoverageSum / static_cast<double>(SurfacePixels) : 0.0;
+            Out.MeanReservoirM = CoverageSum > 0.0 ? MSum / CoverageSum : 0.0;
+            if (Verbose)
+                std::printf("[restir] frame %3d: %zu surface pixels, reservoirs on %.1f%% of them, mean M %.1f (max M %u), "
+                            "occluded selections %.1f%%, %ld bad samples%s\n",
+                            F + 1, static_cast<size_t>(SurfacePixels), Out.ReservoirCoverage, Out.MeanReservoirM, MaxM,
+                            CoverageSum > 0.0 ? 100.0 * OccludedSum / CoverageSum : 0.0, FrameNonFinite,
+                            MaxM > 100000000u ? "  ⚠ M is approaching the uint32 ceiling the kernel stores it in" : "");
+        }
+        std::swap(FilmPrevious, FilmCurrent);
+        std::swap(FilmSurfacePrevious, FilmSurfaceCurrent);
+        std::swap(State.Previous, State.Current);
+    }
+    return Out;
+}
+
+// The shipped à-trous chain, dispatched the way SwapchainExchange does it: one level per call, StepSize 1 << level,
+//    the engine's σn/σz/σl, the filter's own 8×8 workgroup per level, the presentation tone map on the last live level.
+void ApplyAtrousChain(SequenceResult& Result, int Extent, int Levels, float Exposure)
+{
+    const size_t Count = static_cast<size_t>(Extent) * Extent;
+    std::vector<float> A(Count * 4u, 0.0f), B(Count * 4u, 0.0f);
+    for (size_t I = 0; I < Count; ++I)
+    {
+        A[I * 4u + 0u] = Result.Mean[I * 3u + 0u];
+        A[I * 4u + 1u] = Result.Mean[I * 3u + 1u];
+        A[I * 4u + 2u] = Result.Mean[I * 3u + 2u];
+        A[I * 4u + 3u] = Result.Variance[I];
+    }
+    std::vector<float> Output(Count * 4u, 0.0f);
+    bool SourceIsA = true;
+    for (int Level = 0; Level < Levels; ++Level)
+    {
+        DenoiseMirror::RunConfiguration Config;
+        Config.Extent = static_cast<uint32_t>(Extent);
+        Config.StepSize = 1u << Level;
+        Config.Enabled = true;
+        Config.FinalLevel = (Level == Levels - 1);
+        Config.Exposure = Exposure;
+        Config.ColourSaturation = 1.0f;
+        DenoiseMirror::Run(Config, (SourceIsA ? A : B).data(), Result.Surface.data(),
+                           (SourceIsA ? B : A).data(), Output.data());
+        SourceIsA = !SourceIsA;
+    }
+    const std::vector<float>& Filtered = SourceIsA ? A : B;
+    for (size_t I = 0; I < Count; ++I)
+    {
+        Result.Mean[I * 3u + 0u] = Filtered[I * 4u + 0u];
+        Result.Mean[I * 3u + 1u] = Filtered[I * 4u + 1u];
+        Result.Mean[I * 3u + 2u] = Filtered[I * 4u + 2u];
+        Result.Variance[I] = Filtered[I * 4u + 3u];
+    }
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -777,8 +1505,13 @@ int main(int ArgumentCount, char** ArgumentValues)
     std::string View = "default";
     std::string FogName = "clear";
     int Width = 960, Height = 540, Spp = 64, Bounces = 6;
+    int Frames = 1;             // accumulation frames: the app's own ResolveSurface loop, off-GPU
+    int DenoiseLevels = 5;      // the shipped chain's ceiling (ReSTIRIntegratorConfiguration::DenoiseLevelCount)
     double SunHour = 17.93;
     float Exposure = 1.05f;
+    float PanPerFrame = 0.0f;   // [m/frame] camera drift, so the reprojection has something to reproject
+    bool  UseRestir = false;    // the CPU ReSTIR DI mirror (see the block above)
+    bool  Denoise = false;      // the shipped à-trous chain over the accumulated film
     unsigned Threads = std::thread::hardware_concurrency();
     if (Threads == 0u) Threads = 2u;
 
@@ -802,11 +1535,23 @@ int main(int ArgumentCount, char** ArgumentValues)
         else if (A == "--threads")  Threads = static_cast<unsigned>(std::atoi(Next("--threads")));
         else if (A == "--no-sun")   g_SunNee = false;
         else if (A == "--row")      g_RowFilter = std::atoi(Next("--row"));
+        else if (A == "--frames")   Frames = std::atoi(Next("--frames"));
+        else if (A == "--pan")      PanPerFrame = static_cast<float>(std::atof(Next("--pan")));
+        else if (A == "--restir")   UseRestir = true;
+        else if (A == "--no-reproject") g_RestirNoReproject = true;
+        else if (A == "--no-sun-coin") g_RestirNoSunCoin = true;
+        else if (A == "--taps")     g_RestirSpatialTaps = static_cast<uint32_t>(std::atoi(Next("--taps")));
+        else if (A == "--restir-bounce-mis") g_RestirBounceMis = true;
+        else if (A == "--m-cap")    g_RestirMCap = static_cast<uint32_t>(std::atoi(Next("--m-cap")));
+        else if (A == "--denoise")  Denoise = true;
+        else if (A == "--denoise-levels") DenoiseLevels = std::atoi(Next("--denoise-levels"));
         else if (A == "--help")
         {
             std::printf("usage: MaterialLevelViewport [--out file.png] [--view default|wide|glass|row5] [--row N]\n"
                         "                            [--width W] [--height H] [--spp N] [--bounce N] [--sun H]\n"
-                        "                            [--fog clear|morning|backlit] [--exposure X] [--threads N]\n");
+                        "                            [--fog clear|morning|backlit] [--exposure X] [--threads N]\n"
+                        "                            [--frames N] [--pan metres] [--restir] [--no-reproject]\n"
+                        "                            [--denoise] [--denoise-levels N]\n");
             return 0;
         }
         else { std::printf("[material-level] unknown argument '%s' (try --help)\n", A.c_str()); return 2; }
@@ -836,49 +1581,36 @@ int main(int ArgumentCount, char** ArgumentValues)
                 SunHour, g_SunDirRender.x, g_SunDirRender.y, g_SunDirRender.z, FogName.c_str());
 
     const Viewpoint VP = ViewpointFor(View);
-    Frontier::CameraProjection Camera;
-    Camera.AssignSpatialLocation(VP.Position);
-    Camera.AssignOrientationEuler(VP.PitchDegrees * kPi / 180.0f, VP.YawDegrees * kPi / 180.0f, 0.0f);
-    Camera.AssignFieldOfView(VP.FieldOfView);
-    Camera.AssignAspectRatio(static_cast<float>(Width) / static_cast<float>(Height));
-    std::printf("[material-level] view '%s': eye (%.2f %.2f %.2f), pitch %.1f°, yaw %.1f°, FoV %.0f°, %dx%d @ %d spp, %d bounces\n",
+    std::printf("[material-level] view '%s': eye (%.2f %.2f %.2f), pitch %.1f°, yaw %.1f°, FoV %.0f°, %dx%d @ %d spp, %d bounces, %d frame%s%s%s%s\n",
                 View.c_str(), VP.Position.x, VP.Position.y, VP.Position.z, VP.PitchDegrees, VP.YawDegrees, VP.FieldOfView,
-                Width, Height, Spp, Bounces);
+                Width, Height, Spp, Bounces, Frames, Frames == 1 ? "" : "s",
+                UseRestir ? ", RESTIR DI (CPU mirror)" : "",
+                PanPerFrame != 0.0f ? ", camera pan" : "",
+                Denoise ? ", à-trous" : "");
 
     Frontier::ShadingTableSet Tables = Frontier::ShadingTableCodec::Bake(1024u);
     g_Tables = &Tables;
 
-    std::vector<float> Film(static_cast<size_t>(Width) * Height * 3u, 0.0f);
-    std::vector<std::thread> Pool;
-    for (unsigned Th = 0u; Th < Threads; ++Th)
-        Pool.emplace_back([&, Th]()
-        {
-            for (int Y = static_cast<int>(Th); Y < Height; Y += static_cast<int>(Threads))
-                for (int X = 0; X < Width; ++X)
-                {
-                    double Sum[3] = { 0.0, 0.0, 0.0 };
-                    for (int S = 0; S < Spp; ++S)
-                    {
-                        Rng R((static_cast<uint32_t>(Y) * 73856093u) ^ (static_cast<uint32_t>(X) * 19349663u)
-                              ^ (static_cast<uint32_t>(S + 1) * 83492791u));
-                        // CameraProjection::ConstructRay takes screen coordinates in [0, 1] (it applies 2u − 1 itself,
-                        //    with the vertical FoV and the aspect on X) — feeding it [−1, 1] would render a 2×-wide,
-                        //    off-centre crop of the level.
-                        const float U = (static_cast<float>(X) + R.Next()) / static_cast<float>(Width);
-                        const float V = (static_cast<float>(Y) + R.Next()) / static_cast<float>(Height);
-                        const Frontier::ViewRay Ray = Camera.ConstructRay(U, V);
-                        const vec3 RadianceValue = Radiance(vec3(Ray.OriginLocation.x, Ray.OriginLocation.y, Ray.OriginLocation.z),
-                                                            normalize(vec3(Ray.UnitDirection.x, Ray.UnitDirection.y, Ray.UnitDirection.z)),
-                                                            R, Bounces);
-                        Sum[0] += RadianceValue.x; Sum[1] += RadianceValue.y; Sum[2] += RadianceValue.z;
-                    }
-                    float* Pixel = &Film[(static_cast<size_t>(Y) * Width + X) * 3u];
-                    Pixel[0] = static_cast<float>(Sum[0] / Spp);
-                    Pixel[1] = static_cast<float>(Sum[1] / Spp);
-                    Pixel[2] = static_cast<float>(Sum[2] / Spp);
-                }
-        });
-    for (std::thread& T : Pool) T.join();
+    if (Denoise && Width != Height)
+    {
+        std::printf("[material-level] RED — --denoise runs the shipped filter, whose dispatch is square (8×8 workgroup); "
+                    "render a square panel\n");
+        return 2;
+    }
+
+    std::printf("[material-level] %s\n", UseRestir
+        ? "estimator: the kernel's DI block on the CPU — RIS candidates, temporal + spatial reuse (25° / 10 % validation, "
+          "20× M-clamp, pairwise MIS), visibility re-trace; indirect from the same BSDF-sampled bounce."
+        : "estimator: brute-force accumulation — NEE with MIS for lamps, the sun's disc, and the sky on a missed ray.");
+    if (UseRestir && g_RestirNoReproject)
+        std::printf("[material-level] reprojection DISABLED: the temporal merge reads the same pixel (the pre-R7a rule)\n");
+
+    SequenceResult Sequence = RenderSequence(VP, Width, Height, Spp, Bounces, Frames, PanPerFrame, UseRestir, Threads, true);
+    if (Denoise) ApplyAtrousChain(Sequence, Width, DenoiseLevels, Exposure);
+    const std::vector<float>& Film = Sequence.Mean;
+    if (UseRestir)
+        std::printf("[material-level] reservoirs: %.1f %% of surface pixels held one, mean M %.1f\n",
+                    Sequence.ReservoirCoverage, Sequence.MeanReservoirM);
 
     // Presentation: the engine's own transfer, at the engine's own manual exposure.
     ColourTransfer Transfer;
@@ -897,7 +1629,7 @@ int main(int ArgumentCount, char** ArgumentValues)
         ColourPipeline::ApplyToByte(Transfer, Linear, &Png[I]);
     }
     Mean /= static_cast<double>(Film.size() / 3u);
-    std::printf("[material-level] film: mean %.4f, %ld non-finite/out-of-range samples\n", Mean, Bad);
+    std::printf("[material-level] film: mean %.4f, %ld non-finite/out-of-range samples\n", Mean, Bad + Sequence.NonFinite);
 
     const int Ok = PngWriteCounterpart::WritePng(OutPath.c_str(), Width, Height, 3, Png.data(), Width * 3);
     std::printf("[material-level] %s -> %s\n", Ok != 0 ? "wrote" : "FAILED", OutPath.c_str());

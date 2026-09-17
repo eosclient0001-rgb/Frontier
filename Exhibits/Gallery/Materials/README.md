@@ -74,3 +74,40 @@ same shader text, same lights, same radiance.
 - Deliberately absent: the sky core's panel post (vignette/flare), the fog march (the level's scenario is Clear), and
   textures (the level is constants-only by design — see the M10 section of the proofs report). Below the sky horizon
   the atmosphere's dark planet ground shows, exactly as the engine returns it.
+
+## ReSTIR sheet — the shipped kernel's direct block, CPU-simulated (2026-09-17)
+
+`RestirSheet_StandardTier.png` (660×1040): six panels of the M10 level answering the question "what would I see if I
+ran this on my GPU" without one. The Vulkan build draws the level with `Engine/Shaders/ReSTIRViewport.slang`
+(bindless tables, a BVH in buffers, storage images); the CPU viewport mirrors that kernel line for line — RIS
+candidates, temporal and spatial reservoir reuse, visibility re-traced at the shading pixel, and the running mean in
+`ResolveSurface` — constants included (25°/10 % validation, the 20× M clamp, the sun-pick probability, radius 4–16 px
+scaled by width/1280).
+
+| panel | what it is | RMSE vs ① (display space) |
+|---|---|---|
+| ① reference | brute force, 192 spp | — |
+| ② brute force | 4 spp × 16 frames (the same 64 samples) | 1268.26 (0.0194) |
+| ③ ReSTIR | Standard tier: 4 candidates × 16 frames, 2 spatial taps | 2308.00 (0.0352) |
+| ④ ReSTIR + à-trous | the product's actual pipeline (R7 filter over the R6 reuse) | 2272.37 (0.0347) |
+| ⑤ + camera excursion | ±0.70 m triangular pan, out and back; R7a reprojection on | 6545.49 (0.0999) |
+| ⑥ the same, pre-R7a | both history reads at the pixel's own address | 10186.5 (0.1554) |
+
+- **The R7a A/B is the headline**: the closing frame of a ±0.70 m excursion sits back on the base pose, and the
+  reprojected running mean gets there 36 % closer to the reference than the same-pixel read (6545 vs 10187), whose
+  spheres are smeared into streaks. The film reports the mechanism per frame: ⑤ reprojects 98.0 % of surface pixels
+  with 2.0 % disocclusion restarts and keeps 57 of its 64 samples; ⑥ reprojects 0 % and keeps 64 samples it never
+  should have.
+- **One measured caveat, stated plainly**: at equal sample budgets ③ is *noisier* than ② (2308 vs 1268). The cause is
+  measured, not guessed — with the spatial taps off (`--taps 0`) the same estimator converges to 1952.52 by 128
+  frames (240×135), while 2 taps stall at 4437.03 and 4 at 4660.38. The CPU mirror spends 100 % fidelity here, so the
+  arithmetic is what the shader's arithmetic is; whether the GPU stalls the same way is exactly what the spatial-tap
+  A/B on the Vulkan build should answer before any of this is called converged.
+- Harness: `Projects/Project-Zero/Host/MaterialLevelViewport.cpp` · driver:
+  `Exhibits/Workbench/Materials/RunRestirViewport.sh [fast|full]` (builds, renders, gates on non-finite samples,
+  prints the RMSE table and the sheet's sha256).
+- The plain path tracer is **kept on purpose** and is not superseded by the `--restir` mirror: it is the reference
+  oracle every ReSTIR and denoiser number here is measured against (the ① panels), it is the bit-stability floor
+  (AE = 1 on the 480×270 wide render), and it stays available for later cross-checks against the GPU frame.
+- Kept-sheet hash (2026-09-17, `full`): `4cde5583…`. Deterministic — per (pixel, sample, frame) seeds, no
+  time-dependent state.

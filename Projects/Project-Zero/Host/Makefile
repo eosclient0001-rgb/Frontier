@@ -41,7 +41,15 @@ VKINCLUDE := $(if $(VULKAN_ROOT),-I$(VULKAN_ROOT)/Vulkan-Headers/include,)
 #   --gc-sections drops MaterialSwatchStructure::Export (and the SceneCodec/cgltf chain behind it): the viewport reads
 #   the level's own triangles and records, it does not write the glTF the GPU imports — that is the app's and the M10
 #   gate's job. Same trick the materials gates use to keep their link lines free of the codec dependencies they never call.
-MaterialLevelViewport: MaterialLevelViewport.cpp \
+# The M9 filter, compiled 1:1 from Engine/Shaders/AtrousDenoise.slang: the viewport's --denoise panel is the shipped
+#   à-trous chain, not a lookalike. StageAtrousDenoise.py (the gate's own transform, shared) writes the two halves here.
+DENOISE_STAGE := $(CURDIR)/.staged-denoise
+
+$(DENOISE_STAGE)/AtrousDenoise.cpu.1.h: ../../../Engine/Shaders/AtrousDenoise.slang ../../../Exhibits/Workbench/Materials/StageAtrousDenoise.py
+	@mkdir -p $(DENOISE_STAGE)
+	@cd ../../.. && DO_STAGE=$(DENOISE_STAGE) python3 Exhibits/Workbench/Materials/StageAtrousDenoise.py
+
+MaterialLevelViewport: MaterialLevelViewport.cpp ../../../Exhibits/Workbench/Materials/AtrousDenoiseMirror.cpp $(DENOISE_STAGE)/AtrousDenoise.cpu.1.h \
 		../../../Engine/DisplayPresentation/ShadingTableCodec.cpp \
 		../../../Engine/ContentInterchange/MaterialIndex.cpp \
 		../../../Engine/ContentInterchange/MaterialSwatchStructure.cpp \
@@ -52,7 +60,9 @@ MaterialLevelViewport: MaterialLevelViewport.cpp \
 	$(CXX) -O2 -std=c++20 -Wall -Wextra -Werror -DFRONTIER_CPU_PORT -ffunction-sections -fdata-sections -Wl,--gc-sections $(VKINCLUDE) -I. -I../Shaders -I../Source -I../../../Engine/Shaders \
 		-I../../../Engine/DisplayPresentation -I../../../Engine/ContentInterchange -I../../../Engine/DeviceExchange \
 		-I../../../Engine/GeometricRaster -I../../../Exhibits/Workbench/Materials -I../../../Exhibits/Workbench/Editor \
+		-I$(DENOISE_STAGE) \
 		-o $@ MaterialLevelViewport.cpp \
+		../../../Exhibits/Workbench/Materials/AtrousDenoiseMirror.cpp \
 		../../../Engine/DisplayPresentation/ShadingTableCodec.cpp \
 		../../../Engine/ContentInterchange/MaterialIndex.cpp \
 		../../../Engine/ContentInterchange/MaterialSwatchStructure.cpp \
@@ -67,3 +77,4 @@ clean:
 	rm -f $(BIN) *.o
 
 .PHONY: all clean
+# .staged-denoise holds generated headers (StageAtrousDenoise.py output) — never committed.
