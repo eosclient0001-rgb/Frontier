@@ -1,13 +1,17 @@
 # Material Proofs Report — GREEN
 
-Date: 2026-09-17 · Branch: `arena/01a0aa50-slate` · Gates: `CheckMaterialsProof.sh` (dependency-free) + `CheckMaterialCodec.sh` (needs the interchange headers)
+Date: 2026-09-17 · Branch: `arena/01a0af43-slate` · Gates: `CheckMaterialsProof.sh` (dependency-free) ·
+`CheckMaterialCodec.sh` (interchange headers) · `CheckMaterialScenes.sh` · `CheckMaterialSwatches.sh` ·
+`CheckMaterialDenoise.sh` · `CheckMaterialInspector.sh` (needs the inspector's UI headers — not seated in this
+sandbox, so that one gate is RED for environment, not for regression)
 
-The gate compiles the two dependency-free CPU proofs with the system compiler (no Vulkan, no submodules) and
-runs them with a fixed splitmix64 seed, so every number below is **deterministic** — re-running the gate
-reproduces this transcript bit-for-bit (full logs: `/tmp/MaterialsProof.coverage.log`,
-`/tmp/MaterialsProof.furnace.log`).
+Each gate compiles its CPU proofs with the system compiler (no Vulkan, no GPU, no window; third-party headers come
+from `ExternalPackages/` or the `~/.cache` mirrors) and runs them with fixed seeds, so every number below is
+**deterministic** — re-running a gate reproduces its transcript bit-for-bit (logs: `/tmp/MaterialsProof.*.log`,
+`/tmp/MaterialCodec.log`, `/tmp/MaterialScenes.log`, `/tmp/MaterialSwatches.log`, `/tmp/MaterialDenoise.log`).
 
-**Score: 3,556 furnace checks + 110 coverage checks + 211 codec checks, 0 failures.**
+**Score: 110 coverage + 3,556 furnace + 211 codec + 158 inspector + 229 editable inspector + 102 scene + 65 swatch
++ 97 denoise checks, 0 failures (the inspector pair as shipped; its gate needs UI headers absent here).**
 
 ---
 
@@ -563,7 +567,74 @@ proof, together with the §5 render-verification backlog.
 
 ---
 
-## 11. What's next
+## 11. Re-enable milestone — M9: à-trous denoiser + motion-vector reprojection (97/97, SHIPPED 2026-09-17)
+
+The phase the merge deferred, and the last unshipped M-milestone: `Denoise` and `TemporalReprojection` were left
+in-tree but default **off** so M1–M10 could validate lobes on raw accumulated images, with the promise that the
+filter could never hide or fake lobe energy. **Reconnaissance finding: there was nothing left to re-enable.** At
+this tip both defaults are already `true` (`ReSTIRIntegratorConfiguration`, blame `2be1647f`), every tier carries a
+live à-trous chain (4 levels Minimal–Standard, 5 Ultra/Reference), and a probe linked against the real
+`ReSTIRIntegrator.cpp` prints `features=0xfb denoise=1 reproj=1 levels=5`. M9's deliverable was therefore the
+proof, not the flag — the evidence the deferral's rationale asked for, run on the shipped code.
+
+Gate: `bash Exhibits/Workbench/Materials/CheckMaterialDenoise.sh` → **97/97**, no GPU, no window, no imgui.
+New files `DenoiseCpuShim.h`, `AtrousDenoiseMirror.{h,cpp}`, `DenoiseReprojectionProof.cpp`, the gate script;
+`SlangCpuShim.h` gained additive read-only `.r/.g/.b/.a` and `vec4.rgb` proxies (the filter's tone map) — the
+shaderball sheet still re-renders to its committed hash `f84f6ac3…`, byte-identical.
+
+| § | What it establishes | Checks |
+|---|---|---|
+| A | the **live configuration**, compiled from the real `ReSTIRIntegrator.cpp` TU: both defaults ON, dispatch bits, all four denoise × reprojection toggle combinations, `AssignDenoise` (post-process — no accumulation reset) vs `AssignTemporalReprojection` (sampling change — reset spent), and the tier ladder's level counts | 13 (A1–A13) |
+| B | **text pins** for what cannot be compiled standalone — `ReSTIRViewport.slang`'s accumulation + reprojection sites (bindless tables + BVH), the dispatcher's 5-level chain, the push constants, and the filter's lobe-agnosticism | 33 (B0–B32) |
+| C | the **compiled filter**: transform re-derived byte for byte, identity switch, uniform pass-through, the two A/B cases, early-out ≡ full tap loop, edge stopping, variance propagation | 21 (C0.1–C6.4) |
+| D | the **reprojection rule** mirrored from `ResolveSurface`: static identity, tracked translation, off-screen disocclusion, 25° normal / 10 % depth validation, background, feature-off = pre-R7a | 9 (D1–D9) |
+| E | the **three-stream A/B** — lambertian, glass-BTDF (1 % fireflies), subsurface — accumulated 8192 frames each | 21 (E1–E4c) |
+
+**The filter is the shipped filter, not a transcription.** `Engine/Shaders/AtrousDenoise.slang` is compiled 1:1 as
+C++ by the gate script's four mechanical substitutions (drop `#version` + `layout(local_size…)`; brace-init the B₃
+array; open the push block as `struct DenoiseConstants`; close it with its instance). The proof re-derives all four
+from the shader text and compares the staged halves against the file (§C0), re-reads the B₃ weights out of the
+compiled `KernelWeight` (§C6.0–C6.1), and drives the shader's own `main()` through a plain-float API — so the A/B
+below is a statement about the shipped filter, not about a re-implementation of it. Compile-verified numbers: the
+converged A/B is bit-identical (§C3.2), a uniform field survives the 25-tap weighted mean unchanged (§C2), a 4×
+radiance step across orthogonal normals stays at 1.0 / 4.0 and a 100× depth step stops (§C5.1–C5.2), in-region noise
+falls 12.00 → 8.85 (§C5.3), filtered variance matches σ²Σw²/(Σw)² to 2.2e-7 relative with the Monte-Carlo ratio at
+0.0683 against a theory of 0.0748 (§C6.2–C6.4).
+
+**The A/B, per stream** (one 1-spp sample per frame, fixed per-sample 3 % noise, running mean → the accumulator the
+filter reads):
+
+| Stream | E1 presentation MSE, frame 1 (filtered vs raw) | E2b frame-1 mean drift | E3 512-frame mean vs analytic | E2 converged mean drift | E4 early-out acceptance @ 512 / 2048 / 8192 | E4 identity |
+|---|---|---|---|---|---|---|
+| lambertian | **0.0023 < 0.0180** | 0.007 % | 0.060 % | 0.0000 % | 100 % / 100 % / 100 % | 576/576/576 accepted, **0 differ** |
+| glass-BTDF | **0.0977 < 0.3674** | 0.187 % | 0.626 % | 0.0210 % | 0 % / 0 % / 80.7 % | 0/0/465 accepted, **0 differ** |
+| subsurface | **0.0094 < 0.0822** | 0.020 % | 0.100 % | 0.0000 % | 100 % / 100 % / 100 % | 576/576/576 accepted, **0 differ** |
+
+**What the A/B says, exactly.** Before convergence the filter helps — 8× to 19× lower presentation MSE at 1 spp on
+all three streams, including the two lobes M9 was asked to cover: the BTDF chain with its 1 % fireflies and the
+exponential SSS transport. At convergence it is invisible: every pixel the shipped early-out accepts comes back
+**bit-identical**, checked from outside the filter against the tone map the kernel would have written itself, with
+zero mean drift on linear radiance. The firefly stream is the interesting one and it is honest about it — at 512
+frames (1 % fireflies ⇒ 36× the diffuse per-sample variance) it is genuinely *not* converged, the early-out
+correctly declines at 0 %, and the filter still halves the error (2.08e-6 vs 3.87e-6); by an 8192-frame hold the
+shader's own criterion takes over 80.7 % of the frame. That 0 % → 0 % → 80.7 % curve is the R10 #9 self-gating
+claim, measured per stream rather than asserted. Two notes worth keeping: a *decrescent* per-frame amplitude was
+tried first and rejected as unphysical — a real estimator's per-sample variance is fixed, only the variance of the
+mean falls as s²/N, and at these magnitudes shrinking the former drives the shader's fp32 moment recursion below
+its own ulp; and the "verify in M9" line from the plan's §5 (reuse re-evaluating the new BSDFs) is covered here
+structurally — the filter carries no lobe vocabulary at all (§B32, one colour store site for every material,
+§B10–B11) and the three streams ride the same compiled kernel — but the in-kernel revalidation under real motion
+is a GPU-side check.
+
+**Honest scope.** Same bar as K0–K5: compile-verified, render-pending-GPU. What is proven here is the live
+configuration, the filter's own mathematics, the reprojection rule and the A/B *on CPU-accumulated streams*
+built to each lobe's noise shape. What is not: an end-to-end ReSTIR run where temporal/spatial reuse re-evaluates
+the new BSDFs at neighbours under motion vectors produced by moving geometry, and the sky-backed outdoor glass
+A/B. Both join the render-verification backlog (§5), together with the M10 library render.
+
+---
+
+## 12. What's next
 
 1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped, superseded by the v2 dipole — see 3).
 2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §5; render-verification pending GPU).
@@ -573,7 +644,9 @@ proof, together with the §5 render-verification backlog.
 6. ~~**M7b editable inspector**~~ DONE 2026-09-17 (229/229 — see §8).
 7. ~~**M8 Tier B + full-scene validation**~~ DONE 2026-09-17 (102/102 — see §9).
 8. ~~**M10 material library level**~~ DONE 2026-09-17 (65/65 — see §10; `--scene materials`, first GPU render pending).
-9. **Denoiser + motion vectors** (plan M9 — parked per direction; the last unshipped M-phase).
-10. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a/M7b pixels + the M10 library render — needs a GPU runner).
+9. ~~**Denoiser + motion vectors**~~ DONE 2026-09-17 (97/97 — see §11; the re-enable was already live at this
+   tip, so M9 shipped as the proof + gate. **Every M-phase of the plan is now shipped.**)
+10. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a/M7b pixels + the M10 library render + the M9
+    end-to-end denoiser/reprojection A/B under motion and the sky-backed glass scene — needs a GPU runner).
 11. Optional/deferred: M4c dispersion hero sampling, glints (`slate_glint_*` stored-unread), geometric displacement
     (channel 20), Tier B in-kernel multi-slab (post-M9 revisit).

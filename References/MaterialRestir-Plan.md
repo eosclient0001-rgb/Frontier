@@ -65,14 +65,15 @@ the R6/R7 ReSTIR (temporal + spatial reuse, alias pick, à-trous, adaptive expos
 sky/sun/atmosphere are in-tree. No cherry-pick portability discipline is needed anymore —
 but the kernel-wiring diffs vs the old R4b kernel are still recorded per phase where they matter.
 
-**Deferral (decided with the merge):** the à-trous **denoiser** and **motion-vector**
-temporal reprojection stay in-tree but default **off**
+**Deferral (decided with the merge, RESOLVED at M9 — see §4 M9):** the à-trous **denoiser**
+and **motion-vector** temporal reprojection were left in-tree but default **off**
 (`ReSTIRIntegratorConfiguration::Denoise = false`, `TemporalReprojection = false`, with the
 previously-missing `AssignTemporalReprojection` setter added). Rationale: new lobes are
 validated on raw accumulated images so the filter can never hide or fake lobe energy; motion
-vectors are still *produced* by R2, only their consumption is off. Both re-enable at M9 with
-the A/B proofs (converged image must match with and without). M9 is therefore a
-re-enable-and-validate milestone, not a branch sync.
+vectors are still *produced* by R2, only their consumption is off. Both are **back on** at this
+tip, with the A/B proofs run (converged image matches with and without — report §11). M9 was
+therefore a re-enable-and-validate milestone, not a branch sync — and at this tip it turned out
+the re-enable itself had already landed (`2be1647f`), so M9 shipped as proof-only.
 
 ## 2. Scope line
 
@@ -113,8 +114,9 @@ project of its own).
   (raster-only mechanism; explicitly substituted).
 - **D-charlie — Charlie albedo goes in `SheenLut.w`** (currently unused; `EnergyLut.z` is
   `E_avg` and Kulla–Conty needs it — doc `18` §4.1's `.z` assignment is declined with reason).
-- **D-bg — black background stands until M9.** Glass/SSS proofs use area-light Cornell-style
-  scenes. Sky sync is a milestone, not a dependency.
+- **D-bg — black background, replaced by the in-tree sky at the merge.** The CPU glass/SSS proofs
+  keep their area-light Cornell-style scenes (they need a known analytic answer, not an HDR
+  environment). Sky sync was a milestone, not a dependency; it arrived with `fbceb82`.
 
 ## 4. Phases (one commit row each; proofs run in the CPU port first, kernel second)
 
@@ -267,11 +269,36 @@ Files: `Engine/ContentInterchange/MaterialSwatchStructure.{h,cpp}` (new), `Proje
 - Proof: build → encode → decode → per-swatch field-by-field comparison (58-float prefix, sheen/emission compared
   as products), uniqueness, zero folds at 1/2/8, grid geometry, flag inventory, luminaire count.
 
-### M9 — Re-enable milestone (denoiser + motion vectors back on)
-- Re-enable `Denoise` and `TemporalReprojection` (defaults back to true); validate the new
-  lobes under temporal + spatial reuse + à-trous (revalidation re-evaluates the BSDF — must
-  pick up BTDF/SSS automatically); A/B proofs (converged image identical with and without);
-  sky-backed outdoor glass proof.
+### M9 — Re-enable milestone (denoiser + motion vectors back on) — shipped 2026-09-17
+
+The last unshipped M-phase. **Reconnaissance finding: the re-enable had already landed at this tip** —
+`ReSTIRIntegratorConfiguration::Denoise` and `.TemporalReprojection` are both `true` (`2be1647f`), every tier carries
+a live à-trous chain (4 levels Minimal–Standard, 5 Ultra/Reference), and a probe linked against the real
+`ReSTIRIntegrator.cpp` prints `features=0xfb denoise=1 reproj=1 levels=5`. So M9's deliverable was the *proof* the
+deferral's rationale asked for, not a flag flip.
+
+Files: `Exhibits/Workbench/Materials/CheckMaterialDenoise.sh` (gate, 97/97), `DenoiseReprojectionProof.cpp`,
+`AtrousDenoiseMirror.{h,cpp}`, `DenoiseCpuShim.h`, plus additive read-only `.r/.g/.b/.a` + `vec4.rgb` proxies in
+`SlangCpuShim.h`; report §11.
+
+- **The shipped filter, compiled 1:1.** `Engine/Shaders/AtrousDenoise.slang` goes through the gate's four mechanical
+  substitutions (drop `#version` + `layout(local_size…)`; brace-init the B₃ array; `struct DenoiseConstants`; close the
+  push block with its instance) and is then driven through the shader's own `main()` — identity switch, tone map,
+  early-out and kernel weights are the shader's code, so the A/B is a statement about the shipped filter.
+- **Coverage:** §A 13 live-configuration checks (defaults, feature bits 64/128 vs the shader's constants, all four
+  toggle combinations, reset semantics, tier ladder) · §B 33 text pins for what cannot be compiled standalone
+  (`ReSTIRViewport.slang`'s accumulation/reprojection — bindless + BVH —, the dispatcher's level chain, and the
+  filter's lobe-agnosticism) · §C 21 compiled-filter checks · §D 9 reprojection-mirror checks · §E 21 three-stream
+  A/B checks.
+- **A/B result (lambertian · glass-BTDF · subsurface):** at 1 spp the filter lowers presentation MSE
+  (0.0023 < 0.0180 / 0.0977 < 0.3674 / 0.0094 < 0.0822); the running mean reaches the analytic truth within 0.63 %;
+  at convergence the filter is **bit-identical on every pixel its own early-out accepts** (576/576/576,
+  576/576/576, and 0/0/465 accepted then all identical on the firefly stream) with zero mean drift; the firefly
+  stream's fade-out curve runs 0 % → 0 % → 80.7 % acceptance over 512/2048/8192-frame holds, which is the R10 #9
+  self-gating claim measured per stream.
+- **Still GPU-side:** an end-to-end ReSTIR run where reuse re-evaluates the new BSDFs under real motion (the
+  "no Jacobian needed for DI" claim), and the sky-backed outdoor glass A/B — both on the render-verification
+  backlog with K0–K5.
 
 ## 5. How each channel meets ReSTIR (integration points, all phases)
 
@@ -282,7 +309,7 @@ Files: `Engine/ContentInterchange/MaterialSwatchStructure.{h,cpp}` (new), `Proje
 | Temporal/spatial reuse (01a0a578) | free via BSDF re-evaluation | DI reservoirs re-evaluate the target at neighbours — new lobes ride along; verify in M9, no Jacobian needed for DI |
 | Shadow rays | cutout re-trace (exists) + transmissive Beer-tint walk (M4, ≤4 steps) | Tinted shadows, not binary; thin-walled never flips the offset |
 | GI bounce | refract (M4), dipole branch (M5), SSS-v1 in throughput | The `dot>0` gate becomes selection-aware; one bounce stays one bounce |
-| Background | black until M9 | sky in-tree since the merge; glass proofs use sky and/or area-light Cornell scenes |
+| Background | sky in-tree since the merge (was "black until M9") | the CPU proofs keep their own black / area-light Cornell framing; the sky is a kernel-side scene setting |
 | Accumulation/denoise | lobes are per-sample; reuse + à-trous agnostic | No per-lobe history; BTDF noise converges like specular |
 
 ## 6. Budgets and gates
@@ -301,7 +328,9 @@ Files: `Engine/ContentInterchange/MaterialSwatchStructure.{h,cpp}` (new), `Proje
 
 M0 audit → M1 selection/gating → M2 sampled channels → M3 cloth → M4a thin glass →
 M4b thick glass → M5 SSS v1 → v2 → M6 codecs → M7a inspector → M7b editing → M8 Tier B
-call → M10 library level (✅ 2026-09-17) → M9 ReSTIR-sync. M6 can interleave any time after M0.
+call → M10 library level (✅ 2026-09-17) → M9 ReSTIR-sync (✅ 2026-09-17 — the re-enable was already live, so it
+shipped as the proof). **Every M-phase is now shipped**; what remains is the GPU render-verification backlog.
+M6 could interleave any time after M0.
 M4c dispersion only if M4a/b come in under budget.
 
 ## 8. Open decisions for you

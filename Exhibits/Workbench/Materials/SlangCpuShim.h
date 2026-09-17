@@ -6,7 +6,8 @@
 //    (.xy / .yz / .xyz — the file performs no swizzle writes), component-wise arithmetic, and the builtins below.
 //
 //    Swizzles are pointer proxies rebound by every constructor; reads on temporaries (SheenSample(...).xyz) are safe
-//    because the temporary outlives the full expression. Float builtins are new overloads (the C library only declares
+//    because the temporary outlives the full expression. M9 added .r/.g/.b/.a and vec4.rgb for AtrousDenoise.slang's
+//    tone map — same proxy discipline, read-only. Float builtins are new overloads (the C library only declares
 //    the double versions globally), so double intermediates from un-suffixed literals still resolve to ::sqrt etc.
 
 #pragma once
@@ -27,13 +28,15 @@ struct vec3
 {
     float x, y, z;
     struct Read2 { const float* a; const float* b; operator vec2() const { return vec2(*a, *b); } };
+    struct Read1 { const float* a; operator float() const { return *a; } };   // M9: the atrous filter's Hdr.r/.g/.b
     Read2 xy, yz;
-    vec3() : x(0.0f), y(0.0f), z(0.0f), xy{ &x, &y }, yz{ &y, &z } {}
-    vec3(float s) : x(s), y(s), z(s), xy{ &x, &y }, yz{ &y, &z } {}
-    vec3(float x_, float y_, float z_) : x(x_), y(y_), z(z_), xy{ &x, &y }, yz{ &y, &z } {}
-    vec3(const vec2& a, float b) : x(a.x), y(a.y), z(b), xy{ &x, &y }, yz{ &y, &z } {}
-    vec3(const vec3& o) : x(o.x), y(o.y), z(o.z), xy{ &x, &y }, yz{ &y, &z } {}
-    vec3(vec3&& o) noexcept : x(o.x), y(o.y), z(o.z), xy{ &x, &y }, yz{ &y, &z } {}
+    Read1 r, g, b;
+    vec3() : x(0.0f), y(0.0f), z(0.0f), xy{ &x, &y }, yz{ &y, &z }, r{ &x }, g{ &y }, b{ &z } {}
+    vec3(float s) : x(s), y(s), z(s), xy{ &x, &y }, yz{ &y, &z }, r{ &x }, g{ &y }, b{ &z } {}
+    vec3(float x_, float y_, float z_) : x(x_), y(y_), z(z_), xy{ &x, &y }, yz{ &y, &z }, r{ &x }, g{ &y }, b{ &z } {}
+    vec3(const vec2& a, float b_) : x(a.x), y(a.y), z(b_), xy{ &x, &y }, yz{ &y, &z }, r{ &x }, g{ &y }, b{ &z } {}
+    vec3(const vec3& o) : x(o.x), y(o.y), z(o.z), xy{ &x, &y }, yz{ &y, &z }, r{ &x }, g{ &y }, b{ &z } {}
+    vec3(vec3&& o) noexcept : x(o.x), y(o.y), z(o.z), xy{ &x, &y }, yz{ &y, &z }, r{ &x }, g{ &y }, b{ &z } {}
     vec3& operator=(const vec3& o) { x = o.x; y = o.y; z = o.z; return *this; }
     vec3& operator=(vec3&& o) noexcept { x = o.x; y = o.y; z = o.z; return *this; }
 };
@@ -42,13 +45,15 @@ struct vec4
 {
     float x, y, z, w;
     struct Read3 { const float* a; const float* b; const float* c; operator vec3() const { return vec3(*a, *b, *c); } };
-    Read3 xyz;
-    vec4() : x(0.0f), y(0.0f), z(0.0f), w(0.0f), xyz{ &x, &y, &z } {}
-    vec4(float s) : x(s), y(s), z(s), w(s), xyz{ &x, &y, &z } {}
-    vec4(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_), xyz{ &x, &y, &z } {}
-    vec4(const vec3& a, float b) : x(a.x), y(a.y), z(a.z), w(b), xyz{ &x, &y, &z } {}
-    vec4(const vec4& o) : x(o.x), y(o.y), z(o.z), w(o.w), xyz{ &x, &y, &z } {}
-    vec4(vec4&& o) noexcept : x(o.x), y(o.y), z(o.z), w(o.w), xyz{ &x, &y, &z } {}
+    struct Read1 { const float* a; operator float() const { return *a; } };   // M9: the atrous filter's TapColour.a
+    Read3 xyz, rgb;
+    Read1 r, g, b, a;
+    vec4() : x(0.0f), y(0.0f), z(0.0f), w(0.0f), xyz{ &x, &y, &z }, rgb{ &x, &y, &z }, r{ &x }, g{ &y }, b{ &z }, a{ &w } {}
+    vec4(float s) : x(s), y(s), z(s), w(s), xyz{ &x, &y, &z }, rgb{ &x, &y, &z }, r{ &x }, g{ &y }, b{ &z }, a{ &w } {}
+    vec4(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_), xyz{ &x, &y, &z }, rgb{ &x, &y, &z }, r{ &x }, g{ &y }, b{ &z }, a{ &w } {}
+    vec4(const vec3& a_, float b_) : x(a_.x), y(a_.y), z(a_.z), w(b_), xyz{ &x, &y, &z }, rgb{ &x, &y, &z }, r{ &x }, g{ &y }, b{ &z }, a{ &w } {}
+    vec4(const vec4& o) : x(o.x), y(o.y), z(o.z), w(o.w), xyz{ &x, &y, &z }, rgb{ &x, &y, &z }, r{ &x }, g{ &y }, b{ &z }, a{ &w } {}
+    vec4(vec4&& o) noexcept : x(o.x), y(o.y), z(o.z), w(o.w), xyz{ &x, &y, &z }, rgb{ &x, &y, &z }, r{ &x }, g{ &y }, b{ &z }, a{ &w } {}
     vec4& operator=(const vec4& o) { x = o.x; y = o.y; z = o.z; w = o.w; return *this; }
     vec4& operator=(vec4&& o) noexcept { x = o.x; y = o.y; z = o.z; w = o.w; return *this; }
 };
