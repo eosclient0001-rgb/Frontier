@@ -9,7 +9,9 @@
  * ============================================================ */
 
 import { buildMountain } from './mountain.js';
-import { runErosion } from './erosion.js';
+import {
+  EROSION_PASSES, EROSION_PASS_ORDER, detectWaterBodies,
+} from './erosion.js';
 import { computeChannels, computeSplatWeights, previewField } from './splats.js';
 import { bakeAllTextures } from './textures.js';
 import { MATERIALS, getMaterial } from './materials.js';
@@ -23,9 +25,14 @@ const P = {
   // mountain
   N: 320, seed: 1337, frequency: 2.4, octaves: 5, gain: 0.48, ridge: 0.38,
   peakHeight: 50, peakRadius: 28, peakSharp: 1.5, warp: 0.55, tilt: 0.42, seaLevel: -7,
-  // erosion — stream power + hillslope diffusion, run on the SDF field
+  // erosion — the pass stack (Gaea-style: each pass individually
+  // simulatable, run in this order when "Run Erosion" is pressed)
   erodeSeed: 42, iterations: 64, diffusion: 0.15, mExp: 0.45, nExp: 1.2,
   erodibility: 0.60, cutFrac: 0.22, sedimentOn: true, microDetail: 0.65,
+  passes: {
+    fluvial: true, debris: true, hydraulic: false, rivers: false,
+    braid: true, micro: true, diffuse: false,
+  },
   // splats
   preview: 'blended', snowLine: 28, material: 'alpine',
   // view
@@ -42,6 +49,7 @@ const S = {
   N: 0, voxel: 0,
   channels: null,
   erodeStats: null,
+  maps: null,        // shared splat maps — accumulate across passes
   // last erosion fields (kept so live rebuilds don't lose flow/sediment)
   lastFlow: null, lastFlowMax: 1,
   lastErosionMap: null, lastDepositMap: null, lastPointsMap: null,
@@ -146,6 +154,38 @@ const C = {}; // control registry
   C.cutRo = mkReadout(b, 'Cut ↔ voxel match');
   C.sedimentOn = mkCheck(b, { id: 'sedimentOn', label: 'Sedimentation', value: P.sedimentOn, hint: 'capacity routing + alluvial fans' });
   C.microDetail = mkSlider(b, { id: 'microDetail', label: 'Micro channels', min: 0, max: 1, step: 0.05, value: P.microDetail, fmt: (v) => Math.round(v * 100) + '%', unit: '' });
+
+  // ---- pass stack (Gaea-style: simulate each pass individually) ----
+  const ph = document.createElement('div');
+  ph.className = 'passhead';
+  ph.innerHTML = '<span>EROSION PASSES</span><span class="sub">tick = in pipeline · ▶ simulate on current terrain</span>';
+  b.appendChild(ph);
+  C.passBtns = {};
+  for (const id of EROSION_PASS_ORDER) {
+    const p = EROSION_PASSES[id];
+    const row = document.createElement('div');
+    row.className = 'passrow';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'passcb';
+    cb.checked = P.passes[id];
+    cb.title = 'Include in the Run Erosion pipeline';
+    cb.addEventListener('change', () => { P.passes[id] = cb.checked; });
+    const btn = document.createElement('button');
+    btn.className = 'passbtn';
+    btn.textContent = 'Simulate';
+    btn.title = p.desc + ' — runs on the CURRENT terrain (no reset).';
+    btn.addEventListener('click', () => simulatePass(id));
+    const nm = document.createElement('span');
+    nm.className = 'passname';
+    nm.textContent = p.name;
+    nm.title = p.desc;
+    row.appendChild(cb);
+    row.appendChild(btn);
+    row.appendChild(nm);
+    b.appendChild(row);
+    C.passBtns[id] = { cb, btn };
+  }
 }
 
 // ---- View section ----
@@ -171,7 +211,7 @@ const stats = {};
   const e = mkSection(right, 'HYDRAULIC EROSION');
   stats.carved = mkStat(e, 'Carved');
   stats.deposited = mkStat(e, 'Deposited');
-  stats.iters = mkStat(e, 'Iterations');
+  stats.iters = mkStat(e, 'Passes run');
   stats.flowMax = mkStat(e, 'Max flow (cells)');
   stats.water = mkStat(e, 'Water bodies');
   stats.genMs = mkStat(e, 'Mountain time');
@@ -215,7 +255,45 @@ function baseChannels() {
     erosionMap: new Float32Array(size),
     depositMap: new Float32Array(size),
     pointsMap: new Float32Array(size),
+    channelsMap: new Float32Array(size),
   });
+}
+
+function freshMaps() {
+  const size = S.N * S.N;
+  return {
+    erosionMap: new Float32Array(size),
+    depositMap: new Float32Array(size),
+    pointsMap: new Float32Array(size),
+    channelsMap: new Float32Array(size),
+  };
+}
+
+function passCfg(extra = {}) {
+  return {
+    h: S.h, N: S.N, voxel: S.voxel, seed: P.erodeSeed,
+    seaLevel: P.seaLevel, valley: S.valley,
+    iterations: P.iterations, diffusion: P.diffusion,
+    mExp: P.mExp, nExp: P.nExp,
+    erodibility: P.erodibility, cutFraction: P.cutFrac,
+    sedimentOn: P.sedimentOn, detail: P.microDetail,
+    maps: S.maps, ...extra,
+  };
+}
+
+// Refresh water bodies + splat channels + mesh after erosion work.
+function postErosion() {
+  const wb = detectWaterBodies(S.h, S.N, S.lastFlow, P.seaLevel, { voxel: S.voxel });
+  S.lastWater = wb.water;
+  S.waterInfo = { lakes: wb.lakeCount, rivers: wb.riverCount };
+  S.channels = computeChannels({
+    h: S.h, N: S.N, voxel: S.voxel,
+    flow: S.lastFlow, flowMax: S.lastFlowMax, pits: null,
+    erosionMap: S.maps.erosionMap, depositMap: S.maps.depositMap,
+    pointsMap: S.maps.pointsMap, channelsMap: S.maps.channelsMap,
+  });
+  rebuildMesh();
+  updateErosionStats();
 }
 
 function rebuildMesh() {
@@ -252,7 +330,7 @@ function updateErosionStats() {
   const s = S.erodeStats;
   stats.carved.set(s ? s.carvedM3.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' m³' : '—');
   stats.deposited.set(s ? s.depositedM3.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' m³' : '—');
-  stats.iters.set(s && s.iterations ? s.iterations + '×' : '—');
+  stats.iters.set(s && s.passes ? s.passes + (s.passes === 1 ? ' pass' : ' passes') : '—');
   stats.flowMax.set(s && s.flowMax ? s.flowMax.toLocaleString() : '—');
   const wi = S.waterInfo;
   stats.water.set(wi ? `${wi.lakes} lakes · ${wi.rivers} rivers` : '—');
@@ -331,6 +409,7 @@ async function generateMountain() {
   S.lastFlow = null; S.lastFlowMax = 1;
   S.lastErosionMap = null; S.lastDepositMap = null; S.lastPointsMap = null;
   S.lastWater = null; S.waterInfo = null;
+  S.maps = freshMaps();
 
   setBusy('computing splat channels…');
   await nextFrame();
@@ -342,41 +421,65 @@ async function generateMountain() {
 }
 
 async function runErosionPipeline() {
-  if (!S.h) return;
+  if (!S.h || S.busy) return;
+  const ids = EROSION_PASS_ORDER.filter((id) => P.passes[id]);
+  if (!ids.length) { setBusy('no passes enabled'); await nextFrame(); clearBusy(); return; }
   // always erode from the fresh mountain so runs are reproducible
   S.h = S.baseH.slice();
+  S.maps = freshMaps();
 
-  setBusy(`stream power: 0/${P.iterations}…`);
-  await nextFrame();
   const t0 = performance.now();
-  const res = await runErosion({
-    h: S.h, N: S.N, voxel: S.voxel, seed: P.erodeSeed,
-    iterations: P.iterations, diffusion: P.diffusion,
-    mExp: P.mExp, nExp: P.nExp,
-    erodibility: P.erodibility,
-    cutFraction: P.cutFrac,
-    sedimentOn: P.sedimentOn, seaLevel: P.seaLevel, valley: S.valley,
-    detail: P.microDetail,
-    yieldControl: (i, n) => { setBusy(`stream power: ${i}/${n}…`); return nextFrame(); },
-  });
+  let carved = 0, deposited = 0;
+  for (let pi = 0; pi < ids.length; pi++) {
+    const id = ids[pi];
+    const p = EROSION_PASSES[id];
+    setBusy(`${p.name}: starting… (${pi + 1}/${ids.length})`);
+    await nextFrame();
+    const r = await p.fn(passCfg({
+      yieldControl: (i, n) => { setBusy(`${p.name}: ${i}/${n}…`); return nextFrame(); },
+    }));
+    carved += r.carvedM3;
+    deposited += r.depositedM3;
+    S.lastFlow = r.flow; S.lastFlowMax = r.flowMax;
+  }
   S.erodeMs = performance.now() - t0;
-  S.erodeStats = res.stats;
-  S.lastFlow = res.flow; S.lastFlowMax = res.flowMax;
-  S.lastErosionMap = res.erosionMap; S.lastDepositMap = res.depositMap; S.lastPointsMap = res.pointsMap;
-  S.lastWater = res.water || null;
-  S.waterInfo = { lakes: res.lakeCount, rivers: res.riverCount };
+  S.erodeStats = {
+    carvedM3: carved, depositedM3: deposited,
+    flowMax: S.lastFlowMax, passes: ids.length,
+  };
+  S.lastErosionMap = S.maps.erosionMap; S.lastDepositMap = S.maps.depositMap; S.lastPointsMap = S.maps.pointsMap;
 
   setBusy('computing splat channels…');
   await nextFrame();
-  S.channels = computeChannels({
-    h: S.h, N: S.N, voxel: S.voxel,
-    flow: res.flow, flowMax: res.flowMax, pits: res.pits,
-    erosionMap: res.erosionMap, depositMap: res.depositMap, pointsMap: res.pointsMap,
-    channelsMap: res.channelsMap,
-  });
-  rebuildMesh();
-  updateErosionStats();
+  postErosion();
   clearBusy();
+}
+
+// Simulate ONE pass on the CURRENT terrain (no reset, maps keep
+// accumulating) — the Gaea-style "add another erosion layer" action.
+async function simulatePass(id) {
+  if (!S.h || S.busy) return;
+  const p = EROSION_PASSES[id];
+  if (!S.maps) S.maps = freshMaps();
+  setBusy(`${p.name}: starting…`);
+  await nextFrame();
+  const t0 = performance.now();
+  const r = await p.fn(passCfg({
+    yieldControl: (i, n) => { setBusy(`${p.name}: ${i}/${n}…`); return nextFrame(); },
+  }));
+  const dt = performance.now() - t0;
+  S.lastFlow = r.flow; S.lastFlowMax = r.flowMax;
+  S.lastErosionMap = S.maps.erosionMap; S.lastDepositMap = S.maps.depositMap; S.lastPointsMap = S.maps.pointsMap;
+  S.erodeStats = (S.erodeStats || { passes: 0 });
+  S.erodeStats.carvedM3 = (S.erodeStats.carvedM3 || 0) + r.carvedM3;
+  S.erodeStats.depositedM3 = (S.erodeStats.depositedM3 || 0) + r.depositedM3;
+  S.erodeStats.passes = (S.erodeStats.passes || 0) + 1;
+  S.erodeMs = (S.erodeMs || 0) + dt;
+  setBusy(`${p.name} done — rebuilding…`);
+  await nextFrame();
+  postErosion();
+  clearBusy();
+  console.log(`[Frontier] pass "${p.name}" simulated in ${dt.toFixed(0)} ms`);
 }
 
 // Select a splatmap-library material: re-bake the 5 albedo layers with
@@ -424,6 +527,7 @@ const liveRebuild = () => {
     h: S.h, N: S.N, voxel: S.voxel,
     flow: S.lastFlow, flowMax: S.lastFlowMax,
     erosionMap: S.lastErosionMap, depositMap: S.lastDepositMap, pointsMap: S.lastPointsMap,
+    channelsMap: S.maps ? S.maps.channelsMap : null,
   });
   rebuildMesh();
 };

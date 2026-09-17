@@ -70,6 +70,28 @@ true neighbour distances, and every per-iteration cut is clamped to
 resolution (fine grids cut finer slices and never alias). The UI shows
 the live `voxel size` and `cut ↔ voxel match` readouts.
 
+### 2b. Erosion pass stack (Gaea-style layering)
+The engine is exposed as a **stack of individually simulable passes** —
+each one is a separate operator on the live SDF field with its own
+**Simulate** button, in the *Hydraulic Erosion* panel. Run them in any
+order, as many times as you like; every pass reads and writes the
+current terrain and the shared splat maps, so layers compose (exactly
+how Gaea users build terrain from multiple erosion layers):
+
+| pass | what it does |
+|---|---|
+| **Fluvial · stream power** | the full water pass — incision + sediment capacity + hillslope diffusion + basin drainage + thermal weathering + scree talus. Run first. |
+| **Debris flows** | non-water erosion: over-steep upper-flank faces collapse into gully channels and fan out into debris deposits at the toe. |
+| **Hydraulic (concentrated)** | stream power with *no* diffusion — the existing network deepens into steep-walled canyons. |
+| **Rivers only** | only the main network (A ≥ 4 m²) incises, with a larger cut — deepens river beds and widens banks. |
+| **Braided rivers** | flow splitting: low-gradient, high-discharge reaches build sand bars, threads split around them and migrate → multi-thread braided channels at the canyon mouths. |
+| **Micro rills (detail)** | the fine 1.6–3.3 m branching rill network on virtual relief; also feeds the dark *Channels* splat layer. |
+| **Hillslope diffusion** | pure Laplacian smoothing — rounds ridges and matures the surface between passes. |
+
+Tick a pass to include it in the **Run Erosion** pipeline; press its
+**Simulate** button to apply it to the *current* terrain alone (no
+reset). The default pipeline is `Fluvial → Debris → Braided → Micro`.
+
 ### 3. Splatmaps (Gaea-style channels → 5 layers)
 Channels derived from the eroded SDF: **height · slope · curvature ·
 flow · erosion · sediment · peaks · points**. A channel **preview**
@@ -85,7 +107,17 @@ Blended into five procedural (mirrored-repeat seamless) texture layers:
 | sand  | narrow waterline beach band |
 | snow  | above the snow line, not too steep |
 
-Wet flow channels darken and gloss the surface in the shader.
+A low-frequency **mottle** field (~11 m soil patches) modulates the
+layer weights so grassland, scree and dirt don't read as flat
+single-colour fields. Wet flow channels darken and gloss the surface
+in the shader.
+
+### Material library
+Nine splatmap presets (Alpine Meadow, High Alpine, Arid Canyon, Tundra,
+Volcanic, **Badlands, Glacial Till, Lichen Rock**, Temperate Forest)
+each combine a 5-layer palette, layer-placement rules and shader tints.
+Selecting one re-bakes the textures and re-blends the splat weights —
+no terrain re-erosion.
 
 ## Controls
 
@@ -96,10 +128,13 @@ Wet flow channels darken and gloss the surface in the shader.
 
 Left panel: **Mountain** (seed, grid resolution, frequency, octaves,
 multifractal gain, ridged blend, peak height/radius/gradient, domain
-warp, flank tilt, sea level) · **Hydraulic Erosion** (erosion seed,
-iterations/maturity, hillslope diffusion, discharge exponent *m*, slope
-exponent *n*, erodibility, max cut/step, sedimentation) · **Splatmaps**
-(channel preview, snow line) · **View** (water, wireframe, auto orbit).
+warp, flank tilt, sea level) · **Splatmaps** (channel preview, snow
+line) · **Material Library** (9 splatmap presets) · **Hydraulic
+Erosion** (erosion seed, iterations/maturity, hillslope diffusion,
+discharge exponent *m*, slope exponent *n*, erodibility, max cut/step,
+sedimentation, micro channels, and the **Erosion Passes** stack — tick
+each pass into the pipeline or press **Simulate** to run it on the
+current terrain) · **View** (water, wireframe, auto orbit).
 
 Right panel: terrain stats (grid, voxel, verts, min/max/mean elevation),
 erosion stats (carved/deposited m³, iterations, max flow, water bodies,

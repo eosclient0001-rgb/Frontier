@@ -343,19 +343,39 @@ export async function streamPowerErode({
       if (load) {
         const cap = 0.025 * erodibility * Math.pow(A, 0.6) * (0.25 + S);
         const incoming = l + e * 0.35; // arrived load + this cell's yield
+        let carried;
         if (incoming > cap) {
-          const dp = Math.min(incoming - cap, cutPerStep);
+          const excess = incoming - cap;
+          const dp = Math.min(excess, cutPerStep);
           h[idx] += dp;
           depositMap[idx] += dp;
           deposited += dp * cellArea;
-          l = incoming - dp;
+          // OVERBANK: when the channel is grossly overloaded the
+          // water spills its banks — the excess load drops onto the
+          // adjacent floodplain, which is what builds broad, low
+          // alluvial flats along big rivers
+          if (excess > cap) {
+            const spill = (excess - cap) * 0.30;
+            const sp1x = -dy, sp1y = dx, sp2x = dy, sp2y = -dx;
+            for (let s = 0; s < 2; s++) {
+              const px = s === 0 ? sp1x : sp2x, py = s === 0 ? sp1y : sp2y;
+              const nx2 = cx + px, ny2 = cy + py;
+              if (nx2 < 0 || ny2 < 0 || nx2 >= N || ny2 >= N) continue;
+              const si = ny2 * N + nx2;
+              const sd = spill * 0.5;
+              h[si] += sd;
+              depositMap[si] += sd;
+              deposited += sd * cellArea;
+            }
+          }
+          carried = incoming - dp;
         } else {
-          l = incoming; // flow carries it all
+          carried = incoming; // flow carries it all
         }
         // canyons export their load so floors don't fill and stop
         // cutting (fans form at the canyon mouths instead)
         const inCanyon = valley && (valley[idx] > 0.15 || valley[down] > 0.15);
-        load[down] += inCanyon ? l * 0.9 : l;
+        load[down] += inCanyon ? carried * 0.9 : carried;
       }
 
       if (e > 1e-9) {
@@ -401,6 +421,22 @@ export async function streamPowerErode({
         if (j < N - 1) { sum += h[c + N]; cnt++; }
         const lap = (sum - cnt * cur) / cnt;
         if (lap > 1e-5 || lap < -1e-5) h[c] = cur + D * lap;
+      }
+    }
+
+    // FAN SMOOTHING: cells carrying deposited sediment relax toward
+    // their neighbourhood — this is what turns point deposits into
+    // smooth alluvial fans and braid-bar mounds (every 4 iters).
+    if (sedimentOn && (it & 3) === 3) {
+      for (let j = 1; j < N - 1; j++) {
+        for (let i = 1; i < N - 1; i++) {
+          const c = j * N + i;
+          const d = depositMap[c];
+          if (d < 0.02) continue;
+          const w = d > 0.1 ? 1 : d * 10;
+          const lap = (h[c - 1] + h[c + 1] + h[c - N] + h[c + N] - 4 * h[c]) * 0.25;
+          h[c] += 0.08 * lap * w;
+        }
       }
     }
 
@@ -681,173 +717,485 @@ export function fillMicroPits(h, N, voxel, maxDepthVoxels = 1.5) {
   }
 }
 
-/** One-click erosion pass on the SDF field. Mutates h; returns stats + fields. */
-export async function runErosion({
-  h, N, voxel, seed,
-  iterations, cutFraction, erodibility, diffusion, mExp, nExp,
-  sedimentOn, seaLevel, valley = null, detail = 0.65, yieldControl = null,
-}) {
+/* ============================================================
+ * EROSION PASS STACK (Gaea-style layering)
+ *
+ * Each pass is an independent, individually-simulable operator on
+ * the SDF field. The user can press "Simulate" on any pass, in any
+ * order, as many times as they like — every pass reads and writes
+ * the live field plus the shared splat maps, so layers compose:
+ *
+ *   Fluvial → Debris → Braid → Micro  is the recommended stack
+ *   (full water erosion, then slope failure, then braided lowland
+ *    reaches, then the fine rill network — what Gaea users do by
+ *    running multiple erosion layers at different strengths).
+ *
+ * Every pass mutates `h` in place, accumulates into the shared
+ * maps {erosionMap, depositMap, pointsMap, channelsMap}, ends by
+ * draining its own micro-pits, and returns the refreshed flow
+ * field so the next pass (and the splats) work on current state.
+ * ============================================================ */
+
+function thermalWeather(h, N, voxel, seed) {
+  // Steep faces weather into jagged, irregular rock and shed debris;
+  // a smooth cliff is a dead giveaway of CG. 1 m-scale jaggedness is
+  // applied only where the surface is already steep, plus a slight
+  // back-cut of over-steep faces. The raggedness also hands the
+  // micro pass fresh small-scale structure to branch from.
+  const jag = new Perlin2D(subseed((seed ^ 0x8e2f) >>> 0, 31));
+  const c2 = (N - 1) / 2;
+  const steepF = new Float32Array(N * N);
+  for (let j = 1; j < N - 1; j++) {
+    for (let i = 1; i < N - 1; i++) {
+      const c = j * N + i;
+      const gx = (h[c + 1] - h[c - 1]) / (2 * voxel);
+      const gz = (h[c + N] - h[c - N]) / (2 * voxel);
+      const sl = Math.hypot(gx, gz);
+      const steep = smooth(1.1, 1.9, sl);
+      if (steep <= 0) continue;
+      const x = (i - c2) * voxel, z = (j - c2) * voxel;
+      const n = fbm01(jag, x * 0.9 + 57.1, z * 0.9 - 13.6,
+        { octaves: 2, lacunarity: 2.3, gain: 0.55 }) - 0.5;
+      h[c] += 0.7 * n * steep;             // ±0.35 m, ~1.1 m scale
+      h[c] -= 0.06 * (sl - 1.1) * steep;   // relax over-steep faces
+      steepF[c] = steep;
+    }
+  }
+  return steepF;
+}
+
+function screeDeposit(h, N, voxel, seed, steepF, depositMap) {
+  // Scree: debris shed from steep walls piles at their base. A talus
+  // band of loose rock at the foot of every cliff is one of the
+  // things that makes a mountain read as real. Deposit (splat)
+  // weight is added to moderate-slope cells sitting against a steep
+  // one, modulated by noise so the aprons look organic, not banded.
+  const talusN = new Perlin2D(subseed((seed ^ 0x3d4c) >>> 0, 91));
+  const c2 = (N - 1) / 2;
+  for (let j = 1; j < N - 1; j++) {
+    for (let i = 1; i < N - 1; i++) {
+      const c = j * N + i;
+      const gx = (h[c + 1] - h[c - 1]) / (2 * voxel);
+      const gz = (h[c + N] - h[c - N]) / (2 * voxel);
+      const sl = Math.hypot(gx, gz);
+      // only the apron: moderate slope, not the wall itself, not flat
+      if (sl < 0.18 || sl > 1.05) continue;
+      let wall = 0;
+      for (let k = 0; k < 8; k++) {
+        const nx = i + NEI[k][0], ny = j + NEI[k][1];
+        if (nx < 1 || ny < 1 || nx >= N - 1 || ny >= N - 1) continue;
+        const wv = steepF[ny * N + nx];
+        if (wv > wall) wall = wv;
+      }
+      if (wall <= 0.05) continue;
+      const x = (i - c2) * voxel, z = (j - c2) * voxel;
+      const t = 0.5 + 0.5 * talusN.noise(x * 0.35 + 21.7, z * 0.35 - 8.2);
+      depositMap[c] += 0.30 * wall * t;
+    }
+  }
+}
+
+function finalFlow(h, N, voxel, seed, seaLevel) {
+  const ff = computeFlow(h, N, voxel, mulberry32((seed ^ 0x9e3779b9) >>> 0), seed, 0.06, 0.4, seaLevel);
+  let flowMax = 1;
+  for (let f = 0; f < h.length; f++) if (ff.flow[f] > flowMax) flowMax = ff.flow[f];
+  return { flow: ff.flow, pits: ff.pits, flowMax };
+}
+
+/**
+ * PASS 1 — FLUVIAL (full water erosion). Stream power incision +
+ * sediment capacity routing + hillslope diffusion, then basin
+ * drainage, thermal weathering and scree talus. The main pass.
+ */
+export async function passFluvial(cfg) {
+  const { h, N, voxel, seed, seaLevel, valley, iterations, diffusion,
+          mExp, nExp, erodibility, cutFraction, sedimentOn, maps, yieldControl } = cfg;
   const bedrock = Math.min(seaLevel - 14, -40);
-  const size = N * N;
-  const erosionMap = new Float32Array(size);
-  const depositMap = new Float32Array(size);
-  const pointsMap = new Float32Array(size);
-
-  const channelsMap = new Float32Array(size); // fine-channel layer (micro pass)
-
   const res = await streamPowerErode({
     h, N, voxel, seed,
     iterations, K: 8e-3, m: mExp, n: nExp, D: diffusion,
     cutFraction, erodibility, sedimentOn, seaLevel, bedrock,
-    valley, erosionMap, depositMap, pointsMap, yieldControl,
+    valley, erosionMap: maps.erosionMap, depositMap: maps.depositMap, pointsMap: maps.pointsMap,
+    yieldControl,
   });
-
-  // ---- drain small enclosed basins (potholes don't persist) ----
   drainSmallBasins(h, N, voxel, seaLevel);
   fillMicroPits(h, N, voxel);
+  const steepF = thermalWeather(h, N, voxel, seed);
+  screeDeposit(h, N, voxel, seed, steepF, maps.depositMap);
+  return res;
+}
 
-  // ---- thermal weathering (Gaea-style) ----
-  // Steep faces weather into jagged, irregular rock and shed debris;
-  // a smooth cliff is a dead giveaway of CG. 1 m-scale jaggedness is
-  // applied only where the surface is already steep, plus a slight
-  // back-cut of over-steep faces. The raggedness also hands the micro
-  // pass below fresh small-scale structure to branch from.
-  const steepF = new Float32Array(size);
-  {
-    const jag = new Perlin2D(subseed((seed ^ 0x8e2f) >>> 0, 31));
-    const c2 = (N - 1) / 2;
-    for (let j = 1; j < N - 1; j++) {
-      for (let i = 1; i < N - 1; i++) {
-        const c = j * N + i;
-        const gx = (h[c + 1] - h[c - 1]) / (2 * voxel);
-        const gz = (h[c + N] - h[c - N]) / (2 * voxel);
-        const sl = Math.hypot(gx, gz);
-        const steep = smooth(1.1, 1.9, sl);
-        if (steep <= 0) continue;
-        const x = (i - c2) * voxel, z = (j - c2) * voxel;
-        const n = fbm01(jag, x * 0.9 + 57.1, z * 0.9 - 13.6,
-          { octaves: 2, lacunarity: 2.3, gain: 0.55 }) - 0.5;
-        h[c] += 0.7 * n * steep;             // ±0.35 m, ~1.1 m scale
-        h[c] -= 0.06 * (sl - 1.1) * steep;   // relax over-steep faces
-        if (steep > 0) steepF[c] = steep;
+/**
+ * PASS 2 — DEBRIS FLOWS (slope failure, the non-water erosion).
+ * Cells on over-steep faces above a spatially-varying critical angle
+ * collapse downslope; a ~2.2 m noise field restricts failure to
+ * coherent gully corridors (so the upper flanks get rill-like debris
+ * channels, not a uniform slump). Material that reaches a gentler
+ * toe keeps moving and piles into fan-shaped deposits — debris fans
+ * read visually differently from water-cut rills (coarser, wider,
+ * fanning).
+ */
+export async function passDebris(cfg) {
+  const { h, N, voxel, seed, seaLevel, iterations, erodibility, maps, yieldControl } = cfg;
+  const size = N * N;
+  const cellArea = voxel * voxel;
+  const iters = Math.max(10, Math.round(iterations * 0.45));
+  const failN = new Perlin2D(subseed((seed ^ 0x5e3a) >>> 0, 71));
+  const c2 = (N - 1) / 2;
+  const rng = mulberry32((seed ^ 0xde3b) >>> 0);
+  let carved = 0, deposited = 0;
+  let ff = computeFlow(h, N, voxel, rng, seed, 0.06, 0.4, seaLevel);
+  for (let it = 0; it < iters; it++) {
+    const { order, downIdx } = ff;
+    for (let ii = size - 1; ii >= 0; ii--) {
+      const idx = order[ii];
+      const down = downIdx[idx];
+      if (down < 0) continue;
+      const cur = h[idx];
+      if (cur < seaLevel + 0.5) continue;
+      const cx = idx % N, cy = (idx / N) | 0;
+      const dx = (down % N) - cx, dy = ((down / N) | 0) - cy;
+      const dist = (dx !== 0 && dy !== 0) ? voxel * Math.SQRT2 : voxel;
+      const drop = cur - h[down];
+      if (drop <= 0) continue;
+      const S = drop / dist;
+      const x = (cx - c2) * voxel, z = (cy - c2) * voxel;
+      // gully corridors: only fail inside noise channels
+      const chan = failN.noise(x * 0.45 + 31.7, z * 0.45 - 14.2);
+      if (chan < 0.12) continue;
+      // spatially varying critical angle (~53°–68°)
+      const crit = 1.25 + 0.55 * failN.noise(x * 0.21 + 3.3, z * 0.21 - 9.1);
+      const over = S - crit;
+      if (over <= 0) continue;
+      // does the toe keep moving? (fan extension)
+      const down2 = downIdx[down];
+      let toe = false;
+      if (down2 >= 0) {
+        const d2x = (down2 % N) - (down % N), d2y = ((down2 / N) | 0) - ((down / N) | 0);
+        const d2d = (d2x !== 0 && d2y !== 0) ? voxel * Math.SQRT2 : voxel;
+        const d2drop = h[down] - h[down2];
+        if (d2drop > 0 && d2drop / d2d < crit * 0.8) toe = true;
+      }
+      const fail = Math.min(over * 0.30 * erodibility * voxel, 0.22 * voxel);
+      h[idx] -= fail * 0.5;
+      maps.erosionMap[idx] += fail * 0.5;
+      carved += fail * 0.5 * cellArea;
+      h[down] += fail * 0.35;
+      maps.depositMap[down] += fail * 0.35;
+      deposited += fail * 0.35 * cellArea;
+      if (toe && down2 >= 0) {
+        h[down2] += fail * 0.15;
+        maps.depositMap[down2] += fail * 0.15;
+        deposited += fail * 0.15 * cellArea;
       }
     }
+    if ((it & 2) === 2 || it === iters - 1) {
+      ff = computeFlow(h, N, voxel, rng, seed, 0.06, 0.4, seaLevel);
+    }
+    if (yieldControl && (it & 3) === 3) await yieldControl(it + 1, iters);
   }
+  drainSmallBasins(h, N, voxel, seaLevel);
+  fillMicroPits(h, N, voxel);
+  const ff2 = finalFlow(h, N, voxel, seed, seaLevel);
+  return { carvedM3: carved, depositedM3: deposited, flow: ff2.flow, flowMax: ff2.flowMax, pits: ff2.pits };
+}
 
-  // ---- scree: debris shed from steep walls piles at their base ----
-  // A talus band of loose rock at the foot of every cliff is one of
-  // the things that makes a mountain read as real. Deposit (splat)
-  // weight is added to moderate-slope cells sitting against a steep
-  // one, modulated by noise so the aprons look organic, not banded.
-  {
-    const talusN = new Perlin2D(subseed((seed ^ 0x3d4c) >>> 0, 91));
-    const c2 = (N - 1) / 2;
-    for (let j = 1; j < N - 1; j++) {
-      for (let i = 1; i < N - 1; i++) {
-        const c = j * N + i;
-        const gx = (h[c + 1] - h[c - 1]) / (2 * voxel);
-        const gz = (h[c + N] - h[c - N]) / (2 * voxel);
-        const sl = Math.hypot(gx, gz);
-        // only the apron: moderate slope, not the wall itself, not flat
-        if (sl < 0.18 || sl > 1.05) continue;
-        let wall = 0;
-        for (let k = 0; k < 8; k++) {
-          const nx = i + NEI[k][0], ny = j + NEI[k][1];
-          if (nx < 1 || ny < 1 || nx >= N - 1 || ny >= N - 1) continue;
-          const wv = steepF[ny * N + nx];
-          if (wv > wall) wall = wv;
+/**
+ * PASS 3 — HYDRAULIC (concentrated fluvial). Stream power with NO
+ * diffusion: incision is not countered by maturing, so the existing
+ * network deepens into steep-walled canyons. Run after Fluvial to
+ * carve the big canyons; run a couple of times for V-shaped gorges.
+ */
+export async function passHydraulic(cfg) {
+  const { h, N, voxel, seed, seaLevel, iterations, mExp, nExp, erodibility,
+          cutFraction, sedimentOn, maps, yieldControl } = cfg;
+  const bedrock = Math.min(seaLevel - 14, -40);
+  const res = await streamPowerErode({
+    h, N, voxel, seed: (seed ^ 0x1a2b) >>> 0,
+    iterations: Math.max(12, Math.round(iterations * 0.75)),
+    K: 0.02, m: mExp, n: Math.max(1.2, nExp), D: 0,
+    cutFraction: Math.min(0.45, cutFraction * 1.15),
+    erodibility, sedimentOn, seaLevel, bedrock,
+    minFlowA: 1.5, mScale: 0.06, mAmp: 0.45, valley: null,
+    erosionMap: maps.erosionMap, depositMap: maps.depositMap, pointsMap: maps.pointsMap,
+    yieldControl,
+  });
+  drainSmallBasins(h, N, voxel, seaLevel);
+  fillMicroPits(h, N, voxel);
+  return res;
+}
+
+/**
+ * PASS 4 — RIVERS ONLY. Same stream power, but only the main
+ * network (A ≥ 4 m²) incises, with a larger cut cap and bank
+ * retreat — deepens riverbeds and widens the big channels without
+ * touching the hillslopes. This is the "river-bed / water-stream
+ * erosion" pass: run it after Fluvial to cut the river courses
+ * deeper into the valley floors.
+ */
+export async function passRivers(cfg) {
+  const { h, N, voxel, seed, seaLevel, iterations, mExp, nExp, erodibility,
+          cutFraction, sedimentOn, maps, yieldControl } = cfg;
+  const bedrock = Math.min(seaLevel - 14, -40);
+  const res = await streamPowerErode({
+    h, N, voxel, seed: (seed ^ 0x4c8e) >>> 0,
+    iterations: Math.max(10, Math.round(iterations * 0.7)),
+    K: 0.03, m: Math.min(0.7, mExp + 0.05), n: Math.max(1.3, nExp), D: 0.03,
+    cutFraction: Math.min(0.5, cutFraction * 1.35),
+    erodibility, sedimentOn, seaLevel, bedrock,
+    minFlowA: 4, mScale: 0.06, mAmp: 0.4, valley: null,
+    erosionMap: maps.erosionMap, depositMap: maps.depositMap, pointsMap: maps.pointsMap,
+    yieldControl,
+  });
+  drainSmallBasins(h, N, voxel, seaLevel);
+  fillMicroPits(h, N, voxel);
+  return res;
+}
+
+/**
+ * PASS 5 — BRAIDED RIVERS (flow splitting). In low-gradient,
+ * high-discharge reaches the channel overloads: a migrating noise
+ * field builds sand BARS where the flow is slow (bar > +0.45) and
+ * scours channels where it's fast (< −0.25). Flow is recomputed
+ * every 4 iterations, so the threads keep splitting around the new
+ * bars — the canyon mouths fan out into the classic multi-thread
+ * braided pattern instead of a single thread to the sea.
+ */
+export async function passBraid(cfg) {
+  const { h, N, voxel, seed, seaLevel, iterations, maps, yieldControl } = cfg;
+  const size = N * N;
+  const cellArea = voxel * voxel;
+  const iters = Math.max(16, Math.round(iterations * 0.75));
+  const barN = new Perlin2D(subseed((seed ^ 0xb1ad) >>> 0, 53));
+  const c2 = (N - 1) / 2;
+  const rng = mulberry32((seed ^ 0xb0a1d) >>> 0);
+  let carved = 0, deposited = 0;
+  const braidMark = new Uint8Array(size); // where this pass worked (for local smoothing)
+  let ff = computeFlow(h, N, voxel, rng, seed, 0.06, 0.4, seaLevel);
+  for (let it = 0; it < iters; it++) {
+    const { flow, order, pits, downIdx } = ff;
+    const phase = it * 0.04; // bars migrate slowly downstream
+    for (let ii = size - 1; ii >= 0; ii--) {
+      const idx = order[ii];
+      if (pits[idx]) continue;
+      const down = downIdx[idx];
+      if (down < 0) continue;
+      const cur = h[idx];
+      if (cur < seaLevel + 0.3) continue;
+      const cx = idx % N, cy = (idx / N) | 0;
+      const dx = (down % N) - cx, dy = ((down / N) | 0) - cy;
+      const dist = (dx !== 0 && dy !== 0) ? voxel * Math.SQRT2 : voxel;
+      const drop = cur - h[down];
+      if (drop <= 0) continue;
+      const S = drop / dist;
+      const A = flow[idx] * cellArea;
+      // the braid zone: any channel with real discharge (main river AND
+      // its tributaries) once the gradient relaxes — that's where the
+      // floodplain braids, fanning out at the canyon mouth
+      if (A < 1.5 || S > 0.30) continue;
+      const x = (cx - c2) * voxel, z = (cy - c2) * voxel;
+      const bar = barN.noise(x * 0.38 + 7.7 + phase, z * 0.38 - 3.1 - phase * 0.3);
+      const g = (1 - S / 0.30) * (0.35 + 0.65 * Math.min(1, A / 40));
+      if (bar > 0.4) {
+        // bar mound: deposit here + a 1-2 cell wide lateral shoulder
+        const d = (0.22 + 0.28 * Math.min(1, A / 40)) * g * voxel;
+        h[idx] += d;
+        maps.depositMap[idx] += d;
+        deposited += d * cellArea;
+        braidMark[idx] = 1;
+        const p1x = -dy, p1y = dx, p2x = dy, p2y = -dx;
+        for (let s = 0; s < 2; s++) {
+          const px = s === 0 ? p1x : p2x, py = s === 0 ? p1y : p2y;
+          const nx2 = cx + px, ny2 = cy + py;
+          if (nx2 < 0 || ny2 < 0 || nx2 >= N || ny2 >= N) continue;
+          const si = ny2 * N + nx2;
+          const sd = d * 0.35;
+          h[si] += sd;
+          maps.depositMap[si] += sd;
+          deposited += sd * cellArea;
+          braidMark[si] = 1;
         }
-        if (wall <= 0.05) continue;
-        const x = (i - c2) * voxel, z = (j - c2) * voxel;
-        const t = 0.5 + 0.5 * talusN.noise(x * 0.35 + 21.7, z * 0.35 - 8.2);
-        depositMap[c] += 0.30 * wall * t;
+      } else if (bar < -0.3) {
+        // scour: cut the active thread deeper so water concentrates
+        const d = Math.min(0.12 * g * Math.pow(A, 0.12), 0.15 * voxel);
+        h[idx] -= d;
+        maps.erosionMap[idx] += d;
+        carved += d * cellArea;
+        braidMark[idx] = 1;
       }
     }
+    if ((it & 3) === 3 || it === iters - 1) {
+      ff = computeFlow(h, N, voxel, rng, seed, 0.06, 0.4, seaLevel);
+    }
+    if (yieldControl && (it & 3) === 3) await yieldControl(it + 1, iters);
   }
+  // relax sharp mounds — but ONLY inside the braided zone, so the rest
+  // of the landscape (rill walls etc.) is untouched
+  for (let j = 1; j < N - 1; j++) {
+    for (let i = 1; i < N - 1; i++) {
+      const c = j * N + i;
+      if (!braidMark[c]) continue;
+      const lap = (h[c - 1] + h[c + 1] + h[c - N] + h[c + N] - 4 * h[c]) * 0.25;
+      if (lap < -0.02) h[c] += 0.15 * lap;
+    }
+  }
+  drainSmallBasins(h, N, voxel, seaLevel);
+  fillMicroPits(h, N, voxel);
+  const ff2 = finalFlow(h, N, voxel, seed, seaLevel);
+  return { carvedM3: carved, depositedM3: deposited, flow: ff2.flow, flowMax: ff2.flowMax, pits: ff2.pits };
+}
 
-  // ---- micro-erosion: the fine rill network (Gaea multi-pass
-  // layering) ----
-  // The main pass's maturity diffusion has already erased everything
-  // finer than ~2 voxels — a mature landscape keeps only its big
-  // rivers, which is why single-pass erosion looks smooth. Real
-  // landscapes are multi-scale, so a second pass with DIFFERENT
-  // physics etches the dense small-channel texture:
-  //   fresh 2 m relief   → real branching choices for the flow
-  //   high K             → tiny drainage areas still incise
-  //   tiny cut cap       → shallow etches, never deep gullies
-  //   low diffusion      → rills don't decay between iterations
-  //   no canyon attractor → branches wander everywhere, off-axis
-  // Stream-power's positive feedback (lower cell → more flow → cuts
-  // more) amplifies the tiny asymmetries into a coherent rill tree.
-  //
-  // The branching seed is a VIRTUAL relief layer: 2 m-scale bumps are
-  // added to a working copy of the field, the pass erodes on the copy,
-  // then the bump field is subtracted — the rill network stays in the
-  // terrain, the bumps themselves never appear (no "boiling" surface).
-  if (detail > 0.01) {
-    const microIters = Math.max(16, Math.round(iterations * 1.5 * detail));
-    const nMicro = new Perlin2D(subseed((seed ^ 0x4b9d1e) >>> 0, 55));
-    const nMicro2 = new Perlin2D(subseed((seed ^ 0x77aa3c) >>> 0, 77));
-    const c2 = (N - 1) / 2;
-    const hm = h.slice();
-    const bumps = new Float32Array(size);
+/**
+ * PASS 6 — MICRO RILLS (fine detail). The dense 1.6–3.3 m branching
+ * rill network, seeded on virtual relief (bumps added to a working
+ * copy, eroded, subtracted — the rills stay, the bumps don't).
+ * Also feeds the dark "Channels" splat layer.
+ */
+export async function passMicro(cfg) {
+  const { h, N, voxel, seed, seaLevel, iterations, erodibility, detail, maps, yieldControl } = cfg;
+  const size = N * N;
+  const bedrock = Math.min(seaLevel - 14, -40);
+  if (detail <= 0.01) {
+    const ff2 = finalFlow(h, N, voxel, seed, seaLevel);
+    return { carvedM3: 0, depositedM3: 0, flow: ff2.flow, flowMax: ff2.flowMax, pits: ff2.pits };
+  }
+  const microIters = Math.max(16, Math.round(iterations * 1.5 * detail));
+  const nMicro = new Perlin2D(subseed((seed ^ 0x4b9d1e) >>> 0, 55));
+  const nMicro2 = new Perlin2D(subseed((seed ^ 0x77aa3c) >>> 0, 77));
+  const c2 = (N - 1) / 2;
+  const hm = h.slice();
+  const bumps = new Float32Array(size);
+  for (let j = 0; j < N; j++) {
+    const z = (j - c2) * voxel;
+    for (let i = 0; i < N; i++) {
+      const x = (i - c2) * voxel;
+      const c = j * N + i;
+      const land = smooth(seaLevel + 0.3, seaLevel + 1.8, h[c]);
+      if (land <= 0) continue;
+      // two virtual scales: ~3.3 m ridges (primary rill corridors)
+      // + ~1.6 m ridges (the fine, intricate branching layer)
+      const g = fbm01(nMicro, x * 0.30 + 17.3, z * 0.30 - 31.8,
+        { octaves: 3, lacunarity: 2.3, gain: 0.5 }) - 0.5;
+      const g2 = fbm01(nMicro2, x * 0.62 + 9.9, z * 0.62 - 44.4,
+        { octaves: 2, lacunarity: 2.3, gain: 0.55 }) - 0.5;
+      const b = (2.8 * g + 2.0 * g2) * detail * land;   // ±~2 m · detail
+      bumps[c] = b;
+      hm[c] += b;
+    }
+  }
+  const micro = await streamPowerErode({
+    h: hm, N, voxel, seed: (seed ^ 0x2c3f) >>> 0,
+    iterations: microIters,
+    K: 0.15, m: 0.45, n: 0.9, D: 0.02,
+    cutFraction: 0.11,
+    erodibility, sedimentOn: true,
+    minFlowA: 0.5,
+    seaLevel, bedrock,
+    mScale: 0.12, mAmp: 0.5,
+    valley: null,
+    erosionMap: maps.erosionMap, depositMap: maps.depositMap,
+    pointsMap: maps.pointsMap, channelsMap: maps.channelsMap,
+    yieldControl,
+  });
+  // strip the virtual seed — rills remain, bumps vanish
+  for (let i = 0; i < size; i++) hm[i] -= bumps[i];
+  h.set(hm);
+  // fine etching can mint fresh micro-pits — drain them too
+  drainSmallBasins(h, N, voxel, seaLevel);
+  fillMicroPits(h, N, voxel);
+  const ff2 = finalFlow(h, N, voxel, seed, seaLevel);
+  return { carvedM3: micro.carvedM3, depositedM3: micro.depositedM3, flow: ff2.flow, flowMax: ff2.flowMax, pits: ff2.pits };
+}
+
+/**
+ * PASS 7 — HILLSLOPE DIFFUSION (thermal/maturation). Pure Laplacian
+ * smoothing: relaxes the whole surface, flattens valley floors,
+ * rounds ridges, kills over-sharp detail. Run it between erosion
+ * passes to "age" the terrain, or alone to mature a raw landscape.
+ */
+export async function passDiffuse(cfg) {
+  const { h, N, voxel, seed, seaLevel, iterations, diffusion, yieldControl } = cfg;
+  const iters = Math.max(8, Math.round(iterations * 0.5));
+  const D = diffusion;
+  for (let it = 0; it < iters; it++) {
     for (let j = 0; j < N; j++) {
-      const z = (j - c2) * voxel;
+      const row = j * N;
       for (let i = 0; i < N; i++) {
-        const x = (i - c2) * voxel;
-        const c = j * N + i;
-        const land = smooth(seaLevel + 0.3, seaLevel + 1.8, h[c]);
-        if (land <= 0) continue;
-        // two virtual scales: ~3.3 m ridges (primary rill corridors)
-        // + ~1.6 m ridges (the fine, intricate branching layer)
-        const g = fbm01(nMicro, x * 0.30 + 17.3, z * 0.30 - 31.8,
-          { octaves: 3, lacunarity: 2.3, gain: 0.5 }) - 0.5;
-        const g2 = fbm01(nMicro2, x * 0.62 + 9.9, z * 0.62 - 44.4,
-          { octaves: 2, lacunarity: 2.3, gain: 0.55 }) - 0.5;
-        const b = (2.8 * g + 2.0 * g2) * detail * land;   // ±~2 m · detail
-        bumps[c] = b;
-        hm[c] += b;
+        const c = row + i;
+        const cur = h[c];
+        let sum = 0, cnt = 0;
+        if (i > 0) { sum += h[c - 1]; cnt++; }
+        if (i < N - 1) { sum += h[c + 1]; cnt++; }
+        if (j > 0) { sum += h[c - N]; cnt++; }
+        if (j < N - 1) { sum += h[c + N]; cnt++; }
+        const lap = (sum - cnt * cur) / cnt;
+        if (lap > 1e-5 || lap < -1e-5) h[c] = cur + D * lap;
       }
     }
-    const micro = await streamPowerErode({
-      h: hm, N, voxel, seed: (seed ^ 0x2c3f) >>> 0,
-      iterations: microIters,
-      K: 0.15, m: 0.45, n: 0.9, D: 0.02,
-      cutFraction: 0.11,
-      erodibility, sedimentOn: true,
-      minFlowA: 0.5,
-      seaLevel, bedrock,
-      mScale: 0.12, mAmp: 0.5,
-      valley: null,
-      erosionMap, depositMap, pointsMap, channelsMap,
-      yieldControl: yieldControl
-        ? (i, n) => yieldControl(i + iterations, n + iterations)
-        : null,
-    });
-    // strip the virtual seed — rills remain, bumps vanish
-    for (let i = 0; i < size; i++) hm[i] -= bumps[i];
-    h.set(hm);
-    res.carvedM3 += micro.carvedM3;
-    res.depositedM3 += micro.depositedM3;
-    // fine etching can mint fresh micro-pits — drain them too
-    drainSmallBasins(h, N, voxel, seaLevel);
-    fillMicroPits(h, N, voxel);
+    if (yieldControl && (it & 3) === 3) await yieldControl(it + 1, iters);
   }
+  const ff2 = finalFlow(h, N, voxel, seed, seaLevel);
+  return { carvedM3: 0, depositedM3: 0, flow: ff2.flow, flowMax: ff2.flowMax, pits: ff2.pits };
+}
 
-  // the drain pass may have opened new outlets — refresh the flow
-  const rng2 = mulberry32((seed ^ 0x9e3779b9) >>> 0);
-  const ff2 = computeFlow(h, N, voxel, rng2, seed, 0.06, 0.4, seaLevel);
-  const flow2 = ff2.flow;
-  let flowMax2 = 1;
-  for (let f = 0; f < size; f++) if (flow2[f] > flowMax2) flowMax2 = flow2[f];
+/** The pass library — the UI renders one "Simulate" button per entry. */
+export const EROSION_PASSES = {
+  fluvial:   { name: 'Fluvial · stream power', desc: 'Full water erosion: incision + sediment capacity + hillslope diffusion + basin drainage + thermal weathering. The main pass — run it first.', fn: passFluvial },
+  debris:    { name: 'Debris flows', desc: 'Slope failure: over-steep upper-flank faces collapse into gully channels and fan out into debris deposits at the toe. Non-water erosion.', fn: passDebris },
+  hydraulic: { name: 'Hydraulic (concentrated)', desc: 'No diffusion: the existing network deepens into steep-walled canyons. Run after Fluvial for V-shaped gorges.', fn: passHydraulic },
+  rivers:    { name: 'Rivers only', desc: 'Only the main network incises (A ≥ 4 m²) with a larger cut — deepens river beds and widens banks without touching hillslopes.', fn: passRivers },
+  braid:     { name: 'Braided rivers', desc: 'Low-gradient reaches overload: bars build, threads split around them and migrate — multi-thread braided channels at the canyon mouths.', fn: passBraid },
+  micro:     { name: 'Micro rills (detail)', desc: 'Fine 1.6–3.3 m branching rill network (the intricate detail texture). Also feeds the dark Channels splat layer.', fn: passMicro },
+  diffuse:   { name: 'Hillslope diffusion', desc: 'Pure smoothing: rounds ridges, flattens valley floors, matures the surface. Run between passes to age the terrain.', fn: passDiffuse },
+};
+export const EROSION_PASS_ORDER = ['fluvial', 'debris', 'hydraulic', 'rivers', 'braid', 'micro', 'diffuse'];
 
+/**
+ * One-click erosion: runs the given pass stack (default:
+ * fluvial → debris → braid → micro) on the field, then refreshes
+ * flow + water bodies. Mutates h; returns stats + splat fields.
+ */
+export async function runErosion({
+  h, N, voxel, seed,
+  iterations, cutFraction, erodibility, diffusion, mExp, nExp,
+  sedimentOn, seaLevel, valley = null, detail = 0.65,
+  stack = null, maps = null, yieldControl = null,
+}) {
+  const size = N * N;
+  const erosionMap = maps ? maps.erosionMap : new Float32Array(size);
+  const depositMap = maps ? maps.depositMap : new Float32Array(size);
+  const pointsMap = maps ? maps.pointsMap : new Float32Array(size);
+  const channelsMap = maps ? maps.channelsMap : new Float32Array(size);
+
+  const passIds = stack || ['fluvial', 'debris', 'braid', 'micro'];
+  const base = {
+    h, N, voxel, seed, seaLevel, valley,
+    iterations, diffusion, mExp, nExp, erodibility, cutFraction,
+    sedimentOn, detail,
+    maps: { erosionMap, depositMap, pointsMap, channelsMap },
+  };
+  let carved = 0, deposited = 0, flow = null, flowMax = 1, pits = null;
+  for (let pi = 0; pi < passIds.length; pi++) {
+    const pass = EROSION_PASSES[passIds[pi]];
+    if (!pass) continue;
+    const r = await pass.fn({
+      ...base,
+      yieldControl: yieldControl ? (i, n) => yieldControl(pi, passIds.length, i, n) : null,
+    });
+    carved += r.carvedM3;
+    deposited += r.depositedM3;
+    flow = r.flow; flowMax = r.flowMax; pits = r.pits;
+  }
+  if (!flow) {
+    const ff2 = finalFlow(h, N, voxel, seed, seaLevel);
+    flow = ff2.flow; flowMax = ff2.flowMax; pits = ff2.pits;
+  }
   // ---- water bodies (lakes filled + rivers) ----
-  const wb = detectWaterBodies(h, N, flow2, seaLevel, { voxel });
-
+  const wb = detectWaterBodies(h, N, flow, seaLevel, { voxel });
   return {
     erosionMap, depositMap, pointsMap, channelsMap,
-    flow: flow2, pits: ff2.pits, flowMax: flowMax2,
+    flow, pits, flowMax,
     water: wb.water, lakeCount: wb.lakeCount, riverCount: wb.riverCount,
-    stats: { carvedM3: res.carvedM3, depositedM3: res.depositedM3, flowMax: flowMax2, iterations },
+    stats: { carvedM3: carved, depositedM3: deposited, flowMax, iterations: passIds.length },
   };
 }

@@ -345,3 +345,51 @@ body.working .pipeline button.primary { opacity: 0.9; }
   display: block;
 }
 .mat.on .nm { color: #eaf2fb; font-weight: 600; }
+
+/* ---------------- erosion pass stack ---------------- */
+.passhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 0 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.passhead span:first-child {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent-2, #7fc4ff);
+}
+.passhead .sub {
+  font-size: 9px;
+  color: var(--text-faint, #5b6774);
+  text-align: right;
+}
+.passrow {
+  display: grid;
+  grid-template-columns: 14px 62px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+}
+.passrow .passcb { accent-color: var(--accent); cursor: pointer; margin: 0; }
+.passrow .passbtn {
+  font-size: 10px;
+  padding: 3px 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: border-color .12s, background .12s, transform .06s;
+}
+.passrow .passbtn:hover { background: #1b2230; border-color: #2e3846; }
+.passrow .passbtn:active { transform: translateY(1px); }
+.passrow .passbtn:disabled { opacity: 0.45; cursor: default; }
+.passrow .passname {
+  font-size: 11px;
+  color: var(--text);
+  cursor: help;
+}

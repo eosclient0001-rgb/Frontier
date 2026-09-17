@@ -121,6 +121,72 @@ export const MATERIALS = [
     },
   },
   {
+    id: 'badlands',
+    name: 'Badlands',
+    desc: 'Rill-etched arid loam · rust & tan · sparse dry grass · no snow',
+    palette: {
+      grass: [[104, 96, 58], [142, 130, 82]],
+      dirt: [[150, 88, 54], [188, 124, 82]],
+      rock: [[126, 92, 70], [158, 122, 96]],
+      sand: [[196, 168, 122], [222, 198, 156]],
+      snow: [[240, 244, 248], [251, 252, 254]],
+    },
+    rules: {
+      grassSlope: [0.10, 0.34], grassFlow: [0.40, 0.70], grassAlt: [6, 20],
+      rockSlope: [0.62, 0.88], rockPeak: 0.70, dirtBelt: [0.18, 0.58],
+      soilErode: [1.00, 1.00, 0.20], snowCap: 0.0,
+    },
+    shader: {
+      wetStart: 0.35, wetEnd: 0.90, wetStrength: 0.50, wetTint: [0.72, 0.56, 0.46],
+      sedStrength: 0.60, sedTint: [1.14, 1.06, 0.96], sedAdd: [0.05, 0.03, 0.01],
+      tonal: 0.038,
+    },
+  },
+  {
+    id: 'glacial',
+    name: 'Glacial Till',
+    desc: 'Cold stony outwash · boulder slopes · braided rivers · long snow',
+    palette: {
+      grass: [[96, 104, 82], [134, 142, 110]],
+      dirt: [[126, 122, 108], [160, 156, 140]],
+      rock: [[138, 142, 150], [178, 182, 190]],
+      sand: [[198, 194, 172], [226, 222, 200]],
+      snow: [[238, 243, 249], [251, 253, 255]],
+    },
+    rules: {
+      grassSlope: [0.10, 0.35], grassFlow: [0.45, 0.80], grassAlt: [12, 32],
+      rockSlope: [0.64, 0.90], rockPeak: 0.80, dirtBelt: [0.26, 0.55],
+      soilErode: [0.70, 0.80, 0.12], snowCap: 0.85,
+    },
+    shader: {
+      wetStart: 0.25, wetEnd: 0.50, wetStrength: 0.38, wetTint: [0.62, 0.65, 0.70],
+      sedStrength: 0.55, sedTint: [1.10, 1.10, 1.08], sedAdd: [0.04, 0.04, 0.045],
+      tonal: 0.030,
+    },
+  },
+  {
+    id: 'lichen',
+    name: 'Lichen Rock',
+    desc: 'Lichen-mottled bare rock · orange/green crusts over grey stone',
+    palette: {
+      grass: [[124, 112, 66], [164, 146, 88]],
+      dirt: [[112, 102, 84], [146, 134, 110]],
+      rock: [[128, 124, 116], [168, 162, 152]],
+      sand: [[178, 170, 146], [206, 198, 172]],
+      snow: [[234, 238, 244], [248, 250, 253]],
+    },
+    rules: {
+      grassSlope: [0.06, 0.45], grassFlow: [0.35, 0.70], grassAlt: [6, 26],
+      rockSlope: [0.50, 0.78], rockPeak: 0.60, dirtBelt: [0.24, 0.50],
+      soilErode: [0.55, 0.65, 0.10], snowCap: 0.30,
+    },
+    shader: {
+      wetStart: 0.30, wetEnd: 0.55, wetStrength: 0.35, wetTint: [0.64, 0.65, 0.62],
+      sedStrength: 0.45, sedTint: [1.08, 1.07, 1.02], sedAdd: [0.03, 0.03, 0.02],
+      tonal: 0.035,
+    },
+  },
+  {
     id: 'forest',
     name: 'Temperate Forest',
     desc: 'Deep green canopy · soft humus · hidden rock · light snow',

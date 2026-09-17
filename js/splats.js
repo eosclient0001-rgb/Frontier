@@ -9,6 +9,7 @@
  * ============================================================ */
 
 import { smoothstep, clamp01 } from './mountain.js';
+import { Perlin2D, fbm01 } from './noise.js';
 
 /** All analysis channels, normalized to [0,1] for preview & blending. */
 export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, depositMap, pointsMap, channelsMap }) {
@@ -41,6 +42,25 @@ export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, 
   let cMin = Infinity, cMax = -Infinity;
   for (let i = 0; i < size; i++) { const v = curvature[i]; if (v < cMin) cMin = v; if (v > cMax) cMax = v; }
   const cSpan = Math.max(cMax - cMin, 1e-6);
+
+  // ---- mottle: low-frequency soil variation (~11 m patches) ----
+  // Modulates the layer weights in computeSplatWeights so grassland,
+  // scree and dirt don't read as flat single-colour fields — the
+  // "mottled" look of real ground cover (fixed seed: stable across
+  // rebuilds, independent of the terrain seed).
+  const mottle = new Float32Array(size);
+  {
+    const mN = new Perlin2D(0x5011071);
+    const c2 = (N - 1) / 2;
+    for (let j = 0; j < N; j++) {
+      const z = (j - c2) * voxel;
+      for (let i = 0; i < N; i++) {
+        const x = (i - c2) * voxel;
+        mottle[j * N + i] = fbm01(mN, x * 0.09 + 11.1, z * 0.09 - 6.6,
+          { octaves: 2, lacunarity: 2.2, gain: 0.5 });
+      }
+    }
+  }
 
   // ---- flow (log-normalized wetness) ----
   const flowN = new Float32Array(size);
@@ -158,7 +178,7 @@ export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, 
   }
 
   return {
-    height, slope, curvature, flowN, erosionN, sedimentN, channelsN, peaks, pointsN,
+    height, slope, curvature, flowN, erosionN, sedimentN, channelsN, peaks, pointsN, mottle,
     hMin, hMax, slopeRef,
     raw: { erosionMap, depositMap, pointsMap, channelsMap },
   };
@@ -180,6 +200,12 @@ export function computeSplatWeights({ channels, h, N, seaLevel, snowLine, mat })
     soilErode: [0.75, 0.95, 0.10], snowCap: 1.0,
   };
   const w = new Float32Array(size * 5);
+  const mottle = channels.mottle || new Float32Array(size);
+  // three phase-shifted reads of the same patch field → grass, dirt
+  // and rock vary together but not in lockstep (soil mottling)
+  const mG = (i) => 0.78 + 0.44 * mottle[i];
+  const mD = (i) => 0.80 + 0.40 * ((mottle[i] + 0.37) % 1);
+  const mR = (i) => 0.88 + 0.24 * ((mottle[i] + 0.71) % 1);
 
   for (let i = 0; i < size; i++) {
     const hv = h[i];
@@ -235,9 +261,11 @@ export function computeSplatWeights({ channels, h, N, seaLevel, snowLine, mat })
       dirt *= 1 - 0.6 * sub;
     }
 
-    // drop impact points darken / enrich soil (trampled paths)
-    const wGrass = grass * (1 - 0.35 * pointsN[i]);
-    const wDirt = dirt * (1 + 0.5 * pointsN[i]);
+    // drop impact points darken / enrich soil (trampled paths),
+    // low-frequency mottling breaks the flat colour fields up
+    const wGrass = grass * (1 - 0.35 * pointsN[i]) * mG(i);
+    const wDirt = dirt * (1 + 0.5 * pointsN[i]) * mD(i);
+    rock *= mR(i);
 
     const sum = wGrass + wDirt + rock * (1 - snow) + sand + snow + 1e-6;
     w[i * 5 + 0] = wGrass / sum;
