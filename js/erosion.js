@@ -32,7 +32,7 @@
  * resolutions.
  * ============================================================ */
 
-import { mulberry32 } from './noise.js';
+import { mulberry32, Perlin2D, subseed } from './noise.js';
 
 const NEI = [
   [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
@@ -119,7 +119,7 @@ function depositFan(h, N, cx, cy, dh, map) {
 export function thermalErode({
   h, N, voxel, rng,
   drops, dropSize, erodibility, traversal, cutFraction,
-  bedrock, erosionMap, depositMap, pointsMap,
+  bedrock, erosionMap, depositMap, pointsMap, downIdx = null,
 }) {
   // world-space drop path -> grid steps (this is where resolution
   // and cut depth stay matched)
@@ -129,8 +129,10 @@ export function thermalErode({
 
   let carved = 0, deposited = 0, stops = 0;
   // per-drop erosion budget (world mass): keeps gorges finite and the
-  // total carved volume comparable across resolutions
-  const maxErode = dropSize * 0.10;
+  // total carved volume comparable across resolutions. Deliberately
+  // small — thermal weathering is subtle texture, the hydraulic
+  // network owns the visible channels (Gaea keeps these separate).
+  const maxErode = dropSize * 0.05;
   // Bias drop starts toward the upper mountain: real rills form where
   // runoff concentrates on the slopes above the drainage, not as a
   // uniform carpet over the lowland. (Re-sample a few times per drop.)
@@ -196,9 +198,13 @@ export function thermalErode({
       }
 
       // Taylor-style transport capacity — mass ∝ slope (world units,
-      // grid-independent), slope-saturated so gorges can't run away
+      // grid-independent), slope-saturated so gorges can't run away.
+      // Slope-gated: rills only form where the ground is steep enough —
+      // gentle mid-flanks weather to soil, they don't get rilled into a
+      // uniform carpet (that is the "parallel stripe" CG artifact).
       const slopeC = Math.min(slope, 3.0);
-      const capacity = dropSize * slopeC * 0.35 * erodibility;
+      const slopeGate = smooth(0.20, 0.55, slope);
+      const capacity = dropSize * slopeC * 0.35 * erodibility * slopeGate;
       const maxCarry = cutPerStep * cellArea; // voxel-matched cut cap
 
       if (sediment < capacity && carvedDrop < maxErode) {
@@ -225,9 +231,17 @@ export function thermalErode({
         }
       }
 
-      // move downhill; jitter breaks straight sticky channels
-      let nx = best;
-      if (second >= 0 && slope < 0.10 && rng() < 0.45) nx = second;
+      // move downhill: follow the meander-biased flow network when
+      // available (rills reinforce the dendritic system instead of
+      // cutting parallel radial slits); else steepest descent + jitter
+      let nx;
+      if (downIdx && downIdx[idx] >= 0) {
+        nx = downIdx[idx];
+        if (second >= 0 && rng() < 0.15) nx = second;
+      } else {
+        nx = best;
+        if (second >= 0 && slope < 0.10 && rng() < 0.45) nx = second;
+      }
       cx = nx % N;
       cy = (nx / N) | 0;
     }
@@ -244,13 +258,28 @@ function kFor(idx, cx, cy, N) {
 }
 
 /**
- * D8 flow accumulation. Returns per-cell contributing-area flow,
- * a pit mask and the processing order (ascending height).
+ * D8 flow accumulation with a COHERENT MEANDER FIELD.
+ *
+ * Pure steepest-descent on a radially symmetric dome routes every
+ * stream straight outward — the result is parallel radial spokes,
+ * the classic CG stripe artifact. Real drainage networks wander,
+ * because the terrain's fine structure rotates the local descent
+ * direction. We emulate that with a low-frequency Perlin field that
+ * biases each cell's descent direction by up to ±~40°, coherently
+ * over ~10 m. The bias is isotropic (zero net drift over the whole
+ * mountain), so this creates MEANDERS and confluences — not the
+ * one-sided sideways slide of a uniform tilt.
+ *
+ * Returns per-cell contributing-area flow, a pit mask, the
+ * processing order (ascending height) and the chosen downhill
+ * neighbour per cell (downIdx — lets thermal drops follow the
+ * same network).
  */
-export function computeFlow(h, N, voxel, jitterRng) {
+export function computeFlow(h, N, voxel, jitterRng, seed = 1, mScale = 0.035, mAmp = 0.7) {
   const size = N * N;
   const flow = new Float32Array(size);
   const pits = new Uint8Array(size);
+  const downIdx = new Int32Array(size).fill(-1);
   flow.fill(1);
 
   // bucket sort by quantized height (fast, stable enough)
@@ -268,6 +297,14 @@ export function computeFlow(h, N, voxel, jitterRng) {
   const cursor = starts.slice(0, BUCKETS);
   for (let i = 0; i < size; i++) order[cursor[bucketOf[i]]++] = i;
 
+  // meander field: preferred descent direction φ(x,y) in [-π, π],
+  // coherent over ~10 m, deterministic per seed
+  const meanderN = new Perlin2D(subseed((seed ^ 0x51ab77) >>> 0, 77));
+  const MSCALE = mScale;
+  const MAMP = mAmp;
+  const ANG = new Float32Array(8);
+  for (let k = 0; k < 8; k++) ANG[k] = Math.atan2(NEI[k][1], NEI[k][0]);
+
   const flatEps = 0.015 * voxel;
   // process strictly from highest cell to lowest so upflow is settled first
   for (let i = size - 1; i >= 0; i--) {
@@ -276,60 +313,95 @@ export function computeFlow(h, N, voxel, jitterRng) {
     const cur = h[idx];
 
     let best = -1, bestH = cur;
+    let minH = cur;
+    let bestScore = -1;
+    const phi = meanderN.noise(cx * MSCALE, cy * MSCALE) * Math.PI;
     for (let k = 0; k < 8; k++) {
       const nx = cx + NEI[k][0], ny = cy + NEI[k][1];
       if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
       const nh = h[ny * N + nx];
-      if (nh < bestH - 1e-9) { best = ny * N + nx; bestH = nh; }
+      if (nh >= cur - 1e-9) continue;
+      if (nh < minH) minH = nh;
+      // meander-biased score: prefer neighbours whose direction
+      // matches the coherent preferred direction
+      const score = (cur - nh) * (1 + 0.5 * MAMP * Math.cos(ANG[k] - phi));
+      if (best < 0 || score > bestScore) { best = ny * N + nx; bestScore = score; bestH = nh; }
     }
     if (best < 0) { pits[idx] = 1; continue; }
     // near-flat jitter: among neighbours within flatEps of the min, pick one at random
-    if (cur - bestH < flatEps) {
+    if (cur - minH < flatEps) {
       const roll = jitterRng();
       let count = 0;
       for (let k = 0; k < 8; k++) {
         const nx = cx + NEI[k][0], ny = cy + NEI[k][1];
         if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
         const nh = h[ny * N + nx];
-        if (nh <= cur - 1e-9 && nh >= bestH - flatEps) count++;
+        if (nh <= cur - 1e-9 && nh >= minH - flatEps) count++;
       }
       let pick = 0;
       for (let k = 0; k < 8; k++) {
         const nx = cx + NEI[k][0], ny = cy + NEI[k][1];
         if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
         const nh = h[ny * N + nx];
-        if (nh <= cur - 1e-9 && nh >= bestH - flatEps) {
-          if (pick === roll * count) { best = ny * N + nx; break; }
+        if (nh <= cur - 1e-9 && nh >= minH - flatEps) {
+          if (pick === roll * count) { best = ny * N + nx; bestH = nh; break; }
           pick++;
         }
       }
     }
+    downIdx[idx] = best;
     flow[best] += flow[idx];
   }
-  return { flow, pits, order };
+  return { flow, pits, order, downIdx };
 }
 
 /**
- * Hydraulic carving + sediment routing.
+ * Hydraulic carving + sediment routing — Gaea-style layered erosion.
+ *
+ *  · PASS 0 (STRUCTURE): wider, gentler incision of the mid-flow
+ *    field. The grooves it cuts bias the D8 field on the next
+ *    recompute, so water converges into them (Gaea's "layering
+ *    erosion" — the first pass's flow structure guides the rest).
+ *  · PASSES 1..n (DOWNCUT): incision concentrates into the dominant
+ *    channels only (steep fN gate) + HEADWARD EROSION — channel
+ *    heads grow upstream, capturing neighbouring flow lines, which
+ *    is what produces the dendritic river-tree topology (real
+ *    drainage networks, not parallel radial slits).
+ *  · SEDIMENT ROUTING: load follows flow; alluvial fans where the
+ *    gradient relaxes (valley floors, piedmont).
+ *
  * Re-runs flow accumulation on each pass so rivers re-route as they cut.
  *
- * @returns {{carvedM3:number, depositedM3:number, flowMax:number}}
+ * @returns {{carvedM3:number, depositedM3:number, flowMax:number,
+ *            flow:Float32Array, pits:Uint8Array}}
  */
 export function hydraulicCarve({
   h, N, voxel, rng,
   passes, cutFraction, erodibility, flowExp, sedimentOn, seaLevel, bedrock,
-  erosionMap, depositMap,
+  erosionMap, depositMap, seed = 1, initFlow = null,
+  mScale = 0.035, mAmp = 1.8,
 }) {
   const size = N * N;
   const cellArea = voxel * voxel;
   const cutPerStep = voxel * cutFraction * 0.90; // voxel-matched cut cap
   let carved = 0, deposited = 0, flowMax = 1;
 
-  let { flow, pits, order } = computeFlow(h, N, voxel, rng);
+  let { flow, pits, order } = initFlow || computeFlow(h, N, voxel, rng, seed, mScale, mAmp);
   for (let f = 0; f < size; f++) if (flow[f] > flowMax) flowMax = flow[f];
 
   for (let pass = 0; pass < passes; pass++) {
     const logF = Math.log1p(flowMax);
+    const fN = new Float32Array(size);
+    for (let i = 0; i < size; i++) fN[i] = Math.pow(Math.log1p(flow[i]) / logF, flowExp);
+
+    // ---- Gaea layering: structure pass vs downcut passes ----
+    const structural = pass === 0;
+    // temporal concentration: later downcut passes tighten the gate so
+    // only the dominant (high-flow) channels keep cutting — deep
+    // main-stem canyons + shallow tributaries (river-order hierarchy)
+    const gateLo = structural ? 0.34 : 0.50 + 0.045 * pass;
+    const gateHi = structural ? 0.72 : 0.90;
+    const amp = structural ? 0.65 : 1.1;
 
     // ---- (1) flow-weighted incision (shapes the channels) ----
     for (let idx = 0; idx < size; idx++) {
@@ -345,15 +417,18 @@ export function hydraulicCarve({
         if (nh < bestH) bestH = nh;
       }
       const slope = Math.max(0, (cur - bestH) / voxel);
-      const fN = Math.pow(Math.log1p(flow[idx]) / logF, flowExp);
+      const fG = fN[idx];
 
       // gate: only STRONGLY concentrated flow incises. This is the core
       // of the dendritic hierarchy — a few dominant channels + tributaries
       // cut, while hillslopes between them stay intact (no uniform slits).
-      const fGate = smooth(0.25, 0.65, fN);
+      const fGate = smooth(gateLo, gateHi, fG);
+      if (fGate <= 0.004) continue;
 
-      // world volume moved per cell (m³) — resolution independent
-      const cellVol = 0.075 * fGate * fN * (0.25 + slope * 1.6) * erodibility;
+      // world volume moved per cell (m³) — resolution independent.
+      // fG² makes incision super-linear in concentration: main stems
+      // cut several times deeper than tributaries (river-order depth)
+      const cellVol = 0.075 * amp * fGate * fG * fG * (0.30 + slope * 0.7) * erodibility;
       let e = cellVol / cellArea;
       if (e > cutPerStep) e = cutPerStep;
       // soften near the waterline to keep a clean coast
@@ -377,6 +452,84 @@ export function hydraulicCarve({
           }
         }
         carved += moved;
+      }
+    }
+
+    // ---- (2) headward erosion + divide capture (downcut passes) ----
+    // The branching mechanism of real drainage networks: a flow HEAD
+    // (a cell that receives no upstream inflow — the source of a
+    // streamlet) that drains into an already-carved channel cuts a
+    // small notch into the divide above it. On the next flow recompute
+    // the water on the FAR side of that divide routes through the
+    // notch, so the channel has captured a whole tributary basin —
+    // producing Y confluences and the dendritic river-tree topology
+    // instead of parallel radial grooves.
+    if (!structural) {
+      // channel proximity mask: cells within 5 of any eroded cell
+      const near = new Uint8Array(size);
+      for (let ii = 0; ii < size; ii++) if (erosionMap[ii] > 0.004) near[ii] = 1;
+      const near2 = new Uint8Array(size);
+      for (let d = 0; d < 5; d++) {
+        for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+          const c = j * N + i;
+          if (!near[c]) continue;
+          near2[c] = 1;
+          for (let k = 0; k < 4; k++) {
+            const nx = i + NEI[k][0], ny = j + NEI[k][1];
+            if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+            near2[ny * N + nx] = 1;
+          }
+        }
+        near.set(near2); near2.fill(0);
+      }
+
+      for (let ii = 0; ii < size; ii++) {
+        const idx = order[ii];
+        if (pits[idx] || flow[idx] < 2 || !near[idx]) continue;
+        const cx = idx % N, cy = (idx / N) | 0;
+        const cur = h[idx];
+        if (cur < seaLevel + 1.0) continue;
+
+        // head = local flow maximum (no neighbour feeds it)
+        let isHead = true;
+        for (let k = 0; k < 8 && isHead; k++) {
+          const nx = cx + NEI[k][0], ny = cy + NEI[k][1];
+          if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+          if (flow[ny * N + nx] > flow[idx] + 0.5) isHead = false;
+        }
+        if (!isHead) continue;
+
+        // the head must drain (within 4 downhill steps) into a carved
+        // channel — otherwise it is just hilltop rill, not a tributary
+        let p = idx, feeder = false;
+        for (let s = 0; s < 4 && !feeder; s++) {
+          let bestN = -1, bestH = h[p];
+          for (let k = 0; k < 8; k++) {
+            const nx = (p % N) + NEI[k][0], ny = ((p / N) | 0) + NEI[k][1];
+            if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+            if (h[ny * N + nx] < bestH - 1e-9) { bestH = h[ny * N + nx]; bestN = ny * N + nx; }
+          }
+          if (bestN < 0) break;
+          if (erosionMap[bestN] > 0.004) { feeder = true; break; }
+          p = bestN;
+        }
+        if (!feeder) continue;
+
+        // carve the head + one notch into the steepest divide above
+        const dh = Math.min(cutPerStep * 0.45, cur - bedrock);
+        if (dh > 1e-9) {
+          h[idx] -= dh; erosionMap[idx] += dh; carved += dh * cellArea;
+        }
+        let divN = -1, divH = cur;
+        for (let k = 0; k < 8; k++) {
+          const nx = cx + NEI[k][0], ny = cy + NEI[k][1];
+          if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+          if (h[ny * N + nx] > divH) { divH = h[ny * N + nx]; divN = ny * N + nx; }
+        }
+        if (divN >= 0) {
+          const dh2 = Math.min(dh * 0.6, h[divN] - bedrock);
+          if (dh2 > 1e-9) { h[divN] -= dh2; erosionMap[divN] += dh2; carved += dh2 * cellArea; }
+        }
       }
     }
 
@@ -410,9 +563,8 @@ export function hydraulicCarve({
           if (nh < bestH) { bestH = nh; bestDown = ny * N + nx; }
         }
         const slope = Math.max(0, (h[idx] - bestH) / voxel);
-        const fN = Math.pow(Math.log1p(flow[idx]) / logF, flowExp);
         // same steep gate as incision: channels transport, hillslopes deposit
-        const fGate = smooth(0.25, 0.65, fN);
+        const fGate = smooth(gateLo, gateHi, fN[idx]);
         if (fGate <= 0.01) {
           // negligible flow: whatever arrived settles here as a broad fan
           if (l > 1e-9) {
@@ -424,7 +576,7 @@ export function hydraulicCarve({
         }
 
         // transport capacity (mass) for this cell
-        const cap = 0.9 * fGate * fN * (0.25 + slope * 1.8) * erodibility;
+        const cap = 0.9 * fGate * fN[idx] * (0.30 + slope * 0.8) * erodibility;
         const cur = h[idx];
 
         if (l < cap) {
@@ -454,7 +606,7 @@ export function hydraulicCarve({
     }
 
     if (pass < passes - 1) {
-      ({ flow, pits, order } = computeFlow(h, N, voxel, rng));
+      ({ flow, pits, order } = computeFlow(h, N, voxel, rng, seed, mScale, mAmp));
       flowMax = 1;
       for (let f = 0; f < size; f++) if (flow[f] > flowMax) flowMax = flow[f];
     }
@@ -462,6 +614,45 @@ export function hydraulicCarve({
 
   // keep the final flow field for splats
   return { carvedM3: carved, depositedM3: deposited, flowMax, flow, pits };
+}
+
+/**
+ * Mass wasting (talus / debris) — Gaea's "Debris" analogue.
+ * Sandpile relaxation: any cell steeper than the angle of repose sheds
+ * material downhill until the slope relaxes. This is what real mountains
+ * do with cliffs and freshly-cut gully walls:
+ *   · cliff faces slump into smooth scree (talus) cones at their base
+ *   · sharp V channels widen into natural U gullies (bank slumping)
+ *   · noise spikes relax into believable rounded relief
+ * Mass-conserving, cheap, stable. Mutates h in place.
+ */
+function talusRelax(h, N, voxel, bedrock, { iterations = 3, tanAngle = 0.78, k = 0.22 } = {}) {
+  const size = N * N;
+  const eqDrop = voxel * tanAngle; // equilibrium drop per neighbour step
+  for (let it = 0; it < iterations; it++) {
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const c = j * N + i;
+        const cur = h[c];
+        if (cur <= bedrock) continue;
+        // lowest neighbour
+        let lowN = -1, lowH = cur;
+        for (let kk = 0; kk < 8; kk++) {
+          const nx = i + NEI[kk][0], ny = j + NEI[kk][1];
+          if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+          const ni = ny * N + nx;
+          if (h[ni] < lowH) { lowH = h[ni]; lowN = ni; }
+        }
+        if (lowN < 0) continue;
+        const drop = cur - lowH;
+        if (drop <= eqDrop) continue; // at rest — nothing moves
+        const moved = Math.min((drop - eqDrop) * k, cur - bedrock);
+        if (moved <= 1e-9) continue;
+        h[c] -= moved;
+        h[lowN] += moved;
+      }
+    }
+  }
 }
 
 /**
@@ -477,7 +668,7 @@ export function hydraulicCarve({
  *            lakeCount:number, riverCount:number}}
  */
 export function detectWaterBodies(h, N, flow, seaLevel,
-  { minLakeArea = 18, minLakeDepth = 0.28, riverPercentile = 0.9965 } = {}) {
+  { minLakeArea = 15, minLakeDepth = 0.20, riverPercentile = 0.998 } = {}) {
   const size = N * N;
   const river = new Float32Array(size);
   const lake = new Float32Array(size);
@@ -610,7 +801,7 @@ export function detectWaterBodies(h, N, flow, seaLevel,
 }
 
 /** One-click full hydraulic pass. Mutates h; returns stats + fields. */
-export function runErosion({ h, N, voxel, seed, thermalOn, hydOn, drops, dropSize, erodibility, traversal, cutFraction, flowPasses, flowExp, sedimentOn, seaLevel }) {
+export function runErosion({ h, N, voxel, seed, thermalOn, hydOn, drops, dropSize, erodibility, traversal, cutFraction, flowPasses, flowExp, sedimentOn, seaLevel, meanderScale = 0.035, meanderAmp = 1.8 }) {
   const rngT = mulberry32((seed ^ 0x2f6e2b1) >>> 0);
   const rngH = mulberry32((seed ^ 0x9e3779b9) >>> 0);
   const bedrock = Math.min(seaLevel - 14, -40);
@@ -619,12 +810,17 @@ export function runErosion({ h, N, voxel, seed, thermalOn, hydOn, drops, dropSiz
   const depositMap = new Float32Array(size);
   const pointsMap = new Float32Array(size);
 
+  // Base flow field (with the coherent meander) computed ONCE up front:
+  // thermal drops follow this network and the hydraulic pass reuses it
+  // as pass 0 — one consistent drainage system across all solvers.
+  const flow0 = computeFlow(h, N, voxel, rngH, seed, meanderScale, meanderAmp);
+
   const stats = { thermal: null, hydraulic: null };
   if (thermalOn) {
     stats.thermal = thermalErode({
       h, N, voxel, rng: rngT,
       drops, dropSize, erodibility, traversal, cutFraction, bedrock,
-      erosionMap, depositMap, pointsMap,
+      erosionMap, depositMap, pointsMap, downIdx: flow0.downIdx,
     });
   }
   let flow = null, pits = null, flowMax = 0;
@@ -633,6 +829,7 @@ export function runErosion({ h, N, voxel, seed, thermalOn, hydOn, drops, dropSiz
       h, N, voxel, rng: rngH,
       passes: flowPasses, cutFraction, erodibility, flowExp,
       sedimentOn, seaLevel, bedrock, erosionMap, depositMap,
+      seed, initFlow: flow0, mScale: meanderScale, mAmp: meanderAmp,
     });
     stats.hydraulic = { carvedM3: res.carvedM3, depositedM3: res.depositedM3, flowMax: res.flowMax };
     flow = res.flow; pits = res.pits; flowMax = res.flowMax;
@@ -655,6 +852,10 @@ export function runErosion({ h, N, voxel, seed, thermalOn, hydOn, drops, dropSiz
   let carvedM3 = 0, depositedM3 = 0;
   if (stats.thermal) { carvedM3 += stats.thermal.carvedM3; depositedM3 += stats.thermal.depositedM3; }
   if (stats.hydraulic) { carvedM3 += stats.hydraulic.carvedM3; depositedM3 += stats.hydraulic.depositedM3; }
+
+  // ---- mass wasting (talus): relax over-steep walls into scree cones,
+  // widen V channels into U gullies — the debris layer of Gaea ----
+  talusRelax(h, N, voxel, bedrock);
 
   // ---- water bodies (lakes filled + rivers) ----
   let water = null, lakeCount = 0, riverCount = 0;

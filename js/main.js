@@ -11,6 +11,7 @@ import { buildMountain } from './mountain.js';
 import { runErosion } from './erosion.js';
 import { computeChannels, computeSplatWeights, previewField } from './splats.js';
 import { bakeAllTextures } from './textures.js';
+import { MATERIALS, getMaterial } from './materials.js';
 import { TerrainView } from './terrain.js';
 import {
   mkSection, mkSlider, mkSelect, mkCheck, mkSeed, mkReadout, mkStat,
@@ -24,9 +25,9 @@ const P = {
   // erosion
   erodeSeed: 42, drops: 8192, dropSize: 1.6, erodibility: 0.60,
   traversal: 90, cutFrac: 0.22,
-  thermalOn: true, hydOn: true, flowPasses: 8, flowExp: 1.1, sedimentOn: true,
+  thermalOn: true, hydOn: true, flowPasses: 8, flowExp: 1.55, sedimentOn: true,
   // splats
-  preview: 'blended', snowLine: 28,
+  preview: 'blended', snowLine: 28, material: 'alpine',
   // view
   waterOn: true, wireframe: false, autoOrbit: false,
 };
@@ -122,6 +123,32 @@ const C = {}; // control registry
   C.snowLine = mkSlider(b, { id: 'snowLine', label: 'Snow line', min: 15, max: 60, step: 1, value: P.snowLine, unit: ' m' });
 }
 
+// ---- Material library section (splatmap presets) ----
+{
+  const b = mkSection(left, 'MATERIAL LIBRARY', 're-bakes albedo + re-blends splats');
+  const wrap = document.createElement('div');
+  wrap.className = 'matgrid';
+  MATERIALS.forEach((m) => {
+    const btn = document.createElement('button');
+    btn.className = 'mat' + (m.id === P.material ? ' on' : '');
+    btn.dataset.id = m.id;
+    btn.title = m.desc;
+    const sw = document.createElement('span');
+    sw.className = 'sw';
+    sw.style.background = `linear-gradient(135deg,
+      rgb(${m.palette.grass[1]}) 0 30%, rgb(${m.palette.dirt[1]}) 30% 55%,
+      rgb(${m.palette.rock[1]}) 55% 80%, rgb(${m.palette.snow[1]}) 80% 100%)`;
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = m.name;
+    btn.appendChild(sw);
+    btn.appendChild(nm);
+    btn.addEventListener('click', () => applyMaterial(m.id, btn));
+    wrap.appendChild(btn);
+  });
+  b.appendChild(wrap);
+}
+
 // ---- View section ----
 {
   const b = mkSection(left, 'VIEW');
@@ -200,7 +227,7 @@ function rebuildMesh() {
   }
   view.rebuild({
     h: S.h, N: S.N, voxel: S.voxel,
-    weights: computeSplatWeights({ channels: S.channels, h: S.h, N: S.N, seaLevel: P.seaLevel, snowLine: P.snowLine }),
+    weights: computeSplatWeights({ channels: S.channels, h: S.h, N: S.N, seaLevel: P.seaLevel, snowLine: P.snowLine, mat: getMaterial(P.material) }),
     channels: S.channels,
     previewField: pf,
     seaLevel: P.seaLevel,
@@ -351,6 +378,27 @@ async function runErosionPipeline() {
   clearBusy();
 }
 
+// Select a splatmap-library material: re-bake the 5 albedo layers with
+// the preset palette, apply its shader tints, re-blend the splat weights
+// with its layer rules — all without re-eroding the terrain.
+async function applyMaterial(id, btn) {
+  if (S.busy) return;
+  const mat = getMaterial(id);
+  P.material = id;
+  document.querySelectorAll('.mat').forEach((b) => b.classList.toggle('on', b === btn));
+  setBusy(`baking ${mat.name} textures…`);
+  await nextFrame();
+  const t0 = performance.now();
+  const textures = bakeAllTextures(P.seed, mat.palette, (name, p) => {
+    els.busy.textContent = `baking ${mat.name} — ${name} ${(p * 100) | 0}%`;
+  });
+  view.setTextures(textures);
+  view.setMaterialShader(mat);
+  console.log(`[Frontier] material "${mat.name}" baked in ${(performance.now() - t0).toFixed(0)} ms`);
+  if (S.h) liveRebuild();
+  clearBusy();
+}
+
 async function fullPipeline() {
   if (S.busy) return;
   const t0 = performance.now();
@@ -427,12 +475,14 @@ window.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------- boot
 (async function boot() {
   const t0 = performance.now();
-  setBusy('baking surface textures…');
+  const bootMat = getMaterial(P.material);
+  setBusy(`baking ${bootMat.name} textures…`);
   await nextFrame();
-  const textures = bakeAllTextures(P.seed, (name, p) => {
-    els.busy.textContent = `baking textures — ${name} ${(p * 100) | 0}%`;
+  const textures = bakeAllTextures(P.seed, bootMat.palette, (name, p) => {
+    els.busy.textContent = `baking ${bootMat.name} — ${name} ${(p * 100) | 0}%`;
   });
   view.setTextures(textures);
+  view.setMaterialShader(bootMat);
   console.log(`[Frontier] textures baked in ${(performance.now() - t0).toFixed(0)} ms`);
   await fullPipeline();
 })();

@@ -304,3 +304,44 @@ body.working .pipeline button.primary { opacity: 0.9; }
   .brand { min-width: 0; }
   .brand-sub { display: none; }
 }
+
+/* ---------------- material library (splatmap presets) ---------------- */
+.matgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 2px;
+}
+.mat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s, background .12s, transform .06s;
+}
+.mat:hover { background: #1b2230; border-color: #2e3846; }
+.mat:active { transform: translateY(1px); }
+.mat.on {
+  border-color: var(--accent);
+  background: #182437;
+  box-shadow: 0 0 0 1px rgba(77, 163, 255, 0.25) inset;
+}
+.mat .sw {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.mat .nm {
+  font-size: 11px;
+  color: var(--text);
+  line-height: 1.15;
+  display: block;
+}
+.mat.on .nm { color: #eaf2fb; font-weight: 600; }

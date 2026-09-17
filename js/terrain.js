@@ -127,6 +127,15 @@ export class TerrainView {
       tLayer4: { value: null }, // snow
       tPreview: { value: null },
       uPreviewOn: { value: 0 },
+      // material library: tint parameters (set via setMaterialShader)
+      uWetStart: { value: 0.30 },
+      uWetEnd: { value: 0.85 },
+      uWetStrength: { value: 0.45 },
+      uWetTint: { value: new THREE.Vector3(0.66, 0.64, 0.62) },
+      uSedStrength: { value: 0.50 },
+      uSedTint: { value: new THREE.Vector3(1.12, 1.09, 1.03) },
+      uSedAdd: { value: new THREE.Vector3(0.045, 0.034, 0.018) },
+      uTonal: { value: 0.03 },
     };
     this.material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
@@ -165,6 +174,10 @@ export class TerrainView {
           uniform sampler2D tLayer3; uniform sampler2D tLayer4;
           uniform sampler2D tPreview;
           uniform float uPreviewOn;
+          uniform float uWetStart; uniform float uWetEnd; uniform float uWetStrength;
+          uniform vec3 uWetTint;
+          uniform float uSedStrength; uniform vec3 uSedTint; uniform vec3 uSedAdd;
+          uniform float uTonal;
           varying vec4 vSplatC;
           varying float vSnowC;
           varying float vSlopeC;
@@ -190,18 +203,19 @@ export class TerrainView {
             vec3 baseCol = gL * w.x + dL * w.y + rL * w.z + sL * w.w + snL * vSnowC;
             baseCol = mix(baseCol, rL, rockUp * 0.4);
 
-            // flow lines: darkened, slightly cool (wet rock), hue kept
-            float wet = smoothstep(0.12, 0.65, vWetC);
-            baseCol = mix(baseCol, baseCol * vec3(0.60, 0.59, 0.58), wet * 0.55);
+            // flow lines: darkened only where flow is CONCENTRATED
+            // (channel bottoms) — gentle hillslope flow stays bright
+            float wet = smoothstep(uWetStart, uWetEnd, vWetC);
+            baseCol = mix(baseCol, baseCol * uWetTint, wet * uWetStrength);
 
             // alluvium: lighter warm gravel (coarser), not yellow-white
             float sed = clamp(vSedC, 0.0, 1.0);
-            baseCol = mix(baseCol, baseCol * vec3(1.12, 1.09, 1.03) + vec3(0.045, 0.034, 0.018), sed * 0.5);
+            baseCol = mix(baseCol, baseCol * uSedTint + uSedAdd, sed * uSedStrength);
 
             // large-scale tonal variation (soil/rock variation, kills flat CG color)
             float lv1 = sin(vUv.x * 5.1 + 1.3) * sin(vUv.y * 4.7 - 0.8);
             float lv2 = sin(vUv.x * 9.7 - 2.1) * sin(vUv.y * 8.3 + 1.7);
-            baseCol *= 0.945 + 0.05 * lv1 + 0.02 * lv2;
+            baseCol *= (1.0 - uTonal) + uTonal * (0.6 * lv1 + 0.4 * lv2);
 
             // rivers & lakes: flat blue water, glossy
             float wat = smoothstep(0.35, 0.7, vWaterC);
@@ -229,7 +243,7 @@ export class TerrainView {
           roughnessFactor = mix(roughnessFactor, 0.30, smoothstep(0.35, 0.7, vWaterC));`
         );
     };
-    this.material.customProgramCacheKey = () => 'frontier-splat-v2';
+    this.material.customProgramCacheKey = () => 'frontier-splat-v3';
 
     this.terrainMesh = null;
 
@@ -322,6 +336,19 @@ export class TerrainView {
     this.uniforms.tLayer2.value = tex.rock;
     this.uniforms.tLayer3.value = tex.sand;
     this.uniforms.tLayer4.value = tex.snow;
+  }
+
+  /** Apply a material preset's shader tints (wet/alluvium/tonal). */
+  setMaterialShader(mat) {
+    const sh = mat.shader;
+    this.uniforms.uWetStart.value = sh.wetStart;
+    this.uniforms.uWetEnd.value = sh.wetEnd;
+    this.uniforms.uWetStrength.value = sh.wetStrength;
+    this.uniforms.uWetTint.value.set(sh.wetTint[0], sh.wetTint[1], sh.wetTint[2]);
+    this.uniforms.uSedStrength.value = sh.sedStrength;
+    this.uniforms.uSedTint.value.set(sh.sedTint[0], sh.sedTint[1], sh.sedTint[2]);
+    this.uniforms.uSedAdd.value.set(sh.sedAdd[0], sh.sedAdd[1], sh.sedAdd[2]);
+    this.uniforms.uTonal.value = sh.tonal;
   }
 
   /**

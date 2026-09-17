@@ -162,11 +162,18 @@ export function computeChannels({ h, N, voxel, flow, flowMax, pits, erosionMap, 
 
 /**
  * Gaea-style layer weights from the channels.
+ * `mat` is a material preset from the splatmap library — its `rules`
+ * decide where each layer lives (slope/altitude/flow gates, snow cap).
  * Returns Float32Array size*5 → [grass, dirt, rock, sand, snow] per vertex.
  */
-export function computeSplatWeights({ channels, h, N, seaLevel, snowLine }) {
+export function computeSplatWeights({ channels, h, N, seaLevel, snowLine, mat }) {
   const size = N * N;
   const { slope, flowN, erosionN, sedimentN, peaks, pointsN, slopeRef } = channels;
+  const R = (mat && mat.rules) || {
+    grassSlope: [0.15, 0.52], grassFlow: [0.55, 0.95], grassAlt: [34, 58],
+    rockSlope: [0.84, 0.96], rockPeak: 0.85, dirtBelt: [0.40, 0.60],
+    soilErode: [0.75, 0.95, 0.10], snowCap: 1.0,
+  };
   const w = new Float32Array(size * 5);
 
   for (let i = 0; i < size; i++) {
@@ -174,14 +181,15 @@ export function computeSplatWeights({ channels, h, N, seaLevel, snowLine }) {
     const sl = clamp01(slope[i] / slopeRef);
     const aboveSea = hv - seaLevel;
 
-    // snow: high & not too steep
-    const snow = smoothstep(snowLine - 3.0, snowLine + 3.0, hv) * (1 - smoothstep(0.90, 1.0, sl));
+    // snow: high & not too steep (preset snowCap can mute/remove it)
+    const snow = smoothstep(snowLine - 3.0, snowLine + 3.0, hv)
+      * (1 - smoothstep(0.90, 1.0, sl)) * R.snowCap;
 
     // rock: only the steepest upper walls + summit peaks. Moderate
     // slopes read as scree/soil, not bare wall, so the mountain has a
     // realistic grass→dirt→rock→snow breakdown instead of a bare cone.
-    const rockSlope = smoothstep(0.80, 0.95, sl);
-    const rockPeak = peaks[i] * 0.85;
+    const rockSlope = smoothstep(R.rockSlope[0], R.rockSlope[1], sl);
+    const rockPeak = peaks[i] * R.rockPeak;
     let rock = Math.max(rockSlope, rockPeak);
 
     // sand: narrow beach band hugging the waterline on the dry side
@@ -190,17 +198,18 @@ export function computeSplatWeights({ channels, h, N, seaLevel, snowLine }) {
     let sand = band * flat;
 
     // dirt: broad mid-slope soil/scree belt + carved/sedimented ground
-    const soilEroded = clamp01(erosionN[i] * 0.85 + sedimentN[i] * 1.05 + flowN[i] * 0.22);
-    const dirtBelt = smoothstep(0.40, 0.60, sl) * (1 - smoothstep(0.75, 0.90, sl));
-    let dirt = clamp01(Math.max(dirtBelt * 0.9, soilEroded * 1.15 + sedimentN[i] * 0.35))
+    const soilEroded = clamp01(erosionN[i] * R.soilErode[0]
+      + sedimentN[i] * R.soilErode[1] + flowN[i] * R.soilErode[2]);
+    const dirtBelt = smoothstep(R.dirtBelt[0], R.dirtBelt[1], sl) * (1 - smoothstep(0.75, 0.90, sl));
+    let dirt = clamp01(Math.max(dirtBelt * 0.85, soilEroded * 1.05 + sedimentN[i] * 0.30))
       * (1 - sand) * (1 - snow) * (1 - rockSlope * 0.7);
 
     // grass: low & moderate slopes (hilly foothills included), dry,
-    // not beach, not alpine
-    let grass = (1 - smoothstep(0.15, 0.45, sl))
-      * (1 - smoothstep(0.45, 0.90, flowN[i]))
+    // not beach, not alpine — preset sets the altitude ceiling
+    let grass = (1 - smoothstep(R.grassSlope[0], R.grassSlope[1], sl))
+      * (1 - smoothstep(R.grassFlow[0], R.grassFlow[1], flowN[i]))
       * (1 - sand) * (1 - snow) * (1 - rock)
-      * (1 - smoothstep(26, 44, aboveSea));
+      * (1 - smoothstep(R.grassAlt[0], R.grassAlt[1], aboveSea));
 
     // seabed: no grass underwater — sandy shallows over a rocky deep
     // floor. Engages only in the water (0.5 m ramp below the line),
