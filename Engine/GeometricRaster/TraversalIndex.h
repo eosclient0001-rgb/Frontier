@@ -83,6 +83,21 @@ public:
     //    tinybvh refuses to refit it, which is a hard error rather than a quality trade.
     [[nodiscard]] bool RefitBottomLevel(const std::vector<TriangleIndex>& Triangles) noexcept;
 
+    // D8 — the SAME deformation, carried only as far as the CPU path needs it.
+    //
+    //    RefitBottomLevel above pays the full chain because it re-emits the GPU blobs: 0.22 ms of actual refit
+    //    followed by 0.74 ms of collapse and 6.31 ms of compression. But this class' CPU trace walks the INNER
+    //    BINARY tree (see the note on TraceClosestObjectSpace — the packed CWBVH walker is AVX-only and was
+    //    measured returning misses the binary tree hits), so a caller that maintains the packed blobs itself —
+    //    InstanceAcceleration::RefitBlasInPlace does, in one sweep that reuses the topology that is already there —
+    //    only needs the vertices rewritten and the binary tree refitted. That is the 0.22 ms, and it is why the
+    //    fast path exists at all.
+    //
+    //    Same contract as RefitBottomLevel (triangle count unchanged, not HighQuality) and the same in-place
+    //    vertex-array rewrite; it deliberately leaves NodeBlob/LeafBlob untouched, which is why it is named for
+    //    what it does rather than being a flag on the other one.
+    [[nodiscard]] bool RefitTriangleTree(const std::vector<TriangleIndex>& Triangles) noexcept;
+
     // True when RefitBottomLevel can be used: a tree exists and it was not built with spatial splits.
     [[nodiscard]] bool IsRefittable() const noexcept { return !NodeBlob.empty() && !Metrics.HighQuality; }
 

@@ -182,6 +182,68 @@ deformed vertices and refits; the animation system owns everything before that b
   dispatcher, the integrator and the project (bindings, the table's last-place rule, the push slot, the object-space
   call sites, the inverse-transpose arm, the payload's float order) and computes the record offsets the shader's std430
   layout would produce. Running the kernel is the user's GPU build.
+- **D8 — the deformation path, refit in place — DELIVERED (CPU measured; the GPU half is text-pinned).**
+  *(Plan wording: "refit kernel over the wide layout, plus the displacement-driven rebuild policy".)* The shipped answer
+  keeps **one** layout: the packed CWBVH. `InstanceAcceleration::RefitBlas(uint32_t, const std::vector<TriangleIndex>&)`
+  is the only D8 entry point, and it rewrites the leaf entries from the deformed soup (each entry's own primitive index
+  is read back out of block 2's `.w`, so the blob is self-describing and needs no side table), refits the inner binary
+  tree the CPU porter walks, re-quantises every node in ONE **descending sweep** of node indices, and refreshes the
+  object AABB. A CWBVH node quantises its children into at most 255 cells of its own extent, so the re-quantisation
+  cannot change the block count: the update is in place **by construction**, and the offsets the kernel was handed at
+  upload stay valid. Evidence — `Exhibits/Workbench/Traversal/CheckTwoLevelBvh.sh` reports **116 passed / 0 failed**,
+  §⑧ is the D8 section:
+  - **a refitted BLAS answers exactly as the same geometry rebuilt**: 20 000 rays over the deformed level → 10 159
+    bit-identical hits, 9 841 both miss, **0 unrelated surfaces, 0 hit/miss disagreements**;
+  - **the packed blob still reaches every triangle of its own arena**: an independent walker written from the uploaded
+    layout, against a brute force over the blob's own triangles with the same float Möller–Trumbore → 5 544 identical
+    hits, 14 456 both miss, **0 unrelated, 0 hit/miss**. This is the statement that a re-quantised box never prunes its
+    own geometry — the one failure mode a CPU trace over the binary tree cannot see;
+  - **containment, without rays**: 31 927/31 927 leaf triangles lie inside their own quantised slot box (15 814 slots)
+    and every interior slot covers its child (4 827 parents), worst slack 0;
+  - **an untouched BLAS is untouched**: refitting BLAS 1 leaves BLAS 0's node and leaf slices byte-identical (FNV-1a),
+    and the refitted BLAS' own node slice DOES change — the check is not vacuous;
+  - **cost**, this 2-core host, 63 854 triangles with 31 927 in the refitted BLAS: in-place refit **4.39 ms** against
+    **74.84 ms** for a full rebuild; the packed re-emit (refit + collapse + compress) is **7.76 ms** and moves the node
+    count 24 135 → 25 190 blocks, i.e. it **no longer fits the recorded slice** (+1 055). In-place is not merely
+    faster, it is the only update that can stay in an already-uploaded buffer. 4 827 nodes went through the sweep, whose
+    largest child-index jump is 4 125 (`Metrics.MaxChildIndexJump`, `RefitSweepable`) — the number a GPU kernel needs to
+    size its windows;
+  - the gate deforms at **5.04 % of the mesh's own mean edge** (0.0031 m of 0.0611 m), the regime the policy calls
+    Refit; `Frontier::MeasureDeformation` + `Frontier::BlasUpdatePolicy{RefitDisplacementRatio, RebuildCooldownFrames}`
+    answer all seven policy cases, a topology change is refused **and counted** (`RefitRefusedCount`), and a
+    spatial-split (HighQuality) BLAS refuses to refit — its splits cut triangles, so the D8 trade holds.
+  ⚠️ **Not verified here:** the GPU half (a refit kernel; D9's build kernels). What is pinned instead is the layout
+  invariant that makes those kernels possible (descending child indices) plus §⑦'s text pins, which keep
+  `TraversalCWBVH.slang` in step with the records.
+
+### What writing D8's instrument turned up (three traps, all now gated)
+
+The packed blob had never been walked on the CPU: every earlier gate read it through tinybvh's own binary tree. An
+independent walker was needed precisely because a re-quantisation that *shrank* a box is invisible to a walker that never
+reads the boxes — and it cost three wrong instruments before it was trustworthy:
+
+1. **The leaf hit mask is the meta's UNARY field (1/3/7), not a triangle count (1/2/3).** Shifting a decoded count sets
+   bit 1 for a two-triangle leaf: the walker drops that leaf's first triangle and invents one past its last. It
+   "disagreed with the blob's own geometry" on 23 % of rays while the blob was correct — the kernel shifts the
+   *field* (`(meta4 >> 5) & 7`), which is why the GPU path was never wrong.
+2. **SPIR-V's FMax/FMin drop a NaN operand; `std::min/max` propagate it.** A ray with an exactly zero direction
+   component has rD = inf on that axis, so every quantised slab value along it is 0 · inf = NaN. Transcribed with
+   `std::max`, the walker rejected *every* axis-aligned ray (22 % of the control's rays) while the kernel was right.
+   This is also the mechanism behind the long-standing note in `TraversalIndex.cpp` that the library's own AVX CWBVH
+   walker "returns misses the binary tree hits": MAXPS/MINPS return their second operand when one input is NaN. The
+   gate now carries a dedicated axis-aligned census (166 exact, 5 834 misses, 0 disagreements).
+3. **The oracle must share the walker's arithmetic.** Comparing the walker against the library's binary tree folds in a
+   second intersection routine whose grazing verdicts legitimately differ; on this ray set that produced 4 643 apparent
+   "hit/miss disagreements", which were almost all rays the library resolved in the scene's *other* BLAS (5 531 of its
+   hits land in the walked BLAS, 4 664 in the one a single-BLAS walker cannot reach). The gate now compares the walker
+   against a brute force over the blob's **own** triangles with the same float Möller–Trumbore — exact, no tolerance —
+   and reports the cross-implementation census separately.
+
+Also worth recording: the deformation magnitude decides what "disagree" means. Sized by the level's bounding box
+(0.15 · diagonal = 2 749 % of a primitive), two *valid* tree shapes disagree on rays that graze a node boundary — 4
+hit/miss, none adjudicated as a real miss. The gate therefore runs at 5 % of a primitive, what a skinned character
+actually does frame to frame, and reports the level-scale wave as information only.
+
 ### What building it actually turned up (three defects, all now gated)
 
 1. **The kernel applied the stored inverse TRANSPOSED.** `dot(Inv0.xyz, P) + Inv0.w` reads the record's *rows* out of
@@ -221,9 +283,10 @@ because two defects sat in `Engine/Shaders/` for a whole milestone: `flat` used 
 and a `vec3 histUv = res.SelectedUv;` followed by a `vec4(histUv, w, depth)` (five components from two). Installing the
 Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`/`glslangValidator` it runs as-is.
 
-- **D8 — dynamic update path.** Rigid: nothing (D6/D7 already cover it). Deforming: refit kernel over the wide layout,
-  plus the displacement-driven rebuild policy. Acceptance: a moving/deforming scene renders correct shadows and
-  reflections with the frame budget printed, and the CPU mirror reproduces the same images.
+- **D8 — dynamic update path — DELIVERED, CPU half (see §6).** Rigid: nothing (D6/D7 already cover it). Deforming: an
+  in-place refit of the packed layout plus the displacement-driven rebuild policy. Acceptance: a moving/deforming scene
+  renders correct shadows and reflections with the frame budget printed, and the CPU mirror reproduces the same images.
+  ⚠️ The GPU half of that acceptance sentence — the kernel-side refit and a rendered frame — is still owed.
 - **D9 — GPU build for topology changes.** H-PLOC or a simpler LBVH into the same wide layout, behind the frame-graph
   stage, on a worker/double-buffered BLAS so a build never stalls a frame.
 - **D10 — ReSTIR integration.** Motion vectors already follow `PreviousWorld`; for dynamic objects the reservoir
@@ -236,8 +299,8 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
 |---|---|---|
 | CPU or GPU for the world build? | **CPU**, once, at load | deterministic, proven, and 148 ms for 256 k triangles is a load-time cost; no PCIe round trip |
 | CPU or GPU for a rigid object move? | **Either**; CPU TLAS rebuild is ~0.2–3 ms and can hide on a worker | the work is instance AABBs, not triangles |
-| CPU or GPU for deformation? | **GPU refit**, CPU for a few actors | CPU refit of a 16 k character is 0.17 ms, but the shipped packed re-emit is 5.2 ms and 30× the refit |
-| Which format for dynamic BLASes? | **wide, unquantized (refittable)**, compressed CWBVH for static | packed/quantized formats cannot be partially updated; the re-quantize is the cost |
+| CPU or GPU for deformation? | **GPU refit**, CPU for a few actors | D8 measured the CPU path end to end: 31 927 triangles refitted in 4.39 ms (the raw binary refit inside it is 0.22 ms per 16 k) against 74.84 ms to rebuild — but that is still a frame's worth of CPU on a big character, so the kernel is the destination and the CPU path is the mirror it is checked against |
+| Which format for dynamic BLASes? | **the packed CWBVH, refitted in place** — *(D8 reversed this plan row)* | the plan said "wide, unquantized (refittable)" on the belief that "packed formats cannot be partially updated". They can: a node quantises its children into ≤ 255 cells of its own extent, so a re-quantise cannot change the block count, and the re-emit that would change it no longer fits the uploaded slice (+1 055 blocks measured). A second wide format would double the traversal code and the descriptor traffic for no measured win |
 | Keep one world-space tree? | **No** — two-level from here on (D6/D7 delivered; the single-blob path stays as the fallback and as the bit-identity reference) | the whole-scene re-emit is the ceiling that blocks every dynamic feature |
 | Must the object-space ray be re-normalised after `M⁻¹`? | **No** — transform O and D, take t as-is | `M·(O' + t·D') = O + t·(M·D')`, so t survives the transform; re-normalising would both rescale t and perturb grazing rays by an ulp |
 | Animation without a rig? | per-frame deformed vertices + refit; VAT as the authoring route | the renderer never needs bone data; refit needs fixed topology, which skinning/VAT give |

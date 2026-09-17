@@ -131,6 +131,32 @@ bool TraversalIndex::RefitBottomLevel(const std::vector<TriangleIndex>& Triangle
     return true;
 }
 
+bool TraversalIndex::RefitTriangleTree(const std::vector<TriangleIndex>& Triangles) noexcept
+{
+    RefitMilliseconds = 0.0f;
+    if (!IsRefittable()) return false;
+
+    const uint32_t PrimitiveCount = static_cast<uint32_t>(Triangles.size());
+    if (PrimitiveCount != Metrics.TriangleCount) return false;
+    if (Impl->Vertices.size() != static_cast<size_t>(PrimitiveCount) * 3u) return false;
+
+    const auto Start = std::chrono::steady_clock::now();
+    for (size_t I = 0; I < Triangles.size(); ++I)
+    {
+        const TriangleIndex& T = Triangles[I];
+        Impl->Vertices[I * 3u + 0u] = tinybvh::bvhvec4(T.VertexAlphaX, T.VertexAlphaY, T.VertexAlphaZ, 0.0f);
+        Impl->Vertices[I * 3u + 1u] = tinybvh::bvhvec4(T.VertexBetaX,  T.VertexBetaY,  T.VertexBetaZ,  0.0f);
+        Impl->Vertices[I * 3u + 2u] = tinybvh::bvhvec4(T.VertexGammaX, T.VertexGammaY, T.VertexGammaZ, 0.0f);
+    }
+    Impl->Tree.bvh8.bvh.Refit();
+    RefitMilliseconds = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - Start).count();
+
+    // The packed blobs are now STALE BY CONSTRUCTION (the geometry moved under them). Say so in the metrics
+    //    rather than leaving a reader to infer it from a timestamp.
+    Metrics.NodeByteCount = static_cast<uint32_t>(NodeBlob.size() * sizeof(float));
+    return true;
+}
+
 bool TraversalIndex::TraceClosest(const float Origin[3], const float Direction[3], float& OutDistance, uint32_t& OutPrimitive) const noexcept
 {
     if (!IsReady()) return false;
@@ -142,6 +168,15 @@ bool TraversalIndex::TraceClosest(const float Origin[3], const float Direction[3
     //    returning misses for rays the plain BVH hits — a trivial floor quad struck head-on came back empty
     //    (Scratchpad/TraversalRefitTest.cpp exists partly because of that discovery). The GPU blobs it emits are
     //    correct; it is the host-side walker that is unreliable.
+    //
+    //    ✅ That symptom now has a cause, found while writing D8's independent walker (Docs/DynamicGeometry.md §6):
+    //    "struck head-on" is the whole story. A ray with an exactly zero direction component has rD = +inf on that
+    //    axis, so every quantised slab value along it is 0 · inf = NaN. SPIR-V's FMax/FMin — what the kernel's max()
+    //    and min() lower to — return the operand that is NOT NaN and walk straight through it, but the x86
+    //    MAXPS/MINPS that the host path uses return their SECOND operand whenever either input is NaN, so a NaN
+    //    decides the comparison and the node is pruned. The blobs are fine and the kernel is fine; a host walker is
+    //    only right if it uses FMax/FMin semantics (see Exhibits/Workbench/Traversal/TwoLevelBvhProof.cpp, whose
+    //    §⑧ walker carries a gate for exactly these axis-aligned rays).
     //
     //    This function is a REFERENCE path used by proofs, never by a frame, so correctness beats speed and the
     //    binary tree is the honest oracle. bvh8.bvh is the same tree the CWBVH was collapsed from, so a hit here

@@ -53,6 +53,8 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstring>
+#include <chrono>
+#include <atomic>
 #include <type_traits>
 #include <vector>
 
@@ -81,6 +83,9 @@ namespace
         for (size_t I = 0; I < Count; ++I) { Hash ^= P[I]; Hash *= 1099511628211ull; }
         return Hash;
     }
+
+    // Blob-walker stack overflows, counted so a walker that loses geometry cannot pass for a walker that agrees.
+    std::atomic<uint32_t> g_BlobOverflows{ 0u };
 
     uint64_t BlobHash(const std::vector<float>& V) { return V.empty() ? 0ull : Fnv1a(V.data(), V.size() * sizeof(float)); }
 
@@ -630,6 +635,218 @@ static void RunKernelAudit()
 }
 
 } // namespace
+
+
+// ── ⑧'s second half needs a walker that reads the PACKED blob the way the shader does ───────────────────────────────
+// Everything else in this file goes through tinybvh's CPU tree (TraversalIndex::TraceClosest walks the inner binary
+//    BVH, deliberately — the packed CWBVH walker is AVX-only and was measured returning misses the binary tree hits).
+//    But the packed blob is what the GPU actually reads, so a refit that re-quantises it has to be checked against
+//    something that decodes it the same way the shader will. This is that something: the layout transcribed by hand
+//    from TraversalCWBVH.slang's decode — p and the exponent/mask bytes in n0.w, childBase/triBase in n1.xy, the meta
+//    byte per child slot in n1.zw, and the triangle entries as e1 = v2 − v0, e2 = v1 − v0, v0 (w = primitive bits).
+//
+//    It does NOT reproduce the traversal's octant-ordered hit-mask walk (that is a performance trick: it visits the
+//    children in the order the ray enters them). It descends every slot whose quantised box the ray crosses and takes
+//    the nearest triangle, which is the same surface and therefore a fair judge of whether the bounds still contain
+//    the geometry.
+struct BlobWalker
+{
+    static uint32_t Bits(float F) { uint32_t V; std::memcpy(&V, &F, 4); return V; }
+
+    // The kernel's max()/min() are SPIR-V FMax/FMin, which return the operand that is NOT NaN; std::max/min propagate
+    //    the NaN instead. That difference is not academic here: a ray with an exactly zero direction component has
+    //    rD = inf on that axis, so every quantised slab value along it is 0 * inf = NaN. Transcribed with std::max,
+    //    this walker rejected every axis-aligned ray — 22 % of the control's rays — and no amount of blob inspection
+    //    could have shown it. (It is also why the library's own AVX CWBVH walker "returns misses the binary tree
+    //    hits": MAXPS/MINPS return their second operand when one is NaN.)
+    static float FMax(float A, float B) { return std::isnan(A) ? B : (std::isnan(B) ? A : (A < B ? B : A)); }
+    static float FMin(float A, float B) { return std::isnan(A) ? B : (std::isnan(B) ? A : (B < A ? B : A)); }
+    static int8_t SByte(uint32_t V, int Byte) { return int8_t((V >> (8 * Byte)) & 0xFFu); }
+    static uint32_t FindMSB(uint32_t V) { uint32_t I = 0; while (V >>= 1) ++I; return I; }
+
+    // One child slot's quantised box, decoded exactly as the kernel decodes it: p + q * 2^exponent, with the byte
+    //    taken from the swizzled position the traversal reads (block 2 .x/.z, block 3 .x/.z, block 4 .x/.z for slots
+    //    0-3, then .y/.w of the same three blocks for slots 4-7) and the exponent packed into n0.w.
+    static void SlotBox(const float* Node, int Slot, float Lo[3], float Hi[3])
+    {
+        const uint8_t* B = reinterpret_cast<const uint8_t*>(Node);
+        const float Q[3] = { std::pow(2.0f, float(int8_t(B[12]))), std::pow(2.0f, float(int8_t(B[13]))),
+                             std::pow(2.0f, float(int8_t(B[14]))) };
+        Lo[0] = Node[0] + float(B[32 + Slot +  0]) * Q[0];  Hi[0] = Node[0] + float(B[32 + Slot + 24]) * Q[0];
+        Lo[1] = Node[1] + float(B[32 + Slot +  8]) * Q[1];  Hi[1] = Node[1] + float(B[32 + Slot + 32]) * Q[1];
+        Lo[2] = Node[2] + float(B[32 + Slot + 16]) * Q[2];  Hi[2] = Node[2] + float(B[32 + Slot + 40]) * Q[2];
+    }
+
+    static bool MollerTrumbore(const float* Tri, const float O[3], const float D[3], float TMax, float& OutT, uint32_t& OutPrim)
+    {
+        // tinybvh stores e1 = v2 − v0, e2 = v1 − v0 and uses iquilezles' form; TransversalCWBVH.slang is a port of it,
+        //    so this is that arithmetic verbatim (r = D × e1, a = e2 · r, q = s × e2, t = (e1 · q) / a).
+        const float* E1 = Tri + 0;
+        const float* E2 = Tri + 4;
+        const float* V0 = Tri + 8;
+        const float R[3] = { D[1] * E1[2] - D[2] * E1[1], D[2] * E1[0] - D[0] * E1[2], D[0] * E1[1] - D[1] * E1[0] };
+        const float A = E2[0] * R[0] + E2[1] * R[1] + E2[2] * R[2];
+        const float F = 1.0f / A;
+        const float Sv[3] = { O[0] - V0[0], O[1] - V0[1], O[2] - V0[2] };
+        const float U = F * (Sv[0] * R[0] + Sv[1] * R[1] + Sv[2] * R[2]);
+        const float Q[3] = { Sv[1] * E2[2] - Sv[2] * E2[1], Sv[2] * E2[0] - Sv[0] * E2[2], Sv[0] * E2[1] - Sv[1] * E2[0] };
+        const float V = F * (D[0] * Q[0] + D[1] * Q[1] + D[2] * Q[2]);
+        if (U < 0.0f || V < 0.0f || U + V > 1.0f) return false;
+        const float T = F * (E1[0] * Q[0] + E1[1] * Q[1] + E1[2] * Q[2]);
+        if (!(T > 0.0f) || T >= TMax) return false;
+        if (!(F == F)) return false;
+        OutT = T;
+        OutPrim = Bits(Tri[11]);
+        return true;
+    }
+
+    // The kernel's walk, transcribed: octant-driven child order, the 8-bit hit mask that carries interior children in
+    //    bits 24..31 (at 24 + (slot ^ octant)) and leaf triangles in bits 0..23 (at the leaf's triangle slot), and the
+    //    stored imask OR'd in so the rank below a popped bit counts in STORED slot order — which is the order the
+    //    collapse assigned the child nodes in.
+    //
+    //    ⚠️ The stack depth is a real bound, not a formality: each node can push up to eight children, and the earlier
+    //    version of this walker used 64 entries and returned a MISS on overflow — which is exactly how a walker
+    //    silently loses geometry. It reports overflow instead (OutOverflow), and the gate fails on it.
+    static bool Trace(const std::vector<float>& Nodes, const std::vector<float>& Leaves, const BlasRecord& R,
+                      const float* O, const float* D, float MaxDistance, float& OutT, uint32_t& OutPrim, bool& OutOverflow)
+    {
+        OutOverflow = false;
+        if (Nodes.empty() || Leaves.empty()) return false;
+        const float InvD[3] = { 1.0f / D[0], 1.0f / D[1], 1.0f / D[2] };
+        const int SignOctant = (D[0] < 0.0f ? 4 : 0) | (D[1] < 0.0f ? 2 : 0) | (D[2] < 0.0f ? 1 : 0);
+        const uint32_t OctInv = uint32_t(7 - SignOctant) * 0x01010101u;
+
+        uint32_t StackX[512], StackY[512];
+        int StackPtr = 0;
+        uint32_t NodeGroupX = 0u, NodeGroupY = 0x80000000u;   // bit 31 = the root
+        uint32_t TriGroupX = 0u, TriGroupY = 0u;
+        float Best = MaxDistance;
+        uint32_t BestPrim = 0xFFFFFFFFu;
+
+        for (uint32_t Guard = 0u; Guard < 100000u; ++Guard)
+        {
+            if (NodeGroupY > 0x00FFFFFFu)
+            {
+                const uint32_t Hits = NodeGroupY, IMask = NodeGroupY;
+                const uint32_t ChildBitIndex = FindMSB(Hits);
+                const uint32_t ChildBase = NodeGroupX;
+                NodeGroupY &= ~(1u << ChildBitIndex);
+                if (NodeGroupY > 0x00FFFFFFu)
+                {
+                    if (StackPtr >= 512) { OutOverflow = true; return false; }
+                    StackX[StackPtr] = NodeGroupX; StackY[StackPtr] = NodeGroupY; ++StackPtr;
+                }
+
+                const uint32_t SlotIndex   = ((ChildBitIndex - 24u) ^ (OctInv & 255u)) & 31u;
+                uint32_t RelativeIndex = 0u;
+                for (uint32_t B = 0u; B < SlotIndex; ++B) if (IMask & (1u << B)) ++RelativeIndex;
+                const uint32_t ChildNode = ChildBase + RelativeIndex;
+                const size_t NodeAt = (size_t(R.NodeOffset) + size_t(ChildNode) * 5u) * 4u;
+                if (NodeAt + 20u > Nodes.size()) { OutOverflow = true; return false; }
+                const float* N0 = &Nodes[NodeAt];
+                const uint32_t EW = Bits(N0[3]);
+                const float Idir[3] = { std::pow(2.0f, float(SByte(EW, 0))) * InvD[0],
+                                        std::pow(2.0f, float(SByte(EW, 1))) * InvD[1],
+                                        std::pow(2.0f, float(SByte(EW, 2))) * InvD[2] };
+                const float Orig[3] = { (N0[0] - O[0]) * InvD[0], (N0[1] - O[1]) * InvD[1], (N0[2] - O[2]) * InvD[2] };
+                NodeGroupX = Bits(N0[4]);          // childBase
+                TriGroupX  = Bits(N0[5]);          // triangleBase
+                TriGroupY  = 0u;
+
+                uint32_t HitMask = 0u;
+                for (int Slot = 0; Slot < 8; ++Slot)
+                {
+                    const uint8_t Meta = reinterpret_cast<const uint8_t*>(N0)[24 + Slot];
+                    const bool Interior = (Meta & 0x18u) == 0x18u;
+                    // The meta's top three bits are a UNARY triangle count — 1, 3 or 7 for one, two or three
+                    //    triangles — so the value to OR into the hit mask is the FIELD, not a decoded count. An
+                    //    interior child encodes 1 there. Shifting a decoded count instead (1/2/3) silently drops the
+                    //    first triangle of every two- and three-triangle leaf and invents a bit past the last one:
+                    //    that transcription error cost this walker 23 % of the hits the blob actually contains, and
+                    //    it is why the walker's own control failed before the fix.
+                    const uint32_t Unary = Interior ? 1u : ((Meta >> 5) & 0x7u);
+                    if (Unary == 0u) continue;                      // empty slot
+                    // The kernel's slab test, in the kernel's own arithmetic: the quantised byte is multiplied by
+                    //    (2^exponent * rD) and the node origin contributes (p - O) * rD, with lo/hi swapped by the
+                    //    ray's sign so that the comparison is in the ray's own direction.
+                    const uint8_t* B = reinterpret_cast<const uint8_t*>(N0);
+                    const float TXLo = float(B[32 + Slot + (D[0] < 0.0f ? 24 : 0)]) * Idir[0] + Orig[0];
+                    const float TXHi = float(B[32 + Slot + (D[0] < 0.0f ?  0 : 24)]) * Idir[0] + Orig[0];
+                    const float TYLo = float(B[32 + Slot + (D[1] < 0.0f ? 32 :  8)]) * Idir[1] + Orig[1];
+                    const float TYHi = float(B[32 + Slot + (D[1] < 0.0f ?  8 : 32)]) * Idir[1] + Orig[1];
+                    const float TZLo = float(B[32 + Slot + (D[2] < 0.0f ? 40 : 16)]) * Idir[2] + Orig[2];
+                    const float TZHi = float(B[32 + Slot + (D[2] < 0.0f ? 16 : 40)]) * Idir[2] + Orig[2];
+                    const float CMin = FMax(FMax(FMax(TXLo, TYLo), TZLo), 0.0f);
+                    const float CMax = FMin(FMin(FMin(TXHi, TYHi), TZHi), Best);
+                    if (!(CMin <= CMax)) continue;
+                    const uint32_t BitIndex = Interior ? (24u + (uint32_t(Slot) ^ (OctInv & 255u)))
+                                                       : uint32_t(Meta & 0x1Fu);
+                    HitMask |= Unary << BitIndex;
+                }
+                NodeGroupY = (HitMask & 0xFF000000u) | (Bits(N0[3]) >> 24u);
+                TriGroupY  = HitMask & 0x00FFFFFFu;
+            }
+            else
+            {
+                TriGroupX = NodeGroupX; TriGroupY = NodeGroupY; NodeGroupX = 0u; NodeGroupY = 0u;
+            }
+
+            while (TriGroupY != 0u)
+            {
+                const uint32_t TriangleIndex = FindMSB(TriGroupY);
+                TriGroupY -= 1u << TriangleIndex;
+                const size_t Float = (size_t(R.LeafOffset) + TriGroupX + TriangleIndex * 3u) * 4u;
+                if (Float + 12u > Leaves.size()) { OutOverflow = true; return false; }
+                float T = 0.0f; uint32_t Prim = 0u;
+                if (MollerTrumbore(&Leaves[Float], O, D, Best, T, Prim)) { Best = T; BestPrim = Prim; }
+            }
+
+            if (NodeGroupY > 0x00FFFFFFu) continue;
+            if (StackPtr > 0) { --StackPtr; NodeGroupX = StackX[StackPtr]; NodeGroupY = StackY[StackPtr]; }
+            else break;
+        }
+
+        if (BestPrim == 0xFFFFFFFFu) return false;
+        OutT = Best; OutPrim = BestPrim;
+        return true;
+    }
+
+    // The walker's opposite number, deliberately: every triangle in the BLAS' leaf arena, tested with the same float
+    //    Möller–Trumbore the walker uses. Two readers that share the triangle data and the leaf arithmetic can only
+    //    disagree when the TREE — boxes, masks, child pointers — pruned something the arena contains, which is exactly
+    //    what an in-place re-quantisation can break. (Comparing the walker against the library's binary-tree trace
+    //    instead folds in a second intersection routine that resolves grazing rays differently; that difference is
+    //    real but it is about the arithmetic, not about the packed blob. The census against it is reported for the
+    //    record and adjudicated by the oracle.)
+    static bool Brute(const std::vector<float>& Leaves, const BlasRecord& R, const float* O, const float* D,
+                      float MaxDistance, float& OutT, uint32_t& OutPrim)
+    {
+        if (Leaves.size() < 12u) return false;
+        float Best = MaxDistance;
+        uint32_t BestPrim = 0xFFFFFFFFu;
+        const size_t Count = size_t(R.LeafBlocks) / 3u;
+        for (size_t I = 0u; I < Count; ++I)
+        {
+            const size_t At = (size_t(R.LeafOffset) + I * 3u) * 4u;
+            if (At + 12u > Leaves.size()) break;
+            float T = 0.0f;
+            uint32_t Prim = 0u;
+            if (MollerTrumbore(&Leaves[At], O, D, Best, T, Prim)) { Best = T; BestPrim = Prim; }
+        }
+        if (BestPrim == 0xFFFFFFFFu) return false;
+        OutT = Best;
+        OutPrim = BestPrim;
+        return true;
+    }
+
+    static bool Trace(const std::vector<float>& Nodes, const std::vector<float>& Leaves, const BlasRecord& R,
+                      const float* O, const float* D, float MaxDistance, float& OutT, uint32_t& OutPrim)
+    {
+        bool Overflow = false;
+        return Trace(Nodes, Leaves, R, O, D, MaxDistance, OutT, OutPrim, Overflow);
+    }
+};
 
 int main()
 {
@@ -1338,6 +1555,471 @@ int main()
                  C.AgreeExact, C.MissAgree, C.NeighbourTies + C.CoincidentTies, C.PrimitiveMismatch, C.HitMismatches);
 
         for (TraversalIndex* Walker : BlasPointers) delete Walker;
+    }
+
+    // ── ⑧ the deformation path (D8) — refit vs rebuild, and the packed blob the GPU reads ────────────────────────
+    std::printf("\n⑧ deformation — a deformed BLAS refitted in place, against the same geometry rebuilt from scratch\n");
+    {
+        // The scene: the level's soup as two prototypes so that "only this BLAS moved" is a real statement, with the
+        //    second prototype's copy displaced like a skinned mesh (a travelling wave across its own bounds — smooth,
+        //    large-scale, and nothing like the rest pose).
+        const size_t Split = TriangleCount / 2u;
+        std::vector<TriangleIndex> Left(Soup.begin(), Soup.begin() + ptrdiff_t(Split));
+        std::vector<TriangleIndex> Right(Soup.begin() + ptrdiff_t(Split), Soup.end());
+        std::vector<TriangleIndex> RightDeformed = Right;
+
+        const SceneBounds RB = Measure(Right, 0u, Right.size());
+        const float Diag = Diagonal(RB);
+        const auto Wave = [&](float Scale, std::vector<TriangleIndex>& Target) {
+            Target = Right;
+            for (TriangleIndex& T : Target)
+            {
+                float* V[3] = { &T.VertexAlphaX, &T.VertexBetaX, &T.VertexGammaX };
+                for (int I = 0; I < 3; ++I)
+                    for (int A = 0; A < 3; ++A)
+                        V[I][A] += Scale * 0.5f * std::sin(4.0f * (V[I][0] + V[I][2]) / std::max(1.0e-6f, Diag));
+            }
+        };
+
+        // Two scales, and the difference matters. The gate proper runs at the magnitude the POLICY calls Refit — a
+        //    few percent of the mesh's own primitive size, which is what a skinned character actually does frame to
+        //    frame — because that is the regime a refit has to be right in. The whole-level scale below it is what the
+        //    wave would be if it were sized by the level's bounding box; it is reported as information, because at
+        //    that magnitude the comparison between two DIFFERENT tree shapes starts to disagree on rays that graze a
+        //    node boundary, and no tree is wrong there.
+        std::vector<TriangleIndex> Extreme;
+        Wave(0.15f * Diag, Extreme);
+        float ExtremeDisplacement = 0.0f, PrimitiveSize = 0.0f;
+        Frontier::MeasureDeformation(Right, Extreme, ExtremeDisplacement, PrimitiveSize);
+        Info("the level-scale wave (%.3f m) is %.0f %% of the mesh's own %.4f m mean edge; the gate runs at 5 %%",
+              double(ExtremeDisplacement), 100.0 * double(ExtremeDisplacement) / std::max(1.0e-9, double(PrimitiveSize)),
+              double(PrimitiveSize));
+
+        Wave(0.15f * Diag * (0.05f * PrimitiveSize) / std::max(1.0e-9f, ExtremeDisplacement), RightDeformed);
+        float Displacement = 0.0f;
+        Frontier::MeasureDeformation(Right, RightDeformed, Displacement, PrimitiveSize);
+
+        const std::vector<MeshPrototype> Prototypes = { MeshPrototype{ Left.data(),  uint32_t(Left.size())  },
+                                                       MeshPrototype{ Right.data(), uint32_t(Right.size()) } };
+        std::vector<InstanceRow> Rows(2);
+        IdentityMatrix(Rows[0].Transform); Rows[0].BlasIndex = 0u; Rows[0].FirstTriangle = 0u;
+        IdentityMatrix(Rows[1].Transform); Rows[1].BlasIndex = 1u; Rows[1].FirstTriangle = uint32_t(Split);
+
+        InstanceAcceleration Reference, Rebuilt;
+        if (!Reference.Build(Prototypes, Rows, false))
+        { Fail("the deformation scene would not build"); return 1; }
+
+        // The untouched-BLAS question, asked before anything moves: hash both BLAS' slices of both shared buffers.
+        const uint64_t LeftNodesBefore = Fnv1a(Reference.QueryNodeBlob().data(), size_t(Reference.QueryBlasRecords()[0].NodeBlocks) * 16u);
+        const uint64_t LeftLeavesBefore = Fnv1a(Reference.QueryLeafBlob().data(), size_t(Reference.QueryBlasRecords()[0].LeafBlocks) * 16u);
+        const uint64_t RightNodesBefore = Fnv1a(Reference.QueryNodeBlob().data() + size_t(Reference.QueryBlasRecords()[1].NodeOffset) * 4u,
+                                                size_t(Reference.QueryBlasRecords()[1].NodeBlocks) * 16u);
+
+        // The walker's control, over the rest structure and a ray set generated against the rest soup.
+        std::vector<TriangleIndex> RestSoup = Left;
+        RestSoup.insert(RestSoup.end(), Right.begin(), Right.end());
+        InstanceAcceleration RestReference;
+        if (!RestReference.Build(Prototypes, Rows, false)) { Fail("the control structure would not build"); return 1; }
+
+        const auto Start = std::chrono::steady_clock::now();
+        const bool RefOk = Reference.RefitBlas(1u, RightDeformed);
+        const float RefMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - Start).count();
+
+        std::vector<TriangleIndex> DeformedSoup = Left;
+        DeformedSoup.insert(DeformedSoup.end(), RightDeformed.begin(), RightDeformed.end());
+        const std::vector<MeshPrototype> RebuiltPrototypes = { MeshPrototype{ Left.data(), uint32_t(Left.size()) },
+                                                              MeshPrototype{ RightDeformed.data(), uint32_t(RightDeformed.size()) } };
+        const auto Start3 = std::chrono::steady_clock::now();
+        const bool RebuildOk = Rebuilt.Build(RebuiltPrototypes, Rows, false);
+        const float RebuildMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - Start3).count();
+
+        if (RefOk && RebuildOk)
+            Pass("the refit accepted the deformation; a rebuild of the same geometry is the reference against it");
+        else
+            Fail("a deformation path refused valid input (refit %d, rebuild %d)", int(RefOk), int(RebuildOk));
+
+        Info("deformation: %.4f m of displacement against a %.4f m mean edge — %.2f %% of the mesh's own primitive size",
+              double(Displacement), double(PrimitiveSize), 100.0 * double(Displacement) / std::max(1.0e-9, double(PrimitiveSize)));
+        Info("cost: in-place refit %.2f ms · full rebuild %.2f ms (2 prototypes, %zu triangles; %u of them in the refitted BLAS)",
+              double(RefMs), double(RebuildMs), TriangleCount, Reference.QueryMetrics().LastRefitTriangleCount);
+        Info("       the refit re-quantised %u nodes in one descending sweep (largest child-index jump %u, sweepable %d) and rewrote every leaf entry in place",
+              Reference.QueryMetrics().LastRefitNodeCount, Reference.QueryMetrics().MaxChildIndexJump,
+              int(Reference.QueryMetrics().RefitSweepable));
+
+        // ⑧a — the refit must say exactly what a rebuild says, on rays generated against the DEFORMED geometry.
+        const SceneBounds DB = Measure(DeformedSoup, 0u, DeformedSoup.size());
+        std::vector<float> Origins, Directions;
+        long Snapped = 0, Unsnapped = 0; int WorstAttempts = 0;
+        GenerateRays(DeformedSoup, DB, 20000, 20260922ull, Origins, Directions, Snapped, Unsnapped, WorstAttempts);
+
+        const auto Canonical = [&](const InstanceAcceleration& S) {
+            return [&S, &Rows](const float* O, const float* D, float& T, uint32_t& Key) -> bool {
+                uint32_t Instance = 0u, Local = 0u; float TT = 0.0f;
+                if (!S.TraceClosest(O, D, 1.0e30f, Instance, Local, TT)) return false;
+                Key = Rows[Instance].FirstTriangle + Local;
+                T = TT;
+                return true;
+            };
+        };
+        // A ray that lands on a tessellation edge can be resolved either way by two trees of different shape: the
+        //    census reports those separately from an unrelated surface, and the oracle decides which ones were knife
+        //    edges. A hit/miss difference is only a defect when the oracle sees an unambiguous hit.
+        const auto Adjudicate = [&](const Case* Cases, int Count) -> int {
+            int Unexplained = 0;
+            for (int I = 0; I < Count; ++I)
+            {
+                const int Ray = Cases[I].Ray;
+                uint32_t Triangle = 0u; double Margin = 0.0, Det = 1.0;
+                BruteForceNearest(DeformedSoup, &Origins[size_t(Ray) * 3u], &Directions[size_t(Ray) * 3u], Triangle, Margin, Det);
+                if (!(Det < 0.1 || Margin < 1.0e-3)) ++Unexplained;
+            }
+            return Unexplained;
+        };
+
+        const float TieTolerance = 1.0e-3f * std::max(1.0f, Diagonal(DB));
+
+        // The control: walker over the UNTOUCHED rest blob vs a fresh CPU build of the same geometry.
+        {
+            const std::vector<float>& RN = RestReference.QueryNodeBlob();
+            const std::vector<float>& RL = RestReference.QueryLeafBlob();
+            const BlasRecord RR = RestReference.QueryBlasRecords()[1];
+            const uint32_t First = Rows[1].FirstTriangle;
+            const auto RestWalk = [&RN, &RL, RR, First](const float* O, const float* D, float& T, uint32_t& Key) -> bool {
+                float TT = 0.0f; uint32_t Prim = 0u; bool Overflow = false;
+                if (!BlobWalker::Trace(RN, RL, RR, O, D, 1.0e30f, TT, Prim, Overflow)) {
+                    if (Overflow) g_BlobOverflows.fetch_add(1u);
+                    return false;
+                }
+                Key = First + Prim; T = TT; return true;
+            };
+            const SceneBounds RB2 = Measure(RestSoup, 0u, RestSoup.size());
+            std::vector<float> RO, RD2; long S2 = 0, U2 = 0; int A2 = 0;
+            GenerateRays(RestSoup, RB2, 20000, 20260923ull, RO, RD2, S2, U2, A2);
+            const float TieCtl = 1.0e-3f * std::max(1.0f, Diagonal(RB2));
+            const auto RestBrute = [&RL, RR, First](const float* O, const float* D, float& T, uint32_t& Key) -> bool {
+                float TT = 0.0f; uint32_t Prim = 0u;
+                if (!BlobWalker::Brute(RL, RR, O, D, 1.0e30f, TT, Prim)) return false;
+                Key = First + Prim; T = TT; return true;
+            };
+            // (i) the GATE: the walker against the blob's own triangles. Same floats, same arithmetic, so this needs
+            //     no tie tolerance — a single different triangle, or a single hit on one side only, means the packed
+            //     tree pruned geometry that is in its own arena.
+            Case OwnCases[4]; int OwnCount = 0;
+            const Census Own = Compare(RestWalk, RestBrute, RO, RD2, 20000, TieCtl, RestSoup, OwnCases, 4, OwnCount);
+            if (Own.PrimitiveMismatch == 0 && Own.HitMismatches == 0 && Own.AgreeExact + Own.AgreeDistance + Own.MissAgree == 20000)
+                Pass("the blob walker finds every hit its own arena contains on an UNTOUCHED structure (%ld exact, %ld within rounding, %ld both miss) — the instrument is calibrated",
+                      Own.AgreeExact, Own.AgreeDistance, Own.MissAgree);
+            else
+                Fail("the blob walker misses geometry its own arena contains (%ld unrelated, %ld hit/miss, %ld exact) — the instrument, not the refit",
+                     Own.PrimitiveMismatch, Own.HitMismatches, Own.AgreeExact);
+            // (ii) the same rays against a fresh build's binary tree: reported, not gated. The library's traversal
+            //     resolves grazing rays with a different intersection routine, so a hit/miss difference there is
+            //     expected on snapped rays; the oracle's verdict on the sampled disagreements is printed with it.
+            Case CtlCases[4]; int CtlCount = 0;
+            const Census Ctl = Compare(RestWalk, Canonical(RestReference), RO, RD2, 20000, TieCtl, RestSoup, CtlCases, 4, CtlCount);
+            const int CtlUnexplained = Adjudicate(CtlCases, CtlCount);
+            long SameBlas = 0, OtherBlas = 0;
+            for (int I = 0; I < 20000; ++I)
+            {
+                uint32_t Inst = 0u, Local = 0u; float TT = 0.0f;
+                if (!RestReference.TraceClosest(&RO[size_t(I) * 3u], &RD2[size_t(I) * 3u], 1.0e30f, Inst, Local, TT)) continue;
+                if (Inst == 1u) ++SameBlas; else ++OtherBlas;
+            }
+            Info("control (walker over the UNTOUCHED rest blob vs the library's binary tree): %ld exact · %ld within rounding · %ld misses · %ld unrelated · %ld hit/miss (%d of the %d sampled not knife-edge)",
+                  Ctl.AgreeExact, Ctl.AgreeDistance, Ctl.MissAgree, Ctl.PrimitiveMismatch, Ctl.HitMismatches, CtlUnexplained, CtlCount);
+            Info("  of the rays the library resolves, %ld land inside this BLAS and %ld inside the other one — a single-BLAS walker cannot reach the latter, which is what the hit/miss count above is mostly made of",
+                  SameBlas, OtherBlas);
+        }
+
+        // ⑧a·2 — the same control restricted to AXIS-ALIGNED rays, held as its own gate because that is the case the
+        //    transcription got wrong in a way no blob measurement could see: with rD = inf on one axis, every slab
+        //    value there is 0 * inf = NaN, and only the kernel's NaN-dropping FMax/FMin keeps the child boxes alive.
+        //    A walker that propagates the NaN prunes every node and reports a miss for every such ray.
+        {
+            const std::vector<float>& RN = RestReference.QueryNodeBlob();
+            const std::vector<float>& RL = RestReference.QueryLeafBlob();
+            const BlasRecord RR = RestReference.QueryBlasRecords()[1];
+            const uint32_t First = Rows[1].FirstTriangle;
+            const auto RestWalk = [&RN, &RL, RR, First](const float* O, const float* D, float& T, uint32_t& Key) -> bool {
+                float TT = 0.0f; uint32_t Prim = 0u; bool Overflow = false;
+                if (!BlobWalker::Trace(RN, RL, RR, O, D, 1.0e30f, TT, Prim, Overflow)) {
+                    if (Overflow) g_BlobOverflows.fetch_add(1u);
+                    return false;
+                }
+                Key = First + Prim; T = TT; return true;
+            };
+            const SceneBounds RB3 = Measure(RestSoup, 0u, RestSoup.size());
+            std::vector<float> AO, AD;
+            for (int I = 0; I < 6000; ++I)
+            {
+                const float T0 = float(I % 100) / 100.0f, S0 = float((I / 100) % 60) / 60.0f;
+                const float Span = std::max(0.25f, Diagonal(RB3));
+                AO.push_back(RB3.Min[0] - 0.1f * Span + (Span * 1.2f) * T0);
+                AO.push_back(RB3.Max[1] + 0.4f * Span);
+                AO.push_back(RB3.Min[2] - 0.1f * Span + (Span * 1.2f) * S0);
+                const int Axis = I % 3;   // one direction component is EXACTLY zero, on a rotating axis
+                AD.push_back(Axis == 0 ? 0.0f : 0.35f * (S0 - 0.5f));
+                AD.push_back(-1.0f);
+                AD.push_back(Axis == 2 ? 0.0f : (Axis == 0 ? 0.35f * (T0 - 0.5f) : 0.2f));
+                if (Axis == 1) AD[2] = 0.0f;
+            }
+            const auto RestBruteA = [&RL, RR, First](const float* O, const float* D, float& T, uint32_t& Key) -> bool {
+                float TT = 0.0f; uint32_t Prim = 0u;
+                if (!BlobWalker::Brute(RL, RR, O, D, 1.0e30f, TT, Prim)) return false;
+                Key = First + Prim; T = TT; return true;
+            };
+            Case AxisCases[4]; int AxisCount = 0;
+            const Census AxisC = Compare(RestWalk, RestBruteA, AO, AD, 6000,
+                                         1.0e-3f * std::max(1.0f, Diagonal(RB3)), RestSoup, AxisCases, 4, AxisCount);
+            if (AxisC.PrimitiveMismatch == 0 && AxisC.HitMismatches == 0)
+                Pass("axis-aligned rays (rD = inf, every slab value 0 * inf = NaN) walk the blob exactly like the kernel's: %ld exact, %ld misses",
+                      AxisC.AgreeExact, AxisC.MissAgree);
+            else
+                Fail("axis-aligned rays diverge from an untouched blob (%ld unrelated, %ld hit/miss) — the walker's min/max are not the kernel's FMin/FMax",
+                     AxisC.PrimitiveMismatch, AxisC.HitMismatches);
+        }
+        Case Cases[16]; int CaseCount = 0;
+        const Census CC = Compare(Canonical(Reference), Canonical(Rebuilt), Origins, Directions, 20000, TieTolerance,
+                                  DeformedSoup, Cases, 16, CaseCount);
+        Info("refit vs rebuild: %ld exact · %ld misses · %ld grazing ties · %ld unrelated · %ld hit/miss",
+              CC.AgreeExact, CC.MissAgree, CC.NeighbourTies + CC.CoincidentTies, CC.PrimitiveMismatch, CC.HitMismatches);
+        const int Unexplained = Adjudicate(Cases, CaseCount);
+        if (CC.PrimitiveMismatch == 0 && CC.HitMismatches == Unexplained)
+            Pass("a refitted BLAS answers exactly as the same geometry rebuilt: %ld rays, no unrelated surface, %ld grazing ties, %ld hit/miss resolved by the oracle",
+                  CC.Rays, CC.NeighbourTies + CC.CoincidentTies, CC.HitMismatches);
+        else
+            Fail("the refit disagrees with the rebuild (%ld unrelated, %ld hit/miss of which %d not knife-edge)",
+                 CC.PrimitiveMismatch, CC.HitMismatches, Unexplained);
+
+        // ⑧b — the packed blob is what the GPU reads, so it gets its own independent walker. The CPU trace above walks
+        //    the inner binary tree, not the blob, so a re-quantisation that shrank a box would be invisible to it.
+        //
+        //    ⚠️ The walker is an instrument, so it is calibrated first: run it over the REST structure — the blob
+        //    tinybvh built and the GPU traverses today, untouched by any refit — and require it to agree with a fresh
+        //    build of that same geometry. Without this control a disagreement below could be the walker's fault, and
+        //    a walker nobody has checked is not evidence.
+        const auto Walk = [&](const InstanceAcceleration& S) {
+            const std::vector<float>& Nodes  = S.QueryNodeBlob();
+            const std::vector<float>& Leaves = S.QueryLeafBlob();
+            const BlasRecord R = S.QueryBlasRecords()[1];
+            const uint32_t First = Rows[1].FirstTriangle;
+            return [&Nodes, &Leaves, R, First](const float* O, const float* D, float& T, uint32_t& Key) -> bool {
+                float TT = 0.0f; uint32_t Prim = 0u; bool Overflow = false;
+                if (!BlobWalker::Trace(Nodes, Leaves, R, O, D, 1.0e30f, TT, Prim, Overflow)) {
+                    if (Overflow) g_BlobOverflows.fetch_add(1u);
+                    return false;
+                }
+                Key = First + Prim; T = TT;
+                return true;
+            };
+        };
+        const auto BruteOf = [&](const InstanceAcceleration& S) {
+            const std::vector<float>& Leaves = S.QueryLeafBlob();
+            const BlasRecord R = S.QueryBlasRecords()[1];
+            const uint32_t First = Rows[1].FirstTriangle;
+            return [&Leaves, R, First](const float* O, const float* D, float& T, uint32_t& Key) -> bool {
+                float TT = 0.0f; uint32_t Prim = 0u;
+                if (!BlobWalker::Brute(Leaves, R, O, D, 1.0e30f, TT, Prim)) return false;
+                Key = First + Prim; T = TT; return true;
+            };
+        };
+        // The GATE for the packed blob: after the refit, every triangle the arena contains is still reachable by the
+        //    walker — no box may have been re-quantised into a shape that prunes its own geometry. This is the direct
+        //    statement of "the GPU's copy still describes the surface", and it is exact rather than tolerance-based.
+        Case Own2Cases[8]; int Own2Count = 0;
+        const Census Own2 = Compare(Walk(Reference), BruteOf(Reference), Origins, Directions, 20000, TieTolerance,
+                                    DeformedSoup, Own2Cases, 8, Own2Count);
+        if (Own2.PrimitiveMismatch == 0 && Own2.HitMismatches == 0)
+            Pass("the refit's PACKED BLOB still reaches every triangle of its own arena (%ld exact, %ld within rounding, %ld both miss, %ld unrelated, %ld hit/miss)",
+                  Own2.AgreeExact, Own2.AgreeDistance, Own2.MissAgree, Own2.PrimitiveMismatch, Own2.HitMismatches);
+        else
+            Fail("the packed blob after a refit prunes its own geometry (%ld unrelated, %ld hit/miss of %ld rays)",
+                 Own2.PrimitiveMismatch, Own2.HitMismatches, Own2.Rays);
+        Case Cases2[16]; int CaseCount2 = 0;
+        const Census CB = Compare(Walk(Reference), Canonical(Rebuilt), Origins, Directions, 20000, TieTolerance,
+                                  DeformedSoup, Cases2, 16, CaseCount2);
+        const int UnexplainedBlob = Adjudicate(Cases2, CaseCount2);
+        Info("packed blob (independent walker) vs the library's tree over a rebuild: %ld exact · %ld agree within rounding · %ld misses · %ld grazing ties · %ld unrelated · %ld hit/miss (%d of the %d sampled not knife-edge)",
+              CB.AgreeExact, CB.AgreeDistance, CB.MissAgree, CB.NeighbourTies + CB.CoincidentTies, CB.PrimitiveMismatch, CB.HitMismatches,
+              UnexplainedBlob, CaseCount2);
+
+        // ⑧c — containment, measured directly rather than through rays: every triangle a leaf slot owns must lie inside
+        //    the quantised box that slot will be tested against. A ray census samples; this covers every triangle.
+        {
+            const std::vector<float>& Nodes  = Reference.QueryNodeBlob();
+            const std::vector<float>& Leaves = Reference.QueryLeafBlob();
+            const BlasRecord R = Reference.QueryBlasRecords()[1];
+            uint32_t Escapes = 0, Slots = 0, Triangles = 0; float Worst = 0.0f;
+            for (uint32_t N = 0; N < R.NodeBlocks / 5u; ++N)
+            {
+                const float* Node = &Nodes[(size_t(R.NodeOffset) + size_t(N) * 5u) * 4u];
+                const uint32_t TriBase = *reinterpret_cast<const uint32_t*>(&Node[5]);
+                for (int Slot = 0; Slot < 8; ++Slot)
+                {
+                    const uint8_t Meta = reinterpret_cast<const uint8_t*>(Node)[24 + Slot];
+                    if ((Meta & 0x18u) == 0x18u) continue;
+                    const uint32_t Unary = (Meta >> 5) & 0x7u;
+                    const uint32_t Count = (Unary == 1u) ? 1u : (Unary == 3u) ? 2u : (Unary == 7u) ? 3u : 0u;
+                    if (Count == 0u) continue;
+                    ++Slots;
+                    float Lo[3], Hi[3]; BlobWalker::SlotBox(Node, Slot, Lo, Hi);
+                    const uint32_t First = Meta & 0x1Fu;
+                    for (uint32_t T = 0u; T < Count; ++T)
+                    {
+                        ++Triangles;
+                        const float* E = &Leaves[(size_t(R.LeafOffset) + TriBase + (First + T) * 3u) * 4u];
+                        const float V0[3] = { E[8], E[9], E[10] };
+                        const float V1[3] = { E[8] + E[4], E[9] + E[5], E[10] + E[6] };
+                        const float V2[3] = { E[8] + E[0], E[9] + E[1], E[10] + E[2] };
+                        const float* Pts[3] = { V0, V1, V2 };
+                        for (int V = 0; V < 3; ++V)
+                            for (int A = 0; A < 3; ++A)
+                            {
+                                const float Slack = std::max(0.0f, std::max(Lo[A] - Pts[V][A], Pts[V][A] - Hi[A]));
+                                if (Slack > 1.0e-4f) { ++Escapes; Worst = std::max(Worst, Slack); }
+                            }
+                    }
+                }
+            }
+            // And the other half of the same question, which the leaf test cannot see: an interior slot's box must
+            //    contain every box of the child it points at. A traversal tests the parent's box before descending, so
+            //    a parent that under-covers its child prunes geometry the ray would otherwise have hit — invisible to
+            //    the CPU trace (which walks the inner binary tree) and visible only to the blob walker above.
+            uint32_t ParentEscapes = 0; float WorstParent = 0.0f;
+            for (uint32_t N = 0; N < R.NodeBlocks / 5u; ++N)
+            {
+                const float* Node = &Nodes[(size_t(R.NodeOffset) + size_t(N) * 5u) * 4u];
+                for (int Slot = 0; Slot < 8; ++Slot)
+                {
+                    const uint8_t Meta = reinterpret_cast<const uint8_t*>(Node)[24 + Slot];
+                    if ((Meta & 0x18u) != 0x18u) continue;
+                    uint32_t Rank = 0u;
+                    for (int S2 = 0; S2 < Slot; ++S2)
+                        if ((reinterpret_cast<const uint8_t*>(Node)[24 + S2] & 0x18u) == 0x18u) ++Rank;
+                    const uint32_t ChildBlock = *reinterpret_cast<const uint32_t*>(&Node[4]) + Rank;
+                    if (size_t(ChildBlock) * 5u + 5u > R.NodeBlocks) continue;
+                    const float* Child = &Nodes[(size_t(R.NodeOffset) + size_t(ChildBlock) * 5u) * 4u];
+                    float PLo[3], PHi[3]; BlobWalker::SlotBox(Node, Slot, PLo, PHi);
+                    for (int CS = 0; CS < 8; ++CS)
+                    {
+                        const uint8_t CM = reinterpret_cast<const uint8_t*>(Child)[24 + CS];
+                        const uint32_t CU = (CM >> 5) & 0x7u;
+                        const bool CIn = (CM & 0x18u) == 0x18u;
+                        if (!CIn && CU != 1u && CU != 3u && CU != 7u) continue;
+                        float CLo[3], CHi[3]; BlobWalker::SlotBox(Child, CS, CLo, CHi);
+                        for (int A = 0; A < 3; ++A)
+                        {
+                            const float Slack = std::max(0.0f, std::max(PLo[A] - CLo[A], CHi[A] - PHi[A]));
+                            if (Slack > 1.0e-4f) { ++ParentEscapes; WorstParent = std::max(WorstParent, Slack); }
+                        }
+                    }
+                }
+            }
+
+            if (Escapes == 0 && ParentEscapes == 0)
+                Pass("every one of the %u leaf triangles lies inside its own quantised slot box (%u slots) and every interior slot covers its child (%u slots parents)",
+                      Triangles, Slots, R.NodeBlocks / 5u);
+            else
+                Fail("%u vertex tests escape their leaf box and %u child boxes escape their parent (worst %.4f m) — a refit that shrinks a box drops geometry",
+                     Escapes, ParentEscapes, double(std::max(Worst, WorstParent)));
+        }
+
+        // ⑧d — the BLAS that did not move must not have been written to. The slices share one buffer and every offset is
+        //    recorded, so this is the statement that makes per-BLAS updates safe in a scene with several of them.
+        const uint64_t LeftNodesAfter  = Fnv1a(Reference.QueryNodeBlob().data(), size_t(Reference.QueryBlasRecords()[0].NodeBlocks) * 16u);
+        const uint64_t LeftLeavesAfter = Fnv1a(Reference.QueryLeafBlob().data(), size_t(Reference.QueryBlasRecords()[0].LeafBlocks) * 16u);
+        const uint64_t RightNodesAfter = Fnv1a(Reference.QueryNodeBlob().data() + size_t(Reference.QueryBlasRecords()[1].NodeOffset) * 4u,
+                                               size_t(Reference.QueryBlasRecords()[1].NodeBlocks) * 16u);
+        if (LeftNodesAfter == LeftNodesBefore && LeftLeavesAfter == LeftLeavesBefore)
+            Pass("refitting BLAS 1 left BLAS 0's node and leaf slices byte-identical (its offsets never shift)");
+        else
+            Fail("an untouched BLAS was written to (%llx→%llx nodes, %llx→%llx leaves)",
+                 (unsigned long long)LeftNodesBefore, (unsigned long long)LeftNodesAfter,
+                 (unsigned long long)LeftLeavesBefore, (unsigned long long)LeftLeavesAfter);
+        if (RightNodesAfter != RightNodesBefore)
+            Pass("and the refitted BLAS' own nodes did change (%llx → %llx), so the test above is not vacuous",
+                 (unsigned long long)RightNodesBefore, (unsigned long long)RightNodesAfter);
+        else
+            Fail("the refitted BLAS' node slice is unchanged — the refit did nothing");
+
+        // ⑧e — the LAYOUT decision the refit rests on, measured on this very geometry: re-emitting the packed blob
+        //    instead of re-quantising it (TraversalIndex::RefitBottomLevel, the path the whole-scene D5 refit uses)
+        //    re-runs the MBVH8 collapse, and the collapse's node count depends on the new bounds. In a shared buffer
+        //    that would move every following BLAS' slice, so the two-level path cannot use it.
+        {
+            TraversalIndex Probe;
+            const BlasRecord R = Reference.QueryBlasRecords()[1];
+            if (Probe.Build(Right, false))
+            {
+                const size_t BlocksBefore = Probe.QueryNodeBlob().size() / 4u;
+                const auto RStart = std::chrono::steady_clock::now();
+                const bool ProbeOk = Probe.RefitBottomLevel(RightDeformed);
+                const float ReEmitMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - RStart).count();
+                const size_t BlocksAfter = Probe.QueryNodeBlob().size() / 4u;
+                const bool Fits = ProbeOk && BlocksAfter <= size_t(R.NodeBlocks);
+                Info("re-emitting the packed blob (refit + collapse + compress) takes %.2f ms and moves the node count %zu → %zu blocks against a recorded slice of %u",
+                      double(ReEmitMs), BlocksBefore, BlocksAfter, R.NodeBlocks);
+                if (ProbeOk && !Fits)
+                    Pass("the re-emit path does NOT fit the BLAS' recorded slice (%+zd blocks) — which is why the refit re-quantises in place",
+                          ptrdiff_t(BlocksAfter) - ptrdiff_t(BlocksBefore));
+                else
+                    Info("the re-emit happened to fit this geometry; the in-place path is still the one whose counts cannot change");
+            }
+        }
+
+        // ⑧f — the policy that decides between the two paths, and the two refusals that must never be silent.
+        {
+            Frontier::BlasUpdatePolicy Policy;
+            struct Row { float Displacement, PrimitiveSize; bool Topology; uint32_t Frames; bool Outstanding; Frontier::BlasUpdateDecision Want; const char* Name; };
+            const Row Table[] = {
+                { 0.0f,   0.05f, false, 999u, false, Frontier::BlasUpdateDecision::None,    "no movement" },
+                { 0.001f, 0.05f, false, 999u, false, Frontier::BlasUpdateDecision::Refit,   "2 % of a primitive" },
+                { 0.02f,  0.05f, false, 999u, false, Frontier::BlasUpdateDecision::Rebuild, "40 % of a primitive" },
+                { 0.0f,   0.0f,  false, 999u, false, Frontier::BlasUpdateDecision::Rebuild, "degenerate mesh" },
+                { 0.0f,   0.05f, true,  999u, false, Frontier::BlasUpdateDecision::Rebuild, "topology changed" },
+                { 0.02f,  0.05f, false, 0u,   false, Frontier::BlasUpdateDecision::Refit,   "big move, fresh rebuild" },
+                { 0.02f,  0.05f, false, 999u, true,  Frontier::BlasUpdateDecision::Refit,   "big move, rebuild in flight" },
+            };
+            int Bad = 0;
+            for (const Row& R : Table)
+                if (Policy.Decide(R.Displacement, R.PrimitiveSize, R.Topology, R.Frames, R.Outstanding) != R.Want) ++Bad;
+            if (Bad == 0)
+                Pass("the refit/rebuild policy answers all %zu cases correctly (refit under ~%.0f %% of a primitive, never back-to-back rebuilds)",
+                      sizeof(Table) / sizeof(Table[0]), 100.0 * double(Policy.RefitDisplacementRatio));
+            else
+                Fail("%d of %zu policy cases answered wrongly", Bad, sizeof(Table) / sizeof(Table[0]));
+
+            const Frontier::BlasUpdateDecision D = Policy.Decide(Displacement, PrimitiveSize, false, 999u, false);
+            if (D == Frontier::BlasUpdateDecision::Refit)
+                Pass("this deformation (%.2f %% of a primitive) is classified Refit — and the refit above accepted it",
+                     100.0 * double(Displacement) / std::max(1.0e-9, double(PrimitiveSize)));
+            else
+                Info("this deformation is classified as a REBUILD by the policy; the refit above still had to be correct");
+
+            InstanceAcceleration NoTopology;
+            if (!NoTopology.Build(Prototypes, Rows, false)) { Fail("the refusal scene would not build"); return 1; }
+            std::vector<TriangleIndex> Short(RightDeformed.begin(), RightDeformed.end() - 1);
+            const bool Refused = !NoTopology.RefitBlas(1u, Short) && NoTopology.QueryMetrics().RefitRefusedCount == 1u;
+            if (Refused)
+                Pass("a changed triangle count is refused and counted (%u refusal) — a refit cannot express a topology change",
+                      NoTopology.QueryMetrics().RefitRefusedCount);
+            else
+                Fail("a topology change was not refused (or not counted) — a refit cannot express it");
+        }
+
+        // ⑧g — the spatial-split build, which is the reason a BLAS can be un-refittable: D8's trade, checked.
+        {
+            InstanceAcceleration HQ;
+            if (HQ.Build(Prototypes, Rows, true))
+            {
+                if (!HQ.RefitBlas(1u, RightDeformed))
+                    Pass("a spatial-split (HighQuality) BLAS refuses to refit — its splits cut triangles, so the D8 trade holds");
+                else
+                    Fail("a spatial-split BLAS accepted a refit");
+            }
+            else
+                Info("the spatial-split build was refused by this host, so the un-refittable case could not be exercised");
+        }
     }
 
     RunKernelAudit();

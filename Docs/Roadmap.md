@@ -37,8 +37,8 @@ See `Docs/DynamicGeometry.md` for the plan, the measured budget table and the de
 |---|---|---|:--:|---|
 | 14 | D6 object-space BLAS + per-instance transforms in the kernel | ⚠️ | 90 % | Built and CPU-proven (`Exhibits/Workbench/Traversal`, 103 gates: identity bit-identical, transform agreement, payload, wiring pins). Left: **one GPU run** |
 | 15 | D7 TLAS over instances (build at load, rebuild per frame) | ⚠️ | 85 % | Measured **0.07 / 0.32 / 1.42 ms** at 256 / 1 024 / 4 096 all-moving instances (TLAS alone 0.05 / 0.23 / 1.06). ⚠️ 4 096 misses the ≤1 ms plan number on the 2-core proof host |
-| 16 | D8 dynamic BLAS update path (refit for deforming meshes) | ❌ | 0 % | Layout decision first: the packed CWBVH re-quantize is the cost (5.2 ms per 16 k-tri character) |
-| 17 | D9 GPU refit / GPU build kernels (wide-AABB refit; H-PLOC for topology changes) | ❌ | 0 % | Needs the layout from D8 and a GPU runner |
+| 16 | D8 dynamic BLAS update path (refit for deforming meshes) | ✅ | 90 % | **In-place refit of the packed layout**: 4.39 ms for 31 927 triangles (vs 74.84 ms rebuild; the packed re-emit is 7.76 ms and no longer fits the uploaded slice). 116 gates, 0 failed — refit ≡ rebuild on 20 000 rays, the blob reaches its own geometry, untouched BLAS slices byte-identical. ⚠️ Left: one GPU run (kernel-side refit + rendered frame) |
+| 17 | D9 GPU refit / GPU build kernels (wide-AABB refit; H-PLOC for topology changes) | ⚠️ | 45 % | D8 supplied the layout and the invariant (`MaxChildIndexJump` 4 125, `RefitSweepable`) so a refit kernel is a descending-window sweep; the build kernels (H-PLOC) exist as pinned text. Left: compile + run on a GPU |
 | 18 | D10 ReSTIR/temporal integration for moving geometry | ❌ | 0 % | Motion vectors exist (`PreviousWorld`); identity-based validation is the new part |
 
 ## D. Project format — ≈ 8 % (plan complete, nothing built)

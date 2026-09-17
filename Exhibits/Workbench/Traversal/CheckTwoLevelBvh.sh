@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# D6/D7 gate — the two-level acceleration structure (object-space BLASes + an instance TLAS), measured against today's
-#    single world-space tree on the M10 level's own triangles (MaterialSwatchStructure::Construct, the source the
-#    shipped level and the CPU mirror both read). Five gates, all printed: blob identity under an identity transform;
-#    ray agreement across chunked identity instances; transform agreement against the D5 triangle rewrite; the D7
-#    per-frame budget with the BLAS blobs hashed before/after; and the instancing byte cost.
+# D6/D7/D8 gate — the two-level acceleration structure (object-space BLASes + an instance TLAS), measured against
+#    today's single world-space tree on the M10 level's own triangles (MaterialSwatchStructure::Construct, the source
+#    the shipped level and the CPU mirror both read). Gates ①–⑦ (D6/D7): blob identity under an identity transform; ray
+#    agreement across chunked identity instances; transform agreement against the D5 triangle rewrite; the D7 per-frame
+#    budget with the BLAS blobs hashed before/after; the instancing byte cost; the payload walk; and the shader
+#    transcription/text pins. §⑧ (D8) is the deformation path: refit vs rebuild, an INDEPENDENT walker over the PACKED
+#    blob (calibrated first against the UNTOUCHED structure and against the blob's own triangles, with a dedicated
+#    axis-aligned ray census), leaf and parent-child containment, untouched-BLAS slice hashes, the layout measurement
+#    that forces an in-place update, the update policy table, and the two refusals.
+#    ⚠️ The walker in §⑧ is deliberately NOT tinybvh's host walker: see TraversalIndex.cpp's note on the NaN/FMax
+#    mechanism behind "the CWBVH host walker misses head-on rays".
 #    Headers: Vulkan-Headers (TriangleIndex reaches them through SwapchainExchange.h) and tinybvh (tiny_bvh.h).
 #    Both seat from ExternalPackages/ when the submodules are initialised, from an env override, or from the ~/.cache
 #    mirrors. Compiles TraversalIndex.cpp, the ONLY translation unit that defines TINYBVH_IMPLEMENTATION, together
