@@ -7,6 +7,7 @@ Projects/Project-Zero/Diagnostics/Proof/*.ppm
 Projects/Project-Zero/Diagnostics/Proof/media.csv
 Projects/Project-Zero/Host/FogProbe
 Projects/Project-Zero/Host/FogViewport
+Projects/Project-Zero/Host/MaterialLevelViewport
 Projects/Project-Zero/Diagnostics/Proof/fog.csv
 # Union merge: regenerable + build outputs (never commit)
 EngineContent/CelestialTextures/Moons/

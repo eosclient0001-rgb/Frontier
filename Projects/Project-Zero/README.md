@@ -18,6 +18,13 @@ ReSTIR direct + indirect, nothing else.
   mist through ReSTIR DI + GI; verified: builds warning-free, runs,
   deterministic, matches the harness sky within 3 LDR).
   `Integration/Build/` holds port/format tooling.
+- `Host/MaterialLevelViewport.cpp` — the material library level (`--scene materials`,
+  `Engine/ContentInterchange/MaterialSwatchStructure`) rendered by this CPU stack: engine
+  material records + the shipped `MaterialEvaluation.slang` BSDF + the sky core + the
+  product's own camera and tone map. `make MaterialLevelViewport` (needs the Vulkan headers
+  for the engine interchange headers; see `VULKAN_CANDIDATES`), driven by
+  `Exhibits/Workbench/Materials/RunMaterialLibraryViewport.sh`, sheets in
+  `Exhibits/Gallery/Materials/MaterialLibrary_*.png`.
 - `Host/` — CPU harness that compiles the shipped `.slang` verbatim as C++17:
   `SkyViewport` (reference frames), `CpuPortDiff` (second-truth frames),
   `ReSTIRConvergence` (T2/T3/T4), `MediaProbe` (media sampler for G3),

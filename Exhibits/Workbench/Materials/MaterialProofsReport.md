@@ -663,7 +663,49 @@ A/B. Both join the render-verification backlog (§5), together with the M10 libr
 
 ---
 
-## 12. What's next
+## 12. Visual proof — the level rendered by Project-Zero's own CPU stack (2026-09-17)
+
+A gate says the level is right; a picture says what it looks like. `MaterialLibrary_View.png` (and three crops) is the
+M10 level drawn the way the Vulkan build draws it, by the CPU stack Project-Zero already ships:
+
+| The picture uses | … from |
+|---|---|
+| the level | `MaterialSwatchStructure::Construct` — the same authoring the app exports to `Content/Scenes/Materials.gltf` (the export→decode round trip in between is §10's A/E checks, zero drift) |
+| the material records | `MaterialIndex::Register`/`Finalise(1)` → `MaterialRecord` + `MaterialSlabRecord`, the rows the GPU uploads |
+| the material model | `ReSTIRViewport.slang`'s `ResolveMaterial`, transcribed for the constants-only case (no textures are bound by design — §10's four acknowledged channel gaps) |
+| the BSDF | `Engine/Shaders/MaterialEvaluation.slang`, compiled 1:1 as C++ (`FRONTIER_CPU_PORT`) |
+| the lights | the level's own six emissive triangles (key 60 nit, fill 25 nit, emissive panel 25 nit) + the atmosphere's sun |
+| the sky | Project-Zero's `SkySpecification`/`FogSpecification` core at the product's staging (17.93 h, 26.19 °S) |
+| the camera | `GameExecution.cpp`'s `Materials` branch — eye (0, −5, 2.6), pitch −13°, FoV 55° — for the hero sheet |
+| the transfer | `Engine/DisplayPresentation/ColourTransfer.h`, ACES, exposure 1.05 — the engine's single definition of linear → display |
+
+Driver: `bash Exhibits/Workbench/Materials/RunMaterialLibraryViewport.sh [fast|full]` → harness
+`Projects/Project-Zero/Host/MaterialLevelViewport.cpp` (Makefile target `MaterialLevelViewport`), sheets kept in
+`Exhibits/Gallery/Materials/`.
+
+| Sheet | Size | What it shows |
+|---|---|---|
+| `MaterialLibrary_View.png` | 960×540, 80 spp | the app's own opening frame for `--scene materials`: the four near rows — plastics, ceramics, coats, metals, brushed steel — with the backdrop, three sign panels and the fill luminaire at frame left |
+| `MaterialLibrary_GlassRow.png` | 480×270, 128 spp | row 3 down the row (`--row 3`): soda-lime clear and frosted, amber bottle, lead crystal, ice, thin-walled acrylic, water. The row is a lookdev crop — the other five rows are dropped from the scene (printed when the flag is used), the studio stays |
+| `MaterialLibrary_Specials.png` | 480×270, 128 spp | row 5 down the row (`--row 5`): velvet and felt (M3 cloth), satin, soap film (thin-film iridescence), hazy acrylic, emerald, mercury |
+| `MaterialLibrary_Wide.png` | 480×270, 80 spp | the whole set from 7 m back: the 7 × 6 grid, floor, backdrop and the three panels |
+
+**What it is not.** The ReSTIR kernel. No reservoirs, no reuse, no à-trous: a CPU render can afford the samples the
+GPU cannot, so this is the converged answer ReSTIR + the M9 denoiser are estimating. Physics for physics the two agree
+— the same shader text turns the same lights into the same radiance — so the difference in the GPU's frame is noise and
+filter response, not layout, colour or energy. Also absent, deliberately: the sky core's panel post (vignette/flare —
+a viewer effect, not level radiance), the fog march (the studio is 3–15 m deep and the level's own scenario is Clear),
+and lens flare. Below the sky's horizon the level shows the atmosphere's dark planet ground, which is what the engine
+returns there too — the studio floor simply does not extend to the frame's edges.
+
+**Honest scope.** Textures are not bound (constants only), the alpha test is resolved per material rather than per
+texel (the level has no texture assets, so the two coincide), and one medium is tracked at a time while walking glass
+(M4b's v1 rule — the level never nests dielectrics). The GPU's first render of this level is still the visual proof of
+the *product*; this sheet is the visual proof of the content.
+
+---
+
+## 13. What's next
 
 1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped, superseded by the v2 dipole — see 3).
 2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §5; render-verification pending GPU).
@@ -676,6 +718,8 @@ A/B. Both join the render-verification backlog (§5), together with the M10 libr
 9. ~~**Denoiser + motion vectors**~~ DONE 2026-09-17 (97/97 — see §11; the re-enable was already live at this
    tip, so M9 shipped as the proof + gate. **Every M-phase of the plan is now shipped.**)
 10. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a/M7b pixels + the M10 library render + the M9
-    end-to-end denoiser/reprojection A/B under motion and the sky-backed glass scene — needs a GPU runner).
+    end-to-end denoiser/reprojection A/B under motion and the sky-backed glass scene — needs a GPU runner). The M10
+    level now has a CPU visual proof of its own (§12, four kept sheets); what stays GPU-side is the product's frame —
+    ReSTIR + denoiser at interactive rates — not the content.
 11. Optional/deferred: M4c dispersion hero sampling, glints (`slate_glint_*` stored-unread), geometric displacement
     (channel 20), Tier B in-kernel multi-slab (post-M9 revisit).

@@ -3,7 +3,9 @@ CXX ?= g++
 CXXFLAGS ?= -O2 -std=c++17 -Wall -Wextra -pedantic -Werror
 INCLUDES = -I. -I../Integration/Shaders
 
-BIN = SkyViewport CpuPortDiff ReSTIRConvergence MediaProbe FogProbe FogViewport
+BIN = SkyViewport CpuPortDiff ReSTIRConvergence MediaProbe FogProbe FogViewport MaterialLevelViewport
+# MaterialLevelViewport is the one harness that also needs the engine's interchange headers; it is in `all` because it
+#   is the level's visual driver, but it is the only target that needs seated Vulkan headers (see VULKAN_CANDIDATES).
 
 all: $(BIN)
 
@@ -25,6 +27,38 @@ ReSTIRConvergence: ReSTIRConvergence.cpp CelHost.h ../Integration/Shaders/SlangI
 
 FogProbe: FogProbe.cpp CelHost.h ../Integration/Shaders/SlangInterchange.h SunPosition.h ../Integration/Shaders/SkySpecification.slang ../Integration/Shaders/FogSpecification.slang
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ FogProbe.cpp
+
+# The material library level (M10) rendered by the Project-Zero CPU stack: the engine's own level builder, material
+#   records, BSDF text (Engine/Shaders/MaterialEvaluation.slang via the CPU-port shim), sky core and tone map. A Host/
+#   harness — never part of the Vulkan TU list — but it consumes the same engine sources the kernel does.
+# The engine's SwapchainExchange.h (reached from MaterialSwatchStructure.h) needs the Vulkan headers. Same three
+#   candidates the materials gates search: a seated ExternalPackages/, $MATERIAL_SCENES_EXT, or the ~/.cache/m7 mirror
+#   (git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers).
+VULKAN_CANDIDATES := $(wildcard ExternalPackages) $(MATERIAL_SCENES_EXT) $(HOME)/.cache/m7
+VULKAN_ROOT := $(firstword $(foreach C,$(VULKAN_CANDIDATES),$(if $(wildcard $(C)/Vulkan-Headers/include/vulkan/vulkan.h),$(C))))
+VKINCLUDE := $(if $(VULKAN_ROOT),-I$(VULKAN_ROOT)/Vulkan-Headers/include,)
+
+#   --gc-sections drops MaterialSwatchStructure::Export (and the SceneCodec/cgltf chain behind it): the viewport reads
+#   the level's own triangles and records, it does not write the glTF the GPU imports — that is the app's and the M10
+#   gate's job. Same trick the materials gates use to keep their link lines free of the codec dependencies they never call.
+MaterialLevelViewport: MaterialLevelViewport.cpp \
+		../../../Engine/DisplayPresentation/ShadingTableCodec.cpp \
+		../../../Engine/ContentInterchange/MaterialIndex.cpp \
+		../../../Engine/ContentInterchange/MaterialSwatchStructure.cpp \
+		../../../Engine/GeometricRaster/CameraProjection.cpp \
+		../Source/SkyFogIntegrator.cpp
+	@test -n "$(VULKAN_ROOT)" || { echo "[MaterialLevelViewport] Vulkan-Headers not found — clone them first:"; \
+	  echo "    git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers \$$HOME/.cache/m7/Vulkan-Headers"; exit 1; }
+	$(CXX) -O2 -std=c++20 -Wall -Wextra -Werror -DFRONTIER_CPU_PORT -ffunction-sections -fdata-sections -Wl,--gc-sections $(VKINCLUDE) -I. -I../Shaders -I../Source -I../../../Engine/Shaders \
+		-I../../../Engine/DisplayPresentation -I../../../Engine/ContentInterchange -I../../../Engine/DeviceExchange \
+		-I../../../Engine/GeometricRaster -I../../../Exhibits/Workbench/Materials -I../../../Exhibits/Workbench/Editor \
+		-o $@ MaterialLevelViewport.cpp \
+		../../../Engine/DisplayPresentation/ShadingTableCodec.cpp \
+		../../../Engine/ContentInterchange/MaterialIndex.cpp \
+		../../../Engine/ContentInterchange/MaterialSwatchStructure.cpp \
+		../../../Engine/GeometricRaster/CameraProjection.cpp \
+		../../../Engine/DeviceExchange/OrientationClassifier.cpp \
+		../Source/SkyFogIntegrator.cpp
 
 FogViewport: FogViewport.cpp CelHost.h ../Integration/Shaders/SlangInterchange.h SunPosition.h ../Integration/Shaders/SkySpecification.slang ../Integration/Shaders/FogSpecification.slang
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ FogViewport.cpp

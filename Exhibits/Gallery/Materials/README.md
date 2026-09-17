@@ -54,3 +54,22 @@ firefly-heavy glass stream is still being filtered at 512 and 2048 spp because i
 the diffuse per-sample variance) and only past the 8192-sample hold does the shader's own test take over 79 % of
 the frame; and at every hold, every accepted pixel is returned bit-identical — 0 differing pixels in all nine
 cells of the gate's E4.
+
+## Material library level — the product's own scene, CPU-rendered (2026-09-17)
+
+`MaterialLibrary_View.png` (960×540), `MaterialLibrary_GlassRow.png`, `MaterialLibrary_Specials.png` and
+`MaterialLibrary_Wide.png` (480×270): the M10 level (`--scene materials`) drawn by Project-Zero's own CPU stack — the
+engine's level builder and material records, the shipped `MaterialEvaluation.slang` BSDF compiled 1:1 as C++, the
+engine's atmosphere core at the product's 17.93 h staging, the `GameExecution` materials camera and the engine's
+single tone map (`ColourTransfer.h`, ACES, exposure 1.05). Not the ReSTIR kernel: a CPU render affords the samples the
+GPU cannot, so these are the converged images ReSTIR + the M9 denoiser estimate. Physics for physics the two agree —
+same shader text, same lights, same radiance.
+
+- Harness: `Projects/Project-Zero/Host/MaterialLevelViewport.cpp` (Makefile target `MaterialLevelViewport`) ·
+  driver: `Exhibits/Workbench/Materials/RunMaterialLibraryViewport.sh [fast|full]` (builds, renders, gates on
+  non-finite samples and a plausible film mean, prints the sha256 of each sheet).
+- Deterministic: fixed per (pixel, sample) seeds, no time-dependent state; re-running the driver reproduces each sheet
+  bit-for-bit.
+- Deliberately absent: the sky core's panel post (vignette/flare), the fog march (the level's scenario is Clear), and
+  textures (the level is constants-only by design — see the M10 section of the proofs report). Below the sky horizon
+  the atmosphere's dark planet ground shows, exactly as the engine returns it.
