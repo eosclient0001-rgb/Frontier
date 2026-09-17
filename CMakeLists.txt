@@ -207,6 +207,7 @@ set(FRONTIER_ENGINE_SOURCES
     Engine/ContentInterchange/TextureIndex.cpp
     Engine/ContentInterchange/SceneCodec.cpp
     Engine/ContentInterchange/ShaderBallStructure.cpp
+    Engine/ContentInterchange/MaterialSwatchStructure.cpp
     Engine/ContentInterchange/FbxCodec.cpp
     Engine/ContentInterchange/ObjCodec.cpp
     Engine/ContentInterchange/ContentCodec.cpp

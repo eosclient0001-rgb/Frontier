@@ -3,8 +3,10 @@
 //============================================================================================================================================
 // 🧩 Project-Zero entry point — opens the Vulkan window, makes a glTF level resident, runs the ReSTIR render loop.
 //
-//    Scene selection (R2): `Project-Zero.exe [--scene <file.gltf|glb|shaderball|showroom|showcase>] [--scale <float>]`
+//    Scene selection (R2): `Project-Zero.exe [--scene <file.gltf|glb|shaderball|materials|showroom|showcase>] [--scale <float>]`
 //        showroom — P0 spatial-interface level, exported once from ShowroomStructure then imported like any other
+//        materials — the material library level (M10): 42 swatch spheres (plastics → coat → metals → glass →
+//                    subsurface → cloth/specials) plus three sign panels, exported once from MaterialSwatchStructure
 //        showcase — 100-object analytical field, exported once from RayTracingSolver::ConstructShowcaseScene
 //        default  Projects/Project-Zero/Content/Scenes/Showcase.gltf — regenerated from RayTracingSolver when missing
 //                 (the Cornell box stays one --scene path away, untouched as the reference).
@@ -33,6 +35,7 @@
 #include "RayTracingSolver.h"
 #include "../../../Engine/ContentInterchange/ShaderballPreview.h"
 #include "../../../Engine/ContentInterchange/ShaderBallStructure.h"
+#include "../../../Engine/ContentInterchange/MaterialSwatchStructure.h"
 #include "ShowroomStructure.h"
 #include "EditorFeedSequence.h"
 #include "../../../Engine/DeviceExchange/InterfaceExchange.h"
@@ -77,6 +80,7 @@ int main(int argc, char** argv)
         if (std::strcmp(argv[I], "--scale") == 0) SceneScale = static_cast<float>(std::atof(argv[++I]));
     }
     if (ScenePath == "shaderball") ScenePath = "Projects/Project-Zero/Content/Scenes/ShaderBall.gltf";   // R4b material test level
+    if (ScenePath == "materials")  ScenePath = "Projects/Project-Zero/Content/Scenes/Materials.gltf";    // M10 material library level
     if (ScenePath == "showroom")   ScenePath = "Projects/Project-Zero/Content/Scenes/Showroom.gltf";     // P0 spatial-interface level
     // The open-air scene.
     if (ScenePath == "outdoor")    ScenePath = "Projects/Project-Zero/Content/Scenes/Outdoor.gltf";
@@ -171,6 +175,17 @@ int main(int argc, char** argv)
             Frontier::ShaderBallStructure ShaderBall; ShaderBall.Construct();
             if (ShaderBall.Export(ScenePath, &Error)) std::cerr << "[Scene] Exported the shader-ball level to " << ScenePath << "\n";
             else                                     std::cerr << "[Scene] Shader-ball export failed: " << Error << "\n";
+        }
+        // M10 material library level. Same export-once-then-import discipline: the swatch level is generated headless
+        //    (MaterialSwatchStructure) and every later run reads the file like any other level.
+        const bool IsMaterials = ScenePath.find("Materials.gltf") != std::string::npos;
+        if (IsMaterials && !std::filesystem::exists(ScenePath, FsError))
+        {
+            std::filesystem::create_directories(std::filesystem::path(ScenePath).parent_path(), FsError);
+            std::string Error;
+            Frontier::MaterialSwatchStructure Library; Library.Construct();
+            if (Library.Export(ScenePath, &Error)) std::cerr << "[Scene] Exported the material library level to " << ScenePath << "\n";
+            else                                   std::cerr << "[Scene] Material library export failed: " << Error << "\n";
         }
         // P0 spatial-interface level. Same export-once-then-import discipline: the Cornell box stays the untouched
         //    bit-identity reference, and the showroom is a separate file the renderer only ever sees as glTF.
@@ -370,6 +385,13 @@ int main(int argc, char** argv)
         // Shader ball: 5 m back from the front row, 2.6 m up, pitched down ~22° so all four rows fit at 55° FoV.
         Camera.AssignSpatialLocation(Frontier::Vector3{ 0.0f, -6.2f, 2.6f });
         Camera.AssignOrientationEuler(-22.0f * 3.14159265f / 180.0f, 0.0f, 0.0f);
+    }
+    else if (Level.QueryName() == "Materials")
+    {
+        // Material library: 5 m back from the near row at 2.6 m, pitched down ~13° — the whole 7 × 6 grid sits in
+        //    frame at 55° FoV with the three sign panels on the backdrop behind it.
+        Camera.AssignSpatialLocation(Frontier::Vector3{ 0.0f, -5.0f, 2.6f });
+        Camera.AssignOrientationEuler(-13.0f * 3.14159265f / 180.0f, 0.0f, 0.0f);
     }
     else if (Level.QueryName() == "Outdoor")
     {

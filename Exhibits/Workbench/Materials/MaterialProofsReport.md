@@ -512,7 +512,58 @@ multi-slab content — the C probes prove the fold handles it deterministically 
 
 ---
 
-## 10. What's next
+## 10. Material library level — M10 (65/65, SHIPPED 2026-09-17)
+
+The user-facing half of the programme: **`--scene materials`**. M1–M8 proved the channels one lobe at a time
+(furnace, shaderball rows, glass proofs); this level is the curated index of them — 42 swatch spheres in a
+7 × 6 grid on a matte studio floor against a neutral backdrop, one material per sphere, plus three sign panels
+for the channels that are not sphere-shaped, one ceiling key (3 × 3 m, 60 nit) and one side fill (2.4 × 1.8 m,
+25 nit). New TU `Engine/ContentInterchange/MaterialSwatchStructure.{h,cpp}` (registered in `CMakeLists.txt` and
+`ToolchainSequence.ps1`), export-once to `Content/Scenes/Materials.gltf` beside the showroom/shaderball blocks in
+`GameExecution.cpp`, camera branch keyed on the level name `Materials`.
+
+| Row | Swatches | Channels carried |
+|---|---|---|
+| 0 | plastics, rubber, ceramics, plaster | base colour, roughness, EON diffuse roughness, specular weight, F0/IOR |
+| 1 | car paints, varnish, lacquer, enamel, canvas, tile | clear coat weight/roughness/IOR/colour/darkening |
+| 2 | gold, copper, chrome, brushed steel, aluminium, anodised titanium, brass | metalness, F0 + F82 tint, anisotropy strength + direction |
+| 3 | soda-lime clear + frosted, amber bottle, lead crystal, ice, thin-walled acrylic, water | transmission, transmission colour + depth (Beer), thin wall, IOR |
+| 4 | bone, jade, wax, marble, skin, milk, honey resin | subsurface weight/colour/radius/radius-scale/scatter anisotropy |
+| 5 | velvet, felt, satin, soap film, hazy acrylic, emerald, mercury | sheen colour + roughness (Cloth), thin film, haziness, transmission, metalness |
+| panels | alpha cutout, unlit poster, emissive-only | opacity + mask/cutoff, unlit, emission |
+
+Gate: `bash Exhibits/Workbench/Materials/CheckMaterialSwatches.sh` — `MaterialSwatchProof.cpp` against the real
+codec stack (no preview TU, no GPU):
+
+- **A build/round trip** — 49 authored materials (42 swatches + floor + backdrop + 3 panels + 2 luminaires) →
+  `SceneCodec::Encode` → `ContentCodec::Decode` → 50 (fallback slot), names in authored order, 63 854 triangles
+  (42 × 1520-triangle spheres + 7 quads).
+- **B census** — the table above as printed rows: selection + complexity + changed-channel count per swatch.
+  Tally: Standard 17 · Anisotropic 2 · ClearCoated 7 · Cloth 2 · Subsurface 7 · Transmissive 8 · EmissiveOnly 1 ·
+  Unlit 1 — **all eight selections**, with `EmissiveOnly` reached through the extras (`base_weight` 0) that
+  glTF-authored content cannot express, and `Unlit` through `KHR_materials_unlit`.
+- **C uniqueness** — 42 distinct names, 42 distinct resident records (no two swatches share a value set), zero
+  folds at slab_limit 1/2/8 with one resident slab each.
+- **D channel coverage** — **16 of 20 channels carried as constants**; the four gaps are acknowledged in the
+  print: surface orientation / occlusion / coat orientation are texture-shaped (carried by imported content, not
+  by a level with no committed texture files) and channel 20 displacement is the plan's M6 decision (none).
+- **E round-trip fidelity** — authored vs decoded descriptor compared field by field for all 42 swatches
+  (58-float prefix + `SlateAnisotropyRotation` + `GeometryThinWalled` + flags + cutoff); the two renormalising
+  folds (`KHR_materials_sheen` colour/weight split, emissive peak normalisation) are compared as **products**.
+  Zero drift — including `coat_ior` on every coated swatch (authored ≠ 1.6, or the clearcoat extension's fixed
+  1.5 would win) and the thin-walled flag on the acrylic.
+- **F geometry** — every sphere is centred on the declared pitch at r = 0.40 m (span bounding boxes), no two
+  closer than 1.10 m, bounds X ±5.0 · Y −2.0 … 7.60 · Z 0 … 4.60 m, 6 luminaire triangles (key, fill, emissive
+  panel), flag inventory 1 mask / 1 thin / 1 unlit / 3 emissive, spans named `Swatch NN (material)`.
+
+**Honest scope.** No GPU here: the level renders on the user's Vulkan build (`--scene materials`; the file is
+generated on first run, like the shaderball and showroom levels — not committed). The CPU side proves what the
+level *is* (materials, geometry, coverage), not what it *looks like*; the first GPU render of it is the visual
+proof, together with the §5 render-verification backlog.
+
+---
+
+## 11. What's next
 
 1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped, superseded by the v2 dipole — see 3).
 2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §5; render-verification pending GPU).
@@ -521,5 +572,8 @@ multi-slab content — the C probes prove the fold handles it deterministically 
 5. ~~**M7a read-only inspector**~~ DONE 2026-09-17 (158/158 — see §7).
 6. ~~**M7b editable inspector**~~ DONE 2026-09-17 (229/229 — see §8).
 7. ~~**M8 Tier B + full-scene validation**~~ DONE 2026-09-17 (102/102 — see §9).
-8. **Denoiser + motion vectors** (parked per direction).
-9. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a/M7b pixels — needs a GPU runner).
+8. ~~**M10 material library level**~~ DONE 2026-09-17 (65/65 — see §10; `--scene materials`, first GPU render pending).
+9. **Denoiser + motion vectors** (plan M9 — parked per direction; the last unshipped M-phase).
+10. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a/M7b pixels + the M10 library render — needs a GPU runner).
+11. Optional/deferred: M4c dispersion hero sampling, glints (`slate_glint_*` stored-unread), geometric displacement
+    (channel 20), Tier B in-kernel multi-slab (post-M9 revisit).

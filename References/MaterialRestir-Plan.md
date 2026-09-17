@@ -251,6 +251,22 @@ selection-switch retention test.
   (DONE 2026-09-17 — `MaterialSceneProof` 102/102, report §9: verdict keep Tier A + fold,
   0 multi-slab in 44 real materials; Sponza validate-if-present, absent here.)
 
+### M10 — Material library level (`--scene materials`) — NEW, shipped 2026-09-17
+
+Not in the original M-list; requested directly: "add the material channels, then add them to Project-Zero in a
+grid, each material its own unique material (plastic, bone, clearcoat, glossy glass, clear glass, metal …)".
+Files: `Engine/ContentInterchange/MaterialSwatchStructure.{h,cpp}` (new), `Projects/Project-Zero/Source/GameExecution.cpp`
+(alias + export-once + camera branch), `CMakeLists.txt` + `ToolchainSequence.ps1` (TU),
+`Exhibits/Workbench/Materials/MaterialSwatchProof.cpp` + `CheckMaterialSwatches.sh` (gate 65/65), report §10.
+- 42 swatches, one descriptor each (no two share a value set), 7 × 6 grid at 1.10 m pitch, r = 0.40 m spheres on a
+  matte studio floor + neutral backdrop, three sign panels (alpha cutout / unlit / emissive-only), ceiling key
+  (60 nit) + side fill (25 nit) appended last; export-once to `Content/Scenes/Materials.gltf`.
+- Coverage: all eight `MaterialReflectance` selections, 16 of 20 channels carried as constants; the four gaps
+  (normal, occlusion, coat normal = texture-shaped; displacement = channel 20, M6 decision none) are printed as
+  acknowledged, not hidden.
+- Proof: build → encode → decode → per-swatch field-by-field comparison (58-float prefix, sheen/emission compared
+  as products), uniqueness, zero folds at 1/2/8, grid geometry, flag inventory, luminaire count.
+
 ### M9 — Re-enable milestone (denoiser + motion vectors back on)
 - Re-enable `Denoise` and `TemporalReprojection` (defaults back to true); validate the new
   lobes under temporal + spatial reuse + à-trous (revalidation re-evaluates the BSDF — must
@@ -285,8 +301,8 @@ selection-switch retention test.
 
 M0 audit → M1 selection/gating → M2 sampled channels → M3 cloth → M4a thin glass →
 M4b thick glass → M5 SSS v1 → v2 → M6 codecs → M7a inspector → M7b editing → M8 Tier B
-call → M9 ReSTIR-sync. M6 can interleave any time after M0. M4c dispersion only if M4a/b
-come in under budget.
+call → M10 library level (✅ 2026-09-17) → M9 ReSTIR-sync. M6 can interleave any time after M0.
+M4c dispersion only if M4a/b come in under budget.
 
 ## 8. Open decisions for you
 
