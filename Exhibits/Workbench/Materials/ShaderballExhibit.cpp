@@ -67,6 +67,9 @@ inline vec4 FetchSheenFull(float mu, float alpha)
 
 #include "MaterialEvaluation.slang"
 #include "PngWriteCounterpart.h"
+#ifdef SHADERBALL_PREVIEW_LIB
+#include "ShaderballPreview.h"   // M7b preview entry (engine descriptor -> ball 0)
+#endif
 
 namespace {
 
@@ -365,6 +368,7 @@ ShadingRecord StandardMaterial(vec3 albedo, float roughness)
 ShadingRecord g_Mats[8];
 bool g_SolidBall = false;   // M4b: the ball (slot 0) is traversed as solid glass (medium tracking, not skip-ball)
 
+#ifndef SHADERBALL_PREVIEW_LIB
 void BuildMaterials(int Panel)
 {
     // Slots: 0 ball (per panel) · 1 ground · 2/3/4 softboxes (+ 5 tungsten backlight on --sss; emissive, never BRDF-shaded).
@@ -434,6 +438,7 @@ void BuildMaterials(int Panel)
     g_Mats[1] = StandardMaterial(vec3(0.32f), 1.0f);   // matte studio ground
     g_Mats[1].SpecularWeight = 0.25f;
 }
+#endif // !SHADERBALL_PREVIEW_LIB
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                           INTEGRATOR
@@ -691,8 +696,88 @@ float Aces(float X)
     return clamp(Y, 0.0f, 1.0f);
 }
 
+
+//------------------------------------------------------------------------------------------------------------------------
+// M7b shared setup: main() and the SHADERBALL_PREVIEW_LIB entry build the identical stage, camera, and
+// encode through these helpers (extracted byte-for-byte from main(); the exhibit sheets are unaffected).
+//------------------------------------------------------------------------------------------------------------------------
+
+struct StageStats { int Tris = 0; int Nodes = 0; int Lights = 0; };
+
+// The full stage rig main() has always built (mesh + ground + 3 softboxes, + tungsten when SssRig),
+// including the BVH build, the always-on audit, and the [exhibit] progress lines.
+bool SetupStage(const char* MeshPath, bool SssRig, StageStats& Out)
+{
+    if (!LoadObj(MeshPath, 0)) { std::printf("[exhibit] cannot open %s\n", MeshPath); return false; }
+    AddGround(-0.865f, 15.0f, 1);
+    vec3 Subject(0.0f, 0.0f, 0.0f);
+    AddSoftbox(vec3(-2.6f, -1.4f, 2.6f), Subject - vec3(-2.6f, -1.4f, 2.6f), vec3(0.0f, 0.0f, 1.0f),
+               1.1f, 0.8f, vec3(16.0f, 15.5f, 15.0f), 2);
+    AddSoftbox(vec3(2.8f, 0.8f, 1.2f), Subject - vec3(2.8f, 0.8f, 1.2f), vec3(0.0f, 0.0f, 1.0f),
+               0.35f, 1.5f, vec3(9.0f, 11.0f, 14.0f), 3);
+    AddSoftbox(vec3(1.2f, 3.6f, 0.6f), Subject - vec3(1.2f, 3.6f, 0.6f), vec3(0.0f, 0.0f, 1.0f),
+               1.25f, 1.25f, vec3(3.5f, 2.8f, 2.2f), 4);   // M5: nudged out (the BVH fix revealed a 4px graze in-frame)
+    if (SssRig)   // M5: tungsten backlight high behind (bottom edge 1.7× clear of the frame top; SSS-sheet only)
+        AddSoftbox(vec3(-0.5f, 4.0f, 5.5f), Subject - vec3(-0.5f, 4.0f, 5.5f), vec3(0.0f, 0.0f, 1.0f),
+                   2.0f, 1.4f, vec3(27.0f, 18.0f, 12.0f), 5);
+
+    g_Order.resize(g_Tris.size());
+    for (size_t I = 0; I < g_Tris.size(); ++I) g_Order[I] = static_cast<int>(I);
+    g_Nodes.emplace_back();
+    BuildBvh(0, 0, static_cast<int>(g_Tris.size()));
+    std::printf("[exhibit] scene: %d tris, %d bvh nodes, %d lights\n",
+                (int)g_Tris.size(), (int)g_Nodes.size(), (int)g_Lights.size());
+    {   // BVH audit, always on (M5: BuildBvh once dropped root.Right silently and hid half the scene — every
+        // ray only ever needed frontfaces so no sheet showed it. Reachable-tris must equal total, or fail loud).
+        long bad = 0, reach = 0;
+        std::vector<int> st; st.push_back(0);
+        std::vector<char> seen(g_Nodes.size(), 0);
+        while (!st.empty())
+        {
+            int ni = st.back(); st.pop_back();
+            if (ni < 0 || ni >= (int)g_Nodes.size()) { ++bad; continue; }
+            if (seen[ni]) continue;
+            seen[ni] = 1;
+            const BvhNode& N = g_Nodes[ni];
+            if (N.Count > 0) reach += N.Count;
+            else { st.push_back(N.Left); st.push_back(N.Right); }
+        }
+        std::printf("[exhibit] bvh audit: nodes=%d badchild=%ld reachtris=%ld/%d\n",
+                    (int)g_Nodes.size(), bad, reach, (int)g_Tris.size());
+        if (bad != 0 || reach != (long)g_Tris.size()) { std::printf("[exhibit] BVH CORRUPT\n"); return false; }
+    }
+    Out.Tris = static_cast<int>(g_Tris.size());
+    Out.Nodes = static_cast<int>(g_Nodes.size());
+    Out.Lights = static_cast<int>(g_Lights.size());
+    return true;
+}
+
+void SetupCamera(Camera& C)
+{
+    C.O = vec3(2.35f, -3.05f, 1.35f);
+    vec3 Look = vec3(0.0f, 0.0f, -0.05f);
+    C.F = normalize(Look - C.O);
+    C.R = normalize(cross(C.F, vec3(0.0f, 0.0f, 1.0f)));
+    C.U = normalize(cross(C.R, C.F));
+    C.TanHalf = std::tan(16.0f * 3.14159265358979f / 180.0f);
+    C.Aspect = 1.0f;
+}
+
+void BlitFilm(std::vector<unsigned char>& Sheet, int SheetW, int X0,
+              const std::vector<float>& Film, int Size, float Exposure)
+{
+    for (int Y = 0; Y < Size; ++Y)
+        for (int X = 0; X < Size; ++X)
+            for (int Ch = 0; Ch < 3; ++Ch)
+            {
+                float Lin = Aces(Film[(static_cast<size_t>(Y) * Size + X) * 3u + Ch] * Exposure);
+                Sheet[(static_cast<size_t>(Y) * SheetW + X0 + X) * 3u + Ch] =
+                    static_cast<unsigned char>(std::pow(Lin, 1.0f / 2.2f) * 255.0f + 0.5f);
+            }
+}
 } // namespace
 
+#ifndef SHADERBALL_PREVIEW_LIB
 int main(int Argc, char** Argv)
 {
     const char* MeshPath = "Exhibits/Gallery/Materials/shaderball.obj";
@@ -718,52 +803,11 @@ int main(int Argc, char** Argv)
     g_Tables = &Tables;
     std::printf("[exhibit] tables baked\n");
 
-    if (!LoadObj(MeshPath, 0)) { std::printf("[exhibit] cannot open %s\n", MeshPath); return 1; }
-    AddGround(-0.865f, 15.0f, 1);
-    vec3 Subject(0.0f, 0.0f, 0.0f);
-    AddSoftbox(vec3(-2.6f, -1.4f, 2.6f), Subject - vec3(-2.6f, -1.4f, 2.6f), vec3(0.0f, 0.0f, 1.0f),
-               1.1f, 0.8f, vec3(16.0f, 15.5f, 15.0f), 2);
-    AddSoftbox(vec3(2.8f, 0.8f, 1.2f), Subject - vec3(2.8f, 0.8f, 1.2f), vec3(0.0f, 0.0f, 1.0f),
-               0.35f, 1.5f, vec3(9.0f, 11.0f, 14.0f), 3);
-    AddSoftbox(vec3(1.2f, 3.6f, 0.6f), Subject - vec3(1.2f, 3.6f, 0.6f), vec3(0.0f, 0.0f, 1.0f),
-               1.25f, 1.25f, vec3(3.5f, 2.8f, 2.2f), 4);   // M5: nudged out (the BVH fix revealed a 4px graze in-frame)
-    if (SssSheet)   // M5: tungsten backlight high behind (bottom edge 1.7× clear of the frame top; SSS-sheet only)
-        AddSoftbox(vec3(-0.5f, 4.0f, 5.5f), Subject - vec3(-0.5f, 4.0f, 5.5f), vec3(0.0f, 0.0f, 1.0f),
-                   2.0f, 1.4f, vec3(27.0f, 18.0f, 12.0f), 5);
-
-    g_Order.resize(g_Tris.size());
-    for (size_t I = 0; I < g_Tris.size(); ++I) g_Order[I] = static_cast<int>(I);
-    g_Nodes.emplace_back();
-    BuildBvh(0, 0, static_cast<int>(g_Tris.size()));
-    std::printf("[exhibit] scene: %d tris, %d bvh nodes, %d lights\n",
-                (int)g_Tris.size(), (int)g_Nodes.size(), (int)g_Lights.size());
-    {   // BVH audit, always on (M5: BuildBvh once dropped root.Right silently and hid half the scene — every
-        // ray only ever needed frontfaces so no sheet showed it. Reachable-tris must equal total, or fail loud).
-        long bad = 0, reach = 0;
-        std::vector<int> st; st.push_back(0);
-        std::vector<char> seen(g_Nodes.size(), 0);
-        while (!st.empty())
-        {
-            int ni = st.back(); st.pop_back();
-            if (ni < 0 || ni >= (int)g_Nodes.size()) { ++bad; continue; }
-            if (seen[ni]) continue; seen[ni] = 1;
-            const BvhNode& N = g_Nodes[ni];
-            if (N.Count > 0) reach += N.Count;
-            else { st.push_back(N.Left); st.push_back(N.Right); }
-        }
-        std::printf("[exhibit] bvh audit: nodes=%d badchild=%ld reachtris=%ld/%d\n",
-                    (int)g_Nodes.size(), bad, reach, (int)g_Tris.size());
-        if (bad != 0 || reach != (long)g_Tris.size()) { std::printf("[exhibit] BVH CORRUPT\n"); return 1; }
-    }
+    StageStats Stats;
+    if (!SetupStage(MeshPath, SssSheet, Stats)) return 1;
 
     Camera C;
-    C.O = vec3(2.35f, -3.05f, 1.35f);
-    vec3 Look = vec3(0.0f, 0.0f, -0.05f);
-    C.F = normalize(Look - C.O);
-    C.R = normalize(cross(C.F, vec3(0.0f, 0.0f, 1.0f)));
-    C.U = normalize(cross(C.R, C.F));
-    C.TanHalf = std::tan(16.0f * 3.14159265358979f / 180.0f);
-    C.Aspect = 1.0f;
+    SetupCamera(C);
 
     const char* Names[8] = { "glass", "cloth", "coat", "solid", "ref", "skin", "wax", "jade" };
     int PanelList[4] = { 0, 1, 2, -1 };
@@ -789,17 +833,117 @@ int main(int Argc, char** Argv)
         }
         Mean /= Film.size();
         std::printf("[exhibit] panel %s: mean=%.4f bad=%ld\n", Names[P], Mean, Bad);
-        int X0 = Pi * (Size + Gap);
-        for (int Y = 0; Y < Size; ++Y)
-            for (int X = 0; X < Size; ++X)
-                for (int Ch = 0; Ch < 3; ++Ch)
-                {
-                    float Lin = Aces(Film[(static_cast<size_t>(Y) * Size + X) * 3u + Ch] * Exposure);
-                    Sheet[(static_cast<size_t>(Y) * SheetW + X0 + X) * 3u + Ch] =
-                        static_cast<unsigned char>(std::pow(Lin, 1.0f / 2.2f) * 255.0f + 0.5f);
-                }
+        BlitFilm(Sheet, SheetW, Pi * (Size + Gap), Film, Size, Exposure);
     }
     int Ok = PngWriteCounterpart::WritePng(OutPath, SheetW, Size, 3, Sheet.data(), SheetW * 3);
     std::printf("[exhibit] %s -> %s\n", Ok ? "wrote" : "FAILED", OutPath);
     return Ok ? 0 : 1;
 }
+
+#endif // !SHADERBALL_PREVIEW_LIB
+
+#ifdef SHADERBALL_PREVIEW_LIB
+
+//====================================================================================================================
+// M7b preview entry: the same stage rig, camera, integrator tables, and PNG writer as main() — ball 0 is
+// mapped from an engine descriptor instead of a film record, so preview pixels are comparable with the
+// Gallery sheets by construction. Not part of the exhibit binary (the guard selects it).
+//
+// Fidelity limits (see ShaderballPreview.h): constants only (no texture pipeline), no cutout (the record
+// carries no alpha — the ball renders opaque), Slabs[0] only, standard rig, exposure 1.
+//====================================================================================================================
+namespace Frontier {
+
+// The Selection transmute below is a static_cast<uint>: these asserts pin the engine enum to the slang
+// table it must match (MaterialEvaluation.slang: kReflectance*). If either side reorders, the preview
+// fails LOUD at compile time instead of silently shading the wrong selection.
+static_assert(static_cast<uint>(MaterialReflectance::Standard) == kReflectanceStandard);
+static_assert(static_cast<uint>(MaterialReflectance::Anisotropic) == kReflectanceAnisotropic);
+static_assert(static_cast<uint>(MaterialReflectance::ClearCoated) == kReflectanceClearCoated);
+static_assert(static_cast<uint>(MaterialReflectance::Cloth) == kReflectanceCloth);
+static_assert(static_cast<uint>(MaterialReflectance::Subsurface) == kReflectanceSubsurface);
+static_assert(static_cast<uint>(MaterialReflectance::Transmissive) == kReflectanceTransmissive);
+static_assert(static_cast<uint>(MaterialReflectance::EmissiveOnly) == kReflectanceEmissiveOnly);
+static_assert(static_cast<uint>(MaterialReflectance::Unlit) == kReflectanceUnlit);
+
+bool RenderShaderballPreview(const ShaderballPreviewRequest& Req, ShaderballPreviewResult& Out) noexcept
+{
+    Out = ShaderballPreviewResult{};
+    if (!Req.Material || Req.Material->Slabs.empty() || !Req.MeshPath || !Req.OutPath) return false;
+    if (Req.Size <= 0 || Req.Spp <= 0) return false;
+    const MaterialSlabDescriptor& S = Req.Material->Slabs[0];
+    const uint32_t F = Req.Material->Flags;
+
+    g_Tris.clear(); g_Nodes.clear(); g_Order.clear(); g_Lights.clear();   // the entry may run many times per process
+
+    Frontier::ShadingTableSet Tables = Frontier::ShadingTableCodec::Bake(1024u);
+    g_Tables = &Tables;
+    std::printf("[preview] tables baked\n");
+
+    StageStats Stats;
+    if (!SetupStage(Req.MeshPath, false, Stats)) return false;   // the standard rig (tungsten is SSS-sheet-only)
+
+    // Descriptor -> record: StandardMaterial seeds every field (CoatTangent/Normal identity, SssThickness 0 with
+    // the tracer filling it per hit, exactly like the film records); the fold below overwrites from the slab.
+    // BaseColor/Emission carry the weight x colour fold the kernel's ResolveMaterial performs (no textures here).
+    ShadingRecord m = StandardMaterial(vec3(S.BaseWeight * S.BaseColor[0], S.BaseWeight * S.BaseColor[1],
+                                                     S.BaseWeight * S.BaseColor[2]), S.SpecularRoughness);
+    m.Metalness = S.BaseMetalness; m.DiffuseRoughness = S.BaseDiffuseRoughness;
+    m.SpecularWeight = S.SpecularWeight;
+    m.SpecularColor = vec3(S.SpecularColor[0], S.SpecularColor[1], S.SpecularColor[2]);
+    m.SpecularRoughness = S.SpecularRoughness;
+    m.SpecularAnisotropy = S.SpecularRoughnessAnisotropy;
+    m.AnisotropyAngle = S.SlateAnisotropyRotation;
+    m.SpecularIor = S.SpecularIor;
+    m.ThinFilmWeight = S.ThinFilmWeight; m.ThinFilmThickness = S.ThinFilmThickness; m.ThinFilmIor = S.ThinFilmIor;
+    m.HazinessWeight = S.SlateHazinessWeight; m.HazinessRoughness = S.SlateHazinessRoughness;
+    m.CoatWeight = S.CoatWeight;
+    m.CoatColor = vec3(S.CoatColor[0], S.CoatColor[1], S.CoatColor[2]);
+    m.CoatRoughness = S.CoatRoughness; m.CoatAnisotropy = S.CoatRoughnessAnisotropy;
+    m.CoatIor = S.CoatIor; m.CoatDarkening = S.CoatDarkening;
+    m.FuzzWeight = S.FuzzWeight;
+    m.FuzzColor = vec3(S.FuzzColor[0], S.FuzzColor[1], S.FuzzColor[2]);
+    m.FuzzRoughness = S.FuzzRoughness;
+    m.Emission = vec3(S.EmissionLuminance * S.EmissionColor[0], S.EmissionLuminance * S.EmissionColor[1],
+                      S.EmissionLuminance * S.EmissionColor[2]);
+    m.TransmissionWeight = S.TransmissionWeight;
+    m.TransmissionColor = vec3(S.TransmissionColor[0], S.TransmissionColor[1], S.TransmissionColor[2]);
+    m.TransmissionDepth = S.TransmissionDepth;
+    m.TransmissionThickness = Req.Material->VolumeThickness;   // the foil path + the solid no-exit fallback
+    m.Selection = static_cast<uint>(Req.Selection);
+    m.SssWeight = S.SubsurfaceWeight;
+    m.SssColor = vec3(S.SubsurfaceColor[0], S.SubsurfaceColor[1], S.SubsurfaceColor[2]);
+    m.SssRadius = S.SubsurfaceRadius;
+    m.SssRadiusScale = vec3(S.SubsurfaceRadiusScale[0], S.SubsurfaceRadiusScale[1], S.SubsurfaceRadiusScale[2]);
+    g_Mats[0] = m;
+    g_SolidBall = (S.TransmissionWeight > 0.0f) && ((F & MaterialFlagThinWalled) == 0u);
+    g_Mats[1] = StandardMaterial(vec3(0.32f), 1.0f);   // matte studio ground (BuildMaterials' line)
+    g_Mats[1].SpecularWeight = 0.25f;
+
+    Camera C;
+    SetupCamera(C);
+
+    std::vector<float> Film;
+    RenderPanel(C, 16, Req.Size, Req.Spp, Film);   // panel tag 16: out of film range, fixed seed => deterministic
+    double Mean = 0.0;
+    long Bad = 0;
+    for (size_t I = 0; I < Film.size(); ++I)
+    {
+        float V = Film[I];
+        if (!(V >= 0.0f) || !(V <= 1e6f)) ++Bad;
+        Mean += V;
+    }
+    Mean /= static_cast<double>(Film.size());
+    Out.Mean = Mean; Out.Bad = Bad; Out.Tris = Stats.Tris; Out.Nodes = Stats.Nodes;
+    std::printf("[preview] ball: mean=%.4f bad=%ld tris=%d\n", Mean, Bad, Stats.Tris);
+
+    std::vector<unsigned char> Png(static_cast<size_t>(Req.Size) * static_cast<size_t>(Req.Size) * 3u);
+    BlitFilm(Png, Req.Size, 0, Film, Req.Size, 1.0f);
+    int Ok = PngWriteCounterpart::WritePng(Req.OutPath, Req.Size, Req.Size, 3, Png.data(), Req.Size * 3);
+    std::printf("[preview] %s -> %s\n", Ok ? "wrote" : "FAILED", Req.OutPath);
+    return Ok != 0;
+}
+
+} // namespace Frontier
+
+#endif // SHADERBALL_PREVIEW_LIB

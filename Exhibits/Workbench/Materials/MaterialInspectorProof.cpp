@@ -1,11 +1,13 @@
 //============================================================================================================================================
 //                                                  MATERIALINSPECTORPROOF.CPP
 //============================================================================================================================================
-// M7a gate — the material-inspector proof. Nine archetype materials (opaque, metal, folded glass, cloth, subsurface,
+// M7b gate — the material-inspector proof. Nine archetype materials (opaque, metal, folded glass, cloth, subsurface,
 //    emissive-only, unlit, coated+mask, one fully-loaded slab) walk the inspector: selection resolution, the
 //    reflectance/complexity cross-check against Finalise's own records, all 20 Sultan rows (value/source/texture),
 //    fold attribution, registry round-trip, headless layout (null AND recording surfaces), the selector menu flow,
-//    host wiring, and the F-panel summary. No GPU, no window: imgui runs context-only (draw lists accumulate in CPU
+//    host wiring, and the F-panel summary — then the M7b editing loop: drafts, clamps, Apply/Discard, retention,
+//    cutout, the shaderball preview (deterministic + commit-reactive), the preview toggle, host commit flow, and
+//    a synthetic slider drag. No GPU, no window: imgui runs context-only (draw lists accumulate in CPU
 //    memory, never rendered) and Vulkan appears as headers only (RayTracingCapabilitySet declarations).
 
 #include "MaterialInspector.h"
@@ -17,6 +19,7 @@
 #include "OrientationClassifier.h"
 #include "ReSTIRIntegrator.h"
 #include "InputExchange.h"
+#include "ShaderballPreview.h"
 #include "imgui.h"
 
 #include <clocale>
@@ -333,10 +336,13 @@ int main()
         bool Heights = true;
         for (uint32_t I = 0u; I < 20u; ++I)
         {
-            const float Want = 24.0f + (Insp.QueryRow(I).HasDetail() ? 16.0f : 0.0f);
+            // M7b: editable rows grow an editor block (6px pad + 40px scalar / 3x40px RGB).
+            const MaterialEditKind K = MaterialRowEditKind(I);
+            const float Want = 24.0f + (Insp.QueryRow(I).HasDetail() ? 16.0f : 0.0f)
+                             + (K == MaterialEditKind::None ? 0.0f : (K == MaterialEditKind::Rgb ? 126.0f : 46.0f));
             Heights = Heights && std::fabs(Insp.QueryRowExtent(I).Height() - Want) < 0.01f;
         }
-        Check(Heights, "F5 row heights match detail presence");
+        Check(Heights, "F5 row heights match detail + editor presence");
         PixelSpace Null;   // never begun: every primitive is a no-op
         MaterialInspector Twin;
         Twin.SeedSelection("rich-00"); Twin.Rebuild(&Index);
@@ -392,7 +398,7 @@ int main()
         Host.AccessMaterials().Rebuild(&Index);
         Host.ConstructControlLayout(Recording);
         Check(Host.QueryMaterials().QuerySelectorExtent().Width() > 100.0f, "H6 page records the selector through the host");
-        Check(!Host.IsPageDirty(), "H7 Materials never dirty (M7a read-only)");
+        Check(!Host.IsPageDirty(), "H7 Materials clean when untouched (M7b editable)");
         Host.NavigateBack();
         Check(Host.QueryActivePage() == ControlCentrePageCategory::Dashboard, "H8 back navigates away");
         Host.NavigateToPage(ControlCentrePageCategory::Materials);
@@ -419,8 +425,258 @@ int main()
         Diagnostics.ConstructInspectorLayout(Recording, 0.0f, 1280.0f, Tele, 0u, false, ReSTIR,
                                              Index.QueryMetrics(), TexStats, 1u, nullptr);
         Check(true, "I4 inspector layout with no summary (omitted row) does not crash");
+        // Q. Synthetic slider drag (own fixtures — isolated from the shared index).
+        MaterialIndex QIndex;
+        {
+            MaterialDescriptor QBrick; QBrick.Name = "qbrick";
+            MaterialSlabDescriptor QS; QS.SpecularRoughness = 0.9f;
+            QBrick.Slabs.push_back(QS); QIndex.Register(QBrick);
+            MaterialDescriptor QWax; QWax.Name = "qwax";
+            MaterialSlabDescriptor QW; QW.SubsurfaceWeight = 0.6f;
+            QWax.Slabs.push_back(QW); QIndex.Register(QWax);
+        }
+        QIndex.Finalise(1u, nullptr);
+        MaterialInspector Q;
+        Q.SeedSelection("qbrick"); Q.Rebuild(&QIndex);
+        PixelSpace QNull;   // never begun: hit-testing still runs (F6 precedent)
+        ControlPointer QIdle{};
+        Q.ConstructMaterialsLayout(QNull, Body, 0.0f, QIdle, 1.0f);
+        const PlaneExtent QTrack = Q.QueryEditExtent(2u);
+        Check(QTrack.Width() > 100.0f && QTrack.Height() == 40.0f, "Q1 roughness track extent recorded");
+        Check(Q.QueryEditExtent(0u, 0u).MinimumY < Q.QueryEditExtent(0u, 1u).MinimumY &&
+              Q.QueryEditExtent(0u, 1u).MinimumY < Q.QueryEditExtent(0u, 2u).MinimumY, "Q2 RGB tracks stack R/G/B");
+        Check(Q.QueryEditExtent(19u).Width() == 0.0f && Q.QueryEditExtent(4u).Width() == 0.0f, "Q3 no editor on rows 05/20");
+        Check(Q.QueryCutoutExtent().Width() > 100.0f, "Q4 cutout track recorded");
+        // Press at 25% across the track: T=(X-MinX-Thumb/2)/Usable (ControlKit::Slider, verbatim).
+        ControlPointer QPress{};
+        QPress.X = QTrack.MinimumX + ControlKit::SliderThumb * 0.5f + (QTrack.Width() - ControlKit::SliderThumb) * 0.25f;
+        QPress.Y = (QTrack.MinimumY + QTrack.MaximumY) * 0.5f;
+        QPress.Pressed = true; QPress.Down = true;
+        Q.ConstructMaterialsLayout(QNull, Body, 0.0f, QPress, 1.0f);
+        Check(std::fabs(Q.QueryDraftSlab(0u).SpecularRoughness - 0.25f) < 1e-4f, "Q5 drag writes the draft (exact track map)");
+        ControlPointer QRel{};
+        QRel.X = QPress.X; QRel.Y = QPress.Y; QRel.Released = true;
+        Q.ConstructMaterialsLayout(QNull, Body, 0.0f, QRel, 1.0f);
+        ControlPointer QMove{};
+        QMove.X = QTrack.MinimumX + QTrack.Width() * 0.9f; QMove.Y = QPress.Y; QMove.Down = true;
+        Q.ConstructMaterialsLayout(QNull, Body, 0.0f, QMove, 1.0f);
+        Check(std::fabs(Q.QueryDraftSlab(0u).SpecularRoughness - 0.25f) < 1e-4f, "Q6 release ends the drag (stale motion ignored)");
     }
     ImGui::DestroyContext();
+
+    // ── J. Draft/edit API ─────────────────────────────────────────────────────────────────────────────────────────
+    {
+        Insp.SeedSelection("steel-02"); Insp.Rebuild(&Index);   // id 1, roughness 0.3, aniso 0.6
+        Check(!Insp.IsDirty() && Insp.QueryDirtyCount() == 0u && Insp.QueryCommitRevision() == 0u, "J1 clean after Rebuild");
+        Insp.SetDraftScalar(1u, 2u, 0.05f);
+        Check(Insp.QueryDraftSlab(1u).SpecularRoughness == 0.05f, "J2 scalar writes the draft slab");
+        Check(std::fabs(Insp.QueryDraftScalar(2u) - 0.05f) < 1e-6f, "J3 knob reader mirrors the write (selected)");
+        Check(Insp.IsDirty() && Insp.QueryDirtyCount() == 1u, "J4 dirty + count follow the edit");
+        Insp.Rebuild(&Index);   // steady Rebuild: drafts survive, status refreshes
+        Check(Contains(Insp.QueryStatusLine(), "1 unsaved change: steel-02"), "J5 status names the dirty material");
+        Check(Contains(Insp.QuerySummaryLine(), "1 unsaved"), "J6 summary carries the dirty suffix");
+        Check(Insp.QueryDraftSlab(1u).SpecularRoughness == 0.05f, "J7 Rebuild preserves the draft");
+        // Clamp pin per range (proof-side literals — the UX contract).
+        Insp.SetDraftScalar(0u, 2u, 99.0f);
+        Check(Insp.QueryDraftSlab(0u).SpecularRoughness == 1.0f, "J8 roughness clamps to 1");
+        Insp.SetDraftScalar(0u, 3u, 99.0f);
+        Check(Insp.QueryDraftSlab(0u).SpecularIor == 2.5f, "J9 IOR clamps to 2.5");
+        Insp.SetDraftScalar(0u, 3u, 0.5f);
+        Check(Insp.QueryDraftSlab(0u).SpecularIor == 1.0f, "J10 IOR clamps to 1.0");
+        Insp.SetDraftScalar(1u, 8u, -99.0f);
+        Check(Insp.QueryDraftSlab(1u).SpecularRoughnessAnisotropy == -1.0f, "J11 signed aniso clamps to -1");
+        Insp.SetDraftScalar(1u, 9u, 99.0f);
+        Check(std::fabs(Insp.QueryDraftSlab(1u).SlateAnisotropyRotation - 6.28318530717959f) < 1e-6f, "J12 rotation clamps to 2pi");
+        Insp.SetDraftScalar(4u, 16u, 99.0f);
+        Check(Insp.QueryDraftSlab(4u).SubsurfaceRadius == 2.0f, "J13 radius clamps to 2m");
+        Insp.SetDraftScalar(4u, 6u, 99.0f);
+        Check(Insp.QueryDraftSlab(4u).EmissionLuminance == 20.0f, "J14 emission clamps to 20 nit");
+        Insp.SetDraftColor(0u, 0u, 1u, 0.5f);
+        Check(Insp.QueryDraftSlab(0u).BaseColor[1] == 0.5f, "J15 colour writes the channel");
+        Insp.SetDraftColor(0u, 0u, 1u, 99.0f);
+        Check(Insp.QueryDraftSlab(0u).BaseColor[1] == 1.0f, "J16 colour clamps to 1");
+        Insp.SetDraftColor(0u, 1u, 1u, 0.5f);   // row 1 is Scalar, not Rgb
+        Check(Insp.QueryDraftSlab(0u).BaseMetalness == 0.0f, "J17 colour on a scalar row no-ops");
+        const MaterialSlabDescriptor BeforeJ = Insp.QueryDraftSlab(0u);
+        const uint32_t DirtyJ = Insp.QueryDirtyCount();
+        Insp.SetDraftScalar(0u, 19u, 0.5f);
+        Insp.SetDraftScalar(99u, 2u, 0.5f);
+        Insp.SetDraftScalar(0u, 99u, 0.5f);
+        Insp.SetDraftColor(0u, 0u, 9u, 0.5f);
+        Insp.SetDraftColor(99u, 0u, 0u, 0.5f);
+        Insp.SetDraftCutoff(99u, 0.9f);
+        Check(Insp.QueryDraftSlab(0u) == BeforeJ && Insp.QueryDirtyCount() == DirtyJ, "J18 invalid ids/rows/components no-op");
+        Insp.SetDraftCutoff(7u, 0.9f);
+        Check(Insp.QueryDraftCutoff(7u) == 0.9f, "J19 cutoff writes the draft");
+        Insp.SetDraftCutoff(7u, 99.0f);
+        Check(Insp.QueryDraftCutoff(7u) == 1.0f, "J20 cutoff clamps to 1");
+        // Setter/getter closure: every scalar row round-trips Set->Query on the selection (steel, id 1).
+        Insp.SeedSelection("steel-02"); Insp.Rebuild(&Index);
+        bool RoundTrip = true;
+        const uint32_t ScalarRows[14] = { 1u, 2u, 3u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 14u, 16u, 17u, 18u };
+        for (uint32_t Rr : ScalarRows)
+        {
+            const float V = (Rr == 3u || Rr == 18u) ? 1.5f : 0.123f;
+            Insp.SetDraftScalar(1u, Rr, V);
+            RoundTrip = RoundTrip && std::fabs(Insp.QueryDraftScalar(Rr) - V) < 1e-6f;
+        }
+        Check(RoundTrip, "J21 all 14 scalar rows Set->Query round-trip");
+        bool RgbTrip = true;
+        const uint32_t RgbRows[3] = { 0u, 13u, 15u };
+        for (uint32_t Rr : RgbRows)
+            for (uint32_t Cc = 0u; Cc < 3u; ++Cc)
+            {
+                const float V = 0.1f + 0.01f * static_cast<float>(Cc);
+                Insp.SetDraftColor(1u, Rr, Cc, V);
+                RgbTrip = RgbTrip && std::fabs(Insp.QueryDraftColor(Rr, Cc) - V) < 1e-6f;
+            }
+        Check(RgbTrip, "J22 all 3 RGB rows x channels Set->Query round-trip");
+        Check(MaterialRowEditKind(0u) == MaterialEditKind::Rgb && MaterialRowEditKind(2u) == MaterialEditKind::Scalar &&
+              MaterialRowEditKind(4u) == MaterialEditKind::None && MaterialRowEditKind(12u) == MaterialEditKind::None &&
+              MaterialRowEditKind(19u) == MaterialEditKind::None && MaterialRowEditKind(99u) == MaterialEditKind::None,
+              "J23 edit-kind table (Rgb/Scalar/None/OOB)");
+    }
+
+    // ── K. Apply/commit ─────────────────────────────────────────────────────────────────────────────────────────
+    {
+        const float SteelRough = Insp.QueryDraftSlab(1u).SpecularRoughness;
+        const float HelmetCut = Insp.QueryDraftCutoff(7u);
+        const uint32_t DirtyBefore = Insp.QueryDirtyCount();
+        Check(DirtyBefore >= 3u, "K1 several drafts dirty (steel, brick, wax, helmet)");
+        Insp.Apply();
+        Check(Insp.QueryCommitRevision() == 1u && Insp.QueryLastCommitCount() == DirtyBefore, "K2 commit bumps + stamps the count");
+        Check(!Insp.IsDirty() && Insp.QueryDirtyCount() == 0u, "K3 clean after Apply");
+        Check(Index.QueryDescriptors()[1].Slabs[0].SpecularRoughness == SteelRough, "K4 descriptor carries the commit");
+        Check(Index.QueryRecords()[1].Roughness == SteelRough, "K5 Finalise re-derived the record");
+        Check(Index.QueryRecords()[7].AlphaCutoff == HelmetCut, "K6 cutoff committed through to the record");
+        Insp.Apply();
+        Check(Insp.QueryCommitRevision() == 1u && Insp.QueryLastCommitCount() == 0u, "K7 no-op Apply bumps nothing");
+        Check(!Contains(Insp.QueryStatusLine(), "unsaved"), "K8 status clears inside Apply");
+    }
+
+    // ── L. Retention + Discard ──────────────────────────────────────────────────────────────────────────────────
+    {
+        (void)Insp.Select(0u); Insp.Rebuild(&Index);   // brick
+        Insp.SetDraftColor(0u, 0u, 0u, 0.1f);
+        (void)Insp.Select(4u); Insp.Rebuild(&Index);   // wax
+        Insp.SetDraftScalar(4u, 16u, 0.9f);
+        (void)Insp.Select(0u); Insp.Rebuild(&Index);
+        Check(Insp.QueryDraftSlab(0u).BaseColor[0] == 0.1f, "L1 brick draft survives the round-trip switch");
+        (void)Insp.Select(4u); Insp.Rebuild(&Index);
+        Check(Insp.QueryDraftSlab(4u).SubsurfaceRadius == 0.9f, "L2 wax draft survives the round-trip switch");
+        Check(Insp.QueryDirtyCount() == 2u, "L3 both drafts dirty");
+        Insp.Apply();
+        Check(Index.QueryDescriptors()[0].Slabs[0].BaseColor[0] == 0.1f, "L4 brick committed");
+        Check(Index.QueryRecords()[0].AlbedoR == 0.1f, "L5 record albedo follows the commit");
+        Check(Index.QueryDescriptors()[4].Slabs[0].SubsurfaceRadius == 0.9f, "L6 wax committed");
+        Insp.SetDraftScalar(5u, 6u, 9.0f);   // lamp emission (applied 5.0)
+        Check(Insp.IsDirty(), "L7 lamp edit dirties");
+        Insp.Discard();
+        Check(!Insp.IsDirty() && Insp.QueryDraftSlab(5u).EmissionLuminance == 5.0f, "L8 Discard re-snapshots, lamp back to 5");
+        Check(!Contains(Insp.QueryStatusLine(), "unsaved"), "L9 status clears inside Discard");
+    }
+
+    // ── M. Cutoff on a non-mask material ────────────────────────────────────────────────────────────────────────
+    {
+        Insp.SetDraftCutoff(0u, 0.2f);   // brick is opaque (no mask flag)
+        Insp.Apply();
+        Check(Index.QueryDescriptors()[0].AlphaCutoff == 0.2f, "M1 cutoff commits without the mask flag");
+        Check(Index.QueryRecords()[0].AlphaCutoff == 0.2f, "M2 record carries it");
+    }
+
+    // ── N. Shaderball preview ─────────────────────────────────────────────────────────────────────────────────
+    {
+        auto ReadFile = [](const char* Path, std::vector<unsigned char>& Out) -> bool {
+            Out.clear();
+            FILE* F = std::fopen(Path, "rb");
+            if (!F) return false;
+            unsigned char Buf[4096];
+            size_t N = 0;
+            while ((N = std::fread(Buf, 1, sizeof(Buf), F)) > 0) Out.insert(Out.end(), Buf, Buf + N);
+            std::fclose(F);
+            return !Out.empty();
+        };
+        const MaterialDescriptor& ND = Index.QueryDescriptors()[0];
+        uint32_t NFolded = 0u;
+        const std::vector<MaterialSlabDescriptor> NFlat = MaterialIndex::Flatten(ND, 1u, &NFolded, nullptr);
+        static const MaterialSlabDescriptor kNDef{};
+        const MaterialSlabDescriptor& NS = NFlat.empty() ? kNDef : NFlat.front();
+        ShaderballPreviewRequest Req;
+        Req.Material = &ND; Req.Selection = MaterialIndex::DeriveReflectance(ND, NS);
+        Req.Size = 64; Req.Spp = 2; Req.OutPath = "/tmp/MaterialPreview_N1.png";
+        ShaderballPreviewResult Res;
+        Check(RenderShaderballPreview(Req, Res), "N1 preview renders");
+        Check(Res.Bad == 0 && Res.Mean > 0.01 && Res.Tris > 15000, "N2 sane stats (no bad, lit, full mesh)");
+        Req.OutPath = "/tmp/MaterialPreview_N2.png";
+        ShaderballPreviewResult Res2;
+        Check(RenderShaderballPreview(Req, Res2), "N3 re-render renders");
+        std::vector<unsigned char> A, B;
+        Check(ReadFile("/tmp/MaterialPreview_N1.png", A) && ReadFile("/tmp/MaterialPreview_N2.png", B) &&
+              A.size() == B.size() && std::memcmp(A.data(), B.data(), A.size()) == 0, "N4 deterministic: byte-identical");
+        // Close the loop: edit -> Apply -> pixels differ.
+        Insp.SeedSelection("brick-01"); Insp.Rebuild(&Index);
+        Insp.SetDraftScalar(0u, 2u, 0.0f);
+        Insp.SetDraftColor(0u, 0u, 0u, 0.9f);
+        Insp.Apply();
+        Req.Material = &Index.QueryDescriptors()[0];
+        Req.OutPath = "/tmp/MaterialPreview_N3.png";
+        ShaderballPreviewResult Res3;
+        Check(RenderShaderballPreview(Req, Res3), "N5 post-commit preview renders");
+        std::vector<unsigned char> C;
+        Check(ReadFile("/tmp/MaterialPreview_N3.png", C) && (C.size() != A.size() || std::memcmp(C.data(), A.data(), A.size()) != 0),
+              "N6 commit changes the pixels");
+        ShaderballPreviewRequest BadReq;
+        ShaderballPreviewResult BadRes;
+        Check(!RenderShaderballPreview(BadReq, BadRes), "N7 null request fails clean");
+        std::remove("/tmp/MaterialPreview_N1.png"); std::remove("/tmp/MaterialPreview_N2.png"); std::remove("/tmp/MaterialPreview_N3.png");
+    }
+
+    // ── O. Preview toggle + request ─────────────────────────────────────────────────────────────────────────────
+    {
+        MaterialInspector P;
+        P.SeedPreview(false);
+        Check(!P.QueryPreviewEnabled() && P.QueryPreviewRevision() == 0u, "O1 seed sets without bumping");
+        P.SeedSelection("brick-01"); P.Rebuild(&Index);
+        P.SetPreviewEnabled(true);
+        Check(P.QueryPreviewEnabled() && P.QueryPreviewRevision() == 1u, "O2 enable bumps");
+        P.SetPreviewEnabled(true);
+        Check(P.QueryPreviewRevision() == 1u, "O3 set-same bumps nothing");
+        Check(!P.TakePreviewRequest(), "O4 no request initially");
+        P.Apply();   // clean: no changes
+        Check(!P.TakePreviewRequest(), "O5 clean Apply requests nothing");
+        P.SetDraftScalar(0u, 2u, 0.5f);
+        P.Apply();   // dirty + enabled
+        Check(P.TakePreviewRequest(), "O6 commit-while-enabled requests");
+        Check(!P.TakePreviewRequest(), "O7 take consumes");
+        P.SetPreviewEnabled(false);
+        P.SetDraftScalar(0u, 2u, 0.6f);
+        P.Apply();
+        Check(!P.TakePreviewRequest(), "O8 commit-while-disabled requests nothing");
+        P.NotifyPreviewRendered(true, "brick-01", "/tmp/x.png", 1.5, 3u);
+        Check(Contains(P.QueryPreviewStatus(), "brick-01") && Contains(P.QueryPreviewStatus(), "commit #3"), "O9 ok stamp");
+        P.NotifyPreviewRendered(false, "brick-01", "write failed", 0.0, 3u);
+        Check(Contains(P.QueryPreviewStatus(), "failed: write failed"), "O10 fail stamp");
+    }
+
+    // ── P. Host commit flow ─────────────────────────────────────────────────────────────────────────────────────
+    {
+        ControlCentreHost Host2;
+        Check(Host2.Initialize(1280u, 800u), "P1 host initializes headless");
+        Host2.NavigateToPage(ControlCentrePageCategory::Materials);
+        Host2.AccessMaterials().SeedSelection("wax-04");
+        Host2.AccessMaterials().Rebuild(&Index);
+        Check(!Host2.IsPageDirty(), "P2 clean when untouched");
+        Host2.AccessMaterials().SetDraftScalar(4u, 16u, 0.33f);
+        Check(Host2.IsPageDirty(), "P3 edit dirties the page");
+        // (Apply/DiscardActivePage are private tap targets — the harness drives the same page instance the footer calls.)
+        Host2.AccessMaterials().Apply();
+        Check(!Host2.IsPageDirty() && Index.QueryDescriptors()[4].Slabs[0].SubsurfaceRadius == 0.33f, "P4 host page Apply commits + clears");
+        Check(Host2.AccessMaterials().QueryCommitRevision() == 1u, "P5 commit revision visible through the host");
+        Host2.AccessMaterials().SetDraftScalar(4u, 16u, 0.44f);
+        Host2.AccessMaterials().Discard();
+        Check(!Host2.IsPageDirty() && Host2.AccessMaterials().QueryDraftSlab(4u).SubsurfaceRadius == 0.33f, "P6 host page Discard reverts");
+    }
+
 
     if (Failed == 0) std::printf("MATERIAL INSPECTOR: PASS (%d/%d)\n", Passed, Passed + Failed);
     else std::printf("MATERIAL INSPECTOR: FAIL (%d passed, %d failed)\n", Passed, Failed);

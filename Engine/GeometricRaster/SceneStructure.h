@@ -183,6 +183,7 @@ public:
     [[nodiscard]] const std::vector<InstanceRecord>&    QueryInstances()  const noexcept { return Instances; }
     [[nodiscard]] const std::vector<ClusterRecord>&     QueryClusters()   const noexcept { return Clusters; }
     [[nodiscard]] const MaterialIndex&                  QueryMaterials()  const noexcept { return Materials; }
+    [[nodiscard]] MaterialIndex&                        AccessMaterials()       noexcept { return Materials; }   // M7b: the materials page commits drafts through here
     [[nodiscard]] MaterialIndex&                        ModifyMaterials()       noexcept { return Materials; }
     [[nodiscard]] const std::vector<PlacementRecord>&   QueryPlacements() const noexcept { return Placements; }
     [[nodiscard]] const std::vector<CameraRecord>&      QueryCameras()    const noexcept { return Cameras; }

@@ -124,6 +124,11 @@ public:
     void     Clear() noexcept;
 
     [[nodiscard]] const std::vector<MaterialDescriptor>& QueryDescriptors() const noexcept { return Descriptors; }
+
+    // M7b: mutable access for the material inspector's Apply (commits drafts into Slabs[0]/AlphaCutoff; the caller
+    //    re-runs Finalise after). nullptr when Id is out of range. Finalise never mutates Descriptors, so the commit
+    //    (descriptor write) and the derive (Finalise) stay two explicit steps.
+    [[nodiscard]] MaterialDescriptor* AccessDescriptor(uint32_t Id) noexcept { return Id < Descriptors.size() ? &Descriptors[Id] : nullptr; }
     [[nodiscard]] std::vector<MaterialDescriptor>&       ModifyDescriptors()      noexcept { return Descriptors; }
     [[nodiscard]] const std::vector<MaterialRecord>&     QueryRecords()     const noexcept { return Records; }
     [[nodiscard]] const std::vector<MaterialSlabRecord>& QuerySlabRecords() const noexcept { return SlabRecords; }

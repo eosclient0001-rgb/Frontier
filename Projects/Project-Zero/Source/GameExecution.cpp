@@ -31,6 +31,7 @@
 #include "../../../Engine/GeometricRaster/TraversalIndex.h"
 #include "FlyThroughSolver.h"
 #include "RayTracingSolver.h"
+#include "../../../Engine/ContentInterchange/ShaderballPreview.h"
 #include "../../../Engine/ContentInterchange/ShaderBallStructure.h"
 #include "ShowroomStructure.h"
 #include "EditorFeedSequence.h"
@@ -642,6 +643,7 @@ int main(int argc, char** argv)
     ControlCentre.AccessInput().Seed(Configuration.Query().Input);
     ControlCentre.AccessNotifications().Seed(Configuration.Query().Notifications);
     ControlCentre.AccessMaterials().SeedSelection(Configuration.Query().Material.Selected.c_str());
+    ControlCentre.AccessMaterials().SeedPreview(Configuration.Query().Material.Preview);
     Frontier::PixelSpace OverlaySurface;
 
     // R2 debug popup (F3) — seeded from [render] debug_view / occlusion_culling / alias_pick.
@@ -676,6 +678,8 @@ int main(int argc, char** argv)
     uint32_t AppliedInputRevision      = 0u;
     uint32_t AppliedNotifyRevision     = 0u;
     uint32_t AppliedMaterialsRevision  = 0u;
+    uint32_t AppliedMaterialsCommit    = 0u;   // M7b: commit generation (Apply ran Finalise inside)
+    uint32_t AppliedMaterialsPreview   = 0u;   // M7b: preview-toggle generation ([material] preview)
     Frontier::SkyConstantRecord  LastSky{};    // last sky bytes pushed (④d); a change restarts the accumulation
     Frontier::MoonConstantRecord LastMoons{};  // last moon bytes pushed (④e); a change restarts the accumulation
     Frontier::PostConstantRecord LastPost{};   // last post bytes pushed (④f); a change restarts the accumulation
@@ -1077,12 +1081,14 @@ int main(int argc, char** argv)
             }
         }
 
-        // ①h Materials page → [material] selected (M7a): the inspector snapshots the selection every frame so the
-        //    F-panel summary stays fresh without opening the page; a revision change persists the newly selected
-        //    name. Read-only — selection never restarts the accumulation and never toasts.
+        // ①h Materials page → commits + [material] (M7b): the inspector snapshots the selection every frame so the
+        //    F-panel summary stays fresh without opening the page; a selection change persists the name, a commit
+        //    (Apply already ran Finalise inside) restarts the accumulation + toasts, a preview-toggle change persists
+        //    the flag, and a preview request renders the shaderball PNG + stamps the header line. Selection alone
+        //    never restarts the accumulation.
         {
             Frontier::MaterialInspector& M = ControlCentre.AccessMaterials();
-            M.Rebuild(&Level.QueryMaterials());
+            M.Rebuild(&Level.AccessMaterials());
             if (M.QueryRevision() != AppliedMaterialsRevision)
             {
                 const bool First = AppliedMaterialsRevision == 0u;
@@ -1093,7 +1099,69 @@ int main(int argc, char** argv)
                     if (!Configuration.Save()) std::cerr << "[Configuration] save failed: " << Configuration.QueryLastError() << "\n";
                 }
             }
+            if (M.QueryCommitRevision() != AppliedMaterialsCommit)
+            {
+                AppliedMaterialsCommit = M.QueryCommitRevision();
+                Integrator.ResetAccumulation();   // committed constants change the shading - restart like any look change
+                if (ControlCentre.QueryNotifications().QueryApplied().RenderFinished)
+                {
+                    char Body[128];
+                    std::snprintf(Body, sizeof(Body), "%u material change%s applied - accumulation restarted",
+                                  M.QueryLastCommitCount(), M.QueryLastCommitCount() == 1u ? "" : "s");
+                    Notifications.Push("Material changes applied", Body);
+                }
+            }
+            if (M.QueryPreviewRevision() != AppliedMaterialsPreview)
+            {
+                AppliedMaterialsPreview = M.QueryPreviewRevision();
+                Configuration.Access().Material.Preview = M.QueryPreviewEnabled();
+                if (!Configuration.Save()) std::cerr << "[Configuration] save failed: " << Configuration.QueryLastError() << "\n";
+            }
+            if (M.TakePreviewRequest())
+            {
+                Frontier::MaterialIndex& Index = Level.AccessMaterials();
+                const uint32_t Id = M.QuerySelectedId();
+                if (Id < Index.QueryCount())
+                {
+                    // Fresh derive (NOT the inspector's retained selection - it predates the commit that requested
+                    //    this render, and the selection is exactly what an edit may have flipped).
+                    const Frontier::MaterialDescriptor& D = Index.QueryDescriptors()[Id];
+                    const uint32_t Limit = std::max(1u, Index.QueryMetrics().SlabLimit);
+                    uint32_t Folded = 0u;
+                    const std::vector<Frontier::MaterialSlabDescriptor> Flat =
+                        Frontier::MaterialIndex::Flatten(D, Limit, &Folded, nullptr);
+                    static const Frontier::MaterialSlabDescriptor kPreviewSlab{};
+                    const Frontier::MaterialSlabDescriptor& S = Flat.empty() ? kPreviewSlab : Flat.front();
+                    const Frontier::MaterialReflectance Sel = Frontier::MaterialIndex::DeriveReflectance(D, S);
+                    std::string Safe;
+                    for (char C : D.Name)
+                        Safe += ((C >= 'a' && C <= 'z') || (C >= 'A' && C <= 'Z') || (C >= '0' && C <= '9') || C == '-' || C == '_') ? C : '_';
+                    if (Safe.empty()) Safe = "material";
+                    const std::string Out = "Projects/Project-Zero/Diagnostics/MaterialPreview_" + Safe + ".png";
+                    std::error_code PreviewDirs;
+                    std::filesystem::create_directories("Projects/Project-Zero/Diagnostics", PreviewDirs);
+                    Frontier::ShaderballPreviewRequest Req;
+                    Req.Material = &D; Req.Selection = Sel; Req.Size = 160; Req.Spp = 6; Req.OutPath = Out.c_str();
+                    const auto T0 = std::chrono::steady_clock::now();
+                    Frontier::ShaderballPreviewResult Res;
+                    const bool Ok = Frontier::RenderShaderballPreview(Req, Res);
+                    const double Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - T0).count();
+                    M.NotifyPreviewRendered(Ok, D.Name.c_str(), Ok ? Out.c_str() : "write failed", Seconds, M.QueryCommitRevision());
+                    if (ControlCentre.QueryNotifications().QueryApplied().RenderFinished)
+                    {
+                        char Body[192];
+                        if (Ok) std::snprintf(Body, sizeof(Body), "%s rendered in %.1fs (mean %.3f, %d tris)", Safe.c_str(), Seconds, Res.Mean, Res.Tris);
+                        else std::snprintf(Body, sizeof(Body), "%s failed to render", Safe.c_str());
+                        Notifications.Push(Ok ? "Shaderball preview rendered" : "Shaderball preview failed", Body);
+                    }
+                }
+                else
+                {
+                    M.NotifyPreviewRendered(false, "", "no material selected", 0.0, M.QueryCommitRevision());
+                }
+            }
         }
+
 
         // ①g Alert gates: "Autosave Errors" (preference writes), "Baking Complete" (accumulation converged),
         //    "Frame-rate Drops" (2 s average under 30 fps, once per episode).

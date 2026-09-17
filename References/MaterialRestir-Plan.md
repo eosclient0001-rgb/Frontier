@@ -235,9 +235,11 @@ Files: `Engine/DisplayPresentation/MaterialInspector.{h,cpp}` (new, ControlKit p
 `material.preview`).
 - M7a read-only (DONE 2026-09-17 — `MaterialInspectorProof` 158/158, report §7; Sponza walkthrough
   reduced to nine in-harness archetypes): selected material's selection + all 20 channels (value/source/texture),
-  complexity, slab count, fold report; F-panel hook. M7b editable: constant editing +
-  selection switch (channels retained per `42` §5) + cutout threshold + live `Finalise` and
-  accumulation reset; shader-ball preview hook (reuse `--scene shaderball`).
+  complexity, slab count, fold report; F-panel hook. M7b editable (DONE 2026-09-17 —
+  `MaterialInspectorProof` 229/229, report §8): constant editing + selection switch (per-material draft
+  retention) + cutout threshold + live `Finalise` and accumulation reset; shader-ball preview via the CPU
+  exhibit entry (byte-identical reuse — the `--scene shaderball` glTF is Vulkan-only and uncommitted, so the
+  preview shares the exhibit's rig/integrator/encode instead).
 - Sultan `56` paint layers are out of scope; sources covered: Constant / Imported / Absent.
 Proof: UI walkthrough on Sponza materials; edit→re-Finalise→re-render loop test (headless);
 selection-switch retention test.

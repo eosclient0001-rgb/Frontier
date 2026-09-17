@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# M7a gate — the material-inspector proof. Compiles MaterialInspectorProof.cpp against the real engine TUs
-#    (MaterialInspector + MaterialIndex + ControlCentreHost + the inspector/UI cascade + imgui core) and walks nine
-#    archetype materials through selection, the 20 Sultan rows, fold attribution, and the F-panel summary.
+# M7b gate — the material-inspector proof. Compiles MaterialInspectorProof.cpp against the real engine TUs
+#    (MaterialInspector + MaterialIndex + ControlCentreHost + the inspector/UI cascade + imgui core + the CPU
+#    shaderball exhibit as a SHADERBALL_PREVIEW_LIB TU) and walks nine archetype materials through selection, the 20
+#    Sultan rows, fold attribution, the F-panel summary, and the editing loop (drafts, Apply/Discard, retention,
+#    cutout, deterministic shaderball previews, the preview toggle, host commit flow, synthetic slider drag).
 #    Header resolution: $REPO/ExternalPackages (submodule layout), then $MATERIAL_INSPECTOR_EXT, then ~/.cache/m7
 #    (the documented fallback for submodule-less clones — same directory layout: imgui/, tomlplusplus/,
 #    Vulkan-Headers/ as header-only deps; no GPU, no window, no Vulkan library).
@@ -20,8 +22,9 @@ fi
 echo "[MaterialInspector] headers: $Ext"
 
 Bin="$(mktemp -u /tmp/MaterialInspector.XXXXXX)"
-if ! g++ -std=c++20 -O2 -Wall -Wextra -ffunction-sections -fdata-sections -Wl,--gc-sections -I Exhibits/Workbench/Materials -I Engine/DisplayPresentation \
-     -I Engine/ContentInterchange -I Engine/DeviceExchange -I Engine/GeometricRaster \
+if ! g++ -std=c++20 -O2 -Wall -Wextra -ffunction-sections -fdata-sections -Wl,--gc-sections -DFRONTIER_CPU_PORT -DSHADERBALL_PREVIEW_LIB \
+     -I Exhibits/Workbench/Materials -I Engine/DisplayPresentation -I Engine/ContentInterchange -I Engine/DeviceExchange \
+     -I Engine/GeometricRaster -I Engine/Shaders -I Exhibits/Workbench/Editor \
      -I "$Ext/imgui" -I "$Ext/tomlplusplus/include" -I "$Ext/Vulkan-Headers/include" \
      Exhibits/Workbench/Materials/MaterialInspectorProof.cpp \
      Engine/DisplayPresentation/MaterialInspector.cpp \
@@ -40,6 +43,8 @@ if ! g++ -std=c++20 -O2 -Wall -Wextra -ffunction-sections -fdata-sections -Wl,--
      Engine/DisplayPresentation/TypefaceRegistry.cpp \
      Engine/DisplayPresentation/FontCodec.cpp \
      Engine/DisplayPresentation/ConfigurationRegistry.cpp \
+     Engine/DisplayPresentation/ShadingTableCodec.cpp \
+     Exhibits/Workbench/Materials/ShaderballExhibit.cpp \
      Engine/ContentInterchange/MaterialIndex.cpp \
      Engine/DeviceExchange/InputExchange.cpp \
      Engine/DeviceExchange/VisibilityExchange.cpp \

@@ -1,8 +1,9 @@
 //============================================================================================================================================
 //                                                     MATERIALINSPECTOR.CPP
 //============================================================================================================================================
-// 🔍 M7a read-only material inspector (see the header for the data model). Rows read the RESOLVED slab; layout is
-//    ControlKit-native (SectionCard / SectionHeading / ControlRow / Dropdown) with custom 20-row channel cards.
+// 🔍 M7b editable material inspector (see the header for the data + editing models). Rows read the
+//    RESOLVED slab; sliders write per-material drafts; layout is ControlKit-native with custom 20-row
+//    channel cards + editors.
 
 #include "MaterialInspector.h"
 
@@ -48,6 +49,26 @@ void FormatColour(char* Out, size_t Capacity, const float C[3]) noexcept
     std::snprintf(Out, Capacity, "(%.3g, %.3g, %.3g)", static_cast<double>(C[0]), static_cast<double>(C[1]), static_cast<double>(C[2]));
 }
 
+
+// M7b editor ranges per editable row (None rows are never queried — the layout and SetDraft* route
+// through MaterialRowEditKind first). Proof section J pins every range via the clamp asserts.
+void EditRange(uint32_t Row, float& Min, float& Max) noexcept
+{
+    Min = 0.0f; Max = 1.0f;
+    if (Row == 3u || Row == 18u) { Min = 1.0f; Max = 2.5f; }   // IOR (one carrier, two Sultan rows)
+    else if (Row == 6u) Max = 20.0f;                            // emission [nit]
+    else if (Row == 8u) { Min = -1.0f; Max = 1.0f; }             // signed aniso (negative flips the axis)
+    else if (Row == 9u) Max = 6.28318530717959f;                // rotation [rad]
+    else if (Row == 16u) Max = 2.0f;                            // SSS radius [m]
+}
+
+const MaterialEditKind kEditKinds[kMaterialChannelRowCount] = {
+    MaterialEditKind::Rgb,    MaterialEditKind::Scalar, MaterialEditKind::Scalar, MaterialEditKind::Scalar,
+    MaterialEditKind::None,   MaterialEditKind::Scalar, MaterialEditKind::Scalar, MaterialEditKind::Scalar,
+    MaterialEditKind::Scalar, MaterialEditKind::Scalar, MaterialEditKind::Scalar, MaterialEditKind::Scalar,
+    MaterialEditKind::None,   MaterialEditKind::Rgb,    MaterialEditKind::Scalar, MaterialEditKind::Rgb,
+    MaterialEditKind::Scalar, MaterialEditKind::Scalar, MaterialEditKind::Scalar, MaterialEditKind::None,
+};
 } // namespace
 
 const char* MaterialChannelRowName(uint32_t Row) noexcept { return kRowNames[Row < kMaterialChannelRowCount ? Row : 0u]; }
@@ -67,6 +88,9 @@ const char* MaterialTextureChannelName(TextureChannelSelection Channel) noexcept
     const uint32_t I = static_cast<uint32_t>(Channel);
     return kChannelNames[I < 5u ? I : 0u];
 }
+
+// M7b: None = rows 05/13 (map-or-mesh-frame) + 20 (no carrier); Rgb = colour carriers (01/14/16).
+MaterialEditKind MaterialRowEditKind(uint32_t Row) noexcept { return kEditKinds[Row < kMaterialChannelRowCount ? Row : 19u]; }
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                        SELECTION
@@ -95,8 +119,10 @@ bool MaterialInspector::Select(uint32_t Id) noexcept
     return true;
 }
 
-void MaterialInspector::Rebuild(const MaterialIndex* Index) noexcept
+void MaterialInspector::Rebuild(MaterialIndex* Index) noexcept
 {
+    CachedIndex = Index;   // the Apply target (retained, never owned)
+    if (!Index || Index->QueryCount() == 0u) { Drafts.clear(); DraftNames.clear(); DraftIndex = nullptr; }
     Names.clear(); NamePointers.clear(); FoldLines.clear();
     for (uint32_t I = 0u; I < kMaterialChannelRowCount; ++I)
     {
@@ -116,6 +142,7 @@ void MaterialInspector::Rebuild(const MaterialIndex* Index) noexcept
         for (const MaterialDescriptor& D : Descriptors)
             Names.push_back(D.Name.empty() ? "(unnamed)" : D.Name);
         for (const std::string& N : Names) NamePointers.push_back(N.c_str());
+        SyncDrafts(Descriptors);   // same scene: keep drafts (retention); new scene: re-snapshot
 
         // Resolve the seeded/persisted name (exact display-name match, else material 0).
         uint32_t Id = 0u;
@@ -175,6 +202,193 @@ void MaterialInspector::Rebuild(const MaterialIndex* Index) noexcept
         ++Revision;
     }
     BuildStatusAndSummary();
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                         EDITING
+//------------------------------------------------------------------------------------------------------------------------
+
+void MaterialInspector::SyncDrafts(const std::vector<MaterialDescriptor>& Descriptors) noexcept
+{
+    if (CachedIndex == DraftIndex && DraftNames == Names) return;   // same scene: retention (never touch drafts)
+    static const MaterialSlabDescriptor kDefaultSlab{};
+    Drafts.clear();
+    DraftNames = Names;
+    DraftIndex = CachedIndex;
+    for (const MaterialDescriptor& D : Descriptors)
+    {
+        MaterialDraft Draft;
+        Draft.Slab = D.Slabs.empty() ? kDefaultSlab : D.Slabs.front();
+        Draft.AlphaCutoff = D.AlphaCutoff;
+        Drafts.push_back(Draft);
+    }
+}
+
+bool MaterialInspector::DraftDiffers(uint32_t Material) const noexcept
+{
+    if (!CachedIndex || Material >= Drafts.size() || Material >= CachedIndex->QueryDescriptors().size()) return false;
+    static const MaterialSlabDescriptor kDefaultSlab{};
+    const MaterialDescriptor& D = CachedIndex->QueryDescriptors()[Material];
+    const MaterialSlabDescriptor& Applied = D.Slabs.empty() ? kDefaultSlab : D.Slabs.front();
+    return !(Drafts[Material].Slab == Applied) || Drafts[Material].AlphaCutoff != D.AlphaCutoff;
+}
+
+bool MaterialInspector::IsDirty() const noexcept
+{
+    for (uint32_t I = 0u; I < Drafts.size(); ++I)
+        if (DraftDiffers(I)) return true;
+    return false;
+}
+
+uint32_t MaterialInspector::QueryDirtyCount() const noexcept
+{
+    uint32_t N = 0u;
+    for (uint32_t I = 0u; I < Drafts.size(); ++I)
+        N += DraftDiffers(I) ? 1u : 0u;
+    return N;
+}
+
+const MaterialSlabDescriptor& MaterialInspector::QueryDraftSlab(uint32_t Material) const noexcept
+{
+    static const MaterialSlabDescriptor kDefaultSlab{};
+    return Material < Drafts.size() ? Drafts[Material].Slab : kDefaultSlab;
+}
+
+float MaterialInspector::QueryDraftCutoff(uint32_t Material) const noexcept
+{
+    return Material < Drafts.size() ? Drafts[Material].AlphaCutoff : 0.5f;
+}
+
+// The knob readers (layout + proof share them; the switch mirrors SetDraft* field for field — section J loops every
+//    row asserting Set-then-Query round-trips, so the two maps cannot drift apart silently).
+float MaterialInspector::QueryDraftScalar(uint32_t Row) const noexcept
+{
+    if (SelectedId >= Drafts.size() || MaterialRowEditKind(Row) != MaterialEditKind::Scalar) return 0.0f;
+    const MaterialSlabDescriptor& S = Drafts[SelectedId].Slab;
+    switch (Row)
+    {
+        case 1u:  return S.BaseMetalness;
+        case 2u:  return S.SpecularRoughness;
+        case 3u:  return S.SpecularIor;
+        case 5u:  return S.Texture(MaterialTextureChannel::Occlusion).Scalar;
+        case 6u:  return S.EmissionLuminance;
+        case 7u:  return S.GeometryOpacity;
+        case 8u:  return S.SpecularRoughnessAnisotropy;
+        case 9u:  return S.SlateAnisotropyRotation;
+        case 10u: return S.CoatWeight;
+        case 11u: return S.CoatRoughness;
+        case 14u: return S.FuzzRoughness;
+        case 16u: return S.SubsurfaceRadius;
+        case 17u: return S.TransmissionWeight;
+        case 18u: return S.SpecularIor;
+        default:  return 0.0f;
+    }
+}
+
+float MaterialInspector::QueryDraftColor(uint32_t Row, uint32_t Component) const noexcept
+{
+    if (SelectedId >= Drafts.size() || Component >= 3u || MaterialRowEditKind(Row) != MaterialEditKind::Rgb) return 0.0f;
+    const MaterialSlabDescriptor& S = Drafts[SelectedId].Slab;
+    if (Row == 0u) return S.BaseColor[Component];
+    if (Row == 13u) return S.FuzzColor[Component];
+    if (Row == 15u) return S.SubsurfaceColor[Component];
+    return 0.0f;
+}
+
+const PlaneExtent& MaterialInspector::QueryEditExtent(uint32_t Row, uint32_t Component) const noexcept
+{
+    static const PlaneExtent kEmpty{};
+    return (Row < kMaterialChannelRowCount && Component < 3u) ? EditExtents[Row][Component] : kEmpty;
+}
+
+void MaterialInspector::SetDraftScalar(uint32_t Material, uint32_t Row, float V) noexcept
+{
+    if (Material >= Drafts.size() || MaterialRowEditKind(Row) != MaterialEditKind::Scalar) return;
+    float Min = 0.0f, Max = 1.0f;
+    EditRange(Row, Min, Max);
+    MaterialSlabDescriptor& S = Drafts[Material].Slab;
+    switch (Row)
+    {
+        case 1u:  S.BaseMetalness = std::clamp(V, Min, Max); break;
+        case 2u:  S.SpecularRoughness = std::clamp(V, Min, Max); break;
+        case 3u:  S.SpecularIor = std::clamp(V, Min, Max); break;
+        case 5u:  S.Texture(MaterialTextureChannel::Occlusion).Scalar = std::clamp(V, Min, Max); break;
+        case 6u:  S.EmissionLuminance = std::clamp(V, Min, Max); break;
+        case 7u:  S.GeometryOpacity = std::clamp(V, Min, Max); break;
+        case 8u:  S.SpecularRoughnessAnisotropy = std::clamp(V, Min, Max); break;
+        case 9u:  S.SlateAnisotropyRotation = std::clamp(V, Min, Max); break;
+        case 10u: S.CoatWeight = std::clamp(V, Min, Max); break;
+        case 11u: S.CoatRoughness = std::clamp(V, Min, Max); break;
+        case 14u: S.FuzzRoughness = std::clamp(V, Min, Max); break;
+        case 16u: S.SubsurfaceRadius = std::clamp(V, Min, Max); break;
+        case 17u: S.TransmissionWeight = std::clamp(V, Min, Max); break;
+        case 18u: S.SpecularIor = std::clamp(V, Min, Max); break;   // same carrier as row 04
+        default: break;
+    }
+}
+
+void MaterialInspector::SetDraftColor(uint32_t Material, uint32_t Row, uint32_t Component, float V) noexcept
+{
+    if (Material >= Drafts.size() || Component >= 3u || MaterialRowEditKind(Row) != MaterialEditKind::Rgb) return;
+    V = std::clamp(V, 0.0f, 1.0f);
+    MaterialSlabDescriptor& S = Drafts[Material].Slab;
+    if (Row == 0u) S.BaseColor[Component] = V;
+    else if (Row == 13u) S.FuzzColor[Component] = V;
+    else if (Row == 15u) S.SubsurfaceColor[Component] = V;
+}
+
+void MaterialInspector::SetDraftCutoff(uint32_t Material, float V) noexcept
+{
+    if (Material >= Drafts.size()) return;
+    Drafts[Material].AlphaCutoff = std::clamp(V, 0.0f, 1.0f);
+}
+
+void MaterialInspector::Apply() noexcept
+{
+    LastCommitCount = 0u;
+    if (!CachedIndex) return;
+    uint32_t Changed = 0u;
+    for (uint32_t I = 0u; I < Drafts.size(); ++I)
+    {
+        if (!DraftDiffers(I)) continue;
+        if (MaterialDescriptor* D = CachedIndex->AccessDescriptor(I))
+        {
+            if (D->Slabs.empty()) D->Slabs.push_back(Drafts[I].Slab);   // hand-built indexes only (codecs never emit empty)
+            else D->Slabs.front() = Drafts[I].Slab;
+            D->AlphaCutoff = Drafts[I].AlphaCutoff;
+            ++Changed;
+        }
+    }
+    if (Changed == 0u) { BuildStatusAndSummary(); return; }
+    CachedIndex->Finalise(std::max(1u, CachedIndex->QueryMetrics().SlabLimit), nullptr);   // the index's own limit
+    LastCommitCount = Changed;
+    ++CommitRevision;
+    if (PreviewEnabled) PreviewRequested = true;
+    BuildStatusAndSummary();   // the footer reads the status right after Apply — never stale
+}
+
+void MaterialInspector::Discard() noexcept
+{
+    if (!CachedIndex) return;
+    static const MaterialSlabDescriptor kDefaultSlab{};
+    const std::vector<MaterialDescriptor>& Descriptors = CachedIndex->QueryDescriptors();
+    for (uint32_t I = 0u; I < Drafts.size() && I < Descriptors.size(); ++I)
+    {
+        Drafts[I].Slab = Descriptors[I].Slabs.empty() ? kDefaultSlab : Descriptors[I].Slabs.front();
+        Drafts[I].AlphaCutoff = Descriptors[I].AlphaCutoff;
+    }
+    BuildStatusAndSummary();   // same staleness contract as Apply
+}
+
+void MaterialInspector::NotifyPreviewRendered(bool Ok, const char* MaterialName, const char* Detail, double Seconds, uint32_t Commit) noexcept
+{
+    const char* Name = (MaterialName && *MaterialName) ? MaterialName : "(unnamed)";
+    const char* Info = (Detail && *Detail) ? Detail : (Ok ? "?" : "failed");
+    if (Ok)
+        std::snprintf(PreviewStatus, sizeof(PreviewStatus), "%.64s \xC2\xB7 %.80s \xC2\xB7 %.1fs \xC2\xB7 commit #%u",
+                      Name, Info, Seconds, Commit);
+    else
+        std::snprintf(PreviewStatus, sizeof(PreviewStatus), "%.64s \xC2\xB7 failed: %.96s", Name, Info);
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -362,13 +576,36 @@ void MaterialInspector::BuildStatusAndSummary() noexcept
         SummaryLine[0] = '\0';
         return;
     }
-    std::snprintf(StatusLine, sizeof(StatusLine), "%u material%s - %s - %s",
-                  static_cast<uint32_t>(Names.size()), Names.size() == 1u ? "" : "s",
-                  SelectedName, MaterialSelectionName(Selection));
+    const uint32_t Dirty = QueryDirtyCount();
+    if (Dirty > 0u)
+    {
+        // "N unsaved changes: a, b, ..." (house format — Appearance caps its field list at 8 the same way).
+        std::snprintf(StatusLine, sizeof(StatusLine), "%u unsaved change%s: ", Dirty, Dirty == 1u ? "" : "s");
+        uint32_t Shown = 0u;
+        for (uint32_t I = 0u; I < Drafts.size() && I < Names.size(); ++I)
+        {
+            if (!DraftDiffers(I)) continue;
+            if (Shown >= 8u) { std::strncat(StatusLine, ", ...", sizeof(StatusLine) - std::strlen(StatusLine) - 1u); break; }
+            if (Shown > 0u) std::strncat(StatusLine, ", ", sizeof(StatusLine) - std::strlen(StatusLine) - 1u);
+            std::strncat(StatusLine, Names[I].c_str(), sizeof(StatusLine) - std::strlen(StatusLine) - 1u);
+            ++Shown;
+        }
+    }
+    else
+    {
+        std::snprintf(StatusLine, sizeof(StatusLine), "%u material%s - %s - %s",
+                      static_cast<uint32_t>(Names.size()), Names.size() == 1u ? "" : "s",
+                      SelectedName, MaterialSelectionName(Selection));
+    }
     // No "material" prefix — the F-panel adds the row label. The name is capped so the 160-byte panel row holds it.
-    std::snprintf(SummaryLine, sizeof(SummaryLine), "%.100s  \xC2\xB7  %s  \xC2\xB7  %s  \xC2\xB7  %u/%u slabs",
-                  SelectedName, MaterialSelectionName(Selection), MaterialComplexityName(Complexity),
-                  ResidentSlabs, AuthoredSlabs);
+    if (Dirty > 0u)
+        std::snprintf(SummaryLine, sizeof(SummaryLine), "%.100s  \xC2\xB7  %s  \xC2\xB7  %s  \xC2\xB7  %u/%u slabs  \xC2\xB7  %u unsaved",
+                      SelectedName, MaterialSelectionName(Selection), MaterialComplexityName(Complexity),
+                      ResidentSlabs, AuthoredSlabs, Dirty);
+    else
+        std::snprintf(SummaryLine, sizeof(SummaryLine), "%.100s  \xC2\xB7  %s  \xC2\xB7  %s  \xC2\xB7  %u/%u slabs",
+                      SelectedName, MaterialSelectionName(Selection), MaterialComplexityName(Complexity),
+                      ResidentSlabs, AuthoredSlabs);
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -384,11 +621,13 @@ float MaterialInspector::ConstructMaterialsLayout(PixelSpace& Surface, const Pla
     const float Top = Y;
     ControlPointer Local = Pointer;
     if (SelectorOpen) Local.Enabled = false;   // the open menu owns the pointer
+    if (Pointer.Released) DraggingEdit = -1;   // sliders release like Appearance's (house pattern)
 
     // Header card: selector + selection / complexity / slabs / flags.
     {
         const float HeadingH = 24.0f + 16.0f + 24.0f;   // title + description + mb-6 (mirrors SectionHeading)
-        const float H = Pad * 2.0f + HeadingH + ControlKitTokens::ControlHeight + 12.0f + 4.0f * 26.0f + 3.0f * 8.0f;
+        const float H = Pad * 2.0f + HeadingH + ControlKitTokens::ControlHeight + 12.0f + 4.0f * 26.0f + 3.0f * 8.0f
+                      + 8.0f + 40.0f + 10.0f + 30.0f + 10.0f + 40.0f;   // M7b: cutout + preview + render pill
         const PlaneExtent Card = Spanning(X, Y, W, H);
         const PlaneExtent Content = ControlKit::SectionCard(Surface, Card, ControlKitTokens::RadiusInset, Opacity);
         float R = Content.MinimumY + ControlKit::SectionHeading(Surface, Content.MinimumX, Content.MinimumY, Content.Width(),
@@ -419,15 +658,63 @@ float MaterialInspector::ConstructMaterialsLayout(PixelSpace& Surface, const Pla
                                     Names.empty() ? "—" : Values[I], 13.0f);
             R += 26.0f + 8.0f;
         }
+        // M7b: cutout threshold (draft AlphaCutoff of the selection) + preview controls.
+        const bool CanEditHeader = !Names.empty() && SelectedId < Drafts.size();
+        if (CanEditHeader)
+        {
+            ControlKit::TextLeading(Surface, Spanning(Content.MinimumX, R, ControlKitTokens::LabelWidth, 40.0f), 0.0f,
+                                    ControlKit::Faded(P.TextDim, Opacity), "Cutout", 13.0f);
+            char CutText[16];
+            std::snprintf(CutText, sizeof(CutText), "%.3g", static_cast<double>(Drafts[SelectedId].AlphaCutoff));
+            const float PillX = Content.MinimumX + ControlKitTokens::LabelWidth + ControlKitTokens::RowGap;
+            ControlKit::ValuePill(Surface, PillX, R, CutText, "", Opacity);
+            const float TrackX = PillX + ControlKit::ValuePillWidth + 12.0f;
+            const PlaneExtent Track = Spanning(TrackX, R, Content.MinimumX + Content.Width() - TrackX, 40.0f);
+            float V = Drafts[SelectedId].AlphaCutoff;
+            const ControlHit CutHit = ControlKit::Slider(Surface, Track, 0.0f, 1.0f, V, DraggingEdit == 200, Local, V, false, false, Opacity);
+            if (CutHit.Pressed) DraggingEdit = 200;
+            if (DraggingEdit == 200) SetDraftCutoff(SelectedId, V);
+            CutoutSlider = Track;
+        }
+        else
+        {
+            CutoutSlider = PlaneExtent{};
+        }
+        R += 40.0f + 10.0f;
+        if (CanEditHeader)
+        {
+            ControlKit::TextLeading(Surface, Spanning(Content.MinimumX, R, ControlKitTokens::LabelWidth, 30.0f), 0.0f,
+                                    ControlKit::Faded(P.TextDim, Opacity), "Preview", 13.0f);
+            const float SwitchX = Content.MinimumX + ControlKitTokens::LabelWidth + ControlKitTokens::RowGap;
+            if (ControlKit::Switch(Surface, SwitchX, R + 2.0f, PreviewEnabled, Local, Opacity).Clicked)
+                SetPreviewEnabled(!PreviewEnabled);
+            const char* PreviewText = PreviewStatus[0] ? PreviewStatus : (PreviewEnabled ? "renders on Apply" : "off");
+            ControlKit::TextLeading(Surface, Spanning(SwitchX + ControlKit::SwitchWidth + 12.0f, R,
+                                                      Content.MinimumX + Content.Width() - SwitchX - ControlKit::SwitchWidth - 12.0f, 30.0f),
+                                    0.0f, ControlKit::Faded(P.TextFaint, Opacity), PreviewText, 12.0f);
+        }
+        R += 30.0f + 10.0f;
+        if (CanEditHeader)
+        {
+            ButtonStructure PreviewButton;
+            PreviewButton.Label = "Render preview";
+            PreviewButton.Tone = ButtonToneCategory::Secondary;
+            const PlaneExtent Btn = Spanning(Content.MinimumX, R, 220.0f, 40.0f);
+            if (ControlKit::PillButton(Surface, Btn, PreviewButton, Local, Opacity).Clicked) PreviewRequested = true;
+        }
         Y += H + 16.0f;
     }
 
     // Channels card: the 20 Sultan rows (label | value | source | texture + detail line).
     {
         float RowsH = 0.0f;
+        const bool CanEdit = !Names.empty() && SelectedId < Drafts.size();
         for (uint32_t I = 0u; I < kMaterialChannelRowCount; ++I)
         {
-            RowsH += 24.0f + (Rows[I].HasDetail() ? 16.0f : 0.0f);
+            // M7b: editable rows grow an editor block (6px pad + 40px scalar / 3x40px RGB) under the value line.
+            const MaterialEditKind KindH = CanEdit ? MaterialRowEditKind(I) : MaterialEditKind::None;
+            RowsH += 24.0f + (Rows[I].HasDetail() ? 16.0f : 0.0f)
+                   + (KindH == MaterialEditKind::None ? 0.0f : (KindH == MaterialEditKind::Rgb ? 6.0f + 120.0f : 6.0f + 40.0f));
             if (I + 1u < kMaterialChannelRowCount) RowsH += 4.0f;
         }
         const float HeadingH = 24.0f + 16.0f + 24.0f;
@@ -444,7 +731,9 @@ float MaterialInspector::ConstructMaterialsLayout(PixelSpace& Surface, const Pla
         for (uint32_t I = 0u; I < kMaterialChannelRowCount; ++I)
         {
             const MaterialChannelRow& Row = Rows[I];
-            const float RowH = 24.0f + (Row.HasDetail() ? 16.0f : 0.0f);
+            const MaterialEditKind Kind = CanEdit ? MaterialRowEditKind(I) : MaterialEditKind::None;
+            const float RowH = 24.0f + (Row.HasDetail() ? 16.0f : 0.0f)
+                             + (Kind == MaterialEditKind::None ? 0.0f : (Kind == MaterialEditKind::Rgb ? 6.0f + 120.0f : 6.0f + 40.0f));
             RowExtents[I] = Spanning(Content.MinimumX, R, Content.Width(), RowH);
             const bool Dim = Row.Source == MaterialChannelSource::Absent;
             ControlKit::TextLeading(Surface, Spanning(Content.MinimumX, R, LabelW, 24.0f), 0.0f,
@@ -460,6 +749,47 @@ float MaterialInspector::ConstructMaterialsLayout(PixelSpace& Surface, const Pla
             if (Row.HasDetail())
                 ControlKit::TextLeading(Surface, Spanning(ValueX, R + 24.0f, Content.Width() - LabelW, 16.0f), 0.0f,
                                         ControlKit::Faded(P.TextFaint, Opacity), Row.Detail, 11.0f);
+            // The knob binds the draft (authoring top slab) — the knob is what you edit, the row text is what renders.
+            const float EditY = R + 24.0f + (Row.HasDetail() ? 16.0f : 0.0f) + (Kind == MaterialEditKind::None ? 0.0f : 6.0f);
+            if (Kind == MaterialEditKind::Scalar)
+            {
+                float Min = 0.0f, Max = 1.0f;
+                EditRange(I, Min, Max);
+                char Num[16];
+                std::snprintf(Num, sizeof(Num), "%.3g", static_cast<double>(QueryDraftScalar(I)));
+                ControlKit::ValuePill(Surface, ValueX, EditY, Num, "", Opacity);
+                const PlaneExtent Track = Spanning(ValueX + ControlKit::ValuePillWidth + 12.0f, EditY,
+                                                   ValueW - ControlKit::ValuePillWidth - 12.0f, 40.0f);
+                float V = QueryDraftScalar(I);
+                const ControlHit Hit = ControlKit::Slider(Surface, Track, Min, Max, V, DraggingEdit == static_cast<int>(I),
+                                                           Local, V, false, false, Opacity);
+                if (Hit.Pressed) DraggingEdit = static_cast<int>(I);
+                if (DraggingEdit == static_cast<int>(I)) SetDraftScalar(SelectedId, I, V);
+                EditExtents[I][0] = Track; EditExtents[I][1] = PlaneExtent{}; EditExtents[I][2] = PlaneExtent{};
+            }
+            else if (Kind == MaterialEditKind::Rgb)
+            {
+                static const char* const kTags[3] = { "R", "G", "B" };
+                for (uint32_t C = 0u; C < 3u; ++C)
+                {
+                    const float Cy = EditY + static_cast<float>(C) * 40.0f;
+                    ControlKit::TextLeading(Surface, Spanning(ValueX, Cy, 14.0f, 40.0f), 0.0f,
+                                            ControlKit::Faded(P.TextFaint, Opacity), kTags[C], 12.0f);
+                    char Num[16];
+                    std::snprintf(Num, sizeof(Num), "%.3g", static_cast<double>(QueryDraftColor(I, C)));
+                    ControlKit::ValuePill(Surface, ValueX + 18.0f, Cy, Num, "", Opacity);
+                    const PlaneExtent Track = Spanning(ValueX + 18.0f + ControlKit::ValuePillWidth + 12.0f, Cy,
+                                                       ValueW - 18.0f - ControlKit::ValuePillWidth - 12.0f, 40.0f);
+                    float V = QueryDraftColor(I, C);
+                    const int Key = 64 + static_cast<int>(I) * 3 + static_cast<int>(C);
+                    const ControlHit Hit = ControlKit::Slider(Surface, Track, 0.0f, 1.0f, V, DraggingEdit == Key,
+                                                               Local, V, false, false, Opacity);
+                    if (Hit.Pressed) DraggingEdit = Key;
+                    if (DraggingEdit == Key) SetDraftColor(SelectedId, I, C, V);
+                    EditExtents[I][C] = Track;
+                }
+            }
+            else { EditExtents[I][0] = PlaneExtent{}; EditExtents[I][1] = PlaneExtent{}; EditExtents[I][2] = PlaneExtent{}; }
             R += RowH + 4.0f;
         }
         Y += H + 16.0f;
@@ -482,6 +812,8 @@ float MaterialInspector::ConstructMaterialsLayout(PixelSpace& Surface, const Pla
         }
         Y += H + 16.0f;
     }
+
+    BuildStatusAndSummary();   // a drag updates the footer/summary without a Rebuild
 
     return Y - 16.0f - Top;   // content height (trailing gap excluded)
 }

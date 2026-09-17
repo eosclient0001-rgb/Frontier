@@ -163,6 +163,7 @@ bool ControlCentreHost::IsPageDirty() const noexcept
         case ControlCentrePageCategory::Appearance:    return Appearance.IsDirty();
         case ControlCentrePageCategory::Input:         return InputPage.IsDirty();
         case ControlCentrePageCategory::Notifications: return NotificationPage.IsDirty();
+        case ControlCentrePageCategory::Materials:      return Materials.IsDirty();
         default: return false;
     }
 }
@@ -178,6 +179,7 @@ void ControlCentreHost::ApplyActivePage() noexcept
             // "Show FPS Overlay" and the dashboard FPS tile are one flag.
             if (Settings.FrameRateOverlay != NotificationPage.QueryApplied().ShowFrameRateOverlay) { Settings.FrameRateOverlay = NotificationPage.QueryApplied().ShowFrameRateOverlay; ++Settings.Revision; }
             break;
+        case ControlCentrePageCategory::Materials:      Materials.Apply(); break;
         default: break;
     }
 }
@@ -189,6 +191,7 @@ void ControlCentreHost::DiscardActivePage() noexcept
         case ControlCentrePageCategory::Appearance:    Appearance.Discard(); break;
         case ControlCentrePageCategory::Input:         InputPage.Discard(); break;
         case ControlCentrePageCategory::Notifications: NotificationPage.Discard(); break;
+        case ControlCentrePageCategory::Materials:      Materials.Discard(); break;
         default: break;
     }
 }
@@ -1142,7 +1145,7 @@ struct PageChromeStructure
 };
 
 // Titles / subtitles / footer pills verbatim from Notch OtherModals.tsx & SettingsModal.tsx (Materials is an engine
-//    addition in the same idiom; its pills stay dimmed until M7b wires Apply/Discard).
+//    addition in the same idiom; M7b wired its Apply/Discard through the same IsPageDirty-gated footer).
 constexpr PageChromeStructure PageChrome[5] =
 {
     { "Render Settings",            "Configure output rendering quality and passes.",       "Discard Changes", "Apply Render Settings" },
@@ -1615,7 +1618,7 @@ void ControlCentreHost::ConstructSubPageLayout(PixelSpace& Surface, ControlCentr
             else Status = "Ready to apply changes.";   // GenericSettingsModal verbatim
             break;
         case ControlCentrePageCategory::Materials:
-            Status = Materials.QueryStatusLine();   // M7a: never dirty, so the pills stay dimmed
+            Status = Materials.QueryStatusLine();   // M7b: "N unsaved changes: ..." when dirty (pills live)
             break;
         default:
             Status = "Ready to apply changes.";   // GenericSettingsModal verbatim

@@ -412,13 +412,67 @@ preview) is next; the `preview` key and dimmed pills are its hooks.
 
 ---
 
-## 8. What's next
+## 8. Editable inspector — M7b (229/229, SHIPPED 2026-09-17)
+
+Gate: `bash Exhibits/Workbench/Materials/CheckMaterialInspector.sh` — the M7a build plus the CPU shaderball
+exhibit as a `SHADERBALL_PREVIEW_LIB` TU (`ShadingTableCodec.cpp`, `-I Engine/Shaders`, `-I
+Exhibits/Workbench/Editor`). 158 M7a checks intact (F5/H7 updated for editors) + 71 new (J–Q):
+
+- **J drafts** — per-material eager drafts (full slab + cutoff, snapshotted from `Slabs[0]`); `SetDraft*` shared
+  by sliders and proof; every slider range pinned via clamps (IOR 1–2.5, signed aniso ±1, rotation 0–2π, emission
+  0–20 nit, SSS radius 0–2 m, the rest 0–1); invalid ids/rows/components no-op; all 14 scalar + 3 RGB rows
+  Set→Query round-trip (setter/getter maps can't drift); rows 05/13/20 have no editor.
+- **K Apply** — commits every dirty draft into `Slabs[0]`/`AlphaCutoff`, re-runs `Finalise` at the index's own
+  limit, bumps `CommitRevision` + stamps the count; records re-derived (roughness, cutoff); no-op Apply silent.
+- **L retention + Discard** — brick/wax drafts survive the round-trip switch and commit together; Discard
+  re-snapshots (lamp back to 5 nit).
+- **M cutout** — commits on an opaque (non-mask) material through to the record.
+- **N preview** — 64 px/2 spp renders with sane stats (bad 0, lit, full mesh), byte-identical re-render
+  (deterministic), edit→Apply→pixels-differ (the loop closed), null request fails clean.
+- **O toggle** — seed/enable/revision semantics, request-on-commit iff enabled, take-consumes, ok/fail stamps.
+- **P host** — `IsPageDirty` transitions through the host; page Apply/Discard commit+revert (the private
+  `Apply/DiscardActivePage` tap targets are review-verified — see honest scope).
+- **Q drag** — a synthetic press at 25% across the roughness track writes exactly 0.25 (verbatim track map);
+  release ends the drag (stale motion ignored); RGB tracks stack; rows 05/20 expose no extent.
+
+The preview IS the exhibit: `SetupStage`/`SetupCamera`/`BlitFilm` were extracted byte-for-byte from `main()`
+(the 96 px smoke re-renders md5-identical, `5a89e025…`), `main`/`BuildMaterials` guard out under
+`SHADERBALL_PREVIEW_LIB`, and the entry maps the descriptor to ball 0 (weight×colour folds included, 8
+`static_assert`s pinning `MaterialReflectance` to the slang table) through the same rig/camera/integrator/PNG
+writer. Limits, documented: constants only (no texture pipeline), no cutout (the record carries no alpha),
+`Slabs[0]` only, standard rig, exposure 1. The feeder (`GameExecution` ①h) re-derives the selection fresh at
+render time (the inspector's retained selection predates the requesting commit), renders 160 px/6 spp to the
+ignored `Diagnostics/MaterialPreview_<name>.png`, and stamps the header line; commits restart the accumulation
+and toast (both `RenderFinished`-gated, like Appearance).
+
+Code changes: `MaterialInspector` drafts/editors/Apply/Discard/revisions/preview; `MaterialIndex::AccessDescriptor`
++ `SceneStructure::AccessMaterials` (one line each); host dirty/Apply/Discard cases + live pills; `GameExecution`
+①h (commit→reset+toast, preview persist, preview render); new `ShaderballPreview.h`; exhibit refactor + entry;
+CMake gains the two TUs (per-file `SHADERBALL_PREVIEW_LIB` + include dirs — `FRONTIER_CPU_PORT` is vestigial, no
+ifdefs, intentionally not passed).
+
+Drive-by fixes: `MaterialInspector.cpp` was missing from `FRONTIER_ENGINE_SOURCES` (M7a linked only in the gate —
+the full CMake build would have failed to link); exhibit `-Wunused-function`/`-Wmisleading-indentation` surfaced
+by the gate's `-Wall` (main-only `BuildMaterials` guarded out of the preview TU, M5 one-liner split — both
+behaviour-preserving, smoke still md5-identical).
+
+**Honest scope.** Same headless caveat (layout-verified, not screenshot-verified). The footer-tap→switch path is
+review-verified (3 one-line cases symmetric with proven siblings; the harness drives the same page instance). The
+preview render blocks the frame loop (~seconds at 160/6 — async is a follow-up). Sub-parameters (coat IOR, film,
+attenuation…) are retained and committable but have no editors yet (primaries + cutout only). CMake was edited but
+not configured here (no cmake binary in the sandbox — syntax mirrors precedent; the runner compiles the exact TU
+set with equivalent flags, and the missing-sources guard catches path typos at configure time).
+
+---
+
+## 9. What's next
 
 1. ~~**M5 subsurface**~~ DONE 2026-09-16 (v1 wrap shipped, superseded by the v2 dipole — see 3).
 2. ~~**Kernel milestone**~~ DONE 2026-09-16 (K0–K5 shipped, §5; render-verification pending GPU).
 3. ~~**M5 v2 dipole**~~ DONE 2026-09-16 (pushed `1d76fe2` — triptych + solid sheets byte-identical).
 4. ~~**M6 codec gap-fill**~~ DONE 2026-09-17 (211/211 — see §6).
 5. ~~**M7a read-only inspector**~~ DONE 2026-09-17 (158/158 — see §7).
-6. **M7b editable inspector** (constant editing + live re-Finalise + shader-ball preview). ← NEXT
-7. **Denoiser + motion vectors** (parked per direction).
-8. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a pixels — needs a GPU runner).
+6. ~~**M7b editable inspector**~~ DONE 2026-09-17 (229/229 — see §8).
+7. **M8 Tier B + full-scene validation** (next).
+8. **Denoiser + motion vectors** (parked per direction).
+9. **GPU render-verification** (kernel K0–K5 + M5 v2 triptych + M7a/M7b pixels — needs a GPU runner).

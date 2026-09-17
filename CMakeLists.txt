@@ -231,6 +231,7 @@ set(FRONTIER_ENGINE_SOURCES
     Engine/DisplayPresentation/DialogueHost.cpp
     Engine/DisplayPresentation/AppearanceInspector.cpp
     Engine/DisplayPresentation/ConfigurationInspector.cpp
+    Engine/DisplayPresentation/MaterialInspector.cpp
     Engine/DisplayPresentation/TypefaceRegistry.cpp
     Engine/DisplayPresentation/FidelityClassifier.cpp
     Engine/SpatialInterface/InterfaceStructure.cpp
@@ -277,6 +278,7 @@ set(PROJECT_ZERO_SOURCES
     Engine/DisplayPresentation/DiagnosticInspector.cpp
     Engine/DisplayPresentation/ReSTIRIntegrator.cpp
     Engine/DisplayPresentation/ShadingTableCodec.cpp
+    Exhibits/Workbench/Materials/ShaderballExhibit.cpp
     Engine/DisplayPresentation/RenderScheduler.cpp
     Projects/Project-Zero/Source/RayTracingSolver.cpp
     Projects/Project-Zero/Source/FlyThroughSolver.cpp
@@ -304,6 +306,8 @@ endif()
 add_executable(Project-Zero ${PROJECT_ZERO_SOURCES})
 add_dependencies(Project-Zero ReSTIRViewportSpirv)
 set_source_files_properties(Engine/GeometricRaster/TraversalIndex.cpp PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma;-msse4.2")   # tinybvh SIMD build
+set_source_files_properties(Exhibits/Workbench/Materials/ShaderballExhibit.cpp PROPERTIES COMPILE_DEFINITIONS SHADERBALL_PREVIEW_LIB
+    INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/Engine/DisplayPresentation;${CMAKE_CURRENT_SOURCE_DIR}/Engine/Shaders;${CMAKE_CURRENT_SOURCE_DIR}/Exhibits/Workbench/Editor;${CMAKE_CURRENT_SOURCE_DIR}/Engine/ContentInterchange")   # M7b preview TU (FRONTIER_CPU_PORT is vestigial — no ifdefs — and intentionally not passed)
 
 target_include_directories(Project-Zero PRIVATE
     ${FRONTIER_ENGINE_INCLUDES}
