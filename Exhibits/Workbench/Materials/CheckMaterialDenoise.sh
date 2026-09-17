@@ -25,55 +25,11 @@ fi
 echo "[MaterialDenoise] headers: $Vk"
 
 #──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# ① the transformed shader: three mechanical substitutions, each asserted, then re-derived by the proof (§C0).
+# ① the transformed shader: the four mechanical substitutions (StageAtrousDenoise.py), each asserted there, then
+#    re-derived from the shader text by the proof (§C0). The exhibit driver calls the same script.
 #──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Stage="$(mktemp -d /tmp/DenoiseMirror.XXXXXX)"
-if ! DO_STAGE="$Stage" python3 - <<'PY'
-import os, re, sys
-stage = os.environ["DO_STAGE"]
-source = "Engine/Shaders/AtrousDenoise.slang"
-lines = open(source, encoding="utf-8").read().split("\n")
-
-prologue = [i for i, l in enumerate(lines) if l.startswith("#") or l.startswith("layout(local_size")]
-assert len(prologue) == 2, f"expected 2 prologue lines (#version + the workgroup size), found {len(prologue)}"
-assert lines[prologue[0]].startswith("#version") and lines[prologue[1]].startswith("layout(local_size"), "unexpected prologue"
-array_lines = [i for i, l in enumerate(lines) if "float[5](" in l]
-assert len(array_lines) == 1, f"expected 1 GLSL array constructor, found {len(array_lines)}"
-closers = [i for i, l in enumerate(lines) if l.strip() == "};"]
-push = [i for i, l in enumerate(lines) if "push_constant" in l]
-assert len(closers) == 1 and len(push) == 1 and closers[0] > push[0], "push-constant block not found as a single '};'"
-assert lines[push[0]] == "layout(push_constant) uniform DenoiseConstants", f"unexpected push-constant opener: {lines[push[0]]!r}"
-split = closers[0]
-array = array_lines[0]
-
-values = re.findall(r"-?\d+\.?\d*", lines[array].split("float[5](")[1])
-assert len(values) == 5, f"array constructor has {len(values)} literals"
-replacement = "    const float Weights[5] = float[5](" + ", ".join(values) + ");"
-
-drop = set(prologue)
-body = [l for i, l in enumerate(lines) if i not in drop]
-# Re-index after the prologue removal, then rewrite the array line and close the push block with its instance.
-shift = sum(1 for i in prologue if i < array)
-shift_push = sum(1 for i in prologue if i < push[0])
-shift_close = sum(1 for i in prologue if i < split)
-body[array - shift] = "    const float Weights[5] = { " + ", ".join(v + "f" for v in values) + " };"
-body[push[0] - shift_push] = "struct DenoiseConstants"
-body[split - shift_close] = body[split - shift_close].replace("};", "} DenoiseParameters;")
-
-open(os.path.join(stage, "AtrousDenoise.cpu.1.h"), "w", encoding="utf-8").write("\n".join(body[:split - shift_close + 1]) + "\n")
-open(os.path.join(stage, "AtrousDenoise.cpu.2.h"), "w", encoding="utf-8").write("\n".join(body[split - shift_close + 1:]))
-open(os.path.join(stage, "transform.manifest"), "w", encoding="utf-8").write(
-    f"source {source}\n"
-    f"dropped {lines[prologue[0]]}\n"
-    f"dropped {lines[prologue[1]]}\n"
-    f"rewrote {lines[array].strip()}\n"
-    f"        -> {body[array - shift].strip()}\n"
-    f"rewrote {lines[push[0]].strip()}\n"
-    f"        -> {body[push[0] - shift_push].strip()}\n"
-    f"split after {body[split - shift_close].strip()}\n")
-print("[MaterialDenoise] staged " + stage)
-PY
-then
+if ! DO_STAGE="$Stage" python3 Exhibits/Workbench/Materials/StageAtrousDenoise.py; then
     echo "[MaterialDenoise] RED — the shader did not match the transform's expectations"; rm -rf "$Stage"; exit 1
 fi
 sed 's/^/    /' "$Stage/transform.manifest"

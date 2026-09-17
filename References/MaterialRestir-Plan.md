@@ -296,6 +296,15 @@ Files: `Exhibits/Workbench/Materials/CheckMaterialDenoise.sh` (gate, 97/97), `De
   576/576/576, and 0/0/465 accepted then all identical on the firefly stream) with zero mean drift; the firefly
   stream's fade-out curve runs 0 % → 0 % → 80.7 % acceptance over 512/2048/8192-frame holds, which is the R10 #9
   self-gating claim measured per stream.
+- **Visual exhibit, seven kept sheets:** `RunDenoiseExhibit.sh` → `Exhibits/Gallery/Materials/DenoiseSheet_*.png`.
+  `DenoiseExhibit.cpp` drives the shipped filter over a CPU path-traced scene (checker ground, two spheres, wall,
+  soft area light) and renders, at 192 px / 2048 spp: the A/B in one frame (mean |error| vs reference 0.1170 →
+  0.0295, 74.8 % removed; identity at convergence on 4566 of 36864 surface pixels), the fade-out curve on a real
+  frame (0 → 2 → 5 → 12 % of surface pixels out of the filter's hands), the 0–5-level progression, the edge stops
+  on/off at the deepest depth edge, a 64-frame pan with the reprojection rule and its disocclusion map, and §E as
+  bars. The transform, the rule and the §E measurement are shared source with the gate (`StageAtrousDenoise.py`,
+  `ReprojectionMirror.h`, `DenoiseStreams.h`), so sheets and checks cannot disagree. The integrator is one bounce —
+  no reservoirs, no reuse, no BVH — so these prove the filter and the rule, not the kernel.
 - **Still GPU-side:** an end-to-end ReSTIR run where reuse re-evaluates the new BSDFs under real motion (the
   "no Jacobian needed for DI" claim), and the sky-backed outdoor glass A/B — both on the render-verification
   backlog with K0–K5.

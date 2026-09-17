@@ -24,16 +24,26 @@
 #include "ReSTIRIntegrator.h"
 #include "FidelityClassifier.h"
 #include "AtrousDenoiseMirror.h"
+#include "ReprojectionMirror.h"   // the rule itself — shared with the exhibit, so §D and the sheets cannot drift apart
+#include "DenoiseStreams.h"       // and the §E measurement, shared with the exhibit's chart of the same numbers
 
 #include <algorithm>
 #include <clocale>
 #include <cmath>
 #include <cstdint>
-#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
+
+using DenoiseStreams::EarlyOutAccepts;
+using DenoiseStreams::Field;
+using DenoiseStreams::MeasureStream;
+using DenoiseStreams::Pcg;
+using DenoiseStreams::StreamBase;
+using DenoiseStreams::StreamCategory;
+using DenoiseStreams::StreamMeasurement;
+using DenoiseStreams::StreamName;
 
 namespace {
 
@@ -92,29 +102,6 @@ void AuditPin(const std::string& Text, const TextPin& Pin)
 //                                                    FIELD HELPERS
 //------------------------------------------------------------------------------------------------------------------------
 
-struct Field
-{
-    uint32_t Extent = 0u;
-    std::vector<float> Values;                       // 4 floats per texel
-
-    void Resize(uint32_t N) { Extent = N; Values.assign(static_cast<size_t>(N) * N * 4u, 0.0f); }
-    float*       At(uint32_t X, uint32_t Y)       { return &Values[(static_cast<size_t>(Y) * Extent + X) * 4u]; }
-    const float* At(uint32_t X, uint32_t Y) const { return &Values[(static_cast<size_t>(Y) * Extent + X) * 4u]; }
-};
-
-struct Pcg
-{
-    uint32_t State = 0u;
-    explicit Pcg(uint32_t Seed) : State(Seed * 747796405u + 2891336453u) {}
-    uint32_t NextBits()
-    {
-        State = State * 747796405u + 2891336453u;
-        const uint32_t Word = ((State >> ((State >> 28u) + 4u)) ^ State) * 277803737u;
-        return (Word >> 22u) ^ Word;
-    }
-    float Uniform() { return static_cast<float>(NextBits() >> 8u) * (1.0f / 16777216.0f); }
-};
-
 //------------------------------------------------------------------------------------------------------------------------
 //                                              REPROJECTION RULE (SHADER MIRROR)
 //------------------------------------------------------------------------------------------------------------------------
@@ -122,121 +109,6 @@ struct Pcg
 //    history's (normal, depth) with the SAME thresholds the reservoir reuse uses (25°, 10 % relative), and treat every
 //    failure as a disocclusion — the mean restarts at n = 1 instead of smearing the surface that used to be here.
 //    §B pins the four lines this comes from, so a change there fails the gate.
-
-struct HistoryTexel
-{
-    float Normal[3] = { 0.0f, 0.0f, 1.0f };
-    float Depth     = -1.0f;          // ≤ 0 = no surface (background, direct emitters)
-    float Count     = 0.0f;
-};
-
-struct ReprojectionAnswer
-{
-    int  PreviousX = 0;
-    int  PreviousY = 0;
-    bool Inherited = false;          // true = history found and validated; false = disocclusion (restart at n = 1)
-    bool Offscreen = false;
-};
-
-constexpr float kReprojectNormalCos = 0.906307787f;   // 25° — kTemporalNormalCos, shared with reservoir reuse
-constexpr float kReprojectDepthTol  = 0.10f;
-
-ReprojectionAnswer Reproject(float PixelX, float PixelY, uint32_t Width, uint32_t Height,
-                             const float Normal[3], float Depth, float MotionU, float MotionV,
-                             const HistoryTexel* History, bool FeatureEnabled)
-{
-    ReprojectionAnswer Answer;
-    Answer.PreviousX = static_cast<int>(PixelX);
-    Answer.PreviousY = static_cast<int>(PixelY);
-
-    const bool Reprojecting = Depth > 0.0f && FeatureEnabled;
-    if (!Reprojecting) return Answer;   // pre-R7a behaviour: own pixel, and the answer says so
-
-    const float CentreU = (PixelX + 0.5f) / static_cast<float>(Width);
-    const float CentreV = (PixelY + 0.5f) / static_cast<float>(Height);
-    const float PrevU   = CentreU - MotionU;
-    const float PrevV   = CentreV - MotionV;
-    const int   PrevX   = static_cast<int>(std::floor(PrevU * static_cast<float>(Width)));
-    const int   PrevY   = static_cast<int>(std::floor(PrevV * static_cast<float>(Height)));
-
-    if (PrevX < 0 || PrevY < 0 || PrevX >= static_cast<int>(Width) || PrevY >= static_cast<int>(Height))
-    {
-        Answer.Offscreen = true;
-        return Answer;                  // back-projected off screen — also a disocclusion
-    }
-
-    Answer.PreviousX = PrevX;
-    Answer.PreviousY = PrevY;
-
-    const HistoryTexel& Tap = History[static_cast<size_t>(PrevY) * Width + static_cast<size_t>(PrevX)];
-    const float Dot = Normal[0] * Tap.Normal[0] + Normal[1] * Tap.Normal[1] + Normal[2] * Tap.Normal[2];
-    const float DepthDelta = std::fabs(Depth - Tap.Depth) / std::max(Depth, 1.0e-3f);
-    Answer.Inherited = Tap.Depth > 0.0f && Dot > kReprojectNormalCos && DepthDelta < kReprojectDepthTol;
-    return Answer;
-}
-
-//------------------------------------------------------------------------------------------------------------------------
-//                                                  SAMPLE STREAMS (§E)
-//------------------------------------------------------------------------------------------------------------------------
-
-enum class StreamCategory : uint32_t { Lambertian = 0u, Glass = 1u, Subsurface = 2u, Count = 3u };
-
-const char* StreamName(StreamCategory Category)
-{
-    switch (Category)
-    {
-        case StreamCategory::Lambertian: return "lambertian";
-        case StreamCategory::Glass:      return "glass-btdf";
-        case StreamCategory::Subsurface: return "subsurface";
-        default:                         return "?";
-    }
-}
-
-// The spatial base each stream modulates: a smooth gradient, so the filter has real structure to preserve.
-float StreamBase(uint32_t X, uint32_t Y, uint32_t Extent)
-{
-    return 0.35f + 0.30f * (static_cast<float>(X) / static_cast<float>(Extent))
-                  + 0.10f * (static_cast<float>(Y) / static_cast<float>(Extent));
-}
-
-// The analytic mean each stream is unbiased towards — a property of the material, never of the frame's noise level.
-float StreamMean(StreamCategory Category, float Base)
-{
-    switch (Category)
-    {
-        case StreamCategory::Lambertian: return Base;
-        case StreamCategory::Glass:      return 0.62f * Base;   // 99 % dim paths + 1 % fireflies
-        case StreamCategory::Subsurface: return 0.60f * Base;   // exponential transport, truncated at the first bounce
-        default:                         return 0.0f;
-    }
-}
-
-// Zero-mean, unit-scale noise shaped like each lobe's transport: uniform for diffuse, a rare large value for the
-//    specular/BTDF chain (fireflies), exponential for subsurface. `Amplitude` scales the noise only — 1.0 is a noisy
-//    frame, 0.02 a nearly-converged one — so the mean holds whatever the amplitude does, which is what makes the §E
-//    convergence assertions meaningful.
-void StreamSample(StreamCategory Category, float Base, float Amplitude, Pcg& Rng, float* OutSample, float* OutTruth)
-{
-    const float Mean = StreamMean(Category, Base);
-    float Noise = 0.0f;
-    switch (Category)
-    {
-        case StreamCategory::Lambertian:
-            Noise = 2.0f * Rng.Uniform() - 1.0f;                    // uniform on [−1, 1]: E = 0, Var = 1/3
-            break;
-        case StreamCategory::Glass:
-            // P(firefly) = 1 % : +60 with probability 0.01, −0.60606 otherwise (E = 0 exactly).
-            Noise = Rng.Uniform() < 0.01f ? 60.0f : -0.6060606f;
-            break;
-        case StreamCategory::Subsurface:
-            Noise = -std::log(std::max(Rng.Uniform(), 1.0e-6f)) - 1.0f;   // E = 0, Var = 1
-            break;
-        default:
-            break;
-    }
-    OutSample[0] = OutSample[1] = OutSample[2] = Mean * (1.0f + Amplitude * Noise);
-    OutTruth[0] = OutTruth[1] = OutTruth[2] = Mean;
-}
 
 } // namespace
 
@@ -863,190 +735,58 @@ int main()
     //  §E  A/B over three lobe-like streams: helpful before convergence, mean-preserving at it, and bit-identical on
     //      every pixel the shipped early-out judges converged.
     //──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-    //  The filter's own convergence test, transcribed from AtrousDenoise.slang (the 3x3 pre-filtered variance is the
-    //     one the shader makes its decision on). Used to ask, pixel by pixel, whether the shipped early-out fires —
-    //     which is the only way "identity at convergence" can be stated about a filter that decides per pixel.
-    auto EarlyOutAccepts = [](const Field& Source, uint32_t X, uint32_t Y) -> bool
-    {
-        double VarianceSum = 0.0, VarianceWeight = 0.0;
-        for (int32_t OY = -1; OY <= 1; ++OY)
-            for (int32_t OX = -1; OX <= 1; ++OX)
-            {
-                const int32_t TapX = std::min(std::max(static_cast<int32_t>(X) + OX, 0), static_cast<int32_t>(kExtent) - 1);
-                const int32_t TapY = std::min(std::max(static_cast<int32_t>(Y) + OY, 0), static_cast<int32_t>(kExtent) - 1);
-                const double W = static_cast<double>(DenoiseMirror::KernelWeight(OX)) * static_cast<double>(DenoiseMirror::KernelWeight(OY));
-                VarianceSum    += static_cast<double>(Source.At(static_cast<uint32_t>(TapX), static_cast<uint32_t>(TapY))[3]) * W;
-                VarianceWeight += W;
-            }
-        const double LocalVariance = VarianceWeight > 0.0 ? std::max(VarianceSum / VarianceWeight, 0.0) : 0.0;
-        return LocalVariance < static_cast<double>(DenoiseMirror::EarlyOutVariance());
-    };
     {
         constexpr uint32_t kFrames = 512u;                    // the reporting mark: "after 512 accumulated samples"
-        constexpr uint32_t kMilestones[3] = { 512u, 2048u, 8192u };   // the fade-out curve's sampling points
+        const uint32_t kHolds[3] = { 512u, 2048u, 8192u };    // the fade-out curve's sampling points
+
         for (uint32_t Category = 0u; Category < static_cast<uint32_t>(StreamCategory::Count); ++Category)
         {
             const StreamCategory Stream = static_cast<StreamCategory>(Category);
             const char* Name = StreamName(Stream);
+            const StreamMeasurement Measured = MeasureStream(Stream, kExtent, kHolds[2], kHolds);
 
-            // One pass per frame: accumulate → filter (and the kernel's own tone map for the unfiltered side).
-            std::vector<DenoiseMirror::Accumulator> Accumulators(kExtent * kExtent);
-            Field Source, Surface, Filtered, FilteredOutput, Truth;
-            Source.Resize(kExtent); Surface.Resize(kExtent); Filtered.Resize(kExtent); FilteredOutput.Resize(kExtent); Truth.Resize(kExtent);
-            for (uint32_t Y = 0u; Y < kExtent; ++Y)
-                for (uint32_t X = 0u; X < kExtent; ++X)
-                {
-                    float* F = Surface.At(X, Y);
-                    F[0] = 0.0f; F[1] = 0.0f; F[2] = 1.0f; F[3] = 1.0f;
-                }
-            DenoiseMirror::RunConfiguration Config;
-            Config.Extent = kExtent; Config.StepSize = 1u; Config.Enabled = true; Config.FinalLevel = true;
-            Config.Exposure = 1.0f; Config.ColourSaturation = 1.0f;
+            for (uint32_t M = 0u; M < 3u; ++M)
+                std::printf("[denoise] %-12s hold %5u: MSE raw %.4g vs filtered %.4g, early-out accepts %5.1f%%, of those %u differ\n",
+                            Name, kHolds[M], Measured.MilestoneMseRaw[M], Measured.MilestoneMseFiltered[M],
+                            100.0 * Measured.MilestoneAcceptance[M], Measured.MilestoneBad[M]);
+            std::printf("[denoise] %-12s frame %3u: MSE filtered %.6g vs unfiltered %.6g, linear image-mean drift %.4f%%\n",
+                        Name, kFrames, Measured.MilestoneMseFiltered[0], Measured.MilestoneMseRaw[0], Measured.FinalFrameDrift * 100.0);
 
-            double FirstFrameFilteredError = 0.0, FirstFrameUnfilteredError = 0.0;
-            double FinalLinearError = 0.0, FinalTruth = 0.0;
-            double FirstFrameDrift = 0.0, FinalFrameDrift = 0.0;
-            uint32_t AcceptedFirst = 0u;
-
-            double MilestoneAcceptance[3] = { 0.0, 0.0, 0.0 };
-            uint32_t MilestoneAccepted[3] = { 0u, 0u, 0u };
-            uint32_t MilestoneBad[3] = { 0u, 0u, 0u };
-            for (uint32_t Frame = 0u; Frame < kMilestones[2]; ++Frame)
-            {
-                // One sample per frame, with the SAME per-sample noise every frame — the physical model, not a
-                //    convenience. A real estimator's per-sample variance is fixed; what falls is the variance OF THE
-                //    MEAN, s²/N, and that is what the accumulator reports and what the early-out keys on. Shrinking the
-                //    per-frame noise instead would hand the filter a convergence the renderer never earned (and, at
-                //    these magnitudes, drives the shader's float moment recursion below its own ulp).
-                constexpr float kSampleNoise = 0.03f;   // [-] 3 % per-sample radiance noise, ≈ a 33 spp frame
-                const float Amplitude = kSampleNoise;
-                for (uint32_t Y = 0u; Y < kExtent; ++Y)
-                    for (uint32_t X = 0u; X < kExtent; ++X)
-                    {
-                        const float Base = StreamBase(X, Y, kExtent);
-                        Pcg Rng(0x9E3779B9u ^ (Frame * 2654435761u) ^ (Y * kExtent + X) * 40503u);
-                        float Sample[3], Analytic[3];
-                        StreamSample(Stream, Base, Amplitude, Rng, Sample, Analytic);
-                        float Radiance[3], Variance = 0.0f;
-                        Accumulators[static_cast<size_t>(Y) * kExtent + X].Resolve(Sample, Radiance, &Variance);
-                        float* S = Source.At(X, Y);
-                        S[0] = Radiance[0]; S[1] = Radiance[1]; S[2] = Radiance[2]; S[3] = Variance;
-                        float* T = Truth.At(X, Y);
-                        T[0] = Analytic[0]; T[1] = Analytic[1]; T[2] = Analytic[2];
-                    }
-
-                DenoiseMirror::Run(Config, Source.Values.data(), Surface.Values.data(), Filtered.Values.data(), FilteredOutput.Values.data());
-
-                double FilteredError = 0.0, UnfilteredError = 0.0, FilteredMean = 0.0, UnfilteredMean = 0.0;
-                for (uint32_t Y = 0u; Y < kExtent; ++Y)
-                    for (uint32_t X = 0u; X < kExtent; ++X)
-                    {
-                        float UnfilteredPresentation[3];
-                        const float* S = Source.At(X, Y);
-                        DenoiseMirror::ToneMap(S[0], S[1], S[2], Config.Exposure, Config.ColourSaturation, UnfilteredPresentation);
-                        float TruthPresentation[3];
-                        const float* T = Truth.At(X, Y);
-                        DenoiseMirror::ToneMap(T[0], T[1], T[2], Config.Exposure, Config.ColourSaturation, TruthPresentation);
-
-                        const float* O = FilteredOutput.At(X, Y);
-                        for (uint32_t C = 0u; C < 3u; ++C)
-                        {
-                            const double Delta = static_cast<double>(O[C] - TruthPresentation[C]);
-                            FilteredError += Delta * Delta;
-                            const double DeltaUnfiltered = static_cast<double>(UnfilteredPresentation[C] - TruthPresentation[C]);
-                            UnfilteredError += DeltaUnfiltered * DeltaUnfiltered;
-                        }
-                        FilteredMean   += Filtered.At(X, Y)[0] + Filtered.At(X, Y)[1] + Filtered.At(X, Y)[2];
-                        UnfilteredMean += S[0] + S[1] + S[2];
-                        if (Frame == 0u)
-                        {
-                            for (uint32_t C = 0u; C < 3u; ++C)
-                            {
-                                const double Delta = static_cast<double>(O[C] - TruthPresentation[C]);
-                                FirstFrameFilteredError += Delta * Delta;
-                                const double DeltaUnfiltered = static_cast<double>(UnfilteredPresentation[C] - TruthPresentation[C]);
-                                FirstFrameUnfilteredError += DeltaUnfiltered * DeltaUnfiltered;
-                            }
-                        }
-                        if (Frame == kFrames - 1u)
-                        {
-                            FinalLinearError += std::fabs(static_cast<double>(S[0] - T[0]));
-                            FinalTruth += static_cast<double>(T[0]);
-                        }
-                        if (Frame == 0u && EarlyOutAccepts(Source, X, Y)) ++AcceptedFirst;
-                    }
-
-                const double Drift = std::fabs(FilteredMean - UnfilteredMean) / std::max(UnfilteredMean, 1.0e-9);
-                if (Frame == 0u) FirstFrameDrift = Drift;
-                if (Frame == kFrames - 1u) FinalFrameDrift = Drift;
-
-                // The fade-out curve. At each hold the shipped convergence test is asked, pixel by pixel, whether it
-                //    fires — and every pixel it accepts is checked against the tone map the kernel would have written.
-                for (uint32_t M = 0u; M < 3u; ++M)
-                {
-                    if (Frame + 1u != kMilestones[M]) continue;
-                    uint32_t Accepted = 0u, Bad = 0u;
-                    std::vector<float> Variances;
-                    Variances.reserve(kExtent * kExtent);
-                    for (uint32_t Y = 0u; Y < kExtent; ++Y)
-                        for (uint32_t X = 0u; X < kExtent; ++X)
-                        {
-                            Variances.push_back(Source.At(X, Y)[3]);
-                            if (!EarlyOutAccepts(Source, X, Y)) continue;
-                            ++Accepted;
-                            const float* O = FilteredOutput.At(X, Y);
-                            const float* S = Source.At(X, Y);
-                            float Presented[3];
-                            DenoiseMirror::ToneMap(S[0], S[1], S[2], Config.Exposure, Config.ColourSaturation, Presented);
-                            bool Same = true;
-                            for (uint32_t C = 0u; C < 3u; ++C) Same = Same && O[C] == Presented[C];
-                            if (!Same) ++Bad;
-                        }
-                    std::sort(Variances.begin(), Variances.end());
-                    MilestoneAcceptance[M] = static_cast<double>(Accepted) / (kExtent * kExtent);
-                    MilestoneAccepted[M] = Accepted;
-                    MilestoneBad[M] = Bad;
-                    std::printf("[denoise] %-12s hold %5u: variance of the mean median %.3g, early-out accepts %5.1f%%, of those %u differ\n",
-                                Name, kMilestones[M], Variances[Variances.size() / 2], 100.0 * MilestoneAcceptance[M], Bad);
-                    std::printf("[denoise] %-12s frame %3u: MSE filtered %.6g vs unfiltered %.6g, linear image-mean drift %.4f%%\n",
-                                Name, kMilestones[M], FilteredError / (kExtent * kExtent * 3u), UnfilteredError / (kExtent * kExtent * 3u), Drift * 100.0);
-                }
-            }
-
-            char Label[192];
+            char Label[224];
             std::snprintf(Label, sizeof(Label), "E1 %s: at 1 sample the filter lowers presentation MSE (%.4g < %.4g)",
-                          Name, FirstFrameFilteredError, FirstFrameUnfilteredError);
-            Check(FirstFrameFilteredError < FirstFrameUnfilteredError, Label);
+                          Name, Measured.FirstFrameFilteredError, Measured.FirstFrameUnfilteredError);
+            Check(Measured.FirstFrameFilteredError < Measured.FirstFrameUnfilteredError, Label);
             // E2 is stated about LINEAR radiance and at convergence: a display-space filter redistributes the first
             //    frame's under-sampled energy on purpose (that is what denoising IS — E2b bounds it), and the tone map
             //    is a display transform, not a mean-preserving one. Where the estimate has converged, the filter must
             //    hand the image back: that is the mean-preservation claim that belongs to the denoiser.
             std::snprintf(Label, sizeof(Label), "E2 %s: at convergence the filter preserves the linear image mean (%.4f %% drift)",
-                          Name, FinalFrameDrift * 100.0);
-            Check(FinalFrameDrift < 0.02, Label);
-            std::snprintf(Label, sizeof(Label), "E2b %s: the frame-one redistribution is bounded (%.3f %% drift)", Name, FirstFrameDrift * 100.0);
-            Check(FirstFrameDrift < 0.50, Label);
+                          Name, Measured.FinalFrameDrift * 100.0);
+            Check(Measured.FinalFrameDrift < 0.02, Label);
+            std::snprintf(Label, sizeof(Label), "E2b %s: the frame-one redistribution is bounded (%.3f %% drift)", Name, Measured.FirstFrameDrift * 100.0);
+            Check(Measured.FirstFrameDrift < 0.50, Label);
             std::snprintf(Label, sizeof(Label), "E3 %s: the running mean converges to the analytic truth (%.3f %% after %u frames)",
-                          Name, 100.0 * FinalLinearError / std::max(FinalTruth, 1.0e-9), kFrames);
-            Check(FinalLinearError / std::max(FinalTruth, 1.0e-9) < 0.02, Label);
+                          Name, 100.0 * Measured.FinalLinearError / std::max(Measured.FinalTruth, 1.0e-9), kFrames);
+            Check(Measured.FinalLinearError / std::max(Measured.FinalTruth, 1.0e-9) < 0.02, Label);
             // E4. Every pixel the shipped convergence test accepts, at EVERY hold, comes back out untouched: that is
             //    the A. It is not a tautology — the check is made from outside the filter, on the presentation image,
             //    against the tone map the kernel would have written itself.
             std::snprintf(Label, sizeof(Label), "E4 %s: every pixel the early-out accepts is bit-identical (%u/%u/%u accepted at the three holds, %u differ)",
-                          Name, MilestoneAccepted[0], MilestoneAccepted[1], MilestoneAccepted[2],
-                          MilestoneBad[0] + MilestoneBad[1] + MilestoneBad[2]);
-            Check(MilestoneBad[0] + MilestoneBad[1] + MilestoneBad[2] == 0u && MilestoneAccepted[2] > 0u, Label);
+                          Name, Measured.MilestoneAccepted[0], Measured.MilestoneAccepted[1], Measured.MilestoneAccepted[2],
+                          Measured.MilestoneBad[0] + Measured.MilestoneBad[1] + Measured.MilestoneBad[2]);
+            Check(Measured.MilestoneBad[0] + Measured.MilestoneBad[1] + Measured.MilestoneBad[2] == 0u && Measured.MilestoneAccepted[2] > 0u, Label);
             // E4b is the "helps before convergence, then fades" claim as a single measurable: at one sample the test
             //    never fires (nothing is converged); by the longest hold it accepts the majority of the frame. The
             //    curve between the two is the self-gating the shader documents, printed hold by hold above.
             std::snprintf(Label, sizeof(Label), "E4b %s: the early-out engages as the estimate converges (%.1f %% at frame 1, %.1f %% at hold %u)",
-                          Name, 100.0 * AcceptedFirst / (kExtent * kExtent), 100.0 * MilestoneAcceptance[2], kMilestones[2]);
-            Check(AcceptedFirst == 0u && MilestoneAcceptance[2] > 0.5, Label);
+                          Name, 100.0 * Measured.AcceptedAtFirstFrame / (kExtent * kExtent), 100.0 * Measured.MilestoneAcceptance[2], kHolds[2]);
+            Check(Measured.AcceptedAtFirstFrame == 0u && Measured.MilestoneAcceptance[2] > 0.5, Label);
             // E4c. The curve must not go backwards: as the estimate settles, the shipped test can only accept MORE
             //    pixels, which is what "the filter fades out as the frame converges" means when it is measured.
             std::snprintf(Label, sizeof(Label), "E4c %s: acceptance grows with the hold, it never falls back (%.1f %% -> %.1f %% -> %.1f %%)",
-                          Name, 100.0 * MilestoneAcceptance[0], 100.0 * MilestoneAcceptance[1], 100.0 * MilestoneAcceptance[2]);
-            Check(MilestoneAcceptance[1] + 0.02 >= MilestoneAcceptance[0] && MilestoneAcceptance[2] + 0.02 >= MilestoneAcceptance[1], Label);
+                          Name, 100.0 * Measured.MilestoneAcceptance[0], 100.0 * Measured.MilestoneAcceptance[1], 100.0 * Measured.MilestoneAcceptance[2]);
+            Check(Measured.MilestoneAcceptance[1] + 0.02 >= Measured.MilestoneAcceptance[0] &&
+                  Measured.MilestoneAcceptance[2] + 0.02 >= Measured.MilestoneAcceptance[1], Label);
         }
     }
 

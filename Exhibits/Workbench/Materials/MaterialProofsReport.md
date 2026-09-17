@@ -578,7 +578,10 @@ live à-trous chain (4 levels Minimal–Standard, 5 Ultra/Reference), and a prob
 proof, not the flag — the evidence the deferral's rationale asked for, run on the shipped code.
 
 Gate: `bash Exhibits/Workbench/Materials/CheckMaterialDenoise.sh` → **97/97**, no GPU, no window, no imgui.
-New files `DenoiseCpuShim.h`, `AtrousDenoiseMirror.{h,cpp}`, `DenoiseReprojectionProof.cpp`, the gate script;
+New files `DenoiseCpuShim.h`, `AtrousDenoiseMirror.{h,cpp}`, `DenoiseReprojectionProof.cpp`, the gate script, and
+the shared pieces `ReprojectionMirror.h` (the rule), `DenoiseStreams.h` (the §E measurement) and
+`StageAtrousDenoise.py` (the shader transform) — shared so the exhibit and the gate cannot drift; the exhibit
+harness (`DenoiseExhibit.cpp` + `RunDenoiseExhibit.sh`, seven kept sheets) is described below.
 `SlangCpuShim.h` gained additive read-only `.r/.g/.b/.a` and `vec4.rgb` proxies (the filter's tone map) — the
 shaderball sheet still re-renders to its committed hash `f84f6ac3…`, byte-identical.
 
@@ -625,6 +628,32 @@ its own ulp; and the "verify in M9" line from the plan's §5 (reuse re-evaluatin
 structurally — the filter carries no lobe vocabulary at all (§B32, one colour store site for every material,
 §B10–B11) and the three streams ride the same compiled kernel — but the in-kernel revalidation under real motion
 is a GPU-side check.
+
+### The visual exhibit — seven kept sheets
+
+A gate says the filter is right; a picture says what it does. `bash Exhibits/Workbench/Materials/RunDenoiseExhibit.sh`
+(192 px tiles, 2048 spp reference, ~50 s) renders seven sheets into `Exhibits/Gallery/Materials/` — listed with
+sizes and captions in that directory's README. They are not illustrations of the filter: they are the filter. The
+driver stages `AtrousDenoise.slang` with the *same* `StageAtrousDenoise.py` the gate uses, links the *same*
+`AtrousDenoiseMirror`, and drives the shader's own `main()` level by level exactly as `SwapchainExchange`'s
+dispatcher does; the reprojection sheet calls the *same* `ReprojectionMirror.h` the §D checks exercise; the chart
+sheet calls the *same* `DenoiseStreams::MeasureStream` the §E checks call. Three of those are now shared headers/
+scripts rather than copies, precisely so the sheets and the gate cannot drift apart.
+
+| Sheet | The M9 claim it makes visible |
+|---|---|
+| `DenoiseSheet_NoiseAndEdges.png` | a real 1-spp frame, filtered: mean \|error\| against a 2048-spp reference falls **0.1170 → 0.0295 (74.8 % removed)**, with the error maps auto-exposed and the variance-of-the-mean the filter reads |
+| `DenoiseSheet_IdentityAtConvergence.png` | the other half of the A/B: filtered vs unfiltered differ by 0 on **4566 of 36864 surface pixels** — every pixel the shipped early-out accepted — plus a 4× crop of the worst difference |
+| `DenoiseSheet_FadeOut.png` | the fade-out on a real frame: 0 % → 2 % → 5 % → 12 % of surface pixels leave the filter's hands as the estimate settles (1/16/128/2048 spp), each with its error map and mask |
+| `DenoiseSheet_AtrasLevels.png` | one noisy frame after 0–5 à-trous levels (tap step 1/2/4/8/16 px), including the coarse blotching the widest levels trade speckle for |
+| `DenoiseSheet_EdgeStops.png` | the three edge-stopping terms on/off at the deepest depth edge: silhouette and checker held, versus a ball bleeding into the wall |
+| `DenoiseSheet_Reprojection.png` | a 64-frame pan: pre-R7a same-pixel history vs R7a reprojection, the R2 motion field, the disocclusion map (25.2 % of surface pixels rejected at least once after frame 0) and the filtered result |
+| `DenoiseSheet_StreamAB.png` | §E as bars — MSE 92 % / 69 % / 91 % lower at 1 spp, and the acceptance curve per hold, drawn from the gate's own measurement function |
+
+Scene honesty, in the sheets' own footnote: the radiance is a one-bounce CPU path trace (checker ground, two
+spheres, wall, soft area light) accumulated by the shader's own recursion, so the noise is the scene's rather than
+a model of it; the *integrator* is not the ReSTIR kernel — no reservoirs, no reuse, no BVH — and the GPU-side
+end-to-end A/B stays on the backlog below.
 
 **Honest scope.** Same bar as K0–K5: compile-verified, render-pending-GPU. What is proven here is the live
 configuration, the filter's own mathematics, the reprojection rule and the A/B *on CPU-accumulated streams*
