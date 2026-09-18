@@ -14,7 +14,8 @@
 #    Both seat from ExternalPackages/ when the submodules are initialised, from an env override, or from the ~/.cache
 #    mirrors. Compiles TraversalIndex.cpp, the ONLY translation unit that defines TINYBVH_IMPLEMENTATION, together
 #    with the new InstanceAcceleration.cpp, so the two SIMD layouts cannot diverge across TUs.
-#    §⑨/⑩ (D9) also compile BlasBuildMirror.cpp — the CPU mirror the two GPU kernels are transcribed from and pinned to;
+#    §⑨/⑩ (D9) also compile BlasBuildMirror.cpp
+#    the CPU mirror the two GPU kernels are transcribed from and pinned to
 #    it holds the ONE definition of the quantiser (InstanceAcceleration.cpp's EncodeNode forwards to it).
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
@@ -55,6 +56,7 @@ if ! g++ -std=c++20 -O2 -Wall -Wextra -Werror -Wno-uninitialized -Wno-array-boun
      Engine/GeometricRaster/InstanceAcceleration.cpp \
      Engine/GeometricRaster/TraversalIndex.cpp \
      Engine/GeometricRaster/BlasBuildMirror.cpp \
+     Engine/GeometricRaster/BlasDevicePayload.cpp \
      Engine/ContentInterchange/MaterialSwatchStructure.cpp \
      Engine/DeviceExchange/OrientationClassifier.cpp \
      -o "$Bin" 2>/tmp/TwoLevelBvh.build; then

@@ -26,9 +26,11 @@
 //
 // ⚠️ NOT RUN ON A GPU. There is no Vulkan device in the development sandbox, so this file is compile-gated by
 //    Tools/Build/CheckShaders.sh and text-pinned by §⑩ of Exhibits/Workbench/Traversal/TwoLevelBvhProof.cpp; the CPU
-//    mirror it is transcribed from (BlasBuildMirror::RefitLevelOrder) is what §⑨ actually executes. Host wiring still
-//    owed: a device buffer for the deformed soup, a per-BLAS level table, one descriptor set of the five bindings below,
-//    and the dispatch loop — see Docs/DynamicGeometry.md §5.
+//    mirror it is transcribed from (BlasBuildMirror::RefitLevelOrder) is what §⑨ actually executes. The host's half is
+//    written down and gated too — `Engine/GeometricRaster/BlasDevicePayload.{h,cpp}` holds this kernel's push block, the
+//    deformed-soup and level-table packers, and the dispatch plan §⑨i checks (leaves, then one dispatch per level from
+//    the table's deepest down to 0) — so what remains for a device session is the Vulkan plumbing around it: buffers,
+//    descriptors, barriers, and the run itself. See Docs/DynamicGeometry.md §5.
 //
 // NOTE: GLSL source lowered by glslc -fshader-stage=compute.
 #version 460

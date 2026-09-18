@@ -142,6 +142,12 @@ deformed vertices and refits; the animation system owns everything before that b
   | clustered: count-balanced bins + SAH|  4 681 | 15.8 ms | 19.73 ms |        165 229 |       26.4 %|
   | **shipped: octant + the format rule**| **7 185** | **12.5 ms** | **10.11 ms** |     **63 462** |   **46.7 %**|
 
+  ⚠️ One number in that table is honest about its own spread: the walk clock for the two octant rows has read 12.36/12.36,
+  12.84/13.57 and 12.84/14.91 ms across runs on this 2-core box — a ~20 % swing that no best-of-five removes, because it
+  is another process on the box rather than noise inside the walk. §⑨g therefore bounds that pair at 25 % (its first 10 %
+  failed on the coin flip) and keeps the terms that are decisive: the halved arena, the faster build, and the clustered
+  rule's ≥ 1.4× walk, which is outside the spread by a wide margin.
+
   The two rules a wide format turned out to need are about the FORMAT, not about clustering: (1) a range that fits one
   node's eight leaf slots — 24 triangles — becomes runs of three and is never recursed into; (2) past the Morton bits a
   range too large for that is cut into eight count-balanced pieces, not into up to 64 octant children for a node with 8
@@ -313,19 +319,32 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
   in-place refit of the packed layout plus the displacement-driven rebuild policy. Acceptance: a moving/deforming scene
   renders correct shadows and reflections with the frame budget printed, and the CPU mirror reproduces the same images.
   ⚠️ The GPU half of that acceptance sentence — the kernel-side refit and a rendered frame — is still owed.
-- **D9 — GPU refit / GPU build kernels — WRITTEN, COMPILED, PINNED, MEASURED ON THE CPU; NOT RUN.** `Engine/Shaders/BlasRefit.slang`
+- **D9 — GPU refit / GPU build kernels — WRITTEN, COMPILED, PINNED, MEASURED ON THE CPU, HOST HALF BUILT; NOT RUN.** `Engine/Shaders/BlasRefit.slang`
   (two stages: rewrite the leaf records from the deformed soup, then re-quantise one dispatch per level, deepest first)
   and `Engine/Shaders/BlasBuild.slang` (five stages: Morton prepass · per-level octant partition · childBase scan ·
   emit · leaf runs), both lowering through `Tools/Build/CheckShaders.sh` (15/15) and both pinned to the CPU mirror by
-  §⑩ of the two-level gate (B1–B40: the layout bytes, the interior test, the exponent rounding, the unary counts, the
-  rank rule, the block units of triangleBase, the CMake entries that keep them in the compile gate).
+  §⑩ of the two-level gate (B1–B78: the layout bytes, the interior test, the exponent rounding, the unary counts, the
+  rank rule, the block units of triangleBase, the CMake entries that keep them in the compile gate, and the host half).
   ⚠️ The build is the octant partition plus the format rule, not H-PLOC's cluster merge — and §5 has the measurement
   that says why the top-down clustering variant is not what to ship (it walks 60–95 % slower). What the shipped rule
   costs: 7 185 nodes for 63 854 triangles, 46.7 % of the wide slots empty, 3.9× fewer nodes and 14 % faster to build
   than D9's first attempt, at the same traversal work. The empty slots are the remaining quality gap, and closing it is
   an H-PLOC-shaped job (merge siblings that are already spatially close, bottom-up) rather than another split heuristic.
-  ⚠️ Nothing here has been compiled by `slangc` or executed on a device: the sandbox has no Vulkan. Left: **one GPU
-  run**, plus the host wiring (a deformed-soup buffer, a level table, one descriptor set per kernel, the dispatch loop).
+  **The host half is built and gated.** `Engine/GeometricRaster/BlasDevicePayload.{h,cpp}` carries what the two kernels
+  are dispatched with, as types the CPU can build: the build's 48 B push block and the refit's 16 B one (`static_assert`s,
+  pinned field for field to the shader text), the scratch size as ONE expression their Stride constants share
+  (`8 + 24 × node slots`), the soup in the layout the kernels index (3 vec4 = 12 floats per triangle — §⑨h's first run
+  caught that unit slip as a heap overflow), the level table the refit counts down (`PackBlasLevels` widens `LevelsOf`'s
+  uint16 to the kernel's uint32 with 0xFFFFFFFF for a slot the tree cannot reach), and the **dispatch plan** — the host's
+  loop as data: §⑨i checks 44 build dispatches (`prepass`, then `partition · scan · emit` per level, then `runs`) under a
+  level cap of 14 for the 8 levels this level has, and 9 refit dispatches whose levels run 7,6,…,0, each exactly once
+  and deepest first, because a repeated level would re-quantise a node from a child that moved. The plan's `Groups == 1`
+  entries are the build's two single-workgroup stages, which is why §⑩ pins the guard lines that make them single-threaded
+  — parallelise one and the plan has to change with it. **And the engine's source batch now compiles the three D6–D9 TUs**
+  (`InstanceAcceleration.cpp` had been called from `SwapchainExchange.cpp` since D6 with no target compiling it); each was
+  compile-checked standalone under the engine's own include paths and flags before registration, which B76–B78 pin.
+  ⚠️ Nothing here has been compiled by `slangc` or executed on a device: the sandbox has no Vulkan. Left: **one GPU run**,
+  plus the Vulkan plumbing itself (buffers, descriptor sets, barriers), which is what a device session is for.
 - **D10 — ReSTIR integration.** Motion vectors already follow `PreviousWorld`; for dynamic objects the reservoir
   validation should use instance/primitive identity plus the previous transform, so a moving object's history is
   rejected on genuine disocclusion and kept when it merely moved.

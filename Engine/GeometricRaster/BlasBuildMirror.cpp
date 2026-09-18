@@ -35,7 +35,7 @@ namespace
 {
     constexpr uint32_t kNodeBlocks = BlasBuildMirror::kNodeBlocks;   // 5
     constexpr uint32_t kTriBlocks  = BlasBuildMirror::kTriBlocks;    // 3
-    constexpr uint32_t kMortonDepth = 10u;                           // 30 bits, 3 per level
+    constexpr uint32_t kMortonDepth = BlasBuildMirror::kMortonDepth;  // 30 bits, 3 per level — the kernel's own depth
 
     inline const uint8_t* NodeBytes(const float* Node) noexcept { return reinterpret_cast<const uint8_t*>(Node); }
     inline uint8_t* NodeBytes(float* Node) noexcept { return reinterpret_cast<uint8_t*>(Node); }

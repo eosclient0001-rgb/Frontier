@@ -101,6 +101,10 @@ namespace Frontier
         // The packed layout this mirror emits and reads: 5 float4 per node, 3 per triangle. Stated here because the
         //    kernels index with the same constants and a mismatch is silent (the node's block stride is what the
         //    traversal multiplies child indices by).
+        // The Morton code is 30 bits, 3 per level, and the device kernel's kBlasMortonDepth is the same 10 — §⑩ pins
+        //    the pair, because "past the last level" is where the octant read has to be guarded (B49).
+        static constexpr uint32_t kMortonDepth   = 10u;
+        static constexpr uint32_t kLeafSlots     = 8u;   // the wide node's slot count — the build's fan-out cap
         static constexpr uint32_t kNodeBlocks = 5u;
         static constexpr uint32_t kTriBlocks  = 3u;
         static constexpr uint32_t kMaxTrianglesPerLeaf = 3u;

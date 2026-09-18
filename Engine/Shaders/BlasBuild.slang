@@ -91,8 +91,9 @@ layout(std430, binding = 6) buffer BlasLevelExtent   { uint BlasLevels[]; };  //
 const uint kBlasScratchHeader = 8u;
 const uint kBlasScratchStride = 24u;
 
-// 64 B. The object AABB comes from the host: it has one already (InstanceAcceleration::QueryBlasObjectAabb), and a
-//    device-side reduction over the soup would be a second implementation of the same normalisation.
+// 48 B — four uints, then two vec4 (16-byte aligned): 16 + 16 + 16. The object AABB comes from the host: it has one
+//    already (InstanceAcceleration::QueryBlasObjectAabb), and a device-side reduction over the soup would be a second
+//    implementation of the same normalisation.
 layout(push_constant) uniform BlasBuildConstants
 {
     uint Stage;         // [-]   0 prepass · 1 partition · 2 scan · 3 emit · 4 runs
