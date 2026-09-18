@@ -92,6 +92,25 @@ Tick a pass to include it in the **Run Erosion** pipeline; press its
 **Simulate** button to apply it to the *current* terrain alone (no
 reset). The default pipeline is `Fluvial → Debris → Braided → Micro`.
 
+
+### 2c. Particle Droplet Hydraulic Erosion & Anti-Hole Carve Limiting
+Discrete agent-based water droplet simulation running directly on the SDF field:
+- **Root Cause of the Deep Hole Problem:** Unbounded particle engines drill vertically into a single cell over repeated frames because capacity remains positive and local slope drops vertically.
+- **The Solution:**
+  1. **Voxel-Matched CFL Limit:** Every single carve step is strictly clamped to a resolution-matched fraction of the local voxel size (`cutFraction × voxel * 0.45`).
+  2. **Per-Droplet Lifetime Carve Budget:** Drops cannot dig deeper than a fixed cumulative volume before being forced to deposit or exit.
+  3. **Continuous Bilinear Gradients:** Sub-voxel continuous bilinear sampling of $-\nabla h$ eliminates stair-step edge trapping.
+  4. **Smooth 3×3 Gaussian Carve & 5×5 Fan Deposition:** Avoids 1-cell slits, creating realistic U/V-shaped rills and flat basin fills.
+
+### 2d. Interactive 3D SDF Surface Sculpting
+Real-time 3D brush tools operating directly on the signed-distance volume:
+- **Ridge / Raise:** Adds smooth organic volume with cubic hermite falloff.
+- **Dent / Carve:** Carves valleys and riverbeds with bounded bed floors.
+- **Smooth:** Local Laplacian relaxation filter that removes artificial sharp notches.
+- **Flatten:** Drives terrain towards the initial contact elevation (plateau creation).
+- **Rock Texture:** Multi-octave Perlin noise micro-displacement for cliff roughness.
+- Features real-time brush ring cursor projected onto the SDF mesh, drag stroke interpolation, radius, strength, and falloff controls.
+
 ### 3. Splatmaps (Gaea-style channels → 5 layers)
 Channels derived from the eroded SDF: **height · slope · curvature ·
 flow · erosion · sediment · peaks · points**. A channel **preview**
