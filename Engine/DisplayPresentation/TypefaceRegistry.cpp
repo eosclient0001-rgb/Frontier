@@ -4,6 +4,7 @@
 // 🧩 Font family / weight registry — FontCodec discovery → ImGui faces. See TypefaceRegistry.h.
 
 #include "TypefaceRegistry.h"
+#include "../ContentInterchange/AssetResolution.h"
 #include "imgui.h"
 #include <algorithm>
 #include <cstdlib>
@@ -55,7 +56,8 @@ void* TypefaceRegistry::LoadFace(const std::string& Path) noexcept
     Config.OversampleV = 1;
     Config.PixelSnapH  = false;
     // Legacy (static-atlas) backends need a size; dynamic-atlas backends ignore it and rasterise per draw size.
-    ImFont* Font = IO.Fonts->AddFontFromFileTTF(Path.c_str(), 16.0f, &Config);
+    const std::string Resolved = ResolveAssetText(Path);   // font archives are repository-relative too
+    ImFont* Font = IO.Fonts->AddFontFromFileTTF(Resolved.c_str(), 16.0f, &Config);
     return Font;
 }
 
@@ -65,7 +67,8 @@ uint32_t TypefaceRegistry::Load(std::string_view ArchiveRoot) noexcept
     Loaded = true;
     if (ImGui::GetCurrentContext() == nullptr) return 0u;
 
-    Codec.ScanDirectory(ArchiveRoot);
+    // The archive root is repository-relative; resolve it so a launch from outside the root still finds faces.
+    Codec.ScanDirectory(ResolveAssetText(std::string(ArchiveRoot)));
 
     for (const char* Wanted : PreferredFamilies)
     {

@@ -1316,6 +1316,14 @@ bool SwapchainExchange::BringComputePipeline() noexcept
         BindingFlags[TextureBinding] = static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
         BindingFlags[16u]            = static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
         BindingFlags[17u]            = static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
+        // ⚠️ 25/26 are the indirect pool's ping-pong (kFeatureGiReuse) and they are rewritten every frame for exactly
+        //    the same reason 16/17 are: the pair swaps as history/target. They were added after the flags above and
+        //    never joined them, so every frame rewrote a binding on a set still pending on the previous frame's
+        //    command buffer — VUID-vkUpdateDescriptorSets-None-03047, which the validation layer reported ten times
+        //    before hitting its duplicate limit. Without UPDATE_AFTER_BIND the write is undefined behaviour, not just
+        //    a warning: the dispatch may read whichever buffer the driver happened to leave bound.
+        BindingFlags[25u]            = static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
+        BindingFlags[26u]            = static_cast<VkDescriptorBindingFlags>(VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT);
     }
     VkDescriptorSetLayoutBindingFlagsCreateInfo FlagsInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO };
     FlagsInfo.bindingCount  = kComputeBindingCount;

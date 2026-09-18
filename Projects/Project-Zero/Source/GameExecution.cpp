@@ -7,8 +7,11 @@
 //        showroom — P0 spatial-interface level, exported once from ShowroomStructure then imported like any other
 //        materials — the material library level (M10): 42 swatch spheres (plastics → coat → metals → glass →
 //                    subsurface → cloth/specials) plus three sign panels, exported once from MaterialSwatchStructure
-//        showcase — 100-object analytical field, exported once from RayTracingSolver::ConstructShowcaseScene
-//        default  Projects/Project-Zero/Content/Scenes/Showcase.gltf — regenerated from RayTracingSolver when missing
+//        showcase — the default level: a 6x6 grid of OpenPBR spheres (anisotropic metals, IOR glass, subsurface,
+//                    coat, cloth/fuzz, thin film, haziness, EON, emission, glints) over a scattered field of boxes,
+//                    cylinders and cones, lit by two area luminaires. Exported once from ShowcaseStructure.
+//        default  Projects/Project-Zero/Content/Scenes/Showcase.gltf — regenerated from ShowcaseStructure when the
+//                 file is missing OR was written by an older kShowcaseRevision
 //                 (the Cornell box stays one --scene path away, untouched as the reference).
 //        Sponza   Projects/Project-Zero/Content/Scenes/Sponza/Sponza.gltf (fetched by the build script, not committed).
 
@@ -29,6 +32,7 @@
 #include "../../../Engine/DisplayPresentation/ConfigurationRegistry.h"
 #include "../../../Engine/DisplayPresentation/DiagnosticInspector.h"
 #include "../../../Engine/ContentInterchange/ContentCodec.h"
+#include "../../../Engine/ContentInterchange/AssetResolution.h"
 #include "../../../Engine/GeometricRaster/SceneStructure.h"
 #include "../../../Engine/GeometricRaster/TraversalIndex.h"
 #include "../../../Engine/GeometricRaster/InstanceAcceleration.h"   // D6/D7 two-level: BLASes + instance top level
@@ -36,6 +40,7 @@
 #include "RayTracingSolver.h"
 #include "../../../Engine/ContentInterchange/ShaderballPreview.h"
 #include "../../../Engine/ContentInterchange/ShaderBallStructure.h"
+#include "../../../Engine/ContentInterchange/ShowcaseStructure.h"
 #include "../../../Engine/ContentInterchange/MaterialSwatchStructure.h"
 #include "ShowroomStructure.h"
 #include "EditorFeedSequence.h"
@@ -89,6 +94,16 @@ int main(int argc, char** argv)
     if (ScenePath == "showcase")   ScenePath = "Projects/Project-Zero/Content/Scenes/Showcase.gltf";
     bool DropScene = false;
     if (ScenePath == "drop") { ScenePath = "Projects/Project-Zero/Content/Scenes/ShowroomDrop.gltf"; DropScene = true; }   // D4 physics level
+
+    // Anchor every repository-relative path to the content root before anything opens a file. Levels are exported
+    //    once and then imported forever, so a run whose working directory is not the repository root would otherwise
+    //    export a SECOND copy of the level next to the executable and read that one — which is exactly how the
+    //    renderer ended up showing a stale Showcase while the repository held a newer one.
+    {
+        const std::filesystem::path ContentRoot = Frontier::QueryContentRoot();
+        if (!ContentRoot.empty() && !std::filesystem::path(ScenePath).is_absolute())
+            ScenePath = (ContentRoot / ScenePath).string();
+    }
 
     //──────────────────────────────────────────────────────────────────────────
     // Telemetry sink
@@ -150,22 +165,27 @@ int main(int argc, char** argv)
                 std::cerr << "[Scene] Outdoor export failed: " << Error << "\n";
         }
 
+        // The showcase is authored as OpenPBR slabs (ShowcaseStructure), NOT through the analytical solver. The old
+        //    path went through ReSTIRIntegrator::BuildMaterialDescriptors, which pins SpecularWeight = 0 to protect the
+        //    Cornell reference — so every showcase object arrived Lambertian, and the level carried no emissive
+        //    triangle at all ("0 luminaires"), which is what left it with neither shadows nor indirect light.
+        //
+        //    kShowcaseRevision is stamped into the file name so an existing Showcase.gltf from the previous structure
+        //    is not silently reused. Export-once-then-import only works if "once" can be invalidated when the level
+        //    itself changes; without this the old file wins forever and the new materials never appear.
         const bool IsShowcase = ScenePath.find("Showcase.gltf") != std::string::npos;
-        if (IsShowcase && !std::filesystem::exists(ScenePath, FsError))
+        if (IsShowcase)
         {
-            std::filesystem::create_directories(std::filesystem::path(ScenePath).parent_path(), FsError);
-            Frontier::ProjectZero::RayTracingSolver Field;
-            Field.ConstructShowcaseScene();
-            std::string Error;
-            Frontier::SceneEncodeConfiguration ShowcaseNaming{};
-            ShowcaseNaming.Name  = "Showcase";
-            ShowcaseNaming.Spans = &Field.QuerySpans();
-            if (Frontier::SceneCodec::Encode(ScenePath, Frontier::ReSTIRIntegrator::BuildTriangleIndex(Field),
-                                             Frontier::ReSTIRIntegrator::BuildMaterialDescriptors(Field), &Error,
-                                             ShowcaseNaming))
-                std::cerr << "[Scene] Exported the showcase scene to " << ScenePath << "\n";
-            else
-                std::cerr << "[Scene] Showcase export failed: " << Error << "\n";
+            const std::filesystem::path Folder = std::filesystem::path(ScenePath).parent_path();
+            ScenePath = (Folder / "Showcase.gltf").string();
+            if (!std::filesystem::exists(ScenePath, FsError) || !Frontier::ShowcaseIsCurrent(ScenePath))
+            {
+                std::filesystem::create_directories(Folder, FsError);
+                Frontier::ShowcaseStructure Showcase; Showcase.Construct();
+                std::string Error;
+                if (Showcase.Export(ScenePath, &Error)) std::cerr << "[Scene] Exported the showcase level to " << ScenePath << "\n";
+                else                                    std::cerr << "[Scene] Showcase export failed: " << Error << "\n";
+            }
         }
 
         const bool IsShaderBall = ScenePath.find("ShaderBall.gltf") != std::string::npos;
@@ -1018,6 +1038,11 @@ int main(int argc, char** argv)
     Frontier::EditorProperty* TintMirror  = nullptr;
     uint32_t                 AppliedOrbit = 0u;
 
+    // Performance-telemetry accumulators (the 5 s window the loop reports over; see the block at the end of the loop).
+    float    PerformanceWindow      = 0.0f;   // [s]
+    uint32_t PerformanceSampleCount = 0u;     // [frames]
+    float    PerformancePeakSeconds = 0.0f;   // [s] worst single frame in the window — the number a mean always hides
+
     while (!Surface.CloseRequested() && !Panel.Convert<bool>())
     {
         const auto  NowTime = Clock::now();
@@ -1783,6 +1808,70 @@ int main(int argc, char** argv)
             const auto Coarse   = Deadline - std::chrono::milliseconds(1);
             if (Clock::now() < Coarse) std::this_thread::sleep_until(Coarse);
             while (Clock::now() < Deadline) { }
+        }
+
+        //──────────────────────────────────────────────────────────────────────
+        // Performance telemetry — CPU frame pacing and the GPU stage timings
+        //──────────────────────────────────────────────────────────────────────
+        // Written on a wall-clock cadence rather than a frame count so the cost of the logging itself does not scale
+        //    with frame rate, and so a run that stalls still produces rows (a frame-count cadence goes quiet exactly
+        //    when the timings would be most interesting).
+        //
+        //    The GPU numbers are real device timestamps, not CPU-side guesses: VisibilityExchange writes them from
+        //    its query pool around each stage, so "Kernel 6.2 ms" is the ReSTIR dispatch measured on the GPU. They
+        //    read as zero until the pool has a completed frame to report, which is why Valid is checked.
+        {
+            PerformanceSampleCount += 1u;
+            PerformanceWindow      += Δτ;
+            PerformancePeakSeconds  = std::max(PerformancePeakSeconds, Δτ);
+
+            if (PerformanceWindow >= 5.0f && PerformanceSampleCount > 0u)
+            {
+                const Frontier::VisibilityTelemetry& G = Surface.QueryVisibilityTelemetry();
+                const float MeanMs = 1000.0f * PerformanceWindow / static_cast<float>(PerformanceSampleCount);
+                const float PeakMs = 1000.0f * PerformancePeakSeconds;
+
+                char Line[512];
+                std::snprintf(Line, sizeof(Line),
+                              "CPU %.2f ms/frame (%.1f fps, worst %.2f ms over %u frames), RSS %.0f MiB",
+                              static_cast<double>(MeanMs),
+                              static_cast<double>(Telemetry.QueryAverageFramesPerSecond()),
+                              static_cast<double>(PeakMs), PerformanceSampleCount,
+                              static_cast<double>(Telemetry.QueryResidentMebibytes()));
+                Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Performance", Line);
+
+                if (G.Valid)
+                {
+                    const float GpuTotal = G.CullMilliseconds + G.RasterMilliseconds + G.HiZMilliseconds
+                                         + G.ResolveMilliseconds + G.KernelMilliseconds + G.ShadowMilliseconds
+                                         + G.SkyMilliseconds + G.VolumeMilliseconds;
+                    std::snprintf(Line, sizeof(Line),
+                                  "GPU %.2f ms total | cull %.2f · raster %.2f · HiZ %.2f · resolve %.2f · "
+                                  "ReSTIR %.2f · shadow %.2f · post %.2f · sky %.2f · volume %.2f",
+                                  static_cast<double>(GpuTotal),
+                                  static_cast<double>(G.CullMilliseconds),   static_cast<double>(G.RasterMilliseconds),
+                                  static_cast<double>(G.HiZMilliseconds),    static_cast<double>(G.ResolveMilliseconds),
+                                  static_cast<double>(G.RestirMilliseconds), static_cast<double>(G.ShadowMilliseconds),
+                                  static_cast<double>(G.PostMilliseconds),   static_cast<double>(G.SkyMilliseconds),
+                                  static_cast<double>(G.VolumeMilliseconds));
+                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "GpuTiming", Line);
+
+                    std::snprintf(Line, sizeof(Line),
+                                  "Clusters %u tested -> %u frustum, %u cone, %u visible | draws %u+%u, %u triangles",
+                                  G.ClusterTotal, G.FrustumPassed, G.ConePassed, G.OcclusionPassed,
+                                  G.PhaseOneDraws, G.PhaseTwoDraws, G.TrianglesDrawn);
+                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Visibility", Line);
+                }
+                else
+                {
+                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Warning, "GpuTiming",
+                                         "Device timestamps unavailable - the query pool reported no completed frame.");
+                }
+
+                PerformanceWindow      = 0.0f;
+                PerformanceSampleCount = 0u;
+                PerformancePeakSeconds = 0.0f;
+            }
         }
 
         // Keep the on-disk telemetry current even if the process is killed mid-run.

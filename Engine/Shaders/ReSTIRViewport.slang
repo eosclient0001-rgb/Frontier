@@ -816,6 +816,19 @@ const float kSunPickProbability = 0.5;   // when sun and lamps coexist, each can
 const uint  kSunLightIndex      = 0xFFFFFFFFu;   // SelectedLight sentinel: the sample is a sun direction, not a triangle
 const float kSunShadowDistance  = 1.0e4;   // [m] the far point sun samples are stored as — past any scene, inside float range
 
+// Indirect-contribution bound. Applied to every term the BOUNCE adds to the image (its NEE arms and the GI pool's
+//    shade), never to the primary hit's direct lighting — clamping direct light would visibly darken a surface that
+//    legitimately faces a bright luminaire, whereas an indirect sample this large is always a sampling artefact.
+const float kIndirectFireflyBound = 64.0;
+
+vec3 BoundIndirect(vec3 contribution)
+{
+    // Scale the whole colour by its peak rather than clamping per channel: a per-channel min() would shift the hue
+    //    of any sample that crosses the bound in one channel only, turning a white firefly into a coloured one.
+    float peak = max(contribution.r, max(contribution.g, contribution.b));
+    return peak > kIndirectFireflyBound ? contribution * (kIndirectFireflyBound / peak) : contribution;
+}
+
 // Solid angle of the solar disc. Half-angle form, not 2π(1−cosθ): at 0.0046 rad the subtraction cancels to a
 //    1 % error in float, and this Ω divides every sun weight — the bias would land directly on the sunlight.
 float SunSolidAngle()
@@ -1753,6 +1766,17 @@ void main()
             bool enteredSolid = solidPrimary && bounce.z < 0.0;
             vec3 throughput = EvaluateBsdf(shading, layers, woLocal, bounce.xyz) * abs(bounce.z) / bounce.w;   // K3: f · |cosθ| / pdf — the full-sphere T measure is symmetric (R: wi.z > 0, bit-identical)
             throughput = min(throughput, vec3(8.0));   // K4: firefly clamp (CPU mirror — softboxes through smooth glass)
+            // ⚠️ The throughput clamp above does NOT bound what the bounce's NEE adds. Those estimators divide by
+            //    (dist² + 0.01) and multiply by the emitter area and the slot count, so a bounce landing a few
+            //    centimetres from a luminaire — or one whose cosL grazes zero on the light's own plane — returns a
+            //    value orders of magnitude above the local mean. One such sample per few thousand frames is a
+            //    firefly: a single pixel that flares white and then decays as the running mean dilutes it. Sunset is
+            //    where it showed, because that is when the sun stops dominating and the mesh-light arm starts
+            //    winning the coin, so this indirect path carries the image.
+            //
+            //    The bound is on the CONTRIBUTION, not the estimator, and it is generous (well above any legitimate
+            //    indirect sample at these exposures) so converged energy is untouched — it only removes the tail
+            //    that the running mean cannot average away in a viewer's lifetime.
             Ray  bounceRay;
             // K4: solid segments take a pure ray offset (CPU mirror — the normal term lands on-surface at near-normal
             // exits and re-hits the exit face); foil/R keep the K3 ray-side normal offset.
@@ -1828,8 +1852,8 @@ void main()
                         && bShading.TransmissionWeight <= 0.0
                         && bShading.SssWeight <= 0.0;
                     if (giPoolOwns)
-                        accumulatedRadiance += throughput * GiPoolShade(bFrame, bShading, bLayers, bWo, bHitPos,
-                                                                        hitNormal, primaryT, primaryIdentity, pixel, sunUp, seed);
+                        accumulatedRadiance += BoundIndirect(throughput * GiPoolShade(bFrame, bShading, bLayers, bWo, bHitPos,
+                                                                        hitNormal, primaryT, primaryIdentity, pixel, sunUp, seed));
                     else if (true)
                     {
                     // The bounce draws one light the same way the reservoir candidates do — sun or lamp by the same
@@ -1847,7 +1871,7 @@ void main()
                         {
                             vec3  bF = EvaluateBsdf(bShading, bLayers, bWo, bWi);
                             float pPick = LightTriangleCount > 0u ? kSunPickProbability : 1.0;
-                            accumulatedRadiance += throughput * bF * SunEmission() * bCos * SunSolidAngle() / pPick;
+                            accumulatedRadiance += BoundIndirect(throughput * bF * SunEmission() * bCos * SunSolidAngle() / pPick);
                         }
                     }
                     else
@@ -1874,8 +1898,8 @@ void main()
                             //    by slots·area. The old line divided by bSlots (a defended-in-comment inversion),
                             //    which paid the whole second bounce divided by N² and forgot the area too.
                             float pMesh = sunUp ? 1.0 - kSunPickProbability : 1.0;
-                            accumulatedRadiance += throughput * bF * bLEmit * bCos * bCosL
-                                                 * Luminaires[bLi].Area * float(bSlots) / ((bDist2 + 0.01) * pMesh);
+                            accumulatedRadiance += BoundIndirect(throughput * bF * bLEmit * bCos * bCosL
+                                                 * Luminaires[bLi].Area * float(bSlots) / ((bDist2 + 0.01) * pMesh));
                         }
                     }
                     }
@@ -1893,7 +1917,7 @@ void main()
                             {
                                 vec3  vF = EvaluateBsdf(bShading, bLayers, bWo, vWi);
                                 float vPick = LightTriangleCount > 0u ? kSunPickProbability : 1.0;
-                                accumulatedRadiance += throughput * vF * SunEmission() * vCos * SunSolidAngle() / vPick;
+                                accumulatedRadiance += BoundIndirect(throughput * vF * SunEmission() * vCos * SunSolidAngle() / vPick);
                             }
                         }
                         else
@@ -1912,8 +1936,8 @@ void main()
                                 float vDist2 = vDist * vDist;
                                 vec3  vF = EvaluateBsdf(bShading, bLayers, bWo, vWi);
                                 float vMesh = sunUp ? 1.0 - kSunPickProbability : 1.0;
-                                accumulatedRadiance += throughput * vF * LightEmission(vLi) * vCos * vCosL
-                                                     * Luminaires[vLi].Area * float(vSlots) / ((vDist2 + 0.01) * vMesh);
+                                accumulatedRadiance += BoundIndirect(throughput * vF * LightEmission(vLi) * vCos * vCosL
+                                                     * Luminaires[vLi].Area * float(vSlots) / ((vDist2 + 0.01) * vMesh));
                             }
                         }
                     }

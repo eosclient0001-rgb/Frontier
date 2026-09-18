@@ -10,6 +10,7 @@
 #include <stb_image.h>
 
 #include "TextureIndex.h"
+#include "AssetResolution.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -182,15 +183,20 @@ uint32_t TextureIndex::Decode(uint32_t MaximumEdge, std::vector<std::string>* Re
         TextureDescriptor& T = Textures[I];
 
         int W = 0, H = 0, Channels = 0;
+        // ⚠️ Resolve before opening. A path like "EngineContent/CelestialTextures/luna_2k.jpg" is repository-relative,
+        //    and stb opens it against the WORKING DIRECTORY — which is the repository root only when the process was
+        //    launched from there. Running the mirrored Build\Project-Zero.exe failed every one of these opens and the
+        //    moons fell back to 1x1 placeholders (a pale, textureless disc) while the log said "can't fopen".
+        const std::string Opened = T.Path.empty() ? std::string() : ResolveAssetText(T.Path);
         const bool Hdr = T.Path.empty() ? stbi_is_hdr_from_memory(P.Encoded.data(), static_cast<int>(P.Encoded.size())) != 0
-                                        : stbi_is_hdr(T.Path.c_str()) != 0;
+                                        : stbi_is_hdr(Opened.c_str()) != 0;
         void* Pixels = nullptr;
         if (Hdr)
             Pixels = T.Path.empty() ? static_cast<void*>(stbi_loadf_from_memory(P.Encoded.data(), static_cast<int>(P.Encoded.size()), &W, &H, &Channels, 4))
-                                    : static_cast<void*>(stbi_loadf(T.Path.c_str(), &W, &H, &Channels, 4));
+                                    : static_cast<void*>(stbi_loadf(Opened.c_str(), &W, &H, &Channels, 4));
         else
             Pixels = T.Path.empty() ? static_cast<void*>(stbi_load_from_memory(P.Encoded.data(), static_cast<int>(P.Encoded.size()), &W, &H, &Channels, 4))
-                                    : static_cast<void*>(stbi_load(T.Path.c_str(), &W, &H, &Channels, 4));
+                                    : static_cast<void*>(stbi_load(Opened.c_str(), &W, &H, &Channels, 4));
         if (!Pixels || W <= 0 || H <= 0)
         {
             if (Report) Report->push_back("texture '" + T.Name + "': " + (stbi_failure_reason() ? stbi_failure_reason() : "decode failed") + " -> 1x1 placeholder");

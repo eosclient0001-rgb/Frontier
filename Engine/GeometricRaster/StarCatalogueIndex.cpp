@@ -3,6 +3,7 @@
 //============================================================================================================================================
 
 #include "StarCatalogueIndex.h"
+#include "../ContentInterchange/AssetResolution.h"
 
 #include <algorithm>
 #include <cmath>
@@ -57,7 +58,10 @@ bool StarCatalogueIndex::Load(const std::string& Path) noexcept
     Cells.clear();
     SourceCount = 0u;
 
-    std::ifstream File(Path, std::ios::binary);
+    // Repository-relative, like every other content path: resolved against the working directory first and then the
+    //    executable's parent chain. Opening Path verbatim meant the catalogue only loaded when the process happened
+    //    to start at the repository root — every other launch reported an empty catalogue and a starless sky.
+    std::ifstream File(ResolveAsset(Path), std::ios::binary);
     if (!File) return false;
 
     uint32_t Header[4]{};
