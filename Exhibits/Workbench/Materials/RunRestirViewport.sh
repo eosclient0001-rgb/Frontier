@@ -92,8 +92,11 @@ Render movingoff "--spp $Spp --frames $Frames --restir --taps 2 --row 3 --drift 
 #    budget where the noise is common to both arms, measures 1.94x. The excursion RETURNS to the rest pose, so the
 #    matched-budget render of the untouched level IS what the closing frame should look like: the ghost is the
 #    difference, and only the difference.
-Render movingref "--spp $Spp --frames $Frames --row 3" \
-       "⑧ ground truth — the level untouched, same budget and pose"
+# ⚠️ The ground truth must be the SAME ESTIMATOR (--restir --taps 2), not ①'s brute force: two different estimators
+#    differ by far more than a ghost does, and the first version of this panel measured exactly that mistake (3 803 vs
+#    3 508, noise-dominated, with the ON arm apparently worse). Static ReSTIR at the same budget, same pose.
+Render movingref "--spp $Spp --frames $Frames --restir --taps 2 --row 3" \
+       "⑧ ground truth — the level untouched, same estimator, budget and pose"
 
 echo "[RestirSheet] error against ① (display space, RMSE / normalised), and the R7a tell of the pan pair:"
 # ⚠️ The D10 panels are CROPPED (--row 3) and are therefore not comparable with ①: they get their own block below.

@@ -3,7 +3,8 @@
 Date: 2026-09-17 · Branch: `arena/01a0af43-slate` · Gates: `CheckMaterialsProof.sh` (dependency-free) ·
 `CheckMaterialCodec.sh` (interchange headers) · `CheckMaterialScenes.sh` · `CheckMaterialSwatches.sh` ·
 `CheckMaterialDenoise.sh` · `CheckMaterialInspector.sh` (needs the inspector's UI headers — not seated in this
-sandbox, so that one gate is RED for environment, not for regression)
+sandbox, so that one gate is RED for environment, not for regression) · `CheckTemporalIdentity.sh` (D10, the same
+estimator with moving geometry)
 
 Each gate compiles its CPU proofs with the system compiler (no Vulkan, no GPU, no window; third-party headers come
 from `ExternalPackages/` or the `~/.cache` mirrors) and runs them with fixed seeds, so every number below is
@@ -11,7 +12,8 @@ from `ExternalPackages/` or the `~/.cache` mirrors) and runs them with fixed see
 `/tmp/MaterialCodec.log`, `/tmp/MaterialScenes.log`, `/tmp/MaterialSwatches.log`, `/tmp/MaterialDenoise.log`).
 
 **Score: 110 coverage + 3,556 furnace + 211 codec + 158 inspector + 229 editable inspector + 102 scene + 65 swatch
-+ 97 denoise checks, 0 failures (the inspector pair as shipped; its gate needs UI headers absent here).**
++ 97 denoise checks + 10 identity checks, 0 failures (the inspector pair as shipped; its gate needs UI headers absent
+here).**
 
 ---
 
@@ -591,6 +593,7 @@ shaderball sheet still re-renders to its committed hash `f84f6ac3…`, byte-iden
 | B | **text pins** for what cannot be compiled standalone — `ReSTIRViewport.slang`'s accumulation + reprojection sites (bindless tables + BVH), the dispatcher's 5-level chain, the push constants, and the filter's lobe-agnosticism | 33 (B0–B32) |
 | C | the **compiled filter**: transform re-derived byte for byte, identity switch, uniform pass-through, the two A/B cases, early-out ≡ full tap loop, edge stopping, variance propagation | 21 (C0.1–C6.4) |
 | D | the **reprojection rule** mirrored from `ResolveSurface`: static identity, tracked translation, off-screen disocclusion, 25° normal / 10 % depth validation, background, feature-off = pre-R7a | 9 (D1–D9) |
+| D10 | the **identity rule** on top of it — the history also records WHICH surface it came from (`kFeatureTemporalIdentity`, bit 9), so a read that agrees on normal and depth but belongs to another object is refused. Its own gate, `CheckTemporalIdentity.sh`: the object's shadow follows it, a still scene is undisturbed, and the ghost is refused for **1.94x lower error** against the untouched level at the same pose (891 vs 1 732 RMSE). ⚠️ Found two bugs by measurement — the identity must be the OBJECT, never the triangle, and the mirror's motion vector carried the raster jitter. Design, numbers and both corrections: `Docs/DynamicGeometry.md` §7a | 10 |
 | E | the **three-stream A/B** — lambertian, glass-BTDF (1 % fireflies), subsurface — accumulated 8192 frames each | 21 (E1–E4c) |
 
 **The filter is the shipped filter, not a transcription.** `Engine/Shaders/AtrousDenoise.slang` is compiled 1:1 as
