@@ -21,8 +21,9 @@
 //         7 843/7 623/8 082) with M bounded (41.7 mean / 64 max at frame 16, 50.4 / 84 at frame 32).
 //       • the indirect half's own pool — ReSTIR GI-style reuse of the FIRST-BOUNCE VERTEX's NEE stratum — landed as
 //         kFeatureGiReuse (bit 8, ON by default; the Control Centre's "Indirect reuse (GI pool)" checkbox and
-//         ReSTIRIntegratorConfiguration::GlobalIlluminationReuse turn it off for the A/B). A second 64 B/px
-//         reservoir pair (bindings 25/26) holds light samples DRAWN AT THE VERTEX; temporal reuse reprojects by the
+//         ReSTIRIntegratorConfiguration::GlobalIlluminationReuse turn it off for the A/B). A second 80 B/px
+//         reservoir pair (bindings 25/26 — same GpuReservoir, D10 widened it from 64 B, so the two pools share the
+//         stride and the Identity tail) holds light samples DRAWN AT THE VERTEX; temporal reuse reprojects by the
 //         pixel's motion and validates on the PRIMARY surface (25° / 10 % / stride guard), and spatial reuse runs the
 //         same cross as the direct pool with the neighbour's reservoir re-evaluated at THIS pixel's vertex. (No
 //         vertex-proximity test: the transferred quantity is a light SAMPLE — a world point on an emitter — so the
@@ -152,7 +153,8 @@ struct GpuReservoir   // 80 B stride (D10) — mirrors ReservoirBufferRecord in 
 };
 layout(std430, binding = 16) readonly buffer PrevReservoirExtent { GpuReservoir PrevReservoirs[]; };
 layout(std430, binding = 17) writeonly buffer CurrReservoirExtent { GpuReservoir CurrReservoirs[]; };
-// The indirect pool's own pair (kFeatureGiReuse). Same 64 B record, same field meanings, but the sample inside lives
+// The indirect pool's own pair (kFeatureGiReuse). Same 80 B record (D10; 64 B before the Identity tail) and the same
+//    field meanings, but the sample inside lives
 //    on the FIRST-BOUNCE VERTEX rather than on the primary surface: Sample.xyz is a light point sampled from that
 //    vertex (for the sun, a far point along a cone-sampled direction from it), UvDepth.xy its uv, and the record's
 //    Normal/primaryT are the PRIMARY pixel's validation pair — the same pair the direct pool validates, because the
