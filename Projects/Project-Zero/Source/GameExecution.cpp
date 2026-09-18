@@ -1925,6 +1925,18 @@ int main(int argc, char** argv)
                               static_cast<double>(Telemetry.QueryResidentMebibytes()));
                 Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Performance", Line);
 
+                // ⚠️ The line above is PROSE. These are ROWS. RecordMeasurement is what puts a
+                //    "Measurement: <token> = <value> [<unit>]" entry into ProjectZero_TelemetryReport, and the
+                //    report had no performance or GPU rows at all because the frame loop only ever called
+                //    RecordMessage — every number was locked inside a sentence no tool can parse. CpuReferenceMain
+                //    emitted rows; the application itself never did. One row per quantity, so the report can be
+                //    diffed between runs and a regression shows up as a number that moved.
+                Logger.RecordMeasurement("FrameTimeMeanMs",   static_cast<double>(MeanMs), "ms");
+                Logger.RecordMeasurement("FrameTimePeakMs",   static_cast<double>(PeakMs), "ms");
+                Logger.RecordMeasurement("FramesPerSecond",   static_cast<double>(Telemetry.QueryAverageFramesPerSecond()), "fps");
+                Logger.RecordMeasurement("FrameSampleCount",  static_cast<double>(PerformanceSampleCount), "count");
+                Logger.RecordMeasurement("ResidentMemory",    static_cast<double>(Telemetry.QueryResidentMebibytes()), "MiB");
+
                 if (G.Valid)
                 {
                     const float GpuTotal = G.CullMilliseconds + G.RasterMilliseconds + G.HiZMilliseconds
@@ -1941,11 +1953,35 @@ int main(int argc, char** argv)
                                   static_cast<double>(G.VolumeMilliseconds));
                     Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "GpuTiming", Line);
 
+                    // The per-stage GPU breakdown as rows. These come from the device's own timestamp pool
+                    //    (vkCmdWriteTimestamp, scaled by timestampPeriod), not from a CPU-side clock, so they are
+                    //    what the GPU actually spent rather than what the submission looked like from the host.
+                    //    A stage that did not run this frame reports 0.
+                    Logger.RecordMeasurement("GpuFrameTotalMs", static_cast<double>(GpuTotal),               "ms");
+                    Logger.RecordMeasurement("GpuCullMs",       static_cast<double>(G.CullMilliseconds),     "ms");
+                    Logger.RecordMeasurement("GpuRasterMs",     static_cast<double>(G.RasterMilliseconds),   "ms");
+                    Logger.RecordMeasurement("GpuHiZMs",        static_cast<double>(G.HiZMilliseconds),      "ms");
+                    Logger.RecordMeasurement("GpuResolveMs",    static_cast<double>(G.ResolveMilliseconds),  "ms");
+                    Logger.RecordMeasurement("GpuReSTIRMs",     static_cast<double>(G.RestirMilliseconds),   "ms");
+                    Logger.RecordMeasurement("GpuShadowMs",     static_cast<double>(G.ShadowMilliseconds),   "ms");
+                    Logger.RecordMeasurement("GpuPostMs",       static_cast<double>(G.PostMilliseconds),     "ms");
+                    Logger.RecordMeasurement("GpuSkyMs",        static_cast<double>(G.SkyMilliseconds),      "ms");
+                    Logger.RecordMeasurement("GpuVolumeMs",     static_cast<double>(G.VolumeMilliseconds),   "ms");
+
                     std::snprintf(Line, sizeof(Line),
                                   "Clusters %u tested -> %u frustum, %u cone, %u visible | draws %u+%u, %u triangles",
                                   G.ClusterTotal, G.FrustumPassed, G.ConePassed, G.OcclusionPassed,
                                   G.PhaseOneDraws, G.PhaseTwoDraws, G.TrianglesDrawn);
                     Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Visibility", Line);
+
+                    // What the culling actually threw away, as rows: the ratio of ClusterTotal to OcclusionPassed
+                    //    is the whole point of the cluster pipeline, and it was previously only ever prose.
+                    Logger.RecordMeasurement("ClustersTested",     static_cast<double>(G.ClusterTotal),      "count");
+                    Logger.RecordMeasurement("ClustersFrustum",    static_cast<double>(G.FrustumPassed),     "count");
+                    Logger.RecordMeasurement("ClustersCone",       static_cast<double>(G.ConePassed),        "count");
+                    Logger.RecordMeasurement("ClustersVisible",    static_cast<double>(G.OcclusionPassed),   "count");
+                    Logger.RecordMeasurement("TrianglesDrawn",     static_cast<double>(G.TrianglesDrawn),    "count");
+                    Logger.RecordMeasurement("DrawCalls",          static_cast<double>(G.PhaseOneDraws + G.PhaseTwoDraws), "count");
 
                     // The optimisation verdict, stated rather than left to be worked out from the numbers. GPU-bound
                     //    and CPU-bound want opposite fixes, and the single most common surprise on this renderer is
@@ -1964,6 +2000,18 @@ int main(int argc, char** argv)
                                   Surface.QueryPresentModeName(),
                                   static_cast<double>(GpuTotal > 0.0f ? 100.0f * G.RestirMilliseconds / GpuTotal : 0.0f));
                     Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Performance", Line);
+
+                    // The workload that produced those milliseconds. Without these the timings are unactionable:
+                    //    "ReSTIR took 11 ms" means nothing until you know it was 922k pixels x 8 candidates.
+                    Logger.RecordMeasurement("RenderPixels",       static_cast<double>(PixelCount),               "px");
+                    Logger.RecordMeasurement("ReSTIRCandidates",   static_cast<double>(C.CandidatesPerPixel),     "count");
+                    Logger.RecordMeasurement("ReSTIRExtra",        static_cast<double>(C.ExtraCandidateCount),    "count");
+                    Logger.RecordMeasurement("ReSTIRSpatialTaps",  static_cast<double>(C.SpatialTapCount),        "count");
+                    Logger.RecordMeasurement("DenoiseLevels",      static_cast<double>(C.DenoiseLevelCount),      "count");
+                    Logger.RecordMeasurement("GpuBound",           GpuTotal > MeanMs * 0.85f ? 1.0 : 0.0,         "bool");
+                    Logger.RecordMeasurement("ReSTIRShareOfFrame",
+                                             static_cast<double>(GpuTotal > 0.0f ? 100.0f * G.RestirMilliseconds / GpuTotal : 0.0f),
+                                             "percent");
                 }
                 else
                 {
