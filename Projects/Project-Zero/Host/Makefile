@@ -49,10 +49,11 @@ $(DENOISE_STAGE)/AtrousDenoise.cpu.1.h: ../../../Engine/Shaders/AtrousDenoise.sl
 	@mkdir -p $(DENOISE_STAGE)
 	@cd ../../.. && DO_STAGE=$(DENOISE_STAGE) python3 Exhibits/Workbench/Materials/StageAtrousDenoise.py
 
-MaterialLevelViewport: MaterialLevelViewport.cpp ../../../Exhibits/Workbench/Materials/AtrousDenoiseMirror.cpp $(DENOISE_STAGE)/AtrousDenoise.cpu.1.h \
+MaterialLevelViewport: MaterialLevelViewport.cpp ../../../Engine/ContentInterchange/ShowcaseStructure.cpp ../../../Exhibits/Workbench/Materials/AtrousDenoiseMirror.cpp $(DENOISE_STAGE)/AtrousDenoise.cpu.1.h \
 		../../../Engine/DisplayPresentation/ShadingTableCodec.cpp \
 		../../../Engine/ContentInterchange/MaterialIndex.cpp \
 		../../../Engine/ContentInterchange/MaterialSwatchStructure.cpp \
+	../../../Engine/ContentInterchange/ShowcaseStructure.cpp \
 		../../../Engine/GeometricRaster/CameraProjection.cpp \
 		../Source/SkyFogIntegrator.cpp
 	@test -n "$(VULKAN_ROOT)" || { echo "[MaterialLevelViewport] Vulkan-Headers not found — clone them first:"; \
@@ -66,6 +67,7 @@ MaterialLevelViewport: MaterialLevelViewport.cpp ../../../Exhibits/Workbench/Mat
 		../../../Engine/DisplayPresentation/ShadingTableCodec.cpp \
 		../../../Engine/ContentInterchange/MaterialIndex.cpp \
 		../../../Engine/ContentInterchange/MaterialSwatchStructure.cpp \
+	../../../Engine/ContentInterchange/ShowcaseStructure.cpp \
 		../../../Engine/GeometricRaster/CameraProjection.cpp \
 		../../../Engine/DeviceExchange/OrientationClassifier.cpp \
 		../Source/SkyFogIntegrator.cpp

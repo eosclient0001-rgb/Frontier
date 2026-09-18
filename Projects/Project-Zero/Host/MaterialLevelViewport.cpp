@@ -92,6 +92,7 @@ inline vec4 FetchSheenFull(float mu, float alpha)
 #include "ColourTransfer.h"
 #include "MaterialIndex.h"
 #include "MaterialSwatchStructure.h"
+#include "ShowcaseStructure.h"
 #include "SkyFogIntegrator.h"
 
 namespace {
@@ -102,6 +103,7 @@ using Frontier::MaterialFlagAlphaMask;
 using Frontier::MaterialRecord;
 using Frontier::MaterialSlabRecord;
 using Frontier::MaterialSwatchStructure;
+using Frontier::ShowcaseStructure;
 using Frontier::MaterialFlagThinWalled;
 using Frontier::MaterialIndex;
 
@@ -156,6 +158,10 @@ vec3  g_SunDirRender(0.0f, 0.0f, 1.0f);   // [-] unit vector toward the sun, ren
 float g_SunAngularRadius = 0.00465f;      // [rad] the sky core's disc radius (0.53° diameter)
 bool  g_SunNee = true;
 int   g_RowFilter = -1;    // [-] -1 = the whole grid; 0..5 = one sphere row (a lookdev crop, printed when used)
+// Which level to render. "materials" is the M10 library (the historical default of this harness); "showcase" is the
+//    product's own DEFAULT level — what Project-Zero.exe opens with no --scene argument at all. They are built from
+//    the same kind of source (a Structure's Construct + MaterialIndex), so the renderer below does not care which.
+std::string g_Level = "materials";
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                          RNG
@@ -266,6 +272,18 @@ Viewpoint ViewpointFor(const std::string& Name)
     if (Name == "row5")  return { Frontier::Vector3{ -4.60f, 3.70f, 2.00f }, -16.0f, 60.0f, 50.0f };   // row 5, 3/4 down the row
     // Default: the product's own entry framing for `--scene materials` (GameExecution.cpp, the "Materials" branch).
     return { Frontier::Vector3{ 0.0f, -5.00f, 2.60f }, -13.0f, 0.0f, 55.0f };
+}
+
+// The showcase level's framings. The default here is GameExecution.cpp's "Showcase" branch VERBATIM — the position,
+//    pitch, yaw and FoV the application itself opens with when it is launched with no --scene at all. That is the
+//    whole point of this harness: the sheet must be the shot the product gives you, not a flattering angle.
+Viewpoint ShowcaseViewpointFor(const std::string& Name)
+{
+    if (Name == "grid")   return { Frontier::Vector3{  0.0f, -7.50f, 2.40f },  -7.0f,  0.0f, 55.0f };  // closer on the grid
+    if (Name == "metals") return { Frontier::Vector3{ -1.0f, -5.40f, 1.60f },  -7.0f,  0.0f, 50.0f };  // row 0: anisotropic metals
+    if (Name == "glass")  return { Frontier::Vector3{ -1.0f, -3.60f, 1.60f },  -6.0f,  0.0f, 50.0f };  // row 1: the IOR ramp
+    if (Name == "wide")   return { Frontier::Vector3{  0.0f, -13.0f, 5.20f }, -14.0f,  0.0f, 62.0f };  // grid + scattered field
+    return { Frontier::Vector3{ 0.0f, -9.50f, 5.60f }, -21.0f, 0.0f, 55.0f };                          // the product's entry shot
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -1679,11 +1697,18 @@ float TotalLightPower()
 //    world-space with three authored smooth normals per triangle, exactly what the kernel interpolates per hit.
 bool BuildLevel()
 {
+    // Both levels are authored the same way — a Structure whose Construct() emits a world-space soup, three smooth
+    //    normals per triangle, OpenPBR MaterialDescriptors and named spans — so the only thing that varies is which
+    //    Construct runs. The showcase is the product's DEFAULT level (no --scene argument); the swatch library is the
+    //    M10 set this harness shipped with. Everything below this point is level-agnostic.
     MaterialSwatchStructure Library;
-    Library.Construct();
+    ShowcaseStructure       Showcase;
+    const bool IsShowcase = (g_Level == "showcase");
+    if (IsShowcase) Showcase.Construct(); else Library.Construct();
 
-    const std::vector<Frontier::TriangleIndex>& Tris = Library.QueryTriangles();
-    const std::vector<Frontier::Vector3>& Corners = Library.QueryCornerNormals();
+    const std::vector<Frontier::TriangleIndex>&      Tris     = IsShowcase ? Showcase.QueryTriangles()     : Library.QueryTriangles();
+    const std::vector<Frontier::Vector3>&            Corners  = IsShowcase ? Showcase.QueryCornerNormals() : Library.QueryCornerNormals();
+    const std::vector<Frontier::MaterialDescriptor>& Authored = IsShowcase ? Showcase.QueryMaterials()     : Library.QueryMaterials();
     if (Tris.empty() || Corners.size() != Tris.size() * 3u)
     {
         std::printf("[material-level] the level's triangle soup is malformed (%zu tris, %zu corner normals)\n",
@@ -1692,7 +1717,7 @@ bool BuildLevel()
     }
 
     MaterialIndex Index;
-    for (const Frontier::MaterialDescriptor& D : Library.QueryMaterials()) Index.Register(D);
+    for (const Frontier::MaterialDescriptor& D : Authored) Index.Register(D);
     Index.Finalise(1u, nullptr);   // Tier A: the flattened resident level the GPU build seats
 
     const std::vector<MaterialRecord>& Records = Index.QueryRecords();
@@ -1721,13 +1746,15 @@ bool BuildLevel()
 
     // Soup index → object (span), so every triangle knows which of the level's objects it belongs to. Spans are the
     //    builder's own record of one object's triangle range and are what the GPU uploads as instances.
-    const std::vector<Frontier::TriangleSpanRecord>& Spans = Library.QuerySpans();
-    std::vector<uint8_t> ObjectOfSoup(Tris.size(), 0u);
+    const std::vector<Frontier::TriangleSpanRecord>& Spans = IsShowcase ? Showcase.QuerySpans() : Library.QuerySpans();
+    // ⚠️ uint8_t indexes the span list, and the showcase has 115 spans — fine today, but one more row of objects
+    //    would wrap silently and put triangles on the wrong object. Widened to uint16_t rather than left to rot.
+    std::vector<uint16_t> ObjectOfSoup(Tris.size(), 0u);
     for (size_t SpanIndex = 0; SpanIndex < Spans.size(); ++SpanIndex)
     {
         const Frontier::TriangleSpanRecord& Span = Spans[SpanIndex];
         const size_t End = std::min(static_cast<size_t>(Span.FirstTriangle) + Span.TriangleCount, Tris.size());
-        for (size_t T = Span.FirstTriangle; T < End; ++T) ObjectOfSoup[T] = static_cast<uint8_t>(SpanIndex);
+        for (size_t T = Span.FirstTriangle; T < End; ++T) ObjectOfSoup[T] = static_cast<uint16_t>(SpanIndex);
     }
 
     g_Tris.reserve(Tris.size());
@@ -1753,7 +1780,7 @@ bool BuildLevel()
         R.Object   = static_cast<int>(ObjectOfSoup[I]);
         R.Light = -1;
         if (R.Material < 0 || R.Material >= static_cast<int>(g_Mat.size())) return false;
-        if (g_RowFilter >= 0)
+        if (g_RowFilter >= 0 && !IsShowcase)
         {
             // A lookdev crop: keep one sphere row and the studio around it, drop the other five. The material slots are
             //    laid out as floor, backdrop, swatch 0…41, panels, luminaires (MaterialSwatchStructure's constants), so
@@ -2558,6 +2585,7 @@ int main(int ArgumentCount, char** ArgumentValues)
             return ArgumentValues[++I];
         };
         if      (A == "--out")      OutPath = Next("--out");
+        else if (A == "--level")    g_Level = Next("--level");   // materials (M10 library) | showcase (the product default)
         else if (A == "--view")     View = Next("--view");
         else if (A == "--fog")      FogName = Next("--fog");
         else if (A == "--width")    Width = std::atoi(Next("--width"));
@@ -2597,7 +2625,9 @@ int main(int ArgumentCount, char** ArgumentValues)
         else if (A == "--denoise-levels") DenoiseLevels = std::atoi(Next("--denoise-levels"));
         else if (A == "--help")
         {
-            std::printf("usage: MaterialLevelViewport [--out file.png] [--view default|wide|glass|row5] [--row N]\n"
+            std::printf("usage: MaterialLevelViewport [--out file.png] [--level materials|showcase]\n"
+                        "                            [--view default|wide|glass|row5]   (materials)\n"
+                        "                            [--view default|grid|metals|glass|wide] (showcase) [--row N]\n"
                         "                            [--width W] [--height H] [--spp N] [--bounce N] [--sun H]\n"
                         "                            [--fog clear|morning|backlit] [--exposure X] [--threads N]\n"
                         "                            [--frames N] [--pan metres] [--restir] [--no-reproject]\n"
@@ -2616,7 +2646,9 @@ int main(int ArgumentCount, char** ArgumentValues)
     if (Spp < 1) Spp = 1;
 
     std::printf("================================================================================\n");
-    std::printf("   PROJECT-ZERO — MATERIAL LIBRARY LEVEL (M10), CPU RENDER OF THE VULKAN SCENE   \n");
+    std::printf(g_Level == "showcase"
+                ? "   PROJECT-ZERO — SHOWCASE, THE DEFAULT LEVEL, CPU RENDER OF THE VULKAN SCENE   \n"
+                : "   PROJECT-ZERO — MATERIAL LIBRARY LEVEL (M10), CPU RENDER OF THE VULKAN SCENE   \n");
     std::printf("================================================================================\n");
 
     if (!BuildLevel())
@@ -2635,7 +2667,7 @@ int main(int ArgumentCount, char** ArgumentValues)
     std::printf("[material-level] sky: sun hour %.2f, sun dir render (%.3f %.3f %.3f), fog %s\n",
                 SunHour, g_SunDirRender.x, g_SunDirRender.y, g_SunDirRender.z, FogName.c_str());
 
-    const Viewpoint VP = ViewpointFor(View);
+    const Viewpoint VP = (g_Level == "showcase") ? ShowcaseViewpointFor(View) : ViewpointFor(View);
     std::printf("[material-level] view '%s': eye (%.2f %.2f %.2f), pitch %.1f°, yaw %.1f°, FoV %.0f°, %dx%d @ %d spp, %d bounces, %d frame%s%s%s%s\n",
                 View.c_str(), VP.Position.x, VP.Position.y, VP.Position.z, VP.PitchDegrees, VP.YawDegrees, VP.FieldOfView,
                 Width, Height, Spp, Bounces, Frames, Frames == 1 ? "" : "s",

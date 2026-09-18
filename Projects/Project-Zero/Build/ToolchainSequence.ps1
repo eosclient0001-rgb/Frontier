@@ -376,12 +376,21 @@ $ShaderTable = @(
     @{ Source = 'AtrousDenoise.slang';         Stage = 'compute';  Output = 'AtrousDenoise.spv' }
     @{ Source = 'LuminanceReduce.slang';       Stage = 'compute';  Output = 'LuminanceReduce.spv' }
     @{ Source = 'SurfaceResolve.slang';        Stage = 'compute';  Output = 'SurfaceResolve.spv' }
+    # The shadow stage. These five were in CMakeLists.txt but NOT in this table, which is why a Windows build produced
+    #    a renderer with no shadows at all: the engine looks for ShadowResolve.spv / ShadowRaster.*.spv, finds nothing,
+    #    and the shadow stage fails to bring itself up, so every frame falls through to the unshadowed path. CMake and
+    #    this script must list the same shaders; the user builds with this one.
+    @{ Source = 'ShadowResolve.slang';         Stage = 'compute';  Output = 'ShadowResolve.spv' }
+    @{ Source = 'ShadowRaster.vert.slang';     Stage = 'vertex';   Output = 'ShadowRaster.vert.spv' }
+    @{ Source = 'ShadowRaster.frag.slang';     Stage = 'fragment'; Output = 'ShadowRaster.frag.spv' }
+    @{ Source = 'BlasRefit.slang';             Stage = 'compute';  Output = 'BlasRefit.spv' }
+    @{ Source = 'BlasBuild.slang';             Stage = 'compute';  Output = 'BlasBuild.spv' }
     @{ Source = 'VisibilityRaster.vert.slang'; Stage = 'vertex';   Output = 'VisibilityRaster.vert.spv' }
     @{ Source = 'VisibilityRaster.frag.slang'; Stage = 'fragment'; Output = 'VisibilityRaster.frag.spv' }
     @{ Source = 'InterfaceRaster.vert.slang';  Stage = 'vertex';   Output = 'InterfaceRaster.vert.spv' }
     @{ Source = 'InterfaceRaster.frag.slang';  Stage = 'fragment'; Output = 'InterfaceRaster.frag.spv' }
 )
-$ShaderIncludeNames = @('SceneRecords.slang', 'RayGeneration.slang', 'TraversalCWBVH.slang', 'InterfaceRecords.slang', 'InterfaceSignedDistance.slang', 'SkyRecords.slang', 'MoonRecords.slang', 'PostRecords.slang', 'MaterialEvaluation.slang')
+$ShaderIncludeNames = @('SceneRecords.slang', 'RayGeneration.slang', 'TraversalCWBVH.slang', 'InterfaceRecords.slang', 'InterfaceSignedDistance.slang', 'SkyRecords.slang', 'MoonRecords.slang', 'PostRecords.slang', 'MaterialEvaluation.slang', 'ShadowRecords.slang', 'ShadowSample.slang')
 
 function Invoke-ShaderLowering([string] $VulkanRoot)
 {

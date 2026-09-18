@@ -77,10 +77,26 @@ void main()
     uint Taps = min(ShadowControl.z, kShadowMaximumTaps);
     for (uint Tap = 0u; Tap < Taps; ++Tap)
     {
-        vec3  ToLight = ShadowTapOrigin[Tap].xyz - Position;
-        float Distance = length(ToLight);
-        if (Distance <= 1e-6) continue;
-        ToLight /= Distance;
+        // Directional taps (the sun) are lights at infinity. Their Origin is only the point the shadow map was
+        //    rasterised from, so the incident direction comes from the tap's normal — which faces the scene —
+        //    and the inverse-square falloff below does not apply. Treating the sun as a point light at the map's
+        //    viewpoint would make it fall off across the scene and scale with an arbitrary stand-off distance.
+        bool  Directional = (ShadowControl.w & (kShadowTapDirectionalBit << Tap)) != 0u;
+
+        vec3  ToLight;
+        float Distance;
+        if (Directional)
+        {
+            ToLight  = -ShadowTapNormal[Tap].xyz;   // the emitter normal faces the scene; negate for surface → sun
+            Distance = 1.0;                         // no falloff for a light at infinity
+        }
+        else
+        {
+            ToLight  = ShadowTapOrigin[Tap].xyz - Position;
+            Distance = length(ToLight);
+            if (Distance <= 1e-6) continue;
+            ToLight /= Distance;
+        }
 
         float NdotL = dot(Normal, ToLight);
         if (NdotL <= 0.0) continue;
@@ -90,7 +106,9 @@ void main()
         //    would spend a full PCSS kernel — up to 106 texel fetches at Reference — on a result thrown away on
         //    the next line. VisibilityRaster::Shade already rejects on both cosines before calling Shadow(), so
         //    this ordering is what keeps the GPU path faithful to the CPU one rather than merely cheaper.
-        float LdotL = -dot(ShadowTapNormal[Tap].xyz, ToLight);
+        //    A directional tap has no emitter plane to face away from — the sun illuminates everything its own
+        //    hemisphere reaches — so LdotL is 1 by definition rather than a test that would reject every surface.
+        float LdotL = Directional ? 1.0 : -dot(ShadowTapNormal[Tap].xyz, ToLight);
         if (LdotL <= 0.0) continue;
 
         float Lit = ShadowLitFraction(Position, Normal, NdotL, Tap);
@@ -101,7 +119,11 @@ void main()
         vec3  Radiance = ShadowTapRadiance[Tap].xyz;
         float Weight   = ShadowTapRadiance[Tap].w;
 
-        float Geometry = NdotL * LdotL * Weight * Lit / (Distance * Distance);
+        //    Directional: radiance × NdotL × visibility, full stop. The solar disc's solid angle is already folded
+        //    into the record's SunDirect (the same quantity the kernel's SunEmission divides by and multiplies
+        //    back), so applying an area or a d² here would double-count it.
+        float Geometry = Directional ? (NdotL * Lit)
+                                     : (NdotL * LdotL * Weight * Lit / (Distance * Distance));
 
         vec3  Half     = normalize(ToLight + ToEye);
         float NdotH    = max(dot(Normal, Half), 0.0);

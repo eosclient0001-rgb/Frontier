@@ -423,10 +423,16 @@ int main(int argc, char** argv)
     }
     else if (Level.QueryName() == "Showcase")
     {
-        // Showcase: stand south of the field at 2.2 m, facing the sunset (yaw 220°, pitch −2°) so the
-        //    sun-only flare is in frame on launch — the same framing the CPU reference renders by default.
-        Camera.AssignSpatialLocation(Frontier::Vector3{ 0.0f, -14.0f, 2.2f });
-        Camera.AssignOrientationEuler(-2.0f * 3.14159265f / 180.0f, 220.0f * 3.14159265f / 180.0f, 0.0f);
+        // Showcase: 9.5 m south of the material grid at 5.6 m, pitched down 21° and looking straight up +Y. The
+        //    elevation is what makes the six rows read AS six rows: from eye height they telescope into each other
+        //    and the back rows are hidden behind the front ones.
+        //
+        //    ⚠️ The old framing (0, −14, 2.2) at yaw 220° pointed AWAY from the grid — it was aimed at the sunset
+        //    for the lens flare, which made sense when the level was a scattered analytical field with nothing in
+        //    particular to look at. Pointed at the new level it would frame empty ground, which reads as "the new
+        //    scene did not load". This is the framing the CPU proof renders, so the two match shot for shot.
+        Camera.AssignSpatialLocation(Frontier::Vector3{ 0.0f, -9.5f, 5.6f });
+        Camera.AssignOrientationEuler(-21.0f * 3.14159265f / 180.0f, 0.0f, 0.0f);
     }
     else if (Level.QueryName() == "Showroom" || Level.QueryName() == "ShowroomDrop")
     {
@@ -800,6 +806,11 @@ int main(int argc, char** argv)
     constexpr uint32_t BakeFrameCount  = 256u;
     std::string LastSaveError;                   // de-duplicates the "Autosave Errors" toast
 
+    // The tier-chosen shadow settings (technique, kernel width, map side), held so the per-frame sun refresh can
+    //    re-send them with the current solar state rather than rebuilding the tier decision every frame.
+    Frontier::ShadowFrameConfiguration ShadowTierFrame{};
+    bool                               ShadowTierFrameValid = false;
+
     // Push the Control Centre settings into the renderer. Called whenever the settings revision changes.
     auto ApplyControlCentreSettings = [&](const Frontier::ControlCentreSettings& S, bool Announce)
     {
@@ -835,6 +846,11 @@ int main(int argc, char** argv)
                 default:
                     Shadow.Filter = Frontier::ShadowFilterCategory::Pcss; break;
             }
+            // The sun's own tap is NOT set here: this lambda runs only when the Control Centre's settings revision
+            //    changes, and the sun moves every frame. It is refreshed next to the sky push instead (④d below),
+            //    which is the one place that already knows the current solar state.
+            ShadowTierFrame      = Shadow;
+            ShadowTierFrameValid = true;
             Surface.AssignShadowFrame(Shadow);
         }
 
@@ -1733,6 +1749,25 @@ int main(int argc, char** argv)
         {
             const Frontier::SkyConstantRecord Sky = Celestial.PackSkyRecord();
             (void)Surface.RefreshSky(&Sky, sizeof(Sky));
+
+            // ⚠️ The sun casts a shadow, and this is where it is told to. The ReSTIR kernel has sampled the sun as a
+            //    direct light since it landed (kSunLightIndex / PHatSun), but the GI-off shadow stage only ever
+            //    walked the emissive MESH triangles — so with GI off an outdoor level rasterised lamp shadows and no
+            //    sun shadow, and a level lit only by the sun placed zero taps and skipped the stage entirely.
+            //
+            //    Driven from the SAME packed record the kernel reads at binding 21, so the two paths cannot disagree
+            //    about where the sun is or how bright it is. SunDirect is already hard zero below the horizon and
+            //    when the sun is hidden or disabled, so "is the sun up" needs no second opinion here. Re-sent every
+            //    frame because the sun moves; the tier's own fields ride along unchanged.
+            if (ShadowTierFrameValid)
+            {
+                Frontier::ShadowFrameConfiguration Shadow = ShadowTierFrame;
+                const float Direct = Sky.SunDirect[0] + Sky.SunDirect[1] + Sky.SunDirect[2];
+                Shadow.SunEnabled = Direct > 0.0f;
+                for (int I = 0; I < 3; ++I) Shadow.SunDirection[I] = Sky.SunDirection[I];
+                for (int I = 0; I < 3; ++I) Shadow.SunRadiance[I]  = Sky.SunDirect[I];
+                Surface.AssignShadowFrame(Shadow);
+            }
             // A slider step on a converged frame is absorbed at 1/n — invisible until the camera restarts the
             //    history, which is why panel edits used to land only when the view moved. Compare the packed
             //    bytes and restart the accumulation the tick the sky changes, so sliders, presets, visibility
@@ -1861,6 +1896,24 @@ int main(int argc, char** argv)
                                   G.ClusterTotal, G.FrustumPassed, G.ConePassed, G.OcclusionPassed,
                                   G.PhaseOneDraws, G.PhaseTwoDraws, G.TrianglesDrawn);
                     Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Visibility", Line);
+                }
+                    // The optimisation verdict, stated rather than left to be worked out from the numbers. GPU-bound
+                    //    and CPU-bound want opposite fixes, and the single most common surprise on this renderer is
+                    //    "100 % GPU on a tiny scene", which is almost never the geometry: at 1280x720 the ReSTIR
+                    //    kernel dispatches ~922k threads every frame, each tracing candidate and shadow rays through
+                    //    a software BVH (this GPU exposes no ray-tracing extension, so traversal is plain compute).
+                    //    Triangle count barely enters into it — the cost is pixels x candidates x bounces.
+                    const char* Bound = GpuTotal > MeanMs * 0.85f ? "GPU-BOUND" : "CPU-BOUND or presenting-limited";
+                    const float PixelCount = static_cast<float>(Surface.QueryWidth() * Surface.QueryHeight());
+                    const Frontier::ReSTIRIntegratorConfiguration& C = Integrator.QueryConfiguration();
+                    std::snprintf(Line, sizeof(Line),
+                                  "%s | %.0f kpx x (%u candidates + %u extra + %u spatial taps), %u denoise levels, "
+                                  "present %s | kernel %.0f%% of GPU frame",
+                                  Bound, static_cast<double>(PixelCount / 1000.0f),
+                                  C.CandidatesPerPixel, C.ExtraCandidateCount, C.SpatialTapCount, C.DenoiseLevelCount,
+                                  Surface.QueryPresentModeName(),
+                                  static_cast<double>(GpuTotal > 0.0f ? 100.0f * G.RestirMilliseconds / GpuTotal : 0.0f));
+                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Performance", Line);
                 }
                 else
                 {

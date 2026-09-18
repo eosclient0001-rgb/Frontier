@@ -67,6 +67,20 @@ struct ShadowFrameConfiguration
 
     ShadowLightTap       Taps[MaximumTaps]{};
     uint32_t             TapCount   = 0u;                            // [cnt] live taps this frame
+
+    // ── The sun ──────────────────────────────────────────────────────────────────────────────────────────────
+    // ⚠️ THE SUN IS A LIGHT LIKE ANY OTHER AND MUST CAST A SHADOW. The ReSTIR kernel has treated it as one since
+    //    the sun landed as a direct light (kSunLightIndex / PHatSun): outdoors it is the largest emitter present.
+    //    The GI-off shadow stage did not, because PlaceShadowTaps only ever walked the emissive MESH triangles —
+    //    so with GI off an outdoor scene rasterised lamp shadows and no sun shadow at all, and a scene whose only
+    //    light IS the sun (no emissive mesh) placed zero taps and skipped the stage entirely.
+    //
+    //    The sun occupies tap slot 0 when enabled, and the mesh emitters fill the slots after it. It is flagged
+    //    directional: the resolve must not apply 1/d² or a point-light geometry term to a light at infinity.
+    bool                 SunEnabled   = false;                       // [-]   the sun is above the horizon and lit
+    float                SunDirection[3] = { 0.0f, 0.0f, 1.0f };     // [-]   unit vector pointing TOWARD the sun
+    float                SunRadiance[3]  = { 0.0f, 0.0f, 0.0f };     // [nit] the record's attenuated direct sun
+    float                SunAngularRadius = 0.00465f;                // [rad] the solar disc — PCSS's penumbra scale
     uint32_t             MapSide    = 512u;                          // [px]  shadow map side, tier or dropdown
     ShadowFilterCategory Filter     = ShadowFilterCategory::Pcss;    // [-]   which filter the tier selected
     uint32_t             FilterTaps = 5u;                            // [cnt] filter kernel side, in taps
@@ -75,6 +89,12 @@ struct ShadowFrameConfiguration
     float                DepthBias  = 0.015f;                        // [m]   plus a slope term from NdotL
     float                HalfAngle  = 65.0f;                         // [deg] frustum half-angle about tap→centre
     float                Centre[3]  = { 0.0f, 0.0f, 0.0f };          // [m]   scene centre each tap aims at
+
+    // Which tap slots are directional (bit K = tap K). Mirrors ShadowControl.w in ShadowRecords.slang.
+    uint32_t             DirectionalMask = 0u;
 };
+
+// Bit of ShadowControl.w, per tap: this tap is a light at infinity (the sun), not a point on an emitter.
+inline constexpr uint32_t kShadowTapDirectionalBit = 1u;
 
 } // namespace Frontier

@@ -18,6 +18,11 @@ const uint kShadowFilterPcf  = 1u;   // fixed-radius box: constant-width penumbr
 const uint kShadowFilterPcss = 2u;   // blocker search + similar triangles: contact-hardening, physically scaled
 
 const uint kShadowMaximumTaps = 4u;      // matches VisibilityRaster::kLightTaps — the stratified taps over a luminaire
+
+// Bit K of ShadowControl.w: tap K is DIRECTIONAL — a light at infinity (the sun), not a point on an emitter.
+//    A directional tap's Origin is a rasterisation viewpoint, not a light position: the resolve must take its
+//    direction from the tap's normal and must NOT apply the 1/d² falloff or the emitter-area geometry term.
+const uint kShadowTapDirectionalBit = 1u;
 const uint kShadowBlockerTaps = 5u;      // blocker-search kernel side, in texels (PCSS step one)
 
 layout(std140, set = 1, binding = 0) uniform ShadowConstants

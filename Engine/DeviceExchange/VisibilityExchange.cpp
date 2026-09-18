@@ -1294,39 +1294,87 @@ bool VisibilityExchange::IsShadowReady() const noexcept
 
 bool VisibilityExchange::PlaceShadowTaps(ShadowFrameConfiguration& Shadow) const noexcept
 {
-    Shadow.TapCount = 0u;
-    if (Emitters.empty()) return false;
+    const uint32_t Maximum = ShadowFrameConfiguration::MaximumTaps;
 
-    // The same fixed stratified warp points VisibilityRaster::PlaceTaps uses, in the same order. Fixed rather than
-    //    random on purpose: a moving tap would make the shadow crawl between frames, and the CPU proof could not
-    //    then be compared against the GPU frame at all.
+    Shadow.TapCount        = 0u;
+    Shadow.DirectionalMask = 0u;
+
+    // ⚠️ The sun counts. This used to read `if (Emitters.empty()) return false;`, which is why the GI-off path cast
+    //    no sun shadow: an outdoor level with a sun and no emissive mesh placed zero taps, RecordShadowFrame
+    //    refused, and the frame fell through to the kernel — or, with GI off, to a stage that never ran. The sun is
+    //    a light the kernel has sampled since it landed (kSunLightIndex), so it must be one here too.
+    const bool SunLit = Shadow.SunEnabled
+                     && (Shadow.SunRadiance[0] + Shadow.SunRadiance[1] + Shadow.SunRadiance[2]) > 0.0f;
+    if (Emitters.empty() && !SunLit) return false;
+
+    uint32_t Placed = 0u;
+
+    // ── The sun takes slot 0 ─────────────────────────────────────────────────────────────────────────────────
+    //    A light at infinity has no position, but the shadow stage rasterises a perspective map from a point. The
+    //    tap is therefore placed ONE SCENE RADIUS back along the sun direction from the scene centre: far enough
+    //    that the projection is near-orthographic over the scene, close enough that the depth range stays usable.
+    //    The resolve is told it is directional (the mask below) so it uses the direction and skips 1/d².
+    if (SunLit)
+    {
+        const float Radius = std::max(SceneDiagonal * 0.5f, 1.0f);
+        const float Back   = Radius * 2.0f;
+        ShadowLightTap& Tap = Shadow.Taps[0];
+        for (int I = 0; I < 3; ++I) Tap.Origin[I] = SceneCentre[I] + Shadow.SunDirection[I] * Back;
+        // The emitter normal is what the resolve's LdotL tests: the sun faces the scene, so it is −direction.
+        for (int I = 0; I < 3; ++I) Tap.Normal[I]   = -Shadow.SunDirection[I];
+        for (int I = 0; I < 3; ++I) Tap.Radiance[I] = Shadow.SunRadiance[I];
+
+        // Directional taps carry no area: the resolve multiplies radiance by NdotL alone (the disc's solid angle is
+        //    already folded into the record's SunDirect, exactly as the kernel's SunEmission does).
+        Tap.Weight    = 1.0f;
+        // PCSS penumbra: the disc's apparent width at this distance. tan(θ)·d for the solar half-angle gives the
+        //    same contact-hardening behaviour a real sun produces — sharp at contact, soft metres away.
+        Tap.LightSize = 2.0f * std::tan(Shadow.SunAngularRadius) * Back;
+
+        Shadow.DirectionalMask |= kShadowTapDirectionalBit << 0;
+        ++Placed;
+    }
+
+    // ── The mesh emitters fill what is left ──────────────────────────────────────────────────────────────────
+    //    The same fixed stratified warp points VisibilityRaster::PlaceTaps uses, in the same order. Fixed rather
+    //    than random on purpose: a moving tap would make the shadow crawl between frames, and the CPU proof could
+    //    not then be compared against the GPU frame at all.
     constexpr float kWarp[ShadowFrameConfiguration::MaximumTaps][2] =
         { { 0.25f, 0.25f }, { 0.75f, 0.25f }, { 0.25f, 0.75f }, { 0.75f, 0.75f } };
 
-    const float Count = static_cast<float>(Emitters.size());
-    for (uint32_t K = 0u; K < ShadowFrameConfiguration::MaximumTaps; ++K)
+    if (!Emitters.empty())
     {
-        const EmissiveTriangle& E = Emitters[K % Emitters.size()];
-        const float Sq = std::sqrt(kWarp[K][0]);
-        ShadowLightTap& Tap = Shadow.Taps[K];
-        for (int I = 0; I < 3; ++I)
-            Tap.Origin[I] = E.A[I] + (E.B[I] - E.A[I]) * (1.0f - Sq) + (E.C[I] - E.A[I]) * (Sq * kWarp[K][1]);
-        for (int I = 0; I < 3; ++I) Tap.Normal[I]   = E.Normal[I];
-        for (int I = 0; I < 3; ++I) Tap.Radiance[I] = E.Radiance[I];
+        const uint32_t MeshTaps = Maximum - Placed;   // 3 when the sun is up, 4 when it is not
+        const float    Count    = static_cast<float>(Emitters.size());
+        for (uint32_t K = 0u; K < MeshTaps; ++K)
+        {
+            const EmissiveTriangle& E = Emitters[K % Emitters.size()];
+            const float Sq = std::sqrt(kWarp[K][0]);
+            ShadowLightTap& Tap = Shadow.Taps[Placed + K];
+            for (int I = 0; I < 3; ++I)
+                Tap.Origin[I] = E.A[I] + (E.B[I] - E.A[I]) * (1.0f - Sq) + (E.C[I] - E.A[I]) * (Sq * kWarp[K][1]);
+            for (int I = 0; I < 3; ++I) Tap.Normal[I]   = E.Normal[I];
+            for (int I = 0; I < 3; ++I) Tap.Radiance[I] = E.Radiance[I];
 
-        // Each tap integrates its share of the whole emitter set, exactly as the CPU path divides it.
-        Tap.Weight = E.Area * Count / static_cast<float>(ShadowFrameConfiguration::MaximumTaps);
+            // Each tap integrates its share of the whole emitter set, exactly as the CPU path divides it. The
+            //    divisor is the number of MESH taps actually placed — not the slot maximum — or giving the sun a
+            //    slot would silently dim every lamp by a quarter.
+            Tap.Weight = E.Area * Count / static_cast<float>(MeshTaps);
 
-        // PCSS's LightSize is the luminaire's own extent — √(total emissive area), not one tap's share. The
-        //    penumbra is cast by the light's real width; the taps are only how that one emitter is integrated.
-        Tap.LightSize = std::sqrt(E.Area * Count);
+            // PCSS's LightSize is the luminaire's own extent — √(total emissive area), not one tap's share. The
+            //    penumbra is cast by the light's real width; the taps are only how that one emitter is integrated.
+            Tap.LightSize = std::sqrt(E.Area * Count);
+        }
+        Placed += MeshTaps;
     }
-    Shadow.TapCount = ShadowFrameConfiguration::MaximumTaps;
+
+    Shadow.TapCount = Placed;
 
     for (int I = 0; I < 3; ++I) Shadow.Centre[I] = SceneCentre[I];
     // Far must clear the whole scene from any tap, near stays small so contact shadows survive the depth precision.
-    Shadow.FarPlane  = std::max(Shadow.NearPlane * 4.0f, SceneDiagonal * 2.0f);
-    return true;
+    //    The sun tap stands two radii out, so the far plane must clear that too.
+    Shadow.FarPlane  = std::max(Shadow.NearPlane * 4.0f, SceneDiagonal * 4.0f);
+    return Placed > 0u;
 }
 
 namespace {
@@ -1523,7 +1571,7 @@ bool VisibilityExchange::RecordShadowFrame(void* CommandHandle, uint32_t Slot, c
     Record.Control[0]  = static_cast<uint32_t>(Shadow.Filter);
     Record.Control[1]  = std::max(Shadow.FilterTaps, 1u);
     Record.Control[2]  = Taps;
-    Record.Control[3]  = 0u;
+    Record.Control[3]  = Shadow.DirectionalMask;   // per-tap directional bits (the sun); see ShadowRecords.slang
     if (Vulkan->ShadowConstants[Slot].Mapped)
         std::memcpy(Vulkan->ShadowConstants[Slot].Mapped, &Record, sizeof(Record));
 
