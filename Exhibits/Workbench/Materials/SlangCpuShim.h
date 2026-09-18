@@ -12,6 +12,17 @@
 
 #pragma once
 
+// The port itself. Every offline build passes -DFRONTIER_CPU_PORT on the command line (the materials gates, the
+//    Host Makefile), but Project-Zero's own build deliberately does not — the CMake entry for ShaderballExhibit
+//    says so in as many words. Until 2026-09-18 that was fine, because no Project-Zero TU included this header;
+//    the M7b preview TU joining the exe batch changed it: the slang file's GLSL-only block (layout(binding…),
+//    sampler2D) hit MSVC and the Windows build failed. The port belongs to the port header — the offline builds'
+//    -D keeps working through the #ifndef, and the app build now defines it here, before the slang include that
+//    needs it. (The proof harnesses pass it explicitly, which is why this header alone was never enough before.)
+#ifndef FRONTIER_CPU_PORT
+#define FRONTIER_CPU_PORT 1
+#endif
+
 #include <cmath>
 
 typedef unsigned int uint;   // M3: the selection/channel table in MaterialEvaluation.slang uses uint (native in GLSL)

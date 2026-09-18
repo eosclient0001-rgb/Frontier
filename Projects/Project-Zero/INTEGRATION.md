@@ -69,6 +69,13 @@ Run the gate before blaming the code:
 bash Tools/Build/CheckBuildSourceList.sh      # CMake <-> ToolchainSequence.ps1 <-> tree
 ```
 
+For the performance trace ledger (startup stages, per-frame rows, shader
+payloads — RAM only, one report at close, development builds only):
+
+```sh
+bash Tools/Build/CheckPerformanceTrace.sh     # builds the gate twice: ledger ON and compiled OUT
+```
+
 It also fails when an engine TU belongs to neither build system, so a new
 file cannot land invisible to both. Two TUs need per-file treatment and
 both build systems carry it: `ShaderballExhibit.cpp` compiles with

@@ -200,6 +200,7 @@ set(FRONTIER_ENGINE_SOURCES
     Engine/DeviceExchange/OrientationClassifier.cpp
     Engine/DeviceExchange/InputExchange.cpp
     Engine/DeviceExchange/DiagnosticMetrics.cpp
+    Engine/DeviceExchange/PerformanceTrace.cpp
     Engine/GeometricRaster/GeometryStructure.cpp
     Engine/GeometricRaster/CameraProjection.cpp
     Engine/GeometricRaster/SceneStructure.cpp

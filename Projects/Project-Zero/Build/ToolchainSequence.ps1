@@ -398,6 +398,13 @@ function Invoke-ShaderLowering([string] $VulkanRoot)
     $Compiler  = Resolve-ShaderCompiler $VulkanRoot
     $CompilerName = [System.IO.Path]::GetFileName($Compiler)
 
+    # Shader lowering times, one row per module actually lowered this build, written to a CSV next to the build
+    #    output (Build\Output\ShaderLowering.csv — regenerable, never committed). The application's runtime trace
+    #    ledger (PerformanceTrace) carries the other half of "shader times": what loading those modules and
+    #    creating the pipelines cost at startup, per stage.
+    $LoweringRows = New-Object System.Collections.Generic.List[object]
+    $LoweringStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
     $IncludeStamp = [DateTime]::MinValue
     foreach ($Name in $ShaderIncludeNames)
     {
@@ -465,7 +472,7 @@ function Invoke-ShaderLowering([string] $VulkanRoot)
             )
         }
 
-        & $Compiler @Arguments | ForEach-Object { Write-Host "    $_" }
+        $LowerMs = (Measure-Command { & $Compiler @Arguments | ForEach-Object { Write-Host "    $_" } }).TotalMilliseconds
 
         if ($LASTEXITCODE -ne 0)
         {
@@ -473,8 +480,19 @@ function Invoke-ShaderLowering([string] $VulkanRoot)
             throw "$CompilerName rejected $($Entry.Source)"
         }
 
-        Write-Lowered $SpirvPath
+        $LoweringRows.Add([pscustomobject]@{ Source = $Entry.Source; Output = $Entry.Output; Milliseconds = [math]::Round($LowerMs, 1) })
+        Write-Lowered ("{0}  ({1:N1} ms)" -f $SpirvPath, $LowerMs)
     }
+
+    $LoweringStopwatch.Stop()
+
+    # The CSV lands even when nothing was lowered this run (zero rows), so a reader can tell "no shaders were
+    #    rebuilt" from "the report was never written".
+    $LoweringOutputFolder = Join-Path $ProjectRoot 'Build\Output'
+    New-Item -ItemType Directory -Force -Path $LoweringOutputFolder | Out-Null
+    $LoweringRows | Export-Csv -Path (Join-Path $LoweringOutputFolder 'ShaderLowering.csv') -NoTypeInformation -Encoding ASCII
+    Write-Building ("Shader lowering: {0} module(s) lowered in {1:N1} ms total — {2}" -f `
+        $LoweringRows.Count, $LoweringStopwatch.Elapsed.TotalMilliseconds, (Join-Path $LoweringOutputFolder 'ShaderLowering.csv'))
 }
 
 #---
@@ -666,6 +684,7 @@ $EngineRelative = @(
     'Engine\DeviceExchange\RayTracingCapabilitySet.cpp'
     'Engine\DeviceExchange\InputExchange.cpp'
     'Engine\DeviceExchange\DiagnosticMetrics.cpp'
+    'Engine\DeviceExchange\PerformanceTrace.cpp'
     'Engine\DeviceExchange\OrientationClassifier.cpp'
     'Engine\DisplayPresentation\ReSTIRIntegrator.cpp'
     'Engine\DisplayPresentation\ShadingTableCodec.cpp'

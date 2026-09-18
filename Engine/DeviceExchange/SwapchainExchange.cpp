@@ -3,6 +3,19 @@
 //============================================================================================================================================
 // 🧩 Vulkan instance, surface, device, swapchain and recording-slot transport across the hardware vendor edge.
 
+// Windows headers come first, before vulkan.h: vk_platform.h defines APIENTRY (empty) only when it is still
+//    undefined, and windows.h then defines it as __stdcall — which MSVC reports as C4005 'APIENTRY': macro
+//    redefinition once per translation unit. Establishing the real APIENTRY first keeps every later definer quiet.
+#if defined(_WIN32)
+#   ifndef WIN32_LEAN_AND_MEAN
+#       define WIN32_LEAN_AND_MEAN
+#   endif
+#   ifndef NOMINMAX
+#       define NOMINMAX
+#   endif
+#   include <windows.h>
+#endif
+
 #include <vulkan/vulkan.h>
 
 #define GLFW_INCLUDE_NONE
@@ -15,6 +28,7 @@
 #include <thorvg.h>
 
 #include "SwapchainExchange.h"
+#include "PerformanceTrace.h"                           // ⏱ development-only RAM ledger; call sites below are #if-wrapped
 #include "../ContentInterchange/MaterialIndex.h"
 #include "../ContentInterchange/TextureIndex.h"
 #include "../GeometricRaster/TraversalIndex.h"
@@ -30,18 +44,12 @@
 #include <limits>
 #include <vector>
 
-#if defined(_WIN32)
-#   ifndef WIN32_LEAN_AND_MEAN
-#       define WIN32_LEAN_AND_MEAN
-#   endif
-#   ifndef NOMINMAX
-#       define NOMINMAX
-#   endif
-#   include <windows.h>
-#elif defined(__APPLE__)
+#if defined(__APPLE__)
 #   include <mach-o/dyld.h>
 #else
-#   include <unistd.h>
+#   if !defined(_WIN32)
+#       include <unistd.h>
+#   endif
 #endif
 
 namespace Frontier {
@@ -342,6 +350,11 @@ static std::vector<uint32_t> LoadSpirv(const std::string& RelativePath)
     File.seekg(0);
     File.read(reinterpret_cast<char*>(Spirv.data()), ByteCount);
     std::cerr << "[SwapchainExchange] Loaded SPIR-V: " << Path.string() << "\n";
+#if FRONTIER_PERFORMANCE_TRACE
+    // ⏱ Shader payload census: one named row per lowered module the application actually loaded.
+    Frontier::PerformanceTrace::Query().RecordSample(("SpirvBytes/" + Path.filename().string()).c_str(),
+                                                     static_cast<double>(ByteCount), "bytes");
+#endif
     return Spirv;
 }
 
@@ -498,7 +511,16 @@ bool SwapchainExchange::Bring() noexcept
 
     for (const Stage& Current : Stages)
     {
+#if FRONTIER_PERFORMANCE_TRACE
+        // ⏱ Each bring-up stage is a row in the trace ledger's stage table — the reader sees not just "bring-up
+        //    took 800 ms" but which of the 17 steps took it (the pipeline steps are the shader times).
+        Frontier::PerformanceTrace::Query().BeginStage(Current.Name);
+        const bool StageStarted = (this->*Current.Fn)();
+        Frontier::PerformanceTrace::Query().EndStage();
+        if (!StageStarted)
+#else
         if (!(this->*Current.Fn)())
+#endif
         {
             std::cerr << "[SwapchainExchange] Bring-up stopped at stage " << Current.Name << ".\n";
             return false;
@@ -2768,7 +2790,15 @@ void SwapchainExchange::RecordAndPresent(const DispatchConfiguration& Dispatch) 
 {
     const uint32_t ActiveSlot = Vulkan->ActiveSlot;
 
+#if FRONTIER_PERFORMANCE_TRACE
+    // ⏱ Queue path, timed for the frame ledger. The three values are read back by name from GameExecution's
+    //    telemetry block the same frame; RecordFrame clears them, so a stage that skips reads as zero.
+    Frontier::PerformanceTrace::Query().BeginStage("Frame.WaitCycle");
+#endif
     vkWaitForFences(Vulkan->Device, 1u, &Vulkan->CycleFences[ActiveSlot], VK_TRUE, UINT64_MAX);
+#if FRONTIER_PERFORMANCE_TRACE
+    Frontier::PerformanceTrace::Query().EndStage(/*RecordRow=*/false);   // Frame.WaitCycle
+#endif
 
     // 🔴 A pending resize is handled BEFORE the acquire, not after it. Acquiring and then abandoning the frame
     //    leaves the acquire semaphore SIGNALLED with nothing ever waiting on it, and the next acquire on the
@@ -2783,6 +2813,15 @@ void SwapchainExchange::RecordAndPresent(const DispatchConfiguration& Dispatch) 
     }
 
     uint32_t ImageOrdinal = 0u;
+
+#if FRONTIER_PERFORMANCE_TRACE
+    // Acquire → record → submit, scope-guarded: the acquire's failure paths return out of this function and the
+    //    stage must close wherever it does. ImageOrdinal stays outside the scope — the present step, which is
+    //    timed separately, still needs it.
+    {
+    Frontier::PerformanceStageScope RecordScope("Frame.RecordSubmit", /*RecordRow=*/false);
+#endif
+
     const VkResult AcquireResult = vkAcquireNextImageKHR(
         Vulkan->Device, Vulkan->Swapchain, UINT64_MAX,
         Vulkan->AcquireSemaphores[ActiveSlot], VK_NULL_HANDLE, &ImageOrdinal);
@@ -2829,6 +2868,10 @@ void SwapchainExchange::RecordAndPresent(const DispatchConfiguration& Dispatch) 
     Submit.pSignalSemaphores    = &Vulkan->ReleaseSemaphores[ImageOrdinal];
     (void)vkQueueSubmit(Vulkan->GraphicsQueue, 1u, &Submit, Vulkan->CycleFences[ActiveSlot]);
 
+#if FRONTIER_PERFORMANCE_TRACE
+    }   // Frame.RecordSubmit scope closes here; Present is timed on its own
+#endif
+
     VkPresentInfoKHR PresentInfo{ VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
     PresentInfo.waitSemaphoreCount = 1u;
     PresentInfo.pWaitSemaphores    = &Vulkan->ReleaseSemaphores[ImageOrdinal];
@@ -2836,12 +2879,18 @@ void SwapchainExchange::RecordAndPresent(const DispatchConfiguration& Dispatch) 
     PresentInfo.pSwapchains        = &Vulkan->Swapchain;
     PresentInfo.pImageIndices      = &ImageOrdinal;
 
+#if FRONTIER_PERFORMANCE_TRACE
+    Frontier::PerformanceTrace::Query().BeginStage("Frame.Present");
+#endif
     const VkResult PresentResult = vkQueuePresentKHR(Vulkan->GraphicsQueue, &PresentInfo);
     if (PresentResult == VK_ERROR_OUT_OF_DATE_KHR || PresentResult == VK_SUBOPTIMAL_KHR || ResizePending)
     {
         ResizePending = false;
         (void)RebuildSwapchain();
     }
+#if FRONTIER_PERFORMANCE_TRACE
+    Frontier::PerformanceTrace::Query().EndStage(/*RecordRow=*/false);   // Frame.Present
+#endif
 
     Vulkan->ActiveSlot = (ActiveSlot + 1u) % kCycleSlotCount;
 }

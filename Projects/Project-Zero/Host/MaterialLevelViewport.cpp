@@ -85,7 +85,18 @@ inline vec4 FetchSheenFull(float mu, float alpha)
     return vec4(Out[0], Out[1], Out[2], Out[3]);
 }
 
+// The shader text is written in GLSL literal style (`vec3(0.2126, 0.7152, 0.0722)`): every real number is a double
+//    literal in C++ mode, and MSVC reports the implicit double→float conversions GLSL performs silently as
+//    C4244/C4305. The text stays unsuffixed (Slang and GLSL consume the same characters); the C++ translation
+//    silences the two numbers for exactly the length of the include.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4244 4305)   // double→float literal conversions, exact at compile time
+#endif
 #include "MaterialEvaluation.slang"   // the shipped OpenPBR lobe set, compiled 1:1 as C++ (see the file's own header)
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 #include "PngWriteCounterpart.h"
 
 #include "CameraProjection.h"

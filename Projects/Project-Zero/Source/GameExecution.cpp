@@ -23,6 +23,7 @@
 #include "CelestialSequence.h"
 #include "../../../Engine/Editor/EditorInstance.h"
 #include "../../../Engine/DeviceExchange/DiagnosticMetrics.h"
+#include "../../../Engine/DeviceExchange/PerformanceTrace.h"   // ⏱ development-only RAM ledger; every call site below sits inside #if FRONTIER_PERFORMANCE_TRACE
 #include "../../../Engine/DisplayPresentation/ControlCentreHost.h"
 #include "../../../Engine/DisplayPresentation/PixelSpace.h"
 #include "../../../Engine/DisplayPresentation/FidelityClassifier.h"
@@ -69,6 +70,16 @@
 
 int main(int argc, char** argv)
 {
+#if FRONTIER_PERFORMANCE_TRACE
+    // ⏱ The session clock starts here, before anything else runs — "startup time" means from this line, not from
+    //    somewhere convenient later. Every stage below nests inside Startup, and the whole ledger stays in RAM
+    //    until WriteReport at close (see PerformanceTrace.h: a production build parses none of this).
+    Frontier::PerformanceTrace& PerformanceTrace = Frontier::PerformanceTrace::Query();
+    PerformanceTrace.BeginSession("Project-Zero");
+    PerformanceTrace.BeginStage("Startup");
+    PerformanceTrace.BeginStage("CommandLine");
+#endif
+
     // D4: how many rigid bodies the --scene drop level contains. Fixed so the exported glTF and the solver agree
     //    on instance ordinals without either having to inspect the other.
     constexpr uint32_t kDropBodyCount = 12u;
@@ -106,6 +117,11 @@ int main(int argc, char** argv)
             ScenePath = (ContentRoot / ScenePath).string();
     }
 
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // CommandLine
+    PerformanceTrace.BeginStage("TelemetrySink");
+#endif
+
     //──────────────────────────────────────────────────────────────────────────
     // Telemetry sink
     //──────────────────────────────────────────────────────────────────────────
@@ -122,6 +138,11 @@ int main(int argc, char** argv)
         std::cerr << "[Project-Zero] Telemetry sink could not be opened; continuing with console output only.\n";
     Logger.RecordMessage(Frontier::DiagnosticSeverity::Information,
                          "Bootstrap", "Project-Zero windowed ReSTIR renderer starting.");
+
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // TelemetrySink
+    PerformanceTrace.BeginStage("SceneEnsure");        // export-once: the level files are built if stale
+#endif
 
     //──────────────────────────────────────────────────────────────────────────
     // Scene — glTF level made resident (R2). The Cornell box is exported once from the analytical solver so the
@@ -222,10 +243,18 @@ int main(int argc, char** argv)
         }
     }
 
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // SceneEnsure
+    PerformanceTrace.BeginStage("ConfigurationLoad");
+#endif
     Frontier::ConfigurationRegistry Configuration;
     if (!Configuration.Load("Projects/Project-Zero/Content/Frontier.config.toml"))
         std::cerr << "[Configuration] " << Configuration.QueryPath() << ": " << Configuration.QueryLastError() << " - using defaults\n";
 
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // ConfigurationLoad
+    PerformanceTrace.BeginStage("SceneDecode");        // glTF/FBX/OBJ import + textures + moon atlas registration
+#endif
     Frontier::SceneStructure Level;
     Frontier::TextureIndex   Textures;
     uint32_t MaxTextureLevels = 1u;   // R6 row 3: deepest mip chain resident (F3 scene-census row; computed once below)
@@ -242,6 +271,9 @@ int main(int argc, char** argv)
         if (!Frontier::ContentCodec::Decode(ScenePath, Level, &Textures, Decode, &Error))   // .gltf/.glb/.fbx/.obj by extension
         {
             Logger.RecordMessage(Frontier::DiagnosticSeverity::Fatal, "Scene", ("Cannot import " + ScenePath + ": " + Error).c_str());
+#if FRONTIER_PERFORMANCE_TRACE
+            PerformanceTrace.WriteReport(DiagnosticConfig.DestinationFolder.c_str());   // the ledger holds everything up to the failed import
+#endif
             Logger.TerminateSink();
             std::cerr << "\nProject-Zero could not import the scene. Press Enter to close this console.\n";
             std::cin.get();
@@ -277,6 +309,10 @@ int main(int argc, char** argv)
             Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Materials", Line);
         }
     }
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // SceneDecode
+    PerformanceTrace.BeginStage("SceneFinalise");      // interface light proxy + flat triangles + luminaires
+#endif
     const uint32_t LuminaireCount = static_cast<uint32_t>(Level.QueryLuminaires().size());
     uint32_t AlphaMaskedMaterialCount = 0u;   // R4b: > 0 switches shadow rays to the alpha-mask-aware walk
     for (const Frontier::MaterialRecord& R : Level.QueryMaterials().QueryRecords())
@@ -370,6 +406,11 @@ int main(int argc, char** argv)
     //     instance, so object space is world space and this is bit-for-bit what Build() produced before
     //     (Scratchpad/CheckTraversalIdentity.sh is the gate). Per-instance transforms arrive in D2/D3.
     Frontier::TraversalIndex Traversal;
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // SceneFinalise
+    PerformanceTrace.BeginStage("TraversalBuild");     // the CWBVH over the level's flat triangles
+    double TraversalBuildSampleMs = 0.0;               // the builder's own measurement, summed over spans
+#endif
     {
         // SBVH; ~2× build time for ~10 % fewer steps. The drop level opts OUT: spatial splits cut triangles,
         //    which makes the tree unrefittable, and movable geometry is worth more here than the traversal gain.
@@ -382,7 +423,14 @@ int main(int argc, char** argv)
                       double(M.NodeByteCount + M.LeafByteCount) / std::max(1u, M.TriangleCount), M.SahCost, M.BuildMilliseconds,
                       M.HighQuality ? "spatial splits" : "binned SAH");
         Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Traversal", Line);
+#if FRONTIER_PERFORMANCE_TRACE
+        TraversalBuildSampleMs += M.BuildMilliseconds;
+#endif
     }
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.RecordSample("TraversalBuildMs", TraversalBuildSampleMs, "ms");
+    PerformanceTrace.EndStage();                       // TraversalBuild
+#endif
 
     //──────────────────────────────────────────────────────────────────────────
     // Camera — Unreal-style fly-through, right-handed +Z up
@@ -500,24 +548,48 @@ int main(int argc, char** argv)
     Frontier::SwapchainExchange Surface(SurfaceConfig);
     Surface.AssignRayTracingRequest(static_cast<Frontier::RayTracingRequestCategory>(Configuration.Query().Backend.RayTracingTier));
 
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.BeginStage("SwapchainBring");     // window + instance + device + swapchain + every pipeline;
+                                                       //   the exchange itself opens one stage per bring-up step
+#endif
     if (!Surface.Bring())
     {
         Logger.RecordMessage(Frontier::DiagnosticSeverity::Fatal,
                              "Bootstrap", "SwapchainExchange bring-up failed - see the [SwapchainExchange] lines above for the failing stage.");
+#if FRONTIER_PERFORMANCE_TRACE
+        PerformanceTrace.WriteReport(DiagnosticConfig.DestinationFolder.c_str());   // a failed bring-up is exactly when the startup numbers matter
+#endif
         Logger.TerminateSink();
         std::cerr << "\nProject-Zero could not open its window. Press Enter to close this console.\n";
         std::cin.get();
         return 1;
     }
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // SwapchainBring
+#endif
 
     Logger.RecordMessage(Frontier::DiagnosticSeverity::Information,
                          "Bootstrap", "Window and Vulkan swapchain ready.");
 
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.BeginStage("ShadingTableBake");   // R4b: the GGX energy + LTC sheen LUTs the kernel samples
+#endif
     {
         const Frontier::ShadingTableSet Tables = Frontier::ShadingTableCodec::Bake();   // R4b: GGX energy + LTC sheen LUTs
         Surface.UploadShadingTables(Tables.Energy.data(), Tables.Sheen.data(), Frontier::ShadingTableSet::kResolution);
     }
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.RecordSample("ShadingTableBakeMs", PerformanceTrace.EndStage(), "ms");
+    PerformanceTrace.BeginStage("SceneUpload");        // triangles, materials, textures → device memory
+#endif
     Surface.UploadScene(Level, Traversal, &Textures);
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // SceneUpload
+#endif
+
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.BeginStage("PhysicsBring");       // D3/D4/D5: bodies, bridges, the refittable copy
+#endif
 
     //──────────────────────────────────────────────────────────────────────────
     // D3 — scripted instance motion (--animate), proving the transform path before physics
@@ -610,6 +682,11 @@ int main(int argc, char** argv)
                                  : "Scripted instance motion requested but no instances could be driven.");
     }
 
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // PhysicsBring
+    PerformanceTrace.BeginStage("InstanceTraversalBuild");   // D6/D7: per-instance BLASes + the top level
+#endif
+
     //──────────────────────────────────────────────────────────────────────────
     // D6/D7 — the two-level acceleration structure (object-space BLASes + an instance top level)
     //──────────────────────────────────────────────────────────────────────────
@@ -679,6 +756,11 @@ int main(int argc, char** argv)
                                  "Two-level build refused - the kernel keeps the single world-space structure.");
         }
     }
+
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // InstanceTraversalBuild
+    PerformanceTrace.BeginStage("ControlCentreBring"); // celestial, star tables, typefaces, shade, notifications
+#endif
 
     //──────────────────────────────────────────────────────────────────────────
     // ImGui panel — apply theme once after context exists
@@ -885,6 +967,11 @@ int main(int argc, char** argv)
     Logger.RecordMessage(Frontier::DiagnosticSeverity::Information,
                          "Bootstrap", "Entering render loop.");
 
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // ControlCentreBring
+    PerformanceTrace.BeginStage("InterfaceBring");     // world-space panel + the audio bound to it
+#endif
+
     //──────────────────────────────────────────────────────────────────────────
     // Spatial interface — the world-space panel, composited over the resolved scene
     //──────────────────────────────────────────────────────────────────────────
@@ -1028,6 +1115,11 @@ int main(int argc, char** argv)
         Interface.RecordInterface(Command, CycleSlot, InterfaceViewOfFrame);
     });
 
+#if FRONTIER_PERFORMANCE_TRACE
+    PerformanceTrace.EndStage();                       // InterfaceBring
+    PerformanceTrace.EndStage();                       // Startup — everything after this line is per-frame
+#endif
+
     //──────────────────────────────────────────────────────────────────────────
     // Input exchange — filled each frame by GLFW callbacks
     //──────────────────────────────────────────────────────────────────────────
@@ -1061,6 +1153,14 @@ int main(int argc, char** argv)
     //    end of the loop, and PerformanceTelemetrySequence.h for why rows exist at all.
     Frontier::ProjectZero::PerformanceTelemetrySequence PerformanceTelemetry{ 5.0f };
 
+#if FRONTIER_PERFORMANCE_TRACE
+    // ⏱ The per-frame ledger. Each numbered section below sits in a trace stage whose elapsed value accumulates
+    //    into one of these columns; the row lands in RAM every frame and is written to disk once, at close.
+    uint32_t TraceFrameIndex = 0u;
+    float    TraceInterfaceMs = 0.0f, TraceCameraMs = 0.0f, TraceBuildMs = 0.0f;
+    float    TraceDispatchMs = 0.0f, TraceRecordsMs = 0.0f;
+#endif
+
     while (!Surface.CloseRequested() && !Panel.Convert<bool>())
     {
         const auto  NowTime = Clock::now();
@@ -1070,6 +1170,9 @@ int main(int argc, char** argv)
         // Clamp Δτ to prevent spiral-of-death on window drag or breakpoints
         if (Δτ > 0.1f) Δτ = 0.1f;
 
+#if FRONTIER_PERFORMANCE_TRACE
+        PerformanceTrace.BeginStage("Frame.Interface");
+#endif
         // ① Poll input — GLFW callbacks forward into Input
         Surface.PollInput(Input);
 
@@ -1327,6 +1430,10 @@ int main(int argc, char** argv)
             if (Input.QueryEditKey(I) == 256u) Surface.RequestClose();
         Input.ClearTextQueue();
 
+#if FRONTIER_PERFORMANCE_TRACE
+        TraceInterfaceMs += static_cast<float>(PerformanceTrace.EndStage(/*RecordRow=*/false));   // Frame.Interface
+        PerformanceTrace.BeginStage("Frame.Camera");
+#endif
         // ② Advance camera kinematics (frozen while the Control Centre owns the pointer, or an ImGui
         //    window has captured the pointer or keyboard — a drag that started on a panel must not fly
         //    the camera, and a keystroke typed into one must not fire a shortcut).
@@ -1337,6 +1444,10 @@ int main(int argc, char** argv)
             static_cast<float>(Surface.QueryWidth()) /
             static_cast<float>(Surface.QueryHeight()));
 
+#if FRONTIER_PERFORMANCE_TRACE
+        TraceCameraMs += static_cast<float>(PerformanceTrace.EndStage(false));   // Frame.Camera
+        PerformanceTrace.BeginStage("Frame.InterfaceBuild");
+#endif
         // ③ Build ImGui draw data (calls ImGui::NewFrame → ImGui::Render internally); the Control Centre records
         //    itself onto the foreground list between NewFrame and Render via the overlay hook.
         // ②c Scene editor feed: the roster fills once, the sheet follows the pick, and the folder
@@ -1481,6 +1592,10 @@ int main(int argc, char** argv)
         }
 #endif
 
+#if FRONTIER_PERFORMANCE_TRACE
+        TraceBuildMs += static_cast<float>(PerformanceTrace.EndStage(false));   // Frame.InterfaceBuild
+        PerformanceTrace.BeginStage("Frame.Dispatch");
+#endif
         // ④ Build dispatch configuration from live camera + integrator state (camera motion restarts accumulation)
         //    Render scale: the kernel runs on a sub-rectangle of the storage image and the blit stretches it.
         //    Display → Resolution: Native follows the dashboard render-scale slider; a fixed preset renders at that
@@ -1662,6 +1777,10 @@ int main(int argc, char** argv)
             }
         }
 
+#if FRONTIER_PERFORMANCE_TRACE
+        TraceDispatchMs += static_cast<float>(PerformanceTrace.EndStage(false));   // Frame.Dispatch
+        PerformanceTrace.BeginStage("Frame.SceneRecords");
+#endif
         // ④c D3 — advance instance transforms and refresh them in place. No reallocation and no device stall, so
         //     unlike UploadScene this is safe every frame; the VkBuffer handle is unchanged so descriptors stand.
         if (PhysicsReady)
@@ -1881,7 +2000,10 @@ int main(int argc, char** argv)
         }
 
         // ⑤ Cull → raster → HiZ → resolve → kernel, blit to swapchain, submit ImGui, present
-        Surface.RecordAndPresent(Dispatch);
+#if FRONTIER_PERFORMANCE_TRACE
+        TraceRecordsMs += static_cast<float>(PerformanceTrace.EndStage(false));   // Frame.SceneRecords
+#endif
+        Surface.RecordAndPresent(Dispatch);   // its queue-path stages (Frame.WaitCycle/RecordSubmit/Present) are timed inside
 
         Integrator.IncrementAccumulationIndex();
 
@@ -1921,6 +2043,44 @@ int main(int argc, char** argv)
             {
                 Logger.FlushSink();
             }
+
+#if FRONTIER_PERFORMANCE_TRACE
+            // ⏱ One RAM row per frame, no disk I/O — the whole ledger is written once, at close.
+            const Frontier::VisibilityTelemetry& GpuTimings = Surface.QueryVisibilityTelemetry();
+            Frontier::PerformanceFrameSample FrameSample;
+            FrameSample.FrameIndex                 = TraceFrameIndex++;
+            FrameSample.DeltaMilliseconds          = Δτ * 1000.0f;
+            FrameSample.InterfaceMilliseconds      = TraceInterfaceMs;
+            FrameSample.CameraMilliseconds         = TraceCameraMs;
+            FrameSample.InterfaceBuildMilliseconds = TraceBuildMs;
+            FrameSample.DispatchMilliseconds       = TraceDispatchMs;
+            FrameSample.SceneRecordsMilliseconds   = TraceRecordsMs;
+            FrameSample.QueueWaitMilliseconds      = static_cast<float>(PerformanceTrace.QueryStageMilliseconds("Frame.WaitCycle"));
+            FrameSample.RecordSubmitMilliseconds   = static_cast<float>(PerformanceTrace.QueryStageMilliseconds("Frame.RecordSubmit"));
+            FrameSample.PresentMilliseconds        = static_cast<float>(PerformanceTrace.QueryStageMilliseconds("Frame.Present"));
+            FrameSample.GpuCullMilliseconds        = GpuTimings.CullMilliseconds;
+            FrameSample.GpuRasterMilliseconds      = GpuTimings.RasterMilliseconds;
+            FrameSample.GpuHiZMilliseconds         = GpuTimings.HiZMilliseconds;
+            FrameSample.GpuResolveMilliseconds     = GpuTimings.ResolveMilliseconds;
+            FrameSample.GpuReSTIRMilliseconds      = GpuTimings.RestirMilliseconds;
+            FrameSample.GpuShadowMilliseconds      = GpuTimings.ShadowMilliseconds;
+            FrameSample.GpuPostMilliseconds        = GpuTimings.PostMilliseconds;
+            FrameSample.GpuSkyMilliseconds         = GpuTimings.SkyMilliseconds;
+            FrameSample.GpuVolumeMilliseconds      = GpuTimings.VolumeMilliseconds;
+            FrameSample.GpuTotalMilliseconds       = GpuTimings.CullMilliseconds + GpuTimings.RasterMilliseconds + GpuTimings.HiZMilliseconds
+                                                   + GpuTimings.ResolveMilliseconds + GpuTimings.KernelMilliseconds + GpuTimings.ShadowMilliseconds
+                                                   + GpuTimings.SkyMilliseconds + GpuTimings.VolumeMilliseconds;   // parents only — Kernel already contains ReSTIR + Post
+            FrameSample.ClustersTested             = GpuTimings.ClusterTotal;
+            FrameSample.ClustersVisible            = GpuTimings.OcclusionPassed;
+            FrameSample.TrianglesDrawn             = GpuTimings.TrianglesDrawn;
+            FrameSample.DrawCalls                  = GpuTimings.PhaseOneDraws + GpuTimings.PhaseTwoDraws;
+            FrameSample.ResidentMebibytes          = Telemetry.QueryResidentMebibytes();
+            FrameSample.AverageFramesPerSecond     = Telemetry.QueryAverageFramesPerSecond();
+            FrameSample.GpuTimingsValid            = GpuTimings.Valid;
+            PerformanceTrace.RecordFrame(FrameSample);
+            TraceInterfaceMs = 0.0f; TraceCameraMs = 0.0f; TraceBuildMs = 0.0f;
+            TraceDispatchMs  = 0.0f; TraceRecordsMs = 0.0f;
+#endif
         }
 
         // Keep the on-disk telemetry current even if the process is killed mid-run.
@@ -1946,6 +2106,12 @@ int main(int argc, char** argv)
                                                           : Frontier::DiagnosticSeverity::Information,
                              "Physics", RefitLine);
     }
+
+#if FRONTIER_PERFORMANCE_TRACE
+    // ⏱ The close. The ledger held every startup stage and every frame row in RAM for the whole run; this call is
+    //    its only disk write. (The destructor is the safety net for an exit path that skips this one.)
+    PerformanceTrace.WriteReport(DiagnosticConfig.DestinationFolder.c_str());
+#endif
     Logger.TerminateSink();
 
     return 0;

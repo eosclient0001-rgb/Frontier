@@ -45,7 +45,15 @@ inline vec4 FetchSheenFull(float mu, float alpha)   // M3: + E_charlie in .w
 }
 
 
+// GLSL literal style (see ShaderballExhibit.cpp): MSVC's double→float C4244/C4305 are silenced for the include only.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4244 4305)
+#endif
 #include "MaterialEvaluation.slang"
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 namespace {
 
