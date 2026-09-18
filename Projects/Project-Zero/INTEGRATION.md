@@ -54,6 +54,29 @@ Projects\Project-Zero\Construct.bat -Rebuild -Run
 
 `Construct.bat` forwards to `Build/ToolchainSequence.ps1` (arguments
 pass through: `-Configuration Debug|Release`, `-Rebuild`, `-Run`).
+
+⚠️ **Unresolved externals at link time are almost always a stale source
+list, not missing code.** The script's `$EngineRelative` is the batch that
+becomes the exe, and CMakeLists.txt names the same translation units
+independently; when the two drift, the compiler happily builds what it is
+given and `link.exe` reports symbols whose implementations are sitting in
+the tree (2026-09-18: nine TUs CMake built were absent from the script —
+`MaterialInspector`, `InstanceAcceleration`, `BlasBuildMirror` and the M7b
+`ShaderballExhibit` preview entry among them, 14 unresolved externals).
+Run the gate before blaming the code:
+
+```sh
+bash Tools/Build/CheckBuildSourceList.sh      # CMake <-> ToolchainSequence.ps1 <-> tree
+```
+
+It also fails when an engine TU belongs to neither build system, so a new
+file cannot land invisible to both. Two TUs need per-file treatment and
+both build systems carry it: `ShaderballExhibit.cpp` compiles with
+`SHADERBALL_PREVIEW_LIB` (undefined, that file defines its own `main` *and*
+does not export `RenderShaderballPreview` — the showroom needs the opposite
+of both), and `TraversalIndex.cpp` / `InstanceAcceleration.cpp` want the
+SIMD flags CMake sets (`-Isa AVX2` on the script side, which is the same
+opt-in the Jolt build documents).
 First build fetches the submodules/packages the script lists
 (`imgui` on `docking`, GLFW, Jolt, cgltf, stb, …) — that step needs
 network; afterwards the build is offline. The window opens on the

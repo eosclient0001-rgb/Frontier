@@ -193,6 +193,13 @@ function Get-IncludePaths([string] $VulkanRoot)
         "/I$(Join-Path $PackageRoot 'stb')"
         "/I$(Join-Path $PackageRoot 'ufbx')"
         "/I$(Join-Path $PackageRoot 'fast_obj')"
+        # The engine's own shader sources are #included as C++ by the CPU-side TUs (MaterialEvaluation.slang), which is
+        #    how the shipped lobe set is compiled 1:1 for the host. The other three carry headers the M7b preview TU and
+        #    the D9 build-pipeline TUs include across directories; CMake lists the same four per-file on those TUs.
+        "/I$(Join-Path $EngineRoot 'Shaders')"
+        "/I$(Join-Path $EngineRoot 'DisplayPresentation')"
+        "/I$(Join-Path $EngineRoot 'ContentInterchange')"
+        "/I$(Join-Path $RepositoryRoot 'Exhibits\Workbench\Editor')"
     )
 }
 
@@ -639,9 +646,13 @@ $ImGuiSources = @(
 )
 
 $EngineRelative = @(
-    # NOTE: this list must match the .cpp files actually in the tree (branch arena/01a06c54-slate, 2026-09-04).
-    # Phantom entries from a foreign module layout were removed and the two missing DisplayPresentation files
-    # added; the existence guard below fails fast with names if the list ever rots again.
+    # NOTE: this list must match BOTH the .cpp files in the tree AND CMakeLists.txt's Project-Zero target — the two
+    # Windows build paths have to name the same translation units, or one of them links an exe the other cannot.
+    # 2026-09-04: phantom entries from a foreign module layout were removed and two DisplayPresentation files added.
+    # 2026-09-18: nine TUs CMake built were missing here (M7b's inspector and preview entry, D6/D9's instance/BLAS
+    #    files, P1-P6's container/exporters/CLI) — 14 unresolved externals at link time. The guard below catches a
+    #    renamed/deleted entry; `Tools/Build/CheckBuildSourceList.sh` catches an absent one and holds the CMake
+    #    agreement, so run it with any build-system change.
     'Engine\DeviceExchange\SwapchainExchange.cpp'
     'Engine\DeviceExchange\RayTracingCapabilitySet.cpp'
     'Engine\DeviceExchange\InputExchange.cpp'
@@ -718,6 +729,23 @@ $EngineRelative = @(
     'Projects\Project-Zero\Source\FlyThroughSolver.cpp'
     'Projects\\Project-Zero\\Source\\EditorFeedSequence.cpp'
     'Projects\Project-Zero\Source\GameExecution.cpp'
+    # ── Added 2026-09-18. The Windows link failed with 14 unresolved externals because the nine TUs below were in the
+    #    tree and in CMakeLists.txt's Project-Zero target, but not here. Three of them were the reported symbols:
+    #    MaterialInspector (ControlCentreHost + GameExecution), InstanceAcceleration (GameExecution's D6/D7 two-level
+    #    scene), and ShaderballExhibit (RenderShaderballPreview, M7b). BlasBuildMirror is InstanceAcceleration's own
+    #    dependency (QuantiseNode), so the link would have failed a second time without it. The rest are CMake-side
+    #    entries that were equally absent: the P1-P6 space-format pair and CLI, and the D9 build-pipeline pair.
+    #    `Tools/Build/CheckBuildSourceList.sh` now cross-checks this list against CMakeLists.txt and the tree, so the
+    #    next TU cannot land in one build system only.
+    'Engine\DisplayPresentation\MaterialInspector.cpp'          # M7b inspector (Apply/Discard/IsDirty/layouts/Rebuild)
+    'Engine\GeometricRaster\InstanceAcceleration.cpp'           # D6/D7 BLAS + instance top level, and RelativeMatrix
+    'Engine\GeometricRaster\BlasBuildMirror.cpp'                # its QuantiseNode dependency (D9's refit kernel source)
+    'Engine\GeometricRaster\BlasDevicePayload.cpp'              # D9 device payload layout
+    'Engine\GeometricRaster\BlasBuildPipeline.cpp'              # D9 build/refit dispatch
+    'Engine\ContentInterchange\SpaceCodec.cpp'                  # P1/P3 .space container
+    'Engine\ContentInterchange\SpaceExport.cpp'                 # P2/P6 exporters
+    'Projects\Project-Zero\Source\CommandLine.cpp'             # P4 the launch line both hosts parse
+    'Exhibits\Workbench\Materials\ShaderballExhibit.cpp'       # M7b preview entry — compiled with the override below
 )
 
 $EngineSources = New-Object System.Collections.Generic.List[string]
@@ -726,16 +754,41 @@ foreach ($Rel in $EngineRelative)
     $EngineSources.Add((Join-Path $RepositoryRoot $Rel))
 }
 
-# Fail fast with NAMES if the source list ever rots again (was: 73 cascading c1xx C1083s, 2026-09-04).
+# This guard catches a source that was RENAMED or DELETED while staying listed (was: 73 cascading c1xx C1083s,
+#    2026-09-04). It cannot catch the opposite failure — a file that exists, is referenced by the app, and is simply not
+#    listed — which is what produced 14 unresolved externals on 2026-09-18. `Tools/Build/CheckBuildSourceList.sh` does
+#    that half, by cross-checking this list against CMakeLists.txt and the tree.
 $MissingSources = @($EngineSources | Where-Object { -not (Test-Path $_) }) + @($ImGuiSources | Where-Object { -not (Test-Path $_) })
 if ($MissingSources.Count -gt 0) { throw ('missing source files in the translation batch:' + [Environment]::NewLine + ($MissingSources -join [Environment]::NewLine)) }
 
+# ── Per-file compilation overrides ───────────────────────────────────────────────────────────────────────────────────
+#    cl.exe takes ONE flag set per invocation, so a TU that needs an extra define cannot ride the shared batch: it gets
+#    its own batch and its own object file, and every object still goes to the same linker line. CMake carries the same
+#    override for the same file (`set_source_files_properties(... COMPILE_DEFINITIONS SHADERBALL_PREVIEW_LIB)`), so the
+#    two build systems agree — which is exactly the agreement that had rotted here.
+#
+#      · ShaderballExhibit.cpp IS the M7b preview entry (`RenderShaderballPreview`). SHADERBALL_PREVIEW_LIB compiles the
+#        renderer without the exhibit's own main(), which is what lets the showroom link it. Undefined, that file defines
+#        main() as well and the link fails on a duplicate entry point instead of a missing one.
+$Overrides = @(
+    @{ Source = (Join-Path $RepositoryRoot 'Exhibits\Workbench\Materials\ShaderballExhibit.cpp')
+       Flags  = @('/DSHADERBALL_PREVIEW_LIB')
+       Label  = 'Project-Zero preview TU' }
+)
+
+$OverridePaths = @($Overrides | ForEach-Object { $_.Source })
+
 $AllSources = New-Object System.Collections.Generic.List[string]
-foreach ($S in $EngineSources) { $AllSources.Add($S) }
+foreach ($S in $EngineSources) { if ($OverridePaths -notcontains $S) { $AllSources.Add($S) } }
 foreach ($S in $ImGuiSources)  { $AllSources.Add($S) }
 
 # Translate
-$ObjectFiles = Invoke-Translation $AllSources.ToArray() 'Project-Zero' $ObjectRoot $Flags $IncludePaths
+$ObjectFiles = @(Invoke-Translation $AllSources.ToArray() 'Project-Zero' $ObjectRoot $Flags $IncludePaths)
+foreach ($Override in $Overrides)
+{
+    $OverrideFlags = @($Flags) + @($Override.Flags)
+    $ObjectFiles = $ObjectFiles + @(Invoke-Translation @($Override.Source) $Override.Label $ObjectRoot $OverrideFlags $IncludePaths)
+}
 
 # Link
 $BinaryRoot = Join-Path $OutputRoot 'Binary'
