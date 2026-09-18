@@ -1305,35 +1305,45 @@ bool VisibilityExchange::PlaceShadowTaps(ShadowFrameConfiguration& Shadow) const
     //    a light the kernel has sampled since it landed (kSunLightIndex), so it must be one here too.
     const bool SunLit = Shadow.SunEnabled
                      && (Shadow.SunRadiance[0] + Shadow.SunRadiance[1] + Shadow.SunRadiance[2]) > 0.0f;
-    if (Emitters.empty() && !SunLit) return false;
+    // The moon is a light too. A moonlit night casts real shadows — soft and dim, but there — and the GI-off path
+    //    used to produce none, because the moon was only ever a disc painted into the sky.
+    const bool MoonLit = Shadow.MoonEnabled
+                      && (Shadow.MoonRadiance[0] + Shadow.MoonRadiance[1] + Shadow.MoonRadiance[2]) > 0.0f;
+    if (Emitters.empty() && !SunLit && !MoonLit) return false;
 
     uint32_t Placed = 0u;
 
-    // ── The sun takes slot 0 ─────────────────────────────────────────────────────────────────────────────────
+    // ── The celestial bodies take the first slots ────────────────────────────────────────────────────────────
     //    A light at infinity has no position, but the shadow stage rasterises a perspective map from a point. The
-    //    tap is therefore placed ONE SCENE RADIUS back along the sun direction from the scene centre: far enough
-    //    that the projection is near-orthographic over the scene, close enough that the depth range stays usable.
-    //    The resolve is told it is directional (the mask below) so it uses the direction and skips 1/d².
-    if (SunLit)
+    //    tap is therefore placed ONE SCENE RADIUS back along the body's direction from the scene centre: far
+    //    enough that the projection is near-orthographic over the scene, close enough that the depth range stays
+    //    usable. The resolve is told it is directional (the mask below) so it uses the direction and skips 1/d².
+    //
+    //    Sun first, then moon. Both can be up at once — a daytime moon is ordinary — so these are independent
+    //    tests rather than an either/or, and the mesh emitters take whatever slots are left.
+    const auto PlaceDirectional = [&](const float Direction[3], const float Radiance[3], float AngularRadius)
     {
         const float Radius = std::max(SceneDiagonal * 0.5f, 1.0f);
         const float Back   = Radius * 2.0f;
-        ShadowLightTap& Tap = Shadow.Taps[0];
-        for (int I = 0; I < 3; ++I) Tap.Origin[I] = SceneCentre[I] + Shadow.SunDirection[I] * Back;
-        // The emitter normal is what the resolve's LdotL tests: the sun faces the scene, so it is −direction.
-        for (int I = 0; I < 3; ++I) Tap.Normal[I]   = -Shadow.SunDirection[I];
-        for (int I = 0; I < 3; ++I) Tap.Radiance[I] = Shadow.SunRadiance[I];
+        ShadowLightTap& Tap = Shadow.Taps[Placed];
+        for (int I = 0; I < 3; ++I) Tap.Origin[I] = SceneCentre[I] + Direction[I] * Back;
+        // The emitter normal is what the resolve's LdotL tests: the body faces the scene, so it is −direction.
+        for (int I = 0; I < 3; ++I) Tap.Normal[I]   = -Direction[I];
+        for (int I = 0; I < 3; ++I) Tap.Radiance[I] = Radiance[I];
 
         // Directional taps carry no area: the resolve multiplies radiance by NdotL alone (the disc's solid angle is
         //    already folded into the record's SunDirect, exactly as the kernel's SunEmission does).
         Tap.Weight    = 1.0f;
-        // PCSS penumbra: the disc's apparent width at this distance. tan(θ)·d for the solar half-angle gives the
-        //    same contact-hardening behaviour a real sun produces — sharp at contact, soft metres away.
-        Tap.LightSize = 2.0f * std::tan(Shadow.SunAngularRadius) * Back;
+        // PCSS penumbra: the disc's apparent width at this distance. tan(θ)·d for the body's half-angle gives the
+        //    same contact-hardening a real sun or moon produces — sharp at contact, soft metres away.
+        Tap.LightSize = 2.0f * std::tan(AngularRadius) * Back;
 
-        Shadow.DirectionalMask |= kShadowTapDirectionalBit << 0;
+        Shadow.DirectionalMask |= kShadowTapDirectionalBit << Placed;
         ++Placed;
-    }
+    };
+
+    if (SunLit)  PlaceDirectional(Shadow.SunDirection,  Shadow.SunRadiance,  Shadow.SunAngularRadius);
+    if (MoonLit) PlaceDirectional(Shadow.MoonDirection, Shadow.MoonRadiance, Shadow.MoonAngularRadius);
 
     // ── The mesh emitters fill what is left ──────────────────────────────────────────────────────────────────
     //    The same fixed stratified warp points VisibilityRaster::PlaceTaps uses, in the same order. Fixed rather
@@ -1342,9 +1352,9 @@ bool VisibilityExchange::PlaceShadowTaps(ShadowFrameConfiguration& Shadow) const
     constexpr float kWarp[ShadowFrameConfiguration::MaximumTaps][2] =
         { { 0.25f, 0.25f }, { 0.75f, 0.25f }, { 0.25f, 0.75f }, { 0.75f, 0.75f } };
 
-    if (!Emitters.empty())
+    if (!Emitters.empty() && Placed < Maximum)
     {
-        const uint32_t MeshTaps = Maximum - Placed;   // 3 when the sun is up, 4 when it is not
+        const uint32_t MeshTaps = Maximum - Placed;   // 4, minus however many of sun/moon are up
         const float    Count    = static_cast<float>(Emitters.size());
         for (uint32_t K = 0u; K < MeshTaps; ++K)
         {
@@ -1372,7 +1382,7 @@ bool VisibilityExchange::PlaceShadowTaps(ShadowFrameConfiguration& Shadow) const
 
     for (int I = 0; I < 3; ++I) Shadow.Centre[I] = SceneCentre[I];
     // Far must clear the whole scene from any tap, near stays small so contact shadows survive the depth precision.
-    //    The sun tap stands two radii out, so the far plane must clear that too.
+    //    A celestial tap stands two radii out, so the far plane must clear that too.
     Shadow.FarPlane  = std::max(Shadow.NearPlane * 4.0f, SceneDiagonal * 4.0f);
     return Placed > 0u;
 }

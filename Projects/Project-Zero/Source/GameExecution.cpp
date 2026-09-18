@@ -810,6 +810,8 @@ int main(int argc, char** argv)
     //    re-send them with the current solar state rather than rebuilding the tier decision every frame.
     Frontier::ShadowFrameConfiguration ShadowTierFrame{};
     bool                               ShadowTierFrameValid = false;
+    // The frame the sun (④d) and the moon (④e) jointly fill each tick, handed to the device once at the end of ④e.
+    Frontier::ShadowFrameConfiguration ShadowFrameStaged{};
 
     // Push the Control Centre settings into the renderer. Called whenever the settings revision changes.
     auto ApplyControlCentreSettings = [&](const Frontier::ControlCentreSettings& S, bool Announce)
@@ -1759,14 +1761,16 @@ int main(int argc, char** argv)
             //    about where the sun is or how bright it is. SunDirect is already hard zero below the horizon and
             //    when the sun is hidden or disabled, so "is the sun up" needs no second opinion here. Re-sent every
             //    frame because the sun moves; the tier's own fields ride along unchanged.
+            //    The frame is STAGED here rather than assigned: ④e below adds the moon to the same block, and the
+            //    device must see one frame carrying both bodies, not the sun's frame immediately overwritten by a
+            //    moon-only one. ShadowFrameStaged is handed to the device once, at the end of ④e.
             if (ShadowTierFrameValid)
             {
-                Frontier::ShadowFrameConfiguration Shadow = ShadowTierFrame;
+                ShadowFrameStaged = ShadowTierFrame;
                 const float Direct = Sky.SunDirect[0] + Sky.SunDirect[1] + Sky.SunDirect[2];
-                Shadow.SunEnabled = Direct > 0.0f;
-                for (int I = 0; I < 3; ++I) Shadow.SunDirection[I] = Sky.SunDirection[I];
-                for (int I = 0; I < 3; ++I) Shadow.SunRadiance[I]  = Sky.SunDirect[I];
-                Surface.AssignShadowFrame(Shadow);
+                ShadowFrameStaged.SunEnabled = Direct > 0.0f;
+                for (int I = 0; I < 3; ++I) ShadowFrameStaged.SunDirection[I] = Sky.SunDirection[I];
+                for (int I = 0; I < 3; ++I) ShadowFrameStaged.SunRadiance[I]  = Sky.SunDirect[I];
             }
             // A slider step on a converged frame is absorbed at 1/n — invisible until the camera restarts the
             //    history, which is why panel edits used to land only when the view moved. Compare the packed
@@ -1788,6 +1792,52 @@ int main(int argc, char** argv)
         {
             const Frontier::MoonConstantRecord Moons = Celestial.PackMoonRecord();
             (void)Surface.RefreshMoons(&Moons, sizeof(Moons));
+
+            // ⚠️ THE MOON LIGHTS THE SCENE, AND UNTIL NOW IT DID NOT. MoonAmbient() in MoonRecords.slang is summed
+            //    by the ReSTIR kernel alone, so with GI OFF a night frame had no lunar contribution whatsoever —
+            //    the moon was a lit disc painted on a sky above ground it did not illuminate, and it cast no
+            //    shadow on either path. The moon is a directional light like the sun, orders of magnitude down,
+            //    and it gets a tap on the same terms.
+            //
+            //    Sourced from the SAME packed record the kernel reads at binding 22, so the two paths cannot
+            //    disagree, and using the SAME brightness × phase product MoonAmbient() uses, so a moonlit frame
+            //    has the same intensity whether GI is on or off. Of up to four moons only the brightest gets a
+            //    tap: four shadow-casting moons would spend the entire tap budget on the sky and leave none for
+            //    the lamps, and the others still contribute through the ambient term.
+            if (ShadowTierFrameValid)
+            {
+                const uint32_t Drawn = Moons.Control[0] < Frontier::kMoonDrawCount ? Moons.Control[0]
+                                                                                   : Frontier::kMoonDrawCount;
+                int   Brightest = -1;
+                float BestLevel = 0.0f;
+                for (uint32_t M = 0u; M < Drawn; ++M)
+                {
+                    // Below the horizon it lights nothing: the same max(direction.z, 0) gate as MoonAmbient.
+                    const float Up = Moons.Direction[M][2];
+                    if (Up <= 0.0f) continue;
+                    // Phase is the REFERENCE convention here (0 = full), matching MoonAmbient's cosine exactly.
+                    const float Phase = Moons.Params[M][2];
+                    const float Lit   = 0.5f + 0.5f * std::cos(Phase * 2.0f * 3.14159265358979323846f);
+                    const float Level = Moons.Params[M][1] * Up * Lit;
+                    if (Level > BestLevel) { BestLevel = Level; Brightest = static_cast<int>(M); }
+                }
+
+                ShadowFrameStaged.MoonEnabled = Brightest >= 0 && BestLevel > 0.0f;
+                if (ShadowFrameStaged.MoonEnabled)
+                {
+                    const uint32_t M = static_cast<uint32_t>(Brightest);
+                    for (int I = 0; I < 3; ++I) ShadowFrameStaged.MoonDirection[I] = Moons.Direction[M][I];
+                    // The 0.0025 scale is MoonAmbient's, kept verbatim so the direct tap and the kernel's ambient
+                    //    are the same moon at the same brightness rather than two guesses that drift apart.
+                    for (int I = 0; I < 3; ++I)
+                        ShadowFrameStaged.MoonRadiance[I] = Moons.Tint[M][I] * BestLevel * 0.0025f;
+                    // MoonParams.x is the angular RADIUS in radians — exactly what the PCSS penumbra wants.
+                    ShadowFrameStaged.MoonAngularRadius = Moons.Params[M][0] > 1e-6f ? Moons.Params[M][0] : 0.00465f;
+                }
+
+                // One frame, both bodies. See ④d: the sun staged it, the moon completed it, the device gets it now.
+                Surface.AssignShadowFrame(ShadowFrameStaged);
+            }
             // Same shape as the sky above: a moon slider step is absorbed at 1/n on a converged frame, so the
             //    roster bytes are compared and the accumulation restarts the tick anything lands.
             if (std::memcmp(&Moons, &LastMoons, sizeof(Moons)) != 0)
@@ -1896,7 +1946,7 @@ int main(int argc, char** argv)
                                   G.ClusterTotal, G.FrustumPassed, G.ConePassed, G.OcclusionPassed,
                                   G.PhaseOneDraws, G.PhaseTwoDraws, G.TrianglesDrawn);
                     Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Visibility", Line);
-                }
+
                     // The optimisation verdict, stated rather than left to be worked out from the numbers. GPU-bound
                     //    and CPU-bound want opposite fixes, and the single most common surprise on this renderer is
                     //    "100 % GPU on a tiny scene", which is almost never the geometry: at 1280x720 the ReSTIR

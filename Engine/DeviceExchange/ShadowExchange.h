@@ -81,6 +81,20 @@ struct ShadowFrameConfiguration
     float                SunDirection[3] = { 0.0f, 0.0f, 1.0f };     // [-]   unit vector pointing TOWARD the sun
     float                SunRadiance[3]  = { 0.0f, 0.0f, 0.0f };     // [nit] the record's attenuated direct sun
     float                SunAngularRadius = 0.00465f;                // [rad] the solar disc — PCSS's penumbra scale
+
+    // ── The moon ─────────────────────────────────────────────────────────────────────────────────────────────
+    // The same argument as the sun, one step down in magnitude. A moonlit night has REAL shadows — soft, blue and
+    //    dim, but present — and before this the moon lit nothing at all on the GI-off path: MoonAmbient() exists
+    //    but is only summed by the ReSTIR kernel, so with GI off a night frame fell to the flat kAmbient fill and
+    //    the moon was a painted disc in the sky that cast no light and no shadow.
+    //
+    //    The moon takes tap slot 1 (after the sun) and is likewise directional. Sun and moon can both be up —
+    //    daytime moons are ordinary — so the two are independent, not an either/or.
+    bool                 MoonEnabled   = false;                      // [-]   a moon is up and contributing
+    float                MoonDirection[3] = { 0.0f, 0.0f, 1.0f };    // [-]   unit vector pointing TOWARD the moon
+    float                MoonRadiance[3]  = { 0.0f, 0.0f, 0.0f };    // [nit] brightness × phase × tint, from the roster
+    float                MoonAngularRadius = 0.00465f;               // [rad] the lunar disc — PCSS's penumbra scale
+
     uint32_t             MapSide    = 512u;                          // [px]  shadow map side, tier or dropdown
     ShadowFilterCategory Filter     = ShadowFilterCategory::Pcss;    // [-]   which filter the tier selected
     uint32_t             FilterTaps = 5u;                            // [cnt] filter kernel side, in taps

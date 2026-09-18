@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #============================================================================================================================================
-#                                                        CHECKSUNSHADOW.SH
+#                                                        CHECKCELESTIALSHADOW.SH
 #============================================================================================================================================
 # Builds and runs the sun-shadow gate: with GI off, the shadow stage must place a rasterisation tap for the sun.
 #
@@ -9,7 +9,7 @@
 #    because nothing the gate calls issues a Vulkan command, but the HEADERS must be reachable. They are looked for in
 #    the same three places the rest of the workbench uses.
 #
-#    usage: bash Tools/Build/CheckSunShadow.sh
+#    usage: bash Tools/Build/CheckCelestialShadow.sh
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -19,11 +19,11 @@ for Candidate in ExternalPackages/Vulkan-Headers "${MATERIAL_SCENES_EXT:-}/Vulka
     if [ -f "$Candidate/include/vulkan/vulkan.h" ]; then VULKAN_ROOT="$Candidate"; break; fi
 done
 if [ -z "$VULKAN_ROOT" ]; then
-    echo "[sun-shadow] Vulkan headers not found — tried ExternalPackages/, \$MATERIAL_SCENES_EXT and ~/.cache/m7." >&2
-    echo "[sun-shadow]   git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers ~/.cache/m7/Vulkan-Headers" >&2
+    echo "[celestial-shadow] Vulkan headers not found — tried ExternalPackages/, \$MATERIAL_SCENES_EXT and ~/.cache/m7." >&2
+    echo "[celestial-shadow]   git clone --depth 1 https://github.com/KhronosGroup/Vulkan-Headers ~/.cache/m7/Vulkan-Headers" >&2
     exit 2
 fi
-echo "[sun-shadow] Vulkan headers: $VULKAN_ROOT"
+echo "[celestial-shadow] Vulkan headers: $VULKAN_ROOT"
 
 Stage="$(mktemp -d)"
 trap 'rm -rf "$Stage"' EXIT
@@ -40,19 +40,19 @@ g++ -std=c++20 -O1 -g -c -I. -I"$VULKAN_ROOT/include" -o "$Stage/VisibilityExcha
     echo '#include <cstdlib>'
     echo 'extern "C" {'
     nm -u "$Stage/VisibilityExchange.o" | awk '{print $2}' | grep -E '^vk' | sort -u | while read -r Symbol; do
-        echo "void ${Symbol}(void) { std::fprintf(stderr, \"[sun-shadow] ${Symbol} was called - the gate left the pure path\\n\"); std::abort(); }"
+        echo "void ${Symbol}(void) { std::fprintf(stderr, \"[celestial-shadow] ${Symbol} was called - the gate left the pure path\\n\"); std::abort(); }"
     done
     echo '}'
 } > "$Stage/VulkanStubs.cpp"
 
-echo "[sun-shadow] stubbed $(grep -c '^void vk' "$Stage/VulkanStubs.cpp") Vulkan entry points (none may be called)"
+echo "[celestial-shadow] stubbed $(grep -c '^void vk' "$Stage/VulkanStubs.cpp") Vulkan entry points (none may be called)"
 
 g++ -std=c++20 -O1 -g -fno-omit-frame-pointer \
     -I. -I"$VULKAN_ROOT/include" \
-    -o "$Stage/SunShadowGate" \
-    Tools/Build/Gates/SunShadowGate.cpp \
+    -o "$Stage/CelestialShadowGate" \
+    Tools/Build/Gates/CelestialShadowGate.cpp \
     "$Stage/VisibilityExchange.o" \
     Engine/DeviceExchange/OrientationClassifier.cpp \
     "$Stage/VulkanStubs.cpp"
 
-"$Stage/SunShadowGate"
+"$Stage/CelestialShadowGate"
