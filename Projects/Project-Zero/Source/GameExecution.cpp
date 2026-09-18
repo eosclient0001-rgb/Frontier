@@ -50,6 +50,7 @@
 #include "../../../Engine/GeometricRaster/ClipProjection.h"
 #include "InterfaceTrialSequence.h"
 #include "InstanceMotionSequence.h"
+#include "PerformanceTelemetrySequence.h"
 #include "PhysicsInstanceSequence.h"
 #include "InterfaceAudioSequence.h"
 #include "../../../Engine/SpatialInterface/InterfaceScreenSequence.h"
@@ -1056,10 +1057,9 @@ int main(int argc, char** argv)
     Frontier::EditorProperty* TintMirror  = nullptr;
     uint32_t                 AppliedOrbit = 0u;
 
-    // Performance-telemetry accumulators (the 5 s window the loop reports over; see the block at the end of the loop).
-    float    PerformanceWindow      = 0.0f;   // [s]
-    uint32_t PerformanceSampleCount = 0u;     // [frames]
-    float    PerformancePeakSeconds = 0.0f;   // [s] worst single frame in the window — the number a mean always hides
+    // The performance reporter: owns the 5 s window, the prose lines and the measurement rows. See the block at the
+    //    end of the loop, and PerformanceTelemetrySequence.h for why rows exist at all.
+    Frontier::ProjectZero::PerformanceTelemetrySequence PerformanceTelemetry{ 5.0f };
 
     while (!Surface.CloseRequested() && !Panel.Convert<bool>())
     {
@@ -1898,130 +1898,28 @@ int main(int argc, char** argv)
         //──────────────────────────────────────────────────────────────────────
         // Performance telemetry — CPU frame pacing and the GPU stage timings
         //──────────────────────────────────────────────────────────────────────
-        // Written on a wall-clock cadence rather than a frame count so the cost of the logging itself does not scale
-        //    with frame rate, and so a run that stalls still produces rows (a frame-count cadence goes quiet exactly
-        //    when the timings would be most interesting).
-        //
-        //    The GPU numbers are real device timestamps, not CPU-side guesses: VisibilityExchange writes them from
-        //    its query pool around each stage, so "Kernel 6.2 ms" is the ReSTIR dispatch measured on the GPU. They
-        //    read as zero until the pool has a completed frame to report, which is why Valid is checked.
+        // PerformanceTelemetrySequence owns the cadence, the prose and the measurement ROWS that land in
+        //    ProjectZero_TelemetryReport. See its header: the report used to carry no performance or GPU entries at
+        //    all, because everything the frame loop knew was written with RecordMessage (a sentence) and never with
+        //    RecordMeasurement (a row).
         {
-            PerformanceSampleCount += 1u;
-            PerformanceWindow      += Δτ;
-            PerformancePeakSeconds  = std::max(PerformancePeakSeconds, Δτ);
+            Frontier::ProjectZero::PerformanceWorkload Workload;
+            Workload.RenderWidth     = Surface.QueryWidth();
+            Workload.RenderHeight    = Surface.QueryHeight();
+            Workload.PresentMode     = Surface.QueryPresentModeName();
+            const Frontier::ReSTIRIntegratorConfiguration& C = Integrator.QueryConfiguration();
+            Workload.Candidates      = C.CandidatesPerPixel;
+            Workload.ExtraCandidates = C.ExtraCandidateCount;
+            Workload.SpatialTaps     = C.SpatialTapCount;
+            Workload.DenoiseLevels   = C.DenoiseLevelCount;
 
-            if (PerformanceWindow >= 5.0f && PerformanceSampleCount > 0u)
+            // Reporting is the natural moment to get the rows onto disk: a run killed mid-flight then still leaves a
+            //    complete report rather than one truncated part-way through a window.
+            if (PerformanceTelemetry.AdvanceFrame(Δτ, Logger, Surface.QueryVisibilityTelemetry(), Workload,
+                                                  Telemetry.QueryAverageFramesPerSecond(),
+                                                  Telemetry.QueryResidentMebibytes()))
             {
-                const Frontier::VisibilityTelemetry& G = Surface.QueryVisibilityTelemetry();
-                const float MeanMs = 1000.0f * PerformanceWindow / static_cast<float>(PerformanceSampleCount);
-                const float PeakMs = 1000.0f * PerformancePeakSeconds;
-
-                char Line[512];
-                std::snprintf(Line, sizeof(Line),
-                              "CPU %.2f ms/frame (%.1f fps, worst %.2f ms over %u frames), RSS %.0f MiB",
-                              static_cast<double>(MeanMs),
-                              static_cast<double>(Telemetry.QueryAverageFramesPerSecond()),
-                              static_cast<double>(PeakMs), PerformanceSampleCount,
-                              static_cast<double>(Telemetry.QueryResidentMebibytes()));
-                Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Performance", Line);
-
-                // ⚠️ The line above is PROSE. These are ROWS. RecordMeasurement is what puts a
-                //    "Measurement: <token> = <value> [<unit>]" entry into ProjectZero_TelemetryReport, and the
-                //    report had no performance or GPU rows at all because the frame loop only ever called
-                //    RecordMessage — every number was locked inside a sentence no tool can parse. CpuReferenceMain
-                //    emitted rows; the application itself never did. One row per quantity, so the report can be
-                //    diffed between runs and a regression shows up as a number that moved.
-                Logger.RecordMeasurement("FrameTimeMeanMs",   static_cast<double>(MeanMs), "ms");
-                Logger.RecordMeasurement("FrameTimePeakMs",   static_cast<double>(PeakMs), "ms");
-                Logger.RecordMeasurement("FramesPerSecond",   static_cast<double>(Telemetry.QueryAverageFramesPerSecond()), "fps");
-                Logger.RecordMeasurement("FrameSampleCount",  static_cast<double>(PerformanceSampleCount), "count");
-                Logger.RecordMeasurement("ResidentMemory",    static_cast<double>(Telemetry.QueryResidentMebibytes()), "MiB");
-
-                if (G.Valid)
-                {
-                    const float GpuTotal = G.CullMilliseconds + G.RasterMilliseconds + G.HiZMilliseconds
-                                         + G.ResolveMilliseconds + G.KernelMilliseconds + G.ShadowMilliseconds
-                                         + G.SkyMilliseconds + G.VolumeMilliseconds;
-                    std::snprintf(Line, sizeof(Line),
-                                  "GPU %.2f ms total | cull %.2f · raster %.2f · HiZ %.2f · resolve %.2f · "
-                                  "ReSTIR %.2f · shadow %.2f · post %.2f · sky %.2f · volume %.2f",
-                                  static_cast<double>(GpuTotal),
-                                  static_cast<double>(G.CullMilliseconds),   static_cast<double>(G.RasterMilliseconds),
-                                  static_cast<double>(G.HiZMilliseconds),    static_cast<double>(G.ResolveMilliseconds),
-                                  static_cast<double>(G.RestirMilliseconds), static_cast<double>(G.ShadowMilliseconds),
-                                  static_cast<double>(G.PostMilliseconds),   static_cast<double>(G.SkyMilliseconds),
-                                  static_cast<double>(G.VolumeMilliseconds));
-                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "GpuTiming", Line);
-
-                    // The per-stage GPU breakdown as rows. These come from the device's own timestamp pool
-                    //    (vkCmdWriteTimestamp, scaled by timestampPeriod), not from a CPU-side clock, so they are
-                    //    what the GPU actually spent rather than what the submission looked like from the host.
-                    //    A stage that did not run this frame reports 0.
-                    Logger.RecordMeasurement("GpuFrameTotalMs", static_cast<double>(GpuTotal),               "ms");
-                    Logger.RecordMeasurement("GpuCullMs",       static_cast<double>(G.CullMilliseconds),     "ms");
-                    Logger.RecordMeasurement("GpuRasterMs",     static_cast<double>(G.RasterMilliseconds),   "ms");
-                    Logger.RecordMeasurement("GpuHiZMs",        static_cast<double>(G.HiZMilliseconds),      "ms");
-                    Logger.RecordMeasurement("GpuResolveMs",    static_cast<double>(G.ResolveMilliseconds),  "ms");
-                    Logger.RecordMeasurement("GpuReSTIRMs",     static_cast<double>(G.RestirMilliseconds),   "ms");
-                    Logger.RecordMeasurement("GpuShadowMs",     static_cast<double>(G.ShadowMilliseconds),   "ms");
-                    Logger.RecordMeasurement("GpuPostMs",       static_cast<double>(G.PostMilliseconds),     "ms");
-                    Logger.RecordMeasurement("GpuSkyMs",        static_cast<double>(G.SkyMilliseconds),      "ms");
-                    Logger.RecordMeasurement("GpuVolumeMs",     static_cast<double>(G.VolumeMilliseconds),   "ms");
-
-                    std::snprintf(Line, sizeof(Line),
-                                  "Clusters %u tested -> %u frustum, %u cone, %u visible | draws %u+%u, %u triangles",
-                                  G.ClusterTotal, G.FrustumPassed, G.ConePassed, G.OcclusionPassed,
-                                  G.PhaseOneDraws, G.PhaseTwoDraws, G.TrianglesDrawn);
-                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Visibility", Line);
-
-                    // What the culling actually threw away, as rows: the ratio of ClusterTotal to OcclusionPassed
-                    //    is the whole point of the cluster pipeline, and it was previously only ever prose.
-                    Logger.RecordMeasurement("ClustersTested",     static_cast<double>(G.ClusterTotal),      "count");
-                    Logger.RecordMeasurement("ClustersFrustum",    static_cast<double>(G.FrustumPassed),     "count");
-                    Logger.RecordMeasurement("ClustersCone",       static_cast<double>(G.ConePassed),        "count");
-                    Logger.RecordMeasurement("ClustersVisible",    static_cast<double>(G.OcclusionPassed),   "count");
-                    Logger.RecordMeasurement("TrianglesDrawn",     static_cast<double>(G.TrianglesDrawn),    "count");
-                    Logger.RecordMeasurement("DrawCalls",          static_cast<double>(G.PhaseOneDraws + G.PhaseTwoDraws), "count");
-
-                    // The optimisation verdict, stated rather than left to be worked out from the numbers. GPU-bound
-                    //    and CPU-bound want opposite fixes, and the single most common surprise on this renderer is
-                    //    "100 % GPU on a tiny scene", which is almost never the geometry: at 1280x720 the ReSTIR
-                    //    kernel dispatches ~922k threads every frame, each tracing candidate and shadow rays through
-                    //    a software BVH (this GPU exposes no ray-tracing extension, so traversal is plain compute).
-                    //    Triangle count barely enters into it — the cost is pixels x candidates x bounces.
-                    const char* Bound = GpuTotal > MeanMs * 0.85f ? "GPU-BOUND" : "CPU-BOUND or presenting-limited";
-                    const float PixelCount = static_cast<float>(Surface.QueryWidth() * Surface.QueryHeight());
-                    const Frontier::ReSTIRIntegratorConfiguration& C = Integrator.QueryConfiguration();
-                    std::snprintf(Line, sizeof(Line),
-                                  "%s | %.0f kpx x (%u candidates + %u extra + %u spatial taps), %u denoise levels, "
-                                  "present %s | kernel %.0f%% of GPU frame",
-                                  Bound, static_cast<double>(PixelCount / 1000.0f),
-                                  C.CandidatesPerPixel, C.ExtraCandidateCount, C.SpatialTapCount, C.DenoiseLevelCount,
-                                  Surface.QueryPresentModeName(),
-                                  static_cast<double>(GpuTotal > 0.0f ? 100.0f * G.RestirMilliseconds / GpuTotal : 0.0f));
-                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Information, "Performance", Line);
-
-                    // The workload that produced those milliseconds. Without these the timings are unactionable:
-                    //    "ReSTIR took 11 ms" means nothing until you know it was 922k pixels x 8 candidates.
-                    Logger.RecordMeasurement("RenderPixels",       static_cast<double>(PixelCount),               "px");
-                    Logger.RecordMeasurement("ReSTIRCandidates",   static_cast<double>(C.CandidatesPerPixel),     "count");
-                    Logger.RecordMeasurement("ReSTIRExtra",        static_cast<double>(C.ExtraCandidateCount),    "count");
-                    Logger.RecordMeasurement("ReSTIRSpatialTaps",  static_cast<double>(C.SpatialTapCount),        "count");
-                    Logger.RecordMeasurement("DenoiseLevels",      static_cast<double>(C.DenoiseLevelCount),      "count");
-                    Logger.RecordMeasurement("GpuBound",           GpuTotal > MeanMs * 0.85f ? 1.0 : 0.0,         "bool");
-                    Logger.RecordMeasurement("ReSTIRShareOfFrame",
-                                             static_cast<double>(GpuTotal > 0.0f ? 100.0f * G.RestirMilliseconds / GpuTotal : 0.0f),
-                                             "percent");
-                }
-                else
-                {
-                    Logger.RecordMessage(Frontier::DiagnosticSeverity::Warning, "GpuTiming",
-                                         "Device timestamps unavailable - the query pool reported no completed frame.");
-                }
-
-                PerformanceWindow      = 0.0f;
-                PerformanceSampleCount = 0u;
-                PerformancePeakSeconds = 0.0f;
+                Logger.FlushSink();
             }
         }
 

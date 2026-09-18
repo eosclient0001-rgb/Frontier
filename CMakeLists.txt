@@ -276,6 +276,7 @@ set(PROJECT_ZERO_SOURCES
     Engine/DeviceExchange/InterfaceExchange.cpp
     Projects/Project-Zero/Source/InterfaceTrialSequence.cpp
     Projects/Project-Zero/Source/InstanceMotionSequence.cpp
+    Projects/Project-Zero/Source/PerformanceTelemetrySequence.cpp
     Projects/Project-Zero/Source/PhysicsInstanceSequence.cpp
     Projects/Project-Zero/Source/InterfaceAudioSequence.cpp
     Projects/Project-Dyno/Source/CrankClickIntegrator.cpp
