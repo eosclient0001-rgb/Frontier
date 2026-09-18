@@ -149,8 +149,10 @@ void BlasQuantiseNode(inout vec4 Node[5], in vec3 SlotMin[8], in vec3 SlotMax[8]
     }
 }
 
-// The octant a 30-bit Morton key names at a given depth (root = 0), three bits at a time from the MSB.
-uint BlasOctantAt(uint Key, uint Depth) { return (Key >> (27u - Depth * 3u)) & 0x7u; }
+// The octant a 30-bit Morton key names at a given depth (root = 0), three bits at a time from the MSB. Past the last
+//    level the bits are exhausted — every key's remaining octant is 0 — which is why the guard (and the CPU mirror's) is
+//    depth < 10 rather than a clamp of a negative shift.
+uint BlasOctantAt(uint Key, uint Depth) { return Depth < kBlasMortonDepth ? ((Key >> (27u - Depth * 3u)) & 0x7u) : 0u; }
 
 // A triangle's exact bounds from a leaf record (the record stores e1, e2 and v0, not three vertices).
 void BlasTriangleBounds(vec4 E1, vec4 E2, vec4 V0, out vec3 Lo, out vec3 Hi)

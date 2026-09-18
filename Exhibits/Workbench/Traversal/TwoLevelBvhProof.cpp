@@ -60,6 +60,7 @@
 #include <vector>
 
 using Frontier::BlasBuildMirror;
+using Frontier::BlasPartition;
 using Frontier::BlasBuildMirrorMetrics;
 using Frontier::BlasPlacement;
 using Frontier::BlasRecord;
@@ -711,11 +712,22 @@ struct BlobWalker
     //    ⚠️ The stack depth is a real bound, not a formality: each node can push up to eight children, and the earlier
     //    version of this walker used 64 entries and returned a MISS on overflow — which is exactly how a walker
     //    silently loses geometry. It reports overflow instead (OutOverflow), and the gate fails on it.
+    // The walk's WORK, for the D9 build comparison (⑨g): a node visit is one popped node group, a slot test is one
+    //    quantised box tested, an interior pop is one child descended into, a triangle test is one Möller–Trumbore. These
+    //    are the costs a wide node pays and a 4-wide binary node does not — which is the whole trade-off the build rules
+    //    are choosing between, so the comparison is made in these units rather than in node counts.
+    struct Work
+    {
+        uint64_t NodeVisits = 0u, SlotTests = 0u, ChildPops = 0u, TriangleTests = 0u;
+        void Add(const Work& Other) { NodeVisits += Other.NodeVisits; SlotTests += Other.SlotTests; ChildPops += Other.ChildPops; TriangleTests += Other.TriangleTests; }
+    };
+
     static bool Trace(const std::vector<float>& Nodes, const std::vector<float>& Leaves, const BlasRecord& R,
                       const float* O, const float* D, float MaxDistance, float& OutT, uint32_t& OutPrim, bool& OutOverflow,
-                      bool OctantPermutedRank = false)
+                      bool OctantPermutedRank = false, Work* OutWork = nullptr)
     {
         OutOverflow = false;
+        Work W;
         if (Nodes.empty() || Leaves.empty()) return false;
         const float InvD[3] = { 1.0f / D[0], 1.0f / D[1], 1.0f / D[2] };
         const int SignOctant = (D[0] < 0.0f ? 4 : 0) | (D[1] < 0.0f ? 2 : 0) | (D[2] < 0.0f ? 1 : 0);
@@ -732,6 +744,7 @@ struct BlobWalker
         {
             if (NodeGroupY > 0x00FFFFFFu)
             {
+                ++W.NodeVisits;
                 const uint32_t Hits = NodeGroupY, IMask = NodeGroupY;
                 const uint32_t ChildBitIndex = FindMSB(Hits);
                 const uint32_t ChildBase = NodeGroupX;
@@ -750,6 +763,7 @@ struct BlobWalker
                 const uint32_t SlotIndex   = ((ChildBitIndex - 24u) ^ (OctantPermutedRank ? 0u : (OctInv & 255u))) & 31u;
                 uint32_t RelativeIndex = 0u;
                 for (uint32_t B = 0u; B < SlotIndex; ++B) if (IMask & (1u << B)) ++RelativeIndex;
+                ++W.ChildPops;
                 const uint32_t ChildNode = ChildBase + RelativeIndex;
                 const size_t NodeAt = (size_t(R.NodeOffset) + size_t(ChildNode) * 5u) * 4u;
                 if (NodeAt + 20u > Nodes.size()) { OutOverflow = true; return false; }
@@ -766,6 +780,7 @@ struct BlobWalker
                 uint32_t HitMask = 0u;
                 for (int Slot = 0; Slot < 8; ++Slot)
                 {
+                    ++W.SlotTests;
                     const uint8_t Meta = reinterpret_cast<const uint8_t*>(N0)[24 + Slot];
                     const bool Interior = (Meta & 0x18u) == 0x18u;
                     // The meta's top three bits are a UNARY triangle count — 1, 3 or 7 for one, two or three
@@ -805,6 +820,7 @@ struct BlobWalker
             {
                 const uint32_t TriangleIndex = FindMSB(TriGroupY);
                 TriGroupY -= 1u << TriangleIndex;
+                ++W.TriangleTests;
                 const size_t Float = (size_t(R.LeafOffset) + TriGroupX + TriangleIndex * 3u) * 4u;
                 if (Float + 12u > Leaves.size()) { OutOverflow = true; return false; }
                 float T = 0.0f; uint32_t Prim = 0u;
@@ -816,6 +832,7 @@ struct BlobWalker
             else break;
         }
 
+        if (OutWork != nullptr) *OutWork = W;
         if (BestPrim == 0xFFFFFFFFu) return false;
         OutT = Best; OutPrim = BestPrim;
         return true;
@@ -920,22 +937,33 @@ static void RunBlasKernelPins()
         // ── the build: the same partition, the same encoding, the same caps ─────────────────────────────────────────
         { "Build", "const uint Key = (BlasSpread(Qx) << 2u) | (BlasSpread(Qy) << 1u) | BlasSpread(Qz);", 1u, "B25 the Morton key is the mirror's interleave, 10 bits per axis" },
         { "Build", "uint Result = 0u;", 1u, "B26 BlasSpread exists once, so the key cannot drift" },
-        { "Build", "BlasSortedB[Destination] = uvec2(Key, BlasSortedA[Index].y);", 1u, "B27 the partition is the sort: a stable scatter by the octant at this depth, ping-pong between two arrays" },
+        { "Build", "BlasSortedB[Destination] = uvec2(Key, BlasSortedA[Index].y);", 1u, "B27 the octant partition is the sort: a stable scatter by the octant at this depth, ping-pong between two arrays" },
         { "Build", "for (uint Other = 0u; Other < Lane; ++Other) if (Octants[Other] == Octant) ++Rank;", 1u, "B28 stable by construction — a tile-local rank, never an atomic ticket, because the order decides the blob's bytes" },
-        { "Build", "if (Count > 0u && Count <= kBlasTriPerLeaf) LeafTriangles += Count;", 1u, "B29 a slot with 1..3 triangles is a leaf, more is an interior child — the mirror's split" },
+        { "Build", "if (RunHi - RunLo <= kBlasTriPerLeaf) LeafTriangles += RunHi - RunLo;", 1u, "B29 a child entry of 1..3 triangles is a leaf, more is an interior child — the mirror's split, on the shared entry list" },
         { "Build", "uint Next = NodeBase + Nodes;", 1u, "B30 children are numbered in ascending slot order from the level's own end: childBase is a scan, not a ticket" },
-        { "Build", "while (J > 0u && (Staged[J - 1u] & 0xFFu) > (Key & 0xFFu)) { Staged[J] = Staged[J - 1u]; --J; }", 1u, "B31 the slot assignment sorts by STORED slot, which is the order the traversal ranks children in" },
+        { "Build", "for (uint S = 0u; S < 8u; ++S)   // ascending STORED slot:", 1u, "B31 the emit walks the children in ascending STORED slot — the order the traversal ranks them in and the order the runs are laid out" },
         { "Build", "if (Take > 7u) return;", 1u, "B32 more than eight children cannot be represented: the kernel stops rather than emitting a malformed node" },
-        { "Build", "Meta = BlasSetByte(Meta, Store, (BlasCountToUnary(Count) << 5u) | RunPosition);", 1u, "B33 the leaf meta is the unary count and the slot's first triangle inside the node's run" },
-        { "Build", "BlasLevels[Child] = EmitLevel + 1u;", 1u, "B34 the build writes the level table the refit kernel dispatches over" },
+        { "Build", "Meta = BlasSetByte(Meta, S, (BlasCountToUnary(Count) << 5u) | RunPosition);", 1u, "B33 the leaf meta is the unary count and the slot's first triangle inside the node's run" },
+        { "Build", "BlasLevels[Child] = Level + 1u;", 1u, "B34 the build writes the level table the refit kernel dispatches over" },
         { "Build", "BlasSetTriBase(Node, Triangles * kBlasTriBlocks);", 1u, "B35 triangleBase counts BLOCKS (3 vec4 per triangle), as tinybvh's converter does and the traversal assumes" },
-        { "Build", "if (BlasByteOf(SlotOfOctant, O) != S) continue;", 1u, "B36 the run order inside a node is recovered from the octant→slot map, not assumed to be the soup's" },
+        { "Build", "if (BlasByteOf(Stored, Entry) != S) continue;", 1u, "B36 the run order inside a node is recovered from the STORED-slot map, not assumed to be the soup's" },
 
         // ── one layout, three consumers: the traversal, the mirror and the kernels ──────────────────────────────────
         { "Traversal", "uint childNodeBaseIndex = ngroup.x;", 2u, "B37 the traversal reads the child base from the node, the same field the kernel writes" },
         { "Traversal", "triAddr", 8u, "B38 and addresses a leaf by triBase + 3 × the slot's triangle index — the unit B35 writes" },
         { "Table", "\"BlasRefit.slang|compute|BlasRefit.spv\"", 1u, "B39 the refit kernel is in SHADER_TABLE, so Tools/Build/CheckShaders.sh lowers it as part of the build's own gate" },
         { "Table", "\"BlasBuild.slang|compute|BlasBuild.spv\"", 1u, "B40 ...and so is the build kernel: an unlowerable kernel fails the gate before a GPU is involved" },
+
+        // ── the SHIPPED build rule, both sides, because §⑨g chose it by measurement (see the header of BlasBuild.slang) ──
+        { "Build", "if (Hi - Lo <= 8u * kBlasTriPerLeaf)", 1u, "B41 rule 1 on the device: a range that fits one node's eight slots is leaf runs of three, never recursed into" },
+        { "Mirror", "if (Fits && !Baseline)", 1u, "B42 rule 1 in the mirror — the same rule, and the only configuration that turns it off is the D9-v1 baseline §⑨g measures against" },
+        { "Build", "if (Level >= kBlasMortonDepth)", 1u, "B43 rule 3 on the device: past the Morton bits, eight count-balanced pieces — never the up-to-64 a per-octant split could ask for" },
+        { "Mirror", "else if (Partition == BlasPartition::Clustered || W.Depth >= kMortonDepth)", 1u, "B44 rule 3 in the mirror, reached by the octant rule too" },
+        { "Build", "const uint Want = BlasByteOf(Preferred, Entry);", 1u, "B45 the octant is a preference and the pool decides — one slot-assignment shape for all three rules" },
+        { "Mirror", "C.Slot = FreeSlots[At];", 1u, "B46 ...and the mirror's pool takes the same free slot in the same child order" },
+        { "Build", "BlasScratch[At + 22u] = Stored;", 1u, "B47 the stored slot per entry travels to stage 4, which lays the runs out in exactly that order" },
+        { "Mirror", "if (Cost < BestCost) { BestCost = Cost; BestMask = Mask; }", 1u, "B48 the REJECTED rule is still in the mirror, so the comparison §⑨g runs stays reproducible rather than becoming folklore" },
+        { "Layout", "uint BlasOctantAt(uint Key, uint Depth) { return Depth < kBlasMortonDepth", 1u, "B49 the octant read is guarded past the last level — an unguarded shift is what made the depth-exhausted case undefined" },
     };
 
     const auto Text = [&](const char* Key) -> const std::string&
@@ -2346,6 +2374,181 @@ int main()
                              NodeDiffs, LeafDiffs, int(MirrorOk));
                 }
             }
+        }
+
+        // ⑨g — the BUILD RULE, measured instead of argued. D9 shipped the octant rule, which left 64 % of the wide slots
+        //    empty and split ranges a single node could have held; the question a wide format has to answer is what that
+        //    costs in TRAVERSAL work, because a wide node's whole premise is fewer box tests per ray. So the same level
+        //    is built three ways and walked by the same walker over the same rays, with the walk counted in the units the
+        //    format actually charges for: node visits, slot tests, child descents and Möller–Trumbore tests.
+        {
+            struct Config { BlasPartition Mode; bool Pack; const char* Name; };
+            const Config Configs[] = {
+                { BlasPartition::Octant,    false, "D9 v1 (octant, no pack)" },
+                { BlasPartition::Clustered, true,  "clustered + pack (tried, rejected)" },
+                { BlasPartition::Octant,    true,  "octant + pack (SHIPPED)" }
+            };
+            const int ConfigCount = 3;
+
+            std::vector<float> ConfigOrigins, ConfigDirections;
+            long SnappedG = 0, UnsnappedG = 0;
+            int WorstAttemptsG = 0;
+            const int RayCountG = 12000;
+            GenerateRays(Soup, Bounds, RayCountG, 20260919ull, ConfigOrigins, ConfigDirections, SnappedG, UnsnappedG, WorstAttemptsG);
+
+            uint64_t Cost[ConfigCount] = { 0u, 0u, 0u };
+            double WalkMs[ConfigCount] = { 0.0, 0.0, 0.0 };
+            double BuildMs[ConfigCount] = { 0.0, 0.0, 0.0 };
+            long Hits[ConfigCount] = { 0L, 0L, 0L };
+            uint32_t Nodes_[ConfigCount] = { 0u, 0u, 0u };
+            uint32_t Empty_[ConfigCount] = { 0u, 0u, 0u };
+            uint32_t LeafSlots_[ConfigCount] = { 0u, 0u, 0u };
+            uint32_t Levels_[ConfigCount] = { 0u, 0u, 0u };
+            uint32_t BuildBlocks_[ConfigCount] = { 0u, 0u, 0u };
+            long Disagreements = 0, BuildRefusals = 0;
+            double Work[ConfigCount][4] = { { 0.0, 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0, 0.0 } };
+
+            for (int C = 0; C < ConfigCount; ++C)
+            {
+                BlasBuildMirrorMetrics Metrics;
+                std::vector<float> CfgNodes, CfgLeaves;
+                if (!BlasBuildMirror::BuildHPloc(Soup, CfgNodes, CfgLeaves, Metrics, Configs[C].Mode, Configs[C].Pack))
+                {
+                    ++BuildRefusals;
+                    continue;
+                }
+                BlasRecord Record{};
+                Record.NodeOffset = 0u;
+                Record.NodeBlocks = Metrics.NodeBlocks;
+                Record.LeafOffset = 0u;
+                Record.LeafBlocks = Metrics.LeafBlocks;
+                Record.PrimitiveCount = static_cast<uint32_t>(TriangleCount);
+
+                // Exactness first, untimed: every ray through the walker AND through brute force over the same leaf
+                //    arena. A build comparison is worthless if one of the builds is merely faster at being wrong.
+                BlobWalker::Work Total;
+                for (int I = 0; I < RayCountG; ++I)
+                {
+                    const float* O = &ConfigOrigins[size_t(I) * 3u];
+                    const float* D = &ConfigDirections[size_t(I) * 3u];
+                    float TW = 0.0f, TB = 0.0f; uint32_t PW = 0u, PB = 0u; bool Overflow = false;
+                    BlobWalker::Work One;
+                    const bool HW = BlobWalker::Trace(CfgNodes, CfgLeaves, Record, O, D, 1.0e30f, TW, PW, Overflow, false, &One);
+                    Total.Add(One);
+                    const bool HB = BlobWalker::Brute(CfgLeaves, Record, O, D, 1.0e30f, TB, PB);
+                    if (HW != HB || (HW && PW != PB)) ++Disagreements;
+                    if (HW) ++Hits[C];
+                }
+
+                // ⚠️ Then the walk ALONE, best of three, with the brute force out of the timed region: the counters above
+                //    are a model of the walk's cost and a model cannot settle a trade-off between box tightness and
+                //    fan-out. (Timing walk+brute together, as the first version of this gate did, measures mostly the
+                //    brute force: 63 854 triangles per ray against a few dozen node visits.)
+                // ⚠️ Best of FIVE with a warm-up, because the two octant builds differ by less than the run-to-run
+                //    spread: a single timing would have "measured" a 4 % win in either direction depending on the run.
+                //    What the comparison CAN settle is what the two rules cost in arena and build time, and that the
+                //    loose-boxed clustering is not merely a different trade-off but a slower one.
+                for (int Warm = 0; Warm < 1; ++Warm)
+                    for (int I = 0; I < RayCountG; ++I)
+                    {
+                        const float* O = &ConfigOrigins[size_t(I) * 3u];
+                        const float* D = &ConfigDirections[size_t(I) * 3u];
+                        float TW = 0.0f; uint32_t PW = 0u; bool Overflow = false;
+                        BlobWalker::Trace(CfgNodes, CfgLeaves, Record, O, D, 1.0e30f, TW, PW, Overflow, false, nullptr);
+                    }
+                WalkMs[C] = 1.0e30;
+                for (int Rep = 0; Rep < 5; ++Rep)
+                {
+                    const auto WalkStart = std::chrono::steady_clock::now();
+                    for (int I = 0; I < RayCountG; ++I)
+                    {
+                        const float* O = &ConfigOrigins[size_t(I) * 3u];
+                        const float* D = &ConfigDirections[size_t(I) * 3u];
+                        float TW = 0.0f; uint32_t PW = 0u; bool Overflow = false;
+                        BlobWalker::Trace(CfgNodes, CfgLeaves, Record, O, D, 1.0e30f, TW, PW, Overflow, false, nullptr);
+                    }
+                    const double One = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - WalkStart).count();
+                    WalkMs[C] = std::min(WalkMs[C], One);
+                }
+                BuildMs[C] = double(Metrics.BuildMilliseconds);
+                Nodes_[C] = Metrics.NodeCount;
+                Empty_[C] = Metrics.EmptySlots;
+                LeafSlots_[C] = Metrics.LeafSlots;
+                BuildBlocks_[C] = Metrics.NodeBlocks;
+                std::vector<uint16_t> CfgLevels;
+                uint32_t CfgMaxLevel = 0u;
+                BlasBuildMirror::LevelsOf(CfgNodes, 0u, Metrics.NodeBlocks, CfgLevels, CfgMaxLevel);
+                Levels_[C] = CfgMaxLevel + 1u;
+                Work[C][0] = double(Total.NodeVisits);  Work[C][1] = double(Total.SlotTests);
+                Work[C][2] = double(Total.ChildPops);   Work[C][3] = double(Total.TriangleTests);
+                // The cost a wide node is meant to reduce, in the units the format pays: a node visit, its eight slot
+                //    tests, a descent per interior child, and a triangle test — which is the expensive one.
+                Cost[C] = Total.NodeVisits + Total.SlotTests + Total.ChildPops + 3u * Total.TriangleTests;
+            }
+
+            for (int C = 0; C < ConfigCount; ++C)
+                Info("⑨g %-28s nodes %5u (%6u blocks) · levels %2u · leaf slots %5u · empty slots %5u (%4.1f %%) · walk: "
+                     "%7.2f ms (%9.0f visits, %9.0f slot tests, %8.0f descents, %9.0f triangle tests), build %6.2f ms — %ld hits",
+                     Configs[C].Name, Nodes_[C], BuildBlocks_[C], Levels_[C], LeafSlots_[C], Empty_[C],
+                     Nodes_[C] ? 100.0 * double(Empty_[C]) / double(8u * Nodes_[C]) : 0.0,
+                     WalkMs[C], Work[C][0], Work[C][1], Work[C][2], Work[C][3], BuildMs[C], Hits[C]);
+
+            // The default arguments of BuildHPloc must produce the shipped configuration byte for byte: a default that
+            //    drifted from the measured winner is exactly the kind of thing that survives review and fails on a device.
+            {
+                BlasBuildMirrorMetrics DefaultMetrics;
+                std::vector<float> DefaultNodes, DefaultLeaves;
+                const bool DefaultOk = BlasBuildMirror::BuildHPloc(Soup, DefaultNodes, DefaultLeaves, DefaultMetrics);
+                BlasBuildMirrorMetrics ShippedMetrics;
+                std::vector<float> ShippedNodes, ShippedLeaves;
+                const bool ShippedOk = BlasBuildMirror::BuildHPloc(Soup, ShippedNodes, ShippedLeaves, ShippedMetrics,
+                                                                   Configs[ConfigCount - 1].Mode, Configs[ConfigCount - 1].Pack);
+                const bool SameBytes = DefaultOk && ShippedOk && DefaultNodes.size() == ShippedNodes.size() &&
+                                       DefaultLeaves.size() == ShippedLeaves.size() &&
+                                       std::memcmp(DefaultNodes.data(), ShippedNodes.data(), DefaultNodes.size() * sizeof(float)) == 0 &&
+                                       std::memcmp(DefaultLeaves.data(), ShippedLeaves.data(), DefaultLeaves.size() * sizeof(float)) == 0;
+                if (SameBytes)
+                    Pass("⑨g the mirror's DEFAULT arguments produce the shipped build byte for byte (%u nodes, %u leaf blocks) "
+                         "— the default is the measured winner, not a leftover", DefaultMetrics.NodeCount, DefaultMetrics.LeafBlocks);
+                else
+                    Fail("⑨g the default build differs from the shipped configuration (%u vs %u nodes) — the header's default "
+                         "has drifted from what the gate measures", DefaultMetrics.NodeCount, ShippedMetrics.NodeCount);
+            }
+
+            const int Shipped = ConfigCount - 1;
+            int Cheapest = 0;
+            for (int C = 1; C < ConfigCount; ++C) if (Cost[C] < Cost[Cheapest]) Cheapest = C;
+            int Fastest = 0;
+            for (int C = 1; C < ConfigCount; ++C) if (WalkMs[C] < WalkMs[Fastest]) Fastest = C;
+
+            if (BuildRefusals != 0 || Disagreements != 0 || WalkMs[Shipped] <= 0.0)
+                Fail("⑨g the build comparison is inconclusive: %ld refusals, %ld walker/brute disagreements", BuildRefusals, Disagreements);
+            // What the comparison CAN settle, and what it cannot:
+            //   · it CAN settle that the loose-boxed clustering is slower (it was, by 60-95 % across runs), so the
+            //     topology rule is a box-tightness trade rather than a node-count one;
+            //   · it CANNOT settle a few-percent walk difference between the two octant builds — that is inside the
+            //     run-to-run spread, and a gate that asserted it would fail on a coin flip (it did, twice, in both
+            //     directions). So the shipped rule is required to be within 10 % of the fastest, and to win the terms
+            //     that are not noise: node count and build time.
+            const double WalkTolerance = 1.10;
+            if (WalkMs[Shipped] <= WalkTolerance * WalkMs[Fastest] && Nodes_[Shipped] <= Nodes_[0] / 2u &&
+                BuildMs[Shipped] <= BuildMs[0] && Fastest != 1)
+                Pass("⑨g all three builds are exact against brute force over %d rays. The shipped rule walks within noise of "
+                     "the fastest (%.2f ms against %.2f ms, %.0f %%) while halving the arena (%u nodes against %u, %u blocks "
+                     "against %u) and building in %.0f %% of the time — and the clustered rule it replaces the node count "
+                     "with is the slower one (%.2f ms, +%.0f %%)",
+                     RayCountG, WalkMs[Shipped], WalkMs[Fastest], 100.0 * WalkMs[Shipped] / (WalkMs[Fastest] > 0.0 ? WalkMs[Fastest] : 1.0),
+                     Nodes_[Shipped], Nodes_[0], BuildBlocks_[Shipped], BuildBlocks_[0],
+                     100.0 * BuildMs[Shipped] / (BuildMs[0] > 0.0 ? BuildMs[0] : 1.0),
+                     WalkMs[1], 100.0 * (WalkMs[1] / (WalkMs[0] > 0.0 ? WalkMs[0] : 1.0) - 1.0));
+            else
+                Fail("⑨g the shipped build regressed: %.2f ms against the fastest %.2f ms (%s), %u nodes against %u, build %.2f "
+                     "ms against %.2f ms — the default in BlasBuildMirror.h has to be the measured winner, not the intended one",
+                     WalkMs[Shipped], WalkMs[Fastest], Configs[Fastest].Name, Nodes_[Shipped], Nodes_[0],
+                     BuildMs[Shipped], BuildMs[0]);
+            Info("⑨g counters are a model, the clock is the verdict: the clustered rule's %.0f triangle tests against the "
+                 "octant rule's %.0f are what its %.2f ms against %.2f ms is made of — merging equal-count bins into one "
+                 "child buys fan-out with box tightness", Work[1][3], Work[2][3], WalkMs[1], WalkMs[2]);
         }
 
         // ⑨f — economics, so the plan's numbers are on the record rather than in the plan.

@@ -388,7 +388,8 @@ bool BlasBuildMirror::RefitLevelOrder(std::vector<float>& Nodes, uint32_t NodeOf
 //------------------------------------------------------------------------------------------------------------------------
 
 bool BlasBuildMirror::BuildHPloc(const std::vector<TriangleIndex>& Triangles, std::vector<float>& OutNodes,
-                                 std::vector<float>& OutLeaves, BlasBuildMirrorMetrics& OutMetrics) noexcept
+                                 std::vector<float>& OutLeaves, BlasBuildMirrorMetrics& OutMetrics,
+                                 BlasPartition Partition, bool PackFittedRanges) noexcept
 {
     const auto Start = std::chrono::steady_clock::now();
     OutNodes.clear();
@@ -467,13 +468,59 @@ bool BlasBuildMirror::BuildHPloc(const std::vector<TriangleIndex>& Triangles, st
         }
     };
 
-    // ③ top-down octant partition, breadth-first so a node's children are allocated together — the rank contract.
+    // ③ partition the Morton-sorted range into the wide tree, breadth-first so a node's children are allocated together
+    //    (the rank contract: children occupy consecutive arena slots, in ascending stored-slot order).
+    //
+    //    Both rules cut a node's range into CONTIGUOUS slices of the Morton order, so locality, the arena order and the
+    //    leaf-run layout do not depend on the choice — only where the cuts go:
+    //
+    //      Clustered (shipped)  the range is cut into eight COUNT-BALANCED bins and the SAH then keeps whichever of the
+    //                           seven boundaries pay for themselves, merging neighbours where the merged box is cheaper
+    //                           than the extra child. A range that is spatially clumped — every triangle inside one
+    //                           octant, which an octant split cannot split at all — is cut into eight anyway, and the
+    //                           equal counts keep the tree shallow. This is the PLOC/H-PLOC-shaped half of the build.
+    //      Octant               every occupied octant becomes a child: the tree mirrors the Morton octree. Kept because
+    //                           it is what D9 shipped first, and because §⑨g of the two-level gate walks BOTH builds
+    //                           over the same rays and reports the work each one costs.
+    //
+    //    Two rules belong to the FORMAT rather than to the split, and apply to every configuration that is not the
+    //    reproducible D9-v1 baseline (`Octant` with `PackFittedRanges == false`):
+    //      · a range that fits ONE node — eight leaf slots hold 24 triangles — is emitted as runs of three and never
+    //        recursed into. D9's first build split ranges a single node could have held: 17 835 nodes for 63 854
+    //        triangles, 64 % of the wide slots empty;
+    //      · once the Morton bits are exhausted, a range too large for that is cut into eight count-balanced pieces —
+    //        the Clustered rule's bins, without the SAH — because per-octant splitting there could ask for up to 64
+    //        children from one node, and a node has eight slots.
     std::vector<StagedNode> Nodes;
     Nodes.emplace_back();
     struct Work { uint32_t Lo, Hi, Depth, Node; };
     std::vector<Work> Pending;
     Pending.push_back({ 0u, Count, 0u, 0u });
     std::vector<Sorted> Scratch(Count);
+
+    // Which slot a child PREFERS: the octant of its first triangle at this depth. A preference only — the pool in the
+    //    slot-assignment block decides, and nothing in the traversal depends on a slot meaning an octant.
+    const auto PreferredSlot = [&](uint32_t Lo, uint32_t Depth) -> uint32_t
+    {
+        return Depth < kMortonDepth ? OctantAt(Sorted_[Lo].Morton, Depth) : 0u;
+    };
+    // A contiguous slice of the node's Morton range as a child. `Slot` starts as the preference; the pool resolves it.
+    const auto Child = [&](uint32_t Slot, uint32_t Lo, uint32_t Hi, uint32_t Depth) -> StagedChild
+    {
+        if (Hi - Lo <= kMaxTrianglesPerLeaf) return StagedChild{ false, Slot, Lo, Hi, Depth, 0u, Hi - Lo };
+        return StagedChild{ true, Slot, Lo, Hi, Depth, 0u, 0u };
+    };
+    // Eight count-balanced boundaries over a range — the bins every non-octant path is built on.
+    const auto BinBounds = [](uint32_t Lo, uint32_t Size, uint32_t Out[9])
+    {
+        Out[0] = Lo;
+        for (uint32_t Bin = 0u; Bin < 8u; ++Bin) Out[Bin + 1u] = Lo + static_cast<uint32_t>(uint64_t(Size) * (Bin + 1u) / 8u);
+    };
+    const auto EmitRuns = [&](uint32_t Lo, uint32_t Hi, uint32_t Depth, std::vector<StagedChild>& Out)
+    {
+        for (uint32_t Run = Lo; Run < Hi; Run += kMaxTrianglesPerLeaf)
+            Out.push_back(Child(PreferredSlot(Run, Depth), Run, std::min(Hi, Run + kMaxTrianglesPerLeaf), Depth + 1u));
+    };
     for (size_t Head = 0u; Head < Pending.size(); ++Head)
     {
         const Work W = Pending[Head];
@@ -482,110 +529,147 @@ bool BlasBuildMirror::BuildHPloc(const std::vector<TriangleIndex>& Triangles, st
         RangeBox(W.Lo, W.Hi, Nodes[W.Node].Min, Nodes[W.Node].Max);
         Nodes[W.Node].Depth = W.Depth;
 
-        // Stable counting partition by octant: the range is Morton-sorted, so equal octants are adjacent and the
-        //    partition preserves the order inside each octant.
-        uint32_t Counts[8] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
-        uint32_t Starts[8] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
-        for (uint32_t I = W.Lo; I < W.Hi; ++I) ++Counts[OctantAt(Sorted_[I].Morton, W.Depth)];
-        uint32_t Cursor = W.Lo;
-        for (uint32_t Slot = 0u; Slot < 8u; ++Slot) { Starts[Slot] = Cursor; Cursor += Counts[Slot]; }
-        uint32_t Fill[8];
-        for (uint32_t Slot = 0u; Slot < 8u; ++Slot) Fill[Slot] = Starts[Slot];
-        for (uint32_t I = W.Lo; I < W.Hi; ++I)
+        const uint32_t Size = W.Hi - W.Lo;
+        const bool Fits = Size <= 8u * kMaxTrianglesPerLeaf;
+        const bool Baseline = (Partition == BlasPartition::Octant) && !PackFittedRanges;   // D9's first build
+        std::vector<StagedChild> Staged;
+
+        if (Fits && !Baseline)
         {
-            const uint32_t Slot = OctantAt(Sorted_[I].Morton, W.Depth);
-            Scratch[Fill[Slot]++] = Sorted_[I];
+            EmitRuns(W.Lo, W.Hi, W.Depth, Staged);
         }
-        for (uint32_t I = W.Lo; I < W.Hi; ++I) Sorted_[I] = Scratch[I];
+        else if (Partition == BlasPartition::Clustered || W.Depth >= kMortonDepth)
+        {
+            // Eight count-balanced bins, then the SAH chooses which of the seven boundaries to keep — merging neighbours
+            //    where the merged box is cheaper than the extra child. A mask of zero would mean a single child covering
+            //    the whole range, i.e. no progress, so a grouping always keeps at least one boundary.
+            //
+            //    The cost is the standard SAH shape with a leaf term: a child costs one box test plus three units per
+            //    triangle it holds (a Möller–Trumbore against a box test), weighted by its box area. A group of three or
+            //    fewer gets the same expression as the leaf it becomes, which is what lets the search avoid padding
+            //    small groups out into nodes of their own.
+            uint32_t Bound[9];
+            BinBounds(W.Lo, Size, Bound);
+            float BinLo[8][3], BinHi[8][3];
+            for (uint32_t Bin = 0u; Bin < 8u; ++Bin)
+            {
+                for (int C = 0; C < 3; ++C) { BinLo[Bin][C] = 1.0e30f; BinHi[Bin][C] = -1.0e30f; }
+                for (uint32_t I = Bound[Bin]; I < Bound[Bin + 1u]; ++I)
+                {
+                    const uint32_t P = Sorted_[I].Primitive;
+                    for (int C = 0; C < 3; ++C)
+                    {
+                        BinLo[Bin][C] = std::min(BinLo[Bin][C], TriMin[static_cast<size_t>(P) * 3u + C]);
+                        BinHi[Bin][C] = std::max(BinHi[Bin][C], TriMax[static_cast<size_t>(P) * 3u + C]);
+                    }
+                }
+            }
 
-        struct Ranged { uint32_t Slot, Lo, Hi; };
-        std::vector<Ranged> Ranges;
-        for (uint32_t Slot = 0u; Slot < 8u; ++Slot)
-            if (Counts[Slot] > 0u) Ranges.push_back({ Slot, Starts[Slot], Starts[Slot] + Counts[Slot] });
+            uint32_t BestMask = 0xFFu;
+            if (Partition == BlasPartition::Clustered && Size > 8u * kMaxTrianglesPerLeaf)
+            {
+                double BestCost = 1.0e30;
+                for (uint32_t Mask = 1u; Mask < 256u; ++Mask)
+                {
+                    double Cost = 0.0;
+                    uint32_t GroupStart = 0u;
+                    for (uint32_t Bin = 0u; Bin < 8u; ++Bin)
+                    {
+                        if (Bin + 1u < 8u && (Mask & (1u << Bin)) == 0u) continue;   // this boundary is merged away
+                        float Lo[3], Hi[3];
+                        uint32_t GroupCount = 0u;
+                        for (int C = 0; C < 3; ++C) { Lo[C] = 1.0e30f; Hi[C] = -1.0e30f; }
+                        for (uint32_t B = GroupStart; B <= Bin; ++B)
+                        {
+                            for (int C = 0; C < 3; ++C)
+                            {
+                                Lo[C] = std::min(Lo[C], BinLo[B][C]);
+                                Hi[C] = std::max(Hi[C], BinHi[B][C]);
+                            }
+                            GroupCount += Bound[B + 1u] - Bound[B];
+                        }
+                        const float Ex = std::max(0.0f, Hi[0] - Lo[0]);
+                        const float Ey = std::max(0.0f, Hi[1] - Lo[1]);
+                        const float Ez = std::max(0.0f, Hi[2] - Lo[2]);
+                        const double Area = double(Ex) * Ey + double(Ey) * Ez + double(Ez) * Ex;   // half a surface area: the factor cancels
+                        Cost += (GroupCount == 0u ? 0.0 : Area * (1.0 + 3.0 * static_cast<double>(GroupCount)));
+                        GroupStart = Bin + 1u;
+                    }
+                    if (Cost < BestCost) { BestCost = Cost; BestMask = Mask; }
+                }
+            }
 
-        // Slot assignment, from a POOL of free slots. A child's octant slot is a preference, never a requirement: a
-        //    slot only decides which box lane a child's quantised box lives in and where its meta byte goes, while the
-        //    traversal's child index comes from the imask byte and the stored slot (see the header). Preferring the
-        //    octant keeps the pop order nearly front-to-back; taking from the pool keeps the children CONSECUTIVE and
-        //    collision-free, which is the part that correctness actually needs.
+            uint32_t GroupStart = 0u;
+            for (uint32_t Bin = 0u; Bin < 8u; ++Bin)
+            {
+                if (Bin + 1u < 8u && (BestMask & (1u << Bin)) == 0u) continue;
+                const uint32_t Lo = Bound[GroupStart], Hi = Bound[Bin + 1u];
+                if (Hi > Lo) Staged.push_back(Child(PreferredSlot(Lo, W.Depth), Lo, Hi, W.Depth + 1u));
+                GroupStart = Bin + 1u;
+            }
+        }
+        else
+        {
+            // Stable counting partition by octant. The range is Morton-sorted, so equal octants are already adjacent and
+            //    this pass is the identity permutation — kept because the octant rule is *defined* in terms of the ranges
+            //    it produces, not because the order needs repairing.
+            uint32_t Counts[8] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
+            uint32_t Starts[8] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
+            for (uint32_t I = W.Lo; I < W.Hi; ++I) ++Counts[OctantAt(Sorted_[I].Morton, W.Depth)];
+            uint32_t Cursor = W.Lo;
+            for (uint32_t Slot = 0u; Slot < 8u; ++Slot) { Starts[Slot] = Cursor; Cursor += Counts[Slot]; }
+            uint32_t Fill[8];
+            for (uint32_t Slot = 0u; Slot < 8u; ++Slot) Fill[Slot] = Starts[Slot];
+            for (uint32_t I = W.Lo; I < W.Hi; ++I)
+            {
+                const uint32_t Slot = OctantAt(Sorted_[I].Morton, W.Depth);
+                Scratch[Fill[Slot]++] = Sorted_[I];
+            }
+            for (uint32_t I = W.Lo; I < W.Hi; ++I) Sorted_[I] = Scratch[I];
+
+            // One child per occupied octant: at most eight, which is what a node has.
+            for (uint32_t Slot = 0u; Slot < 8u; ++Slot)
+            {
+                if (Counts[Slot] == 0u) continue;
+                Staged.push_back(Child(Slot, Starts[Slot], Starts[Slot] + Counts[Slot], W.Depth + 1u));
+            }
+        }
+
+        if (Staged.empty() || Staged.size() > 8u) return false;
+
+        // Smoothing pass, then the slots. An interior child's box is the EXACT box of its range (`RangeBox` below), so the
+        //    SAH is choosing between groupings of the same children — but the grouping that a bin merge produces can hide
+        //    cells no ray can reach, and D9 measured that as the difference between 64 % empty slots and 90 % used ones.
+        //
+        //    Slot assignment, from a POOL of free slots: the octant is a preference, never a requirement. A slot only
+        //    decides which box lane a child's quantised box lives in and where its meta byte goes, while the traversal's
+        //    child index comes from the imask byte and the stored slot.
         std::vector<uint32_t> FreeSlots;
         for (uint32_t Slot = 0u; Slot < 8u; ++Slot) FreeSlots.push_back(Slot);
-        const auto TakeSlot = [&FreeSlots](uint32_t Preferred) -> uint32_t
+        for (StagedChild& C : Staged)
         {
-            if (FreeSlots.empty()) return 0xFFFFFFFFu;
-            size_t At = 0u;
-            for (size_t I = 0u; I < FreeSlots.size(); ++I) if (FreeSlots[I] == Preferred) { At = I; break; }
-            const uint32_t Slot = FreeSlots[At];
+            size_t At = FreeSlots.size();
+            for (size_t I = 0u; I < FreeSlots.size(); ++I) if (FreeSlots[I] == C.Slot) { At = I; break; }
+            if (At >= FreeSlots.size()) At = 0u;
+            C.Slot = FreeSlots[At];
             FreeSlots.erase(FreeSlots.begin() + ptrdiff_t(At));
-            return Slot;
-        };
-
-        std::vector<StagedChild> Staged;
-        uint32_t RunPosition = 0u;
-        const bool CanSplit = W.Depth < kMortonDepth;
-        for (const Ranged& R : Ranges)
-        {
-            const uint32_t Size = R.Hi - R.Lo;
-            if (Size <= 3u)
-            {
-                const uint32_t Slot = TakeSlot(R.Slot);
-                if (Slot > 7u) break;
-                Staged.push_back({ false, Slot, R.Lo, R.Hi, W.Depth + 1u, RunPosition, Size });
-                RunPosition += Size;
-                continue;
-            }
-            if (CanSplit)
-            {
-                const uint32_t Slot = TakeSlot(R.Slot);
-                if (Slot > 7u) break;
-                Staged.push_back({ true, Slot, R.Lo, R.Hi, W.Depth + 1u, 0u, 0u });
-                continue;
-            }
-            // The Morton bits are exhausted: this node has to hold the range itself, either as leaf children (three
-            //    triangles per free slot, so at most 24) or as index-split interior children, which always shrink the
-            //    range and therefore always terminate.
-            if (Size <= uint32_t(FreeSlots.size()) * 3u)
-            {
-                uint32_t At = R.Lo;
-                uint32_t First = 0u;
-                while (At < R.Hi)
-                {
-                    const uint32_t Slot = TakeSlot(First == 0u ? R.Slot : 0xFFFFFFFFu);
-                    if (Slot > 7u) break;
-                    const uint32_t Take = std::min(3u, R.Hi - At);
-                    Staged.push_back({ false, Slot, At, At + Take, W.Depth + 1u, RunPosition, Take });
-                    RunPosition += Take;
-                    At += Take;
-                    ++First;
-                }
-                continue;
-            }
-            const uint32_t Pieces = std::max(2u, uint32_t(FreeSlots.size()));
-            for (uint32_t Piece = 0u; Piece < Pieces; ++Piece)
-            {
-                const uint32_t PLo = R.Lo + (Size * Piece) / Pieces;
-                const uint32_t PHi = R.Lo + (Size * (Piece + 1u)) / Pieces;
-                if (PHi <= PLo) continue;
-                const uint32_t Slot = TakeSlot(Piece == 0u ? R.Slot : 0xFFFFFFFFu);
-                if (Slot > 7u) break;
-                Staged.push_back({ true, Slot, PLo, PHi, W.Depth + 1u, 0u, 0u });
-            }
-        }
-        if (RunPosition > 24u || Staged.empty()) return false;
-        // The cover invariant the traversal leans on: the run positions must stay under bit 24, where the leaf bits go.
-        for (const StagedChild& Child : Staged)
-        {
-            if (Child.Slot > 7u) return false;
-            if (Child.Interior) continue;
-            if (Child.First + Child.Count > 24u) return false;
         }
         std::stable_sort(Staged.begin(), Staged.end(), [](const StagedChild& A, const StagedChild& B)
         {
             return A.Slot < B.Slot;
         });
-        Nodes[W.Node].Children = Staged;
 
-        // Allocate the interior children contiguously, in ascending slot order (the leaves need no arena index).
+        // The cover invariant the traversal leans on: leaf runs are laid out in ascending stored slot, so the running
+        //    triangle total IS the `firstTri` each run will carry, and the traversal reads those as bit positions inside a
+        //    24-bit group — every one of them has to stay under bit 24. (Eight runs of three end exactly at 24.)
+        uint32_t RunPosition = 0u;
+        for (const StagedChild& C : Staged)
+        {
+            if (C.Interior) continue;
+            if (C.Count == 0u || RunPosition + C.Count > 24u) return false;
+            RunPosition += C.Count;
+        }
+        Nodes[W.Node].Children = Staged;        // Allocate the interior children contiguously, in ascending slot order (the leaves need no arena index).
         const uint32_t FirstInterior = static_cast<uint32_t>(Nodes.size());
         uint32_t InteriorCount = 0u;
         for (const StagedChild& Child : Staged) if (Child.Interior) ++InteriorCount;

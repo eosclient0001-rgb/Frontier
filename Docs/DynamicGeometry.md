@@ -130,12 +130,27 @@ deformed vertices and refits; the animation system owns everything before that b
   H-PLOC/PLOC++/LBVH here, not the builder itself. Vertex data must also already be on the device (it is not: the CPU
   uploads flat triangles). So a GPU *build* is a bigger change than a GPU *refit*.
   **D9 answered this the way the paragraph asks.** `Engine/Shaders/BlasBuild.slang` emits the same packed layout — Morton
-  key prepass, one per-level octant partition per node (which is also the sort: no radix passes, no key prefix sum),
-  a childBase scan in ascending slot order, an emit that quantises with the shared function, then the leaf runs. So
-  `TraversalCWBVH.slang` keeps its single traversal path, and the question "can the builder write the refit's layout"
-  is settled by construction rather than by hope: `Engine/GeometricRaster/BlasBuildMirror.cpp` is the reference the
-  kernels are transcribed from, and §⑨ walks and measures it (63 854 triangles: 17 835 nodes, 10 clean levels, every
-  triangle reachable, 21.3 ms on the CPU — a third of the measured 74.8 ms rebuild). What is still owed is a GPU.
+  key prepass, a per-level octant partition that is also the sort (no radix passes, no key prefix sum), a childBase scan
+  in ascending slot order, an emit that quantises with the shared function, then the leaf runs — so `TraversalCWBVH.slang`
+  keeps its single traversal path. `Engine/GeometricRaster/BlasBuildMirror.cpp` is the reference the kernels are
+  transcribed from, and the build RULE was chosen by measurement rather than by taste: §⑨g walks three builds of the M10
+  level over the same 12 000 rays and clocks them.
+
+  | build rule                          | nodes  | build   | walk     | triangle tests | empty slots |
+  |-------------------------------------|--------|---------|----------|----------------|-------------|
+  | D9's first build (octant, no pack)  | 17 835 | 17.9 ms | 10.93 ms |         36 700 |       64.2 %|
+  | clustered: count-balanced bins + SAH|  4 681 | 15.8 ms | 19.73 ms |        165 229 |       26.4 %|
+  | **shipped: octant + the format rule**| **7 185** | **12.5 ms** | **10.11 ms** |     **63 462** |   **46.7 %**|
+
+  The two rules a wide format turned out to need are about the FORMAT, not about clustering: (1) a range that fits one
+  node's eight leaf slots — 24 triangles — becomes runs of three and is never recursed into; (2) past the Morton bits a
+  range too large for that is cut into eight count-balanced pieces, not into up to 64 octant children for a node with 8
+  slots. Clustering by count produced by far the fewest nodes and the least empty slots and walked 60–95 % SLOWER: merging
+  bins that are far apart makes a child's box the union of the far parts, so rays the octant rule rejects at the box
+  descend and test triangles. **A wide-node build is a box-tightness trade, not a node-count one** — and the counters
+  alone did not show it; the clock did. The rejected rule stays in the mirror (`BlasPartition::Clustered`) so the
+  comparison stays reproducible, and H-PLOC's actual merge (bottom-up, merging siblings that are already spatially close)
+  is a different algorithm and remains the open experiment. What is still owed is a GPU.
 - **A GPU refit is small, and layout-local.** Bottom-up node-box updates over the wide layout: one dispatch per level,
   no topology change, no vertex re-quantization. This is the piece to write first, because it is what deformation needs
   — and it is what `Engine/Shaders/BlasRefit.slang` is: the same quantiser the build calls, the same child-bounds rule
@@ -298,19 +313,19 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
   in-place refit of the packed layout plus the displacement-driven rebuild policy. Acceptance: a moving/deforming scene
   renders correct shadows and reflections with the frame budget printed, and the CPU mirror reproduces the same images.
   ⚠️ The GPU half of that acceptance sentence — the kernel-side refit and a rendered frame — is still owed.
-- **D9 — GPU refit / GPU build kernels — WRITTEN, COMPILED, PINNED; NOT RUN.** `Engine/Shaders/BlasRefit.slang`
+- **D9 — GPU refit / GPU build kernels — WRITTEN, COMPILED, PINNED, MEASURED ON THE CPU; NOT RUN.** `Engine/Shaders/BlasRefit.slang`
   (two stages: rewrite the leaf records from the deformed soup, then re-quantise one dispatch per level, deepest first)
   and `Engine/Shaders/BlasBuild.slang` (five stages: Morton prepass · per-level octant partition · childBase scan ·
   emit · leaf runs), both lowering through `Tools/Build/CheckShaders.sh` (15/15) and both pinned to the CPU mirror by
   §⑩ of the two-level gate (B1–B40: the layout bytes, the interior test, the exponent rounding, the unary counts, the
   rank rule, the block units of triangleBase, the CMake entries that keep them in the compile gate).
-  ⚠️ The build is the LBVH-shaped variant, not H-PLOC's cluster merge: it partitions a node's Morton range into its
-  eight octants instead of merging neighbouring clusters, so it uses only 935 of 2 432 wide slots at 1 152 triangles
-  and 33 267 of 142 680 at 63 854 (64 % empty — the format tolerates it, the traversal pays for it). H-PLOC's merge is
-  the next step and the one that would close that gap; the alternative (build wider nodes from the same partition) is
-  the decision to make before a GPU run, not after. ⚠️ Nothing here has been compiled by `slangc` or executed on a
-  device: the sandbox has no Vulkan. Left: **one GPU run**, plus the host wiring (a deformed-soup buffer, a level
-  table, one descriptor set per kernel, the dispatch loop).
+  ⚠️ The build is the octant partition plus the format rule, not H-PLOC's cluster merge — and §5 has the measurement
+  that says why the top-down clustering variant is not what to ship (it walks 60–95 % slower). What the shipped rule
+  costs: 7 185 nodes for 63 854 triangles, 46.7 % of the wide slots empty, 3.9× fewer nodes and 14 % faster to build
+  than D9's first attempt, at the same traversal work. The empty slots are the remaining quality gap, and closing it is
+  an H-PLOC-shaped job (merge siblings that are already spatially close, bottom-up) rather than another split heuristic.
+  ⚠️ Nothing here has been compiled by `slangc` or executed on a device: the sandbox has no Vulkan. Left: **one GPU
+  run**, plus the host wiring (a deformed-soup buffer, a level table, one descriptor set per kernel, the dispatch loop).
 - **D10 — ReSTIR integration.** Motion vectors already follow `PreviousWorld`; for dynamic objects the reservoir
   validation should use instance/primitive identity plus the previous transform, so a moving object's history is
   rejected on genuine disocclusion and kept when it merely moved.

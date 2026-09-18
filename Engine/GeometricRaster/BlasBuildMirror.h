@@ -63,6 +63,38 @@ namespace Frontier
         uint32_t LastRefitTriangleCount = 0u;// [cnt] leaf records rewritten from the deformed soup
     };
 
+    // How a node's Morton range becomes children (`BuildHPloc`'s `Partition`). Both rules cut the range into
+    //    CONTIGUOUS slices, so locality, the arena order and the leaf-run layout are identical either way; what differs
+    //    is where the cuts go, and §⑨g of the two-level gate walks both over the same rays and clocks them.
+    //
+    //    ⚠️ `Clustered` is the rule that looked right and measured WRONG, so it is kept in the tree as a measured
+    //    alternative rather than deleted. On the M10 level (63 854 triangles, 12 000 rays, best of three):
+    //
+    //      | rule                   | nodes | build  | walk   | triangle tests |
+    //      |------------------------|-------|--------|--------|----------------|
+    //      | Clustered (count bins) |  4 681| 16.6 ms| 19.63 ms |     165 229     |
+    //      | Octant, no pack (v1)   | 17 835| 14.9 ms| 12.24 ms |      36 700     |
+    //      | Octant + pack (SHIPPED)|  7 185| 12.7 ms| 11.78 ms |      63 462     |
+    //
+    //    The clustering cut the node count by 3.8× and the empty slots to 26 %, and walked 61 % SLOWER: merging equal-count
+    //    bins into a child makes that child's box the union of bins that are spatially far apart, so a ray that the octant
+    //    rule rejects at the box now descends and tests triangles. Wide-node builds are a box-tightness trade, not a
+    //    node-count one, and the counters are not enough to see it — the clock is (§⑨g reports both).
+    enum class BlasPartition
+    {
+        // The tree mirrors the Morton octree: every occupied octant becomes a child. This is what ships, with the format
+        //    rules below (a range of ≤ 24 triangles becomes leaf runs and is never recursed into; at the end of the
+        //    Morton bits a too-large range is cut into eight count-balanced pieces, because per-octant splitting there
+        //    could ask for up to 64 children and a node has eight slots). Against D9's first build it is 2.5× fewer nodes,
+        //    14 % faster to build and 3.9 % faster to walk.
+        Octant,
+        // Eight COUNT-BALANCED bins, then the SAH keeps whichever of the seven boundaries pay for themselves (merging
+        //    neighbours where the merged box is cheaper than the extra child). Measured slower than `Octant` above; the
+        //    bottom-up merge H-PLOC actually does (merging siblings that are already spatially close) is a different
+        //    algorithm from this top-down binning and is still the open item.
+        Clustered
+    };
+
     class BlasBuildMirror
     {
     public:
@@ -75,9 +107,14 @@ namespace Frontier
 
         // ── H-PLOC-style build into the packed layout. Triangles are consumed in the order given (the primitive index
         //    written into each leaf record is the index into `Triangles`, so the caller's mapping survives).
+        //    `PackFittedRanges` is a rule about the FORMAT rather than about the split: eight leaf slots hold 24
+        //    triangles, so a range of at most 24 is emitted as runs of three and never recursed into. The only
+        //    configuration that turns it off is `Octant` + false, which reproduces D9's first build for §⑨g.
         [[nodiscard]] static bool BuildHPloc(const std::vector<TriangleIndex>& Triangles,
                                              std::vector<float>& OutNodes, std::vector<float>& OutLeaves,
-                                             BlasBuildMirrorMetrics& OutMetrics) noexcept;
+                                             BlasBuildMirrorMetrics& OutMetrics,
+                                             BlasPartition Partition = BlasPartition::Octant,
+                                             bool PackFittedRanges = true) noexcept;
 
         // ── The refit: same packed blobs, moved vertices, no change to the topology. `Levels` is LevelsOf()'s output
         //    (size = NodeBlocks / 5). Leaves are rewritten from `Triangles` (indexed by each record's own primitive

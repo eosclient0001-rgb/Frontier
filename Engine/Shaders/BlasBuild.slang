@@ -5,38 +5,56 @@
 //    moves, so the blob has to be built rather than updated. This kernel builds the SAME layout the refit writes and the
 //    traversal reads — a second traversal path is the cost the plan named, and this avoids it.
 //
-// The build, stage by stage, all in this one entry point (the host loops the stages; `Stage` picks one):
+// THE RULE (measured, not chosen by taste — §⑨g of the two-level gate walks three builds of the M10 level over the same
+// 12 000 rays and clocks them):
+//
+//   | build rule                       | nodes  | build  | walk    | triangle tests |
+//   |----------------------------------|--------|--------|---------|----------------|
+//   | D9 v1: octant, no pack           | 17 835 | 17.9 ms| 10.93 ms|      36 700    |
+//   | clustered: count-balanced + SAH  |  4 681 | 15.8 ms| 19.73 ms|     165 229    |
+//   | SHIPPED: octant + the format rule|  7 185 | 12.5 ms| 10.11 ms|      63 462    |
+//
+//   1. A node whose Morton range is at most 24 triangles — eight leaf slots of three — becomes LEAF RUNS of three and is
+//      never recursed into. D9's first build re-split those ranges (four times the nodes, 64 % of the wide slots empty).
+//   2. Otherwise the range is cut by OCTANT: the tree mirrors the Morton octree, and each child's box is the tight box
+//      of its own octant. This is the part a "smarter" clustering broke: cutting by count makes shallow trees with full
+//      wide nodes (4 681 nodes, 26 % empty slots) and walks 60-95 % SLOWER, because merging bins that are far apart makes
+//      a child's box the union of the far parts — a ray the octant rule rejects at the box descends and tests triangles.
+//      A wide-node build is a box-tightness trade, not a node-count one. The clustered rule is kept in the CPU mirror
+//      (`BlasBuildMirror::BlasPartition::Clustered`) precisely so that this stays measurable rather than folklore; the
+//      device ships the octant rule only.
+//   3. Once the Morton bits are exhausted (level 10) a range too large for a node is cut into eight count-balanced
+//      PIECES instead — per-octant splitting there could ask for 64 children from a node that has eight slots.
+//
+// Stages, all in this one entry point (the host loops them; `Stage` picks one):
 //    Stage 0 — PREPASS     one thread per triangle: exact bounds, centroid, 30-bit Morton code (10 bits per axis,
-//                          normalised against the object AABB the host passes in the push block), written as
-//                          uvec2(key, primitive) into the sorted array in soup order. The root's range, [0, N), and the
-//                          root's level, 0.
-//    Stage 1 — PARTITION   one workgroup per node of the level. This is what replaces the sort: at level d every node's
-//                          range is stably counting-sorted by the octant its keys name at depth d (`key >> (27 − 3d)`),
-//                          so after d levels the array IS Morton-ordered inside every node — no radix passes, no
-//                          prefix-sum over keys, one dispatch per level. Stability is not decoration: a different order
-//                          inside an octant changes which triangles end up sharing a leaf, i.e. the blob's bytes, so the
-//                          tile loop computes each element's rank within its octant explicitly instead of using atomics.
-//                          Also records each slot's range and whether the slot is a leaf (1–3 triangles), an interior
-//                          child, or empty, and the node's total leaf triangles (the format's cap is 24 per node).
-//    Stage 2 — SCAN        one workgroup, exclusive prefix sum of the level's interior-child counts: every node's
-//                          childBase, and the next level's base/count. Children are numbered in ASCENDING SLOT ORDER
-//                          (the rank contract the traversal's imask pop depends on), which is why this is a scan over
-//                          the level in node order rather than an atomic ticket per node.
-//    Stage 3 — EMIT        one workgroup per node (thread 0 emits): compute each child's exact bounds from the geometry
-//                          (a leaf child from its ≤ 3 triangles, an interior child from its whole range), assign the
-//                          eight slots (octant preference, free-slot pool — BlasBuildMirror's TakeSlot), write the
-//                          node's p/exponents/qlo/qhi, its meta bytes, its imask and childBase, hand each child its
-//                          range, and set the child's level in the level table.
-//    Stage 4 — RUNS        assign every node's triangleBase in node order (the leaf runs are concatenated in BFS node
-//                          order, which is what makes a node's `firstTri` a bit position inside its own run) and write
-//                          the leaf records from the soup.
+//                          normalised against the object AABB in the push block), written as uvec2(key, primitive) into
+//                          the array in soup order, plus the root's range and level.
+//    Stage 1 — PARTITION   one workgroup per node of the level. This is what replaces a separate sort: at level d every
+//                          node's range is stably counting-sorted by the octant its keys name at depth d, so after d
+//                          levels the array IS Morton-ordered inside every node — no radix passes, no key prefix sum, and
+//                          a packed node (rule 1) needs no scatter at all because it has no children below it. Stability
+//                          is not decoration: a different order inside an octant changes which triangles share a leaf,
+//                          i.e. the blob's bytes, so the tile loop computes each element's rank within its octant
+//                          explicitly instead of using atomics. The stage also writes each child's range, its preferred
+//                          slot and the node's total leaf triangles.
+//    Stage 2 — SCAN        one workgroup: exclusive prefix sum of the level's interior-child counts. Children are numbered
+//                          in ASCENDING SLOT ORDER (the rank contract the traversal's imask pop depends on), which is why
+//                          this is a scan over the level in node order rather than an atomic ticket per node.
+//    Stage 3 — EMIT        one workgroup per node: take each child's exact bounds from the geometry its range names,
+//                          assign the eight slots (octant preference, free-slot pool), write the node's p/exponents/
+//                          qlo/qhi, its meta bytes, its imask and its childBase, hand each interior child its range, and
+//                          record its stored slot and level.
+//    Stage 4 — RUNS        assign every node's triangleBase in node order (leaf runs are concatenated in BFS node order,
+//                          and inside a node in ascending stored slot, which is what makes `firstTri` a bit position in
+//                          the node's own run) and write the leaf records from the soup.
 //
 // ⚠️ NOT RUN ON A GPU. No Vulkan device in the development sandbox: this file is compile-gated by
 //    Tools/Build/CheckShaders.sh and text-pinned by §⑩ of Exhibits/Workbench/Traversal/TwoLevelBvhProof.cpp against the
-//    CPU mirror (`BlasBuildMirror::BuildHPloc`), which §⑨a/⑨b/⑨c then walk and measure. Two parts below are
+//    CPU mirror (`BlasBuildMirror::BuildHPloc`), which §⑨a/⑨b/⑨c/⑨g then walk, measure and clock. Two parts below are
 //    deliberately the simple ones and say so where they are: the scan and the run assignment are one-workgroup steps
-//    (they are O(level nodes) and O(all nodes)), and the emit is single-threaded per node. Those are the first things
-//    to replace with a device prefix sum once this has been run once.
+//    (O(level nodes) and O(all nodes)), and the emit is single-threaded per node. Those are the first things to replace
+//    with a device prefix sum once this has been run once.
 //
 // NOTE: GLSL source lowered by glslc -fshader-stage=compute.
 #version 460
@@ -51,17 +69,25 @@ layout(std430, binding = 1) buffer BlasLeafExtent   { vec4 BlasLeaves[]; };   //
 layout(std430, binding = 2) readonly buffer BlasSoupExtent { vec4 BlasSoup[]; };// D9: object-space soup, 3 × vec4 per triangle
 layout(std430, binding = 3) buffer BlasSortedExtent    { uvec2 BlasSortedA[]; };   // ping (each level writes the other)
 layout(std430, binding = 4) buffer BlasSortedAltExtent { uvec2 BlasSortedB[]; };   // pong
-layout(std430, binding = 5) buffer BlasScratchExtent { uint BlasScratch[]; }; // per-node slot ranges + childBase + a header
+layout(std430, binding = 5) buffer BlasScratchExtent { uint BlasScratch[]; }; // one block per node slot + a header
 layout(std430, binding = 6) buffer BlasLevelExtent   { uint BlasLevels[]; };  // written here, read by the refit kernel
 
-// Scratch layout: [0] = the level's base node slot, [1] = the level's node count, [2] = the level index,
-//    [3] = reserved. From byte 32 on, 24 uints per node slot:
-//      +0..15  the eight slot ranges (lo, hi)
-//      +16     the node's total leaf triangles
-//      +17     the node's own range lo
-//      +18     the node's own range hi
-//      +19     childBase (stage 2 writes it, stage 3 reads it)
-//      +20     the occupied-slot mask
+// ─── the scratch: one block per node slot, holding that node's children ──────────────────────────────────────────────
+// Header: [0] the level's base node slot · [1] the level's node count · [2] the level index · [3] reserved.
+// Per node, `kBlasScratchStride` uints:
+//    +0..15   eight child entries: the range of each ([lo, hi)). An entry with lo == hi is EMPTY.
+//    +16      the node's total leaf triangles   (the format's cap is 8 slots × 3 = 24, which rule 1 relies on)
+//    +17, +18 the node's own range
+//    +19      childBase — where this node's interior children start (stage 2; the mirror's §⑨c invariant is that it is
+//             always beyond this node)
+//    +20      how many entries stage 1 filled (informational; emptiness is lo == hi)
+//    +21      each entry's PREFERRED slot, three bits per entry (its first triangle's octant at this depth)
+//    +22      each entry's STORED slot, three bits per entry (stage 3, after the pool resolves the preferences)
+//    +23      reserved
+//
+// ⚠️ The entries are what makes both halves of the rule expressible in one kernel: the octant case fills all eight (one
+//    per occupied octant), the packed case fills ceil(n/3) runs, and the depth-exhausted case fills eight pieces — and
+//    stages 3 and 4 never need to know which of them produced the entries.
 const uint kBlasScratchHeader = 8u;
 const uint kBlasScratchStride = 24u;
 
@@ -78,9 +104,12 @@ layout(push_constant) uniform BlasBuildConstants
 };
 
 uint BlasNodeSlotAt(uint Slot) { return kBlasScratchHeader + kBlasScratchStride * Slot; }
+uint BlasEntrySlotAt(uint NodeSlot, uint Entry) { return BlasNodeSlotAt(NodeSlot) + 2u * Entry; }
+uint BlasPreferredSlots(uint NodeSlot) { return BlasScratch[BlasNodeSlotAt(NodeSlot) + 21u]; }
+uint BlasStoredSlots(uint NodeSlot)     { return BlasScratch[BlasNodeSlotAt(NodeSlot) + 22u]; }
 
 // Stage 1's workgroup state. GLSL only allows `shared` at file scope, and one workgroup is one node, so a single set of
-//    octant counters serves every node the level dispatches.
+//    counters serves every node the level dispatches.
 shared uint Cursor[8];     // where the next element of each octant goes (the scatter offsets)
 shared uint Start[8];      // where that octant's run began — the slot ranges stage 3/4 read back
 shared uint Octants[128];  // this tile's octant per lane (a stable rank needs the tile's own order, not atomics)
@@ -130,7 +159,6 @@ void main()
             const uint Root = BlasNodeSlotAt(0u);
             BlasScratch[Root + 17u] = 0u;
             BlasScratch[Root + 18u] = TriangleCount;
-            BlasScratch[Root + 19u] = 1u;          // a single node: childBase is where the children will start
             BlasLevels[0] = 0u;
         }
         return;
@@ -148,7 +176,64 @@ void main()
         const uint Hi = BlasScratch[At + 18u];
         const uint Lane = gl_LocalInvocationID.x;
         const uint Lanes = gl_WorkGroupSize.x;
+        const bool SortedIsA = (Level & 1u) == 0u;   // the array the previous level left the range in
 
+        // ── rule 1: a range that fits this node's own eight slots is leaf runs of three, and nothing below it needs
+        //    ordering — every child is a leaf, so the range is never partitioned again. (The mirror emits the same runs
+        //    from the same arithmetic; §⑨g's D9-v1 column is what happens without this.)
+        if (Hi - Lo <= 8u * kBlasTriPerLeaf)
+        {
+            if (Lane == 0u)
+            {
+                uint Preferred = 0u, LeafTriangles = 0u, Entry = 0u;
+                for (uint Run = Lo; Run < Hi; Run += kBlasTriPerLeaf)
+                {
+                    const uint RunHi = min(Hi, Run + kBlasTriPerLeaf);
+                    const uint Key = SortedIsA ? BlasSortedA[Run].x : BlasSortedB[Run].x;
+                    BlasScratch[At + 2u * Entry + 0u] = Run;
+                    BlasScratch[At + 2u * Entry + 1u] = RunHi;
+                    Preferred = BlasSetByte(Preferred, Entry, BlasOctantAt(Key, Level));
+                    LeafTriangles += RunHi - Run;
+                    ++Entry;
+                }
+                for (uint Fill = Entry; Fill < 8u; ++Fill)
+                {
+                    BlasScratch[At + 2u * Fill + 0u] = 0u;
+                    BlasScratch[At + 2u * Fill + 1u] = 0u;
+                }
+                BlasScratch[At + 16u] = LeafTriangles;
+                BlasScratch[At + 20u] = Entry;
+                BlasScratch[At + 21u] = Preferred;
+            }
+            return;
+        }
+
+        // ── rule 3: the Morton bits are exhausted. Eight count-balanced pieces — never more than eight children, and
+        //    each strictly smaller than the range, so the recursion terminates. (Per-octant splitting here could produce
+        //    up to sixty-four children from a node with eight slots.)
+        if (Level >= kBlasMortonDepth)
+        {
+            if (Lane == 0u)
+            {
+                const uint Count = Hi - Lo;
+                uint LeafTriangles = 0u;
+                for (uint Entry = 0u; Entry < 8u; ++Entry)
+                {
+                    // 32-bit is enough: Count is a triangle count (well under 2^28) and the multiplier is at most 8.
+                    const uint PLo = Lo + (Count * Entry) / 8u;
+                    const uint PHi = Lo + (Count * (Entry + 1u)) / 8u;
+                    BlasScratch[At + 2u * Entry + 0u] = PLo;
+                    BlasScratch[At + 2u * Entry + 1u] = PHi;
+                    if (PHi - PLo <= kBlasTriPerLeaf) LeafTriangles += PHi - PLo;
+                }
+                BlasScratch[At + 16u] = LeafTriangles;
+                BlasScratch[At + 20u] = 8u;
+                BlasScratch[At + 21u] = 0u;   // no octant left to prefer
+            }
+            return;
+        }
+
+        // ── rule 2: the octant partition, which is also the sort for this level ─────────────────────────────────────
         if (Lane == 0u)
         {
             for (uint S = 0u; S < 8u; ++S) { Cursor[S] = Lo; Start[S] = Lo; TileCount[S] = 0u; }
@@ -156,9 +241,6 @@ void main()
         memoryBarrierShared();
         barrier();
 
-        // The source is the array the previous level scattered into; the destination is the other one. Ping-pong keeps
-        //    every node's writes disjoint, so no atomics and no ordering between nodes are needed.
-        const bool UseA = (Level & 1u) == 0u;
         for (uint Tile = Lo; Tile < Hi; Tile += Lanes)
         {
             const uint Index = Tile + Lane;
@@ -166,7 +248,7 @@ void main()
             uint Octant = 0u;
             if (Index < Hi)
             {
-                Key = UseA ? BlasSortedA[Index].x : BlasSortedB[Index].x;
+                Key = SortedIsA ? BlasSortedA[Index].x : BlasSortedB[Index].x;
                 Octant = BlasOctantAt(Key, Level);
             }
             Octants[Lane] = Octant;
@@ -182,8 +264,8 @@ void main()
                 uint Rank = 0u;
                 for (uint Other = 0u; Other < Lane; ++Other) if (Octants[Other] == Octant) ++Rank;
                 const uint Destination = Cursor[Octant] + Rank;
-                if (UseA) BlasSortedB[Destination] = uvec2(Key, BlasSortedA[Index].y);
-                else      BlasSortedA[Destination] = uvec2(Key, BlasSortedB[Index].y);
+                if (SortedIsA) BlasSortedB[Destination] = uvec2(Key, BlasSortedA[Index].y);
+                else           BlasSortedA[Destination] = uvec2(Key, BlasSortedB[Index].y);
             }
             memoryBarrierShared();
             barrier();
@@ -194,29 +276,28 @@ void main()
 
         if (Lane == 0u)
         {
-            uint Mask = 0u, LeafTriangles = 0u, Interior = 0u;
+            uint LeafTriangles = 0u;
             for (uint S = 0u; S < 8u; ++S)
             {
                 const uint RunLo = Start[S];
                 const uint RunHi = Cursor[S];
-                BlasScratch[At + 2u * S + 0u] = RunLo;
+                BlasScratch[At + 2u * S + 0u] = RunLo;      // lo == hi is an empty entry: the octant was unoccupied
                 BlasScratch[At + 2u * S + 1u] = RunHi;
-                const uint Count = RunHi - RunLo;
-                if (Count > 0u) Mask |= 1u << S;
-                if (Count > 0u && Count <= kBlasTriPerLeaf) LeafTriangles += Count;
-                if (Count > kBlasTriPerLeaf) ++Interior;
+                if (RunHi - RunLo <= kBlasTriPerLeaf) LeafTriangles += RunHi - RunLo;
             }
             BlasScratch[At + 16u] = LeafTriangles;
-            BlasScratch[At + 19u] = 0u;   // childBase is stage 2's to fill
-            BlasScratch[At + 20u] = Mask;
+            BlasScratch[At + 20u] = 8u;
+            // The entry's own index is the octant, so the preference is the identity here; the pool in stage 3 still
+            //    resolves it, which is what keeps the two rules' slot assignment identical in shape.
+            BlasScratch[At + 21u] = (0u << 0u) | (1u << 3u) | (2u << 6u) | (3u << 9u) | (4u << 12u) | (5u << 15u) |
+                                    (6u << 18u) | (7u << 21u);
         }
         return;
     }
 
     // ─── stage 2: childBase, in ascending slot order ─────────────────────────────────────────────────────────────────
     // ⚠️ One workgroup, and the sum is a serial loop. It is O(level nodes); a device prefix sum replaces it without
-    //    changing a byte, and the mirror's numbers (17 835 nodes for 63 854 triangles, max level 10) say it is not the
-    //    expensive part of a build.
+    //    changing a byte.
     if (Stage == 2u)
     {
         if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x != 0u) return;
@@ -230,9 +311,9 @@ void main()
         {
             const uint At = BlasNodeSlotAt(NodeBase + I);
             uint Interior = 0u;
-            for (uint S = 0u; S < 8u; ++S)
+            for (uint Entry = 0u; Entry < 8u; ++Entry)
             {
-                const uint Count = BlasScratch[At + 2u * S + 1u] - BlasScratch[At + 2u * S + 0u];
+                const uint Count = BlasScratch[At + 2u * Entry + 1u] - BlasScratch[At + 2u * Entry + 0u];
                 if (Count > kBlasTriPerLeaf) ++Interior;
             }
             BlasScratch[At + 19u] = Next;
@@ -253,94 +334,99 @@ void main()
         const uint Nodes = BlasScratch[1];
         const uint Slot = NodeBase + gl_WorkGroupID.x;
         if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x >= Nodes) return;
-        // The level being emitted is the PREVIOUS one: the partition above already moved its children into place.
-        const uint EmitLevel = Level;
         const uint At = BlasNodeSlotAt(Slot);
-        const bool ScatteredIsA = ((EmitLevel + 1u) & 1u) == 0u;   // the array this level's partition scattered into
+        const bool ScatteredIsA = ((Level + 1u) & 1u) == 0u;   // the array this level's partition scattered into
+        const uint Preferred = BlasScratch[At + 21u];
 
-        // Each child's exact bounds, from the geometry the child's range names.
+        // Each child's exact bounds, from the geometry its range names.
         vec3 SlotMin[8];
         vec3 SlotMax[8];
-        uint Occupied = BlasScratch[At + 20u];
-        for (uint S = 0u; S < 8u; ++S)
+        bool Present[8];
+        for (uint Entry = 0u; Entry < 8u; ++Entry)
         {
-            SlotMin[S] = vec3( 1.0e30f);
-            SlotMax[S] = vec3(-1.0e30f);
-            if ((Occupied & (1u << S)) == 0u) continue;
-            const uint RunLo = BlasScratch[At + 2u * S + 0u];
-            const uint RunHi = BlasScratch[At + 2u * S + 1u];
+            const uint RunLo = BlasScratch[At + 2u * Entry + 0u];
+            const uint RunHi = BlasScratch[At + 2u * Entry + 1u];
+            Present[Entry] = RunHi > RunLo;
+            SlotMin[Entry] = vec3( 1.0e30f);
+            SlotMax[Entry] = vec3(-1.0e30f);
+            if (!Present[Entry]) continue;
             for (uint I = RunLo; I < RunHi; ++I)
             {
                 const uint Primitive = ScatteredIsA ? BlasSortedA[I].y : BlasSortedB[I].y;
                 const vec4 V0 = BlasSoup[3u * Primitive + 0u];
                 const vec4 V1 = BlasSoup[3u * Primitive + 1u];
                 const vec4 V2 = BlasSoup[3u * Primitive + 2u];
-                SlotMin[S] = min(SlotMin[S], min(V0.xyz, min(V1.xyz, V2.xyz)));
-                SlotMax[S] = max(SlotMax[S], max(V0.xyz, max(V1.xyz, V2.xyz)));
+                SlotMin[Entry] = min(SlotMin[Entry], min(V0.xyz, min(V1.xyz, V2.xyz)));
+                SlotMax[Entry] = max(SlotMax[Entry], max(V0.xyz, max(V1.xyz, V2.xyz)));
             }
         }
 
         // Slot assignment: the octant is a PREFERENCE, the free-slot pool is what keeps the children consecutive and
         //    collision-free (BlasBuildMirror::BuildHploc — a slot decides a box lane and a meta byte, while the
         //    traversal's child index comes from the imask and the stored slot).
-        uint Staged[8];
-        uint StagedCount = 0u;
+        uint EntryOfSlot[8];
+        for (uint S = 0u; S < 8u; ++S) EntryOfSlot[S] = 8u;
         uint Free = 0xFFu;
-        for (uint S = 0u; S < 8u; ++S)
+        for (uint Entry = 0u; Entry < 8u; ++Entry)
         {
-            if ((Occupied & (1u << S)) == 0u) continue;
+            if (!Present[Entry]) continue;
+            const uint Want = BlasByteOf(Preferred, Entry);
             uint Take = 8u;
-            if ((Free & (1u << S)) != 0u) Take = S;
+            if ((Free & (1u << Want)) != 0u) Take = Want;
             else for (uint F = 0u; F < 8u; ++F) if ((Free & (1u << F)) != 0u) { Take = F; break; }
             if (Take > 7u) return;                       // more than eight children: the format cannot hold this node
             Free &= ~(1u << Take);
-            Staged[StagedCount++] = (S << 8u) | Take;    // (octant, stored slot), kept in ascending octant order
-        }
-        // Ascending STORED slot, which is the order the children are numbered in and the order the traversal ranks by.
-        for (uint I = 1u; I < StagedCount; ++I)
-        {
-            const uint Key = Staged[I];
-            uint J = I;
-            while (J > 0u && (Staged[J - 1u] & 0xFFu) > (Key & 0xFFu)) { Staged[J] = Staged[J - 1u]; --J; }
-            Staged[J] = Key;
+            EntryOfSlot[Take] = Entry;
         }
 
         vec4 Node[5];
         for (uint W = 0u; W < kBlasNodeBlocks; ++W) Node[W] = vec4(0.0f);
-        vec3 EmitMin[8];
-        vec3 EmitMax[8];
-        uint EmitPresent = 0u;
         uint Meta = 0u, Imask = 0u, RunPosition = 0u, ChildBase = BlasScratch[At + 19u], NextChild = ChildBase;
-        uint SlotOfOctant = 0u;   // stage 4 needs the mapping back: 3 bits per octant, stored slot in the low three
-        for (uint I = 0u; I < StagedCount; ++I)
-        {
-            const uint Octant = Staged[I] >> 8u;
-            const uint Store = Staged[I] & 0xFFu;
-            SlotOfOctant = BlasSetByte(SlotOfOctant, Octant, Store);
-            const uint Count = BlasScratch[At + 2u * Octant + 1u] - BlasScratch[At + 2u * Octant + 0u];
-            EmitPresent |= 1u << Store;
-            EmitMin[Store] = SlotMin[Octant];
-            EmitMax[Store] = SlotMax[Octant];
+        uint Stored = 0u;
+        for (uint S = 0u; S < 8u; ++S)   // ascending STORED slot: the order the children are numbered in, the order the
+        {                                 // traversal ranks them by, and the order a node's leaf runs are laid out in
+            const uint Entry = EntryOfSlot[S];
+            if (Entry >= 8u) continue;
+            Stored = BlasSetByte(Stored, Entry, S);
+            const uint RunLo = BlasScratch[At + 2u * Entry + 0u];
+            const uint RunHi = BlasScratch[At + 2u * Entry + 1u];
+            const uint Count = RunHi - RunLo;
             if (Count > kBlasTriPerLeaf)
             {
                 // Interior child: a new node slot, its range handed over, its level recorded for the refit kernel.
                 const uint Child = NextChild++;
                 const uint ChildAt = BlasNodeSlotAt(Child);
-                BlasScratch[ChildAt + 17u] = BlasScratch[At + 2u * Octant + 0u];
-                BlasScratch[ChildAt + 18u] = BlasScratch[At + 2u * Octant + 1u];
-                BlasLevels[Child] = EmitLevel + 1u;
-                Meta = BlasSetByte(Meta, Store, BlasInteriorMeta(Store));
-                Imask |= 1u << Store;
+                BlasScratch[ChildAt + 17u] = RunLo;
+                BlasScratch[ChildAt + 18u] = RunHi;
+                BlasLevels[Child] = Level + 1u;
+                Meta = BlasSetByte(Meta, S, BlasInteriorMeta(S));
+                Imask |= 1u << S;
             }
             else
             {
                 // Leaf child: its share of the node's run, in the slot's own order (the mirror's ④).
-                Meta = BlasSetByte(Meta, Store, (BlasCountToUnary(Count) << 5u) | RunPosition);
+                Meta = BlasSetByte(Meta, S, (BlasCountToUnary(Count) << 5u) | RunPosition);
                 RunPosition += Count;
             }
         }
-        BlasScratch[At + 21u] = SlotOfOctant;
-        BlasQuantiseNode(Node, EmitMin, EmitMax, EmitPresent);
+        BlasScratch[At + 22u] = Stored;
+
+        // ⚠️ The quantiser reads its slots by STORED slot, so the bounds have to be gathered the same way: the child
+        //    in stored slot S is the entry EntryOfSlot[S], and its box is that entry's exact box.
+        vec3 StoredMin[8];
+        vec3 StoredMax[8];
+        uint Presence = 0u;
+        for (uint S = 0u; S < 8u; ++S)
+        {
+            const uint Entry = EntryOfSlot[S];
+            StoredMin[S] = vec3( 1.0e30f);
+            StoredMax[S] = vec3(-1.0e30f);
+            if (Entry >= 8u) continue;
+            Presence |= 1u << S;
+            StoredMin[S] = SlotMin[Entry];
+            StoredMax[S] = SlotMax[Entry];
+        }
+        BlasQuantiseNode(Node, StoredMin, StoredMax, Presence);
         BlasSetChildBase(Node, ChildBase);
         BlasSetImask(Node, Imask);
         for (uint S = 0u; S < 8u; ++S) BlasSetMeta(Node, S, BlasByteOf(Meta, S));
@@ -351,7 +437,6 @@ void main()
     // ─── stage 4: triangleBase, and the leaf records ─────────────────────────────────────────────────────────────────
     // The runs are concatenated in node order and, inside a node, in ascending STORED SLOT order — so a node's meta
     //    offsets are positions inside its own run, and the primitive order inside a run is the geometry's, not the soup's.
-    //    Stage 3 left the octant→slot map (3 bits per octant) and each octant's range behind; that is all this needs.
     // ⚠️ One workgroup, serial over the nodes. A device prefix sum over the per-node leaf counts replaces this loop
     //    without changing a byte.
     if (Stage == 4u)
@@ -365,30 +450,30 @@ void main()
             BlasSetTriBase(Node, Triangles * kBlasTriBlocks);
 
             const uint At = BlasNodeSlotAt(Slot);
-            const uint SlotOfOctant = BlasScratch[At + 21u];
-            const uint NodeDepth = BlasLevels[Slot];
-            const bool SortedIsA = (NodeDepth & 1u) == 0u;
+            const uint Stored = BlasScratch[At + 22u];
+            const bool SortedIsA = (BlasLevels[Slot] & 1u) == 0u;
 
-            // Pass 1: each leaf child's position inside the run, in ascending stored slot.
-            uint FirstOfOctant[8];
+            // Entries in ascending stored slot: find each leaf child's position inside the run first, so a slot's
+            //    `firstTri` is the offset a ray's hit bit will carry.
+            uint FirstOfEntry[8];
             uint RunPosition = 0u;
             for (uint S = 0u; S < 8u; ++S)
             {
-                for (uint O = 0u; O < 8u; ++O)
+                for (uint Entry = 0u; Entry < 8u; ++Entry)
                 {
-                    if (BlasByteOf(SlotOfOctant, O) != S) continue;
-                    const uint Count = BlasScratch[At + 2u * O + 1u] - BlasScratch[At + 2u * O + 0u];
-                    if (Count == 0u || Count > kBlasTriPerLeaf) continue;   // empty, or an interior child
-                    FirstOfOctant[O] = RunPosition;
-                    RunPosition += Count;
+                    if (BlasByteOf(Stored, Entry) != S) continue;
+                    const uint RunLo = BlasScratch[At + 2u * Entry + 0u];
+                    const uint RunHi = BlasScratch[At + 2u * Entry + 1u];
+                    if (RunHi <= RunLo || (RunHi - RunLo) > kBlasTriPerLeaf) continue;   // empty, or an interior child
+                    FirstOfEntry[Entry] = RunPosition;
+                    RunPosition += RunHi - RunLo;
                 }
             }
-
-            // Pass 2: the records themselves, straight out of the soup.
-            for (uint O = 0u; O < 8u; ++O)
+            // ...then the records themselves, straight out of the soup.
+            for (uint Entry = 0u; Entry < 8u; ++Entry)
             {
-                const uint RunLo = BlasScratch[At + 2u * O + 0u];
-                const uint RunHi = BlasScratch[At + 2u * O + 1u];
+                const uint RunLo = BlasScratch[At + 2u * Entry + 0u];
+                const uint RunHi = BlasScratch[At + 2u * Entry + 1u];
                 if (RunHi <= RunLo || (RunHi - RunLo) > kBlasTriPerLeaf) continue;
                 for (uint I = RunLo; I < RunHi; ++I)
                 {
@@ -397,7 +482,7 @@ void main()
                     const vec4 V0 = BlasSoup[3u * Primitive + 0u];
                     const vec4 V1 = BlasSoup[3u * Primitive + 1u];
                     const vec4 V2 = BlasSoup[3u * Primitive + 2u];
-                    const uint Block = kBlasTriBlocks * (Triangles + FirstOfOctant[O] + (I - RunLo));
+                    const uint Block = kBlasTriBlocks * (Triangles + FirstOfEntry[Entry] + (I - RunLo));
                     BlasLeaves[Block + 0u] = vec4(V2.xyz - V0.xyz, 0.0f);
                     BlasLeaves[Block + 1u] = vec4(V1.xyz - V0.xyz, 0.0f);
                     BlasLeaves[Block + 2u] = vec4(V0.xyz, uintBitsToFloat(Primitive));
