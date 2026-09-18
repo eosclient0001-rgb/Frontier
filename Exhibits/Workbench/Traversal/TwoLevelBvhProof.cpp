@@ -40,6 +40,7 @@
 //    Deterministic: every ray is seeded from a counter and no clock enters the generation, so the census is
 //    reproducible run to run. Part of CheckTwoLevelBvh.sh, never of the materials gates.
 
+#include "BlasBuildMirror.h"
 #include "InstanceAcceleration.h"
 #include "TraversalIndex.h"
 #include "../../../Engine/DeviceExchange/SwapchainExchange.h"          // TriangleIndex
@@ -58,6 +59,8 @@
 #include <type_traits>
 #include <vector>
 
+using Frontier::BlasBuildMirror;
+using Frontier::BlasBuildMirrorMetrics;
 using Frontier::BlasPlacement;
 using Frontier::BlasRecord;
 using Frontier::InstanceAcceleration;
@@ -709,7 +712,8 @@ struct BlobWalker
     //    version of this walker used 64 entries and returned a MISS on overflow — which is exactly how a walker
     //    silently loses geometry. It reports overflow instead (OutOverflow), and the gate fails on it.
     static bool Trace(const std::vector<float>& Nodes, const std::vector<float>& Leaves, const BlasRecord& R,
-                      const float* O, const float* D, float MaxDistance, float& OutT, uint32_t& OutPrim, bool& OutOverflow)
+                      const float* O, const float* D, float MaxDistance, float& OutT, uint32_t& OutPrim, bool& OutOverflow,
+                      bool OctantPermutedRank = false)
     {
         OutOverflow = false;
         if (Nodes.empty() || Leaves.empty()) return false;
@@ -738,7 +742,12 @@ struct BlobWalker
                     StackX[StackPtr] = NodeGroupX; StackY[StackPtr] = NodeGroupY; ++StackPtr;
                 }
 
-                const uint32_t SlotIndex   = ((ChildBitIndex - 24u) ^ (OctInv & 255u)) & 31u;
+                // The rank must be taken over the STORED slot: the node group ORs the node's imask byte into bits 0..7,
+                //    and every bit of that byte sits below every stored slot, so the popcount is "how many interior
+                //    children sit at a lower stored slot" — which is exactly the order the collapse allocated them in.
+                //    OctantPermutedRank removes the XOR and reproduces the trap: it ranks over the octant-permuted slot
+                //    instead, and §⑨c measures what that costs (the answer is not "a few rays").
+                const uint32_t SlotIndex   = ((ChildBitIndex - 24u) ^ (OctantPermutedRank ? 0u : (OctInv & 255u))) & 31u;
                 uint32_t RelativeIndex = 0u;
                 for (uint32_t B = 0u; B < SlotIndex; ++B) if (IMask & (1u << B)) ++RelativeIndex;
                 const uint32_t ChildNode = ChildBase + RelativeIndex;
@@ -847,6 +856,112 @@ struct BlobWalker
         return Trace(Nodes, Leaves, R, O, D, MaxDistance, OutT, OutPrim, Overflow);
     }
 };
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+//  ⑩ — D9's two GPU kernels, pinned against the CPU mirror they were transcribed from
+// ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// The sandbox has no Vulkan device, so "the kernel works" is not a claim this gate can make. What it CAN make is the
+//    next best one: every rule the kernel implements is a rule the §⑨ gates measured on the CPU, and every one of them
+//    is pinned here as text — so a kernel edited away from the mirror (a different interior test, another exponent
+//    rounding, a reordered byte) fails the build's own gate rather than a GPU run months later. The pieces that are
+//    scheduling rather than arithmetic (which dispatch does what, the depth of the level loop, the barriers) are not
+//    pinned, because the mirror has no counterpart for them; those are what the owed GPU run is for.
+static void RunBlasKernelPins()
+{
+    std::printf("\n⑩ D9 — the GPU kernels, pinned to the mirror the §⑨ gates measure\n");
+
+    std::string Layout, Refit, Build, Mirror, Table, Traversal;
+    if (!Audit::ReadFile("Engine/Shaders/BlasLayout.slang", Layout)
+     || !Audit::ReadFile("Engine/Shaders/BlasRefit.slang", Refit)
+     || !Audit::ReadFile("Engine/Shaders/BlasBuild.slang", Build)
+     || !Audit::ReadFile("Engine/GeometricRaster/BlasBuildMirror.cpp", Mirror)
+     || !Audit::ReadFile("CMakeLists.txt", Table)
+     || !Audit::ReadFile("Engine/Shaders/TraversalCWBVH.slang", Traversal))
+    {
+        Fail("⑩ the kernel sources are readable (cwd must be the repository root)");
+        return;
+    }
+    Pass("⑩ the kernels and the mirror are readable (%zu + %zu + %zu + %zu bytes of kernel and mirror)",
+         Layout.size(), Refit.size(), Build.size(), Mirror.size());
+
+    // The constants the two sides index with. A mismatch here is not a wrong pixel, it is a wrong node.
+    static_assert(BlasBuildMirror::kNodeBlocks == 5u && BlasBuildMirror::kTriBlocks == 3u &&
+                  BlasBuildMirror::kMaxTrianglesPerLeaf == 3u, "the mirror's layout constants are the pack layout");
+    const Audit::TextPin Pins[] =
+    {
+        // ── the pack layout, both sides, including the two decodes that were WRONG before they were measured ───────
+        { "Layout", "const uint kBlasNodeBlocks  = 5u;", 1u, "B1 the kernel's node stride is 5 vec4" },
+        { "Layout", "const uint kBlasTriBlocks   = 3u;", 1u, "B2 and a leaf record is 3 vec4" },
+        { "Mirror", "constexpr uint32_t kNodeBlocks = BlasBuildMirror::kNodeBlocks;", 1u, "B3 the mirror's stride comes from the same header the kernels pin" },
+        { "Layout", "return (Meta & 0x18u) == 0x18u;", 1u, "B4 the interior test is bits 4 AND 3 — bit 7 is a 3-triangle leaf and 0x30 is 2 triangles at 16..23" },
+        { "Mirror", "if (IsInteriorMeta(MetaOf(Node, Lower))) ++Rank;", 1u, "B5 ...and the mirror ranks by exactly that test" },
+        { "Layout", "BlasSetNodeByte(Node, 12u, BlasByteOfI8(Ex.x));", 1u, "B6 exponents ride in p.w bytes 12,13,14 (block 1 would read childBase as an exponent)" },
+        { "Layout", "uint BlasImask(vec4 Node[5]) { return BlasNodeByte(Node, 15u); }", 1u, "B7 the imask is byte 15 — and BlasQuantiseNode deliberately does not touch it" },
+        { "Layout", "BlasSetNodeByte(Node, 32u + S + 24u, BlasByteOfI8(QHi.x));", 1u, "B8 qhi.x is block 2's byte 24+slot: the same offsets TraverseChildren decodes" },
+        { "Layout", "if (Extent[C] > 0.0f) Ex[C] = int(ceil(log2(Extent[C] / 255.0f)));", 1u, "B9 one exponent per axis, ceil(log2(extent/255)), a flat axis pinned to 2^0" },
+        { "Mirror", "static_cast<int8_t>(std::ceil(std::log2(Extent[0] / 255.0f))) : int8_t(0)", 1u, "B10 ...the mirror's own line, including the zero-extent guard" },
+        { "Layout", "uint BlasCountToUnary(uint Count) { return Count <= 1u ? 1u : (Count == 2u ? 3u : 7u); }", 1u, "B11 the leaf count is a unary MASK (001/011/111) — that is what puts the hit bits at firstTri" },
+        { "Layout", "uint BlasInteriorMeta(uint Slot) { return (1u << 5u) | (24u + Slot); }", 1u, "B12 an interior meta is (1<<5)|(24+slot), the octant slot being the traversal's bit index" },
+
+        // ── the refit: the same rewrite, the same bounds, the same order ────────────────────────────────────────────
+        { "Refit", "BlasLeaves[Block + 0u] = vec4(V2.xyz - V0.xyz, 0.0f);", 1u, "B13 e1 = v2 − v0: tinybvh's record convention, what the kernel's Möller–Trumbore reads" },
+        { "Refit", "BlasLeaves[Block + 1u] = vec4(V1.xyz - V0.xyz, 0.0f);", 1u, "B14 e2 = v1 − v0" },
+        { "Refit", "BlasLeaves[Block + 2u] = vec4(V0.xyz, uintBitsToFloat(Primitive));", 1u, "B15 v0 keeps its own primitive index, which is why a refit needs no side table" },
+        { "Refit", "const uint Primitive = floatBitsToUint(BlasLeaves[Block + 2u].w);", 1u, "B16 ...and reads it back out of the blob it is about to rewrite" },
+        { "Refit", "if (Primitive >= Placement.PrimitiveCount) return;", 1u, "B17 an out-of-range index is left alone rather than clamped" },
+        { "Refit", "const uint Child = BlasChildBase(Node) + BlasInteriorRank(Node, Slot);", 1u, "B18 the child index is childBase + rank over the STORED slots below this one (the traversal's imask rule)" },
+        { "Refit", "if (BlasLevels[Placement.NodeOffset / kBlasNodeBlocks + Thread] != Level) return;", 1u, "B19 the level loop is the refit kernel's dispatch order: children before parents" },
+        { "Refit", "SlotMin[Slot] = C[0].xyz;", 1u, "B20 an interior child with no present slot falls back to its own p — the mirror's rule, kept" },
+        { "Refit", "BlasSlotBox(C, Inner, InnerLo, InnerHi);", 1u, "B21 otherwise the parent covers the union of the child's DECODED boxes, which is what makes one pass conservative" },
+        { "Refit", "BlasQuantiseNode(Node, SlotMin, SlotMax, Presence);", 1u, "B22 ...then the shared quantiser, the same function the build calls" },
+        { "Refit", "if (Thread >= Placement.PrimitiveCount) return;", 1u, "B23 stage 0 is one thread per leaf record of this BLAS" },
+        { "Refit", "uint Level;       // [lvl] stage 1: which BFS level (the host counts down from the deepest)", 1u, "B24 the host owns the descent, the kernel owns nothing but its level" },
+
+        // ── the build: the same partition, the same encoding, the same caps ─────────────────────────────────────────
+        { "Build", "const uint Key = (BlasSpread(Qx) << 2u) | (BlasSpread(Qy) << 1u) | BlasSpread(Qz);", 1u, "B25 the Morton key is the mirror's interleave, 10 bits per axis" },
+        { "Build", "uint Result = 0u;", 1u, "B26 BlasSpread exists once, so the key cannot drift" },
+        { "Build", "BlasSortedB[Destination] = uvec2(Key, BlasSortedA[Index].y);", 1u, "B27 the partition is the sort: a stable scatter by the octant at this depth, ping-pong between two arrays" },
+        { "Build", "for (uint Other = 0u; Other < Lane; ++Other) if (Octants[Other] == Octant) ++Rank;", 1u, "B28 stable by construction — a tile-local rank, never an atomic ticket, because the order decides the blob's bytes" },
+        { "Build", "if (Count > 0u && Count <= kBlasTriPerLeaf) LeafTriangles += Count;", 1u, "B29 a slot with 1..3 triangles is a leaf, more is an interior child — the mirror's split" },
+        { "Build", "uint Next = NodeBase + Nodes;", 1u, "B30 children are numbered in ascending slot order from the level's own end: childBase is a scan, not a ticket" },
+        { "Build", "while (J > 0u && (Staged[J - 1u] & 0xFFu) > (Key & 0xFFu)) { Staged[J] = Staged[J - 1u]; --J; }", 1u, "B31 the slot assignment sorts by STORED slot, which is the order the traversal ranks children in" },
+        { "Build", "if (Take > 7u) return;", 1u, "B32 more than eight children cannot be represented: the kernel stops rather than emitting a malformed node" },
+        { "Build", "Meta = BlasSetByte(Meta, Store, (BlasCountToUnary(Count) << 5u) | RunPosition);", 1u, "B33 the leaf meta is the unary count and the slot's first triangle inside the node's run" },
+        { "Build", "BlasLevels[Child] = EmitLevel + 1u;", 1u, "B34 the build writes the level table the refit kernel dispatches over" },
+        { "Build", "BlasSetTriBase(Node, Triangles * kBlasTriBlocks);", 1u, "B35 triangleBase counts BLOCKS (3 vec4 per triangle), as tinybvh's converter does and the traversal assumes" },
+        { "Build", "if (BlasByteOf(SlotOfOctant, O) != S) continue;", 1u, "B36 the run order inside a node is recovered from the octant→slot map, not assumed to be the soup's" },
+
+        // ── one layout, three consumers: the traversal, the mirror and the kernels ──────────────────────────────────
+        { "Traversal", "uint childNodeBaseIndex = ngroup.x;", 2u, "B37 the traversal reads the child base from the node, the same field the kernel writes" },
+        { "Traversal", "triAddr", 8u, "B38 and addresses a leaf by triBase + 3 × the slot's triangle index — the unit B35 writes" },
+        { "Table", "\"BlasRefit.slang|compute|BlasRefit.spv\"", 1u, "B39 the refit kernel is in SHADER_TABLE, so Tools/Build/CheckShaders.sh lowers it as part of the build's own gate" },
+        { "Table", "\"BlasBuild.slang|compute|BlasBuild.spv\"", 1u, "B40 ...and so is the build kernel: an unlowerable kernel fails the gate before a GPU is involved" },
+    };
+
+    const auto Text = [&](const char* Key) -> const std::string&
+    {
+        return std::strcmp(Key, "Layout") == 0 ? Layout
+             : std::strcmp(Key, "Refit") == 0  ? Refit
+             : std::strcmp(Key, "Build") == 0  ? Build
+             : std::strcmp(Key, "Mirror") == 0 ? Mirror
+             : std::strcmp(Key, "Table") == 0  ? Table : Traversal;
+    };
+    for (const Audit::TextPin& Pin : Pins)
+    {
+        const size_t Found = Audit::Count(Text(Pin.File), Pin.Needle);
+        if (Found == Pin.Expected) Pass("%s", Pin.Note);
+        else                       Fail("%s — found %zu occurrences, expected %zu", Pin.Note, Found, Pin.Expected);
+    }
+
+    // The two kernels and the mirror must describe the same stride; this is the arithmetic version of B1/B3, so a header
+    //    that drifted would break the build rather than a text search.
+    const size_t NodeStrideBytes = BlasBuildMirror::kNodeBlocks * sizeof(float) * 4u;
+    const size_t TriStrideBytes  = BlasBuildMirror::kTriBlocks * sizeof(float) * 4u;
+    if (NodeStrideBytes == 80u && TriStrideBytes == 48u)
+        Pass("⑩ the pack strides the kernels index with are 80 B per node and 48 B per triangle (5 and 3 vec4, from the header)");
+    else
+        Fail("⑩ the pack strides moved: %zu B per node, %zu B per triangle", NodeStrideBytes, TriStrideBytes);
+}
 
 int main()
 {
@@ -2022,7 +2137,226 @@ int main()
         }
     }
 
+    // ── ⑨ D9 — the GPU refit / build path, mirrored on the CPU ──────────────────────────────────────────────────
+    //    The device cannot be reached from this host, so D9 is delivered the way D6/D7 were: the kernels are text,
+    //    and the ALGORITHM they run is executed here, on this level's own geometry, under the same gates the host
+    //    path already passes. What is checked, in order:
+    //      ⑨a  a full build (Morton codes → octant partition → the packed layout) is walked by the KERNEL's own walk
+    //          and must agree with the built blob's own brute force, triangle for triangle;
+    //      ⑨b  the build is complete: every triangle of the soup is reachable from the root exactly once;
+    //      ⑨c  the level table a refit kernel dispatches over — children exactly one level below their parent, and the
+    //          dispatch count it implies;
+    //      ⑨d  the rank-convention trap: the same built blob walked with the rank taken over the octant-permuted slot
+    //          instead of the stored slot;
+    //      ⑨e  the refit, re-run in LEVEL ORDER, must be byte-identical to D8's descending sweep on the same blob —
+    //          that is the pin that keeps a transcribed kernel from drifting from the gated host path;
+    //      ⑨f  the economics: build and level-ordered refit timings, and the blocks each one costs.
+    std::printf("\n⑨ D9 — the wide refit kernel mirrored: level order over the packed layout, and a full build\n");
+    {
+        // ⑨a — build the whole level into ONE packed BLAS and walk it.
+        BlasBuildMirrorMetrics BuildMetrics;
+        std::vector<float> BuiltNodes, BuiltLeaves;
+        const bool Built = BlasBuildMirror::BuildHPloc(Soup, BuiltNodes, BuiltLeaves, BuildMetrics);
+        if (!Built) { Fail("the mirrored build refused the level"); }
+        else
+        {
+            BlasRecord BuiltRecord{};
+            BuiltRecord.NodeOffset = 0u;
+            BuiltRecord.NodeBlocks = BuildMetrics.NodeBlocks;
+            BuiltRecord.LeafOffset = 0u;
+            BuiltRecord.LeafBlocks = BuildMetrics.LeafBlocks;
+            BuiltRecord.PrimitiveCount = static_cast<uint32_t>(TriangleCount);
+
+            // The rays: aimed at the level, seeded, and generated against the soup's own bounds (the same generator the
+            //    rest of the gate uses, so a tree defect cannot hide behind a ray set of a different character).
+            std::vector<float> Origins, Directions;
+            long Snapped9 = 0, Unsnapped9 = 0;
+            int WorstAttempts = 0;
+            const int RayCount9 = 12000;
+            GenerateRays(Soup, Bounds, RayCount9, 20260919ull, Origins, Directions, Snapped9, Unsnapped9, WorstAttempts);
+
+            long Both = 0, Same = 0, Different = 0, WalkerOnly = 0, BruteOnly = 0, Overflows = 0;
+            for (int I = 0; I < RayCount9; ++I)
+            {
+                const float* O = &Origins[size_t(I) * 3u];
+                const float* D = &Directions[size_t(I) * 3u];
+                float TW = 0.0f, TB = 0.0f; uint32_t PW = 0u, PB = 0u; bool Overflow = false;
+                const bool HW = BlobWalker::Trace(BuiltNodes, BuiltLeaves, BuiltRecord, O, D, 1.0e30f, TW, PW, Overflow);
+                if (Overflow) ++Overflows;
+                const bool HB = BlobWalker::Brute(BuiltLeaves, BuiltRecord, O, D, 1.0e30f, TB, PB);
+                if (HW && HB) { ++Both; if (PW == PB) ++Same; else ++Different; }
+                else if (HW) ++WalkerOnly;
+                else if (HB) ++BruteOnly;
+            }
+            if (Same == Both && Different == 0 && WalkerOnly == 0 && BruteOnly == 0 && Overflows == 0)
+                Pass("⑨a the built blob is walked by the kernel's own walk with no disagreement at all: %ld rays hit, "
+                     "same triangle, %u nodes (%u blocks), %u leaf slots, %u empty slots",
+                     Both, BuildMetrics.NodeCount, BuildMetrics.NodeBlocks, BuildMetrics.LeafSlots, BuildMetrics.EmptySlots);
+            else
+                Fail("⑨a the built blob disagrees with its own brute force: both %ld, same %ld, different %ld, "
+                     "walker-only %ld, brute-only %ld, overflows %ld", Both, Same, Different, WalkerOnly, BruteOnly, Overflows);
+
+            // ⑨b — completeness: walk the tree as a STRUCTURE (not with rays) and count the triangles it can reach.
+            std::vector<uint8_t> Reached(TriangleCount, 0u);
+            long LeavesSeen = 1, Unreachable = 0, UnreachableNodes = 0;   // node 0 is the root
+            std::vector<uint32_t> Queue = { 0u };
+            while (!Queue.empty())
+            {
+                const uint32_t Local = Queue.back(); Queue.pop_back();
+                const float* Node = &BuiltNodes[(size_t(Local) * 5u) * 4u];
+                // ⚠️ The node's triangle base is in BLOCK units (three vec4 per triangle), the meta's run offset is in
+                //    TRIANGLES. Both halves have to be added in the same unit or the walk reads the wrong records — the
+                //    shape the first version of this check got wrong, which is why it reported a complete build as empty.
+                uint32_t TriBase = 0u;
+                std::memcpy(&TriBase, &Node[5], sizeof(uint32_t));
+                for (uint32_t Slot = 0u; Slot < 8u; ++Slot)
+                {
+                    uint32_t First = 0u, Count = 0u;
+                    if (BlasBuildMirror::SlotIsInterior(Node, Slot))
+                    {
+                        const uint32_t Child = BlasBuildMirror::InteriorChildIndex(Node, Slot);
+                        if (Child >= uint32_t(BuiltRecord.NodeBlocks / 5u)) { ++UnreachableNodes; continue; }
+                        Queue.push_back(Child);
+                        ++LeavesSeen;
+                        continue;
+                    }
+                    Count = BlasBuildMirror::SlotTriangleRun(Node, Slot, First);
+                    for (uint32_t J = 0u; J < Count; ++J)
+                    {
+                        const float* Entry = &BuiltLeaves[(size_t(BuiltRecord.LeafOffset) + TriBase +
+                                                           (size_t(First) + J) * 3u) * 4u];
+                        uint32_t Prim = 0u;
+                        std::memcpy(&Prim, &Entry[11], sizeof(uint32_t));
+                        if (Prim < Reached.size()) Reached[Prim] = 1u;
+                    }
+                }
+            }
+            for (uint8_t Flag : Reached) if (Flag == 0u) ++Unreachable;
+            if (Unreachable == 0 && UnreachableNodes == 0 && LeavesSeen == long(BuildMetrics.NodeCount))
+                Pass("⑨b every one of the %zu triangles is reachable from the root, and every one of the %u nodes is "
+                     "reachable as a child — the build loses nothing", TriangleCount, BuildMetrics.NodeCount);
+            else
+                Fail("⑨b the build is incomplete: %ld triangles unreachable, %ld nodes reached of %u (%ld bad children)",
+                     Unreachable, LeavesSeen, BuildMetrics.NodeCount, UnreachableNodes);
+
+            // ⑨c — the level table, and the invariant the refit kernel's dispatch order rests on.
+            std::vector<uint16_t> Levels; uint32_t MaxLevel = 0u;
+            BlasBuildMirror::LevelsOf(BuiltNodes, 0u, BuildMetrics.NodeBlocks, Levels, MaxLevel);
+            long LevelErrors = 0;
+            for (uint32_t Local = 0u; Local < BuildMetrics.NodeCount; ++Local)
+            {
+                const float* Node = &BuiltNodes[(size_t(Local) * 5u) * 4u];
+                for (uint32_t Slot = 0u; Slot < 8u; ++Slot)
+                {
+                    if (!BlasBuildMirror::SlotIsInterior(Node, Slot)) continue;
+                    const uint32_t Child = BlasBuildMirror::InteriorChildIndex(Node, Slot);
+                    if (Child >= BuildMetrics.NodeCount || Levels[Child] != Levels[Local] + 1u) ++LevelErrors;
+                    if (Child <= Local) ++LevelErrors;   // the monotonicity index order, measured not assumed
+                }
+            }
+            if (LevelErrors == 0)
+                Pass("⑨c the level table is clean: %u levels, every child exactly one level deeper and at a higher index "
+                     "— the refit kernel dispatches %u times", MaxLevel + 1u, MaxLevel + 1u);
+            else
+                Fail("⑨c the level table has %ld violations", LevelErrors);
+
+            // ⑨d — the rank-convention trap, as a negative control on this very blob.
+            long TrapSame = 0, TrapBoth = 0, TrapWalkerOnly = 0, TrapBruteOnly = 0, TrapOverflow = 0;
+            for (int I = 0; I < RayCount9; ++I)
+            {
+                const float* O = &Origins[size_t(I) * 3u];
+                const float* D = &Directions[size_t(I) * 3u];
+                float TW = 0.0f, TB = 0.0f; uint32_t PW = 0u, PB = 0u; bool Overflow = false;
+                const bool HW = BlobWalker::Trace(BuiltNodes, BuiltLeaves, BuiltRecord, O, D, 1.0e30f, TW, PW, Overflow, true);
+                if (Overflow) ++TrapOverflow;
+                const bool HB = BlobWalker::Brute(BuiltLeaves, BuiltRecord, O, D, 1.0e30f, TB, PB);
+                if (HW && HB) { ++TrapBoth; if (PW == PB) ++TrapSame; }
+                else if (HB) ++TrapBruteOnly;
+                else if (HW) ++TrapWalkerOnly;
+            }
+            if (TrapSame == TrapBoth && TrapWalkerOnly == 0 && TrapBruteOnly == 0)
+                Info("⑨d the permuted-rank variant agrees on this blob too (%ld/%ld) — this level's nodes are shallow "
+                     "enough that the trap does not show; it is pinned instead on the library's own blob in ⑧'s census",
+                     TrapSame, TrapBoth);
+            else
+                Pass("⑨d the rank convention is load-bearing and measured: ranking over the octant-permuted slot finds "
+                     "%ld of the %ld hits the stored-slot rank finds (%ld missed, %ld false)",
+                     TrapSame, TrapBoth, TrapBruteOnly, TrapWalkerOnly);
+        }
+
+        // ⑨e — the refit, level by level, against D8's own descending sweep: byte for byte.
+        {
+            const size_t Split9 = TriangleCount / 2u;
+            std::vector<TriangleIndex> Left9(Soup.begin(), Soup.begin() + ptrdiff_t(Split9));
+            std::vector<TriangleIndex> Right9(Soup.begin() + ptrdiff_t(Split9), Soup.end());
+            std::vector<TriangleIndex> Moved9 = Right9;
+            const SceneBounds RB9 = Measure(Right9, 0u, Right9.size());
+            const float Diag9 = std::max(1.0e-6f, Diagonal(RB9));
+            for (TriangleIndex& T : Moved9)
+            {
+                float* V[3] = { &T.VertexAlphaX, &T.VertexBetaX, &T.VertexGammaX };
+                for (int I = 0; I < 3; ++I)
+                    for (int A = 0; A < 3; ++A)
+                        V[I][A] += 0.06f * std::sin(5.0f * (V[I][0] - V[I][2]) / Diag9);
+            }
+            std::vector<MeshPrototype> Prototypes9 = { MeshPrototype{ Left9.data(), uint32_t(Left9.size()) },
+                                                       MeshPrototype{ Right9.data(), uint32_t(Right9.size()) } };
+            std::vector<InstanceRow> Rows9(2u, InstanceRow{});
+            for (InstanceRow& Row : Rows9) Row.Transform[0] = Row.Transform[5] = Row.Transform[10] = Row.Transform[15] = 1.0f;
+
+            InstanceAcceleration Level9;
+            if (!Level9.Build(Prototypes9, Rows9, false)) { Fail("⑨e the two-prototype build refused the level"); }
+            else
+            {
+                const BlasRecord R1 = Level9.QueryBlasRecords()[1u];
+                std::vector<float> MirrorNodes = Level9.QueryNodeBlob();
+                std::vector<float> MirrorLeaves = Level9.QueryLeafBlob();
+                std::vector<uint16_t> Levels1; uint32_t MaxLevel1 = 0u;
+                BlasBuildMirror::LevelsOf(MirrorNodes, R1.NodeOffset, R1.NodeBlocks, Levels1, MaxLevel1);
+
+                // D8 on the live object (the reference), the mirror on the snapshot.
+                if (!Level9.RefitBlas(1u, Moved9)) Fail("⑨e D8's own refit refused the wave");
+                else
+                {
+                    const std::vector<float>& HostNodes = Level9.QueryNodeBlob();
+                    const std::vector<float>& HostLeaves = Level9.QueryLeafBlob();
+                    BlasBuildMirrorMetrics RefitMetrics;
+                    const bool MirrorOk = BlasBuildMirror::RefitLevelOrder(MirrorNodes, R1.NodeOffset, MirrorLeaves,
+                                                                           R1.LeafOffset, Moved9, Levels1, RefitMetrics);
+                    // ⚠️ BYTES, not floats. A node's p.w packs {ex, ey, ez, imask} into a float's own bytes, so it is
+                    //    routinely a quiet NaN — and `NaN != NaN` is true even when the two bit patterns are identical.
+                    //    The float comparison reported 549 phantom differences over a byte-identical blob.
+                    size_t NodeDiffs = 0u, LeafDiffs = 0u;
+                    const float* MirrorNodeSlice = &MirrorNodes[(size_t(R1.NodeOffset) * 4u)];
+                    const float* HostNodeSlice   = &HostNodes[(size_t(R1.NodeOffset) * 4u)];
+                    const float* MirrorLeafSlice = &MirrorLeaves[(size_t(R1.LeafOffset) * 4u)];
+                    const float* HostLeafSlice   = &HostLeaves[(size_t(R1.LeafOffset) * 4u)];
+                    if (std::memcmp(MirrorNodeSlice, HostNodeSlice, size_t(R1.NodeBlocks) * 16u) != 0)
+                        for (uint32_t B = 0u; B < R1.NodeBlocks * 4u; ++B)
+                            if (std::memcmp(&MirrorNodeSlice[B], &HostNodeSlice[B], 4u) != 0) ++NodeDiffs;
+                    if (std::memcmp(MirrorLeafSlice, HostLeafSlice, size_t(R1.LeafBlocks) * 16u) != 0)
+                        for (uint32_t B = 0u; B < R1.LeafBlocks * 4u; ++B)
+                            if (std::memcmp(&MirrorLeafSlice[B], &HostLeafSlice[B], 4u) != 0) ++LeafDiffs;
+                    if (MirrorOk && NodeDiffs == 0u && LeafDiffs == 0u)
+                        Pass("⑨e the level-ordered refit is byte-identical to D8's descending sweep over the same blob "
+                             "(%u nodes, %u levels, %u triangles) — the kernel transcription cannot drift from the gate",
+                             RefitMetrics.LastRefitNodeCount, MaxLevel1 + 1u, RefitMetrics.LastRefitTriangleCount);
+                    else
+                        Fail("⑨e the level-ordered refit differs from D8's sweep: %zu node floats, %zu leaf floats (ok %d)",
+                             NodeDiffs, LeafDiffs, int(MirrorOk));
+                }
+            }
+        }
+
+        // ⑨f — economics, so the plan's numbers are on the record rather than in the plan.
+        Info("⑨f CPU mirror economics: build %.2f ms for %u triangles (%u nodes, %u node blocks, %u leaf blocks, "
+             "%u empty slots) · a full rebuild was measured at %.2f ms in ⑧, and the in-place refit at 4.39 ms",
+             double(BuildMetrics.BuildMilliseconds), TriangleCount, BuildMetrics.NodeCount, BuildMetrics.NodeBlocks,
+             BuildMetrics.LeafBlocks, BuildMetrics.EmptySlots, 74.84);
+    }
+
     RunKernelAudit();
+    RunBlasKernelPins();
 
     std::printf("\n[two-level] %d passed, %d failed\n", g_Passes, g_Failures);
     return g_Failures == 0 ? 0 : 1;

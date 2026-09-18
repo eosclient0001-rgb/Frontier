@@ -11,6 +11,7 @@
 //    compiled with the same SIMD flags — the class layouts must not be allowed to diverge across the two TUs.
 
 #include "InstanceAcceleration.h"
+#include "BlasBuildMirror.h"
 #include "TraversalIndex.h"
 #include "../DeviceExchange/SwapchainExchange.h"   // TriangleIndex
 
@@ -171,62 +172,13 @@ namespace
         OutMax[2] = P[2] + static_cast<float>(Base[Slot + 40u]) * std::pow(2.0f, static_cast<float>(Ez));
     }
 
-    // Re-quantise one node's eight child slots from the bounds handed in. `ChildMin`/`ChildMax` are world bounds; a slot
-    //    with ChildPresent[Slot] == false is left as it was. This is the arithmetic tinybvh's ConvertFrom uses, written
-    //    the same way (powf, floorf, ceilf, and the (int8_t) exponent cast) so a refit and a rebuild that see the same
-    //    bounds emit the same bytes.
+    // Re-quantise one node's eight child slots from the bounds handed in. The arithmetic now lives in ONE place —
+    //    BlasBuildMirror::QuantiseNode — because D9's GPU refit kernel is transcribed from that same function, and a
+    //    host refit and a device refit that disagree by one byte would be a silent correctness split. This forwarder
+    //    used to hold the body; moving it changed no bytes, which the §⑧ gate re-verified.
     void EncodeNode(float* Node, const float ChildMin[8][3], const float ChildMax[8][3], const bool ChildPresent[8]) noexcept
     {
-        uint8_t* Bytes = reinterpret_cast<uint8_t*>(Node);
-
-        float Lo[3] = {  1.0e30f,  1.0e30f,  1.0e30f };
-        float Hi[3] = { -1.0e30f, -1.0e30f, -1.0e30f };
-        for (uint32_t Slot = 0u; Slot < 8u; ++Slot)
-        {
-            if (!ChildPresent[Slot]) continue;
-            for (int C = 0; C < 3; ++C)
-            {
-                Lo[C] = std::min(Lo[C], ChildMin[Slot][C]);
-                Hi[C] = std::max(Hi[C], ChildMax[Slot][C]);
-            }
-        }
-        if (!(Lo[0] <= Hi[0])) return;   // no live child: leave the node exactly as it was
-
-        Node[0] = Lo[0]; Node[1] = Lo[1]; Node[2] = Lo[2];
-        // A flat node (zero extent on an axis — a perfectly planar mesh) has no exponent: log2(0) is −inf and the cast
-        //    to int8 is undefined. tinybvh takes that cast on faith; here the axis is pinned to a cell of 1.0, which
-        //    quantises a zero-extent range to 0/0 and is therefore exact.
-        const float Extent[3] = { Hi[0] - Lo[0], Hi[1] - Lo[1], Hi[2] - Lo[2] };
-        const int8_t Ex = (Extent[0] > 0.0f) ? static_cast<int8_t>(std::ceil(std::log2(Extent[0] / 255.0f))) : int8_t(0);
-        const int8_t Ey = (Extent[1] > 0.0f) ? static_cast<int8_t>(std::ceil(std::log2(Extent[1] / 255.0f))) : int8_t(0);
-        const int8_t Ez = (Extent[2] > 0.0f) ? static_cast<int8_t>(std::ceil(std::log2(Extent[2] / 255.0f))) : int8_t(0);
-        // p.w = [ex | ey | ez | imask] as four bytes; the mask byte is preserved, the three exponents are rewritten.
-        const uint8_t Mask = Bytes[15];
-        Bytes[12] = static_cast<uint8_t>(Ex);
-        Bytes[13] = static_cast<uint8_t>(Ey);
-        Bytes[14] = static_cast<uint8_t>(Ez);
-        Bytes[15] = Mask;
-
-        const float Qx = std::pow(2.0f, static_cast<float>(Ex));
-        const float Qy = std::pow(2.0f, static_cast<float>(Ey));
-        const float Qz = std::pow(2.0f, static_cast<float>(Ez));
-        uint8_t* Base = Bytes + 32u;
-        for (uint32_t Slot = 0u; Slot < 8u; ++Slot)
-        {
-            if (!ChildPresent[Slot]) continue;
-            const int32_t QLoX = static_cast<int32_t>(std::floor((ChildMin[Slot][0] - Lo[0]) / Qx));
-            const int32_t QLoY = static_cast<int32_t>(std::floor((ChildMin[Slot][1] - Lo[1]) / Qy));
-            const int32_t QLoZ = static_cast<int32_t>(std::floor((ChildMin[Slot][2] - Lo[2]) / Qz));
-            const int32_t QHiX = static_cast<int32_t>(std::ceil ((ChildMax[Slot][0] - Lo[0]) / Qx));
-            const int32_t QHiY = static_cast<int32_t>(std::ceil ((ChildMax[Slot][1] - Lo[1]) / Qy));
-            const int32_t QHiZ = static_cast<int32_t>(std::ceil ((ChildMax[Slot][2] - Lo[2]) / Qz));
-            Base[Slot +  0u] = static_cast<uint8_t>(QLoX);
-            Base[Slot +  8u] = static_cast<uint8_t>(QLoY);
-            Base[Slot + 16u] = static_cast<uint8_t>(QLoZ);
-            Base[Slot + 24u] = static_cast<uint8_t>(QHiX);
-            Base[Slot + 32u] = static_cast<uint8_t>(QHiY);
-            Base[Slot + 40u] = static_cast<uint8_t>(QHiZ);
-        }
+        BlasBuildMirror::QuantiseNode(Node, ChildMin, ChildMax, ChildPresent);
     }
 
     // Interior child slot -> the child's node index, LOCAL TO THIS BLAS' NODE ARENA (the blob stores childBase that

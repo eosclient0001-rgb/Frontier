@@ -12,7 +12,7 @@ that number decides the answer. Three frequencies, three answers:
 | build the world tree | once at load | whole scene | **CPU** (today's `TraversalIndex::Build`; deterministic, already proven) |
 | move a rigid object | every frame | transforms only — 0 triangles | **either** (CPU is 0.16–3.1 ms for the whole TLAS; see §3) |
 | deform a mesh (skinning/VAT/cloth) | every frame | that mesh's triangles | **GPU refit**, once the layout allows refit-in-place |
-| change topology (destruction, LOD swap) | occasionally | that mesh | CPU rebuild on a worker thread, or GPU build (H-PLOC) |
+| change topology (destruction, LOD swap) | occasionally | that mesh | CPU rebuild on a worker thread, or the GPU build kernel (`BlasBuild.slang`; H-PLOC's cluster merge is the open optimisation) |
 
 ## 1. What exists in this repository today
 
@@ -129,8 +129,19 @@ deformed vertices and refits; the animation system owns everything before that b
   some other layout is useless unless `TraversalCWBVH.slang` grows a second traversal path — which is the real cost of
   H-PLOC/PLOC++/LBVH here, not the builder itself. Vertex data must also already be on the device (it is not: the CPU
   uploads flat triangles). So a GPU *build* is a bigger change than a GPU *refit*.
-- **A GPU refit is small, and layout-local.** Bottom-up node-box updates over the wide layout: one dispatch, no
-  topology change, no vertex re-quantization. This is the piece to write first, because it is what deformation needs.
+  **D9 answered this the way the paragraph asks.** `Engine/Shaders/BlasBuild.slang` emits the same packed layout — Morton
+  key prepass, one per-level octant partition per node (which is also the sort: no radix passes, no key prefix sum),
+  a childBase scan in ascending slot order, an emit that quantises with the shared function, then the leaf runs. So
+  `TraversalCWBVH.slang` keeps its single traversal path, and the question "can the builder write the refit's layout"
+  is settled by construction rather than by hope: `Engine/GeometricRaster/BlasBuildMirror.cpp` is the reference the
+  kernels are transcribed from, and §⑨ walks and measures it (63 854 triangles: 17 835 nodes, 10 clean levels, every
+  triangle reachable, 21.3 ms on the CPU — a third of the measured 74.8 ms rebuild). What is still owed is a GPU.
+- **A GPU refit is small, and layout-local.** Bottom-up node-box updates over the wide layout: one dispatch per level,
+  no topology change, no vertex re-quantization. This is the piece to write first, because it is what deformation needs
+  — and it is what `Engine/Shaders/BlasRefit.slang` is: the same quantiser the build calls, the same child-bounds rule
+  D8's CPU sweep uses, dispatched deepest level first so a parallel pass reads only finished children. §⑨e proves the
+  two orders agree byte for byte on the same blob (4 827 nodes, 31 927 triangles, 0 differing floats), which is what
+  makes the transcription checkable without a device.
 - **GPU builders are for topology changes** (destruction, LOD swaps, meshes authored on the fly): H-PLOC (AMD, GPUOpen,
   Benthin et al. 2024) constructs a whole BVH in a single kernel launch, 1.1–3.6× faster than PLOC++/ATRBVH, with
   LBVH-quality-competitive results (a million instances, 4-wide, in 2.21 ms). PLOC (Meister & Bittner 2018) / PLOC++
@@ -287,8 +298,19 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
   in-place refit of the packed layout plus the displacement-driven rebuild policy. Acceptance: a moving/deforming scene
   renders correct shadows and reflections with the frame budget printed, and the CPU mirror reproduces the same images.
   ⚠️ The GPU half of that acceptance sentence — the kernel-side refit and a rendered frame — is still owed.
-- **D9 — GPU build for topology changes.** H-PLOC or a simpler LBVH into the same wide layout, behind the frame-graph
-  stage, on a worker/double-buffered BLAS so a build never stalls a frame.
+- **D9 — GPU refit / GPU build kernels — WRITTEN, COMPILED, PINNED; NOT RUN.** `Engine/Shaders/BlasRefit.slang`
+  (two stages: rewrite the leaf records from the deformed soup, then re-quantise one dispatch per level, deepest first)
+  and `Engine/Shaders/BlasBuild.slang` (five stages: Morton prepass · per-level octant partition · childBase scan ·
+  emit · leaf runs), both lowering through `Tools/Build/CheckShaders.sh` (15/15) and both pinned to the CPU mirror by
+  §⑩ of the two-level gate (B1–B40: the layout bytes, the interior test, the exponent rounding, the unary counts, the
+  rank rule, the block units of triangleBase, the CMake entries that keep them in the compile gate).
+  ⚠️ The build is the LBVH-shaped variant, not H-PLOC's cluster merge: it partitions a node's Morton range into its
+  eight octants instead of merging neighbouring clusters, so it uses only 935 of 2 432 wide slots at 1 152 triangles
+  and 33 267 of 142 680 at 63 854 (64 % empty — the format tolerates it, the traversal pays for it). H-PLOC's merge is
+  the next step and the one that would close that gap; the alternative (build wider nodes from the same partition) is
+  the decision to make before a GPU run, not after. ⚠️ Nothing here has been compiled by `slangc` or executed on a
+  device: the sandbox has no Vulkan. Left: **one GPU run**, plus the host wiring (a deformed-soup buffer, a level
+  table, one descriptor set per kernel, the dispatch loop).
 - **D10 — ReSTIR integration.** Motion vectors already follow `PreviousWorld`; for dynamic objects the reservoir
   validation should use instance/primitive identity plus the previous transform, so a moving object's history is
   rejected on genuine disocclusion and kept when it merely moved.

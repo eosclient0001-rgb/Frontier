@@ -155,7 +155,9 @@ set(SHADER_TABLE
     "VisibilityRaster.vert.slang|vertex|VisibilityRaster.vert.spv"
     "VisibilityRaster.frag.slang|fragment|VisibilityRaster.frag.spv"
     "InterfaceRaster.vert.slang|vertex|InterfaceRaster.vert.spv"
-    "InterfaceRaster.frag.slang|fragment|InterfaceRaster.frag.spv")
+    "InterfaceRaster.frag.slang|fragment|InterfaceRaster.frag.spv"
+    "BlasRefit.slang|compute|BlasRefit.spv"
+    "BlasBuild.slang|compute|BlasBuild.spv")
 
 set(SPV_OUTPUTS)
 if(GLSLC_EXECUTABLE OR SLANGC_EXECUTABLE)
