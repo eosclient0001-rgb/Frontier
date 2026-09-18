@@ -350,11 +350,14 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
   (`8 + 24 × node slots`), the soup in the layout the kernels index (3 vec4 = 12 floats per triangle — §⑨h's first run
   caught that unit slip as a heap overflow), the level table the refit counts down (`PackBlasLevels` widens `LevelsOf`'s
   uint16 to the kernel's uint32 with 0xFFFFFFFF for a slot the tree cannot reach), and the **dispatch plan** — the host's
-  loop as data: §⑨i checks 44 build dispatches (`prepass`, then `partition · scan · emit` per level, then `runs`) under a
-  level cap of 14 for the 8 levels this level has, and 9 refit dispatches whose levels run 7,6,…,0, each exactly once
-  and deepest first, because a repeated level would re-quantise a node from a child that moved. The plan's `Groups == 1`
+  loop as data: §⑨i checks 60 build dispatches (`prepass`, then `partition · count+scan · BLOCK SCAN · emit` per level —
+  the block scan lands between the two stages it feeds — then the run path's three) under a level cap of 14 for the 8
+  levels this level has, and 9 refit dispatches whose levels run 7,6,…,0, each exactly once and deepest first, because a
+  repeated level would re-quantise a node from a child that moved. The plan's `Groups == 1`
   entries are the build's two single-workgroup stages, which is why §⑩ pins the guard lines that make them single-threaded
-  — parallelise one and the plan has to change with it. **And the engine's source batch now compiles the three D6–D9 TUs**
+  — parallelise one and the plan has to change with it. (D9b then parallelised the other two, which is exactly the change
+  that rule predicted: the plan's 4 dispatches a level, §⑨j's scan model, and the pins moved together.) **And the engine's
+  source batch compiles the four D6–D9 TUs**
   (`InstanceAcceleration.cpp` had been called from `SwapchainExchange.cpp` since D6 with no target compiling it); each was
   compile-checked standalone under the engine's own include paths and flags before registration, which B76–B78 pin.
   **The Vulkan half is written, and the run is one command away.** `Engine/GeometricRaster/BlasBuildPipeline.{h,cpp}`
