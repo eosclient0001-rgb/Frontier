@@ -142,12 +142,13 @@ layout(std430, binding = 11) readonly buffer VertexExtent { GpuVertex Vertices[]
 layout(std430, binding = 12) readonly buffer IndexExtent  { uint      Indices[];  };   // R4b
 // 13 = EnergyLut, 14 = SheenLut (declared in MaterialEvaluation.slang)
 layout(binding = 15) uniform sampler2D MotionImage;   // R6: R2 motion (CurrentUv − PreviousUv, [0,1] uv units) — texelFetch only
-struct GpuReservoir   // 64 B stride — mirrors ReservoirBufferRecord in SwapchainExchange.cpp
+struct GpuReservoir   // 80 B stride (D10) — mirrors ReservoirBufferRecord in SwapchainExchange.cpp
 {
     vec4  Sample;    // xyz = light sample point, w = WeightSum
     uvec4 Counts;    // x = M, y = SelectedLight, z = Visible, w = Age
     vec4  UvDepth;   // xy = SelectedUv, z = W, w = view depth at the build pixel [m]
     vec4  Normal;    // xyz = viewer-facing geometric normal at the build pixel, w = stride guard (ViewportWidth)
+    uvec4 Identity;  // D10: x = the packed (instance, primitive) this reservoir was built on; yzw reserved
 };
 layout(std430, binding = 16) readonly buffer PrevReservoirExtent { GpuReservoir PrevReservoirs[]; };
 layout(std430, binding = 17) writeonly buffer CurrReservoirExtent { GpuReservoir CurrReservoirs[]; };
@@ -423,6 +424,37 @@ const uint kVisibilityInvalid = 0xFFFFFFFFu;
 uint VisibilityInstance(uint Packed)  { return (Packed >> 14) & 0x3FFFFu; }
 uint VisibilityPrimitive(uint Packed) { return Packed & 0x3FFFu; }
 
+// ⚠️ Where the history's identity lives, and why it is not a new binding. Bindings 0–31 of this set are all taken
+//    (21-24 are the sky/moons/stars/post records, 25/26 the GI reservoir pair, 27-30 D6/D7's instance buffers, 31 the
+//    bindless table, which must stay the highest number because it is variable-count). Adding a 33rd descriptor for four
+//    bytes per pixel would be a pipeline change for a channel pair that is already allocated, already reprojected with
+//    the mean, and already reserved for growth: MomentImage's z/w, which held 0.0 and nothing else.
+//
+//    The packing is exact, not approximate: each half is a 16-bit integer, and every integer below 2^24 is exact in a
+//    float32, so the decoded identity compares with `==` like the integer it is. There is no tolerance here and there
+//    must not be one — an identity that matches "closely" is a different object.
+float IdentityLow(uint Identity)   { return float(Identity & 0xFFFFu); }
+float IdentityHigh(uint Identity)  { return float(Identity >> 16u); }
+uint  DecodeIdentity(vec4 Moments) { return uint(Moments.z) | (uint(Moments.w) << 16u); }
+
+// D10: the identity a pixel with no surface carries. Spelled once, so the resolve and the background path cannot
+//    disagree about "no surface".
+const uint kIdentityNone = 0xFFFFFFFFu;
+
+// ⚠️ The validation compares the INSTANCE — the object — and deliberately not the primitive.
+//
+//    The raster carries (instance, primitive) packed, and the primitive is what the history's identity was first built
+//    from. Measured on a still scene with a still camera, that restarted ~13 % of the image every frame: the jitter is
+//    one Halton offset per frame, and on a densely tessellated object (a swatch sphere is ~1500 triangles for ~10
+//    pixels) the neighbouring triangle is far smaller than a pixel, so the primitive changes under a jitter while the
+//    surface does not. An identity that fine does not measure "the same thing", it measures the tessellation.
+//
+//    The object is the right granularity, and it is the one this feature exists for: it survives the motion of a moving
+//    object (so the object keeps its own history as it moves — the point of D10), it differs between two objects that
+//    exchange places (the ghost the rule catches), and it is the same number the raster, the instance buffers and the
+//    acceleration structure all agree on. Same object, different face is the normal/depth test's job, not this one's.
+uint IdentityObject(uint Packed) { return Packed >> 14u; }   // 18 bits — VisibilityInstance's own shift
+
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    PUSH CONSTANTS
 //------------------------------------------------------------------------------------------------------------------------
@@ -469,6 +501,10 @@ const uint kFeatureAliasPick          = 32u;  // bit 5: R6 row 3 — Walker-alia
 const uint kFeatureTemporalReprojection = 64u;  // bit 6: R7a — reproject the running mean through the R2 motion vectors
 const uint kFeatureDenoise            = 128u; // bit 7: R7 — the à-trous filter runs, so the kernel defers the tone map to it
 const uint kFeatureGiReuse            = 256u; // bit 8: the indirect half's pool — ReSTIR GI-style reuse of the first-bounce
+// D10: bit 9 — validate a reprojected history against the IDENTITY of the surface, not only its normal and depth.
+//    ⚠️ Off by default, and byte-identical when off: with the bit clear the resolve reads, validates and stores exactly
+//    what it did before this existed, which is what makes the exhibit's A/B a comparison rather than a rewrite.
+const uint kFeatureTemporalIdentity   = 512u; // bit 9: D10 — identity-based validation of the reprojected history
                                               //    vertex's NEE stratum, temporally and over the same kSpatialTapCount cross.
                                               //    ON by default (the host sets it); clearing the bit restores the
                                               //    single-sample NEE arm, which is the A/B the CPU mirror measures.
@@ -994,8 +1030,20 @@ vec3 ToneMap(vec3 hdr)
 const float kReprojectNormalCos = kTemporalNormalCos;   // 25°, identical to the reservoir rule
 const float kReprojectDepthTol  = kTemporalDepthTol;    // 10 % relative
 
+// ⚠️ D10: normal + depth agree for TWO DIFFERENT OBJECTS more often than it is comfortable to admit — two objects
+//    exchanging places, a tumble that brings a different face to the same pixel at the same distance, an object leaving
+//    a wall while another arrives to take its place. All of those reproject cleanly under the 25°/10 % rule and inherit
+//    a history that was shaded from something else, which is ghosting: a mean that averages two different materials'
+//    radiance and takes hundreds of frames to forget. The normal/depth rule is not wrong, it is incomplete — the third
+//    thing a history has to remember about the surface it came from is WHICH surface it was.
+//
+// The identity is the packed (instance, primitive) the visibility raster hands this shader, so it is not a new fact
+//    about the scene. A mismatch is a disocclusion in the only sense an accumulator cares about — the surface here is
+//    not the surface there — and the honest answer is the one a failed depth test already gets: restart at n = 1.
+//
 // Depth < 0 marks "no surface" (background); such a pixel never reprojects and never becomes a valid source.
-void ResolveSurface(uvec2 pixel, vec3 radiance, vec3 normal, float depth)
+// `identity` is 0xFFFFFFFF for a pixel with no surface.
+void ResolveSurface(uvec2 pixel, vec3 radiance, vec3 normal, float depth, uint identity)
 {
     vec4  history   = vec4(0.0);
     float count     = 0.0;
@@ -1015,14 +1063,22 @@ void ResolveSurface(uvec2 pixel, vec3 radiance, vec3 normal, float depth)
         if (all(greaterThanEqual(prevPx, ivec2(0))) && prevPx.x < int(ViewportWidth) && prevPx.y < int(ViewportHeight))
         {
             vec4 prevSurface = imageLoad(HistorySurfaceImage, prevPx);
+            // The moments were already being read here for the reprojected mean; D10 makes that same load carry the
+            //    identity too, so the feature costs no additional fetch — and when it is off, the z/w decode is simply
+            //    never looked at.
+            const vec4 prevMoments = imageLoad(MomentImage, prevPx);
+            bool identityOk = true;
+            if ((FeatureFlags & kFeatureTemporalIdentity) != 0u)
+                identityOk = IdentityObject(DecodeIdentity(prevMoments)) == IdentityObject(identity);
             // prevSurface.w <= 0 means that pixel held no surface last frame, so there is nothing to inherit.
             if (prevSurface.w > 0.0
+                && identityOk
                 && dot(normal, prevSurface.xyz) > kReprojectNormalCos
                 && abs(depth - prevSurface.w) / max(depth, 1e-3) < kReprojectDepthTol)
             {
                 history  = imageLoad(HistoryImage, prevPx);
                 count    = history.a;
-                moments  = imageLoad(MomentImage, prevPx).xy;   // the moments follow the same reprojection
+                moments  = prevMoments.xy;   // the moments follow the same reprojection
                 resolved = true;
             }
             // Failing validation is a real disocclusion: leave count at 0 so the mean restarts at n = 1 rather
@@ -1075,7 +1131,10 @@ void ResolveSurface(uvec2 pixel, vec3 radiance, vec3 normal, float depth)
 
     imageStore(HistoryImage,     ivec2(pixel), vec4(mean, count));
     imageStore(HistorySurfaceImage, ivec2(pixel), vec4(normal, depth));
-    imageStore(MomentImage,      ivec2(pixel), vec4(moments, 0.0, 0.0));
+    // D10: WHICH surface this mean was shaded from, in the moment image's reserved z/w. Stored on every frame whether
+    //    the feature is on or not — it is one channel write, and a history written while the feature was off must not
+    //    make the first frame with it on restart every pixel in the image.
+    imageStore(MomentImage,      ivec2(pixel), vec4(moments, IdentityLow(identity), IdentityHigh(identity)));
 
     // With the denoiser on, the filter owns the tone map: it needs LINEAR radiance, and tone mapping before a blur
     //    would average display-space values and darken every gradient. The final à-trous level writes OutputImage.
@@ -1087,7 +1146,7 @@ void ResolveSurface(uvec2 pixel, vec3 radiance, vec3 normal, float depth)
 // Background and other surface-less writes: no normal, no depth, never a reprojection source.
 void Resolve(uvec2 pixel, vec3 radiance)
 {
-    ResolveSurface(pixel, radiance, vec3(0.0, 0.0, 1.0), -1.0);
+    ResolveSurface(pixel, radiance, vec3(0.0, 0.0, 1.0), -1.0, kIdentityNone);
 }
 //------------------------------------------------------------------------------------------------------------------------
 // 4b. The indirect half's pool — ReSTIR GI-style reuse of the first-bounce vertex's NEE stratum (kFeatureGiReuse)
@@ -1121,7 +1180,7 @@ void Resolve(uvec2 pixel, vec3 radiance)
 //    Writes GiCurrReservoirs[pixel] unconditionally (zeros when the vertex is ineligible) so a stale entry cannot be
 //    reused across a frame in which this pixel had no vertex.
 vec3 GiPoolShade(SurfaceFrame F, ShadingRecord m, ResolvedLayers L, vec3 wo, vec3 hitPos,
-                 vec3 primaryNormal, float primaryT, uvec2 pixel, bool sunUp, inout uint seed)
+                 vec3 primaryNormal, float primaryT, uint primaryIdentity, uvec2 pixel, bool sunUp, inout uint seed)
 {
     Reservoir ris;
     ris.SelectedPoint  = vec3(0.0);
@@ -1170,7 +1229,13 @@ vec3 GiPoolShade(SurfaceFrame F, ShadingRecord m, ResolvedLayers L, vec3 wo, vec
             bool valid = prevM > 0u
                 && prev.Normal.w == float(ViewportWidth)   // stride guard (render-scale change)
                 && dot(primaryNormal, prev.Normal.xyz) > kTemporalNormalCos
-                && abs(primaryT - prev.UvDepth.w) / max(primaryT, 1e-3) < kTemporalDepthTol;
+                && abs(primaryT - prev.UvDepth.w) / max(primaryT, 1e-3) < kTemporalDepthTol
+                // D10: the same surface. It matters more here than in the direct pool: the pooled sample is a light
+                //    point chosen at the FIRST-BOUNCE VERTEX, so inheriting one across a surface change inherits an
+                //    occlusion test and a BRDF evaluated somewhere else — which reads as a reflection of an object
+                //    that is no longer there, and clears only as 1/n.
+                && ((FeatureFlags & kFeatureTemporalIdentity) == 0u
+                    || IdentityObject(prev.Identity.x) == IdentityObject(primaryIdentity));
             if (valid)
             {
                 uint mPrevCapped = min(prevM, kTemporalMClamp * ris.SampleCount);
@@ -1200,7 +1265,8 @@ vec3 GiPoolShade(SurfaceFrame F, ShadingRecord m, ResolvedLayers L, vec3 wo, vec
         hist.Sample  = vec4(ris.SelectedPoint, ris.WeightSum);
         hist.Counts  = uvec4(ris.SampleCount, ris.SelectedLight, 1u, giAge);
         hist.UvDepth = vec4(ris.SelectedUv, ris.UnbiasedWeight, primaryT);
-        hist.Normal  = vec4(primaryNormal, float(ViewportWidth));
+        hist.Normal   = vec4(primaryNormal, float(ViewportWidth));
+        hist.Identity = uvec4(primaryIdentity, 0u, 0u, 0u);   // D10: which surface this reservoir belongs to
         GiCurrReservoirs[pixel.y * ViewportWidth + pixel.x] = hist;
     }
 
@@ -1288,7 +1354,10 @@ void main()
         giClear.Sample  = vec4(0.0);
         giClear.Counts  = uvec4(0u);
         giClear.UvDepth = vec4(0.0);
-        giClear.Normal  = vec4(0.0, 0.0, 1.0, float(ViewportWidth));
+        giClear.Normal   = vec4(0.0, 0.0, 1.0, float(ViewportWidth));
+        // M = 0 is what makes this slot invalid; the identity still says "no surface" rather than "instance 0,
+        //    primitive 0", which is a real surface and would read as a match if a decode ever looked at it.
+        giClear.Identity = uvec4(kIdentityNone, 0u, 0u, 0u);
         GiCurrReservoirs[pixel.y * ViewportWidth + pixel.x] = giClear;
     }
 
@@ -1322,6 +1391,10 @@ void main()
         Resolve(pixel, SkyAlong(direction) + RainbowAlong(direction, SkySunDirection.xyz, 1.0e6));
         return;
     }
+
+    // D10: the identity every temporal validation in this pixel compares against — the raster's packed
+    //    (instance, primitive), which is the same number the visibility buffer already carries. Nothing new is derived.
+    const uint primaryIdentity = visibility;
 
     GpuInstance primaryInstance = Instances[VisibilityInstance(visibility)];
     GpuMaterial mat = Materials[primaryInstance.MaterialIndex];
@@ -1446,7 +1519,12 @@ void main()
                     bool valid = prevM > 0u
                         && prev.Normal.w == float(ViewportWidth)   // stride guard (render-scale change)
                         && dot(hitNormal, prev.Normal.xyz) > kTemporalNormalCos
-                        && abs(primaryT - prev.UvDepth.w) / max(primaryT, 1e-3) < kTemporalDepthTol;
+                        && abs(primaryT - prev.UvDepth.w) / max(primaryT, 1e-3) < kTemporalDepthTol
+                        // D10: and the same surface. Two objects exchanging places pass the normal and the depth test
+                        //    at both pixels; without this the reservoir carries the other object's light sample, so the
+                        //    pixel is lit by a sample chosen for geometry that is no longer there.
+                        && ((FeatureFlags & kFeatureTemporalIdentity) == 0u
+                            || IdentityObject(prev.Identity.x) == IdentityObject(primaryIdentity));
                     if (valid)
                     {
                         uint mPrevCapped = min(prevM, kTemporalMClamp * res.SampleCount);
@@ -1578,7 +1656,8 @@ void main()
             histRes.Sample  = vec4(histPoint, histWeightSum);
             histRes.Counts  = uvec4(histCount, histLight, histVisible, histAge);
             histRes.UvDepth = vec4(histUv, histW, primaryT);
-            histRes.Normal  = vec4(hitNormal, float(ViewportWidth));
+            histRes.Normal   = vec4(hitNormal, float(ViewportWidth));
+            histRes.Identity = uvec4(primaryIdentity, 0u, 0u, 0u);   // D10: which surface this reservoir belongs to
             CurrReservoirs[pixel.y * ViewportWidth + pixel.x] = histRes;
 
             // Shade (R6: the stored selection carries its light — no search). The sun divides by nothing: it is at
@@ -1748,7 +1827,7 @@ void main()
                         && bShading.SssWeight <= 0.0;
                     if (giPoolOwns)
                         accumulatedRadiance += throughput * GiPoolShade(bFrame, bShading, bLayers, bWo, bHitPos,
-                                                                        hitNormal, primaryT, pixel, sunUp, seed);
+                                                                        hitNormal, primaryT, primaryIdentity, pixel, sunUp, seed);
                     else if (true)
                     {
                     // The bounce draws one light the same way the reservoir candidates do — sun or lamp by the same
@@ -1860,5 +1939,7 @@ void main()
 
     // R7a: the primary hit's geometric normal and camera distance are what the next frame validates its
     //    back-projection against — the same pair R6 row 2 uses to validate reprojected reservoirs.
-    ResolveSurface(pixel, accumulatedRadiance, hitNormal, primaryT);
+    // D10: and WHICH hit it was — the raster's packed (instance, primitive), already in hand here and the only
+    //    additional fact the accumulator needs to tell "this surface moved" from "a different one is here now".
+    ResolveSurface(pixel, accumulatedRadiance, hitNormal, primaryT, visibility);
 }

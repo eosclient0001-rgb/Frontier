@@ -119,6 +119,9 @@ struct RenderTriangle
     float U0, V0, U1, V1, U2, V2;
     int  Material;        // [idx] material record slot
     int  Light;           // [idx] emissive-triangle list entry, -1 when the triangle does not emit
+    int  Object = 0;      // [idx] the SPAN this triangle belongs to — M10's object, i.e. the kernel's INSTANCE.
+                          //       D10's history identity is this, not the triangle: the tessellation is finer than a
+                          //       pixel, so a triangle is not a "thing" a temporal accumulator can recognise.
 };
 
 struct BvhNode
@@ -456,6 +459,8 @@ const float    kRestirGiVertexTol   = 0.05f;
 
 struct CpuReservoir
 {
+    uint32_t Identity        = 0u;   // D10: the surface this reservoir was built on (0 = none) — the kernel's
+                                     //    instance<<14|primitive, here the mirrored triangle's own ordinal
     vec3     SelectedPoint   = vec3(0.0f);
     uint32_t SelectedLight   = 0u;
     float    SelectedUvU     = 0.0f;
@@ -472,10 +477,27 @@ struct CpuReservoir
 };
 
 bool g_RestirNoReproject = false;
+// D10: validate a reprojected history against the IDENTITY of the surface, not only its normal and depth. On by
+//    default (the kernel's kFeatureTemporalIdentity); `--restir-no-identity` restores the pre-D10 rule so the fix can
+//    be measured against it, which is the whole point of having the switch.
+bool g_RestirIdentity = true;
+// D10: the moving-object driver. Zero = the level is static (every sheet before this one). With a value, all triangles
+//    carrying `g_RestirDriftMaterial` slide that many metres per frame along their own tile's dominant axis, in a
+//    triangular excursion that RETURNS to the rest pose on the closing frame — so the last frame can be compared
+//    against a one-frame reference render of the untouched level, exactly like the camera-pan pair.
+float g_RestirDrift = 0.0f;
+int   g_RestirDriftMaterial = 24;   // [idx] which swatch's material slides (the middle of the M10 grid by default)
+int   g_RestirDriftAxis = -1;       // [-]  -1: the object's own longest extent (a flat swatch's in-plane axis);
+                                    //         0/1/2: force x/y/z — a lateral slide crosses coplanar neighbours (the
+                                    //         case normal+depth cannot see), a bob does not.
 bool g_RestirHistorySplit = true;
 // The indirect half's pool (ReSTIR GI). Off ⇒ the pre-pool single-sample arm, which is the A/B.
 bool g_RestirGiReuse = true;
 std::atomic<long> g_GiBad{0}, g_GiEscape{0}, g_GiEmitter{0}, g_GiUnlit{0}, g_GiUnusable{0}, g_GiVertex{0}, g_GiNoPHat{0};
+// D10: temporal merges the geometry test would have allowed and the identity refused — per pool, because the two pools
+//    ghost differently (the DI pool inherits a light sample chosen for another object; the GI pool inherits one chosen
+//    at another object's first-bounce VERTEX, which reads as a reflection of something that is no longer there).
+std::atomic<long> g_IdentityRefusedDirect{0}, g_IdentityRefusedGi{0};
 std::atomic<long> g_GiTried{0}, g_GiTValid{0}, g_GiFDepth{0}, g_GiFNormal{0}, g_GiFVertex{0}, g_GiFHist{0};   // [-] the training-wheels switch: false restores the pre-fix feedback loop   // [-] the pre-R7a same-pixel history read (the D9 switch, for the A/B sheet)
 bool g_RestirBounceMis = false;   // [-] DIAGNOSTIC: exclude the first-bounce emitter hit (see Radiance)
 bool g_RestirNoSunCoin = false;   // [-] DIAGNOSTIC: lamps-only candidates (what the sun coin costs in this scene)
@@ -650,6 +672,14 @@ float PHatSelected(const ShadingRecord& m, const ResolvedLayers& L, const vec3& 
 struct RestirSurface
 {
     bool          Valid  = false;
+    uint32_t      Identity = 0u;   // D10: which surface this pixel shows (0 = none) — the reservoir's validation key
+    int           MaterialIdx = -1;   // [idx] the material of that surface (diagnostics only — see the refusal split)
+    // The UV this pixel's primary ray was cast through — the pixel centre plus this frame's jitter. A motion vector is
+    //    the surface point's displacement, so it has to be measured from WHERE THE RAY WENT, not from the pixel centre:
+    //    mixing the two left a sub-pixel offset in every reprojection, and on a still scene that read a neighbouring
+    //    pixel's history about half the time (the raster's motion image carries a vertex's own displacement, which is
+    //    why the kernel does not have this problem — this is the mirror being brought into line with it).
+    float         RayU = 0.0f, RayV = 0.0f;
     vec3          P{0.0f, 0.0f, 0.0f};
     vec3          Ng{0.0f, 0.0f, 1.0f};
     vec3          T{1.0f, 0.0f, 0.0f};
@@ -697,6 +727,7 @@ struct RestirVertex
 
 struct CpuGiReservoir
 {
+    uint32_t Identity = 0u;                         // D10: the primary surface this vertex/sample belongs to
     vec3     Point{0.0f, 0.0f, 0.0f};               // the world light point the sample selected
     uint32_t Light = kRestirSunLight;
     float    WeightSum = 0.0f;
@@ -728,6 +759,69 @@ void ClampGiReservoirM(CpuGiReservoir& Res)
     if (g_RestirMCap == 0u || Res.SampleCount <= g_RestirMCap) return;
     Res.WeightSum *= static_cast<float>(g_RestirMCap) / static_cast<float>(Res.SampleCount);
     Res.SampleCount = g_RestirMCap;
+}
+
+// ── D10: the moving object, shared by the sequence and the shadow probe ───────────────────────────────────────────────
+// One definition of "what moved and where to", so the render and the shadow test cannot drift apart.
+struct DriftCapture
+{
+    std::vector<int>  Triangles;
+    std::vector<vec3> RestP0, RestP1, RestP2;
+    vec3 Axis{1.0f, 0.0f, 0.0f};   // the in-plane axis the object slides along (its own dominant extent)
+    vec3 Lo{0.0f, 0.0f, 0.0f}, Hi{0.0f, 0.0f, 0.0f};
+    [[nodiscard]] bool Empty() const { return Triangles.empty(); }
+};
+
+DriftCapture CaptureDrift(int Material)
+{
+    DriftCapture C;
+    vec3 Lo(1.0e30f, 1.0e30f, 1.0e30f), Hi(-1.0e30f, -1.0e30f, -1.0e30f);
+    for (size_t I = 0; I < g_Tris.size(); ++I)
+    {
+        if (g_Tris[I].Material != Material) continue;
+        const RenderTriangle& T = g_Tris[I];
+        C.Triangles.push_back(static_cast<int>(I));
+        C.RestP0.push_back(T.P0); C.RestP1.push_back(T.P1); C.RestP2.push_back(T.P2);
+        const vec3 Corners[3]{ T.P0, T.P1, T.P2 };
+        for (const vec3& V : Corners)
+        {
+            Lo = vec3(min(Lo.x, V.x), min(Lo.y, V.y), min(Lo.z, V.z));
+            Hi = vec3(max(Hi.x, V.x), max(Hi.y, V.y), max(Hi.z, V.z));
+        }
+    }
+    C.Lo = Lo;
+    C.Hi = Hi;
+    // A flat swatch's own longest extent is the in-plane one, so sliding along it keeps the object in its own plane —
+    //    which is the HARD case on purpose: the surfaces it slides across share its normal and its depth, so the
+    //    normal/depth rule alone cannot tell them apart.
+    if (!C.Empty())
+    {
+        const vec3 Extent = Hi - Lo;
+        if      (g_RestirDriftAxis == 0) C.Axis = vec3(1.0f, 0.0f, 0.0f);
+        else if (g_RestirDriftAxis == 1) C.Axis = vec3(0.0f, 1.0f, 0.0f);
+        else if (g_RestirDriftAxis == 2) C.Axis = vec3(0.0f, 0.0f, 1.0f);
+        else if (Extent.y >= Extent.x && Extent.y >= Extent.z) C.Axis = vec3(0.0f, 1.0f, 0.0f);
+        else if (Extent.z >= Extent.x && Extent.z >= Extent.y) C.Axis = vec3(0.0f, 0.0f, 1.0f);
+        else                                                   C.Axis = vec3(1.0f, 0.0f, 0.0f);
+    }
+    return C;
+}
+
+// Writes the object to rest + Offset and rebuilds the acceleration structure, so primary rays AND every shadow ray see
+//    it where it actually is this frame. A moving object whose shadows lagged its geometry would be the other half of
+//    the acceptance test this milestone is judged by.
+void ApplyDrift(const DriftCapture& C, const vec3& Offset)
+{
+    if (C.Empty()) return;
+    for (size_t I = 0; I < C.Triangles.size(); ++I)
+    {
+        RenderTriangle& T = g_Tris[static_cast<size_t>(C.Triangles[I])];
+        T.P0 = C.RestP0[I] + Offset;
+        T.P1 = C.RestP1[I] + Offset;
+        T.P2 = C.RestP2[I] + Offset;
+    }
+    for (size_t I = 0; I < g_Order.size(); ++I) g_Order[I] = static_cast<int>(I);
+    BuildBvh(0, 0, static_cast<int>(g_Order.size()));
 }
 
 // ── THE SPLIT. The kernel's two reuse passes are two DISPATCHES: temporal reuse writes CurrReservoirs, and the
@@ -793,13 +887,13 @@ CpuReservoir RestirTemporalReservoir(const RestirSurface& Surface, int Candidate
         float PrevU = 0.0f, PrevV = 0.0f;
         if (State.HasPrevious && ProjectPoint(State.PreviousPose, P, PrevU, PrevV))
         {
-            const float CurU = (static_cast<float>(X) + 0.5f) / static_cast<float>(Width);
-            const float CurV = (static_cast<float>(Y) + 0.5f) / static_cast<float>(Height);
-            Res.MotionU = CurU - PrevU;
-            Res.MotionV = CurV - PrevV;
+            // From the ray the pixel actually took (Surface.RayU/V), not from the pixel centre.
+            Res.MotionU = Surface.RayU - PrevU;
+            Res.MotionV = Surface.RayV - PrevV;
         }
-        Res.Normal = Ng;
-        Res.Depth  = Surface.Depth;
+        Res.Normal   = Ng;
+        Res.Depth    = Surface.Depth;
+        Res.Identity = Surface.Identity;   // D10: the surface this reservoir belongs to (0 = none)
 
         if (State.HasPrevious)
         {
@@ -813,10 +907,17 @@ CpuReservoir RestirTemporalReservoir(const RestirSurface& Surface, int Candidate
             {
                 const CpuReservoir& Prev = State.History[static_cast<size_t>(PrevY) * Width + PrevX];
                 const uint32_t PrevM = Prev.SampleCount;
-                const bool Valid = PrevM > 0u
-                    && Prev.StrideWidth == static_cast<float>(Width)
+                const bool GeometryOk = Prev.StrideWidth == static_cast<float>(Width)
                     && dot(Ng, Prev.Normal) > kRestirNormalCos
                     && fabsf(Surface.Depth - Prev.Depth) / max(Surface.Depth, 1.0e-3f) < kRestirDepthTol;
+                const bool IdentityDiffers = Prev.Identity != Surface.Identity;
+                const bool IdentityOk = !g_RestirIdentity || !IdentityDiffers;
+                const bool Valid = PrevM > 0u && GeometryOk && IdentityOk;
+                // D10: a temporal merge that the geometry test alone would have allowed and the identity refuses. With
+                //    the rule off this is the count of light samples the pixel inherited from ANOTHER surface.
+                // D10: the case the rule exists for — a merge the GEOMETRY test allowed and the identity refuses. Off
+                //    screen this is the count of light samples the pixel inherited from another object last frame.
+                if (PrevM > 0u && GeometryOk && IdentityDiffers) ++g_IdentityRefusedDirect;
                 if (Valid)
                 {
                     const uint32_t PrevCapped = std::min(PrevM, kRestirMClamp * Res.SampleCount);
@@ -1068,10 +1169,11 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
         SelectedPHat = PHatSelected(vm, VL, VNg, VT, VB, VNs, VWo, Res.Light, Res.Point - VP);
         Res.UnbiasedWeight = SelectedPHat > 0.0f
             ? Res.WeightSum / (static_cast<float>(Res.SampleCount) * SelectedPHat) : 0.0f;
-        Res.Normal = Surface.Ng;
-        Res.Vertex = VP;
+        Res.Normal   = Surface.Ng;
+        Res.Vertex   = VP;
         Res.VertexNg = VNg;
-        Res.Depth  = Surface.Depth;
+        Res.Depth    = Surface.Depth;
+        Res.Identity = Surface.Identity;   // D10
         V.Valid = true;   // a reusable vertex exists — the caller can spend it on the pool
 
         ++g_GiVertex;
@@ -1079,8 +1181,8 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
         float PrevU = 0.0f, PrevV = 0.0f;
         if (State.HasPrevious && ProjectPoint(State.PreviousPose, Surface.P, PrevU, PrevV))
         {
-            Res.MotionU = (static_cast<float>(X) + 0.5f) / static_cast<float>(Width) - PrevU;
-            Res.MotionV = (static_cast<float>(Y) + 0.5f) / static_cast<float>(Height) - PrevV;
+            Res.MotionU = Surface.RayU - PrevU;
+            Res.MotionV = Surface.RayV - PrevV;
         }
 
         if (State.HasPrevious)
@@ -1106,10 +1208,16 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
                 //    in place, 6 989 of 20 831 temporal attempts failed on vertex distance alone and the pool
                 //    bought almost nothing. Research note kept: the stricter form belongs with a replay + shift
                 //    mapping (ReSTIR GI proper), not with a light-sample pool.
-                const bool Valid = Prev.SampleCount > 0u && PV2.Valid
+                const bool GeometryOk = PV2.Valid
                     && Prev.StrideWidth == static_cast<float>(Width)
                     && dot(Surface.Ng, Prev.Normal) > kRestirNormalCos
                     && fabsf(Surface.Depth - Prev.Depth) / max(Surface.Depth, 1.0e-3f) < kRestirDepthTol;
+                const bool IdentityDiffers = Prev.Identity != Surface.Identity;
+                const bool IdentityOk = !g_RestirIdentity || !IdentityDiffers;
+                const bool Valid = Prev.SampleCount > 0u && GeometryOk && IdentityOk;
+                // D10, and here the sample is a light point chosen at the OTHER object's first-bounce vertex — the
+                //    reflection-side ghost. Counted in both arms, honoured in one.
+                if (Prev.SampleCount > 0u && GeometryOk && IdentityDiffers) ++g_IdentityRefusedGi;
                 if (Valid)
                 {
                     const uint32_t PrevCapped = std::min(Prev.SampleCount, kRestirMClamp * Res.SampleCount);
@@ -1541,6 +1649,17 @@ bool BuildLevel()
         g_MatCutAway[I] = (Records[I].Flags & MaterialFlagAlphaMask) != 0u && S.GeometryOpacity < Records[I].AlphaCutoff;
     }
 
+    // Soup index → object (span), so every triangle knows which of the level's objects it belongs to. Spans are the
+    //    builder's own record of one object's triangle range and are what the GPU uploads as instances.
+    const std::vector<Frontier::TriangleSpanRecord>& Spans = Library.QuerySpans();
+    std::vector<uint8_t> ObjectOfSoup(Tris.size(), 0u);
+    for (size_t SpanIndex = 0; SpanIndex < Spans.size(); ++SpanIndex)
+    {
+        const Frontier::TriangleSpanRecord& Span = Spans[SpanIndex];
+        const size_t End = std::min(static_cast<size_t>(Span.FirstTriangle) + Span.TriangleCount, Tris.size());
+        for (size_t T = Span.FirstTriangle; T < End; ++T) ObjectOfSoup[T] = static_cast<uint8_t>(SpanIndex);
+    }
+
     g_Tris.reserve(Tris.size());
     for (size_t I = 0; I < Tris.size(); ++I)
     {
@@ -1561,6 +1680,7 @@ bool BuildLevel()
         uint32_t Slot = 0u;
         std::memcpy(&Slot, &T.MaterialSlot, sizeof(Slot));
         R.Material = static_cast<int>(Slot);
+        R.Object   = static_cast<int>(ObjectOfSoup[I]);
         R.Light = -1;
         if (R.Material < 0 || R.Material >= static_cast<int>(g_Mat.size())) return false;
         if (g_RowFilter >= 0)
@@ -1632,11 +1752,19 @@ struct SequenceResult
     double             MeanGiM = 0.0;                   // [-] the indirect pool, same two numbers
     double             MeanGiMPublished = 0.0;
     double             GiOccludedPercent = 0.0;
+    double             IdentityRefused = 0.0;   // D10: [reads] geometry agreed, the surface differed — the ghost case
+    double             Disocclusion = 0.0;      // [px] every restart of the running mean
+    double             ReservoirIdentityRefused = 0.0;   // [merges] the same case in the two reservoir pools
+    double             IdentityRefusedCrossMaterial = 0.0;   // [reads] of those, those showing a different MATERIAL
 };
 
 struct FrameTally
 {
     long     Bad = 0;
+    // D10: reprojections refused because the history belonged to a DIFFERENT surface (the A/B's own tell — with
+    //    --restir-no-identity the rule is not consulted, so this counts what it would have refused).
+    double   IdentityRefused = 0.0;
+    double   IdentityRefusedCrossMaterial = 0.0;
     double   Surface = 0.0, SamplesBehind = 0.0;
     double   Reprojected = 0.0, Moved = 0.0, Disocclusion = 0.0;
     double   Covered = 0.0, MSum = 0.0, Occluded = 0.0, MSumPublished = 0.0;
@@ -1664,6 +1792,15 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
     const size_t PixelCount = static_cast<size_t>(Width) * Height;
     std::vector<DenoiseMirror::Accumulator> FilmPrevious(PixelCount), FilmCurrent(PixelCount);
     std::vector<float> FilmSurfacePrevious(PixelCount * 4u, 0.0f), FilmSurfaceCurrent(PixelCount * 4u, 0.0f);
+    // D10: WHICH surface each pixel's mean was shaded from, alongside the (normal, depth) pair R7a already keeps there.
+    //    The GPU packs this into the moment image's reserved z/w; the mirror keeps it in its own array, and the rule it
+    //    feeds is the same one: a different surface is a disocclusion whatever its normal and depth say.
+    std::vector<uint32_t> FilmIdentityPrevious(PixelCount, 0u), FilmIdentityCurrent(PixelCount, 0u);
+    // The material index as well, purely so the refusal can be split into its two very different cases: a DIFFERENT
+    //    MATERIAL agreeing on normal and depth (the true ghost — two different surfaces whose shading has nothing in
+    //    common) versus the same material's surface under a jittered sample (harmless, and it must not be counted as if
+    //    it were the pathology). Without the split the number is unreadable.
+    std::vector<int> FilmMaterialPrevious(PixelCount, -1), FilmMaterialCurrent(PixelCount, -1);
 
     RestirFrameState State;
     State.Temporal.resize(PixelCount);
@@ -1674,6 +1811,9 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
     State.VertexHistory.resize(PixelCount);
     State.Surface.resize(PixelCount);
 
+    g_IdentityRefusedDirect.store(0);
+    g_IdentityRefusedGi.store(0);
+
     Frontier::CameraProjection Base;
     Base.AssignSpatialLocation(VP.Position);
     Base.AssignOrientationEuler(VP.PitchDegrees * kPi / 180.0f, VP.YawDegrees * kPi / 180.0f, 0.0f);
@@ -1682,8 +1822,31 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
 
     const bool SunUp = dot(g_SunDirRender, g_SunDirRender) > 0.0f && SkyRadianceWorld(g_SunDirRender).y > 0.0f;
 
+    // D10: the moving object. The driven triangles' rest poses are captured once; each frame they are placed at
+    //    rest + Offset(F) and the BVH is rebuilt, so both the primary rays AND every shadow ray see the object where it
+    //    actually is this frame (a moving object whose shadows lagged its geometry would be the other half of this
+    //    milestone's acceptance). The excursion is triangular and returns home on the last frame.
+    const DriftCapture Drift = (g_RestirDrift != 0.0f) ? CaptureDrift(g_RestirDriftMaterial) : DriftCapture();
+    const std::vector<int>& DriftTriangles = Drift.Triangles;
+    const vec3 DriftAxis = Drift.Axis;
+    const int DriftPeak = (Frames - 1) / 2;
+    if (!Drift.Empty())
+        std::printf("[restir] D10 moving object: material %d, %zu triangles slide along (%.0f,%.0f,%.0f) by "
+                    "%.3f m/frame, out and back (%d frames, peak %.3f m)\n",
+                    g_RestirDriftMaterial, DriftTriangles.size(), DriftAxis.x, DriftAxis.y, DriftAxis.z,
+                    g_RestirDrift, Frames, g_RestirDrift * static_cast<float>(DriftPeak));
+
     for (int F = 0; F < Frames; ++F)
     {
+        // The offset this frame, and the one the previous frame used — their difference is what the motion vector has to
+        //    carry: the surface point a pixel shows moved in WORLD space, not only on screen.
+        const int Excursion = (F <= DriftPeak) ? F : (Frames - 1 - F);
+        const int PreviousExcursion = (F - 1 <= DriftPeak) ? (F - 1) : (Frames - F);   // E(F-1), the same triangle
+        const vec3 DriftOffset = DriftAxis * (g_RestirDrift * static_cast<float>(Excursion));
+        const float DriftDelta = g_RestirDrift * static_cast<float>(Excursion - (F > 0 ? PreviousExcursion : Excursion));
+        ApplyDrift(Drift, DriftOffset);
+        const vec3 DriftStep = DriftAxis * DriftDelta;
+
         Frontier::CameraProjection Camera = Base;
         if (PanPerFrame != 0.0f)
         {
@@ -1724,6 +1887,8 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
                     T.Bad += Local.Bad; T.Surface += Local.Surface; T.SamplesBehind += Local.SamplesBehind;
                     T.Reprojected += Local.Reprojected; T.Moved += Local.Moved; T.Disocclusion += Local.Disocclusion;
                     T.Covered += Local.Covered; T.MSum += Local.MSum; T.Occluded += Local.Occluded;
+                    T.IdentityRefused += Local.IdentityRefused;
+                    T.IdentityRefusedCrossMaterial += Local.IdentityRefusedCrossMaterial;
                     T.MSumPublished += Local.MSumPublished;
                     T.CoveredGi += Local.CoveredGi; T.MSumGi += Local.MSumGi; T.OccludedGi += Local.OccludedGi;
                     if (Local.MaxM > T.MaxM) T.MaxM = Local.MaxM;
@@ -1746,11 +1911,19 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
                 const vec3 D = normalize(vec3(Ray.UnitDirection.x, Ray.UnitDirection.y, Ray.UnitDirection.z));
                 Surf.O = O;
                 Surf.D = D;
+                Surf.RayU = CurU;
+                Surf.RayV = CurV;
                 const Hit H = Intersect(O, D, 1.0e30f, -1);
                 if (H.Valid)
                 {
                     const RenderTriangle& Tri = g_Tris[H.TriId];
                     const bool Emitter = Tri.Light >= 0;
+                    // D10: the identity is the OBJECT (the span), +1 so 0 can stay "no surface". The triangle ordinal
+                    //    was the first cut and the still-scene measurement rejected it: with a per-frame sub-pixel
+                    //    jitter, the same object's 1500-triangle sphere reports a different triangle almost every frame,
+                    //    and the rule restarted 13.5 % of a static image for nothing.
+                    Surf.Identity   = static_cast<uint32_t>(Tri.Object) + 1u;
+                    Surf.MaterialIdx = Tri.Material;
                     Surf.Depth = H.T;
                     Surf.P     = O + D * H.T;
                     Surf.Ng    = normalize(cross(Tri.P1 - Tri.P0, Tri.P2 - Tri.P0));
@@ -1772,10 +1945,15 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
                     if (State.HasPrevious)
                     {
                         float PrevU = 0.0f, PrevV = 0.0f;
-                        if (ProjectPoint(State.PreviousPose, Surf.P, PrevU, PrevV))
+                        // D10: a driven surface point was where the object left it last frame, not where the object is
+                        //    now — the camera pose is only half of a motion vector once geometry moves (the GPU reads
+                        //    the other half from InstanceRecord::PreviousWorld).
+                        const vec3 PrevPoint = (DriftTriangles.empty() || Tri.Material != g_RestirDriftMaterial)
+                            ? Surf.P : (Surf.P - DriftStep);
+                        if (ProjectPoint(State.PreviousPose, PrevPoint, PrevU, PrevV))
                         {
-                            Surf.MotionU = CurU - PrevU;
-                            Surf.MotionV = CurV - PrevV;
+                            Surf.MotionU = Surf.RayU - PrevU;
+                            Surf.MotionV = Surf.RayV - PrevV;
                         }
                     }
                 }
@@ -1791,23 +1969,49 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
                 bool Resolved = false;
                 if (Surf.Depth > 0.0f && !g_RestirNoReproject)
                 {
-                    const float PU = CurU - Surf.MotionU, PV = CurV - Surf.MotionV;
+                    // The address is the PIXEL's own position minus the surface's displacement — the kernel's
+                    //    `cuv - motion` (ResolveSurface), where cuv is the pixel centre and the motion image carries the
+                    //    surface point's screen motion.
+                    const float CentreU = (static_cast<float>(X) + 0.5f) / static_cast<float>(Width);
+                    const float CentreV = (static_cast<float>(Y) + 0.5f) / static_cast<float>(Height);
+                    const float PU = CentreU - Surf.MotionU, PV = CentreV - Surf.MotionV;
                     const int PrevX = static_cast<int>(floorf(PU * static_cast<float>(Width)));
                     const int PrevY = static_cast<int>(floorf(PV * static_cast<float>(Height)));
                     if (PrevX >= 0 && PrevY >= 0 && PrevX < Width && PrevY < Height)
                     {
                         const size_t PrevPixel = static_cast<size_t>(PrevY) * Width + PrevX;
                         const float* PrevSurf = &FilmSurfacePrevious[PrevPixel * 4u];
-                        if (PrevSurf[3] > 0.0f
+                        // The two tests are kept apart ON PURPOSE: the measurement this milestone is judged by is how
+                        //    many reads agree on normal and depth (so R7a would have merged them) and still belong to a
+                        //    DIFFERENT surface. That is the ghost, and the count is the same number in both arms of the
+                        //    A/B — one arm refuses them, the other inherits them.
+                        const bool GeometryOk = PrevSurf[3] > 0.0f
                             && dot(Surf.Ng, vec3(PrevSurf[0], PrevSurf[1], PrevSurf[2])) > kRestirNormalCos
-                            && fabsf(Surf.Depth - PrevSurf[3]) / max(Surf.Depth, 1.0e-3f) < kRestirDepthTol)
+                            && fabsf(Surf.Depth - PrevSurf[3]) / max(Surf.Depth, 1.0e-3f) < kRestirDepthTol;
+                        const bool IdentityDiffers = FilmIdentityPrevious[PrevPixel] != Surf.Identity;
+                        const bool IdentityOk = !g_RestirIdentity || !IdentityDiffers;
+                        if (GeometryOk && IdentityOk)
                         {
                             Accumulator = FilmPrevious[PrevPixel];
                             T.Reprojected += 1.0;
                             if (PrevPixel != Pixel) T.Moved += 1.0;
                             Resolved = true;
                         }
-                        else { T.Disocclusion += 1.0; Resolved = true; }
+                        else
+                        {
+                            T.Disocclusion += 1.0;
+                            // D10: the ghost-prevented count. Counted in BOTH arms, so the A/B reports the same geometry
+                            //    and the only difference between the arms is whether those reads were honoured.
+                            if (GeometryOk && IdentityDiffers)
+                            {
+                                T.IdentityRefused += 1.0;
+                                // A different MATERIAL is not required to ghost — two different objects can share a
+                                //    material — but when the materials differ the read is provably worthless, so it is
+                                //    counted: it is the lower bound on how many of these merges were true ghosts.
+                                if (FilmMaterialPrevious[PrevPixel] != Surf.MaterialIdx) T.IdentityRefusedCrossMaterial += 1.0;
+                            }
+                            Resolved = true;
+                        }
                     }
                     else { T.Disocclusion += 1.0; Resolved = true; }
                 }
@@ -1815,6 +2019,10 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
             }
             float* FilmSurf = &FilmSurfaceCurrent[Pixel * 4u];
             FilmSurf[0] = Surf.Ng.x; FilmSurf[1] = Surf.Ng.y; FilmSurf[2] = Surf.Ng.z; FilmSurf[3] = Surf.Depth;
+            // D10: stored whether the feature is on or off — a history written while it was off must not restart the
+            //    whole image on the first frame it is switched on.
+            FilmIdentityCurrent[Pixel] = Surf.Identity;
+            FilmMaterialCurrent[Pixel] = Surf.MaterialIdx;
         });
 
         // ── PASS 1 — candidates, RIS, W, temporal reuse: the reservoir this frame publishes ──────────────────────
@@ -1833,6 +2041,7 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
                 Temporal.Normal = Surf.Ng;
                 Temporal.Depth  = Surf.Depth;
                 State.Temporal[Pixel] = Temporal;
+
                 if (Surf.Depth > 0.0f)
                 {
                     T.Covered += 1.0;
@@ -1890,6 +2099,13 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
                     const vec3 Direct = RestirSpatialShade(State.Temporal[Pixel], Surf, SunUp, State,
                                                            Width, Height, X, Y, R, Published);
                     State.History[Pixel] = g_RestirHistorySplit ? State.Temporal[Pixel] : Published;
+                    // ⚠️ The identity must survive the copy. A spatial TAP's merge rewrites the receiver's SelectedPoint
+                    //    and SelectedLight but not its identity, and a reservoir with a zero weight never reaches the
+                    //    branch that sets it at all — so `State.Temporal[Pixel]` above can still carry "no surface" while
+                    //    the pixel plainly shows one. That was the whole of a measured 1275 phantom refusals per frame in
+                    //    the direct pool; the history is the record the NEXT frame validates against, so it is normalised
+                    //    here, where the record is final.
+                    State.History[Pixel].Identity = Surf.Identity;
                     T.MSumPublished += static_cast<double>(Published.SampleCount);
                     if (Published.Visible == 0u) T.Occluded += 1.0;
 
@@ -2005,6 +2221,11 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
             Out.MeanGiM = Gi.Covered > 0.0 ? Gi.MSum / Gi.Covered : 0.0;
             Out.MeanGiMPublished = Shade.CoveredGi > 0.0 ? Shade.MSumGi / Shade.CoveredGi : 0.0;
             Out.GiOccludedPercent = Shade.CoveredGi > 0.0 ? 100.0 * Shade.OccludedGi / Shade.CoveredGi : 0.0;
+            Out.IdentityRefusedCrossMaterial += Film.IdentityRefusedCrossMaterial;
+            Out.IdentityRefused += Film.IdentityRefused
+                                 + static_cast<double>(g_IdentityRefusedDirect.load())
+                                 + static_cast<double>(g_IdentityRefusedGi.load());
+            Out.Disocclusion    += Film.Disocclusion;
             if (Verbose)
                 std::printf("[restir] frame %3d: %zu surface pixels, reservoirs on %.1f%% of them, mean M %.1f (max M %u), "
                             "shaded M %.1f, occluded selections %.1f%%, %ld bad samples%s\n",
@@ -2018,6 +2239,15 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
                             F + 1, Rest.Covered > 0.0 ? 100.0 * Gi.CoveredGi / Rest.Covered : 0.0,
                             Gi.Covered > 0.0 ? Gi.MSum / Gi.Covered : 0.0, Out.MeanGiMPublished, Out.GiOccludedPercent,
                             g_RestirGiReuse ? "" : "   (pool disabled: --restir-no-gi-reuse)");
+            if (Verbose)
+                std::printf("[restir] D10 identity: %ld film reads + %ld DI merges + %ld GI merges agreed on "
+                            "normal+depth and belonged to a DIFFERENT surface (%ld of the reads showed a different "
+                            "MATERIAL) — %s\n",
+                            static_cast<long>(Film.IdentityRefused),
+                            g_IdentityRefusedDirect.load(), g_IdentityRefusedGi.load(),
+                            static_cast<long>(Film.IdentityRefusedCrossMaterial),
+                            g_RestirIdentity ? "refused (identity validation ON)"
+                                             : "inherited (the pre-D10 rule, --restir-no-identity)");
             if (F + 1 == Frames)
                 std::printf("[restir gi] reasons: bad %ld escape %ld emitter %ld unlit %ld unusable %ld vertex %ld noPHat %ld\n",
                             g_GiBad.load(), g_GiEscape.load(), g_GiEmitter.load(), g_GiUnlit.load(),
@@ -2026,6 +2256,8 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
 
         std::swap(FilmPrevious, FilmCurrent);
         std::swap(FilmSurfacePrevious, FilmSurfaceCurrent);
+        std::swap(FilmIdentityPrevious, FilmIdentityCurrent);
+        std::swap(FilmMaterialPrevious, FilmMaterialCurrent);
         // The vertex history is read an entire frame later (temporal validation), so it follows the film buffers.
         std::swap(State.VertexHistory, State.Vertex);
         // ⚠️ NO History/Temporal swap here. There used to be one, and it silently made the reservoir the next
@@ -2075,6 +2307,146 @@ void ApplyAtrousChain(SequenceResult& Result, int Extent, int Levels, float Expo
     }
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                          D10 — DOES THE OBJECT'S SHADOW FOLLOW IT?
+//------------------------------------------------------------------------------------------------------------------------
+// The acceptance for moving geometry is not "the transform was uploaded" — it is that the SHADOW (and the reflection) is
+//    where the object is, this frame. This probe asks the renderer's own intersector that question directly, with no
+//    image, no noise and no denoiser in the way:
+//
+//      · one grid of points on the studio floor, over and around the moving object's own footprint;
+//      · from each point, the renderer's own shadow ray — the sun-ward `Intersect` the kernel's TraceShadow wraps;
+//      · the set of points whose FIRST blocker belongs to the moving object: that set IS the object's shadow;
+//      · the same measurement with the object at its peak excursion instead of its rest pose.
+//
+//    Both poses must cast one (a count of zero would mean the probe measured nothing), and the two sets must DIFFER —
+//    which is precisely the statement "the shadow moved with the object". The centroid displacement is printed as
+//    information, not asserted: a vertical bob under an oblique sun moves the footprint sideways and shrinks it, so the
+//    only direction-agnostic, always-true assertion is that the footprint is not the same one.
+int RunShadowProbe(int Material, float Drift, int Frames, bool Verbose)
+{
+    if (!(g_SunDirRender.y > 0.0f))
+    {
+        std::printf("[shadow-probe] RED — the sun is below the horizon (dir %.3f %.3f %.3f); a shadow test needs "
+                    "daylight (try --sun 12)\n", g_SunDirRender.x, g_SunDirRender.y, g_SunDirRender.z);
+        return 1;
+    }
+    const DriftCapture DriftGeo = CaptureDrift(Material);
+    if (DriftGeo.Empty())
+    {
+        std::printf("[shadow-probe] RED — material %d carries no geometry\n", Material);
+        return 1;
+    }
+    const int PeakFrame = (Frames - 1) / 2;
+    const vec3 PeakOffset = DriftGeo.Axis * (Drift * static_cast<float>(PeakFrame));
+    if (PeakFrame < 1 || Drift == 0.0f)
+    {
+        std::printf("[shadow-probe] RED — a probe needs a moving object: --drift metres and --frames N > 1 "
+                    "(the excursion peaks at frame N/2)\n");
+        return 1;
+    }
+
+    // The floor: the level's lowest plane, sampled on a grid that covers the object's footprint plus room for the
+    //    shadow to leave it (a low sun throws a long one, so the margin is generous on purpose).
+    float FloorY = 1.0e30f;
+    for (const RenderTriangle& T : g_Tris) FloorY = min(FloorY, min(T.P0.y, min(T.P1.y, T.P2.y)));
+    // ⚠️ The grid must cover where the SHADOW lands, not where the object is. The first version of this probe centred
+    //    the window on the object's own footprint and found nothing: the sun is 6 m above the floor at a 64° elevation,
+    //    so a 0.8 m swatch throws its shadow 2.5 m sideways — outside the window entirely, and the probe reported "no
+    //    shadow" for an object that plainly had one. The window is therefore derived the way the shadow is: project the
+    //    object's bounding box along the sun direction onto the floor plane, for BOTH poses, and take that box.
+    const vec3  Extent = DriftGeo.Hi - DriftGeo.Lo;
+    auto FloorPoint = [&](const vec3& V) -> vec2
+    {
+        const float T = (V.y - FloorY) / g_SunDirRender.y;   // sun-ward drop to the floor
+        return vec2(V.x - g_SunDirRender.x * T, V.z - g_SunDirRender.z * T);
+    };
+    vec2 Lo2(1.0e30f, 1.0e30f), Hi2(-1.0e30f, -1.0e30f);
+    for (int Corner = 0; Corner < 8; ++Corner)
+    {
+        const vec3 C(((Corner & 1) ? DriftGeo.Hi.x : DriftGeo.Lo.x),
+                     ((Corner & 2) ? DriftGeo.Hi.y : DriftGeo.Lo.y),
+                     ((Corner & 4) ? DriftGeo.Hi.z : DriftGeo.Lo.z));
+        for (int Pose = 0; Pose < 2; ++Pose)
+        {
+            const vec2 S = FloorPoint(C + (Pose ? PeakOffset : vec3(0.0f, 0.0f, 0.0f)));
+            Lo2 = vec2(min(Lo2.x, S.x), min(Lo2.y, S.y));
+            Hi2 = vec2(max(Hi2.x, S.x), max(Hi2.y, S.y));
+        }
+    }
+    const float Margin = 0.25f * max(Extent.x, max(Extent.y, Extent.z)) + 0.1f;
+    const int Steps = 96;
+    const float X0 = Lo2.x - Margin, X1 = Hi2.x + Margin;
+    const float Z0 = Lo2.y - Margin, Z1 = Hi2.y + Margin;
+    const float Eps = 1.0e-3f;
+
+    std::vector<char> IsMoving(g_Tris.size(), 0);
+    for (int Tri : DriftGeo.Triangles) IsMoving[static_cast<size_t>(Tri)] = 1;
+
+    // One pose's footprint: every grid point whose sun-ward ray is blocked by the moving object, and where the shadow
+    //    actually lands (the first blocker's hit point), so the two poses' shadow sets can be compared home to home.
+    struct Footprint { int Count = 0; vec3 Centroid{0.0f, 0.0f, 0.0f}; std::vector<char> Shadowed; };
+    auto Measure = [&](const vec3& Offset) -> Footprint
+    {
+        ApplyDrift(DriftGeo, Offset);
+        Footprint F;
+        F.Shadowed.assign(static_cast<size_t>(Steps) * Steps, 0);
+        for (int Iz = 0; Iz < Steps; ++Iz)
+            for (int Ix = 0; Ix < Steps; ++Ix)
+            {
+                const vec3 P(X0 + (X1 - X0) * (static_cast<float>(Ix) + 0.5f) / Steps, FloorY + Eps,
+                             Z0 + (Z1 - Z0) * (static_cast<float>(Iz) + 0.5f) / Steps);
+                const Hit H = Intersect(P, g_SunDirRender, 1.0e30f, -1);
+                if (!H.Valid || !IsMoving[static_cast<size_t>(H.TriId)]) continue;
+                F.Shadowed[static_cast<size_t>(Iz) * Steps + Ix] = 1;
+                ++F.Count;
+                F.Centroid += P;
+            }
+        if (F.Count > 0) F.Centroid = F.Centroid / static_cast<float>(F.Count);
+        return F;
+    };
+
+    const Footprint Rest = Measure(vec3(0.0f, 0.0f, 0.0f));
+    const Footprint Peak = Measure(PeakOffset);
+    ApplyDrift(DriftGeo, vec3(0.0f, 0.0f, 0.0f));   // leave the level as it was found
+
+    int Changed = 0, StillShadowed = 0;
+    for (size_t I = 0; I < Rest.Shadowed.size(); ++I)
+    {
+        if (Rest.Shadowed[I] == Peak.Shadowed[I]) { if (Rest.Shadowed[I]) ++StillShadowed; continue; }
+        ++Changed;
+    }
+    const vec3 CentroidDelta = Peak.Centroid - Rest.Centroid;
+    const int Points = Steps * Steps;
+    if (Verbose)
+        std::printf("[shadow-probe] sun (%.3f %.3f %.3f), floor y %.3f, grid %d x %d over x[%.2f,%.2f] z[%.2f,%.2f]\n",
+                    g_SunDirRender.x, g_SunDirRender.y, g_SunDirRender.z, FloorY, Steps, Steps, X0, X1, Z0, Z1);
+    std::printf("[shadow-probe] object: x[%.2f,%.2f] y[%.2f,%.2f] z[%.2f,%.2f]\n",
+                DriftGeo.Lo.x, DriftGeo.Hi.x, DriftGeo.Lo.y, DriftGeo.Hi.y, DriftGeo.Lo.z, DriftGeo.Hi.z);
+    std::printf("[shadow-probe] rest        : %d of %d floor points blocked by material %d (centroid %.2f %.2f %.2f)\n",
+                Rest.Count, Points, Material, Rest.Centroid.x, Rest.Centroid.y, Rest.Centroid.z);
+    std::printf("[shadow-probe] peak %.3f m : %d of %d floor points blocked by material %d (%.0f kept the same point)\n",
+                length(PeakOffset), Peak.Count, Points, Material, static_cast<double>(StillShadowed));
+    std::printf("[shadow-probe] footprint: %d points changed state, centroid moved (%.3f %.3f %.3f) = %.3f m\n",
+                Changed, CentroidDelta.x, CentroidDelta.y, CentroidDelta.z, length(CentroidDelta));
+
+    if (Rest.Count == 0 || Peak.Count == 0)
+    {
+        std::printf("[shadow-probe] RED — a pose casts no shadow on the floor (%d rest / %d peak): the probe "
+                    "measured nothing\n", Rest.Count, Peak.Count);
+        return 1;
+    }
+    if (Changed == 0)
+    {
+        std::printf("[shadow-probe] RED — the shadow footprint is IDENTICAL in both poses: the shadow did not "
+                    "follow the object\n");
+        return 1;
+    }
+    std::printf("[shadow-probe] PASS — both poses cast a shadow ONTO the floor, and the footprint moved with the "
+                "object (%d of %d points changed state)\n", Changed, Points);
+    return 0;
+}
+
 } // namespace
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -2097,6 +2469,7 @@ int main(int ArgumentCount, char** ArgumentValues)
     bool  Denoise = false;      // the shipped à-trous chain over the accumulated film
     unsigned Threads = std::thread::hardware_concurrency();
     if (Threads == 0u) Threads = 2u;
+    bool ProbeMode = false;   // D10: --shadow-probe — does the moving object's shadow follow it? (no image, no noise)
 
     for (int I = 1; I < ArgumentCount; ++I)
     {
@@ -2124,6 +2497,18 @@ int main(int ArgumentCount, char** ArgumentValues)
         else if (A == "--no-reproject") g_RestirNoReproject = true;
         else if (A == "--restir-no-history-split") g_RestirHistorySplit = false;
         else if (A == "--restir-no-gi-reuse")      g_RestirGiReuse = false;
+        else if (A == "--restir-no-identity")      g_RestirIdentity = false;
+        else if (A == "--drift")        g_RestirDrift = static_cast<float>(std::atof(Next("--drift")));
+        else if (A == "--drift-material") g_RestirDriftMaterial = std::atoi(Next("--drift-material"));
+        else if (A == "--shadow-probe") ProbeMode = true;
+        else if (A == "--drift-axis")
+        {
+            const std::string Ax = Next("--drift-axis");
+            if      (Ax == "x") g_RestirDriftAxis = 0;
+            else if (Ax == "y") g_RestirDriftAxis = 1;
+            else if (Ax == "z") g_RestirDriftAxis = 2;
+            else { std::printf("[material-level] --drift-axis expects x, y or z (got '%s')\n", Ax.c_str()); return 2; }
+        }
         else if (A == "--no-sun-coin") g_RestirNoSunCoin = true;
         else if (A == "--taps")     g_RestirSpatialTaps = static_cast<uint32_t>(std::atoi(Next("--taps")));
         else if (A == "--restir-bounce-mis") g_RestirBounceMis = true;
@@ -2136,6 +2521,9 @@ int main(int ArgumentCount, char** ArgumentValues)
                         "                            [--width W] [--height H] [--spp N] [--bounce N] [--sun H]\n"
                         "                            [--fog clear|morning|backlit] [--exposure X] [--threads N]\n"
                         "                            [--frames N] [--pan metres] [--restir] [--no-reproject]\n"
+                        "                            [--drift metres] [--drift-material idx] [--restir-no-identity]\n"
+                        "                            [--shadow-probe]  (with --drift/--frames: does the shadow follow?)\n"
+                        "                            [--drift-axis x|y|z]\n"
                         "                            [--denoise] [--denoise-levels N]\n");
             return 0;
         }
@@ -2172,6 +2560,8 @@ int main(int ArgumentCount, char** ArgumentValues)
                 UseRestir ? ", RESTIR DI (CPU mirror)" : "",
                 PanPerFrame != 0.0f ? ", camera pan" : "",
                 Denoise ? ", à-trous" : "");
+
+    if (ProbeMode) return RunShadowProbe(g_RestirDriftMaterial, g_RestirDrift, Frames, true);
 
     Frontier::ShadingTableSet Tables = Frontier::ShadingTableCodec::Bake(1024u);
     g_Tables = &Tables;

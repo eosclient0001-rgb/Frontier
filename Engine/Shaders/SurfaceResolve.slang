@@ -42,6 +42,11 @@ struct GpuReservoirView
     uvec4 Counts;    // x = M, y = SelectedLight, z = Visible, w = Age
     vec4  UvDepth;   // xy = SelectedUv, z = W, w = view depth at the build pixel [m]
     vec4  Normal;    // xyz = geometric normal at the build pixel, w = stride guard (ViewportWidth)
+    // ⚠️ D10 widened the record to 80 B. This view must carry the tail even though no debug view reads it: an array
+    //    stride is the whole struct, so a 64 B view over an 80 B buffer drifts one field every 80 bytes and the M / W /
+    //    Age views would be reading a neighbouring pixel's data — wrong on screen, and wrong in a way that looks
+    //    plausible. Keep this in step with GpuReservoir (ReSTIRViewport.slang) and ReservoirBufferRecord (host).
+    uvec4 Identity;  // D10: x = instance << 14 | primitive; yzw reserved
 };
 layout(std430, set = 0, binding = 13) readonly buffer ReservoirExtent { GpuReservoirView Reservoirs[]; };
 

@@ -18,6 +18,13 @@
 #      ⑥ ⑤ with BOTH reads forced to the pixel's own address (the pre-R7a rule) — the A/B the rule exists for.
 #         The excursion is big enough to separate them: at 0.10 m/frame the reprojected closing frame measures
 #         ~19 % lower error against ① than the same-pixel read, and carries fewer spurious restarts
+#      ⑦ D10 — the MOVING OBJECT: one swatch slides along its own plane, out and back (so ⑧'s closing frame is the rest
+#         pose). Correct behaviour is threefold and all three are asserted by CheckTemporalIdentity.sh: the shadow
+#         follows the object (the renderer's own intersector, a grid of floor points), a still scene is left alone, and
+#         the ghost is refused. The panel is the picture of the last of those.
+#      ⑧ ⑦ with identity validation off (--restir-no-identity, the pre-D10 rule) and — for the eye — the untouched level
+#         at the same pose, which is the ground truth the closing frame is judged against: 891 vs 1 732 RMSE in
+#         CheckTemporalIdentity.sh, i.e. the reads the identity refuses carry about twice the error.
 #
 #    Deterministic: every RNG is seeded from (pixel, sample index, frame); re-running reproduces each panel and the
 #    montage bit-for-bit. NOT part of CheckMaterialDenoise.sh (a render, not a check).
@@ -46,7 +53,7 @@ if ! make -C "$Host" MaterialLevelViewport >/tmp/RestirSheet.build 2>&1; then
     echo "[RestirSheet] BUILD FAILED"; sed 's/^/    /' /tmp/RestirSheet.build | tail -25; exit 1
 fi
 
-Size=320; Spp=4; Frames=16; Reference=192; Pan=0.10
+Size=320; Spp=4; Frames=16; Reference=192; Pan=0.10; Drift=0.06
 if [ "$Mode" = "fast" ]; then Size=128; Spp=2; Frames=4; Reference=16; fi
 Excursion=$(awk -v p="$Pan" -v f="$Frames" 'BEGIN { printf "%.2f", p * int((f - 1) / 2) }')
 
@@ -72,14 +79,37 @@ Render pan       "--spp $Spp --frames $Frames --restir --taps 2 --pan $Pan" \
        "⑤ ReSTIR with a ±${Excursion} m triangular camera excursion (R7a reprojection on)"
 Render noreproj  "--spp $Spp --frames $Frames --restir --taps 2 --pan $Pan --no-reproject" \
        "⑥ … the same excursion, both history reads at the pixel's own address (pre-R7a)"
+# The moving panels crop to the sphere row that carries the drifting swatch (--row 3): at whole-level scale the swatch
+#    is ~26 px across in a 320 px panel and the ghost it drags is a few pixels — the crop is what makes the picture show
+#    what the gate measures.
+Render moving    "--spp $Spp --frames $Frames --restir --taps 2 --row 3 --drift $Drift" \
+       "⑦ D10 — a moving object: one swatch slides along its own plane (${Drift} m/frame), out and back"
+Render movingoff "--spp $Spp --frames $Frames --restir --taps 2 --row 3 --drift $Drift --restir-no-identity" \
+       "⑧ … the same, identity validation off (the pre-D10 rule: ghosts inherited)"
+# ⚠️ The ground truth is a render at the SAME budget, not ①'s converged reference — deliberately. At a few spp over a
+#    few frames, a 192-spp reference measures Monte-Carlo noise rather than ghosts, and the numbers said exactly that:
+#    the ON/OFF pair came out noise-dominated (3 459 vs 3 759 RMSE) while the gate, which compares against a MATCHED
+#    budget where the noise is common to both arms, measures 1.94x. The excursion RETURNS to the rest pose, so the
+#    matched-budget render of the untouched level IS what the closing frame should look like: the ghost is the
+#    difference, and only the difference.
+Render movingref "--spp $Spp --frames $Frames --row 3" \
+       "⑧ ground truth — the level untouched, same budget and pose"
 
 echo "[RestirSheet] error against ① (display space, RMSE / normalised), and the R7a tell of the pan pair:"
+# ⚠️ The D10 panels are CROPPED (--row 3) and are therefore not comparable with ①: they get their own block below.
 for panel in plain restir denoised pan noreproj; do
     printf "    %-10s " "$panel"
     compare -metric RMSE "$Work/$panel.png" "$Work/reference.png" null: 2>&1; echo
 done
 printf "    %-10s " "⑤ vs ⑥"
 compare -metric RMSE "$Work/pan.png" "$Work/noreproj.png" null: 2>&1; echo
+echo "[RestirSheet] D10: the moving object's ghost, against the same budget and pose untouched (§7a of Docs/DynamicGeometry.md):"
+for panel in moving movingoff; do
+    printf "    %-10s " "$panel"
+    compare -metric RMSE "$Work/$panel.png" "$Work/movingref.png" null: 2>&1; echo
+done
+printf "    %-10s " "⑦ vs ⑧"
+compare -metric RMSE "$Work/moving.png" "$Work/movingoff.png" null: 2>&1; echo
 
 Sheet="$Gallery/RestirSheet_StandardTier.png"
 montage -label "① reference — brute force ${Reference} spp" "$Work/reference.png" \
@@ -88,7 +118,9 @@ montage -label "① reference — brute force ${Reference} spp" "$Work/reference
         -label '④ ReSTIR + à-trous (the product)'       "$Work/denoised.png" \
         -label "⑤ + a ±${Excursion} m camera excursion (R7a on)" "$Work/pan.png" \
         -label '⑥ the same, reads at the own address'   "$Work/noreproj.png" \
-        -tile 2x3 -geometry +6+6 -background '#141414' -fill '#e8e8e8' -font DejaVu-Sans -pointsize 15 \
+        -label "⑦ D10 — an object slides ${Drift} m/frame (identity on)" "$Work/moving.png" \
+        -label '⑧ … identity validation off (pre-D10)'   "$Work/movingoff.png" \
+        -tile 2x4 -geometry +6+6 -background '#141414' -fill '#e8e8e8' -font DejaVu-Sans -pointsize 15 \
         "$Sheet"
 echo "[RestirSheet] wrote $Sheet"
 sha256sum "$Sheet"

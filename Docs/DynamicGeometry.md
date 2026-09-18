@@ -379,9 +379,10 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
   serial by design and say so where they are (the two block scans, one iteration per 128 node slots); everything else in
   the build is now parallel across the level, and §⑨j checks the parallel scan's arithmetic against the serial one over
   the shipped build's own 7 185 nodes.
-- **D10 — ReSTIR integration.** Motion vectors already follow `PreviousWorld`; for dynamic objects the reservoir
-  validation should use instance/primitive identity plus the previous transform, so a moving object's history is
-  rejected on genuine disocclusion and kept when it merely moved.
+- **D10 — ReSTIR integration** — *(delivered; see §7a below)*. The plan said the validation should use instance/primitive
+  identity plus the previous transform. It does, with one measured correction: the identity is the INSTANCE, never the
+  primitive (see the granularity note in §7a), and the previous transform is not a separate input — the motion vector
+  already carries it, and for a moving object the motion has to be the surface point's displacement, not the camera's.
 
 ## 7. Decision record
 
@@ -394,3 +395,94 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
 | Keep one world-space tree? | **No** — two-level from here on (D6/D7 delivered; the single-blob path stays as the fallback and as the bit-identity reference) | the whole-scene re-emit is the ceiling that blocks every dynamic feature |
 | Must the object-space ray be re-normalised after `M⁻¹`? | **No** — transform O and D, take t as-is | `M·(O' + t·D') = O + t·(M·D')`, so t survives the transform; re-normalising would both rescale t and perturb grazing rays by an ulp |
 | Animation without a rig? | per-frame deformed vertices + refit; VAT as the authoring route | the renderer never needs bone data; refit needs fixed topology, which skinning/VAT give |
+
+## 7a. D10 — temporal integration for moving geometry *(delivered)*
+
+The plan's one line was "identity-based validation is the new part". This is what was actually built, and the two things
+measurement changed.
+
+### What the accumulator had, and why it was not enough
+
+Every history read in the renderer — the running mean in `ResolveSurface` (R7a) and both reservoir pools — is reprojected
+through the R2 motion vectors and validated on the surface's normal and depth: cos 25°, 10 % relative depth. That rule is
+necessary and it is not sufficient, because **normal and depth agree for two different objects more often than is
+comfortable**:
+
+- two objects that exchange places present the same normal and the same depth at the reprojected pixel;
+- an object sliding across a coplanar neighbour *is* the same plane at the same depth;
+- an object leaving a wall while another arrives to take its place does the same thing at a silhouette.
+
+In all three cases the pixel inherits radiance shaded for something else, and the running mean carries it until the
+sample count drowns it — ghosting, visible as a smear that follows the old object.
+
+### The third fact
+
+`kFeatureTemporalIdentity` (bit 9) makes the history record **which surface it came from**, and the read is accepted only
+if that surface is the same one. Implementation notes:
+
+| | |
+|---|---|
+| the identity | the packed value the visibility raster already carries, `instance << 14 \| primitive` (`SceneRecords.slang`'s own packing) — not a new number about the scene |
+| where it is stored (mean) | `MomentImage`'s reserved `z/w` channels, which held `0.0` and nothing else. **Not a new binding**: bindings 0–31 of that set are all taken and 31 must stay the highest number (the bindless table is variable-count). Each half is a 16-bit integer, and every integer below 2²⁴ is exact in a float32, so the decoded identity compares with `==` like the integer it is |
+| where it is stored (reservoirs) | a fifth `uvec4 Identity` in `GpuReservoir`: **64 B → 80 B**, mirrored by `ReservoirBufferRecord` on the host behind a `static_assert` that fails at compile time if the two ever drift |
+| the GI/debug views | `SurfaceResolve.slang`'s `GpuReservoirView` carries the new tail too — an array stride is the whole struct, so a 64 B view over an 80 B buffer drifts one field every 80 bytes and the M/W/Age debug views would silently read a neighbouring pixel |
+| whose rule it is | it is the SAME test in all three places (mean, DI pool, GI pool), because a ghost in the reflection half is the same bug wearing a different hat |
+| default | **on**, with `--restir-no-identity` (mirror) / the bit clear (kernel) restoring the pre-D10 rule, so the fix is measurable rather than asserted |
+
+### ⚠️ The granularity correction — the identity is the OBJECT, not the triangle
+
+The first cut compared the whole packed pair, primitive included. Measured on a **still scene with a still camera**, that
+restarted **13.5 % of the image every frame**. The raster jitters sub-pixel once per frame (one Halton offset, shared by
+raster and resolve) and M10's swatch spheres carry ~1 500 triangles for ~10 pixels, so the neighbouring triangle is far
+smaller than a pixel and the primitive flips constantly while the surface does not move at all. An identity that fine
+does not measure "the same thing", it measures the *tessellation* — and it would have behaved completely differently on
+a 4-triangle box than on a 4 000-triangle sphere.
+
+The object is the right granularity, and it is the one the feature exists for: it survives a moving object's motion (so
+the object keeps its own history as it moves — the point of the milestone), it differs between two objects that exchange
+places (the ghost the rule catches), and it is the number the raster, the instance buffers and the acceleration
+structure all already agree on. *Same object, different face* is the normal/depth test's business. On the same still
+scene the rule now changes 0.5 % of pixels instead of 13.5 %.
+
+### ⚠️ The second measurement — the mirror's motion vector had the jitter in it
+
+Once the rule was at the right granularity, the pool still refused ~1 275 merges per frame on a still scene, and the
+diagnostic said why: the mirror measured the surface point's displacement from the pixel **centre** while the G-buffer's
+hit point came from the **jittered** ray. Motion is a displacement of a POINT, so mixing the two left a sub-pixel offset
+in every reprojection, and `floor()` turned half of them into a neighbouring pixel's history. The kernel does not have
+this bug — its motion image carries a *vertex's* own screen displacement — so this is the mirror being brought into line
+with it: the motion is measured from the ray the pixel actually took, and the read address is
+
+    prevPx = floor((pixelCentre − motion) · extent)
+
+which is the kernel's own `cuv - motion`. Refusals on a still scene fell from 1 275 to ~40 (the genuine silhouettes).
+
+**Both bugs were found by measurement, not by review** — which is the argument for the gate below existing.
+
+### What is measured
+
+`Exhibits/Workbench/Materials/CheckTemporalIdentity.sh` (its own gate; the exhibit's `RunRestirViewport.sh` grew two
+matching panels for the kept sheet):
+
+1. **The shadow follows the object.** The moving object's shadow is tested against the renderer's own intersector: a
+   96 × 96 grid of floor points, each shot sun-ward with the kernel's `Intersect`, and the subset whose FIRST blocker is
+   the moving object *is* its shadow; measured at the rest pose and at the peak of the excursion. Both cast one
+   (865 / 1 072 points) and the footprints DIFFER (307 points changed state, centroid 0.091 m) — the direction-agnostic
+   statement of "the shadow moved with it". The mirror re-poses the geometry *and rebuilds the acceleration structure*
+   each frame, so primary rays and shadow rays see the object where it actually is; a moving object with a lagging
+   shadow is the other half of this acceptance.
+2. **The ghost is refused, and the picture shows it.** One swatch slides along its own plane, out and back, so the closing
+   frame's scene is the REST scene — which makes a plain render of the untouched level a ground truth for it. The same
+   sequence runs with and without the rule: **891 vs 1 732 RMSE** against that ground truth (0.0136 vs 0.0264
+   normalised), i.e. the reads the identity refuses carry about **twice** the error the pre-D10 rule leaves in the
+   picture. Per frame, ~770 history reads (145 mean + 560 DI + 64 GI) agreed on normal and depth and belonged to a
+   different object.
+3. **A still scene is not disturbed** (the granularity lesson, as a check): with no motion at all the two arms agree to
+   0.5 % of pixels.
+
+### What is still owed
+
+The kernel side is compile-checked and lowers (`Tools/Build/CheckShaders.sh`, 15/15) and the host record's stride is
+static-asserted, but **no frame has been dispatched**: the identity path wants a GPU run on the owner's card, exactly
+like the rest of the D9/D10 device work in §5–§6. The mirror is the kernel's algorithm with the kernel's constants, not
+the kernel itself.
