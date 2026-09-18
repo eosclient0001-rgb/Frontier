@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frontier · SDF Terrain Lab</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4 3 28h26z' fill='%234da3ff'/%3E%3Cpath d='M16 12l-6 14h12z' fill='%230c0f14' opacity='0.25'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/app.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three.module.js",
+        "three/addons/": "./vendor/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▲</span>
+      <span class="brand-name">FRONTIER</span>
+      <span class="brand-sub">SDF Terrain Lab</span>
+    </div>
+    <div class="pipeline">
+      <button id="btnGenerate" title="Rebuild the multifractal mountain (G)">Generate Mountain <kbd>G</kbd></button>
+      <button id="btnErode" title="Run hydraulic SDF erosion (E)">Run Erosion <kbd>E</kbd></button>
+      <button id="btnFull" class="primary" title="Mountain → erosion → splatmaps (P)">Full Pipeline <kbd>P</kbd></button>
+      <button id="btnCamera" title="Reset camera (R)">Reset View <kbd>R</kbd></button>
+    </div>
+    <div class="topstats">
+      <span id="busy" class="busy"></span>
+      <span id="clock" class="dim mono">—</span>
+      <span id="fps" class="mono">— fps</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel" id="leftPanel"></aside>
+
+    <div class="viewport" id="viewport"></div>
+
+    <aside class="panel" id="rightPanel"></aside>
+  </main>
+
+  <footer class="statusbar">
+    <span id="probe" class="probe mono">probe: hover terrain</span>
+    <span class="dim">SDF-grid hydraulic erosion · the mesh is a visualization of the field</span>
+    <span class="dim">LMB orbit · wheel zoom · RMB pan · <b>G</b> generate · <b>E</b> erode · <b>P</b> pipeline</span>
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
