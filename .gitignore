@@ -1,3 +1,8 @@
-# agent scratch / render-harness output
-.tmp-*
 node_modules/
+dist/
+.cache/
+artifacts/
+.DS_Store
+
+test-results/
+playwright-report/
