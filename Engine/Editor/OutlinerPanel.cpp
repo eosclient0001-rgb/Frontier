@@ -1546,8 +1546,9 @@ void OutlinerPanel::RecordFooter() noexcept
         ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, FootTop));
     }
     const float PadX = Compact_ ? 14.0f : 16.0f;
-    const float PadT = 7.0f;   // 7 + 26 + 7: the shared forty, compact or full
-    const float PadB = 7.0f;
+    // 7 + 26 + 7 = the shared forty (kEditorFooterH), compact or full. Only the TOP needs a variable: the 26 px row
+    //    and the bottom 7 both ride `H` below, so a `PadB` would be a number nothing reads (MSVC C4189).
+    const float PadT = 7.0f;
     const uint32_t Items = 5u;   // one line: every figure side by side
     const float H = kEditorFooterH;
 

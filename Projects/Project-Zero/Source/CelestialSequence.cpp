@@ -354,7 +354,11 @@ void CelestialSequence::Tick(float DeltaSeconds, const float Camera[3], float Gr
 
 //------------------------------------------------------------------------------------------------------------------------
 
-void CelestialSequence::ApplyTo(VisibilityRaster& Raster, const CelestialBudget& Budget) const noexcept
+// ⚠️ The parameter is named `Limits`, not `Budget`: the class has a `Budget` member too (the sequence's own tier
+//    spend, read by the editor's Tier Budget group), and MSVC's C4458 flagged the parameter as hiding it. The
+//    function is *handed* a budget by its caller, so the parameter is the one that should win — naming it
+//    differently makes that unambiguous instead of accidental.
+void CelestialSequence::ApplyTo(VisibilityRaster& Raster, const CelestialBudget& Limits) const noexcept
 {
     VisibilityRaster::CelestialSettings Settings{};
     Settings.Enabled = Enabled;
@@ -380,8 +384,8 @@ void CelestialSequence::ApplyTo(VisibilityRaster& Raster, const CelestialBudget&
     }
 
     Settings.CameraHeight     = 2.0f;
-    Settings.SampleCount      = Budget.AtmosphereSamples;
-    Settings.LightSampleCount = Budget.AtmosphereLightSamples;
+    Settings.SampleCount      = Limits.AtmosphereSamples;
+    Settings.LightSampleCount = Limits.AtmosphereLightSamples;
 
     const bool WantStars = Shown[static_cast<uint32_t>(CelestialEntity::Stars)] && !Catalogue.Empty();
     Settings.Stars             = WantStars ? &Catalogue : nullptr;
@@ -410,7 +414,7 @@ void CelestialSequence::ApplyTo(VisibilityRaster& Raster, const CelestialBudget&
     Settings.LocalCloud = (WantLocalCloud && LocalCloud.Enabled) ? LocalCloud : LocalVolumeSettings{};
     Settings.LocalFog = (WantLocalFog && LocalFog.Enabled) ? LocalFog : LocalVolumeSettings{};
     Settings.Wind = Wind;
-    Settings.CloudBudget = Budget.Volumetrics;
+    Settings.CloudBudget = Limits.Volumetrics;
     Settings.CloudTime = Observation.LocalHours * 3600.0f;
 
     Raster.AssignCelestial(Settings);
@@ -531,7 +535,9 @@ PostConstantRecord CelestialSequence::PackPostRecord(const float CameraForward[3
     //    catalogue packs zero brightness, which is the kernel's early-out (the tables upload never ran, but the
     //    bring-up zeros stand and the brightness gate never touches them).
     const bool WantStars = Enabled && Shown[static_cast<uint32_t>(CelestialEntity::Stars)] && !Catalogue.Empty();
-    const float StarBrightness = WantStars ? CelestialSequence::StarBrightness : 0.0f;
+    const float StarsScale = WantStars ? CelestialSequence::StarBrightness : 0.0f;   // the member, gated by the entity
+                                                                                     //    (the local used to be named after
+                                                                                     //    the member — C4458, same as above)
     // The star core floors at half a pixel: the shader's PixelSpreadAngle(), computed here because the post
     //    file reads no push constants. A zero height is a caller bug — guard rather than divide.
     const float PixelSpread = ViewportHeightPx > 0u && TanHalfFieldOfView > 0.0f
@@ -577,7 +583,7 @@ PostConstantRecord CelestialSequence::PackPostRecord(const float CameraForward[3
 
     float ShadowDriftX = 0.0f, ShadowDriftY = 0.0f;
     FoldShadowDrift(ShadowStaging, ShadowTimeSeconds, ShadowDriftX, ShadowDriftY);
-    return PackPostConstants(Solved.LocalSiderealTime, Observation.Latitude, StarSize, StarBrightness, PixelSpread,
+    return PackPostConstants(Solved.LocalSiderealTime, Observation.Latitude, StarSize, StarsScale, PixelSpread,
                              static_cast<uint32_t>(Flare.Category), Flare.GhostCount, Flare.Intensity,
                              Flare.HaloRadius, Flare.Chromatic, Flare.StreakGain, Flare.ApertureBlades,
                              // Below-horizon suns flare nothing (no direct light enters the lens); faded over

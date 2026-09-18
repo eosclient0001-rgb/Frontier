@@ -113,7 +113,7 @@ public:
     void Tick(float DeltaSeconds, const float Camera[3], float GroundHeight) noexcept;
 
     // Hand the raster everything it needs to draw the sky. One call, so a caller cannot wire half of it.
-    void ApplyTo(VisibilityRaster& Raster, const CelestialBudget& Budget) const noexcept;
+    void ApplyTo(VisibilityRaster& Raster, const CelestialBudget& Limits) const noexcept;
 
     // Hand the RAY-TRACING KERNEL the same sky ApplyTo hands the raster, packed for binding 21. Every adjustment
     //    mirrors ApplyTo — the solved direction, the tint and brightness on the radiance, a hidden sun as night —
