@@ -20,7 +20,11 @@
 #
 #      ② THE GHOST IS REFUSED, AND IT SHOWS. The driver slides one swatch along its own plane, out and back, so the
 #         closing frame's scene is the REST scene — which makes a plain render of the untouched level a ground truth
-#         for it. The same sequence then runs twice, once with identity validation and once without
+#         for it. ⚠️ That ground truth deliberately SHARES the arm's seed stream: this is a PAIRED comparison, where the
+#         two arms differ in one switch and the Monte-Carlo noise is common to both, so the difference that survives is
+#         the ghost and not the sampling. (Roadmap #7's `--seed-stream` is the opposite tool for a different question —
+#         the absolute distance from a converged reference, where shared noise would flatter the estimate. Use it here
+#         and the pair gets noisier without becoming more honest; the claim above is about a difference, not a level.) The same sequence then runs twice, once with identity validation and once without
 #         (--restir-no-identity, the pre-D10 rule), and the error against that ground truth is compared. Measured on the
 #         M10 row-3 crop / 256x192 / 4 spp / 16 frames: 891 vs 1732 RMSE (0.0136 vs 0.0264 normalised), i.e. the ghosts
 #         the identity refuses are about twice the error the pre-D10 rule leaves in the picture.

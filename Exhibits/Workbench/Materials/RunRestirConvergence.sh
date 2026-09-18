@@ -18,6 +18,15 @@
 #      ⑧ ④                                  (the indirect half's pool: ReSTIR GI-style reuse of the first-bounce
 #                                            vertex's NEE stratum, temporally and over the same taps)
 #
+#    ⑨ THE FLOOR (roadmap #7). Every panel above is compared against ① on the SAME seed stream, which is deliberate —
+#       4 spp × 128 frames IS the 512 seeds of the one-frame reference, so ② ≡ ① is bit-identical and doubles as this
+#       script's sanity gate. But it also means each RMSE shares its noise with the arm being measured, and the
+#       difference of two correlated estimators is smaller than the difference of two independent ones: those errors are
+#       understated, by an amount nobody had measured. The last block therefore re-renders the plain arm and the
+#       Standard arm on an INDEPENDENT stream (--seed-stream 1) and prints both numbers side by side, so the shared
+#       figure can be read for what it is — a lower bound on the error — with the honest one on the record beside it.
+#       ⚠️ --seed-stream 0 is the identity, so every panel above is unchanged by this existing.
+#
 #    Deterministic, like the standard sheet: every RNG is seeded from (pixel, sample index, frame).
 #    Usage: RunRestirConvergence.sh [fast|full]
 set -uo pipefail
@@ -73,6 +82,11 @@ Render gioff     "--spp $Spp --frames $Frames --restir --taps $Taps --restir-no-
        "⑦ the indirect half's single-sample arm (no pool)"
 Render gion      "--spp $Spp --frames $Frames --restir --taps $Taps" \
        "⑧ the indirect half's pool (ReSTIR GI-style reuse on)"
+# ⑨ the floor: the two arms that carry the headline claim, re-rendered on a stream independent of ①'s.
+Render plainind  "--spp $Spp --frames $Frames --seed-stream 1" \
+       "⑨② the plain arm on an INDEPENDENT stream — the floor, not the shared lower bound"
+Render taps2ind  "--spp $Spp --frames $Frames --restir --taps $Taps --seed-stream 1" \
+       "⑨④ the Standard arm on an INDEPENDENT stream — the same, for the product pipeline"
 
 echo "[RestirConvergence] error against ① (display space, RMSE / normalised):"
 for panel in plain taps0 taps2 taps4 splitoff gioff gion; do
@@ -83,6 +97,16 @@ printf "    %-9s " "④vs⑦"
 compare -metric RMSE "$Work/taps2.png" "$Work/gioff.png" null: 2>&1; echo
 printf "    %-9s " "④vs⑥"
 compare -metric RMSE "$Work/taps2.png" "$Work/splitoff.png" null: 2>&1; echo
+
+echo "[RestirConvergence] ⑨ THE FLOOR — the same two arms on a stream independent of ①'s (roadmap #7):"
+printf "    %-34s shared %-13s independent %s\n" "plain (= ① by construction)" \
+    "$(compare -metric RMSE "$Work/plain.png" "$Work/reference.png" null: 2>&1 | grep -o '^[0-9.]*')" \
+    "$(compare -metric RMSE "$Work/plainind.png" "$Work/reference.png" null: 2>&1 | grep -o '^[0-9.]*')"
+printf "    %-34s shared %-13s independent %s\n" "ReSTIR, $Spp cand x $Frames frames, $Taps taps" \
+    "$(compare -metric RMSE "$Work/taps2.png" "$Work/reference.png" null: 2>&1 | grep -o '^[0-9.]*')" \
+    "$(compare -metric RMSE "$Work/taps2ind.png" "$Work/reference.png" null: 2>&1 | grep -o '^[0-9.]*')"
+echo "    (both columns are against the SAME ① — ${Reference} spp, one frame, stream 0 — so the only difference between"
+echo "     the two is whether the arm shares ①'s random numbers)" 
 
 Sheet="$Gallery/RestirConvergenceSheet.png"
 montage -label "① reference — brute force ${Reference} spp" "$Work/reference.png" \

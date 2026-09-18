@@ -161,10 +161,26 @@ int   g_RowFilter = -1;    // [-] -1 = the whole grid; 0..5 = one sphere row (a 
 //                                                          RNG
 //------------------------------------------------------------------------------------------------------------------------
 
+// ── Roadmap #7: the SEED STREAM ─────────────────────────────────────────────────────────────────────────────────────
+// Every render in this harness is deterministic in (pixel, sample index, frame), which is what makes the sheets
+//    reproducible. That determinism has a cost the report names: the converged reference ① and the budget render ② walk
+//    the SAME stream — deliberately, since 4 spp x 128 frames IS the 512 seeds of the one-frame reference, which is why
+//    ② ≡ ① measures AE 0 and doubles as the harness's own sanity gate. But it also means every RMSE against ① shares its
+//    noise with the arm being measured, so those errors are understated: the difference of two correlated estimators is
+//    smaller than the difference of two independent ones.
+//
+//    `--seed-stream N` shifts the whole stream by N, and at N = 0 it is the identity (a multiply by a constant and an
+//    XOR that adds nothing), so every number recorded before this existed still describes this code. Stream 1 is a
+//    genuinely independent draw of the same estimator: the reference is rendered on one stream and the arm on another,
+//    and the error between them is then the error, with no shared modes subtracted out. Roadmap #7 asked for exactly
+//    this — "the floor can be measured rather than shared" — and every absolute RMSE in the report should be read
+//    against the pair of numbers (shared stream, independent stream), not one of them.
+uint32_t g_SeedStream = 0u;
+
 struct Rng
 {
     uint32_t S;
-    explicit Rng(uint32_t Seed) noexcept : S(Seed * 747796405u + 2891336453u) {}
+    explicit Rng(uint32_t Seed) noexcept : S((Seed ^ (g_SeedStream * 0x9E3779B9u)) * 747796405u + 2891336453u) {}
     float Next() noexcept
     {
         S = S * 747796405u + 2891336453u;
@@ -2470,6 +2486,7 @@ int main(int ArgumentCount, char** ArgumentValues)
     unsigned Threads = std::thread::hardware_concurrency();
     if (Threads == 0u) Threads = 2u;
     bool ProbeMode = false;   // D10: --shadow-probe — does the moving object's shadow follow it? (no image, no noise)
+    uint32_t SeedStream = 0u; // #7: the RNG stream offset — an independent reference and an independent arm
 
     for (int I = 1; I < ArgumentCount; ++I)
     {
@@ -2501,6 +2518,7 @@ int main(int ArgumentCount, char** ArgumentValues)
         else if (A == "--drift")        g_RestirDrift = static_cast<float>(std::atof(Next("--drift")));
         else if (A == "--drift-material") g_RestirDriftMaterial = std::atoi(Next("--drift-material"));
         else if (A == "--shadow-probe") ProbeMode = true;
+        else if (A == "--seed-stream") SeedStream = static_cast<uint32_t>(std::atoi(Next("--seed-stream")));
         else if (A == "--drift-axis")
         {
             const std::string Ax = Next("--drift-axis");
@@ -2523,6 +2541,7 @@ int main(int ArgumentCount, char** ArgumentValues)
                         "                            [--frames N] [--pan metres] [--restir] [--no-reproject]\n"
                         "                            [--drift metres] [--drift-material idx] [--restir-no-identity]\n"
                         "                            [--shadow-probe]  (with --drift/--frames: does the shadow follow?)\n"
+                        "                            [--seed-stream N] (an independent RNG stream: 0 = the shipped one)\n"
                         "                            [--drift-axis x|y|z]\n"
                         "                            [--denoise] [--denoise-levels N]\n");
             return 0;
@@ -2562,6 +2581,10 @@ int main(int ArgumentCount, char** ArgumentValues)
                 Denoise ? ", à-trous" : "");
 
     if (ProbeMode) return RunShadowProbe(g_RestirDriftMaterial, g_RestirDrift, Frames, true);
+    if (SeedStream != 0u)
+        std::printf("[material-level] seed stream %u — an INDEPENDENT draw of the same estimator (roadmap #7: the RMSE "
+                    "floor is measured rather than shared)\n", SeedStream);
+    g_SeedStream = SeedStream;
 
     Frontier::ShadingTableSet Tables = Frontier::ShadingTableCodec::Bake(1024u);
     g_Tables = &Tables;

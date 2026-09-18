@@ -4,7 +4,7 @@ Date: 2026-09-17 · Branch: `arena/01a0af43-slate` · Gates: `CheckMaterialsProo
 `CheckMaterialCodec.sh` (interchange headers) · `CheckMaterialScenes.sh` · `CheckMaterialSwatches.sh` ·
 `CheckMaterialDenoise.sh` · `CheckMaterialInspector.sh` (needs the inspector's UI headers — not seated in this
 sandbox, so that one gate is RED for environment, not for regression) · `CheckTemporalIdentity.sh` (D10, the same
-estimator with moving geometry)
+estimator with moving geometry) · `CheckRestirSoak.sh` (roadmap #2, the 1 000-frame M-clamp soak — the slow one)
 
 Each gate compiles its CPU proofs with the system compiler (no Vulkan, no GPU, no window; third-party headers come
 from `ExternalPackages/` or the `~/.cache` mirrors) and runs them with fixed seeds, so every number below is
@@ -12,8 +12,8 @@ from `ExternalPackages/` or the `~/.cache` mirrors) and runs them with fixed see
 `/tmp/MaterialCodec.log`, `/tmp/MaterialScenes.log`, `/tmp/MaterialSwatches.log`, `/tmp/MaterialDenoise.log`).
 
 **Score: 110 coverage + 3,556 furnace + 211 codec + 158 inspector + 229 editable inspector + 102 scene + 65 swatch
-+ 97 denoise checks + 10 identity checks, 0 failures (the inspector pair as shipped; its gate needs UI headers absent
-here).**
++ 97 denoise checks + 10 identity checks + 6 soak checks, 0 failures (the same 6 soak checks at both lengths — the
+inspector pair as shipped; its gate needs UI headers absent here).**
 
 ---
 
@@ -819,14 +819,18 @@ with each tap's M capped against the receiver's **pre-merge** count, re-traces v
 ends up shading, and shades. `--restir-no-history-split` restores the old feedback so the fix is measurable rather
 than asserted.
 
-Measured (240×135, 4 candidates/frame, taps 4 = 4 taps, against a fresh 512-spp brute-force reference):
+Measured (240×135, 4 candidates/frame, taps 4 = 4 taps, against a fresh 512-spp brute-force reference). ⚠️ The
+2026-09-17 rows below are on a **shared** seed stream and predate D10's identity rule becoming the default in this
+mirror, so they are history, not the current reading — the taps *ordering*, which is the point of the table, survives the
+regeneration unchanged:
 
 | frames | taps 0 | taps 2 | taps 4 | fix OFF (`--restir-no-history-split`, taps 2) |
 |---|---|---|---|---|
 | 32 | 7 843.57 | 7 510.05 | **7 462.26** | 7 510.05 |
 | 64 | 7 623.46 | 7 294.70 | **7 163.18** | 7 294.70 |
 | 128 | 8 082.03 | 7 666.34 | **7 599.18** | 7 666.34 |
-| 128 (sheet, `--view default`) | 8 013.72 | 7 631.62 | **7 553.24** | 7 695.74 |
+| 128 (sheet, `--view default`, 2026-09-17) | 8 013.72 | 7 631.62 | **7 553.24** | 7 695.74 |
+| 128 (sheet, **regenerated 2026-09-18**, identity on by default) | 6 428.44 | 6 181.33 | **6 123.37** | 6 309.43 |
 
 - **The ordering is the proof**: more taps is now strictly better at every budget (before: 2 or 4 taps degraded
   against 0 taps, and 0 taps degraded against nothing). M is bounded: mean **41.7 / max 64** at frame 16, **50.4 /
@@ -851,8 +855,10 @@ Measured (240×135, 4 candidates/frame, taps 4 = 4 taps, against a fresh 512-spp
   brute-force arm resolves **four**, so the film's per-frame information differs by 4×; (b) the shaded estimate is
   zeroed for the ~12.7 % of pixels whose selected sample fails its visibility re-trace, which is a loss of energy the
   brute-force arm pays for with more shadow rays instead. And the reuse arm's error is *flat* across 32 → 128 frames
-  (7 387 → 7 223 → 7 632), i.e. what remains is bias/plateau, not variance that more frames can average away. The
-  next experiments are named in §13: sun-coin variance, the occluded-weight loss, and per-frame resolve rate.
+  (7 387 → 7 223 → 7 632 on the 2026-09-17 stream), i.e. what remains is bias/plateau, not variance that more frames can
+  average away — **§14.4 now measures that plateau properly on an independent stream and puts its onset at ~250 frames**,
+  which is the same conclusion with a longer lever. The next experiments are named in §13: sun-coin variance, the
+  occluded-weight loss, and per-frame resolve rate.
 
 ### 14.1b The plain path is bit-stable, and finding that out found a third fault
 
@@ -930,21 +936,32 @@ The user's hunch that raw path tracing may be the better use of cycles on this s
 and it is worth stating plainly rather than burying it. Both arms below are compared to the same ① (the 512-spp
 reference at 240×135, `/tmp/ref240.png`), and both resolve one shaded sample per pixel per frame:
 
-| arm (240×135, 128 frames, vs the 512-spp reference) | rays per pixel per frame | RMSE |
-|---|---|---|
-| plain path, 1 spp × 128 frames (one resolve/frame — ReSTIR's own rate) | 1 path + NEE | **971.89 (0.0148)** |
-| ReSTIR, 4 candidates × 128 frames, 4 taps | 1 path + 4 candidates × 2 NEE + 4 tap ray tests | **7 553.24 (0.1153)** |
+⚠️ **Re-measured 2026-09-18 with roadmap #7's independent stream**, which this table originally named as its own
+qualification. Every RMSE below is against the same ① (512-spp reference, stream 0); the columns differ only in whether
+the arm shares ①'s random numbers. `--seed-stream 1` is an independent draw of the same estimator, and `--seed-stream 0`
+is the identity, so the shared column reproduces the numbers this report has always quoted:
 
-The reservoir path lands **7.8× further** from the converged image than plain tracing does at the same resolve rate.
-Two honest qualifications, both measured rather than assumed:
+| arm (240×135, 128 frames, vs the 512-spp reference) | rays per pixel per frame | RMSE, shared stream | RMSE, **independent stream** |
+|---|---|---|---|
+| plain path, 1 spp × 128 frames (one resolve/frame — ReSTIR's own rate) | 1 path + NEE | 971.89 (0.0148) | **1 181.57 (0.0180)** |
+| ReSTIR, 4 candidates × 128 frames, 4 taps | 1 path + 4 candidates × 2 NEE + 4 tap ray tests | 6 123.37 (0.0934) | **5 991.04 (0.0914)** |
 
-- The reference is the *same* plain estimator with 4× the samples per pixel — 4 spp × 128 frames walks exactly the 512
-  seeds of the one-frame 512-spp render, which is why ② ≡ ① measures **AE 0** (and is the harness's own sanity gate).
-  So the plain figure above is a partial-mean-vs-full-mean discrepancy on a shared seed stream, which flatters plain by
-  at most ~15 % (variance algebra for (1/128)Σ_{i≤128} − (1/512)Σ_{i≤512}); the direction of the comparison is not in
-  doubt, the exact ratio is not to be quoted to three digits.
-- `--spp 4 --frames 128` (512 samples/px) is byte-identical to the 512-spp single-frame render, so "brute force at this
-  budget" and "the reference" are the same image by construction — there is no fourth panel to add here.
+The reservoir path lands **5.1× further** from the converged image than plain tracing does at the same resolve rate. The
+direction is unchanged and the factor is now honest; the previous "7.8×" was the artefact this section had already
+flagged, and the flag was worth raising — the correction is not the ~15 % the variance algebra predicted:
+
+- **The correlation flattered exactly one arm, and not by 15 %.** Plain's shared number (971.89) is a partial-mean-vs-
+  full-mean discrepancy against a reference built from a superset of its own seeds: it understates plain's error by
+  **21.6 %**. ReSTIR's shared number was *slightly pessimistic* (6 123.37 shared vs 5 991.04 independent, −2.2 %), because
+  its samples arrive through a reservoir selection rather than as the first 128 seeds of the reference's stream, so the
+  shared modes are not the same modes. The flattery was never a property of "sharing"; it was a property of *which*
+  samples were shared, and only measurement could say which way an arm would move.
+- The two invariants the harness relies on are untouched: `--seed-stream 0` is byte-identical to the shipped stream
+  (checked against the pre-change binary on both the plain and ReSTIR paths), and `--spp 4 --frames 128` on the *same*
+  stream is still byte-identical to the 512-spp single-frame render — the sanity gate above still reports **AE 0**.
+- The convergence sheet now prints both columns for the two arms that carry the headline claim (`⑨ THE FLOOR`), so this
+  table cannot drift from the evidence again: `RunRestirConvergence.sh` full → `plain 0 → 760.03`, `ReSTIR 6 181.33 →
+  6 078.44` at 4 spp × 128 frames / 2 taps, an 8.0× ratio in the same direction on the other budget pairing.
 
 Why the reuse does not pay on *this* level yet, in order of measured weight:
 - **The indirect pool exists on 16 % of surface pixels** (the share whose primary BSDF sample hits geometry; 41 % escape
@@ -958,6 +975,61 @@ Why the reuse does not pay on *this* level yet, in order of measured weight:
   high DI variance — the next scene, not this one. That is why fixing the two faults above was worth doing even though
   the headline RMSE is not yet favourable.
 
-Open items this reading names (all cheap, none assumed): sun-coin variance in the candidate pool, weight loss from
-dropped occluded selections, an independent reference (a second seed stream, so the floor can be measured rather than
-shared), and a 100 %-coverage indirect estimator (replay + shift mapping).
+Open items this reading named: sun-coin variance in the candidate pool, weight loss from dropped occluded selections, an
+independent reference, and a 100 %-coverage indirect estimator (replay + shift mapping). **The independent reference is
+done** (`--seed-stream`, roadmap #7, re-measured above); the other three stand.
+
+### 14.4 The clamp is the floor — a 1 000-frame soak (2026-09-18, roadmap #2)
+
+The sheets above run 128 frames. The ticket behind the spatial-reuse fix was that M *compounded* — mean 843 633 by frame
+20 — so the question the 128-frame sheets leave open is whether the capped form is still bounded four times further out,
+or merely slower to blow up. `CheckRestirSoak.sh full` runs 1 000 frames at 128×72 (4 candidates, 2 taps, one resolve per
+frame — the app's own rate) and reads the arithmetic:
+
+| frame | 1 | 25 | 50 | 100 | 250 | **1 000** |
+|---|---|---|---|---|---|---|
+| mean M | 3.8 | 59.8 | 59.4 | 59.3 | 60.1 | **58.9** |
+| max M | 4 | 84 | 84 | 84 | 84 | **84** |
+| shaded M | 9.3 | 156.1 | 156.5 | 153.8 | 155.7 | **154.2** |
+
+M saturates by frame 25 and is *still* at its saturated value 975 frames later — mean M grew 0.980× while the frame count
+grew 4.000×, max M is pinned at the same 84, the uint32 ceiling the shader stores M in was never approached, and all
+1 000 frames report zero non-finite or out-of-range samples. Against the pre-fix behaviour (843 633 at frame 20) this is
+not a smaller version of the same curve; it is a flat line.
+
+**The error is bounded with it — and that is the finding, not a footnote.** The soak measures the distance to a converged
+512-spp reference both ways at once, against the shared seed stream and against an independent one (roadmap #7), so the
+two effects cannot be confused:
+
+| arm, 128×72, one resolve per frame | vs a stream-0 reference (shared) | vs a stream-1 reference (**independent**) |
+|---|---|---|
+| ReSTIR, 4 candidates × 2 taps — 128 frames | 8 378.82 | 8 367.70 |
+| — 250 frames | 7 310.73 | 7 334.12 |
+| — 1 000 frames | 7 437.20 (+1.7 % over 250) | 7 423.79 (+1.2 % over 250) |
+| plain path, 4 spp — 250 frames | 389.79 | 734.05 |
+| — 1 000 frames | 511.76 (**+31 %**) | 627.62 (**−14.5 %**) |
+
+The plain arm keeps buying accuracy with frames; the ReSTIR arm does not. Reading the ReSTIR run at five lengths on the
+shared stream gives 7 310.73 · 7 635.93 · 7 391.16 · 6 918.20 · 7 437.20 — no secular trend, a ±5 % band around ≈7 340,
+not a slow decay; the gain happens earlier (8 367.70 at 128 frames → 7 334.12 at 250, −12 %) and stops. So the honest
+statement about the fix is two-sided: **the pre-merge cap bounds M, and a bounded M bounds the error — but it is also the
+floor.** With M saturating near 60, the temporal filter's effective memory is ≈M frames, and frames past that resample
+clamped weights (and their own correlated history) instead of adding information. Two consequences worth stating plainly:
+
+- The 128-frame sheets sit ~12 % above the reached floor and nothing past 250 frames improves on it, so §14.3's 5.1× is
+  not an artefact of an impatient frame budget — running the sheets to 1 000 frames would not move them.
+- Accuracy past this point has to come from the dials, not the clock: taps, candidates and indirect coverage (§14.3's
+  matrix and roadmap #5/#6). That is the opposite of the plain arm's behaviour, and it is why this ticket is not closed
+  by "run it longer".
+
+⚠️ The table also re-measures §14.3's correlation trap at a second configuration, and in the same direction: sharing
+flatters the **plain** arm by 1.88× at 250 frames (389.79 shared vs 734.05 independent) and ReSTIR by 0.3 %
+(7 310.73 vs 7 334.12). It also shows the trap's second edge — an error-versus-shared-reference curve is **not monotone
+in run length**: the plain arm reads 389.79 at 250 frames and *rises* to 511.76 at 1 000, because by then it has averaged
+away from the reference's own noise realisation, while on an independent reference the same pair falls 734.05 → 627.62.
+Nothing was wrong with the renderer. The gate therefore asserts on the independent reference and merely *prints* the
+shared one, and its ⑤ check is a control: the plain arm must improve over the same span (1 017.76 at 62 frames → 734.05
+at 250, −28 %), or ④'s flatness would be a blind metric rather than a clamped reservoir.
+
+Gate: `Exhibits/Workbench/Materials/CheckRestirSoak.sh [fast|full]` — GREEN at both lengths (full: 1 000 frames, ~7 min;
+fast: 250 frames, ~3 min), 0 failures, run with the shader's M warning live.

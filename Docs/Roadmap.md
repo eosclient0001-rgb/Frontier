@@ -8,15 +8,19 @@ the report keeps the evidence, this file keeps the queue. Percentages are engine
 
 ## A. Renderer / ReSTIR — ≈ 86 %
 
+> The ≈ 86 % is the author's hand-set scope aggregate from 32afd9f, not the mean of the rows below (that mean was
+> 57.8 % then and is 78.6 % now that #7 and #2's soak closed — the two items this section was waiting on). Left as set;
+> the rows carry the measured figures.
+
 | # | Item | | % | What's left → next step |
 |---|---|---|:--:|---|
 | 1 | Spatial-reuse convergence fix (history split + pre-merge cap) | ✅ | 95 % | One GPU A/B on the owner's card |
-| 2 | Temporal reuse, M growth bounded | ✅ | 92 % | 1 000-frame M-clamp soak (ticket open) |
+| 2 | Temporal reuse, M growth bounded | ✅ | 100 % | **The soak is run** (`CheckRestirSoak.sh`, GREEN at 1 000 frames): mean M 58.9 / max M 84, unchanged since frame 25 and 0.980x over a 4x longer run. The finding is two-sided — a bounded M bounds the *error* too, so the clamp is also the floor: ReSTIR stops improving past ~250 frames (7 334.12 → 7 423.79 on an independent stream) while the plain arm keeps improving (1 017.76 → 734.05, −28 %). Accuracy past this point is dials, not frames. Report §14.4 |
 | 3 | Indirect/GI pool in the CPU mirror | ✅ | 100 % | — (A/B: 7 387 vs 7 508 · 7 223 vs 7 295 · 7 632 vs 7 680) |
 | 4 | Indirect/GI pool in the kernel (`kFeatureGiReuse`, ON by default) | ⚠️ | 85 % | Landed text-verified; **needs the GPU run** |
 | 5 | Indirect coverage 16 % → 100 % (replay + shift mapping) | ❌ | 0 % | Design note only; the pool is blind to sky vertices |
 | 6 | Sun-coin variance, occluded-selection weight loss | ❌ | 10 % | Named and measured as the residual; no fix attempted |
-| 7 | Independent reference (second seed stream) for the RMSE floor | ❌ | 0 % | Today ② ≡ ① shares the plain seed stream |
+| 7 | Independent reference (second seed stream) for the RMSE floor | ✅ | 100 % | `--seed-stream N` (0 = the identity, verified byte-identical against the pre-change binary). The floor is measured, not shared: the plain arm moves 0 → **1 181.57** and ReSTIR 6 123.37 → **5 991.04**, so §14.3's headline is **5.1×** rather than 7.8× — and the flattery is per-arm (21.6 % for plain, −2.2 % for ReSTIR), not the ~15 % the variance algebra predicted. The convergence sheet prints both columns (`⑨ THE FLOOR`), so the table cannot drift from the evidence |
 | 8 | Quality dials (render scale, candidates, extra, taps slider, GI toggle) | ✅ | 100 % | Exposed and documented |
 | 9 | Materials M1–M10 + kernel K0–K5 | ✅ | 96 % | GPU pixels for the triptych, M10 level, denoiser A/B |
 | 10 | Deferred material work (M4c dispersion, glints, displacement ch20, Tier-B multi-slab) | ❌ | 0 % | Queued, unscheduled |
@@ -27,7 +31,7 @@ the report keeps the evidence, this file keeps the queue. Percentages are engine
 |---|---|---|:--:|---|
 | 11 | GPU render-verification (K0–K5, GI pool, M10 level, denoiser under motion) | ❌ | 0 % | **The single biggest open item** |
 | 12 | Owner's fullscale blur + fireflies report closed | ❌ | 0 % | Needs commit + tier + denoise setting from the test |
-| 13 | Brute-force-vs-reservoir budget study on GPU | ❌ | 0 % | Mirror says plain wins 7.8× at equal resolve rate (§14.3) |
+| 13 | Brute-force-vs-reservoir budget study on GPU | ❌ | 0 % | Mirror says plain wins **5.1×** at equal resolve rate on an independent stream (§14.3, re-measured with #7 — the old 7.8× was shared-stream flattery) |
 
 ## C. Dynamic geometry (BVH for moving and animated objects) — D6/D7 delivered · D8 refit · D9/D9b device path · D10 temporal identity
 

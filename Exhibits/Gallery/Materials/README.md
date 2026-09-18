@@ -126,28 +126,48 @@ build: the reprojection still wins by 17 % on the closing frame.
 - Kept-sheet hash (2026-09-17, `full`, post-fix): `22454e15…`. Deterministic — per (pixel, sample, frame) seeds, no
   time-dependent state.
 
-## Convergence sheet — the two reuse paths, before and after (2026-09-17)
+## Convergence sheet — the two reuse paths, before and after (regenerated 2026-09-18)
 
 `RestirConvergenceSheet.png`: eight cells of the same level at the same budget, one switch apart — the fix-evidence
-companion to the product sheet above, and the A/B for both faults in §14 of the proofs report.
+companion to the product sheet above, and the A/B for both faults in §14 of the proofs report. ⚠️ The numbers below are
+from the 2026-09-18 regeneration, which is the first with **D10's identity validation on by default**: every ReSTIR
+figure dated 2026-09-17 in this README and in §14 of the report was measured before that rule existed and is kept as
+history, not as the current reading. The direction of every comparison is unchanged; the absolute values moved.
 
 | panel | what it is | RMSE vs ① (display space) |
 |---|---|---|
 | ① reference | brute force, 512 spp, one frame | — |
-| ② brute force | 4 spp × 128 frames (the same 512 samples per pixel) | **0** — pixel-identical to ① |
-| ③ ReSTIR, 0 taps | spatial reuse off — the arm that used to be the only one that converged | 8013.72 (0.1223) |
-| ④ ReSTIR, 2 taps | the Standard tier's own tap count | **7631.62 (0.1165)** |
-| ⑤ ReSTIR, 4 taps | spatial reuse with the fix in | **7553.24 (0.1153)** |
-| ⑥ split OFF | ④ with `--restir-no-history-split` — spatial feeds temporal again | 7695.74 (0.1174) |
-| ⑦ indirect, no pool | ④ with `--restir-no-gi-reuse` — the pre-pool single-sample arm | 7680.03 (0.1172) |
-| ⑧ indirect pool on | ④ — ReSTIR GI-style reuse of the first-bounce vertex's NEE stratum | **7631.62 (0.1165)** |
+| ② brute force | 4 spp × 128 frames (the same 512 samples per pixel) | **0** — pixel-identical to ①, the sanity gate still holds |
+| ③ ReSTIR, 0 taps | spatial reuse off — the arm that used to be the only one that converged | 6428.44 (0.0981) |
+| ④ ReSTIR, 2 taps | the Standard tier's own tap count | **6181.33 (0.0943)** |
+| ⑤ ReSTIR, 4 taps | spatial reuse with the fix in | **6123.37 (0.0934)** |
+| ⑥ split OFF | ④ with `--restir-no-history-split` — spatial feeds temporal again | 6309.43 (0.0963) |
+| ⑦ indirect, no pool | ④ with `--restir-no-gi-reuse` — the pre-pool single-sample arm | 6087.87 (0.0929) |
+| ⑧ indirect pool on | ④ — ReSTIR GI-style reuse of the first-bounce vertex's NEE stratum | **6181.33 (0.0943)** |
+
+**⑨ The floor (roadmap #7).** Everything above is against ① on the *same* seed stream — deliberate, since that is what
+makes ② ≡ ① a gate. It also means each figure is a lower bound: a shared stream subtracts the noise the two arms have
+in common. The sheet now re-renders the two arms that carry the headline claim on an independent stream and prints both
+columns, so the size of that flattery is measured instead of estimated:
+
+| arm | shared stream | independent stream |
+|---|---|---|
+| plain, 4 spp × 128 frames | 0 (identical to ① by construction) | **760.03** |
+| ReSTIR, 4 candidates × 128 frames, 2 taps | 6181.33 | **6078.44** |
+
+- **More frames are not the lever** (roadmap #2, report §14.4): the same arm soaked to 1 000 frames is flat past ~250
+  frames — mean M 58.9 / max M 84, unchanged since frame 25 — while the plain arm keeps improving over the same span
+  (1 017.76 at 62 frames → 734.05 at 250, −28 %). The pre-merge clamp that fixed the compounding growth is also the
+  floor: with M saturating near 60 the temporal filter's memory is ~M frames, and more frames resample the clamped
+  weights instead of adding information. Past this point accuracy comes from taps, candidates and indirect coverage —
+  not from the clock (`Exhibits/Workbench/Materials/CheckRestirSoak.sh`).
 
 - ② and ① are the *same* estimator sampled the same way — 4 spp × 128 frames walks exactly the 512 seeds of the
   one-frame reference — so the pair is bit-identical and doubles as the harness's own sanity gate.
-- Per-frame M at frame 128 (all 240×135): ③ 50.5 (max 84) with the shaded reservoir unchanged at 50.5, ④/⑧ 50.5 with
-  the shaded 146.0, ⑥ 69.6 (max 84) — the old loop saturates at the clamp again, and ⑦ 146.0 identical to ⑧ (the
-  direct half is untouched by the pool switch). The pool reports on 16.0 % of surface pixels with shaded M 10.0 and
-  24.5 % of its selections occluded.
+- Per-frame M at frame 128 (all 240×135): ③ 63.1 (max 84) with the shaded reservoir unchanged at 63.1, ④/⑧ 63.1 with
+  the shaded 178.4, ⑥ 71.3 (max 84) — the old loop runs hotter than the split, and ⑦'s direct half is identical to ⑧'s
+  (the pool switch does not touch it). The pool reports on 16.0 % of surface pixels with shaded M 13.1 and 24.5 % of its
+  selections occluded.
 
 - **Read ③④⑤ left to right**: before the fix this read *backwards* (0 taps converged to 1952.52 by 128 frames while 2
   taps stalled at 4437.03 and 4 at 4660.38). It now reads forwards at every budget, and M stays bounded (mean 41.7 /
@@ -174,9 +194,11 @@ companion to the product sheet above, and the A/B for both faults in §14 of the
   reuse (GI pool)* checkbox off for the indirect half. Tiers: Minimal 0.5×/1 cand/0 taps · Economy 0.75×/2/1 ·
   Standard 1.0×/4/2 · High 1.0×/8/3 · Ultra 1.0×/16/4 (`FidelityClassifier`).
 - **Where brute force still wins (measured, not spun)**: at the same one-sample-per-frame resolve rate, plain path
-  tracing lands 971.89 from the 512-spp reference while the ReSTIR arm lands 7 553.24 — 7.8× further. The reference
-  shares the plain path's seed stream (that is why ② ≡ ①), so the exact ratio is approximate; the direction is not.
-  Why, and what would change it (16 % indirect coverage, occluded-selection weight loss, sun-coin variance, replay +
-  shift mapping): report §14.3.
+  tracing lands **1 181.57** from the 512-spp reference while the ReSTIR arm lands **5 991.04** — **5.1× further**, both
+  on an INDEPENDENT seed stream. Earlier printings said 7.8× against 971.89 vs 7 553.24; those figures compared the
+  arms against a reference sharing the plain arm's own seeds, which understated plain's error by 21.6 % (and slightly
+  *overstated* ReSTIR's, by 2.2 % — the correlation's effect is per-arm, not a uniform discount). The direction never
+  changed; the factor is now the honest one. Why, and what would change it (16 % indirect coverage, occluded-selection
+  weight loss, sun-coin variance, replay + shift mapping): report §14.3.
 - Harness: `Exhibits/Workbench/Materials/RunRestirConvergence.sh [fast|full]` (builds, renders, gates on non-finite
-  samples, prints the RMSE table and the sheet's sha256). Kept-sheet hash: `fbcc5382…`.
+  samples, prints the RMSE table, the ⑨ floor pair and the sheet's sha256). Kept-sheet hash (2026-09-18): `b61e528e…`.
