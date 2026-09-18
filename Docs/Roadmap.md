@@ -64,17 +64,25 @@ See `Docs/ProjectFormat.md` for the plan, the divergences and the measured sizes
 
 ## Weighted summary
 
-- Renderer/ReSTIR ≈ 86 % — everything left is GPU-verified or a deliberate research step (#5–7).
+- Renderer/ReSTIR ≈ 86 % (the hand-set figure under §A) — everything left is GPU-verified or a deliberate research
+  step: #5 (indirect coverage, the largest **measured** residual, and §14.4 says coverage/dials are what buys accuracy
+  past the clamp's floor), #6 (sun-coin and occluded-selection weight loss), #10 (deferred materials).
 - GPU verification ≈ 5 % — nothing in the sandbox can move it; it gates all remaining confidence.
-- Dynamic geometry ≈ 40 % — D6/D7 are built, CPU-proven and wired end to end; the remainder is D8/D9 (deformation and
-  GPU build) plus the GPU run that closes D6/D7.
-- Project format ≈ 8 % — deliberately unstarted; blocked on decisions, not on code.
-- Whole product ≈ 62 %.
+- Dynamic geometry ≈ 92 % (mean of D6–D10) — D8/D9/D9b are built and CPU-gated, D10 is delivered and gated; what is
+  left is the device run that closes D6/D7/D9, which is §B's item.
+- Project format ≈ 70 % (mean of #19–#28) — P1–P6 shipped and gated (§D), plus q4 answered in code; what is left is
+  the environment-lighting pair (#26/#27) and the branch designation (#28). The device-side AE = 0 parity run is owed
+  to §B, not here.
+- Whole product ≈ 66 % (mean of the 28 rows; 62 % before #7 and #2's soak closed and the project format landed).
 
 ## Next three, in order
 
 1. 🔎 Run the current tip on the GPU with the HUD's ReSTIR row open ("indirect pool on/off · N taps") and report
-   commit + tier + whether the blur/fireflies survive — closes #4 and #12 together.
-2. 📝 §10 answered (q4 = **CopyOnWrite**, taken in code) — P1–P6 shipped and gated; the only item left is the device-side AE=0 parity run.
-3. 🧭 Pick the next CPU-measurable build: **D8/D9** (dynamic BLAS update policy + GPU build for topology changes, next
-   per `Docs/DynamicGeometry.md` §6), replay + shift mapping (indirect 16 % → 100 %), or the sky probe bake.
+   commit + tier + whether the blur/fireflies survive — closes #4 and #12 together, and §B is where the P1–P6 device
+   parity run (#20) belongs too.
+2. ✅ Done since this list was written: #7 (independent reference — the floor is measured, and §14.3's headline is
+   5.1× not 7.8×) and #2's 1 000-frame soak (`CheckRestirSoak.sh` GREEN; the clamp bounds M *and* the error, so it is
+   also the floor — more frames buy nothing past ~250, coverage and dials do).
+3. 🧭 Pick the next CPU-measurable build: **replay + shift mapping** (indirect 16 % → 100 % — §14.3's biggest named
+   residual and the only item that moves the headline), the sun-coin/occluded-weight study (#6), or the sky probe bake
+   (#26, the smallest version that pays).
