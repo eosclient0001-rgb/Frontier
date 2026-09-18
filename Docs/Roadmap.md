@@ -60,7 +60,7 @@ See `Docs/ProjectFormat.md` for the plan, the divergences and the measured sizes
 | 25 | §10 open questions (8), esp. material assignment copy vs share | ✅ | 100 % | q4 answered **CopyOnWrite** and taken in code (project export slots); the rest documented defaults |
 | 26 | Environment lighting stage A — bake the sky probe | ❌ | 0 % | CPU-measurable; the smallest version that pays |
 | 27 | Environment lighting stage B — sky as a reservoir candidate | ❌ | 0 % | After A; fixes glass/specular sky variance |
-| 28 | "This is the new master branch" designation | ⚠️ | 0 % | Unanswered; work currently sits on `arena/01a0af43-slate` |
+| 28 | "This is the new master branch" designation | ✅ | 95 % | **Answered by the owner 2026-09-18: yes.** `main` is the repo's default branch and holds only the initial commit, so the promotion is [PR #3](https://github.com/unassignedinbox/Slate/pull/3) — 67 commits, `arena/01a0af43-slate` → `main`. A session can only push its own branch, so the merge click is the owner's; once it lands, `main` is this tree. Until then this branch is still the tip |
 
 ## Weighted summary
 
