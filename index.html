@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontier · SDF Terrain Generator</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">
+      <span class="brand-mark">▲</span>
+      <div class="brand-text">
+        <strong>Frontier</strong>
+        <em>SDF terrain generator · particles + field passes</em>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="btnUndo" title="Undo last destructive edit (Ctrl+Z)">↶ Undo</button>
+      <button id="btnReset">Reset view</button>
+      <button id="btnHelp" title="About this build">?</button>
+    </div>
+  </header>
+
+  <div id="main">
+    <aside id="panel">
+      <section class="sec open" data-sec="terrain">
+        <h2><span class="tw"></span>Terrain</h2>
+        <div class="body">
+          <label class="row"><span>Preset</span>
+            <select id="preset">
+              <option value="canyon">Canyon mesas</option>
+              <option value="badlands">Badlands</option>
+              <option value="alpine">Alpine ridges</option>
+              <option value="volcano">Volcanic cone</option>
+              <option value="coastal">Coastal dunes</option>
+            </select>
+          </label>
+          <label class="row"><span>Seed</span>
+            <span class="duo"><input id="seed" type="number" value="1284" min="0" max="99999"><button id="btnDice" title="Random seed">⚄</button></span>
+          </label>
+          <label class="row"><span>Relief</span><input id="relief" type="range" min="0.4" max="1.8" step="0.01" value="1"><b>1.00</b></label>
+          <label class="row"><span>Roughness</span><input id="rough" type="range" min="0" max="1" step="0.01" value="0.55"><b>0.55</b></label>
+          <button id="btnGenerate" class="primary">⟳ Generate terrain</button>
+          <p class="hint">Regenerating clears all sculpting and erosion edits.</p>
+        </div>
+      </section>
+
+      <section class="sec" data-sec="sculpt">
+        <h2><span class="tw"></span>Sculpt SDF</h2>
+        <div class="body">
+          <label class="row"><span>Tool</span>
+            <select id="tool">
+              <option value="0">Off (orbit camera)</option>
+              <option value="1">Raise</option>
+              <option value="2">Lower / carve</option>
+              <option value="3">Smooth</option>
+              <option value="4">Flatten</option>
+              <option value="5">Terrace</option>
+              <option value="6">Add blob (CSG union)</option>
+              <option value="7">Cut blob (CSG subtract)</option>
+            </select>
+          </label>
+          <label class="row"><span>Radius</span><input id="brushRadius" type="range" min="0.6" max="7" step="0.1" value="2.4"><b>2.4</b></label>
+          <label class="row"><span>Strength</span><input id="brushStrength" type="range" min="0.05" max="1" step="0.01" value="0.45"><b>0.45</b></label>
+          <label class="row"><span>Falloff</span><input id="brushFalloff" type="range" min="0" max="1" step="0.01" value="0.55"><b>0.55</b></label>
+          <p class="hint">Left-drag on the terrain to sculpt. The SDF is re-normalized (Eikonal repair) after every stroke, so distances stay exact.</p>
+        </div>
+      </section>
+
+      <section class="sec open" data-sec="particles">
+        <h2><span class="tw"></span>Erosion · Particles</h2>
+        <div class="body">
+          <div class="row buttons">
+            <button id="btnParticles" class="primary">▶ Run</button>
+            <button id="btnBurst" title="Spawn one heavy rain burst">Burst</button>
+          </div>
+          <label class="row"><span>Agents</span>
+            <select id="agent">
+              <option value="0">Rain &amp; sheet runoff</option>
+              <option value="1">River current</option>
+              <option value="2">Both</option>
+            </select>
+          </label>
+          <label class="row"><span>Intensity</span><input id="rainRate" type="range" min="0.02" max="1" step="0.01" value="0.45"><b>0.45</b></label>
+          <label class="row"><span>Detachment</span><input id="detach" type="range" min="0" max="1" step="0.01" value="0.5"><b>0.50</b></label>
+          <label class="row"><span>Capacity</span><input id="capacity" type="range" min="0.05" max="1" step="0.01" value="0.45"><b>0.45</b></label>
+          <label class="row"><span>Deposition</span><input id="deposit" type="range" min="0.05" max="1" step="0.01" value="0.6"><b>0.60</b></label>
+          <label class="row check"><input id="showGrains" type="checkbox" checked><span>Show agents &amp; sediment</span></label>
+          <p class="hint">Agents carry real sediment. Pits self-limit: a resting agent dumps its load instead of digging, and every cell has a regenerating cut budget.</p>
+        </div>
+      </section>
+
+      <section class="sec" data-sec="field">
+        <h2><span class="tw"></span>Erosion · Field passes</h2>
+        <div class="body">
+          <label class="row"><span>Iterations</span><input id="iters" type="range" min="4" max="120" step="1" value="36"><b>36</b></label>
+          <label class="row"><span>Incision K</span><input id="fldK" type="range" min="0" max="1" step="0.01" value="0.45"><b>0.45</b></label>
+          <label class="row"><span>Channel sharpness n</span><input id="fldN" type="range" min="0.8" max="2" step="0.05" value="1.5"><b>1.50</b></label>
+          <label class="row"><span>Hillslope diffusion</span><input id="fldD" type="range" min="0" max="0.5" step="0.005" value="0.12"><b>0.120</b></label>
+          <label class="row"><span>Thermal talus</span><input id="fldT" type="range" min="0" max="1" step="0.01" value="0.5"><b>0.50</b></label>
+          <label class="row"><span>Detail sharpen</span><input id="fldDetail" type="range" min="0" max="1" step="0.01" value="0.55"><b>0.55</b></label>
+          <button id="btnField" class="primary">Run field passes</button>
+          <div id="fieldProgress" class="progress hidden"><div class="bar"></div><span class="txt"></span></div>
+          <p class="hint">Stream-power incision + sediment routing run on the extracted SDF surface. Diffusion is flow-gated so channels stay crisp.</p>
+        </div>
+      </section>
+
+      <section class="sec" data-sec="water">
+        <h2><span class="tw"></span>Water</h2>
+        <div class="body">
+          <label class="row"><span>Level</span><input id="waterLevel" type="range" min="-2" max="8" step="0.05" value="0.6"><b>0.60</b></label>
+          <label class="row check"><input id="waterOn" type="checkbox" checked><span>Show water</span></label>
+        </div>
+      </section>
+
+      <section class="sec" data-sec="view">
+        <h2><span class="tw"></span>View</h2>
+        <div class="body">
+          <label class="row"><span>Sun angle</span><input id="sunAngle" type="range" min="0" max="360" step="1" value="135"><b>135</b></label>
+          <label class="row"><span>Sun height</span><input id="sunHeight" type="range" min="0.15" max="1.2" step="0.01" value="0.7"><b>0.70</b></label>
+          <label class="row"><span>Exposure</span><input id="exposure" type="range" min="0.5" max="2" step="0.01" value="1.05"><b>1.05</b></label>
+          <label class="row"><span>Detail grain</span><input id="grainAmt" type="range" min="0" max="1" step="0.01" value="0.6"><b>0.60</b></label>
+        </div>
+      </section>
+    </aside>
+
+    <div id="viewport">
+      <canvas id="glcanvas"></canvas>
+      <div id="brushBadge" class="hidden">sculpting</div>
+      <div id="glError" class="hidden">
+        <h3>WebGL2 unavailable</h3>
+        <p id="glErrorMsg"></p>
+        <p>This engine needs WebGL2 with float color buffers (EXT_color_buffer_float). Try Chrome/Edge/Firefox with hardware acceleration enabled.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer id="statusbar">
+    <span id="statGl" class="pill">WebGL2 …</span>
+    <span id="statFps" class="pill">– fps</span>
+    <span id="statAgents" class="pill">agents 0</span>
+    <span id="statMass" class="pill">cut 0 m³ · fill 0 m³</span>
+    <span class="spacer"></span>
+    <span class="pill dim">LMB sculpt/orbit · RMB pan · wheel zoom · WASD+QE fly (RMB look)</span>
+  </footer>
+</div>
+
+<div id="helpModal" class="modal hidden">
+  <div class="sheet">
+    <h3>Frontier · combined SDF terrain engine</h3>
+    <p>This build fuses two earlier experiments: GPU <strong>particle erosion</strong> on a true 3D signed-distance volume (realistic carving), and <strong>field-pass erosion</strong> (stream-power incision, sediment routing, thermal talus) for large-scale drainage structure.</p>
+    <ul>
+      <li><strong>Anti-pit guards</strong> — capacity-limited detachment, shear thresholds, hardness armoring, a resting-agent deposit rule, and a per-cell regenerating cut budget stop agents from drilling bottomless holes.</li>
+      <li><strong>Anti-blur passes</strong> — diffusion is gated off inside channels (flow-area mask), incision uses a sharp n≈1.5 law, and a detail-sharpen pass re-injects ridge micro-relief on fresh rock.</li>
+      <li><strong>Proper SDF sculpting</strong> — density and CSG brushes edit the volume directly, then a banded Eikonal solver re-normalizes distances.</li>
+    </ul>
+    <button id="btnCloseHelp" class="primary">Close</button>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

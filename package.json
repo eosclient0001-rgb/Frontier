@@ -1,0 +1,17 @@
+{
+  "name": "frontier-sdf-terrain",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontier — SDF terrain generator: GPU particle erosion + geomorphic field passes on a true 3D signed-distance volume.",
+  "scripts": {
+    "start": "python3 -m http.server 5173 --bind 0.0.0.0",
+    "test": "node --test tests/*.test.js",
+    "lint:glsl": "node tests/glsl-lint.mjs src/gen.js src/sculpt.js src/particles.js src/field-erosion.js src/render.js src/reduce.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eosclient0001-rgb/Frontier.git"
+  },
+  "license": "ISC"
+}
