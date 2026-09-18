@@ -1083,3 +1083,7 @@ re-evaluated for the direction to the *new* receiver) and the receiver must supp
 `f_r(ω)·cos_r·G(p_r,x_v)·V(p_r,x_v)` against the vertex's own subpath. The estimator part is standard; the
 risk is bias, so the change has to land behind its own switch and be read against a converged reference, the way
 `--restir-no-gi-reuse` is read today. That is the next build, and §14.3's 16 % is the number it has to move.
+
+Harness: `Exhibits/Workbench/Materials/ReportGiCoverage.sh [frames]` re-runs both configurations and prints exactly the
+two tables above (≈ 1 min). The shares are config-robust — at 128×72 the same run reads escape 68.9 %, covered
+11.9 %, unusable 4.5 %, emitter 2.8 % — so the gap is a property of the estimator, not of the viewpoint.
