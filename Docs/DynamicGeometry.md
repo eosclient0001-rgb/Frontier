@@ -337,7 +337,7 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
   (two stages: rewrite the leaf records from the deformed soup, then re-quantise one dispatch per level, deepest first)
   and `Engine/Shaders/BlasBuild.slang` (five stages: Morton prepass · per-level octant partition · childBase scan ·
   emit · leaf runs), both lowering through `Tools/Build/CheckShaders.sh` (15/15) and both pinned to the CPU mirror by
-  §⑩ of the two-level gate (B1–B78: the layout bytes, the interior test, the exponent rounding, the unary counts, the
+  §⑩ of the two-level gate (B1–B115: the layout bytes, the interior test, the exponent rounding, the unary counts, the
   rank rule, the block units of triangleBase, the CMake entries that keep them in the compile gate, and the host half).
   ⚠️ The build is the octant partition plus the format rule, not H-PLOC's cluster merge — and §5 has the measurement
   that says why the top-down clustering variant is not what to ship (it walks 60–95 % slower). What the shipped rule

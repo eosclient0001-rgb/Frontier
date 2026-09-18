@@ -899,13 +899,15 @@ static void RunBlasKernelPins()
 {
     std::printf("\n⑩ D9 — the GPU kernels, pinned to the mirror the §⑨ gates measure\n");
 
-    std::string Layout, Refit, Build, Mirror, MirrorH, Table, Traversal, Payload, PayloadCpp;
+    std::string Layout, Refit, Build, Mirror, MirrorH, Table, Traversal, Payload, PayloadCpp, Pipeline, Runner;
     if (!Audit::ReadFile("Engine/Shaders/BlasLayout.slang", Layout)
      || !Audit::ReadFile("Engine/Shaders/BlasRefit.slang", Refit)
      || !Audit::ReadFile("Engine/Shaders/BlasBuild.slang", Build)
      || !Audit::ReadFile("Engine/GeometricRaster/BlasDevicePayload.h", Payload)
      || !Audit::ReadFile("Engine/GeometricRaster/BlasDevicePayload.cpp", PayloadCpp)
      || !Audit::ReadFile("Engine/GeometricRaster/BlasBuildMirror.h", MirrorH)
+     || !Audit::ReadFile("Engine/GeometricRaster/BlasBuildPipeline.cpp", Pipeline)
+     || !Audit::ReadFile("Exhibits/Workbench/Traversal/BlasDeviceRun.cpp", Runner)
      || !Audit::ReadFile("Engine/GeometricRaster/BlasBuildMirror.cpp", Mirror)
      || !Audit::ReadFile("Engine/GeometricRaster/BlasBuildMirror.h", MirrorH)
      || !Audit::ReadFile("CMakeLists.txt", Table)
@@ -1025,6 +1027,25 @@ static void RunBlasKernelPins()
         { "Build", "if (Index < NodeCount) BlasScratch[BlasNodeSlotAt(Index) + 23u] = Inclusive - LeafTriangles;", 1u, "B93 (D9b) the run scan's within-block prefix, over the WHOLE arena in node order" },
         { "Build", "BlasScratch[4u] = Running;", 1u, "B94 (D9b) stage 6 publishes the arena's leaf triangle count, which is what BlasBuildPipeline::Verify compares with the mirror's count — a run that wrote nothing cannot pass on bytes alone" },
         { "Build", "const uint Triangles = BlasBlockSums[gl_WorkGroupID.x] + BlasScratch[At + 23u];", 1u, "B95 (D9b) the run emit's triangleBase, assembled from the run scan the same way the childBase is assembled from the other one" },
+        // ── ⑩c the Vulkan half and the run (D9b): text pins, because the plumbing cannot be executed here. The point of
+        //    these is the CROSS-FILE binding — the stage numbers the plan emits have to be the stage numbers the shader
+        //    tests, or a device would run the wrong compute pass and no gate would notice.
+        { "Build", "if (Stage == 2u)", 1u, "B100 (D9b) the shader's stage 2 is the one the plan dispatches second in a level: the count+scan" },
+        { "Build", "if (Stage == 4u)", 1u, "B101 ...stage 4 is the block scan, which the plan dispatches THIRD in a level — between the two stages that produce and consume the number it computes" },
+        { "Build", "if (Stage == 3u)", 1u, "B102 ...stage 3 is the emit, dispatched fourth, because it reads what stage 4 wrote" },
+        { "Build", "if (Stage == 5u)", 1u, "B103 ...and the run path's three stages keep their numbers: 5 counts and scans within each block" },
+        { "Build", "if (Stage == 6u)", 1u, "B104 ...6 turns the block totals into prefixes" },
+        { "Build", "if (Stage == 7u)", 1u, "B105 ...and 7 writes triangleBase and the leaf records, one lane per node" },
+        { "Pipeline", "Constants.Stage = Entry.Stage;", 2u, "B106 (D9b) the pipeline dispatches the PLAN's stage number rather than a numbering of its own: the loop is data-driven, so this pin and the five above are what keep the two files' stage numbers the same numbers" },
+        { "Pipeline", "for (const BlasDispatch& Entry : Plan)", 2u, "B107 (D9b) ...and it iterates the plan both times (the build and the refit), never a hand-written sequence" },
+        { "Pipeline", "ComputeBarrier(Cmd, Api);", 2u, "B108 (D9b) a compute->compute barrier after every dispatch: a storage-buffer write is not visible to the next dispatch without it, and every stage here reads what the previous one wrote" },
+        { "Pipeline", "BuildRange.size       = static_cast<uint32_t>(sizeof(BlasBuildConstants));", 1u, "B109 (D9b) the push range is the payload struct's size, so the 48 B block cannot drift from the shader's without the static_assert above firing first" },
+        { "Pipeline", "RefitRange.size       = static_cast<uint32_t>(sizeof(BlasRefitConstants));", 1u, "B110 (D9b) ...and the refit's 16 B one" },
+        { "Pipeline", "Api.CreateComputePipelines(Device, VK_NULL_HANDLE, 1u,", 1u, "B111 (D9b) the pipelines come from the .spv files the compile gate lowers (BlasBuild.spv / BlasRefit.spv), not from anything embedded or checked in" },
+        { "Runner", "\"libvulkan.so.1\", \"libvulkan.so\"", 1u, "B112 (D9b) the runner opens the loader at runtime — the reason nothing has to link -lvulkan, and the reason this file compiles where no loader exists" },
+        { "Runner", "no Vulkan loader found", 1u, "B113 (D9b) a machine without a device is reported as SKIPPED (exit 2) rather than as a pass: an unattended run must not read 'no GPU' as 'verified'" },
+        { "Runner", "--refit", 2u, "B114 (D9b) the refit path is opt-in on the command line and checked against a MIRROR refit of the same deformation, so 'the device wrote something' cannot pass for 'the device was right'" },
+        { "Runner", "PackBlasSoup(Deformed, DeformedSoup)", 1u, "B115 (D9b) ...with the deformed soup packed by the same packer the build uses, which is the only way the two soups can be compared at all" },
         { "Build", "layout(std430, binding = 7) buffer BlasBlockSumExtent { uint BlasBlockSums[]; };", 1u, "B96 (D9b) the scan's scratch buffer is a binding of its own — the kernel's eighth, and the one the refit does NOT have" },
         { "Payload", "return BlasGroupCountStub(NodeSlots, kBlasBuildLocalSize);", 1u, "B97 (D9b) the host sizes that buffer from the same block width the kernel scans with, so a mismatch between the two is a refused allocation rather than an out-of-bounds write" },
         { "PayloadCpp", "Out.push_back({ 4u, Level, 1u,", 1u, "B98 (D9b) the plan dispatches the block scan between the count+scan and the emit — §⑨i is what checks that order means something" },
@@ -1043,7 +1064,9 @@ static void RunBlasKernelPins()
              : std::strcmp(Key, "Table") == 0  ? Table
              : std::strcmp(Key, "Payload") == 0 ? Payload
              : std::strcmp(Key, "PayloadCpp") == 0 ? PayloadCpp
-             : std::strcmp(Key, "MirrorH") == 0 ? MirrorH : Traversal;
+             : std::strcmp(Key, "MirrorH") == 0 ? MirrorH
+             : std::strcmp(Key, "Pipeline") == 0 ? Pipeline
+             : std::strcmp(Key, "Runner") == 0 ? Runner : Traversal;
     };
     for (const Audit::TextPin& Pin : Pins)
     {

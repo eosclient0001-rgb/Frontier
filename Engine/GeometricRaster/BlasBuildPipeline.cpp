@@ -379,7 +379,9 @@ bool BlasBuildPipeline::CreateJob(VkPhysicalDevice Physical, VkDevice InDevice, 
     const uint64_t NodeWords   = uint64_t(5u) * Out.NodeSlots * 4u;          // [vec4] kNodeBlocks per slot
     const uint64_t LeafWords   = uint64_t(3u) * Out.NodeSlots * 4u;          // [vec4] the leaf arena's upper bound
     const uint64_t SoupWords   = Out.Payload.Soup.size();
-    const uint64_t SortedWords = uint64_t(2u) * Out.NodeSlots;               // [uvec2] one entry per TRIANGLE: NodeSlots
+    // [uvec2] one entry per TRIANGLE. The arena bound IS the triangle count (payload.NodeSlotBound), so the ping and the
+    //    pong are each NodeSlots entries — 8 B apiece.
+    const uint64_t SortedBytes = uint64_t(Out.NodeSlots) * 8u;
     const uint64_t ScratchWords = BlasBuildScratchWords(Out.NodeSlots);
     const uint64_t BlockWords   = BlasBlockSumsWords(Out.NodeSlots);
     const uint64_t LevelWords   = Out.NodeSlots;
@@ -388,8 +390,8 @@ bool BlasBuildPipeline::CreateJob(VkPhysicalDevice Physical, VkDevice InDevice, 
         CreateBuffer(Api, Physical, Target, NodeWords * 4u, Out.Nodes, OutError) &&
         CreateBuffer(Api, Physical, Target, LeafWords * 4u, Out.Leaves, OutError) &&
         CreateBuffer(Api, Physical, Target, SoupWords * 4u, Out.Soup, OutError) &&
-        CreateBuffer(Api, Physical, Target, SortedWords * 8u, Out.SortedA, OutError) &&
-        CreateBuffer(Api, Physical, Target, SortedWords * 8u, Out.SortedB, OutError) &&
+        CreateBuffer(Api, Physical, Target, SortedBytes, Out.SortedA, OutError) &&
+        CreateBuffer(Api, Physical, Target, SortedBytes, Out.SortedB, OutError) &&
         CreateBuffer(Api, Physical, Target, ScratchWords * 4u, Out.Scratch, OutError) &&
         CreateBuffer(Api, Physical, Target, LevelWords * 4u, Out.Levels, OutError) &&
         CreateBuffer(Api, Physical, Target, BlockWords * 4u, Out.Blocks, OutError);

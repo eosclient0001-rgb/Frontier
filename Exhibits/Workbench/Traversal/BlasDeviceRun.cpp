@@ -36,6 +36,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdarg>
+#include <functional>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -416,13 +417,16 @@ int main(int ArgumentCount, char** Arguments)
     Say("arena: %u node slots (bound = triangles / 3 — a cap, not a reservation) · the mirror filled %u of them",
         Job.NodeSlots, MirrorMetrics.NodeCount);
 
-    auto SubmitAndWait = [&](bool Record) -> bool
+    // ⚠️ The recording happens INSIDE this lambda, after BeginCommandBuffer: passing a pre-recorded buffer in would
+    //    record into a command buffer that is not in the recording state, which is invalid usage and — the first time it
+    //    ran on a real device — would have been the whole run's failure, on a machine nobody could debug it on.
+    auto SubmitAndWait = [&](const std::function<bool()>& Record) -> bool
     {
         Api.ResetCommandBuffer(Command, 0u);
         VkCommandBufferBeginInfo Begin{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
         Begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         if (Api.BeginCommandBuffer(Command, &Begin) != VK_SUCCESS) return false;
-        if (!Record) return false;
+        if (!Record()) return false;
         if (Api.EndCommandBuffer(Command) != VK_SUCCESS) return false;
         VkSubmitInfo Submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
         Submit.commandBufferCount = 1u;
@@ -434,7 +438,7 @@ int main(int ArgumentCount, char** Arguments)
     };
 
     const std::chrono::steady_clock::time_point BuildStart = std::chrono::steady_clock::now();
-    const bool Recorded = SubmitAndWait(Pipeline.RecordBuild(Command, Job, true, Error));
+    const bool Recorded = SubmitAndWait([&] { return Pipeline.RecordBuild(Command, Job, true, Error); });
     const double BuildMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - BuildStart).count();
     if (!Recorded)
     {
@@ -487,7 +491,7 @@ int main(int ArgumentCount, char** Arguments)
         else
         {
             const std::chrono::steady_clock::time_point RefitStart = std::chrono::steady_clock::now();
-            const bool RefitRecorded = SubmitAndWait(Pipeline.RecordRefit(Command, Job, RefitMaxLevel, true, Error));
+            const bool RefitRecorded = SubmitAndWait([&] { return Pipeline.RecordRefit(Command, Job, RefitMaxLevel, true, Error); });
             const double RefitMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - RefitStart).count();
             if (!RefitRecorded) Fail("② recording the refit: %s", Error.c_str());
             else
