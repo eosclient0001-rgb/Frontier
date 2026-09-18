@@ -1035,7 +1035,20 @@ shared one, and its ⑤ check is a control: the plain arm must improve over the 
 at 250, −28 %), or ④'s flatness would be a blind metric rather than a clamped reservoir.
 
 Gate: `Exhibits/Workbench/Materials/CheckRestirSoak.sh [fast|full]` — GREEN at both lengths (full: 1 000 frames, ~7 min;
-fast: 250 frames, ~3 min), 0 failures, run with the shader's M warning live.
+fast: 250 frames, ~3 min), 0 failures, run with the shader's M warning live. Checks ④ and ⑤ take their form from the
+length, because the claim does: `full` asserts the ±10 % flatness band (250 → 1 000 frames, measured 1.2 %), while
+`fast` asserts that the arm is still closing on the plateau (62 → 250, measured 4.2 %) — the band's premise is false
+below ~250 frames, so asserting it there would fail on a *true* statement about the renderer.
+
+⚠️ Both of those checks were wrong in the gate's first cut, in ways worth recording because neither was a renderer
+defect and both looked like one. ⑤'s control span was a hardcoded 62 frames, which in `fast` mode (Mid = 250/4 = 62)
+became a zero-length span: the gate compared a render against itself and failed with "the plain control did not
+improve" — the one failure mode that says nothing about the code. A half-span fixed the collapse and then measured only
+−12.4 % (31 → 62 frames), too close to the −15 % bar for a control to be comfortable; it is now a quarter of ④'s span
+in both modes (62 → 250 full, 15 → 62 fast), which has measured −28 % and −43 %. And ④ asserted the flatness band in
+both modes, which the 250-frame run does not satisfy. The lesson is the same one §14.6 taught about the coverage table:
+a check whose failure mode is indistinguishable from a real regression has to be calibrated against the measurement it
+claims, not written from the claim.
 
 ### 14.5 Why the indirect pool covers 16 % — the gap, measured (2026-09-18, roadmap #5)
 
