@@ -89,10 +89,19 @@ namespace Frontier
         //    14 % faster to build and 3.9 % faster to walk.
         Octant,
         // Eight COUNT-BALANCED bins, then the SAH keeps whichever of the seven boundaries pay for themselves (merging
-        //    neighbours where the merged box is cheaper than the extra child). Measured slower than `Octant` above; the
-        //    bottom-up merge H-PLOC actually does (merging siblings that are already spatially close) is a different
-        //    algorithm from this top-down binning and is still the open item.
-        Clustered
+        //    neighbours where the merged box is cheaper than the extra child). Measured slower than `Octant` above, and
+        //    the merge is what does it: a merged child's box is the union of two bins' worth of space, and the traversal
+        //    pays per ray that descends into it. `Collapse` below is the same cut WITHOUT the merge, which separates the
+        //    two effects this rule conflated.
+        Clustered,
+        // The COLLAPSE step of an H-PLOC-shaped build, in its cheapest faithful form: at every level the range is cut into
+        //    exactly eight count-balanced pieces, so a node has eight children by construction and the wide format's slots
+        //    are full — no top-down merge, no nearest-neighbour search, just the eight-way collapse of the Morton order.
+        //    This is the rule that attacks the one quality gap the shipped rule admits to (§⑨g: 46.7 % of the slots empty,
+        //    because an octant split yields however many octants a range happens to occupy). Whether full slots at every
+        //    level pay for the wider boxes a uniform cut produces is a question for the same walk measurement, and the
+        //    answer is in the header's table.
+        Collapse
     };
 
     class BlasBuildMirror
@@ -141,6 +150,18 @@ namespace Frontier
                                  const bool SlotPresent[8]) noexcept;
 
         // ── Slot accessors the kernels mirror (see the layout note in InstanceAcceleration.cpp).
+        // ── D9b: the build kernel's two-step scan, as the CPU model of it ────────────────────────────────────────────
+        //    The kernel could not be run here, so the part of it that is arithmetic rather than layout is modelled and
+        //    checked numerically: the same counts through the same block width must produce the same childBase the
+        //    serial construction produced. The three lines that matter are in BlasBuild.slang's stages 2 and 4 — the
+        //    within-block prefix, the block total, and the block prefix — and §⑨j runs this model over the SHIPPED
+        //    build's own interior counts (§⑩ pins the three lines, so the model and the kernel cannot drift apart).
+        //    `Counts` are one level's interior-child counts, in node order; `OutBases` gets one childBase per count.
+        //    Returns false if the block sums would run past `BlockSumsWords` entries.
+        [[nodiscard]] static bool ScanLevelChildBases(const std::vector<uint32_t>& Counts, uint32_t TileStart,
+                                                      uint32_t BlockWidth, uint32_t BlockSumsWords,
+                                                      std::vector<uint32_t>& OutBases) noexcept;
+
         static bool  SlotIsInterior(const float* Node, uint32_t Slot) noexcept;
         static uint32_t SlotTriangleRun(const float* Node, uint32_t Slot, uint32_t& OutFirst) noexcept;
         static uint32_t InteriorChildIndex(const float* Node, uint32_t Slot) noexcept;

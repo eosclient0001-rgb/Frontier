@@ -31,6 +31,8 @@
 //    deformed-soup and level-table packers, and the dispatch plan §⑨i checks (leaves, then one dispatch per level from
 //    the table's deepest down to 0) — so what remains for a device session is the Vulkan plumbing around it: buffers,
 //    descriptors, barriers, and the run itself. See Docs/DynamicGeometry.md §5.
+//    ⚠️ TO RUN IT ON A MACHINE WITH A GPU: `bash Exhibits/Workbench/Traversal/RunBlasDevice.sh --refit`, which checks this
+//       kernel's output against `BlasBuildMirror::RefitLevelOrder`'s byte for byte.
 //
 // NOTE: GLSL source lowered by glslc -fshader-stage=compute.
 #version 460

@@ -14,7 +14,9 @@
 #    Both seat from ExternalPackages/ when the submodules are initialised, from an env override, or from the ~/.cache
 #    mirrors. Compiles TraversalIndex.cpp, the ONLY translation unit that defines TINYBVH_IMPLEMENTATION, together
 #    with the new InstanceAcceleration.cpp, so the two SIMD layouts cannot diverge across TUs.
-#    §⑨/⑩ (D9) also compile BlasBuildMirror.cpp
+#    §⑨/⑩ (D9/D9b) also compile BlasBuildMirror.cpp (the CPU mirror), BlasDevicePayload.cpp (the host payload and the
+#    dispatch plan) and BlasBuildPipeline.cpp (the Vulkan plumbing) — the last needs -Wno-missing-field-initializers
+#    because Vulkan's structs are initialised sType-first, which -Wextra reports once per struct.
 #    the CPU mirror the two GPU kernels are transcribed from and pinned to
 #    it holds the ONE definition of the quantiser (InstanceAcceleration.cpp's EncodeNode forwards to it).
 set -uo pipefail
@@ -48,7 +50,8 @@ Bin="$(mktemp -u /tmp/TwoLevelBvh.XXXXXX)"
 # -ffunction-sections -fdata-sections -Wl,--gc-sections: drops MaterialSwatchStructure::Export (and the SceneCodec/cgltf
 #   chain behind it) — this proof reads the level's triangles, it never writes glTF. -DFRONTIER_CPU_PORT, as the other
 #   CPU-side proofs set.
-if ! g++ -std=c++20 -O2 -Wall -Wextra -Werror -Wno-uninitialized -Wno-array-bounds -Wno-maybe-uninitialized -DFRONTIER_CPU_PORT \
+if ! g++ -std=c++20 -O2 -Wall -Wextra -Werror -Wno-uninitialized -Wno-array-bounds -Wno-maybe-uninitialized \
+     -Wno-missing-field-initializers -DFRONTIER_CPU_PORT \
      -ffunction-sections -fdata-sections -Wl,--gc-sections -mavx2 -mfma -msse4.2 \
      -I Engine/GeometricRaster -I Engine/DeviceExchange -I Engine/ContentInterchange \
      -I "$Vk/Vulkan-Headers/include" -I "$TB" \
@@ -57,6 +60,7 @@ if ! g++ -std=c++20 -O2 -Wall -Wextra -Werror -Wno-uninitialized -Wno-array-boun
      Engine/GeometricRaster/TraversalIndex.cpp \
      Engine/GeometricRaster/BlasBuildMirror.cpp \
      Engine/GeometricRaster/BlasDevicePayload.cpp \
+     Engine/GeometricRaster/BlasBuildPipeline.cpp \
      Engine/ContentInterchange/MaterialSwatchStructure.cpp \
      Engine/DeviceExchange/OrientationClassifier.cpp \
      -o "$Bin" 2>/tmp/TwoLevelBvh.build; then

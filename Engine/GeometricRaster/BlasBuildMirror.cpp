@@ -207,6 +207,46 @@ void BlasBuildMirror::QuantiseNode(float* Node, const float SlotMin[8][3], const
 //                                              slot accessors (the kernels mirror these)
 //------------------------------------------------------------------------------------------------------------------------
 
+bool BlasBuildMirror::ScanLevelChildBases(const std::vector<uint32_t>& Counts, uint32_t TileStart, uint32_t BlockWidth,
+                                          uint32_t BlockSumsWords, std::vector<uint32_t>& OutBases) noexcept
+{
+    OutBases.clear();
+    if (BlockWidth == 0u) return false;
+    const uint32_t Nodes = static_cast<uint32_t>(Counts.size());
+    const uint32_t Blocks = Nodes / BlockWidth + ((Nodes % BlockWidth) != 0u ? 1u : 0u);
+    if (Blocks > BlockSumsWords) return false;
+
+    // stage 2 — each lane counts one node, the workgroup scans its own 128 counts (Hillis–Steele, the shader's loop),
+    //    and the last lane publishes the block's total.
+    std::vector<uint32_t> BlockTotals(Blocks, 0u);
+    OutBases.assign(Nodes, 0u);
+    for (uint32_t Block = 0u; Block < Blocks; ++Block)
+    {
+        const uint32_t Lo = Block * BlockWidth;
+        const uint32_t Hi = std::min(Nodes, Lo + BlockWidth);
+        uint32_t Inclusive = 0u;
+        for (uint32_t I = Lo; I < Hi; ++I)
+        {
+            OutBases[I] = Inclusive;          // the exclusive prefix = the inclusive one minus this lane's own value
+            Inclusive += Counts[I];
+        }
+        BlockTotals[Block] = Inclusive;       // the shader's Inclusive for the last lane of the block
+    }
+
+    // stage 4 — one workgroup walks the block totals and turns them into exclusive prefixes in place.
+    uint32_t Running = 0u;
+    for (uint32_t Block = 0u; Block < Blocks; ++Block)
+    {
+        const uint32_t Total = BlockTotals[Block];
+        BlockTotals[Block] = Running;
+        Running += Total;
+    }
+
+    // stage 3 — the emit adds the two halves back together, plus the level's tile start.
+    for (uint32_t I = 0u; I < Nodes; ++I) OutBases[I] += TileStart + BlockTotals[I / BlockWidth];
+    return true;
+}
+
 bool BlasBuildMirror::SlotIsInterior(const float* Node, uint32_t Slot) noexcept
 {
     return IsInteriorMeta(MetaOf(Node, Slot));
@@ -538,7 +578,8 @@ bool BlasBuildMirror::BuildHPloc(const std::vector<TriangleIndex>& Triangles, st
         {
             EmitRuns(W.Lo, W.Hi, W.Depth, Staged);
         }
-        else if (Partition == BlasPartition::Clustered || W.Depth >= kMortonDepth)
+        else if (Partition == BlasPartition::Clustered || Partition == BlasPartition::Collapse ||
+                 W.Depth >= kMortonDepth)
         {
             // Eight count-balanced bins, then the SAH chooses which of the seven boundaries to keep — merging neighbours
             //    where the merged box is cheaper than the extra child. A mask of zero would mean a single child covering
@@ -565,6 +606,9 @@ bool BlasBuildMirror::BuildHPloc(const std::vector<TriangleIndex>& Triangles, st
                 }
             }
 
+            // `Collapse` IS this cut with every boundary kept (the mask stays all-ones): eight children per node, full
+            //    slots, and each child's box the box of one contiguous slice. The SAH search below is what `Clustered`
+            //    adds on top, and §⑨g measures the two separately because the merge and the cut are different trades.
             uint32_t BestMask = 0xFFu;
             if (Partition == BlasPartition::Clustered && Size > 8u * kMaxTrianglesPerLeaf)
             {

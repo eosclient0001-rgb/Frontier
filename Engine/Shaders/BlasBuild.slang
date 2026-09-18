@@ -38,23 +38,33 @@
 //                          i.e. the blob's bytes, so the tile loop computes each element's rank within its octant
 //                          explicitly instead of using atomics. The stage also writes each child's range, its preferred
 //                          slot and the node's total leaf triangles.
-//    Stage 2 — SCAN        one workgroup: exclusive prefix sum of the level's interior-child counts. Children are numbered
-//                          in ASCENDING SLOT ORDER (the rank contract the traversal's imask pop depends on), which is why
-//                          this is a scan over the level in node order rather than an atomic ticket per node.
-//    Stage 3 — EMIT        one workgroup per node: take each child's exact bounds from the geometry its range names,
+//    Stage 2 — COUNT+SCAN  one workgroup per 128 node slots: each lane counts its own node's interior children, the
+//                          workgroup scans them, and the block total goes to `BlasBlockSums`. Children are numbered in
+//                          ASCENDING SLOT ORDER (the rank contract the traversal's imask pop depends on), which is why this
+//                          is a scan over the level in node order rather than an atomic ticket per node.
+//    Stage 4 — BLOCK SCAN  one workgroup: exclusive prefix of the block totals, and the next level's base/count. Still a
+//                          serial loop, but one iteration per BLOCK (nodes / 128) rather than per node.
+//    Stage 3 — EMIT        one lane per node: take each child's exact bounds from the geometry its range names,
 //                          assign the eight slots (octant preference, free-slot pool), write the node's p/exponents/
 //                          qlo/qhi, its meta bytes, its imask and its childBase, hand each interior child its range, and
 //                          record its stored slot and level.
-//    Stage 4 — RUNS        assign every node's triangleBase in node order (leaf runs are concatenated in BFS node order,
-//                          and inside a node in ascending stored slot, which is what makes `firstTri` a bit position in
-//                          the node's own run) and write the leaf records from the soup.
+//    Stage 5 — RUNS COUNT+SCAN   the run scan's first half: leaf triangles per node, scanned within the block.
+//    Stage 6 — RUNS BLOCK SCAN   the second half: block prefixes, and the arena's total leaf triangles.
+//    Stage 7 — RUNS EMIT         every node's triangleBase in node order (leaf runs are concatenated in BFS node order,
+//                                and inside a node in ascending stored slot, which is what makes `firstTri` a bit position
+//                                in the node's own run) and the leaf records themselves.
+//
+// ⚠️ The two scans are what the file used to admit were serial: stage 2 was one workgroup looping over every node of the
+//    level, and the run assignment was one workgroup looping over the whole arena. Both are now block-local scans plus a
+//    block prefix sum, and the guard lines §⑩ pins (the single-workgroup ones) are gone with them: the plan's group
+//    counts and every pin that named those lines moved with the change.
 //
 // ⚠️ NOT RUN ON A GPU. No Vulkan device in the development sandbox: this file is compile-gated by
 //    Tools/Build/CheckShaders.sh and text-pinned by §⑩ of Exhibits/Workbench/Traversal/TwoLevelBvhProof.cpp against the
-//    CPU mirror (`BlasBuildMirror::BuildHPloc`), which §⑨a/⑨b/⑨c/⑨g then walk, measure and clock. Two parts below are
-//    deliberately the simple ones and say so where they are: the scan and the run assignment are one-workgroup steps
-//    (O(level nodes) and O(all nodes)), and the emit is single-threaded per node. Those are the first things to replace
-//    with a device prefix sum once this has been run once.
+//    CPU mirror (`BlasBuildMirror::BuildHPloc`), which §⑨a/⑨b/⑨c/⑨g then walk, measure and clock.
+//    ⚠️ TO RUN IT ON A MACHINE WITH A GPU: `bash Exhibits/Workbench/Traversal/RunBlasDevice.sh --refit`. That script
+//       lowers this file, compiles the runner with the Vulkan-Headers only (the loader is opened at runtime), dispatches
+//       the plan in BlasDevicePayload.cpp, and compares the device's node/leaf/level bytes with the mirror's.
 //
 // NOTE: GLSL source lowered by glslc -fshader-stage=compute.
 #version 460
@@ -71,19 +81,32 @@ layout(std430, binding = 3) buffer BlasSortedExtent    { uvec2 BlasSortedA[]; };
 layout(std430, binding = 4) buffer BlasSortedAltExtent { uvec2 BlasSortedB[]; };   // pong
 layout(std430, binding = 5) buffer BlasScratchExtent { uint BlasScratch[]; }; // one block per node slot + a header
 layout(std430, binding = 6) buffer BlasLevelExtent   { uint BlasLevels[]; };  // written here, read by the refit kernel
+// D9b: the per-workgroup totals of a parallel scan (one entry per block of 128 node slots). Both scans use it, at
+//    different times: the childBase scan during each level, the run scan once at the end. ⚠️ It is a SCAN SCRATCH, not a
+//    result: after the block-scan stage it holds the exclusive prefix of the blocks, which is what the stages after it
+//    read. ⚠️ Sized ceil(NodeCount / 128) by the host — `BlasBlockSumsWords()` in BlasDevicePayload.h is the one place
+//    that expression lives.
+layout(std430, binding = 7) buffer BlasBlockSumExtent { uint BlasBlockSums[]; };
 
 // ─── the scratch: one block per node slot, holding that node's children ──────────────────────────────────────────────
-// Header: [0] the level's base node slot · [1] the level's node count · [2] the level index · [3] reserved.
+// Header — ⚠️ the level's base/count is PING-PONGED BY LEVEL PARITY, because a level's block scan computes the NEXT
+//    level's pair while the rest of the current level still reads its own: with one pair the emit would see the next
+//    level's base and write the wrong childBase, and a barrier between them would be the only other way out.
+//    [0], [1]   even levels: the level's base node slot · its node count
+//    [2], [3]   odd levels:  the same pair (stage 4 writes the next level's pair into the other one)
+//    [4]        total leaf triangles written (stage 6 — the host reads it back as a check against the mirror)
+//    [5..7]     reserved
 // Per node, `kBlasScratchStride` uints:
 //    +0..15   eight child entries: the range of each ([lo, hi)). An entry with lo == hi is EMPTY.
 //    +16      the node's total leaf triangles   (the format's cap is 8 slots × 3 = 24, which rule 1 relies on)
 //    +17, +18 the node's own range
-//    +19      childBase — where this node's interior children start (stage 2; the mirror's §⑨c invariant is that it is
-//             always beyond this node)
+//    +19      this node's slice of the childBase scan: its EXCLUSIVE prefix WITHIN its 128-slot block (stage 2). The
+//             absolute base is that plus the block's own prefix (stage 4) plus the level's tile start — added in the
+//             emit, because a block-local scan cannot know where its block sits in the level.
 //    +20      how many entries stage 1 filled (informational; emptiness is lo == hi)
 //    +21      each entry's PREFERRED slot, three bits per entry (its first triangle's octant at this depth)
 //    +22      each entry's STORED slot, three bits per entry (stage 3, after the pool resolves the preferences)
-//    +23      reserved
+//    +23      this node's slice of the RUN scan: its exclusive prefix of leaf triangles within its block (stage 5)
 //
 // ⚠️ The entries are what makes both halves of the rule expressible in one kernel: the octant case fills all eight (one
 //    per occupied octant), the packed case fills ceil(n/3) runs, and the depth-exhausted case fills eight pieces — and
@@ -96,7 +119,8 @@ const uint kBlasScratchStride = 24u;
 //    implementation of the same normalisation.
 layout(push_constant) uniform BlasBuildConstants
 {
-    uint Stage;         // [-]   0 prepass · 1 partition · 2 scan · 3 emit · 4 runs
+    uint Stage;         // [-]   0 prepass · 1 partition · 2 count+scan · 3 emit · 4 block scan · 5 runs count+scan ·
+                        //       6 block scan · 7 runs emit
     uint Level;         // [lvl] the level being partitioned / emitted
     uint TriangleCount; // [cnt] triangles in the soup and in the leaf arena
     uint NodeCount;     // [cnt] node slots the arena may use (a cap, not a reservation)
@@ -133,6 +157,35 @@ uint BlasSpread(uint Value)
     return Result;
 }
 
+// The workgroup's own inclusive scan (Hillis–Steele over the 128 lanes) — the first half of both prefix sums this kernel
+//    needs. ⚠️ Every lane of the workgroup MUST reach it: the barriers below are workgroup-wide, so a lane that returned
+//    early because its node slot is past the level would hang the group. Out-of-range lanes therefore enter with zero.
+//    Returns this lane's inclusive prefix; the block's total is the last lane's value.
+shared uint BlasScan[128];
+uint BlasBlockScan(uint Value)
+{
+    const uint Lane = gl_LocalInvocationID.x;
+    const uint Lanes = gl_WorkGroupSize.x;
+    BlasScan[Lane] = Value;
+    memoryBarrierShared();
+    barrier();
+    for (uint Step = 1u; Step < Lanes; Step <<= 1u)
+    {
+        uint Read = 0u;
+        if (Lane >= Step) Read = BlasScan[Lane - Step];
+        memoryBarrierShared();
+        barrier();
+        if (Lane >= Step) BlasScan[Lane] += Read;
+        memoryBarrierShared();
+        barrier();
+    }
+    return BlasScan[Lane];
+}
+
+// The level's base/count pair for a given level — the parity ping-pong is the header's, not the caller's.
+uint BlasLevelBase(uint ForLevel) { return BlasScratch[2u * (ForLevel & 1u) + 0u]; }
+uint BlasLevelNodes(uint ForLevel) { return BlasScratch[2u * (ForLevel & 1u) + 1u]; }
+
 void main()
 {
     const uint Thread = gl_GlobalInvocationID.x;
@@ -154,9 +207,10 @@ void main()
         }
         if (Thread == 0u)
         {
-            BlasScratch[0] = 0u;                   // the root is node slot 0
+            BlasScratch[0] = 0u;                   // the root is node slot 0 — level 0's pair (even, so slots 0 and 1)
             BlasScratch[1] = TriangleCount > 0u ? 1u : 0u;
-            BlasScratch[2] = 0u;
+            BlasScratch[2] = 0u;                   // level 1's pair starts empty: stage 4 fills it
+            BlasScratch[3] = 0u;
             const uint Root = BlasNodeSlotAt(0u);
             BlasScratch[Root + 17u] = 0u;
             BlasScratch[Root + 18u] = TriangleCount;
@@ -168,8 +222,8 @@ void main()
     // ─── stage 1: the level's partition — this is the sort, one level at a time ──────────────────────────────────────
     if (Stage == 1u)
     {
-        const uint NodeBase = BlasScratch[0];
-        const uint Nodes = BlasScratch[1];
+        const uint NodeBase = BlasLevelBase(Level);
+        const uint Nodes = BlasLevelNodes(Level);
         const uint Slot = NodeBase + gl_WorkGroupID.x;
         if (gl_WorkGroupID.x >= Nodes) return;
         const uint At = BlasNodeSlotAt(Slot);
@@ -296,45 +350,74 @@ void main()
         return;
     }
 
-    // ─── stage 2: childBase, in ascending slot order ─────────────────────────────────────────────────────────────────
-    // ⚠️ One workgroup, and the sum is a serial loop. It is O(level nodes); a device prefix sum replaces it without
-    //    changing a byte.
+    // ─── stage 2: count each node's interior children, and scan them WITHIN the block ───────────────────────────────
+    // One workgroup per 128 node slots of the level. The level's slots are dense ([NodeBase, NodeBase + Nodes)), so the
+    //    children of the whole level tile the arena from NodeBase + Nodes on — and each parent's childBase is its slice
+    //    of that tile, in node order, which is what puts every interior child at a HIGHER slot than its parent (§⑨c
+    //    measures that invariant).
+    // ⚠️ This stage used to be one workgroup with a serial O(level nodes) loop. It is the same sum, computed the way a
+    //    device computes it: each lane counts its own node, the workgroup scans its 128 counts, and the per-block totals
+    //    go to `BlasBlockSums` for the block scan (stage 4) that turns them into absolute bases. Nothing about the
+    //    RESULT changes — the emit adds the two halves back together — which is why the mirror's bytes still stand.
     if (Stage == 2u)
     {
-        if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x != 0u) return;
-        const uint NodeBase = BlasScratch[0];
-        const uint Nodes = BlasScratch[1];
-        // The level's slots are dense ([NodeBase, NodeBase + Nodes)), so the children of the whole level tile the arena
-        //    from NodeBase + Nodes on — and each parent's childBase is its slice of that tile, in node order, which is
-        //    what puts every interior child at a HIGHER slot than its parent (§⑨c measures that invariant).
-        uint Next = NodeBase + Nodes;
-        for (uint I = 0u; I < Nodes; ++I)
+        const uint NodeBase = BlasLevelBase(Level);
+        const uint Nodes = BlasLevelNodes(Level);
+        const uint Index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+        uint Interior = 0u;
+        if (Index < Nodes)
         {
-            const uint At = BlasNodeSlotAt(NodeBase + I);
-            uint Interior = 0u;
+            const uint At = BlasNodeSlotAt(NodeBase + Index);
             for (uint Entry = 0u; Entry < 8u; ++Entry)
             {
                 const uint Count = BlasScratch[At + 2u * Entry + 1u] - BlasScratch[At + 2u * Entry + 0u];
                 if (Count > kBlasTriPerLeaf) ++Interior;
             }
-            BlasScratch[At + 19u] = Next;
-            Next += Interior;
         }
-        BlasScratch[0] = NodeBase + Nodes;   // the next level's base
-        BlasScratch[1] = Next - (NodeBase + Nodes);
+        const uint Inclusive = BlasBlockScan(Interior);            // every lane enters, in range or not
+        if (Index < Nodes) BlasScratch[BlasNodeSlotAt(NodeBase + Index) + 19u] = Inclusive - Interior;
+        if (gl_LocalInvocationID.x == gl_WorkGroupSize.x - 1u) BlasBlockSums[gl_WorkGroupID.x] = Inclusive;
         return;
     }
 
-    // ─── stage 3: emit the level's nodes ─────────────────────────────────────────────────────────────────────────────
-    // ⚠️ Thread 0 of each workgroup emits its node: the child-bound scans below are O(child range), so this is the part
-    //    a real build would parallelise across the workgroup's lanes. Kept serial here because it is the part that must
-    //    match BlasBuildMirror's bytes exactly, and a serial transcription is the one that can be pinned line by line.
+    // ─── stage 4: the block scan — one workgroup over the per-block totals of stage 2 ────────────────────────────────
+    // ⚠️ The second workgroup-wide step, and the only one that is still a serial loop: it is O(nodes / 128) — one
+    //    iteration per BLOCK, not per node, which is the 128× reduction that made the parallel scan worth doing. It
+    //    turns the block totals into exclusive prefixes IN PLACE and publishes the next level's pair: the level's
+    //    children tile the arena from NodeBase + Nodes on (the mirror's §⑨c invariant), so the next level's base is that
+    //    tile's start and its count is the level's total interior children.
+    //    A level with no nodes writes a zero count, and every later stage of that level — and the levels the host still
+    //    dispatches after it — no-op, which is what lets the host loop to a fixed cap with no readback.
+    if (Stage == 4u)
+    {
+        if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x != 0u) return;
+        const uint NodeBase = BlasLevelBase(Level);
+        const uint Nodes = BlasLevelNodes(Level);
+        const uint Blocks = (Nodes + gl_WorkGroupSize.x - 1u) / gl_WorkGroupSize.x;
+        uint Running = 0u;
+        for (uint Block = 0u; Block < Blocks; ++Block)
+        {
+            const uint Total = BlasBlockSums[Block];
+            BlasBlockSums[Block] = Running;
+            Running += Total;
+        }
+        BlasScratch[2u * ((Level + 1u) & 1u) + 0u] = NodeBase + Nodes;
+        BlasScratch[2u * ((Level + 1u) & 1u) + 1u] = Running;
+        return;
+    }
+
+    // ─── stage 3: emit the level's nodes, one lane per node ─────────────────────────────────────────────────────────
+    // Every node of a level is emitted by its own lane, so the O(child range) bounds gathering below is spread across the
+    //    level instead of serialised behind one thread. What each node writes is untouched by that: the childBase is the
+    //    level's tile start (NodeBase + Nodes) plus the node's block prefix (stage 4) plus its within-block offset
+    //    (stage 2) — the same number stage 2 used to compute in one serial pass, assembled from its two halves.
     if (Stage == 3u)
     {
-        const uint NodeBase = BlasScratch[0];
-        const uint Nodes = BlasScratch[1];
-        const uint Slot = NodeBase + gl_WorkGroupID.x;
-        if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x >= Nodes) return;
+        const uint NodeBase = BlasLevelBase(Level);
+        const uint Nodes = BlasLevelNodes(Level);
+        const uint Index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+        if (Index >= Nodes) return;
+        const uint Slot = NodeBase + Index;
         const uint At = BlasNodeSlotAt(Slot);
         const bool ScatteredIsA = ((Level + 1u) & 1u) == 0u;   // the array this level's partition scattered into
         const uint Preferred = BlasScratch[At + 21u];
@@ -382,7 +465,9 @@ void main()
 
         vec4 Node[5];
         for (uint W = 0u; W < kBlasNodeBlocks; ++W) Node[W] = vec4(0.0f);
-        uint Meta = 0u, Imask = 0u, RunPosition = 0u, ChildBase = BlasScratch[At + 19u], NextChild = ChildBase;
+        uint Meta = 0u, Imask = 0u, RunPosition = 0u, NextChild = 0u;
+        const uint ChildBase = NodeBase + Nodes + BlasBlockSums[gl_WorkGroupID.x] + BlasScratch[At + 19u];
+        NextChild = ChildBase;
         uint Stored = 0u;
         for (uint S = 0u; S < 8u; ++S)   // ascending STORED slot: the order the children are numbered in, the order the
         {                                 // traversal ranks them by, and the order a node's leaf runs are laid out in
@@ -435,64 +520,97 @@ void main()
         return;
     }
 
-    // ─── stage 4: triangleBase, and the leaf records ─────────────────────────────────────────────────────────────────
+    // ─── stage 5: each node's leaf triangles, scanned WITHIN its block ──────────────────────────────────────────────
     // The runs are concatenated in node order and, inside a node, in ascending STORED SLOT order — so a node's meta
     //    offsets are positions inside its own run, and the primitive order inside a run is the geometry's, not the soup's.
-    // ⚠️ One workgroup, serial over the nodes. A device prefix sum over the per-node leaf counts replaces this loop
-    //    without changing a byte.
-    if (Stage == 4u)
+    //    Same two-step scan as stage 2, over the WHOLE arena this time (node order, not one level's), because the runs
+    //    are laid out in node order. The count comes out of the entries stage 1/3 left behind, so a slot whose run is
+    //    empty or interior contributes nothing.
+    if (Stage == 5u)
     {
-        if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x != 0u) return;
-        uint Triangles = 0u;   // [cnt] leaf records written so far — the running triangleBase / 3
-        for (uint Slot = 0u; Slot < NodeCount; ++Slot)
+        const uint Index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+        uint LeafTriangles = 0u;
+        if (Index < NodeCount)
         {
-            vec4 Node[5];
-            for (uint W = 0u; W < kBlasNodeBlocks; ++W) Node[W] = BlasNodes[kBlasNodeBlocks * Slot + W];
-            BlasSetTriBase(Node, Triangles * kBlasTriBlocks);
-
-            const uint At = BlasNodeSlotAt(Slot);
-            const uint Stored = BlasScratch[At + 22u];
-            const bool SortedIsA = (BlasLevels[Slot] & 1u) == 0u;
-
-            // Entries in ascending stored slot: find each leaf child's position inside the run first, so a slot's
-            //    `firstTri` is the offset a ray's hit bit will carry.
-            uint FirstOfEntry[8];
-            uint RunPosition = 0u;
-            for (uint S = 0u; S < 8u; ++S)
-            {
-                for (uint Entry = 0u; Entry < 8u; ++Entry)
-                {
-                    if (BlasByteOf(Stored, Entry) != S) continue;
-                    const uint RunLo = BlasScratch[At + 2u * Entry + 0u];
-                    const uint RunHi = BlasScratch[At + 2u * Entry + 1u];
-                    if (RunHi <= RunLo || (RunHi - RunLo) > kBlasTriPerLeaf) continue;   // empty, or an interior child
-                    FirstOfEntry[Entry] = RunPosition;
-                    RunPosition += RunHi - RunLo;
-                }
-            }
-            // ...then the records themselves, straight out of the soup.
+            const uint At = BlasNodeSlotAt(Index);
             for (uint Entry = 0u; Entry < 8u; ++Entry)
             {
+                const uint Count = BlasScratch[At + 2u * Entry + 1u] - BlasScratch[At + 2u * Entry + 0u];
+                if (Count >= 1u && Count <= kBlasTriPerLeaf) LeafTriangles += Count;
+            }
+        }
+        const uint Inclusive = BlasBlockScan(LeafTriangles);       // every lane enters, in range or not
+        if (Index < NodeCount) BlasScratch[BlasNodeSlotAt(Index) + 23u] = Inclusive - LeafTriangles;
+        if (gl_LocalInvocationID.x == gl_WorkGroupSize.x - 1u) BlasBlockSums[gl_WorkGroupID.x] = Inclusive;
+        return;
+    }
+
+    // ─── stage 6: the block scan over stages 5's totals — the same shape as stage 4 ─────────────────────────────────
+    if (Stage == 6u)
+    {
+        if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x != 0u) return;
+        const uint Blocks = (NodeCount + gl_WorkGroupSize.x - 1u) / gl_WorkGroupSize.x;
+        uint Running = 0u;
+        for (uint Block = 0u; Block < Blocks; ++Block)
+        {
+            const uint Total = BlasBlockSums[Block];
+            BlasBlockSums[Block] = Running;
+            Running += Total;
+        }
+        BlasScratch[4u] = Running;   // the leaf arena's triangle count, for the host's post-build check
+        return;
+    }
+
+    // ─── stage 7: triangleBase, and the leaf records — one lane per node ────────────────────────────────────────────
+    if (Stage == 7u)
+    {
+        const uint Slot = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+        if (Slot >= NodeCount) return;
+        const uint At = BlasNodeSlotAt(Slot);
+        const uint Triangles = BlasBlockSums[gl_WorkGroupID.x] + BlasScratch[At + 23u];
+        const uint Stored = BlasScratch[At + 22u];
+        const bool SortedIsA = (BlasLevels[Slot] & 1u) == 0u;
+
+        vec4 Node[5];
+        for (uint W = 0u; W < kBlasNodeBlocks; ++W) Node[W] = BlasNodes[kBlasNodeBlocks * Slot + W];
+        BlasSetTriBase(Node, Triangles * kBlasTriBlocks);
+
+        // Entries in ascending stored slot: find each leaf child's position inside the run first, so a slot's `firstTri`
+        //    is the offset a ray's hit bit will carry.
+        uint FirstOfEntry[8];
+        uint RunPosition = 0u;
+        for (uint S = 0u; S < 8u; ++S)
+        {
+            for (uint Entry = 0u; Entry < 8u; ++Entry)
+            {
+                if (BlasByteOf(Stored, Entry) != S) continue;
                 const uint RunLo = BlasScratch[At + 2u * Entry + 0u];
                 const uint RunHi = BlasScratch[At + 2u * Entry + 1u];
-                if (RunHi <= RunLo || (RunHi - RunLo) > kBlasTriPerLeaf) continue;
-                for (uint I = RunLo; I < RunHi; ++I)
-                {
-                    const uint Primitive = SortedIsA ? BlasSortedA[I].y : BlasSortedB[I].y;
-                    if (Primitive >= TriangleCount) continue;
-                    const vec4 V0 = BlasSoup[3u * Primitive + 0u];
-                    const vec4 V1 = BlasSoup[3u * Primitive + 1u];
-                    const vec4 V2 = BlasSoup[3u * Primitive + 2u];
-                    const uint Block = kBlasTriBlocks * (Triangles + FirstOfEntry[Entry] + (I - RunLo));
-                    BlasLeaves[Block + 0u] = vec4(V2.xyz - V0.xyz, 0.0f);
-                    BlasLeaves[Block + 1u] = vec4(V1.xyz - V0.xyz, 0.0f);
-                    BlasLeaves[Block + 2u] = vec4(V0.xyz, uintBitsToFloat(Primitive));
-                }
+                if (RunHi <= RunLo || (RunHi - RunLo) > kBlasTriPerLeaf) continue;   // empty, or an interior child
+                FirstOfEntry[Entry] = RunPosition;
+                RunPosition += RunHi - RunLo;
             }
-
-            Triangles += RunPosition;
-            for (uint W = 0u; W < kBlasNodeBlocks; ++W) BlasNodes[kBlasNodeBlocks * Slot + W] = Node[W];
         }
+        // ...then the records themselves, straight out of the soup.
+        for (uint Entry = 0u; Entry < 8u; ++Entry)
+        {
+            const uint RunLo = BlasScratch[At + 2u * Entry + 0u];
+            const uint RunHi = BlasScratch[At + 2u * Entry + 1u];
+            if (RunHi <= RunLo || (RunHi - RunLo) > kBlasTriPerLeaf) continue;
+            for (uint I = RunLo; I < RunHi; ++I)
+            {
+                const uint Primitive = SortedIsA ? BlasSortedA[I].y : BlasSortedB[I].y;
+                if (Primitive >= TriangleCount) continue;
+                const vec4 V0 = BlasSoup[3u * Primitive + 0u];
+                const vec4 V1 = BlasSoup[3u * Primitive + 1u];
+                const vec4 V2 = BlasSoup[3u * Primitive + 2u];
+                const uint Block = kBlasTriBlocks * (Triangles + FirstOfEntry[Entry] + (I - RunLo));
+                BlasLeaves[Block + 0u] = vec4(V2.xyz - V0.xyz, 0.0f);
+                BlasLeaves[Block + 1u] = vec4(V1.xyz - V0.xyz, 0.0f);
+                BlasLeaves[Block + 2u] = vec4(V0.xyz, uintBitsToFloat(Primitive));
+            }
+        }
+        for (uint W = 0u; W < kBlasNodeBlocks; ++W) BlasNodes[kBlasNodeBlocks * Slot + W] = Node[W];
         return;
     }
 }

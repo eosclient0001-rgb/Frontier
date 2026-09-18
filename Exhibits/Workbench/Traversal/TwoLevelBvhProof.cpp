@@ -961,7 +961,7 @@ static void RunBlasKernelPins()
         { "Build", "BlasSortedB[Destination] = uvec2(Key, BlasSortedA[Index].y);", 1u, "B27 the octant partition is the sort: a stable scatter by the octant at this depth, ping-pong between two arrays" },
         { "Build", "for (uint Other = 0u; Other < Lane; ++Other) if (Octants[Other] == Octant) ++Rank;", 1u, "B28 stable by construction — a tile-local rank, never an atomic ticket, because the order decides the blob's bytes" },
         { "Build", "if (RunHi - RunLo <= kBlasTriPerLeaf) LeafTriangles += RunHi - RunLo;", 1u, "B29 a child entry of 1..3 triangles is a leaf, more is an interior child — the mirror's split, on the shared entry list" },
-        { "Build", "uint Next = NodeBase + Nodes;", 1u, "B30 children are numbered in ascending slot order from the level's own end: childBase is a scan, not a ticket" },
+        { "Build", "BlasScratch[2u * ((Level + 1u) & 1u) + 0u] = NodeBase + Nodes;", 1u, "B30 children are numbered in ascending slot order from the level's own end — the level's tile starts where its own nodes end, and the scan (D9b: block-local + block prefix) is what numbers them; nothing here is an atomic ticket, so the order cannot depend on scheduling" },
         { "Build", "for (uint S = 0u; S < 8u; ++S)   // ascending STORED slot:", 1u, "B31 the emit walks the children in ascending STORED slot — the order the traversal ranks them in and the order the runs are laid out" },
         { "Build", "if (Take > 7u) return;", 1u, "B32 more than eight children cannot be represented: the kernel stops rather than emitting a malformed node" },
         { "Build", "Meta = BlasSetByte(Meta, S, (BlasCountToUnary(Count) << 5u) | RunPosition);", 1u, "B33 the leaf meta is the unary count and the slot's first triangle inside the node's run" },
@@ -982,7 +982,7 @@ static void RunBlasKernelPins()
         { "Build", "if (Hi - Lo <= 8u * kBlasTriPerLeaf)", 1u, "B41 rule 1 on the device: a range that fits one node's eight slots is leaf runs of three, never recursed into" },
         { "Mirror", "if (Fits && !Baseline)", 1u, "B42 rule 1 in the mirror — the same rule, and the only configuration that turns it off is the D9-v1 baseline §⑨g measures against" },
         { "Build", "if (Level >= kBlasMortonDepth)", 1u, "B43 rule 3 on the device: past the Morton bits, eight count-balanced pieces — never the up-to-64 a per-octant split could ask for" },
-        { "Mirror", "else if (Partition == BlasPartition::Clustered || W.Depth >= kMortonDepth)", 1u, "B44 rule 3 in the mirror, reached by the octant rule too" },
+        { "Mirror", "else if (Partition == BlasPartition::Clustered || Partition == BlasPartition::Collapse ||", 1u, "B44 rule 3 in the mirror, reached by the octant rule too (and by both alternatives — the cut is shared, which is why §⑨g's four builds differ only in where the boundaries fall)" },
         { "Build", "const uint Want = BlasByteOf(Preferred, Entry);", 1u, "B45 the octant is a preference and the pool decides — one slot-assignment shape for all three rules" },
         { "Mirror", "C.Slot = FreeSlots[At];", 1u, "B46 ...and the mirror's pool takes the same free slot in the same child order" },
         { "Build", "BlasScratch[At + 22u] = Stored;", 1u, "B47 the stored slot per entry travels to stage 4, which lays the runs out in exactly that order" },
@@ -1010,11 +1010,25 @@ static void RunBlasKernelPins()
         { "MirrorH", "static constexpr uint32_t kLeafSlots     = 8u;   // the wide node's slot count — the build's fan-out cap", 1u, "B75 the eight slots the level cap and the format rule are both written in terms of" },
         { "Build", "layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;", 1u, "B64 the build's local size IS the host plan's kBlasBuildLocalSize: the group count ⑨i checks is only right for this 128" },
         { "Refit", "layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;", 1u, "B65 ...and the refit's for this 64" },
-        { "Payload", "inline constexpr uint32_t kBlasBuildLocalSize = 128u;   // [-] BlasBuild.slang's local_size_x", 1u, "B66 the host states the local size as a constant rather than a literal at each vkCmdDispatch" },
+        { "Payload", "inline constexpr uint32_t kBlasBuildLocalSize = 128u;", 1u, "B66 the host states the local size as a constant rather than a literal at each vkCmdDispatch — and the block width the two scans are written in, which is why the scratch sizing can be expressed from it" },
         { "Payload", "inline constexpr uint32_t kBlasRefitLocalSize = 64u;    // [-] BlasRefit.slang's local_size_x", 1u, "B67 ...for the refit" },
-        { "Build", "if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x != 0u) return;", 2u, "B68 the two stages the plan gives ONE workgroup really are single-workgroup global passes (the scan and the run assignment) — if one of them became parallel, the plan's group count would have to change with it" },
-        { "Build", "if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x >= Nodes) return;", 1u, "B69 the emit is one thread per node; its guard is what lets the plan over-dispatch the arena instead of reading the level's node count back" },
-        { "Build", "if (gl_WorkGroupID.x >= Nodes) return;", 1u, "B70 the partition's guard, same reason — and the reason the plan can loop levels without a readback" },
+        { "Build", "if (gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x != 0u) return;", 2u, "B83 (D9b) exactly TWO stages are still one workgroup: the two BLOCK SCANS, which are serial over blocks (nodes / 128) rather than over nodes. The plan gives them one group each, and the count in §⑨i's assertion is written for that number" },
+        { "Build", "const uint Index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;", 3u, "B84 (D9b) the stages that ARE parallel address one node at a time through this expression — count+scan, emit and the run count+scan; the partition stage and the run emit build the same index but keep it as a SLOT (they index the arena, not the level), which is the pair of lines just below" },
+        { "Build", "const uint Slot = NodeBase + Index;", 1u, "B85 (D9b) ...and the partition stage's own form of it" },
+        { "Build", "const uint Slot = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;", 1u, "B86 (D9b) ...and the run emit's, over the whole arena" },
+        { "Build", "uint BlasBlockScan(uint Value)", 1u, "B87 (D9b) the workgroup scan both prefix sums are built from" },
+        { "Build", "if (Lane >= Step) BlasScan[Lane] += Read;", 1u, "B88 (D9b) ...a Hillis-Steele step: read the neighbour, barrier, add. The read is taken BEFORE the barrier and the write after it, which is what makes the step race-free inside one workgroup" },
+        { "Build", "if (Index < Nodes) BlasScratch[BlasNodeSlotAt(NodeBase + Index) + 19u] = Inclusive - Interior;", 1u, "B89 (D9b) stage 2's within-block prefix, written as the exclusive offset the emit adds back" },
+        { "Build", "BlasScratch[2u * ((Level + 1u) & 1u) + 0u] = NodeBase + Nodes;", 1u, "B90 (D9b) stage 4 publishes the NEXT level's base into the other parity's pair — with one pair the emit would read the next level's base and write the wrong childBase" },
+        { "Build", "BlasScratch[2u * ((Level + 1u) & 1u) + 1u] = Running;", 1u, "B91 (D9b) ...and its count, which is the level's total interior children: the tile's size" },
+        { "Build", "const uint ChildBase = NodeBase + Nodes + BlasBlockSums[gl_WorkGroupID.x] + BlasScratch[At + 19u];", 1u, "B92 (D9b) the emit's childBase is the level's tile start plus the block prefix plus the within-block offset — the two halves the serial stage 2 used to compute in one pass" },
+        { "Build", "if (Index < NodeCount) BlasScratch[BlasNodeSlotAt(Index) + 23u] = Inclusive - LeafTriangles;", 1u, "B93 (D9b) the run scan's within-block prefix, over the WHOLE arena in node order" },
+        { "Build", "BlasScratch[4u] = Running;", 1u, "B94 (D9b) stage 6 publishes the arena's leaf triangle count, which is what BlasBuildPipeline::Verify compares with the mirror's count — a run that wrote nothing cannot pass on bytes alone" },
+        { "Build", "const uint Triangles = BlasBlockSums[gl_WorkGroupID.x] + BlasScratch[At + 23u];", 1u, "B95 (D9b) the run emit's triangleBase, assembled from the run scan the same way the childBase is assembled from the other one" },
+        { "Build", "layout(std430, binding = 7) buffer BlasBlockSumExtent { uint BlasBlockSums[]; };", 1u, "B96 (D9b) the scan's scratch buffer is a binding of its own — the kernel's eighth, and the one the refit does NOT have" },
+        { "Payload", "return BlasGroupCountStub(NodeSlots, kBlasBuildLocalSize);", 1u, "B97 (D9b) the host sizes that buffer from the same block width the kernel scans with, so a mismatch between the two is a refused allocation rather than an out-of-bounds write" },
+        { "PayloadCpp", "Out.push_back({ 4u, Level, 1u,", 1u, "B98 (D9b) the plan dispatches the block scan between the count+scan and the emit — §⑨i is what checks that order means something" },
+        { "PayloadCpp", "Out.push_back({ 7u, 0u, NodeGroups,", 1u, "B99 (D9b) ...and the run path's three stages, whose emit is the parallel one" },
         { "Payload", "return BlasBuildMirror::kMortonDepth + Extra;", 1u, "B71 the level cap is the Morton depth plus one octave per level of growth: a bound, and ⑨i checks it against the tree that exists rather than against itself" },
         { "PayloadCpp", "if (TriangleCount == 0u || NodeSlots == 0u) return false;", 1u, "B72 the plan refuses an empty build rather than emitting dispatches over nothing" },
         { "PayloadCpp", "const uint32_t Level = MaxLevel - Step;   // deepest first: a node is re-quantised after its children are final", 1u, "B73 the refit's plan counts levels DOWN — ⑨i checks the sequence is 7,6,…,0 on this level, each exactly once" },
@@ -2442,10 +2456,12 @@ int main()
             struct Config { BlasPartition Mode; bool Pack; const char* Name; };
             const Config Configs[] = {
                 { BlasPartition::Octant,    false, "D9 v1 (octant, no pack)" },
-                { BlasPartition::Clustered, true,  "clustered + pack (tried, rejected)" },
+                { BlasPartition::Clustered, true,  "clustered (bins + SAH merge)" },
+                { BlasPartition::Collapse,  true,  "collapse (uniform 8-way)" },
                 { BlasPartition::Octant,    true,  "octant + pack (SHIPPED)" }
             };
-            const int ConfigCount = 3;
+            const int ConfigCount = 4;
+            static_assert(sizeof(Configs) / sizeof(Configs[0]) == size_t(ConfigCount), "⑨g's config list and its count");
 
             std::vector<float> ConfigOrigins, ConfigDirections;
             long SnappedG = 0, UnsnappedG = 0;
@@ -2453,17 +2469,17 @@ int main()
             const int RayCountG = 12000;
             GenerateRays(Soup, Bounds, RayCountG, 20260919ull, ConfigOrigins, ConfigDirections, SnappedG, UnsnappedG, WorstAttemptsG);
 
-            uint64_t Cost[ConfigCount] = { 0u, 0u, 0u };
-            double WalkMs[ConfigCount] = { 0.0, 0.0, 0.0 };
-            double BuildMs[ConfigCount] = { 0.0, 0.0, 0.0 };
-            long Hits[ConfigCount] = { 0L, 0L, 0L };
-            uint32_t Nodes_[ConfigCount] = { 0u, 0u, 0u };
-            uint32_t Empty_[ConfigCount] = { 0u, 0u, 0u };
-            uint32_t LeafSlots_[ConfigCount] = { 0u, 0u, 0u };
-            uint32_t Levels_[ConfigCount] = { 0u, 0u, 0u };
-            uint32_t BuildBlocks_[ConfigCount] = { 0u, 0u, 0u };
+            uint64_t Cost[ConfigCount] = {};
+            double WalkMs[ConfigCount] = {};
+            double BuildMs[ConfigCount] = {};
+            long Hits[ConfigCount] = {};
+            uint32_t Nodes_[ConfigCount] = {};
+            uint32_t Empty_[ConfigCount] = {};
+            uint32_t LeafSlots_[ConfigCount] = {};
+            uint32_t Levels_[ConfigCount] = {};
+            uint32_t BuildBlocks_[ConfigCount] = {};
             long Disagreements = 0, BuildRefusals = 0;
-            double Work[ConfigCount][4] = { { 0.0, 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0, 0.0 } };
+            double Work[ConfigCount][4] = {};
 
             for (int C = 0; C < ConfigCount; ++C)
             {
@@ -2595,6 +2611,9 @@ int main()
             //     the triangle tests of D9 v1 and pays for it) bounded by that spread, the arena it halves, and the
             //     clustered rule's ±70 %, which is outside the spread by a wide margin.
             const double WalkTolerance = 1.25;
+            // The merge is what the earlier clustering measurement blamed, so the gate keeps BOTH halves of it in view:
+            //    `Clustered` (bins + merge) must stay the slow one, and `Collapse` (bins alone) is the rule that is
+            //    allowed to be competitive — it is the H-PLOC collapse step in its cheapest faithful form.
             const bool ClusteredSlower = WalkMs[1] >= 1.40 * WalkMs[Shipped];
             if (WalkMs[Shipped] <= WalkTolerance * WalkMs[Fastest] && Nodes_[Shipped] <= Nodes_[0] / 2u &&
                 BuildMs[Shipped] <= BuildMs[0] && Fastest != 1 && ClusteredSlower)
@@ -2686,22 +2705,30 @@ int main()
             std::string RefitLevels;
             if (BuildPlanOk)
             {
-                // the shape: prepass, then per level {partition, scan, emit}, then runs
-                if (BuildPlan.size() != 2u + 3u * PlanCap) ++PlanErrors;
+                // The shape, and the ORDER — which is not a detail here: the block scan (stage 4) publishes the NEXT
+                //    level's base/count from this level's block totals, so it must run after the count+scan (2) and
+                //    before the emit (3) that consumes the number it produces. The three node stages share a grouping
+                //    (one group per 128 node slots) because they read and write the same block.
+                const uint32_t NodeGroups = BlasGroupCount(PlanSlots, kBlasBuildLocalSize);
+                if (BuildPlan.size() != 4u + 4u * PlanCap) ++PlanErrors;   // prepass + 4 per level + the run path's three
                 if (BuildPlan.empty() || BuildPlan.front().Stage != 0u) ++PlanErrors;
-                if (BuildPlan.size() < 2u || BuildPlan.back().Stage != 4u || BuildPlan.back().Groups != 1u) ++PlanErrors;
                 if (BuildPlan.front().Groups != BlasGroupCount(PlanTriangles, kBlasBuildLocalSize)) ++PlanErrors;
+                const uint32_t Tail = static_cast<uint32_t>(BuildPlan.size()) - 3u;
+                if (BuildPlan[Tail + 0u].Stage != 5u || BuildPlan[Tail + 1u].Stage != 6u || BuildPlan[Tail + 2u].Stage != 7u)
+                    ++PlanErrors;
+                if (BuildPlan[Tail + 1u].Groups != 1u) ++PlanErrors;   // the two block scans are one workgroup each
                 for (uint32_t L = 0u; L < PlanCap; ++L)
                 {
-                    const BlasDispatch& P = BuildPlan[1u + 3u * L + 0u];
-                    const BlasDispatch& S = BuildPlan[1u + 3u * L + 1u];
-                    const BlasDispatch& E = BuildPlan[1u + 3u * L + 2u];
+                    const BlasDispatch& P = BuildPlan[1u + 4u * L + 0u];
+                    const BlasDispatch& C = BuildPlan[1u + 4u * L + 1u];
+                    const BlasDispatch& B = BuildPlan[1u + 4u * L + 2u];
+                    const BlasDispatch& E = BuildPlan[1u + 4u * L + 3u];
                     // Strictly ascending from 0 with no gaps: the ping/pong parity is `Level & 1`, so a missing level
                     //    would have the next one read the array the last one wrote.
-                    if (P.Level != L || S.Level != L || E.Level != L) ++PlanErrors;
-                    if (P.Stage != 1u || S.Stage != 2u || E.Stage != 3u) ++PlanErrors;
-                    if (P.Groups != PlanSlots || E.Groups != PlanSlots) ++PlanErrors;   // one group per node slot
-                    if (S.Groups != 1u) ++PlanErrors;                                   // the scan is one workgroup
+                    if (P.Level != L || C.Level != L || B.Level != L || E.Level != L) ++PlanErrors;
+                    if (P.Stage != 1u || C.Stage != 2u || B.Stage != 4u || E.Stage != 3u) ++PlanErrors;
+                    if (P.Groups != NodeGroups || C.Groups != NodeGroups || E.Groups != NodeGroups) ++PlanErrors;
+                    if (B.Groups != 1u) ++PlanErrors;                                   // the block scan is one workgroup
                 }
 
                 // the refit: leaves, then the levels the build actually made, deepest first
@@ -2729,7 +2756,8 @@ int main()
                 Pass("⑨i the host's dispatch plan covers the tree that exists: %zu build dispatches for %u triangles in "
                      "%u node slots (%u levels, cap %u — the cap must not cut a build off, and BlasBuildLevelCap(1) is "
                      "exactly the Morton depth %u), then %zu refit dispatches whose levels run %s — deepest first, each "
-                     "exactly once, %u groups a node dispatch and one group for the two single-workgroup stages",
+                     "exactly once, with the per-level order partition → count+scan → BLOCK SCAN → emit (the block scan "
+                     "must land between the two it feeds), %u groups a node stage and one group for each block scan",
                      BuildPlan.size(), PlanTriangles, PlanSlots, PlanLevels, PlanCap,
                      BlasBuildMirror::kMortonDepth, RefitPlan.size(), RefitLevels.c_str(),
                      BlasGroupCount(PlanSlots, kBlasRefitLocalSize));
@@ -2737,6 +2765,90 @@ int main()
                 Fail("⑨i the dispatch plan does not cover the build (%ld errors, cap %u for %u actual levels, plan %zu + %zu "
                      "dispatches, built %d)",
                      PlanErrors, PlanCap, PlanLevels, BuildPlan.size(), RefitPlan.size(), int(BuildPlanOk));
+        }
+
+        // ⑨j — the PARALLEL SCAN (D9b). The kernel's two serial stages — the level's childBase sum and the arena's run
+        //    sum — are now block-local scans plus a block prefix (BlasBuild.slang stages 2/4 and 5/6), so the thing that
+        //    can be wrong is arithmetic rather than layout, and arithmetic can be checked here. This runs the model
+        //    (BlasBuildMirror::ScanLevelChildBases) over the SHIPPED build's own interior counts and compares every
+        //    childBase with the one the serial construction implies: each level's children tile the arena from the first
+        //    slot of the next level, in node order. §⑩ pins the three shader lines the model stands in for.
+        {
+            std::vector<float> ScanNodes, ScanLeaves;
+            BlasBuildMirrorMetrics ScanMetrics;
+            std::vector<uint16_t> ScanLevels;
+            uint32_t ScanDeepest = 0u;
+            const bool ScanBuilt = BlasBuildMirror::BuildHPloc(Soup, ScanNodes, ScanLeaves, ScanMetrics) &&
+                                   (BlasBuildMirror::LevelsOf(ScanNodes, 0u, ScanMetrics.NodeBlocks, ScanLevels, ScanDeepest), true);
+
+            long ScanErrors = 0, ScanNodesChecked = 0;
+            uint32_t ScanBlocksUsed = 0u;
+            bool ScanRefused = false;
+            if (ScanBuilt && !ScanLevels.empty())
+            {
+                // Group the nodes by level, in slot order, and take each level's tile start from the first slot of the
+                //    next level — which is the invariant the serial construction relies on (§⑨c measures it directly).
+                std::vector<uint32_t> FirstOfLevel(ScanDeepest + 2u, 0xFFFFFFFFu);
+                for (uint32_t Slot = 0u; Slot < ScanMetrics.NodeCount; ++Slot)
+                {
+                    const uint32_t Level = ScanLevels[Slot] == 0xFFFFu ? 0u : ScanLevels[Slot];
+                    if (Level + 1u < FirstOfLevel.size() && FirstOfLevel[Level + 1u] == 0xFFFFFFFFu)
+                        FirstOfLevel[Level + 1u] = Slot;
+                }
+                if (!FirstOfLevel.empty() && FirstOfLevel[0] == 0xFFFFFFFFu) FirstOfLevel[0] = 0u;
+
+                for (uint32_t Level = 0u; Level <= ScanDeepest; ++Level)
+                {
+                    std::vector<uint32_t> Counts;
+                    for (uint32_t Slot = 0u; Slot < ScanMetrics.NodeCount; ++Slot)
+                    {
+                        if ((ScanLevels[Slot] == 0xFFFFu ? 0u : ScanLevels[Slot]) != Level) continue;
+                        const float* Node = &ScanNodes[size_t(Slot) * 20u];
+                        uint32_t Interior = 0u;
+                        for (uint32_t S = 0u; S < 8u; ++S) if (BlasBuildMirror::SlotIsInterior(Node, S)) ++Interior;
+                        Counts.push_back(Interior);
+                    }
+                    if (Counts.empty()) continue;
+
+                    // The level's children start at the first slot of the next level (or right after this level, when it
+                    //    is the deepest one and has no interior children at all — then nothing is checked).
+                    const uint32_t TileStart = Level + 1u < FirstOfLevel.size() && FirstOfLevel[Level + 1u] != 0xFFFFFFFFu
+                                             ? FirstOfLevel[Level + 1u]
+                                             : ScanMetrics.NodeCount;
+                    std::vector<uint32_t> ModelBases;
+                    const uint32_t BlockSumsWords = 1u + static_cast<uint32_t>(Counts.size()) / kBlasBuildLocalSize;
+                    if (!BlasBuildMirror::ScanLevelChildBases(Counts, TileStart, kBlasBuildLocalSize, BlockSumsWords, ModelBases))
+                    {
+                        ScanRefused = true;
+                        break;
+                    }
+                    ScanBlocksUsed = std::max(ScanBlocksUsed, BlasGroupCount(static_cast<uint32_t>(Counts.size()), kBlasBuildLocalSize));
+
+                    // The serial arithmetic the kernel's two-step scan must reproduce: walking the level in node order,
+                    //    each node's childBase is the running total, and its children are the interior slots it has.
+                    uint32_t Serial = TileStart;
+                    size_t Model = 0u;
+                    for (uint32_t Slot = 0u; Slot < ScanMetrics.NodeCount; ++Slot)
+                    {
+                        if ((ScanLevels[Slot] == 0xFFFFu ? 0u : ScanLevels[Slot]) != Level) continue;
+                        const float* Node = &ScanNodes[size_t(Slot) * 20u];
+                        if (Model < ModelBases.size() && ModelBases[Model] != Serial) ++ScanErrors;
+                        ++Model;
+                        ++ScanNodesChecked;
+                        for (uint32_t S = 0u; S < 8u; ++S) if (BlasBuildMirror::SlotIsInterior(Node, S)) ++Serial;
+                    }
+                }
+            }
+
+            if (ScanBuilt && !ScanRefused && ScanNodesChecked > 0 && ScanErrors == 0)
+                Pass("⑨j the parallel scan reproduces the serial one over the shipped build: %ld nodes' childBase across "
+                     "%u levels, every block boundary included (%u block sums used) — the model is "
+                     "BlasBuildMirror::ScanLevelChildBases, and §⑩ pins the three shader lines it stands in for "
+                     "(within-block prefix, block total, block prefix)", ScanNodesChecked, ScanDeepest + 1u, ScanBlocksUsed);
+            else
+                Fail("⑨j the parallel scan disagrees with the serial construction: %ld mismatches over %ld nodes "
+                     "(built %d, refused %d) — the kernel's stages 2/4 would write the wrong childBase",
+                     ScanErrors, ScanNodesChecked, int(ScanBuilt), int(ScanRefused));
         }
 
         // ⑨f — economics, so the plan's numbers are on the record rather than in the plan.

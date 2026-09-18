@@ -56,8 +56,16 @@ echo "[Shaders] compiling $Entries shader(s) with $Flavor ($Compiler)"
 # ─── stage + lower ───────────────────────────────────────────────────────────────────────────────────────────────────
 # glslc and glslang require a recognised extension for the stage, so the source is staged under a .glsl name in a temp
 #    directory; the .slang includes still resolve through -IEngine/Shaders.
-Stage="$(mktemp -d /tmp/CheckShaders.XXXXXX)"
-trap 'rm -rf "$Stage"' EXIT
+# SHADER_OUT (D9b): when set, the lowered .spv files are KEPT in that directory instead of being verified in a temp one
+#    that is thrown away. This gate's job is "do they lower"; the runner's is "run them", and it needs the artifacts — so
+#    one lowering recipe serves both rather than a second copy of the tool flags living in a shell script.
+if [ -n "${SHADER_OUT:-}" ]; then
+    Stage="$SHADER_OUT"
+    mkdir -p "$Stage" || { echo "[Shaders] RED — cannot create SHADER_OUT=$SHADER_OUT"; exit 1; }
+else
+    Stage="$(mktemp -d /tmp/CheckShaders.XXXXXX)"
+    trap 'rm -rf "$Stage"' EXIT
+fi
 Failures=0
 
 while IFS='|' read -r Src StageName Out; do
@@ -68,10 +76,10 @@ while IFS='|' read -r Src StageName Out; do
     case "$Flavor" in
         slangc)
             Command=( "$Compiler" "$Source" "-DFRONTIER_SHADER_TOOLCHAIN=1" "-IEngine" "-I$ShaderRoot"
-                      -target spirv -profile glsl_450 -stage "$StageName" -entry main -o "$Stage/$Out.spv" ) ;;
+                      -target spirv -profile glsl_450 -stage "$StageName" -entry main -o "$Stage/$Out" ) ;;
         glslc)
             Command=( "$Compiler" "-DFRONTIER_SHADER_TOOLCHAIN=1" "-IEngine" "-I$ShaderRoot"
-                      --target-env=vulkan1.2 "-fshader-stage=$StageName" -o "$Stage/$Out.spv" "$Staged" ) ;;
+                      --target-env=vulkan1.2 "-fshader-stage=$StageName" -o "$Stage/$Out" "$Staged" ) ;;
         glslang)
             case "$StageName" in
                 compute) StageFlag=comp ;;
@@ -80,11 +88,11 @@ while IFS='|' read -r Src StageName Out; do
                 *)       StageFlag="$StageName" ;;
             esac
             Command=( "$Compiler" -V --target-env vulkan1.2 -S "$StageFlag" -DFRONTIER_SHADER_TOOLCHAIN=1
-                      -IEngine "-I$ShaderRoot" -o "$Stage/$Out.spv" "$Staged" ) ;;
+                      -IEngine "-I$ShaderRoot" -o "$Stage/$Out" "$Staged" ) ;;
     esac
     [ "$Verbose" = "1" ] && printf '  $ %s\n' "${Command[*]}"
     if Output=$("${Command[@]}" 2>&1); then
-        printf '  PASS  %-28s → %s (%s B)\n' "$Src" "$Out" "$(stat -c%s "$Stage/$Out.spv" 2>/dev/null || echo '?')"
+        printf '  PASS  %-28s → %s (%s B)\n' "$Src" "$Out" "$(stat -c%s "$Stage/$Out" 2>/dev/null || echo '?')"
     else
         printf '  FAIL  %-28s\n' "$Src"
         printf '%s\n' "$Output" | grep -E "error|ERROR" | head -5 | sed 's/^/        /'

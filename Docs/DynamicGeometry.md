@@ -141,12 +141,25 @@ deformed vertices and refits; the animation system owns everything before that b
   | D9's first build (octant, no pack)  | 17 835 | 17.9 ms | 10.93 ms |         36 700 |       64.2 %|
   | clustered: count-balanced bins + SAH|  4 681 | 15.8 ms | 19.73 ms |        165 229 |       26.4 %|
   | **shipped: octant + the format rule**| **7 185** | **12.5 ms** | **10.11 ms** |     **63 462** |   **46.7 %**|
+  | collapse: uniform 8-way (D9b)      |  4 681 | 12.1 ms | 24.72 ms |        165 229 |       26.4 %|
 
   ⚠️ One number in that table is honest about its own spread: the walk clock for the two octant rows has read 12.36/12.36,
   12.84/13.57 and 12.84/14.91 ms across runs on this 2-core box — a ~20 % swing that no best-of-five removes, because it
   is another process on the box rather than noise inside the walk. §⑨g therefore bounds that pair at 25 % (its first 10 %
   failed on the coin flip) and keeps the terms that are decisive: the halved arena, the faster build, and the clustered
   rule's ≥ 1.4× walk, which is outside the spread by a wide margin.
+
+  **D9b closed the H-PLOC question by measuring its cheapest faithful form.** The merge the plan asked for was tried two
+  ways. The first — count-balanced bins plus an SAH that merges neighbouring bins — walked 60–95 % slower, and the second
+  (`Collapse`: the same cut with NO merge, i.e. the uniform 8-way collapse an H-PLOC build ends up with) produced the SAME
+  STRUCTURE on this level: 4 681 nodes, 26.4 % empty slots, the same 165 229 triangle tests, the same 24.7 ms walk. So on
+  the M10 level the SAH merge never fires — a uniform cut is already near the cut the search would choose — and the row
+  above is what that buys: the fewest nodes and the least empty slots of any rule, at **2.4× the shipped rule's walk**.
+  The conclusion the plan needed is therefore not "H-PLOC is untried" but **"in a wide-node format, a full node is not a
+  faster node"**: filling the eight slots forces each child's box to be a union of slices the octant rule would have kept
+  apart, and the traversal pays per ray that descends into it. The gap the plan worried about (46.7 % empty slots) is the
+  price of tight boxes, and it is the cheaper side of the trade. Both alternatives stay in the mirror so this stays
+  reproducible.
 
   The two rules a wide format turned out to need are about the FORMAT, not about clustering: (1) a range that fits one
   node's eight leaf slots — 24 triangles — becomes runs of three and is never recursed into; (2) past the Morton bits a
@@ -319,7 +332,8 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
   in-place refit of the packed layout plus the displacement-driven rebuild policy. Acceptance: a moving/deforming scene
   renders correct shadows and reflections with the frame budget printed, and the CPU mirror reproduces the same images.
   ⚠️ The GPU half of that acceptance sentence — the kernel-side refit and a rendered frame — is still owed.
-- **D9 — GPU refit / GPU build kernels — WRITTEN, COMPILED, PINNED, MEASURED ON THE CPU, HOST HALF BUILT; NOT RUN.** `Engine/Shaders/BlasRefit.slang`
+- **D9 — GPU refit / GPU build kernels — WRITTEN, COMPILED, PINNED, MEASURED ON THE CPU, HOST AND VULKAN HALVES BUILT,
+  READY TO RUN; NOT RUN HERE (no device).** `Engine/Shaders/BlasRefit.slang`
   (two stages: rewrite the leaf records from the deformed soup, then re-quantise one dispatch per level, deepest first)
   and `Engine/Shaders/BlasBuild.slang` (five stages: Morton prepass · per-level octant partition · childBase scan ·
   emit · leaf runs), both lowering through `Tools/Build/CheckShaders.sh` (15/15) and both pinned to the CPU mirror by
@@ -343,8 +357,25 @@ Vulkan SDK makes it a one-line pre-commit check; on a host with `slangc`/`glslc`
   — parallelise one and the plan has to change with it. **And the engine's source batch now compiles the three D6–D9 TUs**
   (`InstanceAcceleration.cpp` had been called from `SwapchainExchange.cpp` since D6 with no target compiling it); each was
   compile-checked standalone under the engine's own include paths and flags before registration, which B76–B78 pin.
-  ⚠️ Nothing here has been compiled by `slangc` or executed on a device: the sandbox has no Vulkan. Left: **one GPU run**,
-  plus the Vulkan plumbing itself (buffers, descriptor sets, barriers), which is what a device session is for.
+  **The Vulkan half is written, and the run is one command away.** `Engine/GeometricRaster/BlasBuildPipeline.{h,cpp}`
+  creates the two pipelines (`BlasBuild.spv`, `BlasRefit.spv`), allocates one BLAS' worth of buffers on a host-visible
+  memory type, records the plan's dispatches with a compute→compute barrier between every stage, and verifies the device's
+  node blob, leaf blob, level table and leaf-triangle total against the CPU mirror's — byte for byte. It links no Vulkan
+  loader: the entry points arrive through a `VulkanSourced` table, which is why the file compiles (and is compiled by the
+  gate) in a sandbox with no `libvulkan.so` at all. `Exhibits/Workbench/Traversal/BlasDeviceRun.cpp` is the program — it
+  opens the loader with `dlopen`, picks a device (discrete first), builds the M10 level's soup, runs the mirror for the
+  expected answer, dispatches, and prints the comparison; `--refit` runs the refit path too, against a wave-deformed soup
+  and a mirror refit of the same deformation, so "the device wrote something" cannot pass for "the device was right".
+
+      bash Exhibits/Workbench/Traversal/RunBlasDevice.sh --refit        # 0 = device == mirror · 1 = mismatch · 2 = no device
+
+  `RunBlasDevice.sh` lowers the shaders itself (through `SHADER_OUT`, the same recipe the compile gate uses — which is how
+  a real bug surfaced: that gate had been writing `<name>.spv.spv` since it was written, a name nothing loads), compiles
+  the runner with the Vulkan-Headers only, and reports a device-less machine as **SKIPPED**, not as a pass.
+  ⚠️ What is still owed is the RUN, and nothing else: the kernels have never executed. Two stages of the build are still
+  serial by design and say so where they are (the two block scans, one iteration per 128 node slots); everything else in
+  the build is now parallel across the level, and §⑨j checks the parallel scan's arithmetic against the serial one over
+  the shipped build's own 7 185 nodes.
 - **D10 — ReSTIR integration.** Motion vectors already follow `PreviousWorld`; for dynamic objects the reservoir
   validation should use instance/primitive identity plus the previous transform, so a moving object's history is
   rejected on genuine disocclusion and kept when it merely moved.

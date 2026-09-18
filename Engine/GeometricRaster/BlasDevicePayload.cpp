@@ -66,17 +66,23 @@ bool BuildBlasDispatchPlan(uint32_t TriangleCount, uint32_t NodeSlots, std::vect
     Out.clear();
     if (TriangleCount == 0u || NodeSlots == 0u) return false;
 
+    // One group per 128 node SLOTS for the three node stages: the level's own nodes are the dense range
+    //    [NodeBase, NodeBase + Nodes) the scratch header holds, so the arena's capacity is a safe over-dispatch and the
+    //    kernels' guards turn the rest off. The block index is what ties the three together — they all read and write
+    //    block `gl_WorkGroupID.x`, so they MUST use the same grouping.
+    const uint32_t NodeGroups = BlasGroupCount(NodeSlots, kBlasBuildLocalSize);
     Out.push_back({ 0u, 0u, BlasGroupCount(TriangleCount, kBlasBuildLocalSize), "prepass: keys, centroids, the root" });
     const uint32_t Cap = BlasBuildLevelCap(TriangleCount);
     for (uint32_t Level = 0u; Level < Cap; ++Level)
     {
-        // One group per node SLOT: the level's own nodes are the dense range [NodeBase, NodeBase + Nodes) the scratch
-        //    header holds, so the arena's capacity is a safe over-dispatch and the kernel's guard turns the rest off.
-        Out.push_back({ 1u, Level, NodeSlots, "partition: this level's range in octants — also the sort" });
-        Out.push_back({ 2u, Level, 1u, "scan: child numbers in ascending slot order (one workgroup)" });
-        Out.push_back({ 3u, Level, NodeSlots, "emit: slots, boxes, metas, childBase" });
+        Out.push_back({ 1u, Level, NodeGroups, "partition: this level's range in octants — also the sort" });
+        Out.push_back({ 2u, Level, NodeGroups, "count+scan: interior children, prefix within each block" });
+        Out.push_back({ 4u, Level, 1u, "block scan: block prefixes, and the next level's base/count" });
+        Out.push_back({ 3u, Level, NodeGroups, "emit: slots, boxes, metas, childBase" });
     }
-    Out.push_back({ 4u, 0u, 1u, "runs: triangleBase in node order, then the leaf records (one workgroup)" });
+    Out.push_back({ 5u, 0u, NodeGroups, "runs count+scan: leaf triangles per node, prefix within each block" });
+    Out.push_back({ 6u, 0u, 1u, "runs block scan: block prefixes and the arena's triangle total" });
+    Out.push_back({ 7u, 0u, NodeGroups, "runs emit: triangleBase in node order, then the leaf records" });
     return true;
 }
 

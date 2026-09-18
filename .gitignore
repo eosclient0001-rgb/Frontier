@@ -9,6 +9,9 @@ Projects/Project-Zero/Host/FogProbe
 Projects/Project-Zero/Host/FogViewport
 Projects/Project-Zero/Host/MaterialLevelViewport
 Projects/Project-Zero/Diagnostics/Proof/fog.csv
+# D9b: the SPIR-V the device runner lowers into (Exhibits/Workbench/Traversal/RunBlasDevice.sh). Generated, never commit.
+Build/
+
 # Union merge: regenerable + build outputs (never commit)
 EngineContent/CelestialTextures/Moons/
 Projects/Project-Zero/bin/

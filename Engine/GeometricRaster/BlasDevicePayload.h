@@ -54,14 +54,29 @@ namespace Frontier
     // ── BlasBuild.slang's scratch: a header, then one block per node slot ────────────────────────────────────────────
     //    These two numbers are the shader's `kBlasScratchHeader` / `kBlasScratchStride`; §⑩ pins the pair on both sides,
     //    so a host that sizes the buffer with one and a kernel that indexes with the other cannot pass unnoticed.
-    inline constexpr uint32_t kBlasScratchHeader = 8u;    // [u32] level base slot, node count, level, reserved
+    inline constexpr uint32_t kBlasScratchHeader = 8u;    // [u32] the two level pairs, the triangle total, reserved
     inline constexpr uint32_t kBlasScratchStride = 24u;   // [u32] per node slot: child ranges, own range, counts, slot maps
+    inline constexpr uint32_t kBlasBuildLocalSize = 128u; // [-] BlasBuild.slang's local_size_x — as forward-declared,
+                                                          //     because the scratch sizing below is written in it
+    [[nodiscard]] inline uint32_t BlasGroupCountStub(uint32_t Items, uint32_t LocalSize) noexcept
+    {
+        return Items / LocalSize + ((Items % LocalSize) != 0u ? 1u : 0u);
+    }
 
     // The scratch the build kernel needs for an arena of `NodeSlots` node slots — the same expression the kernel indexes
     //    with, so the host cannot under-allocate it.
     inline uint32_t BlasBuildScratchWords(uint32_t NodeSlots) noexcept
     {
         return kBlasScratchHeader + kBlasScratchStride * NodeSlots;
+    }
+
+    // The build's SCAN scratch: one uint per workgroup of the dispatch, because each workgroup scans 128 node slots and
+    //    publishes its total (binding 7, `BlasBlockSums`). ⚠️ The 128 is `kBlasBuildLocalSize` and the block width at
+    //    once — change one and this expression changes with it, which is why it is written here rather than at the
+    //    allocation site.
+    inline uint32_t BlasBlockSumsWords(uint32_t NodeSlots) noexcept
+    {
+        return BlasGroupCountStub(NodeSlots, kBlasBuildLocalSize);
     }
 
     // ── the soup: three vec4 per triangle, in primitive order ────────────────────────────────────────────────────────
@@ -125,7 +140,6 @@ namespace Frontier
     //    The single-workgroup stages (build's scan and run assignment) are single-threaded global passes: the kernels say
     //    so where they guard on `gl_LocalInvocationID.x != 0u || gl_WorkGroupID.x != 0u`, which is also why the plan gives
     //    them one group. That is a first-cut choice the shader headers name as the first thing to parallelise later.
-    inline constexpr uint32_t kBlasBuildLocalSize = 128u;   // [-] BlasBuild.slang's local_size_x
     inline constexpr uint32_t kBlasRefitLocalSize = 64u;    // [-] BlasRefit.slang's local_size_x
 
     struct BlasDispatch
@@ -156,13 +170,19 @@ namespace Frontier
         return BlasBuildMirror::kMortonDepth + Extra;
     }
 
-    // The build's dispatches, in the order the stages require:
+    // The build's dispatches, in the order the stages require — ⚠️ the order matters, because some of these stages
+    //    consume what the previous one wrote and only two of them may be reordered freely:
     //    0 prepass (one thread per triangle)
-    //    for each level 0 .. cap-1:  1 partition (one group per node SLOT in the arena — the kernel early-outs past the
-    //                                level's own node count) · 2 scan (ONE workgroup) · 3 emit (one per node slot)
-    //    4 runs (ONE workgroup)
+    //    for each level 0 .. cap-1:  1 partition (one group per 128 node slots — the kernel early-outs past the level's
+    //                                own node count) · 2 count+scan (same grouping; writes the within-block prefixes AND
+    //                                the per-block totals) · 4 block scan (ONE workgroup, over the block totals; it
+    //                                publishes the NEXT level's base/count, so it must run AFTER 2 and BEFORE 3) ·
+    //                                3 emit (same grouping as 1 and 2; it adds the two scan halves back together)
+    //    5 runs count+scan (over the whole arena) · 6 runs block scan (ONE workgroup) · 7 runs emit (over the arena)
     //    The level parity in the partition comes from `Level & 1`: the ping and the pong swap every level, so the loop
-    //    must be strictly ascending from 0 with no gaps — losing a level would read the wrong array.
+    //    must be strictly ascending from 0 with no gaps — losing a level would read the wrong array. The header's own
+    //    level pair ping-pongs on the same parity, which is why 4 can write the next level's pair while 3 still reads
+    //    the current one.
     [[nodiscard]] bool BuildBlasDispatchPlan(uint32_t TriangleCount, uint32_t NodeSlots,
                                              std::vector<BlasDispatch>& Out) noexcept;
 
