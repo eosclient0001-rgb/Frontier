@@ -509,6 +509,22 @@ int   g_RestirDriftAxis = -1;       // [-]  -1: the object's own longest extent 
 bool g_RestirHistorySplit = true;
 // The indirect half's pool (ReSTIR GI). Off ⇒ the pre-pool single-sample arm, which is the A/B.
 bool g_RestirGiReuse = true;
+// Roadmap #5, step 1: WHY a pixel has no pool coverage, as a per-pixel image rather than a counter. §14.5's counters say
+//    what share of the frame falls in each case; they cannot say whether those pixels are where the ERROR is, and that
+//    is the question that decides whether the 16 → 100 % fix (replay + shift mapping) is worth its bias risk. Writing
+//    the classification out as a PNG lets the same pixels be masked in an RMSE table — coverage and error, per class.
+enum : unsigned char
+{
+    kGiClassNone     = 0u,   // the primary ray missed geometry — no surface, so no vertex and no pool either way
+    kGiClassBad      = 1u,   // the primary BSDF draw was degenerate (zero weight / zero pdf)
+    kGiClassEscape   = 2u,   // the primary BSDF sample saw the sky: no first-bounce vertex exists  (69 % of the frame)
+    kGiClassEmitter  = 3u,   // it landed on a light: the path ends there (already a perfect light sample)
+    kGiClassUnlit    = 4u,   // it landed on an emissive-only / unlit surface: the terminal IS the answer
+    kGiClassUnusable = 5u,   // glass / SSS / solid-interface vertex: out of scope for a light-sample pool by design
+    kGiClassVertex   = 6u,   // a reusable opaque vertex — the pool's coverage, and the ONLY class it currently gets
+    kGiClassNoSample = 7u,   // a vertex was usable, but the frame's candidate draw produced NO sample (zero total
+                             //    weight — every candidate behind the horizon), so there is nothing to merge or shade
+};
 std::atomic<long> g_GiBad{0}, g_GiEscape{0}, g_GiEmitter{0}, g_GiUnlit{0}, g_GiUnusable{0}, g_GiVertex{0}, g_GiNoPHat{0};
 // The indirect pool's temporal half, counted so a DEAD merge is visible in the transcript rather than inferred from a
 //    flat mean M: `Tried` is every attempt against a history pixel that held samples, `NoVertexHistory` the share of
@@ -872,6 +888,7 @@ struct RestirFrameState
     std::vector<RestirVertex>   Vertex;     // this frame's first-bounce vertices
     std::vector<RestirVertex>   VertexHistory;   // last frame's, for the vertex-proximity validation of a tap
     std::vector<RestirSurface> Surface;     // the G-buffer pass 2 reads (see RestirSurface)
+    std::vector<unsigned char> GiClass;     // roadmap #5: this frame's class per pixel (see kGiClass* — diagnostic)
     CameraPose PreviousPose;
     CameraPose LastPose;
     int        FrameIndex  = 0;
@@ -1085,6 +1102,11 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
     RestirVertex& V = State.Vertex[static_cast<size_t>(Y) * Width + X];
     V = RestirVertex{};
     V.PrimaryDepth = Surface.Depth;
+    // Roadmap #5: every return below labels the pixel before it leaves, so the map covers the frame exactly like the
+    //    counters do. The lambda is the only writer, which is what keeps the two in step.
+    const size_t ClassPixel = static_cast<size_t>(Y) * Width + X;
+    bool ClassSet = false;
+    const auto MarkClass = [&](unsigned char C) { State.GiClass[ClassPixel] = C; ClassSet = true; };
 
     const ShadingRecord& m = Surface.Mat;
     const ResolvedLayers& L = Surface.Layers;
@@ -1092,13 +1114,13 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
 
     // One primary BSDF sample — the same block Radiance() runs at depth 0, kept in step with it by hand.
     const vec4 S = SampleBsdf(m, L, wo, vec4(R.Next(), R.Next(), R.Next(), R.Next()));
-    if (S.w <= 0.0f) { ++g_GiBad; return Res; }
+    if (S.w <= 0.0f) { ++g_GiBad; MarkClass(kGiClassBad); return Res; }
     const vec3 wi = S.xyz;
     const vec3 F = EvaluateBsdf(m, L, wo, wi);
     const float CosS = wi.z < 0.0f ? -wi.z : wi.z;
     const vec3 Beta = F * (CosS / max(S.w, 1e-12f));
     V.Beta = Beta;
-    if (Beta.x <= 0.0f && Beta.y <= 0.0f && Beta.z <= 0.0f) { ++g_GiBad; return Res; }
+    if (Beta.x <= 0.0f && Beta.y <= 0.0f && Beta.z <= 0.0f) { ++g_GiBad; MarkClass(kGiClassBad); return Res; }
     const vec3 Dir = Surface.T * wi.x + Surface.B * wi.y + Surface.Ns * wi.z;
 
     // The vertex's own terminal cases come first: a BSDF-sampled ray that escapes or lands on an emitter ends the
@@ -1116,6 +1138,7 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
         }
         V.Terminal = Beta * E;
         ++g_GiEscape;
+        MarkClass(kGiClassEscape);
         return Res;
     }
 
@@ -1135,6 +1158,7 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
             V.Terminal = Beta * g_Mat[Rt.Material].Emission * W;
         }
         ++g_GiEmitter;
+        MarkClass(kGiClassEmitter);
         return Res;
     }
 
@@ -1150,18 +1174,25 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
     {
         V.Terminal = Beta * vm.Emission;
         ++g_GiUnlit;
+        MarkClass(kGiClassUnlit);
         return Res;
     }
     if (vm.Selection == static_cast<uint>(kReflectanceUnlit))
     {
         V.Terminal = Beta * vm.BaseColor;
         ++g_GiUnlit;
+        MarkClass(kGiClassUnlit);
         return Res;
     }
     // Glass and SSS vertices are out of scope for the pool: the pool's candidates are surface/sun light samples,
     //    so an SSS vertex would silently lose the below stratum, and a dielectric vertex is a refraction site, not
     //    a NEE site. Those pixels keep the single-sample arm (see the caller).
-    if (vm.TransmissionWeight > 0.0f || vm.SssWeight > 0.0f || L.SolidInterface) { ++g_GiUnusable; return Res; }
+    if (vm.TransmissionWeight > 0.0f || vm.SssWeight > 0.0f || L.SolidInterface)
+    {
+        ++g_GiUnusable;
+        MarkClass(kGiClassUnusable);
+        return Res;
+    }
 
     const vec3 VWo(dot(-Dir, VT), dot(-Dir, VB), dot(-Dir, VNs));
     const ResolvedLayers VL = ResolveLayers(vm, VWo);
@@ -1203,6 +1234,7 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
         V.Valid = true;   // a reusable vertex exists — the caller can spend it on the pool
 
         ++g_GiVertex;
+        MarkClass(kGiClassVertex);
         if (SelectedPHat <= 0.0f) ++g_GiNoPHat;
         float PrevU = 0.0f, PrevV = 0.0f;
         if (State.HasPrevious && ProjectPoint(State.PreviousPose, Surface.P, PrevU, PrevV))
@@ -1273,6 +1305,12 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
             }
         }
     }
+    // ⚠️ Everything above labels itself; this is the one case that has no counter of its own, and it must not be left
+    //    showing the enum's default. Measured (240x135, 32 frames): 762 pixels/frame on average — about 4 % of the
+    //    surface — reach the end with a usable vertex but an empty candidate set. Before this line the map called them
+    //    "bad" and the map's tally disagreed with `g_GiBad` by exactly that margin, which is how the label was caught:
+    //    the two are meant to be checkable against each other, and now they are.
+    if (!ClassSet) MarkClass(kGiClassNoSample);
     return Res;
 }
 
@@ -1788,6 +1826,7 @@ struct SequenceResult
     double             Disocclusion = 0.0;      // [px] every restart of the running mean
     double             ReservoirIdentityRefused = 0.0;   // [merges] the same case in the two reservoir pools
     double             IdentityRefusedCrossMaterial = 0.0;   // [reads] of those, those showing a different MATERIAL
+    std::vector<unsigned char> GiClass;   // roadmap #5: the last frame's per-pixel GI class (0 = none, see kGiClass*)
 };
 
 struct FrameTally
@@ -1842,6 +1881,7 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
     State.Vertex.resize(PixelCount);
     State.VertexHistory.resize(PixelCount);
     State.Surface.resize(PixelCount);
+    State.GiClass.assign(PixelCount, kGiClassNone);
 
     g_IdentityRefusedDirect.store(0);
     g_IdentityRefusedGi.store(0);
@@ -2301,6 +2341,7 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
         //    flag's two arms produced byte-identical PNGs (the tell). Pass 2 now decides what the history takes;
         //    pass 1 overwrites every pixel of State.Temporal next frame, so the two buffers stay disjoint.
     }
+    Out.GiClass = State.GiClass;   // roadmap #5: the class map is the LAST frame's classification, same as the film
     return Out;
 }
 
@@ -2492,6 +2533,7 @@ int main(int ArgumentCount, char** ArgumentValues)
 {
     std::setlocale(LC_ALL, "C");
     std::string OutPath = "Exhibits/Gallery/Materials/MaterialLibrary_View.png";
+    std::string ClassMapPath;   // roadmap #5 diagnostic: per-pixel GI class, written as a grey PNG when asked for
     std::string View = "default";
     std::string FogName = "clear";
     int Width = 960, Height = 540, Spp = 64, Bounces = 6;
@@ -2538,6 +2580,7 @@ int main(int ArgumentCount, char** ArgumentValues)
         else if (A == "--drift-material") g_RestirDriftMaterial = std::atoi(Next("--drift-material"));
         else if (A == "--shadow-probe") ProbeMode = true;
         else if (A == "--seed-stream") SeedStream = static_cast<uint32_t>(std::atoi(Next("--seed-stream")));
+        else if (A == "--class-map") ClassMapPath = Next("--class-map");
         else if (A == "--drift-axis")
         {
             const std::string Ax = Next("--drift-axis");
@@ -2561,6 +2604,7 @@ int main(int ArgumentCount, char** ArgumentValues)
                         "                            [--drift metres] [--drift-material idx] [--restir-no-identity]\n"
                         "                            [--shadow-probe]  (with --drift/--frames: does the shadow follow?)\n"
                         "                            [--seed-stream N] (an independent RNG stream: 0 = the shipped one)\n"
+                        "                            [--class-map file.png] (roadmap #5: per-pixel GI class, grey = class * 32)\n"
                         "                            [--drift-axis x|y|z]\n"
                         "                            [--denoise] [--denoise-levels N]\n");
             return 0;
@@ -2650,5 +2694,28 @@ int main(int ArgumentCount, char** ArgumentValues)
 
     const int Ok = PngWriteCounterpart::WritePng(OutPath.c_str(), Width, Height, 3, Png.data(), Width * 3);
     std::printf("[material-level] %s -> %s\n", Ok != 0 ? "wrote" : "FAILED", OutPath.c_str());
+
+    // Roadmap #5: the class map, written with the same writer as the film so the two are the same frame. The grey step
+    //    is 32 per class, and the analysis tool knows it (`GiClassError.cpp`), so the PNG is a picture of the
+    //    classification and the tool's masks come from the same file the eye can check.
+    if (!ClassMapPath.empty())
+    {
+        std::vector<unsigned char> Map(static_cast<size_t>(Width) * Height * 3u, 0u);
+        long Tally[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+        for (size_t I = 0; I < Sequence.GiClass.size(); ++I)
+        {
+            const unsigned char Raw = Sequence.GiClass[I];
+            const unsigned char C = Raw <= kGiClassNoSample ? Raw : static_cast<unsigned char>(kGiClassNone);
+            Tally[C] += 1;
+            const unsigned char Grey = static_cast<unsigned char>(C * 32u);
+            Map[I * 3u + 0u] = Grey; Map[I * 3u + 1u] = Grey; Map[I * 3u + 2u] = Grey;
+        }
+        const int MapOk = PngWriteCounterpart::WritePng(ClassMapPath.c_str(), Width, Height, 3, Map.data(), Width * 3);
+        std::printf("[material-level] %s -> %s (GI class map)\n", MapOk != 0 ? "wrote" : "FAILED",
+                    ClassMapPath.c_str());
+        std::printf("[material-level] GI classes (last frame): none %ld, bad %ld, escape %ld, emitter %ld, unlit %ld, "
+                    "unusable %ld, VERTEX %ld, no sample %ld\n", Tally[0], Tally[1], Tally[2], Tally[3], Tally[4],
+                    Tally[5], Tally[6], Tally[7]);
+    }
     return Ok != 0 ? 0 : 1;
 }

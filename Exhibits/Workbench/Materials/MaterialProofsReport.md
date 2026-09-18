@@ -963,7 +963,10 @@ flagged, and the flag was worth raising — the correction is not the ~15 % the 
   table cannot drift from the evidence again: `RunRestirConvergence.sh` full → `plain 0 → 760.03`, `ReSTIR 6 181.33 →
   6 078.44` at 4 spp × 128 frames / 2 taps, an 8.0× ratio in the same direction on the other budget pairing.
 
-Why the reuse does not pay on *this* level yet, in order of measured weight:
+Why the reuse does not pay on *this* level yet, in order of measured weight — now with the per-class measurement behind
+it: §14.6 masks this same comparison by pixel class and finds the penalty UNIFORM (3.4–4.5×) rather than concentrated in
+the classes the pool cannot cover, so closing the coverage gap would spread the pool's current penalty rather than fix a
+deficit that lives there:
 - **The indirect pool exists on 16 % of surface pixels** (the share whose primary BSDF sample hits geometry; 41 % escape
   to the sky). The other 84 % get no GI reuse by construction: a light-sample pool cannot estimate a sky vertex, and
   real ReSTIR GI needs the replay + shift mapping rather than a proximity test.
@@ -1083,6 +1086,53 @@ re-evaluated for the direction to the *new* receiver) and the receiver must supp
 `f_r(ω)·cos_r·G(p_r,x_v)·V(p_r,x_v)` against the vertex's own subpath. The estimator part is standard; the
 risk is bias, so the change has to land behind its own switch and be read against a converged reference, the way
 `--restir-no-gi-reuse` is read today. That is the next build, and §14.3's 16 % is the number it has to move.
+
+### 14.6 Step 1 of #5 says do NOT build the shift map — coverage is not where the error is (2026-09-18)
+
+§14.5 answered *where the missing 84 % are*. It did not answer whether they are where the error is, and that is the
+question the rewrite's bias risk has to be weighed against — coverage is a share of pixels, and the decision is about a
+share of MSE. The mirror now writes its per-pixel classification next to the film (`--class-map`), so the same pixels can
+be masked in an RMSE: `ReportGiClassError.sh` renders the shipped ReSTIR configuration (4 candidates, 2 taps, 64 frames,
+240×135) and the plain arm **at the same one-sample-per-pixel-per-frame rate**, both against a 512-spp reference on
+`--seed-stream 1` (independent, roadmap #7), and reports each class separately. `GiClassError.cpp` does the masking from
+three raw dumps and its TOTAL row is checked against `compare -metric RMSE` on the same PNGs — the run below is GREEN on
+that check, so the class table sums to the whole-image number.
+
+| class (240×135, 64 frames) | pixels | share | ReSTIR RMSE | MSE share | plain RMSE | MSE share | excess |
+|---|---|---|---|---|---|---|---|
+| none — no geometry (sky) | 13 943 | 43.0 % | 3 388.10 | 15.3 % | 762.08 | 10.6 % | **4.45×** |
+| bad — degenerate draw | 206 | 0.6 % | 7 294.01 | 1.0 % | 1 421.77 | 0.5 % | 5.13× |
+| escape — BSDF ray saw the sky | 13 702 | 42.3 % | 5 568.60 | **40.5 %** | 1 485.33 | 39.8 % | 3.75× |
+| emitter hit | 572 | 1.8 % | 6 434.46 | 2.3 % | 2 495.76 | 4.7 % | 2.58× |
+| unlit receiver | 30 | 0.1 % | 5 058.47 | 0.1 % | 1 341.99 | 0.1 % | 3.77× |
+| unusable — glass / SSS | 868 | 2.7 % | **14 680.80** | 17.8 % | 4 339.10 | 21.5 % | 3.38× |
+| **VERTEX — the pool's coverage** | 2 333 | 7.2 % | 8 638.99 | 16.6 % | 2 305.26 | 16.3 % | 3.75× |
+| no sample — empty candidate set | 746 | 2.3 % | 9 466.13 | 6.4 % | 2 572.83 | 6.5 % | 3.68× |
+| **TOTAL** | 32 400 | 100 % | **5 688.39** | 100 % | 1 531.96 | 100 % | 3.71× |
+
+**The measurement says the rewrite is not the lever, and it says it three ways.**
+
+- **The penalty is UNIFORM.** ReSTIR's excess over the plain arm is 3.75× in the class the pool covers and 3.75× in the
+  class it cannot reach; every class with enough pixels to matter sits between 3.38× and 4.45×. A deficit that does not
+  concentrate in the uncovered class cannot be fixed by covering it — extending reuse to the escape pixels would import
+  an estimator that is *already 3.75× worse than the plain fallback*, not remove a class-specific loss.
+- **The pool's own class is not the best-off.** 8 638.99 RMSE where the pool works, against 5 568.60 where it does not
+  (the classes are different pixels, so the honest comparison is the excess column, but the direction is unmistakable).
+  The place the pool *does* operate is not where the image is closest to converged.
+- **The class that carries the error is 43 % of the frame and has no reuse path at all.** Sky (never a surface, so the
+  GI pool is structurally inapplicable) is the largest single excess at 4.45×, and it is the sun coin / MIS story — #6,
+  not #5. Second by per-pixel error is glass/SSS, 2.7 % of the pixels carrying 17.8 % of the MSE, which the pool
+  excludes by design for a good reason (a light-sample pool loses the refracted subpath).
+
+So #5's step 1 is a **negative result, recorded as one**: the coverage gap is real (§14.5) and it is not the binding
+constraint (§14.6). The replay + shift-mapping build stays unbuilt, deliberately, and the effort it would have consumed
+is re-pointed at the two classes the table actually names — the sky's sun coin (#6) and the glass/SSS receivers. What
+would change the answer: a configuration where the covered class's excess is materially worse than the uncovered
+classes' (the level, camera or dial set for a lamp-dominated interior with few sky pixels), which is exactly the regime
+§14.3 says ReSTIR is for — so re-run `ReportGiCoverage.sh` and `ReportGiClassError.sh` there before reviving #5.
+
+Reports: `Exhibits/Workbench/Materials/ReportGiCoverage.sh` (§14.5's decomposition, config-robust at 69.2 % / 68.9 %
+escape on two framings) and `ReportGiClassError.sh` (§14.6, `[fast|full]`, GREEN on its ImageMagick cross-check).
 
 Harness: `Exhibits/Workbench/Materials/ReportGiCoverage.sh [frames]` re-runs both configurations and prints exactly the
 two tables above (≈ 1 min). The shares are config-robust — at 128×72 the same run reads escape 68.9 %, covered
