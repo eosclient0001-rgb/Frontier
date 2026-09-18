@@ -17,6 +17,11 @@
 #      ④ every .cpp under Engine/ and Projects/Project-Zero/Source/ is either in a list or named in the allowlist
 #        below with a reason — so a new TU cannot quietly land in neither build system;
 #      ⑤ per-file overrides agree: every TU CMake gives extra defines/include dirs gets the same treatment here.
+#      ⑥ the headless CPU reference agrees across all THREE of its lists (CMake, the Makefile, Construct.ps1) — it is
+#        built on the sandbox side too, so a divergence there breaks the CPU work as well as the product;
+#      ⑦ Project-Dyno agrees between CMake and its own ToolchainSequence.ps1.
+#
+#    Every list in the repo that names .cpp files by hand is covered here. If a new build target grows one, add it.
 #
 #    Usage: CheckBuildSourceList.sh
 set -uo pipefail
@@ -120,9 +125,55 @@ if grep -q "SHADERBALL_PREVIEW_LIB" "$CMakeFile" && grep -q "SHADERBALL_PREVIEW_
     fi
 fi
 
+# ── ⑥/⑦ the other hand-maintained lists ──────────────────────────────────────────────────────────────────────────────
+Compare() { # $1 = label, $2/$3 = files with one TU per line, $4/$5 = their names
+    if diff -q "$2" "$3" > /dev/null; then
+        Pass "$1"
+    else
+        Fail "$1"
+        diff "$2" "$3" | sed 's/^</        only in '"$4"': /; s/^>/        only in '"$5"': /' | grep -v '^[0-9-]' | head -12
+    fi
+}
+
+# CPU reference — the Makefile, normalised to repo-relative Windows paths the way the other extractors do.
+sed -n '/^SRCS :=/,/^OBJS :=/p' Projects/Project-Zero/Makefile \
+    | grep -oE '[A-Za-z][A-Za-z0-9_/.-]*\.cpp' \
+    | sed 's|^\./||' \
+    | awk '{ if ($0 ~ /^Source\//) { sub(/^Source\//, ""); print "Projects\\Project-Zero\\Source\\" $0 }
+             else { sub(/^\.\.\/\.\.\//, ""); gsub(/\//, "\\\\"); print } }' \
+    | sort -u > "$Work/cpu_make.txt"
+
+# CPU reference — Construct.ps1's $SourceFiles, normalised through its Join-Path roots. Read line by line on purpose:
+#    a $Root inside a double-quoted pattern would be a SHELL SUBSTITUTION, which is how this extractor returned an
+#    empty list the first time it ran — and a gate that silently checks nothing is worse than no gate at all.
+sed -n '/^\$SourceFiles = @(/,/^)/p' Projects/Project-Zero/Build/Construct.ps1 > "$Work/construct.raw"
+: > "$Work/cpu_construct.txt"
+while IFS= read -r Line; do
+    Rel=$(printf '%s' "$Line" | grep -oE "'[^']+\.cpp'" | tr -d "'")
+    [ -z "$Rel" ] && continue
+    Rel="${Rel//\//\\}"
+    case "$Line" in
+        *'ProjectRoot'*)      echo "Projects\\Project-Zero\\$Rel" >> "$Work/cpu_construct.txt" ;;
+        *'RepositoryRoot'*)   echo "$Rel" >> "$Work/cpu_construct.txt" ;;
+    esac
+done < "$Work/construct.raw"
+sort -u "$Work/cpu_construct.txt" -o "$Work/cpu_construct.txt"
+
+CmakeList PROJECT_ZERO_CPU_SOURCES | sort -u > "$Work/cpu_cmake.txt"
+Compare "⑥ the CPU reference names the same TUs in CMake, the Makefile and Construct.ps1" \
+        "$Work/cpu_cmake.txt" "$Work/cpu_make.txt" CMake Makefile
+Compare "⑥ …and Construct.ps1 agrees with CMake too" \
+        "$Work/cpu_cmake.txt" "$Work/cpu_construct.txt" CMake Construct.ps1
+
+CmakeList PROJECT_DYNO_SOURCES | sort -u > "$Work/dyno_cmake.txt"
+sed -n '/^\$EngineRelative = @(/,/^)/p' Projects/Project-Dyno/Build/ToolchainSequence.ps1 \
+    | grep -oE "'[A-Za-z][^']*\.cpp'" | tr -d "'" | sed 's|\\\\|\\|g' | sort -u > "$Work/dyno_ps.txt"
+Compare "⑦ Project-Dyno names the same TUs in CMake and its ToolchainSequence.ps1" \
+        "$Work/dyno_cmake.txt" "$Work/dyno_ps.txt" CMake Dyno.ps1
+
 echo
 if [ "$Failures" -eq 0 ]; then
-    echo "[BuildSourceList] GREEN — CMake and ToolchainSequence.ps1 name the same translation units"
+    echo "[BuildSourceList] GREEN — every hand-maintained source list names the same translation units"
     exit 0
 fi
 echo "[BuildSourceList] RED — $Failures check(s) failed"
