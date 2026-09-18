@@ -510,6 +510,16 @@ bool g_RestirHistorySplit = true;
 // The indirect half's pool (ReSTIR GI). Off ⇒ the pre-pool single-sample arm, which is the A/B.
 bool g_RestirGiReuse = true;
 std::atomic<long> g_GiBad{0}, g_GiEscape{0}, g_GiEmitter{0}, g_GiUnlit{0}, g_GiUnusable{0}, g_GiVertex{0}, g_GiNoPHat{0};
+// The indirect pool's temporal half, counted so a DEAD merge is visible in the transcript rather than inferred from a
+//    flat mean M: `Tried` is every attempt against a history pixel that held samples, `NoVertexHistory` the share of
+//    those refused only because the previous frame's vertex record was missing, `Merged` the accepted ones. Measured
+//    (240x135, 128 frames): 104 805 tried, 97 194 merged, 78 refused for a missing record — the temporal half IS alive
+//    (the swap at the end of the frame keeps `VertexHistory` = last frame's vertices) and merges 93 % of the attempts it
+//    gets; what it does not get is attempts. Only ~25 % of the pixels that hold a reservoir even look at a history pixel
+//    that holds one, because a pixel only has an indirect reservoir on the frames its own primary BSDF sample reached
+//    geometry at all. The counters exist so that distinction stays measured rather than assumed — it was assumed wrong
+//    once already (a "dead VertexHistory" hypothesis, disproved by the swap plus these counters).
+std::atomic<long> g_GiTemporalTried{0}, g_GiTemporalNoVertexHistory{0}, g_GiTemporalMerged{0};
 // D10: temporal merges the geometry test would have allowed and the identity refused — per pool, because the two pools
 //    ghost differently (the DI pool inherits a light sample chosen for another object; the GI pool inherits one chosen
 //    at another object's first-bounce VERTEX, which reads as a reflection of something that is no longer there).
@@ -1231,6 +1241,12 @@ CpuGiReservoir RestirGiTemporalReservoir(const RestirSurface& Surface, int Candi
                 const bool IdentityDiffers = Prev.Identity != Surface.Identity;
                 const bool IdentityOk = !g_RestirIdentity || !IdentityDiffers;
                 const bool Valid = Prev.SampleCount > 0u && GeometryOk && IdentityOk;
+                if (Prev.SampleCount > 0u)
+                {
+                    ++g_GiTemporalTried;
+                    if (!PV2.Valid) ++g_GiTemporalNoVertexHistory;
+                    if (Valid)      ++g_GiTemporalMerged;
+                }
                 // D10, and here the sample is a light point chosen at the OTHER object's first-bounce vertex — the
                 //    reflection-side ghost. Counted in both arms, honoured in one.
                 if (Prev.SampleCount > 0u && GeometryOk && IdentityDiffers) ++g_IdentityRefusedGi;
@@ -2268,6 +2284,9 @@ SequenceResult RenderSequence(const Viewpoint& VP, int Width, int Height, int Sp
                 std::printf("[restir gi] reasons: bad %ld escape %ld emitter %ld unlit %ld unusable %ld vertex %ld noPHat %ld\n",
                             g_GiBad.load(), g_GiEscape.load(), g_GiEmitter.load(), g_GiUnlit.load(),
                             g_GiUnusable.load(), g_GiVertex.load(), g_GiNoPHat.load());
+            if (F + 1 == Frames)
+                std::printf("[restir gi] temporal: tried %ld, refused for a MISSING previous vertex record %ld, merged %ld\n",
+                            g_GiTemporalTried.load(), g_GiTemporalNoVertexHistory.load(), g_GiTemporalMerged.load());
         }
 
         std::swap(FilmPrevious, FilmCurrent);

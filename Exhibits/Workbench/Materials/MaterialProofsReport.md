@@ -1033,3 +1033,53 @@ at 250, −28 %), or ④'s flatness would be a blind metric rather than a clampe
 
 Gate: `Exhibits/Workbench/Materials/CheckRestirSoak.sh [fast|full]` — GREEN at both lengths (full: 1 000 frames, ~7 min;
 fast: 250 frames, ~3 min), 0 failures, run with the shader's M warning live.
+
+### 14.5 Why the indirect pool covers 16 % — the gap, measured (2026-09-18, roadmap #5)
+
+§14.3 says the pool exists on 16 % of surface pixels and names the cause from the design side. Roadmap #5 is the item
+that closes the gap, and before any estimator change it is worth knowing *where* the 84 % go, because "16 % → 100 %" is
+not one fix but four, of very different size. The mirror already counted the reasons; `--restir` runs now also count the
+temporal half's attempts, so both halves of the answer are in the transcript:
+
+| per frame, 240×135, 4 candidates, 2 taps | pixels | share of surface pixels |
+|---|---|---|
+| **escape** — the primary BSDF sample saw the sky, so no first-bounce vertex exists | 13 426 | **69.2 %** |
+| **vertex** — usable, this is the pool's coverage | 2 344 | 12.1 % |
+| **unusable** — glass / SSS vertices, out of scope by design | 867 | 4.5 % |
+| **emitter** — the primary sample landed on a light: the path ends there | 560 | 2.9 % |
+| **bad** — degenerate BSDF draw | 232 | 1.2 % |
+| **unlit** — emissive-only / unlit receivers | 20 | 0.1 % |
+
+(19 404 surface pixels that frame; the ~10 % not listed are pixels whose primary ray missed geometry, which the kernel
+resolves as sky rather than through the DI block. The same shares over 1 000 frames at 128×72: escape 77 % of the
+reasons, vertex 13.4 %, unusable 5.0 %, emitter 3.2 %.) **The gap is overwhelmingly the escape case**, which is exactly
+what §14.3 predicted from the estimator's shape: a light-sample pool needs a vertex to reconnect from, and a sky ray
+does not make one.
+
+**The temporal half is alive, but starved — and that is where the pool's M goes.** The indirect line's mean M reads 1.1
+against the direct pool's 63.1 at the same moment, which looks like a broken merge. It is not:
+
+| 240×135, 128 frames | count |
+|---|---|
+| temporal attempts with samples in the history pixel (`tried`) | 104 805 |
+| accepted merges | **97 194 (92.7 % of the tries)** |
+| refused because the previous frame's vertex record was missing | 78 (0.07 %) |
+
+So the merge succeeds whenever it is asked; it is asked on only ~25 % of the covered pixels per frame. The reason is the
+estimator's own shape again: the first-bounce vertex is derived from a *fresh primary BSDF sample every frame*, so whether
+a given pixel has a vertex at all is a per-frame coin flip (12–16 % heads). A pixel's reprojected history pixel
+therefore holds an indirect reservoir only a quarter of the time, and the pool's M sits near the candidate count instead
+of climbing to the direct pool's 60–84. ⚠️ This was first misdiagnosed as a dead validation buffer
+(`State.VertexHistory` looked write-only). It is not: the frame end does `std::swap(State.VertexHistory, State.Vertex)`,
+so the buffer is last frame's vertices by construction. The counters above — and a one-line experiment that proved a
+write there only perturbs the arm by 10 RMSE units—settled it; the write was dropped and the arm reproduces its previous
+RMSE 6 181.33 **byte-for-byte** with the counters in place.
+
+**What #5 therefore costs, in the order the numbers ask for it.** The escape case cannot be fixed by loosening a
+validation test: those pixels have no vertex to reconnect from, and a neighbour's light point alone cannot be attached to
+a receiver whose first bounce is at infinity. It needs the neighbour's *vertex* moved onto this pixel — ReSTIR GI's
+shift mapping — which means the reservoir must carry the vertex payload (its material, so the vertex's BSDF can be
+re-evaluated for the direction to the *new* receiver) and the receiver must supply the connect term
+`f_r(ω)·cos_r·G(p_r,x_v)·V(p_r,x_v)` against the vertex's own subpath. The estimator part is standard; the
+risk is bias, so the change has to land behind its own switch and be read against a converged reference, the way
+`--restir-no-gi-reuse` is read today. That is the next build, and §14.3's 16 % is the number it has to move.
