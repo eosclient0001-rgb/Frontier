@@ -218,6 +218,8 @@ set(FRONTIER_ENGINE_SOURCES
     Engine/ContentInterchange/ObjCodec.cpp
     Engine/ContentInterchange/ContentCodec.cpp
     Engine/ContentInterchange/UfbxTranslation.cpp
+    Engine/ContentInterchange/SpaceCodec.cpp      # P1/P3: the Space container family's reader, writer and the two tools
+    Engine/ContentInterchange/SpaceExport.cpp     # P2/P4/P6: resident records → containers
     Engine/DisplayPresentation/ThemeStructure.cpp
     Engine/DisplayPresentation/VectorCodec.cpp
     Engine/DisplayPresentation/FontCodec.cpp
@@ -281,6 +283,7 @@ set(PROJECT_ZERO_SOURCES
     Engine/PlatformInterchange/WaveCodec.cpp
     Engine/PhysicalDynamics/RigidBodySolver.cpp
     Projects/Project-Zero/Source/CelestialSequence.cpp
+    Projects/Project-Zero/Source/CommandLine.cpp   # P4: the launch line both hosts parse (-Project/-Level/-Build/-Config/+Location)
     Projects/Project-Zero/Source/ShowroomStructure.cpp
     Engine/DisplayPresentation/DiagnosticInspector.cpp
     Engine/DisplayPresentation/ReSTIRIntegrator.cpp

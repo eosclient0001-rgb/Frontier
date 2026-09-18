@@ -45,13 +45,13 @@ See `Docs/DynamicGeometry.md` for the plan, the measured budget table and the de
 
 | # | Item | | % | What's left → next step |
 |---|---|---|:--:|---|
-| 19 | P1 header + directory + `TYPE`/`META` + checksum + gate | ❌ | 0 % | Round-trip / truncation / unknown-table tests |
-| 20 | P2 `.geometry` / `.material` / `.instance` + `MaterialSlot` | ❌ | 0 % | Bit-identical to the glTF path on the M10 level |
-| 21 | P3 `REFS` + `BLOB` + five modes + `-Pack`/`-Explode` | ❌ | 0 % | Dedup, engine-content resolution |
-| 22 | P4 Unreal-style CLI, migrate Project-Zero, glTF → interchange | ❌ | 0 % | Package run == `--scene` run |
-| 23 | P5 `.runtime` (`.state` family deferred by the owner's call) | ❌ | 0 % | Write/read-back only |
-| 24 | P6 `.environment` / `.pigment` / `.uvspace` / `.workflow` / `.archive` | ❌ | 0 % | Each gets its own exhibit pair |
-| 25 | §10 open questions (8), esp. material assignment copy vs share | ⚠️ | 0 % | **Blocks P2** — needs decisions, not code |
+| 19 | P1 header + directory + `TYPE`/`META` + checksum + gate | ✅ | 100 % | `SpaceFormat.h`/`SpaceCodec.{h,cpp}`; `CheckSpaceFamily.sh` GREEN (19 claims, 2 GPU skips) |
+| 20 | P2 `.geometry` / `.material` / `.instance` + `MaterialSlot` | ✅ | 100 % | `SpaceExport.{h,cpp}`; 49/49 record sets identical by memcmp (CPU half) — AE=0 on device still owed |
+| 21 | P3 `REFS` + `BLOB` + five modes + `-Pack`/`-Explode` | ✅ | 100 % | Dedup flat at 136 B/copy; `Pack(Explode(X)) == X` (`SpaceTool`, `Tools/Scripts/*.sh`) |
+| 22 | P4 Unreal-style CLI, migrate Project-Zero, glTF → interchange | ✅ | 100 % | `CommandLine.{h,cpp}` + `SpaceTool`; CPU parity by memcmp (49 geometry + 49 material record sets) |
+| 23 | P5 `.runtime` (`.state` family deferred by the owner's call) | ✅ | 100 % | Written by `SpaceTool`; a file claiming the state-embedding policy is refused by name |
+| 24 | P6 `.environment` / `.pigment` / `.uvspace` / `.workflow` / `.archive` | ✅ | 100 % | Six exporters in `SpaceExport.cpp`; `-Bake=Sky` probes from `AtmosphereModel`; editors deferred (§11.3) |
+| 25 | §10 open questions (8), esp. material assignment copy vs share | ✅ | 100 % | q4 answered **CopyOnWrite** and taken in code (project export slots); the rest documented defaults |
 | 26 | Environment lighting stage A — bake the sky probe | ❌ | 0 % | CPU-measurable; the smallest version that pays |
 | 27 | Environment lighting stage B — sky as a reservoir candidate | ❌ | 0 % | After A; fixes glass/specular sky variance |
 | 28 | "This is the new master branch" designation | ⚠️ | 0 % | Unanswered; work currently sits on `arena/01a0af43-slate` |
@@ -69,6 +69,6 @@ See `Docs/DynamicGeometry.md` for the plan, the measured budget table and the de
 
 1. 🔎 Run the current tip on the GPU with the HUD's ReSTIR row open ("indirect pool on/off · N taps") and report
    commit + tier + whether the blur/fireflies survive — closes #4 and #12 together.
-2. 📝 Answer the §10 questions (the one that matters: material assignment copy vs share / CopyOnWrite) — unlocks P1/P2.
+2. 📝 §10 answered (q4 = **CopyOnWrite**, taken in code) — P1–P6 shipped and gated; the only item left is the device-side AE=0 parity run.
 3. 🧭 Pick the next CPU-measurable build: **D8/D9** (dynamic BLAS update policy + GPU build for topology changes, next
    per `Docs/DynamicGeometry.md` §6), replay + shift mapping (indirect 16 % → 100 %), or the sky probe bake.

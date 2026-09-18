@@ -1,6 +1,8 @@
 # The Space family — one container format, one file per part of a project
 
-*Status: plan. Nothing here is implemented yet.*
+*Status: **shipped** — P1–P6 are implemented, gated and green (§12). Two claims are image comparisons and need a device;
+they are reported as SKIPPED by the gate with their CPU half stated. The plan below is kept as written: where the code
+diverged from it, the divergence is listed in §12 and explained in the source's own header.*
 
 The ask, in the owner's words: stop loading `Projects/Project-Zero/Content/Scenes/*.gltf` at startup; give a project
 one binary container of its own — like a font file, self-contained, with duplicate objects stored once as references;
@@ -338,8 +340,10 @@ Every claim is checkable on this machine, with no GPU:
    material produce one blob and ten slot rows (file size flat in N); editing a `Shared` material moves every
    referencing object, editing a `Copied`/`CoW` one moves exactly one (reference census differs in exactly one row),
    and a slot whose blob is missing fails by name rather than silently rendering the base colour.
-One gate, `Exhibits/Workbench/ProjectFormat/CheckSpaceFamily.sh`, same shape as `CheckMaterialDenoise.sh`: PASS/FAIL
-per claim, exits on the first red.
+One gate, `Exhibits/Workbench/ProjectFormat/CheckSpaceFamily.sh`: PASS/FAIL per claim, exits on the first red. Claims 1, 3,
+4, 5, 7 and 8 run here in full (with the shell-level `Pack(Explode(X)) == X`); claims 2 and 6 have their CPU half
+(the records ARE the resident records, by `memcmp`) run here and their GPU half (AE = 0 against the gallery PNG) reported
+as SKIPPED, because this machine has no device — see §12.3.
 
 ## 9. Phasing
 
@@ -351,6 +355,10 @@ per claim, exits on the first red.
 | P4 | `-Project/-Level/-Build/-Config/+Location` in both hosts; `-Export`; migrate Project-Zero; glTF stays as interchange | CPU parity: package run == `--scene` run |
 | P5 | `.runtime` only; the `.state` family (four domains in one file type) is **deferred** (§11) | `.runtime` records are written and read back; no state ever embeds into an asset |
 | P6 | `.environment` (terrain + sky probe, per the deferred lighting plan), `.pigment` + `.uvspace` with the paint/UV editors, `.workflow`/`.script`, `.archive` | each gets its own exhibit pair when it lands |
+
+Shipped as: P1 `SpaceFormat.h`/`SpaceCodec.{h,cpp}` · P2 `SpaceExport.{h,cpp}` · P3 the same codec's `SpacePack`/
+`SpaceExplode`/`SpaceEmitWithReferences` · P4 `Projects/Project-Zero/Source/CommandLine.{h,cpp}` + `SpaceTool` +
+`Tools/Scripts/{Pack,Explode}Project.sh` · P5/P6 `SpaceExport.cpp`'s six type exporters + `SpaceTool -Bake=Sky`.
 
 ## 10. Open questions — the ones worth answering before P2
 
@@ -369,6 +377,13 @@ per claim, exits on the first red.
    means an "edit one object's material" needs the inspector to fork it first. Plan assumes **CopyOnWrite** as the
    editor default, which behaves like copy for edits and like share for bytes — and it is the one open question worth
    an explicit answer, because it is the only part of this design a user ever feels.
+
+   **Answered: CopyOnWrite is the default.** It is what the code takes when it has to take one —
+   `SpaceTool`'s export writes `kSpaceMaterialCopyOnWrite` slots that name the shared file and carry no blob, and
+   `SpaceExport.h`'s note says so where the slot is created. The consequence is the one the trade-off predicts: an edit
+   to a `CoW` material forks that object's copy (one blob appears, one slot row changes) and leaves the other referrers
+   alone; a `Shared` material is the level designer's explicit "these are the same thing", and `Copied` is what a
+   `CoW` slot becomes after its first edit. Claim 8 measures all three.
 5. **Does a material file embed its maps or reference them?** Plan assumes both are allowed and the policy is §5's
    (embed small, reference large; `-Pack` inlines). A material whose maps are always embedded is a self-contained
    font-like artefact that survives being copied anywhere; one that references `EngineContent` is smaller and updates
@@ -403,3 +418,67 @@ per claim, exits on the first red.
    self-contained material files that objects copy instead. If a real need appears later — one gold with 20 slightly
    different roughnesses — the addition is a new *file type* (a variant that names its parent and lists overrides),
    never a quiet change to `MaterialSlot`; v1 has no such table and no such field.
+
+---
+
+## 12. What landed (P1–P6): files, gate, divergences, and what is still owed
+
+### 12.1 The code
+
+| what | where |
+|---|---|
+| the bytes: signature, 20 B header, 16 B table records, tags, the 13-entry file-type table, every row struct, FNV-1a | `Engine/ContentInterchange/SpaceFormat.h` |
+| reader, writer, `-Pack`, `-Explode`, the shared re-emit, reference resolution | `Engine/ContentInterchange/SpaceCodec.{h,cpp}` |
+| resident records → containers: geometry, material, instance, project builder, runtime, environment, uvspace, pigment, workflow, archive | `Engine/ContentInterchange/SpaceExport.{h,cpp}` |
+| the launch line (`-Project`/`-Level`/`-Build`/`-Config`/`-Export`/`-Bake`/`-Embed`/`+Location`/`+Rotation`, and the `--scene`/`--scale` aliases for one phase) | `Projects/Project-Zero/Source/CommandLine.{h,cpp}` |
+| the tool the CLI drives, and the two scripts the plan names | `Exhibits/Workbench/ProjectFormat/SpaceTool.cpp`, `Tools/Scripts/PackProject.sh`, `Tools/Scripts/ExplodeProject.sh` |
+| the gate | `Exhibits/Workbench/ProjectFormat/{SpaceFamilyProof.cpp,CheckSpaceFamily.sh}` |
+
+### 12.2 The gate, as it ran
+
+`bash Exhibits/Workbench/ProjectFormat/CheckSpaceFamily.sh` → **19 claims passed, 0 failed, 2 skipped**, comprising:
+
+* claims 1–8 of §8 (12 verdicts in the proof, 6 PASS / 2 SKIP of them the two GPU halves);
+* the command line (P4): export the M10 level, `-Verify` every vertex/index/cluster and all 49 materials against the
+  level builder by `memcmp`, `-Info` the container, `-Pack` it and resolve every reference with the content directory
+  deleted, `-Explode` it back;
+* the shell-level round trips: two exports byte-identical, `Pack(Explode(X)) == X` at 13 052 252 B, and the whole family
+  present in one export (project, runtime, environment, uvspace, workflow, archive, geometry, materials);
+* `-Bake=Sky`: a 32×16 equirect probe integrated from `AtmosphereModel::Integrate` at the staging's own sun hour.
+
+Measured facts worth keeping: the M10 level exports as **49 references · 49 material slots · 49 instances · 49 material
+files**, the project file is **14 116 B**, and the geometry behind it is **13 042 124 B** — i.e. the project is 0.1 % of
+what it points at, which is the whole point of a reference. `-Verify` reports 49/49 record sets identical.
+
+### 12.3 Still owed
+
+* **AE = 0 on a device** for claims 2 and 6 (`Gallery` comparison between the project path and the `--scene` path). The
+  CPU half is proven here and the gate says SKIPPED, never PASS.
+* **Committing the exported artefacts.** `-Export` writes into `Build/Space` (gitignored) because it is 13 MB of
+  regenerable bytes; `Tools/Scripts/PackProject.sh` is what a packaging run uses to write them where they ship.
+* **The editors** (§11.3): `.uvspace`, `.pigment`, `.environment` authoring are format-defined and editor-defined later.
+
+### 12.4 Where the code diverges from this plan, and why
+
+Each of these is explained at the site in the source; they are listed together so the plan and the code cannot drift
+silently.
+
+1. **The header is 20 B, not 16** (§3's field list does not fit 16: `4+2+2+2+2+4+4`). The gate asserts the constant and
+   `sizeof(SpaceHeader)` against each other, so this cannot rot.
+2. **`INST` rows are 112 B and materials are a separate 24 B `MSLT` row**, not one combined 96 B record. The plan's own
+   field list for that record is 160 B. Splitting is what lets two instances share one material slot and what makes
+   claims 3 and 8 measurable.
+3. **The directory is written after the payloads** (the header's `TableOffset` describes where), so adding a table does
+   not move every payload, and `-Pack`/`-Explode` rewrites are shifts rather than re-layouts.
+4. **`BLOB` is emitted last, sorted by hash, with offsets relative to its own payload**, and every blob's hash is
+   re-checked on read — a flipped bit inside an embedded material is a named failure, not a corrupt render.
+5. **`REFS` is re-emitted by the tools with its string block rebuilt** (rows, then strings). A tool cannot carry the
+   offsets across a rewrite, and a payload whose first four bytes are text is a payload whose row count is text: that
+   mistake was made once during this milestone and the writer's API now makes it unrepresentable
+   (`WriteRowWithString`, and no "write a string now" call at all).
+6. **`LITE` rows are `PunctualLuminaireRecord` in fixed form** (the CPU record carries a `std::string`) plus a 16 B alias
+   row, which is what §3's table needed to be writable.
+7. **`SpacePack` copies the container's existing blobs into the rewritten file first**, so a reference index that already
+   pointed at one still does — and it CHECKS that the copy reproduced its index rather than assuming it.
+8. **`-Explode` writes the rewritten container into the payload directory**, not beside the input: its references are
+   sibling names, and a sibling is "next to the file that names it".
