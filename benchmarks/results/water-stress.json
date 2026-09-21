@@ -1,0 +1,263 @@
+{
+  "variant": "optimized",
+  "water": true,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "dt": 0.002,
+  "viscosity": 0.003,
+  "samples": [
+    {
+      "clear": 0.112683,
+      "build": 0.148301,
+      "density": 15.920032,
+      "integrate": 3.790924
+    },
+    {
+      "clear": 0.065748,
+      "build": 0.206414,
+      "density": 16.623492,
+      "integrate": 4.126449
+    },
+    {
+      "clear": 0.091889,
+      "build": 0.168447,
+      "density": 16.485483,
+      "integrate": 3.721257
+    },
+    {
+      "clear": 0.062914,
+      "build": 0.135323,
+      "density": 15.344251,
+      "integrate": 3.751246
+    },
+    {
+      "clear": 0.061571,
+      "build": 0.139288,
+      "density": 15.898239,
+      "integrate": 3.796836
+    },
+    {
+      "clear": 0.087175,
+      "build": 0.133247,
+      "density": 16.169113,
+      "integrate": 3.750775
+    },
+    {
+      "clear": 0.094404,
+      "build": 0.177628,
+      "density": 15.817562,
+      "integrate": 3.899116
+    },
+    {
+      "clear": 0.121526,
+      "build": 0.139472,
+      "density": 15.739297,
+      "integrate": 3.682441
+    },
+    {
+      "clear": 0.076206,
+      "build": 0.150848,
+      "density": 15.634478,
+      "integrate": 3.751
+    }
+  ],
+  "checkpoints": [
+    {
+      "count": 6144,
+      "time": 0.024000000000000007,
+      "steps": 12,
+      "finite": true,
+      "minY": 0.08074823766946793,
+      "maxY": 1.0224521160125732,
+      "maxSpeed": 0.4048575703733654,
+      "meanDensityRatio": 0.949676369181058,
+      "kineticEnergy": 709.3399930601676,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 2,
+      "invalidResets": 0
+    },
+    {
+      "count": 6144,
+      "time": 0.2640000000000002,
+      "steps": 132,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 0.9438611268997192,
+      "maxSpeed": 7.2505751354974795,
+      "meanDensityRatio": 1.0196423527959269,
+      "kineticEnergy": 21761.264861926313,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 13451,
+      "invalidResets": 0
+    },
+    {
+      "count": 6144,
+      "time": 0.5040000000000003,
+      "steps": 252,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 1.0776633024215698,
+      "maxSpeed": 5.261261009463964,
+      "meanDensityRatio": 1.0065542928593156,
+      "kineticEnergy": 19945.1421308487,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 21912,
+      "invalidResets": 0
+    },
+    {
+      "count": 6144,
+      "time": 0.7440000000000005,
+      "steps": 372,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 1.657429575920105,
+      "maxSpeed": 4.376893474844115,
+      "meanDensityRatio": 0.9894902988720181,
+      "kineticEnergy": 15873.044008273535,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 26148,
+      "invalidResets": 0
+    },
+    {
+      "count": 6144,
+      "time": 0.9840000000000008,
+      "steps": 492,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 1.7790436744689941,
+      "maxSpeed": 4.395690359746044,
+      "meanDensityRatio": 0.9926506194460671,
+      "kineticEnergy": 14591.612976064322,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 28497,
+      "invalidResets": 0
+    },
+    {
+      "count": 6144,
+      "time": 1.2240000000000009,
+      "steps": 612,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 1.3482908010482788,
+      "maxSpeed": 5.057092975765479,
+      "meanDensityRatio": 0.9988276121560679,
+      "kineticEnergy": 15313.243618542869,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 30136,
+      "invalidResets": 0
+    },
+    {
+      "count": 6144,
+      "time": 1.464000000000001,
+      "steps": 732,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 2.036419630050659,
+      "maxSpeed": 5.4954491205141665,
+      "meanDensityRatio": 0.99510202017215,
+      "kineticEnergy": 13714.486229143291,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 30139,
+      "invalidResets": 0
+    },
+    {
+      "count": 6144,
+      "time": 1.7040000000000013,
+      "steps": 852,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 2.304816484451294,
+      "maxSpeed": 4.089334882079946,
+      "meanDensityRatio": 0.9961749478267544,
+      "kineticEnergy": 10995.60138132853,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 29755,
+      "invalidResets": 0
+    },
+    {
+      "count": 6144,
+      "time": 1.9200000000000015,
+      "steps": 960,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 2.2056779861450195,
+      "maxSpeed": 4.414429620877273,
+      "meanDensityRatio": 0.9999521116891023,
+      "kineticEnergy": 9712.009610442185,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 30125,
+      "invalidResets": 0
+    }
+  ],
+  "errors": [],
+  "summary": {
+    "clear": {
+      "median_ms": 0.087175,
+      "p95_ms": 0.121526,
+      "min_ms": 0.061571
+    },
+    "build": {
+      "median_ms": 0.148301,
+      "p95_ms": 0.206414,
+      "min_ms": 0.133247
+    },
+    "density": {
+      "median_ms": 15.898239,
+      "p95_ms": 16.623492,
+      "min_ms": 15.344251
+    },
+    "integrate": {
+      "median_ms": 3.751246,
+      "p95_ms": 4.126449,
+      "min_ms": 3.682441
+    }
+  },
+  "python_wall_seconds": 21.57414695099999,
+  "browser": "153.0.8010.0",
+  "mode": "stages",
+  "page_errors": []
+}

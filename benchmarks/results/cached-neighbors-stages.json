@@ -1,0 +1,100 @@
+{
+  "variant": "optimized",
+  "water": false,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "dt": 0.002,
+  "viscosity": 0.025,
+  "samples": [
+    {
+      "clear": 0.083633,
+      "build": 0.198133,
+      "density": 16.996141,
+      "integrate": 4.096097
+    },
+    {
+      "clear": 0.099978,
+      "build": 0.181022,
+      "density": 14.884207,
+      "integrate": 4.068505
+    },
+    {
+      "clear": 0.080654,
+      "build": 0.168036,
+      "density": 14.618272,
+      "integrate": 3.704167
+    },
+    {
+      "clear": 0.064067,
+      "build": 0.135557,
+      "density": 13.460885,
+      "integrate": 3.680779
+    },
+    {
+      "clear": 0.074623,
+      "build": 0.130974,
+      "density": 13.960681,
+      "integrate": 3.684026
+    },
+    {
+      "clear": 0.064651,
+      "build": 0.122879,
+      "density": 14.611353,
+      "integrate": 4.04467
+    },
+    {
+      "clear": 0.065035,
+      "build": 0.132585,
+      "density": 14.501749,
+      "integrate": 4.048439
+    },
+    {
+      "clear": 0.084604,
+      "build": 0.187267,
+      "density": 13.680614,
+      "integrate": 3.640647
+    },
+    {
+      "clear": 0.080795,
+      "build": 0.16577,
+      "density": 13.496326,
+      "integrate": 3.65142
+    }
+  ],
+  "checkpoints": [],
+  "errors": [],
+  "summary": {
+    "clear": {
+      "median_ms": 0.080654,
+      "p95_ms": 0.099978,
+      "min_ms": 0.064067
+    },
+    "build": {
+      "median_ms": 0.16577,
+      "p95_ms": 0.198133,
+      "min_ms": 0.122879
+    },
+    "density": {
+      "median_ms": 14.501749,
+      "p95_ms": 16.996141,
+      "min_ms": 13.460885
+    },
+    "integrate": {
+      "median_ms": 3.704167,
+      "p95_ms": 4.096097,
+      "min_ms": 3.640647
+    }
+  },
+  "python_wall_seconds": 0.48872967700003755,
+  "browser": "153.0.8010.0",
+  "mode": "stages",
+  "page_errors": []
+}

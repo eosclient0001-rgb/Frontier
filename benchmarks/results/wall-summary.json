@@ -1,0 +1,62 @@
+{
+  "render": {
+    "samples_per_variant": 27,
+    "medians": {
+      "particleDepth": {
+        "before_ms": 140.746675,
+        "after_ms": 139.033771,
+        "reduction_percent": 1.2170120537483453
+      },
+      "filter": {
+        "before_ms": 56.230424,
+        "after_ms": 57.788098,
+        "reduction_percent": -2.7701622879457544
+      },
+      "surface": {
+        "before_ms": 196.037051,
+        "after_ms": 173.235638,
+        "reduction_percent": 11.631175272066297
+      }
+    }
+  },
+  "frame": {
+    "samples_per_variant": 27,
+    "medians": {
+      "computeMs": {
+        "before_ms": 174.289947,
+        "after_ms": 173.347428,
+        "reduction_percent": 0.5407764568314488
+      },
+      "renderMs": {
+        "before_ms": 403.93304,
+        "after_ms": 374.41201,
+        "reduction_percent": 7.308396956089558
+      },
+      "totalMs": {
+        "before_ms": 578.941193,
+        "after_ms": 552.362936,
+        "reduction_percent": 4.590838814262788
+      }
+    }
+  },
+  "moving": {
+    "samples_per_variant": 27,
+    "medians": {
+      "computeMs": {
+        "before_ms": 169.356487,
+        "after_ms": 180.849523,
+        "reduction_percent": -6.786298064862439
+      },
+      "renderMs": {
+        "before_ms": 470.14504,
+        "after_ms": 450.836096,
+        "reduction_percent": 4.107018548999264
+      },
+      "totalMs": {
+        "before_ms": 635.612309,
+        "after_ms": 633.105723,
+        "reduction_percent": 0.3943576869905985
+      }
+    }
+  }
+}

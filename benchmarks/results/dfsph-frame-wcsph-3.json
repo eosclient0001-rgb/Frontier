@@ -1,0 +1,132 @@
+{
+  "implementation": "WCSPH-neighbor-cache-stencil-v2",
+  "useDFSPH": false,
+  "renderer": "batched-walls-v1",
+  "scenePath": "cached",
+  "material": {
+    "stiffness": 100,
+    "pressureModel": "explicit equation of state",
+    "viscosity": 0.003,
+    "velocitySmoothing": 0.004,
+    "cohesion": 0
+  },
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "computeMs": 163.626337,
+      "renderMs": 383.106115,
+      "totalMs": 546.732452
+    },
+    {
+      "computeMs": 166.938571,
+      "renderMs": 372.356334,
+      "totalMs": 539.294905
+    },
+    {
+      "computeMs": 162.935721,
+      "renderMs": 370.588186,
+      "totalMs": 533.523907
+    },
+    {
+      "computeMs": 156.375462,
+      "renderMs": 353.15082,
+      "totalMs": 509.526282
+    },
+    {
+      "computeMs": 155.635709,
+      "renderMs": 355.024725,
+      "totalMs": 510.660434
+    },
+    {
+      "computeMs": 159.305947,
+      "renderMs": 341.772611,
+      "totalMs": 501.078558
+    },
+    {
+      "computeMs": 156.083071,
+      "renderMs": 373.874879,
+      "totalMs": 529.95795
+    },
+    {
+      "computeMs": 184.320725,
+      "renderMs": 352.663937,
+      "totalMs": 536.984662
+    },
+    {
+      "computeMs": 179.438062,
+      "renderMs": 347.01674,
+      "totalMs": 526.454802
+    }
+  ],
+  "state": {
+    "algorithm": "WCSPH",
+    "constraintDiagnostics": null,
+    "densityError": {
+      "measured": true,
+      "sampleTime": 0.19000000000000014,
+      "minRatio": 0.5276890397071838,
+      "medianRatio": 1.0680429935455322,
+      "p95Ratio": 1.1560229063034058,
+      "maxRatio": 1.3543487787246704,
+      "meanPositiveCompressionPercent": 6.8479377853994565,
+      "p95PositiveCompressionPercent": 15.602290630340576,
+      "maxPositiveCompressionPercent": 35.43487787246704,
+      "particlesOverOnePercent": 4737,
+      "particlesOverFivePercent": 3798
+    },
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9407274723052979,
+    "maxSpeed": 4.780185299654291,
+    "meanDensityRatio": 1.0348570434725843,
+    "kineticEnergy": 13358.503531062417,
+    "outside": 0,
+    "insideSolids": 0,
+    "penetrations": [],
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8473,
+    "invalidResets": 0
+  },
+  "summary": {
+    "computeMs": {
+      "median_ms": 162.935721,
+      "p95_ms": 184.320725,
+      "min_ms": 155.635709
+    },
+    "renderMs": {
+      "median_ms": 355.024725,
+      "p95_ms": 383.106115,
+      "min_ms": 341.772611
+    },
+    "totalMs": {
+      "median_ms": 529.95795,
+      "p95_ms": 546.732452,
+      "min_ms": 501.078558
+    }
+  },
+  "source_overrides": {},
+  "python_wall_seconds": 8.762562882000111,
+  "browser": "153.0.8010.0",
+  "mode": "frame",
+  "variant": "optimized",
+  "moving_camera": false,
+  "page_errors": []
+}

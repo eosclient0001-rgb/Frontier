@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "dimensions": [
+        5,
+        3.4
+      ],
+      "rays": 16384,
+      "maxDistanceError": 0,
+      "maxAttributeError": 0,
+      "mismatches": 0
+    },
+    {
+      "dimensions": [
+        7.5,
+        5
+      ],
+      "rays": 16384,
+      "maxDistanceError": 0,
+      "maxAttributeError": 0,
+      "mismatches": 0
+    },
+    {
+      "dimensions": [
+        10,
+        6.8
+      ],
+      "rays": 16384,
+      "maxDistanceError": 0,
+      "maxAttributeError": 0,
+      "mismatches": 0
+    },
+    {
+      "dimensions": [
+        14,
+        10
+      ],
+      "rays": 16384,
+      "maxDistanceError": 0,
+      "maxAttributeError": 0,
+      "mismatches": 0
+    }
+  ],
+  "errors": [],
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader"
+  }
+}

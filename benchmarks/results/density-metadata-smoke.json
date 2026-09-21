@@ -1,0 +1,94 @@
+{
+  "variant": "optimized",
+  "water": true,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "dt": 0.002,
+  "stiffness": 100,
+  "viscosity": 0.003,
+  "samples": [
+    {
+      "clear": 0.072341,
+      "build": 0.140582,
+      "density": 14.198549,
+      "integrate": 3.810554
+    }
+  ],
+  "checkpoints": [
+    {
+      "densityError": {
+        "measured": true,
+        "sampleTime": 0.022000000000000006,
+        "minRatio": 0.5205825567245483,
+        "medianRatio": 1.006845235824585,
+        "p95Ratio": 1.0130308866500854,
+        "maxRatio": 1.047813057899475,
+        "meanPositiveCompressionPercent": 0.5791363345148662,
+        "p95PositiveCompressionPercent": 1.303088665008545,
+        "maxPositiveCompressionPercent": 4.78130578994751,
+        "particlesOverOnePercent": 935,
+        "particlesOverFivePercent": 0
+      },
+      "count": 6144,
+      "time": 0.024000000000000007,
+      "steps": 12,
+      "finite": true,
+      "minY": 0.08074823766946793,
+      "maxY": 1.0224521160125732,
+      "maxSpeed": 0.4048575703733651,
+      "meanDensityRatio": 0.9496763694817977,
+      "kineticEnergy": 709.339994988356,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 2,
+      "invalidResets": 0
+    }
+  ],
+  "stressSummary": {
+    "checkedBatches": 1,
+    "densityMeasuredBatches": 1,
+    "maxPositiveCompressionPercent": 4.78130578994751,
+    "maxMeanPositiveCompressionPercent": 0.5791363345148662,
+    "maxParticlesOverFivePercent": 0
+  },
+  "errors": [],
+  "summary": {
+    "clear": {
+      "median_ms": 0.072341,
+      "p95_ms": 0.072341,
+      "min_ms": 0.072341
+    },
+    "build": {
+      "median_ms": 0.140582,
+      "p95_ms": 0.140582,
+      "min_ms": 0.140582
+    },
+    "density": {
+      "median_ms": 14.198549,
+      "p95_ms": 14.198549,
+      "min_ms": 14.198549
+    },
+    "integrate": {
+      "median_ms": 3.810554,
+      "p95_ms": 3.810554,
+      "min_ms": 3.810554
+    }
+  },
+  "source_overrides": {},
+  "python_wall_seconds": 0.5719701729999542,
+  "browser": "153.0.8010.0",
+  "mode": "stages",
+  "moving_camera": false,
+  "page_errors": []
+}

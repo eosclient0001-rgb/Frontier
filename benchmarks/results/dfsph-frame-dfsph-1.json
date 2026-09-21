@@ -1,0 +1,141 @@
+{
+  "implementation": "DFSPH-experimental-v1",
+  "useDFSPH": true,
+  "renderer": "batched-walls-v1",
+  "scenePath": "cached",
+  "material": {
+    "stiffness": 100,
+    "pressureModel": "constraint solve (stiffness unused)",
+    "viscosity": 0.003,
+    "velocitySmoothing": 0.004,
+    "cohesion": 0
+  },
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "computeMs": 530.87188,
+      "renderMs": 307.535617,
+      "totalMs": 838.407497
+    },
+    {
+      "computeMs": 498.640433,
+      "renderMs": 322.889243,
+      "totalMs": 821.529676
+    },
+    {
+      "computeMs": 547.472309,
+      "renderMs": 349.445765,
+      "totalMs": 896.918074
+    },
+    {
+      "computeMs": 570.663414,
+      "renderMs": 323.677409,
+      "totalMs": 894.340823
+    },
+    {
+      "computeMs": 494.468443,
+      "renderMs": 345.682786,
+      "totalMs": 840.151229
+    },
+    {
+      "computeMs": 495.199342,
+      "renderMs": 375.886214,
+      "totalMs": 871.085556
+    },
+    {
+      "computeMs": 572.668466,
+      "renderMs": 365.993088,
+      "totalMs": 938.661554
+    },
+    {
+      "computeMs": 590.679608,
+      "renderMs": 357.447263,
+      "totalMs": 948.126871
+    },
+    {
+      "computeMs": 513.407373,
+      "renderMs": 339.937378,
+      "totalMs": 853.344751
+    }
+  ],
+  "state": {
+    "algorithm": "DFSPH experimental",
+    "constraintDiagnostics": {
+      "measured": true,
+      "densityIterations": 8,
+      "divergenceIterations": 4,
+      "meanPredictedCompressionPercent": 6.717393441120952e-05,
+      "p95PredictedCompressionPercent": 0.0001654088009672705,
+      "maxPredictedCompressionPercent": 0.009152991697192192,
+      "maxPositiveDivergencePerStepPercent": 1.1378031224012375,
+      "note": "Linearized pre-contact residual, not post-advection geometric volume error. Fixed iteration budget, no convergence guarantee."
+    },
+    "densityError": {
+      "measured": true,
+      "sampleTime": 0.19000000000000014,
+      "minRatio": 0.1958351880311966,
+      "medianRatio": 0.7898330092430115,
+      "p95Ratio": 1.000002384185791,
+      "maxRatio": 1.0009443759918213,
+      "meanPositiveCompressionPercent": 0.00034804106689989567,
+      "p95PositiveCompressionPercent": 0.0002384185791015625,
+      "maxPositiveCompressionPercent": 0.0944375991821289,
+      "particlesOverOnePercent": 0,
+      "particlesOverFivePercent": 0
+    },
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 1.4158658981323242,
+    "maxSpeed": 4.174464353775991,
+    "meanDensityRatio": 0.7924038293640479,
+    "kineticEnergy": 14593.337508167164,
+    "outside": 0,
+    "insideSolids": 0,
+    "penetrations": [],
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 7408,
+    "invalidResets": 0
+  },
+  "summary": {
+    "computeMs": {
+      "median_ms": 530.87188,
+      "p95_ms": 590.679608,
+      "min_ms": 494.468443
+    },
+    "renderMs": {
+      "median_ms": 345.682786,
+      "p95_ms": 375.886214,
+      "min_ms": 307.535617
+    },
+    "totalMs": {
+      "median_ms": 871.085556,
+      "p95_ms": 948.126871,
+      "min_ms": 821.529676
+    }
+  },
+  "source_overrides": {},
+  "python_wall_seconds": 15.050851529999818,
+  "browser": "153.0.8010.0",
+  "mode": "frame",
+  "variant": "optimized",
+  "moving_camera": false,
+  "page_errors": []
+}

@@ -1,0 +1,39 @@
+{
+  "environment": "SwiftShader software WebGPU, NOT a hardware GTX/RTX benchmark",
+  "method": "3 interleaved fresh-browser runs per variant, 3 warmup frames + 9 measured frames each; 8 fixed 2 ms substeps; 6144 particles; Large tub; Balanced rendering; previous material held fixed",
+  "samples": {
+    "baseline": {
+      "computeMs": {
+        "median_ms": 279.022554,
+        "p95_ms": 327.799268
+      },
+      "renderMs": {
+        "median_ms": 462.585881,
+        "p95_ms": 497.515514
+      },
+      "totalMs": {
+        "median_ms": 741.608435,
+        "p95_ms": 794.878522
+      }
+    },
+    "optimized": {
+      "computeMs": {
+        "median_ms": 158.346015,
+        "p95_ms": 191.554282
+      },
+      "renderMs": {
+        "median_ms": 387.663136,
+        "p95_ms": 426.100707
+      },
+      "totalMs": {
+        "median_ms": 551.520528,
+        "p95_ms": 619.910976
+      }
+    }
+  },
+  "reduction_percent": {
+    "computeMs": 43.24974353148527,
+    "renderMs": 16.19650492532001,
+    "totalMs": 25.631842631347634
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "variant": "optimized",
+  "water": false,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "dt": 0.002,
+  "viscosity": 0.025,
+  "samples": [
+    {
+      "clear": 0.07467,
+      "build": 0.30707,
+      "density": 16.05761,
+      "integrate": 3.880447
+    },
+    {
+      "clear": 0.049185,
+      "build": 0.132398,
+      "density": 16.209744,
+      "integrate": 3.835434
+    },
+    {
+      "clear": 0.094951,
+      "build": 0.167828,
+      "density": 16.178682,
+      "integrate": 3.827615
+    },
+    {
+      "clear": 0.105559,
+      "build": 0.137302,
+      "density": 16.143347,
+      "integrate": 3.843881
+    },
+    {
+      "clear": 0.069449,
+      "build": 0.129029,
+      "density": 16.146785,
+      "integrate": 3.891865
+    },
+    {
+      "clear": 0.051129,
+      "build": 0.139443,
+      "density": 16.005263,
+      "integrate": 3.796769
+    },
+    {
+      "clear": 0.191538,
+      "build": 0.133121,
+      "density": 15.805527,
+      "integrate": 3.813829
+    },
+    {
+      "clear": 0.177482,
+      "build": 0.134166,
+      "density": 15.700874,
+      "integrate": 3.839449
+    },
+    {
+      "clear": 0.05345,
+      "build": 0.126357,
+      "density": 16.118626,
+      "integrate": 3.876115
+    }
+  ],
+  "checkpoints": [],
+  "errors": [],
+  "summary": {
+    "clear": {
+      "median_ms": 0.07467,
+      "p95_ms": 0.191538,
+      "min_ms": 0.049185
+    },
+    "build": {
+      "median_ms": 0.134166,
+      "p95_ms": 0.30707,
+      "min_ms": 0.126357
+    },
+    "density": {
+      "median_ms": 16.118626,
+      "p95_ms": 16.209744,
+      "min_ms": 15.700874
+    },
+    "integrate": {
+      "median_ms": 3.839449,
+      "p95_ms": 3.891865,
+      "min_ms": 3.796769
+    }
+  },
+  "source_overrides": {
+    "gpu-sph.wgsl": "1d287db53bf58df48c91b3200fd93c6563ec9f1188e67979e88d50418dd0f5e0"
+  },
+  "python_wall_seconds": 0.5159201829999915,
+  "browser": "153.0.8010.0",
+  "mode": "stages",
+  "moving_camera": false,
+  "page_errors": []
+}

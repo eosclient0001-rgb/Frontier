@@ -1,0 +1,112 @@
+{
+  "implementation": "WCSPH-neighbor-cache-v1",
+  "scenePath": "direct",
+  "material": {
+    "viscosity": 0.025,
+    "velocitySmoothing": 0.03,
+    "cohesion": 0.06
+  },
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "computeMs": 141.682865,
+      "renderMs": 388.647666,
+      "totalMs": 530.330531
+    },
+    {
+      "computeMs": 154.792824,
+      "renderMs": 460.675028,
+      "totalMs": 615.467852
+    },
+    {
+      "computeMs": 179.432122,
+      "renderMs": 456.565199,
+      "totalMs": 635.997321
+    },
+    {
+      "computeMs": 160.192613,
+      "renderMs": 407.827988,
+      "totalMs": 568.020601
+    },
+    {
+      "computeMs": 168.966522,
+      "renderMs": 404.894591,
+      "totalMs": 573.861113
+    },
+    {
+      "computeMs": 182.223848,
+      "renderMs": 461.490864,
+      "totalMs": 643.714712
+    },
+    {
+      "computeMs": 210.936748,
+      "renderMs": 467.026843,
+      "totalMs": 677.963591
+    },
+    {
+      "computeMs": 190.636369,
+      "renderMs": 475.958367,
+      "totalMs": 666.594736
+    },
+    {
+      "computeMs": 207.701774,
+      "renderMs": 464.870376,
+      "totalMs": 672.57215
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.287779335941155,
+    "meanDensityRatio": 1.0327462925439856,
+    "kineticEnergy": 12289.818330130025,
+    "outside": 0,
+    "insideSolids": 0,
+    "penetrations": [],
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8482,
+    "invalidResets": 0
+  },
+  "summary": {
+    "computeMs": {
+      "median_ms": 179.432122,
+      "p95_ms": 210.936748,
+      "min_ms": 141.682865
+    },
+    "renderMs": {
+      "median_ms": 460.675028,
+      "p95_ms": 475.958367,
+      "min_ms": 388.647666
+    },
+    "totalMs": {
+      "median_ms": 635.997321,
+      "p95_ms": 677.963591,
+      "min_ms": 530.330531
+    }
+  },
+  "python_wall_seconds": 9.668455718999667,
+  "browser": "153.0.8010.0",
+  "mode": "frame",
+  "variant": "optimized",
+  "moving_camera": true,
+  "page_errors": []
+}

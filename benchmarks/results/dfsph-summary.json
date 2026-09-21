@@ -1,0 +1,101 @@
+{
+  "samples_per_variant": 27,
+  "material": "Water, pressure coefficient unused in DFSPH",
+  "dt": 0.002,
+  "steps_per_frame": 8,
+  "adapter": "SwiftShader software WebGPU",
+  "medians": {
+    "computeMs": {
+      "wcsph_ms": 159.305947,
+      "dfsph_ms": 572.668466,
+      "dfsph_over_wcsph": 3.5947714243210265
+    },
+    "renderMs": {
+      "wcsph_ms": 353.663335,
+      "dfsph_ms": 349.21216,
+      "dfsph_over_wcsph": 0.9874140897302797
+    },
+    "totalMs": {
+      "wcsph_ms": 519.985138,
+      "dfsph_ms": 927.636298,
+      "dfsph_over_wcsph": 1.7839669448398734
+    }
+  },
+  "last_run_states": {
+    "wcsph": {
+      "algorithm": "WCSPH",
+      "constraintDiagnostics": null,
+      "densityError": {
+        "measured": true,
+        "sampleTime": 0.19000000000000014,
+        "minRatio": 0.5276890397071838,
+        "medianRatio": 1.0680429935455322,
+        "p95Ratio": 1.1560229063034058,
+        "maxRatio": 1.3543487787246704,
+        "meanPositiveCompressionPercent": 6.8479377853994565,
+        "p95PositiveCompressionPercent": 15.602290630340576,
+        "maxPositiveCompressionPercent": 35.43487787246704,
+        "particlesOverOnePercent": 4737,
+        "particlesOverFivePercent": 3798
+      },
+      "count": 6144,
+      "time": 0.19200000000000014,
+      "steps": 96,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 0.9407274723052979,
+      "maxSpeed": 4.780185299654291,
+      "meanDensityRatio": 1.0348570434725843,
+      "kineticEnergy": 13358.503531062417,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 8473,
+      "invalidResets": 0
+    },
+    "dfsph": {
+      "algorithm": "DFSPH experimental",
+      "constraintDiagnostics": {
+        "measured": true,
+        "densityIterations": 8,
+        "divergenceIterations": 4,
+        "meanPredictedCompressionPercent": 6.676291939289314e-05,
+        "p95PredictedCompressionPercent": 0.0001614660504856147,
+        "maxPredictedCompressionPercent": 0.009153923019766808,
+        "maxPositiveDivergencePerStepPercent": 1.1378061026334763,
+        "note": "Linearized pre-contact residual, not post-advection geometric volume error. Fixed iteration budget, no convergence guarantee."
+      },
+      "densityError": {
+        "measured": true,
+        "sampleTime": 0.19000000000000014,
+        "minRatio": 0.1958351880311966,
+        "medianRatio": 0.7898373603820801,
+        "p95Ratio": 1.0000026226043701,
+        "maxRatio": 1.0009441375732422,
+        "meanPositiveCompressionPercent": 0.0003473386944582065,
+        "p95PositiveCompressionPercent": 0.00026226043701171875,
+        "maxPositiveCompressionPercent": 0.09441375732421875,
+        "particlesOverOnePercent": 0,
+        "particlesOverFivePercent": 0
+      },
+      "count": 6144,
+      "time": 0.19200000000000014,
+      "steps": 96,
+      "finite": true,
+      "minY": 0.062483981251716614,
+      "maxY": 1.4158658981323242,
+      "maxSpeed": 4.174466716783455,
+      "meanDensityRatio": 0.792404143869741,
+      "kineticEnergy": 14593.356837882124,
+      "outside": 0,
+      "insideSolids": 0,
+      "penetrations": [],
+      "neighborTruncations": 0,
+      "speedCaps": 0,
+      "contacts": 7411,
+      "invalidResets": 0
+    }
+  }
+}

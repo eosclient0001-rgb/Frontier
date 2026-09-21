@@ -1,0 +1,47 @@
+{
+  "stages": {
+    "samples_per_variant": 27,
+    "medians": {
+      "clear": {
+        "before_ms": 0.07467,
+        "after_ms": 0.081056,
+        "reduction_percent": -8.552296772465517
+      },
+      "build": {
+        "before_ms": 0.137302,
+        "after_ms": 0.14393,
+        "reduction_percent": -4.827314969920327
+      },
+      "density": {
+        "before_ms": 15.931293,
+        "after_ms": 13.627703,
+        "reduction_percent": 14.459529430536488
+      },
+      "integrate": {
+        "before_ms": 3.835434,
+        "after_ms": 3.52774,
+        "reduction_percent": 8.022403722759918
+      }
+    }
+  },
+  "frame": {
+    "samples_per_variant": 27,
+    "medians": {
+      "computeMs": {
+        "before_ms": 171.505411,
+        "after_ms": 164.894867,
+        "reduction_percent": 3.8544229954354026
+      },
+      "renderMs": {
+        "before_ms": 361.417622,
+        "after_ms": 365.691637,
+        "reduction_percent": -1.1825696202494518
+      },
+      "totalMs": {
+        "before_ms": 532.010475,
+        "after_ms": 527.148343,
+        "reduction_percent": 0.9139165915859282
+      }
+    }
+  }
+}

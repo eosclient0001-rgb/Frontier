@@ -1,0 +1,102 @@
+{
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "particleDepth": 129.660949,
+      "filter": 51.877236,
+      "surface": 274.900055
+    },
+    {
+      "particleDepth": 134.748503,
+      "filter": 51.982296,
+      "surface": 268.672064
+    },
+    {
+      "particleDepth": 128.273316,
+      "filter": 52.134518,
+      "surface": 267.671901
+    },
+    {
+      "particleDepth": 129.725584,
+      "filter": 52.064499,
+      "surface": 268.221
+    },
+    {
+      "particleDepth": 140.965112,
+      "filter": 52.286211,
+      "surface": 274.49711
+    },
+    {
+      "particleDepth": 140.157628,
+      "filter": 53.053019,
+      "surface": 294.034488
+    },
+    {
+      "particleDepth": 144.241361,
+      "filter": 53.845544,
+      "surface": 306.960257
+    },
+    {
+      "particleDepth": 146.451156,
+      "filter": 55.693044,
+      "surface": 292.17236
+    },
+    {
+      "particleDepth": 148.656117,
+      "filter": 59.87318,
+      "surface": 305.731727
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.237399110687466,
+    "meanDensityRatio": 1.032745187714075,
+    "outside": 0,
+    "insideSolids": 0,
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8408,
+    "invalidResets": 0
+  },
+  "summary": {
+    "particleDepth": {
+      "median_ms": 140.157628,
+      "p95_ms": 148.656117,
+      "min_ms": 128.273316
+    },
+    "filter": {
+      "median_ms": 52.286211,
+      "p95_ms": 59.87318,
+      "min_ms": 51.877236
+    },
+    "surface": {
+      "median_ms": 274.900055,
+      "p95_ms": 306.960257,
+      "min_ms": 267.671901
+    }
+  },
+  "python_wall_seconds": 11.441264520000004,
+  "browser": "153.0.8010.0",
+  "mode": "render",
+  "variant": "baseline",
+  "page_errors": []
+}

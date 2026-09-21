@@ -1,0 +1,102 @@
+{
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "particleDepth": 150.818697,
+      "filter": 58.635023,
+      "surface": 200.958095
+    },
+    {
+      "particleDepth": 146.649386,
+      "filter": 54.609628,
+      "surface": 198.179573
+    },
+    {
+      "particleDepth": 152.513092,
+      "filter": 56.031942,
+      "surface": 201.493795
+    },
+    {
+      "particleDepth": 142.20094,
+      "filter": 54.539513,
+      "surface": 186.831314
+    },
+    {
+      "particleDepth": 119.638879,
+      "filter": 52.531076,
+      "surface": 199.296371
+    },
+    {
+      "particleDepth": 153.619002,
+      "filter": 59.355492,
+      "surface": 210.914321
+    },
+    {
+      "particleDepth": 134.284145,
+      "filter": 55.979572,
+      "surface": 202.547644
+    },
+    {
+      "particleDepth": 141.478375,
+      "filter": 51.615266,
+      "surface": 185.833794
+    },
+    {
+      "particleDepth": 146.538042,
+      "filter": 55.973263,
+      "surface": 196.497333
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.237401721320663,
+    "meanDensityRatio": 1.0327451865693245,
+    "outside": 0,
+    "insideSolids": 0,
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8408,
+    "invalidResets": 0
+  },
+  "summary": {
+    "particleDepth": {
+      "median_ms": 146.538042,
+      "p95_ms": 153.619002,
+      "min_ms": 119.638879
+    },
+    "filter": {
+      "median_ms": 55.973263,
+      "p95_ms": 59.355492,
+      "min_ms": 51.615266
+    },
+    "surface": {
+      "median_ms": 199.296371,
+      "p95_ms": 210.914321,
+      "min_ms": 185.833794
+    }
+  },
+  "python_wall_seconds": 10.46390320699993,
+  "browser": "153.0.8010.0",
+  "mode": "render",
+  "variant": "optimized",
+  "page_errors": []
+}

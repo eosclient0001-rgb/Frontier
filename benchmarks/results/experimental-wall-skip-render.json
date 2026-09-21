@@ -1,0 +1,104 @@
+{
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "particleDepth": 136.570618,
+      "filter": 56.106033,
+      "surface": 204.364789
+    },
+    {
+      "particleDepth": 136.912407,
+      "filter": 66.752002,
+      "surface": 214.793667
+    },
+    {
+      "particleDepth": 147.409401,
+      "filter": 58.734452,
+      "surface": 209.53314
+    },
+    {
+      "particleDepth": 144.311052,
+      "filter": 57.775871,
+      "surface": 199.71656
+    },
+    {
+      "particleDepth": 139.261752,
+      "filter": 56.710747,
+      "surface": 199.050172
+    },
+    {
+      "particleDepth": 133.35133,
+      "filter": 56.896431,
+      "surface": 201.044177
+    },
+    {
+      "particleDepth": 145.274435,
+      "filter": 55.531507,
+      "surface": 206.086487
+    },
+    {
+      "particleDepth": 141.757984,
+      "filter": 53.604919,
+      "surface": 202.701273
+    },
+    {
+      "particleDepth": 155.286664,
+      "filter": 55.642585,
+      "surface": 215.700715
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.2877755503119825,
+    "meanDensityRatio": 1.0327462925730895,
+    "kineticEnergy": 12289.818138281938,
+    "outside": 0,
+    "insideSolids": 0,
+    "penetrations": [],
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8482,
+    "invalidResets": 0
+  },
+  "summary": {
+    "particleDepth": {
+      "median_ms": 141.757984,
+      "p95_ms": 155.286664,
+      "min_ms": 133.35133
+    },
+    "filter": {
+      "median_ms": 56.710747,
+      "p95_ms": 66.752002,
+      "min_ms": 53.604919
+    },
+    "surface": {
+      "median_ms": 204.364789,
+      "p95_ms": 215.700715,
+      "min_ms": 199.050172
+    }
+  },
+  "python_wall_seconds": 8.891504499999996,
+  "browser": "153.0.8010.0",
+  "mode": "render",
+  "variant": "optimized",
+  "page_errors": []
+}

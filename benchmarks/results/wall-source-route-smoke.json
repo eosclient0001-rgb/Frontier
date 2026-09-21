@@ -1,0 +1,76 @@
+{
+  "implementation": "WCSPH-neighbor-cache-v1",
+  "renderer": "batched-walls-v1",
+  "scenePath": "cached",
+  "material": {
+    "viscosity": 0.025,
+    "velocitySmoothing": 0.03,
+    "cohesion": 0.06
+  },
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "particleDepth": 135.210586,
+      "filter": 58.009093,
+      "surface": 204.408925
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.06400000000000004,
+    "steps": 32,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 1.014173984527588,
+    "maxSpeed": 0.8028474037902826,
+    "meanDensityRatio": 0.951194826096374,
+    "kineticEnergy": 3331.5088945781176,
+    "outside": 0,
+    "insideSolids": 0,
+    "penetrations": [],
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 3014,
+    "invalidResets": 0
+  },
+  "summary": {
+    "particleDepth": {
+      "median_ms": 135.210586,
+      "p95_ms": 135.210586,
+      "min_ms": 135.210586
+    },
+    "filter": {
+      "median_ms": 58.009093,
+      "p95_ms": 58.009093,
+      "min_ms": 58.009093
+    },
+    "surface": {
+      "median_ms": 204.408925,
+      "p95_ms": 204.408925,
+      "min_ms": 204.408925
+    }
+  },
+  "source_overrides": {
+    "gpu-fluid-shaders.mjs": "5b9e848c6593c4e076fa854834ba65754dd4b3dcb5380b25fc70f052d0be6e6d"
+  },
+  "python_wall_seconds": 4.455293655999867,
+  "browser": "153.0.8010.0",
+  "mode": "render",
+  "variant": "optimized",
+  "moving_camera": false,
+  "page_errors": []
+}

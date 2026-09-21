@@ -1,0 +1,94 @@
+{
+  "cases": [
+    {
+      "config": {},
+      "maxPositionErrorMetres": 2.384185791015625e-07,
+      "maxVelocityError": 2.9727816581726074e-06,
+      "maxDensityErrorKgPerM3": 0.00048828125,
+      "fallbackParticles": 0
+    },
+    {
+      "config": {
+        "dense": true
+      },
+      "maxPositionErrorMetres": 5.960464477539063e-08,
+      "maxVelocityError": 5.21540641784668e-08,
+      "maxDensityErrorKgPerM3": 0.0001220703125,
+      "fallbackParticles": 128
+    },
+    {
+      "config": {
+        "boundary": true
+      },
+      "maxPositionErrorMetres": 5.960464477539063e-08,
+      "maxVelocityError": 5.21540641784668e-08,
+      "maxDensityErrorKgPerM3": 0.0001220703125,
+      "fallbackParticles": 0
+    },
+    {
+      "config": {
+        "count": 12000
+      },
+      "maxPositionErrorMetres": 2.384185791015625e-07,
+      "maxVelocityError": 2.8731301426887512e-06,
+      "maxDensityErrorKgPerM3": 0.00115966796875,
+      "fallbackParticles": 0
+    },
+    {
+      "config": {
+        "count": 24000
+      },
+      "maxPositionErrorMetres": 2.384185791015625e-07,
+      "maxVelocityError": 3.989320248365402e-06,
+      "maxDensityErrorKgPerM3": 0.00115966796875,
+      "fallbackParticles": 0
+    },
+    {
+      "config": {
+        "dimensions": [
+          5,
+          3.4
+        ]
+      },
+      "maxPositionErrorMetres": 2.384185791015625e-07,
+      "maxVelocityError": 2.234010025858879e-06,
+      "maxDensityErrorKgPerM3": 0.00079345703125,
+      "fallbackParticles": 0
+    },
+    {
+      "config": {
+        "dimensions": [
+          14,
+          10
+        ]
+      },
+      "maxPositionErrorMetres": 2.384185791015625e-07,
+      "maxVelocityError": 1.4392426237463951e-06,
+      "maxDensityErrorKgPerM3": 0.000244140625,
+      "fallbackParticles": 0
+    },
+    {
+      "config": {
+        "dimensions": [
+          14,
+          3.4
+        ],
+        "boundary": true
+      },
+      "maxPositionErrorMetres": 5.960464477539063e-08,
+      "maxVelocityError": 7.82310962677002e-08,
+      "maxDensityErrorKgPerM3": 0.0001220703125,
+      "fallbackParticles": 0
+    },
+    {
+      "config": {
+        "batches": 10
+      },
+      "maxPositionErrorMetres": 1.6689300537109375e-06,
+      "maxVelocityError": 4.553794860839844e-05,
+      "maxDensityErrorKgPerM3": 0.0025634765625,
+      "fallbackParticles": 0
+    }
+  ],
+  "errors": []
+}

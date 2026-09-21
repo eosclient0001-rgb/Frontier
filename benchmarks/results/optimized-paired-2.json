@@ -1,0 +1,105 @@
+{
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "computeMs": 152.346123,
+      "renderMs": 344.763472,
+      "totalMs": 497.109595
+    },
+    {
+      "computeMs": 135.837812,
+      "renderMs": 336.286745,
+      "totalMs": 472.124557
+    },
+    {
+      "computeMs": 150.11002,
+      "renderMs": 363.434413,
+      "totalMs": 513.544433
+    },
+    {
+      "computeMs": 149.91094,
+      "renderMs": 378.314574,
+      "totalMs": 528.225514
+    },
+    {
+      "computeMs": 151.183355,
+      "renderMs": 360.319079,
+      "totalMs": 511.502434
+    },
+    {
+      "computeMs": 158.346015,
+      "renderMs": 341.458917,
+      "totalMs": 499.804932
+    },
+    {
+      "computeMs": 156.127537,
+      "renderMs": 326.390688,
+      "totalMs": 482.518225
+    },
+    {
+      "computeMs": 155.454332,
+      "renderMs": 328.491778,
+      "totalMs": 483.94611
+    },
+    {
+      "computeMs": 154.089207,
+      "renderMs": 330.484876,
+      "totalMs": 484.574083
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.287775836941441,
+    "meanDensityRatio": 1.0327462933006852,
+    "kineticEnergy": 12289.818281743836,
+    "outside": 0,
+    "insideSolids": 0,
+    "penetrations": [],
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8482,
+    "invalidResets": 0
+  },
+  "summary": {
+    "computeMs": {
+      "median_ms": 152.346123,
+      "p95_ms": 158.346015,
+      "min_ms": 135.837812
+    },
+    "renderMs": {
+      "median_ms": 341.458917,
+      "p95_ms": 378.314574,
+      "min_ms": 326.390688
+    },
+    "totalMs": {
+      "median_ms": 497.109595,
+      "p95_ms": 528.225514,
+      "min_ms": 472.124557
+    }
+  },
+  "python_wall_seconds": 8.451110710000194,
+  "browser": "153.0.8010.0",
+  "mode": "frame",
+  "variant": "optimized",
+  "moving_camera": false,
+  "page_errors": []
+}

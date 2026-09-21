@@ -1,0 +1,102 @@
+{
+  "variant": "optimized",
+  "water": false,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "dt": 0.002,
+  "viscosity": 0.025,
+  "samples": [
+    {
+      "clear": 0.082323,
+      "build": 0.159945,
+      "density": 14.328876,
+      "integrate": 3.772014
+    },
+    {
+      "clear": 0.067366,
+      "build": 0.176796,
+      "density": 14.430715,
+      "integrate": 3.755744
+    },
+    {
+      "clear": 0.060255,
+      "build": 0.137625,
+      "density": 14.576149,
+      "integrate": 3.448465
+    },
+    {
+      "clear": 0.110673,
+      "build": 0.165925,
+      "density": 14.947931,
+      "integrate": 3.762887
+    },
+    {
+      "clear": 0.047029,
+      "build": 0.163389,
+      "density": 14.770268,
+      "integrate": 3.829899
+    },
+    {
+      "clear": 0.103034,
+      "build": 0.138418,
+      "density": 14.794434,
+      "integrate": 3.852151
+    },
+    {
+      "clear": 0.061175,
+      "build": 0.12902,
+      "density": 14.94087,
+      "integrate": 3.844937
+    },
+    {
+      "clear": 0.053172,
+      "build": 0.142897,
+      "density": 14.809066,
+      "integrate": 3.78855
+    },
+    {
+      "clear": 0.083611,
+      "build": 0.138254,
+      "density": 16.893402,
+      "integrate": 3.827469
+    }
+  ],
+  "checkpoints": [],
+  "errors": [],
+  "summary": {
+    "clear": {
+      "median_ms": 0.067366,
+      "p95_ms": 0.110673,
+      "min_ms": 0.047029
+    },
+    "build": {
+      "median_ms": 0.142897,
+      "p95_ms": 0.176796,
+      "min_ms": 0.12902
+    },
+    "density": {
+      "median_ms": 14.794434,
+      "p95_ms": 16.893402,
+      "min_ms": 14.328876
+    },
+    "integrate": {
+      "median_ms": 3.78855,
+      "p95_ms": 3.852151,
+      "min_ms": 3.448465
+    }
+  },
+  "source_overrides": {},
+  "python_wall_seconds": 0.5480233100000191,
+  "browser": "153.0.8010.0",
+  "mode": "stages",
+  "moving_camera": false,
+  "page_errors": []
+}

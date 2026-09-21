@@ -1,0 +1,18 @@
+{
+  "cache_equivalence": [
+    {
+      "dense": false,
+      "maxPositionError": 2.384185791015625e-07,
+      "maxVelocityError": 2.695247530937195e-06,
+      "fallbackParticles": 0
+    },
+    {
+      "dense": true,
+      "maxPositionError": 5.960464477539063e-08,
+      "maxVelocityError": 5.21540641784668e-08,
+      "fallbackParticles": 128
+    }
+  ],
+  "ui": "materials, rendering, resize, mobile, GPU startup passed",
+  "errors": []
+}

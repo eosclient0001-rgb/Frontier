@@ -1,0 +1,112 @@
+{
+  "implementation": "WCSPH-neighbor-cache-v1",
+  "scenePath": "cached",
+  "material": {
+    "viscosity": 0.025,
+    "velocitySmoothing": 0.03,
+    "cohesion": 0.06
+  },
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "particleDepth": 130.960251,
+      "filter": 53.077206,
+      "surface": 154.992562
+    },
+    {
+      "particleDepth": 132.269567,
+      "filter": 52.593278,
+      "surface": 162.180373
+    },
+    {
+      "particleDepth": 167.204925,
+      "filter": 80.395105,
+      "surface": 194.810011
+    },
+    {
+      "particleDepth": 144.883868,
+      "filter": 58.424005,
+      "surface": 169.70358
+    },
+    {
+      "particleDepth": 126.341105,
+      "filter": 53.038593,
+      "surface": 166.265385
+    },
+    {
+      "particleDepth": 138.891145,
+      "filter": 52.702674,
+      "surface": 170.260673
+    },
+    {
+      "particleDepth": 146.489704,
+      "filter": 55.329895,
+      "surface": 173.595165
+    },
+    {
+      "particleDepth": 129.27988,
+      "filter": 51.78542,
+      "surface": 157.348944
+    },
+    {
+      "particleDepth": 130.039336,
+      "filter": 54.079126,
+      "surface": 157.443741
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.287773605163926,
+    "meanDensityRatio": 1.0327462921462331,
+    "kineticEnergy": 12289.818346953618,
+    "outside": 0,
+    "insideSolids": 0,
+    "penetrations": [],
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8482,
+    "invalidResets": 0
+  },
+  "summary": {
+    "particleDepth": {
+      "median_ms": 132.269567,
+      "p95_ms": 167.204925,
+      "min_ms": 126.341105
+    },
+    "filter": {
+      "median_ms": 53.077206,
+      "p95_ms": 80.395105,
+      "min_ms": 51.78542
+    },
+    "surface": {
+      "median_ms": 166.265385,
+      "p95_ms": 194.810011,
+      "min_ms": 154.992562
+    }
+  },
+  "python_wall_seconds": 8.514959120000185,
+  "browser": "153.0.8010.0",
+  "mode": "render",
+  "variant": "optimized",
+  "moving_camera": false,
+  "page_errors": []
+}

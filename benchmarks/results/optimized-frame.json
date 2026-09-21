@@ -1,0 +1,102 @@
+{
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "computeMs": 177.897823,
+      "renderMs": 405.652426,
+      "totalMs": 583.550249
+    },
+    {
+      "computeMs": 159.658707,
+      "renderMs": 381.332163,
+      "totalMs": 540.99087
+    },
+    {
+      "computeMs": 155.494402,
+      "renderMs": 385.233045,
+      "totalMs": 540.727447
+    },
+    {
+      "computeMs": 154.383271,
+      "renderMs": 374.875209,
+      "totalMs": 529.25848
+    },
+    {
+      "computeMs": 163.72702,
+      "renderMs": 375.063574,
+      "totalMs": 538.790594
+    },
+    {
+      "computeMs": 160.746845,
+      "renderMs": 404.216308,
+      "totalMs": 564.963153
+    },
+    {
+      "computeMs": 196.409487,
+      "renderMs": 378.576009,
+      "totalMs": 574.985496
+    },
+    {
+      "computeMs": 183.4824,
+      "renderMs": 383.710586,
+      "totalMs": 567.192986
+    },
+    {
+      "computeMs": 159.909158,
+      "renderMs": 356.771179,
+      "totalMs": 516.680337
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.237400385346473,
+    "meanDensityRatio": 1.0327451879954122,
+    "outside": 0,
+    "insideSolids": 0,
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8408,
+    "invalidResets": 0
+  },
+  "summary": {
+    "computeMs": {
+      "median_ms": 160.746845,
+      "p95_ms": 196.409487,
+      "min_ms": 154.383271
+    },
+    "renderMs": {
+      "median_ms": 381.332163,
+      "p95_ms": 405.652426,
+      "min_ms": 356.771179
+    },
+    "totalMs": {
+      "median_ms": 540.99087,
+      "p95_ms": 583.550249,
+      "min_ms": 516.680337
+    }
+  },
+  "python_wall_seconds": 8.651482115000022,
+  "browser": "153.0.8010.0",
+  "mode": "frame",
+  "variant": "optimized",
+  "page_errors": []
+}

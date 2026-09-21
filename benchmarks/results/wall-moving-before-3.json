@@ -1,0 +1,112 @@
+{
+  "implementation": "WCSPH-neighbor-cache-v1",
+  "scenePath": "direct",
+  "material": {
+    "viscosity": 0.025,
+    "velocitySmoothing": 0.03,
+    "cohesion": 0.06
+  },
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "computeMs": 170.103049,
+      "renderMs": 504.93217,
+      "totalMs": 675.035219
+    },
+    {
+      "computeMs": 167.29045,
+      "renderMs": 466.479031,
+      "totalMs": 633.769481
+    },
+    {
+      "computeMs": 140.233369,
+      "renderMs": 518.698444,
+      "totalMs": 658.931813
+    },
+    {
+      "computeMs": 173.222287,
+      "renderMs": 557.531803,
+      "totalMs": 730.75409
+    },
+    {
+      "computeMs": 174.524926,
+      "renderMs": 517.96912,
+      "totalMs": 692.494046
+    },
+    {
+      "computeMs": 182.358611,
+      "renderMs": 529.938826,
+      "totalMs": 712.297437
+    },
+    {
+      "computeMs": 193.659654,
+      "renderMs": 512.695958,
+      "totalMs": 706.355612
+    },
+    {
+      "computeMs": 186.153411,
+      "renderMs": 512.249324,
+      "totalMs": 698.402735
+    },
+    {
+      "computeMs": 196.387474,
+      "renderMs": 510.562504,
+      "totalMs": 706.949978
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.287773675399926,
+    "meanDensityRatio": 1.0327462910305865,
+    "kineticEnergy": 12289.818184452017,
+    "outside": 0,
+    "insideSolids": 0,
+    "penetrations": [],
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8482,
+    "invalidResets": 0
+  },
+  "summary": {
+    "computeMs": {
+      "median_ms": 174.524926,
+      "p95_ms": 196.387474,
+      "min_ms": 140.233369
+    },
+    "renderMs": {
+      "median_ms": 512.695958,
+      "p95_ms": 557.531803,
+      "min_ms": 466.479031
+    },
+    "totalMs": {
+      "median_ms": 698.402735,
+      "p95_ms": 730.75409,
+      "min_ms": 633.769481
+    }
+  },
+  "python_wall_seconds": 10.591516915000284,
+  "browser": "153.0.8010.0",
+  "mode": "frame",
+  "variant": "optimized",
+  "moving_camera": true,
+  "page_errors": []
+}

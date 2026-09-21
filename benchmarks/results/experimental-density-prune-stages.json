@@ -1,0 +1,102 @@
+{
+  "variant": "optimized",
+  "water": false,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "dt": 0.002,
+  "viscosity": 0.025,
+  "samples": [
+    {
+      "clear": 0.111867,
+      "build": 0.202421,
+      "density": 15.601381,
+      "integrate": 3.874477
+    },
+    {
+      "clear": 0.147151,
+      "build": 0.172732,
+      "density": 15.51601,
+      "integrate": 3.818387
+    },
+    {
+      "clear": 0.113764,
+      "build": 0.141153,
+      "density": 15.333494,
+      "integrate": 3.622388
+    },
+    {
+      "clear": 0.050243,
+      "build": 0.126174,
+      "density": 14.840139,
+      "integrate": 3.801181
+    },
+    {
+      "clear": 0.088504,
+      "build": 0.152313,
+      "density": 16.601561,
+      "integrate": 4.400707
+    },
+    {
+      "clear": 0.125358,
+      "build": 0.181877,
+      "density": 15.867,
+      "integrate": 3.831932
+    },
+    {
+      "clear": 0.061632,
+      "build": 0.136969,
+      "density": 15.026856,
+      "integrate": 4.042611
+    },
+    {
+      "clear": 0.092319,
+      "build": 0.180088,
+      "density": 16.09882,
+      "integrate": 3.946904
+    },
+    {
+      "clear": 0.090417,
+      "build": 0.133308,
+      "density": 15.798471,
+      "integrate": 4.2099
+    }
+  ],
+  "checkpoints": [],
+  "errors": [],
+  "summary": {
+    "clear": {
+      "median_ms": 0.092319,
+      "p95_ms": 0.147151,
+      "min_ms": 0.050243
+    },
+    "build": {
+      "median_ms": 0.152313,
+      "p95_ms": 0.202421,
+      "min_ms": 0.126174
+    },
+    "density": {
+      "median_ms": 15.601381,
+      "p95_ms": 16.601561,
+      "min_ms": 14.840139
+    },
+    "integrate": {
+      "median_ms": 3.874477,
+      "p95_ms": 4.400707,
+      "min_ms": 3.622388
+    }
+  },
+  "source_overrides": {},
+  "python_wall_seconds": 0.5489555849999874,
+  "browser": "153.0.8010.0",
+  "mode": "stages",
+  "moving_camera": false,
+  "page_errors": []
+}

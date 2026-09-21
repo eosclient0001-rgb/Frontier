@@ -1,0 +1,104 @@
+{
+  "variant": "optimized",
+  "water": false,
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "dt": 0.002,
+  "viscosity": 0.025,
+  "samples": [
+    {
+      "clear": 0.095275,
+      "build": 0.171351,
+      "density": 15.931293,
+      "integrate": 3.885307
+    },
+    {
+      "clear": 0.080355,
+      "build": 0.135466,
+      "density": 15.978345,
+      "integrate": 3.960747
+    },
+    {
+      "clear": 0.061727,
+      "build": 0.127829,
+      "density": 17.086842,
+      "integrate": 3.864012
+    },
+    {
+      "clear": 0.219049,
+      "build": 0.142871,
+      "density": 16.905639,
+      "integrate": 4.090053
+    },
+    {
+      "clear": 0.062061,
+      "build": 0.126955,
+      "density": 15.880451,
+      "integrate": 3.858918
+    },
+    {
+      "clear": 0.052631,
+      "build": 0.177016,
+      "density": 16.157516,
+      "integrate": 3.833336
+    },
+    {
+      "clear": 0.072721,
+      "build": 0.133636,
+      "density": 16.484621,
+      "integrate": 3.878765
+    },
+    {
+      "clear": 0.083591,
+      "build": 0.146349,
+      "density": 16.001999,
+      "integrate": 3.878495
+    },
+    {
+      "clear": 0.07267,
+      "build": 0.139821,
+      "density": 15.694221,
+      "integrate": 4.352331
+    }
+  ],
+  "checkpoints": [],
+  "errors": [],
+  "summary": {
+    "clear": {
+      "median_ms": 0.072721,
+      "p95_ms": 0.219049,
+      "min_ms": 0.052631
+    },
+    "build": {
+      "median_ms": 0.139821,
+      "p95_ms": 0.177016,
+      "min_ms": 0.126955
+    },
+    "density": {
+      "median_ms": 16.001999,
+      "p95_ms": 17.086842,
+      "min_ms": 15.694221
+    },
+    "integrate": {
+      "median_ms": 3.878765,
+      "p95_ms": 4.352331,
+      "min_ms": 3.833336
+    }
+  },
+  "source_overrides": {
+    "gpu-sph.wgsl": "1d287db53bf58df48c91b3200fd93c6563ec9f1188e67979e88d50418dd0f5e0"
+  },
+  "python_wall_seconds": 0.5602958499999886,
+  "browser": "153.0.8010.0",
+  "mode": "stages",
+  "moving_camera": false,
+  "page_errors": []
+}

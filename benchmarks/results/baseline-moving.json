@@ -1,0 +1,103 @@
+{
+  "adapter": {
+    "vendor": "google",
+    "architecture": "swiftshader",
+    "description": ""
+  },
+  "width": 960,
+  "height": 708,
+  "steps": 8,
+  "dt": 0.002,
+  "count": 6144,
+  "dimensions": [
+    7.5,
+    5
+  ],
+  "profile": "balanced",
+  "results": [
+    {
+      "computeMs": 291.141899,
+      "renderMs": 514.839122,
+      "totalMs": 805.981021
+    },
+    {
+      "computeMs": 281.998806,
+      "renderMs": 464.51795,
+      "totalMs": 746.516756
+    },
+    {
+      "computeMs": 281.719102,
+      "renderMs": 510.497815,
+      "totalMs": 792.216917
+    },
+    {
+      "computeMs": 284.905684,
+      "renderMs": 449.956863,
+      "totalMs": 734.862547
+    },
+    {
+      "computeMs": 260.135633,
+      "renderMs": 441.735752,
+      "totalMs": 701.871385
+    },
+    {
+      "computeMs": 273.190906,
+      "renderMs": 479.221114,
+      "totalMs": 752.41202
+    },
+    {
+      "computeMs": 324.937579,
+      "renderMs": 512.224929,
+      "totalMs": 837.162508
+    },
+    {
+      "computeMs": 327.673555,
+      "renderMs": 445.911071,
+      "totalMs": 773.584626
+    },
+    {
+      "computeMs": 326.205226,
+      "renderMs": 482.654606,
+      "totalMs": 808.859832
+    }
+  ],
+  "state": {
+    "count": 6144,
+    "time": 0.19200000000000014,
+    "steps": 96,
+    "finite": true,
+    "minY": 0.062483981251716614,
+    "maxY": 0.9501526355743408,
+    "maxSpeed": 4.23740296073138,
+    "meanDensityRatio": 1.0327451852693532,
+    "outside": 0,
+    "insideSolids": 0,
+    "neighborTruncations": 0,
+    "speedCaps": 0,
+    "contacts": 8408,
+    "invalidResets": 0
+  },
+  "summary": {
+    "computeMs": {
+      "median_ms": 284.905684,
+      "p95_ms": 327.673555,
+      "min_ms": 260.135633
+    },
+    "renderMs": {
+      "median_ms": 479.221114,
+      "p95_ms": 514.839122,
+      "min_ms": 441.735752
+    },
+    "totalMs": {
+      "median_ms": 773.584626,
+      "p95_ms": 837.162508,
+      "min_ms": 701.871385
+    }
+  },
+  "python_wall_seconds": 11.419009920000008,
+  "browser": "153.0.8010.0",
+  "mode": "frame",
+  "variant": "baseline",
+  "moving_camera": true,
+  "page_errors": []
+}
