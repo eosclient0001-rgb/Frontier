@@ -1,0 +1,188 @@
+import { test, expect } from '@playwright/test';
+
+test('renders WebGL without errors and supports the material and playback controls', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.goto('/');
+  await expect(page.locator('#canvas-container canvas')).toBeVisible();
+  await expect(page.locator('#loading-panel')).toBeHidden();
+  await page.locator('#play-pause').click();
+  await expect(page.locator('#live-state')).toHaveText('PAUSED');
+  const time = await page.locator('#elapsed').textContent();
+  await page.waitForTimeout(600);
+  await expect(page.locator('#elapsed')).toHaveText(time!);
+  for (const [material, viscosity] of [['honey', '0.780'], ['chocolate', '0.580'], ['milk', '0.090'], ['water', '0.018']]) {
+    await page.locator(`[data-material=${material}]`).click();
+    await expect(page.locator(`[data-material=${material}]`)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#viscosity-value')).toHaveText(viscosity);
+  }
+  await page.locator('#gravity').fill('4.5');
+  await expect(page.locator('#gravity-value')).toHaveText('4.50');
+  await page.locator('[data-mode="1"]').click();
+  await expect(page.locator('[data-mode="1"]')).toHaveClass('active');
+  await page.locator('[data-mode="2"]').click();
+  await page.locator('[data-mode="0"]').click();
+  await page.locator('#grid-toggle').click();
+  await expect(page.locator('#grid-toggle')).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('#pour-btn').click();
+  await expect(page.locator('#emitter-toggle')).not.toBeChecked();
+  await page.locator('#stir-btn').click();
+  await expect(page.locator('#live-state')).toHaveText('LIVE');
+  await page.locator('#reset').click();
+  await expect(page.locator('#emitter-toggle')).toBeChecked();
+  await page.locator('#play-pause').click();
+  await page.locator('#export-btn').click();
+  const download = page.waitForEvent('download');
+  await page.locator('#download-scene').click();
+  expect((await download).suggestedFilename()).toBe('flux-scene.json');
+  await page.locator('#export-btn').click();
+  const image = page.waitForEvent('download');
+  await page.locator('#download-image').click();
+  expect((await image).suggestedFilename()).toMatch(/^flux-water-.*\.png$/);
+  await page.locator('[data-nav=docs]').click();
+  await expect(page.locator('#modal')).toBeVisible();
+  await expect(page.locator('#modal')).toContainText('simulation runs on the CPU');
+  await page.locator('#close-modal').click();
+  expect(errors).toEqual([]);
+});
+
+test('benchmark reports measured results', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-nav=benchmarks]').click();
+  await page.locator('#benchmark-start').click();
+  await expect(page.locator('.bench-stats')).toBeVisible({ timeout: 45_000 });
+  await expect(page.locator('.bench-stats')).toContainText('AVERAGE FPS');
+  await expect(page.locator('#benchmark-start')).toBeEnabled();
+});
+
+test('mobile layout keeps the scene and all presets accessible without horizontal overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.locator('#canvas-container canvas')).toBeVisible();
+  await page.locator('#play-pause').click();
+  const width = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, viewport: innerWidth }));
+  expect(width.scroll).toBeLessThanOrEqual(width.viewport);
+  await page.locator('[data-material=honey]').click();
+  await expect(page.locator('#viscosity-value')).toHaveText('0.780');
+  await expect(page.locator('#stir-btn')).toBeVisible();
+});
+
+
+test('research comparison controls change algorithms without resetting a paused scene', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.goto('/');
+  await page.locator('#play-pause').click();
+  const time = await page.locator('#elapsed').textContent();
+  await page.locator('#reconstruction').selectOption('spheres');
+  await expect(page.locator('.mono-label')).toContainText('SPHERICAL');
+  await page.waitForTimeout(500);
+  const spheres = await page.locator('#canvas-container canvas').screenshot();
+  await page.locator('#reconstruction').selectOption('anisotropic');
+  await expect(page.locator('.mono-label')).toContainText('ANISOTROPIC');
+  await page.waitForTimeout(500);
+  const anisotropic = await page.locator('#canvas-container canvas').screenshot();
+  expect(spheres.equals(anisotropic)).toBe(false);
+  await expect(page.locator('#elapsed')).toHaveText(time!);
+  await page.locator('#viscosity-model').selectOption('xsph');
+  await expect(page.locator('#viscosity-iterations')).toHaveText('XSPH');
+  await page.locator('[data-material=honey]').click();
+  await expect(page.locator('#vorticity-value')).toHaveText('0.000');
+  await page.locator('[data-material=water]').click();
+  await expect(page.locator('#vorticity-value')).toHaveText('0.060');
+  await page.locator('#vorticity').fill('0.1');
+  await expect(page.locator('#vorticity-value')).toHaveText('0.100');
+  await page.locator('#export-btn').click();
+  const download = page.waitForEvent('download');
+  await page.locator('#download-scene').click();
+  const stream = await (await download).createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  const config = JSON.parse(Buffer.concat(chunks).toString());
+  expect(config.viscosityModel).toBe('XSPH');
+  expect(config.reconstruction).toBe('anisotropic-PCA');
+  expect(config.vorticityRecovery).toBe(.1);
+  await page.locator('#settings-reset').click();
+  await expect(page.locator('#viscosity-model')).toHaveValue('implicit');
+  await expect(page.locator('#reconstruction')).toHaveValue('anisotropic');
+  await page.locator('#research-notes').click();
+  await expect(page.locator('#modal')).toContainText('not full paper reproductions');
+  expect(errors).toEqual([]);
+});
+
+test('temperature, wetting, obstacle, and pressure controls are wired into exported scene settings', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.goto('/');
+  await page.locator('[data-material=chocolate]').click();
+  await expect(page.locator('#temperature-value')).toHaveText('40');
+  await expect(page.locator('#shear-thinning-value')).toHaveText('0.80');
+  await page.locator('#temperature').fill('60');
+  await page.locator('#shear-thinning').fill('0.95');
+  await page.locator('#wetting').fill('1.5');
+  await page.locator('#pressure-quality').selectOption('precise');
+  await page.locator('#obstacle-toggle').check();
+  await page.locator('#boundary-debug').check();
+  await expect(page.locator('#pressure-caption')).toContainText('Compression');
+  await expect(page.locator('#effective-viscosity')).not.toHaveText('—');
+  await page.locator('#play-pause').click();
+  await page.locator('#export-btn').click();
+  const download = page.waitForEvent('download');
+  await page.locator('#download-scene').click();
+  const stream = await (await download).createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  const config = JSON.parse(Buffer.concat(chunks).toString());
+  expect(config.temperatureCelsius).toBe(60);
+  expect(config.shearThinning).toBe(.95);
+  expect(config.wetting).toBe(1.5);
+  expect(config.pressureQuality).toBe('precise');
+  expect(config.obstacle.enabled).toBe(true);
+  expect(config.boundarySupport).toBe(true);
+  expect(Number.isFinite(config.pressureDiagnostics.peak)).toBe(true);
+  await page.locator('#settings-reset').click();
+  await expect(page.locator('#temperature')).toHaveValue('20');
+  await expect(page.locator('#shear-thinning')).toHaveValue('0');
+  await expect(page.locator('#obstacle-toggle')).not.toBeChecked();
+  await expect(page.locator('#boundary-debug')).not.toBeChecked();
+  await expect(page.locator('#pressure-quality')).toHaveValue('balanced');
+  expect(errors).toEqual([]);
+});
+
+test('drop experiments expose their reduced gravity, disable pouring, and preserve the selected experiment on reset', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#experiment').selectOption('suspended');
+  await expect(page.locator('#gravity-value')).toHaveText('0.00');
+  await expect(page.locator('#cohesion-value')).toHaveText('0.080');
+  await expect(page.locator('#emitter-toggle')).not.toBeChecked();
+  await expect(page.locator('#particle-count')).toHaveText('227');
+  await page.locator('#experiment').selectOption('wetting');
+  await expect(page.locator('#gravity-value')).toHaveText('1.00');
+  await page.locator('#reset').click();
+  await expect(page.locator('#experiment')).toHaveValue('wetting');
+  await expect(page.locator('#emitter-toggle')).not.toBeChecked();
+  await page.locator('#play-pause').click();
+  await page.locator('#boundary-support').uncheck();
+  await expect(page.locator('#boundary-support')).not.toBeChecked();
+  await page.locator('#experiment').selectOption('basin');
+  await expect(page.locator('#gravity-value')).toHaveText('9.81');
+  await expect(page.locator('#emitter-toggle')).toBeChecked();
+});
+
+test('warming paused chocolate updates apparent viscosity without advancing the simulation', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-material=chocolate]').click();
+  await page.locator('#play-pause').click();
+  const time=await page.locator('#elapsed').textContent();
+  await page.locator('#temperature').fill('20');
+  await expect(page.locator('#temperature-value')).toHaveText('20');
+  await page.waitForTimeout(700);
+  const cold=Number(await page.locator('#effective-viscosity').textContent());
+  expect(cold).toBeGreaterThan(0);
+  await page.locator('#temperature').fill('60');
+  await expect.poll(async()=>Number(await page.locator('#effective-viscosity').textContent())).toBeLessThan(cold*.5);
+  await expect(page.locator('#elapsed')).toHaveText(time!);
+});
