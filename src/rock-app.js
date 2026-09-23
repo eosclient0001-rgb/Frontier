@@ -38,7 +38,8 @@ export class RockStudioApp {
       aperture: 0.07,
       depthReach: 0.7,
       branching: 0.6,
-      jaggedness: 0.4,
+      jaggedness: 0.45,
+      explode: 0.0, // Broken piece separation
       // SDF Erosion params
       iterations: 12,
       frostWedging: 0.65,
@@ -210,6 +211,7 @@ export class RockStudioApp {
     this.bindSlider("slider-aperture", "aperture", (v) => parseFloat(v), "val-aperture", "m");
     this.bindSlider("slider-branching", "branching", (v) => parseFloat(v), "val-branching");
     this.bindSlider("slider-jaggedness", "jaggedness", (v) => parseFloat(v), "val-jaggedness");
+    this.bindSlider("slider-explode", "explode", (v) => parseFloat(v), "val-explode", "x");
 
     this.bindSlider("slider-frost-wedging", "frostWedging", (v) => parseFloat(v), "val-frost-wedging");
     this.bindSlider("slider-edge-bevel", "edgeBevel", (v) => parseFloat(v), "val-edge-bevel");
@@ -355,6 +357,7 @@ export class RockStudioApp {
     setVal("slider-aperture", this.state.aperture, "val-aperture", "m");
     setVal("slider-branching", this.state.branching, "val-branching");
     setVal("slider-jaggedness", this.state.jaggedness, "val-jaggedness");
+    setVal("slider-explode", this.state.explode || 0.0, "val-explode", "x");
 
     setVal("slider-frost-wedging", this.state.frostWedging, "val-frost-wedging");
     setVal("slider-edge-bevel", this.state.edgeBevel, "val-edge-bevel");
@@ -441,6 +444,7 @@ export class RockStudioApp {
       branching: this.state.branching,
       jaggedness: this.state.jaggedness,
       strataDip: this.state.strataDip,
+      explode: this.state.explode,
     });
 
     // Step 3: 3D SDF Crack Erosion
