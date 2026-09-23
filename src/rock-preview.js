@@ -118,6 +118,8 @@ uniform vec3 uCrackColor;
 uniform vec3 uOxidationColor;
 uniform float uRoughness;
 uniform float uMetalness;
+uniform float uMicroGrainStrength;
+uniform float uCrystalSparkle;
 uniform vec3 uLightDir;
 uniform vec3 uLightColor;
 uniform vec3 uAmbientColor;
@@ -134,6 +136,25 @@ varying float vCrack;
 varying float vErosion;
 varying float vSediment;
 varying float vOxidation;
+
+// Procedural 3D Hash & Noise for mineral micro-details
+float hash3(vec3 p) {
+  p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float noise3(vec3 x) {
+  vec3 i = floor(x);
+  vec3 f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(mix(hash3(i + vec3(0,0,0)), hash3(i + vec3(1,0,0)), f.x),
+        mix(hash3(i + vec3(0,1,0)), hash3(i + vec3(1,1,0)), f.x), f.y),
+    mix(mix(hash3(i + vec3(0,0,1)), hash3(i + vec3(1,0,1)), f.x),
+        mix(hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), f.x), f.y), f.z
+  );
+}
 
 vec3 getHeatmapColor(float t) {
   t = clamp(t, 0.0, 1.0);
@@ -155,7 +176,21 @@ void main() {
     if (dist > 0.0) discard;
   }
 
-  vec3 N = normalize(vNormal);
+  // 1. Procedural 3D Geological Surface Micro-Detail
+  float grainNoise1 = noise3(vWorldPos * 36.0);
+  float grainNoise2 = noise3(vWorldPos * 84.0);
+  float mineralFleck = noise3(vWorldPos * 140.0);
+  float microDetail = (grainNoise1 * 0.6 + grainNoise2 * 0.4);
+
+  // Normal micro-perturbation along world tangents
+  vec3 N0 = normalize(vNormal);
+  vec3 grainGrad = vec3(
+    noise3(vWorldPos * 48.0 + vec3(0.05, 0, 0)) - noise3(vWorldPos * 48.0 - vec3(0.05, 0, 0)),
+    noise3(vWorldPos * 48.0 + vec3(0, 0.05, 0)) - noise3(vWorldPos * 48.0 - vec3(0, 0.05, 0)),
+    noise3(vWorldPos * 48.0 + vec3(0, 0, 0.05)) - noise3(vWorldPos * 48.0 - vec3(0, 0, 0.05))
+  );
+  vec3 N = normalize(N0 + grainGrad * (uMicroGrainStrength * 0.22));
+
   vec3 L = normalize(uLightDir);
   vec3 V = normalize(uCameraPos - vWorldPos);
   vec3 H = normalize(L + V);
@@ -165,15 +200,25 @@ void main() {
   vec3 directLight = uLightColor * NdotL;
   vec3 ambientLight = uAmbientColor * skyFill;
 
-  // Microfacet Specular
+  // Crystalline Microfacet Specular & Glint
   float NdotH = max(0.0, dot(N, H));
-  float roughVal = clamp(uRoughness + vCrack * 0.2 - vOxidation * 0.1, 0.1, 0.98);
-  float specPower = mix(128.0, 6.0, roughVal);
+  float roughVal = clamp(uRoughness + (microDetail - 0.5) * 0.15 + vCrack * 0.2 - vOxidation * 0.1, 0.1, 0.98);
+  float specPower = mix(140.0, 6.0, roughVal);
   float specTerm = pow(NdotH, specPower) * (1.0 - roughVal * 0.7);
+
+  // Sparkling quartz/mica crystal glint
+  float crystalGlint = pow(max(0.0, dot(N, H)), 90.0) * step(0.72, mineralFleck) * (uCrystalSparkle * 2.5);
 
   // View Mode: 0 = Final PBR Realistic Rock
   if (uViewMode == 0) {
     vec3 col = uBaseColor;
+
+    // Mineral grain color variation (dark biotite mica vs pale quartz/feldspar)
+    float fleckTone = (mineralFleck - 0.5) * 0.28 * uMicroGrainStrength;
+    col = clamp(col + vec3(fleckTone), 0.0, 1.0);
+
+    // Subtle granite micro-grain modulation
+    col *= 0.9 + microDetail * 0.2;
 
     // Oxidation patina halo along crack lips
     col = mix(col, uOxidationColor, clamp(vOxidation * 1.4, 0.0, 0.85));
@@ -184,16 +229,15 @@ void main() {
     // Ambient occlusion in deep crevices
     float ao = clamp(1.0 - vCrack * 0.6 - vSediment * 0.4, 0.18, 1.0);
 
-    vec3 finalColor = col * (directLight + ambientLight) * ao + vec3(specTerm * 0.25);
+    vec3 finalColor = col * (directLight + ambientLight) * ao + vec3((specTerm + crystalGlint) * 0.35);
     gl_FragColor = vec4(finalColor, 1.0);
     return;
   }
 
   // View Mode: 1 = Phase 2: 3D Fracture Stress & Crack Field
-  // Clearly illuminates the rock body and highlights 3D crack lines
   if (uViewMode == 1) {
-    // Neutral slate rock body
-    vec3 rockBodyCol = vec3(0.28, 0.32, 0.38) * (directLight * 0.7 + ambientLight * 0.8);
+    // Neutral slate rock body with grain texture
+    vec3 rockBodyCol = vec3(0.28, 0.32, 0.38) * (0.9 + microDetail * 0.2) * (directLight * 0.7 + ambientLight * 0.8);
 
     // Glowing electric cyan/magenta fracture lines & stress concentration
     vec3 glowColor = mix(vec3(0.0, 0.85, 1.0), vec3(1.0, 0.15, 0.55), clamp(vCrack * 1.5, 0.0, 1.0));
@@ -219,7 +263,7 @@ void main() {
 
   // View Mode: 3 = Crevice Sediment & Silt
   if (uViewMode == 3) {
-    vec3 baseCol = vec3(0.35, 0.37, 0.40);
+    vec3 baseCol = vec3(0.35, 0.37, 0.40) * (0.9 + microDetail * 0.2);
     vec3 sedCol = vec3(0.85, 0.72, 0.48); // Golden sand/silt
     vec3 col = mix(baseCol, sedCol, clamp(vSediment * 1.5, 0.0, 1.0));
     gl_FragColor = vec4(col * (directLight + ambientLight), 1.0);
@@ -306,6 +350,8 @@ export class RockPreviewViewport {
       uOxidationColor: { value: new THREE.Color(pal.oxidationColor) },
       uRoughness: { value: pal.roughness },
       uMetalness: { value: pal.metalness },
+      uMicroGrainStrength: { value: 0.65 },
+      uCrystalSparkle: { value: 0.45 },
       uLightDir: { value: new THREE.Vector3(4, 6, 3).normalize() },
       uLightColor: { value: new THREE.Color(0xfffaed) },
       uAmbientColor: { value: new THREE.Color(0x8eb5e0) },
@@ -399,6 +445,11 @@ export class RockPreviewViewport {
     if (baseColor) this.rockUniforms.uBaseColor.value.set(baseColor);
     if (crackColor) this.rockUniforms.uCrackColor.value.set(crackColor);
     if (oxidationColor) this.rockUniforms.uOxidationColor.value.set(oxidationColor);
+  }
+
+  setSurfaceDetails({ microGrain, crystalSparkle }) {
+    if (microGrain !== undefined) this.rockUniforms.uMicroGrainStrength.value = microGrain;
+    if (crystalSparkle !== undefined) this.rockUniforms.uCrystalSparkle.value = crystalSparkle;
   }
 
   setWireframe(enabled) {

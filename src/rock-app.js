@@ -28,6 +28,12 @@ export class RockStudioApp {
       baseRoundness: 0.35,
       noiseAmp: 0.08,
       noiseFreq: 0.75,
+      microGrainAmp: 0.025,
+      microGrainFreq: 6.5,
+      pockmarkAmp: 0.015,
+      pockmarkScale: 4.2,
+      weatheringCrust: 0.4,
+      crystalSparkle: 0.45,
       strataAmp: 0.02,
       strataFreq: 1.2,
       strataDip: 15,
@@ -228,6 +234,12 @@ export class RockStudioApp {
     this.bindSlider("slider-sediment", "sedimentFill", (v) => parseFloat(v), "val-sediment");
     this.bindSlider("slider-erosion-iter", "iterations", (v) => parseInt(v), "val-erosion-iter");
 
+    // Geological Rock Surface Details sliders
+    this.bindSlider("slider-micro-grain", "microGrainAmp", (v) => parseFloat(v), "val-micro-grain", "m");
+    this.bindSlider("slider-pockmark", "pockmarkAmp", (v) => parseFloat(v), "val-pockmark", "m");
+    this.bindSlider("slider-crust", "weatheringCrust", (v) => parseFloat(v), "val-crust", "k");
+    this.bindSlider("slider-sparkle", "crystalSparkle", (v) => parseFloat(v), "val-sparkle", "gl");
+
     // Mesh LOD selection
     const lodButtons = document.querySelectorAll(".lod-btn");
     lodButtons.forEach((btn) => {
@@ -333,6 +345,11 @@ export class RockStudioApp {
     this.state.baseRoundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.35;
     this.state.noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.08;
     this.state.noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.75;
+    this.state.microGrainAmp = p.microGrainAmp !== undefined ? p.microGrainAmp : 0.025;
+    this.state.microGrainFreq = p.microGrainFreq || 6.5;
+    this.state.pockmarkAmp = p.pockmarkAmp !== undefined ? p.pockmarkAmp : 0.015;
+    this.state.pockmarkScale = p.pockmarkScale || 4.2;
+    this.state.weatheringCrust = p.weatheringCrust !== undefined ? p.weatheringCrust : 0.4;
     this.state.strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.02;
     this.state.strataFreq = p.strataFreq || 1.2;
     this.state.strataDip = p.strataDip || 15;
@@ -377,6 +394,11 @@ export class RockStudioApp {
     setVal("slider-dissolution", this.state.dissolution, "val-dissolution");
     setVal("slider-sediment", this.state.sedimentFill, "val-sediment");
     setVal("slider-erosion-iter", this.state.iterations, "val-erosion-iter");
+
+    setVal("slider-micro-grain", this.state.microGrainAmp, "val-micro-grain", "m");
+    setVal("slider-pockmark", this.state.pockmarkAmp, "val-pockmark", "m");
+    setVal("slider-crust", this.state.weatheringCrust, "val-crust", "k");
+    setVal("slider-sparkle", this.state.crystalSparkle, "val-sparkle", "gl");
 
     const presetSel = document.getElementById("rock-preset-select");
     if (presetSel) presetSel.value = this.state.preset;
@@ -441,6 +463,11 @@ export class RockStudioApp {
       baseRoundness: this.state.baseRoundness,
       noiseAmp: this.state.noiseAmp,
       noiseFreq: this.state.noiseFreq,
+      microGrainAmp: this.state.microGrainAmp,
+      microGrainFreq: this.state.microGrainFreq || 6.5,
+      pockmarkAmp: this.state.pockmarkAmp,
+      pockmarkScale: this.state.pockmarkScale || 4.2,
+      weatheringCrust: this.state.weatheringCrust,
       strataAmp: this.state.strataAmp,
       strataFreq: this.state.strataFreq,
       strataDip: this.state.strataDip,
@@ -577,6 +604,10 @@ export class RockStudioApp {
       baseColor: this.state.baseColor,
       crackColor: this.state.crackColor,
       oxidationColor: this.state.oxidationColor,
+    });
+    this.viewport.setSurfaceDetails({
+      microGrain: this.state.microGrainAmp * 25.0,
+      crystalSparkle: this.state.crystalSparkle,
     });
 
     // Update poly stats in HUD

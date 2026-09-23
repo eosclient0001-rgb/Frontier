@@ -564,9 +564,46 @@
             </div>
           </div>
 
-          <!-- 5. Mineral Colors & PBR -->
+          <!-- 5. Geological Surface Details -->
           <div class="sec-group">
-            <div class="sec-title">5. Mineral Colors & PBR</div>
+            <div class="sec-title">5. Rock Surface Details</div>
+
+            <div class="crow">
+              <span class="clabel">Micro-Grain Texture</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-micro-grain" class="slider" min="0.0" max="0.08" step="0.005" value="0.025">
+                <div class="vpill"><div class="num" id="val-micro-grain">0.025</div><div class="unit">m</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Weathering Pockmarks</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-pockmark" class="slider" min="0.0" max="0.06" step="0.005" value="0.015">
+                <div class="vpill"><div class="num" id="val-pockmark">0.015</div><div class="unit">m</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Exfoliation Crust</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-crust" class="slider" min="0.0" max="1.0" step="0.05" value="0.40">
+                <div class="vpill"><div class="num" id="val-crust">0.40</div><div class="unit">k</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Quartz / Mica Sparkle</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-sparkle" class="slider" min="0.0" max="1.0" step="0.05" value="0.45">
+                <div class="vpill"><div class="num" id="val-sparkle">0.45</div><div class="unit">gl</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. Mineral Colors & PBR -->
+          <div class="sec-group">
+            <div class="sec-title">6. Mineral Colors & PBR</div>
 
             <div class="crow mb-2">
               <span class="clabel">Mineral Preset</span>

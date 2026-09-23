@@ -19,6 +19,11 @@ export const ROCK_PRESETS = {
     baseRoundness: 0.35,
     noiseAmp: 0.08,
     noiseFreq: 0.75,
+    microGrainAmp: 0.025,
+    microGrainFreq: 6.5,
+    pockmarkAmp: 0.015,
+    pockmarkScale: 4.2,
+    weatheringCrust: 0.4,
     strataAmp: 0.02,
     strataFreq: 1.2,
     strataDip: 15,
@@ -27,13 +32,18 @@ export const ROCK_PRESETS = {
   },
   sandstone_slab: {
     name: "Sedimentary Sandstone Slab",
-    description: "Layered sedimentary rock with prominent horizontal bedding planes",
+    description: "Layered sedimentary rock with prominent horizontal bedding planes and porous grain",
     shapeType: "slab",
     facets: 10,
     asymmetry: [1.35, 0.75, 1.15],
     baseRoundness: 0.30,
     noiseAmp: 0.06,
     noiseFreq: 0.7,
+    microGrainAmp: 0.035,
+    microGrainFreq: 8.0,
+    pockmarkAmp: 0.03,
+    pockmarkScale: 5.5,
+    weatheringCrust: 0.6,
     strataAmp: 0.04,
     strataFreq: 1.5,
     strataDip: 12,
@@ -42,13 +52,18 @@ export const ROCK_PRESETS = {
   },
   river_cobble: {
     name: "Weathered River Tor / Cobble",
-    description: "Water-smoothed rounded boulder with beveled polygonal facet edges",
+    description: "Water-smoothed rounded boulder with beveled polygonal facet edges and faint polish",
     shapeType: "ellipsoid",
     facets: 8,
     asymmetry: [1.2, 0.9, 1.05],
     baseRoundness: 0.75,
     noiseAmp: 0.04,
     noiseFreq: 0.8,
+    microGrainAmp: 0.012,
+    microGrainFreq: 5.0,
+    pockmarkAmp: 0.008,
+    pockmarkScale: 3.0,
+    weatheringCrust: 0.2,
     strataAmp: 0.01,
     strataFreq: 1.0,
     strataDip: 0,
@@ -57,13 +72,18 @@ export const ROCK_PRESETS = {
   },
   columnar_basalt: {
     name: "Columnar Basalt Joint",
-    description: "Hexagonal prismatic volcanic cooling column with sharp vertical n-gon facets",
+    description: "Hexagonal prismatic volcanic cooling column with vesicular micro-pores",
     shapeType: "prism",
     facets: 6,
     asymmetry: [0.9, 1.45, 0.9],
     baseRoundness: 0.2,
     noiseAmp: 0.05,
     noiseFreq: 0.9,
+    microGrainAmp: 0.02,
+    microGrainFreq: 7.0,
+    pockmarkAmp: 0.035,
+    pockmarkScale: 6.0,
+    weatheringCrust: 0.5,
     strataAmp: 0.02,
     strataFreq: 1.4,
     strataDip: 5,
@@ -72,13 +92,18 @@ export const ROCK_PRESETS = {
   },
   cliff_shard: {
     name: "Jagged Monolith Shard",
-    description: "High-energy rockfall monolith with sharp tectonic cleavage planes",
+    description: "High-energy rockfall monolith with sharp tectonic cleavage planes and crisp micro-facets",
     shapeType: "shard",
     facets: 16,
     asymmetry: [1.1, 1.35, 0.9],
     baseRoundness: 0.15,
     noiseAmp: 0.1,
     noiseFreq: 0.8,
+    microGrainAmp: 0.03,
+    microGrainFreq: 5.5,
+    pockmarkAmp: 0.01,
+    pockmarkScale: 3.5,
+    weatheringCrust: 0.3,
     strataAmp: 0.03,
     strataFreq: 1.5,
     strataDip: 35,
@@ -87,13 +112,18 @@ export const ROCK_PRESETS = {
   },
   desert_ventifact: {
     name: "Desert Ventifact",
-    description: "Wind-sculpted dreikanter with aerodynamic keel facets and fluted polish",
+    description: "Wind-sculpted dreikanter with aerodynamic keel facets, fluted polish, and etched grooves",
     shapeType: "ventifact",
     facets: 10,
     asymmetry: [1.25, 0.85, 1.1],
     baseRoundness: 0.4,
     noiseAmp: 0.06,
     noiseFreq: 0.75,
+    microGrainAmp: 0.018,
+    microGrainFreq: 9.0,
+    pockmarkAmp: 0.02,
+    pockmarkScale: 4.0,
+    weatheringCrust: 0.7,
     strataAmp: 0.02,
     strataFreq: 1.2,
     strataDip: 10,
@@ -102,13 +132,18 @@ export const ROCK_PRESETS = {
   },
   meteorite: {
     name: "Impact Meteorite (Regmaglypts)",
-    description: "Extraterrestrial chondrite with thumbprint ablation cavities",
+    description: "Extraterrestrial chondrite with thumbprint ablation cavities and fusion crust",
     shapeType: "meteorite",
     facets: 12,
     asymmetry: [1.05, 0.95, 1.1],
     baseRoundness: 0.5,
     noiseAmp: 0.1,
     noiseFreq: 1.0,
+    microGrainAmp: 0.022,
+    microGrainFreq: 6.0,
+    pockmarkAmp: 0.05,
+    pockmarkScale: 3.2,
+    weatheringCrust: 0.85,
     strataAmp: 0.0,
     strataFreq: 0.0,
     strataDip: 0,
@@ -244,18 +279,36 @@ export class RockGenerator {
             baseSDF = smin(distPoly, distEllipsoid, blendK);
           }
 
-          // 3. Smooth, gentle organic boulder micro-displacement (continuous 3D simplex)
+          // 3. Macro organic boulder displacement (continuous 3D simplex)
           const n1 = noise.fBm3D(wx * noiseFreq, wy * noiseFreq, wz * noiseFreq, 3, 2.0, 0.5);
-          const displacement = (n1 - 0.5) * 2.0 * noiseAmp;
+          const macroDisplacement = (n1 - 0.5) * 2.0 * noiseAmp;
 
-          // 4. Subtle strata variation (gentle, continuous, no terraced stepping)
+          // 4. Geological Rock Surface Details:
+          // A. Micro-grain crystalline texture (feldspar/quartz mineral granules)
+          const microGrainAmp = p.microGrainAmp !== undefined ? p.microGrainAmp : 0.025;
+          const microGrainFreq = p.microGrainFreq || 6.5;
+          const grainNoise = noise.noise3D(wx * microGrainFreq, wy * microGrainFreq, wz * microGrainFreq);
+          const microGrainDisp = (grainNoise - 0.5) * 2.0 * microGrainAmp;
+
+          // B. Weathering Pockmarks and Vesicular Cavities
+          const pockmarkAmp = p.pockmarkAmp !== undefined ? p.pockmarkAmp : 0.015;
+          const pockmarkScale = p.pockmarkScale || 4.2;
+          const pockNoise = noise.noise3D(wx * pockmarkScale + 12.3, wy * pockmarkScale + 8.7, wz * pockmarkScale + 5.1);
+          // Sharp hollow indentations when pockNoise drops below threshold
+          const pockmarkDisp = pockNoise < 0.35 ? ((0.35 - pockNoise) / 0.35) * pockmarkAmp : 0.0;
+
+          // 5. Subtle strata variation (gentle, continuous, no terraced stepping)
           const strataCoord = wy * cosDip + wz * sinDip;
           const strataDisplacement = Math.sin(strataCoord * strataFreq * Math.PI) * strataAmp;
           const strataHardness = 1.0 + Math.sin(strataCoord * strataFreq * Math.PI) * 0.25;
 
-          const finalDist = baseSDF + displacement + strataDisplacement;
+          // 6. Weathering Exfoliation Crust differential hardness
+          const weatheringCrust = p.weatheringCrust !== undefined ? p.weatheringCrust : 0.4;
+          const crustFactor = Math.max(0.6, 1.0 - weatheringCrust * 0.3 * (grainNoise * 0.5 + 0.5));
+
+          const finalDist = baseSDF + macroDisplacement + microGrainDisp + pockmarkDisp + strataDisplacement;
           this.sdf[idx] = finalDist;
-          this.hardness[idx] = Math.max(0.4, (p.hardness || 1.4) * strataHardness);
+          this.hardness[idx] = Math.max(0.4, (p.hardness || 1.4) * strataHardness * crustFactor);
         }
       }
     }
