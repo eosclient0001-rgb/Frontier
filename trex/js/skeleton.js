@@ -124,6 +124,7 @@ export function buildSkeleton(mats) {
   const pelvisWorld = new Matrix4();   // pelvis frame = identity for layout
   const dorsals = layout.items.filter((it) => it.series === 'dorsal'); // D13..D1
   const trunk = [];
+  const cage = [];                 // rib points in the pelvis frame (for the girdle)
   let parent = pelvis, parentM = pelvisWorld;
   for (const it of dorsals) {
     const j = new Object3D();
@@ -142,6 +143,7 @@ export function buildSkeleton(mats) {
     })));
     // --- rib pair
     const rib = buildRibPair(it, hw, hd, hv);
+    if (rib) for (const p of rib.pts) cage.push(p.clone().applyMatrix4(M));
     if (rib) j.add(reg(meshOf(rib.geom, mats.bone, `Rib pair ${it.index}`, {
       name: `Dorsal rib pair ${it.index}`, detail: `arc length ${(rib.length * 100).toFixed(1)} cm`, length: rib.length,
     })));
@@ -171,7 +173,7 @@ export function buildSkeleton(mats) {
   const d2Index = dorsals.findIndex((d) => d.index === 2);
   const d2 = trunk[d2Index];
   const d2M = matrixInPelvis(d2, pelvis);
-  const arms = buildPectoral(d2, d2M, mats, reg);
+  const arms = buildPectoral(d2, d2M, mats, reg, cage);
 
   /* ----------------------------------------------------------- neck */
   const cervicals = layout.items.filter((it) => it.series === 'cervical'); // C10..C1
@@ -217,6 +219,10 @@ export function buildSkeleton(mats) {
   attach(parent, head, atlas.b.clone().add(atlas.dir.clone().multiplyScalar(0.03)), headQ, parentM);
   const skull = buildSkull(mats);
   head.add(skull.group);
+  // reference points used for aiming and hit tests (head frame)
+  const snout = new Object3D(); snout.name = 'snout'; snout.position.set(0, -0.10, -1.30); head.add(snout);
+  const jawHinge = new Object3D(); jawHinge.name = 'jawHinge'; jawHinge.position.set(0, -0.40, 0.15); head.add(jawHinge);
+  const mouth = new Object3D(); mouth.name = 'mouth'; mouth.position.set(0, -0.40, -0.72); head.add(mouth);
   skull.group.traverse((o) => {
     if (o.isMesh) {
       o.userData.bone = o.parent && o.parent.name === 'mandible'
@@ -261,7 +267,7 @@ export function buildSkeleton(mats) {
 
   /* -------------------------------------------------------- summary */
   return {
-    rig, pelvis, trunk, neck, head, jaw: skull.jaw, tail, legs, arms, bones, layout,
+    rig, pelvis, trunk, neck, head, jaw: skull.jaw, tail, legs, arms, bones, layout, snout, jawHinge, mouth,
     skull,
     measurements: {
       axialLength: layout.axialLength,
@@ -292,6 +298,7 @@ function buildRibPair(it, hw, hd, hv) {
   const L = [0, 0.78, 1.10, 1.34, 1.45, 1.478, 1.46, 1.40, 1.30, 1.16, 1.00, 0.82, 0.62, 0.42][i];
   if (!L) return null;
   const parts = [];
+  const allPts = [];
   let arc = 0;
   for (const s of [1, -1]) {
     const x0 = 0.24, z0 = 0.14;
@@ -328,6 +335,7 @@ function buildRibPair(it, hw, hd, hv) {
       return [r * 0.6, r * 1.15];
     });
     parts.push(tubeGeometry(pts, radii, { radialSegments: 7, up0: new Vector3(0, 1, 0) }));
+    allPts.push(...pts);
     // rib head (capitulum) articulating with the centrum
     parts.push(tubeGeometry(
       [new Vector3(s * x0, it.length * 0.5, z0), new Vector3(s * 0.08, it.length * 0.52, -0.02)],
@@ -336,7 +344,7 @@ function buildRibPair(it, hw, hd, hv) {
   }
   const geom = mergeGeoms(parts);
   roughenGeometry(geom, 0.002, 18, it.index * 3.3);
-  return { geom, length: arc };
+  return { geom, length: arc, pts: allPts };
 }
 
 /* ============================================================ gastralia */
@@ -423,106 +431,179 @@ function buildPelvicGirdle(pelvis, mats, reg) {
 
 /* ============================================================ pectoral */
 
-function buildPectoral(d2, d2M, mats, reg) {
-  // author in pelvis frame, then convert into D2's frame
+/**
+ * Shoulder girdle + forelimbs.
+ *
+ * In tyrannosaurs the scapula is a long strap that lies FLAT ON THE OUTSIDE
+ * of the rib cage, running from the shoulder joint (glenoid, roughly
+ * mid-height on the chest) up and back towards the dorsal ribs.  The coracoid
+ * is a rounded plate in front of / below the glenoid that curls medially
+ * towards the breastbone; a small furcula joins the two sides.  To guarantee
+ * the girdle sits outside the ribs, every point is placed against the actual
+ * rib geometry (`cage`, sampled in the pelvis frame).
+ *
+ * Forelimb: humerus 39 cm, ulna 28.5 cm, radius 25.5 cm, manus with two
+ * functional clawed digits + a splint-like metacarpal III.  Resting posture
+ * (after Carpenter & Smith 2001 / Lipkin & Carpenter 2008): humerus
+ * retracted, pointing down and back; elbow flexed ~90° so the forearm points
+ * forward-down; palms facing each other (medially).
+ */
+function buildPectoral(d2, d2M, mats, reg, cage) {
   const inv = d2M.clone().invert();
-  const toLocal = (g) => (g.applyMatrix4(inv), g);
-  const origin = new Vector3().setFromMatrixPosition(d2M);   // D2 posterior
+  const d2q = new Quaternion().setFromRotationMatrix(d2M);
+  const d2qInv = d2q.clone().invert();
 
+  // half-width of the rib cage at a pelvis-frame (y, z)
+  const cageX = (y, z) => {
+    let best = 0;
+    for (const p of cage) {
+      const dy = Math.abs(p.y - y), dz = Math.abs(p.z - z);
+      if (dy < 0.10 && dz < 0.22) best = Math.max(best, Math.abs(p.x) * (1 - dz * 0.4));
+    }
+    return best || 0.55;
+  };
+
+  const G = { y: -0.46, z: -2.78 };            // glenoid (pelvis frame)
+  const TOP = { y: 0.26, z: -2.02 };           // dorsal end of the scapular blade
   const parts = [];
   const arms = {};
+
   for (const s of [1, -1]) {
-    // glenoid (shoulder socket): low on the chest, ahead of D2
-    const glen = origin.clone().add(new Vector3(s * 0.46, -0.78, -0.30));
-    // scapula: 1.31 m scapulocoracoid, strap blade sweeping up & back
-    const tip = glen.clone().add(new Vector3(s * 0.20, 0.74, 0.62));
-    const mid = glen.clone().lerp(tip, 0.5).add(new Vector3(s * 0.12, 0, 0));
-    const scap = tubeGeometry(
-      [glen.clone().add(new Vector3(0, 0.05, 0.02)), glen.clone().lerp(mid, 0.5), mid, tip],
-      [[0.035, 0.13], [0.03, 0.075], [0.028, 0.07], [0.022, 0.10]],
-      { radialSegments: 8, up0: new Vector3(0, 0, 1) }
-    );
-    parts.push(scap);
-    // coracoid: rounded plate anteroventral of the glenoid
-    parts.push(transformGeom(ellipsoidGeom(0.03, 0.15, 0.17, 14), {
-      pos: [glen.x - s * 0.04, glen.y - 0.06, glen.z - 0.15], rot: [0, s * 0.3, 0],
-    }));
-    arms[s > 0 ? 'R' : 'L'] = { glenoid: glen };
+    const onCage = (y, z, off) => new Vector3(s * (cageX(y, z) + off), y, z);
+
+    // ---- scapula: strap blade following the outer surface of the ribs
+    const pts = [], rad = [];
+    const N = 10;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const y = G.y + (TOP.y - G.y) * t + 0.05 * Math.sin(Math.PI * t);
+      const z = G.z + (TOP.z - G.z) * t;
+      pts.push(onCage(y, z, 0.05));
+      const width = 0.10 - 0.05 * Math.sin(Math.PI * Math.min(1, t * 1.25)) + 0.03 * Math.pow(t, 3);   // expanded ends, narrow shaft
+      rad.push([0.022 + 0.012 * (1 - t), width]);
+    }
+    parts.push(tubeGeometry(pts, rad, { radialSegments: 10, up0: new Vector3(s, 0, 0) }));
+    // acromion process (front lip above the glenoid, where the furcula meets it)
+    const acr = onCage(G.y + 0.14, G.z - 0.10, 0.07);
+    parts.push(transformGeom(ellipsoidGeom(0.035, 0.06, 0.07, 10), { pos: acr.toArray() }));
+
+    // ---- coracoid: rounded plate anteroventral to the glenoid, curling medially
+    const cor = [];
+    const corR = [];
+    for (let i = 0; i <= 6; i++) {
+      const t = i / 6;
+      const y = G.y - 0.04 - 0.20 * t;
+      const z = G.z - 0.10 - 0.16 * Math.sin(t * 1.3);
+      const x = cageX(y, z) + 0.04 - 0.16 * t * t;
+      cor.push(new Vector3(s * x, y, z));
+      corR.push([0.024, 0.13 * Math.sin(Math.PI * (0.15 + 0.7 * t)) + 0.04]);
+    }
+    parts.push(tubeGeometry(cor, corR, { radialSegments: 10, up0: new Vector3(s, 0, 0) }));
+    // glenoid lip
+    const glen = onCage(G.y, G.z, 0.10);
+    parts.push(transformGeom(ellipsoidGeom(0.05, 0.065, 0.06, 10), { pos: glen.toArray() }));
+    arms[s > 0 ? 'R' : 'L'] = { glenoid: glen.clone().add(new Vector3(s * 0.035, -0.02, 0.01)), acromion: acr };
   }
-  // furcula (wishbone) — Sue was the first T. rex found with one
+
+  // ---- furcula (wishbone) — Sue was the first T. rex found with one
   {
-    const a = origin.clone().add(new Vector3(0.42, -0.62, -0.40));
-    const b = origin.clone().add(new Vector3(0, -0.88, -0.62));
-    const c = origin.clone().add(new Vector3(-0.42, -0.62, -0.40));
-    parts.push(tubeGeometry([a, a.clone().lerp(b, 0.5).add(new Vector3(0, -0.06, -0.05)), b, c.clone().lerp(b, 0.5).add(new Vector3(0, -0.06, -0.05)), c],
-      [0.025, 0.03, 0.035, 0.03, 0.025], { radialSegments: 7, up0: new Vector3(0, 1, 0) }));
+    const a = arms.R.acromion.clone().add(new Vector3(0, 0, -0.03));
+    const c = arms.L.acromion.clone().add(new Vector3(0, 0, -0.03));
+    const b = new Vector3(0, G.y - 0.30, G.z - 0.34);
+    const mAB = a.clone().lerp(b, 0.5).add(new Vector3(0, -0.02, -0.08));
+    const mCB = c.clone().lerp(b, 0.5).add(new Vector3(0, -0.02, -0.08));
+    parts.push(tubeGeometry([a, mAB, b, mCB, c], [0.022, 0.028, 0.034, 0.028, 0.022], { radialSegments: 8, up0: new Vector3(0, 0, 1) }));
   }
-  const g = toLocal(mergeGeoms(parts));
+
+  const g = mergeGeoms(parts);
+  g.applyMatrix4(inv);
   roughenGeometry(g, 0.003, 10, 4.4);
   d2.add(reg(meshOf(g, mats.bone, 'Pectoral girdle', {
-    name: 'Scapulocoracoid + furcula', detail: `scapulocoracoid ${SPEC.scapulocoracoid} m`,
+    name: 'Scapulocoracoid + furcula', detail: `scapulocoracoid ${SPEC.scapulocoracoid} m — lies on the outside of the ribs`,
   })));
 
-  // arms as small joint chains hanging from the glenoid
+  // ---- forelimbs
   const F = SPEC.forelimb;
+  // joint basis: +X = world right (flexion axis), +Y = back up the bone, Z = X × Y
+  const basisQ = (boneDir) => {
+    const y = boneDir.clone().negate().normalize();
+    const x = new Vector3(1, 0, 0).addScaledVector(y, -y.x).normalize();
+    const z = new Vector3().crossVectors(x, y).normalize();
+    return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
+  };
+
   for (const key of ['L', 'R']) {
     const s = key === 'R' ? 1 : -1;
     const shoulder = new Object3D();
     shoulder.name = `shoulder.${key}`;
-    const glenLocal = arms[key].glenoid.clone().applyMatrix4(inv);
-    shoulder.position.copy(glenLocal);
-    // hang the humerus down & slightly forward (world), expressed in D2 space
-    const wq = new Quaternion().setFromUnitVectors(new Vector3(0, -1, 0), new Vector3(s * 0.12, -0.85, -0.5).normalize());
-    const d2q = new Quaternion().setFromRotationMatrix(d2M);
-    shoulder.quaternion.copy(d2q.clone().invert().multiply(wq));
+    shoulder.position.copy(arms[key].glenoid.clone().applyMatrix4(inv));
+    // humerus: down, back and slightly out (pelvis frame)
+    const humDir = new Vector3(s * 0.22, -0.88, 0.40).normalize();
+    shoulder.quaternion.copy(d2qInv.clone().multiply(basisQ(humDir)));
     shoulder.userData.restQuat = shoulder.quaternion.clone();
     d2.add(shoulder);
 
-    const hum = longBone({ length: F.humerus, shaft: 0.028, prox: 0.05, dist: 0.045, bow: new Vector3(0, 0, 0.015) });
-    hum.rotateX(Math.PI);                         // extend along -Y
-    shoulder.add(reg(meshOf(hum, mats.bone, `Humerus ${key}`, { name: `Humerus (${key})`, detail: `${F.humerus * 100} cm` , length: F.humerus })));
+    // humerus with deltopectoral crest and rounded head
+    const hum = longBone({ length: F.humerus, shaft: 0.026, prox: 0.052, dist: 0.046, proxFlare: 0.3, distFlare: 0.25, ellipse: [0.9, 1.1] });
+    hum.rotateX(Math.PI);
+    const dpc = transformGeom(ellipsoidGeom(0.018, 0.075, 0.035, 8), { pos: [0, -0.10, -0.035] });
+    const hHead = transformGeom(ellipsoidGeom(0.045, 0.04, 0.05, 10), { pos: [0, 0.005, 0.01] });
+    const humG = mergeGeoms([hum, dpc, hHead]);
+    roughenGeometry(humG, 0.002, 18, 5 + s);
+    shoulder.add(reg(meshOf(humG, mats.bone, `Humerus ${key}`, { name: `Humerus (${key})`, detail: `${(F.humerus * 100).toFixed(0)} cm`, length: F.humerus })));
 
     const elbow = new Object3D();
     elbow.name = `elbow.${key}`;
     elbow.position.set(0, -F.humerus, 0);
-    elbow.quaternion.setFromAxisAngle(new Vector3(1, 0, 0), 70 * DEG);   // forearm flexed forward
+    elbow.quaternion.setFromAxisAngle(new Vector3(1, 0, 0), 100 * DEG);   // forearm swings forward
     elbow.userData.restQuat = elbow.quaternion.clone();
     shoulder.add(elbow);
-    const ul = longBone({ length: F.ulna, shaft: 0.02, prox: 0.04, dist: 0.028 });
-    ul.rotateX(Math.PI); ul.translate(s * 0.012, 0, 0.012);
-    const ra = longBone({ length: F.radius, shaft: 0.014, prox: 0.022, dist: 0.024 });
-    ra.rotateX(Math.PI); ra.translate(-s * 0.018, 0, -0.012);
-    elbow.add(reg(meshOf(mergeGeoms([ul, ra]), mats.bone, `Forearm ${key}`, {
-      name: `Ulna + radius (${key})`, detail: `ulna ${F.ulna * 100} cm · radius ${F.radius * 100} cm`,
+    const ul = longBone({ length: F.ulna, shaft: 0.019, prox: 0.036, dist: 0.026 });
+    ul.rotateX(Math.PI); ul.translate(0.014 * s, 0, 0.012);
+    const olec = transformGeom(ellipsoidGeom(0.022, 0.03, 0.024, 8), { pos: [0.014 * s, 0.02, 0.022] });   // olecranon
+    const ra = longBone({ length: F.radius, shaft: 0.013, prox: 0.022, dist: 0.024 });
+    ra.rotateX(Math.PI); ra.translate(-0.016 * s, -0.01, -0.012);
+    const faG = mergeGeoms([ul, olec, ra]);
+    roughenGeometry(faG, 0.0015, 20, 9 + s);
+    elbow.add(reg(meshOf(faG, mats.bone, `Forearm ${key}`, {
+      name: `Ulna + radius (${key})`, detail: `ulna ${(F.ulna * 100).toFixed(1)} cm · radius ${(F.radius * 100).toFixed(1)} cm`,
     })));
 
     const wrist = new Object3D();
     wrist.name = `wrist.${key}`;
     wrist.position.set(0, -F.ulna, 0);
-    wrist.quaternion.setFromAxisAngle(new Vector3(1, 0, 0), 15 * DEG);
+    wrist.quaternion.setFromAxisAngle(new Vector3(1, 0, 0), 12 * DEG);
     wrist.userData.restQuat = wrist.quaternion.clone();
     elbow.add(wrist);
-    // manus: two functional digits (I, II) + vestigial metacarpal III
-    const mp = [];
-    const fingers = [
-      { x: -0.02, lens: [0.075, 0.085, 0.075], r: 0.017 },
-      { x: 0.02, lens: [0.085, 0.07, 0.065, 0.07], r: 0.016 },
+
+    // manus: carpals, MC I + II with two clawed digits, splint MC III.
+    // Digits run along -Y; claws curve towards -Z (the palm side).
+    const mp = [transformGeom(ellipsoidGeom(0.03, 0.02, 0.028, 8), { pos: [0, -0.01, 0] })];
+    const digits = [
+      { x: -0.016, mc: 0.045, ph: [0.08], claw: 0.075, r: 0.016 },            // digit I (thumb)
+      { x: 0.016, mc: 0.075, ph: [0.075, 0.065], claw: 0.07, r: 0.014 },      // digit II
     ];
-    for (const f of fingers) {
-      let y = 0;
-      const pts = [new Vector3(f.x * s, 0, 0)];
-      const radii = [f.r];
-      let ang = 0;
-      for (let k = 0; k < f.lens.length; k++) {
-        ang += 12 * DEG;
-        y -= f.lens[k] * Math.cos(ang);
-        pts.push(new Vector3(f.x * s, y, -Math.sin(ang) * f.lens[k] * (k + 1) * 0.6));
-        radii.push(k === f.lens.length - 1 ? 0.004 : f.r * (1 - 0.15 * k));
+    for (const d of digits) {
+      let y = -0.015;
+      const x = d.x * s;
+      mp.push(tubeGeometry([new Vector3(x, y, 0), new Vector3(x, y - d.mc, -0.004)], [d.r, d.r * 0.85], { radialSegments: 7 }));
+      y -= d.mc;
+      let z = -0.004;
+      for (const len of d.ph) {
+        mp.push(tubeGeometry([new Vector3(x, y, z), new Vector3(x, y - len, z - 0.012)], [d.r * 0.9, d.r * 0.75], { radialSegments: 7 }));
+        y -= len; z -= 0.012;
       }
-      mp.push(tubeGeometry(pts, radii, { radialSegments: 6, up0: new Vector3(0, 0, 1) }));
+      // ungual: laterally compressed, strongly curved
+      const cp = [], cr = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6;
+        cp.push(new Vector3(x, y - d.claw * Math.sin(t * 1.2), z - d.claw * 0.55 * (1 - Math.cos(t * 1.3))));
+        cr.push([d.r * 0.55 * (1 - 0.85 * t), d.r * 0.9 * (1 - 0.85 * t)]);
+      }
+      mp.push(tubeGeometry(cp, cr, { radialSegments: 7, up0: new Vector3(1, 0, 0) }));
     }
-    mp.push(tubeGeometry([new Vector3(0.045 * s, 0, 0), new Vector3(0.05 * s, -0.05, 0)], [0.009, 0.004], { radialSegments: 5 }));
-    wrist.add(reg(meshOf(mergeGeoms(mp), mats.bone, `Manus ${key}`, { name: `Manus (${key})`, detail: 'two clawed digits + vestigial MC III' })));
+    mp.push(tubeGeometry([new Vector3(0.04 * s, -0.02, 0.005), new Vector3(0.045 * s, -0.07, 0.004)], [0.008, 0.004], { radialSegments: 5 }));
+    wrist.add(reg(meshOf(mergeGeoms(mp), mats.bone, `Manus ${key}`, { name: `Manus (${key})`, detail: 'two clawed digits + vestigial metacarpal III' })));
 
     arms[key] = { shoulder, elbow, wrist };
   }

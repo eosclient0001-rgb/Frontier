@@ -5,13 +5,16 @@ import {
   WebGLRenderer, Scene, PerspectiveCamera, Color, Fog, HemisphereLight, DirectionalLight,
   AmbientLight, Mesh, PlaneGeometry, CircleGeometry, MeshBasicMaterial, Vector3, Vector2, Raycaster,
   ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Clock, InstancedMesh, Object3D,
-  Matrix4, DynamicDrawUsage, CanvasTexture, GridHelper, Group,
+  Matrix4, DynamicDrawUsage, CanvasTexture, GridHelper, Group, SphereGeometry, MeshStandardMaterial,
+  RingGeometry, Plane,
 } from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { buildSkeleton } from './skeleton.js';
 import { Animator } from './animator.js';
 import { buildFlesh } from './flesh.js';
 import { makeMaterials } from './materials.js';
+import { Hunter } from './hunter.js';
+import { Prey } from './prey.js';
 import { gaitAt, WALK_SPEED, RUN_SPEED } from './gait.js';
 import { SPEC } from './spec.js';
 
@@ -95,6 +98,37 @@ const flesh = buildFlesh(skel, mats.flesh);
 flesh.forEach((m) => (m.visible = false));
 const anim = new Animator(skel);
 
+const ray = new Raycaster();
+const mouse = new Vector2();
+
+/* ------------------------------------------------------------------ prey */
+const prey = new Prey({ radius: 0.45 });
+const preyMat = new MeshStandardMaterial({ color: 0xd8583c, roughness: 0.45, emissive: 0x3a0d04 });
+const preyMesh = new Mesh(new SphereGeometry(prey.radius, 32, 20), preyMat);
+preyMesh.castShadow = true;
+{ // stripes so rolling is visible
+  const c = document.createElement('canvas'); c.width = 64; c.height = 32;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 32);
+  g.fillStyle = '#7a1c0c'; for (let i = 0; i < 64; i += 16) g.fillRect(i, 0, 6, 32);
+  const t = new CanvasTexture(c); t.colorSpace = SRGBColorSpace; preyMat.map = t;
+}
+const preyRing = new Mesh(new RingGeometry(0.55, 0.72, 40).rotateX(-Math.PI / 2), new MeshBasicMaterial({ color: 0xffd08a, transparent: true, opacity: 0.55, depthWrite: false }));
+preyRing.position.y = 0.01;
+const preyGroup = new Group();
+preyGroup.add(preyMesh, preyRing);
+preyGroup.visible = false;
+scene.add(preyGroup);
+const hunter = new Hunter(anim, skel, prey);
+let hitFlash = 0;
+hunter.on((ev, d) => {
+  if (ev === 'hit') {
+    hitFlash = 1;
+    prey.knock(d.kind === 'tail' ? 2.5 : 3.0);
+    shake = Math.max(shake, d.kind === 'tail' ? 0.06 : 0.04);
+    toast(d.kind === 'tail' ? 'TAIL STRIKE!' : 'BITE!');
+  } else if (ev === 'miss') toast(d.kind === 'tail' ? 'tail swipe missed' : 'bite missed', true);
+});
+
 /* ------------------------------------------------------------ footprints */
 const PRINTS = 64;
 const printTex = (() => {
@@ -173,8 +207,8 @@ const setTarget = (v) => {
   anim.setTargetSpeed(targetSpeed);
   document.querySelectorAll('[data-gait]').forEach((b) => b.classList.toggle('active', +b.dataset.v === targetSpeed));
 };
-ui.speed.addEventListener('input', () => setTarget(+ui.speed.value));
-document.querySelectorAll('[data-gait]').forEach((b) => b.addEventListener('click', () => setTarget(+b.dataset.v)));
+ui.speed.addEventListener('input', () => { if (hunting) setHunting(false); setTarget(+ui.speed.value); });
+document.querySelectorAll('[data-gait]').forEach((b) => b.addEventListener('click', () => { if (hunting) setHunting(false); setTarget(+b.dataset.v); }));
 $('roar').addEventListener('click', () => anim.roar());
 
 document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => {
@@ -185,6 +219,101 @@ document.querySelectorAll('[data-bone]').forEach((b) => b.addEventListener('clic
   document.querySelectorAll('[data-bone]').forEach((x) => x.classList.toggle('active', x === b));
   mats.setBonePreset(b.dataset.bone);
 }));
+$('texT').addEventListener('change', (e) => mats.setTextured(e.target.checked));
+
+/* ------------------------------------------------------- attacks & hunt */
+const doTurn = (deg) => { if (!anim.busy) anim.turnBy(deg * Math.PI / 180); };
+$('turnL').addEventListener('click', () => doTurn(90));
+$('turnR').addEventListener('click', () => doTurn(-90));
+$('turn180').addEventListener('click', () => doTurn(180));
+const manualBite = () => {
+  if (hunting) return;
+  anim.startAction('bite', preyGroup.visible ? { target: null } : {});
+};
+const manualTail = (side) => { if (!hunting) anim.startAction('tailSwipe', { side }); };
+$('bite').addEventListener('click', manualBite);
+$('tailL').addEventListener('click', () => manualTail(-1));
+$('tailR').addEventListener('click', () => manualTail(1));
+
+let hunting = false;
+function placePreyAhead(dist = 16) {
+  const p = skel.rig.position;
+  const a = anim.heading + (Math.random() - 0.5) * 1.2;
+  prey.pos.set(p.x - Math.sin(a) * dist, prey.radius, p.z - Math.cos(a) * dist);
+  prey.vel.set(0, 0, 0); prey.held = false;
+}
+function setHunting(v) {
+  hunting = v;
+  $('hunt').classList.toggle('active', v);
+  $('hunt').textContent = v ? '■ Stop hunt' : '▶ Start hunt';
+  document.body.classList.toggle('hunting', v);
+  if (v) {
+    if (!preyGroup.visible) { preyGroup.visible = true; placePreyAhead(); }
+    targetSpeed = 0; ui.speed.value = 0;
+    document.querySelectorAll('[data-gait]').forEach((b) => b.classList.remove('active'));
+  } else { anim.setTargetSpeed(0); targetSpeed = 0; }
+  hunter.setEnabled(v);
+}
+$('hunt').addEventListener('click', () => setHunting(!hunting));
+$('spawn').addEventListener('click', () => { preyGroup.visible = true; placePreyAhead(); });
+document.querySelectorAll('[data-prey]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-prey]').forEach((x) => x.classList.toggle('active', x === b));
+  prey.mode = b.dataset.prey;
+}));
+
+// toast messages
+const toastEl = $('toast');
+let toastT = 0;
+function toast(msg, dim = false) {
+  toastEl.textContent = msg;
+  toastEl.classList.toggle('dim', dim);
+  toastEl.classList.add('show');
+  toastT = dim ? 0.9 : 1.4;
+}
+
+/* ------------------------------------------- drag / throw the prey ball */
+const dragPlane = new Plane(new Vector3(0, 1, 0), 0);
+let dragging = false;
+const dragHist = [];
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (!preyGroup.visible || e.button !== 0) return;
+  mouse.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  if (ray.intersectObject(preyMesh, false).length) {
+    dragging = true; prey.dragging = true; prey.held = false;
+    controls.enabled = false;
+    dragPlane.constant = -Math.max(prey.radius, prey.pos.y);
+    dragHist.length = 0;
+    renderer.domElement.setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  }
+}, true);
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  mouse.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = new Vector3();
+  if (ray.ray.intersectPlane(dragPlane, hit)) {
+    const d = hit.sub(skel.rig.position.clone().setY(hit.y));
+    if (d.length() > 65) d.setLength(65);
+    prey.pos.set(skel.rig.position.x + d.x, -dragPlane.constant, skel.rig.position.z + d.z);
+    dragHist.push({ t: performance.now(), p: prey.pos.clone() });
+    if (dragHist.length > 6) dragHist.shift();
+  }
+});
+const endDrag = (e) => {
+  if (!dragging) return;
+  dragging = false; prey.dragging = false; controls.enabled = true;
+  // throw velocity from the last few samples
+  if (dragHist.length >= 2) {
+    const a = dragHist[0], b = dragHist[dragHist.length - 1];
+    const dt = Math.max(0.016, (b.t - a.t) / 1000);
+    prey.vel.copy(b.p).sub(a.p).divideScalar(dt).clampLength(0, 14);
+    prey.vel.y = Math.min(6, prey.vel.length() * 0.25);
+  } else prey.vel.set(0, 0, 0);
+};
+renderer.domElement.addEventListener('pointerup', endDrag);
+renderer.domElement.addEventListener('pointercancel', endDrag);
 document.querySelectorAll('[data-cam]').forEach((b) => b.addEventListener('click', () => {
   document.querySelectorAll('[data-cam]').forEach((x) => x.classList.toggle('active', x === b));
   camMode = b.dataset.cam === 'free' ? 'free' : 'follow';
@@ -208,14 +337,18 @@ window.addEventListener('keydown', (e) => {
   if (k === '2') setTarget(WALK_SPEED);
   if (k === '3') setTarget(RUN_SPEED);
   if (k === 'r') anim.roar();
+  if (k === 'q') doTurn(90);
+  if (k === 'e') doTurn(-90);
+  if (k === 'f') manualBite();
+  if (k === 'z') manualTail(-1);
+  if (k === 'c') manualTail(1);
+  if (k === 't') setHunting(!hunting);
   if (k === 'h') document.body.classList.toggle('noui');
   if (k === ' ') { paused = !paused; $('pause').textContent = paused ? '▶ Play' : '❚❚ Pause'; e.preventDefault(); }
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 
 /* ------------------------------------------------------------ bone picking */
-const ray = new Raycaster();
-const mouse = new Vector2();
 const tip = $('tip');
 let hoverTimer = 0;
 renderer.domElement.addEventListener('pointermove', (e) => {
@@ -250,12 +383,29 @@ function frame() {
   const rdt = Math.min(clock.getDelta(), 0.1);
   const dt = paused ? 0 : rdt * slow;
 
-  // keyboard speed/turn
-  if (keys.has('w') || keys.has('arrowup')) setTarget(targetSpeed + 3.0 * rdt);
-  if (keys.has('s') || keys.has('arrowdown')) setTarget(targetSpeed - 4.0 * rdt);
-  anim.setTurn((keys.has('a') || keys.has('arrowleft') ? 1 : 0) - (keys.has('d') || keys.has('arrowright') ? 1 : 0));
+  // keyboard speed/turn (manual mode only)
+  if (!hunting) {
+    if (keys.has('w') || keys.has('arrowup')) setTarget(targetSpeed + 3.0 * rdt);
+    if (keys.has('s') || keys.has('arrowdown')) setTarget(targetSpeed - 4.0 * rdt);
+    const kt = (keys.has('a') || keys.has('arrowleft') ? 1 : 0) - (keys.has('d') || keys.has('arrowright') ? 1 : 0);
+    if (kt !== 0 || anim.turnTarget === null) anim.setTurn(kt);
+  }
 
-  if (dt > 0) anim.update(dt);
+  if (dt > 0) {
+    if (hunting) hunter.update(dt);
+    anim.update(dt);
+    if (preyGroup.visible) prey.update(dt, skel.rig.position);
+  }
+  if (preyGroup.visible) {
+    preyMesh.position.copy(prey.pos);
+    preyMesh.rotation.set(prey.roll.x, 0, prey.roll.z);
+    preyRing.position.set(prey.pos.x, 0.012, prey.pos.z);
+    preyRing.material.opacity = 0.35 + 0.3 * Math.max(0, 1 - prey.pos.y);
+    hitFlash *= Math.exp(-rdt * 4);
+    preyMat.emissive.setRGB(0.23 + hitFlash, 0.05 + hitFlash * 0.8, 0.02 + hitFlash * 0.4);
+  }
+  toastT -= rdt;
+  if (toastT <= 0) toastEl.classList.remove('show');
 
   // follow camera: move camera + target by the rig displacement
   const p = skel.rig.position;
@@ -279,6 +429,7 @@ function frame() {
 
   // HUD
   const g = anim.gait;
+  if (hunting) ui.speed.value = anim.targetSpeed;
   ui.speedVal.textContent = `${anim.speed.toFixed(1)} m/s · ${(anim.speed * 3.6).toFixed(1)} km/h`;
   ui.gait.textContent = anim.gaitLabel;
   ui.gait.dataset.state = anim.gaitLabel.split(' ')[0].toLowerCase();
@@ -290,7 +441,8 @@ function frame() {
     `<div><span>Duty factor</span><b>${g.duty.toFixed(2)}</b></div>` +
     `<div><span>Froude</span><b>${g.froude.toFixed(2)}</b></div>` +
     `<div><span>Distance</span><b>${anim.distance.toFixed(0)} m</b></div>` +
-    `<div><span>FPS</span><b>${fps}</b></div>`;
+    `<div><span>FPS</span><b>${fps}</b></div>` +
+    (hunting ? `<div><span>Hunter</span><b>${hunter.state}</b></div><div><span>Hits</span><b>${hunter.stats.hits}/${hunter.stats.bites + hunter.stats.tail}</b></div>` : '');
   ui.dutyL.style.opacity = anim.feet.L.inStance ? 1 : 0.25;
   ui.dutyR.style.opacity = anim.feet.R.inStance ? 1 : 0.25;
   $('aerial').style.opacity = !anim.feet.L.inStance && !anim.feet.R.inStance ? 1 : 0.15;
@@ -312,5 +464,5 @@ $('specLine').textContent = `${SPEC.specimen} · ${SPEC.totalLength} m · femur 
 
 loading.classList.add('done');
 setTimeout(() => loading.remove(), 700);
-window.__trex = { skel, anim, scene, camera, renderer };
+window.__trex = { skel, anim, scene, camera, renderer, hunter, prey };
 frame();

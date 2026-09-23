@@ -74,34 +74,38 @@ function tex(canvas, repeat = 1, srgb = true) {
   return t;
 }
 
-/** Bone colour presets. Sue's real bones are a very dark chocolate brown. */
+/**
+ * Bone finishes.  Plain (untextured) by default — clean matte colours read
+ * best at a distance; the procedural fossil texture is optional.
+ */
 export const BONE_PRESETS = {
-  sue: { name: 'Fossil (Sue, dark)', palette: [[38, 24, 16], [66, 44, 28], [96, 66, 42], [128, 94, 62], [150, 118, 82]], rough: 0.62 },
-  sand: { name: 'Fossil (ochre)', palette: [[92, 66, 40], [140, 104, 66], [176, 140, 96], [204, 176, 132], [222, 202, 164]], rough: 0.72 },
-  cast: { name: 'Museum cast', palette: [[150, 146, 138], [178, 172, 162], [200, 195, 184], [220, 216, 206], [236, 233, 225]], rough: 0.55 },
+  ivory: { name: 'Plain ivory', color: 0xd9ceb6, rough: 0.72, tooth: 0xf1ead8 },
+  sue:   { name: 'Plain brown (Sue)', color: 0x5a3d28, rough: 0.6, tooth: 0x2b1d12 },
+  ochre: { name: 'Plain ochre', color: 0xb08a5a, rough: 0.7, tooth: 0x6a4d2e },
+  cast:  { name: 'Plain grey cast', color: 0xb9b6ae, rough: 0.55, tooth: 0xdcd8cc },
 };
 
 export function makeMaterials() {
-  const boneCanvases = {};
   const bumpCanvas = fbmCanvas(256, 7, [[0, 0, 0], [255, 255, 255]], { octaves: 5, base: 6, pits: 900 });
   const bump = tex(bumpCanvas, 3, false);
+  const fossilMap = tex(fbmCanvas(256, 11, [[92, 80, 66], [150, 138, 120], [196, 186, 170], [226, 218, 204], [250, 246, 238]], { octaves: 5, base: 5, pits: 1500, streak: 0.18 }), 3);
 
-  const bone = new MeshStandardMaterial({
-    color: 0xffffff, roughness: 0.62, metalness: 0.0,
-    bumpMap: bump, bumpScale: 1.4,
-  });
-  const setBonePreset = (key) => {
-    const p = BONE_PRESETS[key];
-    if (!boneCanvases[key]) boneCanvases[key] = tex(fbmCanvas(256, 11, p.palette, { octaves: 5, base: 5, pits: 1500, streak: 0.18 }), 3);
-    if (bone.map) bone.map = null;
-    bone.map = boneCanvases[key];
+  const bone = new MeshStandardMaterial({ color: BONE_PRESETS.ivory.color, roughness: 0.72, metalness: 0.0 });
+  let textured = false;
+  let preset = 'ivory';
+  const apply = () => {
+    const p = BONE_PRESETS[preset];
+    bone.color.setHex(p.color);
     bone.roughness = p.rough;
+    bone.map = textured ? fossilMap : null;          // map is greyscale → tinted by the colour
+    bone.bumpMap = textured ? bump : null;
+    bone.bumpScale = 1.4;
     bone.needsUpdate = true;
+    tooth.color.setHex(p.tooth);
   };
-  setBonePreset('sue');
 
-  const tooth = new MeshStandardMaterial({ color: 0x3b2a1c, roughness: 0.35, metalness: 0.0 });
-  const toothPresets = { sue: 0x2b1d12, sand: 0x6a4d2e, cast: 0xd8d2c4 };
+  const tooth = new MeshStandardMaterial({ color: 0xf1ead8, roughness: 0.35, metalness: 0.0 });
+  apply();
 
   const fleshCanvas = fbmCanvas(256, 23, [[62, 58, 44], [84, 78, 58], [104, 96, 70], [70, 64, 50], [128, 116, 84]], { octaves: 6, base: 10, pits: 3000 });
   const flesh = new MeshPhysicalMaterial({
@@ -115,6 +119,7 @@ export function makeMaterials() {
 
   return {
     bone, tooth, flesh, ground,
-    setBonePreset(key) { setBonePreset(key); tooth.color.setHex(toothPresets[key]); },
+    setBonePreset(key) { preset = key; apply(); },
+    setTextured(v) { textured = v; apply(); },
   };
 }

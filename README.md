@@ -25,7 +25,33 @@ A T. rex skeleton built in HTML/WebGL from real measurements. It is built bone b
 - Idle: breathing, weight shifts, looking around, sniffing, jaw movement and a roar (**R**).
 
 ## Controls
-W/S speed · A/D turn · 1/2/3 idle/walk/run · R roar · Space pause · H hide UI. The panel also has view modes (bones, X‑ray, flesh), bone finishes and camera presets.
+| Key | Action |
+|---|---|
+| W / S | speed up / slow down |
+| A / D | steer while moving (turns on the spot when stopped) |
+| Q / E | turn 90° left / right in place (feet step round, no sliding) |
+| F | bite |
+| Z / C | tail swipe to the left / right |
+| R | roar (the lower jaw drops) |
+| T | start / stop hunting the ball |
+| 1 / 2 / 3 | idle / walk / run |
+| Space · H | pause · hide the UI |
+
+**Hunt the ball.** Press *Start hunt* and drag the red ball anywhere (flick it to throw).
+The T. rex tracks the ball with its head, runs, walks or pivots towards it, and attacks
+when it gets close:
+* **Bite:** the ball is in front, 4.4–7 m from the hips. The body tips forward over the hips,
+  the neck lunges, the jaws snap shut, and on a catch it shakes its head and flings the ball.
+* **Tail swipe:** the ball is beside or behind the hips, inside the measured sweep of the tail
+  (4.6–5.5 m out). The hips pivot and the tail whips low through the ball.
+* If the ball is under its chin, the T. rex turns away, opens up some distance and comes back round.
+
+Hits are checked against the real geometry: the tooth row at the moment the jaws snap, and
+each tail vertebra during the sweep. In **Flees** mode the ball runs away and dodges
+until it tires.
+
+Bones use plain matte finishes (ivory, brown, ochre, grey). The procedural fossil texture is
+an optional toggle.
 
 ## Tests
 `npm test` builds the rig headlessly and checks bone counts and size, and runs idle → walk → run → stop. It checks for no foot sliding, no stretched bones, no ground penetration and no NaNs.

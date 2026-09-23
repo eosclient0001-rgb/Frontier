@@ -16,12 +16,21 @@ mats.tooth.userData.tooth = true;
 const skel = buildSkeleton(mats);
 const flesh = fleshArg ? buildFlesh(skel, new MeshStandardMaterial()) : [];
 const anim = new Animator(skel);
+const actArg = process.env.ACTION;            // e.g. ACTION=roar / bite / tailSwipe
 anim.setTargetSpeed(+spArg);
 anim.speed = +spArg;
+if (actArg) {
+  for (let t = 0; t < 0.5; t += 1 / 60) anim.update(1 / 60);
+  if (actArg === 'bite' && process.env.TARGET) {
+    const T = process.env.TARGET.split(',').map(Number);
+    anim.aimTarget = new Vector3(...T); anim.aimWeight = 1;
+    for (let t = 0; t < 1.5; t += 1 / 60) anim.update(1 / 60);
+    anim.startAction('bite', { target: anim.aimTarget, reach: -T[2] });
+  } else anim.startAction(actArg, { side: 1 });
+}
 for (let t = 0; t < +tArg; t += 1 / 60) anim.update(1 / 60);
 anim.update(1 / 60);
-skel.rig.position.set(0, 0, 0);
-skel.rig.rotation.set(0, 0, 0);
+if (!actArg) { skel.rig.position.set(0, 0, 0); skel.rig.rotation.set(0, 0, 0); }
 skel.rig.updateMatrixWorld(true);
 
 // view transform: world -> screen axes (u right, v up, depth toward viewer)
@@ -31,9 +40,10 @@ const views = {
   top: (p) => [-p.z, -p.x, p.y],
   threeq: (p) => { const c = Math.cos(0.6), s = Math.sin(0.6); const x = -p.z * c - p.x * s, d = p.z * s - p.x * c; return [x, p.y + d * 0.18, d]; },
 };
-const onlySkull = view === 'skull' || view === 'skullfront';
-const V = views[view === 'skull' ? 'side' : view === 'skullfront' ? 'threeq' : view];
-const root = onlySkull ? skel.head : skel.rig;
+const onlySkull = view === 'skull' || view === 'skullfront' || view === 'chest' || view === 'chestside';
+const V = views[view === 'skull' || view === 'chestside' ? 'side' : view === 'skullfront' ? 'threeq' : view === 'chest' ? 'front' : view];
+const chestNode = skel.trunk[skel.trunk.length - 2];
+const root = view.startsWith('chest') ? chestNode : onlySkull ? skel.head : skel.rig;
 const box = new Box3().setFromObject(root);
 const corners = [];
 for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(V(new Vector3(x, y, z)));

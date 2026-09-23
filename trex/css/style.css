@@ -79,3 +79,14 @@ input[type=range] { width: 100%; accent-color: var(--acc); margin-top: 6px; }
   .title h1 { font-size: 18px; }
   .help { display: none; }
 }
+
+.hint { margin: 6px 0 0; color: var(--dim); font-size: 11px; line-height: 1.35; }
+button.hunt { font-weight: 700; }
+button.hunt.active { background: var(--red); border-color: var(--red); color: #fff; }
+body.hunting .gaitrow button:not(#roar) { opacity: .55; }
+
+#toast { position: fixed; top: 22%; left: 50%; transform: translate(-50%, -10px) scale(.96); z-index: 9; pointer-events: none;
+  font: italic 800 34px/1 Georgia, serif; color: #ffe0b0; letter-spacing: 1px;
+  text-shadow: 0 2px 0 #5a1d0c, 0 0 24px rgba(216,88,60,.8); opacity: 0; transition: opacity .15s, transform .15s; }
+#toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+#toast.dim { font-size: 18px; color: var(--dim); text-shadow: 0 1px 0 #000; font-weight: 600; }
