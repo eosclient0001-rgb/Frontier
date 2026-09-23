@@ -317,8 +317,8 @@ function vertebra(o) {
     [-0.38, 0.04], [-0.31, -0.10], [-0.22, -0.09], [-0.17, 0.05], [-0.09, 0.14], [0.0, 0.17], [0.09, 0.14], [0.16, 0.05],
     [0.22, -0.10], [0.30, -0.15]], 140);
   let il = plate(ilOut, [], 0.045, 0.014, 0.014);
-  const ilRidge = rod([0.02, 0.18, 0.03], [-0.02, 0.62, 0.03], (t) => [0.018, 0.03], 6, 6); // vertical supraacetabular ridge
-  il = merge([il, ilRidge, rod([-0.22, 0.12, 0.035], [0.22, 0.12, 0.035], 0.028, 6, 6)]);
+  // supraacetabular crest (hood over the hip socket) + faint vertical ridge, hugging the blade surface
+  il = merge([il, ellipRot([0.0, 0.16, 0.022], [0.24, 0.045, 0.03], [0, 0, 0]), ellipRot([0.0, 0.40, 0.02], [0.022, 0.2, 0.018], [0, 0, 0.05])]);
   il.rotateX(-0.28); il.translate(0, 0, 0.29);
   // pubis (left)
   const pub = sweep(curve([[0.28, -0.11, 0.28], [0.40, -0.45, 0.22], [0.55, -0.80, 0.12], [0.62, -0.98, 0.06]], 14),
@@ -718,7 +718,7 @@ function addPrint(x, z) {
 
 // ───────────────────────────────────────────────────────── gait engine
 const GAITS = { idle: 0, walk: 1.45, run: 5.2 };  // m/s
-const state = { v: 0, target: 0, gait: 'idle', phase: 0, stepping: false, t: 0, groundX: 0, roar: -1, breath: 0, timeScale: 1, auto: !CALIB, autoT: 0 };
+const state = { v: 0, target: 0, custom: null, gait: 'idle', phase: 0, stepping: false, t: 0, groundX: 0, roar: -1, breath: 0, timeScale: 1, auto: !CALIB, autoT: 0 };
 // gait parameters as a function of speed (m/s)
 function gaitParams(v) {
   return {
@@ -829,7 +829,7 @@ const tmpE = new THREE.Euler(0, 0, 0, 'YZX');
 function animate(dt) {
   const S = state; S.t += dt;
   // speed with limited acceleration → smooth gait transitions
-  S.target = GAITS[S.gait];
+  S.target = S.custom != null ? S.custom : GAITS[S.gait];
   const acc = S.target > S.v ? 1.35 : 1.9;
   S.v = approach(S.v, S.target, acc * dt);
   const P = gaitParams(S.v);
@@ -937,8 +937,15 @@ const ui = {
   strip: document.getElementById('strip'),
 };
 const history = [];
+const spd = document.getElementById('speed'), spdVal = document.getElementById('spd-val');
+spd.addEventListener('input', () => {
+  state.custom = +spd.value; state.auto = false; document.getElementById('auto').classList.remove('on');
+  spdVal.textContent = (state.custom * 3.6).toFixed(0) + ' km/h';
+  document.querySelectorAll('[data-gait]').forEach(b => b.classList.remove('on'));
+});
 function setGait(g, fromUser = true) {
-  state.gait = g;
+  state.gait = g; state.custom = null;
+  spd.value = GAITS[g]; spdVal.textContent = (GAITS[g] * 3.6).toFixed(0) + ' km/h';
   if (fromUser) { state.auto = false; document.getElementById('auto').classList.remove('on'); }
   document.querySelectorAll('[data-gait]').forEach(b => b.classList.toggle('on', b.dataset.gait === g));
 }
@@ -954,7 +961,7 @@ document.querySelectorAll('[data-mat]').forEach(b => b.addEventListener('click',
 }));
 const CAMS = {
   side: { p: [0.4, 2.3, 17], t: [0.0, 2.0, 0] }, three: { p: [10.5, 4.8, 12.5], t: [0.2, 2.0, 0] },
-  front: { p: [15, 3.2, 1.5], t: [1.0, 2.3, 0] }, top: { p: [0.5, 21, 0.6], t: [0, 1.5, 0] }, low: { p: [4.5, 0.35, 4.2], t: [0.8, 2.3, 0] },
+  front: { p: [15, 3.2, 1.5], t: [1.0, 2.3, 0] }, top: { p: [0.5, 21, 0.6], t: [0, 1.5, 0] }, 
 };
 let camAnim = null;
 function setCam(k) {
