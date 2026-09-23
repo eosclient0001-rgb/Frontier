@@ -104,6 +104,14 @@ async function run(p, id) {
 
   const zip = makeZip(files);
 
+  // cut/fill map (diverging u8: 128 = unchanged, >128 eroded, <128 deposited)
+  let cAbs = 0;
+  for (let i = 0; i < er.cut.length; i++) { const v = Math.abs(er.cut[i]); if (v > cAbs) cAbs = v; }
+  const cutMap = new Uint8Array(er.cut.length);
+  const cS = 127 / Math.max(1e-4, cAbs);
+  for (let i = 0; i < cutMap.length; i++)
+    cutMap[i] = Math.max(0, Math.min(255, 128 + er.cut[i] * cS)) | 0;
+
   // droplet trail overlay (log-normed particle flow)
   let fMax = 0;
   for (let i = 0; i < er.dropletFlow.length; i++) if (er.dropletFlow[i] > fMax) fMax = er.dropletFlow[i];
@@ -120,12 +128,13 @@ async function run(p, id) {
     satB: sat.satB.buffer,
     colH: er.colH.buffer,
     trail: trail.buffer,
+    cutMap: cutMap.buffer,
     heightRange: [hMin, hMax],
     audit: a,
     contract,
     zip: zip.buffer,
     elapsed: Number(elapsed)
-  }, [base.vol.data.buffer, sat.satA.buffer, sat.satB.buffer, er.colH.buffer, trail.buffer, zip.buffer]);
+  }, [base.vol.data.buffer, sat.satA.buffer, sat.satB.buffer, er.colH.buffer, trail.buffer, cutMap.buffer, zip.buffer]);
 }
 
 function buildReport(p, base, a, contract, sat, elapsed) {

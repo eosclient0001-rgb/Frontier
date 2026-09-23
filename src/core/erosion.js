@@ -75,6 +75,10 @@ export function erodeSDF(vol, p, ctx) {
   const maxColumnCut = (2.5 + 6 * p.erosionDepth) * voxMax;
   const borderMargin = 2.5 * vox[0];
   const cutAcc = new Float32Array(nx * nz);   // exact integrated cut per column
+  // Column-delta bakes only move near-surface cells, fading to zero at this
+  // depth — deep interior (already clamped by redistancing) can never flip
+  // sign, which would read as a phantom borehole.
+  const bakeBand = 5 * voxMax;
 
   const n = [0, 0, 0], g = [0, -G, 0];
   let carveVolume = 0, depositVolume = 0, activeSteps = 0;
@@ -232,13 +236,15 @@ export function erodeSDF(vol, p, ctx) {
       rounds: p.incisionRounds,
       kE: 0.16 * (p.erosionDepth || 1),
       mExp: 0.8, nExp: 1.0,
-      maxInciseVox: 0.85, lateral: 0.35, minAcc: 8
+      maxInciseVox: 0.85, lateral: 0.35, minAcc: 8,
+      bake: bakeColumnDelta
     }, rng);
     ctx.onProgress && ctx.onProgress(1, 'Fluvial incision', now() - tF);
   }
 
   scanAllColumns();
   vol.reinitialize({ bandVox: 7, iters: 2 });
+  despeckleColumns();
 
   // final drainage network (drives the Flow / Wetness SAT maps)
   const hydro = drainageNetwork(colH, nx, nz, vol.vox[0], rng);
@@ -371,20 +377,45 @@ export function erodeSDF(vol, p, ctx) {
         }
       }
     }
-    // bake the *intended* talus deltas into the SDF (bounded, no re-scan —
-    // a full colH−scan bake is degenerate for buried/bored columns)
+    // bake the *intended* talus deltas into the SDF, band-faded with depth
     const bound = vox[0] * (1 + iters);
     for (let k = 0; k < nz; k++) {
       for (let i = 0; i < nx; i++) {
         let delta = colH[colIdx(i, k)] - pre[colIdx(i, k)];
         if (delta > bound) { delta = bound; colH[colIdx(i, k)] = pre[colIdx(i, k)] + bound; }
         else if (delta < -bound) { delta = -bound; colH[colIdx(i, k)] = pre[colIdx(i, k)] - bound; }
-        if (delta > 1e-4 || delta < -1e-4) {
-          for (let j = 0; j < ny; j++) {
-            data[(k * ny + j) * nx + i] -= delta;
+        if (delta > 1e-4 || delta < -1e-4) bakeColumnDelta(i, k, delta);
+      }
+    }
+  }
+
+  /** Remove isolated 1-cell sign spikes inside columns (bake/stamp leftovers). */
+  function despeckleColumns() {
+    for (let k = 0; k < nz; k++) {
+      for (let i = 0; i < nx; i++) {
+        const base = k * ny * nx + i;
+        for (let pass = 0; pass < 2; pass++) {
+          for (let j = 1; j < ny - 1; j++) {
+            const c = data[base + j * nx];
+            const up = data[base + (j + 1) * nx];
+            const dn = data[base + (j - 1) * nx];
+            if (c < 0 !== up < 0 && c < 0 !== dn < 0) {
+              data[base + j * nx] = dn;   // adopt neighbour sign
+            }
           }
         }
       }
+    }
+  }
+
+  /** Shift a column's surface by deltaC, fading to zero by |sdf| = bakeBand. */
+  function bakeColumnDelta(i, k, deltaC) {
+    for (let j = 0; j < ny; j++) {
+      const cell = (k * ny + j) * nx + i;
+      const d = data[cell];
+      const ad = d < 0 ? -d : d;
+      if (ad >= bakeBand) continue;
+      data[cell] -= deltaC * (1 - ad / bakeBand);
     }
   }
 }

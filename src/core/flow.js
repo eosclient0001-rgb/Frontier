@@ -196,19 +196,16 @@ export function streamPowerIncise(vol, colH, scanColumn, o, rng = Math.random) {
       colH[i] = Math.max(vol.worldY(0), colH[i] + delta[i]);
     }
 
-    // bake THIS round's incision deltas into the SDF. Each round applies its
-    // own bounded delta only (no cumulative re-application, no re-scan
-    // difference — both are pathological for buried/bored columns).
+    // bake THIS round's incision deltas into the SDF via the band-faded
+    // column bake (deep interior never moves → no phantom bores). Each round
+    // applies only its own bounded delta.
     const bound = maxIncise * 1.6;   // cut + accumulated lateral hits
     for (let k = 0; k < nz; k++) {
       for (let i = 0; i < nx; i++) {
         let deltaC = delta[k * nx + i];
         if (deltaC > bound) deltaC = bound;
         else if (deltaC < -bound) deltaC = -bound;
-        if (deltaC > 1e-4 || deltaC < -1e-4) {
-          const base = k * vol.ny * nx + i;
-          for (let j = 0; j < vol.ny; j++) vol.data[base + j * nx] -= deltaC;
-        }
+        if (deltaC > 1e-4 || deltaC < -1e-4) o.bake(i, k, deltaC);
       }
     }
   }

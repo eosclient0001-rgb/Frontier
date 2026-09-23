@@ -56,7 +56,7 @@ because a channel incised less than ~⅓ voxel is invisible at the current grid,
 cut deeper than the budget means the simulation is punching through features the
 resolution can't hold — both fail the contract and are flagged in the UI.
 
-## Exports
+## Exports & session QoL
 
 **Export bundle** downloads a ZIP (encoded in-browser, zero dependencies):
 
@@ -65,13 +65,26 @@ resolution can't hold — both fail the contract and are flagged in the UI.
 - `sdf/volume_u16.raw` + `sdf/header.json` — the quantised SDF volume
 - `params.json`, `AUDIT.md` — full parameter set + measured audit table
 
+Plus: **Save PNG** viewport capture, **keyboard shortcuts** (`R` regenerate,
+`I` inspector, `T` flow trails, `S` save PNG), and parameter persistence via
+`localStorage` (shareable `?seed=<n>` URL parameter).
+
 ## Node harnesses
 
 ```bash
 node tools/sim-test.mjs [res] [droplets]   # headless pipeline + diagnostic PNGs + |∇d| audit
 node tools/tune.mjs                        # base-vs-eroded shaded relief + flow map
 node tools/worker-e2e.mjs [res] [drops]    # runs the *actual browser worker* end-to-end, validates the ZIP
+node tools/seed-sweep.mjs                  # contract compliance across seeds
 ```
+
+Validated matrix (all PASS — no phantom bores/towers, max cut within budget):
+
+| Grid | Voxel | Channels | Max cut vs budget | Time |
+|---|---|---|---|---|
+| 128² | 781 mm | 0.9 vox | 4.0–5.0 / 7.9 m (5 seeds) | ~15 s |
+| 192² | 521 mm | 0.91 vox | 3.24 / 5.21 m | ~50 s |
+| 288² | 347 mm | 0.88 vox | 2.18 / 3.13 m | ~147 s |
 
 ## Design notes
 

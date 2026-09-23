@@ -86,6 +86,7 @@ const SAT_INFO = [
   ['slope', 'Slope', 'Surface gradient magnitude, saturated at ~58°. Rock exposure driver.'],
   ['height', 'Height', 'Normalised elevation — hypsometric texturing / snow lines.'],
   ['wetness', 'Wetness', 'Smoothed flow accumulation — dampness for texturing.'],
+  ['cut', 'Cut / Fill', 'Net elevation change from erosion — warm: incised, cool: deposited (diverging).'],
 ];
 
 // ---------------------------------------------------------------------------
@@ -94,7 +95,23 @@ const SAT_INFO = [
 const params = {};
 const $ = (s) => document.querySelector(s);
 let worker = null, viewer = null, running = false, lastZip = null;
-let satData = null, satN = [0, 0], gridDims = null;
+let satData = null, satN = [0, 0];
+
+const LS_KEY = 'frontier-params-v1';
+let savedParams = {};
+try { savedParams = JSON.parse(localStorage.getItem(LS_KEY) || '{}') || {}; } catch { savedParams = {}; }
+{
+  const us = new URLSearchParams(location.search).get('seed');
+  if (us) savedParams.seed = parseInt(us) || savedParams.seed;
+}
+function resolveDefault(item) {
+  const s = savedParams[item.key];
+  return (s !== undefined && typeof s === typeof item.value &&
+          !(item.type === 'seg' && !item.options.some(o => o.id === s))) ? s : item.value;
+}
+function saveParams() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(params)); } catch {}
+}
 
 // ---------------------------------------------------------------------------
 //  boot
@@ -178,10 +195,23 @@ function buildControls() {
 
   $('#btn-generate').addEventListener('click', generate);
   $('#btn-export').addEventListener('click', exportBundle);
+  $('#btn-shot').addEventListener('click', screenshot);
+
+  document.addEventListener('keydown', (e) => {
+    const t = e.target && e.target.tagName;
+    if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
+    if (e.key === 'r' || e.key === 'R') generate();
+    else if (e.key === 'i' || e.key === 'I') $('#btn-inspect').click();
+    else if (e.key === 't' || e.key === 'T') $('#btn-trail').click();
+    else if (e.key === 's' || e.key === 'S') screenshot();
+  });
+
+  applyRenderParams();               // sync viewer with (possibly restored) params
+  if (Object.keys(savedParams).length) logLine('parameters restored from last session', 'accent');
 }
 
 function rangeCtl(item) {
-  params[item.key] = item.value;
+  params[item.key] = resolveDefault(item);
   const wrap = document.createElement('div');
   const row = document.createElement('div');
   row.className = 'ctl-row';
@@ -192,7 +222,7 @@ function rangeCtl(item) {
   row.append(lab, val);
   const input = document.createElement('input');
   input.type = 'range';
-  input.min = item.min; input.max = item.max; input.step = item.step; input.value = item.value;
+  input.min = item.min; input.max = item.max; input.step = item.step; input.value = params[item.key];
   const paint = () => {
     const v = parseFloat(input.value);
     val.textContent = item.fmt ? item.fmt(v) : v;
@@ -203,6 +233,7 @@ function rangeCtl(item) {
     params[item.key] = parseFloat(input.value);
     paint();
     if (RENDER_KEYS.has(item.key)) applyRenderParams();
+    saveParams();
   });
   paint();
   wrap.append(row, input);
@@ -215,7 +246,7 @@ function rangeCtl(item) {
 }
 
 function selectCtl(item) {
-  params[item.key] = item.value;
+  params[item.key] = resolveDefault(item);
   const row = document.createElement('div');
   row.className = 'ctl-row';
   row.innerHTML = `<label>${item.label}</label>`;
@@ -223,16 +254,16 @@ function selectCtl(item) {
   for (const [v, l] of item.options) {
     const o = document.createElement('option');
     o.value = v; o.textContent = l;
-    if (String(v) === String(item.value)) o.selected = true;
+    if (String(v) === String(params[item.key])) o.selected = true;
     sel.appendChild(o);
   }
-  sel.addEventListener('change', () => params[item.key] = sel.value);
+  sel.addEventListener('change', () => { params[item.key] = sel.value; saveParams(); });
   row.appendChild(sel);
   return row;
 }
 
 function segCtl(item) {
-  params[item.key] = item.value;
+  params[item.key] = resolveDefault(item);
   const wrap = document.createElement('div');
   const row = document.createElement('div');
   row.className = 'ctl-row';
@@ -242,12 +273,13 @@ function segCtl(item) {
   for (const o of item.options) {
     const b = document.createElement('button');
     b.textContent = o.label;
-    b.classList.toggle('active', o.id === item.value);
+    b.classList.toggle('active', o.id === params[item.key]);
     b.addEventListener('click', () => {
       seg.querySelectorAll('button').forEach(x => x.classList.remove('active'));
       b.classList.add('active');
       params[item.key] = o.id;
       if (RENDER_KEYS.has(item.key)) applyRenderParams();
+      saveParams();
     });
     seg.appendChild(b);
   }
@@ -261,20 +293,20 @@ function segCtl(item) {
 }
 
 function seedCtl(item) {
-  params[item.key] = item.value;
+  params[item.key] = resolveDefault(item);
   const row = document.createElement('div');
   row.className = 'ctl-row';
   row.innerHTML = `<label>${item.label}</label>`;
   const line = document.createElement('div');
   line.className = 'seed-row';
   const num = document.createElement('input');
-  num.type = 'number'; num.value = item.value;
-  num.addEventListener('change', () => params[item.key] = parseInt(num.value) || 1);
+  num.type = 'number'; num.value = params[item.key];
+  num.addEventListener('change', () => { params[item.key] = parseInt(num.value) || 1; saveParams(); });
   const dice = document.createElement('button');
   dice.className = 'icon-btn'; dice.textContent = '🎲'; dice.title = 'Random seed';
   dice.addEventListener('click', () => {
     const s = (Math.random() * 99999) | 0;
-    num.value = s; params[item.key] = s;
+    num.value = s; params[item.key] = s; saveParams();
   });
   line.append(num, dice);
   const wrap = document.createElement('div');
@@ -286,6 +318,18 @@ function seedCtl(item) {
     wrap.appendChild(h);
   }
   return wrap;
+}
+
+function screenshot() {
+  if (!viewer) return;
+  viewer.requestCapture((blob) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `frontier_view_${params.seed}_${params.quality}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    logLine('viewport captured → ' + a.download, 'ok');
+  });
 }
 
 function applyRenderParams() {
@@ -347,6 +391,7 @@ function buildPipelineParams() {
 
 function generate() {
   if (running) return;
+  saveParams();
   running = true;
   lastZip = null;
   $('#btn-export').disabled = true;
@@ -373,7 +418,6 @@ function onDone(m) {
     viewer.setSat(m.satA, m.satB, m.sdf.dims[0], m.sdf.dims[2]);
     viewer.setTrail(m.trail, m.sdf.dims[0], m.sdf.dims[2]);
   }
-  gridDims = m.sdf.dims;
   $('#hud-grid').textContent = m.sdf.dims.join('×');
   $('#hud-voxel').textContent = (m.sdf.voxel[0] * 1000).toFixed(0) + ' mm';
 
@@ -385,7 +429,7 @@ function onDone(m) {
   $('#clip-val').textContent = viewer.clipY.toFixed(1) + ' m';
 
   fillAudit(m.audit, m.contract, m.elapsed);
-  buildGallery(new Uint8Array(m.satA), new Uint8Array(m.satB), m.sdf.dims[0], m.sdf.dims[2]);
+  buildGallery(new Uint8Array(m.satA), new Uint8Array(m.satB), m.sdf.dims[0], m.sdf.dims[2], new Uint8Array(m.cutMap));
   lastZip = new Blob([m.zip], { type: 'application/zip' });
   $('#btn-export').disabled = false;
 
@@ -425,7 +469,7 @@ function fillContract(c) {
     ['Grid', `${c.grid[0]}×${c.grid[1]}×${c.grid[2]}`],
     ['Cells', (cells / 1e6).toFixed(2) + ' M'],
     ['Min feature (3 vox)', (c.detailCapMM / 1000).toFixed(2) + ' m'],
-    ['Cut budget', `${c.maxCutM.toFixed(2)} m  (${((4 + 6 * 1)).toFixed(0)} vox)`],
+    ['Cut budget', `${c.maxCutM.toFixed(2)} m (${(c.maxCutM / c.voxel).toFixed(1)} vox)`],
     ['Channel target', '≈ 1.0 voxel', ''],
   ]);
 }
@@ -457,8 +501,8 @@ function fillAudit(a, c, elapsed) {
   }
 }
 
-function buildGallery(satA, satB, nx, nz) {
-  satData = { satA, satB, nx, nz };
+function buildGallery(satA, satB, nx, nz, cutU8) {
+  satData = { satA, satB, nx, nz, cut: cutU8 };
   const gal = $('#sat-gallery');
   gal.innerHTML = '';
   SAT_INFO.forEach(([key, label], i) => {
@@ -466,7 +510,7 @@ function buildGallery(satA, satB, nx, nz) {
     tile.className = 'sat-tile';
     const cv = document.createElement('canvas');
     cv.width = nx; cv.height = nz;
-    paintSat(cv, i, satA, satB, nx, nz);
+    paintSat(cv, i);
     const lab = document.createElement('div');
     lab.className = 'sat-label';
     lab.textContent = label;
@@ -476,24 +520,20 @@ function buildGallery(satA, satB, nx, nz) {
   });
 }
 
-function channelBytes(i) {
-  const { satA, satB, nx, nz } = satData;
-  const src = i < 4 ? satA : satB;
-  const ch = i % 4;
-  const out = new Uint8Array(nx * nz);
-  for (let j = 0; j < out.length; j++) out[j] = src[j * 4 + ch];
-  return out;
-}
-
-function paintSat(cv, i, satA, satB, nx, nz) {
+function paintSat(cv, i) {
+  const { satA, satB, nx, nz, cut } = satData;
   const ctx = cv.getContext('2d');
   const img = ctx.createImageData(nx, nz);
-  const bytes = channelBytesFor(i, satA, satB, nx, nz);
   const key = SAT_INFO[i][0];
+  const bytes = key === 'cut' ? cut : channelBytesFor(i, satA, satB, nx, nz);
   for (let j = 0; j < nx * nz; j++) {
     const v = bytes[j] / 255;
     let r, g, b;
-    if (key === 'pointiness') {          // diverging blue-white-red
+    if (key === 'cut') {                 // diverging: cool deposition, warm erosion
+      const t = (bytes[j] / 255) * 2 - 1;
+      if (t > 0) { r = 150 + t * 72; g = 160 - t * 55; b = 150 - t * 75; }
+      else { r = 150 - t * 70; g = 160 + t * 15; b = 150 + t * 60; }
+    } else if (key === 'pointiness') {   // diverging blue-white-red
       const t = v * 2 - 1;
       if (t > 0) { r = 90 + t * 165; g = 140 - t * 60; b = 200 - t * 140; }
       else { r = 90 - t * 40; g = 140 + t * 20; b = 200 + t * 55; }
@@ -532,7 +572,7 @@ function openLightbox(i) {
   const [key, label, desc] = SAT_INFO[i];
   const cv = $('#lightbox-canvas');
   cv.width = satData.nx; cv.height = satData.nz;
-  paintSat(cv, i, satData.satA, satData.satB, satData.nx, satData.nz);
+  paintSat(cv, i);
   $('#lightbox-title').textContent = `${label} — ${key}`;
   $('#lightbox-desc').textContent = desc + `  (${satData.nx}×${satData.nz} @ ${(100 / satData.nx * 1000).toFixed(0)} mm/px)`;
   $('#lightbox').classList.remove('hidden');

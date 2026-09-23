@@ -261,8 +261,9 @@ export class FrontierViewer {
     this.sunAz = 2.35; this.sunEl = 0.62;
     this.mode = 0; this.clipY = 20;
     this.snowline = 33; this.wet = 0.8; this.ao = 1.0; this.exposure = 1.0;
-    this.showTrail = 0; this.renderScale = 0.85;
+    this.showTrail = 0; this.renderScale = 0.75;
     this.worldSize = [100, 64, 100];
+    this.captureCb = null;
 
     this.bindInput();
   }
@@ -382,7 +383,14 @@ export class FrontierViewer {
     gl.uniform1f(u.uTime, performance.now() / 1000);
     gl.uniform1f(u.uShowTrail, this.showTrail);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    if (this.captureCb) {           // buffer is intact right after the draw
+      const cb = this.captureCb; this.captureCb = null;
+      c.toBlob(b => cb(b), 'image/png');
+    }
   }
+
+  requestCapture(cb) { this.captureCb = cb; }
 
   bindInput() {
     const c = this.canvas;
