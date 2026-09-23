@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRONTIER — Tyre Forge · Procedural Racing Tyre &amp; Tread Generator</title>
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<header id="topbar">
+  <div class="logo">
+    <span class="logo-mark">◮</span>
+    <div class="logo-text">
+      <h1>FRONTIER <em>TYRE FORGE</em></h1>
+      <p>procedural racing tyre &amp; tread generator</p>
+    </div>
+  </div>
+  <div class="top-stats">
+    <span class="chip mono" id="sizeChip">225/45 R17</span>
+    <span class="chip mono" id="odChip">OD 634 mm</span>
+    <span class="chip mono" id="wearChip">NEW</span>
+  </div>
+</header>
+
+<main id="layout">
+  <!-- ══════════════ LEFT PANEL : TYRE BUILDER ══════════════ -->
+  <aside id="leftPanel">
+    <section class="panel">
+      <h2><span class="sec-num">01</span> Tyre size <em class="hint">fully procedural profile</em></h2>
+      <div class="ctl">
+        <label>Section width <output id="oWidth">225 mm</output></label>
+        <input type="range" id="sWidth" min="145" max="355" step="5" value="225">
+      </div>
+      <div class="ctl">
+        <label>Aspect ratio <output id="oAspect">45 %</output></label>
+        <input type="range" id="sAspect" min="25" max="80" step="1" value="45">
+      </div>
+      <div class="ctl">
+        <label>Rim diameter <output id="oRim">17 in</output></label>
+        <input type="range" id="sRim" min="13" max="22" step="1" value="17">
+      </div>
+      <canvas id="blueprint" width="560" height="340"></canvas>
+      <div class="spec-grid mono" id="specGrid"></div>
+    </section>
+
+    <section class="panel">
+      <h2><span class="sec-num">02</span> Tread compound <em class="hint">13 named patterns</em></h2>
+      <div class="chips" id="filterChips"></div>
+      <div class="preset-grid" id="presetGrid"></div>
+    </section>
+
+    <section class="panel">
+      <h2><span class="sec-num">03</span> Condition &amp; detail</h2>
+      <div class="ctl">
+        <label>Wear <output id="oWear">0 %</output></label>
+        <input type="range" id="sWear" min="0" max="100" step="1" value="0">
+        <div class="range-ends"><span>NEW</span><span>BALD</span></div>
+      </div>
+      <div class="ctl">
+        <label>Tread depth <output id="oDepth">8.0 mm</output></label>
+        <input type="range" id="sDepth" min="2" max="14" step="0.5" value="8">
+      </div>
+      <div class="ctl">
+        <label>Pattern repeat (around tyre) <output id="oRepeat">14×</output></label>
+        <input type="range" id="sRepeat" min="6" max="30" step="1" value="14">
+      </div>
+      <div class="row2">
+        <div class="ctl">
+          <label>Accent stripe</label>
+          <input type="color" id="cAccent" value="#e23b2e">
+        </div>
+        <div class="ctl">
+          <label>Rim colour</label>
+          <input type="color" id="cRim" value="#383d45">
+        </div>
+      </div>
+      <div class="ctl check">
+        <label><input type="checkbox" id="cbRim" checked> Show rim</label>
+        <label><input type="checkbox" id="cbSpin"> Turntable spin</label>
+      </div>
+      <div class="ctl">
+        <label>Spin speed <output id="oRpm">24 rpm</output></label>
+        <input type="range" id="sRpm" min="2" max="120" step="1" value="24">
+      </div>
+      <div class="btn-row">
+        <button id="btnShot" class="btn">📸 Screenshot</button>
+        <button id="btnCam" class="btn ghost">⟲ Reset camera</button>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ══════════════ CENTER : 3D VIEWPORT ══════════════ -->
+  <div id="viewport">
+    <canvas id="scene3d"></canvas>
+    <div id="overlay">
+      <div id="ovName">GRIZZLY MAGNUM</div>
+      <div id="ovMeta"><span id="ovCat" class="badge">OFF-ROAD</span> <span id="ovSize" class="mono">225/45 R17</span></div>
+      <div id="ovDesc">Chunky staggered lugs for gravel, dirt and rally stages.</div>
+      <div id="ovStats"></div>
+    </div>
+    <div id="stripWrap">
+      <div class="strip-label">UNROLLED TREAD — 3 REPEATS <span id="stripWear"></span></div>
+      <canvas id="stripCanvas" width="1200" height="132"></canvas>
+    </div>
+  </div>
+
+  <!-- ══════════════ RIGHT PANEL : TREAD EDITOR ══════════════ -->
+  <aside id="rightPanel">
+    <section class="panel">
+      <h2><span class="sec-num">04</span> Tread editor <em class="hint">design your own</em></h2>
+      <input type="text" id="customName" value="Custom Tread" maxlength="24" spellcheck="false">
+      <div class="tools" id="toolBar">
+        <button data-tool="hgroove" title="Circumferential groove — drag to position">▬</button>
+        <button data-tool="vgroove" title="Lateral / angled groove — drag to position">◧</button>
+        <button data-tool="chevron" title="Directional V-chevron">⌃</button>
+        <button data-tool="sipes"   title="Sipe row (small zig-zag slits)">〰</button>
+        <button data-tool="circle"  title="Circular pattern — drag to size">○</button>
+        <button data-tool="hex"     title="Hexagon stamp — drag to size">⬡</button>
+        <button data-tool="diamond" title="Diamond stamp — drag to size">◇</button>
+        <button data-tool="blocks"  title="Tread block grid">▦</button>
+        <button data-tool="dimples" title="Row of circular dimples">◌</button>
+        <button data-tool="erase"   title="Eraser — paint rubber back">⌫</button>
+      </div>
+      <canvas id="editorCanvas" width="560" height="560"></canvas>
+      <div class="ctl">
+        <label>Groove width <output id="oEW">0.030</output></label>
+        <input type="range" id="sEW" min="0.004" max="0.12" step="0.002" value="0.03">
+      </div>
+      <div class="ctl">
+        <label>Feature size <output id="oES">0.060</output></label>
+        <input type="range" id="sES" min="0.015" max="0.22" step="0.005" value="0.06">
+      </div>
+      <div class="ctl">
+        <label>Angle <output id="oEA">25°</output></label>
+        <input type="range" id="sEA" min="-60" max="60" step="1" value="25">
+      </div>
+      <div class="ctl">
+        <label>Count <output id="oEN">6</output></label>
+        <input type="range" id="sEN" min="2" max="14" step="1" value="6">
+      </div>
+      <div class="ctl check">
+        <label><input type="checkbox" id="cbMirror" checked> Mirror across centreline</label>
+      </div>
+      <div class="btn-row wrap">
+        <button id="btnImport" class="btn">⤓ Import current tread</button>
+        <button id="btnUndo" class="btn ghost">↶ Undo</button>
+        <button id="btnClear" class="btn ghost">✕ Clear</button>
+        <button id="btnPng" class="btn ghost">PNG</button>
+        <button id="btnJson" class="btn ghost">JSON</button>
+      </div>
+      <p class="tip">Draw directly on the tile — it wraps seamlessly around the tyre. Start drawing on any preset to remix it.</p>
+    </section>
+  </aside>
+</main>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
