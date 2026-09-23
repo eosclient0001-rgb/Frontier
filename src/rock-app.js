@@ -1,9 +1,9 @@
 /**
  * Standalone Rock Crack & SDF Erosion Studio — Application Controller
- * Features a dedicated 4-Phase Step-by-Step Geological Pipeline:
- * Phase 1: Base Rock Generator (Polyhedral SDF)
- * Phase 2: 3D Fracture Dynamics (Cleavage Faults & Stress Tensors)
- * Phase 3: Volumetric SDF Crack Erosion (Frost Wedging & Lip Beveling)
+ * Features the authoritative 4-Phase Geological Pipeline:
+ * Phase 1: Base Rock Generator (Polyhedral SDF with Strata Bedding & Micro-Facets)
+ * Phase 2: 3D Fracture Dynamics & Sharp Planar Chipped Cuts (Cleavage Faults & Stress Tensors)
+ * Phase 3: Volumetric 3D SDF Crack Erosion (Frost Wedging & Lip Beveling)
  * Phase 4: Final Mesh LOD Extraction & PBR Material Shading
  */
 
@@ -15,7 +15,7 @@ import { RockPreviewViewport, MINERAL_PALETTES } from "./rock-preview.js";
 
 export class RockStudioApp {
   constructor() {
-    this.gridResolution = 80; // 80x80x80 SDF grid with Adaptive Crack Refinement
+    this.gridResolution = 80; // 80x80x80 SDF grid with Adaptive Sub-Voxel Crack Refinement
     this.lodStep = 1; // 1 = High poly, 2 = Mid poly, 3 = Low poly game mesh
     this.currentPhase = 1; // 1: Base Rock, 2: Fractured & Chipped, 3: Eroded SDF, 4: Final Mesh/LOD
 
@@ -40,7 +40,7 @@ export class RockStudioApp {
       branching: 0.6,
       jaggedness: 0.45,
       explode: 0.0, // Broken piece separation
-      // Chipped Faces / Surface Spall Flaking
+      // Sharp Planar Chipped Cuts & Spall Facets
       chipDensity: 0.55,
       chipDepth: 0.06,
       chipScale: 0.45,
@@ -217,7 +217,7 @@ export class RockStudioApp {
     this.bindSlider("slider-jaggedness", "jaggedness", (v) => parseFloat(v), "val-jaggedness");
     this.bindSlider("slider-explode", "explode", (v) => parseFloat(v), "val-explode", "x");
 
-    // Chipped Faces sliders
+    // Sharp Planar Chipped Cuts sliders
     this.bindSlider("slider-chip-density", "chipDensity", (v) => parseFloat(v), "val-chip-density");
     this.bindSlider("slider-chip-depth", "chipDepth", (v) => parseFloat(v), "val-chip-depth", "m");
     this.bindSlider("slider-chip-scale", "chipScale", (v) => parseFloat(v), "val-chip-scale", "m");
@@ -330,11 +330,11 @@ export class RockStudioApp {
 
     this.state.preset = presetKey;
     this.state.facets = p.facets || 14;
-    this.state.baseRoundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.35;
-    this.state.noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.15;
-    this.state.noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.9;
+    this.state.baseRoundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.25;
+    this.state.noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.12;
+    this.state.noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.85;
     this.state.strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.04;
-    this.state.strataFreq = p.strataFreq || 2.5;
+    this.state.strataFreq = p.strataFreq || 2.2;
     this.state.strataDip = p.strataDip || 15;
     this.state.rockHardness = p.hardness || 1.4;
     this.state.mineral = p.mineral || "granite";
@@ -447,7 +447,7 @@ export class RockStudioApp {
       hardness: this.state.rockHardness,
     });
 
-    // Step 2: 3D Fracture Dynamics & Chipped Flakes
+    // Step 2: 3D Fracture Dynamics & Sharp Planar Chipped Cuts
     const fractureResult = this.fractureEngine.generateFracture(baseRockResult.sdf, {
       seed: this.state.seed + 101,
       fractureType: this.state.fractureType,
@@ -511,14 +511,14 @@ export class RockStudioApp {
       case 1: // Phase 1: Base Rock Only
         sdfToExtract = baseRock.sdf;
         defaultViewMode = 0; // PBR Shaded
-        if (statusText) statusText.textContent = "Phase 1/4: Base Rock Geometry (Clean polyhedral form)";
+        if (statusText) statusText.textContent = "Phase 1/4: Base Rock Geometry (Clean polyhedral form & strata)";
         break;
 
-      case 2: // Phase 2: Fracture Cracks & Stress Field
+      case 2: // Phase 2: Fracture Cracks & Sharp Chipped Cuts
         sdfToExtract = fracture.fracturedRockSDF;
         crackMaskAttr = fracture.crackMask;
         defaultViewMode = 1; // Glowing crack & stress lines
-        if (statusText) statusText.textContent = "Phase 2/4: 3D Fracture Stress (Inspect crack clefts & lines)";
+        if (statusText) statusText.textContent = `Phase 2/4: 3D Fracture Dynamics (${fracture.pieceCount} pieces, ${fracture.chipCount} sharp chips)`;
         break;
 
       case 3: // Phase 3: SDF Crack Erosion
@@ -528,7 +528,7 @@ export class RockStudioApp {
         sedimentAttr = erosion.cavitySediment;
         oxidationAttr = erosion.oxidationHalo;
         defaultViewMode = 2; // SDF Erosion heatmap
-        if (statusText) statusText.textContent = "Phase 3/4: SDF Crack Erosion (Frost wedging & beveling)";
+        if (statusText) statusText.textContent = "Phase 3/4: SDF Crack Erosion (Frost wedging & acute beveling)";
         break;
 
       case 4: // Phase 4: Final Mesh LOD & PBR Shading
@@ -539,7 +539,7 @@ export class RockStudioApp {
         sedimentAttr = erosion.cavitySediment;
         oxidationAttr = erosion.oxidationHalo;
         defaultViewMode = 0; // Realistic PBR
-        if (statusText) statusText.textContent = "Phase 4/4: Final Weathered Rock & Mesh LOD";
+        if (statusText) statusText.textContent = "Phase 4/4: Final Weathered Rock & Mesh LOD (Ready for export)";
         break;
     }
 
@@ -550,7 +550,7 @@ export class RockStudioApp {
     });
     this.viewport.setViewMode(defaultViewMode);
 
-    // Extract isosurface mesh using Marching Cubes
+    // Extract isosurface mesh using Adaptive Marching Cubes
     const meshData = extractIsosurface(
       {
         sdf: sdfToExtract,
@@ -606,7 +606,7 @@ export class RockStudioApp {
 
     const { positions, normals, uvs, indices } = this.currentMesh;
     let objText = "# Frontier Standalone Rock Crack & SDF Erosion Studio\n";
-    objText += `# Phase: ${this.currentPhase}, Preset: ${this.state.preset}, Mineral: ${this.state.mineral}\n`;
+    objText += `# Phase: ${this.currentPhase}/4, Preset: ${this.state.preset}, Mineral: ${this.state.mineral}\n`;
     objText += `# LOD Step: ${this.lodStep}, Triangles: ${this.currentMesh.triangleCount}\n\n`;
 
     for (let i = 0; i < positions.length; i += 3) {

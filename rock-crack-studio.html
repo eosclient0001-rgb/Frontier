@@ -251,7 +251,7 @@
         <div class="panel-header">
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline></svg>
           <div>
-            <div class="ph-title">Interactive Pipeline</div>
+            <div class="ph-title">4-Step Pipeline</div>
             <div class="ph-sub">Click any phase to isolate</div>
           </div>
         </div>
@@ -269,12 +269,12 @@
               <div class="step-desc">Polyhedral facet clipping planes + 3D simplex displacement + strata dip.</div>
             </div>
 
-            <div class="step-card" id="card-step-2" title="Click to view fracture cracks and stress lines">
+            <div class="step-card" id="card-step-2" title="Click to view fracture cracks and sharp chipped cuts">
               <div class="step-title">
-                <span>2. 3D Fracture Cracks</span>
+                <span>2. 3D Fracture & Chips</span>
                 <span class="step-badge">Fracture</span>
               </div>
-              <div class="step-desc">Voronoi cleavage, shear faults, and Griffith stress intensity tensor fields.</div>
+              <div class="step-desc">Voronoi cleavage, sharp planar chipped cuts, and Griffith stress tensors.</div>
             </div>
 
             <div class="step-card" id="card-step-3" title="Click to view SDF erosion and gelifraction">
@@ -304,7 +304,7 @@
               </div>
               <div class="diag-stat-row">
                 <span>SDF Resolution:</span>
-                <span id="stat-grid-res" class="diag-stat-val">64³ (262k)</span>
+                <span id="stat-grid-res" class="diag-stat-val">80³ (512k)</span>
               </div>
               <div class="diag-stat-row">
                 <span>Eroded Volume:</span>
@@ -321,13 +321,13 @@
             </div>
           </div>
 
-          <!-- Mesh LOD -->
+          <!-- Mesh LOD / Remesh -->
           <div class="sec-group">
-            <div class="sec-title">Mesh LOD (Target Poly Count)</div>
+            <div class="sec-title">SDF Remesh LOD</div>
             <div class="seg" style="width: 100%;">
-              <button class="lod-btn active" data-step="1" style="flex: 1;">High SDF (20k)</button>
-              <button class="lod-btn" data-step="2" style="flex: 1;">Mid (5k)</button>
-              <button class="lod-btn" data-step="3" style="flex: 1;">Low Poly (1.5k)</button>
+              <button class="lod-btn active" data-step="1" style="flex: 1;" title="Sub-voxel refined mesh">High SDF (25k)</button>
+              <button class="lod-btn" data-step="2" style="flex: 1;" title="Balanced mesh">Mid (6k)</button>
+              <button class="lod-btn" data-step="3" style="flex: 1;" title="Decimated game LOD">Low Poly (1.5k)</button>
             </div>
           </div>
         </div>
@@ -415,16 +415,16 @@
             <div class="crow">
               <span class="clabel">Base Roundness</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-roundness" class="slider" min="0.0" max="1.0" step="0.05" value="0.35">
-                <div class="vpill"><div class="num" id="val-roundness">0.35</div><div class="unit">r</div></div>
+                <input type="range" id="slider-roundness" class="slider" min="0.0" max="1.0" step="0.05" value="0.25">
+                <div class="vpill"><div class="num" id="val-roundness">0.25</div><div class="unit">r</div></div>
               </div>
             </div>
 
             <div class="crow">
               <span class="clabel">3D Simplex Displacement</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-noise-amp" class="slider" min="0.0" max="0.4" step="0.01" value="0.15">
-                <div class="vpill"><div class="num" id="val-noise-amp">0.15</div><div class="unit">m</div></div>
+                <input type="range" id="slider-noise-amp" class="slider" min="0.0" max="0.4" step="0.01" value="0.12">
+                <div class="vpill"><div class="num" id="val-noise-amp">0.12</div><div class="unit">m</div></div>
               </div>
             </div>
 
@@ -460,8 +460,8 @@
             <div class="crow">
               <span class="clabel">Aperture (Crack Width)</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-aperture" class="slider" min="0.02" max="0.20" step="0.01" value="0.07">
-                <div class="vpill"><div class="num" id="val-aperture">0.07m</div><div class="unit">m</div></div>
+                <input type="range" id="slider-aperture" class="slider" min="0.02" max="0.20" step="0.01" value="0.06">
+                <div class="vpill"><div class="num" id="val-aperture">0.06m</div><div class="unit">m</div></div>
               </div>
             </div>
 
@@ -490,12 +490,12 @@
             </div>
           </div>
 
-          <!-- 3. Chipped Faces & Surface Flaking -->
+          <!-- 3. Sharp Planar Chipped Cuts -->
           <div class="sec-group">
-            <div class="sec-title">3. Chipped Faces & Spall Flaking</div>
+            <div class="sec-title">3. Sharp Planar Chipped Cuts</div>
 
             <div class="crow">
-              <span class="clabel">Chipped Flake Density</span>
+              <span class="clabel">Chipped Cut Density</span>
               <div class="vpill-row" style="width: 180px;">
                 <input type="range" id="slider-chip-density" class="slider" min="0.0" max="1.0" step="0.05" value="0.55">
                 <div class="vpill"><div class="num" id="val-chip-density">0.55</div><div class="unit">%</div></div>
@@ -503,7 +503,7 @@
             </div>
 
             <div class="crow">
-              <span class="clabel">Flake Depth (Step-Down)</span>
+              <span class="clabel">Planar Cut Depth</span>
               <div class="vpill-row" style="width: 180px;">
                 <input type="range" id="slider-chip-depth" class="slider" min="0.01" max="0.15" step="0.01" value="0.06">
                 <div class="vpill"><div class="num" id="val-chip-depth">0.06m</div><div class="unit">m</div></div>
@@ -511,7 +511,7 @@
             </div>
 
             <div class="crow">
-              <span class="clabel">Chip Patch Radius</span>
+              <span class="clabel">Chip Facet Scale</span>
               <div class="vpill-row" style="width: 180px;">
                 <input type="range" id="slider-chip-scale" class="slider" min="0.15" max="0.8" step="0.05" value="0.45">
                 <div class="vpill"><div class="num" id="val-chip-scale">0.45m</div><div class="unit">m</div></div>

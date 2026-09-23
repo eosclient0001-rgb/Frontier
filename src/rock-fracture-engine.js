@@ -1,10 +1,10 @@
 /**
- * 3D Organic Rock Cell Fracture & Chipped Surface Flaking Engine
+ * 3D Organic Rock Cell Fracture & Sharp Planar Chipping Engine
  * 
  * Features:
  * 1. 3D Voronoi Cellular Piece Splitting (broken rock chunks of varying proportions)
  * 2. Organic Domain-Warped Crack Clefts (non-straight, wandering grain-boundary fissures)
- * 3. Chipped Faces & Conchoidal Spall Flaking (eats away chunks of the top surface to reveal lower fracture facets)
+ * 3. Sharp Planar Chipped Cuts & Conchoidal Spall Facets (sharp cutting planes slicing corners and faces)
  * 4. Depth-Tapering Aperture & Griffith Stress Intensity Tensor Fields
  */
 
@@ -75,7 +75,7 @@ export class RockFractureEngine {
   }
 
   /**
-   * Generates organic 3D fracture pieces, wandering crack clefts, and chipped surface spall facets
+   * Generates organic 3D fracture pieces, wandering crack clefts, and sharp planar chipped facets
    */
   generateFracture(baseRockSDF, params = {}) {
     const seed = params.seed !== undefined ? params.seed : 42;
@@ -90,7 +90,7 @@ export class RockFractureEngine {
     const jaggedness = params.jaggedness !== undefined ? params.jaggedness : 0.45;
     const explode = params.explode || 0.0;
 
-    // Chipped Faces / Surface Spall Flaking parameters
+    // Sharp Planar Chipped Cuts parameters
     const chipDensity = params.chipDensity !== undefined ? params.chipDensity : 0.55;
     const chipDepth = params.chipDepth !== undefined ? params.chipDepth : 0.06; // Step-down thickness in meters
     const chipScale = params.chipScale !== undefined ? params.chipScale : 0.45; // Patch radius
@@ -128,30 +128,40 @@ export class RockFractureEngine {
       });
     }
 
-    // 2. Generate Chipped Surface Flake Patches (erasing parts of the top surface to reveal lower stepped facets)
+    // 2. Generate Sharp Planar Chipped Cut Planes (sharp planar slices along edges/corners)
     const numChips = Math.max(2, Math.round(chipDensity * 8));
     const chips = [];
 
     for (let c = 0; c < numChips; c++) {
-      // Preferentially place chipped patches on outer rock perimeter / crack zones
-      const phi = Math.PI * (0.2 + 0.6 * (c / numChips)) + (rng() - 0.5) * 0.3;
+      // Place planar cutting planes preferentially along outer convex facets & corners
+      const phi = Math.PI * (0.15 + 0.7 * (c / numChips)) + (rng() - 0.5) * 0.3;
       const theta = rng() * Math.PI * 2;
-      const rad = 0.95 + rng() * 0.2;
+      const rad = 0.9 + rng() * 0.25;
 
       const cx = rad * Math.sin(phi) * Math.cos(theta);
       const cy = rad * Math.cos(phi) * 0.9 + (rng() - 0.5) * 0.2;
       const cz = rad * Math.sin(phi) * Math.sin(theta);
 
       const cLen = Math.hypot(cx, cy, cz) || 1;
+      const nx = cx / cLen;
+      const ny = cy / cLen;
+      const nz = cz / cLen;
+
+      // Planar cutting plane normal tilted slightly relative to surface normal
+      const tiltX = (rng() - 0.5) * 0.4;
+      const tiltY = (rng() - 0.5) * 0.4;
+      const tiltZ = (rng() - 0.5) * 0.4;
+      const pLen = Math.hypot(nx + tiltX, ny + tiltY, nz + tiltZ) || 1;
+
       chips.push({
-        x: cx,
-        y: cy,
-        z: cz,
-        nx: cx / cLen,
-        ny: cy / cLen,
-        nz: cz / cLen,
-        radius: chipScale * (0.7 + rng() * 0.6),
-        depth: chipDepth * (0.8 + rng() * 0.5),
+        cx,
+        cy,
+        cz,
+        nx: (nx + tiltX) / pLen,
+        ny: (ny + tiltY) / pLen,
+        nz: (nz + tiltZ) / pLen,
+        radius: chipScale * (0.8 + rng() * 0.5),
+        depth: chipDepth * (0.85 + rng() * 0.4),
       });
     }
 
@@ -169,7 +179,7 @@ export class RockFractureEngine {
           const [wx, wy, wz] = this.voxelToCoord(ix, iy, iz);
           const rockDist = baseRockSDF ? baseRockSDF[idx] : -0.5;
 
-          if (rockDist > 0.3) {
+          if (rockDist > 0.35) {
             this.crackSDF[idx] = 1.0;
             this.fracturedRockSDF[idx] = rockDist;
             continue;
@@ -225,25 +235,33 @@ export class RockFractureEngine {
             stressVal = Math.max(0.0, 1.0 - fissureDist / (localAperture * 2.8));
           }
 
-          // Chipped Faces / Surface Flaking:
-          // Checks if voxel falls in a shallow chipped spall patch on top surface
+          // 4. Sharp Planar Chipped Cuts:
+          // Localized half-space planar cuts slicing clean flat facets out of corners and faces
           let maxChipCarve = 0.0;
           let maxChipMask = 0.0;
 
-          if (chipDensity > 0.05 && depthInside < 0.25) {
+          if (chipDensity > 0.05 && depthInside < 0.3) {
             for (let c = 0; c < chips.length; c++) {
               const chip = chips[c];
-              const distToChip = Math.hypot(wx - chip.x, wy - chip.y, wz - chip.z);
+              const dx_ = wx - chip.cx;
+              const dy_ = wy - chip.cy;
+              const dz_ = wz - chip.cz;
+              const distFromCenter = Math.hypot(dx_, dy_, dz_);
 
-              if (distToChip < chip.radius) {
-                // Conchoidal scallop / stepped flaked facet
-                const normR = distToChip / chip.radius;
-                const flakeProfile = Math.pow(Math.max(0.0, 1.0 - normR * normR), 0.6);
-                const chipStep = chip.depth * flakeProfile;
+              if (distFromCenter < chip.radius) {
+                // Distance to the sharp cutting plane
+                const planeDist = dx_ * chip.nx + dy_ * chip.ny + dz_ * chip.nz;
 
-                if (chipStep > maxChipCarve) {
-                  maxChipCarve = chipStep;
-                  maxChipMask = flakeProfile;
+                // If voxel is behind the cutting plane within chip depth, cut cleanly
+                if (planeDist < chip.depth) {
+                  // Sharp planar cut with steep boundary dropoff
+                  const radialFactor = Math.max(0.0, 1.0 - (distFromCenter / chip.radius) ** 4); // Flat center, steep crisp edge
+                  const planeCarve = (chip.depth - planeDist) * radialFactor;
+
+                  if (planeCarve > maxChipCarve) {
+                    maxChipCarve = planeCarve;
+                    maxChipMask = radialFactor;
+                  }
                 }
               }
             }
@@ -256,13 +274,13 @@ export class RockFractureEngine {
             explodeDisp = -(wx * sDir[0] + wy * sDir[1] + wz * sDir[2]) * explode * 0.3;
           }
 
-          // Total carved distance = crack cleft + chipped face flakes + explode
+          // Total carved distance = crack cleft + sharp planar chipped facet + explode
           const totalCarve = Math.max(cleftCarve, maxChipCarve) + explodeDisp;
           const fracturedDist = rockDist + totalCarve;
 
           this.crackSDF[idx] = totalCarve > 0 ? -totalCarve : 1.0;
-          this.crackMask[idx] = Math.max(maskVal, maxChipMask * 0.7);
-          this.stressField[idx] = stressVal;
+          this.crackMask[idx] = Math.max(maskVal, maxChipMask * 0.8);
+          this.stressField[idx] = Math.max(stressVal, maxChipMask * 0.6);
           this.chipMask[idx] = maxChipMask;
           this.fracturedRockSDF[idx] = fracturedDist;
         }

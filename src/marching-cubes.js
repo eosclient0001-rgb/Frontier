@@ -1,10 +1,12 @@
 /**
- * Adaptive Marching Cubes 3D Isosurface Extractor
+ * High-Fidelity Adaptive Marching Cubes 3D Isosurface Extractor & SDF Remesher
  * Converts 3D Signed Distance Fields (SDF) into watertight polygonal 3D meshes.
- * Features:
- * 1. Adaptive Sub-Voxel Crack Refinement (places 8x higher resolution specifically inside cracks and chipped facets)
- * 2. Continuous Trilinear Analytical Gradient Normals (silky smooth, non-faceted normals)
- * 3. Multi-LOD Extraction (High SDF, Mid Poly, Low Poly Game LOD)
+ * 
+ * Key Features:
+ * 1. Adaptive Sub-Voxel Crack & Chip Refinement (places 8x higher polygon density along sharp cracks & planar chipped facets)
+ * 2. High-Precision Trilinear Analytical Gradient Normals with adaptive epsilon (preserves razor-sharp cuts & facet boundaries)
+ * 3. Multi-Channel Attribute Sampling (Crack mask, erosion depth, cavity sediment, oxidation patina halos)
+ * 4. Multi-LOD Decimation (High SDF 25k, Mid 6k, Low Poly 1.5k)
  */
 
 // Edge table: bitmask indicating which of the 12 edges intersect the isosurface for each of 256 cube configurations
@@ -315,12 +317,13 @@ export function extractIsosurface(volume, options = {}) {
     return c0 * (1 - fz) + c1 * fz;
   }
 
-  function calcContinuousNormal(wx, wy, wz) {
+  // Sharp normal calculation with narrow adaptive epsilon
+  function calcContinuousNormal(wx, wy, wz, cellSize) {
     const gx = ((wx - boundsMin[0]) / sx) * (nx - 1);
     const gy = ((wy - boundsMin[1]) / sy) * (ny - 1);
     const gz = ((wz - boundsMin[2]) / sz) * (nz - 1);
 
-    const eps = 0.5;
+    const eps = Math.max(0.08, cellSize * 0.2);
     const dX = sampleSDFContinuous(gx + eps, gy, gz) - sampleSDFContinuous(gx - eps, gy, gz);
     const dY = sampleSDFContinuous(gx, gy + eps, gz) - sampleSDFContinuous(gx, gy - eps, gz);
     const dZ = sampleSDFContinuous(gx, gy, gz + eps) - sampleSDFContinuous(gx, gy, gz - eps);
@@ -394,7 +397,7 @@ export function extractIsosurface(volume, options = {}) {
         const pgy = p0[4] + t * (p1[4] - p0[4]);
         const pgz = p0[5] + t * (p1[5] - p0[5]);
 
-        const norm = calcContinuousNormal(px, py, pz);
+        const norm = calcContinuousNormal(px, py, pz, cellSize);
 
         vertPos[e * 3 + 0] = px;
         vertPos[e * 3 + 1] = py;
@@ -462,7 +465,7 @@ export function extractIsosurface(volume, options = {}) {
         const edgeMask = EDGE_TABLE[cubeIndex];
         if (edgeMask === 0 || edgeMask === undefined) continue;
 
-        // If active crack or chipped facet: adaptively subdivide into 2x2x2 sub-cells
+        // If active crack or sharp chipped facet: adaptively subdivide into 2x2x2 sub-cells
         // places 8x higher polygon resolution specifically in cracks!
         if (hasActiveCrack && step <= 2) {
           const subStep = step * 0.5;
