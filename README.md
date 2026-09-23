@@ -11,6 +11,10 @@ Default test domain: **100 × 64 × 100 m**, isotropic voxels (≈520 mm at the 
 
 ![eroded result](docs/preview_eroded_192.png)
 
+Peak arrangements (single · twin · ridge · range):
+
+![arrangements](docs/preview_arrangements.png)
+
 ## Run it
 
 ```bash
@@ -24,7 +28,7 @@ is WebGL2 sphere tracing of the 3D distance-field texture.
 
 | Stage | Module | What happens |
 |---|---|---|
-| 1 · Multifractal synthesis | `src/core/noise.js`, `terrain.js` | Seeded Perlin gradient noise. Ridged / hybrid multifractal with domain warp, super-elliptical peak mask and a directional tilt gradient build the mountain heightfield. Octaves are **auto-clamped so the smallest wavelength ≥ 3 voxels** — the grid can actually represent every feature the noise asks for. |
+| 1 · Multifractal synthesis | `src/core/noise.js`, `terrain.js` | Seeded Perlin gradient noise. Ridged / hybrid multifractal with domain warp, super-elliptical peak masks and a directional tilt gradient build the mountain heightfield. **Peak arrangements:** single massif, twin summits, ridge line, 5-peak range (weights auto-calibrated so the summit reaches full relief regardless of arrangement). Octaves are **auto-clamped so the smallest wavelength ≥ 3 voxels** — the grid can actually represent every feature the noise asks for. |
 | 2 · SDF voxelisation | `src/core/sdf.js` | The heightfield is seeded into a 3D float grid and redistanced with a **narrow-band fast-sweeping Godunov eikonal solver** (anisotropic-capable, verified |∇d| ≈ 1 at the surface). Sign convention: negative inside rock. |
 | 3 · Particle hydraulics | `src/core/erosion.js` | **Mesh-free, heightmap-free erosion designed for SDFs:** droplets flow *on the implicit isosurface* — gravity is projected onto the tangent plane, and each step ends with a Newton re-projection `P ← P − SDF(P)·∇SDF(P)` onto the *evolving* zero level set. Cuts are volumetric smooth-cubic stamps written directly into the distance field (`sdf += cut·K` removes rock, `sdf -= dep·K` deposits). CFL velocity clamping, waterfall bypass (plunges transport but don't cut), pit-filling, evaporation. |
 | 4 · Mass wasting | `src/core/erosion.js` | Angle-of-repose talus slumping on column heights extracted from the field, baked back as bounded column deltas. |
@@ -61,11 +65,13 @@ resolution can't hold — both fail the contract and are flagged in the UI.
 **Export bundle** downloads a ZIP (encoded in-browser, zero dependencies):
 
 - `heightmap_16bit.png` — 16-bit grayscale
+- `surface.obj` — eroded surface as a world-metre OBJ (positions + normals + UVs, drop straight into Blender)
 - `satmaps/*.png` — all 8 SAT maps
 - `sdf/volume_u16.raw` + `sdf/header.json` — the quantised SDF volume
 - `params.json`, `AUDIT.md` — full parameter set + measured audit table
 
-Plus: **Save PNG** viewport capture, **keyboard shortcuts** (`R` regenerate,
+Plus: **terrain presets** (Alpine Horn, Twin Summits, Desert Mesa, Volcanic Cone,
+Rolling Range), **Save PNG** viewport capture, **keyboard shortcuts** (`R` regenerate,
 `I` inspector, `T` flow trails, `S` save PNG), and parameter persistence via
 `localStorage` (shareable `?seed=<n>` URL parameter).
 

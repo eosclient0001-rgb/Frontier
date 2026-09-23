@@ -6,6 +6,45 @@ import { SDFVolume } from './sdf.js';
 import { GradientNoise2D, ridgedMultifractal, hybridMultifractal, fbm, warp2, peakMask } from './noise.js';
 
 /**
+ * Peak layout for an arrangement. Offsets are rotated by the tilt bearing so
+ * arrangements line up with the gradient direction. Weights are relative.
+ */
+function peakLayout(p, cx, cz) {
+  const a = (p.tiltAngleDeg || 0) * Math.PI / 180;
+  const ca = Math.cos(a), sa = Math.sin(a);
+  const rot = (ox, oz) => [cx + ox * ca - oz * sa, cz + ox * sa + oz * ca];
+  const R = p.peakRadius;
+  switch (p.arrangement) {
+    case 'twin': {
+      const [ax, az] = rot(-R * 0.5, 0), [bx, bz] = rot(R * 0.5, 0);
+      return [
+        { cx: ax, cz: az, r: R * 0.62, w: 1 },
+        { cx: bx, cz: bz, r: R * 0.56, w: 0.85 },
+      ];
+    }
+    case 'ridge': {
+      const out = [];
+      for (let i = 0; i < 3; i++) {
+        const [px, pz] = rot((i - 1) * R * 0.62, (i % 2 ? 1 : -1) * R * 0.1);
+        out.push({ cx: px, cz: pz, r: R * 0.5, w: i === 1 ? 1 : 0.75 });
+      }
+      return out;
+    }
+    case 'range': {
+      const out = [];
+      for (let i = 0; i < 5; i++) {
+        const t = i - 2;
+        const [px, pz] = rot(t * R * 0.42, Math.sin(t * 1.7) * R * 0.16);
+        out.push({ cx: px, cz: pz, r: R * 0.4, w: 1 - Math.abs(t) * 0.16 });
+      }
+      return out;
+    }
+    default:
+      return [{ cx, cz, r: R, w: 1 }];
+  }
+}
+
+/**
  * Build the base terrain.
  *
  * @param {object} p {
@@ -39,6 +78,19 @@ export function buildBaseTerrain(p, onProgress = () => {}) {
   const { nx: NX, nz: NZ } = vol;
   const colH = new Float32Array(NX * NZ);
   const cx = sx / 2, cz = sz / 2;
+
+  // ---- peak arrangement ----------------------------------------------------
+  // 1..n super-ellipse masks; weights normalised so the tallest centre
+  // reaches ~full mask (relief stays calibrated across arrangements).
+  const peaks = peakLayout(p, cx, cz);
+  let maxAt = 0;
+  for (const q of peaks) {
+    let m = 0;
+    for (const o of peaks)
+      m += o.w * peakMask(q.cx - o.cx, q.cz - o.cz, o.r, p.maskPower || 2.2);
+    if (m > maxAt) maxAt = m;
+  }
+  if (maxAt > 0) for (const q of peaks) q.w /= maxAt;
   const tiltRad = (p.tiltAngleDeg || 0) * Math.PI / 180;
   const tx = Math.cos(tiltRad), tz = Math.sin(tiltRad);
 
@@ -65,8 +117,11 @@ export function buildBaseTerrain(p, onProgress = () => {}) {
       else if (p.style === 'fbm') f = fbm(noise, px * p.baseFreq, pz * p.baseFreq, common) * 0.5 + 0.5;
       else f = ridgedMultifractal(noise, px * p.baseFreq, pz * p.baseFreq, common);
 
-      // peak massif mask
-      const mask = peakMask(wx - cx, wz - cz, p.peakRadius, p.maskPower || 2.2);
+      // combined peak massif mask
+      let mask = 0;
+      for (const q of peaks)
+        mask += q.w * peakMask(wx - q.cx, wz - q.cz, q.r, p.maskPower || 2.2);
+      mask = Math.min(1, mask);
 
       // directional gradient tilt (biases ridges toward one flank)
       const tilt = p.tiltStrength ? (wx - cx) * tx + (wz - cz) * tz : 0;

@@ -26,6 +26,7 @@ const SCHEMA = [
   {
     group: 'Mountain — multifractal', open: true, items: [
       { key: 'style', type: 'select', label: 'Noise style', value: 'ridged', options: [['ridged', 'Ridged multifractal'], ['hybrid', 'Hybrid multifractal'], ['fbm', 'fBm']] },
+      { key: 'arrangement', type: 'select', label: 'Peak arrangement', value: 'single', options: [['single', 'Single massif'], ['twin', 'Twin peaks'], ['ridge', 'Ridge line'], ['range', 'Mountain range']] },
       { key: 'baseFreq', type: 'range', label: 'Base frequency', min: 0.006, max: 0.03, step: 0.001, value: 0.016, fmt: v => v.toFixed(3), hint: 'wavelength of the largest landform' },
       { key: 'peakHeight', type: 'range', label: 'Relief', min: 10, max: 52, step: 1, value: 30, fmt: v => v + ' m' },
       { key: 'peakRadius', type: 'range', label: 'Massif radius', min: 22, max: 48, step: 1, value: 40, fmt: v => v + ' m' },
@@ -76,6 +77,15 @@ const SCHEMA = [
 ];
 
 const RENDER_KEYS = new Set(['sunAz', 'sunEl', 'snowline', 'wet', 'exposure', 'ao', 'renderScale']);
+
+// Named terrain presets — sparse parameter overlays on the schema defaults.
+const PRESETS = [
+  { label: 'Alpine Horn', values: { style: 'ridged', arrangement: 'single', baseFreq: 0.016, peakHeight: 30, peakRadius: 40, maskPower: 2.4, octaves: 9, gain: 0.46, warp: 8, tiltStrength: 4, baseHeight: 12, erosionDepth: 1, capacity: 0.09, snowline: 33, wet: 0.8, talusAngleDeg: 42, incisionRounds: 4 } },
+  { label: 'Twin Summits', values: { style: 'ridged', arrangement: 'twin', baseFreq: 0.014, peakHeight: 34, peakRadius: 42, maskPower: 2.2, octaves: 9, gain: 0.46, warp: 10, tiltStrength: 3, baseHeight: 11, erosionDepth: 1, capacity: 0.09, snowline: 36, wet: 0.8, talusAngleDeg: 42, incisionRounds: 4 } },
+  { label: 'Desert Mesa', values: { style: 'hybrid', arrangement: 'single', baseFreq: 0.011, peakHeight: 22, peakRadius: 42, maskPower: 3.6, octaves: 8, gain: 0.58, warp: 5, tiltStrength: 2, baseHeight: 10, erosionDepth: 1.3, capacity: 0.12, snowline: 55, wet: 0.25, talusAngleDeg: 50, incisionRounds: 3 } },
+  { label: 'Volcanic Cone', values: { style: 'fbm', arrangement: 'single', baseFreq: 0.02, peakHeight: 38, peakRadius: 34, maskPower: 4.2, octaves: 9, gain: 0.5, warp: 3, tiltStrength: 1, baseHeight: 10, erosionDepth: 0.8, capacity: 0.07, snowline: 42, wet: 0.5, talusAngleDeg: 38, incisionRounds: 2 } },
+  { label: 'Rolling Range', values: { style: 'fbm', arrangement: 'range', baseFreq: 0.009, peakHeight: 14, peakRadius: 46, maskPower: 2, octaves: 8, gain: 0.45, warp: 6, tiltStrength: 2, baseHeight: 10, erosionDepth: 1, capacity: 0.1, snowline: 55, wet: 0.7, talusAngleDeg: 40, incisionRounds: 5 } },
+];
 
 const SAT_INFO = [
   ['flow', 'Flow', 'D8 accumulated discharge — the drainage network. Drives channel wetness in the material.'],
@@ -166,9 +176,9 @@ function fpsLoop() {
 // ---------------------------------------------------------------------------
 //  controls
 // ---------------------------------------------------------------------------
-function buildControls() {
-  for (const p of SCHEMA) params[p.items.find(i => 'value' in i).key] = p.items.find(i => 'value' in i).value;
+const ctlUpdaters = {};   // key -> (value) => sync control DOM + params
 
+function buildControls() {
   const nav = $('#controls');
   for (const g of SCHEMA) {
     const grp = document.createElement('div');
@@ -191,6 +201,23 @@ function buildControls() {
       body.appendChild(ctl);
     }
     nav.appendChild(grp);
+  }
+
+  // preset bar
+  const bar = $('#preset-bar');
+  for (const pr of PRESETS) {
+    const b = document.createElement('button');
+    b.className = 'preset-btn';
+    b.textContent = pr.label;
+    b.addEventListener('click', () => {
+      if (running) return;
+      for (const [k, v] of Object.entries(pr.values))
+        if (ctlUpdaters[k]) ctlUpdaters[k](v);
+      saveParams();
+      logLine(`preset — ${pr.label}`, 'accent');
+      generate();
+    });
+    bar.appendChild(b);
   }
 
   $('#btn-generate').addEventListener('click', generate);
@@ -235,6 +262,11 @@ function rangeCtl(item) {
     if (RENDER_KEYS.has(item.key)) applyRenderParams();
     saveParams();
   });
+  ctlUpdaters[item.key] = (v) => {
+    params[item.key] = v;
+    input.value = v;
+    paint();
+  };
   paint();
   wrap.append(row, input);
   if (item.hint) {
@@ -258,6 +290,7 @@ function selectCtl(item) {
     sel.appendChild(o);
   }
   sel.addEventListener('change', () => { params[item.key] = sel.value; saveParams(); });
+  ctlUpdaters[item.key] = (v) => { params[item.key] = v; sel.value = v; };
   row.appendChild(sel);
   return row;
 }
@@ -283,6 +316,10 @@ function segCtl(item) {
     });
     seg.appendChild(b);
   }
+  ctlUpdaters[item.key] = (v) => {
+    params[item.key] = v;
+    seg.querySelectorAll('button').forEach((x, i) => x.classList.toggle('active', item.options[i].id === v));
+  };
   wrap.append(row, seg);
   if (item.hint) {
     const h = document.createElement('div');
@@ -308,6 +345,7 @@ function seedCtl(item) {
     const s = (Math.random() * 99999) | 0;
     num.value = s; params[item.key] = s; saveParams();
   });
+  ctlUpdaters[item.key] = (v) => { params[item.key] = v; num.value = v; };
   line.append(num, dice);
   const wrap = document.createElement('div');
   wrap.appendChild(row);
@@ -372,6 +410,7 @@ function buildPipelineParams() {
     size: [100, 64, 100],
     res: params.quality,
     style: params.style,
+    arrangement: params.arrangement,
     octaves: params.octaves,
     lacunarity: 2.0, gain: params.gain,
     baseFreq: params.baseFreq,

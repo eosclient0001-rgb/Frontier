@@ -54,7 +54,8 @@ const params = {
   inertia: 0.06, capacity: 0.09, minSlope: 0.02,
   erosionRate: 0.5, depositionRate: 0.25, evaporation: 0.02,
   erosionDepth: 1.0, stampRadiusVox: 1.15, gravityScale: 0.9,
-  talusAngleDeg: 42, talusRate: 0.25, reinitBandVox: 6, incisionRounds: 4
+  talusAngleDeg: 42, talusRate: 0.25, reinitBandVox: 6, incisionRounds: 4,
+  arrangement: (process.argv[4] || 'single')
 };
 
 let stage = '';

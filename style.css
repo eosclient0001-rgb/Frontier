@@ -81,6 +81,20 @@ body {
 #viewport { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 #viewport:active { cursor: grabbing; }
 
+/* ---------------- preset bar ---------------- */
+#preset-bar {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  padding: 10px 14px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.preset-btn {
+  padding: 7px 4px; border-radius: 6px;
+  background: var(--bg3); border: 1px solid var(--line); color: var(--tx1);
+  font-size: 10.5px; cursor: pointer; letter-spacing: 0.02em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.preset-btn:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-soft); }
+
 /* ---------------- control groups ---------------- */
 .group { border-bottom: 1px solid var(--line-soft); }
 .group-head {
