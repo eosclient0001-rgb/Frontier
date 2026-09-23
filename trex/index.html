@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tyrannosaurus rex — Articulated Skeleton (Walk / Run / Idle)</title>
+<style>
+  :root { --bg:#15181c; --panel:rgba(18,21,26,.82); --line:rgba(255,255,255,.09); --txt:#e9e3d6; --dim:#9a9486; --acc:#e0b872; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; background:var(--bg); color:var(--txt);
+    font:13px/1.4 "Inter","Segoe UI",system-ui,sans-serif; }
+  canvas#view { display:block; width:100vw; height:100vh; }
+  .panel { position:absolute; background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  #info { top:14px; left:14px; padding:14px 16px; max-width:330px; }
+  #info h1 { margin:0 0 2px; font-size:17px; letter-spacing:.3px; font-weight:650; }
+  #info h1 i { color:var(--acc); }
+  #info .sub { color:var(--dim); font-size:12px; margin-bottom:10px; }
+  #info table { border-collapse:collapse; width:100%; font-size:12px; }
+  #info td { padding:2px 0; color:var(--dim); }
+  #info td:last-child { text-align:right; color:var(--txt); font-variant-numeric:tabular-nums; }
+  #controls { left:50%; bottom:14px; transform:translateX(-50%); padding:10px 12px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; justify-content:center; max-width:calc(100vw - 28px); }
+  .group { display:flex; gap:6px; align-items:center; }
+  .group > span.lbl { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.8px; margin-right:2px; }
+  button { background:#262a31; color:var(--txt); border:1px solid #363b44; border-radius:8px; padding:7px 13px;
+    font:inherit; cursor:pointer; transition:background .15s, border-color .15s; }
+  button:hover { background:#30353e; }
+  button.on { background:var(--acc); color:#1a1408; border-color:var(--acc); font-weight:600; }
+  button.roar { border-color:#7a3b2c; }
+  input[type=range] { width:110px; accent-color:var(--acc); }
+  .sep { width:1px; height:26px; background:var(--line); }
+  #gait { top:14px; right:14px; padding:12px 14px; width:250px; }
+  #gait .row { display:flex; justify-content:space-between; color:var(--dim); font-size:12px; }
+  #gait .big { font-size:22px; font-weight:650; color:var(--txt); letter-spacing:.3px; }
+  #gait .big small { font-size:12px; color:var(--dim); font-weight:400; }
+  #strip { width:100%; height:44px; margin-top:8px; display:block; border-radius:6px; background:#0f1114; }
+  #gait .legend { font-size:11px; color:var(--dim); margin-top:4px; }
+  #help { right:14px; bottom:14px; padding:8px 12px; color:var(--dim); font-size:11px; }
+  #help b { color:var(--txt); font-weight:600; }
+  #loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:15px; color:var(--dim); }
+  @media (max-width: 900px) { #info { display:none; } #help { display:none; } }
+</style>
+<script type="importmap">
+  { "imports": { "three": "./lib/three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="loading">Articulating skeleton…</div>
+<canvas id="view"></canvas>
+
+<div id="info" class="panel">
+  <h1><i>Tyrannosaurus rex</i></h1>
+  <div class="sub">Articulated skeleton · proportions traced from FMNH PR 2081 “Sue” skeletal reconstructions</div>
+  <table>
+    <tr><td>Total length</td><td id="i-len">—</td></tr>
+    <tr><td>Skull length</td><td>1.45 m</td></tr>
+    <tr><td>Femur / tibia / metatarsus</td><td>1.32 / 1.22 / 0.65 m</td></tr>
+    <tr><td>Vertebrae (cerv / dors / sacr / caud)</td><td>10 / 13 / 5 / 40</td></tr>
+    <tr><td>Dorsal ribs · gastral rows</td><td>12 pairs · 17</td></tr>
+    <tr><td>Bones rendered</td><td id="i-bones">—</td></tr>
+  </table>
+</div>
+
+<div id="gait" class="panel">
+  <div class="row"><span>GAIT</span><span id="g-freq">—</span></div>
+  <div class="big" id="g-name">Idle <small></small></div>
+  <div class="row"><span id="g-speed">0.0 km/h</span><span id="g-stride">stride —</span></div>
+  <div class="row"><span id="g-duty">duty —</span><span id="g-froude">Froude —</span></div>
+  <canvas id="strip" width="500" height="88"></canvas>
+  <div class="legend">Footfall pattern (bars = foot on ground) · L top / R bottom</div>
+</div>
+
+<div id="controls" class="panel">
+  <div class="group"><span class="lbl">Gait</span>
+    <button data-gait="idle">Idle</button>
+    <button data-gait="walk">Walk</button>
+    <button data-gait="run">Run</button>
+    <button id="auto" class="on" title="Cycles Idle → Walk → Run → Walk → Idle">Auto demo</button>
+  </div>
+  <div class="sep"></div>
+  <div class="group"><button id="roar" class="roar">Roar</button></div>
+  <div class="sep"></div>
+  <div class="group"><span class="lbl">Time</span>
+    <input id="timescale" type="range" min="0.1" max="1.5" step="0.05" value="1" />
+    <span id="ts-val" style="width:34px">1.0×</span>
+  </div>
+  <div class="sep"></div>
+  <div class="group"><span class="lbl">View</span>
+    <button data-cam="side">Side</button>
+    <button data-cam="three" class="on">3/4</button>
+    <button data-cam="front">Front</button>
+    <button data-cam="top">Top</button>
+    <button data-cam="low">Low</button>
+  </div>
+  <div class="sep"></div>
+  <div class="group"><span class="lbl">Finish</span>
+    <button data-mat="bone" class="on">Bone</button>
+    <button data-mat="fossil">Fossil</button>
+  </div>
+</div>
+
+<div id="help" class="panel"><b>1 2 3</b> idle/walk/run · <b>Space</b> roar · <b>Drag</b> orbit · <b>Scroll</b> zoom</div>
+
+<script type="module" src="./trex.js"></script>
+</body>
+</html>
