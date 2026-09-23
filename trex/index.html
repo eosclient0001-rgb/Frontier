@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tyrannosaurus rex — articulated skeleton · walk / run / idle</title>
+<link rel="stylesheet" href="css/style.css" />
+<script type="importmap">
+  { "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loadingText">Loading…</div>
+</div>
+
+<header class="panel title">
+  <h1>Tyrannosaurus rex</h1>
+  <p id="specLine">FMNH PR 2081 “Sue”</p>
+</header>
+
+<section class="panel controls">
+  <div class="row gaitrow">
+    <button data-gait data-v="0" class="active">Idle</button>
+    <button data-gait data-v="2.2">Walk</button>
+    <button data-gait data-v="7.2">Run</button>
+    <button id="roar" class="accent">Roar</button>
+  </div>
+  <label class="slider">
+    <span>Target speed</span>
+    <input id="speed" type="range" min="0" max="7.2" step="0.1" value="0" />
+  </label>
+  <div class="readout">
+    <span id="gaitName" data-state="idle">Idle</span>
+    <span id="speedVal">0.0 m/s</span>
+  </div>
+  <div class="footfall">
+    <span id="dutyL" class="foot">L <i id="stepL"></i></span>
+    <span id="aerial" class="foot air">aerial</span>
+    <span id="dutyR" class="foot">R <i id="stepR"></i></span>
+  </div>
+  <div id="stats" class="stats"></div>
+
+  <h3>View</h3>
+  <div class="row">
+    <button data-view="bones" class="active">Bones</button>
+    <button data-view="xray">X-ray</button>
+    <button data-view="flesh">Flesh</button>
+  </div>
+  <h3>Bone finish</h3>
+  <div class="row">
+    <button data-bone="sue" class="active">Sue (dark)</button>
+    <button data-bone="sand">Ochre</button>
+    <button data-bone="cast">Cast</button>
+  </div>
+  <h3>Camera</h3>
+  <div class="row wrap">
+    <button data-cam="follow" class="active">Follow</button>
+    <button data-cam="side">Side</button>
+    <button data-cam="front">Front</button>
+    <button data-cam="rear">Rear</button>
+    <button data-cam="top">Top</button>
+    <button data-cam="hero">Hero</button>
+    <button data-cam="foot">Feet</button>
+    <button data-cam="free">Free</button>
+  </div>
+  <div class="row toggles">
+    <label><input type="checkbox" id="slowmo" /> Slow-mo ¼×</label>
+    <label><input type="checkbox" id="prints" checked /> Footprints</label>
+    <label><input type="checkbox" id="gridT" /> 1 m grid</label>
+  </div>
+  <div class="row">
+    <button id="pause">❚❚ Pause</button>
+    <button id="hideUI">Hide UI (H)</button>
+  </div>
+</section>
+
+<footer class="panel help">
+  <b>W/S</b> speed · <b>A/D</b> turn · <b>1/2/3</b> idle/walk/run · <b>R</b> roar · <b>Space</b> pause · drag to orbit · hover a bone to identify it
+</footer>
+
+<div id="tip"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
