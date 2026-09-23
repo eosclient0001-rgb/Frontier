@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frontier · Standalone Rock Crack & SDF Erosion Studio</title>
+
+  <!-- General Sans font from Fontshare -->
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=general-sans@300,400,500,600,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/slate.css">
+  <style>
+    .phase-stepper-bar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--inset);
+      border: 1px solid var(--stroke);
+      padding: 3px 6px;
+      border-radius: var(--r-pill);
+    }
+    .phase-step-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      padding: 5px 12px;
+      font-size: 11.5px;
+      font-weight: 500;
+      border-radius: var(--r-pill);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s var(--ease);
+      white-space: nowrap;
+    }
+    .phase-step-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .phase-step-btn.active {
+      color: #111;
+      background: var(--accent);
+      font-weight: 600;
+    }
+    .phase-num {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .phase-step-btn.active .phase-num {
+      background: #111;
+      color: #fff;
+    }
+    .viewport-toolbar {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      background: rgba(14, 17, 23, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--stroke);
+      padding: 4px 6px;
+      border-radius: var(--r-pill);
+      z-index: 50;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+    .vmode-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      padding: 5px 12px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: var(--r-pill);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s var(--ease);
+    }
+    .vmode-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .vmode-btn.active {
+      color: #111;
+      background: var(--accent);
+      font-weight: 600;
+    }
+    .slicer-dock {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(14, 17, 23, 0.92);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--stroke);
+      padding: 6px 16px;
+      border-radius: var(--r-pill);
+      z-index: 50;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--r-pill);
+      background: rgba(108, 119, 255, 0.15);
+      color: var(--hi);
+      border: 1px solid rgba(108, 119, 255, 0.3);
+    }
+    .step-card {
+      background: var(--inset);
+      border: 1px solid var(--stroke);
+      border-radius: var(--r-inset);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: all 0.15s var(--ease);
+      cursor: pointer;
+    }
+    .step-card:hover {
+      background: var(--raised);
+      border-color: var(--stroke-strong);
+    }
+    .step-card.active {
+      border-color: var(--hi);
+      background: rgba(108, 119, 255, 0.12);
+      box-shadow: 0 0 16px rgba(108, 119, 255, 0.2);
+    }
+    .step-title {
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .step-desc {
+      font-size: 10.5px;
+      color: var(--text-faint);
+      line-height: 1.4;
+    }
+    .color-swatch-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 32px;
+    }
+    .color-picker-input {
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      width: 32px;
+      height: 24px;
+      background: none;
+      border: 1px solid var(--stroke-strong);
+      border-radius: 6px;
+      cursor: pointer;
+      padding: 0;
+    }
+    .color-picker-input::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+    .color-picker-input::-webkit-color-swatch {
+      border: none;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Top Control Centre Notch Bar -->
+    <header class="top-bar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+        </div>
+        <div>
+          <div class="brand-title">Rock Fracture Studio</div>
+        </div>
+        <div class="brand-badge">SDF Pipeline</div>
+      </div>
+
+      <div class="top-actions">
+        <!-- 4-Phase Step-by-Step Workflow Selector -->
+        <div class="phase-stepper-bar">
+          <button id="btn-prev-phase" class="btn ghost small icon" title="Previous Phase (←)" disabled>
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+
+          <button class="phase-step-btn active" data-phase="1">
+            <span class="phase-num">1</span> Base Rock
+          </button>
+          <button class="phase-step-btn" data-phase="2">
+            <span class="phase-num">2</span> 3D Fracture Cracks
+          </button>
+          <button class="phase-step-btn" data-phase="3">
+            <span class="phase-num">3</span> SDF Crack Erosion
+          </button>
+          <button class="phase-step-btn" data-phase="4">
+            <span class="phase-num">4</span> Final Mesh & PBR
+          </button>
+
+          <button id="btn-next-phase" class="btn ghost small icon" title="Next Phase (→)">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+
+        <div style="height: 20px; width: 1px; background: var(--stroke); margin: 0 4px;"></div>
+
+        <select class="select-field" id="rock-preset-select" title="Rock Preset Archetype"></select>
+        <select class="select-field" id="fracture-type-select" title="Fracture Physics Pattern"></select>
+      </div>
+
+      <div class="top-right">
+        <button class="btn ghost small" id="btn-export-obj" title="Export Watertight 3D Mesh (.OBJ)">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export .OBJ
+        </button>
+
+        <div class="status-pill">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="sim-step-status">Phase 1/4: Base Rock</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="workspace">
+      <!-- Left Outliner / Workflow Panel -->
+      <aside class="outliner-panel" style="width: 280px; overflow-y: auto;">
+        <div class="panel-header">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline></svg>
+          <div>
+            <div class="ph-title">Interactive Pipeline</div>
+            <div class="ph-sub">Click any phase to isolate</div>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <!-- Step Cards -->
+          <div class="sec-group">
+            <div class="sec-title">Geological Stages</div>
+            
+            <div class="step-card active" id="card-step-1" title="Click to view pristine base rock">
+              <div class="step-title">
+                <span>1. Base Rock Geometry</span>
+                <span class="step-badge">Polyhedral</span>
+              </div>
+              <div class="step-desc">Polyhedral facet clipping planes + 3D simplex displacement + strata dip.</div>
+            </div>
+
+            <div class="step-card" id="card-step-2" title="Click to view fracture cracks and stress lines">
+              <div class="step-title">
+                <span>2. 3D Fracture Cracks</span>
+                <span class="step-badge">Fracture</span>
+              </div>
+              <div class="step-desc">Voronoi cleavage, shear faults, and Griffith stress intensity tensor fields.</div>
+            </div>
+
+            <div class="step-card" id="card-step-3" title="Click to view SDF erosion and gelifraction">
+              <div class="step-title">
+                <span>3. SDF Crack Erosion</span>
+                <span class="step-badge">Weathering</span>
+              </div>
+              <div class="step-desc">Frost wedging expansion, acute lip beveling, and crevice dissolution.</div>
+            </div>
+
+            <div class="step-card" id="card-step-4" title="Click to view final PBR mesh and LODs">
+              <div class="step-title">
+                <span>4. Mesh LOD & Shading</span>
+                <span class="step-badge">PBR Ready</span>
+              </div>
+              <div class="step-desc">Marching Cubes LOD extraction with oxidation halos and crevice dirt.</div>
+            </div>
+          </div>
+
+          <!-- Volumetric Diagnostics -->
+          <div class="sec-group">
+            <div class="sec-title">Volumetric Diagnostics</div>
+            <div class="diag-box">
+              <div class="diag-stat-row">
+                <span>Mesh Complexity:</span>
+                <span id="stat-poly-count" class="diag-stat-val hi">Computing...</span>
+              </div>
+              <div class="diag-stat-row">
+                <span>SDF Resolution:</span>
+                <span id="stat-grid-res" class="diag-stat-val">64³ (262k)</span>
+              </div>
+              <div class="diag-stat-row">
+                <span>Eroded Volume:</span>
+                <span id="stat-carved-vol" class="diag-stat-val ok">0.00 dm³</span>
+              </div>
+              <div class="diag-stat-row">
+                <span>Max Crevice Depth:</span>
+                <span id="stat-max-depth" class="diag-stat-val">0.0 cm</span>
+              </div>
+              <div class="diag-stat-row">
+                <span>Solver Latency:</span>
+                <span id="stat-compute-time" class="diag-stat-val">0.0 ms</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mesh LOD -->
+          <div class="sec-group">
+            <div class="sec-title">Mesh LOD (Target Poly Count)</div>
+            <div class="seg" style="width: 100%;">
+              <button class="lod-btn active" data-step="1" style="flex: 1;">High SDF (20k)</button>
+              <button class="lod-btn" data-step="2" style="flex: 1;">Mid (5k)</button>
+              <button class="lod-btn" data-step="3" style="flex: 1;">Low Poly (1.5k)</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center 3D Viewport -->
+      <section class="viewport-area">
+        <!-- Floating Viewport Toolbar -->
+        <div class="viewport-toolbar">
+          <button class="vmode-btn mode-btn active" data-mode="0">
+            <span>🎨</span> PBR Shaded
+          </button>
+          <button class="vmode-btn mode-btn" data-mode="1">
+            <span>⚡</span> Crack & Stress
+          </button>
+          <button class="vmode-btn mode-btn" data-mode="2">
+            <span>🔥</span> SDF Erosion Heatmap
+          </button>
+          <button class="vmode-btn mode-btn" data-mode="3">
+            <span>⏳</span> Silt & Cavity
+          </button>
+          <div style="width: 1px; height: 16px; background: var(--stroke); margin: 0 4px;"></div>
+          <button id="btn-wireframe" class="btn ghost small" title="Toggle Wireframe Overlay (W)">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            Wireframe
+          </button>
+          <button id="btn-autorotate" class="btn ghost small" title="Toggle Turntable Rotation">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            Turntable
+          </button>
+          <button id="btn-reset-cam" class="btn ghost small" title="Reset Camera View">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="m10 15 5-3-5-3v6Z"/></svg>
+            Reset Cam
+          </button>
+        </div>
+
+        <div id="viewport-container"></div>
+
+        <!-- Slicer Dock -->
+        <div class="slicer-dock">
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text);">
+            <input type="checkbox" id="toggle-slicer">
+            <span>✂️ 3D Slicer Plane</span>
+          </label>
+          <select id="select-slicer-axis" class="select-field" style="height: 24px; padding: 0 8px;">
+            <option value="y" selected>Y-Axis</option>
+            <option value="x">X-Axis</option>
+            <option value="z">Z-Axis</option>
+          </select>
+          <input type="range" id="slider-slicer-dist" class="slider" min="-1.5" max="1.5" step="0.02" value="0.0" style="width: 120px;">
+          <span style="font-size: 10px; color: var(--text-faint);">Inspect internal crack core</span>
+        </div>
+
+        <div class="hud-probe">
+          Rotate: Left Click + Drag | Pan: Right Click | Zoom: Scroll Wheel | Use Phase Stepper at top to inspect each stage
+        </div>
+      </section>
+
+      <!-- Right Inspector Panel -->
+      <aside class="inspector-panel">
+        <div class="panel-header">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          <div>
+            <div class="ph-title">Parameters & Weathering</div>
+            <div class="ph-sub">Real-time Physical Solvers</div>
+          </div>
+        </div>
+
+        <div class="panel-body">
+          <!-- 1. Base Rock Generator -->
+          <div class="sec-group">
+            <div class="sec-title">
+              <span>1. Base Rock Geometry</span>
+              <button id="btn-randomize-seed" class="btn ghost small" style="padding: 0 6px;">🎲 Randomize</button>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Polyhedral Facets</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-facets" class="slider" min="6" max="32" step="1" value="14">
+                <div class="vpill"><div class="num" id="val-facets">14</div><div class="unit">n</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Base Roundness</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-roundness" class="slider" min="0.0" max="1.0" step="0.05" value="0.35">
+                <div class="vpill"><div class="num" id="val-roundness">0.35</div><div class="unit">r</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">3D Simplex Displacement</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-noise-amp" class="slider" min="0.0" max="0.4" step="0.01" value="0.15">
+                <div class="vpill"><div class="num" id="val-noise-amp">0.15</div><div class="unit">m</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Strata Bedding Dip</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-strata-dip" class="slider" min="0" max="90" step="1" value="15">
+                <div class="vpill"><div class="num" id="val-strata-dip">15°</div><div class="unit">deg</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Strata Layer Amp</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-strata-amp" class="slider" min="0.0" max="0.3" step="0.01" value="0.04">
+                <div class="vpill"><div class="num" id="val-strata-amp">0.04</div><div class="unit">m</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. 3D Fracture Dynamics -->
+          <div class="sec-group">
+            <div class="sec-title">2. 3D Fracture Dynamics</div>
+
+            <div class="crow">
+              <span class="clabel">Crack Density</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-crack-density" class="slider" min="0.1" max="1.0" step="0.05" value="0.60">
+                <div class="vpill"><div class="num" id="val-crack-density">0.60</div><div class="unit">%</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Aperture (Crack Width)</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-aperture" class="slider" min="0.02" max="0.20" step="0.01" value="0.07">
+                <div class="vpill"><div class="num" id="val-aperture">0.07m</div><div class="unit">m</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Stochastic Branching</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-branching" class="slider" min="0.0" max="1.0" step="0.05" value="0.60">
+                <div class="vpill"><div class="num" id="val-branching">0.60</div><div class="unit">k</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Fractal Tortuosity</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-jaggedness" class="slider" min="0.0" max="1.0" step="0.05" value="0.40">
+                <div class="vpill"><div class="num" id="val-jaggedness">0.40</div><div class="unit">t</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 3D SDF Crack Erosion -->
+          <div class="sec-group">
+            <div class="sec-title">3. 3D SDF Crack Erosion</div>
+
+            <div class="crow">
+              <span class="clabel">Frost Wedging (Gelifraction)</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-frost-wedging" class="slider" min="0.0" max="1.5" step="0.05" value="0.65">
+                <div class="vpill"><div class="num" id="val-frost-wedging">0.65</div><div class="unit">x</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Acute Lip Beveling / Spall</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-edge-bevel" class="slider" min="0.0" max="1.5" step="0.05" value="0.55">
+                <div class="vpill"><div class="num" id="val-edge-bevel">0.55</div><div class="unit">x</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Chemical Dissolution</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-dissolution" class="slider" min="0.0" max="1.0" step="0.05" value="0.40">
+                <div class="vpill"><div class="num" id="val-dissolution">0.40</div><div class="unit">x</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Cavity Silt Trapping</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-sediment" class="slider" min="0.0" max="1.0" step="0.05" value="0.45">
+                <div class="vpill"><div class="num" id="val-sediment">0.45</div><div class="unit">x</div></div>
+              </div>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Weathering Cycles</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-erosion-iter" class="slider" min="2" max="30" step="1" value="12">
+                <div class="vpill"><div class="num" id="val-erosion-iter">12</div><div class="unit">cyc</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Mineral Colors & PBR -->
+          <div class="sec-group">
+            <div class="sec-title">4. Mineral Colors & PBR</div>
+
+            <div class="crow mb-2">
+              <span class="clabel">Mineral Preset</span>
+              <select id="mineral-preset-select" class="select-field" style="width: 180px;"></select>
+            </div>
+
+            <div class="color-swatch-row">
+              <span class="clabel">Base Rock Mineral</span>
+              <input type="color" id="picker-base-color" class="color-picker-input" value="#827e7a">
+            </div>
+
+            <div class="color-swatch-row">
+              <span class="clabel">Crack Crevice Shadow</span>
+              <input type="color" id="picker-crack-color" class="color-picker-input" value="#322b27">
+            </div>
+
+            <div class="color-swatch-row">
+              <span class="clabel">Crack Oxidation Halo</span>
+              <input type="color" id="picker-ox-color" class="color-picker-input" value="#9c603a">
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="src/rock-app.js"></script>
+</body>
+</html>

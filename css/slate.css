@@ -1,0 +1,675 @@
+/* ============================================================
+   SLATE UI — DESIGN TOKENS & STYLESHEET
+   Frontier SDF Terrain Studio
+   ============================================================ */
+
+:root {
+  /* Surfaces */
+  --bg: #050505;
+  --panel: #121212;
+  --inset: #1a1a1a;
+  --field: #000000;
+  --raised: #222222;
+  --selected: #2a2a2a;
+
+  /* Strokes */
+  --stroke: rgba(255, 255, 255, 0.06);
+  --stroke-strong: #2e2e2e;
+
+  /* Typography */
+  --text: #f0f0f0;
+  --text-dim: #888888;
+  --text-faint: #5c5c5c;
+
+  /* Accent */
+  --accent: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.12);
+  --hi: #6c77ff;
+  --hi-glow: 0 0 12px rgba(108, 119, 255, 0.8);
+  --danger: #ef4444;
+  --ok: #22c55e;
+  --warning: #f59e0b;
+
+  /* Geometry */
+  --r-panel: 20px;
+  --r-inset: 14px;
+  --r-pill: 999px;
+  --ctl-h: 36px;
+  --row-h: 32px;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --shadow-panel: 0 20px 60px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --shadow-pop: 0 24px 60px rgba(0, 0, 0, 0.75);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'General Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+  font-size: 13px;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* App Container Layout */
+#app {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Top Control Centre Notch Bar */
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--stroke);
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 14px;
+  border-right: 1px solid var(--stroke);
+}
+
+.brand-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--inset);
+  border: 1px solid var(--stroke-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hi);
+}
+
+.brand-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--text);
+}
+
+.brand-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  background: rgba(108, 119, 255, 0.15);
+  color: var(--hi);
+  border: 1px solid rgba(108, 119, 255, 0.3);
+}
+
+/* Actions in top bar */
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Status Badge */
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--inset);
+  border: 1px solid var(--stroke);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+}
+
+.status-dot.busy {
+  background: var(--warning);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+  animation: pulse 1s infinite alternate;
+}
+
+@keyframes pulse {
+  from { opacity: 0.4; }
+  to { opacity: 1.0; }
+}
+
+/* Main Workspace */
+.workspace {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Left Outliner Panel */
+.outliner-panel {
+  width: 260px;
+  background: var(--panel);
+  border-right: 1px solid var(--stroke);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+/* Viewport Area */
+.viewport-area {
+  flex: 1;
+  position: relative;
+  background: #0a0b0e;
+  overflow: hidden;
+}
+
+#viewport-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Right Property Inspector Panel */
+.inspector-panel {
+  width: 380px;
+  background: var(--panel);
+  border-left: 1px solid var(--stroke);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 10;
+  overflow-y: auto;
+}
+
+/* Panel Header & Sections */
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.015);
+  flex-shrink: 0;
+}
+
+.panel-header .ph-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.2px;
+}
+
+.panel-header .ph-sub {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.panel-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Section Group */
+.sec-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--stroke);
+}
+
+.sec-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Control Row */
+.crow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: var(--ctl-h);
+}
+
+.clabel {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 500;
+  flex: 1;
+}
+
+/* Buttons */
+.btn {
+  height: var(--ctl-h);
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--stroke);
+  background: var(--inset);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s var(--ease);
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--raised);
+  border-color: var(--stroke-strong);
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn.primary {
+  background: var(--accent);
+  color: #111;
+  border-color: transparent;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(255, 255, 255, 0.15);
+}
+
+.btn.primary:hover {
+  background: #e5e5e5;
+}
+
+.btn.hi {
+  background: var(--hi);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--hi-glow);
+}
+
+.btn.hi:hover {
+  background: #808aff;
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
+}
+
+.btn.ghost:hover {
+  background: var(--inset);
+  color: var(--text);
+}
+
+.btn.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+
+.btn.icon {
+  width: var(--ctl-h);
+  padding: 0;
+}
+
+/* Value Pill: slider + number cell */
+.vpill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.vpill {
+  display: flex;
+  align-items: stretch;
+  height: 28px;
+  width: 78px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  border: 1px solid var(--stroke);
+}
+
+.vpill .num {
+  flex: 1;
+  background: var(--field);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.vpill .unit {
+  width: 28px;
+  background: var(--inset);
+  border-left: 1px solid var(--stroke);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+/* Range Sliders */
+input[type=range].slider {
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  flex: 1;
+  min-width: 70px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  background: var(--raised);
+  border: none;
+}
+
+input[type=range].slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e0e0e0;
+  border: none;
+  transition: transform 0.12s var(--ease);
+}
+
+input[type=range].slider:hover::-webkit-slider-thumb {
+  transform: scale(1.2);
+  background: var(--accent);
+}
+
+/* Segmented Controls */
+.seg {
+  display: inline-flex;
+  background: var(--field);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pill);
+  padding: 3px;
+  gap: 3px;
+  height: 32px;
+}
+
+.seg button {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  transition: all 0.15s var(--ease);
+}
+
+.seg button:hover {
+  color: var(--text);
+}
+
+.seg button.active {
+  background: var(--accent);
+  color: #111;
+  font-weight: 600;
+}
+
+/* Dropdown Selects */
+select.select-field {
+  height: 30px;
+  background: var(--field);
+  border: 1px solid var(--stroke-strong);
+  color: var(--text);
+  border-radius: var(--r-pill);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+
+select.select-field:hover {
+  border-color: var(--hi);
+}
+
+/* Outliner Tree */
+.tree {
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.tnode {
+  display: flex;
+  flex-direction: column;
+}
+
+.trow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--row-h);
+  padding: 0 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 12px;
+  transition: all 0.12s var(--ease);
+}
+
+.trow:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.trow.sel {
+  background: var(--selected);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.trow .tname {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trow .twisty {
+  width: 14px;
+  height: 14px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s var(--ease);
+}
+
+.tnode.open > .trow .twisty {
+  transform: rotate(90deg);
+}
+
+.tkids {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  margin-left: 10px;
+}
+
+.tnode.open > .tkids {
+  display: flex;
+}
+
+.rowbtn {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.rowbtn:hover {
+  color: var(--text);
+}
+
+.rowbtn.on {
+  color: var(--text);
+}
+
+/* Pass Card in Erosion Stack */
+.pass-card {
+  background: var(--inset);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-inset);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pass-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pass-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Viewport HUD Overlays */
+.hud-probe {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  background: rgba(18, 18, 18, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-pill);
+  padding: 6px 16px;
+  font-size: 11.5px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.hud-tools {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  gap: 6px;
+  z-index: 50;
+}
+
+.hud-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: transparent;
+  z-index: 60;
+}
+
+.hud-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--hi);
+  box-shadow: var(--hi-glow);
+  transition: width 0.1s linear;
+}
+
+/* Diagnostics Chart Box */
+.diag-box {
+  background: var(--inset);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-inset);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.diag-stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.diag-stat-val {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.diag-stat-val.ok { color: var(--ok); }
+.diag-stat-val.hi { color: var(--hi); }
+
+/* SVG Icons */
+.ic {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
+  flex-shrink: 0;
+  display: block;
+}

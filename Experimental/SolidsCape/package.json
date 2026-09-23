@@ -1,0 +1,16 @@
+{
+  "name": "frontier",
+  "version": "1.0.0",
+  "description": "Frontier · SDF Terrain Studio",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test": "node --test",
+    "raster": "node -e 'import(\"./tests/erosion-verification.test.js\")'"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}

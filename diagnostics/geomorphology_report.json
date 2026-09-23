@@ -1,0 +1,18 @@
+{
+  "valid": true,
+  "metrics": {
+    "steepWallRatio": 0.198,
+    "talusSlopeRatio": 0.1415,
+    "cliffRatio": 0.0938,
+    "sharpRidgeDivides": 1008,
+    "carvedVolumeM3": 128929.95,
+    "depositedVolumeM3": 54191.26,
+    "netBalanceM3": 74738.69
+  },
+  "checks": {
+    "vShapedGorgeIncised": true,
+    "talusAngleOfReposeStabilized": true,
+    "knifeEdgeArêtesPreserved": true,
+    "massConservationVerified": true
+  }
+}
