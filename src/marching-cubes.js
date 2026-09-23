@@ -1,12 +1,11 @@
 /**
- * High-Fidelity Adaptive Marching Cubes 3D Isosurface Extractor & SDF Remesher
- * Converts 3D Signed Distance Fields (SDF) into watertight polygonal 3D meshes.
+ * Robust Watertight 3D Marching Cubes Isosurface Extractor & SDF Remesher
  * 
- * Key Features:
- * 1. Adaptive Sub-Voxel Crack & Chip Refinement (places 8x higher polygon density along sharp cracks & planar chipped facets)
- * 2. High-Precision Trilinear Analytical Gradient Normals with adaptive epsilon (preserves razor-sharp cuts & facet boundaries)
- * 3. Multi-Channel Attribute Sampling (Crack mask, erosion depth, cavity sediment, oxidation patina halos)
- * 4. Multi-LOD Decimation (High SDF 25k, Mid 6k, Low Poly 1.5k)
+ * Features:
+ * 1. Exact Edge-Welded Vertex Sharing (zero T-junctions, zero cracks, zero internal lines)
+ * 2. Continuous 3D Trilinear Gradient Normals (smooth, silky, curvature-accurate shading)
+ * 3. Multi-Channel Attribute Interpolation (Crack mask, erosion depth, cavity sediment, oxidation halos)
+ * 4. Multi-LOD Support (LOD 1: Full Resolution, LOD 2: Mid Poly, LOD 3: Low-Poly Game LOD)
  */
 
 // Edge table: bitmask indicating which of the 12 edges intersect the isosurface for each of 256 cube configurations
@@ -254,42 +253,45 @@ export function extractIsosurface(volume, options = {}) {
 
   const idx3D = (ix, iy, iz) => (iz * ny + iy) * nx + ix;
 
-  function sampleSDFContinuous(gx, gy, gz) {
-    const cx = Math.max(0, Math.min(nx - 1.001, gx));
-    const cy = Math.max(0, Math.min(ny - 1.001, gy));
-    const cz = Math.max(0, Math.min(nz - 1.001, gz));
+  // 1. Precompute continuous gradients across the 3D grid
+  const gradX = new Float32Array(nx * ny * nz);
+  const gradY = new Float32Array(nx * ny * nz);
+  const gradZ = new Float32Array(nx * ny * nz);
 
-    const x0 = Math.floor(cx), x1 = Math.min(nx - 1, x0 + 1);
-    const y0 = Math.floor(cy), y1 = Math.min(ny - 1, y0 + 1);
-    const z0 = Math.floor(cz), z1 = Math.min(nz - 1, z0 + 1);
+  for (let iz = 0; iz < nz; iz++) {
+    const zPrev = Math.max(0, iz - 1);
+    const zNext = Math.min(nz - 1, iz + 1);
+    const scaleZ = (zNext - zPrev) * dz || 1.0;
 
-    const fx = cx - x0, fy = cy - y0, fz = cz - z0;
+    for (let iy = 0; iy < ny; iy++) {
+      const yPrev = Math.max(0, iy - 1);
+      const yNext = Math.min(ny - 1, iy + 1);
+      const scaleY = (yNext - yPrev) * dy || 1.0;
 
-    const c000 = sdf[idx3D(x0, y0, z0)];
-    const c100 = sdf[idx3D(x1, y0, z0)];
-    const c010 = sdf[idx3D(x0, y1, z0)];
-    const c110 = sdf[idx3D(x1, y1, z0)];
-    const c001 = sdf[idx3D(x0, y0, z1)];
-    const c101 = sdf[idx3D(x1, y0, z1)];
-    const c011 = sdf[idx3D(x0, y1, z1)];
-    const c111 = sdf[idx3D(x1, y1, z1)];
+      for (let ix = 0; ix < nx; ix++) {
+        const xPrev = Math.max(0, ix - 1);
+        const xNext = Math.min(nx - 1, ix + 1);
+        const scaleX = (xNext - xPrev) * dx || 1.0;
 
-    const c00 = c000 * (1 - fx) + c100 * fx;
-    const c10 = c010 * (1 - fx) + c110 * fx;
-    const c01 = c001 * (1 - fx) + c101 * fx;
-    const c11 = c011 * (1 - fx) + c111 * fx;
+        const idx = idx3D(ix, iy, iz);
+        const gx = (sdf[idx3D(xNext, iy, iz)] - sdf[idx3D(xPrev, iy, iz)]) / scaleX;
+        const gy = (sdf[idx3D(ix, yNext, iz)] - sdf[idx3D(ix, yPrev, iz)]) / scaleY;
+        const gz = (sdf[idx3D(ix, iy, zNext)] - sdf[idx3D(ix, iy, zPrev)]) / scaleZ;
 
-    const c0 = c00 * (1 - fy) + c10 * fy;
-    const c1 = c01 * (1 - fy) + c11 * fy;
-
-    return c0 * (1 - fz) + c1 * fz;
+        const len = Math.hypot(gx, gy, gz) || 1.0;
+        gradX[idx] = gx / len;
+        gradY[idx] = gy / len;
+        gradZ[idx] = gz / len;
+      }
+    }
   }
 
-  function sampleAttributeContinuous(arr, gx, gy, gz) {
+  // Trilinear interpolation of scalar fields
+  function sampleField(arr, gx, gy, gz) {
     if (!arr) return 0.0;
-    const cx = Math.max(0, Math.min(nx - 1.001, gx));
-    const cy = Math.max(0, Math.min(ny - 1.001, gy));
-    const cz = Math.max(0, Math.min(nz - 1.001, gz));
+    const cx = Math.max(0, Math.min(nx - 1.0001, gx));
+    const cy = Math.max(0, Math.min(ny - 1.0001, gy));
+    const cz = Math.max(0, Math.min(nz - 1.0001, gz));
 
     const x0 = Math.floor(cx), x1 = Math.min(nx - 1, x0 + 1);
     const y0 = Math.floor(cy), y1 = Math.min(ny - 1, y0 + 1);
@@ -317,135 +319,41 @@ export function extractIsosurface(volume, options = {}) {
     return c0 * (1 - fz) + c1 * fz;
   }
 
-  // Sharp normal calculation with narrow adaptive epsilon
-  function calcContinuousNormal(wx, wy, wz, cellSize) {
-    const gx = ((wx - boundsMin[0]) / sx) * (nx - 1);
-    const gy = ((wy - boundsMin[1]) / sy) * (ny - 1);
-    const gz = ((wz - boundsMin[2]) / sz) * (nz - 1);
-
-    const eps = Math.max(0.08, cellSize * 0.2);
-    const dX = sampleSDFContinuous(gx + eps, gy, gz) - sampleSDFContinuous(gx - eps, gy, gz);
-    const dY = sampleSDFContinuous(gx, gy + eps, gz) - sampleSDFContinuous(gx, gy - eps, gz);
-    const dZ = sampleSDFContinuous(gx, gy, gz + eps) - sampleSDFContinuous(gx, gy, gz - eps);
-
-    const len = Math.hypot(dX, dY, dZ) || 1.0;
-    return [dX / len, dY / len, dZ / len];
+  // Trilinear normal interpolation from precomputed smooth gradients
+  function sampleNormal(gx, gy, gz) {
+    const nx_ = sampleField(gradX, gx, gy, gz);
+    const ny_ = sampleField(gradY, gx, gy, gz);
+    const nz_ = sampleField(gradZ, gx, gy, gz);
+    const len = Math.hypot(nx_, ny_, nz_) || 1.0;
+    return [nx_ / len, ny_ / len, nz_ / len];
   }
 
-  const posList = [];
-  const normList = [];
-  const uvList = [];
+  const positions = [];
+  const normals = [];
+  const uvs = [];
   const crackList = [];
   const erosionList = [];
   const sedList = [];
   const oxList = [];
+  const indices = [];
 
-  // Sub-voxel cell polygonizer
-  function polygonizeCell(gx0, gy0, gz0, cellSize) {
-    const cornerVals = new Float32Array(8);
-    const cornerCoords = [];
+  // Hash table for edge vertex welding
+  const edgeVertexMap = new Map();
 
-    let cubeIndex = 0;
-    for (let i = 0; i < 8; i++) {
-      const off = CORNER_OFFSETS[i];
-      const cgx = gx0 + off[0] * cellSize;
-      const cgy = gy0 + off[1] * cellSize;
-      const cgz = gz0 + off[2] * cellSize;
-
-      const val = sampleSDFContinuous(cgx, cgy, cgz);
-      cornerVals[i] = val;
-      if (val < isovalue) cubeIndex |= 1 << i;
-
-      const wx = boundsMin[0] + (cgx / (nx - 1)) * sx;
-      const wy = boundsMin[1] + (cgy / (ny - 1)) * sy;
-      const wz = boundsMin[2] + (cgz / (nz - 1)) * sz;
-      cornerCoords.push([wx, wy, wz, cgx, cgy, cgz]);
-    }
-
-    const edgeMask = EDGE_TABLE[cubeIndex];
-    if (edgeMask === 0 || edgeMask === undefined) return;
-
-    const vertPos = new Float32Array(12 * 3);
-    const vertNorm = new Float32Array(12 * 3);
-    const vertCrack = new Float32Array(12);
-    const vertErosion = new Float32Array(12);
-    const vertSed = new Float32Array(12);
-    const vertOx = new Float32Array(12);
-
-    for (let e = 0; e < 12; e++) {
-      if (edgeMask & (1 << e)) {
-        const v0Idx = EDGE_CONNECTIONS[e][0];
-        const v1Idx = EDGE_CONNECTIONS[e][1];
-
-        const val0 = cornerVals[v0Idx];
-        const val1 = cornerVals[v1Idx];
-
-        let t = 0.5;
-        if (Math.abs(val1 - val0) > 1e-6) {
-          t = (isovalue - val0) / (val1 - val0);
-          t = Math.max(0.0, Math.min(1.0, t));
-        }
-
-        const p0 = cornerCoords[v0Idx];
-        const p1 = cornerCoords[v1Idx];
-
-        const px = p0[0] + t * (p1[0] - p0[0]);
-        const py = p0[1] + t * (p1[1] - p0[1]);
-        const pz = p0[2] + t * (p1[2] - p0[2]);
-
-        const pgx = p0[3] + t * (p1[3] - p0[3]);
-        const pgy = p0[4] + t * (p1[4] - p0[4]);
-        const pgz = p0[5] + t * (p1[5] - p0[5]);
-
-        const norm = calcContinuousNormal(px, py, pz, cellSize);
-
-        vertPos[e * 3 + 0] = px;
-        vertPos[e * 3 + 1] = py;
-        vertPos[e * 3 + 2] = pz;
-
-        vertNorm[e * 3 + 0] = norm[0];
-        vertNorm[e * 3 + 1] = norm[1];
-        vertNorm[e * 3 + 2] = norm[2];
-
-        vertCrack[e] = sampleAttributeContinuous(crackMask, pgx, pgy, pgz);
-        vertErosion[e] = sampleAttributeContinuous(erosionDepth, pgx, pgy, pgz);
-        vertSed[e] = sampleAttributeContinuous(sediment, pgx, pgy, pgz);
-        vertOx[e] = sampleAttributeContinuous(oxidation, pgx, pgy, pgz);
-      }
-    }
-
-    const tris = TRI_TABLE[cubeIndex];
-    if (!tris) return;
-
-    for (let i = 0; i < tris.length && tris[i] !== -1; i += 3) {
-      const edges = [tris[i], tris[i + 1], tris[i + 2]];
-      for (let j = 0; j < 3; j++) {
-        const edge = edges[j];
-        const px = vertPos[edge * 3 + 0];
-        const py = vertPos[edge * 3 + 1];
-        const pz = vertPos[edge * 3 + 2];
-
-        posList.push(px, py, pz);
-        normList.push(vertNorm[edge * 3 + 0], vertNorm[edge * 3 + 1], vertNorm[edge * 3 + 2]);
-
-        const u = 0.5 + Math.atan2(pz, px) / (2 * Math.PI);
-        const v = 0.5 - Math.asin(Math.max(-1.0, Math.min(1.0, py / (sy * 0.5 || 1)))) / Math.PI;
-        uvList.push(u, v);
-
-        crackList.push(vertCrack[edge]);
-        erosionList.push(vertErosion[edge]);
-        sedList.push(vertSed[edge]);
-        oxList.push(vertOx[edge]);
-      }
-    }
+  function getVoxelCoord(ix, iy, iz) {
+    const wx = boundsMin[0] + (ix / (nx - 1)) * sx;
+    const wy = boundsMin[1] + (iy / (ny - 1)) * sy;
+    const wz = boundsMin[2] + (iz / (nz - 1)) * sz;
+    return [wx, wy, wz];
   }
 
-  // Iterate over 3D grid with Adaptive Resolution at Cracks
+  // Standard uniform grid Marching Cubes
   for (let iz = 0; iz < nz - step; iz += step) {
     for (let iy = 0; iy < ny - step; iy += step) {
       for (let ix = 0; ix < nx - step; ix += step) {
-        // Sample cell corners
-        let hasActiveCrack = false;
+        // Sample 8 corners of the cube
+        const cornerVals = new Float32Array(8);
+        const cornerCoords = [];
         let cubeIndex = 0;
 
         for (let i = 0; i < 8; i++) {
@@ -453,60 +361,114 @@ export function extractIsosurface(volume, options = {}) {
           const cx = ix + off[0] * step;
           const cy = iy + off[1] * step;
           const cz = iz + off[2] * step;
-          const cIdx = idx3D(cx, cy, cz);
 
-          const val = sdf[cIdx];
+          const val = sdf[idx3D(cx, cy, cz)];
+          cornerVals[i] = val;
           if (val < isovalue) cubeIndex |= 1 << i;
 
-          if (crackMask && crackMask[cIdx] > 0.08) hasActiveCrack = true;
-          if (erosionDepth && erosionDepth[cIdx] > 0.005) hasActiveCrack = true;
+          const [wx, wy, wz] = getVoxelCoord(cx, cy, cz);
+          cornerCoords.push([wx, wy, wz, cx, cy, cz]);
         }
 
         const edgeMask = EDGE_TABLE[cubeIndex];
         if (edgeMask === 0 || edgeMask === undefined) continue;
 
-        // If active crack or sharp chipped facet: adaptively subdivide into 2x2x2 sub-cells
-        // places 8x higher polygon resolution specifically in cracks!
-        if (hasActiveCrack && step <= 2) {
-          const subStep = step * 0.5;
-          for (let sz = 0; sz < 2; sz++) {
-            for (let sy = 0; sy < 2; sy++) {
-              for (let sx = 0; sx < 2; sx++) {
-                polygonizeCell(ix + sx * subStep, iy + sy * subStep, iz + sz * subStep, subStep);
+        // Compute or retrieve edge vertices
+        const edgeVertIndices = new Int32Array(12);
+
+        for (let e = 0; e < 12; e++) {
+          if (edgeMask & (1 << e)) {
+            const v0Idx = EDGE_CONNECTIONS[e][0];
+            const v1Idx = EDGE_CONNECTIONS[e][1];
+
+            const p0 = cornerCoords[v0Idx];
+            const p1 = cornerCoords[v1Idx];
+
+            // Global edge hash key based on integer grid coordinates
+            const c0x = p0[3], c0y = p0[4], c0z = p0[5];
+            const c1x = p1[3], c1y = p1[4], c1z = p1[5];
+
+            // Sort corner indices for canonical edge key
+            const k0 = (c0z * ny + c0y) * nx + c0x;
+            const k1 = (c1z * ny + c1y) * nx + c1x;
+            const edgeKey = k0 < k1 ? `${k0}_${k1}` : `${k1}_${k0}`;
+
+            if (edgeVertexMap.has(edgeKey)) {
+              edgeVertIndices[e] = edgeVertexMap.get(edgeKey);
+            } else {
+              const val0 = cornerVals[v0Idx];
+              const val1 = cornerVals[v1Idx];
+
+              let t = 0.5;
+              if (Math.abs(val1 - val0) > 1e-6) {
+                t = (isovalue - val0) / (val1 - val0);
+                t = Math.max(0.0, Math.min(1.0, t));
               }
+
+              const px = p0[0] + t * (p1[0] - p0[0]);
+              const py = p0[1] + t * (p1[1] - p0[1]);
+              const pz = p0[2] + t * (p1[2] - p0[2]);
+
+              const pgx = p0[3] + t * (p1[3] - p0[3]);
+              const pgy = p0[4] + t * (p1[4] - p0[4]);
+              const pgz = p0[5] + t * (p1[5] - p0[5]);
+
+              // Continuous, smooth curvature-accurate gradient normal
+              const [nx_, ny_, nz_] = sampleNormal(pgx, pgy, pgz);
+
+              const vertIdx = positions.length / 3;
+              positions.push(px, py, pz);
+              normals.push(nx_, ny_, nz_);
+
+              // Spherical UVs
+              const u = 0.5 + Math.atan2(pz, px) / (2 * Math.PI);
+              const v = 0.5 - Math.asin(Math.max(-1.0, Math.min(1.0, py / (sy * 0.5 || 1)))) / Math.PI;
+              uvs.push(u, v);
+
+              crackList.push(sampleField(crackMask, pgx, pgy, pgz));
+              erosionList.push(sampleField(erosionDepth, pgx, pgy, pgz));
+              sedList.push(sampleField(sediment, pgx, pgy, pgz));
+              oxList.push(sampleField(oxidation, pgx, pgy, pgz));
+
+              edgeVertexMap.set(edgeKey, vertIdx);
+              edgeVertIndices[e] = vertIdx;
             }
           }
-        } else {
-          polygonizeCell(ix, iy, iz, step);
+        }
+
+        const tris = TRI_TABLE[cubeIndex];
+        if (!tris) continue;
+
+        for (let i = 0; i < tris.length && tris[i] !== -1; i += 3) {
+          indices.push(
+            edgeVertIndices[tris[i]],
+            edgeVertIndices[tris[i + 1]],
+            edgeVertIndices[tris[i + 2]]
+          );
         }
       }
     }
   }
 
-  const positions = new Float32Array(posList);
-  const normals = new Float32Array(normList);
-  const uvs = new Float32Array(uvList);
-  const crackData = new Float32Array(crackList);
-  const erosionData = new Float32Array(erosionList);
-  const sedimentData = new Float32Array(sedList);
-  const oxidationData = new Float32Array(oxList);
-
-  const numVertices = positions.length / 3;
-  const indices = new Uint32Array(numVertices);
-  for (let i = 0; i < numVertices; i++) {
-    indices[i] = i;
-  }
+  const posArray = new Float32Array(positions);
+  const normArray = new Float32Array(normals);
+  const uvArray = new Float32Array(uvs);
+  const indexArray = new Uint32Array(indices);
+  const crackArray = new Float32Array(crackList);
+  const erosionArray = new Float32Array(erosionList);
+  const sedArray = new Float32Array(sedList);
+  const oxArray = new Float32Array(oxList);
 
   return {
-    positions,
-    normals,
-    uvs,
-    indices,
-    crackData,
-    erosionData,
-    sedimentData,
-    oxidationData,
-    vertexCount: numVertices,
-    triangleCount: Math.floor(numVertices / 3),
+    positions: posArray,
+    normals: normArray,
+    uvs: uvArray,
+    indices: indexArray,
+    crackData: crackArray,
+    erosionData: erosionArray,
+    sedimentData: sedArray,
+    oxidationData: oxArray,
+    vertexCount: posArray.length / 3,
+    triangleCount: Math.floor(indexArray.length / 3),
   };
 }

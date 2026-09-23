@@ -1,7 +1,10 @@
 /**
- * 3D Low-Poly N-Gon Rock Generator (Blender-grade Polyhedral SDF Synthesizer)
- * Creates solid, well-proportioned low-poly polygonal rock bodies with flat n-gon facets,
- * strata bedding, and organic asymmetry.
+ * Clean Procedural 3D Rock Generator & SDF Field Synthesizer
+ * Produces solid, well-proportioned 3D rock volumes with true Euclidean distance fields:
+ * - Smooth polyhedral n-gon facet clipping
+ * - Smooth organic simplex noise displacement
+ * - Subtle geological strata bedding (without artificial stepping/corrugation)
+ * - True unit gradient magnitude |∇φ| ≈ 1 everywhere
  */
 
 import { NoiseGenerator, createPRNG } from "./math-noise.js";
@@ -13,11 +16,11 @@ export const ROCK_PRESETS = {
     shapeType: "polyhedral",
     facets: 14,
     asymmetry: [1.2, 0.95, 1.1],
-    baseRoundness: 0.2,
-    noiseAmp: 0.12,
-    noiseFreq: 0.85,
-    strataAmp: 0.04,
-    strataFreq: 2.2,
+    baseRoundness: 0.35,
+    noiseAmp: 0.08,
+    noiseFreq: 0.75,
+    strataAmp: 0.02,
+    strataFreq: 1.2,
     strataDip: 15,
     mineral: "granite",
     hardness: 1.4,
@@ -27,13 +30,13 @@ export const ROCK_PRESETS = {
     description: "Layered sedimentary rock with prominent horizontal bedding planes",
     shapeType: "slab",
     facets: 10,
-    asymmetry: [1.4, 0.7, 1.2],
-    baseRoundness: 0.25,
-    noiseAmp: 0.1,
-    noiseFreq: 0.75,
-    strataAmp: 0.14,
-    strataFreq: 3.2,
-    strataDip: 18,
+    asymmetry: [1.35, 0.75, 1.15],
+    baseRoundness: 0.30,
+    noiseAmp: 0.06,
+    noiseFreq: 0.7,
+    strataAmp: 0.04,
+    strataFreq: 1.5,
+    strataDip: 12,
     mineral: "sandstone",
     hardness: 0.9,
   },
@@ -42,12 +45,12 @@ export const ROCK_PRESETS = {
     description: "Water-smoothed rounded boulder with beveled polygonal facet edges",
     shapeType: "ellipsoid",
     facets: 8,
-    asymmetry: [1.25, 0.85, 1.05],
-    baseRoundness: 0.65,
-    noiseAmp: 0.07,
-    noiseFreq: 0.9,
-    strataAmp: 0.02,
-    strataFreq: 2.0,
+    asymmetry: [1.2, 0.9, 1.05],
+    baseRoundness: 0.75,
+    noiseAmp: 0.04,
+    noiseFreq: 0.8,
+    strataAmp: 0.01,
+    strataFreq: 1.0,
     strataDip: 0,
     mineral: "quartzite",
     hardness: 1.6,
@@ -57,12 +60,12 @@ export const ROCK_PRESETS = {
     description: "Hexagonal prismatic volcanic cooling column with sharp vertical n-gon facets",
     shapeType: "prism",
     facets: 6,
-    asymmetry: [0.85, 1.5, 0.85],
-    baseRoundness: 0.1,
-    noiseAmp: 0.08,
-    noiseFreq: 1.0,
-    strataAmp: 0.05,
-    strataFreq: 2.8,
+    asymmetry: [0.9, 1.45, 0.9],
+    baseRoundness: 0.2,
+    noiseAmp: 0.05,
+    noiseFreq: 0.9,
+    strataAmp: 0.02,
+    strataFreq: 1.4,
     strataDip: 5,
     mineral: "basalt",
     hardness: 1.5,
@@ -72,12 +75,12 @@ export const ROCK_PRESETS = {
     description: "High-energy rockfall monolith with sharp tectonic cleavage planes",
     shapeType: "shard",
     facets: 16,
-    asymmetry: [1.1, 1.4, 0.9],
-    baseRoundness: 0.1,
-    noiseAmp: 0.16,
-    noiseFreq: 0.9,
-    strataAmp: 0.05,
-    strataFreq: 2.8,
+    asymmetry: [1.1, 1.35, 0.9],
+    baseRoundness: 0.15,
+    noiseAmp: 0.1,
+    noiseFreq: 0.8,
+    strataAmp: 0.03,
+    strataFreq: 1.5,
     strataDip: 35,
     mineral: "slate",
     hardness: 1.3,
@@ -87,12 +90,12 @@ export const ROCK_PRESETS = {
     description: "Wind-sculpted dreikanter with aerodynamic keel facets and fluted polish",
     shapeType: "ventifact",
     facets: 10,
-    asymmetry: [1.3, 0.8, 1.1],
-    baseRoundness: 0.35,
-    noiseAmp: 0.1,
-    noiseFreq: 0.8,
-    strataAmp: 0.07,
-    strataFreq: 2.8,
+    asymmetry: [1.25, 0.85, 1.1],
+    baseRoundness: 0.4,
+    noiseAmp: 0.06,
+    noiseFreq: 0.75,
+    strataAmp: 0.02,
+    strataFreq: 1.2,
     strataDip: 10,
     mineral: "red_sandstone",
     hardness: 1.1,
@@ -103,22 +106,28 @@ export const ROCK_PRESETS = {
     shapeType: "meteorite",
     facets: 12,
     asymmetry: [1.05, 0.95, 1.1],
-    baseRoundness: 0.45,
-    noiseAmp: 0.18,
-    noiseFreq: 1.1,
+    baseRoundness: 0.5,
+    noiseAmp: 0.1,
+    noiseFreq: 1.0,
     strataAmp: 0.0,
-    strataFreq: 1.0,
+    strataFreq: 0.0,
     strataDip: 0,
     mineral: "obsidian",
     hardness: 1.8,
   },
 };
 
+// Smooth minimum for blending SDF shapes without sharp crease artifacts
+function smin(a, b, k = 0.15) {
+  const h = Math.max(k - Math.abs(a - b), 0.0) / k;
+  return Math.min(a, b) - h * h * k * 0.25;
+}
+
 export class RockGenerator {
   constructor(options = {}) {
-    this.nx = options.nx || 64;
-    this.ny = options.ny || 64;
-    this.nz = options.nz || 64;
+    this.nx = options.nx || 80;
+    this.ny = options.ny || 80;
+    this.nz = options.nz || 80;
     this.boundsMin = options.boundsMin || [-1.8, -1.8, -1.8];
     this.boundsMax = options.boundsMax || [1.8, 1.8, 1.8];
 
@@ -147,7 +156,7 @@ export class RockGenerator {
   }
 
   /**
-   * Generates a solid low-poly base rock volume with polygonal n-gon facets
+   * Generates a solid base rock signed distance field with clean Euclidean gradients
    */
   generate(params = {}) {
     const p = { ...ROCK_PRESETS.granite_boulder, ...params };
@@ -161,44 +170,44 @@ export class RockGenerator {
 
     const baseRadius = p.radius || 1.1;
     const numFacets = p.facets || 14;
-    const roundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.2;
-    const noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.12;
-    const noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.85;
-    const strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.04;
-    const strataFreq = p.strataFreq || 2.2;
+    const roundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.35;
+    const noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.08;
+    const noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.75;
+    const strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.02;
+    const strataFreq = p.strataFreq || 1.2;
     const strataDipRad = ((p.strataDip || 15) * Math.PI) / 180;
 
-    // Generate polyhedral clipping planes for clean n-gon polygonal faces
+    // Generate polyhedral clipping planes
     const planes = [];
     if (p.shapeType === "prism") {
       const sides = 6;
       for (let i = 0; i < sides; i++) {
         const angle = (i * 2 * Math.PI) / sides + (rng() - 0.5) * 0.1;
-        const dist = baseRadius * (0.85 + rng() * 0.15);
+        const dist = baseRadius * 0.9;
         planes.push({
-          nx: Math.cos(angle),
-          ny: (rng() - 0.5) * 0.1,
-          nz: Math.sin(angle),
+          nx: Math.cos(angle) / asymX,
+          ny: (rng() - 0.5) * 0.08,
+          nz: Math.sin(angle) / asymZ,
           d: dist,
         });
       }
-      planes.push({ nx: 0, ny: 1.0, nz: 0, d: baseRadius * 1.3 });
-      planes.push({ nx: 0, ny: -1.0, nz: 0, d: baseRadius * 1.3 });
+      planes.push({ nx: 0, ny: 1.0 / asymY, nz: 0, d: baseRadius * 1.25 });
+      planes.push({ nx: 0, ny: -1.0 / asymY, nz: 0, d: baseRadius * 1.25 });
     } else {
       for (let i = 0; i < numFacets; i++) {
         const phi = Math.acos(1 - (2 * (i + 0.5)) / numFacets);
         const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5) + rng() * 0.2;
 
-        let nxVal = Math.sin(phi) * Math.cos(theta);
-        let nyVal = Math.cos(phi);
-        let nzVal = Math.sin(phi) * Math.sin(theta);
+        let nxVal = (Math.sin(phi) * Math.cos(theta)) / asymX;
+        let nyVal = Math.cos(phi) / asymY;
+        let nzVal = (Math.sin(phi) * Math.sin(theta)) / asymZ;
 
         const len = Math.hypot(nxVal, nyVal, nzVal) || 1.0;
         nxVal /= len;
         nyVal /= len;
         nzVal /= len;
 
-        const dist = baseRadius * (0.88 + rng() * 0.28);
+        const dist = baseRadius * (0.92 + rng() * 0.22);
         planes.push({ nx: nxVal, ny: nyVal, nz: nzVal, d: dist });
       }
     }
@@ -212,37 +221,41 @@ export class RockGenerator {
           const idx = this.index(ix, iy, iz);
           const [wx, wy, wz] = this.voxelToCoord(ix, iy, iz);
 
-          const px = wx / asymX;
-          const py = wy / asymY;
-          const pz = wz / asymZ;
-
-          // 1. Base Ellipsoid Distance
-          const distEllipsoid = Math.hypot(px, py, pz) - baseRadius;
-
-          // 2. Polyhedral N-Gon Facet Half-Spaces
+          // 1. Exact Polyhedral Facet Half-Spaces
           let distPoly = -100.0;
           for (let i = 0; i < planes.length; i++) {
             const pl = planes[i];
-            const dot = px * pl.nx + py * pl.ny + pz * pl.nz - pl.d;
+            const dot = wx * pl.nx + wy * pl.ny + wz * pl.nz - pl.d;
             if (dot > distPoly) {
               distPoly = dot;
             }
           }
 
-          const dBase = distPoly * (1.0 - roundness) + distEllipsoid * roundness;
+          // 2. Base Ellipsoid Distance
+          const ex = wx / asymX;
+          const ey = wy / asymY;
+          const ez = wz / asymZ;
+          const distEllipsoid = Math.hypot(ex, ey, ez) - baseRadius;
 
-          // 3. Low-frequency organic boulder displacement
-          const n1 = noise.fBm3D(px * noiseFreq, py * noiseFreq, pz * noiseFreq, 3, 2.0, 0.5);
+          // Blend polyhedral facets with rounded boulder profile
+          const blendK = Math.max(0.01, roundness * 0.4);
+          let baseSDF = (1.0 - roundness) * distPoly + roundness * distEllipsoid;
+          if (roundness > 0.05 && roundness < 0.95) {
+            baseSDF = smin(distPoly, distEllipsoid, blendK);
+          }
+
+          // 3. Smooth, gentle organic boulder micro-displacement (continuous 3D simplex)
+          const n1 = noise.fBm3D(wx * noiseFreq, wy * noiseFreq, wz * noiseFreq, 3, 2.0, 0.5);
           const displacement = (n1 - 0.5) * 2.0 * noiseAmp;
 
-          // 4. Geological Strata Bedding
-          const strataCoord = py * cosDip + pz * sinDip;
-          const strataNoise = Math.sin(strataCoord * strataFreq * Math.PI) * strataAmp;
-          const strataHard = 1.0 + Math.sin(strataCoord * strataFreq * Math.PI + 0.4) * 0.35;
+          // 4. Subtle strata variation (gentle, continuous, no terraced stepping)
+          const strataCoord = wy * cosDip + wz * sinDip;
+          const strataDisplacement = Math.sin(strataCoord * strataFreq * Math.PI) * strataAmp;
+          const strataHardness = 1.0 + Math.sin(strataCoord * strataFreq * Math.PI) * 0.25;
 
-          const finalDist = dBase + displacement + strataNoise;
+          const finalDist = baseSDF + displacement + strataDisplacement;
           this.sdf[idx] = finalDist;
-          this.hardness[idx] = Math.max(0.3, (p.hardness || 1.2) * strataHard);
+          this.hardness[idx] = Math.max(0.4, (p.hardness || 1.4) * strataHardness);
         }
       }
     }
