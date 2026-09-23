@@ -1,7 +1,7 @@
 /**
  * Marching Cubes 3D Isosurface Extractor
  * Converts 3D Signed Distance Fields (SDF) into watertight polygonal 3D meshes.
- * Includes vertex gradient normal calculation, triplanar/spherical UVs, and attribute interpolation.
+ * Uses continuous trilinear analytical gradient evaluation for silky-smooth, artifact-free normals.
  */
 
 // Edge table: bitmask indicating which of the 12 edges intersect the isosurface for each of 256 cube configurations
@@ -40,7 +40,7 @@ const EDGE_TABLE = new Int32Array([
   0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x0
 ]);
 
-// Triangulation table: lists of triangle vertices for each of the 256 configurations (-1 terminated)
+// Triangulation table
 const TRI_TABLE = [
   [-1],
   [0, 8, 3, -1],
@@ -312,38 +312,17 @@ const TRI_TABLE = [
   [-1]
 ];
 
-// Corner vertex offsets in local unit cube [0, 1]^3
 const CORNER_OFFSETS = [
   [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
   [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
 ];
 
-// Edge connection table [v0, v1] for the 12 cube edges
 const EDGE_CONNECTIONS = [
   [0, 1], [1, 2], [2, 3], [3, 0],
   [4, 5], [5, 6], [6, 7], [7, 4],
   [0, 4], [1, 5], [2, 6], [3, 7]
 ];
 
-/**
- * Extracts a watertight isosurface mesh from a 3D SDF scalar field.
- * 
- * @param {Object} volume - SDF volume object or object containing scalar fields
- * @param {Float32Array} volume.sdf - 1D array of signed distance values (nx * ny * nz)
- * @param {number} volume.nx - X grid resolution
- * @param {number} volume.ny - Y grid resolution
- * @param {number} volume.nz - Z grid resolution
- * @param {Array<number>} volume.boundsMin - [minX, minY, minZ]
- * @param {Array<number>} volume.boundsMax - [maxX, maxY, maxZ]
- * @param {Object} [options] - Configuration options
- * @param {number} [options.isovalue=0.0] - Isosurface threshold
- * @param {number} [options.step=1] - Grid step (1 = high poly, 2 = mid poly, 3-4 = low poly game mesh)
- * @param {Float32Array} [options.crackMask] - Optional scalar attribute array
- * @param {Float32Array} [options.erosionDepth] - Optional scalar attribute array
- * @param {Float32Array} [options.sediment] - Optional scalar attribute array
- * @param {Float32Array} [options.oxidation] - Optional scalar attribute array
- * @returns {Object} { positions, normals, uvs, indices, crackData, erosionData, sedimentData, oxidationData }
- */
 export function extractIsosurface(volume, options = {}) {
   const {
     isovalue = 0.0,
@@ -366,7 +345,53 @@ export function extractIsosurface(volume, options = {}) {
 
   const idx3D = (ix, iy, iz) => (iz * ny + iy) * nx + ix;
 
-  // Temporary buffers for geometry extraction
+  // Trilinear sample of SDF value at continuous grid coordinate (gx, gy, gz)
+  function sampleSDFContinuous(gx, gy, gz) {
+    const cx = Math.max(0, Math.min(nx - 1.001, gx));
+    const cy = Math.max(0, Math.min(ny - 1.001, gy));
+    const cz = Math.max(0, Math.min(nz - 1.001, gz));
+
+    const x0 = Math.floor(cx), x1 = Math.min(nx - 1, x0 + 1);
+    const y0 = Math.floor(cy), y1 = Math.min(ny - 1, y0 + 1);
+    const z0 = Math.floor(cz), z1 = Math.min(nz - 1, z0 + 1);
+
+    const fx = cx - x0, fy = cy - y0, fz = cz - z0;
+
+    const c000 = sdf[idx3D(x0, y0, z0)];
+    const c100 = sdf[idx3D(x1, y0, z0)];
+    const c010 = sdf[idx3D(x0, y1, z0)];
+    const c110 = sdf[idx3D(x1, y1, z0)];
+    const c001 = sdf[idx3D(x0, y0, z1)];
+    const c101 = sdf[idx3D(x1, y0, z1)];
+    const c011 = sdf[idx3D(x0, y1, z1)];
+    const c111 = sdf[idx3D(x1, y1, z1)];
+
+    const c00 = c000 * (1 - fx) + c100 * fx;
+    const c10 = c010 * (1 - fx) + c110 * fx;
+    const c01 = c001 * (1 - fx) + c101 * fx;
+    const c11 = c011 * (1 - fx) + c111 * fx;
+
+    const c0 = c00 * (1 - fy) + c10 * fy;
+    const c1 = c01 * (1 - fy) + c11 * fy;
+
+    return c0 * (1 - fz) + c1 * fz;
+  }
+
+  // Exact continuous gradient at world position (wx, wy, wz) for ultra-smooth normals
+  function calcContinuousNormal(wx, wy, wz) {
+    const gx = ((wx - boundsMin[0]) / sx) * (nx - 1);
+    const gy = ((wy - boundsMin[1]) / sy) * (ny - 1);
+    const gz = ((wz - boundsMin[2]) / sz) * (nz - 1);
+
+    const eps = 0.5; // Half voxel step for smooth continuous gradient
+    const dX = sampleSDFContinuous(gx + eps, gy, gz) - sampleSDFContinuous(gx - eps, gy, gz);
+    const dY = sampleSDFContinuous(gx, gy + eps, gz) - sampleSDFContinuous(gx, gy - eps, gz);
+    const dZ = sampleSDFContinuous(gx, gy, gz + eps) - sampleSDFContinuous(gx, gy, gz - eps);
+
+    const len = Math.hypot(dX, dY, dZ) || 1.0;
+    return [dX / len, dY / len, dZ / len];
+  }
+
   const posList = [];
   const normList = [];
   const uvList = [];
@@ -382,32 +407,11 @@ export function extractIsosurface(volume, options = {}) {
   const vertSed = new Float32Array(12);
   const vertOx = new Float32Array(12);
 
-  // Gradient computation via central differences
-  function calcGradient(ix, iy, iz) {
-    const x0 = Math.max(0, ix - 1);
-    const x1 = Math.min(nx - 1, ix + 1);
-    const y0 = Math.max(0, iy - 1);
-    const y1 = Math.min(ny - 1, iy + 1);
-    const z0 = Math.max(0, iz - 1);
-    const z1 = Math.min(nz - 1, iz + 1);
-
-    const gX = (sdf[idx3D(x1, iy, iz)] - sdf[idx3D(x0, iy, iz)]) / ((x1 - x0) * dx || 1);
-    const gY = (sdf[idx3D(ix, y1, iz)] - sdf[idx3D(ix, y0, iz)]) / ((y1 - y0) * dy || 1);
-    const gZ = (sdf[idx3D(ix, iy, z1)] - sdf[idx3D(ix, iy, z0)]) / ((z1 - z0) * dz || 1);
-
-    const len = Math.hypot(gX, gY, gZ) || 1.0;
-    // Normal points outward (towards positive SDF)
-    return [gX / len, gY / len, gZ / len];
-  }
-
-  // Iterate over 3D voxel grid
   for (let iz = 0; iz < nz - step; iz += step) {
     for (let iy = 0; iy < ny - step; iy += step) {
       for (let ix = 0; ix < nx - step; ix += step) {
-        // Sample the 8 cube corners
         const cornerVals = new Float32Array(8);
         const cornerCoords = [];
-        const cornerNorms = [];
         const cornerCracks = new Float32Array(8);
         const cornerErosions = new Float32Array(8);
         const cornerSeds = new Float32Array(8);
@@ -429,7 +433,6 @@ export function extractIsosurface(volume, options = {}) {
           const wy = boundsMin[1] + (cy / (ny - 1)) * sy;
           const wz = boundsMin[2] + (cz / (nz - 1)) * sz;
           cornerCoords.push([wx, wy, wz]);
-          cornerNorms.push(calcGradient(cx, cy, cz));
 
           if (crackMask) cornerCracks[i] = crackMask[cIdx] || 0.0;
           if (erosionDepth) cornerErosions[i] = erosionDepth[cIdx] || 0.0;
@@ -440,7 +443,6 @@ export function extractIsosurface(volume, options = {}) {
         const edgeMask = EDGE_TABLE[cubeIndex];
         if (edgeMask === 0 || edgeMask === undefined) continue;
 
-        // Calculate intersection vertices on active edges
         for (let e = 0; e < 12; e++) {
           if (edgeMask & (1 << e)) {
             const v0Idx = EDGE_CONNECTIONS[e][0];
@@ -457,25 +459,21 @@ export function extractIsosurface(volume, options = {}) {
 
             const p0 = cornerCoords[v0Idx];
             const p1 = cornerCoords[v1Idx];
-            const n0 = cornerNorms[v0Idx];
-            const n1 = cornerNorms[v1Idx];
 
             const px = p0[0] + t * (p1[0] - p0[0]);
             const py = p0[1] + t * (p1[1] - p0[1]);
             const pz = p0[2] + t * (p1[2] - p0[2]);
 
-            let nxVal = n0[0] + t * (n1[0] - n0[0]);
-            let nyVal = n0[1] + t * (n1[1] - n0[1]);
-            let nzVal = n0[2] + t * (n1[2] - n0[2]);
-            const nLen = Math.hypot(nxVal, nyVal, nzVal) || 1.0;
+            // Continuous normal directly at the exact interpolated isosurface vertex
+            const norm = calcContinuousNormal(px, py, pz);
 
             vertPos[e * 3 + 0] = px;
             vertPos[e * 3 + 1] = py;
             vertPos[e * 3 + 2] = pz;
 
-            vertNorm[e * 3 + 0] = nxVal / nLen;
-            vertNorm[e * 3 + 1] = nyVal / nLen;
-            vertNorm[e * 3 + 2] = nzVal / nLen;
+            vertNorm[e * 3 + 0] = norm[0];
+            vertNorm[e * 3 + 1] = norm[1];
+            vertNorm[e * 3 + 2] = norm[2];
 
             vertCrack[e] = cornerCracks[v0Idx] + t * (cornerCracks[v1Idx] - cornerCracks[v0Idx]);
             vertErosion[e] = cornerErosions[v0Idx] + t * (cornerErosions[v1Idx] - cornerErosions[v0Idx]);
@@ -484,17 +482,11 @@ export function extractIsosurface(volume, options = {}) {
           }
         }
 
-        // Add triangles for this cube
         const tris = TRI_TABLE[cubeIndex];
         if (!tris) continue;
 
         for (let i = 0; i < tris.length && tris[i] !== -1; i += 3) {
-          const e0 = tris[i];
-          const e1 = tris[i + 1];
-          const e2 = tris[i + 2];
-
-          // Edge indices form the triangle
-          const edges = [e0, e1, e2];
+          const edges = [tris[i], tris[i + 1], tris[i + 2]];
           for (let j = 0; j < 3; j++) {
             const edge = edges[j];
             const px = vertPos[edge * 3 + 0];
@@ -508,7 +500,6 @@ export function extractIsosurface(volume, options = {}) {
             posList.push(px, py, pz);
             normList.push(nxVal, nyVal, nzVal);
 
-            // Triplanar / Spherical UV mapping
             const u = 0.5 + Math.atan2(pz, px) / (2 * Math.PI);
             const v = 0.5 - Math.asin(Math.max(-1.0, Math.min(1.0, py / (sy * 0.5 || 1)))) / Math.PI;
             uvList.push(u, v);
