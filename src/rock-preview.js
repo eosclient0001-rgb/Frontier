@@ -182,6 +182,7 @@ void main() {
   // High-frequency mineral crystal flecks (subtle color & specular glint, NOT puffy normal bump)
   float mineralFleck = noise3(vWorldPos * 96.0);
   float grainNoise = noise3(vWorldPos * 48.0);
+  float microDetail = (grainNoise - 0.5) * 0.1;
 
   // Very subtle tactile surface normal grain (sub-millimeter scale, preserves flat facets)
   vec3 grainGrad = vec3(
