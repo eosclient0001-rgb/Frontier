@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontier — SDF Terrain Lab</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛰</text></svg>">
+</head>
+<body>
+<div id="app">
+
+  <!-- ======================= TOP BAR ======================= -->
+  <header id="topbar">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M3 19L10 5l4 8 2.5-4L21 19H3z" stroke-linejoin="round"/>
+        <path d="M10 5l2.5 5" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand-name">FRONTIER</span>
+      <span class="brand-sub">SDF Terrain Lab</span>
+    </div>
+    <div class="top-status">
+      <span id="status-pill" class="pill pill-idle"><span class="dot"></span><span id="status-text">idle</span></span>
+    </div>
+    <div class="top-actions">
+      <button id="btn-export" class="btn btn-primary" disabled>Export bundle</button>
+    </div>
+  </header>
+
+  <!-- ======================= MAIN ======================= -->
+  <div id="main">
+
+    <!-- -------- LEFT: pipeline controls -------- -->
+    <aside id="left">
+      <nav id="controls"></nav>
+      <div id="gen-area">
+        <button id="btn-generate" class="btn btn-generate">Generate terrain</button>
+        <div id="progress-wrap" class="hidden">
+          <div class="progress-row"><span id="progress-label">—</span><span id="progress-pct">0%</span></div>
+          <div class="progress-bar"><div id="progress-fill"></div></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- -------- CENTER: viewport -------- -->
+    <main id="center">
+      <canvas id="viewport"></canvas>
+      <div id="gl-error" class="hidden"></div>
+
+      <div class="hud hud-tl">
+        <div class="hud-title">VIEWPORT</div>
+        <div class="hud-grid">
+          <span>grid</span><span id="hud-grid" class="mono">—</span>
+          <span>voxel</span><span id="hud-voxel" class="mono">—</span>
+          <span>fps</span><span id="hud-fps" class="mono">—</span>
+          <span>draw</span><span id="hud-draw" class="mono">—</span>
+        </div>
+      </div>
+
+      <div class="hud hud-tr">
+        <button id="btn-inspect" class="hud-btn" title="Toggle volume inspector (I)">Inspect SDF</button>
+        <button id="btn-trail" class="hud-btn" title="Toggle droplet flow overlay (T)">Flow trails</button>
+        <button id="btn-shot" class="hud-btn" title="Save viewport PNG (S)">Save PNG</button>
+      </div>
+
+      <div id="clip-hud" class="hud hud-bc hidden">
+        <span class="mono">clip</span>
+        <input type="range" id="clip-slider" min="1" max="60" step="0.25" value="24">
+        <span id="clip-val" class="mono">24.0 m</span>
+      </div>
+
+      <div class="hud hud-bl mono">drag orbit · shift+drag pan · wheel zoom · R regenerate · I inspect · T trails · S save png</div>
+    </main>
+
+    <!-- -------- RIGHT: audit + SAT maps + console -------- -->
+    <aside id="right">
+      <section class="panel">
+        <h2>Resolution contract</h2>
+        <div id="contract-body" class="kv">
+          <span class="dim">awaiting first build…</span>
+        </div>
+        <div id="contract-badge" class="badge badge-pending">NOT VERIFIED</div>
+      </section>
+
+      <section class="panel">
+        <h2>Erosion audit</h2>
+        <div id="audit-body" class="kv">
+          <span class="dim">awaiting first build…</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>SAT maps</h2>
+        <div id="sat-gallery" class="sat-gallery">
+          <span class="dim">generated with terrain</span>
+        </div>
+      </section>
+
+      <section class="panel panel-grow">
+        <h2>Pipeline console</h2>
+        <div id="console"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div id="sat-lightbox" class="lightbox hidden">
+  <div class="lightbox-inner">
+    <canvas id="lightbox-canvas"></canvas>
+    <div class="lightbox-meta">
+      <h3 id="lightbox-title"></h3>
+      <p id="lightbox-desc"></p>
+    </div>
+    <button id="lightbox-close" class="btn">Close</button>
+  </div>
+</div>
+
+<script type="module" src="src/client/app.js"></script>
+</body>
+</html>
