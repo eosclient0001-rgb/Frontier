@@ -1,11 +1,14 @@
 /**
- * 3D Organic Rock Cell Fracture & Sharp Planar Chipping Engine
+ * 3D Structural Rock Fracture & Geological Fault Simulation Engine
  * 
- * Features:
- * 1. 3D Voronoi Cellular Piece Splitting (broken rock chunks of varying proportions)
- * 2. Organic Domain-Warped Crack Clefts (non-straight, wandering grain-boundary fissures)
- * 3. Sharp Planar Chipped Cuts & Conchoidal Spall Facets (sharp cutting planes slicing corners and faces)
- * 4. Depth-Tapering Aperture & Griffith Stress Intensity Tensor Fields
+ * Features specialized geometric & physical fracture mechanics:
+ * 1. 3D Voronoi Cellular Cleavage (multi-piece chunk splitting)
+ * 2. Tectonic Shear Fault & Riedel Shears (primary fault plane + conjugate feathering cracks)
+ * 3. Radial & Concentric Impact Fracture (epicenter shock starburst + concentric spall rings)
+ * 4. Thermal Spall & Concentric Exfoliation (curved onion-skin shell peeling)
+ * 5. Sedimentary Bedding Delamination (parallel horizontal sheet fissures)
+ * 6. Vertical Columnar Joints (hexagonal prismatic joint fissures)
+ * 7. Shatter Network (high-density brittle cleavage micro-fissure spiderweb)
  */
 
 import { NoiseGenerator, createPRNG } from "./math-noise.js";
@@ -13,28 +16,38 @@ import { NoiseGenerator, createPRNG } from "./math-noise.js";
 export const FRACTURE_TYPES = {
   voronoi_cleavage: {
     id: "voronoi_cleavage",
-    name: "3D Organic Cellular Fracture (Pieces)",
+    name: "3D Voronoi Cellular Cleavage",
     description: "Breaks rock into natural organic Voronoi chunks with wandering grain-boundary clefts",
   },
   tectonic_fault: {
     id: "tectonic_fault",
     name: "Tectonic Shear Fault & Riedel Shears",
-    description: "Primary fault shear fracture with secondary diagonal conjugate feathering fissures",
+    description: "Deep planar fault shear with conjugate diagonal Riedel feathering fissures",
   },
   radial_impact: {
     id: "radial_impact",
-    name: "Radial & Concentric Impact Fracture",
+    name: "Radial & Concentric Impact Shock",
     description: "Impact epicenter with radiating fracture rays and concentric shock rings",
   },
   thermal_spall: {
     id: "thermal_spall",
-    name: "Thermal Spalling & Exfoliation",
-    description: "Curved concentric shell fractures peeling away exterior shells under thermal shock",
+    name: "Thermal Exfoliation & Spall Shells",
+    description: "Curved concentric shell fractures peeling away exterior layers",
   },
   strata_delam: {
     id: "strata_delam",
-    name: "Bedding Plane Delamination",
-    description: "Splits and delamination fissures running parallel to sedimentary strata layers",
+    name: "Sedimentary Bedding Delamination",
+    description: "Parallel delamination fissures running along horizontal sedimentary strata",
+  },
+  columnar_joints: {
+    id: "columnar_joints",
+    name: "Volcanic Columnar Joint Cleavage",
+    description: "Vertical polygonal cooling joint fissures splitting the rock vertically",
+  },
+  shatter_network: {
+    id: "shatter_network",
+    name: "Brittle Micro-Fissure Shatter Web",
+    description: "High-density interconnected spiderweb of fine cleavage cracks",
   },
 };
 
@@ -75,7 +88,7 @@ export class RockFractureEngine {
   }
 
   /**
-   * Generates organic 3D fracture pieces, wandering crack clefts, and sharp planar chipped facets
+   * Generates distinct physical 3D fracture networks
    */
   generateFracture(baseRockSDF, params = {}) {
     const seed = params.seed !== undefined ? params.seed : 42;
@@ -90,50 +103,22 @@ export class RockFractureEngine {
     const jaggedness = params.jaggedness !== undefined ? params.jaggedness : 0.45;
     const explode = params.explode || 0.0;
 
-    // Sharp Planar Chipped Cuts parameters
+    // Sharp Planar Chipped Cuts
     const chipDensity = params.chipDensity !== undefined ? params.chipDensity : 0.55;
-    const chipDepth = params.chipDepth !== undefined ? params.chipDepth : 0.06; // Step-down thickness in meters
-    const chipScale = params.chipScale !== undefined ? params.chipScale : 0.45; // Patch radius
+    const chipDepth = params.chipDepth !== undefined ? params.chipDepth : 0.06;
+    const chipScale = params.chipScale !== undefined ? params.chipScale : 0.45;
 
-    // 1. Generate Organic 3D Voronoi Piece Seeds
-    const numSeeds = Math.max(3, Math.round(3 + crackDensity * 4));
-    const seeds = [];
+    // Reset arrays
+    this.crackSDF.fill(1.0);
+    this.crackMask.fill(0.0);
+    this.stressField.fill(0.0);
+    this.chipMask.fill(0.0);
+    this.pieceID.fill(0);
 
-    // Core main chunk
-    seeds.push({
-      x: (rng() - 0.5) * 0.2,
-      y: (rng() - 0.5) * 0.2,
-      z: (rng() - 0.5) * 0.2,
-      weight: 1.35,
-      dir: [0, 0, 0],
-    });
-
-    // Secondary chunks & broken wedge pieces
-    for (let i = 1; i < numSeeds; i++) {
-      const phi = Math.acos(1 - (2 * (i - 0.5)) / (numSeeds - 1));
-      const theta = (i * 2.4) + rng() * 0.5;
-      const rad = 0.7 + rng() * 0.4;
-
-      const sx = rad * Math.sin(phi) * Math.cos(theta);
-      const sy = rad * Math.cos(phi) * 0.8 + (rng() - 0.5) * 0.2;
-      const sz = rad * Math.sin(phi) * Math.sin(theta);
-
-      const dirLen = Math.hypot(sx, sy, sz) || 1;
-      seeds.push({
-        x: sx,
-        y: sy,
-        z: sz,
-        weight: 0.75 + rng() * 0.45,
-        dir: [sx / dirLen, sy / dirLen, sz / dirLen],
-      });
-    }
-
-    // 2. Generate Sharp Planar Chipped Cut Planes (sharp planar slices along edges/corners)
+    // Generate Sharp Planar Chipped Cut Planes
     const numChips = Math.max(2, Math.round(chipDensity * 8));
     const chips = [];
-
     for (let c = 0; c < numChips; c++) {
-      // Place planar cutting planes preferentially along outer convex facets & corners
       const phi = Math.PI * (0.15 + 0.7 * (c / numChips)) + (rng() - 0.5) * 0.3;
       const theta = rng() * Math.PI * 2;
       const rad = 0.9 + rng() * 0.25;
@@ -147,7 +132,6 @@ export class RockFractureEngine {
       const ny = cy / cLen;
       const nz = cz / cLen;
 
-      // Planar cutting plane normal tilted slightly relative to surface normal
       const tiltX = (rng() - 0.5) * 0.4;
       const tiltY = (rng() - 0.5) * 0.4;
       const tiltZ = (rng() - 0.5) * 0.4;
@@ -165,11 +149,114 @@ export class RockFractureEngine {
       });
     }
 
-    this.crackSDF.fill(1.0);
-    this.crackMask.fill(0.0);
-    this.stressField.fill(0.0);
-    this.chipMask.fill(0.0);
-    this.pieceID.fill(0);
+    // Prepare specialized structural seeds based on fractureType
+    const voronoiSeeds = [];
+    const faultPlanes = [];
+    let epicenter = { x: 0, y: 0.8, z: 0 };
+    const delamPlanes = [];
+    const columnCenters = [];
+
+    if (fractureType === "tectonic_fault") {
+      // Primary shear fault plane
+      const fAngle = rng() * Math.PI * 2;
+      const fDip = Math.PI * 0.35 + (rng() - 0.5) * 0.2;
+      const mainNx = Math.cos(fAngle) * Math.sin(fDip);
+      const mainNy = Math.cos(fDip);
+      const mainNz = Math.sin(fAngle) * Math.sin(fDip);
+
+      faultPlanes.push({ nx: mainNx, ny: mainNy, nz: mainNz, d: (rng() - 0.5) * 0.2, weight: 1.0, isMain: true });
+
+      // Secondary conjugate Riedel shears (feathering at 30° - 45° off the main fault)
+      const numRiedel = Math.max(3, Math.round(crackDensity * 6));
+      for (let r = 0; r < numRiedel; r++) {
+        const tiltAngle = (r % 2 === 0 ? 1 : -1) * (0.55 + (rng() - 0.5) * 0.2);
+        const cosT = Math.cos(tiltAngle);
+        const sinT = Math.sin(tiltAngle);
+        const rNx = mainNx * cosT - mainNz * sinT;
+        const rNz = mainNx * sinT + mainNz * cosT;
+        faultPlanes.push({
+          nx: rNx,
+          ny: mainNy + (rng() - 0.5) * 0.2,
+          nz: rNz,
+          d: (r / numRiedel - 0.5) * 1.2 + (rng() - 0.5) * 0.2,
+          weight: 0.65,
+          isMain: false,
+        });
+      }
+    } else if (fractureType === "radial_impact") {
+      // Impact epicenter on top surface
+      epicenter = {
+        x: (rng() - 0.5) * 0.4,
+        y: 0.75 + (rng() - 0.5) * 0.2,
+        z: (rng() - 0.5) * 0.4,
+      };
+    } else if (fractureType === "strata_delam") {
+      // Horizontal / tilted bedding delamination sheets
+      const numLayers = Math.max(3, Math.round(3 + crackDensity * 5));
+      const dipAngle = ((params.strataDip || 0) * Math.PI) / 180;
+      for (let l = 0; l < numLayers; l++) {
+        const yPos = -0.8 + (1.6 * (l + 0.5)) / numLayers + (rng() - 0.5) * 0.1;
+        delamPlanes.push({
+          nx: Math.sin(dipAngle),
+          ny: Math.cos(dipAngle),
+          nz: 0,
+          d: yPos,
+        });
+      }
+    } else if (fractureType === "columnar_joints") {
+      // Vertical prismatic columns
+      const numCols = Math.max(4, Math.round(4 + crackDensity * 6));
+      for (let c = 0; c < numCols; c++) {
+        const rad = 0.5 + (rng() - 0.5) * 0.3;
+        const ang = (c * 2 * Math.PI) / numCols + (rng() - 0.5) * 0.3;
+        columnCenters.push({
+          x: rad * Math.cos(ang),
+          z: rad * Math.sin(ang),
+        });
+      }
+      columnCenters.push({ x: 0, z: 0 }); // Center column
+    } else if (fractureType === "shatter_network") {
+      // High-density brittle micro-fissure web
+      const numSeeds = Math.max(12, Math.round(10 + crackDensity * 16));
+      for (let i = 0; i < numSeeds; i++) {
+        const phi = Math.acos(1 - (2 * (i + 0.5)) / numSeeds);
+        const theta = (i * 2.4) + rng() * 0.4;
+        const rad = 0.85 * (0.5 + rng() * 0.5);
+        voronoiSeeds.push({
+          x: rad * Math.sin(phi) * Math.cos(theta),
+          y: rad * Math.cos(phi) * 0.9,
+          z: rad * Math.sin(phi) * Math.sin(theta),
+          weight: 0.8 + rng() * 0.4,
+          dir: [Math.sin(phi) * Math.cos(theta), Math.cos(phi), Math.sin(phi) * Math.sin(theta)],
+        });
+      }
+    } else {
+      // Standard 3D Voronoi Cellular Cleavage
+      const numSeeds = Math.max(4, Math.round(3 + crackDensity * 5));
+      voronoiSeeds.push({
+        x: (rng() - 0.5) * 0.2,
+        y: (rng() - 0.5) * 0.2,
+        z: (rng() - 0.5) * 0.2,
+        weight: 1.35,
+        dir: [0, 0, 0],
+      });
+      for (let i = 1; i < numSeeds; i++) {
+        const phi = Math.acos(1 - (2 * (i - 0.5)) / (numSeeds - 1));
+        const theta = (i * 2.4) + rng() * 0.5;
+        const rad = 0.75 + rng() * 0.35;
+        const sx = rad * Math.sin(phi) * Math.cos(theta);
+        const sy = rad * Math.cos(phi) * 0.85 + (rng() - 0.5) * 0.2;
+        const sz = rad * Math.sin(phi) * Math.sin(theta);
+        const dirLen = Math.hypot(sx, sy, sz) || 1;
+        voronoiSeeds.push({
+          x: sx,
+          y: sy,
+          z: sz,
+          weight: 0.75 + rng() * 0.45,
+          dir: [sx / dirLen, sy / dirLen, sz / dirLen],
+        });
+      }
+    }
 
     // 3. Evaluate 3D Volume Field
     for (let iz = 0; iz < this.nz; iz++) {
@@ -187,40 +274,107 @@ export class RockFractureEngine {
 
           const depthInside = Math.max(0.0, -rockDist);
 
-          // Organic domain warping: warps crack paths along grain boundaries (non-straight, wandering)
-          const warp1 = noise.noise3D(wx * 3.2, wy * 3.2, wz * 3.2);
-          const warp2 = noise.noise3D(wx * 6.5 + 4.1, wy * 6.5 + 2.7, wz * 6.5 + 7.3);
-          const organicWarp = (warp1 - 0.5) * jaggedness * 0.35 + (warp2 - 0.5) * jaggedness * 0.15;
+          // Organic domain warping
+          const warp1 = noise.noise3D(wx * 3.5, wy * 3.5, wz * 3.5);
+          const warp2 = noise.noise3D(wx * 7.0 + 4.1, wy * 7.0 + 2.7, wz * 7.0 + 7.3);
+          const organicWarp = (warp1 - 0.5) * jaggedness * 0.3 + (warp2 - 0.5) * jaggedness * 0.12;
 
           const px = wx + organicWarp;
           const py = wy + organicWarp * 0.8;
           const pz = wz + organicWarp;
 
-          // Closest & second closest Voronoi seeds
-          let d1 = Infinity;
-          let d2 = Infinity;
-          let bestSeedIdx = 0;
+          let fissureDist = 10.0;
+          let bestPiece = 0;
+          let explodeDir = [0, 0, 0];
 
-          for (let s = 0; s < seeds.length; s++) {
-            const seed = seeds[s];
-            const dist = Math.hypot(px - seed.x, py - seed.y, pz - seed.z) / seed.weight;
-            if (dist < d1) {
-              d2 = d1;
-              d1 = dist;
-              bestSeedIdx = s;
-            } else if (dist < d2) {
-              d2 = dist;
+          // Compute crack distance based on specific fracture physics
+          if (fractureType === "tectonic_fault") {
+            for (let f = 0; f < faultPlanes.length; f++) {
+              const fp = faultPlanes[f];
+              const pDist = Math.abs(px * fp.nx + py * fp.ny + pz * fp.nz - fp.d);
+              if (pDist < fissureDist) {
+                fissureDist = pDist;
+                bestPiece = f;
+                explodeDir = [fp.nx, fp.ny, fp.nz];
+              }
             }
+          } else if (fractureType === "radial_impact") {
+            const dx_ = px - epicenter.x;
+            const dy_ = py - epicenter.y;
+            const dz_ = pz - epicenter.z;
+            const radDist = Math.hypot(dx_, dy_, dz_);
+            const angle = Math.atan2(dz_, dx_);
+
+            // Radiating spoke rays
+            const numRays = Math.max(4, Math.round(4 + crackDensity * 6));
+            const rayAngle = (angle + Math.PI) / (Math.PI * 2) * numRays;
+            const rayFrac = Math.abs(rayAngle - Math.round(rayAngle));
+            const rayDist = rayFrac * radDist * 0.8;
+
+            // Concentric shock rings
+            const ringSpacing = 0.35;
+            const ringFrac = Math.abs((radDist / ringSpacing) - Math.round(radDist / ringSpacing));
+            const ringDist = ringFrac * ringSpacing;
+
+            fissureDist = Math.min(rayDist, ringDist);
+            bestPiece = Math.floor(rayAngle) % 8;
+            explodeDir = [dx_ / (radDist || 1), dy_ / (radDist || 1), dz_ / (radDist || 1)];
+          } else if (fractureType === "thermal_spall") {
+            // Concentric shell peeling from rock surface
+            const shellDepth = 0.18;
+            const shellLayer = depthInside / shellDepth;
+            const shellFrac = Math.abs(shellLayer - Math.round(shellLayer));
+            fissureDist = shellFrac * shellDepth;
+            bestPiece = Math.floor(shellLayer);
+            explodeDir = [wx, wy, wz];
+          } else if (fractureType === "strata_delam") {
+            for (let l = 0; l < delamPlanes.length; l++) {
+              const dp = delamPlanes[l];
+              const pDist = Math.abs(px * dp.nx + py * dp.ny + pz * dp.nz - dp.d);
+              if (pDist < fissureDist) {
+                fissureDist = pDist;
+                bestPiece = l;
+                explodeDir = [0, 1, 0];
+              }
+            }
+          } else if (fractureType === "columnar_joints") {
+            let d1 = Infinity, d2 = Infinity;
+            for (let c = 0; c < columnCenters.length; c++) {
+              const col = columnCenters[c];
+              const dist = Math.hypot(px - col.x, pz - col.z);
+              if (dist < d1) {
+                d2 = d1;
+                d1 = dist;
+                bestPiece = c;
+              } else if (dist < d2) {
+                d2 = dist;
+              }
+            }
+            fissureDist = Math.max(0.0, d2 - d1);
+            explodeDir = [px - columnCenters[bestPiece].x, 0, pz - columnCenters[bestPiece].z];
+          } else {
+            // Voronoi Cellular / Shatter Network
+            let d1 = Infinity, d2 = Infinity;
+            for (let s = 0; s < voronoiSeeds.length; s++) {
+              const seedObj = voronoiSeeds[s];
+              const dist = Math.hypot(px - seedObj.x, py - seedObj.y, pz - seedObj.z) / seedObj.weight;
+              if (dist < d1) {
+                d2 = d1;
+                d1 = dist;
+                bestPiece = s;
+                explodeDir = seedObj.dir;
+              } else if (dist < d2) {
+                d2 = dist;
+              }
+            }
+            fissureDist = Math.max(0.0, d2 - d1);
           }
 
-          this.pieceID[idx] = bestSeedIdx;
-
-          // Perpendicular distance to the organic fracture boundary
-          const fissureDist = Math.max(0.0, d2 - d1);
+          this.pieceID[idx] = bestPiece;
 
           // Aperture profile: wide at surface, tapering with depth
           const depthFrac = Math.min(1.0, depthInside / Math.max(0.05, depthReach));
-          const localAperture = aperture * Math.pow(Math.max(0.0, 1.0 - depthFrac), 1.1) * (1.0 + warp1 * 0.3);
+          const localAperture = aperture * Math.pow(Math.max(0.0, 1.0 - depthFrac), 1.1) * (1.0 + warp1 * 0.25);
 
           let cleftCarve = 0.0;
           let maskVal = 0.0;
@@ -235,8 +389,7 @@ export class RockFractureEngine {
             stressVal = Math.max(0.0, 1.0 - fissureDist / (localAperture * 2.8));
           }
 
-          // 4. Sharp Planar Chipped Cuts:
-          // Localized half-space planar cuts slicing clean flat facets out of corners and faces
+          // Sharp Planar Chipped Cuts
           let maxChipCarve = 0.0;
           let maxChipMask = 0.0;
 
@@ -249,15 +402,10 @@ export class RockFractureEngine {
               const distFromCenter = Math.hypot(dx_, dy_, dz_);
 
               if (distFromCenter < chip.radius) {
-                // Distance to the sharp cutting plane
                 const planeDist = dx_ * chip.nx + dy_ * chip.ny + dz_ * chip.nz;
-
-                // If voxel is behind the cutting plane within chip depth, cut cleanly
                 if (planeDist < chip.depth) {
-                  // Sharp planar cut with steep boundary dropoff
-                  const radialFactor = Math.max(0.0, 1.0 - (distFromCenter / chip.radius) ** 4); // Flat center, steep crisp edge
+                  const radialFactor = Math.max(0.0, 1.0 - (distFromCenter / chip.radius) ** 4);
                   const planeCarve = (chip.depth - planeDist) * radialFactor;
-
                   if (planeCarve > maxChipCarve) {
                     maxChipCarve = planeCarve;
                     maxChipMask = radialFactor;
@@ -270,11 +418,10 @@ export class RockFractureEngine {
           // Piece explode displacement
           let explodeDisp = 0.0;
           if (explode > 0.0) {
-            const sDir = seeds[bestSeedIdx].dir;
-            explodeDisp = -(wx * sDir[0] + wy * sDir[1] + wz * sDir[2]) * explode * 0.3;
+            const expLen = Math.hypot(explodeDir[0], explodeDir[1], explodeDir[2]) || 1;
+            explodeDisp = -(wx * (explodeDir[0]/expLen) + wy * (explodeDir[1]/expLen) + wz * (explodeDir[2]/expLen)) * explode * 0.3;
           }
 
-          // Total carved distance = crack cleft + sharp planar chipped facet + explode
           const totalCarve = Math.max(cleftCarve, maxChipCarve) + explodeDisp;
           const fracturedDist = rockDist + totalCarve;
 
@@ -294,8 +441,8 @@ export class RockFractureEngine {
       chipMask: this.chipMask,
       pieceID: this.pieceID,
       fracturedRockSDF: this.fracturedRockSDF,
-      crackPlanesCount: seeds.length,
-      pieceCount: seeds.length,
+      crackPlanesCount: Math.max(voronoiSeeds.length, faultPlanes.length, delamPlanes.length, columnCenters.length, 4),
+      pieceCount: Math.max(voronoiSeeds.length, faultPlanes.length, delamPlanes.length, columnCenters.length, 4),
       chipCount: chips.length,
     };
   }

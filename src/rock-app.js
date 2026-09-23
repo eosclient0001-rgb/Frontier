@@ -1,8 +1,8 @@
 /**
  * Standalone Rock Crack & SDF Erosion Studio — Application Controller
  * Features the authoritative 4-Phase Geological Pipeline:
- * Phase 1: Base Rock Generator (Polyhedral SDF with Strata Bedding & Micro-Facets)
- * Phase 2: 3D Fracture Dynamics & Sharp Planar Chipped Cuts (Cleavage Faults & Stress Tensors)
+ * Phase 1: Base Rock Generator (Crisp Polyhedral Facets, Strata Bedding & Cliffs)
+ * Phase 2: 3D Fracture Dynamics & Sharp Planar Chipped Cuts (Tectonic Faults, Voronoi Cleavage, Radial Shocks)
  * Phase 3: Volumetric 3D SDF Crack Erosion (Frost Wedging & Lip Beveling)
  * Phase 4: Final Mesh LOD Extraction & PBR Material Shading
  */
@@ -23,21 +23,18 @@ export class RockStudioApp {
     this.state = {
       preset: "granite_boulder",
       seed: 1337,
+      fractureSeed: 42,
       // Base Rock params
       facets: 14,
-      baseRoundness: 0.35,
-      noiseAmp: 0.08,
-      noiseFreq: 0.75,
-      microGrainAmp: 0.025,
-      microGrainFreq: 6.5,
-      pockmarkAmp: 0.015,
-      pockmarkScale: 4.2,
-      weatheringCrust: 0.4,
+      baseRoundness: 0.20,
+      noiseAmp: 0.03,
+      noiseFreq: 0.8,
+      microGrainAmp: 0.015,
       crystalSparkle: 0.45,
-      strataAmp: 0.02,
-      strataFreq: 1.2,
+      strataAmp: 0.0,
+      strataFreq: 1.5,
       strataDip: 15,
-      rockHardness: 1.4,
+      rockHardness: 1.5,
       // Fracture & Pieces params
       fractureType: "voronoi_cleavage",
       crackDensity: 0.6,
@@ -45,7 +42,7 @@ export class RockStudioApp {
       depthReach: 0.8,
       branching: 0.6,
       jaggedness: 0.45,
-      explode: 0.0, // Broken piece separation
+      explode: 0.0,
       // Sharp Planar Chipped Cuts & Spall Facets
       chipDensity: 0.55,
       chipDepth: 0.06,
@@ -60,7 +57,7 @@ export class RockStudioApp {
       // Shading & Mineral params
       mineral: "granite",
       baseColor: "#827e7a",
-      crackColor: "#322b27",
+      crackColor: "#221d1a",
       oxidationColor: "#9c603a",
     };
 
@@ -123,31 +120,65 @@ export class RockStudioApp {
       });
     }
 
-    // Populate dropdowns
-    const presetSelect = document.getElementById("rock-preset-select");
-    if (presetSelect && presetSelect.options.length === 0) {
+    // Populate Rock Archetype dropdowns
+    const populatePresetDropdown = (sel) => {
+      if (!sel) return;
+      sel.innerHTML = "";
       Object.entries(ROCK_PRESETS).forEach(([key, p]) => {
         const opt = document.createElement("option");
         opt.value = key;
-        opt.textContent = p.name;
+        opt.textContent = `${p.category ? `[${p.category}] ` : ""}${p.name}`;
         if (key === this.state.preset) opt.selected = true;
-        presetSelect.appendChild(opt);
+        sel.appendChild(opt);
       });
-    }
+    };
 
-    const fracSelect = document.getElementById("fracture-type-select");
-    if (fracSelect && fracSelect.options.length === 0) {
+    const topPresetSelect = document.getElementById("rock-preset-select");
+    const inspPresetSelect = document.getElementById("inspector-rock-preset");
+    populatePresetDropdown(topPresetSelect);
+    populatePresetDropdown(inspPresetSelect);
+
+    const onPresetChanged = (val) => {
+      if (topPresetSelect) topPresetSelect.value = val;
+      if (inspPresetSelect) inspPresetSelect.value = val;
+      this.applyPreset(val);
+    };
+
+    if (topPresetSelect) topPresetSelect.addEventListener("change", (e) => onPresetChanged(e.target.value));
+    if (inspPresetSelect) inspPresetSelect.addEventListener("change", (e) => onPresetChanged(e.target.value));
+
+    // Populate Fracture Types dropdowns
+    const populateFractureDropdown = (sel) => {
+      if (!sel) return;
+      sel.innerHTML = "";
       Object.entries(FRACTURE_TYPES).forEach(([key, f]) => {
         const opt = document.createElement("option");
         opt.value = key;
         opt.textContent = f.name;
         if (key === this.state.fractureType) opt.selected = true;
-        fracSelect.appendChild(opt);
+        sel.appendChild(opt);
       });
-    }
+    };
 
+    const topFracSelect = document.getElementById("fracture-type-select");
+    const inspFracSelect = document.getElementById("inspector-fracture-type");
+    populateFractureDropdown(topFracSelect);
+    populateFractureDropdown(inspFracSelect);
+
+    const onFractureChanged = (val) => {
+      this.state.fractureType = val;
+      if (topFracSelect) topFracSelect.value = val;
+      if (inspFracSelect) inspFracSelect.value = val;
+      this.runPipeline();
+    };
+
+    if (topFracSelect) topFracSelect.addEventListener("change", (e) => onFractureChanged(e.target.value));
+    if (inspFracSelect) inspFracSelect.addEventListener("change", (e) => onFractureChanged(e.target.value));
+
+    // Populate Mineral dropdown
     const mineralSelect = document.getElementById("mineral-preset-select");
-    if (mineralSelect && mineralSelect.options.length === 0) {
+    if (mineralSelect) {
+      mineralSelect.innerHTML = "";
       Object.entries(MINERAL_PALETTES).forEach(([key, m]) => {
         const opt = document.createElement("option");
         opt.value = key;
@@ -155,23 +186,6 @@ export class RockStudioApp {
         if (key === this.state.mineral) opt.selected = true;
         mineralSelect.appendChild(opt);
       });
-    }
-
-    // Dropdown change listeners
-    if (presetSelect) {
-      presetSelect.addEventListener("change", (e) => {
-        this.applyPreset(e.target.value);
-      });
-    }
-
-    if (fracSelect) {
-      fracSelect.addEventListener("change", (e) => {
-        this.state.fractureType = e.target.value;
-        this.runPipeline();
-      });
-    }
-
-    if (mineralSelect) {
       mineralSelect.addEventListener("change", (e) => {
         this.state.mineral = e.target.value;
         const pal = MINERAL_PALETTES[e.target.value];
@@ -217,9 +231,9 @@ export class RockStudioApp {
     this.bindSlider("slider-strata-amp", "strataAmp", (v) => parseFloat(v), "val-strata-amp");
     this.bindSlider("slider-strata-dip", "strataDip", (v) => parseFloat(v), "val-strata-dip", "°");
 
+    this.bindSlider("slider-fracture-seed", "fractureSeed", (v) => parseInt(v), "val-fracture-seed");
     this.bindSlider("slider-crack-density", "crackDensity", (v) => parseFloat(v), "val-crack-density");
     this.bindSlider("slider-aperture", "aperture", (v) => parseFloat(v), "val-aperture", "m");
-    this.bindSlider("slider-branching", "branching", (v) => parseFloat(v), "val-branching");
     this.bindSlider("slider-jaggedness", "jaggedness", (v) => parseFloat(v), "val-jaggedness");
     this.bindSlider("slider-explode", "explode", (v) => parseFloat(v), "val-explode", "x");
 
@@ -234,11 +248,22 @@ export class RockStudioApp {
     this.bindSlider("slider-sediment", "sedimentFill", (v) => parseFloat(v), "val-sediment");
     this.bindSlider("slider-erosion-iter", "iterations", (v) => parseInt(v), "val-erosion-iter");
 
-    // Geological Rock Surface Details sliders
+    // Micro surface detail
     this.bindSlider("slider-micro-grain", "microGrainAmp", (v) => parseFloat(v), "val-micro-grain", "m");
-    this.bindSlider("slider-pockmark", "pockmarkAmp", (v) => parseFloat(v), "val-pockmark", "m");
-    this.bindSlider("slider-crust", "weatheringCrust", (v) => parseFloat(v), "val-crust", "k");
     this.bindSlider("slider-sparkle", "crystalSparkle", (v) => parseFloat(v), "val-sparkle", "gl");
+
+    // Randomize Fracture button
+    const randFracBtn = document.getElementById("btn-randomize-fracture");
+    if (randFracBtn) {
+      randFracBtn.addEventListener("click", () => {
+        this.state.fractureSeed = Math.floor(Math.random() * 100) + 1;
+        const sSeed = document.getElementById("slider-fracture-seed");
+        const lSeed = document.getElementById("val-fracture-seed");
+        if (sSeed) sSeed.value = this.state.fractureSeed;
+        if (lSeed) lSeed.textContent = `${this.state.fractureSeed}`;
+        this.runPipeline();
+      });
+    }
 
     // Mesh LOD selection
     const lodButtons = document.querySelectorAll(".lod-btn");
@@ -311,11 +336,6 @@ export class RockStudioApp {
       });
     }
 
-    const recomputeBtn = document.getElementById("btn-recompute");
-    if (recomputeBtn) {
-      recomputeBtn.addEventListener("click", () => this.runPipeline());
-    }
-
     // Exporters
     const exportObjBtn = document.getElementById("btn-export-obj");
     if (exportObjBtn) {
@@ -342,18 +362,14 @@ export class RockStudioApp {
 
     this.state.preset = presetKey;
     this.state.facets = p.facets || 14;
-    this.state.baseRoundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.35;
-    this.state.noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.08;
-    this.state.noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.75;
-    this.state.microGrainAmp = p.microGrainAmp !== undefined ? p.microGrainAmp : 0.025;
-    this.state.microGrainFreq = p.microGrainFreq || 6.5;
-    this.state.pockmarkAmp = p.pockmarkAmp !== undefined ? p.pockmarkAmp : 0.015;
-    this.state.pockmarkScale = p.pockmarkScale || 4.2;
-    this.state.weatheringCrust = p.weatheringCrust !== undefined ? p.weatheringCrust : 0.4;
-    this.state.strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.02;
-    this.state.strataFreq = p.strataFreq || 1.2;
+    this.state.baseRoundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.20;
+    this.state.noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.03;
+    this.state.noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.8;
+    this.state.microGrainAmp = p.microGrainAmp !== undefined ? p.microGrainAmp : 0.015;
+    this.state.strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.0;
+    this.state.strataFreq = p.strataFreq || 1.5;
     this.state.strataDip = p.strataDip || 15;
-    this.state.rockHardness = p.hardness || 1.4;
+    this.state.rockHardness = p.hardness || 1.5;
     this.state.mineral = p.mineral || "granite";
 
     const pal = MINERAL_PALETTES[this.state.mineral] || MINERAL_PALETTES.granite;
@@ -379,9 +395,9 @@ export class RockStudioApp {
     setVal("slider-strata-amp", this.state.strataAmp, "val-strata-amp");
     setVal("slider-strata-dip", this.state.strataDip, "val-strata-dip", "°");
 
+    setVal("slider-fracture-seed", this.state.fractureSeed, "val-fracture-seed");
     setVal("slider-crack-density", this.state.crackDensity, "val-crack-density");
     setVal("slider-aperture", this.state.aperture, "val-aperture", "m");
-    setVal("slider-branching", this.state.branching, "val-branching");
     setVal("slider-jaggedness", this.state.jaggedness, "val-jaggedness");
     setVal("slider-explode", this.state.explode || 0.0, "val-explode", "x");
 
@@ -396,12 +412,17 @@ export class RockStudioApp {
     setVal("slider-erosion-iter", this.state.iterations, "val-erosion-iter");
 
     setVal("slider-micro-grain", this.state.microGrainAmp, "val-micro-grain", "m");
-    setVal("slider-pockmark", this.state.pockmarkAmp, "val-pockmark", "m");
-    setVal("slider-crust", this.state.weatheringCrust, "val-crust", "k");
     setVal("slider-sparkle", this.state.crystalSparkle, "val-sparkle", "gl");
 
-    const presetSel = document.getElementById("rock-preset-select");
-    if (presetSel) presetSel.value = this.state.preset;
+    const topPres = document.getElementById("rock-preset-select");
+    const inspPres = document.getElementById("inspector-rock-preset");
+    if (topPres) topPres.value = this.state.preset;
+    if (inspPres) inspPres.value = this.state.preset;
+
+    const topFrac = document.getElementById("fracture-type-select");
+    const inspFrac = document.getElementById("inspector-fracture-type");
+    if (topFrac) topFrac.value = this.state.fractureType;
+    if (inspFrac) inspFrac.value = this.state.fractureType;
 
     const minSel = document.getElementById("mineral-preset-select");
     if (minSel) minSel.value = this.state.mineral;
@@ -445,7 +466,6 @@ export class RockStudioApp {
     const nextBtn = document.getElementById("btn-next-phase");
     if (nextBtn) nextBtn.disabled = this.currentPhase === 4;
 
-    // Display the corresponding stage in 3D viewport
     this.displayCurrentPhase();
   }
 
@@ -454,20 +474,18 @@ export class RockStudioApp {
    */
   runPipeline() {
     const t0 = performance.now();
+    const currentPreset = ROCK_PRESETS[this.state.preset] || ROCK_PRESETS.granite_boulder;
 
     // Step 1: Base Rock SDF
     const baseRockResult = this.rockGen.generate({
       seed: this.state.seed,
-      shapeType: ROCK_PRESETS[this.state.preset]?.shapeType || "polyhedral",
+      shapeType: currentPreset.shapeType || "polyhedral",
+      asymmetry: currentPreset.asymmetry || [1, 1, 1],
       facets: this.state.facets,
       baseRoundness: this.state.baseRoundness,
       noiseAmp: this.state.noiseAmp,
       noiseFreq: this.state.noiseFreq,
       microGrainAmp: this.state.microGrainAmp,
-      microGrainFreq: this.state.microGrainFreq || 6.5,
-      pockmarkAmp: this.state.pockmarkAmp,
-      pockmarkScale: this.state.pockmarkScale || 4.2,
-      weatheringCrust: this.state.weatheringCrust,
       strataAmp: this.state.strataAmp,
       strataFreq: this.state.strataFreq,
       strataDip: this.state.strataDip,
@@ -476,7 +494,7 @@ export class RockStudioApp {
 
     // Step 2: 3D Fracture Dynamics & Sharp Planar Chipped Cuts
     const fractureResult = this.fractureEngine.generateFracture(baseRockResult.sdf, {
-      seed: this.state.seed + 101,
+      seed: this.state.fractureSeed * 7919 + 101,
       fractureType: this.state.fractureType,
       crackDensity: this.state.crackDensity,
       aperture: this.state.aperture,
@@ -537,15 +555,15 @@ export class RockStudioApp {
     switch (this.currentPhase) {
       case 1: // Phase 1: Base Rock Only
         sdfToExtract = baseRock.sdf;
-        defaultViewMode = 0; // PBR Shaded
-        if (statusText) statusText.textContent = "Phase 1/4: Base Rock Geometry (Clean polyhedral form & strata)";
+        defaultViewMode = 0;
+        if (statusText) statusText.textContent = `Phase 1/4: Base Rock (${ROCK_PRESETS[this.state.preset]?.name || "Faceted"})`;
         break;
 
       case 2: // Phase 2: Fracture Cracks & Sharp Chipped Cuts
         sdfToExtract = fracture.fracturedRockSDF;
         crackMaskAttr = fracture.crackMask;
-        defaultViewMode = 1; // Glowing crack & stress lines
-        if (statusText) statusText.textContent = `Phase 2/4: 3D Fracture Dynamics (${fracture.pieceCount} pieces, ${fracture.chipCount} sharp chips)`;
+        defaultViewMode = 1;
+        if (statusText) statusText.textContent = `Phase 2/4: 3D Fracture (${FRACTURE_TYPES[this.state.fractureType]?.name || "Cleavage"}, ${fracture.chipCount} sharp chips)`;
         break;
 
       case 3: // Phase 3: SDF Crack Erosion
@@ -554,8 +572,8 @@ export class RockStudioApp {
         erosionDepthAttr = erosion.erosionDepth;
         sedimentAttr = erosion.cavitySediment;
         oxidationAttr = erosion.oxidationHalo;
-        defaultViewMode = 2; // SDF Erosion heatmap
-        if (statusText) statusText.textContent = "Phase 3/4: SDF Crack Erosion (Frost wedging & acute beveling)";
+        defaultViewMode = 2;
+        if (statusText) statusText.textContent = "Phase 3/4: SDF Crack Erosion (Gelifraction & acute beveling)";
         break;
 
       case 4: // Phase 4: Final Mesh LOD & PBR Shading
@@ -565,8 +583,8 @@ export class RockStudioApp {
         erosionDepthAttr = erosion.erosionDepth;
         sedimentAttr = erosion.cavitySediment;
         oxidationAttr = erosion.oxidationHalo;
-        defaultViewMode = 0; // Realistic PBR
-        if (statusText) statusText.textContent = "Phase 4/4: Final Weathered Rock & Mesh LOD (Ready for export)";
+        defaultViewMode = 0;
+        if (statusText) statusText.textContent = "Phase 4/4: Final Weathered Rock & PBR Mesh (Ready for export)";
         break;
     }
 
@@ -606,7 +624,7 @@ export class RockStudioApp {
       oxidationColor: this.state.oxidationColor,
     });
     this.viewport.setSurfaceDetails({
-      microGrain: this.state.microGrainAmp * 25.0,
+      microGrain: this.state.microGrainAmp * 15.0,
       crystalSparkle: this.state.crystalSparkle,
     });
 

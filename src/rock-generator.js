@@ -1,159 +1,205 @@
 /**
- * Clean Procedural 3D Rock Generator & SDF Field Synthesizer
- * Produces solid, well-proportioned 3D rock volumes with true Euclidean distance fields:
- * - Smooth polyhedral n-gon facet clipping
- * - Smooth organic simplex noise displacement
- * - Subtle geological strata bedding (without artificial stepping/corrugation)
- * - True unit gradient magnitude |∇φ| ≈ 1 everywhere
+ * Procedural 3D Rock Generator & SDF Field Synthesizer
+ * 
+ * Features crisp, geologically authentic rock archetypes:
+ * 1. Granite Cleavage Boulder (angular polyhedral crystalline block)
+ * 2. Vertical Cliff Monolith (sheer vertical walls, overhangs, stepped ledges)
+ * 3. Sedimentary Sandstone Slab (horizontal stratified flagstone tablet)
+ * 4. Hexagonal Columnar Basalt (prismatic volcanic joint column)
+ * 5. Sharp Scree Stone / Small Gravel (angular jagged fragments)
+ * 6. Smooth River Pebble / Cobble (water-worn rounded stone with beveled facets)
+ * 7. Alpine Mountain Spire / Crag (sharp towering pinnacle with razor arêtes)
+ * 8. Desert Ventifact / Dreikanter (aerodynamic keel facets)
+ * 9. Crystal Geode Cluster (sharp geometric quartz/calcite terminations)
  */
 
 import { NoiseGenerator, createPRNG } from "./math-noise.js";
 
 export const ROCK_PRESETS = {
   granite_boulder: {
+    id: "granite_boulder",
     name: "Granite Cleavage Boulder",
-    description: "Solid plutonic block with angular polyhedral n-gon facets and crystalline jointing",
+    category: "Boulders",
+    description: "Solid plutonic block with crisp planar cleavage facets and crystalline jointing",
     shapeType: "polyhedral",
     facets: 14,
-    asymmetry: [1.2, 0.95, 1.1],
-    baseRoundness: 0.35,
-    noiseAmp: 0.08,
-    noiseFreq: 0.75,
-    microGrainAmp: 0.025,
-    microGrainFreq: 6.5,
-    pockmarkAmp: 0.015,
-    pockmarkScale: 4.2,
-    weatheringCrust: 0.4,
-    strataAmp: 0.02,
-    strataFreq: 1.2,
+    asymmetry: [1.15, 0.95, 1.05],
+    baseRoundness: 0.20,
+    noiseAmp: 0.03,
+    noiseFreq: 0.8,
+    facetSharpness: 0.95,
+    microGrainAmp: 0.015,
+    pockmarkAmp: 0.005,
+    strataAmp: 0.0,
+    strataFreq: 1.0,
     strataDip: 15,
     mineral: "granite",
-    hardness: 1.4,
+    hardness: 1.5,
+  },
+  cliff_monolith: {
+    id: "cliff_monolith",
+    name: "Vertical Cliff Face / Monolith",
+    category: "Cliffs",
+    description: "Towering vertical shear rock face with planar joint cleavage and stepped ledges",
+    shapeType: "cliff",
+    facets: 18,
+    asymmetry: [1.3, 1.6, 0.85],
+    baseRoundness: 0.05,
+    noiseAmp: 0.02,
+    noiseFreq: 0.6,
+    facetSharpness: 1.0,
+    microGrainAmp: 0.01,
+    pockmarkAmp: 0.008,
+    strataAmp: 0.035,
+    strataFreq: 2.2,
+    strataDip: 4,
+    mineral: "slate",
+    hardness: 1.6,
   },
   sandstone_slab: {
-    name: "Sedimentary Sandstone Slab",
-    description: "Layered sedimentary rock with prominent horizontal bedding planes and porous grain",
+    id: "sandstone_slab",
+    name: "Sedimentary Flagstone Slab",
+    category: "Slabs",
+    description: "Flat tabular sedimentary rock with crisp parallel bedding planes and stepped edges",
     shapeType: "slab",
-    facets: 10,
-    asymmetry: [1.35, 0.75, 1.15],
-    baseRoundness: 0.30,
-    noiseAmp: 0.06,
+    facets: 12,
+    asymmetry: [1.6, 0.45, 1.4],
+    baseRoundness: 0.10,
+    noiseAmp: 0.015,
     noiseFreq: 0.7,
-    microGrainAmp: 0.035,
-    microGrainFreq: 8.0,
-    pockmarkAmp: 0.03,
-    pockmarkScale: 5.5,
-    weatheringCrust: 0.6,
-    strataAmp: 0.04,
-    strataFreq: 1.5,
-    strataDip: 12,
+    facetSharpness: 0.95,
+    microGrainAmp: 0.02,
+    pockmarkAmp: 0.015,
+    strataAmp: 0.05,
+    strataFreq: 3.5,
+    strataDip: 0,
     mineral: "sandstone",
     hardness: 0.9,
   },
+  columnar_basalt: {
+    id: "columnar_basalt",
+    name: "Hexagonal Columnar Basalt",
+    category: "Volcanic",
+    description: "Prismatic hexagonal volcanic cooling column with crisp vertical planar joints",
+    shapeType: "prism",
+    facets: 6,
+    asymmetry: [0.95, 1.55, 0.95],
+    baseRoundness: 0.08,
+    noiseAmp: 0.01,
+    noiseFreq: 0.9,
+    facetSharpness: 1.0,
+    microGrainAmp: 0.012,
+    pockmarkAmp: 0.02,
+    strataAmp: 0.01,
+    strataFreq: 1.5,
+    strataDip: 0,
+    mineral: "basalt",
+    hardness: 1.7,
+  },
+  small_stone: {
+    id: "small_stone",
+    name: "Sharp Scree Rock / Small Stone",
+    category: "Stones",
+    description: "Jagged small gravel stone with sharp irregular cleavage facets and chipped edges",
+    shapeType: "scree",
+    facets: 16,
+    asymmetry: [1.05, 0.8, 1.2],
+    baseRoundness: 0.12,
+    noiseAmp: 0.025,
+    noiseFreq: 1.2,
+    facetSharpness: 0.98,
+    microGrainAmp: 0.01,
+    pockmarkAmp: 0.005,
+    strataAmp: 0.0,
+    strataFreq: 1.0,
+    strataDip: 25,
+    mineral: "slate",
+    hardness: 1.4,
+  },
   river_cobble: {
-    name: "Weathered River Tor / Cobble",
-    description: "Water-smoothed rounded boulder with beveled polygonal facet edges and faint polish",
+    id: "river_cobble",
+    name: "Water-Worn River Cobble",
+    category: "Stones",
+    description: "Smooth, naturally rounded stream pebble with softly beveled facet outlines",
     shapeType: "ellipsoid",
     facets: 8,
-    asymmetry: [1.2, 0.9, 1.05],
+    asymmetry: [1.25, 0.85, 1.1],
     baseRoundness: 0.75,
-    noiseAmp: 0.04,
-    noiseFreq: 0.8,
-    microGrainAmp: 0.012,
-    microGrainFreq: 5.0,
-    pockmarkAmp: 0.008,
-    pockmarkScale: 3.0,
-    weatheringCrust: 0.2,
-    strataAmp: 0.01,
+    noiseAmp: 0.015,
+    noiseFreq: 0.75,
+    facetSharpness: 0.35,
+    microGrainAmp: 0.008,
+    pockmarkAmp: 0.003,
+    strataAmp: 0.005,
     strataFreq: 1.0,
     strataDip: 0,
     mineral: "quartzite",
     hardness: 1.6,
   },
-  columnar_basalt: {
-    name: "Columnar Basalt Joint",
-    description: "Hexagonal prismatic volcanic cooling column with vesicular micro-pores",
-    shapeType: "prism",
-    facets: 6,
-    asymmetry: [0.9, 1.45, 0.9],
-    baseRoundness: 0.2,
-    noiseAmp: 0.05,
-    noiseFreq: 0.9,
-    microGrainAmp: 0.02,
-    microGrainFreq: 7.0,
-    pockmarkAmp: 0.035,
-    pockmarkScale: 6.0,
-    weatheringCrust: 0.5,
-    strataAmp: 0.02,
-    strataFreq: 1.4,
-    strataDip: 5,
-    mineral: "basalt",
+  mountain_spire: {
+    id: "mountain_spire",
+    name: "Alpine Mountain Spire / Crag",
+    category: "Cliffs",
+    description: "Towering mountain crag needle with steep razor-sharp arêtes and knife-edge crests",
+    shapeType: "spire",
+    facets: 14,
+    asymmetry: [0.85, 1.8, 0.85],
+    baseRoundness: 0.05,
+    noiseAmp: 0.02,
+    noiseFreq: 0.7,
+    facetSharpness: 1.0,
+    microGrainAmp: 0.015,
+    pockmarkAmp: 0.005,
+    strataAmp: 0.025,
+    strataFreq: 2.0,
+    strataDip: 45,
+    mineral: "slate",
     hardness: 1.5,
   },
-  cliff_shard: {
-    name: "Jagged Monolith Shard",
-    description: "High-energy rockfall monolith with sharp tectonic cleavage planes and crisp micro-facets",
-    shapeType: "shard",
-    facets: 16,
-    asymmetry: [1.1, 1.35, 0.9],
-    baseRoundness: 0.15,
-    noiseAmp: 0.1,
-    noiseFreq: 0.8,
-    microGrainAmp: 0.03,
-    microGrainFreq: 5.5,
-    pockmarkAmp: 0.01,
-    pockmarkScale: 3.5,
-    weatheringCrust: 0.3,
-    strataAmp: 0.03,
-    strataFreq: 1.5,
-    strataDip: 35,
-    mineral: "slate",
-    hardness: 1.3,
-  },
   desert_ventifact: {
-    name: "Desert Ventifact",
-    description: "Wind-sculpted dreikanter with aerodynamic keel facets, fluted polish, and etched grooves",
+    id: "desert_ventifact",
+    name: "Desert Ventifact (Dreikanter)",
+    category: "Boulders",
+    description: "Wind-sculpted aerodynamic rock with sharp keel facets and polished fluted slopes",
     shapeType: "ventifact",
     facets: 10,
-    asymmetry: [1.25, 0.85, 1.1],
-    baseRoundness: 0.4,
-    noiseAmp: 0.06,
-    noiseFreq: 0.75,
-    microGrainAmp: 0.018,
-    microGrainFreq: 9.0,
-    pockmarkAmp: 0.02,
-    pockmarkScale: 4.0,
-    weatheringCrust: 0.7,
-    strataAmp: 0.02,
+    asymmetry: [1.3, 0.75, 1.15],
+    baseRoundness: 0.18,
+    noiseAmp: 0.015,
+    noiseFreq: 0.8,
+    facetSharpness: 0.95,
+    microGrainAmp: 0.01,
+    pockmarkAmp: 0.01,
+    strataAmp: 0.015,
     strataFreq: 1.2,
-    strataDip: 10,
+    strataDip: 12,
     mineral: "red_sandstone",
-    hardness: 1.1,
+    hardness: 1.2,
   },
-  meteorite: {
-    name: "Impact Meteorite (Regmaglypts)",
-    description: "Extraterrestrial chondrite with thumbprint ablation cavities and fusion crust",
-    shapeType: "meteorite",
-    facets: 12,
-    asymmetry: [1.05, 0.95, 1.1],
-    baseRoundness: 0.5,
-    noiseAmp: 0.1,
+  crystal_cluster: {
+    id: "crystal_cluster",
+    name: "Faceted Quartz Crystal Cluster",
+    category: "Crystals",
+    description: "Geometric mineral crystal cluster with sharp prism faces and pyramidal terminations",
+    shapeType: "crystal",
+    facets: 18,
+    asymmetry: [0.9, 1.4, 0.9],
+    baseRoundness: 0.0,
+    noiseAmp: 0.0,
     noiseFreq: 1.0,
-    microGrainAmp: 0.022,
-    microGrainFreq: 6.0,
-    pockmarkAmp: 0.05,
-    pockmarkScale: 3.2,
-    weatheringCrust: 0.85,
+    facetSharpness: 1.0,
+    microGrainAmp: 0.005,
+    pockmarkAmp: 0.0,
     strataAmp: 0.0,
     strataFreq: 0.0,
     strataDip: 0,
-    mineral: "obsidian",
+    mineral: "quartzite",
     hardness: 1.8,
   },
 };
 
 // Smooth minimum for blending SDF shapes without sharp crease artifacts
-function smin(a, b, k = 0.15) {
+function smin(a, b, k = 0.08) {
   const h = Math.max(k - Math.abs(a - b), 0.0) / k;
   return Math.min(a, b) - h * h * k * 0.25;
 }
@@ -191,7 +237,7 @@ export class RockGenerator {
   }
 
   /**
-   * Generates a solid base rock signed distance field with clean Euclidean gradients
+   * Generates a solid, geologically authentic rock SDF with crisp planar facets
    */
   generate(params = {}) {
     const p = { ...ROCK_PRESETS.granite_boulder, ...params };
@@ -203,47 +249,125 @@ export class RockGenerator {
     const asymY = p.asymmetry ? p.asymmetry[1] : 0.95;
     const asymZ = p.asymmetry ? p.asymmetry[2] : 1.05;
 
-    const baseRadius = p.radius || 1.1;
+    const baseRadius = p.radius || 1.15;
     const numFacets = p.facets || 14;
-    const roundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.35;
-    const noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.08;
-    const noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.75;
-    const strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.02;
-    const strataFreq = p.strataFreq || 1.2;
-    const strataDipRad = ((p.strataDip || 15) * Math.PI) / 180;
+    const roundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.2;
+    const noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.03;
+    const noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.8;
+    const strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.0;
+    const strataFreq = p.strataFreq || 1.5;
+    const strataDipRad = ((p.strataDip || 0) * Math.PI) / 180;
+    const shapeType = p.shapeType || "polyhedral";
 
-    // Generate polyhedral clipping planes
+    // 1. Generate Sharp Planar Half-Spaces tailored to each geological archetype
     const planes = [];
-    if (p.shapeType === "prism") {
+
+    if (shapeType === "prism") {
+      // Hexagonal basalt column
       const sides = 6;
       for (let i = 0; i < sides; i++) {
-        const angle = (i * 2 * Math.PI) / sides + (rng() - 0.5) * 0.1;
-        const dist = baseRadius * 0.9;
+        const angle = (i * 2 * Math.PI) / sides + (rng() - 0.5) * 0.05;
+        const dist = baseRadius * 0.75 * (0.95 + rng() * 0.1);
         planes.push({
           nx: Math.cos(angle) / asymX,
-          ny: (rng() - 0.5) * 0.08,
+          ny: 0,
           nz: Math.sin(angle) / asymZ,
           d: dist,
         });
       }
-      planes.push({ nx: 0, ny: 1.0 / asymY, nz: 0, d: baseRadius * 1.25 });
-      planes.push({ nx: 0, ny: -1.0 / asymY, nz: 0, d: baseRadius * 1.25 });
+      // Top and bottom cross-joint planes with subtle tilt
+      planes.push({ nx: (rng() - 0.5) * 0.1, ny: 1.0 / asymY, nz: (rng() - 0.5) * 0.1, d: baseRadius * 1.25 });
+      planes.push({ nx: (rng() - 0.5) * 0.1, ny: -1.0 / asymY, nz: (rng() - 0.5) * 0.1, d: baseRadius * 1.25 });
+    } else if (shapeType === "cliff") {
+      // Vertical cliff face with prominent sheer front wall, stepped side ledges, and steep overhangs
+      planes.push({ nx: 0.98, ny: -0.15, nz: 0.05, d: baseRadius * 0.45 }); // Main vertical sheer face
+      planes.push({ nx: -0.9, ny: -0.1, nz: 0.0, d: baseRadius * 1.1 }); // Back wall
+      planes.push({ nx: 0.0, ny: 1.0 / asymY, nz: 0.0, d: baseRadius * 1.2 }); // Cliff summit plateau
+      planes.push({ nx: 0.0, ny: -1.0 / asymY, nz: 0.0, d: baseRadius * 1.3 }); // Cliff base
+
+      // Stepped side facets and angular cleavage corners
+      for (let i = 0; i < numFacets - 4; i++) {
+        const phi = Math.PI * (0.2 + 0.6 * (i / (numFacets - 4)));
+        const theta = (i * 1.8) + (rng() - 0.5) * 0.3;
+        let nx_ = Math.sin(phi) * Math.cos(theta) / asymX;
+        let ny_ = (Math.cos(phi) * 0.4) / asymY;
+        let nz_ = Math.sin(phi) * Math.sin(theta) / asymZ;
+        const len = Math.hypot(nx_, ny_, nz_) || 1;
+        planes.push({ nx: nx_ / len, ny: ny_ / len, nz: nz_ / len, d: baseRadius * (0.85 + rng() * 0.3) });
+      }
+    } else if (shapeType === "slab") {
+      // Flat sedimentary tablet
+      planes.push({ nx: 0, ny: 1.0 / asymY, nz: 0, d: baseRadius * 0.38 }); // Top bedding plane
+      planes.push({ nx: 0, ny: -1.0 / asymY, nz: 0, d: baseRadius * 0.38 }); // Bottom bedding plane
+      for (let i = 0; i < numFacets - 2; i++) {
+        const angle = (i * 2 * Math.PI) / (numFacets - 2) + (rng() - 0.5) * 0.2;
+        const dist = baseRadius * (1.1 + rng() * 0.25);
+        planes.push({
+          nx: Math.cos(angle) / asymX,
+          ny: (rng() - 0.5) * 0.15,
+          nz: Math.sin(angle) / asymZ,
+          d: dist,
+        });
+      }
+    } else if (shapeType === "spire") {
+      // Alpine mountain needle crag
+      const spireSides = 5;
+      for (let i = 0; i < spireSides; i++) {
+        const angle = (i * 2 * Math.PI) / spireSides;
+        planes.push({
+          nx: Math.cos(angle) / asymX,
+          ny: 0.45 / asymY, // Steep slope to peak
+          nz: Math.sin(angle) / asymZ,
+          d: baseRadius * 0.65,
+        });
+      }
+      planes.push({ nx: 0, ny: -1.0 / asymY, nz: 0, d: baseRadius * 1.35 });
+      for (let i = 0; i < numFacets - spireSides - 1; i++) {
+        const phi = Math.acos(1 - (2 * (i + 0.5)) / numFacets);
+        const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+        let nx_ = Math.sin(phi) * Math.cos(theta) / asymX;
+        let ny_ = Math.cos(phi) / asymY;
+        let nz_ = Math.sin(phi) * Math.sin(theta) / asymZ;
+        const len = Math.hypot(nx_, ny_, nz_) || 1;
+        planes.push({ nx: nx_ / len, ny: ny_ / len, nz: nz_ / len, d: baseRadius * (0.8 + rng() * 0.35) });
+      }
+    } else if (shapeType === "crystal") {
+      // Sharp geometric quartz crystal terminations
+      const crystalSides = 6;
+      for (let i = 0; i < crystalSides; i++) {
+        const angle = (i * 2 * Math.PI) / crystalSides;
+        planes.push({
+          nx: Math.cos(angle) / asymX,
+          ny: 0,
+          nz: Math.sin(angle) / asymZ,
+          d: baseRadius * 0.72,
+        });
+        // Pyramidal apex faces
+        planes.push({
+          nx: Math.cos(angle) / asymX,
+          ny: 0.95 / asymY,
+          nz: Math.sin(angle) / asymZ,
+          d: baseRadius * 0.98,
+        });
+      }
+      planes.push({ nx: 0, ny: -1.0 / asymY, nz: 0, d: baseRadius * 1.1 });
     } else {
+      // Standard Polyhedral Cleavage Facets (Golden Spiral distribution for crisp convex polyhedron)
       for (let i = 0; i < numFacets; i++) {
         const phi = Math.acos(1 - (2 * (i + 0.5)) / numFacets);
-        const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5) + rng() * 0.2;
+        const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5) + (rng() - 0.5) * 0.15;
 
-        let nxVal = (Math.sin(phi) * Math.cos(theta)) / asymX;
-        let nyVal = Math.cos(phi) / asymY;
-        let nzVal = (Math.sin(phi) * Math.sin(theta)) / asymZ;
+        let nx_ = (Math.sin(phi) * Math.cos(theta)) / asymX;
+        let ny_ = Math.cos(phi) / asymY;
+        let nz_ = (Math.sin(phi) * Math.sin(theta)) / asymZ;
 
-        const len = Math.hypot(nxVal, nyVal, nzVal) || 1.0;
-        nxVal /= len;
-        nyVal /= len;
-        nzVal /= len;
+        const len = Math.hypot(nx_, ny_, nz_) || 1.0;
+        nx_ /= len;
+        ny_ /= len;
+        nz_ /= len;
 
-        const dist = baseRadius * (0.92 + rng() * 0.22);
-        planes.push({ nx: nxVal, ny: nyVal, nz: nzVal, d: dist });
+        const dist = baseRadius * (0.9 + rng() * 0.22);
+        planes.push({ nx: nx_, ny: ny_, nz: nz_, d: dist });
       }
     }
 
@@ -256,7 +380,7 @@ export class RockGenerator {
           const idx = this.index(ix, iy, iz);
           const [wx, wy, wz] = this.voxelToCoord(ix, iy, iz);
 
-          // 1. Exact Polyhedral Facet Half-Spaces
+          // 1. Exact Convex Polyhedral Clipping Half-Spaces
           let distPoly = -100.0;
           for (let i = 0; i < planes.length; i++) {
             const pl = planes[i];
@@ -266,49 +390,52 @@ export class RockGenerator {
             }
           }
 
-          // 2. Base Ellipsoid Distance
+          // 2. Base Ellipsoid Bound
           const ex = wx / asymX;
           const ey = wy / asymY;
           const ez = wz / asymZ;
           const distEllipsoid = Math.hypot(ex, ey, ez) - baseRadius;
 
-          // Blend polyhedral facets with rounded boulder profile
-          const blendK = Math.max(0.01, roundness * 0.4);
-          let baseSDF = (1.0 - roundness) * distPoly + roundness * distEllipsoid;
-          if (roundness > 0.05 && roundness < 0.95) {
+          // Blend polyhedral facets with roundness
+          let baseSDF = distPoly;
+          if (roundness > 0.02) {
+            const blendK = Math.max(0.01, roundness * 0.35);
             baseSDF = smin(distPoly, distEllipsoid, blendK);
+            baseSDF = (1.0 - roundness) * baseSDF + roundness * distEllipsoid;
           }
 
-          // 3. Macro organic boulder displacement (continuous 3D simplex)
-          const n1 = noise.fBm3D(wx * noiseFreq, wy * noiseFreq, wz * noiseFreq, 3, 2.0, 0.5);
-          const macroDisplacement = (n1 - 0.5) * 2.0 * noiseAmp;
+          // 3. Crisp Geological Contouring (Anisotropic, subtle, NOT puffy cloud dough)
+          let displacement = 0.0;
+          if (noiseAmp > 0.001) {
+            // Subtle directional cleavage warps
+            const n1 = noise.noise3D(wx * noiseFreq, wy * noiseFreq * 0.5, wz * noiseFreq);
+            displacement = (n1 - 0.5) * noiseAmp;
+          }
 
-          // 4. Geological Rock Surface Details:
-          // A. Micro-grain crystalline texture (feldspar/quartz mineral granules)
-          const microGrainAmp = p.microGrainAmp !== undefined ? p.microGrainAmp : 0.025;
-          const microGrainFreq = p.microGrainFreq || 6.5;
-          const grainNoise = noise.noise3D(wx * microGrainFreq, wy * microGrainFreq, wz * microGrainFreq);
-          const microGrainDisp = (grainNoise - 0.5) * 2.0 * microGrainAmp;
+          // 4. Geological Strata Bedding Planes (Terraced / stepped horizontal ledges)
+          let strataDisplacement = 0.0;
+          let strataHardness = 1.0;
+          if (strataAmp > 0.001) {
+            const strataCoord = wy * cosDip + wz * sinDip;
+            const strataWave = Math.sin(strataCoord * strataFreq * Math.PI);
+            // Sharp planar step modulation for authentic geological strata ledges
+            const steppedStrata = Math.sign(strataWave) * Math.pow(Math.abs(strataWave), 0.4);
+            strataDisplacement = steppedStrata * strataAmp;
+            strataHardness = 1.0 + steppedStrata * 0.3;
+          }
 
-          // B. Weathering Pockmarks and Vesicular Cavities
-          const pockmarkAmp = p.pockmarkAmp !== undefined ? p.pockmarkAmp : 0.015;
-          const pockmarkScale = p.pockmarkScale || 4.2;
-          const pockNoise = noise.noise3D(wx * pockmarkScale + 12.3, wy * pockmarkScale + 8.7, wz * pockmarkScale + 5.1);
-          // Sharp hollow indentations when pockNoise drops below threshold
-          const pockmarkDisp = pockNoise < 0.35 ? ((0.35 - pockNoise) / 0.35) * pockmarkAmp : 0.0;
+          // 5. High-Frequency Micro-Grain Pitting
+          let microGrainDisp = 0.0;
+          const microGrainAmp = p.microGrainAmp || 0.0;
+          if (microGrainAmp > 0.001) {
+            const gFreq = 8.0;
+            const gNoise = noise.noise3D(wx * gFreq, wy * gFreq, wz * gFreq);
+            microGrainDisp = (gNoise - 0.5) * microGrainAmp;
+          }
 
-          // 5. Subtle strata variation (gentle, continuous, no terraced stepping)
-          const strataCoord = wy * cosDip + wz * sinDip;
-          const strataDisplacement = Math.sin(strataCoord * strataFreq * Math.PI) * strataAmp;
-          const strataHardness = 1.0 + Math.sin(strataCoord * strataFreq * Math.PI) * 0.25;
-
-          // 6. Weathering Exfoliation Crust differential hardness
-          const weatheringCrust = p.weatheringCrust !== undefined ? p.weatheringCrust : 0.4;
-          const crustFactor = Math.max(0.6, 1.0 - weatheringCrust * 0.3 * (grainNoise * 0.5 + 0.5));
-
-          const finalDist = baseSDF + macroDisplacement + microGrainDisp + pockmarkDisp + strataDisplacement;
+          const finalDist = baseSDF + displacement + strataDisplacement + microGrainDisp;
           this.sdf[idx] = finalDist;
-          this.hardness[idx] = Math.max(0.4, (p.hardness || 1.4) * strataHardness * crustFactor);
+          this.hardness[idx] = Math.max(0.4, (p.hardness || 1.4) * strataHardness);
         }
       }
     }

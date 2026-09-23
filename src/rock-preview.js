@@ -176,20 +176,20 @@ void main() {
     if (dist > 0.0) discard;
   }
 
-  // 1. Procedural 3D Geological Surface Micro-Detail
-  float grainNoise1 = noise3(vWorldPos * 36.0);
-  float grainNoise2 = noise3(vWorldPos * 84.0);
-  float mineralFleck = noise3(vWorldPos * 140.0);
-  float microDetail = (grainNoise1 * 0.6 + grainNoise2 * 0.4);
-
-  // Normal micro-perturbation along world tangents
+  // 1. Crisp Surface Geometry & Subtle Crystalline Grain
   vec3 N0 = normalize(vNormal);
+  
+  // High-frequency mineral crystal flecks (subtle color & specular glint, NOT puffy normal bump)
+  float mineralFleck = noise3(vWorldPos * 96.0);
+  float grainNoise = noise3(vWorldPos * 48.0);
+
+  // Very subtle tactile surface normal grain (sub-millimeter scale, preserves flat facets)
   vec3 grainGrad = vec3(
-    noise3(vWorldPos * 48.0 + vec3(0.05, 0, 0)) - noise3(vWorldPos * 48.0 - vec3(0.05, 0, 0)),
-    noise3(vWorldPos * 48.0 + vec3(0, 0.05, 0)) - noise3(vWorldPos * 48.0 - vec3(0, 0.05, 0)),
-    noise3(vWorldPos * 48.0 + vec3(0, 0, 0.05)) - noise3(vWorldPos * 48.0 - vec3(0, 0, 0.05))
+    noise3(vWorldPos * 64.0 + vec3(0.03, 0, 0)) - noise3(vWorldPos * 64.0 - vec3(0.03, 0, 0)),
+    noise3(vWorldPos * 64.0 + vec3(0, 0.03, 0)) - noise3(vWorldPos * 64.0 - vec3(0, 0.03, 0)),
+    noise3(vWorldPos * 64.0 + vec3(0, 0, 0.03)) - noise3(vWorldPos * 64.0 - vec3(0, 0, 0.03))
   );
-  vec3 N = normalize(N0 + grainGrad * (uMicroGrainStrength * 0.22));
+  vec3 N = normalize(N0 + grainGrad * (uMicroGrainStrength * 0.04));
 
   vec3 L = normalize(uLightDir);
   vec3 V = normalize(uCameraPos - vWorldPos);
@@ -213,12 +213,9 @@ void main() {
   if (uViewMode == 0) {
     vec3 col = uBaseColor;
 
-    // Mineral grain color variation (dark biotite mica vs pale quartz/feldspar)
-    float fleckTone = (mineralFleck - 0.5) * 0.28 * uMicroGrainStrength;
+    // Subtle granite mineral grain flecks (dark mica biotite vs pale quartz)
+    float fleckTone = (mineralFleck - 0.5) * 0.12 * uMicroGrainStrength;
     col = clamp(col + vec3(fleckTone), 0.0, 1.0);
-
-    // Subtle granite micro-grain modulation
-    col *= 0.9 + microDetail * 0.2;
 
     // Oxidation patina halo along crack lips
     col = mix(col, uOxidationColor, clamp(vOxidation * 1.4, 0.0, 0.85));

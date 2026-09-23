@@ -266,7 +266,7 @@
                 <span>1. Base Rock Geometry</span>
                 <span class="step-badge">Polyhedral</span>
               </div>
-              <div class="step-desc">Polyhedral facet clipping planes + 3D simplex displacement + strata dip.</div>
+              <div class="step-desc">Polyhedral facet clipping planes + strata bedding dip. Flat crisp cuts.</div>
             </div>
 
             <div class="step-card" id="card-step-2" title="Click to view fracture cracks and sharp chipped cuts">
@@ -274,7 +274,7 @@
                 <span>2. 3D Fracture & Chips</span>
                 <span class="step-badge">Fracture</span>
               </div>
-              <div class="step-desc">Voronoi cleavage, sharp planar chipped cuts, and Griffith stress tensors.</div>
+              <div class="step-desc">Voronoi cleavage, tectonic shear faults, radial shocks, and sharp planar cuts.</div>
             </div>
 
             <div class="step-card" id="card-step-3" title="Click to view SDF erosion and gelifraction">
@@ -401,7 +401,12 @@
           <div class="sec-group">
             <div class="sec-title">
               <span>1. Base Rock Geometry</span>
-              <button id="btn-randomize-seed" class="btn ghost small" style="padding: 0 6px;">🎲 Randomize</button>
+              <button id="btn-randomize-seed" class="btn ghost small" style="padding: 0 6px;">🎲 Randomize Rock</button>
+            </div>
+
+            <div class="crow mb-2">
+              <span class="clabel">Archetype</span>
+              <select id="inspector-rock-preset" class="select-field" style="width: 180px;"></select>
             </div>
 
             <div class="crow">
@@ -415,16 +420,16 @@
             <div class="crow">
               <span class="clabel">Base Roundness</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-roundness" class="slider" min="0.0" max="1.0" step="0.05" value="0.25">
-                <div class="vpill"><div class="num" id="val-roundness">0.25</div><div class="unit">r</div></div>
+                <input type="range" id="slider-roundness" class="slider" min="0.0" max="1.0" step="0.05" value="0.20">
+                <div class="vpill"><div class="num" id="val-roundness">0.20</div><div class="unit">r</div></div>
               </div>
             </div>
 
             <div class="crow">
-              <span class="clabel">3D Simplex Displacement</span>
+              <span class="clabel">Cleavage Warp</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-noise-amp" class="slider" min="0.0" max="0.4" step="0.01" value="0.12">
-                <div class="vpill"><div class="num" id="val-noise-amp">0.12</div><div class="unit">m</div></div>
+                <input type="range" id="slider-noise-amp" class="slider" min="0.0" max="0.10" step="0.005" value="0.03">
+                <div class="vpill"><div class="num" id="val-noise-amp">0.03</div><div class="unit">m</div></div>
               </div>
             </div>
 
@@ -437,17 +442,33 @@
             </div>
 
             <div class="crow">
-              <span class="clabel">Strata Layer Amp</span>
+              <span class="clabel">Strata Ledges Amp</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-strata-amp" class="slider" min="0.0" max="0.3" step="0.01" value="0.04">
-                <div class="vpill"><div class="num" id="val-strata-amp">0.04</div><div class="unit">m</div></div>
+                <input type="range" id="slider-strata-amp" class="slider" min="0.0" max="0.15" step="0.005" value="0.0">
+                <div class="vpill"><div class="num" id="val-strata-amp">0.00</div><div class="unit">m</div></div>
               </div>
             </div>
           </div>
 
           <!-- 2. 3D Fracture Dynamics -->
           <div class="sec-group">
-            <div class="sec-title">2. 3D Fracture Dynamics</div>
+            <div class="sec-title">
+              <span>2. 3D Fracture Dynamics</span>
+              <button id="btn-randomize-fracture" class="btn ghost small" style="padding: 0 6px;">⚡ Randomize Crack</button>
+            </div>
+
+            <div class="crow mb-2">
+              <span class="clabel">Fracture Pattern</span>
+              <select id="inspector-fracture-type" class="select-field" style="width: 180px;"></select>
+            </div>
+
+            <div class="crow">
+              <span class="clabel">Fracture Variation</span>
+              <div class="vpill-row" style="width: 180px;">
+                <input type="range" id="slider-fracture-seed" class="slider" min="1" max="100" step="1" value="42">
+                <div class="vpill"><div class="num" id="val-fracture-seed">42</div><div class="unit">#</div></div>
+              </div>
+            </div>
 
             <div class="crow">
               <span class="clabel">Crack Density</span>
@@ -460,16 +481,8 @@
             <div class="crow">
               <span class="clabel">Aperture (Crack Width)</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-aperture" class="slider" min="0.02" max="0.20" step="0.01" value="0.06">
+                <input type="range" id="slider-aperture" class="slider" min="0.02" max="0.15" step="0.005" value="0.06">
                 <div class="vpill"><div class="num" id="val-aperture">0.06m</div><div class="unit">m</div></div>
-              </div>
-            </div>
-
-            <div class="crow">
-              <span class="clabel">Stochastic Branching</span>
-              <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-branching" class="slider" min="0.0" max="1.0" step="0.05" value="0.60">
-                <div class="vpill"><div class="num" id="val-branching">0.60</div><div class="unit">k</div></div>
               </div>
             </div>
 
@@ -482,7 +495,7 @@
             </div>
 
             <div class="crow">
-              <span class="clabel">Explode Pieces (Separation)</span>
+              <span class="clabel">Explode Pieces</span>
               <div class="vpill-row" style="width: 180px;">
                 <input type="range" id="slider-explode" class="slider" min="0.0" max="1.0" step="0.05" value="0.0">
                 <div class="vpill"><div class="num" id="val-explode">0.00x</div><div class="unit">x</div></div>
@@ -505,7 +518,7 @@
             <div class="crow">
               <span class="clabel">Planar Cut Depth</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-chip-depth" class="slider" min="0.01" max="0.15" step="0.01" value="0.06">
+                <input type="range" id="slider-chip-depth" class="slider" min="0.01" max="0.12" step="0.005" value="0.06">
                 <div class="vpill"><div class="num" id="val-chip-depth">0.06m</div><div class="unit">m</div></div>
               </div>
             </div>
@@ -566,29 +579,13 @@
 
           <!-- 5. Geological Surface Details -->
           <div class="sec-group">
-            <div class="sec-title">5. Rock Surface Details</div>
+            <div class="sec-title">5. Crystalline Micro-Detail</div>
 
             <div class="crow">
-              <span class="clabel">Micro-Grain Texture</span>
+              <span class="clabel">Mineral Grain Flecks</span>
               <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-micro-grain" class="slider" min="0.0" max="0.08" step="0.005" value="0.025">
-                <div class="vpill"><div class="num" id="val-micro-grain">0.025</div><div class="unit">m</div></div>
-              </div>
-            </div>
-
-            <div class="crow">
-              <span class="clabel">Weathering Pockmarks</span>
-              <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-pockmark" class="slider" min="0.0" max="0.06" step="0.005" value="0.015">
-                <div class="vpill"><div class="num" id="val-pockmark">0.015</div><div class="unit">m</div></div>
-              </div>
-            </div>
-
-            <div class="crow">
-              <span class="clabel">Exfoliation Crust</span>
-              <div class="vpill-row" style="width: 180px;">
-                <input type="range" id="slider-crust" class="slider" min="0.0" max="1.0" step="0.05" value="0.40">
-                <div class="vpill"><div class="num" id="val-crust">0.40</div><div class="unit">k</div></div>
+                <input type="range" id="slider-micro-grain" class="slider" min="0.0" max="0.03" step="0.002" value="0.015">
+                <div class="vpill"><div class="num" id="val-micro-grain">0.015</div><div class="unit">m</div></div>
               </div>
             </div>
 
@@ -617,7 +614,7 @@
 
             <div class="color-swatch-row">
               <span class="clabel">Crack Crevice Shadow</span>
-              <input type="color" id="picker-crack-color" class="color-picker-input" value="#322b27">
+              <input type="color" id="picker-crack-color" class="color-picker-input" value="#221d1a">
             </div>
 
             <div class="color-swatch-row">
