@@ -368,9 +368,8 @@ export class RockPreviewViewport {
       geometry.setAttribute("aOxidation", new THREE.BufferAttribute(new Float32Array(meshData.positions.length / 3), 1));
     }
 
-    if (meshData.indices) {
-      geometry.setIndex(new THREE.BufferAttribute(meshData.indices, 1));
-    }
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
 
     this.mainMesh = new THREE.Mesh(geometry, this.rockMaterial);
     this.rockGroup.add(this.mainMesh);

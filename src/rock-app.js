@@ -15,7 +15,7 @@ import { RockPreviewViewport, MINERAL_PALETTES } from "./rock-preview.js";
 
 export class RockStudioApp {
   constructor() {
-    this.gridResolution = 80; // 80x80x80 SDF grid with Adaptive Sub-Voxel Crack Refinement
+    this.gridResolution = 80; // 80x80x80 SDF grid
     this.lodStep = 1; // 1 = High poly, 2 = Mid poly, 3 = Low poly game mesh
     this.currentPhase = 1; // 1: Base Rock, 2: Fractured & Chipped, 3: Eroded SDF, 4: Final Mesh/LOD
 
@@ -25,11 +25,11 @@ export class RockStudioApp {
       seed: 1337,
       // Base Rock params
       facets: 14,
-      baseRoundness: 0.25,
-      noiseAmp: 0.12,
-      noiseFreq: 0.85,
-      strataAmp: 0.04,
-      strataFreq: 2.2,
+      baseRoundness: 0.35,
+      noiseAmp: 0.08,
+      noiseFreq: 0.75,
+      strataAmp: 0.02,
+      strataFreq: 1.2,
       strataDip: 15,
       rockHardness: 1.4,
       // Fracture & Pieces params
@@ -330,11 +330,11 @@ export class RockStudioApp {
 
     this.state.preset = presetKey;
     this.state.facets = p.facets || 14;
-    this.state.baseRoundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.25;
-    this.state.noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.12;
-    this.state.noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.85;
-    this.state.strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.04;
-    this.state.strataFreq = p.strataFreq || 2.2;
+    this.state.baseRoundness = p.baseRoundness !== undefined ? p.baseRoundness : 0.35;
+    this.state.noiseAmp = p.noiseAmp !== undefined ? p.noiseAmp : 0.08;
+    this.state.noiseFreq = p.noiseFreq !== undefined ? p.noiseFreq : 0.75;
+    this.state.strataAmp = p.strataAmp !== undefined ? p.strataAmp : 0.02;
+    this.state.strataFreq = p.strataFreq || 1.2;
     this.state.strataDip = p.strataDip || 15;
     this.state.rockHardness = p.hardness || 1.4;
     this.state.mineral = p.mineral || "granite";
@@ -604,7 +604,7 @@ export class RockStudioApp {
   exportOBJ() {
     if (!this.currentMesh || !this.currentMesh.positions) return;
 
-    const { positions, normals, uvs, indices } = this.currentMesh;
+    const { positions, normals, uvs } = this.currentMesh;
     let objText = "# Frontier Standalone Rock Crack & SDF Erosion Studio\n";
     objText += `# Phase: ${this.currentPhase}/4, Preset: ${this.state.preset}, Mineral: ${this.state.mineral}\n`;
     objText += `# LOD Step: ${this.lodStep}, Triangles: ${this.currentMesh.triangleCount}\n\n`;
@@ -621,10 +621,11 @@ export class RockStudioApp {
       objText += `vt ${uvs[i].toFixed(4)} ${uvs[i + 1].toFixed(4)}\n`;
     }
 
-    for (let i = 0; i < indices.length; i += 3) {
-      const v0 = indices[i] + 1;
-      const v1 = indices[i + 1] + 1;
-      const v2 = indices[i + 2] + 1;
+    const numTris = positions.length / 9;
+    for (let i = 0; i < numTris; i++) {
+      const v0 = i * 3 + 1;
+      const v1 = i * 3 + 2;
+      const v2 = i * 3 + 3;
       objText += `f ${v0}/${v0}/${v0} ${v1}/${v1}/${v1} ${v2}/${v2}/${v2}\n`;
     }
 
