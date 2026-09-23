@@ -1,7 +1,11 @@
 /**
- * 3D Organic Rock Cell Fracture Engine
- * Splits low-poly rocks into natural interlocking 3D pieces and chunks
- * using domain-warped Voronoi cell cleavage and depth-tapered organic fissure clefts.
+ * 3D Organic Rock Cell Fracture & Chipped Surface Flaking Engine
+ * 
+ * Features:
+ * 1. 3D Voronoi Cellular Piece Splitting (broken rock chunks of varying proportions)
+ * 2. Organic Domain-Warped Crack Clefts (non-straight, wandering grain-boundary fissures)
+ * 3. Chipped Faces & Conchoidal Spall Flaking (eats away chunks of the top surface to reveal lower fracture facets)
+ * 4. Depth-Tapering Aperture & Griffith Stress Intensity Tensor Fields
  */
 
 import { NoiseGenerator, createPRNG } from "./math-noise.js";
@@ -36,9 +40,9 @@ export const FRACTURE_TYPES = {
 
 export class RockFractureEngine {
   constructor(volumeConfig = {}) {
-    this.nx = volumeConfig.nx || 64;
-    this.ny = volumeConfig.ny || 64;
-    this.nz = volumeConfig.nz || 64;
+    this.nx = volumeConfig.nx || 80;
+    this.ny = volumeConfig.ny || 80;
+    this.nz = volumeConfig.nz || 80;
     this.boundsMin = volumeConfig.boundsMin || [-1.8, -1.8, -1.8];
     this.boundsMax = volumeConfig.boundsMax || [1.8, 1.8, 1.8];
 
@@ -54,6 +58,7 @@ export class RockFractureEngine {
     this.crackSDF = new Float32Array(this.totalVoxels);
     this.crackMask = new Float32Array(this.totalVoxels);
     this.stressField = new Float32Array(this.totalVoxels);
+    this.chipMask = new Float32Array(this.totalVoxels);
     this.pieceID = new Uint8Array(this.totalVoxels);
     this.fracturedRockSDF = new Float32Array(this.totalVoxels);
   }
@@ -70,7 +75,7 @@ export class RockFractureEngine {
   }
 
   /**
-   * Generates organic 3D fracture pieces and non-straight wandering crack clefts
+   * Generates organic 3D fracture pieces, wandering crack clefts, and chipped surface spall facets
    */
   generateFracture(baseRockSDF, params = {}) {
     const seed = params.seed !== undefined ? params.seed : 42;
@@ -79,26 +84,31 @@ export class RockFractureEngine {
 
     const fractureType = params.fractureType || "voronoi_cleavage";
     const crackDensity = params.crackDensity !== undefined ? params.crackDensity : 0.6;
-    const aperture = params.aperture !== undefined ? params.aperture : 0.06; // Surface opening width in meters
+    const aperture = params.aperture !== undefined ? params.aperture : 0.06;
     const depthReach = params.depthReach !== undefined ? params.depthReach : 0.8;
     const branching = params.branching !== undefined ? params.branching : 0.6;
-    const jaggedness = params.jaggedness !== undefined ? params.jaggedness : 0.45; // Organic tortuosity
-    const explode = params.explode || 0.0; // Piece displacement offset
+    const jaggedness = params.jaggedness !== undefined ? params.jaggedness : 0.45;
+    const explode = params.explode || 0.0;
 
-    // Generate organic 3D Voronoi fracture seed centers
+    // Chipped Faces / Surface Spall Flaking parameters
+    const chipDensity = params.chipDensity !== undefined ? params.chipDensity : 0.55;
+    const chipDepth = params.chipDepth !== undefined ? params.chipDepth : 0.06; // Step-down thickness in meters
+    const chipScale = params.chipScale !== undefined ? params.chipScale : 0.45; // Patch radius
+
+    // 1. Generate Organic 3D Voronoi Piece Seeds
     const numSeeds = Math.max(3, Math.round(3 + crackDensity * 4));
     const seeds = [];
 
-    // Seed 0: dominant main boulder core (center)
+    // Core main chunk
     seeds.push({
       x: (rng() - 0.5) * 0.2,
       y: (rng() - 0.5) * 0.2,
       z: (rng() - 0.5) * 0.2,
-      weight: 1.3, // Larger chunk
+      weight: 1.35,
       dir: [0, 0, 0],
     });
 
-    // Secondary seeds: broken slab chunks & wedge pieces around the perimeter
+    // Secondary chunks & broken wedge pieces
     for (let i = 1; i < numSeeds; i++) {
       const phi = Math.acos(1 - (2 * (i - 0.5)) / (numSeeds - 1));
       const theta = (i * 2.4) + rng() * 0.5;
@@ -113,17 +123,45 @@ export class RockFractureEngine {
         x: sx,
         y: sy,
         z: sz,
-        weight: 0.8 + rng() * 0.4,
+        weight: 0.75 + rng() * 0.45,
         dir: [sx / dirLen, sy / dirLen, sz / dirLen],
+      });
+    }
+
+    // 2. Generate Chipped Surface Flake Patches (erasing parts of the top surface to reveal lower stepped facets)
+    const numChips = Math.max(2, Math.round(chipDensity * 8));
+    const chips = [];
+
+    for (let c = 0; c < numChips; c++) {
+      // Preferentially place chipped patches on outer rock perimeter / crack zones
+      const phi = Math.PI * (0.2 + 0.6 * (c / numChips)) + (rng() - 0.5) * 0.3;
+      const theta = rng() * Math.PI * 2;
+      const rad = 0.95 + rng() * 0.2;
+
+      const cx = rad * Math.sin(phi) * Math.cos(theta);
+      const cy = rad * Math.cos(phi) * 0.9 + (rng() - 0.5) * 0.2;
+      const cz = rad * Math.sin(phi) * Math.sin(theta);
+
+      const cLen = Math.hypot(cx, cy, cz) || 1;
+      chips.push({
+        x: cx,
+        y: cy,
+        z: cz,
+        nx: cx / cLen,
+        ny: cy / cLen,
+        nz: cz / cLen,
+        radius: chipScale * (0.7 + rng() * 0.6),
+        depth: chipDepth * (0.8 + rng() * 0.5),
       });
     }
 
     this.crackSDF.fill(1.0);
     this.crackMask.fill(0.0);
     this.stressField.fill(0.0);
+    this.chipMask.fill(0.0);
     this.pieceID.fill(0);
 
-    // Evaluate 3D Voronoi piece cleavage & organic warped crack clefts
+    // 3. Evaluate 3D Volume Field
     for (let iz = 0; iz < this.nz; iz++) {
       for (let iy = 0; iy < this.ny; iy++) {
         for (let ix = 0; ix < this.nx; ix++) {
@@ -137,7 +175,6 @@ export class RockFractureEngine {
             continue;
           }
 
-          // Depth from surface inside rock (negative rockDist is depth)
           const depthInside = Math.max(0.0, -rockDist);
 
           // Organic domain warping: warps crack paths along grain boundaries (non-straight, wandering)
@@ -149,7 +186,7 @@ export class RockFractureEngine {
           const py = wy + organicWarp * 0.8;
           const pz = wz + organicWarp;
 
-          // Find closest and second closest fracture seed
+          // Closest & second closest Voronoi seeds
           let d1 = Infinity;
           let d2 = Infinity;
           let bestSeedIdx = 0;
@@ -168,10 +205,10 @@ export class RockFractureEngine {
 
           this.pieceID[idx] = bestSeedIdx;
 
-          // Perpendicular distance to the organic fracture bisector boundary between pieces
+          // Perpendicular distance to the organic fracture boundary
           const fissureDist = Math.max(0.0, d2 - d1);
 
-          // Aperture profile: wide at surface, tapering naturally with penetration depth
+          // Aperture profile: wide at surface, tapering with depth
           const depthFrac = Math.min(1.0, depthInside / Math.max(0.05, depthReach));
           const localAperture = aperture * Math.pow(Math.max(0.0, 1.0 - depthFrac), 1.1) * (1.0 + warp1 * 0.3);
 
@@ -180,7 +217,6 @@ export class RockFractureEngine {
           let stressVal = 0.0;
 
           if (localAperture > 0.002 && fissureDist < localAperture * 2.2) {
-            // Smoothstep V/U-cleft profile
             const normFissure = Math.min(1.0, fissureDist / (localAperture * 0.7));
             const smoothProfile = 1.0 - normFissure * normFissure * (3.0 - 2.0 * normFissure);
 
@@ -189,18 +225,45 @@ export class RockFractureEngine {
             stressVal = Math.max(0.0, 1.0 - fissureDist / (localAperture * 2.8));
           }
 
-          // Piece explode displacement (pulling broken chunks apart in 3D)
+          // Chipped Faces / Surface Flaking:
+          // Checks if voxel falls in a shallow chipped spall patch on top surface
+          let maxChipCarve = 0.0;
+          let maxChipMask = 0.0;
+
+          if (chipDensity > 0.05 && depthInside < 0.25) {
+            for (let c = 0; c < chips.length; c++) {
+              const chip = chips[c];
+              const distToChip = Math.hypot(wx - chip.x, wy - chip.y, wz - chip.z);
+
+              if (distToChip < chip.radius) {
+                // Conchoidal scallop / stepped flaked facet
+                const normR = distToChip / chip.radius;
+                const flakeProfile = Math.pow(Math.max(0.0, 1.0 - normR * normR), 0.6);
+                const chipStep = chip.depth * flakeProfile;
+
+                if (chipStep > maxChipCarve) {
+                  maxChipCarve = chipStep;
+                  maxChipMask = flakeProfile;
+                }
+              }
+            }
+          }
+
+          // Piece explode displacement
           let explodeDisp = 0.0;
           if (explode > 0.0) {
             const sDir = seeds[bestSeedIdx].dir;
             explodeDisp = -(wx * sDir[0] + wy * sDir[1] + wz * sDir[2]) * explode * 0.3;
           }
 
-          const fracturedDist = rockDist + cleftCarve + explodeDisp;
+          // Total carved distance = crack cleft + chipped face flakes + explode
+          const totalCarve = Math.max(cleftCarve, maxChipCarve) + explodeDisp;
+          const fracturedDist = rockDist + totalCarve;
 
-          this.crackSDF[idx] = cleftCarve > 0 ? -cleftCarve : 1.0;
-          this.crackMask[idx] = maskVal;
+          this.crackSDF[idx] = totalCarve > 0 ? -totalCarve : 1.0;
+          this.crackMask[idx] = Math.max(maskVal, maxChipMask * 0.7);
           this.stressField[idx] = stressVal;
+          this.chipMask[idx] = maxChipMask;
           this.fracturedRockSDF[idx] = fracturedDist;
         }
       }
@@ -210,10 +273,12 @@ export class RockFractureEngine {
       crackSDF: this.crackSDF,
       crackMask: this.crackMask,
       stressField: this.stressField,
+      chipMask: this.chipMask,
       pieceID: this.pieceID,
       fracturedRockSDF: this.fracturedRockSDF,
       crackPlanesCount: seeds.length,
       pieceCount: seeds.length,
+      chipCount: chips.length,
     };
   }
 }

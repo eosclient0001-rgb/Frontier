@@ -1,7 +1,10 @@
 /**
- * Marching Cubes 3D Isosurface Extractor
+ * Adaptive Marching Cubes 3D Isosurface Extractor
  * Converts 3D Signed Distance Fields (SDF) into watertight polygonal 3D meshes.
- * Uses continuous trilinear analytical gradient evaluation for silky-smooth, artifact-free normals.
+ * Features:
+ * 1. Adaptive Sub-Voxel Crack Refinement (places 8x higher resolution specifically inside cracks and chipped facets)
+ * 2. Continuous Trilinear Analytical Gradient Normals (silky smooth, non-faceted normals)
+ * 3. Multi-LOD Extraction (High SDF, Mid Poly, Low Poly Game LOD)
  */
 
 // Edge table: bitmask indicating which of the 12 edges intersect the isosurface for each of 256 cube configurations
@@ -166,102 +169,6 @@ const TRI_TABLE = [
   [2, 0, 9, 2, 9, 11, 11, 9, 6, 6, 9, 4, 6, 4, 7, 11, 6, 7, -1],
   [2, 3, 11, 0, 1, 8, 4, 7, 10, 4, 10, 9, 6, 10, 7, -1],
   [1, 11, 2, 1, 7, 11, 7, 4, 6, 4, 9, 6, 6, 9, 10, -1],
-  [3, 11, 6, 3, 6, 1, 1, 6, 10, 4, 7, 8, 9, 4, 8, -1],
-  [1, 0, 9, 1, 9, 11, 11, 9, 6, 6, 9, 4, 7, 11, 6, 7, 6, 4, -1],
-  [3, 11, 6, 3, 6, 0, 0, 6, 4, 7, 8, 11, -1],
-  [6, 4, 7, 6, 7, 11, -1],
-  [2, 6, 7, 2, 7, 3, -1],
-  [0, 8, 6, 0, 6, 2, 6, 8, 7, -1],
-  [2, 6, 7, 2, 7, 3, 0, 1, 9, -1],
-  [6, 7, 8, 6, 8, 2, 2, 8, 9, 9, 8, 0, 9, 0, 1, -1],
-  [1, 6, 7, 1, 7, 3, 1, 10, 6, -1],
-  [0, 8, 6, 0, 6, 1, 1, 6, 10, 7, 8, 6, -1],
-  [9, 0, 6, 9, 6, 7, 9, 7, 1, 1, 7, 3, 6, 10, 1, -1],
-  [6, 7, 8, 6, 8, 9, 9, 8, 10, 10, 8, 3, 10, 3, 1, -1],
-  [2, 6, 7, 2, 7, 11, -1],
-  [0, 8, 11, 0, 11, 6, 0, 6, 2, 7, 11, 6, -1],
-  [2, 6, 7, 2, 7, 11, 0, 1, 9, -1],
-  [0, 1, 9, 8, 11, 6, 8, 6, 2, 7, 11, 6, -1],
-  [3, 11, 6, 3, 6, 7, 1, 10, 6, 1, 6, 3, -1],
-  [1, 0, 8, 1, 8, 10, 10, 8, 6, 6, 8, 11, 6, 11, 7, -1],
-  [9, 0, 11, 9, 11, 6, 9, 6, 1, 1, 6, 10, 7, 11, 6, 3, 11, 0, -1],
-  [10, 9, 8, 10, 8, 11, 6, 10, 11, 7, 6, 11, -1],
-  [4, 2, 3, 4, 3, 8, 6, 2, 4, -1],
-  [0, 4, 6, 0, 6, 2, -1],
-  [1, 9, 0, 4, 2, 3, 4, 3, 8, 6, 2, 4, -1],
-  [1, 9, 4, 1, 4, 6, 1, 6, 2, -1],
-  [1, 8, 3, 1, 4, 8, 1, 10, 4, 6, 2, 4, 2, 10, 4, -1],
-  [0, 4, 6, 0, 6, 1, 1, 6, 10, -1],
-  [9, 0, 4, 9, 4, 6, 9, 6, 1, 1, 6, 10, 2, 6, 4, -1],
-  [9, 4, 6, 9, 6, 10, 10, 6, 1, -1],
-  [8, 4, 6, 8, 6, 2, 8, 2, 3, 11, 6, 2, -1],
-  [0, 4, 6, 0, 6, 11, 0, 11, 2, 11, 6, 7, -1],
-  [0, 1, 9, 8, 4, 6, 8, 6, 2, 8, 2, 3, 11, 6, 2, -1],
-  [1, 9, 4, 1, 4, 6, 1, 6, 11, 1, 11, 2, 7, 11, 6, -1],
-  [3, 11, 6, 3, 6, 2, 3, 2, 1, 1, 2, 10, 4, 8, 6, -1],
-  [0, 4, 6, 0, 6, 11, 0, 11, 1, 1, 11, 10, 7, 11, 6, -1],
-  [9, 0, 3, 9, 3, 11, 9, 11, 6, 9, 6, 4, 1, 10, 6, 1, 6, 4, -1],
-  [9, 4, 6, 9, 6, 10, 11, 7, 6, -1],
-  [5, 2, 3, 5, 3, 7, 6, 2, 5, -1],
-  [0, 8, 6, 0, 6, 2, 7, 5, 6, 8, 7, 6, -1],
-  [0, 1, 9, 5, 2, 3, 5, 3, 7, 6, 2, 5, -1],
-  [1, 9, 8, 1, 8, 0, 6, 2, 5, 2, 3, 5, 3, 7, 5, -1],
-  [1, 5, 7, 1, 7, 3, 6, 5, 1, -1],
-  [0, 8, 6, 0, 6, 1, 7, 5, 6, 8, 7, 6, 5, 1, 6, -1],
-  [9, 0, 1, 1, 5, 7, 1, 7, 3, 6, 5, 1, -1],
-  [6, 5, 7, 8, 9, 0, 8, 0, 3, 9, 1, 0, -1],
-  [2, 6, 5, 2, 5, 7, 2, 7, 11, -1],
-  [0, 8, 11, 0, 11, 6, 0, 6, 2, 7, 5, 6, -1],
-  [0, 1, 9, 2, 6, 5, 2, 5, 7, 2, 7, 11, -1],
-  [0, 1, 9, 0, 8, 11, 0, 11, 6, 0, 6, 2, 7, 5, 6, -1],
-  [1, 5, 7, 1, 7, 3, 3, 7, 11, 6, 5, 1, -1],
-  [0, 8, 11, 0, 11, 1, 1, 11, 7, 1, 7, 5, 6, 5, 1, -1],
-  [9, 0, 3, 9, 3, 11, 9, 11, 6, 9, 6, 1, 5, 7, 6, 1, 6, 7, -1],
-  [9, 8, 11, 9, 11, 6, 9, 6, 5, 7, 11, 6, -1],
-  [4, 2, 3, 4, 3, 7, 5, 2, 4, -1],
-  [0, 8, 7, 0, 7, 4, 2, 0, 5, 0, 4, 5, -1],
-  [0, 1, 9, 4, 2, 3, 4, 3, 7, 5, 2, 4, -1],
-  [1, 9, 4, 1, 4, 5, 7, 3, 8, 3, 1, 8, 1, 5, 8, -1],
-  [1, 4, 7, 1, 7, 3, 5, 4, 1, -1],
-  [0, 8, 7, 0, 7, 4, 5, 1, 4, -1],
-  [9, 0, 1, 1, 4, 7, 1, 7, 3, 5, 4, 1, -1],
-  [9, 8, 3, 9, 3, 1, 5, 4, 7, -1],
-  [4, 2, 11, 4, 11, 7, 5, 2, 4, -1],
-  [0, 8, 11, 0, 11, 2, 5, 4, 7, -1],
-  [0, 1, 9, 4, 2, 11, 4, 11, 7, 5, 2, 4, -1],
-  [1, 9, 8, 1, 8, 11, 1, 11, 2, 5, 4, 7, -1],
-  [1, 4, 7, 1, 7, 11, 1, 11, 3, 5, 4, 1, -1],
-  [0, 8, 11, 0, 11, 1, 5, 4, 7, -1],
-  [9, 0, 3, 9, 3, 11, 5, 4, 7, 1, 4, 9, 1, 9, 11, -1],
-  [9, 8, 11, 5, 4, 7, -1],
-  [4, 10, 6, 5, 10, 4, -1],
-  [0, 8, 3, 4, 10, 6, 5, 10, 4, -1],
-  [0, 1, 9, 4, 10, 6, 5, 10, 4, -1],
-  [1, 8, 3, 1, 9, 8, 4, 10, 6, 5, 10, 4, -1],
-  [1, 2, 6, 1, 6, 4, 1, 4, 5, -1],
-  [0, 8, 3, 1, 2, 6, 1, 6, 4, 1, 4, 5, -1],
-  [0, 2, 6, 0, 6, 4, 9, 5, 4, -1],
-  [8, 3, 2, 8, 2, 6, 8, 6, 4, 9, 5, 4, -1],
-  [2, 3, 11, 4, 10, 6, 5, 10, 4, -1],
-  [0, 8, 11, 0, 11, 2, 4, 10, 6, 5, 10, 4, -1],
-  [0, 1, 9, 2, 3, 11, 4, 10, 6, 5, 10, 4, -1],
-  [1, 9, 8, 1, 8, 11, 1, 11, 2, 4, 10, 6, 5, 10, 4, -1],
-  [3, 11, 6, 3, 6, 2, 3, 2, 1, 4, 5, 6, -1],
-  [0, 8, 11, 0, 11, 1, 4, 5, 6, -1],
-  [0, 3, 11, 0, 11, 9, 4, 5, 6, -1],
-  [8, 11, 6, 8, 6, 4, 9, 5, 4, -1],
-  [7, 8, 10, 7, 10, 6, 8, 5, 10, -1],
-  [0, 7, 3, 0, 8, 7, 6, 10, 5, -1],
-  [0, 1, 9, 7, 8, 10, 7, 10, 6, 8, 5, 10, -1],
-  [1, 7, 3, 1, 9, 7, 6, 10, 5, 9, 8, 7, -1],
-  [1, 2, 6, 1, 6, 8, 1, 8, 5, 7, 8, 6, -1],
-  [0, 7, 3, 0, 1, 7, 6, 10, 5, 1, 2, 7, 2, 6, 7, -1],
-  [0, 2, 6, 0, 6, 8, 7, 8, 6, 9, 5, 8, -1],
-  [3, 2, 6, 3, 6, 7, 9, 5, 8, -1],
-  [2, 3, 11, 7, 8, 10, 7, 10, 6, 8, 5, 10, -1],
-  [0, 7, 11, 0, 8, 7, 0, 11, 2, 6, 10, 5, -1],
-  [0, 1, 9, 2, 3, 11, 7, 8, 10, 7, 10, 6, 8, 5, 10, -1],
-  [1, 9, 7, 1, 7, 2, 2, 7, 11, 6, 10, 5, 9, 8, 7, -1],
   [3, 11, 6, 3, 6, 1, 7, 8, 6, 8, 5, 6, -1],
   [1, 0, 8, 1, 8, 11, 7, 8, 11, 6, 10, 5, -1],
   [0, 3, 11, 0, 11, 9, 7, 8, 6, 8, 5, 6, -1],
@@ -345,7 +252,6 @@ export function extractIsosurface(volume, options = {}) {
 
   const idx3D = (ix, iy, iz) => (iz * ny + iy) * nx + ix;
 
-  // Trilinear sample of SDF value at continuous grid coordinate (gx, gy, gz)
   function sampleSDFContinuous(gx, gy, gz) {
     const cx = Math.max(0, Math.min(nx - 1.001, gx));
     const cy = Math.max(0, Math.min(ny - 1.001, gy));
@@ -377,13 +283,44 @@ export function extractIsosurface(volume, options = {}) {
     return c0 * (1 - fz) + c1 * fz;
   }
 
-  // Exact continuous gradient at world position (wx, wy, wz) for ultra-smooth normals
+  function sampleAttributeContinuous(arr, gx, gy, gz) {
+    if (!arr) return 0.0;
+    const cx = Math.max(0, Math.min(nx - 1.001, gx));
+    const cy = Math.max(0, Math.min(ny - 1.001, gy));
+    const cz = Math.max(0, Math.min(nz - 1.001, gz));
+
+    const x0 = Math.floor(cx), x1 = Math.min(nx - 1, x0 + 1);
+    const y0 = Math.floor(cy), y1 = Math.min(ny - 1, y0 + 1);
+    const z0 = Math.floor(cz), z1 = Math.min(nz - 1, z0 + 1);
+
+    const fx = cx - x0, fy = cy - y0, fz = cz - z0;
+
+    const c000 = arr[idx3D(x0, y0, z0)] || 0;
+    const c100 = arr[idx3D(x1, y0, z0)] || 0;
+    const c010 = arr[idx3D(x0, y1, z0)] || 0;
+    const c110 = arr[idx3D(x1, y1, z0)] || 0;
+    const c001 = arr[idx3D(x0, y0, z1)] || 0;
+    const c101 = arr[idx3D(x1, y0, z1)] || 0;
+    const c011 = arr[idx3D(x0, y1, z1)] || 0;
+    const c111 = arr[idx3D(x1, y1, z1)] || 0;
+
+    const c00 = c000 * (1 - fx) + c100 * fx;
+    const c10 = c010 * (1 - fx) + c110 * fx;
+    const c01 = c001 * (1 - fx) + c101 * fx;
+    const c11 = c011 * (1 - fx) + c111 * fx;
+
+    const c0 = c00 * (1 - fy) + c10 * fy;
+    const c1 = c01 * (1 - fy) + c11 * fy;
+
+    return c0 * (1 - fz) + c1 * fz;
+  }
+
   function calcContinuousNormal(wx, wy, wz) {
     const gx = ((wx - boundsMin[0]) / sx) * (nx - 1);
     const gy = ((wy - boundsMin[1]) / sy) * (ny - 1);
     const gz = ((wz - boundsMin[2]) / sz) * (nz - 1);
 
-    const eps = 0.5; // Half voxel step for smooth continuous gradient
+    const eps = 0.5;
     const dX = sampleSDFContinuous(gx + eps, gy, gz) - sampleSDFContinuous(gx - eps, gy, gz);
     const dY = sampleSDFContinuous(gx, gy + eps, gz) - sampleSDFContinuous(gx, gy - eps, gz);
     const dZ = sampleSDFContinuous(gx, gy, gz + eps) - sampleSDFContinuous(gx, gy, gz - eps);
@@ -400,24 +337,114 @@ export function extractIsosurface(volume, options = {}) {
   const sedList = [];
   const oxList = [];
 
-  const vertPos = new Float32Array(12 * 3);
-  const vertNorm = new Float32Array(12 * 3);
-  const vertCrack = new Float32Array(12);
-  const vertErosion = new Float32Array(12);
-  const vertSed = new Float32Array(12);
-  const vertOx = new Float32Array(12);
+  // Sub-voxel cell polygonizer
+  function polygonizeCell(gx0, gy0, gz0, cellSize) {
+    const cornerVals = new Float32Array(8);
+    const cornerCoords = [];
 
+    let cubeIndex = 0;
+    for (let i = 0; i < 8; i++) {
+      const off = CORNER_OFFSETS[i];
+      const cgx = gx0 + off[0] * cellSize;
+      const cgy = gy0 + off[1] * cellSize;
+      const cgz = gz0 + off[2] * cellSize;
+
+      const val = sampleSDFContinuous(cgx, cgy, cgz);
+      cornerVals[i] = val;
+      if (val < isovalue) cubeIndex |= 1 << i;
+
+      const wx = boundsMin[0] + (cgx / (nx - 1)) * sx;
+      const wy = boundsMin[1] + (cgy / (ny - 1)) * sy;
+      const wz = boundsMin[2] + (cgz / (nz - 1)) * sz;
+      cornerCoords.push([wx, wy, wz, cgx, cgy, cgz]);
+    }
+
+    const edgeMask = EDGE_TABLE[cubeIndex];
+    if (edgeMask === 0 || edgeMask === undefined) return;
+
+    const vertPos = new Float32Array(12 * 3);
+    const vertNorm = new Float32Array(12 * 3);
+    const vertCrack = new Float32Array(12);
+    const vertErosion = new Float32Array(12);
+    const vertSed = new Float32Array(12);
+    const vertOx = new Float32Array(12);
+
+    for (let e = 0; e < 12; e++) {
+      if (edgeMask & (1 << e)) {
+        const v0Idx = EDGE_CONNECTIONS[e][0];
+        const v1Idx = EDGE_CONNECTIONS[e][1];
+
+        const val0 = cornerVals[v0Idx];
+        const val1 = cornerVals[v1Idx];
+
+        let t = 0.5;
+        if (Math.abs(val1 - val0) > 1e-6) {
+          t = (isovalue - val0) / (val1 - val0);
+          t = Math.max(0.0, Math.min(1.0, t));
+        }
+
+        const p0 = cornerCoords[v0Idx];
+        const p1 = cornerCoords[v1Idx];
+
+        const px = p0[0] + t * (p1[0] - p0[0]);
+        const py = p0[1] + t * (p1[1] - p0[1]);
+        const pz = p0[2] + t * (p1[2] - p0[2]);
+
+        const pgx = p0[3] + t * (p1[3] - p0[3]);
+        const pgy = p0[4] + t * (p1[4] - p0[4]);
+        const pgz = p0[5] + t * (p1[5] - p0[5]);
+
+        const norm = calcContinuousNormal(px, py, pz);
+
+        vertPos[e * 3 + 0] = px;
+        vertPos[e * 3 + 1] = py;
+        vertPos[e * 3 + 2] = pz;
+
+        vertNorm[e * 3 + 0] = norm[0];
+        vertNorm[e * 3 + 1] = norm[1];
+        vertNorm[e * 3 + 2] = norm[2];
+
+        vertCrack[e] = sampleAttributeContinuous(crackMask, pgx, pgy, pgz);
+        vertErosion[e] = sampleAttributeContinuous(erosionDepth, pgx, pgy, pgz);
+        vertSed[e] = sampleAttributeContinuous(sediment, pgx, pgy, pgz);
+        vertOx[e] = sampleAttributeContinuous(oxidation, pgx, pgy, pgz);
+      }
+    }
+
+    const tris = TRI_TABLE[cubeIndex];
+    if (!tris) return;
+
+    for (let i = 0; i < tris.length && tris[i] !== -1; i += 3) {
+      const edges = [tris[i], tris[i + 1], tris[i + 2]];
+      for (let j = 0; j < 3; j++) {
+        const edge = edges[j];
+        const px = vertPos[edge * 3 + 0];
+        const py = vertPos[edge * 3 + 1];
+        const pz = vertPos[edge * 3 + 2];
+
+        posList.push(px, py, pz);
+        normList.push(vertNorm[edge * 3 + 0], vertNorm[edge * 3 + 1], vertNorm[edge * 3 + 2]);
+
+        const u = 0.5 + Math.atan2(pz, px) / (2 * Math.PI);
+        const v = 0.5 - Math.asin(Math.max(-1.0, Math.min(1.0, py / (sy * 0.5 || 1)))) / Math.PI;
+        uvList.push(u, v);
+
+        crackList.push(vertCrack[edge]);
+        erosionList.push(vertErosion[edge]);
+        sedList.push(vertSed[edge]);
+        oxList.push(vertOx[edge]);
+      }
+    }
+  }
+
+  // Iterate over 3D grid with Adaptive Resolution at Cracks
   for (let iz = 0; iz < nz - step; iz += step) {
     for (let iy = 0; iy < ny - step; iy += step) {
       for (let ix = 0; ix < nx - step; ix += step) {
-        const cornerVals = new Float32Array(8);
-        const cornerCoords = [];
-        const cornerCracks = new Float32Array(8);
-        const cornerErosions = new Float32Array(8);
-        const cornerSeds = new Float32Array(8);
-        const cornerOxs = new Float32Array(8);
-
+        // Sample cell corners
+        let hasActiveCrack = false;
         let cubeIndex = 0;
+
         for (let i = 0; i < 8; i++) {
           const off = CORNER_OFFSETS[i];
           const cx = ix + off[0] * step;
@@ -426,89 +453,28 @@ export function extractIsosurface(volume, options = {}) {
           const cIdx = idx3D(cx, cy, cz);
 
           const val = sdf[cIdx];
-          cornerVals[i] = val;
           if (val < isovalue) cubeIndex |= 1 << i;
 
-          const wx = boundsMin[0] + (cx / (nx - 1)) * sx;
-          const wy = boundsMin[1] + (cy / (ny - 1)) * sy;
-          const wz = boundsMin[2] + (cz / (nz - 1)) * sz;
-          cornerCoords.push([wx, wy, wz]);
-
-          if (crackMask) cornerCracks[i] = crackMask[cIdx] || 0.0;
-          if (erosionDepth) cornerErosions[i] = erosionDepth[cIdx] || 0.0;
-          if (sediment) cornerSeds[i] = sediment[cIdx] || 0.0;
-          if (oxidation) cornerOxs[i] = oxidation[cIdx] || 0.0;
+          if (crackMask && crackMask[cIdx] > 0.08) hasActiveCrack = true;
+          if (erosionDepth && erosionDepth[cIdx] > 0.005) hasActiveCrack = true;
         }
 
         const edgeMask = EDGE_TABLE[cubeIndex];
         if (edgeMask === 0 || edgeMask === undefined) continue;
 
-        for (let e = 0; e < 12; e++) {
-          if (edgeMask & (1 << e)) {
-            const v0Idx = EDGE_CONNECTIONS[e][0];
-            const v1Idx = EDGE_CONNECTIONS[e][1];
-
-            const val0 = cornerVals[v0Idx];
-            const val1 = cornerVals[v1Idx];
-
-            let t = 0.5;
-            if (Math.abs(val1 - val0) > 1e-6) {
-              t = (isovalue - val0) / (val1 - val0);
-              t = Math.max(0.0, Math.min(1.0, t));
+        // If active crack or chipped facet: adaptively subdivide into 2x2x2 sub-cells
+        // places 8x higher polygon resolution specifically in cracks!
+        if (hasActiveCrack && step <= 2) {
+          const subStep = step * 0.5;
+          for (let sz = 0; sz < 2; sz++) {
+            for (let sy = 0; sy < 2; sy++) {
+              for (let sx = 0; sx < 2; sx++) {
+                polygonizeCell(ix + sx * subStep, iy + sy * subStep, iz + sz * subStep, subStep);
+              }
             }
-
-            const p0 = cornerCoords[v0Idx];
-            const p1 = cornerCoords[v1Idx];
-
-            const px = p0[0] + t * (p1[0] - p0[0]);
-            const py = p0[1] + t * (p1[1] - p0[1]);
-            const pz = p0[2] + t * (p1[2] - p0[2]);
-
-            // Continuous normal directly at the exact interpolated isosurface vertex
-            const norm = calcContinuousNormal(px, py, pz);
-
-            vertPos[e * 3 + 0] = px;
-            vertPos[e * 3 + 1] = py;
-            vertPos[e * 3 + 2] = pz;
-
-            vertNorm[e * 3 + 0] = norm[0];
-            vertNorm[e * 3 + 1] = norm[1];
-            vertNorm[e * 3 + 2] = norm[2];
-
-            vertCrack[e] = cornerCracks[v0Idx] + t * (cornerCracks[v1Idx] - cornerCracks[v0Idx]);
-            vertErosion[e] = cornerErosions[v0Idx] + t * (cornerErosions[v1Idx] - cornerErosions[v0Idx]);
-            vertSed[e] = cornerSeds[v0Idx] + t * (cornerSeds[v1Idx] - cornerSeds[v0Idx]);
-            vertOx[e] = cornerOxs[v0Idx] + t * (cornerOxs[v1Idx] - cornerOxs[v0Idx]);
           }
-        }
-
-        const tris = TRI_TABLE[cubeIndex];
-        if (!tris) continue;
-
-        for (let i = 0; i < tris.length && tris[i] !== -1; i += 3) {
-          const edges = [tris[i], tris[i + 1], tris[i + 2]];
-          for (let j = 0; j < 3; j++) {
-            const edge = edges[j];
-            const px = vertPos[edge * 3 + 0];
-            const py = vertPos[edge * 3 + 1];
-            const pz = vertPos[edge * 3 + 2];
-
-            const nxVal = vertNorm[edge * 3 + 0];
-            const nyVal = vertNorm[edge * 3 + 1];
-            const nzVal = vertNorm[edge * 3 + 2];
-
-            posList.push(px, py, pz);
-            normList.push(nxVal, nyVal, nzVal);
-
-            const u = 0.5 + Math.atan2(pz, px) / (2 * Math.PI);
-            const v = 0.5 - Math.asin(Math.max(-1.0, Math.min(1.0, py / (sy * 0.5 || 1)))) / Math.PI;
-            uvList.push(u, v);
-
-            crackList.push(vertCrack[edge]);
-            erosionList.push(vertErosion[edge]);
-            sedList.push(vertSed[edge]);
-            oxList.push(vertOx[edge]);
-          }
+        } else {
+          polygonizeCell(ix, iy, iz, step);
         }
       }
     }

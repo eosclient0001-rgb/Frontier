@@ -15,9 +15,9 @@ import { RockPreviewViewport, MINERAL_PALETTES } from "./rock-preview.js";
 
 export class RockStudioApp {
   constructor() {
-    this.gridResolution = 64; // 64x64x64 SDF grid
+    this.gridResolution = 80; // 80x80x80 SDF grid with Adaptive Crack Refinement
     this.lodStep = 1; // 1 = High poly, 2 = Mid poly, 3 = Low poly game mesh
-    this.currentPhase = 1; // 1: Base Rock, 2: Fractured, 3: Eroded SDF, 4: Final Mesh/LOD
+    this.currentPhase = 1; // 1: Base Rock, 2: Fractured & Chipped, 3: Eroded SDF, 4: Final Mesh/LOD
 
     // State parameters
     this.state = {
@@ -25,21 +25,25 @@ export class RockStudioApp {
       seed: 1337,
       // Base Rock params
       facets: 14,
-      baseRoundness: 0.35,
-      noiseAmp: 0.15,
-      noiseFreq: 0.9,
+      baseRoundness: 0.25,
+      noiseAmp: 0.12,
+      noiseFreq: 0.85,
       strataAmp: 0.04,
-      strataFreq: 2.5,
+      strataFreq: 2.2,
       strataDip: 15,
       rockHardness: 1.4,
-      // Fracture params
+      // Fracture & Pieces params
       fractureType: "voronoi_cleavage",
       crackDensity: 0.6,
-      aperture: 0.07,
-      depthReach: 0.7,
+      aperture: 0.06,
+      depthReach: 0.8,
       branching: 0.6,
       jaggedness: 0.45,
       explode: 0.0, // Broken piece separation
+      // Chipped Faces / Surface Spall Flaking
+      chipDensity: 0.55,
+      chipDepth: 0.06,
+      chipScale: 0.45,
       // SDF Erosion params
       iterations: 12,
       frostWedging: 0.65,
@@ -213,6 +217,11 @@ export class RockStudioApp {
     this.bindSlider("slider-jaggedness", "jaggedness", (v) => parseFloat(v), "val-jaggedness");
     this.bindSlider("slider-explode", "explode", (v) => parseFloat(v), "val-explode", "x");
 
+    // Chipped Faces sliders
+    this.bindSlider("slider-chip-density", "chipDensity", (v) => parseFloat(v), "val-chip-density");
+    this.bindSlider("slider-chip-depth", "chipDepth", (v) => parseFloat(v), "val-chip-depth", "m");
+    this.bindSlider("slider-chip-scale", "chipScale", (v) => parseFloat(v), "val-chip-scale", "m");
+
     this.bindSlider("slider-frost-wedging", "frostWedging", (v) => parseFloat(v), "val-frost-wedging");
     this.bindSlider("slider-edge-bevel", "edgeBevel", (v) => parseFloat(v), "val-edge-bevel");
     this.bindSlider("slider-dissolution", "dissolution", (v) => parseFloat(v), "val-dissolution");
@@ -359,6 +368,10 @@ export class RockStudioApp {
     setVal("slider-jaggedness", this.state.jaggedness, "val-jaggedness");
     setVal("slider-explode", this.state.explode || 0.0, "val-explode", "x");
 
+    setVal("slider-chip-density", this.state.chipDensity, "val-chip-density");
+    setVal("slider-chip-depth", this.state.chipDepth, "val-chip-depth", "m");
+    setVal("slider-chip-scale", this.state.chipScale, "val-chip-scale", "m");
+
     setVal("slider-frost-wedging", this.state.frostWedging, "val-frost-wedging");
     setVal("slider-edge-bevel", this.state.edgeBevel, "val-edge-bevel");
     setVal("slider-dissolution", this.state.dissolution, "val-dissolution");
@@ -434,7 +447,7 @@ export class RockStudioApp {
       hardness: this.state.rockHardness,
     });
 
-    // Step 2: 3D Fracture Dynamics
+    // Step 2: 3D Fracture Dynamics & Chipped Flakes
     const fractureResult = this.fractureEngine.generateFracture(baseRockResult.sdf, {
       seed: this.state.seed + 101,
       fractureType: this.state.fractureType,
@@ -445,6 +458,9 @@ export class RockStudioApp {
       jaggedness: this.state.jaggedness,
       strataDip: this.state.strataDip,
       explode: this.state.explode,
+      chipDensity: this.state.chipDensity,
+      chipDepth: this.state.chipDepth,
+      chipScale: this.state.chipScale,
     });
 
     // Step 3: 3D SDF Crack Erosion
