@@ -28,8 +28,8 @@ const GRAVITY = 9.81;
  *   depositionRate, evaporation, erosionDepth (master cut scale),
  *   stampRadiusVox, gravityScale, talusAngleDeg, talusRate,
  *   reinitBandVox, seed }
- * @param {object} ctx { colH: Float32Array|null (updated in place), onProgress }
- * @returns {object} { colH, flow, sediment, wear, cut, audit:{...} }
+ * @param {object} ctx { colH: Float32Array|null (updated in place), onProgress, isCancelled }
+ * @returns {object|null} { colH, flow, sediment, wear, cut, audit:{...} }, null if cancelled
  */
 export function erodeSDF(vol, p, ctx) {
   const { nx, ny, nz } = vol;
@@ -227,6 +227,7 @@ export function erodeSDF(vol, p, ctx) {
     vol.reinitialize({ bandVox: p.reinitBandVox || 6, iters: 2 });
     ctx.onProgress && ctx.onProgress((b + 1) / batches, `Erosion batch ${b + 1}/${batches}`, now() - t0);
     computeBounds();
+    if (ctx.isCancelled && ctx.isCancelled()) return null;
   }
 
   // ---- fluvial phase: drainage-network stream-power incision ----------------

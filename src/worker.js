@@ -14,12 +14,17 @@ import { makeZip } from './core/zip.js';
 
 const post = (type, payload, transfer) => self.postMessage({ type, ...payload }, transfer || []);
 
+let cancelled = false;
+
 self.onmessage = (e) => {
   const msg = e.data;
   if (msg.type === 'run') {
+    cancelled = false;
     run(msg.params, msg.id).catch(err => {
       post('error', { id: msg.id, message: String(err && err.stack || err) });
     });
+  } else if (msg.type === 'cancel') {
+    cancelled = true;
   }
 };
 
@@ -49,8 +54,10 @@ async function run(p, id) {
   // ---------- stage 2: erosion --------------------------------------------
   const er = erodeSDF(base.vol, p, {
     colH: base.colH,
-    onProgress: (f, m, ms) => post('progress', { id, stage: 'erosion', frac: f * 0.82, label: m })
+    onProgress: (f, m, ms) => post('progress', { id, stage: 'erosion', frac: f * 0.82, label: m }),
+    isCancelled: () => cancelled
   });
+  if (cancelled) { post('cancelled', { id }); return; }
   const a = er.audit;
   log(`Hydraulics — ${p.droplets.toLocaleString()} droplets · ${(a.activeSteps / 1000 | 0)}k active steps · carved ${a.carveVolume.toFixed(0)} m³ · deposited ${a.depositVolume.toFixed(0)} m³`);
   log(`Cut audit — mean ${a.meanCut.toFixed(3)} m · channel mean ${a.channelMeanCut.toFixed(3)} m (${(a.channelMeanCut / a.voxMax).toFixed(2)} vox) · max ${a.maxCut.toFixed(2)} m (budget ${contract.maxCutM.toFixed(2)} m)`);

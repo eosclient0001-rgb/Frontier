@@ -221,13 +221,15 @@ function buildControls() {
   }
 
   $('#btn-generate').addEventListener('click', generate);
+  $('#btn-cancel').addEventListener('click', cancelRun);
   $('#btn-export').addEventListener('click', exportBundle);
   $('#btn-shot').addEventListener('click', screenshot);
 
   document.addEventListener('keydown', (e) => {
     const t = e.target && e.target.tagName;
     if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
-    if (e.key === 'r' || e.key === 'R') generate();
+    if (e.key === 'Escape') cancelRun();
+    else if (e.key === 'r' || e.key === 'R') generate();
     else if (e.key === 'i' || e.key === 'I') $('#btn-inspect').click();
     else if (e.key === 't' || e.key === 'T') $('#btn-trail').click();
     else if (e.key === 's' || e.key === 'S') screenshot();
@@ -389,6 +391,11 @@ function initWorker() {
     else if (m.type === 'log') logLine(m.message);
     else if (m.type === 'contract') fillContract(m.contract);
     else if (m.type === 'done') onDone(m);
+    else if (m.type === 'cancelled') {
+      setStatus('idle', 'cancelled');
+      logLine('run cancelled', 'err');
+      finishRun();
+    }
     else if (m.type === 'error') {
       setStatus('error', 'failed');
       logLine('ERROR ' + m.message, 'err');
@@ -428,24 +435,38 @@ function buildPipelineParams() {
   };
 }
 
+let runT0 = 0;
+
 function generate() {
   if (running) return;
   saveParams();
   running = true;
+  runT0 = performance.now();
   lastZip = null;
   $('#btn-export').disabled = true;
   $('#btn-generate').disabled = true;
   $('#btn-generate').textContent = 'Simulating…';
+  $('#btn-cancel').classList.remove('hidden');
   $('#progress-wrap').classList.remove('hidden');
   setStatus('run', 'simulating');
   const p = buildPipelineParams();
   worker.postMessage({ type: 'run', params: p, id: 1 });
 }
 
+function cancelRun() {
+  if (!running) return;
+  worker.postMessage({ type: 'cancel' });
+  logLine('cancel requested — finishing current batch…', 'err');
+  $('#btn-cancel').classList.add('hidden');
+}
+
 function setProgress(frac, label) {
   const pct = Math.round(frac * 100);
   $('#progress-fill').style.width = pct + '%';
-  $('#progress-pct').textContent = pct + '%';
+  const el = performance.now() - runT0;
+  let txt = pct + '%';
+  if (frac > 0.04 && frac < 0.99) txt += ' · ~' + Math.max(1, Math.round(el / frac * (1 - frac) / 1000)) + ' s left';
+  $('#progress-pct').textContent = txt;
   $('#progress-label').textContent = label || '';
 }
 
@@ -482,6 +503,7 @@ function finishRun() {
   running = false;
   $('#btn-generate').disabled = false;
   $('#btn-generate').textContent = 'Generate terrain';
+  $('#btn-cancel').classList.add('hidden');
 }
 
 // ---------------------------------------------------------------------------

@@ -187,6 +187,10 @@ select:focus, input[type=number]:focus { border-color: var(--accent-dim); }
 .btn-generate:hover { filter: brightness(1.1); }
 .btn-generate:disabled { filter: saturate(0.2) brightness(0.7); }
 .btn-generate.running { background: var(--bg3); color: var(--tx1); border: 1px solid var(--line); }
+.btn-cancel {
+  width: 100%; margin-top: 8px; padding: 8px;
+  color: var(--bad); border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.06);
+}
 
 #progress-wrap { margin-top: 10px; }
 .progress-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--tx1); margin-bottom: 4px; }
