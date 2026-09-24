@@ -5,8 +5,8 @@ import { makeConditions, crestX, stageAt, zB, faceGeom, heightAt } from './waves
 import { SurfPhysics, MODE } from './physics.js';
 
 export const GS = {
-  TITLE: 'title', PADDLE: 'paddle', RIDE: 'ride', WIPEOUT: 'wipeout',
-  SCORECARD: 'scorecard',
+  VIEW: 'view', PADDLE: 'paddle', RIDE: 'ride', WIPEOUT: 'wipeout',
+  SCORECARD: 'scorecard',   // non-modal ride log only — auto-dismisses, never blocks
 };
 
 const MANEUVERS = [
@@ -18,7 +18,7 @@ const MANEUVERS = [
 
 export class Game {
   constructor() {
-    this.state = GS.TITLE;
+    this.state = GS.VIEW;
     this.total = 0;
     this.newWave(false);
     this.rideScore = 0;
@@ -48,6 +48,19 @@ export class Game {
     this.phys = new SurfPhysics(this.p);
     this.phys.waveT = 0;
     this.waves++;
+  }
+
+  // next set swings in with the SAME conditions (studying one wave) — the wave
+  // must never just die and leave flat water
+  respawnSet() {
+    if (this.state === GS.PADDLE || this.state === GS.RIDE || this.state === GS.WIPEOUT) {
+      this.endRide('dry');
+    }
+    this.waveT = 0;
+    this.phys = new SurfPhysics(this.p);
+    this.phys.waveT = 0;
+    this.waves++;
+    this.say('NEXT SET SWINGING IN', 1.8);
   }
 
   say(msg, dur = 1.6) {
@@ -104,16 +117,20 @@ export class Game {
       labels,
       total: this.total,
     };
+    this.say(`${{ kickout: 'KICKED OUT', closeout: 'CLOSEOUT COVERED', dry: 'WAVE RAN DRY', wipeout: 'WIPED OUT' }[cause] || 'RIDE OVER'} · +${banked} pts`, 2.4);
     this.state = GS.SCORECARD;
     this.stateT = 0;
-    this.timeScale = 1;
   }
 
   update(dt, sdt, input, physEvents) {
     this.stateT += dt;
     if (this.msgT > 0) this.msgT -= dt;
 
-    if (this.state === GS.TITLE) {
+    // ENDLESS SETS: when the peel is about to run off the end, the same wave
+    // swings in again — the wave never disappears and the game never ends
+    if (zB(this.waveT, this.p) > this.p.zLineEnd + 25) this.respawnSet();
+
+    if (this.state === GS.VIEW) {
       this.waveT += sdt;
       this.phys.waveT = this.waveT;
       return;
@@ -221,7 +238,6 @@ export class Game {
           this.say(ev.cause === 'falls' ? 'OVER THE FALLS!' : ev.cause === 'lip' ? 'LIP BLEW UP!' : 'WASHED!', 2.2);
           this.state = GS.WIPEOUT;
           this.stateT = 0;
-          this.timeScale = 0.35;
           this.wipeoutCause = ev.cause;
           return;
         }
@@ -249,17 +265,14 @@ export class Game {
 
     if (this.state === GS.WIPEOUT) {
       this.waveT += sdt;
-      this.timeScale = Math.min(1, this.timeScale + dt * 0.25);
-      if (this.stateT > 2.4) this.endRide('wipeout');
+      if (this.stateT > 1.2) this.endRide('wipeout');
       return;
     }
 
     if (this.state === GS.SCORECARD) {
       this.waveT += sdt;
-      if (this.stateT > 0.6 && input.start) {
-        this.newWave(true);
-        this.spawnPaddle();
-      }
+      if (input.start) { this.spawnPaddle(); return; }   // no menu, no waiting
+      if (this.stateT > 2.5) this.state = GS.VIEW;
       return;
     }
   }

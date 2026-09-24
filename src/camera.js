@@ -14,6 +14,9 @@ export class FlyCam {
     this.active = false;
     this.locked = false;
     this.skipMove = false;
+    this.lookHeld = false;        // pointerdown-driven (e.buttons may be stripped)
+    this.pid = undefined;
+    this.allowMove = true;
     this.sens = 0.0023;           // rad per pixel
     this._px = null; this._py = null;   // unlocked drag baseline (clientX/Y)
     this._fwd = V3.make();
@@ -39,50 +42,55 @@ export class FlyCam {
 
   attach(canvas) {
     this.canvas = canvas;
-    // Window-level CAPTURE listeners: HUD/overlay divs sitting above the canvas
-    // can't eat the events, and the context menu can never interrupt a look drag.
+    // Pointer Events + setPointerCapture: the drag cannot be eaten by overlay
+    // divs, `e.buttons` stripping, or embed iframes. Look state comes from
+    // pointerdown/up (captured to the canvas), deltas from clientX/Y.
     addEventListener('contextmenu', (e) => { if (this.active) e.preventDefault(); }, true);
-    addEventListener('mousedown', (e) => {
+    addEventListener('pointerdown', (e) => {
       if (!this.active) return;
-      this._px = null; this._py = null;   // fresh drag baseline — no first-tick jump
-      if (e.button === 2) {
-        // UE-style: hold RMB to look. Pointer lock when allowed (usually blocked
-        // in embedded previews — unlocked drag-look below covers that).
-        try {
-          const r = canvas.requestPointerLock && canvas.requestPointerLock();
-          if (r && r.catch) r.catch(() => {});
-        } catch (_) {}
-      }
-      if (e.button === 0 || e.button === 2) e.preventDefault();  // no text-select/drag ghosts
+      if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 2) return;
+      this.lookHeld = true;
+      this.pid = e.pointerId;
+      this._px = null; this._py = null;
+      this.skipMove = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      try {
+        const r = canvas.requestPointerLock && canvas.requestPointerLock();
+        if (r && r.catch) r.catch(() => {});
+      } catch (_) {}
+      e.preventDefault();
     }, true);
-    addEventListener('mouseup', (e) => {
-      if (e.button === 2) {
-        try { if (document.pointerLockElement) document.exitPointerLock(); } catch (_) {}
+    const release = (e) => {
+      if (this.pid === undefined || e.pointerId === this.pid) {
+        this.lookHeld = false;
+        this.pid = undefined;
       }
-    }, true);
+      try { if (document.pointerLockElement) document.exitPointerLock(); } catch (_) {}
+    };
+    addEventListener('pointerup', release, true);
+    addEventListener('pointercancel', release, true);
+    addEventListener('lostpointercapture', release, true);
+    addEventListener('blur', () => { this.lookHeld = false; this.pid = undefined; });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === canvas;
-      this.skipMove = true;              // lock engage/release emits one synthetic jump
+      this.skipMove = true;
       this._px = null; this._py = null;
     });
     addEventListener('pointerlockerror', () => { this.locked = false; });
-    addEventListener('mousemove', (e) => {
+    addEventListener('pointermove', (e) => {
       if (!this.active) return;
-      // e.buttons is the single source of truth for "held" — no stuck state possible.
-      // Locked: RMB held to look (UE). Unlocked: LMB or RMB drag to look.
-      if (!(e.buttons & (this.locked ? 2 : 3))) return;
+      const held = this.lookHeld || this.locked || (e.buttons & 3) !== 0;
+      if (!held) return;
       let dx, dy;
-      if (this.locked) {
-        dx = Number.isFinite(e.movementX) ? e.movementX : 0;
-        dy = Number.isFinite(e.movementY) ? e.movementY : 0;
+      if (this.locked && Number.isFinite(e.movementX)) {
+        dx = e.movementX; dy = e.movementY;
       } else {
-        // derive deltas ourselves — movementX/Y is unreliable in embedded previews
         if (this._px === null) { this._px = e.clientX; this._py = e.clientY; this.skipMove = false; return; }
         dx = e.clientX - this._px; dy = e.clientY - this._py;
         this._px = e.clientX; this._py = e.clientY;
       }
       if (this.skipMove) { this.skipMove = false; return; }
-      dx = clamp(dx, -160, 160); dy = clamp(dy, -160, 160);   // tame trackpad spikes
+      dx = clamp(dx, -180, 180); dy = clamp(dy, -180, 180);
       this.yaw += dx * this.sens;
       this.pitch = clamp(this.pitch - dy * this.sens, -1.54, 1.54);
     }, true);
@@ -93,18 +101,20 @@ export class FlyCam {
     }, { passive: false, capture: true });
   }
 
-  update(dt, input) {
+  update(dt, input, allowMove = true) {
     const f = this.forward(this._fwd);
     const r = this._right;
     V3.set(r, -Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const dn = (...c) => input.down(...c);
     let mx = 0, my = 0, mz = 0;
-    if (dn('KeyW', 'ArrowUp')) { mx += f[0]; my += f[1]; mz += f[2]; }
-    if (dn('KeyS', 'ArrowDown')) { mx -= f[0]; my -= f[1]; mz -= f[2]; }
-    if (dn('KeyD', 'ArrowRight')) { mx += r[0]; my += r[1]; mz += r[2]; }
-    if (dn('KeyA', 'ArrowLeft')) { mx -= r[0]; my -= r[1]; mz -= r[2]; }
-    if (dn('KeyE')) my += 1;
-    if (dn('KeyQ')) my -= 1;
+    if (allowMove) {
+      if (dn('KeyW', 'ArrowUp')) { mx += f[0]; my += f[1]; mz += f[2]; }
+      if (dn('KeyS', 'ArrowDown')) { mx -= f[0]; my -= f[1]; mz -= f[2]; }
+      if (dn('KeyD', 'ArrowRight')) { mx += r[0]; my += r[1]; mz += r[2]; }
+      if (dn('KeyA', 'ArrowLeft')) { mx -= r[0]; my -= r[1]; mz -= r[2]; }
+      if (dn('KeyE')) my += 1;
+      if (dn('KeyQ')) my -= 1;
+    }
     const len = Math.hypot(mx, my, mz);
     const boost = dn('ShiftLeft', 'ShiftRight') ? 4.5 : 1;
     const spd = this.baseSpeed * this.speedMul * boost;
@@ -167,11 +177,11 @@ export class Cameras {
 
   toggleFree() { if (this.mode === 'free') this.exitFree(); else this.enterFree(); }
 
-  update(dt, t, rider, p, input) {
+  update(dt, t, rider, p, input, allowMove = true) {
     this.time = t;
     this.fly.active = this.mode === 'free';
     if (this.mode === 'free') {
-      if (input) this.fly.update(dt, input);
+      if (input) this.fly.update(dt, input, allowMove);
       V3.set(this.pos, this.fly.pos[0], this.fly.pos[1], this.fly.pos[2]);
       const f = this.fly.forward(this.fly._fwd);
       V3.set(this.look,

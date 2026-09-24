@@ -1,4 +1,5 @@
 // SET LINE — main loop, rendering, HUD.
+// The free camera is the ONLY camera. No menus, no game-over: sets roll forever.
 import { createGL } from './gl.js';
 import { Cameras, setAspect } from './camera.js';
 import { Sky } from './sky.js';
@@ -22,8 +23,24 @@ const beach = new Beach(gl, game.p);
 const surfer = new Surfer(gl);
 const spray = new Spray(gl);
 const input = new Input();
-// neutral input fed to the sim while flying the free camera (spectator mode)
+// neutral input fed to the sim while spectating (no board on a wave)
 const BLANK = { steer: 0, pump: false, stall: false, tuck: false, launch: false, kickout: false, start: false, down: () => false, justPressed: () => false };
+
+// ---- boot straight into the wave viewer ----
+const TIME_SPEEDS = [1, 0.3, 0];   // T cycles: real time / slow-mo / frozen
+let timeIdx = 0;
+
+function defaultVantage() {
+  const p = game.p;
+  cameras.pos[0] = p.xC0 + 52;
+  cameras.pos[1] = p.H + 4;
+  cameras.pos[2] = p.zPeel0 + 18;
+  cameras.look[0] = p.xC0 + 4;
+  cameras.look[1] = p.H * 0.5;
+  cameras.look[2] = p.zPeel0 + 30;
+  cameras.enterFree();
+}
+defaultVantage();
 
 let zRef = 0;
 let tumble = 0;
@@ -34,7 +51,6 @@ const hud = {
   score: el('score'), combo: el('combo'), barrel: el('barrel'),
   speed: el('speed'), dist: el('dist'), center: el('center-msg'),
   hints: el('hints'), cond: el('conditions'),
-  title: el('title'), card: el('scorecard'), cardTitle: el('card-title'), cardLines: el('card-lines'),
 };
 
 function resize() {
@@ -49,93 +65,74 @@ resize();
 function fmt(n) { return Math.floor(n).toLocaleString('en-US'); }
 
 function updateHUD() {
+  const riding = game.state === GS.PADDLE || game.state === GS.RIDE || game.state === GS.WIPEOUT;
   hud.score.textContent = fmt(game.state === GS.RIDE || game.state === GS.WIPEOUT ? game.rideScore : game.total);
   hud.combo.textContent = game.combo > 1 ? `combo x${game.combo}` : '';
   hud.barrel.textContent = game.barrelT > 0.05 ? `BARREL ${game.barrelT.toFixed(1)}s` : '';
-  const kmh = Math.abs(game.phys.speed) * 3.6;
-  hud.speed.textContent = `${kmh.toFixed(0)} km/h`;
+  hud.speed.textContent = riding ? `${(Math.abs(game.phys.speed) * 3.6).toFixed(0)} km/h` : '';
   hud.dist.textContent = game.state === GS.RIDE ? `${game.distance.toFixed(0)} m ridden` : '';
   hud.center.textContent = game.msgT > 0 ? game.msg : '';
   hud.center.style.opacity = game.msgT > 0 ? clamp(game.msgT * 2, 0, 1) : 0;
 
-  if (game.state === GS.TITLE) {
-    hud.title.classList.remove('hidden');
-    hud.card.classList.add('hidden');
-    hud.hints.textContent = '';
-  } else if (game.state === GS.SCORECARD) {
-    hud.title.classList.add('hidden');
-    hud.card.classList.remove('hidden');
-    if (game.card) {
-      const c = game.card;
-      const causeTxt = {
-        wipeout: 'WIPED OUT', kickout: 'KICKED OUT', closeout: 'CLOSEOUT COVERED', dry: 'WAVE RAN DRY',
-      }[c.cause] || 'RIDE COMPLETE';
-      hud.cardTitle.textContent = causeTxt;
-      hud.cardLines.innerHTML = c.labels.map(([k, v]) =>
-        `<div class="row"><span>${k}</span><span>${typeof v === 'number' ? fmt(v) : v}</span></div>`).join('') +
-        `<div class="row"><span>Distance</span><span>${c.distance} m</span></div>` +
-        (c.barrelBest > 0.05 ? `<div class="row"><span>Best barrel</span><span>${c.barrelBest.toFixed(1)} s</span></div>` : '') +
-        `<div class="row big"><span>SCORE</span><span>${fmt(c.banked)}</span></div>` +
-        `<div class="row"><span>Session total</span><span>${fmt(c.total)}</span></div>`;
-    }
-    hud.hints.textContent = '';
-  } else {
-    hud.title.classList.add('hidden');
-    hud.card.classList.add('hidden');
-    if (game.state === GS.PADDLE) hud.hints.textContent = game.paddleHint || 'HOLD SPACE TO PADDLE';
-    else if (game.state === GS.RIDE) hud.hints.textContent = 'A/D carve · SPACE pump · S stall · SHIFT tuck · K kick out · C camera · F free-cam';
-    else hud.hints.textContent = '';
-  }
-  if (cameras.mode === 'free') {
-    hud.title.classList.add('hidden');
-    hud.hints.textContent = `FREE CAM · hold RMB (or LMB) & drag to look · WASD fly · Q/E down/up · SHIFT fast · wheel speed ×${cameras.fly.speedMul.toFixed(2)} · F to exit`;
-  }
+  // one always-visible, never-blocking hint line
+  const surf = game.state === GS.PADDLE
+    ? (game.paddleHint || 'HOLD SPACE TO PADDLE') + ' · '
+    : game.state === GS.RIDE
+      ? 'A/D carve · SPACE pump · S stall · SHIFT tuck · K kick out · '
+      : '';
+  const fly = riding
+    ? 'drag to look'
+    : `drag to look · WASD fly · Q/E up/down · SHIFT fast · wheel ×${cameras.fly.speedMul.toFixed(2)}`;
+  const tLabel = game.timeScale === 0 ? 'FROZEN' : `×${game.timeScale}`;
+  hud.hints.textContent = `${surf}${fly} · T wave-time ${tLabel} · SPACE surf · F reset view · R new set`;
+
   const p = game.p;
   hud.cond.textContent =
-    `wave ${p.H.toFixed(1)} m · peel ${p.vPeel.toFixed(1)} m/s · ${p.wind < -0.5 ? 'offshore' : 'light onshore'} · ${game.waves} waves`;
+    `wave ${p.H.toFixed(1)} m · peel ${p.vPeel.toFixed(1)} m/s · ${p.wind < -0.5 ? 'offshore' : 'light onshore'} · set #${game.waves}`;
 }
 
 // ---- frame ----
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  let dt = Math.min(0.05, (now - last) / 1000);
+  const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  game.timeScale = TIME_SPEEDS[timeIdx];
   const sdt = dt * game.timeScale;
 
   input.poll();
+  const riding = game.state === GS.PADDLE || game.state === GS.RIDE || game.state === GS.WIPEOUT;
 
-  // global keys
-  if (input.justPressed('KeyF')) cameras.toggleFree();
-  const flying = cameras.mode === 'free';
-  if (!flying && input.justPressed('KeyC')) cameras.cycle();
-  if (input.justPressed('KeyR')) {
-    game.newWave(true);
-    game.spawnPaddle();
-    if (!flying) cameras.mode = 'chase';
-  }
+  // global keys — the camera is never taken away from you
+  if (input.justPressed('KeyT')) timeIdx = (timeIdx + 1) % TIME_SPEEDS.length;
+  if (input.justPressed('KeyF')) defaultVantage();
+  if (!riding && input.justPressed('KeyR')) game.newWave(true);
+  if (!riding && input.justPressed('Space')) game.spawnPaddle();
 
-  if (game.state === GS.TITLE && input.justPressed('Space')) {
-    game.spawnPaddle();
-    if (!flying) cameras.mode = 'chase';
-  }
-
-  // physics (surf controls are neutralized while free-flying)
-  const sim = flying ? BLANK : input;
+  // while riding, WASD belongs to surfing and the free cam softly follows;
+  // drag-to-look always works. Off the board: full free flight.
+  const sim = riding ? input : BLANK;
   const events = game.phys.update(sdt, sim, game.waveT);
   game.update(dt, sdt, sim, events);
 
-  // camera target
-  if (!flying) cameras.mode = (game.state === GS.TITLE) ? 'attract' : (cameras.mode === 'attract' ? 'chase' : cameras.mode);
   cameras.setSun(game.p);
   const ph = game.phys;
-  // tumble the board on wipeout
-  if (game.state === GS.WIPEOUT) tumble += sdt * 9;
+  if (game.state === GS.WIPEOUT) tumble += dt * 9;
   else tumble = damp(tumble, 0, 6, dt);
-  cameras.update(flying ? dt : sdt, game.waveT, ph, game.p, input);
+
+  if (riding) {
+    // soft-follow: same free camera, anchored near the rider
+    const hx = Math.cos(ph.yaw), hz = Math.sin(ph.yaw);
+    const lam = 2.4;
+    cameras.fly.pos[0] = damp(cameras.fly.pos[0], ph.x - hx * 9, lam, dt);
+    cameras.fly.pos[1] = damp(cameras.fly.pos[1], ph.y + 4.2, lam, dt);
+    cameras.fly.pos[2] = damp(cameras.fly.pos[2], ph.z - hz * 9, lam, dt);
+    cameras.fly.vel[0] = cameras.fly.vel[1] = cameras.fly.vel[2] = 0;
+  }
+  cameras.update(dt, game.waveT, ph, game.p, input, !riding);
 
   // spray clock + density target
-  const zTarget = game.state === GS.TITLE || game.state === GS.SCORECARD
+  const zTarget = (game.state === GS.VIEW || game.state === GS.SCORECARD)
     ? zB(game.waveT, game.p) + 10
     : ph.z + 5;
   zRef = damp(zRef, zTarget, 2.2, dt);
@@ -152,8 +149,7 @@ function frame(now) {
   beach.draw(cameras, game.p);
   water.draw(cameras, { time: game.waveT, zRef, p: game.p });
 
-  const showRider = game.state === GS.PADDLE || game.state === GS.RIDE ||
-    game.state === GS.WIPEOUT || game.state === GS.SCORECARD;
+  const showRider = riding || game.state === GS.SCORECARD;
   if (showRider) {
     const world = {
       pos: [ph.x, ph.y + 0.02, ph.z],
