@@ -851,32 +851,32 @@ function strikeFrame(st) {
   };
   if (st.type === 'shove') {                    // head sweeps the ball sideways — jaws stay shut
     const sw = smooth(0.30, 0.64, u);
-    o.off.y = yChain([0, 0], [0.30, 1.40 * A], [0.50, -1.10 * A], [0.78, -0.40 * A], [1.0, 0]);
+    o.off.y = yChain([0, 0], [0.30, 2.00 * A], [0.50, -1.10 * A], [0.78, -0.40 * A], [1.0, 0]);
     o.off.z = lerp(0.65 * s, -1.05 * s, sw) * A;
     o.off.x = yChain([0, 0], [0.30, -0.30], [0.56, 0.30], [1.0, 0]);
-    o.dip = -0.30 * wind + 0.95 * A * sw * (1 - rel);
+    o.dip = -0.30 * wind + 0.88 * A * sw * (1 - rel);
     o.jaw = lerp(lerp(0.10, 0.45, wind), 0.03, smooth(0.40, 0.55, u));
     o.crouch = 0.26 * wind + 0.30 * sw * (1 - rel);
     o.roll = (-0.30 * wind + 0.10 * sw) * s * (1 - rel * 0.5);
     o.lunge = 0.7 * smooth(0.28, 0.44, u) * (1 - smooth(0.62, 0.84, u));
   } else if (st.type === 'scoop') {             // fast dip under it, then a toss upward
     const lift = smooth(0.46, 0.74, u);
-    o.off.y = yChain([0, 0], [0.28, 1.80 * A], [0.46, -1.60 * A], [0.72, 0.70 * A], [1.0, 0]);
+    o.off.y = yChain([0, 0], [0.28, 2.40 * A], [0.46, -1.60 * A], [0.72, 0.70 * A], [1.0, 0]);
     o.off.x = yChain([0, 0], [0.28, -0.25], [0.50, 0.35], [1.0, 0]);
-    o.dip = -0.22 * wind + 1.15 * A * smooth(0.30, 0.46, u) * (1 - smooth(0.70, 0.98, u));
+    o.dip = -0.22 * wind + 1.02 * A * smooth(0.30, 0.46, u) * (1 - smooth(0.70, 0.98, u));
     o.jaw = lerp(0.10 + 0.70 * wind, 0.06, lift) + 0.10 * rel;
     o.crouch = 0.28 * wind + 0.56 * A * smooth(0.28, 0.46, u) * (1 - smooth(0.58, 0.92, u));
     o.lunge = 0.9 * smooth(0.26, 0.42, u) * (1 - smooth(0.58, 0.82, u));
   } else {                                      // BITE: raise, gape, chop, snap, hold, withdraw
     const ang = st.type === 'angled' ? 1 : 0;
-    o.off.y = yChain([0, 0], [0.30, 2.40 * A], [0.50, -0.90 * A], [0.64, -0.75 * A], [1.0, 0]);
+    o.off.y = yChain([0, 0], [0.30, 3.00 * A], [0.50, -0.90 * A], [0.64, -0.75 * A], [1.0, 0]);
     o.off.x = yChain([0, 0], [0.30, -0.32 * A], [0.52, 0.55 * A], [0.72, 0.35 * A], [1.0, 0]);
     o.off.z = ang ? yChain([0, 0], [0.28, 0.50 * s * A], [0.52, -0.20 * s], [0.72, -0.10 * s], [1.0, 0]) : 0;
-    o.dip = -0.30 * wind + 1.20 * A * chop * (1 - rel);          // neck extends UP, then drives DOWN
+    o.dip = -0.34 * wind + 1.05 * A * chop * (1 - rel);          // neck extends UP, then drives DOWN
     o.jaw = 0.10 + 0.85 * smooth(0.05, 0.28, u);                 // gape
     o.jaw = lerp(o.jaw, 0.04, smooth(0.44, 0.53, u));            // SNAP at impact
     o.jaw = lerp(o.jaw, 0.26, smooth(0.80, 0.94, u));            // release on the way back up
-    o.crouch = 0.24 * wind + 0.62 * A * smooth(0.30, 0.44, u) * (1 - smooth(0.58, 0.88, u));
+    o.crouch = 0.12 * wind + 0.66 * A * smooth(0.30, 0.44, u) * (1 - smooth(0.58, 0.88, u));
     o.roll = ang ? st.roll * s * ((wind) * 1.0 - 0.45 * chop) * (1 - rel) : 0;   // cock it, then unwind through the bite
     o.lunge = 0.8 * smooth(0.30, 0.44, u) * (1 - smooth(0.56, 0.82, u));
   }
@@ -887,7 +887,7 @@ function strikeFrame(st) {
 // half the skull's yaw, and DIP_N is the total ventral flexion (rad) at full stretch.
 const NECK_YAW_W = (() => { const w = [0.10, 0.22, 0.34, 0.46, 0.58, 0.68, 0.70, 0.64, 0.52, 0.38], s = w.reduce((a, b) => a + b, 0); return w.map((v) => v / s); })();
 const NECK_PITCH_W = (() => { const w = [0.25, 0.40, 0.60, 0.85, 1.10, 1.30, 1.30, 1.15, 0.90, 0.60], s = w.reduce((a, b) => a + b, 0); return w.map((v) => v / s); })();
-const DIP_N = 1.85;                 // radians of neck flexion at full reach for the ball
+const DIP_N = 1.45;                 // radians of neck flexion at full reach for the ball
 
 const tmpE2 = V3(), tmpF = V3(), tmpG = V3(), tmpH = V3(), tmpI = V3();
 function updateAI(dt) {
@@ -1134,10 +1134,12 @@ function poseLeg(leg) {
   leg.tibia.position.copy(Kl); basisQuat(Al.clone().sub(Kl), n, leg.tibia.quaternion);
   leg.meta.position.copy(Al); basisQuat(Ml.clone().sub(Al), n, leg.meta.quaternion);
   leg.foot.position.copy(Ml);
-  // heel lift happens about the animal's own lateral axis, not the world Z axis
+  // heel lift happens in the ANIMAL's frame (heading first, then the lift) — the old code
+  // anchored the foot to the world frame, so after a turn the toes still faced world +X
+  // (they read as twisted backward). Compose local-space: pelvis⁻¹ · heading · heelLift.
   dino.getWorldQuaternion(tmpQ3);
-  tmpQ.setFromAxisAngle(tmpAxis.set(0, 0, 1).applyQuaternion(tmpQ3), -p);
-  leg.foot.quaternion.copy(pelQ).invert().multiply(tmpQ);
+  tmpQ.setFromAxisAngle(tmpAxis.set(0, 0, 1), -p);
+  leg.foot.quaternion.copy(pelQ).invert().multiply(tmpQ3).multiply(tmpQ);
   // toes: proximal phalanx pitched down to the ground, rest flattened (compensating heel lift), curled in swing
   for (const chain of leg.toes) {
     chain.forEach((jt, k) => {
@@ -1240,7 +1242,7 @@ function animate(dt) {
     const psi = S.headYawRel, reach = 1.32;
     const lat = e.x * -Math.sin(psi) + e.z * -Math.cos(psi);
     const ay = clamp(S.headYawRel + lat * 2.4 / reach, -1.15, 1.15);
-    const ap = clamp(S.headPitchW + e.y * 2.7 / reach, -1.32, 0.55);
+    const ap = clamp(S.headPitchW + e.y * 2.7 / reach, -1.12, 0.55);
     const cy = clamp(ai.bearing, -0.85, 0.85) * 0.95;      // travelling: look where it is going
     const cp = 0.02 + 0.04 * rw;                          // … but keep the skull level
     yawT = lerp(headYaw0, lerp(cy, ay, ai.aimW), ai.gazeW);
