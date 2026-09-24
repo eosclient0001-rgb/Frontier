@@ -1,0 +1,56 @@
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: #06121e; color: #eaf4f8;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  user-select: none; -webkit-user-select: none;
+}
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+#hud { position: fixed; inset: 0; pointer-events: none; }
+.panel {
+  position: absolute; padding: 10px 16px;
+  background: rgba(4, 18, 30, 0.35);
+  border-radius: 8px; backdrop-filter: blur(3px);
+}
+#topleft { top: 16px; left: 16px; min-width: 150px; }
+#topright { top: 16px; right: 16px; text-align: right; min-width: 130px; }
+#score { font-size: 34px; font-weight: 700; letter-spacing: 1px; text-shadow: 0 2px 8px rgba(0,0,0,.5); }
+#combo { font-size: 15px; color: #ffd25e; min-height: 18px; }
+#barrel { font-size: 15px; color: #7ef0ff; min-height: 18px; }
+#speed { font-size: 24px; font-weight: 600; text-shadow: 0 2px 8px rgba(0,0,0,.5); }
+#dist { font-size: 13px; opacity: .8; }
+
+#center-msg {
+  position: absolute; left: 50%; top: 32%; transform: translate(-50%, -50%);
+  font-size: 42px; font-weight: 800; letter-spacing: 2px; text-align: center;
+  text-shadow: 0 3px 14px rgba(0,0,0,.6); opacity: 0; transition: opacity .25s;
+  color: #fff;
+}
+#hints {
+  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+  font-size: 14px; opacity: .75; text-shadow: 0 1px 6px rgba(0,0,0,.8); text-align: center;
+}
+#conditions {
+  position: absolute; bottom: 18px; right: 20px; font-size: 12px; opacity: .55; text-align: right;
+}
+
+.overlay {
+  position: fixed; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  background: radial-gradient(ellipse at center, rgba(4,16,28,.25) 0%, rgba(3,10,18,.72) 100%);
+}
+.hidden { display: none; }
+.overlay h1 {
+  font-size: 84px; margin: 0 0 4px; letter-spacing: 14px; font-weight: 800;
+  text-shadow: 0 4px 24px rgba(0,0,0,.7), 0 0 60px rgba(80,200,255,.25);
+}
+.overlay h2 { font-size: 20px; margin: 0 0 26px; font-weight: 400; letter-spacing: 6px; opacity: .85; }
+.blurb { max-width: 520px; font-size: 15px; line-height: 1.5; opacity: .8; margin: 0 20px 30px; }
+.press { font-size: 17px; letter-spacing: 3px; animation: pulse 1.8s infinite; }
+.press b { color: #ffd25e; }
+@keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+.controls { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 10px 22px; justify-content: center; max-width: 640px; font-size: 13px; opacity: .75; }
+.controls b { color: #9fe8ff; }
+#card-lines { font-size: 18px; line-height: 2; margin-bottom: 24px; min-width: 320px; }
+#card-lines .row { display: flex; justify-content: space-between; gap: 40px; }
+#card-lines .big { font-size: 30px; font-weight: 700; color: #ffd25e; }

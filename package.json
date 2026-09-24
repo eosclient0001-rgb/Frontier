@@ -1,0 +1,14 @@
+{
+  "name": "set-line",
+  "version": "0.1.0",
+  "description": "SET LINE — surf a realistic, cheap, parametric breaking wave in the browser",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8000 --bind 0.0.0.0",
+    "test": "node tools/smoke.mjs && node tools/validate_shaders.mjs",
+    "preview:wave": "node tools/dump_profile.mjs > /tmp/profile.json && python3 tools/render_preview.py /tmp/profile.json docs/wave_preview.png"
+  },
+  "devDependencies": {
+    "glslang-validator-prebuilt-predownloaded": "^0.0.2"
+  }
+}
