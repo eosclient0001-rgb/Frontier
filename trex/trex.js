@@ -831,36 +831,54 @@ function startStrike(type) {
     amp: 0.84 + Math.random() * 0.32, roll: 0.24 + Math.random() * 0.30 };
   ai.lastType = type; ai.n++;
 }
-// Where the mouth should be driven, and what the jaws do, at normalised time u of a strike.
+// Where the mouth should be driven at normalised time u of a strike, and what the jaws do.
+// Written to read like a real theropod attack: head lifts and cocks BACK (windup), jaws gape,
+// the whole head+neck chops DOWN-THROUGH the target, jaws snap shut at impact and hold a beat,
+// then the head pulls back up-and-out. `off` is metres in the animal frame; dip>0 flexes the
+// neck down (the negative lobe in the windup RE-extends it, lifting the skull).
 function strikeFrame(st) {
   const u = clamp(st.t / st.dur, 0, 1), s = st.side, A = st.amp;
-  const o = { off: V3(0, 0, 0), dip: 0, crouch: 0, roll: 0, jaw: 0.1, aimW: 0 };
-  if (st.type === 'shove') {                    // head swings through the ball, jaws shut
-    const sw = smooth(0.26, 0.74, u);
-    o.dip = 0.60 * A * smooth(0.04, 0.30, u) * (1 - smooth(0.76, 1, u));
-    o.off.z = lerp(-1.05, 1.05, sw) * s;
-    o.off.y = -0.05;
-    o.aimW = smooth(0.10, 0.28, u) * (1 - smooth(0.78, 1, u));
-    o.jaw = lerp(0.20, 0.05, smooth(0.15, 0.55, u));
-    o.crouch = 0.44 * smooth(0.08, 0.36, u) * (1 - smooth(0.72, 1, u));
-    o.roll = -0.17 * s * Math.sin(Math.PI * clamp((u - 0.18) / 0.62, 0, 1));
-  } else if (st.type === 'scoop') {             // dip under it and lift
-    o.dip = 0.95 * A * smooth(0.05, 0.32, u) * (1 - 0.55 * smooth(0.60, 1, u));
-    o.off.y = lerp(-0.42, 0.80, smooth(0.34, 0.66, u));
-    o.off.x = lerp(-0.30, 0.22, smooth(0.28, 0.62, u));
-    o.aimW = smooth(0.08, 0.26, u) * (1 - smooth(0.66, 0.98, u));
-    o.jaw = 0.70 * smooth(0.03, 0.22, u) * (1 - smooth(0.30, 0.48, u)) + 0.06 * smooth(0.5, 0.9, u);
-    o.crouch = 0.84 * smooth(0.08, 0.34, u) * (1 - smooth(0.55, 0.92, u));
-  } else {                                      // straight or angled bite
+  const o = { off: V3(0, 0, 0), dip: 0, crouch: 0, roll: 0, jaw: 0.08, aimW: 0, lunge: 0 };
+  const up = smooth(0.03, 0.30, u);                   // 1 once wound up
+  const chop = smooth(0.33, 0.50, u);                 // 0→1 through the strike
+  const rel = smooth(0.70, 1.0, u);                   // 1 by the end (pull-back)
+  const wind = up * (1 - chop);                       // active during the windup only
+  o.aimW = smooth(0.04, 0.16, u) * (1 - smooth(0.80, 1.0, u));
+  const yChain = (...pts) => {                        // piecewise mouth track
+    let y = pts[0][1];
+    for (let i = 1; i < pts.length; i++) y = lerp(y, pts[i][1], smooth(pts[i - 1][0], pts[i][0], u));
+    return y;
+  };
+  if (st.type === 'shove') {                    // head sweeps the ball sideways — jaws stay shut
+    const sw = smooth(0.30, 0.64, u);
+    o.off.y = yChain([0, 0], [0.30, 1.40 * A], [0.50, -1.10 * A], [0.78, -0.40 * A], [1.0, 0]);
+    o.off.z = lerp(0.65 * s, -1.05 * s, sw) * A;
+    o.off.x = yChain([0, 0], [0.30, -0.30], [0.56, 0.30], [1.0, 0]);
+    o.dip = -0.30 * wind + 0.95 * A * sw * (1 - rel);
+    o.jaw = lerp(lerp(0.10, 0.45, wind), 0.03, smooth(0.40, 0.55, u));
+    o.crouch = 0.26 * wind + 0.30 * sw * (1 - rel);
+    o.roll = (-0.30 * wind + 0.10 * sw) * s * (1 - rel * 0.5);
+    o.lunge = 0.7 * smooth(0.28, 0.44, u) * (1 - smooth(0.62, 0.84, u));
+  } else if (st.type === 'scoop') {             // fast dip under it, then a toss upward
+    const lift = smooth(0.46, 0.74, u);
+    o.off.y = yChain([0, 0], [0.28, 1.80 * A], [0.46, -1.60 * A], [0.72, 0.70 * A], [1.0, 0]);
+    o.off.x = yChain([0, 0], [0.28, -0.25], [0.50, 0.35], [1.0, 0]);
+    o.dip = -0.22 * wind + 1.15 * A * smooth(0.30, 0.46, u) * (1 - smooth(0.70, 0.98, u));
+    o.jaw = lerp(0.10 + 0.70 * wind, 0.06, lift) + 0.10 * rel;
+    o.crouch = 0.28 * wind + 0.56 * A * smooth(0.28, 0.46, u) * (1 - smooth(0.58, 0.92, u));
+    o.lunge = 0.9 * smooth(0.26, 0.42, u) * (1 - smooth(0.58, 0.82, u));
+  } else {                                      // BITE: raise, gape, chop, snap, hold, withdraw
     const ang = st.type === 'angled' ? 1 : 0;
-    o.dip = (0.88 + 0.10 * ang) * A * smooth(0.04, 0.34, u) * (1 - smooth(0.52, 0.95, u));
-    o.off.z = ang ? lerp(0.60 * s, -0.12 * s, smooth(0.22, 0.52, u)) : 0;
-    o.off.x = lerp(-0.22, 0.62, smooth(0.26, 0.52, u));
-    o.off.y = ang ? -0.08 : -0.16;
-    o.aimW = smooth(0.08, 0.28, u) * (1 - smooth(0.56, 0.96, u));
-    o.jaw = 0.78 * smooth(0.02, 0.26, u) * (1 - smooth(0.32, 0.47, u)) + 0.05 * smooth(0.5, 0.9, u);
-    o.crouch = (0.72 + 0.12 * ang) * smooth(0.06, 0.32, u) * (1 - smooth(0.50, 0.90, u));
-    o.roll = ang ? st.roll * s * smooth(0.10, 0.40, u) * (1 - smooth(0.55, 0.95, u)) : 0;
+    o.off.y = yChain([0, 0], [0.30, 2.40 * A], [0.50, -0.90 * A], [0.64, -0.75 * A], [1.0, 0]);
+    o.off.x = yChain([0, 0], [0.30, -0.32 * A], [0.52, 0.55 * A], [0.72, 0.35 * A], [1.0, 0]);
+    o.off.z = ang ? yChain([0, 0], [0.28, 0.50 * s * A], [0.52, -0.20 * s], [0.72, -0.10 * s], [1.0, 0]) : 0;
+    o.dip = -0.30 * wind + 1.20 * A * chop * (1 - rel);          // neck extends UP, then drives DOWN
+    o.jaw = 0.10 + 0.85 * smooth(0.05, 0.28, u);                 // gape
+    o.jaw = lerp(o.jaw, 0.04, smooth(0.44, 0.53, u));            // SNAP at impact
+    o.jaw = lerp(o.jaw, 0.26, smooth(0.80, 0.94, u));            // release on the way back up
+    o.crouch = 0.24 * wind + 0.62 * A * smooth(0.30, 0.44, u) * (1 - smooth(0.58, 0.88, u));
+    o.roll = ang ? st.roll * s * ((wind) * 1.0 - 0.45 * chop) * (1 - rel) : 0;   // cock it, then unwind through the bite
+    o.lunge = 0.8 * smooth(0.30, 0.44, u) * (1 - smooth(0.56, 0.82, u));
   }
   return o;
 }
@@ -894,30 +912,40 @@ function updateAI(dt) {
   const striking = !!ai.st;
   const STOPD = 3.50;                                // ball distance at which the jaws can reach
   if (ai.on && !ai.st && ai.cool <= 0 && ai.watch <= 0 &&
-      ai.dist > 2.8 && ai.dist < 4.1 && Math.abs(ai.bearing) < 0.40 && S.v < 1.5) startStrike(pickStrike());
+      ai.dist >= 2.0 && ai.dist < 4.1 && Math.abs(ai.bearing) < 0.42 && S.v < 1.6) startStrike(pickStrike());
 
-  // ---- steering: rate limited, and slower the faster it is going
-  const wmax = striking ? 0.10 : lerp(0.90, 0.30, smooth(0, 4.6, S.v));
-  const want = ai.on ? clamp(ai.bearing * 2.2, -wmax, wmax) : 0;
-  S.turn = approach(S.turn, want, dt * 4.5);
-  NAV.h += S.turn * dt;
-  if (NAV.h > Math.PI) NAV.h -= TAU; else if (NAV.h < -Math.PI) NAV.h += TAU;
-
-  // ---- speed: close the gap, ease off while turning hard, stop dead to strike
+  // ---- speed first: the animal can only swing round as fast as it is actually moving,
+  // so compute the intended speed, then cap the turn rate to it (no pivoting in place)
+  const fr0 = ai.st ? strikeFrame(ai.st) : null;
+  const TOOCLOSE = 2.2;                              // right under the body — even the jaws reach there, just shove on
   let vT = 0;
-  if (ai.on && !striking && ai.watch <= 0) {
-    const err = ai.dist - STOPD;
-    if (ai.dist < 2.85) vT = -0.55;                  // too close to get the jaws on → shuffle back
-    else {
-      vT = clamp(err * 0.95, 0, 5.2);
-      if (err > 0.4) vT = Math.max(vT, 1.35);
-      vT *= clamp(1 - 0.60 * Math.abs(ai.bearing) / 1.25, 0.18, 1);
+  if (ai.on) {
+    if (striking) vT = fr0 ? fr0.lunge : 0;          // step INTO the strike — a lunge, the way it really bites
+    else if (ai.watch <= 0) {
+      if (ai.dist < TOOCLOSE) vT = 0.85;             // keep walking past: it can't reverse like a machine
+      else {
+        const err = ai.dist - 3.4;                   // arrive a jaw's length short of the ball
+        vT = clamp(err * 0.95, 0, 5.2);
+        if (err > 0.4) vT = Math.max(vT, 1.35);
+        if (err < 0.3 && Math.abs(ai.bearing) > 0.30) vT = Math.max(vT, 0.8);   // step around to line up
+        vT *= clamp(1 - 0.60 * Math.abs(ai.bearing) / 1.25, 0.18, 1);
+      }
     }
   }
   S.chaseV = ai.on ? vT : null;
 
+  // ---- steering: the bigger the ground speed the faster it can turn; nearly stopped → barely turns
+  const wCap = clamp(S.v * 0.9, 0.12, 0.85);                     // turn is paid for in steps ACTUALLY taken
+  const wBody = lerp(0.90, 0.32, smooth(0, 4.6, S.v));           // … and capped harder the faster it runs
+  const wmax = striking ? 0.06 : Math.min(wCap, wBody);
+  const brg = ai.dist < TOOCLOSE ? 0 : ai.bearing;               // walking straight past it: ignore the bearing
+  const want = ai.on ? clamp(brg * 2.2, -wmax, wmax) : 0;
+  S.turn = approach(S.turn, want, dt * 4.5);
+  NAV.h += S.turn * dt;
+  if (NAV.h > Math.PI) NAV.h -= TAU; else if (NAV.h < -Math.PI) NAV.h += TAU;
+
   // ---- where the jaws should go
-  const fr = ai.st ? strikeFrame(ai.st) : null;
+  const fr = fr0;
   ai.aim.copy(bL).addScaledVector(bvL, 0.14);
   if (fr) {
     ai.aim.add(fr.off);
@@ -1218,8 +1246,8 @@ function animate(dt) {
     yawT = lerp(headYaw0, lerp(cy, ay, ai.aimW), ai.gazeW);
     pitchT = lerp(headPitch, lerp(cp, ap, ai.aimW), ai.gazeW);
   }
-  S.headYawRel = approach(S.headYawRel, yawT, lerp(1.8, 4.2, ai.aimW) * dt);
-  S.headPitchW = approach(S.headPitchW, pitchT, lerp(1.8, 4.6, ai.aimW) * dt);
+  S.headYawRel = approach(S.headYawRel, yawT, lerp(2.2, 9.0, ai.aimW) * dt);
+  S.headPitchW = approach(S.headPitchW, pitchT, lerp(2.2, 9.5, ai.aimW) * dt);
   tmpE.set(ai.roll, NAV.h + S.headYawRel, S.headPitchW);
   const desired = new THREE.Quaternion().setFromEuler(tmpE);
   const parentQ = headJoint.parent.getWorldQuaternion(new THREE.Quaternion());
@@ -1241,11 +1269,12 @@ function animate(dt) {
     const lift = (i < 16 ? -0.001 * rw - 0.005 * roar : 0) + (i < 6 ? 0.02 * antic : 0) + (i === 0 ? -(pitch - 0.025) * 0.75 : 0);
     // turning: the tail is dragged, so each joint reproduces the turn rate it had a moment ago —
     // the swing travels backwards along the tail instead of the whole thing pivoting at once
+    const strikeTail = i < 14 ? -0.055 * ai.dip * (1 - i / 14) : 0;   // counterweight to the head chop
     const tl = clamp(turnDelayed(i * 0.045) / 0.5, -1, 1);
     const tYaw = tl * (i < 18 ? lerp(0.075, 0.006, i / 18) : 0);
     // state.tailDroop scales the tail's resting downward arc (tuned against the reference)
     setRot(j, 0, (i === 0 ? -yaw * 0.85 : 0) + (i < 3 ? -look * 0.04 * (1 - ai.gazeW) : 0) + lat + tYaw,
-      vert + lift + j.userData.base.z * (state.tailDroop - 1));
+      vert + lift + strikeTail + j.userData.base.z * (state.tailDroop - 1));
   });
 
   // ---- arms (passive lag + idle fidget)
