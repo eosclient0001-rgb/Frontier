@@ -276,6 +276,7 @@ console.log('\nCybernetic decorations, bite variants and hunt policy');
   dAnim.update(1 / 60);
   const decorations = buildDecorations(dSk);
   ok(decorations.antennae.parent === dSk.head && decorations.antennae.children.length === 2, 'two receiver antennae attach to the skull before the eyes');
+  ok(decorations.antennae.children.every((a) => a.userData.direction === 'posterior' && a.userData.tip.z > a.userData.mount.z), 'digital antenna stalks point backwards from the eye region');
   ok(decorations.actuators.length === 2, 'left and right hydraulic jaw actuators are present');
   ok(decorations.wires.length === 3, `exactly three electrical cables are present (${decorations.wires.map((w) => w.name).join(', ')})`);
   ok(decorations.wires.map((w) => w.color).join(',') === '16765471,16741928,15219509', 'cable colours are yellow, orange and red');
@@ -284,6 +285,13 @@ console.log('\nCybernetic decorations, bite variants and hunt policy');
   ok(Math.abs(hipR.x - hipL.x) > 0.75, `pelvic hip joints are separated laterally (${Math.abs(hipR.x - hipL.x).toFixed(2)} m)`);
 
   decorations.update(1 / 60, dAnim);
+  ok(decorations.actuators.every((a) => Math.abs(a.baseAnchor.x) > 0.40 && Math.abs(a.jawAnchor.x) > 0.40), 'hydraulic clevises sit outside the mouth on the lateral cheek and ramus');
+  const ventralRuns = decorations.wires.every((w) => {
+    const top = w.top.getWorldPosition(new Vector3());
+    const bottom = w.bottom.getWorldPosition(new Vector3());
+    return bottom.y < top.y - 0.5 && bottom.z > top.z + 1.2;
+  });
+  ok(ventralRuns, 'all three cables run posteriorly from the throat down to the stomach');
   const wireStart = decorations.wires[0].points[5].clone();
   const closedPiston = decorations.actuators[0].piston.scale.y;
   dAnim.roar();

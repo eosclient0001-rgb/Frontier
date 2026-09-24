@@ -76,23 +76,34 @@ function buildAntennas(skel) {
   const collarMat = material(0x8c9aa1, { metalness: 0.76, roughness: 0.26 });
   const tipMat = material(0x6fe9ff, { metalness: 0.2, roughness: 0.18, emissive: 0x0a92b0, emissiveIntensity: 1.8 });
 
-  // Skull frame: -Z is anterior. These bases sit just anterior to each orbit,
-  // outside the cheek wall, and the receivers rake up and forward.
+  // Skull frame: -Z is anterior, so a posterior/backward receiver has a
+  // positive-Z tip. The mounts sit just behind the orbit, outside the cheek
+  // wall, and the segmented stalks deliberately rake up and backwards.
   for (const side of [-1, 1]) {
-    const base = new Vector3(side * 0.285, 0.19, -0.69);
-    const bend = new Vector3(side * 0.31, 0.36, -0.75);
-    const tip = new Vector3(side * 0.33, 0.56, -0.84);
+    const base = new Vector3(side * 0.37, 0.235, -0.32);
+    const bend = new Vector3(side * 0.405, 0.415, -0.07);
+    const tip = new Vector3(side * 0.42, 0.605, 0.19);
     const antenna = new Group();
-    antenna.name = `wifi-antenna.${side > 0 ? 'R' : 'L'}`;
+    antenna.name = `alien-antenna.${side > 0 ? 'R' : 'L'}`;
     antenna.userData.decoration = true;
-    addLocalRod(antenna, base, bend, 0.018, rodMat);
-    addLocalRod(antenna, bend, tip, 0.013, rodMat);
-    addLocalRing(antenna, base.clone().add(new Vector3(0, 0.015, 0)), bend.clone().sub(base), 0.048, 0.009, collarMat);
-    // Two little signal bands read as a receiver rather than a random horn.
+    antenna.userData.mount = base.clone();
+    antenna.userData.tip = tip.clone();
+    antenna.userData.direction = 'posterior';
+    addLocalRod(antenna, base, bend, 0.022, rodMat);
+    addLocalRod(antenna, bend, tip, 0.015, rodMat);
+    addLocalRing(antenna, base.clone().add(new Vector3(0, 0.018, 0)), bend.clone().sub(base), 0.058, 0.011, collarMat);
+    // Bright, concentric signal rings and a glowing node make these read as
+    // digital alien receivers rather than ordinary fossil horns.
     const signalDir = tip.clone().sub(bend).normalize();
-    addLocalRing(antenna, bend.clone().lerp(tip, 0.34), signalDir, 0.038, 0.006, tipMat);
-    addLocalRing(antenna, bend.clone().lerp(tip, 0.68), signalDir, 0.030, 0.005, tipMat);
-    const tipMesh = new Mesh(new SphereGeometry(0.027, 10, 6), tipMat);
+    addLocalRing(antenna, bend.clone().lerp(tip, 0.28), signalDir, 0.050, 0.008, tipMat);
+    addLocalRing(antenna, bend.clone().lerp(tip, 0.58), signalDir, 0.040, 0.007, tipMat);
+    addLocalRing(antenna, tip, signalDir, 0.073, 0.010, tipMat);
+    // A tiny two-prong receiver fork gives the silhouette an unmistakably
+    // engineered/alien profile while remaining part of the skull decoration.
+    const forkRoot = tip.clone().addScaledVector(signalDir, -0.035);
+    addLocalRod(antenna, forkRoot, tip.clone().add(new Vector3(side * 0.075, 0.045, 0.035)), 0.009, tipMat);
+    addLocalRod(antenna, forkRoot, tip.clone().add(new Vector3(-side * 0.075, 0.045, 0.035)), 0.009, tipMat);
+    const tipMesh = new Mesh(new SphereGeometry(0.044, 12, 8), tipMat);
     tipMesh.position.copy(tip);
     tipMesh.castShadow = true;
     tipMesh.userData.decoration = true;
@@ -117,18 +128,21 @@ function buildActuators(skel, root) {
     const rodSeal = new Mesh(new TorusGeometry(0.028, 0.007, 8, 16), sealMat);
     for (const m of [baseSeal, rodSeal]) { m.castShadow = true; m.userData.decoration = true; }
     root.add(barrel, piston, baseSeal, rodSeal);
-    actuators.push({ side, barrel, piston, baseSeal, rodSeal });
+    actuators.push({ side, barrel, piston, baseSeal, rodSeal, baseAnchor: new Vector3(), jawAnchor: new Vector3() });
   }
 
   return {
     actuators,
     update() {
-      // Head-side clevis and jaw-side clevis are in their respective live
-      // frames; the piston visibly changes length as the mandible rotates.
+      // Head-side and jaw-side clevises sit on the lateral cheek/ramus, not
+      // across the tooth row or inside the mouth. The live jaw transform then
+      // changes the barrel/piston length as the mandible rotates.
       for (const a of actuators) {
         const s = a.side;
-        const base = worldOf(skel.head, new Vector3(s * 0.34, -0.20, -0.08), _a).clone();
-        const jaw = worldOf(skel.jaw, new Vector3(s * 0.31, -0.03, -0.61), _b).clone();
+        const base = worldOf(skel.head, new Vector3(s * 0.445, 0.015, -0.28), _a).clone();
+        const jaw = worldOf(skel.jaw, new Vector3(s * 0.475, -0.18, -0.46), _b).clone();
+        a.baseAnchor.copy(base);
+        a.jawAnchor.copy(jaw);
         const pistonPoint = base.clone().lerp(jaw, 0.56);
         setBetween(a.barrel, base, pistonPoint);
         setBetween(a.piston, pistonPoint, jaw);
@@ -230,14 +244,16 @@ function makeWire(def, root) {
 }
 
 function buildWires(skel, root) {
-  // The near-side run is offset for readability; all three terminate at the
-  // same throat/stomach systems but have independent slack and inertia.
+  // The cables leave a small bus at the ventral throat and travel posteriorly
+  // and down to the ventral mid-torso/stomach. D6 is used as the torso frame;
+  // its negative local Z is the belly direction, rather than the dorsal spine.
+  // All three share the anatomical route but have independent slack/inertia.
   const throat = skel.neck[Math.min(4, skel.neck.length - 1)];
-  const stomach = skel.trunk[Math.min(5, skel.trunk.length - 1)];
+  const stomach = skel.trunk[Math.min(7, skel.trunk.length - 1)];
   const defs = [
-    { name: 'main-yellow', color: 0xffd21f, emissive: 0.50, radius: 0.018, phase: 0.0, sag: -0.18, drop: 0.17, lateral: -0.08, top: throat, topPos: new Vector3(-0.34, 0.00, -0.04), bottom: stomach, bottomPos: new Vector3(-0.58, -0.14, -0.43) },
-    { name: 'orange', color: 0xff7628, emissive: 0.35, radius: 0.014, phase: 1.7, sag: -0.28, drop: 0.23, lateral: -0.18, top: throat, topPos: new Vector3(-0.30, 0.04, -0.02), bottom: stomach, bottomPos: new Vector3(-0.52, -0.19, -0.48) },
-    { name: 'red', color: 0xe83b35, emissive: 0.40, radius: 0.013, phase: 3.2, sag: -0.23, drop: 0.14, lateral: 0.12, top: throat, topPos: new Vector3(-0.27, -0.04, -0.06), bottom: stomach, bottomPos: new Vector3(-0.47, -0.10, -0.52) },
+    { name: 'main-yellow', color: 0xffd21f, emissive: 0.50, radius: 0.018, phase: 0.0, sag: -0.18, drop: 0.17, lateral: -0.08, top: throat, topPos: new Vector3(-0.34, 0.00, -0.04), bottom: stomach, bottomPos: new Vector3(-0.58, -0.05, -1.10) },
+    { name: 'orange', color: 0xff7628, emissive: 0.35, radius: 0.014, phase: 1.7, sag: -0.28, drop: 0.23, lateral: -0.18, top: throat, topPos: new Vector3(-0.30, 0.04, -0.02), bottom: stomach, bottomPos: new Vector3(-0.52, -0.09, -1.16) },
+    { name: 'red', color: 0xe83b35, emissive: 0.40, radius: 0.013, phase: 3.2, sag: -0.23, drop: 0.14, lateral: 0.12, top: throat, topPos: new Vector3(-0.27, -0.04, -0.06), bottom: stomach, bottomPos: new Vector3(-0.47, -0.03, -1.08) },
   ];
   return defs.map((def) => makeWire(def, root));
 }
