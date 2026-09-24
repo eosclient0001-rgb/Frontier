@@ -452,7 +452,7 @@ const neck = [];
 let headJoint, jawJoint;
 (function buildNeck() {
   const lens = [0.132, 0.132, 0.129, 0.126, 0.123, 0.120, 0.118, 0.115, 0.142, 0.068]; // C10 … C2(axis), C1(atlas)
-  const base = [0.30, 0.05, -0.05, -0.11, -0.19, -0.26, -0.31, -0.33, -0.30, -0.23];
+  const base = [0.36, 0.22, 0.12, 0.01, -0.09, -0.19, -0.27, -0.31, -0.21, -0.10];
   let parent = neckBaseParent, pos = neckBaseOffset.clone();
   for (let i = 0; i < 10; i++) {
     const j = joint(parent, pos.x, pos.y, pos.z, 'neck' + i); j.userData.base.z = base[i];
@@ -728,9 +728,9 @@ function gaitParams(v) {
   return {
     f: table([[0, 0.45], [1.45, 0.43], [3, 0.62], [5.2, 0.86]], v),          // stride frequency (Hz)
     duty: table([[0, 0.7], [1.45, 0.64], [3, 0.52], [5.2, 0.42]], v),        // fraction of cycle on ground
-    hipH: table([[0, 3.02], [1.45, 2.95], [5.2, 2.80]], v),
+    hipH: table([[0, 3.02], [1.45, 2.98], [5.2, 2.88]], v),
     lift: table([[0, 0.16], [1.45, 0.30], [5.2, 0.52]], v),
-    pitch: table([[0, 0.025], [1.45, -0.025], [5.2, -0.11]], v),
+    pitch: table([[0, 0.02], [1.45, 0.0], [5.2, -0.04]], v),
     heel: table([[0, 0.05], [1.45, 0.35], [5.2, 0.62]], v),
     footZ: table([[0, 0.37], [1.45, 0.30], [5.2, 0.26]], v),
     sway: table([[0, 0.0], [1.45, 0.075], [5.2, 0.045]], v),
@@ -891,12 +891,12 @@ function animate(dt) {
   });
   // stabilise head in world space (gaze stabilisation), then layer jaw
   dino.updateMatrixWorld(true);
-  const headPitch = -0.1 - 0.06 * rw + lookP + roar * 0.42 - antic * 0.15 + 0.02 * Math.sin(S.t * 0.7) * (1 - mw);
+  const headPitch = 0.02 + 0.04 * rw + lookP + roar * 0.42 - antic * 0.15 + 0.02 * Math.sin(S.t * 0.7) * (1 - mw);
   tmpE.set(0, look + yaw * 0.25, headPitch);
   const desired = new THREE.Quaternion().setFromEuler(tmpE);
   const parentQ = headJoint.parent.getWorldQuaternion(new THREE.Quaternion());
   const stab = parentQ.clone().invert().multiply(desired);
-  setRot(headJoint, 0, 0, 0); headJoint.quaternion.slerp(stab, 0.85);
+  headJoint.quaternion.copy(stab);   // hold the gaze steady regardless of trunk motion
   const jawIdle = 0.13 + 0.06 * Math.pow(Math.max(0, Math.sin(S.t * 0.27)), 12);
   const jawRun = (0.1 + 0.03 * Math.sin(2 * TAU * S.phase)) * rw;
   const jaw = lerp(jawIdle + jawRun, 0.72 + 0.03 * Math.sin(S.t * 38), roarOpen);
@@ -1028,8 +1028,8 @@ document.getElementById('loading').remove();
 // Deterministic stepping hook (for screenshots/tests)
 // Orthographic silhouette capture (used by tools/compare.html to score the model
 // against the reference skeletal diagram).
-function silhouette(w = 900, h = 340, dir = 1) {
-  const box = new THREE.Box3().setFromObject(dino);
+function silhouette(w = 900, h = 340, dir = 1, target = dino) {
+  const box = new THREE.Box3().setFromObject(target);
   const L = box.max.x - box.min.x, H = box.max.y - box.min.y;
   const cx = (box.min.x + box.max.x) / 2, cy = (box.min.y + box.max.y) / 2;
   const vw = L * 1.02, vh = H * 1.06, a = vw / vh;
@@ -1058,6 +1058,19 @@ if (SIL) {
 window.__trex = {
   state, setGait, THREE, legs, pelvis, neck, tail, arms, trunk, head: headJoint, jaw: jawJoint, renderer, scene,
   sim: (dt, n) => { let P; for (let i = 0; i < n; i++) P = animate(dt); return P; },
+  // Orthographic capture of a single part (e.g. the skull) with everything else hidden,
+  // used to score individual bones against the reference diagrams.
+  partSil: (target, w = 900, h = 400, dir = 1) => {
+    const hidden = [];
+    dino.traverse((o) => { if (o.isMesh && o.visible) { o.visible = false; hidden.push(o); } });
+    const shown = [];
+    target.traverse((o) => { if (o.isMesh) { o.visible = true; shown.push(o); } });
+    const out = silhouette(w, h, dir, target);
+    shown.forEach((o) => (o.visible = false));
+    hidden.forEach((o) => (o.visible = true));
+    out.metresPerPixel = out.length / out.w;
+    return out;
+  },
   silhouette, step: (dt, n) => { let P; for (let i = 0; i < n; i++) P = animate(dt); controls.update(); renderer.render(scene, camera); return P; }, setCam, U, camera, controls, dino };
 
 const clock = new THREE.Clock();
