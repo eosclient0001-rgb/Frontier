@@ -11,9 +11,11 @@ export class FlyCam {
     this.speedMul = 1;
     this.baseSpeed = 15;          // m/s at speedMul 1
     this.fov = 66 * Math.PI / 180;
-    this.looking = false;
     this.active = false;
+    this.locked = false;
+    this.skipMove = false;
     this.sens = 0.0023;           // rad per pixel
+    this._px = null; this._py = null;   // unlocked drag baseline (clientX/Y)
     this._fwd = V3.make();
     this._right = V3.make();
   }
@@ -37,30 +39,58 @@ export class FlyCam {
 
   attach(canvas) {
     this.canvas = canvas;
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 2) return;
-      this.looking = true;
-      try {
-        const r = canvas.requestPointerLock && canvas.requestPointerLock();
-        if (r && r.catch) r.catch(() => {});
-      } catch (_) { /* pointer lock optional — movementX/Y works without it */ }
-    });
+    // Window-level CAPTURE listeners: HUD/overlay divs sitting above the canvas
+    // can't eat the events, and the context menu can never interrupt a look drag.
+    addEventListener('contextmenu', (e) => { if (this.active) e.preventDefault(); }, true);
+    addEventListener('mousedown', (e) => {
+      if (!this.active) return;
+      this._px = null; this._py = null;   // fresh drag baseline — no first-tick jump
+      if (e.button === 2) {
+        // UE-style: hold RMB to look. Pointer lock when allowed (usually blocked
+        // in embedded previews — unlocked drag-look below covers that).
+        try {
+          const r = canvas.requestPointerLock && canvas.requestPointerLock();
+          if (r && r.catch) r.catch(() => {});
+        } catch (_) {}
+      }
+      if (e.button === 0 || e.button === 2) e.preventDefault();  // no text-select/drag ghosts
+    }, true);
     addEventListener('mouseup', (e) => {
-      if (e.button !== 2) return;
-      this.looking = false;
-      try { if (document.pointerLockElement) document.exitPointerLock(); } catch (_) {}
+      if (e.button === 2) {
+        try { if (document.pointerLockElement) document.exitPointerLock(); } catch (_) {}
+      }
+    }, true);
+    document.addEventListener('pointerlockchange', () => {
+      this.locked = document.pointerLockElement === canvas;
+      this.skipMove = true;              // lock engage/release emits one synthetic jump
+      this._px = null; this._py = null;
     });
+    addEventListener('pointerlockerror', () => { this.locked = false; });
     addEventListener('mousemove', (e) => {
       if (!this.active) return;
-      if (!this.looking && document.pointerLockElement !== canvas) return;
-      this.yaw += e.movementX * this.sens;
-      this.pitch = clamp(this.pitch - e.movementY * this.sens, -1.54, 1.54);
-    });
+      // e.buttons is the single source of truth for "held" — no stuck state possible.
+      // Locked: RMB held to look (UE). Unlocked: LMB or RMB drag to look.
+      if (!(e.buttons & (this.locked ? 2 : 3))) return;
+      let dx, dy;
+      if (this.locked) {
+        dx = Number.isFinite(e.movementX) ? e.movementX : 0;
+        dy = Number.isFinite(e.movementY) ? e.movementY : 0;
+      } else {
+        // derive deltas ourselves — movementX/Y is unreliable in embedded previews
+        if (this._px === null) { this._px = e.clientX; this._py = e.clientY; this.skipMove = false; return; }
+        dx = e.clientX - this._px; dy = e.clientY - this._py;
+        this._px = e.clientX; this._py = e.clientY;
+      }
+      if (this.skipMove) { this.skipMove = false; return; }
+      dx = clamp(dx, -160, 160); dy = clamp(dy, -160, 160);   // tame trackpad spikes
+      this.yaw += dx * this.sens;
+      this.pitch = clamp(this.pitch - dy * this.sens, -1.54, 1.54);
+    }, true);
     addEventListener('wheel', (e) => {
       if (!this.active) return;
+      e.preventDefault();
       this.speedMul = clamp(this.speedMul * (e.deltaY > 0 ? 0.8 : 1.25), 0.05, 12);
-    }, { passive: true });
+    }, { passive: false, capture: true });
   }
 
   update(dt, input) {

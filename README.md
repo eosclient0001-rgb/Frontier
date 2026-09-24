@@ -29,9 +29,9 @@ Any static file server works (`npx serve`, nginx, …). Needs a browser with
    mind**), **SHIFT** to tuck when the lip throws over you.
 5. **K** kicks out clean before the closeout ends it for you.
 6. **F** drops you into a free-fly camera to inspect the wave (like an editor
-   viewport): hold **RMB** to look, **WASD** to fly, **Q**/**E** down/up,
-   **SHIFT** fast, mouse **wheel** for speed. **F** again returns to the
-   action — from exactly where you left it.
+   viewport): hold **RMB** (or **LMB**) and drag to look, **WASD** to fly,
+   **Q**/**E** down/up, **SHIFT** fast, mouse **wheel** for speed. **F** again
+   returns to the action — from exactly where you left it.
 
 Score = distance + maneuvers (combo ×5 max) + barrel time + airs + style.
 Wipeouts bank only half the ride.

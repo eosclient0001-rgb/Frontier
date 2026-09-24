@@ -54,3 +54,9 @@ html, body {
 #card-lines { font-size: 18px; line-height: 2; margin-bottom: 24px; min-width: 320px; }
 #card-lines .row { display: flex; justify-content: space-between; gap: 40px; }
 #card-lines .big { font-size: 30px; font-weight: 700; color: #ffd25e; }
+
+/* free-cam drag-look: never start text selection or drag-ghosts */
+body, #hud, #title, #scorecard {
+  user-select: none;
+  -webkit-user-select: none;
+}

@@ -88,7 +88,7 @@ function updateHUD() {
   }
   if (cameras.mode === 'free') {
     hud.title.classList.add('hidden');
-    hud.hints.textContent = `FREE CAM · hold RMB to look · WASD fly · Q/E down/up · SHIFT fast · wheel speed ×${cameras.fly.speedMul.toFixed(2)} · F to exit`;
+    hud.hints.textContent = `FREE CAM · hold RMB (or LMB) & drag to look · WASD fly · Q/E down/up · SHIFT fast · wheel speed ×${cameras.fly.speedMul.toFixed(2)} · F to exit`;
   }
   const p = game.p;
   hud.cond.textContent =
