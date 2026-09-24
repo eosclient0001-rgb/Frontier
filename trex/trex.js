@@ -10,6 +10,7 @@ import { RoomEnvironment } from './lib/RoomEnvironment.js';
 
 const params = new URLSearchParams(location.search);
 const CALIB = params.has('calib');
+const SIL = params.has('sil');
 
 // ───────────────────────────────────────────────────────── utilities
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -160,7 +161,7 @@ function cone(len, r, curl = 0.25, flat = 0.8, dir = -1, seg = 8) {
 
 // ───────────────────────────────────────────────────────── renderer / scene
 const canvas = document.getElementById('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: CALIB, preserveDrawingBuffer: CALIB });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: CALIB && !SIL, preserveDrawingBuffer: CALIB || SIL });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -171,13 +172,13 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
 const BG = new THREE.Color(0x1d2127);
-scene.background = CALIB ? null : BG;
-scene.fog = CALIB ? null : new THREE.Fog(BG, 28, 75);
+scene.background = (CALIB || SIL) ? (SIL ? new THREE.Color(0x000000) : null) : BG;
+scene.fog = (CALIB || SIL) ? null : new THREE.Fog(BG, 28, 75);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
 scene.environmentIntensity = 0.35;
 
-const camera = CALIB
+const camera = (CALIB || SIL)
   ? new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100)
   : new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 300);
 camera.position.set(10.5, 4.8, 12.5);
@@ -240,7 +241,7 @@ const setRot = (j, x, y, z) => j.rotation.set(j.userData.base.x + x, j.userData.
 const dino = new THREE.Group(); scene.add(dino);
 const pelvis = joint(dino, 0, 2.8, 0, 'pelvis');
 pelvis.rotation.order = 'YXZ';
-const COL_Y = 0.40;           // vertebral column height above acetabulum
+const COL_Y = 0.31;           // vertebral column height above acetabulum
 const HIP_Z = 0.34;           // acetabulum lateral offset
 
 // ---------- vertebra builder (built along +X from posterior face x=0 to anterior x=L)
@@ -339,7 +340,7 @@ function vertebra(o) {
 })();
 
 // ---------- dorsal column (3 flexible trunk segments), ribs, gastralia
-const DL = 0.165;               // dorsal centrum length
+const DL = 0.162;               // dorsal centrum length
 const trunk = [];
 const ribs = [];
 const segCounts = [4, 5, 4];     // D13-D10 | D9-D5 | D4-D1
@@ -357,7 +358,7 @@ const segCounts = [4, 5, 4];     // D13-D10 | D9-D5 | D4-D1
     for (let k = 0; k < segCounts[s]; k++) {
       const d = dIndex; // D number
       const f = (13 - d) / 12;
-      const g = vertebra({ L: DL, R: lerp(0.09, 0.085, f), spineH: lerp(0.24, 0.20, f), spineW0: DL * 0.6, spineW1: DL * 0.62,
+      const g = vertebra({ L: DL, R: lerp(0.09, 0.085, f), spineH: lerp(0.09, 0.07, f), spineW0: DL * 0.6, spineW1: DL * 0.62,
         tilt: -0.05, tpLen: 0.17, tpUp: 0.35, tpBack: 0.02, tpFlat: 1.8 });
       g.translate(k * DL, 0, 0); parts.push(g); count();
       // ribs on D2..D13
@@ -450,15 +451,15 @@ const arms = [];
 const neck = [];
 let headJoint, jawJoint;
 (function buildNeck() {
-  const lens = [0.12, 0.12, 0.118, 0.115, 0.112, 0.11, 0.108, 0.105, 0.13, 0.06]; // C10 … C2(axis), C1(atlas)
-  const base = [0.52, 0.22, 0.12, 0.04, -0.05, -0.13, -0.19, -0.22, -0.2, -0.14];
+  const lens = [0.132, 0.132, 0.129, 0.126, 0.123, 0.120, 0.118, 0.115, 0.142, 0.068]; // C10 … C2(axis), C1(atlas)
+  const base = [0.30, 0.05, -0.05, -0.11, -0.19, -0.26, -0.31, -0.33, -0.30, -0.23];
   let parent = neckBaseParent, pos = neckBaseOffset.clone();
   for (let i = 0; i < 10; i++) {
     const j = joint(parent, pos.x, pos.y, pos.z, 'neck' + i); j.userData.base.z = base[i];
     const f = i / 9;
     const R = lerp(0.1, 0.075, f), L = lens[i];
     const isAtlas = i === 9, isAxis = i === 8;
-    const g = vertebra({ L, R, wide: 1.3, spineH: isAtlas ? 0.0 : isAxis ? 0.14 : lerp(0.17, 0.09, f), spineW0: L * 0.55, spineW1: isAxis ? L * 0.9 : L * 0.45,
+    const g = vertebra({ L, R, wide: 1.3, spineH: isAtlas ? 0.0 : isAxis ? 0.11 : lerp(0.11, 0.06, f), spineW0: L * 0.55, spineW1: isAxis ? L * 0.9 : L * 0.45,
       tilt: 0.25, spineT: 0.03, tpLen: isAtlas ? 0.04 : 0.1, tpUp: -0.35, tpBack: -0.02, tpFlat: 1.8, cRib: isAtlas ? 0 : lerp(0.34, 0.2, f) });
     mesh(g, j); count(isAtlas ? 1 : 3);
     neck.push(j); parent = j; pos = V3(L, 0, 0);
@@ -470,10 +471,13 @@ let headJoint, jawJoint;
 (function buildSkull() {
   const S = 0.00249, OX = 135, OY = 400;
   const P = (a) => a.map(([x, y]) => [(x - OX) * S, (OY - y) * S]);
-  const outline = smoothClosed(P([[135, 442], [124, 420], [118, 390], [110, 360], [100, 332], [97, 305], [108, 280], [128, 262], [152, 246], [172, 226],
+  const outlineRaw = smoothClosed(P([[135, 442], [124, 420], [118, 390], [110, 360], [100, 332], [97, 305], [108, 280], [128, 262], [152, 246], [172, 226],
     [184, 202], [193, 188], [205, 196], [214, 210], [245, 212], [290, 222], [340, 238], [400, 252], [460, 264], [520, 278], [572, 292], [612, 308],
     [640, 328], [658, 352], [666, 380], [664, 408], [655, 430], [640, 442], [610, 438], [570, 436], [520, 432], [470, 426], [425, 418], [395, 412],
     [365, 412], [338, 420], [314, 436], [298, 452], [286, 458], [272, 448], [254, 432], [225, 421], [195, 417], [165, 424], [148, 440]]), 260);
+  // the resampling spline overshoots at the sharp step behind the quadrate — clamp it back
+  // to the traced silhouette (premaxilla → occipital condyle = 1.30 m, → quadrate = 1.46 m)
+  const outline = outlineRaw.map((p) => V2(clamp(p.x, -0.115, 1.328), clamp(p.y, -0.112, 0.452)));
   const holes = [
     smoothClosed(P([[282, 250], [300, 242], [318, 250], [326, 272], [318, 300], [308, 325], [298, 345], [290, 335], [286, 305], [278, 275]]), 50),    // orbit (keyhole)
     smoothClosed(P([[160, 250], [190, 238], [222, 252], [226, 275], [212, 305], [208, 340], [218, 375], [205, 392], [178, 392], [163, 365], [158, 320], [156, 285]]), 60), // lateral temporal fenestra
@@ -586,11 +590,11 @@ const tail = [];
 (function buildTail() {
   let parent = pelvis, pos = V3(-0.40, COL_Y, 0);
   for (let i = 0; i < 40; i++) {
-    const L = i <= 12 ? lerp(0.165, 0.225, smooth(0, 12, i)) : lerp(0.225, 0.07, (i - 12) / 27);
+    const L = i <= 12 ? lerp(0.175, 0.241, smooth(0, 12, i)) : lerp(0.241, 0.071, (i - 12) / 27);
     const f = i / 39;
     const R = lerp(0.085, 0.014, Math.pow(f, 0.8));
     const j = joint(parent, pos.x, pos.y, pos.z, 'tail' + i);
-    j.userData.base.z = i === 0 ? -0.03 : i < 20 ? 0.006 : i > 28 ? -0.004 : 0;
+    j.userData.base.z = i === 0 ? 0.07 : i < 10 ? 0.024 : i < 27 ? 0.0 : 0.006;  // tail runs along -X: +Z pitch arcs it down
     const g = vertebra({ L, R, spineH: Math.max(0, lerp(0.30, 0.0, Math.pow(Math.min(1, i / 30), 0.85))), spineW0: L * 0.45, spineW1: L * 0.4,
       tilt: -0.55, spineShift: 0.0, tpLen: Math.max(0, lerp(0.30, 0.0, i / 16)), tpUp: 0.05, tpBack: -0.04, tpFlat: 1.5,
       chev: i >= 1 ? Math.max(0, lerp(0.46, 0.02, Math.pow((i - 1) / 34, 0.8))) : 0, chevTilt: -0.55 });
@@ -602,7 +606,7 @@ const tail = [];
 })();
 
 // ---------- hind limbs (IK-driven; segments are direct children of the pelvis)
-const LF = 1.32, LT = 1.16, LM = 0.66;
+const LF = 1.321, LT = 1.245, LM = 0.671;   // femur / tibiotarsus / MT III of FMNH PR 2081
 const PH0 = 0.575, PH_L0 = 0.175;                      // proximal phalanx pitch & length (digit III)
 const J1 = V2(PH_L0 * Math.cos(PH0), -PH_L0 * Math.sin(PH0)); // J1 relative to MTP in flat foot frame
 const MTP_H = 0.14;                                     // MTP joint height above ground (foot flat)
@@ -691,7 +695,7 @@ const groundTex = (() => {
 })();
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
-if (!CALIB) scene.add(ground);
+if (!CALIB && !SIL) scene.add(ground);
 // scattered rocks drift with the ground so motion reads clearly
 const rocks = [];
 { const rm = new THREE.MeshStandardMaterial({ color: 0x5d544a, roughness: 0.9, flatShading: true });
@@ -700,7 +704,7 @@ const rocks = [];
     let z = (Math.random() - 0.5) * 60; if (Math.abs(z) < 2.5) z += Math.sign(z || 1) * 2.5;
     r.position.set((Math.random() - 0.5) * 120, 0.02, z); r.scale.y = 0.5 + Math.random() * 0.4;
     r.rotation.set(Math.random(), Math.random() * 6, Math.random()); r.castShadow = r.receiveShadow = true;
-    if (!CALIB) scene.add(r); rocks.push(r);
+    if (!CALIB && !SIL) scene.add(r); rocks.push(r);
   } }
 // footprints
 const printTex = (() => {
@@ -718,13 +722,13 @@ function addPrint(x, z) {
 
 // ───────────────────────────────────────────────────────── gait engine
 const GAITS = { idle: 0, walk: 1.45, run: 5.2 };  // m/s
-const state = { v: 0, target: 0, custom: null, gait: 'idle', phase: 0, stepping: false, t: 0, groundX: 0, roar: -1, breath: 0, timeScale: 1, auto: !CALIB, autoT: 0 };
+const state = { v: 0, target: 0, custom: null, tailDroop: 0.6, gait: 'idle', phase: 0, stepping: false, t: 0, groundX: 0, roar: -1, breath: 0, timeScale: 1, auto: !CALIB, autoT: 0 };
 // gait parameters as a function of speed (m/s)
 function gaitParams(v) {
   return {
     f: table([[0, 0.45], [1.45, 0.43], [3, 0.62], [5.2, 0.86]], v),          // stride frequency (Hz)
     duty: table([[0, 0.7], [1.45, 0.64], [3, 0.52], [5.2, 0.42]], v),        // fraction of cycle on ground
-    hipH: table([[0, 2.86], [1.45, 2.80], [5.2, 2.64]], v),
+    hipH: table([[0, 3.02], [1.45, 2.95], [5.2, 2.80]], v),
     lift: table([[0, 0.16], [1.45, 0.30], [5.2, 0.52]], v),
     pitch: table([[0, 0.025], [1.45, -0.025], [5.2, -0.11]], v),
     heel: table([[0, 0.05], [1.45, 0.35], [5.2, 0.62]], v),
@@ -798,6 +802,7 @@ function poseLeg(leg) {
   leg.p = p;
   const pelQ = pelvis.getWorldQuaternion(tmpQ2);
   const pole = V3(1, 0, 0).applyQuaternion(pelQ).add(V3(0, 0, leg.side * 0.12));
+  leg.ankleErr = Math.max(0, H.distanceTo(A) - R);   // >0 = target out of reach (foot skates)
   const K = solve2(H, A, LF, LT, pole);
   const A2 = K.clone().add(A.clone().sub(K).setLength(LT));
   // to pelvis space
@@ -816,7 +821,7 @@ function poseLeg(leg) {
       let r = 0;
       if (k === 0) r = -PH0 - leg.curl * 0.4;
       else if (k === 1) r = PH0 + p - leg.curl;
-      else if (k === chain.length - 1) r = -0.12 - leg.curl * 0.8;
+      else if (k === chain.length - 1) r = -0.04 - leg.curl * 0.8;
       else r = -leg.curl * 0.6;
       jt.rotation.z = r;
     });
@@ -892,7 +897,7 @@ function animate(dt) {
   const parentQ = headJoint.parent.getWorldQuaternion(new THREE.Quaternion());
   const stab = parentQ.clone().invert().multiply(desired);
   setRot(headJoint, 0, 0, 0); headJoint.quaternion.slerp(stab, 0.85);
-  const jawIdle = 0.02 + 0.07 * Math.pow(Math.max(0, Math.sin(S.t * 0.27)), 12);
+  const jawIdle = 0.13 + 0.06 * Math.pow(Math.max(0, Math.sin(S.t * 0.27)), 12);
   const jawRun = (0.1 + 0.03 * Math.sin(2 * TAU * S.phase)) * rw;
   const jaw = lerp(jawIdle + jawRun, 0.72 + 0.03 * Math.sin(S.t * 38), roarOpen);
   jawJoint.rotation.z = -jaw;
@@ -903,7 +908,9 @@ function animate(dt) {
     const lat = (0.018 * mw * Math.sin(TAU * S.phase - i * 0.11 - 0.8) + 0.012 * (1 - mw) * Math.sin(S.t * 0.55 - i * 0.13)) * (0.25 + f);
     const vert = 0.006 * mw * Math.sin(2 * TAU * S.phase - i * 0.14 - 1.2) * (0.4 + f) + 0.002 * br * (1 - mw);
     const lift = (i < 16 ? -0.001 * rw - 0.005 * roar : 0) + (i < 6 ? 0.02 * antic : 0) + (i === 0 ? -(pitch - 0.025) * 0.75 : 0);
-    setRot(j, 0, (i === 0 ? -yaw * 0.85 : 0) + (i < 3 ? -look * 0.04 : 0) + lat, vert + lift);
+    // state.tailDroop scales the tail's resting downward arc (tuned against the reference)
+    setRot(j, 0, (i === 0 ? -yaw * 0.85 : 0) + (i < 3 ? -look * 0.04 : 0) + lat,
+      vert + lift + j.userData.base.z * (state.tailDroop - 1));
   });
 
   // ---- arms (passive lag + idle fidget)
@@ -1019,7 +1026,39 @@ document.getElementById('i-bones').textContent = elementCount;
 document.getElementById('loading').remove();
 
 // Deterministic stepping hook (for screenshots/tests)
-window.__trex = { state, setGait, step: (dt, n) => { let P; for (let i = 0; i < n; i++) P = animate(dt); controls.update(); renderer.render(scene, camera); return P; }, setCam, U, camera, controls, dino };
+// Orthographic silhouette capture (used by tools/compare.html to score the model
+// against the reference skeletal diagram).
+function silhouette(w = 900, h = 340, dir = 1) {
+  const box = new THREE.Box3().setFromObject(dino);
+  const L = box.max.x - box.min.x, H = box.max.y - box.min.y;
+  const cx = (box.min.x + box.max.x) / 2, cy = (box.min.y + box.max.y) / 2;
+  const vw = L * 1.02, vh = H * 1.06, a = vw / vh;
+  Object.assign(camera, { left: -vw / 2, right: vw / 2, top: vh / 2, bottom: -vh / 2, near: -60, far: 60 });
+  camera.position.set(cx, cy, dir * 40); camera.up.set(0, 1, 0); camera.lookAt(cx, cy, 0);
+  camera.updateProjectionMatrix(); camera.updateMatrixWorld(true);
+  renderer.setSize(w, Math.round(w / a), false);
+  renderer.setPixelRatio(1);
+  renderer.render(scene, camera);
+  const gl = renderer.getContext(), W = renderer.domElement.width, Hh = renderer.domElement.height;
+  const px = new Uint8Array(W * Hh * 4);
+  gl.readPixels(0, 0, W, Hh, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const mask = new Uint8Array(W * Hh);
+  // readPixels is bottom-up, and the model faces +X (snout) which lands on the image's right.
+  // Flip both axes so the mask is top-down with the snout at the left.
+  for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) mask[y * W + x] = px[((Hh - 1 - y) * W + (W - 1 - x)) * 4] > 60 ? 1 : 0;
+  return { w: W, h: Hh, data: mask, metresPerPixel: L / (box.max.x - box.min.x ? W : W), length: L, height: H };
+}
+if (SIL) {
+  const white = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  dino.traverse((o) => { if (o.isMesh) o.material = white; });
+  renderer.shadowMap.enabled = false;
+  document.querySelectorAll('.panel').forEach((p) => (p.style.display = 'none'));
+}
+
+window.__trex = {
+  state, setGait, THREE, legs, pelvis, neck, tail, arms, trunk, head: headJoint, jaw: jawJoint, renderer, scene,
+  sim: (dt, n) => { let P; for (let i = 0; i < n; i++) P = animate(dt); return P; },
+  silhouette, step: (dt, n) => { let P; for (let i = 0; i < n; i++) P = animate(dt); controls.update(); renderer.render(scene, camera); return P; }, setCam, U, camera, controls, dino };
 
 const clock = new THREE.Clock();
 let autoSeq = [['idle', 5], ['walk', 9], ['run', 8], ['walk', 7], ['idle', 6]], autoIdx = 0;
