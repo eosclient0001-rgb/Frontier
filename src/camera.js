@@ -14,6 +14,7 @@ export class FlyCam {
     this.active = false;
     this.locked = false;
     this.skipMove = false;
+    this.freeLook = true;         // plain mouse movement rotates (no button needed)
     this.lookHeld = false;        // pointerdown-driven (e.buttons may be stripped)
     this.pid = undefined;
     this.allowMove = true;
@@ -79,7 +80,7 @@ export class FlyCam {
     addEventListener('pointerlockerror', () => { this.locked = false; });
     addEventListener('pointermove', (e) => {
       if (!this.active) return;
-      const held = this.lookHeld || this.locked || (e.buttons & 3) !== 0;
+      const held = this.freeLook || this.lookHeld || this.locked || (e.buttons & 3) !== 0;
       if (!held) return;
       let dx, dy;
       if (this.locked && Number.isFinite(e.movementX)) {

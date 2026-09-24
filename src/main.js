@@ -41,6 +41,7 @@ function defaultVantage() {
   cameras.enterFree();
 }
 defaultVantage();
+cameras.fly.attach(canvas);   // <- wire look/zoom input to the canvas (was missing!)
 
 let zRef = 0;
 let tumble = 0;
