@@ -66,6 +66,7 @@
   <div class="big" id="g-name">Idle <small></small></div>
   <div class="row"><span id="g-speed">0.0 km/h</span><span id="g-stride">stride —</span></div>
   <div class="row"><span id="g-duty">duty —</span><span id="g-froude">Froude —</span></div>
+  <div class="row"><span id="g-ai" style="color:var(--acc)">—</span><span id="g-ball">ball —</span></div>
   <canvas id="strip" width="500" height="88"></canvas>
   <div class="legend">Footfall pattern (bars = foot on ground) · L top / R bottom</div>
 </div>
@@ -98,13 +99,19 @@
     
   </div>
   <div class="sep"></div>
+  <div class="group"><span class="lbl">Ball</span>
+    <button id="throw">Throw</button>
+    <button id="chase" title="The animal goes after the ball, then shoves and bites it">Chase</button>
+  </div>
+  <div class="sep"></div>
   <div class="group"><span class="lbl">Finish</span>
     <button data-mat="bone" class="on">Bone</button>
     <button data-mat="fossil">Fossil</button>
   </div>
 </div>
 
-<div id="help" class="panel"><b>1 2 3</b> idle/walk/run · <b>Speed slider</b> any pace · <b>Space</b> roar · <b>Drag</b> orbit · <b>Scroll</b> zoom</div>
+<div id="help" class="panel"><b>1 2 3</b> idle/walk/run · <b>Speed slider</b> any pace · <b>Space</b> roar · <b>Drag</b> orbit · <b>Scroll</b> zoom<br />
+<b>Click the ground</b> to throw the ball there · <b>B</b> chase on/off · <b>T</b> throw</div>
 
 <script type="module" src="./trex.js"></script>
 </body>

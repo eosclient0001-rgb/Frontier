@@ -676,6 +676,7 @@ const legs = [];
     // state
     leg.C = V3(0.30, J1_H, s * 0.36); leg.p = 0; leg.stance = true; leg.curl = 0; leg.off = { C: leg.C.clone(), p: 0 };
     leg.K = V3(); leg.A = V3(); leg.M = V3();
+      leg.pathLength = LF + LT * 0.92;   // budget for how far the hip may drop toward a planted foot
     legs.push(leg);
   }
 })();
@@ -696,16 +697,29 @@ const groundTex = (() => {
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
 if (!CALIB && !SIL) scene.add(ground);
+// The animal is drawn at the origin and the ground slides under it, but everything else that
+// exists in the world (rocks, footprints, the ball) is stored in TRUE world coordinates inside
+// this group. The group is offset by −travel, so an object planted in the world stays put while
+// the animal actually walks, runs and turns through it.
+const world = new THREE.Group(); scene.add(world);
+// Where the animal is in the world and which way it faces. Kept separate from `state` because the
+// scenery is built before the gait engine exists.
+const NAV = { h: 0, travel: new THREE.Vector3() };
 // scattered rocks drift with the ground so motion reads clearly
 const rocks = [];
 { const rm = new THREE.MeshStandardMaterial({ color: 0x5d544a, roughness: 0.9, flatShading: true });
-  for (let i = 0; i < 60; i++) {
+  const place = (r, ahead) => {
+    const a = ahead ? NAV.h + (Math.random() - 0.5) * 2.0 : Math.random() * TAU;
+    const d = ahead ? lerp(46, 66, Math.random()) : lerp(9, 60, Math.sqrt(Math.random()));
+    r.position.set(NAV.travel.x + Math.cos(a) * d, 0.02, NAV.travel.z - Math.sin(a) * d);
+  };
+  for (let i = 0; i < 70; i++) {
     const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.1 + Math.random() * 0.35, 0), rm);
-    let z = (Math.random() - 0.5) * 60; if (Math.abs(z) < 2.5) z += Math.sign(z || 1) * 2.5;
-    r.position.set((Math.random() - 0.5) * 120, 0.02, z); r.scale.y = 0.5 + Math.random() * 0.4;
+    place(r, false); r.scale.y = 0.5 + Math.random() * 0.4;
     r.rotation.set(Math.random(), Math.random() * 6, Math.random()); r.castShadow = r.receiveShadow = true;
-    if (!CALIB && !SIL) scene.add(r); rocks.push(r);
-  } }
+    if (!CALIB && !SIL) world.add(r); rocks.push(r);
+  }
+  rocks.place = place; }
 // footprints
 const printTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
@@ -715,14 +729,278 @@ const printTex = (() => {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
 const prints = [];
 const printGeo = new THREE.PlaneGeometry(0.9, 0.9).rotateX(-Math.PI / 2);
+// x/z are given in the animal's own frame; they are stored in world coordinates (see `world`).
 function addPrint(x, z) {
   const m = new THREE.Mesh(printGeo, new THREE.MeshBasicMaterial({ map: printTex, transparent: true, depthWrite: false, opacity: 0.8 }));
-  m.position.set(x, 0.006, z); m.renderOrder = 1; scene.add(m); prints.push({ m, age: 0 });
+  const c = Math.cos(NAV.h), s = Math.sin(NAV.h);
+  m.position.set(NAV.travel.x + x * c + z * s, 0.006, NAV.travel.z - x * s + z * c);
+  m.rotation.y = NAV.h; m.renderOrder = 1; world.add(m); prints.push({ m, age: 0 });
+}
+
+// ───────────────────────────────────────────────────────────────── the ball
+// A 1.4 m play ball: big enough that the 1.45 m skull can just get its jaws around it, and
+// heavy enough to read against the ground. Physics runs in world coordinates.
+const BALL_R = 0.70;
+const BALL_E = 0.5;         // restitution
+const BALL_ROLL = 0.85;     // rolling resistance on dirt (m/s²)
+const BALL_MAXV = 5.0;      // … so a solid hit still leaves it catchable
+const ball = { r: BALL_R, pos: V3(8.5, BALL_R, 3.0), vel: V3(), live: true, mesh: null, touch: -9 };
+(function buildBall() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = '#b5512e'; g.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#c66b3d' : '#a14225'; g.fillRect(i * 64, 0, 64, 256); }
+  for (let i = 0; i < 1500; i++) { g.fillStyle = `rgba(72,44,26,${Math.random() * 0.11})`; g.fillRect(Math.random() * 512, Math.random() * 256, 3, 3); }
+  g.strokeStyle = 'rgba(32,17,9,0.72)'; g.lineWidth = 7;
+  for (let i = 0; i <= 8; i++) { g.beginPath(); g.moveTo(i * 64, 0); g.lineTo(i * 64, 256); g.stroke(); }
+  g.lineWidth = 6; for (const y of [56, 128, 200]) { g.beginPath(); g.moveTo(0, y); g.lineTo(512, y); g.stroke(); }
+  g.fillStyle = 'rgba(255,240,214,0.15)'; g.beginPath(); g.ellipse(150, 92, 48, 30, -0.4, 0, TAU); g.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  const m = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 40, 28),
+    new THREE.MeshStandardMaterial({ map: t, roughness: 0.62, metalness: 0.02 }));
+  m.castShadow = true; m.receiveShadow = true;
+  ball.mesh = m;
+  if (!CALIB && !SIL) world.add(m);
+})();
+
+const UPY = V3(0, 1, 0), tmpAxis = V3();
+function stepBall(dt) {
+  const b = ball;
+  if (!b.live) return;
+  b.vel.y -= 9.81 * dt;
+  b.pos.addScaledVector(b.vel, dt);
+  if (b.pos.y < b.r) {
+    b.pos.y = b.r;
+    if (b.vel.y < 0) b.vel.y = -b.vel.y * BALL_E;
+    if (Math.abs(b.vel.y) < 0.8) b.vel.y = 0;
+  }
+  let sp = Math.hypot(b.vel.x, b.vel.z);
+  if (sp > BALL_MAXV) { const k = BALL_MAXV / sp; b.vel.x *= k; b.vel.z *= k; sp = BALL_MAXV; }
+  if (sp > 1e-5) {
+    const dec = (b.pos.y <= b.r + 0.02 ? BALL_ROLL : 0.03) * dt + 0.05 * sp * dt;
+    const k = Math.max(0, 1 - dec / sp);
+    b.vel.x *= k; b.vel.z *= k;
+    if (b.mesh) b.mesh.rotateOnWorldAxis(tmpAxis.set(b.vel.z, 0, -b.vel.x).normalize(), sp * dt / b.r);
+  }
+  if (b.mesh) b.mesh.position.copy(b.pos);
+}
+// lob the ball so it lands on a world point (x,z)
+function throwBall(tx, tz) {
+  const b = ball;
+  b.pos.y = Math.max(b.pos.y, b.r);
+  const dx = tx - b.pos.x, dz = tz - b.pos.z, d = Math.hypot(dx, dz);
+  const T = clamp(0.45 + d / 13, 0.5, 2.2);
+  b.vel.set(dx / T, (0.5 * 9.81 * T) + Math.max(0, b.r - b.pos.y) / T - (b.vel.y * 0), dz / T);
+  b.vel.y = Math.max(1.5, 0.5 * 9.81 * T);
+  b.live = true;
+}
+// drop the ball somewhere in front of the animal so it has to go and get it
+function placeBall(dist = lerp(11, 20, Math.random())) {
+  const a = NAV.h + (Math.random() - 0.5) * 1.7;
+  ball.pos.set(NAV.travel.x + Math.cos(a) * dist, BALL_R, NAV.travel.z - Math.sin(a) * dist);
+  ball.vel.set(0, 0, 0);
+}
+
+// ─────────────────────────────────────────────── chase / strike behaviour
+// The animal steers with its whole body, but the yaw is shared out along the column: trunk leads
+// into the turn, neck leads further, tail lags and swings wide. Nothing snaps rigidly.
+const STRIKES = ['bite', 'angled', 'shove', 'scoop'];
+const ai = {
+  on: false, gazeW: 0, aimW: 0, dip: 0, crouch: 0, roll: 0, jaw: 0, jawW: 0, jawRate: 0, jawPrev: 0,
+  st: null, cool: 0, watch: 0, gazeYaw: 0, gazePitch: 0, bearing: 0, dist: 0,
+  aim: V3(), ballLocal: V3(), ballVelL: V3(), hit: 0, n: 0, lastType: '', label: '',
+};
+const TURN_HIST = new Float32Array(48); let turnIdx = 0, turnAcc = 0;
+function turnDelayed(sec) {  // turn rate `sec` seconds ago → a wave that travels down the tail
+  const k = clamp(Math.round(sec * 30), 0, TURN_HIST.length - 1);
+  return TURN_HIST[(turnIdx - k + TURN_HIST.length * 2) % TURN_HIST.length];
+}
+function pickStrike() {
+  const sp = Math.hypot(ball.vel.x, ball.vel.z), r = Math.random();
+  let t;
+  if (sp > 2.4 && r < 0.5) t = 'shove';                        // ball running at it → swipe aside
+  else if (r < 0.46) t = 'bite';
+  else if (r < 0.80) t = 'angled';
+  else if (r < 0.92) t = 'shove';
+  else t = 'scoop';
+  if (t === ai.lastType && Math.random() < 0.75) t = STRIKES[(STRIKES.indexOf(t) + 1 + (Math.random() * 3 | 0)) % STRIKES.length];
+  return t;
+}
+function startStrike(type) {
+  const dur = { bite: 1.15, angled: 1.30, shove: 1.35, scoop: 1.40 }[type];
+  ai.st = { type, t: 0, dur: dur * (0.9 + Math.random() * 0.28), side: Math.random() < 0.5 ? 1 : -1,
+    amp: 0.84 + Math.random() * 0.32, roll: 0.24 + Math.random() * 0.30 };
+  ai.lastType = type; ai.n++;
+}
+// Where the mouth should be driven, and what the jaws do, at normalised time u of a strike.
+function strikeFrame(st) {
+  const u = clamp(st.t / st.dur, 0, 1), s = st.side, A = st.amp;
+  const o = { off: V3(0, 0, 0), dip: 0, crouch: 0, roll: 0, jaw: 0.1, aimW: 0 };
+  if (st.type === 'shove') {                    // head swings through the ball, jaws shut
+    const sw = smooth(0.26, 0.74, u);
+    o.dip = 0.60 * A * smooth(0.04, 0.30, u) * (1 - smooth(0.76, 1, u));
+    o.off.z = lerp(-1.05, 1.05, sw) * s;
+    o.off.y = -0.05;
+    o.aimW = smooth(0.10, 0.28, u) * (1 - smooth(0.78, 1, u));
+    o.jaw = lerp(0.20, 0.05, smooth(0.15, 0.55, u));
+    o.crouch = 0.44 * smooth(0.08, 0.36, u) * (1 - smooth(0.72, 1, u));
+    o.roll = -0.17 * s * Math.sin(Math.PI * clamp((u - 0.18) / 0.62, 0, 1));
+  } else if (st.type === 'scoop') {             // dip under it and lift
+    o.dip = 0.95 * A * smooth(0.05, 0.32, u) * (1 - 0.55 * smooth(0.60, 1, u));
+    o.off.y = lerp(-0.42, 0.80, smooth(0.34, 0.66, u));
+    o.off.x = lerp(-0.30, 0.22, smooth(0.28, 0.62, u));
+    o.aimW = smooth(0.08, 0.26, u) * (1 - smooth(0.66, 0.98, u));
+    o.jaw = 0.70 * smooth(0.03, 0.22, u) * (1 - smooth(0.30, 0.48, u)) + 0.06 * smooth(0.5, 0.9, u);
+    o.crouch = 0.84 * smooth(0.08, 0.34, u) * (1 - smooth(0.55, 0.92, u));
+  } else {                                      // straight or angled bite
+    const ang = st.type === 'angled' ? 1 : 0;
+    o.dip = (0.88 + 0.10 * ang) * A * smooth(0.04, 0.34, u) * (1 - smooth(0.52, 0.95, u));
+    o.off.z = ang ? lerp(0.60 * s, -0.12 * s, smooth(0.22, 0.52, u)) : 0;
+    o.off.x = lerp(-0.22, 0.62, smooth(0.26, 0.52, u));
+    o.off.y = ang ? -0.08 : -0.16;
+    o.aimW = smooth(0.08, 0.28, u) * (1 - smooth(0.56, 0.96, u));
+    o.jaw = 0.78 * smooth(0.02, 0.26, u) * (1 - smooth(0.32, 0.47, u)) + 0.05 * smooth(0.5, 0.9, u);
+    o.crouch = (0.72 + 0.12 * ang) * smooth(0.06, 0.32, u) * (1 - smooth(0.50, 0.90, u));
+    o.roll = ang ? st.roll * s * smooth(0.10, 0.40, u) * (1 - smooth(0.55, 0.95, u)) : 0;
+  }
+  return o;
+}
+
+// How a reach-down is shared out along the ten cervicals (both sum to 1): the neck carries about
+// half the skull's yaw, and DIP_N is the total ventral flexion (rad) at full stretch.
+const NECK_YAW_W = (() => { const w = [0.10, 0.22, 0.34, 0.46, 0.58, 0.68, 0.70, 0.64, 0.52, 0.38], s = w.reduce((a, b) => a + b, 0); return w.map((v) => v / s); })();
+const NECK_PITCH_W = (() => { const w = [0.25, 0.40, 0.60, 0.85, 1.10, 1.30, 1.30, 1.15, 0.90, 0.60], s = w.reduce((a, b) => a + b, 0); return w.map((v) => v / s); })();
+const DIP_N = 1.85;                 // radians of neck flexion at full reach for the ball
+
+const tmpE2 = V3(), tmpF = V3(), tmpG = V3(), tmpH = V3(), tmpI = V3();
+function updateAI(dt) {
+  const S = state, b = ball;
+  stepBall(dt);
+  // the ball as the animal sees it: its own frame, +X forward
+  tmpE2.copy(b.pos).sub(NAV.travel).applyAxisAngle(UPY, -NAV.h);
+  const bL = ai.ballLocal.copy(tmpE2);
+  const bvL = ai.ballVelL.copy(b.vel).applyAxisAngle(UPY, -NAV.h);
+  ai.bearing = Math.atan2(-bL.z, bL.x);            // >0 → head must swing toward −Z
+  ai.dist = Math.hypot(bL.x, bL.z);
+
+  if (ai.on && ai.dist > 45) placeBall(lerp(11, 17, Math.random()));   // don't chase it out of the world
+  ai.cool = Math.max(0, ai.cool - dt);
+  ai.watch = Math.max(0, ai.watch - dt);
+  ai.hit = Math.max(0, ai.hit - dt * 2.5);
+
+  if (ai.st) {
+    ai.st.t += dt;
+    if (ai.st.t >= ai.st.dur) { ai.st = null; ai.cool = 0.2 + Math.random() * 0.3; ai.watch = 0.55 + Math.random() * 0.9; }
+  }
+  const striking = !!ai.st;
+  const STOPD = 3.50;                                // ball distance at which the jaws can reach
+  if (ai.on && !ai.st && ai.cool <= 0 && ai.watch <= 0 &&
+      ai.dist > 2.8 && ai.dist < 4.1 && Math.abs(ai.bearing) < 0.40 && S.v < 1.5) startStrike(pickStrike());
+
+  // ---- steering: rate limited, and slower the faster it is going
+  const wmax = striking ? 0.10 : lerp(0.90, 0.30, smooth(0, 4.6, S.v));
+  const want = ai.on ? clamp(ai.bearing * 2.2, -wmax, wmax) : 0;
+  S.turn = approach(S.turn, want, dt * 4.5);
+  NAV.h += S.turn * dt;
+  if (NAV.h > Math.PI) NAV.h -= TAU; else if (NAV.h < -Math.PI) NAV.h += TAU;
+
+  // ---- speed: close the gap, ease off while turning hard, stop dead to strike
+  let vT = 0;
+  if (ai.on && !striking && ai.watch <= 0) {
+    const err = ai.dist - STOPD;
+    if (ai.dist < 2.85) vT = -0.55;                  // too close to get the jaws on → shuffle back
+    else {
+      vT = clamp(err * 0.95, 0, 5.2);
+      if (err > 0.4) vT = Math.max(vT, 1.35);
+      vT *= clamp(1 - 0.60 * Math.abs(ai.bearing) / 1.25, 0.18, 1);
+    }
+  }
+  S.chaseV = ai.on ? vT : null;
+
+  // ---- where the jaws should go
+  const fr = ai.st ? strikeFrame(ai.st) : null;
+  ai.aim.copy(bL).addScaledVector(bvL, 0.14);
+  if (fr) {
+    ai.aim.add(fr.off);
+    ai.dip = fr.dip; ai.crouch = fr.crouch; ai.roll = fr.roll;
+    ai.aimW = fr.aimW; ai.jaw = fr.jaw; ai.jawW = 1;
+  } else {
+    ai.dip = approach(ai.dip, 0, dt * 3.2);
+    ai.crouch = approach(ai.crouch, 0, dt * 2.6);
+    ai.roll = approach(ai.roll, 0, dt * 3);
+    ai.aimW = approach(ai.aimW, 0, dt * 3);
+    ai.jaw = 0.16; ai.jawW = ai.on ? 0.4 : 0;
+  }
+  ai.gazeW = approach(ai.gazeW, ai.on ? 1 : 0, dt * 2);
+  ai.label = ai.st ? ai.st.type : ai.watch > 0 ? 'watching' : ai.dist > 5.9 ? 'chasing' : 'closing in';
+}
+
+// ── contact. The ball is batted by whatever part of the animal touches it: the jaws shove,
+// dribble or bite it, and the legs/tail/body simply block it (and can kick it if they move).
+const colPts = [];
+function refreshColliders() {
+  colPts.length = 0;
+  const add = (o, x, y, z, r) => {
+    const v = V3(x, y, z); o.updateWorldMatrix(true, false); v.applyMatrix4(o.matrixWorld).add(NAV.travel);
+    colPts.push({ p: v, r });
+  };
+  add(pelvis, 0.40, 0.02, 0, 0.50); add(pelvis, -0.40, 0.02, 0, 0.46);
+  add(trunk[0], 0.32, 0.05, 0, 0.52); add(trunk[1], 0.32, 0.05, 0, 0.52); add(trunk[2], 0.36, 0.05, 0, 0.46);
+  add(headJoint, 0.55, -0.05, 0, 0.40);
+  add(tail[3], -0.20, 0, 0, 0.30); add(tail[9], -0.20, 0, 0, 0.24);
+  add(tail[19], -0.15, 0, 0, 0.16); add(tail[30], -0.10, 0, 0, 0.10);
+  for (const leg of legs) {
+    const k = pelvis.localToWorld(leg.tibia.position.clone()).add(NAV.travel); colPts.push({ p: k, r: 0.22 });
+    const a = pelvis.localToWorld(leg.meta.position.clone()).add(NAV.travel); colPts.push({ p: a, r: 0.20 });
+    const f = leg.M.clone().applyMatrix4(dino.matrixWorld).add(NAV.travel); f.y += 0.12; colPts.push({ p: f, r: 0.26 });
+  }
+}
+function resolveBall(dt) {
+  const b = ball, S = state;
+  if (!b.live) return;
+  const dinoV = tmpF.set(Math.cos(NAV.h) * S.v, 0, -Math.sin(NAV.h) * S.v);   // the animal, world frame
+  // ---- jaws
+  const mw = tmpG.copy(S.mouthW);
+  const d = tmpE2.copy(b.pos).sub(mw);
+  const dist = d.length(), R = b.r + 0.20;
+  if (dist < R) {
+    const n = d.multiplyScalar(1 / Math.max(1e-4, dist));
+    b.pos.addScaledVector(n, R - dist);
+    const closing = -tmpAxis.copy(b.vel).sub(S.mouthVelW).dot(n);       // >0 = mouth driving into ball
+    const away = tmpH.copy(b.pos).sub(NAV.travel); away.y = 0;           // … and always away from it
+    if (away.lengthSq() < 1e-4) away.set(Math.cos(NAV.h), 0, -Math.sin(NAV.h)); else away.normalize();
+    const dir = tmpI.copy(n).multiplyScalar(0.40).addScaledVector(away, 0.60).normalize();
+    if (closing > 0) b.vel.addScaledVector(dir, Math.min(closing, 2.8) * 1.00);
+    if (ai.jawRate > 0.6) {                                            // jaws snapping shut → launch it
+      const k = Math.min(ai.jawRate, 5);
+      b.vel.addScaledVector(n, k * 0.22);
+      b.vel.y += k * 0.26;
+      ai.hit = 1;
+    }
+    b.touch = S.t;
+  }
+  // ---- rest of the animal
+  for (const c of colPts) {
+    const dd = tmpE2.copy(b.pos).sub(c.p);
+    let dl = dd.length(); const RR = b.r + c.r;
+    if (dl > RR) continue;
+    if (dl < 1e-4) { dd.set(0, 1, 0); dl = 1e-4; } else dd.multiplyScalar(1 / dl);
+    b.pos.copy(c.p).addScaledVector(dd, RR + 0.003);
+    const vn = tmpAxis.copy(b.vel).sub(dinoV).dot(dd);
+    if (vn < 0) b.vel.addScaledVector(dd, -vn * 1.25);
+    b.touch = S.t;
+  }
 }
 
 // ───────────────────────────────────────────────────────── gait engine
 const GAITS = { idle: 0, walk: 1.45, run: 5.2 };  // m/s
-const state = { v: 0, target: 0, custom: null, tailDroop: 0.6, gait: 'idle', phase: 0, stepping: false, t: 0, groundX: 0, roar: -1, breath: 0, timeScale: 1, auto: !CALIB, autoT: 0 };
+const state = {
+  v: 0, target: 0, custom: null, chaseV: null, tailDroop: 0.6, gait: 'idle', phase: 0, stepping: false, t: 0,
+  groundX: 0, roar: -1, breath: 0, timeScale: 1, auto: !CALIB, autoT: 0,
+  turn: 0,                                   // yaw rate (rad/s), +ve swings the head toward −Z
+  headYawRel: 0, headPitchW: 0,              // skull orientation the animal is holding (world pitch)
+  mouthLocal: new THREE.Vector3(), mouthW: new THREE.Vector3(), mouthVelW: new THREE.Vector3(),
+  mouthInit: false,
+};
 // gait parameters as a function of speed (m/s)
 function gaitParams(v) {
   return {
@@ -740,7 +1018,7 @@ function gaitParams(v) {
 }
 const legPhase = (leg) => frac(state.phase + (leg.side > 0 ? 0 : 0.5));
 
-const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpQ2 = new THREE.Quaternion(), invP = new THREE.Matrix4();
+const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpQ2 = new THREE.Quaternion(), tmpQ3 = new THREE.Quaternion(), invP = new THREE.Matrix4();
 function basisQuat(dir, n, out) {
   const y = dir.clone().normalize().negate();
   const z = n.clone().sub(y.clone().multiplyScalar(n.dot(y))).normalize();
@@ -748,10 +1026,12 @@ function basisQuat(dir, n, out) {
   tmpM.makeBasis(x, y, z); return out.setFromRotationMatrix(tmpM);
 }
 function solve2(H, A, l1, l2, pole) {
-  const d = A.clone().sub(H); const dist = clamp(d.length(), Math.abs(l1 - l2) + 1e-3, (l1 + l2) * 0.9995);
-  const dir = d.normalize();
-  const cosA = clamp((l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist), -1, 1), a = Math.acos(cosA);
-  const bend = pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir))).normalize();
+  const d = A.clone().sub(H); let dist = d.length(); const dir = d.normalize();
+  const cosA = clamp((l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist), -1, 1);
+  const a = Math.acos(cosA);
+  dist = clamp(dist, Math.abs(l1 - l2) + 1e-3, (l1 + l2) * 0.9995);
+  const bend = pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir)));
+  if (bend.lengthSq() < 1e-8) bend.set(1, 0, 0); else bend.normalize();
   return H.clone().add(dir.multiplyScalar(Math.cos(a) * l1)).add(bend.multiplyScalar(Math.sin(a) * l1));
 }
 function footM(C, p) { // MTP from control point (distal end of proximal phalanx) and heel-lift angle
@@ -761,12 +1041,19 @@ function footM(C, p) { // MTP from control point (distal end of proximal phalanx
 
 function stepLegs(dt, P, mw) {
   const L = state.v / P.f;               // stride length
+  const turnN = clamp(state.turn / 0.5, -1, 1);
   for (const leg of legs) {
     const lp = legPhase(leg);
     const stance = !state.stepping || lp < P.duty;
     if (stance) {
-      if (!leg.stance) { leg.stance = true; leg.C.y = J1_H; if (mw > 0.05 || state.v > 0.05) addPrint(leg.C.x + 0.02, leg.C.z); }
+      if (!leg.stance) { leg.stance = true; leg.C.y = J1_H; if (mw > 0.05 || Math.abs(state.v) > 0.05) addPrint(leg.C.x + 0.02, leg.C.z); }
       leg.C.x -= state.v * dt;
+      // a planted foot is fixed in the world, so while the body yaws it sweeps around the hips
+      // in the animal's own frame — which is exactly what makes the outside leg take the longer
+      // stride and the inside leg the shorter one.
+      const dh = state.turn * dt;
+      leg.C.x -= leg.C.z * dh;
+      leg.C.z += leg.C.x * dh;
       const sf = state.stepping ? lp / P.duty : 0;
       leg.pTarget = P.heel * smooth(0.45, 1.0, sf) * clamp(state.v / 0.8, 0, 1);
       leg.p = approach(leg.p, leg.pTarget, dt * 3);
@@ -778,8 +1065,10 @@ function stepLegs(dt, P, mw) {
       const landX = P.neutral + P.duty * L / 2;
       const e = s - Math.sin(TAU * s) / TAU;
       leg.C.x = lerp(leg.off.C.x, landX, e);
-      leg.C.z = lerp(leg.off.C.z, leg.side * P.footZ, e);
-      leg.C.y = J1_H + P.lift * Math.pow(Math.sin(Math.PI * Math.pow(s, 0.85)), 1.1);
+      leg.C.z = lerp(leg.off.C.z, leg.side * P.footZ - 0.13 * turnN, e);   // reach into the turn
+      // floor the clearance: marching on the spot (a strike, or a shuffle backwards) still has to
+      // lift the foot clear, otherwise the curled toes hook through the ground
+      leg.C.y = J1_H + Math.max(P.lift * 1.12, 0.32) * Math.pow(Math.sin(Math.PI * Math.pow(s, 0.85)), 1.1);
       leg.p = lerp(leg.off.p, -0.04, smooth(0.0, 0.85, s)) + 0.35 * Math.sin(Math.PI * s) * clamp(P.lift / 0.3, 0.3, 1.4);
       leg.curl = 0.55 * Math.sin(Math.PI * Math.min(1, s * 1.15));
       leg.bend = 0.32 + 0.45 * Math.sin(Math.PI * s);
@@ -792,28 +1081,34 @@ function poseLeg(leg) {
   const H = leg.hip.clone().applyMatrix4(pelvis.matrixWorld);
   const R = (LF + LT) * 0.992;
   let bend = leg.bend, p = leg.p, M, A;
+  const Mw = V3();
   for (let it = 0; it < 14; it++) {
-    M = footM(leg.C, p);
-    const dx = H.x - M.x, dy = H.y - M.y, a = Math.atan2(-dx, dy) + bend;
-    A = V3(M.x - LM * Math.sin(a), M.y + LM * Math.cos(a), M.z);
+    M = footM(leg.C, p);                            // foot target, in the animal's own frame
+    Mw.copy(M).applyMatrix4(dino.matrixWorld);      // … and in the scene frame, to compare with H
+    const dx = H.x - Mw.x, dy = H.y - Mw.y, a = Math.atan2(-dx, dy) + bend;
+    A = V3(Mw.x - LM * Math.sin(a), Mw.y + LM * Math.cos(a), Mw.z);
     if (H.distanceTo(A) <= R) break;
     if (bend > 0.04) bend *= 0.7; else if (leg.stance) p += 0.05; else break;
   }
   leg.p = p;
   const pelQ = pelvis.getWorldQuaternion(tmpQ2);
   const pole = V3(1, 0, 0).applyQuaternion(pelQ).add(V3(0, 0, leg.side * 0.12));
-  leg.ankleErr = Math.max(0, H.distanceTo(A) - R);   // >0 = target out of reach (foot skates)
+  leg.ankleErr = 0;                                  // failure count, not metres: poseLeg never leaves it short
+  if (H.distanceTo(A) > R - 1e-4) leg.ankleErr = 1;  // could NOT reach → it was clamped into maximum extension
+  // exact IK solve from the actual hip, so reaching deep for the ball just bends the knees further
   const K = solve2(H, A, LF, LT, pole);
   const A2 = K.clone().add(A.clone().sub(K).setLength(LT));
   // to pelvis space
   invP.copy(pelvis.matrixWorld).invert();
-  const Hl = leg.hip, Kl = K.applyMatrix4(invP), Al = A2.applyMatrix4(invP), Ml = M.clone().applyMatrix4(invP);
+  const Hl = leg.hip, Kl = K.applyMatrix4(invP), Al = A2.applyMatrix4(invP), Ml = Mw.clone().applyMatrix4(invP);
   const n = Al.clone().sub(Hl).cross(V3(1, 0, 0)); if (n.lengthSq() < 1e-6) n.set(0, 0, 1); n.normalize();
   leg.femur.position.copy(Hl); basisQuat(Kl.clone().sub(Hl), n, leg.femur.quaternion);
   leg.tibia.position.copy(Kl); basisQuat(Al.clone().sub(Kl), n, leg.tibia.quaternion);
   leg.meta.position.copy(Al); basisQuat(Ml.clone().sub(Al), n, leg.meta.quaternion);
   leg.foot.position.copy(Ml);
-  tmpQ.setFromAxisAngle(V3(0, 0, 1), -p);
+  // heel lift happens about the animal's own lateral axis, not the world Z axis
+  dino.getWorldQuaternion(tmpQ3);
+  tmpQ.setFromAxisAngle(tmpAxis.set(0, 0, 1).applyQuaternion(tmpQ3), -p);
   leg.foot.quaternion.copy(pelQ).invert().multiply(tmpQ);
   // toes: proximal phalanx pitched down to the ground, rest flattened (compensating heel lift), curled in swing
   for (const chain of leg.toes) {
@@ -833,17 +1128,23 @@ function poseLeg(leg) {
 const tmpE = new THREE.Euler(0, 0, 0, 'YZX');
 function animate(dt) {
   const S = state; S.t += dt;
+  // ---- brain: ball physics, steering, strike timing. Sets NAV.h (heading) and S.turn.
+  updateAI(dt);
+  dino.rotation.y = NAV.h;
+  turnAcc += dt;                                    // history of the turn rate …
+  while (turnAcc > 1 / 30) { turnAcc -= 1 / 30; turnIdx = (turnIdx + 1) % TURN_HIST.length; TURN_HIST[turnIdx] = S.turn; }
   // speed with limited acceleration → smooth gait transitions
-  S.target = S.custom != null ? S.custom : GAITS[S.gait];
+  S.target = S.chaseV != null ? S.chaseV : (S.custom != null ? S.custom : GAITS[S.gait]);
   const acc = S.target > S.v ? 1.35 : 1.9;
   S.v = approach(S.v, S.target, acc * dt);
   const P = gaitParams(S.v);
   const mw = smooth(0, 1.45, S.v), rw = smooth(1.45, 5.2, S.v);
+  const turnN = clamp(S.turn / 0.5, -1, 1);         // −1 … 1, how hard it is swinging round
 
   // stepping control: keep stepping until feet settle into a square stance
-  if (!S.stepping && (S.v > 0.02 || S.target > 0)) S.stepping = true;
+  if (!S.stepping && (Math.abs(S.v) > 0.02 || S.target > 0)) S.stepping = true;
   if (S.stepping) S.phase += P.f * dt;
-  if (S.stepping && S.target === 0 && S.v < 0.02) {
+  if (S.stepping && S.target === 0 && Math.abs(S.v) < 0.02) {
     const settled = legs.every(l => l.stance && legPhase(l) < P.duty && Math.abs(l.C.x - P.neutral) < 0.16 && Math.abs(Math.abs(l.C.z) - P.footZ) < 0.1);
     if (settled) S.stepping = false;
   }
@@ -871,36 +1172,66 @@ function animate(dt) {
   const idleSway = 0.05 * Math.sin(S.t * 0.33) * (1 - mw);
   const sway = P.sway * Math.cos(TAU * (phiL - midL)) + idleSway;
   const yaw = P.yaw * Math.sin(TAU * phiL);
-  const roll = -0.025 * mw * Math.cos(TAU * (phiL - midL)) + idleSway * 0.25;
-  const pitch = P.pitch + 0.012 * mw * Math.sin(2 * TAU * (phiL - midL) + 0.6) - 0.06 * roar + 0.03 * antic;
-  pelvis.position.set(0.05 * rw * Math.sin(2 * TAU * phiL), P.hipH + bob - 0.05 * roar, sway);
+  // bank into the turn the way any animal does, more of it the faster it is going
+  const bank = -0.085 * turnN * (0.35 + 0.65 * mw);
+  const roll = -0.025 * mw * Math.cos(TAU * (phiL - midL)) + idleSway * 0.25 + bank;
+  const lean = clamp(0.17 * ai.dip, 0, 0.18);     // reaching down for the ball tips the trunk over it
+  const pitch = P.pitch + 0.012 * mw * Math.sin(2 * TAU * (phiL - midL) + 0.6) - 0.06 * roar + 0.03 * antic - lean;
+  pelvis.position.set(0.05 * rw * Math.sin(2 * TAU * phiL), P.hipH + bob - 0.05 * roar - ai.crouch, sway);
   pelvis.rotation.set(roll, yaw, pitch);
 
-  // ---- trunk (counter-rotate lateral motion; breathing flex)
-  trunk.forEach((j, i) => setRot(j, 0, -yaw * 0.28, 0.006 * br + 0.02 * roar * (i === 2 ? 1 : 0)));
+  // ---- trunk (counter-rotate lateral motion; breathing flex; lead the body into a turn)
+  trunk.forEach((j, i) => setRot(j, 0,
+    -yaw * 0.28 + turnN * 0.075 * ((i + 1) / 3) * (0.4 + 0.6 * mw),
+    0.006 * br + 0.02 * roar * (i === 2 ? 1 : 0)));
   for (const r of ribs) r.rotation.x = r.userData.side * 0.035 * (br * 0.5 + 0.5) * (1 + rw);
 
   // ---- neck & head
   const look = (noise1(S.t * 0.18) * 0.55 + noise1(S.t * 0.5 + 9) * 0.12) * (1 - mw * 0.85) * (1 - roar);
   const lookP = (noise1(S.t * 0.13 + 3) * 0.08) * (1 - mw);
+  // the turn is not a rigid rotation: the neck carries part of the head's yaw, and when the
+  // animal reaches down for the ball the flexion is shared out along the cervical series
+  const nkYaw = S.headYawRel * 0.5;
   neck.forEach((j, i) => {
     const f = i / 9;
     const extend = (rw * 0.05 + mw * 0.02) * (i < 3 ? -1 : 0.5);         // run: straighter, head forward
     const roarBend = roar * (i < 4 ? 0.07 : -0.02) - antic * (i < 4 ? -0.06 : 0.03);
-    setRot(j, 0, look / 10 + yaw * 0.1 * (1 - f), extend + roarBend + lookP / 10);
+    const scan = look / 10 * (1 - ai.gazeW) + yaw * 0.1 * (1 - f);
+    setRot(j, 0, scan + nkYaw * NECK_YAW_W[i] + turnN * 0.018,
+      extend + roarBend + lookP / 10 - DIP_N * NECK_PITCH_W[i] * ai.dip);
   });
   // stabilise head in world space (gaze stabilisation), then layer jaw
   dino.updateMatrixWorld(true);
   const headPitch = 0.02 + 0.04 * rw + lookP + roar * 0.42 - antic * 0.15 + 0.02 * Math.sin(S.t * 0.7) * (1 - mw);
-  tmpE.set(0, look + yaw * 0.25, headPitch);
+  const headYaw0 = look + yaw * 0.25;
+  let yawT = headYaw0, pitchT = headPitch;
+  if (ai.gazeW > 0.01) {
+    // Closed loop on the bite point actually measured last frame: the head swings onto the ball,
+    // then — during a strike — drops onto it. Tracking, not a canned animation.
+    const e = tmpE2.copy(ai.aim).sub(S.mouthLocal);
+    const psi = S.headYawRel, reach = 1.32;
+    const lat = e.x * -Math.sin(psi) + e.z * -Math.cos(psi);
+    const ay = clamp(S.headYawRel + lat * 2.4 / reach, -1.15, 1.15);
+    const ap = clamp(S.headPitchW + e.y * 2.7 / reach, -1.32, 0.55);
+    const cy = clamp(ai.bearing, -0.85, 0.85) * 0.95;      // travelling: look where it is going
+    const cp = 0.02 + 0.04 * rw;                          // … but keep the skull level
+    yawT = lerp(headYaw0, lerp(cy, ay, ai.aimW), ai.gazeW);
+    pitchT = lerp(headPitch, lerp(cp, ap, ai.aimW), ai.gazeW);
+  }
+  S.headYawRel = approach(S.headYawRel, yawT, lerp(1.8, 4.2, ai.aimW) * dt);
+  S.headPitchW = approach(S.headPitchW, pitchT, lerp(1.8, 4.6, ai.aimW) * dt);
+  tmpE.set(ai.roll, NAV.h + S.headYawRel, S.headPitchW);
   const desired = new THREE.Quaternion().setFromEuler(tmpE);
   const parentQ = headJoint.parent.getWorldQuaternion(new THREE.Quaternion());
   const stab = parentQ.clone().invert().multiply(desired);
   headJoint.quaternion.copy(stab);   // hold the gaze steady regardless of trunk motion
   const jawIdle = 0.13 + 0.06 * Math.pow(Math.max(0, Math.sin(S.t * 0.27)), 12);
   const jawRun = (0.1 + 0.03 * Math.sin(2 * TAU * S.phase)) * rw;
-  const jaw = lerp(jawIdle + jawRun, 0.72 + 0.03 * Math.sin(S.t * 38), roarOpen);
+  let jaw = lerp(jawIdle + jawRun, 0.72 + 0.03 * Math.sin(S.t * 38), roarOpen);
+  if (ai.jawW > 0.01) jaw = lerp(jaw, ai.jaw, ai.jawW);
   jawJoint.rotation.z = -jaw;
+  ai.jawRate = Math.max(0, (ai.jawPrev - jaw) / Math.max(1e-4, dt));   // >0 while the jaws are snapping shut
+  ai.jawPrev = jaw;
 
   // ---- tail: counter-yaw at base, travelling lateral + vertical waves, lift when running / roaring
   tail.forEach((j, i) => {
@@ -908,8 +1239,12 @@ function animate(dt) {
     const lat = (0.018 * mw * Math.sin(TAU * S.phase - i * 0.11 - 0.8) + 0.012 * (1 - mw) * Math.sin(S.t * 0.55 - i * 0.13)) * (0.25 + f);
     const vert = 0.006 * mw * Math.sin(2 * TAU * S.phase - i * 0.14 - 1.2) * (0.4 + f) + 0.002 * br * (1 - mw);
     const lift = (i < 16 ? -0.001 * rw - 0.005 * roar : 0) + (i < 6 ? 0.02 * antic : 0) + (i === 0 ? -(pitch - 0.025) * 0.75 : 0);
+    // turning: the tail is dragged, so each joint reproduces the turn rate it had a moment ago —
+    // the swing travels backwards along the tail instead of the whole thing pivoting at once
+    const tl = clamp(turnDelayed(i * 0.045) / 0.5, -1, 1);
+    const tYaw = tl * (i < 18 ? lerp(0.075, 0.006, i / 18) : 0);
     // state.tailDroop scales the tail's resting downward arc (tuned against the reference)
-    setRot(j, 0, (i === 0 ? -yaw * 0.85 : 0) + (i < 3 ? -look * 0.04 : 0) + lat,
+    setRot(j, 0, (i === 0 ? -yaw * 0.85 : 0) + (i < 3 ? -look * 0.04 * (1 - ai.gazeW) : 0) + lat + tYaw,
       vert + lift + j.userData.base.z * (state.tailDroop - 1));
   });
 
@@ -925,13 +1260,33 @@ function animate(dt) {
   dino.updateMatrixWorld(true);
   for (const leg of legs) poseLeg(leg);
 
-  // ---- world scroll
-  groundTex.offset.x = S.groundX / GROUND_TILE;
-  for (const r of rocks) { r.position.x -= S.v * dt; if (r.position.x < -60) r.position.x += 120; }
+  // ---- where the jaws actually ended up (the aim loop closes on this next frame)
+  dino.updateMatrixWorld(true);
+  const mp = headJoint.localToWorld(V3(1.24, -0.05, 0)).lerp(jawJoint.localToWorld(V3(1.02, 0.02, 0)), 0.5);
+  S.mouthLocal.copy(mp).applyAxisAngle(UPY, -NAV.h);
+  mp.add(NAV.travel);
+  if (S.mouthInit && dt > 1e-5) S.mouthVelW.copy(mp).sub(S.mouthW).divideScalar(dt); else S.mouthVelW.set(0, 0, 0);
+  S.mouthW.copy(mp); S.mouthInit = true;
+
+  // ---- the ball meets the animal
+  refreshColliders();
+  resolveBall(dt);
+
+  // ---- world scroll: the animal really moves, the ground slides under it
+  const ch = Math.cos(NAV.h), sh = Math.sin(NAV.h);
+  NAV.travel.x += S.v * ch * dt; NAV.travel.z -= S.v * sh * dt;
+  S.groundX += S.v * dt;
+  world.position.set(-NAV.travel.x, 0, -NAV.travel.z);
+  groundTex.offset.set(NAV.travel.x / GROUND_TILE, -NAV.travel.z / GROUND_TILE);
+  for (const r of rocks) {
+    const dx = r.position.x - NAV.travel.x, dz = r.position.z - NAV.travel.z;
+    if (dx * dx + dz * dz > 70 * 70) rocks.place(r, true);
+  }
   for (let i = prints.length - 1; i >= 0; i--) {
-    const pr = prints[i]; pr.m.position.x -= S.v * dt; pr.age += dt;
+    const pr = prints[i]; pr.age += dt;
     pr.m.material.opacity = 0.8 * (1 - smooth(10, 16, pr.age));
-    if (pr.age > 16 || pr.m.position.x < -40) { scene.remove(pr.m); pr.m.material.dispose(); prints.splice(i, 1); }
+    const dx = pr.m.position.x - NAV.travel.x, dz = pr.m.position.z - NAV.travel.z;
+    if (pr.age > 16 || dx * dx + dz * dz > 60 * 60) { world.remove(pr.m); pr.m.material.dispose(); prints.splice(i, 1); }
   }
   sun.target.position.set(0, 0, 0); sun.position.set(7, 14, 9);
   return P;
@@ -941,25 +1296,57 @@ function animate(dt) {
 const ui = {
   name: document.getElementById('g-name'), speed: document.getElementById('g-speed'), stride: document.getElementById('g-stride'),
   duty: document.getElementById('g-duty'), froude: document.getElementById('g-froude'), freq: document.getElementById('g-freq'),
-  strip: document.getElementById('strip'),
+  strip: document.getElementById('strip'), ai: document.getElementById('g-ai'), ballct: document.getElementById('g-ball'),
 };
 const history = [];
 const spd = document.getElementById('speed'), spdVal = document.getElementById('spd-val');
 spd.addEventListener('input', () => {
   state.custom = +spd.value; state.auto = false; document.getElementById('auto').classList.remove('on');
+  if (ai.on) setChase(false);
   spdVal.textContent = (state.custom * 3.6).toFixed(0) + ' km/h';
   document.querySelectorAll('[data-gait]').forEach(b => b.classList.remove('on'));
 });
 function setGait(g, fromUser = true) {
   state.gait = g; state.custom = null;
   spd.value = GAITS[g]; spdVal.textContent = (GAITS[g] * 3.6).toFixed(0) + ' km/h';
-  if (fromUser) { state.auto = false; document.getElementById('auto').classList.remove('on'); }
+  if (fromUser) { state.auto = false; document.getElementById('auto').classList.remove('on'); if (ai.on) setChase(false); }
   document.querySelectorAll('[data-gait]').forEach(b => b.classList.toggle('on', b.dataset.gait === g));
 }
 document.querySelectorAll('[data-gait]').forEach(b => b.addEventListener('click', () => setGait(b.dataset.gait)));
 document.getElementById('auto').addEventListener('click', (e) => { state.auto = !state.auto; state.autoT = 0; e.target.classList.toggle('on', state.auto); });
 const doRoar = () => { if (state.roar < 0) state.roar = 0; };
 document.getElementById('roar').addEventListener('click', doRoar);
+
+// ---- the ball: throw it somewhere and let the animal go and get it
+const chaseBtn = document.getElementById('chase');
+function setChase(on) {
+  ai.on = on;
+  chaseBtn.classList.toggle('on', on);
+  if (on) { state.auto = false; document.getElementById('auto').classList.remove('on'); ball.live = true; }
+  else { ai.st = null; ai.dip = 0; ai.crouch = 0; ai.aimW = 0; ai.jawW = 0; ai.watch = 0; }
+}
+chaseBtn.addEventListener('click', () => setChase(!ai.on));
+function randomSpot(dist = lerp(13, 26, Math.random())) {
+  const a = NAV.h + (Math.random() - 0.5) * 1.7;
+  return [NAV.travel.x + Math.cos(a) * dist, NAV.travel.z - Math.sin(a) * dist];
+}
+const doThrow = () => { if (!ai.on) setChase(true); throwBall(...randomSpot()); };
+document.getElementById('throw').addEventListener('click', doThrow);
+// click any patch of ground to lob the ball onto it
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+let dnX = 0, dnY = 0, dnT = 0;
+canvas.addEventListener('pointerdown', (e) => { dnX = e.clientX; dnY = e.clientY; dnT = performance.now(); });
+canvas.addEventListener('pointerup', (e) => {
+  if (!ground.parent) return;
+  if (Math.hypot(e.clientX - dnX, e.clientY - dnY) > 5 || performance.now() - dnT > 550) return;
+  ptr.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(ptr, camera);
+  const hit = ray.intersectObject(ground, false)[0];
+  if (!hit) return;
+  const p = hit.point;
+  if (!ai.on) setChase(true);
+  throwBall(p.x + NAV.travel.x, p.z + NAV.travel.z);
+});
 const ts = document.getElementById('timescale');
 ts.addEventListener('input', () => { state.timeScale = +ts.value; document.getElementById('ts-val').textContent = (+ts.value).toFixed(1) + '×'; });
 document.querySelectorAll('[data-mat]').forEach(b => b.addEventListener('click', () => {
@@ -979,6 +1366,8 @@ document.querySelectorAll('[data-cam]').forEach(b => b.addEventListener('click',
 addEventListener('keydown', (e) => {
   if (e.key === '1') setGait('idle'); if (e.key === '2') setGait('walk'); if (e.key === '3') setGait('run');
   if (e.code === 'Space') { e.preventDefault(); doRoar(); }
+  if (e.key === 'b' || e.key === 'B') setChase(!ai.on);
+  if (e.key === 't' || e.key === 'T') doThrow();
 });
 function drawStrip() {
   const c = ui.strip, g = c.getContext('2d'), W = c.width, H = c.height, span = 8;
@@ -1004,6 +1393,8 @@ function updateUI(P) {
   ui.freq.textContent = state.stepping ? P.f.toFixed(2) + ' Hz' : '—';
   ui.duty.textContent = state.stepping ? 'duty ' + P.duty.toFixed(2) : 'duty 1.00';
   ui.froude.textContent = 'Froude ' + (v * v / (9.81 * P.hipH)).toFixed(2);
+  ui.ai.textContent = ai.on ? (ai.label || 'watching') : '—';
+  ui.ballct.textContent = 'ball ' + ai.dist.toFixed(1) + ' m';
   history.push({ t: state.t, L: legs[0].stance, R: legs[1].stance });
   drawStrip();
 }
@@ -1057,6 +1448,7 @@ if (SIL) {
 
 window.__trex = {
   state, setGait, THREE, legs, pelvis, neck, tail, arms, trunk, head: headJoint, jaw: jawJoint, renderer, scene,
+  ball, ai, NAV, throwBall, placeBall, setChase, randomSpot, ground,
   sim: (dt, n) => { let P; for (let i = 0; i < n; i++) P = animate(dt); return P; },
   // Orthographic capture of a single part (e.g. the skull) with everything else hidden,
   // used to score individual bones against the reference diagrams.
