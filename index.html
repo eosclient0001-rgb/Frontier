@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Great Hammerhead Shark (Sphyrna mokarran) - Biomechanical 3D Simulation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #030d14;
+      --panel-bg: rgba(6, 25, 38, 0.75);
+      --panel-border: rgba(38, 115, 153, 0.35);
+      --accent-cyan: #00e5ff;
+      --accent-glow: rgba(0, 229, 255, 0.35);
+      --accent-orange: #ff9100;
+      --text-main: #e8f4f8;
+      --text-muted: #8caec0;
+      --gauge-bg: rgba(12, 38, 54, 0.8);
+      --btn-bg: rgba(14, 45, 66, 0.75);
+      --btn-hover: rgba(22, 70, 102, 0.9);
+      --btn-active: rgba(0, 229, 255, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-dark);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--text-main);
+    }
+
+    #canvas-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* Top Navigation Header */
+    .header-bar {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .brand-box {
+      pointer-events: auto;
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 10px 18px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .brand-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-title span.scientific {
+      font-size: 13px;
+      font-weight: 400;
+      font-style: italic;
+      color: var(--accent-cyan);
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .header-controls {
+      pointer-events: auto;
+      display: flex;
+      gap: 10px;
+    }
+
+    .header-btn {
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .header-btn:hover {
+      background: var(--btn-hover);
+      border-color: var(--accent-cyan);
+    }
+
+    .header-btn.active {
+      background: var(--btn-active);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 12px var(--accent-glow);
+      color: var(--accent-cyan);
+    }
+
+    /* Left Telemetry HUD */
+    .telemetry-panel {
+      position: absolute;
+      top: 90px;
+      left: 20px;
+      width: 290px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      padding: 16px;
+      z-index: 10;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .panel-header {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent-cyan);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(38, 115, 153, 0.2);
+      padding-bottom: 6px;
+    }
+
+    .badge-live {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      background: #00e676;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #00e676;
+      animation: pulse 1.8s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .telemetry-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 9px;
+      font-size: 12px;
+    }
+
+    .telemetry-label {
+      color: var(--text-muted);
+    }
+
+    .telemetry-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .telemetry-state {
+      background: rgba(0, 229, 255, 0.12);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      text-align: center;
+      margin: 10px 0;
+      letter-spacing: 0.3px;
+    }
+
+    .gauge-container {
+      margin-top: 10px;
+    }
+
+    .gauge-title {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .gauge-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: var(--gauge-bg);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .gauge-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-orange));
+      transition: width 0.08s ease;
+      border-radius: 4px;
+    }
+
+    /* Right Control Deck */
+    .control-deck {
+      position: absolute;
+      top: 90px;
+      right: 20px;
+      width: 320px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--panel-border);
+      border-radius: 14px;
+      padding: 16px;
+      z-index: 10;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      max-height: calc(100vh - 170px);
+      overflow-y: auto;
+    }
+
+    .control-deck::-webkit-scrollbar {
+      width: 5px;
+    }
+    .control-deck::-webkit-scrollbar-thumb {
+      background: rgba(38, 115, 153, 0.5);
+      border-radius: 3px;
+    }
+
+    .control-section {
+      margin-bottom: 14px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--accent-cyan);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Procedural Turning Slider */
+    .slider-box {
+      background: rgba(10, 32, 46, 0.6);
+      border: 1px solid rgba(38, 115, 153, 0.25);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .slider-header span.val {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent-cyan);
+      font-weight: 600;
+    }
+
+    input[type=range] {
+      width: 100%;
+      height: 6px;
+      background: var(--gauge-bg);
+      border-radius: 4px;
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      box-shadow: 0 0 8px var(--accent-cyan);
+      cursor: pointer;
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Action Buttons Grid */
+    .btn-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .btn-grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .btn-grid-4 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .action-btn {
+      background: var(--btn-bg);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      padding: 9px 8px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+    }
+
+    .action-btn:hover {
+      background: var(--btn-hover);
+      border-color: var(--accent-cyan);
+      transform: translateY(-1px);
+    }
+
+    .action-btn:active {
+      background: var(--btn-active);
+      transform: translateY(0);
+    }
+
+    .action-btn.primary {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(0, 150, 200, 0.3));
+      border-color: var(--accent-cyan);
+      color: #ffffff;
+    }
+
+    .action-btn.primary:hover {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.35), rgba(0, 150, 200, 0.45));
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .action-btn.warning {
+      background: linear-gradient(135deg, rgba(255, 145, 0, 0.2), rgba(200, 80, 0, 0.3));
+      border-color: var(--accent-orange);
+      color: #ffffff;
+    }
+
+    .action-btn.warning:hover {
+      background: linear-gradient(135deg, rgba(255, 145, 0, 0.35), rgba(200, 80, 0, 0.45));
+      box-shadow: 0 0 12px rgba(255, 145, 0, 0.4);
+    }
+
+    .action-btn .subtext {
+      font-size: 9px;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    /* Bottom Control Bar / Hotkey Guide */
+    .bottom-bar {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel-bg);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--panel-border);
+      border-radius: 30px;
+      padding: 8px 24px;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      z-index: 10;
+      font-size: 11px;
+      color: var(--text-muted);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .hotkey {
+      display: inline-block;
+      background: rgba(38, 115, 153, 0.3);
+      border: 1px solid rgba(38, 115, 153, 0.6);
+      color: #ffffff;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      margin-right: 5px;
+    }
+
+    /* Modal Dialog for Anatomy / Reference */
+    .modal-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(2, 8, 13, 0.82);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .modal-content {
+      background: #081e2b;
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      width: 640px;
+      max-width: 95%;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 26px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    }
+
+    .modal-content::-webkit-scrollbar {
+      width: 6px;
+    }
+    .modal-content::-webkit-scrollbar-thumb {
+      background: rgba(38, 115, 153, 0.5);
+      border-radius: 3px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      border-bottom: 1px solid rgba(38, 115, 153, 0.3);
+      padding-bottom: 12px;
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    .modal-close:hover {
+      color: #ffffff;
+    }
+
+    .anatomy-card {
+      background: rgba(14, 45, 66, 0.4);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .anatomy-card h4 {
+      color: var(--accent-cyan);
+      font-size: 13px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .anatomy-card p {
+      font-size: 12px;
+      line-height: 1.6;
+      color: #c0d8e4;
+    }
+
+    @media (max-width: 920px) {
+      .telemetry-panel {
+        display: none;
+      }
+      .control-deck {
+        top: 80px;
+        right: 10px;
+        width: 270px;
+      }
+      .bottom-bar {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <!-- Top Header Bar -->
+  <div class="header-bar">
+    <div class="brand-box">
+      <div class="brand-title">
+        GREAT HAMMERHEAD SHARK
+        <span class="scientific">Sphyrna mokarran</span>
+      </div>
+      <div class="brand-subtitle">BIOMECHANICAL PROCEDURAL KINEMATICS &amp; PREDATORY RIG</div>
+    </div>
+
+    <div class="header-controls">
+      <button id="btn-audio" class="header-btn">🔊 Sound On</button>
+      <button id="btn-xray" class="header-btn">🦴 X-Ray / Skeleton</button>
+      <button id="btn-info" class="header-btn">📖 Anatomy Specs</button>
+    </div>
+  </div>
+
+  <!-- Left Telemetry Panel -->
+  <div class="telemetry-panel">
+    <div class="panel-header">
+      <span>Shark Telemetry</span>
+      <span class="badge-live"></span>
+    </div>
+
+    <div id="hud-state" class="telemetry-state">Cruising (Sub-carangiform)</div>
+
+    <div class="telemetry-item">
+      <span class="telemetry-label">Forward Velocity:</span>
+      <span id="hud-speed" class="telemetry-val">1.6 m/s (3.1 kts)</span>
+    </div>
+
+    <div class="telemetry-item">
+      <span class="telemetry-label">Tail Stroke Frequency:</span>
+      <span id="hud-freq" class="telemetry-val">0.85 Hz</span>
+    </div>
+
+    <div class="telemetry-item">
+      <span class="telemetry-label">Compass Heading:</span>
+      <span id="hud-heading" class="telemetry-val">0°</span>
+    </div>
+
+    <div class="telemetry-item">
+      <span class="telemetry-label">Dynamic Bank Angle:</span>
+      <span id="hud-bank" class="telemetry-val">0.0°</span>
+    </div>
+
+    <div class="gauge-container">
+      <div class="gauge-title">
+        <span>Lower Jaw Gape (Meckel's Cartilage)</span>
+      </div>
+      <div class="gauge-bar-bg">
+        <div id="hud-gape" class="gauge-bar-fill"></div>
+      </div>
+
+      <div class="gauge-title">
+        <span>Palatoquadrate Protrusion (Kinetic Upper Jaw)</span>
+      </div>
+      <div class="gauge-bar-bg">
+        <div id="hud-protrude" class="gauge-bar-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Control Deck -->
+  <div class="control-deck">
+    <!-- Camera Section -->
+    <div class="control-section">
+      <div class="section-title">🎥 Camera Mode</div>
+      <div class="btn-grid-4">
+        <button id="cam-orbit" class="action-btn cam-btn active">Orbit<span class="subtext">Inspect</span></button>
+        <button id="cam-chase" class="action-btn cam-btn">Chase<span class="subtext">Follow</span></button>
+        <button id="cam-head" class="action-btn cam-btn">Rostrum<span class="subtext">1st Person</span></button>
+        <button id="cam-action" class="action-btn cam-btn">Cinematic<span class="subtext">Strike</span></button>
+      </div>
+    </div>
+
+    <!-- Procedural Turning Deck -->
+    <div class="control-section">
+      <div class="section-title">🔄 Procedural Turning (Dynamic Direction)</div>
+      
+      <div class="slider-box">
+        <div class="slider-header">
+          <span>Turn Direction &amp; Spine Curvature</span>
+          <span id="turn-slider-val" class="val">0° (Neutral)</span>
+        </div>
+        <input type="range" id="turn-slider" min="-1" max="1" step="0.02" value="0">
+        <div class="slider-labels">
+          <span>◄ Left (-90°)</span>
+          <span>Center</span>
+          <span>Right (+90°) ►</span>
+        </div>
+      </div>
+
+      <div class="btn-grid-3">
+        <button id="btn-turn-left" class="action-btn">
+          ◄ Turn Left
+          <span class="subtext">90° Arc</span>
+        </button>
+        <button id="btn-turn-180" class="action-btn primary">
+          🔄 180° Turn
+          <span class="subtext">Snap U-Turn</span>
+        </button>
+        <button id="btn-turn-right" class="action-btn">
+          Turn Right ►
+          <span class="subtext">90° Arc</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Locomotion Deck -->
+    <div class="control-section">
+      <div class="section-title">🌊 Locomotion &amp; Swimming Modes</div>
+      <div class="btn-grid-2">
+        <button id="btn-cruise" class="action-btn primary">
+          Cruise Swim
+          <span class="subtext">Sub-carangiform wave</span>
+        </button>
+        <button id="btn-sprint" class="action-btn">
+          Sprint Pursuit
+          <span class="subtext">High frequency stroke</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Predatory Attack & Bite Deck -->
+    <div class="control-section">
+      <div class="section-title">⚡ Attack &amp; Kinetic Bite System</div>
+      <div class="btn-grid-2">
+        <button id="btn-bite" class="action-btn warning">
+          🦈 Kinetic Bite
+          <span class="subtext">Palatoquadrate Protrusion</span>
+        </button>
+        <button id="btn-attack" class="action-btn warning">
+          ⚡ Strike &amp; Thrash
+          <span class="subtext">Rush + Clamp + Shake</span>
+        </button>
+      </div>
+      <button id="btn-hunt" class="action-btn primary" style="width: 100%;">
+        🎯 Hunt Stingray Prey (Autonomous Intercept &amp; Strike)
+        <span class="subtext">Ampullae of Lorenzini electroreceptor tracking</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Bottom Bar: Hotkey Navigation -->
+  <div class="bottom-bar">
+    <div><span class="hotkey">W</span><span class="hotkey">S</span> Dive / Climb</div>
+    <div><span class="hotkey">A</span><span class="hotkey">D</span> Procedural Turning</div>
+    <div><span class="hotkey">SPACE</span> Kinetic Bite</div>
+    <div><span class="hotkey">SHIFT</span> Sprint Speed</div>
+    <div><span class="hotkey">R</span> 180° Turnaround</div>
+    <div><span class="hotkey">DRAG MOUSE</span> Orbit / Zoom</div>
+  </div>
+
+  <!-- Anatomy & Reference Info Modal -->
+  <div id="modal-info" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">Great Hammerhead Shark Anatomy &amp; Mechanics</div>
+        <button id="btn-modal-close" class="modal-close">&times;</button>
+      </div>
+
+      <div class="anatomy-card">
+        <h4>1. Cephalofoil Hydrodynamics &amp; Sensory Wing</h4>
+        <p>
+          The broad, T-shaped hammer head (cephalofoil) measures 23–27% of total body length in <em>Sphyrna mokarran</em>.
+          Unlike other hammerheads, the Great Hammerhead features a nearly straight anterior margin with a shallow central indentation.
+          The cephalofoil provides hydrodynamic lift, dynamic yaw stability, and houses hundreds of <strong>Ampullae of Lorenzini</strong>
+          electroreceptive pores on its ventral surface to detect hidden benthic stingrays.
+        </p>
+      </div>
+
+      <div class="anatomy-card">
+        <h4>2. Kinetic Palatoquadrate Upper Jaw Protrusion</h4>
+        <p>
+          Sharks possess hyostylic jaw suspension. The upper jaw (palatoquadrate) is not fused to the chondrocranium.
+          During a feeding strike, the lower jaw (Meckel's cartilage) depresses down, and the palatoquadrate detaches and
+          <strong>protrudes forward and downward</strong>, projecting the razor-sharp triangular serrated teeth outside the snout profile.
+          After the clamp, violent lateral head thrashing saws through prey tissue.
+        </p>
+      </div>
+
+      <div class="anatomy-card">
+        <h4>3. Procedural Turning &amp; High Dorsal Banking</h4>
+        <p>
+          Hammerheads exhibit extraordinary lateral flexibility. In procedural turns, the vertebral column bends into an organic
+          spline curve while the shark banks (rolls) up to 25°–45° into the turn. Adult Great Hammerheads frequently swim on a tilt,
+          using their massive falcate 1st dorsal fin as a hydrofoil to generate lateral lift and turn "on a dime".
+        </p>
+      </div>
+
+      <div class="anatomy-card">
+        <h4>4. Heterocercal Caudal Fin &amp; Dermal Denticles</h4>
+        <p>
+          The tail features a monumental upper lobe with a subterminal notch and a stiff lower hypochordal lobe.
+          The skin is covered with microscopic placoid scales (dermal denticles) featuring longitudinal riblets that reduce drag
+          and create an anisotropic velvety sheen with pristine countershading (slate dorsum to white belly).
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+  <script>
+    // Info Modal Event Listeners
+    const btnInfo = document.getElementById('btn-info');
+    const modalInfo = document.getElementById('modal-info');
+    const btnModalClose = document.getElementById('btn-modal-close');
+
+    if (btnInfo && modalInfo && btnModalClose) {
+      btnInfo.addEventListener('click', () => modalInfo.style.display = 'flex');
+      btnModalClose.addEventListener('click', () => modalInfo.style.display = 'none');
+      modalInfo.addEventListener('click', (e) => {
+        if (e.target === modalInfo) modalInfo.style.display = 'none';
+      });
+    }
+  </script>
+</body>
+</html>
