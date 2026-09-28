@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tyrannosaurus rex — articulated skeleton · walk / run / idle</title>
+<link rel="stylesheet" href="css/style.css" />
+<script type="importmap">
+  { "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="fileWarning" role="alert" hidden>
+  This viewer uses local ES modules. Open it through <b>http://</b> with <code>npm run serve</code>, not by double-clicking the HTML file.
+</div>
+<script>if (location.protocol === 'file:') document.getElementById('fileWarning').hidden = false;</script>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div id="loadingText">Loading…</div>
+</div>
+
+<header class="panel title">
+  <h1>Tyrannosaurus rex</h1>
+  <p id="specLine">FMNH PR 2081 “Sue”</p>
+</header>
+
+<section class="panel controls">
+  <div class="row gaitrow">
+    <button data-gait data-v="0" class="active">Idle</button>
+    <button data-gait data-v="2.2">Walk</button>
+    <button data-gait data-v="7.2">Run</button>
+    <button id="roar" class="accent">Roar</button>
+  </div>
+  <h3>Behaviour studies</h3>
+  <div class="row wrap">
+    <button id="look" class="pose">Look around (L)</button>
+    <button id="sniffAir" class="pose">Sniff air (Y)</button>
+    <button id="sniffGround" class="pose">Sniff ground (U)</button>
+    <button id="roarInPlace" class="accent">Roar in place (O)</button>
+  </div>
+  <label class="slider">
+    <span>Target speed</span>
+    <input id="speed" type="range" min="0" max="7.2" step="0.1" value="0" />
+  </label>
+  <div class="readout">
+    <span id="gaitName" data-state="idle">Idle</span>
+    <span id="speedVal">0.0 m/s</span>
+  </div>
+  <div class="footfall">
+    <span id="dutyL" class="foot">L <i id="stepL"></i></span>
+    <span id="aerial" class="foot air">aerial</span>
+    <span id="dutyR" class="foot">R <i id="stepR"></i></span>
+  </div>
+  <div id="stats" class="stats"></div>
+
+  <h3>Turn in place</h3>
+  <div class="row">
+    <button id="turnL">⟲ 90° (Q)</button>
+    <button id="turn180">180°</button>
+    <button id="turnR">90° ⟳ (E)</button>
+  </div>
+  <h3>Attacks</h3>
+  <div class="row">
+    <button id="tailL" class="accent">⟵ Tail (Z)</button>
+    <button id="bite" class="accent" title="Cycles three orthal bite variants">Bite (F · cycles)</button>
+    <button id="tailR" class="accent">Tail ⟶ (C)</button>
+  </div>
+  <h3>Hunt the ball</h3>
+  <div class="row">
+    <button id="hunt" class="hunt">▶ Start hunt</button>
+    <button id="spawn">New ball</button>
+  </div>
+  <div class="row" style="margin-top:6px">
+    <button data-prey="drag" class="active" title="Ball stays where you drop it">Drag / throw</button>
+    <button data-prey="flee" title="Ball runs away and tires">Flees</button>
+  </div>
+  <p class="hint">Drag the red ball to move it · flick to throw. Close in front → bite; beside/behind the hips → tail swipe.</p>
+
+  <h3>View</h3>
+  <div class="row">
+    <button data-view="bones" class="active">Bones</button>
+    <button data-view="xray">X-ray</button>
+    <button data-view="flesh">Flesh</button>
+  </div>
+  <h3>Bone finish (plain)</h3>
+  <div class="row wrap">
+    <button data-bone="ivory" class="active">Ivory</button>
+    <button data-bone="sue">Brown</button>
+    <button data-bone="ochre">Ochre</button>
+    <button data-bone="cast">Grey</button>
+  </div>
+  <h3>Camera</h3>
+  <div class="row wrap">
+    <button data-cam="follow" class="active">Follow</button>
+    <button data-cam="side">Side</button>
+    <button data-cam="front">Front</button>
+    <button data-cam="rear">Rear</button>
+    <button data-cam="top">Top</button>
+    <button data-cam="hero">Hero</button>
+    <button data-cam="foot">Feet</button>
+    <button data-cam="free">Free</button>
+  </div>
+  <div class="row toggles">
+    <label><input type="checkbox" id="slowmo" /> Slow-mo ¼×</label>
+    <label><input type="checkbox" id="prints" checked /> Footprints</label>
+    <label><input type="checkbox" id="gridT" /> 1 m grid</label>
+    <label><input type="checkbox" id="texT" /> Fossil texture</label>
+  </div>
+  <div class="row">
+    <button id="pause">❚❚ Pause</button>
+    <button id="hideUI">Hide UI (H)</button>
+  </div>
+</section>
+
+<footer class="panel help">
+  <b>W/S</b> speed · <b>A/D</b> steer · <b>Q/E</b> turn in place · <b>F</b> bite variants · <b>Z/C</b> tail · <b>R</b> roar · <b>L</b> look · <b>Y/U</b> sniff · <b>O</b> roar in place · <b>T</b> hunt · <b>Space</b> pause
+</footer>
+
+<div id="tip"></div>
+<div id="toast"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "frontier-trex",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Anatomically-referenced, skeletal + skinned Tyrannosaurus rex (FMNH PR 2081 \"Sue\" scale) with procedural walk/run/idle gait and blended transitions.",
+  "scripts": {
+    "serve": "python3 -m http.server 8080 --directory trex",
+    "test": "node tests/run-tests.mjs"
+  },
+  "devDependencies": {
+    "three": "0.169.0"
+  }
+}
