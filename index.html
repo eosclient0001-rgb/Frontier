@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ARACHNO-3D: Ultra-Realistic Scorpion Anatomical Model & Biomechanics</title>
+  <link rel="stylesheet" href="./src/ui.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦂</text></svg>" />
+</head>
+<body>
+  <!-- 3D Canvas Viewport -->
+  <div id="canvas-container"></div>
+
+  <!-- Screen-space 3D Anatomical Annotation Overlay -->
+  <div id="annotations-overlay"></div>
+
+  <!-- Top Navigation / Status Header -->
+  <header class="app-header glass-panel">
+    <div class="brand-section">
+      <span class="brand-icon">🦂</span>
+      <div class="brand-title">
+        <span>ARACHNO-3D</span>
+        <span class="brand-badge">PBR ULTRA-HYPER-REALISTIC</span>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="status-item">
+        <span class="status-dot"></span>
+        <span>Heterometrus spinifer / Pandinus imperator</span>
+      </div>
+      <div class="status-item">
+        <span>66 Articulated Joints</span>
+      </div>
+      <div class="status-item">
+        <span>Kinematic Biomechanics Active</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Left Sidebar: Biomechanical Animation Suite -->
+  <aside class="sidebar-left glass-panel">
+    <div class="panel-title">
+      <span>Animations</span>
+      <span style="font-size: 10px; color: var(--text-muted);">6 Biomechanical Modes</span>
+    </div>
+
+    <div class="anim-grid">
+      <!-- 1. Walk Cycle -->
+      <div class="anim-card active" data-anim="Walk">
+        <div class="anim-card-left">
+          <span class="anim-icon">🕷️</span>
+          <div class="anim-info">
+            <span class="anim-name">Alternating Tetrapod Walk</span>
+            <span class="anim-desc">Metachronal wave gait, tail balance sway</span>
+          </div>
+        </div>
+        <span class="anim-badge">1.4s Loop</span>
+      </div>
+
+      <!-- 2. Full Attack -->
+      <div class="anim-card" data-anim="Attack">
+        <div class="anim-card-left">
+          <span class="anim-icon">⚡</span>
+          <div class="anim-info">
+            <span class="anim-name">Predatory Grab & Sting</span>
+            <span class="anim-desc">Pincer splay & clamp + lethal overhead stinger plunge</span>
+          </div>
+        </div>
+        <span class="anim-badge">2.4s Strike</span>
+      </div>
+
+      <!-- 3. Stinger Strike -->
+      <div class="anim-card" data-anim="StingerStrike">
+        <div class="anim-card-left">
+          <span class="anim-icon">🎯</span>
+          <div class="anim-info">
+            <span class="anim-name">Overhead Stinger Whip</span>
+            <span class="anim-desc">120 cm/s high-speed tail arc & defensive jab</span>
+          </div>
+        </div>
+        <span class="anim-badge">1.2s Rapid</span>
+      </div>
+
+      <!-- 4. Pincer Attack -->
+      <div class="anim-card" data-anim="PincerAttack">
+        <div class="anim-card-left">
+          <span class="anim-icon">✂️</span>
+          <div class="anim-info">
+            <span class="anim-name">Chelae Snatch & Clamp</span>
+            <span class="anim-desc">Double pincer grappling snap with denticles</span>
+          </div>
+        </div>
+        <span class="anim-badge">1.4s Clamp</span>
+      </div>
+
+      <!-- 5. Threat Display -->
+      <div class="anim-card" data-anim="Threat">
+        <div class="anim-card-left">
+          <span class="anim-icon">⚠️</span>
+          <div class="anim-info">
+            <span class="anim-name">Threat & Warning Stance</span>
+            <span class="anim-desc">Reared cephalothorax, gaping chelae, poised stinger</span>
+          </div>
+        </div>
+        <span class="anim-badge">2.0s Tremor</span>
+      </div>
+
+      <!-- 6. Idle Respiration -->
+      <div class="anim-card" data-anim="Idle">
+        <div class="anim-card-left">
+          <span class="anim-icon">💨</span>
+          <div class="anim-info">
+            <span class="anim-name">Living Respiration (Idle)</span>
+            <span class="anim-desc">Tergite breathing expansion & trichobothria twitch</span>
+          </div>
+        </div>
+        <span class="anim-badge">3.2s Loop</span>
+      </div>
+    </div>
+
+    <!-- Playback Engine -->
+    <div class="playback-box">
+      <div class="playback-buttons">
+        <button class="control-btn primary" id="play-pause-btn">
+          <span class="btn-icon">⏸</span> Pause
+        </button>
+        <button class="control-btn" id="auto-rotate-btn">
+          <span>🔄</span> Auto-Rotate
+        </button>
+      </div>
+
+      <div class="timeline-row">
+        <span>Timeline</span>
+        <input type="range" class="timeline-slider" id="timeline-slider" min="0" max="1" step="0.001" value="0" />
+      </div>
+
+      <div class="speed-row">
+        <span>Playback Speed</span>
+        <div class="speed-chips">
+          <span class="speed-chip" data-speed="0.25">0.25x</span>
+          <span class="speed-chip" data-speed="0.5">0.5x</span>
+          <span class="speed-chip active" data-speed="1.0">1.0x</span>
+          <span class="speed-chip" data-speed="1.5">1.5x</span>
+        </div>
+      </div>
+      <input type="range" class="timeline-slider" id="speed-slider" min="0.1" max="2.0" step="0.05" value="1.0" />
+    </div>
+
+    <!-- Biomechanical Telemetry Live Monitor -->
+    <div class="telemetry-box">
+      <div style="font-weight: 700; color: #fff; margin-bottom: 4px;">BIOMECHANICAL TELEMETRY</div>
+      <div class="telemetry-row">
+        <span>Locomotion:</span>
+        <span class="telemetry-val" id="telemetry-gait">Alternating Tetrapod</span>
+      </div>
+      <div class="telemetry-row">
+        <span>Active Phase:</span>
+        <span class="telemetry-val" id="telemetry-phase">Tetrapod A</span>
+      </div>
+      <div class="telemetry-row">
+        <span>Tail Arc Velocity:</span>
+        <span class="telemetry-val" id="telemetry-tail-speed">12.4 cm/s</span>
+      </div>
+      <div class="telemetry-row">
+        <span>Skeletal Rig:</span>
+        <span class="telemetry-val"><span id="telemetry-joints">66</span> Nodes Articulated</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Top Right Panel: Camera Presets & Shader Modes -->
+  <aside class="top-right-bar">
+    <!-- Camera View Presets -->
+    <div class="glass-panel">
+      <div class="panel-title" style="padding: 10px 10px 0 10px;">Camera Angles</div>
+      <div class="view-preset-grid">
+        <button class="view-preset-btn" data-view="hero">🎥 Hero 3/4</button>
+        <button class="view-preset-btn" data-view="dorsal">📐 Dorsal Top</button>
+        <button class="view-preset-btn" data-view="pincers">🦀 Macro Claws</button>
+        <button class="view-preset-btn" data-view="lateral">📏 Lateral Profile</button>
+        <button class="view-preset-btn" data-view="stinger" style="grid-column: span 2;">💉 Stinger Aculeus Close-up</button>
+      </div>
+    </div>
+
+    <!-- Lighting & Shader Modes -->
+    <div class="glass-panel">
+      <div class="panel-title" style="padding: 10px 10px 0 10px;">Lighting & Cuticle Shaders</div>
+      <div class="lighting-modes">
+        <button class="mode-btn active" data-mode="studio">
+          <span>🎬</span> Studio PBR Realistic
+        </button>
+        <button class="mode-btn" data-mode="desert">
+          <span>☀️</span> Desert Sunset Arid
+        </button>
+        <button class="mode-btn uv-mode" data-mode="uv">
+          <span>🔮</span> Bioluminescent UV (365nm)
+        </button>
+        <button class="mode-btn" data-mode="wireframe">
+          <span>🕸️</span> Wireframe Mesh
+        </button>
+      </div>
+    </div>
+
+    <!-- Display Toggles -->
+    <div class="glass-panel" style="padding: 10px;">
+      <button class="control-btn" id="toggle-annotations-btn" style="width: 100%;">
+        <span>🏷️</span> Toggle Anatomy Pins
+      </button>
+    </div>
+  </aside>
+
+  <!-- Bottom Bar: Model Export & Scientific Dossier -->
+  <footer class="bottom-bar glass-panel">
+    <div class="action-group">
+      <button class="export-btn" id="download-glb-btn">
+        <span>💾</span> Download GLB (Model + Animations)
+      </button>
+      <button class="export-btn" id="download-obj-btn">
+        <span>📦</span> Download Wavefront OBJ
+      </button>
+      <button class="control-btn" id="screenshot-btn">
+        <span>📸</span> 4K Render Snapshot
+      </button>
+    </div>
+
+    <div class="action-group">
+      <button class="control-btn" id="open-dossier-btn">
+        <span>📖</span> Anatomical & Kinematic Dossier
+      </button>
+    </div>
+  </footer>
+
+  <!-- Anatomy Point Popup Modal -->
+  <div class="modal-overlay" id="anatomy-modal">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-part-title">Anatomical Structure</div>
+        <button class="close-modal-btn">&times;</button>
+      </div>
+      <p id="modal-part-desc" style="line-height: 1.6; color: var(--text-main); font-size: 14px;"></p>
+    </div>
+  </div>
+
+  <!-- Complete Scientific Dossier Modal -->
+  <div class="modal-overlay" id="dossier-modal">
+    <div class="modal-card glass-panel" style="width: 820px;">
+      <div class="modal-header">
+        <div class="modal-title">Scientific Anatomy & Biomechanical Reference Dossier</div>
+        <button class="close-modal-btn">&times;</button>
+      </div>
+      <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6; display: flex; flex-direction: column; gap: 14px;">
+        <p>
+          This 3D model replicates the morphology and biomechanics of the Order <strong>Scorpiones</strong>
+          (specifically Emperor Scorpion <em>Pandinus imperator</em> and Asian Forest Scorpion <em>Heterometrus spinifer</em>)
+          with exact anatomical segmentation, 66 articulated skeletal nodes, PBR chitin shaders, and high-speed strike kinematics.
+        </p>
+
+        <div class="anatomy-grid">
+          <div class="anatomy-item">
+            <h4>1. Prosoma (Cephalothorax)</h4>
+            <p>Shield carapace with anterior median notch. Bears 2 median ocelli on an elevated tubercle and 3 pairs of lateral ocelli. Underneath lies the pentagonal ventral sternum, and chelicerae (anterior grasping jaws) for macerating prey.</p>
+          </div>
+
+          <div class="anatomy-item">
+            <h4>2. Raptorial Pedipalps & Chelae</h4>
+            <p>Composed of Coxa, Trochanter, Femur (humerus) with granulated carinae, Patella (brachium / elbow), and massive Chela. The Chela consists of a swollen manus (palm), fixed finger with serrated denticles, and articulated movable finger (dactyl) capable of crushing prey.</p>
+          </div>
+
+          <div class="anatomy-item">
+            <h4>3. Mesosoma (7 Articulated Tergites)</h4>
+            <p>Somites II to VIII form 7 distinct dorsal plates (Tergites 1–7) overlapping sequentially. Ventral sternites on segments 3–7 feature oblique slits (stigmata) for book lung respiration. Segment 2 bears paired sensory pectines with individual comb teeth.</p>
+          </div>
+
+          <div class="anatomy-item">
+            <h4>4. Metasoma (5 Tail Rings) & Telson</h4>
+            <p>Five cylindrical caudal segments (Cauda I–V), each strengthened by 8 longitudinal keels (carinae) with granular pustules. Segment V features pronounced ventral keels. Terminates in the telson vesicle (paired venom glands) and hypodermic aculeus stinger.</p>
+          </div>
+
+          <div class="anatomy-item">
+            <h4>5. Alternating Tetrapod Gait Biomechanics</h4>
+            <p>Scientific literature (Bowerman 1975, 1981; Spagna 2011) documents an alternating tetrapod gait: Tetrapod A (R1, L2, R3, L4) alternates in anti-phase with Tetrapod B (L1, R2, L3, R4), with a ~10% rear-to-front metachronal wave and tail counterbalance sway.</p>
+          </div>
+
+          <div class="anatomy-item">
+            <h4>6. High-Speed Strike Kinematics</h4>
+            <p>High-speed video analysis (Coelho et al. 2017, Functional Ecology) revealed defensive stinger strikes reach velocities over 100–128 cm/s in open whip trajectories. The attack animation models the full predatory sequence: wind-up rearing, pincer clamp, overhead stinger plunge, venom pulse, and snap retraction.</p>
+          </div>
+        </div>
+
+        <div style="background: rgba(0, 245, 212, 0.08); border: 1px solid rgba(0, 245, 212, 0.3); padding: 10px; border-radius: 6px;">
+          <strong style="color: var(--accent-cyan);">Cuticle UV Bioluminescence:</strong>
+          Scorpion exoskeletons contain beta-carbolines and 7-hydroxy-4-methylcoumarin within the hyaline layer, causing brilliant electric cyan-green fluorescence under 365nm ultraviolet light. Switch to the "Bioluminescent UV" mode in the viewer to observe this authentic phenomenon.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

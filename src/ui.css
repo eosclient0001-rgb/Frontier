@@ -1,0 +1,585 @@
+:root {
+  --bg-color: #080a0c;
+  --panel-bg: rgba(14, 18, 22, 0.75);
+  --panel-border: rgba(0, 245, 212, 0.2);
+  --panel-hover: rgba(22, 28, 35, 0.85);
+  --accent-cyan: #00f5d4;
+  --accent-amber: #fca311;
+  --accent-green: #38b000;
+  --accent-red: #ff3366;
+  --text-main: #e0e6ed;
+  --text-muted: #8b9bb4;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  font-family: var(--font-family);
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+
+#canvas-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+#canvas-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* Glassmorphism Panels */
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Header */
+.app-header {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  height: 56px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 0 8px var(--accent-cyan));
+}
+
+.brand-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 245, 212, 0.15);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 245, 212, 0.4);
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+}
+
+/* Left Sidebar: Animation & Kinematics Control */
+.sidebar-left {
+  position: absolute;
+  top: 84px;
+  left: 16px;
+  width: 320px;
+  max-height: calc(100vh - 100px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  z-index: 10;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.sidebar-left::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-left::-webkit-scrollbar-thumb {
+  background: rgba(0, 245, 212, 0.3);
+  border-radius: 4px;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--accent-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+/* Animation Cards */
+.anim-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.anim-card {
+  background: rgba(25, 32, 40, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.anim-card:hover {
+  background: rgba(35, 45, 56, 0.8);
+  border-color: rgba(0, 245, 212, 0.4);
+  transform: translateX(2px);
+}
+
+.anim-card.active {
+  background: rgba(0, 245, 212, 0.12);
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 16px rgba(0, 245, 212, 0.25);
+}
+
+.anim-card-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.anim-icon {
+  font-size: 18px;
+}
+
+.anim-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.anim-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.anim-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.anim-badge {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
+
+.anim-card.active .anim-badge {
+  background: var(--accent-cyan);
+  color: #080a0c;
+  font-weight: 700;
+}
+
+/* Playback Controls */
+.playback-box {
+  background: rgba(18, 24, 30, 0.7);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.playback-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+.control-btn {
+  background: rgba(35, 45, 56, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.control-btn:hover {
+  background: rgba(50, 65, 80, 0.9);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.control-btn.primary {
+  background: var(--accent-cyan);
+  color: #080a0c;
+  font-weight: 700;
+  border: none;
+}
+.control-btn.primary:hover {
+  background: #38efc6;
+  box-shadow: 0 0 12px rgba(0, 245, 212, 0.5);
+}
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.timeline-slider {
+  flex: 1;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.speed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.speed-chips {
+  display: flex;
+  gap: 4px;
+}
+
+.speed-chip {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.speed-chip.active {
+  background: var(--accent-cyan);
+  color: #080a0c;
+  font-weight: 700;
+}
+
+/* Biomechanical Telemetry */
+.telemetry-box {
+  background: rgba(10, 14, 18, 0.7);
+  border-radius: 8px;
+  padding: 10px;
+  border: 1px solid rgba(0, 245, 212, 0.15);
+  font-family: monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.telemetry-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.telemetry-val {
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+/* Top Right: View & Shading Controls */
+.top-right-bar {
+  position: absolute;
+  top: 84px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 250px;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.view-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  padding: 10px;
+}
+
+.view-preset-btn {
+  background: rgba(25, 32, 40, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.view-preset-btn:hover {
+  background: rgba(35, 45, 56, 0.9);
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+/* Lighting / Shader Mode Selector */
+.lighting-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+
+.mode-btn {
+  background: rgba(25, 32, 40, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s ease;
+}
+
+.mode-btn:hover {
+  background: rgba(35, 45, 56, 0.9);
+  border-color: var(--accent-cyan);
+}
+
+.mode-btn.active {
+  background: rgba(0, 245, 212, 0.15);
+  border-color: var(--accent-cyan);
+  color: #fff;
+  font-weight: 600;
+}
+
+.mode-btn.uv-mode.active {
+  background: rgba(0, 245, 212, 0.25);
+  border-color: #00f5d4;
+  box-shadow: 0 0 15px rgba(0, 245, 212, 0.5);
+  color: #00f5d4;
+}
+
+/* Bottom Actions Bar */
+.bottom-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 16px;
+  height: 52px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.export-btn {
+  background: rgba(30, 40, 50, 0.85);
+  border: 1px solid rgba(0, 245, 212, 0.4);
+  color: var(--accent-cyan);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.export-btn:hover {
+  background: var(--accent-cyan);
+  color: #080a0c;
+  box-shadow: 0 0 16px rgba(0, 245, 212, 0.4);
+}
+
+/* Anatomy Info Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-overlay.open {
+  display: flex;
+}
+
+.modal-card {
+  width: 720px;
+  max-width: 90vw;
+  max-height: 85vh;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 12px;
+}
+
+.modal-title {
+  font-size: 18px;
+  color: var(--accent-cyan);
+  font-weight: 700;
+}
+
+.close-modal-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.close-modal-btn:hover {
+  color: #fff;
+}
+
+.anatomy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.anatomy-item {
+  background: rgba(25, 32, 40, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.anatomy-item h4 {
+  color: var(--accent-cyan);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.anatomy-item p {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* 3D 2D Marker Overlay */
+.annotation-marker {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.2s ease;
+  z-index: 5;
+}
+
+.marker-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px var(--accent-cyan);
+  animation: pulseMarker 2s infinite ease-in-out;
+}
+
+@keyframes pulseMarker {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.8; }
+}
+
+.marker-label {
+  background: rgba(10, 14, 18, 0.85);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+}
