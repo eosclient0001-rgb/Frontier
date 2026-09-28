@@ -1,0 +1,28 @@
+{
+  "preset": "butte_monument",
+  "description": "Butte \u2014 eroded mesa remnant taller than wide, isolated, same stratigraphy as mesa but narrower, edge retreat via basal sapping & frost, overhanging cap, surrounding pedestal slopes.",
+  "bounds": [
+    [
+      -16.0,
+      16.0
+    ],
+    [
+      0,
+      36.0
+    ],
+    [
+      -15.0,
+      15.0
+    ]
+  ],
+  "grid": [
+    133,
+    150,
+    125
+  ],
+  "verts": 76063,
+  "faces": 152102,
+  "strata_type": "mesa",
+  "base_shape": "butte",
+  "seed": 3
+}

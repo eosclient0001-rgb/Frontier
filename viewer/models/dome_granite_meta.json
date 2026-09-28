@@ -1,0 +1,28 @@
+{
+  "preset": "dome_granite",
+  "description": "Granite dome (Half Dome / Enchanted Rock analogue) \u2014 exfoliation onion-skin sheets, orthogonal joint traces, grus weathering, broad convex form.",
+  "bounds": [
+    [
+      -15.0,
+      15.0
+    ],
+    [
+      0,
+      26.0
+    ],
+    [
+      -15.0,
+      15.0
+    ]
+  ],
+  "grid": [
+    150,
+    130,
+    150
+  ],
+  "verts": 95372,
+  "faces": 190498,
+  "strata_type": "basalt",
+  "base_shape": "dome",
+  "seed": 6
+}

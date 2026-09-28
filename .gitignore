@@ -1,0 +1,16 @@
+# Frontier
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.pytest_cache/
+.venv/
+output/
+*.obj
+*.ply
+# but keep viewer/models/*.glb + meta.json for live preview (explicitly tracked)
+!viewer/models/*.glb
+!viewer/models/*.json
+# OS
+.DS_Store
+Thumbs.db
