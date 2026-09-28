@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.vite/
+*.log
+image-search/
+# Scratch: development renders and one-off probes.
+tmp/
