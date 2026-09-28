@@ -1,0 +1,28 @@
+{
+  "preset": "hoodoo_bryce",
+  "description": "Bryce Canyon hoodoo \u2014 Claron limestone cap over mudstone/siltstone stem, frost-wedged joints, tafoni honeycomb, basal sapping alcoves, column-like frost shattering. ~18m tall.",
+  "bounds": [
+    [
+      -3.75,
+      3.75
+    ],
+    [
+      0,
+      20.0
+    ],
+    [
+      -3.75,
+      3.75
+    ]
+  ],
+  "grid": [
+    75,
+    200,
+    75
+  ],
+  "verts": 46313,
+  "faces": 91746,
+  "strata_type": "claron",
+  "base_shape": "hoodoo",
+  "seed": 0
+}

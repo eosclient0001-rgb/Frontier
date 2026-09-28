@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontier — Geological Rock / Spire / Cliff Generator</title>
+<link rel="stylesheet" href="style.css">
+<!-- es-module-shims for importmap support -->
+<script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">◈</div>
+    <div>
+      <h1>Frontier</h1>
+      <p>Geologically-driven SDF → Mesh · No textures · All form is geometry</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <a href="../README.md" target="_blank" class="ghost-btn">README</a>
+    <a href="https://github.com/eosclient0001-rgb/Frontier" target="_blank" class="ghost-btn">GitHub</a>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <section class="panel">
+      <h2>Formation presets</h2>
+      <p class="hint">Each preset is a full environment simulation — differential erosion, hardness stratification, joint sets, frost & salt weathering. Hover for genetics.</p>
+      <div id="preset-list" class="preset-list"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Display</h2>
+      <label class="toggle"><input type="checkbox" id="chk-vertexcolor" checked> Vertex hardness color</label>
+      <label class="toggle"><input type="checkbox" id="chk-wireframe"> Wireframe</label>
+      <label class="toggle"><input type="checkbox" id="chk-flatshade"> Flat shading (emphasize facets)</label>
+      <label class="toggle"><input type="checkbox" id="chk-spin"> Auto spin</label>
+      <div class="row">
+        <label>Exposure <span id="val-exposure" class="val">1.00</span></label>
+        <input type="range" id="rng-exposure" min="0.3" max="2.2" step="0.05" value="1.0">
+      </div>
+      <div class="row">
+        <label>Ground shadow</label>
+        <input type="checkbox" id="chk-ground" checked>
+      </div>
+      <button id="btn-reset-cam" class="primary-btn">Reset camera</button>
+      <button id="btn-export-png" class="ghost-btn" style="width:100%;margin-top:8px">Screenshot (PNG)</button>
+    </section>
+
+    <section class="panel">
+      <h2>Geological pipeline</h2>
+      <ol class="pipeline">
+        <li><b>1 · Base SDF</b> — tapered hoodoo / mesa slab / spire cone / cliff wall / column field / dome; never a linear extrusion.</li>
+        <li><b>2 · Strata & hardness</b> — Claron / Wingate / basalt column: per-layer hardness 0.28–0.93, cross-bed laminae, cement patches.</li>
+        <li><b>3 · Tectonic warps</b> — fold, tilt (dip 4–12°), fault throw, domain warp → beds are never flat.</li>
+        <li><b>4 · Case hardening</b> — 1–4 cm silica/iron crust near surface boosts hardness +0.20; broken where salt breaches.</li>
+        <li><b>5 · Differential erosion</b> — <code>rate ∝ (1−H)^1.8</code> → cliff-and-bench stairsteps, basal sapping alcoves.</li>
+        <li><b>6 · Hydraulics & aeolian</b> — rills (flow accumulation), fluting (windward dot(normal,wind)), talus 32° cone.</li>
+        <li><b>7 · Joints</b> — orthogonal sets (2.2–4.5 m) or centroidal Voronoi hex colonnade CV≈0.36 + hackly entablature + striae.</li>
+        <li><b>8 · Weathering</b> — honeycomb tafoni via Voronoi pits (salt crystallization), frost wedging at top, exfoliation sheets.</li>
+        <li><b>9 · Marching Cubes</b> — 110–270³ grid (longest axis 220), chunked sampling, vertex hardness color (no texture maps).</li>
+      </ol>
+      <p class="hint">Research: Mesa/butte differential erosion (NPS, Livescience), Baihetan CV columnar jointing (Di et al. 2018), VSRD pentagon control (2025), Bryce hoodoo Claron Fm. (Utah GS), tafoni case-hardening (Mol & Viles 2010, ERT).</p>
+    </section>
+
+    <section class="panel">
+      <h2>CLI usage</h2>
+<pre class="code">pip install -r requirements.txt  # numpy scipy scikit-image trimesh
+
+# single formation high-res (longest axis 220)
+python -m frontier.cli --preset hoodoo_bryce --resolution 220
+
+# all 7 presets at preview res
+python -m frontier.cli --all --resolution 140
+
+# list genetics
+python -m frontier.cli --list
+
+# outputs → output/*.glb + *.ply (vertex color) + *.obj + *_meta.json</pre>
+      <p class="hint">Start viewer: <code>python -m http.server 8000</code> then open <code>viewer/</code>.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Stats</h2>
+      <div id="stats" class="stats">
+        <div>Verts: —</div><div>Faces: —</div><div>Grid: —</div><div>Hardness range: —</div>
+      </div>
+      <canvas id="histogram" width="280" height="80" class="hist"></canvas>
+      <p id="preset-desc" class="desc"></p>
+    </section>
+  </aside>
+
+  <main class="view">
+    <div id="canvas-wrap" class="canvas-wrap">
+      <div id="loading" class="loading">Loading formation…</div>
+    </div>
+    <div class="viewbar">
+      <div class="viewbar-left">
+        <span id="label-preset" class="label-preset">hoodoo_bryce</span>
+        <span id="label-detail" class="label-detail"></span>
+      </div>
+      <div class="viewbar-right">
+        <span class="kpi">Drag to orbit · Scroll to zoom · Right-drag to pan</span>
+      </div>
+    </div>
+    <div class="legend">
+      <span class="dot" style="background:#8B7355"></span> Spire / Caprock joint focus
+      <span class="dot" style="background:#6E5A44"></span> Frost-wedged mid
+      <span class="dot" style="background:#B4977A"></span> Tafoni alcove / honeycomb band
+      <span class="dot" style="background:#3A3A3E"></span> Basalt colonnade (columnar)
+      <span class="dot" style="background:#F0EDE6"></span> Limestone cap hard shell
+    </div>
+  </main>
+</div>
+
+<footer class="footer">
+  No textures — all detail is tessellated geometry. Vertex color encodes hardness/lithology only for debugging; final shading is purely geometric under direct lighting. Fracture patterns are SDF-carved Voronoi joints / column walls, not normal maps.
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

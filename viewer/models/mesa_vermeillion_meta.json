@@ -1,0 +1,28 @@
+{
+  "preset": "mesa_vermeillion",
+  "description": "Vermillion Cliffs mesa \u2014 flat-topped, basalt/sandstone caprock over interbedded shale/siltstone, stairstep cliff-and-bench topography, basal sapping overhangs, talus apron, wind-scalloped benches.",
+  "bounds": [
+    [
+      -23.0,
+      23.0
+    ],
+    [
+      0,
+      32.0
+    ],
+    [
+      -19.0,
+      19.0
+    ]
+  ],
+  "grid": [
+    180,
+    125,
+    149
+  ],
+  "verts": 145022,
+  "faces": 289186,
+  "strata_type": "mesa",
+  "base_shape": "mesa",
+  "seed": 2
+}

@@ -1,0 +1,28 @@
+{
+  "preset": "cliff_tafoni",
+  "description": "Entrada sandstone tafoni cliff \u2014 vertical 22m wall, dense honeycomb alveoli, case-hardened filigree ribs, meter-scale caverna, differential cementation bands, wind-scoured flutes, alcove overhangs, slot-like joint corridors.",
+  "bounds": [
+    [
+      -16.0,
+      16.0
+    ],
+    [
+      0,
+      26.0
+    ],
+    [
+      -11.0,
+      11.0
+    ]
+  ],
+  "grid": [
+    210,
+    171,
+    144
+  ],
+  "verts": 159234,
+  "faces": 317244,
+  "strata_type": "mesa",
+  "base_shape": "cliff_wall",
+  "seed": 5
+}

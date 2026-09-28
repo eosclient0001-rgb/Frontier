@@ -1,0 +1,28 @@
+{
+  "preset": "columnar_giants",
+  "description": "Giant's Causeway / Baihetan columnar basalt \u2014 colonnade + hackly entablature, hexagonal CV 0.36, transverse striae, ponded lava flow jointing, pseudo-hexagonal Voronoi extrusion with striae.",
+  "bounds": [
+    [
+      -12.0,
+      12.0
+    ],
+    [
+      0,
+      22.0
+    ],
+    [
+      -12.0,
+      12.0
+    ]
+  ],
+  "grid": [
+    190,
+    174,
+    190
+  ],
+  "verts": 124514,
+  "faces": 248824,
+  "strata_type": "basalt",
+  "base_shape": "columnar_field",
+  "seed": 4
+}

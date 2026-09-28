@@ -1,0 +1,28 @@
+{
+  "preset": "spire_monument",
+  "description": "Monument Valley Wingate spire \u2014 45m uniform eolian sandstone, cross-bed laminae, subvertical orthogonal joints, wind fluting yardang, minimal cap, massive frost rilling.",
+  "bounds": [
+    [
+      -6.25,
+      6.25
+    ],
+    [
+      0,
+      48.0
+    ],
+    [
+      -6.25,
+      6.25
+    ]
+  ],
+  "grid": [
+    64,
+    210,
+    64
+  ],
+  "verts": 30798,
+  "faces": 60954,
+  "strata_type": "spire",
+  "base_shape": "spire_cone",
+  "seed": 1
+}
