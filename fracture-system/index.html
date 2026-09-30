@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Fracture System - AAA Material Destruction</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Segoe UI', system-ui, sans-serif; 
+      background: #0a0a0f; 
+      color: #e8e8f0; 
+      overflow: hidden;
+      height: 100vh;
+    }
+    #canvas { display: block; width: 100%; height: 100%; }
+    .ui-panel {
+      position: fixed; top: 20px; left: 20px; z-index: 100;
+      background: rgba(15, 15, 25, 0.95);
+      border: 1px solid #2a2a3a;
+      border-radius: 12px;
+      padding: 20px;
+      min-width: 280px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .ui-panel h1 { font-size: 1.1rem; font-weight: 600; margin-bottom: 16px; color: #fff; letter-spacing: 0.5px; }
+    .material-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 20px; }
+    .material-btn {
+      padding: 10px 8px; border: 1px solid #2a2a3a; border-radius: 8px;
+      background: transparent; color: #a0a0b0; font-size: 0.75rem;
+      cursor: pointer; transition: all 0.2s; text-align: center;
+    }
+    .material-btn:hover { border-color: #4a4a6a; background: #1a1a2a; color: #fff; }
+    .material-btn.active { border-color: #00d4aa; background: rgba(0, 212, 170, 0.15); color: #00d4aa; }
+    .control-group { margin-bottom: 16px; }
+    .control-group label { display: block; font-size: 0.75rem; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .slider-row { display: flex; align-items: center; gap: 12px; }
+    input[type="range"] { flex: 1; accent-color: #00d4aa; }
+    .value-display { font-size: 0.8rem; color: #00d4aa; min-width: 45px; text-align: right; font-variant-numeric: tabular-nums; }
+    .action-btn {
+      width: 100%; padding: 12px; border: none; border-radius: 8px;
+      background: linear-gradient(135deg, #00d4aa, #00a8cc);
+      color: #0a0a0f; font-weight: 600; font-size: 0.85rem;
+      cursor: pointer; transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .action-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0, 212, 170, 0.4); }
+    .action-btn:active { transform: translateY(0); }
+    .action-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+    .stats-panel {
+      position: fixed; bottom: 20px; right: 20px; z-index: 100;
+      background: rgba(15, 15, 25, 0.95);
+      border: 1px solid #2a2a3a; border-radius: 12px;
+      padding: 16px 20px; min-width: 220px;
+      backdrop-filter: blur(10px);
+      font-size: 0.75rem; color: #a0a0b0;
+    }
+    .stat-row { display: flex; justify-content: space-between; margin: 6px 0; }
+    .stat-label { color: #666; }
+    .stat-value { color: #00d4aa; font-variant-numeric: tabular-nums; font-weight: 500; }
+    .legend {
+      position: fixed; bottom: 20px; left: 20px; z-index: 100;
+      background: rgba(15, 15, 25, 0.95);
+      border: 1px solid #2a2a3a; border-radius: 12px;
+      padding: 12px 16px; font-size: 0.7rem; color: #888;
+      backdrop-filter: blur(10px); max-width: 300px;
+    }
+    .legend kbd { background: #1a1a2a; border: 1px solid #2a2a3a; border-radius: 4px; padding: 2px 6px; font-family: monospace; color: #00d4aa; }
+    .webgpu-unsupported {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(20, 10, 10, 0.98); border: 1px solid #600;
+      border-radius: 16px; padding: 40px; text-align: center; z-index: 1000;
+      max-width: 400px; color: #f88;
+    }
+    .webgpu-unsupported h2 { margin-bottom: 16px; color: #f66; }
+    .webgpu-unsupported p { margin-bottom: 12px; line-height: 1.6; }
+    .material-info { font-size: 0.7rem; color: #666; margin-top: 4px; height: 40px; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  
+  <div class="ui-panel">
+    <h1>MATERIAL FRACTURE SIMULATION</h1>
+    <div class="material-grid" id="materialGrid"></div>
+    
+    <div class="control-group">
+      <label>Impact Severity <span style="color:#555;text-transform:none">(induced strain / material strength)</span></label>
+      <div class="slider-row">
+        <input type="range" id="energySlider" min="1" max="40" value="22" step="1">
+        <span class="value-display" id="energyValue">22x</span>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label>Dynamic Toughness Factor</label>
+      <div class="slider-row">
+        <input type="range" id="toughSlider" min="0.05" max="1" value="0.3" step="0.05">
+        <span class="value-display" id="toughValue">0.30</span>
+      </div>
+    </div>
+    
+    <div class="control-group">
+      <label>Object Size (m)</label>
+      <div class="slider-row">
+        <input type="range" id="sizeSlider" min="0.15" max="1.2" value="0.5" step="0.05">
+        <span class="value-display" id="sizeValue">0.50</span>
+      </div>
+    </div>
+    
+    <div class="control-group">
+      <label>Fracture Detail Level</label>
+      <div class="slider-row">
+        <input type="range" id="detailSlider" min="1" max="5" value="3" step="1">
+        <span class="value-display" id="detailValue">3</span>
+      </div>
+    </div>
+    
+    <div class="material-info" id="blurb"></div>
+    <button class="action-btn" id="fractureBtn">STRIKE OBJECT</button>
+    <button class="action-btn" id="shatterBtn" style="margin-top:8px;background:linear-gradient(135deg,#ff6b4a,#d43f6b);color:#fff;">FULL SHATTER &nbsp;<span style="opacity:.65;font-weight:400">(shatter preset)</span></button>
+    <button class="action-btn" id="resetBtn" style="margin-top: 8px; background: #2a2a3a; color: #aaa;">RESET SIMULATION</button>
+  </div>
+
+  <div class="stats-panel">
+    <div class="stat-row"><span class="stat-label">phase</span><span class="stat-value" id="phaseStat">READY</span></div>
+    <div class="stat-row"><span class="stat-label">fps</span><span class="stat-value" id="fpsStat">--</span></div>
+    <div class="stat-row"><span class="stat-label">material</span><span class="stat-value" id="materialStat">GLASS</span></div>
+    <hr style="border:none;border-top:1px solid #222;margin:8px 0">
+    <div class="stat-row"><span class="stat-label">lattice nodes</span><span class="stat-value" id="nodeStat">--</span></div>
+    <div class="stat-row"><span class="stat-label">bonds</span><span class="stat-value" id="bondStat">--</span></div>
+    <div class="stat-row"><span class="stat-label">substeps</span><span class="stat-value" id="subStepStat">--</span></div>
+    <div class="stat-row"><span class="stat-label">bond damage</span><span class="stat-value" id="damageStat">--</span></div>
+    <div class="stat-row"><span class="stat-label">active cracks</span><span class="stat-value" id="frontStat">--</span></div>
+    <div class="stat-row"><span class="stat-label">crack length</span><span class="stat-value" id="lenStat">--</span></div>
+    <div class="stat-row"><span class="stat-label">peak crack speed</span><span class="stat-value" id="speedStat">--</span></div>
+    <div class="stat-row"><span class="stat-label">sim cost</span><span class="stat-value" id="msStat">--</span></div>
+    <hr style="border:none;border-top:1px solid #222;margin:8px 0">
+    <div class="stat-row"><span class="stat-label">fragments</span><span class="stat-value" id="fragmentStat">0</span></div>
+    <div class="stat-row"><span class="stat-label">triangles</span><span class="stat-value" id="triStat">0</span></div>
+    <div class="stat-row"><span class="stat-label">volume kept</span><span class="stat-value" id="volStat">0%</span></div>
+  </div>
+
+  <div class="legend">
+    <kbd>LMB</kbd> strike the object where you click &nbsp;|&nbsp; <kbd>RMB</kbd> orbit &nbsp;|&nbsp; <kbd>Wheel</kbd> zoom &nbsp;|&nbsp; <kbd>Space</kbd> pause &nbsp;|&nbsp; <kbd>R</kbd> reset
+  </div>
+
+  <div class="webgpu-unsupported" id="unsupported" style="display: none;">
+    <h2>WebGPU Not Supported</h2>
+    <p>This demo requires WebGPU. Please use:</p>
+    <ul style="text-align: left; margin: 16px 0; color: #ccc;">
+      <li>Chrome 113+ / Edge 113+</li>
+      <li>Firefox 120+ (with <code>dom.webgpu.enabled</code>)</li>
+      <li>Safari 17.4+ (experimental)</li>
+    </ul>
+    <p style="font-size: 0.85rem; color: #888;">Enable "Unsafe WebGPU" in chrome://flags if on Linux.</p>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

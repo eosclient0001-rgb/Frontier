@@ -1,0 +1,21 @@
+{
+  "name": "fracture-system",
+  "version": "1.0.0",
+  "description": "AAA-grade real-time fracture system for glass, wood, concrete, plastic, rock",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/three": "^0.164.1",
+    "three": "^0.164.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0"
+  },
+  "dependencies": {
+    "three": "^0.164.0"
+  }
+}
