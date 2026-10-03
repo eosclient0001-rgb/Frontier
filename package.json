@@ -1,0 +1,35 @@
+{
+  "name": "frontier",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontier Volumetric FX - real-time voxel-GPU fluid (fire / smoke / explosions) with raymarched volumetrics on WebGPU",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./renderer": "./src/volumetric/VolumetricRenderer.js",
+    "./solver": "./src/volumetric/FluidSolver.js"
+  },
+  "scripts": {
+    "dev": "node tools/serve.mjs 8080",
+    "start": "node tools/serve.mjs 8080",
+    "check": "node tools/check-shaders.mjs",
+    "test": "node tools/dryrun.mjs",
+    "verify": "node tools/check-shaders.mjs && node tools/dryrun.mjs",
+    "gpucheck": "node tools/gpucheck.mjs"
+  },
+  "keywords": [
+    "webgpu",
+    "volumetric",
+    "raymarching",
+    "fluid-simulation",
+    "fire",
+    "smoke",
+    "explosions",
+    "wgsl"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "naga-wasi-cli": "^0.1.0"
+  }
+}

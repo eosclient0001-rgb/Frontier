@@ -1,0 +1,5 @@
+node_modules/
+.shader-out/
+*.log.txt
+shot*.png
+.DS_Store

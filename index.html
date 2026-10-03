@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Frontier · Volumetric Fire, Smoke &amp; Explosions (WebGPU)</title>
+    <link rel="stylesheet" href="./demo/style.css" />
+    <meta
+      name="description"
+      content="Real-time voxel fluid simulation and raymarched volumetrics for fire, smoke and explosions on WebGPU."
+    />
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="gl"></canvas>
+
+      <header id="brand">
+        <h1>Frontier<span>Volumetric FX</span></h1>
+        <p>GPU eulerian fluid · 3D textures · raymarched volumetrics</p>
+      </header>
+
+      <div id="stats" aria-live="off">
+        <div><span class="k">fps</span><span class="v" id="fps">–</span></div>
+        <div><span class="k">grid</span><span class="v" id="grid">–</span></div>
+        <div><span class="k">voxels</span><span class="v" id="voxels">–</span></div>
+        <div><span class="k">cpu encode</span><span class="v" id="simms">–</span></div>
+        <div><span class="k">scale</span><span class="v" id="scale">–</span></div>
+        <div><span class="k">field</span><span class="v" id="field">–</span></div>
+      </div>
+
+      <div id="hint">drag to orbit · scroll to zoom · <b>click to detonate</b></div>
+
+      <button id="panel-toggle" title="Hide panel">⟨</button>
+
+      <aside id="panel">
+        <section>
+          <h2>Preset</h2>
+          <div class="chips" id="presets"></div>
+          <p class="blurb" id="blurb"></p>
+        </section>
+
+        <section>
+          <h2>Quality</h2>
+          <div class="chips" id="quality"></div>
+          <label class="check"><input type="checkbox" id="autoQuality" /> adaptive resolution</label>
+        </section>
+
+        <section>
+          <h2>Actions</h2>
+          <div class="row">
+            <button class="btn primary" id="detonate">Detonate</button>
+            <button class="btn" id="pause">Pause</button>
+            <button class="btn" id="reset">Reset</button>
+          </div>
+          <label class="check"><input type="checkbox" id="autoDetonate" /> auto detonate every 4s</label>
+        </section>
+
+        <section id="sliders"></section>
+
+        <section>
+          <h2>Debug view</h2>
+          <div class="chips" id="debug"></div>
+          <label class="slider"><span>slice</span><input type="range" id="slice" min="0" max="1" step="0.005" value="0.5" /><em id="slice-v">0.50</em></label>
+        </section>
+
+        <footer>
+          <span id="adapter">–</span>
+          <a href="https://github.com/eosclient0001-rgb/Frontier" target="_blank" rel="noreferrer">source</a>
+        </footer>
+      </aside>
+
+      <div id="fatal" hidden>
+        <div class="box">
+          <h2>WebGPU unavailable</h2>
+          <p id="fatal-msg"></p>
+          <p class="small">
+            Frontier renders with compute shaders and 3D storage textures, so it needs a WebGPU-capable
+            browser: Chrome/Edge 113+, Safari 26+, Firefox 141+. On Linux you may need to enable Vulkan.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./demo/main.js"></script>
+  </body>
+</html>
