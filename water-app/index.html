@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Water Surface Lab</title>
+    <link rel="stylesheet" href="./water.css" />
+  </head>
+  <body>
+    <canvas id="water-canvas" aria-label="Standalone water simulation"></canvas>
+    <main class="ui-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">STANDALONE WATER LAB</p>
+          <h1>Liquid Surface / Dam Break</h1>
+          <p class="subhead">Persistent water markers · screen-space surface reconstruction · no Pyro or smoke path</p>
+        </div>
+        <div class="readouts">
+          <span><b id="fps-readout">60</b> FPS</span>
+          <span><b id="marker-readout">1,536</b> MARKERS</span>
+          <span id="status-readout" class="status">RUNNING</span>
+        </div>
+      </header>
+
+      <section class="control-card">
+        <div class="button-row">
+          <button id="dam-button" class="primary">DAM BREAK</button>
+          <button id="pool-button">CALM POOL</button>
+          <button id="splash-button">SPLASH</button>
+          <button id="obstacle-button">SPHERE: OFF</button>
+          <button id="pause-button">PAUSE</button>
+          <button id="reset-view-button">RESET VIEW</button>
+        </div>
+        <div class="slider-grid">
+          <label>Gravity <output id="gravity-value">9.8</output><input id="gravity" type="range" min="0" max="18" step="0.1" value="9.8" /></label>
+          <label>Viscosity <output id="viscosity-value">0.04</output><input id="viscosity" type="range" min="0.01" max="0.85" step="0.01" value="0.04" /></label>
+          <label>Surface tension <output id="tension-value">0.52</output><input id="tension" type="range" min="0" max="1.2" step="0.01" value="0.52" /></label>
+          <label>Foam <output id="foam-value">1.35</output><input id="foam" type="range" min="0" max="3" step="0.05" value="1.35" /></label>
+          <label>Absorption <output id="absorption-value">0.72</output><input id="absorption" type="range" min="0.05" max="2.2" step="0.05" value="0.72" /></label>
+          <label>Roughness <output id="roughness-value">0.14</output><input id="roughness" type="range" min="0.02" max="0.8" step="0.01" value="0.14" /></label>
+        </div>
+      </section>
+
+      <footer class="hint"><span>Drag to orbit</span><span>Wheel to zoom</span><span>Click the water to kick a real particle impulse</span></footer>
+    </main>
+    <div id="error-panel" class="error-panel" hidden></div>
+    <script type="module" src="./water.js"></script>
+  </body>
+</html>
