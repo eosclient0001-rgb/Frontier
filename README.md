@@ -19,6 +19,11 @@ python3 -m http.server 8000   # then open http://localhost:8000
 ## Two-fluid mixing
 Each particle carries a concentration of fluid B. Viscosity, cohesion, adhesion, friction, yield stress and foam are interpolated per particle, and the concentration diffuses between neighbors, so milk poured into chocolate forms marbled swirls and slowly becomes chocolate milk. In the composite shader, a thickness-weighted concentration buffer blends the two materials' optical properties (absorption, scattering, albedo, roughness, refraction). Mixing rate is adjustable, and 0 keeps the fluids separate.
 
+## Fluid lighting, caustics and wet surfaces
+- **Colored volumetric shadows.** The fluid is rendered from the sun into light-space depth and thickness maps. Every surface measures how much fluid lies between it and the sun, then applies Beer–Lambert transmission. Honey casts amber light, water a blue-green tint, and chocolate and mud near-black shadows. The fluid also shadows itself.
+- **Caustics.** An animated caustic pattern appears under clear liquids. It's strongest under thin layers and fades with depth and for scattering fluids.
+- **Wetness and stains.** The solver records where fluid touched static surfaces in a grid that's uploaded as a 3D texture. Surfaces darken and turn glossy (water), or get coated with the fluid's color (chocolate, mud, honey). Each material dries at its own rate: water in seconds, honey practically never.
+
 ## Threading
 The solver runs in a Web Worker (`src/worker.js`) on a fixed 120 Hz clock. The render thread draws the latest snapshot, so the camera and UI stay smooth even when the simulation is heavy. If the CPU can't keep up, the sim runs in slow motion instead of stalling.
 

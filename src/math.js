@@ -4,6 +4,12 @@ export const mat4 = {
     o[0] = t / aspect; o[5] = t; o[10] = (f + n) / (n - f); o[11] = -1; o[14] = 2 * f * n / (n - f);
     return o;
   },
+  ortho(l, r, b, t, n, f) {
+    const o = new Float32Array(16);
+    o[0] = 2 / (r - l); o[5] = 2 / (t - b); o[10] = -2 / (f - n);
+    o[12] = -(r + l) / (r - l); o[13] = -(t + b) / (t - b); o[14] = -(f + n) / (f - n); o[15] = 1;
+    return o;
+  },
   lookAt(e, c, u) {
     let zx = e[0] - c[0], zy = e[1] - c[1], zz = e[2] - c[2];
     let l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;

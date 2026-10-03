@@ -4,27 +4,27 @@
 
 export const MATERIALS = {
   water: {
-    name: 'Water', density: 1000,
+    dry: 0.35, name: 'Water', density: 1000,
     visc: 0.02, viscIters: 1, cohesion: 0.04, adhesion: 0.6, friction: 0.03, yieldV: 0, foam: 1,
     render: { absorb: [1.6, 0.42, 0.22], scatter: 0.0, albedo: [0.1, 0.3, 0.4], rough: 0.04, f0: 0.02, refract: 1.0, wrap: 0.0, sss: [0, 0, 0], grain: 0, env: 1.0 },
   },
   milk: {
-    name: 'Milk', density: 1030,
+    dry: 0.12, name: 'Milk', density: 1030,
     visc: 0.08, viscIters: 1, cohesion: 0.06, adhesion: 1.5, friction: 0.12, yieldV: 0, foam: 0.35,
     render: { absorb: [0.2, 0.22, 0.3], scatter: 60, albedo: [0.93, 0.92, 0.88], rough: 0.12, f0: 0.025, refract: 0.2, wrap: 0.6, sss: [1.0, 0.95, 0.85], grain: 0, env: 0.7 },
   },
   chocolate: {
-    name: 'Chocolate', density: 1300,
+    dry: 0.015, name: 'Chocolate', density: 1300,
     visc: 0.75, viscIters: 4, cohesion: 0.22, adhesion: 7, friction: 0.6, yieldV: 0.02, foam: 0,
     render: { absorb: [8, 10, 12], scatter: 120, albedo: [0.2, 0.085, 0.035], rough: 0.18, f0: 0.04, refract: 0.0, wrap: 0.3, sss: [0.5, 0.15, 0.04], grain: 0, env: 0.9 },
   },
   honey: {
-    name: 'Honey', density: 1420,
+    dry: 0.006, name: 'Honey', density: 1420,
     visc: 0.95, viscIters: 10, cohesion: 0.3, adhesion: 9, friction: 0.88, yieldV: 0.0, foam: 0,
     render: { absorb: [0.35, 1.5, 6.0], scatter: 0.0, albedo: [0.8, 0.45, 0.05], rough: 0.06, f0: 0.045, refract: 1.4, wrap: 0.0, sss: [1.0, 0.55, 0.1], grain: 0, env: 1.0 },
   },
   mud: {
-    name: 'Mud', density: 1700,
+    dry: 0.01, name: 'Mud', density: 1700,
     visc: 0.85, viscIters: 5, cohesion: 0.28, adhesion: 11, friction: 0.92, yieldV: 0.12, foam: 0,
     render: { absorb: [10, 12, 14], scatter: 200, albedo: [0.24, 0.17, 0.11], rough: 0.55, f0: 0.03, refract: 0.0, wrap: 0.2, sss: [0.2, 0.12, 0.06], grain: 1, env: 0.35 },
   },
@@ -87,6 +87,7 @@ export class FluidSim {
     this.ncell = this.gx * this.gy * this.gz;
     this.cellStart = new Int32Array(this.ncell + 1);
     this.cellCur = new Int32Array(this.ncell);
+    this.wet = new Float32Array(this.ncell * 2); // surface wetness/stain per cell: [fluid A, fluid B]
     // rest density and reference gradient sum from a perfect lattice
     let rho = 0, g2 = 0;
     const R = 3;
@@ -480,6 +481,10 @@ export class FluidSim {
       for (let i = 0; i < n; i++) { conc[i] = lam[i]; csum += lam[i]; }
     } else for (let i = 0; i < n; i++) csum += conc[i];
     this.avgConc = n ? csum / n : 0;
+    if (this._stepCount % 8 === 0) { // drying
+      const wet = this.wet, da = m.dry * dt * 8, db = m2.dry * dt * 8;
+      for (let k = 0; k < wet.length; k += 2) { wet[k] = Math.max(0, wet[k] - da); wet[k + 1] = Math.max(0, wet[k + 1] - db); }
+    }
 
     // adhesion + friction against solids, yield stress, foam
     const adhR = this.s * 1.6;
@@ -506,6 +511,10 @@ export class FluidSim {
           if (!S.fixed) { S.J[0] -= (nvx - v[i3]) * mp * 0.15; S.J[1] -= (nvy - v[i3 + 1]) * mp * 0.15; S.J[2] -= (nvz - v[i3 + 2]) * mp * 0.15; }
         }
         v[i3] = nvx; v[i3 + 1] = nvy; v[i3 + 2] = nvz;
+        if (sid < 0) { // static surfaces get wet / stained
+          const wc = this.cell[i] * 2, wet = this.wet;
+          const a = 1 - ci; if (wet[wc] < a) wet[wc] = a; if (wet[wc + 1] < ci) wet[wc + 1] = ci;
+        }
       }
       if (yv > 0) {
         const sp2 = v[i3] * v[i3] + v[i3 + 1] * v[i3 + 1] + v[i3 + 2] * v[i3 + 2];

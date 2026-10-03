@@ -11,7 +11,37 @@ import { mat4 } from './math.js';
 const COMMON = /* glsl */`#version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler3D;
 uniform vec3 uSunDir;
+// fluid light-space maps (shadows / caustics)
+uniform sampler2D uLDepth, uLThick;
+uniform mat4 uLightVP, uLightView;
+uniform vec3 uAbsA, uAbsB; uniform float uScA, uScB, uTime;
+// thickness of fluid between the sun and world point p; .yzw unused
+float fluidFront(vec3 p, out float mx, out vec2 luv){
+  vec4 lc = uLightVP*vec4(p,1.0); luv = lc.xy*0.5+0.5;
+  if(any(lessThan(luv,vec2(0.0))) || any(greaterThan(luv,vec2(1.0)))){ mx = 0.0; return 0.0; }
+  float fNear = texture(uLDepth, luv).r; vec3 lt = texture(uLThick, luv).rgb;
+  float pd = -(uLightView*vec4(p,1.0)).z;
+  mx = clamp(lt.z/max(lt.x,1e-4), 0.0, 1.0);
+  return clamp(pd - fNear - 0.01, 0.0, lt.x);
+}
+// colored light transmitted through the fluid (Beer-Lambert + scattering extinction)
+vec3 fluidTransmit(float front, float mx){
+  vec3 ext = mix(uAbsA, uAbsB, mx) + vec3(mix(uScA, uScB, mx))*0.35;
+  return exp(-ext*front*0.9);
+}
+// animated caustic pattern (iterated warp), strongest under thin layers of clear liquid
+float caustic(vec2 p, float t){
+  vec2 i = p; float c = 1.0; const float inten = 0.005;
+  for(int n=0;n<4;n++){
+    float tt = t*(1.0 - 3.5/float(n+1));
+    i = p + vec2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
+    c += 1.0/length(vec2(p.x/(sin(i.x+tt)/inten), p.y/(cos(i.y+tt)/inten)));
+  }
+  c /= 4.0; c = 1.17 - pow(c, 1.4);
+  return clamp(pow(abs(c), 8.0), 0.0, 3.0);
+}
 vec3 sky(vec3 d){
   d = normalize(d);
   float y = d.y;
@@ -53,6 +83,8 @@ const MESH_FS = COMMON + `
 in vec3 vW; in vec3 vN; in vec3 vL;
 uniform int uMode; uniform vec3 uColor; uniform vec3 uCam;
 uniform vec4 uSph[16]; uniform int uNSph;
+uniform sampler3D uWet; uniform vec3 uWetSize; uniform int uWetOn;
+uniform vec3 uStainA, uStainB; uniform float uOpqA, uOpqB;
 out vec4 o;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
 void main(){
@@ -76,8 +108,30 @@ void main(){
   } else if(uMode==5){ // metal obstacle
     specK = 0.9; shin = 60.0;
   }
+  // ---- wet surfaces / stains left behind by the fluid
+  float wetAmt = 0.0;
+  if(uWetOn==1){
+    vec3 q = vW + N*0.04;
+    if(all(greaterThanEqual(q, vec3(0.0))) && all(lessThanEqual(q, uWetSize))){
+      vec2 w = texture(uWet, q/uWetSize).rg;
+      wetAmt = clamp(max(w.r, w.g)*1.4, 0.0, 1.0);
+      float bmix = w.g/max(w.r+w.g, 1e-3);
+      vec3 stain = mix(uStainA, uStainB, bmix); float opq = mix(uOpqA, uOpqB, bmix);
+      float hn = hash(floor(vW.xz*60.0)+floor(vW.y*60.0));
+      vec3 darkened = base*mix(0.55, 0.85, hn*0.3);               // clear liquids just darken
+      vec3 coated = mix(base, stain, 0.85);                        // opaque liquids leave a film
+      base = mix(base, mix(darkened, coated, opq), wetAmt);
+      specK = mix(specK, 1.2, wetAmt); shin = mix(shin, 160.0, wetAmt);
+    }
+  }
   vec3 L = uSunDir;
   float sh = 1.0, ao = 1.0;
+  // ---- fluid shadow + caustics
+  float fmx; vec2 luv; float front = fluidFront(vW, fmx, luv);
+  vec3 ftr = fluidTransmit(front, fmx);
+  float clear = 1.0 - clamp(mix(uScA, uScB, fmx)/4.0, 0.0, 1.0);
+  float cw = clear*smoothstep(0.0, 0.04, front)*(1.0 - 0.6*smoothstep(0.2, 1.2, front));
+  vec3 lightTint = ftr*(1.0 + caustic(vW.xz*7.0 + vW.y*3.0, uTime*0.9)*cw*1.6);
   for(int i=0;i<16;i++){ if(i>=uNSph) break;
     vec3 c = uSph[i].xyz; float r = uSph[i].w; vec3 pc = c - vW;
     float t = dot(pc, L);
@@ -85,10 +139,11 @@ void main(){
     float l = length(pc); ao *= 1.0 - clamp(r*r/(l*l)*max(dot(N, pc/l),0.0), 0.0, 1.0)*0.8;
   }
   float diff = max(dot(N,L),0.0)*sh;
+  vec3 sunC = vec3(1.25,1.18,1.05)*lightTint;
   vec3 amb = mix(vec3(0.25,0.23,0.2), vec3(0.55,0.62,0.72), N.y*0.5+0.5)*0.55*ao;
   vec3 V = normalize(uCam - vW); vec3 H = normalize(L+V);
   float spec = pow(max(dot(N,H),0.0), shin)*specK*sh;
-  vec3 col = base*(diff*vec3(1.25,1.18,1.05) + amb) + spec*vec3(1.0);
+  vec3 col = base*(diff*sunC + amb) + spec*lightTint;
   if(uMode==5){ col += sky(reflect(-V,N))*0.25*base; }
   o = vec4(pow(aces(col), vec3(1.0/2.2)), 1.0);
 }`;
@@ -221,6 +276,8 @@ void main(){
   vec3 L = uSunDir;
   float NoV = clamp(dot(Nw,Vw), 1e-3, 1.0);
   float NoL = clamp(dot(Nw,L), 0.0, 1.0);
+  float smx; vec2 sluv; float sfront = fluidFront(Pw - Nw*0.005, smx, sluv);
+  vec3 selfSh = mix(vec3(1.0), fluidTransmit(sfront, smx), 0.85);
   vec3 Hh = normalize(L+Vw); float NoH = clamp(dot(Nw,Hh),0.0,1.0);
   float a = max(rough*rough, 0.002);
   float F = uF0 + (1.0-uF0)*pow(1.0-NoV, 5.0);
@@ -239,11 +296,11 @@ void main(){
   float wrapd = clamp((dot(Nw,L)+uWrap)/(1.0+uWrap), 0.0, 1.0);
   vec3 ambN = sky(Nw)*0.45;
   vec3 sss = uSSS*pow(clamp(dot(Vw,-L),0.0,1.0),4.0)*exp(-thick*4.0)*0.8;
-  vec3 diffuse = albedo*(wrapd*vec3(1.3,1.22,1.08) + ambN) + sss;
+  vec3 diffuse = albedo*(wrapd*vec3(1.3,1.22,1.08)*selfSh + ambN) + sss*selfSh;
   vec3 body = mix(refr, diffuse, opac);
 
   // ---- specular: GGX sun + glossy environment reflection
-  vec3 spec = vec3(D_GGX(NoH,a)*V_SmithJ(NoV,NoL,a)*NoL)*F*vec3(1.2,1.1,0.95)*3.0;
+  vec3 spec = vec3(D_GGX(NoH,a)*V_SmithJ(NoV,NoL,a)*NoL)*F*vec3(1.2,1.1,0.95)*3.0*selfSh;
   vec3 R = reflect(-Vw, Nw);
   vec3 env = mix(sky(R), sky(Nw)*0.6, clamp(rough*1.2,0.0,1.0))*uEnv;
   vec3 col = body*(1.0-F) + env*F + spec;
@@ -332,6 +389,30 @@ export class Renderer {
     this.emptyVao = gl.createVertexArray();
     this.sunDir = (() => { const v = [0.45, 0.8, 0.35]; const l = Math.hypot(...v); return v.map(x => x / l); })();
     this.w = 0; this.h = 0;
+    // light-space fluid maps for shadows/caustics
+    const LS = this.LS = 768;
+    this.lDepth = this.tex(LS, LS, gl.R32F, gl.RED, gl.FLOAT, gl.NEAREST);
+    const lrb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, lrb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, LS, LS);
+    this.lDepthFbo = this.fbo(this.lDepth, null, lrb);
+    this.lThick = this.tex(LS, LS, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+    this.lThickFbo = this.fbo(this.lThick);
+    // wetness volume
+    this.wetTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_3D, this.wetTex);
+    for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RG8, 1, 1, 1, 0, gl.RG, gl.UNSIGNED_BYTE, new Uint8Array(2));
+  }
+
+  // shared uniforms for shaders that sample the fluid light maps
+  bindFluidLight(prog, sim) {
+    const gl = this.gl, u = prog.u;
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, this.lDepth); gl.uniform1i(u.uLDepth, 4);
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, this.lThick); gl.uniform1i(u.uLThick, 5);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniformMatrix4fv(u.uLightVP, false, this.lightVP); gl.uniformMatrix4fv(u.uLightView, false, this.lightView);
+    const a = sim.mat.render, b = sim.mat2.render;
+    gl.uniform3fv(u.uAbsA, a.absorb); gl.uniform3fv(u.uAbsB, b.absorb);
+    gl.uniform1f(u.uScA, a.scatter); gl.uniform1f(u.uScB, b.scatter); gl.uniform1f(u.uTime, sim.time);
   }
 
   tex(w, h, ifmt, fmt, type, filter) {
@@ -387,6 +468,49 @@ export class Renderer {
     const [W, H, D] = sim.size;
     const sun = this.sunDir;
 
+    // particles upload
+    const n = sim.n;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.pbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.x.subarray(0, n * 3), gl.STREAM_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.fbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.foam.subarray(0, n), gl.STREAM_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.conc.subarray(0, n), gl.STREAM_DRAW);
+    const radius = sim.s * opts.radiusScale;
+    const setPt = (prog) => {
+      gl.useProgram(prog.p);
+      gl.uniformMatrix4fv(prog.u.uView, false, view); gl.uniformMatrix4fv(prog.u.uProj, false, proj);
+      gl.uniform1f(prog.u.uRadius, radius); gl.uniform1f(prog.u.uScreenH, h);
+      gl.bindVertexArray(this.pvao);
+    };
+
+    // ---------- 0. light-space fluid depth + thickness (for colored shadows & caustics)
+    const ctr = [W / 2, H / 2, D / 2], LR = Math.hypot(W, H, D) / 2 + 0.1;
+    this.lightView = mat4.lookAt([ctr[0] + sun[0] * (LR + 1), ctr[1] + sun[1] * (LR + 1), ctr[2] + sun[2] * (LR + 1)], ctr, [0, 1, 0]);
+    const lproj = mat4.ortho(-LR, LR, -LR, LR, 0.1, 2 * LR + 2);
+    this.lightVP = mat4.mul(lproj, this.lightView);
+    const LS = this.LS;
+    gl.viewport(0, 0, LS, LS); gl.disable(gl.BLEND);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.lDepthFbo);
+    gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+    gl.clearColor(1e5, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    const setLight = (prog) => {
+      gl.useProgram(prog.p);
+      gl.uniformMatrix4fv(prog.u.uView, false, this.lightView); gl.uniformMatrix4fv(prog.u.uProj, false, lproj);
+      gl.uniform1f(prog.u.uRadius, radius); gl.uniform1f(prog.u.uScreenH, LS);
+      gl.bindVertexArray(this.pvao);
+    };
+    setLight(P.pDepth); gl.drawArrays(gl.POINTS, 0, n);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.lThickFbo);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+    setLight(P.pThick); gl.drawArrays(gl.POINTS, 0, n);
+    gl.disable(gl.BLEND);
+    // wetness volume upload
+    if (sim.wet) {
+      const [gx, gy, gz] = sim.wetDims;
+      gl.bindTexture(gl.TEXTURE_3D, this.wetTex); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RG8, gx, gy, gz, 0, gl.RG, gl.UNSIGNED_BYTE, sim.wet);
+      this.wetSize = [gx * sim.h, gy * sim.h, gz * sim.h];
+    }
+
     // ---------- 1. scene
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.viewport(0, 0, w, h);
@@ -399,6 +523,15 @@ export class Renderer {
     const sph = new Float32Array(64); let ns = 0;
     for (const s of sim.spheres) { if (ns >= 16) break; sph.set([s.c[0], s.c[1], s.c[2], s.r], ns * 4); ns++; }
     gl.uniform4fv(P.mesh.u.uSph, sph); gl.uniform1i(P.mesh.u.uNSph, ns);
+    this.bindFluidLight(P.mesh, sim);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, this.wetTex); gl.uniform1i(P.mesh.u.uWet, 6); gl.activeTexture(gl.TEXTURE0);
+    gl.uniform3fv(P.mesh.u.uWetSize, this.wetSize || [1, 1, 1]);
+    const ra = sim.mat.render, rb = sim.mat2.render;
+    gl.uniform3fv(P.mesh.u.uStainA, ra.albedo); gl.uniform3fv(P.mesh.u.uStainB, rb.albedo);
+    gl.uniform1f(P.mesh.u.uOpqA, Math.min(1, ra.scatter / 20 + (ra.refract < 0.5 ? 0.5 : 0) + (ra.absorb[2] > 3 ? 0.6 : 0)));
+    gl.uniform1f(P.mesh.u.uOpqB, Math.min(1, rb.scatter / 20 + (rb.refract < 0.5 ? 0.5 : 0) + (rb.absorb[2] > 3 ? 0.6 : 0)));
+    const wetOn = (v) => gl.uniform1i(P.mesh.u.uWetOn, v);
+    wetOn(1);
     const id = [1, 0, 0, 0];
     gl.enable(gl.CULL_FACE);
     // ground
@@ -421,23 +554,12 @@ export class Renderer {
     for (const e of sim.emitters) {
       this.drawMesh(null, mat4.trs([e.pos[0], e.pos[1] + 0.12, e.pos[2]], id, [e.radius + 0.03, 0.1, e.radius + 0.03]), [0.4, 0.4, 0.42], 5);
     }
+    wetOn(0);
     for (const s of sim.spheres) this.drawMesh(null, mat4.trs(s.c, s.rot, [s.r, s.r, s.r]), s.color, s.fixed ? 5 : 2, this.sphere);
     gl.disable(gl.CULL_FACE);
     // glass edges
     this.drawMesh(null, mat4.trs([W / 2, H / 2, D / 2], id, [W / 2, H / 2, D / 2]), [0.75, 0.85, 0.95], 4, this.lines, gl.LINES);
 
-    // particles upload
-    const n = sim.n;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.pbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.x.subarray(0, n * 3), gl.STREAM_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.fbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.foam.subarray(0, n), gl.STREAM_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.conc.subarray(0, n), gl.STREAM_DRAW);
-    const radius = sim.s * opts.radiusScale;
-    const setPt = (prog) => {
-      gl.useProgram(prog.p);
-      gl.uniformMatrix4fv(prog.u.uView, false, view); gl.uniformMatrix4fv(prog.u.uProj, false, proj);
-      gl.uniform1f(prog.u.uRadius, radius); gl.uniform1f(prog.u.uScreenH, h);
-      gl.bindVertexArray(this.pvao);
-    };
     const mr = sim.mat.render;
 
     if (opts.debug) {
@@ -480,6 +602,7 @@ export class Renderer {
     const bind = (unit, tex, name) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(C.u[name], unit); };
     bind(0, this.sceneCol, 'uScene'); bind(1, this.sceneDepth, 'uSceneDepth'); bind(2, src, 'uFluidDepth'); bind(3, this.thick, 'uThick');
     gl.uniformMatrix4fv(C.u.uInvView, false, invView);
+    this.bindFluidLight(C, sim);
     gl.uniform1f(C.u.uP00, proj[0]); gl.uniform1f(C.u.uP11, proj[5]); gl.uniform1f(C.u.uNear, near); gl.uniform1f(C.u.uFar, far);
     gl.uniform2f(C.u.uRes, w, h); gl.uniform3fv(C.u.uSunDir, sun);
     for (const [sfx, r] of [['A', mr], ['B', sim.mat2.render]]) {

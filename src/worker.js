@@ -37,12 +37,14 @@ function snapshot() {
   const n = sim.n;
   const x = sim.x.slice(0, n * 3), foam = sim.foam.slice(0, n), conc = sim.conc.slice(0, n);
   const emit = [...(sim.emitter ? [sim.emitter] : []), ...sim.emitters].filter(e => sim.time < e.until).map(e => ({ pos: e.pos, radius: e.radius }));
+  const wet = new Uint8Array(sim.wet.length);
+  for (let k = 0; k < wet.length; k++) wet[k] = Math.min(255, sim.wet[k] * 255) | 0;
   postMessage({
-    n, x, foam, conc, time: sim.time, s: sim.s, size: sim.size, simMs,
+    n, x, foam, conc, wet, wetDims: [sim.gx, sim.gy, sim.gz], h: sim.h, time: sim.time, s: sim.s, size: sim.size, simMs,
     spheres: sim.spheres.map(s => ({ c: s.c, r: s.r, rot: s.rot, color: s.color, fixed: s.fixed })),
     boxes: sim.boxes, ramp: sim.ramp, piston: sim.piston ? { x: sim.piston.x } : null, emitters: emit,
     mat: sim.mat, mat2: sim.mat2, avgConc: sim.avgConc,
-  }, [x.buffer, foam.buffer, conc.buffer]);
+  }, [x.buffer, foam.buffer, conc.buffer, wet.buffer]);
 }
 
 function tick() {
