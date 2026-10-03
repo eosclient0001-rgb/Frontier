@@ -568,7 +568,7 @@ void main() {
   nextVelocity.y -= uLiquidGravity * uDt * 0.105;
   nextVelocity *= exp(-uLiquidViscosity * uDt * 4.5);
 
-  // A VOF-like capillary force pulls the liquid interface together while the
+  // A VOF-like capillary force pulls the liquid interfaceBand together while the
   // pressure pass handles incompressibility and the dam-break acceleration.
   vec3 liquidGrad = 0.5 * vec3(
     fetchVoxel(uThermoTex, v + ivec3(1, 0, 0)).r - fetchVoxel(uThermoTex, v + ivec3(-1, 0, 0)).r,
@@ -584,10 +584,10 @@ void main() {
   }
 
   // Foam is a surface/impact field, not smoke density. Keep it narrow to the
-  // reconstructed liquid interface so the pool stays clear and blue.
-  float interfaceMask = smoothstep(0.035, 0.18, length(liquidGrad));
+  // reconstructed liquid interfaceBand so the pool stays clear and blue.
+  float interfaceBandMask = smoothstep(0.035, 0.18, length(liquidGrad));
   float velocityFoam = clamp(length(nextVelocity) * 0.035, 0.0, 0.55);
-  foam = max(foam * mix(0.18, 1.0, interfaceMask), velocityFoam * uFoamGeneration * interfaceMask);
+  foam = max(foam * mix(0.18, 1.0, interfaceBandMask), velocityFoam * uFoamGeneration * interfaceBandMask);
   float pressureHint = clamp(length(liquidGrad) * 0.55 + length(nextVelocity) * 0.025, 0.0, 1.0);
   outVelocity = vec4(clamp(nextVelocity, vec3(-8.0), vec3(8.0)), 0.0);
   outThermo = vec4(liquid, clamp(foam, 0.0, 1.0), clamp(adhesion, 0.0, 1.0), pressureHint);
@@ -1265,7 +1265,7 @@ vec3 evaluateLiquidPalette(int palette, float foam, float adhesion) {
   } else if (palette == 9) {
     base = vec3(0.06, 0.32, 0.18);
   } else {
-    // Clear-water palette; foam is added separately at the reconstructed interface.
+    // Clear-water palette; foam is added separately at the reconstructed interfaceBand.
     base = vec3(0.012, 0.105, 0.19);
   }
 
@@ -1543,7 +1543,7 @@ void main() {
                  - sampleVolumeTrilinear(uThermoTex, clamp(uvw - vec3(0.0, 0.0, e), 0.0, 1.0)).r;
         vec3 liquidGrad = vec3(gx, gy, gz);
         float gradLen = length(liquidGrad);
-        float interface = smoothstep(0.035, 0.22, gradLen);
+        float interfaceBand = smoothstep(0.035, 0.22, gradLen);
         float filled = smoothstep(uWaterSurfaceThreshold * 0.42, uWaterSurfaceThreshold + 0.16, liquid);
         vec3 normal = gradLen > 1e-4 ? normalize(-liquidGrad) : vec3(0.0, 1.0, 0.0);
         if (normal.y < 0.0) normal = -normal;
@@ -1559,12 +1559,12 @@ void main() {
 
         // The narrow band is the actual liquid surface. Foam and adhesion only
         // affect this band, preventing the whole filled pool from turning white.
-        float surfaceEvent = interface * filled;
+        float surfaceEvent = interfaceBand * filled;
         if (surfaceEvent > 0.004) {
           float diffuse = max(0.10, dot(normal, uSunDir));
           float viewFacing = max(dot(normal, -rayDir), 0.0);
           float fresnel = pow(1.0 - viewFacing, 5.0);
-          vec3 base = evaluateLiquidPalette(uColorPalette, 0.0, adhesion * interface);
+          vec3 base = evaluateLiquidPalette(uColorPalette, 0.0, adhesion * interfaceBand);
           vec3 reflectedSky = mix(vec3(0.025, 0.075, 0.13), vec3(0.28, 0.60, 0.82), clamp(0.35 + 0.65 * normal.y, 0.0, 1.0));
           vec3 refractedTint = mix(base, vec3(0.04, 0.22, 0.34), clamp(uWaterRefraction, 0.0, 1.0));
           float specular = pow(max(dot(reflect(-uSunDir, normal), -rayDir), 0.0), mix(96.0, 24.0, clamp(uWaterRoughness, 0.0, 1.0)))
@@ -1572,11 +1572,11 @@ void main() {
           vec3 surface = refractedTint * (0.30 + 0.70 * diffuse)
                        + reflectedSky * fresnel * (0.22 + 0.48 * uWaterRefraction)
                        + vec3(0.70, 0.86, 1.0) * specular;
-          float surfaceAlpha = clamp(surfaceEvent * (0.30 + 0.38 * interface + 0.22 * foam), 0.0, 0.82);
+          float surfaceAlpha = clamp(surfaceEvent * (0.30 + 0.38 * interfaceBand + 0.22 * foam), 0.0, 0.82);
           hydroLight += hydroTrans * surface * surfaceAlpha;
           hydroTrans *= 1.0 - surfaceAlpha * 0.58;
 
-          float foamLayer = clamp(foam * interface, 0.0, 1.0);
+          float foamLayer = clamp(foam * interfaceBand, 0.0, 1.0);
           if (foamLayer > 0.003) {
             vec3 foamColor = mix(vec3(0.55, 0.75, 0.88), vec3(0.92, 0.98, 1.0), diffuse);
             float foamAlpha = foamLayer * 0.34;
