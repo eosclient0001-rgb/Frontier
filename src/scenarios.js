@@ -1,4 +1,5 @@
-export const QUALITY = { low: 0.06, med: 0.05, high: 0.042 };
+// grid cell size (particles are seeded 2x2x2 per cell)
+export const QUALITY = { low: 0.055, med: 0.042, high: 0.034 };
 
 export const SCENARIOS = {
   dambreak: { name: 'Dam Break', size: [3, 1.8, 1.2], setup(s) {

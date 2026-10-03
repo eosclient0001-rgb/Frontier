@@ -1,5 +1,6 @@
-import { MATERIALS } from './sim.js';
-import { SCENARIOS } from './scenarios.js';
+import { MATERIALS } from './materials.js';
+import { GpuSim } from './gpusim.js';
+import { SCENARIOS, QUALITY } from './scenarios.js';
 import { Renderer } from './renderer.js';
 
 const canvas = document.getElementById('c');
@@ -7,15 +8,31 @@ let renderer;
 try { renderer = new Renderer(canvas); }
 catch (e) { document.getElementById('err').textContent = 'Renderer error: ' + e.message; document.getElementById('err').style.display = 'block'; throw e; }
 
-const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-const post = (m) => worker.postMessage(m);
-// latest snapshot from the simulation thread (renderer reads it like a sim object)
-let sim = null;
-worker.onmessage = ({ data }) => { sim = data; post({ type: 'ack' }); };
+// GPU FLIP solver shares the renderer's WebGL2 context: particles never leave the GPU
+const sim = new GpuSim(renderer.gl, 640);
+const post = (m) => handle(m);
+function handle(m) {
+  switch (m.type) {
+    case 'mat': sim.setMaterial(m.key); break;
+    case 'mat2': sim.setMaterial2(m.key); break;
+    case 'param': { const t = m.which ? sim.mat2 : sim.mat; t[m.k] = m.v; if (m.k === 'visc') t.viscIters = Math.max(1, Math.round(m.v * 10)); break; }
+    case 'mix': sim.mixRate = m.v; break;
+    case 'ball': sim.addSphere(m.p, m.r, m.d, m.v); break;
+    case 'pour': { const [W, H, D] = sim.size; sim.emitters.push({ pos: [W * (0.3 + Math.random() * 0.4), H * 0.9, D * 0.5], dir: [0, -1, 0], speed: 2.2, radius: 0.1, acc: 0, until: sim.time + m.secs, conc: 1 }); break; }
+    case 'reset': {
+      const sc = SCENARIOS[m.scenario];
+      sim.clear(); sim.setMaterial(m.mat); sim.setMaterial2(m.mat2);
+      Object.assign(sim.mat, m.over); Object.assign(sim.mat2, m.over2);
+      sim.configure(QUALITY[m.quality], sc.size);
+      sc.setup(sim);
+      break;
+    }
+  }
+}
 
 const state = {
   scenario: 'dambreak', material: 'water', material2: 'milk', quality: 'med', paused: false, debug: false,
-  ballDensity: 300, radiusScale: 0.62, smooth: 3.0, blurIters: 2,
+  ballDensity: 300, radiusScale: 1.25, smooth: 3.0, blurIters: 2,
 };
 const over = [{}, {}]; // slider overrides for A / B
 let editing = 0;       // which fluid the sliders edit
@@ -116,7 +133,7 @@ syncSliders();
 $('mixr').oninput = e => { post({ type: 'mix', v: +e.target.value }); $('mixv').textContent = (+e.target.value).toFixed(2); };
 $('pourB').onclick = () => post({ type: 'pour', secs: 2.5 });
 $('reset').onclick = reset;
-$('pause').onclick = () => { state.paused = !state.paused; post({ type: 'pause', v: state.paused }); $('pause').textContent = state.paused ? 'Play' : 'Pause'; };
+$('pause').onclick = () => { state.paused = !state.paused;  $('pause').textContent = state.paused ? 'Play' : 'Pause'; };
 $('debug').onclick = () => { state.debug = !state.debug; $('debug').classList.toggle('on', state.debug); };
 $('hide').onclick = () => document.body.classList.toggle('hideui');
 window.addEventListener('keydown', e => {
@@ -127,18 +144,24 @@ window.addEventListener('keydown', e => {
   const i = '12345'.indexOf(e.key); if (i >= 0) $('mats').children[i].click();
 });
 
-// ---------------- loop (render thread; simulation runs in worker.js)
+// ---------------- loop: GPU substeps + rigid coupling + render, all on the GPU timeline
 reset();
-let last = performance.now(), fpsAcc = 0, fpsN = 0;
+let last = performance.now(), fpsAcc = 0, fpsN = 0, frameMs = 16;
 function frame(now) {
-  fpsAcc += Math.min(0.1, (now - last) / 1000); fpsN++; last = now;
+  const dtf = Math.min(0.1, (now - last) / 1000); last = now;
+  fpsAcc += dtf; fpsN++; frameMs = frameMs * 0.9 + dtf * 1000 * 0.1;
+  if (!state.paused) {
+    const sub = 2, dt = 1 / 120;
+    for (let i = 0; i < sub; i++) sim.step(dt);
+    sim.coupleRigid(dt * sub);
+  }
   updateCam();
-  if (sim) renderer.render(sim, cam, { radiusScale: state.radiusScale, smooth: state.smooth, blurIters: state.blurIters, debug: state.debug });
-  if (fpsAcc > 0.5 && sim) {
-    const mixPct = Math.round(sim.avgConc * 100);
-    $('stats').textContent = `${Math.round(fpsN / fpsAcc)} fps · ${sim.n.toLocaleString()} particles · sim ${sim.simMs.toFixed(1)} ms/step` + (mixPct ? ` · B ${mixPct}%` : '');
+  renderer.render(sim, cam, { radiusScale: state.radiusScale, smooth: state.smooth, blurIters: state.blurIters, debug: state.debug });
+  if (fpsAcc > 0.5) {
+    $('stats').textContent = `GPU FLIP · ${Math.round(fpsN / fpsAcc)} fps · ${sim.n.toLocaleString()} particles · grid ${sim.gx}×${sim.gy}×${sim.gz}`;
     fpsAcc = 0; fpsN = 0;
   }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+window.__sim = sim;

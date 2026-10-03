@@ -11,7 +11,6 @@ import { mat4 } from './math.js';
 const COMMON = /* glsl */`#version 300 es
 precision highp float;
 precision highp int;
-precision highp sampler3D;
 uniform vec3 uSunDir;
 // fluid light-space maps (shadows / caustics)
 uniform sampler2D uLDepth, uLThick;
@@ -83,7 +82,16 @@ const MESH_FS = COMMON + `
 in vec3 vW; in vec3 vN; in vec3 vL;
 uniform int uMode; uniform vec3 uColor; uniform vec3 uCam;
 uniform vec4 uSph[16]; uniform int uNSph;
-uniform sampler3D uWet; uniform vec3 uWetSize; uniform int uWetOn;
+uniform sampler2D uWet; uniform ivec3 uWDim; uniform int uWTiles; uniform float uWDx; uniform vec3 uWetSize; uniform int uWetOn;
+vec2 wetSlice(vec2 g, int z){
+  vec2 off = vec2(float(z % uWTiles)*float(uWDim.x), float(z / uWTiles)*float(uWDim.y));
+  return texture(uWet, (off + g + 0.5)/vec2(textureSize(uWet,0))).rg;
+}
+vec2 wetAt(vec3 p){
+  vec3 g = clamp(p/uWDx - 0.5, vec3(0.0), vec3(uWDim) - 2.0);
+  float z0 = floor(g.z);
+  return mix(wetSlice(g.xy, int(z0)), wetSlice(g.xy, int(z0)+1), g.z - z0);
+}
 uniform vec3 uStainA, uStainB; uniform float uOpqA, uOpqB;
 out vec4 o;
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
@@ -113,7 +121,7 @@ void main(){
   if(uWetOn==1){
     vec3 q = vW + N*0.04;
     if(all(greaterThanEqual(q, vec3(0.0))) && all(lessThanEqual(q, uWetSize))){
-      vec2 w = texture(uWet, q/uWetSize).rg;
+      vec2 w = wetAt(q);
       wetAmt = clamp(max(w.r, w.g)*1.4, 0.0, 1.0);
       float bmix = w.g/max(w.r+w.g, 1e-3);
       vec3 stain = mix(uStainA, uStainB, bmix); float opq = mix(uOpqA, uOpqB, bmix);
@@ -149,11 +157,16 @@ void main(){
 }`;
 
 const PT_VS = `#version 300 es
-in vec3 aPos; in float aFoam; in float aConc;
+precision highp float; precision highp sampler2D;
+uniform sampler2D uPosT, uVelT; uniform int uPW;
 uniform mat4 uView, uProj; uniform float uRadius, uScreenH;
 out vec3 vVP; out float vFoam; out float vConc;
 void main(){
-  vec4 vp = uView*vec4(aPos,1.0); vVP = vp.xyz; vFoam = aFoam; vConc = aConc;
+  ivec2 pc = ivec2(gl_VertexID % uPW, gl_VertexID / uPW);
+  vec4 P = texelFetch(uPosT, pc, 0);
+  if(P.y < -50.0){ gl_Position = vec4(2.0,2.0,2.0,1.0); gl_PointSize = 0.0; vVP = vec3(0); vFoam = 0.0; vConc = 0.0; return; }
+  vec3 aPos = P.xyz;
+  vec4 vp = uView*vec4(aPos,1.0); vVP = vp.xyz; vFoam = texelFetch(uVelT, pc, 0).w; vConc = P.w;
   gl_Position = uProj*vp;
   gl_PointSize = max(uRadius*uProj[1][1]*uScreenH/gl_Position.w, 1.0);
 }`;
@@ -177,7 +190,7 @@ void main(){
   vec2 c = gl_PointCoord*2.0-1.0; float r2 = dot(c,c); if(r2>1.0) discard;
   float t = sqrt(1.0-r2);
   float th = 2.0*uRadius*t;
-  o = vec4(th, vFoam*t, vConc*th, 0.0);
+  o = vec4(th, vFoam*th, vConc*th, 0.0);
 }`;
 
 const PT_DEBUG_FS = COMMON + `
@@ -271,7 +284,7 @@ void main(){
     Nw = normalize(Nw + (vec3(noise(Pw*40.0+3.1), noise(Pw*40.0+7.7), noise(Pw*40.0+1.3))-0.5)*0.35*uGrain);
   }
   float thick = th.x;
-  float foam = clamp(th.y/max(thick,1e-3)*1.6, 0.0, 1.0);
+  float foam = smoothstep(0.15, 0.7, th.y/max(thick,1e-4));
 
   vec3 L = uSunDir;
   float NoV = clamp(dot(Nw,Vw), 1e-3, 1.0);
@@ -383,8 +396,6 @@ export class Renderer {
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
     this.fbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.fbuf);
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
-    this.cbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.cbuf);
-    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
     this.emptyVao = gl.createVertexArray();
     this.sunDir = (() => { const v = [0.45, 0.8, 0.35]; const l = Math.hypot(...v); return v.map(x => x / l); })();
@@ -396,11 +407,15 @@ export class Renderer {
     this.lDepthFbo = this.fbo(this.lDepth, null, lrb);
     this.lThick = this.tex(LS, LS, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
     this.lThickFbo = this.fbo(this.lThick);
-    // wetness volume
-    this.wetTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_3D, this.wetTex);
-    for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RG8, 1, 1, 1, 0, gl.RG, gl.UNSIGNED_BYTE, new Uint8Array(2));
+  }
+
+  bindParticles(prog, sim) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, sim.posTex); gl.uniform1i(prog.u.uPosT, 8);
+    gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, sim.velTex); gl.uniform1i(prog.u.uVelT, 9);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(prog.u.uPW, sim.PW);
+    gl.bindVertexArray(this.emptyVao);
   }
 
   // shared uniforms for shaders that sample the fluid light maps
@@ -468,17 +483,13 @@ export class Renderer {
     const [W, H, D] = sim.size;
     const sun = this.sunDir;
 
-    // particles upload
     const n = sim.n;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.pbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.x.subarray(0, n * 3), gl.STREAM_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.fbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.foam.subarray(0, n), gl.STREAM_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.conc.subarray(0, n), gl.STREAM_DRAW);
     const radius = sim.s * opts.radiusScale;
     const setPt = (prog) => {
       gl.useProgram(prog.p);
       gl.uniformMatrix4fv(prog.u.uView, false, view); gl.uniformMatrix4fv(prog.u.uProj, false, proj);
       gl.uniform1f(prog.u.uRadius, radius); gl.uniform1f(prog.u.uScreenH, h);
-      gl.bindVertexArray(this.pvao);
+      this.bindParticles(prog, sim);
     };
 
     // ---------- 0. light-space fluid depth + thickness (for colored shadows & caustics)
@@ -495,7 +506,7 @@ export class Renderer {
       gl.useProgram(prog.p);
       gl.uniformMatrix4fv(prog.u.uView, false, this.lightView); gl.uniformMatrix4fv(prog.u.uProj, false, lproj);
       gl.uniform1f(prog.u.uRadius, radius); gl.uniform1f(prog.u.uScreenH, LS);
-      gl.bindVertexArray(this.pvao);
+      this.bindParticles(prog, sim);
     };
     setLight(P.pDepth); gl.drawArrays(gl.POINTS, 0, n);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.lThickFbo);
@@ -503,14 +514,6 @@ export class Renderer {
     gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
     setLight(P.pThick); gl.drawArrays(gl.POINTS, 0, n);
     gl.disable(gl.BLEND);
-    // wetness volume upload
-    if (sim.wet) {
-      const [gx, gy, gz] = sim.wetDims;
-      gl.bindTexture(gl.TEXTURE_3D, this.wetTex); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RG8, gx, gy, gz, 0, gl.RG, gl.UNSIGNED_BYTE, sim.wet);
-      this.wetSize = [gx * sim.h, gy * sim.h, gz * sim.h];
-    }
-
     // ---------- 1. scene
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.sceneFbo);
     gl.viewport(0, 0, w, h);
@@ -524,8 +527,9 @@ export class Renderer {
     for (const s of sim.spheres) { if (ns >= 16) break; sph.set([s.c[0], s.c[1], s.c[2], s.r], ns * 4); ns++; }
     gl.uniform4fv(P.mesh.u.uSph, sph); gl.uniform1i(P.mesh.u.uNSph, ns);
     this.bindFluidLight(P.mesh, sim);
-    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, this.wetTex); gl.uniform1i(P.mesh.u.uWet, 6); gl.activeTexture(gl.TEXTURE0);
-    gl.uniform3fv(P.mesh.u.uWetSize, this.wetSize || [1, 1, 1]);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, sim.wetTex); gl.uniform1i(P.mesh.u.uWet, 6); gl.activeTexture(gl.TEXTURE0);
+    gl.uniform3i(P.mesh.u.uWDim, ...sim.dim); gl.uniform1i(P.mesh.u.uWTiles, sim.tiles); gl.uniform1f(P.mesh.u.uWDx, sim.dx);
+    gl.uniform3fv(P.mesh.u.uWetSize, sim.size);
     const ra = sim.mat.render, rb = sim.mat2.render;
     gl.uniform3fv(P.mesh.u.uStainA, ra.albedo); gl.uniform3fv(P.mesh.u.uStainB, rb.albedo);
     gl.uniform1f(P.mesh.u.uOpqA, Math.min(1, ra.scatter / 20 + (ra.refract < 0.5 ? 0.5 : 0) + (ra.absorb[2] > 3 ? 0.6 : 0)));
@@ -551,7 +555,7 @@ export class Renderer {
       this.drawMesh(null, mat4.trs([cx, cy, D / 2], [Math.cos(th / 2), 0, 0, Math.sin(th / 2)], [len / 2, t, D / 2]), [0.76, 0.68, 0.5], 1);
     }
     for (const B of sim.boxes) this.drawMesh(null, mat4.trs(B.c, id, B.h), [0.55, 0.58, 0.62], 5);
-    for (const e of sim.emitters) {
+    for (const e of sim.activeEmitters) {
       this.drawMesh(null, mat4.trs([e.pos[0], e.pos[1] + 0.12, e.pos[2]], id, [e.radius + 0.03, 0.1, e.radius + 0.03]), [0.4, 0.4, 0.42], 5);
     }
     wetOn(0);
