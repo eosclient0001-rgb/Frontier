@@ -7,11 +7,14 @@
   "scripts": {
     "dev": "node server.mjs",
     "start": "node server.mjs",
+    "test": "node tools/validate.mjs && node tools/wgsl-check.mjs && node tools/sim-test.mjs && node tools/app-smoke.mjs && node tools/ui-smoke.mjs",
     "validate": "node tools/validate.mjs",
     "check:wgsl": "node tools/wgsl-check.mjs",
     "test:sim": "node tools/sim-test.mjs",
-    "test": "node tools/validate.mjs && node tools/wgsl-check.mjs && node tools/sim-test.mjs && node tools/ui-smoke.mjs",
-    "test:ui": "node tools/ui-smoke.mjs"
+    "test:gpu": "node tools/app-smoke.mjs",
+    "test:ui": "node tools/ui-smoke.mjs",
+    "render": "node tools/software-render.mjs",
+    "preview": "node tools/preview.mjs"
   },
   "dependencies": {
     "wgsl_reflect": "^1.6.0"

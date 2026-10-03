@@ -5,8 +5,11 @@ import { buildDress } from './dress.js';
 import { buildConstraints, buildState, CON_STRIDE } from './physics.js';
 import {
   CLEAR_LAMBDA, PREDICT, SOLVE_CONS, SOLVE_PINS, COLLIDE, FINALIZE, RESET_VERTEX,
-  CLOTH_RENDER, BODY_RENDER, PATTERN_QUAD,
+  CLOTH_RENDER, BODY_RENDER, PATTERN_QUAD, GROUND_PLANE,
 } from './shaders.js';
+import {
+  CAMERA, FABRIC as FABRIC_LAYOUT, SIM as SIM_LAYOUT, COL, PIN, PREVIEW, uniform, writeUniform,
+} from './layout.js';
 
 const WORKGROUP = 256;
 
@@ -76,12 +79,17 @@ export class ClothStudio {
   createUniforms() {
     const dev = this.device;
     const UB = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
-    this.uniforms.cam = dev.createBuffer({ size: 192, usage: UB, label: 'camera' });
-    this.uniforms.fab = dev.createBuffer({ size: 128, usage: UB, label: 'fabric' });
-    this.uniforms.sim = dev.createBuffer({ size: 64, usage: UB, label: 'sim' });
-    this.uniforms.col = dev.createBuffer({ size: 176, usage: UB, label: 'collision' });
-    this.uniforms.pin = dev.createBuffer({ size: 16, usage: UB, label: 'pinparams' });
-    this.uniforms.preview = dev.createBuffer({ size: 48, usage: UB, label: 'preview' });
+    // staging arrays are laid out by src/layout.js; wgsl-check asserts those
+    // offsets against the WGSL structs so packing can never drift
+    this.u = {
+      cam: uniform(CAMERA), fab: uniform(FABRIC_LAYOUT), sim: uniform(SIM_LAYOUT),
+      col: uniform(COL), pin: uniform(PIN), preview: uniform(PREVIEW),
+    };
+    const mk = (label, layout) => dev.createBuffer({ size: layout.size, usage: UB, label });
+    this.uniforms = {
+      cam: mk('camera', CAMERA), fab: mk('fabric', FABRIC_LAYOUT), sim: mk('sim', SIM_LAYOUT),
+      col: mk('collision', COL), pin: mk('pinparams', PIN), preview: mk('preview', PREVIEW),
+    };
   }
 
   createPipelines() {
@@ -143,6 +151,16 @@ export class ClothStudio {
       label: 'fabric-preview',
     });
 
+    const groundModule = dev.createShaderModule({ code: GROUND_PLANE, label: 'ground' });
+    this.pipe.ground = dev.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: groundModule, entryPoint: 'vs' },
+      fragment: { module: groundModule, entryPoint: 'fs', targets: [{ format: this.fmt }] },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+      label: 'ground',
+    });
+
     // depth texture is (re)created on resize
     this.depth = null;
   }
@@ -182,7 +200,7 @@ export class ClothStudio {
   uploadStatic() {
     const dev = this.device;
     const S = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
-    for (const key of ['pos', 'vel', 'prev', 'rest', 'vinfo', 'cons', 'pins', 'pinPos', 'rings', 'caps', 'uv']) {
+    for (const key of ['pos', 'vel', 'prev', 'rest', 'vinfo', 'cons', 'pins', 'pinPos', 'rings', 'caps', 'uv', 'nrm']) {
       if (this.buf?.[key]) this.buf[key].destroy();
     }
     const st = this.state;
@@ -202,6 +220,7 @@ export class ClothStudio {
     this.buf.rings = create(this.collisionData.rings.byteLength, 'rings');
     this.buf.caps = create(Math.max(32, this.collisionData.capsules.byteLength), 'caps');
     this.buf.uv = create(n * 16, 'uv');
+    this.buf.nrm = create(n * 16, 'nrm');
 
     // UVs are packed as vec4 for a clean 16 byte stride
     const uv4 = new Float32Array(n * 4);
@@ -211,7 +230,16 @@ export class ClothStudio {
     }
     this.uvData = uv4;
 
+    // rest-pose normals as vec4f: deforming islands (the straps) read these
+    // directly instead of walking a grid they do not lie on
+    const nrm4 = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      nrm4[i * 4 + 0] = this.dress.normals[i * 3 + 0];
+      nrm4[i * 4 + 1] = this.dress.normals[i * 3 + 1];
+      nrm4[i * 4 + 2] = this.dress.normals[i * 3 + 2];
+    }
     const q = dev.queue;
+    q.writeBuffer(this.buf.nrm, 0, nrm4);
     q.writeBuffer(this.buf.pos, 0, st.pos);
     q.writeBuffer(this.buf.vel, 0, st.vel);
     q.writeBuffer(this.buf.prev, 0, st.prev);
@@ -291,6 +319,7 @@ export class ClothStudio {
       { binding: 2, resource: S(b.prev) },
       { binding: 3, resource: S(b.vinfo) },
       { binding: 4, resource: U(this.uniforms.sim) },
+      { binding: 5, resource: S(b.nrm) },
     ]);
     this.bg.solve = bg(this.pipe.solve, [
       { binding: 0, resource: S(b.pos) },
@@ -328,8 +357,10 @@ export class ClothStudio {
       { binding: 2, resource: S(b.pos) },
       { binding: 3, resource: S(b.vinfo) },
       { binding: 4, resource: S(b.uv) },
+      { binding: 5, resource: S(b.nrm) },
     ]);
     this.bg.body = bg(this.pipe.body, [{ binding: 0, resource: U(this.uniforms.cam) }]);
+    this.bg.ground = bg(this.pipe.ground, [{ binding: 0, resource: U(this.uniforms.cam) }]);
     this.bg.fabric = bg(this.pipe.fabric, [
       { binding: 0, resource: U(this.uniforms.fab) },
       { binding: 1, resource: U(this.uniforms.preview) },
@@ -389,30 +420,27 @@ export class ClothStudio {
     const h = dt / substeps;
     const iterations = Math.max(1, Math.round(simCfg.iterations));
 
-    // uniform writes
-    const simU = new Float32Array(16);
-    simU[0] = simCfg.gravity[0]; simU[1] = simCfg.gravity[1]; simU[2] = simCfg.gravity[2];
-    simU[3] = h;
-    simU[4] = simCfg.wind[0]; simU[5] = simCfg.wind[1]; simU[6] = simCfg.wind[2];
-    simU[7] = this.worldTime;
-    simU[8] = simCfg.airDrag; simU[9] = simCfg.damping;
-    simU[10] = simCfg.thickness; simU[11] = simCfg.friction;
-    simU[12] = substeps; simU[13] = 1; simU[14] = 0; simU[15] = simCfg.floorY;
-    dev.queue.writeBuffer(this.uniforms.sim, 0, simU);
-    dev.queue.writeBuffer(this.uniforms.pin, 0, new Float32Array([simCfg.pinBlend, 0, 0, 0]));
+    // uniform writes (byte offsets come from src/layout.js)
+    const c = simCfg;
+    writeUniform(this.u.sim, SIM_LAYOUT, {
+      gravity: [c.gravity[0], c.gravity[1], c.gravity[2], h],
+      wind: [c.wind[0], c.wind[1], c.wind[2], this.worldTime],
+      params: [c.airDrag, c.damping, c.thickness, c.friction],
+      params2: [substeps, 0, 0, c.floorY],
+    });
+    dev.queue.writeBuffer(this.uniforms.sim, 0, this.u.sim);
 
-    const colU = new Float32Array(44);
-    colU.set(this.bodyMatrixInverse ?? m4.identity(), 0);
-    colU.set(this.bodyMatrix ?? m4.identity(), 16);
-    colU[32] = simCfg.thickness; colU[33] = simCfg.friction;
-    colU[34] = simCfg.restitution; colU[35] = h;
-    colU[36] = simCfg.floorY; colU[37] = this.worldTime; colU[38] = 0; colU[39] = 0;
-    const counts = new Uint32Array(colU.buffer, 160, 4);
-    counts[0] = this.colCounts.ringCount;
-    counts[1] = this.colCounts.capsuleCount;
-    counts[2] = simCfg.bodyCollision ? 1 : 0;
-    counts[3] = 0;
-    dev.queue.writeBuffer(this.uniforms.col, 0, colU);
+    writeUniform(this.u.pin, PIN, { params: [c.pinBlend, 0, 0, 0] });
+    dev.queue.writeBuffer(this.uniforms.pin, 0, this.u.pin);
+
+    writeUniform(this.u.col, COL, {
+      modelInv: this.bodyMatrixInverse ?? m4.identity(),
+      model: this.bodyMatrix ?? m4.identity(),
+      params: [c.thickness, c.friction, c.restitution, h],
+      extra: [c.floorY, this.worldTime, 0, 0],
+      counts: Uint32Array.from([this.colCounts.ringCount, this.colCounts.capsuleCount, c.bodyCollision ? 1 : 0, 0]),
+    });
+    dev.queue.writeBuffer(this.uniforms.col, 0, this.u.col);
 
     const groups = Math.ceil(this.vertexCount / WORKGROUP);
     const cgroups = Math.ceil(this.constraints.count / WORKGROUP);
@@ -477,27 +505,30 @@ export class ClothStudio {
     this.resize();
     const dev = this.device;
 
-    // camera uniform: viewProj, model, eye, lightDir, lightCol, ambient
-    const camU = new Float32Array(48);
-    camU.set(camera.viewProj, 0);
-    camU.set(this.bodyMatrix ?? m4.identity(), 16);
-    camU[32] = camera.eye[0]; camU[33] = camera.eye[1]; camU[34] = camera.eye[2]; camU[35] = 1;
-    const L = camera.lightDir;
-    camU[36] = L[0]; camU[37] = L[1]; camU[38] = L[2]; camU[39] = 0;
-    camU[40] = camera.lightCol[0]; camU[41] = camera.lightCol[1]; camU[42] = camera.lightCol[2]; camU[43] = 1;
-    camU[44] = camera.ambient[0]; camU[45] = camera.ambient[1]; camU[46] = camera.ambient[2]; camU[47] = 1;
-    dev.queue.writeBuffer(this.uniforms.cam, 0, camU);
+    // camera uniform
+    writeUniform(this.u.cam, CAMERA, {
+      viewProj: camera.viewProj,
+      model: this.bodyMatrix ?? m4.identity(),
+      invViewProj: camera.invViewProj,
+      eye: [camera.eye[0], camera.eye[1], camera.eye[2], 1],
+      lightDir: [camera.lightDir[0], camera.lightDir[1], camera.lightDir[2], 0],
+      lightCol: [camera.lightCol[0], camera.lightCol[1], camera.lightCol[2], 1],
+      ambient: [camera.ambient[0], camera.ambient[1], camera.ambient[2], 1],
+    });
+    dev.queue.writeBuffer(this.uniforms.cam, 0, this.u.cam);
     dev.queue.writeBuffer(this.uniforms.fab, 0, fabricUniform);
 
     const enc = dev.createCommandEncoder();
 
     // ---- 2D fabric swatch (drawn into the panel canvas)
     {
-      const pv = new Float32Array(12);
-      pv[0] = 0; pv[1] = 0; pv[2] = this.fabricCanvas.width; pv[3] = this.fabricCanvas.height;
-      pv[4] = this.fabricCanvas.width; pv[5] = this.fabricCanvas.height;
-      pv[8] = this.previewZoom ?? 3.0;
-      dev.queue.writeBuffer(this.uniforms.preview, 0, pv);
+      const cw = this.fabricCanvas.width, ch = this.fabricCanvas.height;
+      writeUniform(this.u.preview, PREVIEW, {
+        rect: [0, 0, cw, ch],
+        res: [cw, ch, 0, 0],
+        flags: [this.previewZoom ?? 3.0, 0, 0, 0],
+      });
+      dev.queue.writeBuffer(this.uniforms.preview, 0, this.u.preview);
       const view = this.fctx.getCurrentTexture().createView();
       const pass = enc.beginRenderPass({
         colorAttachments: [{
@@ -526,6 +557,10 @@ export class ClothStudio {
           depthStoreOp: 'store',
         },
       });
+
+      pass.setPipeline(this.pipe.ground);
+      pass.setBindGroup(0, this.bg.ground);
+      pass.draw(3);
 
       pass.setPipeline(this.pipe.body);
       pass.setBindGroup(0, this.bg.body);

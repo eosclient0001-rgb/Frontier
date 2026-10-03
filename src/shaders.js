@@ -256,6 +256,7 @@ struct Sim {
 @group(0) @binding(2) var<storage, read_write> prev : array<vec4f>;
 @group(0) @binding(3) var<storage, read>       vinfo : array<vec4u>;
 @group(0) @binding(4) var<uniform>             sim : Sim;
+@group(0) @binding(5) var<storage, read>       nrm   : array<vec4f>;
 
 fn gridNeighbour(r : u32, c : u32) -> u32 {
   return r * vinfo[0u].w + c;
@@ -285,7 +286,8 @@ fn main(@builtin(global_invocation_id) gid : vec3u) {
     let b = pos[gridNeighbour(rp, c)].xyz - pos[gridNeighbour(rm, c)].xyz;
     n = normalize(cross(a, b) + vec3f(1e-6, 0.0, 1e-6));
   } else {
-    n = vec3f(0.0, 0.0, 1.0);
+    // strap vertices keep the normal baked from the rest shape
+    n = normalize(nrm[i].xyz + vec3f(1e-6, 1e-6, 0.0));
   }
 
   let wdir = sim.wind.xyz;
@@ -305,8 +307,11 @@ fn main(@builtin(global_invocation_id) gid : vec3u) {
   v = v + sim.gravity.xyz * sim.gravity.w;
   v = v * (1.0 - min(sim.params.y, 0.9));
 
+  // integrate: keep the substep start position for the velocity update in
+  // FINALIZE, then advance the vertex
   prev[i] = vec4f(x, 0.0);
   vel[i] = vec4f(v, 0.0);
+  pos[i] = vec4f(x + v * sim.gravity.w, w);
 }
 `;
 
@@ -419,10 +424,10 @@ fn projectLoft(pIn : vec3f, thickness : f32) -> vec3f {
   if (p.y < y0 || p.y > y1) { return p; }
   let y = p.y;
 
-  var i = 0u;
-  for (var k = 0u; k + 1u < n; k = k + 1u) {
-    if (rings[k].y <= y && y <= rings[k + 1u].y) { i = k; break; }
-  }
+  // rings are uniformly spaced in y (body.js resampleRings), so the bracketing
+  // pair is a division rather than a scan
+  let step = max(rings[1].y - rings[0].y, 1e-6);
+  var i = u32(clamp((y - rings[0].y) / step, 0.0, f32(n - 2u)));
   let A = rings[i];
   let B = rings[i + 1u];
   let t = clamp((y - A.y) / max(B.y - A.y, 1e-6), 0.0, 1.0);
@@ -567,9 +572,10 @@ fn main(@builtin(global_invocation_id) gid : vec3u) {
 // =============================================================== RENDER
 export const SCENE_WGSL = /* wgsl */ `
 struct Camera {
-  viewProj : mat4x4f,
-  model    : mat4x4f,
-  eye      : vec4f,
+  viewProj    : mat4x4f,
+  model       : mat4x4f,
+  invViewProj : mat4x4f,
+  eye         : vec4f,
   lightDir : vec4f,
   lightCol : vec4f,
   ambient  : vec4f,
@@ -585,6 +591,7 @@ ${SCENE_WGSL}
 @group(0) @binding(2) var<storage, read> pos   : array<vec4f>;
 @group(0) @binding(3) var<storage, read> vinfo : array<vec4u>;
 @group(0) @binding(4) var<storage, read> uvs   : array<vec4f>;
+@group(0) @binding(5) var<storage, read> nrm   : array<vec4f>;
 
 struct VSOut {
   @builtin(position) clip : vec4f,
@@ -611,17 +618,8 @@ fn vs(@builtin(vertex_index) vi : u32) -> VSOut {
     let b = pos[rp * cols + c].xyz - pos[rm * cols + c].xyz;
     n = normalize(cross(a, b) + vec3f(1e-7, 0.0, 1e-7));
   } else if (info.w > 1u) {
-    // strap: reconstruct the strip grid from the flat index
-    let width = info.w;
-    let base = vi - info.x * width - info.y;
-    let r = info.x; let c = info.y;
-    let rp = min(r + 1u, 64u);
-    let rm = select(r - 1u, 0u, r == 0u);
-    let cp = min(c + 1u, width - 1u);
-    let cm = select(c - 1u, 0u, c == 0u);
-    let a = pos[base + r * width + cp].xyz - pos[base + r * width + cm].xyz;
-    let b = pos[base + rp * width + c].xyz - pos[base + rm * width + c].xyz;
-    n = normalize(cross(a, b) + vec3f(1e-7, 0.0, 1e-7));
+    // strap: short, stiff and heavily pinned — use the rest-pose normal
+    n = normalize(nrm[vi].xyz + vec3f(1e-7, 0.0, 1e-7));
   }
 
   var o : VSOut;
@@ -782,52 +780,70 @@ fn fs(i : VSOut) -> @location(0) vec4f {
 }
 `;
 
-// Flat colour quads for the editor UI (panels, buttons, swatches).
-export const UI_QUAD = /* wgsl */ `
-struct Quad {
-  rect : vec4f,    // x, y, w, h in pixels
-  color : vec4f,
-  res : vec4f,     // canvas w, h
-  border : vec4f,  // border width, corner flag, 0, 0
-};
-@group(0) @binding(0) var<uniform> q : Quad;
+// Studio floor: a ray-cast plane so the dress has something to fall onto.
+// Drawn as a full-screen triangle with the real hit depth written out.
+export const GROUND_PLANE = /* wgsl */ `
+${SCENE_WGSL}
 
 struct VSOut {
   @builtin(position) clip : vec4f,
-  @location(0) px : vec2f,
+  @location(0) ndc : vec2f,
+};
+
+struct FSOut {
+  @location(0) col : vec4f,
+  @builtin(frag_depth) depth : f32,
 };
 
 @vertex
 fn vs(@builtin(vertex_index) vi : u32) -> VSOut {
-  var corners = array<vec2f, 6>(
-    vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0),
-    vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(0.0, 1.0)
-  );
-  let c = corners[vi];
-  let px = q.rect.xy + c * q.rect.zw;
-  let ndc = vec2f(px.x / q.res.x * 2.0 - 1.0, 1.0 - px.y / q.res.y * 2.0);
+  var pts = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  let p = pts[vi];
   var o : VSOut;
-  o.clip = vec4f(ndc, 0.0, 1.0);
-  o.px = px;
+  o.clip = vec4f(p, 1.0, 1.0);
+  o.ndc = p;
   return o;
 }
 
 @fragment
-fn fs(i : VSOut) -> @location(0) vec4f {
-  let local = (i.px - q.rect.xy) / max(q.rect.zw, vec2f(1.0));
-  var a = q.color.a;
-  let bw = q.border.x;
-  if (bw > 0.0) {
-    let d = min(min(local.x, 1.0 - local.x) * q.rect.z, min(local.y, 1.0 - local.y) * q.rect.w);
-    if (d > bw) { a = 0.0; }
+fn fs(i : VSOut) -> FSOut {
+  let inv = cam.invViewProj;
+  let h0 = inv * vec4f(i.ndc, 0.0, 1.0);
+  let h1 = inv * vec4f(i.ndc, 1.0, 1.0);
+  let p0 = h0.xyz / max(h0.w, 1e-6);
+  let p1 = h1.xyz / max(h1.w, 1e-6);
+  let dir = p1 - p0;
+
+  if (abs(dir.y) > 1e-6) {
+    let t = -p0.y / dir.y;
+    if (t > 0.0) {
+      let hit = p0 + dir * t;
+      let dist = distance(hit, cam.eye.xyz);
+
+      // contact shadow pooled under the figure
+      let r = length(hit.xz);
+      let shadow = 1.0 - 0.58 * exp(-r * r * 2.4);
+
+      // metric grid, fading with distance
+      let g = abs(fract(hit.xz * 2.0) - 0.5);
+      let grid = 1.0 - smoothstep(0.45, 0.5, max(g.x, g.y));
+      let fade = exp(-dist * 0.22);
+
+      var col = vec3f(0.085, 0.089, 0.103) * shadow;
+      col = col + vec3f(0.11, 0.12, 0.145) * grid * fade * shadow;
+      col = mix(col, vec3f(0.10, 0.105, 0.12), 1.0 - exp(-dist * 0.10));
+
+      let clip = cam.viewProj * vec4f(hit, 1.0);
+      var o : FSOut;
+      o.col = vec4f(col, 1.0);
+      o.depth = clamp(clip.z / max(clip.w, 1e-6), 0.0, 1.0);
+      return o;
+    }
   }
-  let r = q.border.y;
-  if (r > 0.0) {
-    let p = abs(local * 2.0 - 1.0);
-    let rr = max(p - (1.0 - r), vec2f(0.0));
-    let d = length(rr) - r;
-    a = a * (1.0 - smoothstep(-1.5, 1.5, d));
-  }
-  return vec4f(q.color.rgb * q.color.a, a);
+  discard;
+  var o : FSOut;
+  o.col = vec4f(0.0, 0.0, 0.0, 1.0);
+  o.depth = 1.0;
+  return o;
 }
 `;

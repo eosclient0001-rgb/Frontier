@@ -44,6 +44,47 @@ export function superRadius(rx, rz, e, theta) {
 }
 
 /**
+ * Resample the authored ring table onto a *uniform* grid in y.
+ *
+ * The hand-authored rings are sparse around the hip and bust, and because the
+ * loft interpolates linearly between rings the silhouette picked up hard
+ * creases (visible on the dress, which follows the same surface). Catmull-Rom
+ * through the authored values gives a smooth figure, and the uniform spacing
+ * lets the collision shader jump straight to the bracketing pair instead of
+ * scanning the whole table.
+ */
+export function resampleRings(rings, step) {
+  const n = rings.length;
+  if (n < 4) return rings.slice();
+  const y0 = rings[0].y, y1 = rings[n - 1].y;
+  const count = Math.max(n, Math.ceil((y1 - y0) / step) + 1);
+  const clampIdx = (i) => (i < 0 ? 0 : i > n - 1 ? n - 1 : i);
+  const at = (i) => rings[clampIdx(i)];
+  const out = [];
+  for (let k = 0; k < count; k++) {
+    const y = y0 + (y1 - y0) * (k / (count - 1));
+    let i = 0;
+    while (i < n - 2 && rings[i + 1].y < y) i++;
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    const t = clamp((y - p1.y) / Math.max(1e-6, p2.y - p1.y), 0, 1);
+    const cr = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t
+      + (2 * a - 5 * b + 4 * c - d) * t * t
+      + (-a + 3 * b - 3 * c + d) * t * t * t);
+    out.push({
+      y,
+      rx: Math.max(0.004, cr(p0.rx, p1.rx, p2.rx, p3.rx)),
+      rz: Math.max(0.004, cr(p0.rz, p1.rz, p2.rz, p3.rz)),
+      cx: cr(p0.cx, p1.cx, p2.cx, p3.cx),
+      cz: cr(p0.cz, p1.cz, p2.cz, p3.cz),
+      e: clamp(cr(p0.e, p1.e, p2.e, p3.e), 1.4, 4.0),
+      front: Math.max(0, cr(p0.front, p1.front, p2.front, p3.front)),
+      back: Math.max(0, cr(p0.back, p1.back, p2.back, p3.back)),
+    });
+  }
+  return out;
+}
+
+/**
  * Build the analytic body description from UI parameters.
  * Returns { rings, capsules, landmarks } in metres, Y-up, feet at y = 0.
  */
@@ -109,6 +150,9 @@ export function buildBodySpec(p) {
   R(Y('crown') - 0.008 * S, 0.026 * S, 0.028 * S, { e: 2.0 });
 
   rings.sort((a, b) => a.y - b.y);
+  const dense = resampleRings(rings, 0.018 * S);
+  rings.length = 0;
+  rings.push(...dense);
 
   // ---------------------------------------------------------------- limbs
   const capsules = [];

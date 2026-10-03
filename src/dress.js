@@ -225,11 +225,13 @@ export function buildDress(spec, p, resolution = 96) {
     const shoulderY = Y('shoulder');
     const shoulderX = 0.100 * p.shoulders * spec.S;
     for (const side of [-1, 1]) {
-      const spread = p.strapInset * D2R + 0.30;
-      // both attach points stay on the same side of the body: thetaFront is
-      // just in front of the shoulder, thetaBack mirrors it through -Z.
-      const thetaFront = Math.PI / 2 - side * spread;
-      const thetaBack = -Math.PI / 2 + side * (spread + 0.04);
+      // theta 0 is +X (the side of the body), +pi/2 is the front. A shoulder
+      // strap crosses the shoulder crest and attaches a little way in front of
+      // and behind it, so both attach points sit near the side, mirrored
+      // through the X axis for the other shoulder.
+      const spread = 0.88 + p.strapInset * D2R;
+      const thetaFront = side > 0 ? spread : Math.PI - spread;
+      const thetaBack = side > 0 ? -spread : Math.PI + spread;
       const yAttachF = topHemY(style, neck, spec, thetaFront, p) + 0.012 * spec.S;
       const yAttachB = topHemY(style, neck, spec, thetaBack, p) + 0.012 * spec.S;
       const surfF = bodySurface(spec, yAttachF, thetaFront);

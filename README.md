@@ -125,17 +125,49 @@ tools/
 
 ## Tests
 
+A browser is not needed to run the suite — the GPU layer is verified against a
+validating WebGPU mock and the shaders are mirrored on the CPU.
+
 ```bash
-npm test            # all three suites
-npm run validate    # body/dress/constraint/state data checks, all 9 styles
-npm run check:wgsl  # every WGSL shader parses; struct sizes match the JS packing
+npm test            # all five suites
+npm run validate    # body/dress/constraint/state data checks, all 9 styles x 6 necklines
+npm run check:wgsl  # every shader parses; JS <-> WGSL struct layout contract; binding counts
 npm run test:sim    # collision projection accuracy + 150 frames of XPBD
+npm run test:gpu    # boots the studio against a validating WebGPU mock and steps/renders
+npm run test:ui     # builds every control-panel widget in a stubbed DOM
 ```
 
-`sim-test.mjs` mirrors the shaders on the CPU and asserts that the collision
-projection lands exactly on the analytic surface (0.00 mm error), that cloth never
-penetrates the mannequin, that pins hold to < 1 mm, and that the dress settles to
-its authored silhouette. Use `VERBOSE=1 npm run test:sim` for per-frame telemetry.
+* **validate** — mannequin surface queries, dress generation for all 54 style
+  combinations, constraint-graph and state packing, strap clearance against the
+  analytic body, fabric uniform packing, mat4 maths.
+* **wgsl-check** — parses every WGSL source with `wgsl_reflect`, proves the byte
+  offsets in `src/layout.js` match the structs the shaders declare (member for
+  member, not just the total size), checks `@binding` contiguity and that each
+  shader binds exactly what `app.js` binds, and asserts the solver-loop
+  invariants (predict integrates, collide folds friction into `prev`, ...).
+* **sim-test** — CPU mirror of the compute shaders: the projection lands exactly
+  on the analytic surface, no vertex ever penetrates the figure, pins hold to
+  < 1 mm, and the hem never sinks through the floor. `VERBOSE=1` prints telemetry.
+* **app-smoke** — `tools/gpu-mock.mjs` validates every bind group, buffer usage,
+  uniform size, vertex layout, dispatch shape and draw call against the parsed
+  shaders, then rebuilds all 54 dress variants and runs the dance rig.
+* **ui-smoke** — constructs every widget in every tab against a stubbed DOM.
+
+## Offline previews
+
+Because the WGSL fabric and lighting shaders are mirrored in JavaScript, the
+garment can be rendered (and looked at) without a GPU:
+
+```bash
+npm run render -- renders/dress.png three      # also: front | side | close | full
+STYLE=ballgown PRESET="Indigo Silk" npm run render -- renders/gown.png front
+npm run preview -- side                        # quick ASCII silhouette
+```
+
+`tools/software-render.mjs` implements the same `evalFabric` / GGX / sheen
+pipeline as the shaders and writes a PNG (see `renders/`), while
+`tools/gpu-mock.mjs` makes `npm run test:gpu` a real integration test instead of
+a stub.
 
 ## Notes
 

@@ -67,8 +67,9 @@ const SIM = {
   bodyCollision: 1,
   pinsEnabled: true,
   timeScale: 1.0,
-  pinBlend: 1.0,
 };
+
+const m4Inv = new Float32Array(16);
 
 const camera = {
   yaw: 0.42,
@@ -325,9 +326,9 @@ function simConfig() {
   const windDir = [Math.sin(SIM.windAngle), 0.06, Math.cos(SIM.windAngle)];
   const gust = SIM.windGust;
   const wind = SIM.windSpeed === 0 ? [0, 0, 0] : [
-    windDir[0] * SIM.windSpeed * (0.7 + 0.3 * gust * Math.sin(studio.worldTime * 0.9)),
+    windDir[0] * SIM.windSpeed * (0.7 + 0.3 * gust * Math.sin((studio?.worldTime ?? 0) * 0.9)),
     windDir[1] * SIM.windSpeed * 0.35,
-    windDir[2] * SIM.windSpeed * (0.7 + 0.3 * gust * Math.cos(studio.worldTime * 1.3)),
+    windDir[2] * SIM.windSpeed * (0.7 + 0.3 * gust * Math.cos((studio?.worldTime ?? 0) * 1.3)),
   ];
   return {
     gravity: [SIM.gravity[0] * g, SIM.gravity[1] * g, SIM.gravity[2] * g],
@@ -493,7 +494,10 @@ function loop(now) {
     studio.updatePins(m4.identity());
   }
 
-  camera.lightDir = camera.lightDir;
+  // keep the eye above the studio floor so the ground plane never occludes
+  if (camera.target[1] + camera.dist * Math.sin(camera.pitch) < 0.14) {
+    camera.pitch = Math.asin(clamp((0.14 - camera.target[1]) / camera.dist, -1, 1));
+  }
   const eye = [
     camera.target[0] + camera.dist * Math.sin(camera.yaw) * Math.cos(camera.pitch),
     camera.target[1] + camera.dist * Math.sin(camera.pitch),
@@ -504,7 +508,14 @@ function loop(now) {
   const view = m4.lookAt(eye, camera.target, [0, 1, 0]);
   const vp = m4.mul(proj, view);
 
-  studio.render({ viewProj: vp, eye, lightDir: camera.lightDir, lightCol: camera.lightCol, ambient: camera.ambient }, fabricUniform);
+  studio.render({
+    viewProj: vp,
+    invViewProj: m4.invert(vp, m4Inv),
+    eye,
+    lightDir: camera.lightDir,
+    lightCol: camera.lightCol,
+    ambient: camera.ambient,
+  }, fabricUniform);
 
   // hud
   fpsAcc += rawDt; fpsCount++; fpsTimer += rawDt;
