@@ -454,12 +454,16 @@ class PyroStudioApp {
     });
 
     document.getElementById('btn-vortex').addEventListener('click', () => {
+      this.setParam('simMode', 0);
+      this.setParam('colorPalette', 3);
+      this.setParam('obstacleType', 0);
       this.setParam('emitterEnabled', true);
       this.setParam('emitterSwirl', 6.5);
       this.setParam('emitterUpwardVelocity', 4.8);
       this.setParam('vorticityConfinement', 9.5);
+      this.setParam('turbulenceStrength', 4.8);
       this.triggerSignatureExplosion();
-      this.showToast('🌪️ Rotational Fire Tornado Vortex Activated!');
+      this.showToast('🌪️ Fire tornado vortex column activated!');
     });
 
     document.getElementById('btn-collider-toggle').addEventListener('click', () => {
@@ -943,7 +947,7 @@ class PyroStudioApp {
     });
     this.addSlider(secVoxel, {
       key: 'voxelQuantization',
-      label: 'Voxel Quantization (Smooth ↔ Blocky)',
+      label: 'Voxel Quantization (Render-only; 0% usually fastest)',
       min: 0.0,
       max: 1.0,
       step: 0.01,
@@ -1433,7 +1437,47 @@ class PyroStudioApp {
     });
     this.addCheckbox(secOverlays, {
       key: 'showEmbers',
-      label: 'Show GPU-Advected Hot Ember Sparks (Fireflies)',
+      label: 'Show GPU-Advected Fireflies / Ash Motes',
+    });
+    this.addSlider(secOverlays, {
+      key: 'emberCount',
+      label: 'Firefly / Ash Mote Count',
+      min: 0,
+      max: 1000,
+      step: 10,
+      format: (v) => `${Math.round(v)}`,
+    });
+    this.addSlider(secOverlays, {
+      key: 'emberSize',
+      label: 'Firefly / Ash Mote Size',
+      min: 0.35,
+      max: 2.5,
+      step: 0.05,
+      format: (v) => `${v.toFixed(2)}x`,
+    });
+    this.addSlider(secOverlays, {
+      key: 'emberIntensity',
+      label: 'Firefly Brightness / Ash Visibility',
+      min: 0.1,
+      max: 3.0,
+      step: 0.05,
+      format: (v) => `${v.toFixed(2)}x`,
+    });
+    this.addSlider(secOverlays, {
+      key: 'emberLifetime',
+      label: 'Mote Lifetime / Drift Speed',
+      min: 0.25,
+      max: 3.0,
+      step: 0.05,
+      format: (v) => `${v.toFixed(2)}x`,
+    });
+    this.addSlider(secOverlays, {
+      key: 'emberAshiness',
+      label: 'Ashiness (Orange Firefly ↔ Grey Ash)',
+      min: 0.0,
+      max: 1.0,
+      step: 0.01,
+      format: (v) => `${Math.round(v * 100)}%`,
     });
   }
 

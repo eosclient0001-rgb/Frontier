@@ -31,8 +31,16 @@ The preset dock includes:
 - **Moving Ball in Water** — animated sphere with a crown splash and foam trail.
 - **Melted Chocolate + Spinning Wheel** — high viscosity, strong adhesion, glossy cocoa shading.
 - **Off-Road Tire in Thick Mud Bog** — viscous mud/clay, tread wetting, and heavy splatter.
+- **Fire Tornado / Alchemical Vortex** — high-swirl rising column with strong vorticity confinement.
+- **Ashfall / Grey Fireflies** — cooling smoke with adjustable grey ash motes.
 
 The inspector exposes pool level, viscosity, adhesion/wetting, surface tension, foam lifetime, splash energy, wave mode/height/speed, and liquid specular response. The `🌊 WATER SPLASH` and `🏄 SURF WAVE` viewport actions provide quick demonstrations without opening the inspector.
+
+## Performance notes
+
+- **Dynamic bounds** change the physical box used by the solver and raymarcher, but they do not change the selected `N³` voxel count. Expansion normally costs about the same GPU simulation time; it prevents explosions/waves from hitting the box boundary. A larger box spreads the same voxels over more space, so it can reduce detail per metre.
+- **Voxel Quantization** is primarily a rendering/debug control. `0%` trilinear sampling is usually the fastest. Intermediate quantization can be slightly slower because it adds sampling/blending work; the discrete DDA render mode has a different ray traversal cost and is not automatically faster.
+- For FPS, reduce grid resolution first, then render scale/raymarch steps, enable the GPU governor, and reduce ember count. Dynamic bounds are for physical room, not an FPS optimization.
 
 ## Is this exactly what Unreal Engine uses?
 

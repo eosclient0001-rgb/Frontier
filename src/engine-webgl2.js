@@ -575,8 +575,7 @@ export class WebGL2PyroEngine {
       }
 
       gl.uniform1i(u.uObstacleType, p.obstacleType);
-      const obstaclePos = renderCollider ? renderCollider.pos : [p.obstacleX, p.obstacleY, p.obstacleZ];
-      gl.uniform3fv(u.uObstaclePos, obstaclePos);
+      gl.uniform3f(u.uObstaclePos, p.obstacleX, p.obstacleY, p.obstacleZ);
       gl.uniform1f(u.uObstacleRadius, p.obstacleRadius);
 
       this.bindTex(0, this.buffers.vel0, u.uVelocityTex);
@@ -803,6 +802,10 @@ export class WebGL2PyroEngine {
       gl.uniform3fv(u.uCamUp, camera.up);
       gl.uniform1f(u.uTanHalfFov, tanHalfFov);
       gl.uniform1f(u.uAspect, camera.aspect);
+      gl.uniform1f(u.uEmberSize, p.emberSize ?? 1.0);
+      gl.uniform1f(u.uEmberLifetime, p.emberLifetime ?? 1.0);
+      gl.uniform1f(u.uEmberIntensity, p.emberIntensity ?? 1.4);
+      gl.uniform1f(u.uEmberAshiness, p.emberAshiness ?? 0.0);
 
       this.bindTex(0, this.buffers.vel0, u.uVelocityTex);
       this.bindTex(1, this.buffers.thermo0, u.uThermoTex);

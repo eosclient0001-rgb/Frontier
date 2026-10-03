@@ -1680,12 +1680,14 @@ uniform vec3 uCamRight;
 uniform vec3 uCamUp;
 uniform float uTanHalfFov;
 uniform float uAspect;
+uniform float uEmberSize;
+uniform float uEmberLifetime;
 
 out float vHeat;
 out float vAlpha;
 
 void main() {
-  float life = fract(aSeed.w + uTime * (0.28 + 0.22 * aSeed.x));
+  float life = fract(aSeed.w + uTime * (0.28 + 0.22 * aSeed.x) / max(uEmberLifetime, 0.15));
   float angle = aSeed.y * 6.2831853 + uTime * 1.4;
   float rad = sqrt(aSeed.z) * 0.18;
 
@@ -1722,7 +1724,7 @@ void main() {
   vAlpha = sin(life * 3.14159265) * smoothstep(0.05, 0.35, localActivity);
 
   gl_Position = vec4(ndcX, ndcY, 0.0, 1.0);
-  gl_PointSize = clamp((4.8 + 5.8 * aSeed.x) / zCam, 1.5, 9.5);
+  gl_PointSize = clamp((4.8 + 5.8 * aSeed.x) * uEmberSize / zCam, 1.5, 14.0);
 }
 `;
 
@@ -1731,6 +1733,8 @@ precision highp float;
 
 in float vHeat;
 in float vAlpha;
+uniform float uEmberIntensity;
+uniform float uEmberAshiness;
 layout(location = 0) out vec4 outColor;
 
 void main() {
@@ -1740,8 +1744,11 @@ void main() {
   if (r2 > 1.0) discard;
 
   float core = exp(-r2 * 3.2);
-  vec3 emberCol = mix(vec3(1.0, 0.22, 0.02), vec3(1.0, 0.88, 0.45), clamp(vHeat, 0.0, 1.0));
-  outColor = vec4(emberCol * core * 1.4, core * vAlpha * 0.85);
+  vec3 hotCol = mix(vec3(1.0, 0.22, 0.02), vec3(1.0, 0.88, 0.45), clamp(vHeat, 0.0, 1.0));
+  vec3 ashCol = mix(vec3(0.20, 0.22, 0.24), vec3(0.72, 0.75, 0.78), clamp(vHeat * 0.65, 0.0, 1.0));
+  vec3 emberCol = mix(hotCol, ashCol, clamp(uEmberAshiness, 0.0, 1.0));
+  float glow = mix(1.4, 0.65, clamp(uEmberAshiness, 0.0, 1.0)) * uEmberIntensity;
+  outColor = vec4(emberCol * core * glow, core * vAlpha * 0.85);
 }
 `;
 

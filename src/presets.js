@@ -179,6 +179,10 @@ export function createDefaultParams() {
     showFloorGrid: true,
     showEmbers: true,
     emberCount: 550,
+    emberSize: 1.0,
+    emberIntensity: 1.4,
+    emberLifetime: 1.0,
+    emberAshiness: 0.0, // 0 = hot orange fireflies, 1 = cool grey ash motes
     showAtlasMinimap: true,
     atlasMinimapField: 0,
   };
@@ -639,7 +643,7 @@ export const PRESETS = {
   },
 
   wildfire_tornado: {
-    name: '🌪️ Alchemical Wildfire Vortex',
+    name: '🌪️ Fire Tornado / Alchemical Vortex',
     description: 'High-swirl fire tornado with copper-emerald blackbody radiation and intense rotational vorticity.',
     triggerExplosionOnLoad: true,
     params: {
@@ -662,6 +666,30 @@ export const PRESETS = {
       emitterTemperature: 3.9,
       emitterFuel: 3.2,
       obstacleType: 0,
+      showActiveVoxelCells: false,
+    },
+  },
+
+  ashfall_motes: {
+    name: '🌫️ Ashfall / Grey Fireflies',
+    description: 'A cooling afterburn cloud with dense grey ash motes instead of orange sparks—use the ember sliders to tune size, brightness, lifetime, and ashiness.',
+    triggerExplosionOnLoad: true,
+    params: {
+      simMode: 0,
+      emitterEnabled: false,
+      blastStrength: 7.0,
+      blastRadius: 0.20,
+      blastTemperature: 2.4,
+      blastFuel: 1.2,
+      blastSmoke: 3.8,
+      colorPalette: 1,
+      smokeDissipation: 0.08,
+      showEmbers: true,
+      emberCount: 900,
+      emberSize: 1.25,
+      emberIntensity: 0.95,
+      emberLifetime: 1.65,
+      emberAshiness: 1.0,
       showActiveVoxelCells: false,
     },
   },
