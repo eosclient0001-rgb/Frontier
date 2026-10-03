@@ -340,7 +340,11 @@ vec3 rayDirection(vec2 uv) {
 }
 
 vec3 worldAtDepth(vec2 uv, float depth) {
-  return uCamPos + rayDirection(uv) * depth;
+  vec3 dir = rayDirection(uv);
+  // Particle depth is stored along the camera forward axis, so recover the
+  // actual ray distance before reconstructing world space off the image centre.
+  float forwardProjection = max(dot(dir, uCamForward), 0.001);
+  return uCamPos + dir * (depth / forwardProjection);
 }
 
 float readDepth(vec2 uv) {
@@ -496,6 +500,7 @@ export class ParticleFluidWebGL2Engine {
     this.maxParticles = this.particleTexSize * this.particleTexSize;
     this.particleCount = this.getParticleCount(params.gridResolution);
     this.time = 0;
+    this.simDurationMs = 0;
     this.liquidSplash = null;
     this.hydroCollider = null;
     this.renderTargets = null;
@@ -770,6 +775,7 @@ export class ParticleFluidWebGL2Engine {
   }
 
   stepSimulation(rawDt) {
+    const t0 = performance.now();
     const gl = this.gl;
     const dt = Math.min(rawDt, 0.025) * (this.params.timeScale || 1);
     this.time += dt;
@@ -793,6 +799,7 @@ export class ParticleFluidWebGL2Engine {
       this.liquidSplash.age += dt;
       if (this.liquidSplash.age > 2.4) this.liquidSplash = null;
     }
+    this.simDurationMs = performance.now() - t0;
   }
 
   ensureRenderTargets() {

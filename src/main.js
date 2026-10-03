@@ -532,7 +532,7 @@ class PyroStudioApp {
 
     document.getElementById('btn-dam-break')?.addEventListener('click', () => {
       this.applyPreset('hydro_dam_breaker');
-      this.showToast('🧱 3D dam break released: volumetric water column + pressure surge');
+      this.showToast('🧱 3D dam break released: persistent marker column + pressure surge');
     });
 
     const btnPause = document.getElementById('btn-pause');
@@ -550,7 +550,7 @@ class PyroStudioApp {
 
     document.getElementById('btn-clear').addEventListener('click', () => {
       if (this.engine) this.engine.clearGrid();
-      this.showToast('🧹 Cleared all 3D voxel fields');
+      this.showToast(Number(this.params.simMode) === 1 ? '🧹 Reset persistent liquid markers' : '🧹 Cleared all 3D voxel fields');
     });
   }
 
