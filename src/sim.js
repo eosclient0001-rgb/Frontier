@@ -44,6 +44,8 @@ export class FluidSim {
     this.lam = new Float32Array(M);
     this.rho = new Float32Array(M);
     this.foam = new Float32Array(M);
+    this.conc = new Float32Array(M); // fraction of secondary fluid B
+    this.mixRate = 0.15;
     this.cell = new Int32Array(M);
     this.sorted = new Int32Array(M);
     this.nb = new Int32Array(M * MAXN);
@@ -57,8 +59,10 @@ export class FluidSim {
     this.boxes = [];      // static AABB obstacles {c:[..], h:[..]}
     this.ramp = null;     // {x0, slope}
     this.piston = null;   // {amp, period, x, vx}
+    this.emitters = [];
     this.emitter = null;  // {pos, dir, speed, radius, acc, until}
     this.setMaterial('water');
+    this.setMaterial2('milk');
     this.configure(0.05, [3, 2, 1.2]);
   }
 
@@ -66,6 +70,7 @@ export class FluidSim {
     this.matKey = key;
     this.mat = { ...MATERIALS[key] };
   }
+  setMaterial2(key) { this.mat2Key = key; this.mat2 = { ...MATERIALS[key] }; }
 
   configure(spacing, size) {
     this.s = spacing;
@@ -99,29 +104,30 @@ export class FluidSim {
     this.eps = this.denomRef * 0.08;
     const dq = 0.2 * h; const t = this.h2 - dq * dq;
     this.Wdq = this.K6 * t * t * t;
-    this.pmass = () => this.mat.density * spacing * spacing * spacing;
+    this.pmass = () => (this.mat.density * (1 - this.avgConc) + this.mat2.density * this.avgConc) * spacing * spacing * spacing;
+    this.avgConc = 0;
   }
 
-  clear() { this.n = 0; this.spheres = []; this.boxes = []; this.ramp = null; this.piston = null; this.emitter = null; this.time = 0; }
+  clear() { this.emitters = []; this.n = 0; this.spheres = []; this.boxes = []; this.ramp = null; this.piston = null; this.emitter = null; this.time = 0; }
 
-  addParticle(x, y, z, vx = 0, vy = 0, vz = 0) {
+  addParticle(x, y, z, vx = 0, vy = 0, vz = 0, conc = 0) {
     if (this.n >= this.max) return false;
     const i = this.n++, i3 = i * 3;
     this.x[i3] = x; this.x[i3 + 1] = y; this.x[i3 + 2] = z;
     this.p[i3] = x; this.p[i3 + 1] = y; this.p[i3 + 2] = z;
     this.v[i3] = vx; this.v[i3 + 1] = vy; this.v[i3 + 2] = vz;
-    this.foam[i] = 0;
+    this.foam[i] = 0; this.conc[i] = conc;
     return true;
   }
 
-  addBlock(min, max, vel = [0, 0, 0]) {
+  addBlock(min, max, vel = [0, 0, 0], conc = 0) {
     const s = this.s;
     for (let x = min[0] + s * 0.5; x < max[0]; x += s)
       for (let y = min[1] + s * 0.5; y < max[1]; y += s)
         for (let z = min[2] + s * 0.5; z < max[2]; z += s) {
           if (this.solidDist(x, y, z) < this.pr) continue;
           const j = s * 0.02;
-          if (!this.addParticle(x + (Math.random() - .5) * j, y + (Math.random() - .5) * j, z + (Math.random() - .5) * j, vel[0], vel[1], vel[2])) return;
+          if (!this.addParticle(x + (Math.random() - .5) * j, y + (Math.random() - .5) * j, z + (Math.random() - .5) * j, vel[0], vel[1], vel[2], conc)) return;
         }
   }
 
@@ -230,6 +236,9 @@ export class FluidSim {
     const f = this.foam, t1 = this.lam;
     for (let k = 0; k < n; k++) t1[k] = f[o[k]];
     f.set(t1.subarray(0, n));
+    const cc = this.conc;
+    for (let k = 0; k < n; k++) t1[k] = cc[o[k]];
+    cc.set(t1.subarray(0, n));
   }
 
   findNeighbors() {
@@ -310,7 +319,11 @@ export class FluidSim {
   }
 
   emit(dt) {
-    const e = this.emitter; if (!e || this.time > e.until) return;
+    if (this.emitter) this.emitOne(this.emitter, dt);
+    for (const e of this.emitters) this.emitOne(e, dt);
+  }
+  emitOne(e, dt) {
+    if (this.time > e.until) return;
     e.acc += e.speed * dt;
     const s = this.s;
     while (e.acc >= s) {
@@ -328,7 +341,7 @@ export class FluidSim {
         const jit = (Math.random() - 0.5) * s * 0.1;
         const off = e.acc;
         this.addParticle(e.pos[0] + ax * i + bx * j + d[0] * off + jit, e.pos[1] + ay * i + by * j + d[1] * off, e.pos[2] + az * i + bz * j + d[2] * off - jit,
-          d[0] * e.speed, d[1] * e.speed, d[2] * e.speed);
+          d[0] * e.speed, d[1] * e.speed, d[2] * e.speed, e.conc || 0);
       }
     }
   }
@@ -361,7 +374,8 @@ export class FluidSim {
     if ((this._stepCount = (this._stepCount | 0) + 1) % 8 === 0) { this.reorder(); this.buildGrid(); }
     this.findNeighbors();
 
-    const cohesion = m.cohesion;
+    const m2 = this.mat2, conc = this.conc;
+    const coh0 = m.cohesion, coh1 = m2.cohesion;
     const sK = 0.0015 / this.denomRef; // tensile instability correction
     const iWdq = 1 / this.Wdq;
     const W0 = K6 * h2 * h2 * h2;
@@ -385,7 +399,7 @@ export class FluidSim {
         }
         rho[i] = r_;
         let C = r_ * irho0 - 1;
-        if (C < 0) C *= cohesion;
+        if (C < 0) C *= coh0 + (coh1 - coh0) * conc[i];
         lam[i] = -C / (s2 + gx * gx + gy * gy + gz * gz + this.eps);
       }
       for (let i = 0; i < n; i++) {
@@ -424,39 +438,55 @@ export class FluidSim {
 
     // XSPH viscosity (normalized, Jacobi, repeated for very viscous fluids)
     const tv = this.tv;
-    const c = m.visc;
-    if (c > 0) {
-      const nbw = this.nbw;
-      for (let i = 0; i < n; i++) {
-        const i3 = i * 3, xi = p[i3], yi = p[i3 + 1], zi = p[i3 + 2], base = i * MAXN, cn = nbc[i];
-        for (let k = 0; k < cn; k++) {
-          const j3 = nb[base + k] * 3;
-          const dx = xi - p[j3], dy = yi - p[j3 + 1], dz = zi - p[j3 + 2];
-          const r2 = dx * dx + dy * dy + dz * dz; const t = h2 - r2;
-          nbw[base + k] = t > 0 ? K6 * t * t * t : 0;
-        }
-      }
-      for (let vi = 0; vi < m.viscIters; vi++) {
-        for (let i = 0; i < n; i++) {
-          const i3 = i * 3, base = i * MAXN, cn = nbc[i];
-          let ax = v[i3] * W0, ay = v[i3 + 1] * W0, az = v[i3 + 2] * W0, ws = W0;
-          for (let k = 0; k < cn; k++) {
-            const w = nbw[base + k], j3 = nb[base + k] * 3;
-            ax += v[j3] * w; ay += v[j3 + 1] * w; az += v[j3 + 2] * w; ws += w;
-          }
-          const iw = 1 / ws;
-          tv[i3] = v[i3] + c * (ax * iw - v[i3]); tv[i3 + 1] = v[i3 + 1] + c * (ay * iw - v[i3 + 1]); tv[i3 + 2] = v[i3 + 2] + c * (az * iw - v[i3 + 2]);
-        }
-        v.set(tv.subarray(0, n * 3));
+    const c0 = m.visc, c1 = m2.visc;
+    const nbw = this.nbw;
+    for (let i = 0; i < n; i++) {
+      const i3 = i * 3, xi = p[i3], yi = p[i3 + 1], zi = p[i3 + 2], base = i * MAXN, cn = nbc[i];
+      for (let k = 0; k < cn; k++) {
+        const j3 = nb[base + k] * 3;
+        const dx = xi - p[j3], dy = yi - p[j3 + 1], dz = zi - p[j3 + 2];
+        const r2 = dx * dx + dy * dy + dz * dz; const t = h2 - r2;
+        nbw[base + k] = t > 0 ? K6 * t * t * t : 0;
       }
     }
+    const it0 = m.viscIters, it1 = m2.viscIters, itMax = Math.max(it0, it1);
+    if (c0 > 0 || c1 > 0) for (let vi = 0; vi < itMax; vi++) {
+      for (let i = 0; i < n; i++) {
+        const i3 = i * 3, base = i * MAXN, cn = nbc[i], ci = conc[i];
+        // per-particle viscosity from the mixture; low-viscosity particles stop iterating earlier
+        const myIt = it0 + (it1 - it0) * ci;
+        if (vi >= myIt + 0.5) { tv[i3] = v[i3]; tv[i3 + 1] = v[i3 + 1]; tv[i3 + 2] = v[i3 + 2]; continue; }
+        const c = c0 + (c1 - c0) * ci;
+        let ax = v[i3] * W0, ay = v[i3 + 1] * W0, az = v[i3 + 2] * W0, ws = W0;
+        for (let k = 0; k < cn; k++) {
+          const w = nbw[base + k], j3 = nb[base + k] * 3;
+          ax += v[j3] * w; ay += v[j3 + 1] * w; az += v[j3 + 2] * w; ws += w;
+        }
+        const iw = 1 / ws;
+        tv[i3] = v[i3] + c * (ax * iw - v[i3]); tv[i3 + 1] = v[i3 + 1] + c * (ay * iw - v[i3 + 1]); tv[i3 + 2] = v[i3 + 2] + c * (az * iw - v[i3 + 2]);
+      }
+      v.set(tv.subarray(0, n * 3));
+    }
+
+    // concentration diffusion -> fluids blend where they touch (milk + chocolate = chocolate milk)
+    let csum = 0;
+    if (this.mixRate > 0) {
+      const lam = this.lam, a = Math.min(1, this.mixRate * dt * 4);
+      for (let i = 0; i < n; i++) {
+        const base = i * MAXN, cn = nbc[i]; let acc = conc[i] * W0, ws = W0;
+        for (let k = 0; k < cn; k++) { const w = nbw[base + k]; acc += conc[nb[base + k]] * w; ws += w; }
+        lam[i] = conc[i] + a * (acc / ws - conc[i]);
+      }
+      for (let i = 0; i < n; i++) { conc[i] = lam[i]; csum += lam[i]; }
+    } else for (let i = 0; i < n; i++) csum += conc[i];
+    this.avgConc = n ? csum / n : 0;
 
     // adhesion + friction against solids, yield stress, foam
     const adhR = this.s * 1.6;
-    const adh = m.adhesion, fr = m.friction, yv = m.yieldV;
-    const foamK = m.foam;
     for (let i = 0; i < n; i++) {
-      const i3 = i * 3;
+      const i3 = i * 3, ci = conc[i];
+      const adh = m.adhesion + (m2.adhesion - m.adhesion) * ci, fr = m.friction + (m2.friction - m.friction) * ci;
+      const yv = m.yieldV + (m2.yieldV - m.yieldV) * ci, foamK = m.foam + (m2.foam - m.foam) * ci;
       const d = this.solidDist(p[i3], p[i3 + 1], p[i3 + 2]);
       if (d < adhR) {
         const nx = this._nx, ny = this._ny, nz = this._nz;
@@ -507,10 +537,11 @@ export class FluidSim {
       const Vs = (4 / 3) * Math.PI * R * R * R;
       const im = 1 / S.m;
       // buoyancy
-      S.v[1] += m.density * Vs * frac * -this.gravity * im * dt;
+      const ac = this.avgConc, mden = m.density * (1 - ac) + m2.density * ac, mvis = m.visc * (1 - ac) + m2.visc * ac;
+      S.v[1] += mden * Vs * frac * -this.gravity * im * dt;
       if (cnt > 0) {
         fvx /= cnt; fvy /= cnt; fvz /= cnt;
-        const k = (3 + 60 * m.visc * m.visc) * frac * Math.min(1, 1500 / S.density + 0.2);
+        const k = (3 + 60 * mvis * mvis) * frac * Math.min(1, 1500 / S.density + 0.2);
         const a = 1 - Math.exp(-k * dt);
         S.v[0] += (fvx - S.v[0]) * a; S.v[1] += (fvy - S.v[1]) * a; S.v[2] += (fvz - S.v[2]) * a;
       }

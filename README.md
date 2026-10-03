@@ -16,6 +16,12 @@ python3 -m http.server 8000   # then open http://localhost:8000
 - **Whitewater**: fast, under-dense particles generate foam/spray.
 - Colliders: tank, static boxes, beach ramp, moving wave-maker piston, spheres. Plus a stream emitter.
 
+## Two-fluid mixing
+Each particle carries a concentration of fluid B. Viscosity, cohesion, adhesion, friction, yield stress and foam are interpolated per particle, and the concentration diffuses between neighbors, so milk poured into chocolate forms marbled swirls and slowly becomes chocolate milk. In the composite shader, a thickness-weighted concentration buffer blends the two materials' optical properties (absorption, scattering, albedo, roughness, refraction). Mixing rate is adjustable, and 0 keeps the fluids separate.
+
+## Threading
+The solver runs in a Web Worker (`src/worker.js`) on a fixed 120 Hz clock. The render thread draws the latest snapshot, so the camera and UI stay smooth even when the simulation is heavy. If the CPU can't keep up, the sim runs in slow motion instead of stalling.
+
 ## Rendering (`src/renderer.js`)
 1. Scene pass (tiles, obstacles, objects, procedural sky, contact shadows/AO)
 2. Particle sphere-impostor **depth** pass (linear eye depth, R32F)
@@ -31,4 +37,4 @@ python3 -m http.server 8000   # then open http://localhost:8000
 | Honey | amber, translucent, glowing | very viscous, very sticky, coils |
 | Mud | matte, grainy, wet patches | viscous with a yield stress, clumps |
 
-Controls: drag to orbit, scroll to zoom, click to throw an object, keys 1–5 switch material live, R resets, P shows raw particles.
+Controls: drag to orbit, scroll to zoom, click to throw an object, keys 1–5 switch fluid A live, B pours fluid B, R resets, P shows raw particles.

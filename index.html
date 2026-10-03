@@ -28,14 +28,17 @@
 <div id="ui">
   <h1>Frontier Fluids</h1>
   <div class="sub">PBF solver · screen-space fluid rendering</div>
-  <h2>Material</h2><div class="row" id="mats"></div>
+  <h2>Fluid A (scene)</h2><div class="row" id="mats"></div>
+  <h2>Fluid B (poured in)</h2><div class="row" id="mats2"></div>
+  <div class="row" style="margin-top:6px"><button id="pourB">Pour B (key B)</button></div>
+  <label style="margin-top:6px"><span>Mixing rate</span><input type="range" id="mixr" min="0" max="2" step="0.01" value="0.15"><em id="mixv">0.15</em></label>
   <h2>Scenario</h2><div class="row" id="scen"></div>
-  <h2>Properties</h2><div id="sliders"></div>
+  <h2>Properties</h2><div class="row" id="edit"></div><div id="sliders"></div>
   <h2>Thrown objects</h2><div class="row" id="balls"></div>
   <h2>Quality</h2><div class="row" id="qual"></div>
   <h2>Controls</h2>
   <div class="row"><button id="reset">Reset (R)</button><button id="pause">Pause</button><button id="debug">Particles (P)</button></div>
-  <div id="help">Drag to orbit · scroll to zoom · <b>click to throw an object</b> · 1–5 switch material live</div>
+  <div id="help">Drag to orbit · scroll to zoom · <b>click to throw an object</b> · 1–5 switch fluid A live · B pours fluid B</div>
 </div>
 <div id="stats"></div>
 <button id="hide">Toggle UI</button>

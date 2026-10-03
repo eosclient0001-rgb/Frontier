@@ -94,11 +94,11 @@ void main(){
 }`;
 
 const PT_VS = `#version 300 es
-in vec3 aPos; in float aFoam;
+in vec3 aPos; in float aFoam; in float aConc;
 uniform mat4 uView, uProj; uniform float uRadius, uScreenH;
-out vec3 vVP; out float vFoam;
+out vec3 vVP; out float vFoam; out float vConc;
 void main(){
-  vec4 vp = uView*vec4(aPos,1.0); vVP = vp.xyz; vFoam = aFoam;
+  vec4 vp = uView*vec4(aPos,1.0); vVP = vp.xyz; vFoam = aFoam; vConc = aConc;
   gl_Position = uProj*vp;
   gl_PointSize = max(uRadius*uProj[1][1]*uScreenH/gl_Position.w, 1.0);
 }`;
@@ -116,23 +116,24 @@ void main(){
 
 const PT_THICK_FS = `#version 300 es
 precision highp float;
-in vec3 vVP; in float vFoam; uniform float uRadius;
+in vec3 vVP; in float vFoam; in float vConc; uniform float uRadius;
 out vec4 o;
 void main(){
   vec2 c = gl_PointCoord*2.0-1.0; float r2 = dot(c,c); if(r2>1.0) discard;
   float t = sqrt(1.0-r2);
-  o = vec4(2.0*uRadius*t, vFoam*t, 0.0, 0.0);
+  float th = 2.0*uRadius*t;
+  o = vec4(th, vFoam*t, vConc*th, 0.0);
 }`;
 
 const PT_DEBUG_FS = COMMON + `
-in vec3 vVP; in float vFoam; uniform mat4 uProj, uView; uniform float uRadius; uniform vec3 uColor;
+in vec3 vVP; in float vFoam; in float vConc; uniform mat4 uProj, uView; uniform float uRadius; uniform vec3 uColor, uColor2;
 out vec4 o;
 void main(){
   vec2 c = gl_PointCoord*2.0-1.0; c.y=-c.y; float r2 = dot(c,c); if(r2>1.0) discard;
   vec3 n = vec3(c, sqrt(1.0-r2)); vec3 p = vVP + n*uRadius;
   vec4 cp = uProj*vec4(p,1.0); gl_FragDepth = cp.z/cp.w*0.5+0.5;
   vec3 L = (uView*vec4(uSunDir,0.0)).xyz;
-  vec3 col = mix(uColor, vec3(1.0), vFoam)*(max(dot(n,L),0.0)*0.9+0.3);
+  vec3 col = mix(mix(uColor, uColor2, vConc), vec3(1.0), vFoam)*(max(dot(n,L),0.0)*0.9+0.3);
   o = vec4(pow(aces(col),vec3(1.0/2.2)),1.0);
 }`;
 
@@ -163,7 +164,8 @@ const COMP_FS = COMMON + `
 in vec2 vUv;
 uniform sampler2D uScene, uSceneDepth, uFluidDepth, uThick;
 uniform mat4 uInvView; uniform float uP00, uP11, uNear, uFar; uniform vec2 uRes;
-uniform vec3 uAbsorb, uAlbedo, uSSS; uniform float uScatter, uRough, uF0, uRefract, uWrap, uGrain, uEnv, uTime;
+uniform vec3 uAbsorbA, uAlbedoA, uSSSA; uniform float uScatterA, uRoughA, uF0A, uRefractA, uWrapA, uGrainA, uEnvA;
+uniform vec3 uAbsorbB, uAlbedoB, uSSSB; uniform float uScatterB, uRoughB, uF0B, uRefractB, uWrapB, uGrainB, uEnvB;
 out vec4 o;
 vec3 viewPos(vec2 uv, float d){ vec2 ndc = uv*2.0-1.0; return vec3(ndc.x*d/uP00, ndc.y*d/uP11, -d); }
 float hash3(vec3 p){ p = fract(p*0.3183099+0.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
@@ -178,7 +180,7 @@ void main(){
   float zb = texture(uSceneDepth, vUv).r*2.0-1.0;
   float sceneLin = 2.0*uNear*uFar/(uFar+uNear - zb*(uFar-uNear));
   float d = texelFetch(uFluidDepth, ip, 0).r;
-  vec2 th = texelFetch(uThick, ip, 0).rg;
+  vec3 th = texelFetch(uThick, ip, 0).rgb;
   if(d > 1e4 || d > sceneLin + 0.002 || th.x < 1e-4){ o = vec4(pow(scene, vec3(1.0/2.2)),1.0); return; }
 
   // ---- normal reconstruction from smoothed depth (choose smaller derivative to avoid edge artifacts)
@@ -194,6 +196,14 @@ void main(){
   vec3 V = normalize(-P);
   if(dot(N,V)<0.0) N = -N;
 
+  // per-pixel material blend from thickness-weighted concentration of fluid B
+  float mx = clamp(th.z/max(th.x,1e-4), 0.0, 1.0);
+  vec3 uAbsorb = mix(uAbsorbA, uAbsorbB, mx), uAlbedo = mix(uAlbedoA, uAlbedoB, mx), uSSS = mix(uSSSA, uSSSB, mx);
+  // scattering mixes in log-space so a little milk clouds water (like real emulsions)
+  float uScatter = mix(uScatterA, uScatterB, sqrt(mx));
+  if(uScatterA > uScatterB) uScatter = mix(uScatterA, uScatterB, mx*mx);
+  float uRough = mix(uRoughA, uRoughB, mx), uF0 = mix(uF0A, uF0B, mx), uRefract = mix(uRefractA, uRefractB, mx);
+  float uWrap = mix(uWrapA, uWrapB, mx), uGrain = mix(uGrainA, uGrainB, mx), uEnv = mix(uEnvA, uEnvB, mx);
   vec3 Pw = (uInvView*vec4(P,1.0)).xyz;
   vec3 Nw = normalize((uInvView*vec4(N,0.0)).xyz);
   vec3 Vw = normalize((uInvView*vec4(V,0.0)).xyz);
@@ -251,7 +261,7 @@ function compile(gl, vs, fs) {
   const mk = (t, s) => { const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) + '\n' + s.split('\n').map((l, i) => (i + 1) + ': ' + l).join('\n')); return sh; };
   const p = gl.createProgram();
   gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs));
-  gl.bindAttribLocation(p, 0, 'aPos'); gl.bindAttribLocation(p, 1, 'aNrm'); gl.bindAttribLocation(p, 1, 'aFoam');
+  gl.bindAttribLocation(p, 0, 'aPos'); gl.bindAttribLocation(p, 1, 'aNrm'); gl.bindAttribLocation(p, 1, 'aFoam'); gl.bindAttribLocation(p, 2, 'aConc');
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
   const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
@@ -316,6 +326,8 @@ export class Renderer {
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
     this.fbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.fbuf);
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
+    this.cbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.cbuf);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
     this.emptyVao = gl.createVertexArray();
     this.sunDir = (() => { const v = [0.45, 0.8, 0.35]; const l = Math.hypot(...v); return v.map(x => x / l); })();
@@ -406,8 +418,8 @@ export class Renderer {
       this.drawMesh(null, mat4.trs([cx, cy, D / 2], [Math.cos(th / 2), 0, 0, Math.sin(th / 2)], [len / 2, t, D / 2]), [0.76, 0.68, 0.5], 1);
     }
     for (const B of sim.boxes) this.drawMesh(null, mat4.trs(B.c, id, B.h), [0.55, 0.58, 0.62], 5);
-    if (sim.emitter && sim.time < sim.emitter.until) {
-      const e = sim.emitter; this.drawMesh(null, mat4.trs([e.pos[0], e.pos[1] + 0.12, e.pos[2]], id, [e.radius + 0.03, 0.1, e.radius + 0.03]), [0.4, 0.4, 0.42], 5);
+    for (const e of sim.emitters) {
+      this.drawMesh(null, mat4.trs([e.pos[0], e.pos[1] + 0.12, e.pos[2]], id, [e.radius + 0.03, 0.1, e.radius + 0.03]), [0.4, 0.4, 0.42], 5);
     }
     for (const s of sim.spheres) this.drawMesh(null, mat4.trs(s.c, s.rot, [s.r, s.r, s.r]), s.color, s.fixed ? 5 : 2, this.sphere);
     gl.disable(gl.CULL_FACE);
@@ -418,6 +430,7 @@ export class Renderer {
     const n = sim.n;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.pbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.x.subarray(0, n * 3), gl.STREAM_DRAW);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.fbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.foam.subarray(0, n), gl.STREAM_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.cbuf); gl.bufferData(gl.ARRAY_BUFFER, sim.conc.subarray(0, n), gl.STREAM_DRAW);
     const radius = sim.s * opts.radiusScale;
     const setPt = (prog) => {
       gl.useProgram(prog.p);
@@ -428,7 +441,7 @@ export class Renderer {
     const mr = sim.mat.render;
 
     if (opts.debug) {
-      setPt(P.pDebug); gl.uniform3fv(P.pDebug.u.uColor, mr.albedo); gl.uniform3fv(P.pDebug.u.uSunDir, sun);
+      setPt(P.pDebug); gl.uniform3fv(P.pDebug.u.uColor, mr.albedo); gl.uniform3fv(P.pDebug.u.uColor2, sim.mat2.render.albedo); gl.uniform3fv(P.pDebug.u.uSunDir, sun);
       gl.uniform1f(P.pDebug.u.uRadius, sim.s * 0.5);
       gl.drawArrays(gl.POINTS, 0, n);
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.sceneFbo); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
@@ -468,10 +481,11 @@ export class Renderer {
     bind(0, this.sceneCol, 'uScene'); bind(1, this.sceneDepth, 'uSceneDepth'); bind(2, src, 'uFluidDepth'); bind(3, this.thick, 'uThick');
     gl.uniformMatrix4fv(C.u.uInvView, false, invView);
     gl.uniform1f(C.u.uP00, proj[0]); gl.uniform1f(C.u.uP11, proj[5]); gl.uniform1f(C.u.uNear, near); gl.uniform1f(C.u.uFar, far);
-    gl.uniform2f(C.u.uRes, w, h); gl.uniform3fv(C.u.uSunDir, sun); gl.uniform1f(C.u.uTime, sim.time);
-    gl.uniform3fv(C.u.uAbsorb, mr.absorb); gl.uniform3fv(C.u.uAlbedo, mr.albedo); gl.uniform3fv(C.u.uSSS, mr.sss);
-    gl.uniform1f(C.u.uScatter, mr.scatter); gl.uniform1f(C.u.uRough, mr.rough); gl.uniform1f(C.u.uF0, mr.f0);
-    gl.uniform1f(C.u.uRefract, mr.refract); gl.uniform1f(C.u.uWrap, mr.wrap); gl.uniform1f(C.u.uGrain, mr.grain); gl.uniform1f(C.u.uEnv, mr.env);
+    gl.uniform2f(C.u.uRes, w, h); gl.uniform3fv(C.u.uSunDir, sun);
+    for (const [sfx, r] of [['A', mr], ['B', sim.mat2.render]]) {
+      gl.uniform3fv(C.u['uAbsorb' + sfx], r.absorb); gl.uniform3fv(C.u['uAlbedo' + sfx], r.albedo); gl.uniform3fv(C.u['uSSS' + sfx], r.sss);
+      for (const [k, v] of [['Scatter', r.scatter], ['Rough', r.rough], ['F0', r.f0], ['Refract', r.refract], ['Wrap', r.wrap], ['Grain', r.grain], ['Env', r.env]]) gl.uniform1f(C.u['u' + k + sfx], v);
+    }
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.activeTexture(gl.TEXTURE0);
   }
