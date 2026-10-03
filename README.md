@@ -118,9 +118,15 @@ src/
   ui.js             control-panel widgets
   math.js           vec3 / mat4 / helpers
 tools/
-  validate.mjs      geometry + data-pipeline checks
-  wgsl-check.mjs    parses every shader (wgsl_reflect) and verifies struct layouts
-  sim-test.mjs      CPU mirror of the GPU solver, projection accuracy + stability
+  validate.mjs         geometry + data-pipeline checks
+  wgsl-check.mjs       shader parsing, JS <-> WGSL struct contract, solver contract
+  sim-test.mjs         CPU mirror of the GPU solver: projection accuracy + stability
+  gpu-mock.mjs         validating WebGPU mock (bind groups, usages, draws)
+  app-smoke.mjs        boots the studio against the mock, steps and renders
+  ui-smoke.mjs         builds every control-panel widget in a stubbed DOM
+  software-render.mjs  CPU port of the fabric shader -> PNG previews
+  preview.mjs          ASCII silhouette dump for quick geometry checks
+renders/               PNG previews produced by tools/software-render.mjs
 ```
 
 ## Tests
