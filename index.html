@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Niagara Grid3D // Real-Time Pyro, Water, Mud & Chocolate Simulator (WebGL2 / WebGPU)</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- TOP STUDIO HEADER BAR -->
+      <header class="studio-header">
+        <div class="brand-block">
+          <div class="brand-icon">
+            <span class="flame-dot"></span>
+          </div>
+          <div class="brand-text">
+            <h1>NIAGARA GRID3D // PYRO + HYDRO LAB</h1>
+            <span class="subtitle">3D Voxel Gas, Shallow Water &amp; Volumetric Raymarcher</span>
+          </div>
+        </div>
+
+        <!-- Voxel Grid Resolution Quick Bar (16³ Ultra-Low GPU up to 128³ Cinema) -->
+        <div class="header-group">
+          <span class="group-label">VOXEL GRID</span>
+          <div class="segmented-control" id="res-quick-bar">
+            <button data-res="16" title="16x16x16 (4,096 voxels — Ultra-Low GPU / Integrated)">16³</button>
+            <button data-res="24" title="24x24x24 (13,824 voxels — Low-End GPU / Fast)">24³</button>
+            <button data-res="32" title="32x32x32 (32,768 voxels)">32³</button>
+            <button data-res="48" title="48x48x48 (110,592 voxels)">48³</button>
+            <button data-res="64" class="active" title="64x64x64 (262,144 voxels — UE5 Default)">64³</button>
+            <button data-res="96" title="96x96x96 (884,736 voxels)">96³</button>
+            <button data-res="128" title="128x128x128 (2,097,152 voxels)">128³</button>
+          </div>
+        </div>
+
+        <!-- Simulation Domain Selector -->
+        <div class="header-group">
+          <span class="group-label">SIM</span>
+          <div class="segmented-control" id="sim-mode-switcher">
+            <button data-sim-mode="0" class="active">🔥 Pyro</button>
+            <button data-sim-mode="1">🌊 Hydro</button>
+          </div>
+        </div>
+
+        <!-- Render Channel Selector -->
+        <div class="header-group">
+          <span class="group-label">CHANNEL</span>
+          <select id="header-channel-select" class="studio-select"></select>
+        </div>
+
+        <!-- Backend Switcher (WebGL2 / WebGPU) -->
+        <div class="header-group">
+          <span class="group-label">BACKEND</span>
+          <div class="segmented-control" id="backend-switcher">
+            <button data-backend="webgl2" class="active">WebGL2</button>
+            <button data-backend="webgpu" id="btn-backend-webgpu">WebGPU</button>
+          </div>
+        </div>
+
+        <!-- Telemetry Readout -->
+        <div class="telemetry-bar">
+          <div class="stat-pill">
+            <span class="stat-label">FPS</span>
+            <span class="stat-value" id="stat-fps">60</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-label">VOXELS</span>
+            <span class="stat-value" id="stat-voxels">262.1K</span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-label">BOUNDS</span>
+            <span class="stat-value" id="stat-bounds">1.9×2.1m</span>
+          </div>
+          <div class="stat-pill backend-pill">
+            <span class="status-dot" id="backend-dot"></span>
+            <span class="stat-value" id="stat-backend">WebGL2</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- MAIN WORKSPACE: 3D VIEWPORT + RIGHT INSPECTOR -->
+      <main class="studio-main">
+        <!-- LEFT/CENTER 3D VOLUMETRIC VIEWPORT -->
+        <section class="viewport-container" id="viewport-container">
+          <canvas id="pyro-canvas"></canvas>
+
+          <!-- Top-Left Viewport Overlay HUD -->
+          <div class="viewport-hud-top">
+            <div class="hud-badge">
+              <span class="badge-tag">SOLVER</span>
+              <span id="hud-solver-desc">Eulerian 3D Grid + BFECC Advection + 22x Jacobi Poisson + 3D Fire Irradiance</span>
+            </div>
+            <div class="hud-badge">
+              <span class="badge-tag">SHADING</span>
+              <span id="hud-shader-desc">Planckian Blackbody + Dual-Octave Beer-Lambert + Henyey-Greenstein + Fireflies</span>
+            </div>
+          </div>
+
+          <!-- Top-Right Quick Tool & Voxel Mode Pills -->
+          <div class="viewport-quick-modes">
+            <div class="segmented-control tool-switcher" id="tool-switcher" title="Choose Left-Mouse Viewport Interaction Mode">
+              <button data-tool="orbit" class="active">🎥 Orbit</button>
+              <button data-tool="flamethrower">🔥 3D Pyro Brush</button>
+              <button data-tool="detonate">💥 Click Blast</button>
+            </div>
+            <button class="hud-btn active" id="btn-toggle-dyn-bounds" title="Toggle Dynamic Auto-Expanding Explosion Bounds [B]">
+              📐 Dyn Bounds: <strong id="lbl-dyn-bounds">ON</strong>
+            </button>
+            <button class="hud-btn" id="btn-toggle-sparse" title="Toggle UE5 Sparse Voxel Octree Wireframe Overlay [O]">
+              📦 Octree
+            </button>
+            <button class="hud-btn" id="btn-toggle-voxel-mode" title="Toggle Discrete Voxelized DDA Cube Raymarching [V]">
+              🧊 DDA: <strong id="lbl-voxel-mode">OFF</strong>
+            </button>
+            <button class="hud-btn" id="btn-toggle-turntable" title="Toggle Automatic 3D Turntable Orbit Camera [T]">
+              🔄 Orbit
+            </button>
+            <button class="hud-btn" id="btn-reset-camera" title="Reset 3D Orbit Camera [R]">
+              ⟲ Cam
+            </button>
+          </div>
+
+          <!-- Bottom-Right Live 2D Tiled 3D Voxel Atlas Minimap Header -->
+          <div class="atlas-pip-header" id="atlas-pip-header" title="Click to cycle 3D Voxel Slice Atlas Field">
+            <span class="pip-dot"></span>
+            <span id="lbl-atlas-pip">3D VOXEL ATLAS: THERMO (64 Z-SLICES)</span>
+          </div>
+
+          <!-- Bottom-Left Controls Hint -->
+          <div class="viewport-controls-hint">
+            <span><strong>LMB</strong> Orbit / Tool</span>
+            <span><strong>RMB</strong> Pan</span>
+            <span><strong>Wheel</strong> Zoom</span>
+            <span><strong>Shift+Drag</strong> 3D Flamethrower</span>
+            <span><strong>DblClick</strong> 3D Raycast Blast</span>
+            <span><strong>B</strong> Dyn Bounds</span>
+          </div>
+
+          <!-- Toast Notification Banner -->
+          <div id="viewport-toast" class="viewport-toast hidden"></div>
+
+          <!-- BOTTOM ACTION & PRESETS DOCK -->
+          <div class="bottom-dock">
+            <!-- Action Triggers Row -->
+            <div class="action-triggers-row">
+              <button class="action-btn primary-blast" id="btn-detonate">
+                💥 DETONATE BLAST <kbd>Space</kbd>
+              </button>
+              <button class="action-btn" id="btn-shrapnel">
+                ☄️ SHRAPNEL STREAMERS
+              </button>
+              <button class="action-btn" id="btn-salvo">
+                🔥 CLUSTER SALVO (4x)
+              </button>
+              <button class="action-btn" id="btn-collide">
+                ⚡ COLLIDING SHOCKWAVES
+              </button>
+              <button class="action-btn" id="btn-thermobaric">
+                ☢️ MUSHROOM CLOUD
+              </button>
+              <button class="action-btn" id="btn-vortex">
+                🌪️ FIRE VORTEX
+              </button>
+              <button class="action-btn" id="btn-collider-toggle">
+                🧱 VOXEL COLLIDER
+              </button>
+              <button class="action-btn hydro-action" id="btn-water-splash">
+                🌊 WATER SPLASH
+              </button>
+              <button class="action-btn hydro-action" id="btn-surf-wave">
+                🏄 SURF WAVE
+              </button>
+              <div class="dock-divider"></div>
+              <button class="action-btn icon-btn" id="btn-pause" title="Pause / Resume Simulation [P]">
+                ⏸ Pause
+              </button>
+              <button class="action-btn icon-btn" id="btn-step" title="Step Single Simulation Frame [S]">
+                ⏭ Step
+              </button>
+              <button class="action-btn icon-btn danger" id="btn-clear" title="Clear All Voxels [C]">
+                🧹 Clear
+              </button>
+            </div>
+
+            <!-- Presets Row -->
+            <div class="presets-row">
+              <span class="presets-label">UE5 NIAGARA TEMPLATES:</span>
+              <div class="presets-list" id="presets-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- RIGHT PARAMETER INSPECTOR PANEL -->
+        <aside class="inspector-panel">
+          <div class="inspector-tabs">
+            <button class="tab-btn active" data-tab="tab-grid">Grid &amp; Bounds</button>
+            <button class="tab-btn" data-tab="tab-pyro">Gas &amp; Hydro</button>
+            <button class="tab-btn" data-tab="tab-raymarch">Raymarching</button>
+            <button class="tab-btn" data-tab="tab-emitter">Emitters &amp; Scene</button>
+          </div>
+
+          <div class="inspector-body" id="inspector-body">
+            <!-- TAB 1: GRID & BOUNDS -->
+            <div class="tab-pane active" id="tab-grid"></div>
+
+            <!-- TAB 2: PYRO & COMBUSTION PHYSICS -->
+            <div class="tab-pane" id="tab-pyro"></div>
+
+            <!-- TAB 3: VOLUMETRIC RAYMARCHING & LIGHTING -->
+            <div class="tab-pane" id="tab-raymarch"></div>
+
+            <!-- TAB 4: EMITTERS, EXPLOSIONS & VOXEL COLLIDER -->
+            <div class="tab-pane" id="tab-emitter"></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
