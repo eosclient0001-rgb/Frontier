@@ -8,6 +8,7 @@
  */
 
 const RESOURCE_IDS = new WeakMap();
+const VIEW_CACHE = new WeakMap();
 let NEXT_ID = 1;
 
 /** Stable numeric id for any GPU resource (used for bind group cache keys). */
@@ -20,6 +21,41 @@ export function resourceId(obj) {
   }
   return id;
 }
+
+/**
+ * Build a `requiredLimits` dictionary that is safe to pass to requestDevice.
+ *
+ * Two rules matter here, and getting either wrong makes boot fail outright:
+ *   - an unknown limit name is a hard error (the browser does not ignore it),
+ *   - asking for more than the adapter supports is also a hard error.
+ * So we only ever ask for a known key, only for values the adapter reports, and
+ * only when we actually need more than the default.
+ *
+ * @param {GPUSupportedLimits} adapterLimits
+ * @param {Record<string, number>} desired
+ * @returns {Record<string, number>}
+ */
+export function buildRequiredLimits(adapterLimits, desired) {
+  const required = {};
+  for (const [key, value] of Object.entries(desired)) {
+    // `key in adapterLimits` is the authoritative "is this a real limit" test:
+    // GPUSupportedLimits exposes exactly the limits the implementation knows.
+    if (!adapterLimits || !(key in adapterLimits)) continue;
+    const supported = adapterLimits[key];
+    if (typeof supported !== 'number' || Number.isNaN(supported)) continue;
+    if (supported < value) continue; // adapter cannot go that high; defaults apply
+    required[key] = value;
+  }
+  return required;
+}
+
+/** Everything Frontier needs beyond the WebGPU defaults. */
+const DESIRED_LIMITS = {
+  // largest grid we ever allocate is 192^3, and the default is 2048
+  maxTextureDimension3D: 256,
+  // the solver writes at most 4 storage textures per pass - this is also the default
+  maxStorageTexturesPerShaderStage: 4,
+};
 
 export async function initWebGPU({ canvas, powerPreference = 'high-performance' } = {}) {
   if (typeof navigator === 'undefined' || !navigator.gpu) {
@@ -34,17 +70,28 @@ export async function initWebGPU({ canvas, powerPreference = 'high-performance' 
   });
   if (!adapter) throw new Error('No suitable WebGPU adapter found.');
 
-  const limits = {
-    maxTextureDimension3D: Math.min(2048, adapter.limits.maxTextureDimension3D),
-    maxStorageTextureDimension3D: Math.min(
-      2048,
-      adapter.limits.maxStorageTextureDimension3D ?? adapter.limits.maxTextureDimension3D
-    ),
-    maxComputeWorkgroupsPerDimension: adapter.limits.maxComputeWorkgroupsPerDimension,
-    maxBufferSize: adapter.limits.maxBufferSize,
-  };
+  let requiredLimits = buildRequiredLimits(adapter.limits, DESIRED_LIMITS);
 
-  const device = await adapter.requestDevice({ requiredLimits: limits });
+  let device;
+  try {
+    device = await adapter.requestDevice({ requiredLimits });
+  } catch (err) {
+    // Never let a limit negotiation mistake be fatal: retry with pure defaults.
+    if (Object.keys(requiredLimits).length === 0) throw err;
+    console.warn('[frontier] falling back to default device limits:', err.message);
+    device = await adapter.requestDevice();
+    requiredLimits = {};
+  }
+
+  // Report what we actually ended up with - the grid resolution cap comes from
+  // the device, not from the adapter request.
+  const deviceLimits = device.limits ?? adapter.limits ?? {};
+  const maxGrid = Math.min(deviceLimits.maxTextureDimension3D ?? 256, 256);
+  if (maxGrid < 64) {
+    throw new Error(
+      `This GPU only supports ${maxGrid}³ 3D textures, which is too small for volumetric simulation.`
+    );
+  }
 
   let context = null;
   let format = 'bgra8unorm';
@@ -65,7 +112,8 @@ export async function initWebGPU({ canvas, powerPreference = 'high-performance' 
       vendor: info.vendor ?? 'unknown',
       architecture: info.architecture ?? 'unknown',
       description: info.description ?? 'unknown',
-      maxGrid: limits.maxStorageTextureDimension3D,
+      maxGrid,
+      limits: requiredLimits,
     },
   };
 }
@@ -279,12 +327,18 @@ export class Program {
       let bound = res;
       let view = res;
       if (typeof GPUTexture !== 'undefined' && res instanceof GPUTexture) {
-        if (!res.__views) res.__views = new Map();
+        // cache views off-object: GPU resources are host objects and expando
+        // properties are not guaranteed to be allowed on every implementation
+        let views = VIEW_CACHE.get(res);
+        if (!views) {
+          views = new Map();
+          VIEW_CACHE.set(res, views);
+        }
         const key = b.viewDimension;
-        view = res.__views.get(key);
+        view = views.get(key);
         if (!view) {
           view = res.createView({ dimension: key, label: `${res.label ?? 'tex'}.${key}` });
-          res.__views.set(key, view);
+          views.set(key, view);
         }
       }
       bound = view;

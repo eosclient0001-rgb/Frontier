@@ -375,6 +375,55 @@ check(
 );
 void lastScalWrite;
 
+// 4a. limit negotiation (regression: an invented limit name used to abort boot)
+// Canonical WebGPU limit names - if a key is not in here, requestDevice throws.
+const REAL_LIMITS = [
+  'maxTextureDimension1D', 'maxTextureDimension2D', 'maxTextureDimension3D', 'maxTextureArrayLayers',
+  'maxBindGroups', 'maxBindGroupsPlusVertexBuffers', 'maxBindingsPerBindGroup',
+  'maxDynamicUniformBuffersPerPipelineLayout', 'maxDynamicStorageBuffersPerPipelineLayout',
+  'maxSampledTexturesPerShaderStage', 'maxSamplersPerShaderStage', 'maxStorageBuffersPerShaderStage',
+  'maxStorageTexturesPerShaderStage', 'maxUniformBuffersPerShaderStage', 'maxUniformBufferBindingSize',
+  'maxStorageBufferBindingSize', 'minUniformBufferOffsetAlignment', 'minStorageBufferOffsetAlignment',
+  'maxVertexBuffers', 'maxBufferSize', 'maxVertexAttributes', 'maxVertexBufferArrayStride',
+  'maxInterStageShaderVariables', 'maxColorAttachments', 'maxColorAttachmentBytesPerSample',
+  'maxComputeWorkgroupStorageSize', 'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupSizeX',
+  'maxComputeWorkgroupSizeY', 'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupsPerDimension',
+];
+const desired = { maxTextureDimension3D: 256, maxStorageTexturesPerShaderStage: 4 };
+check(
+  'desired limits are all real WebGPU limit names',
+  Object.keys(desired).every((k) => REAL_LIMITS.includes(k)),
+  Object.keys(desired).filter((k) => !REAL_LIMITS.includes(k)).join(',')
+);
+
+const adapterLike = {
+  maxTextureDimension3D: 2048,
+  maxStorageTexturesPerShaderStage: 4,
+  maxComputeWorkgroupsPerDimension: 65535,
+};
+const negotiated = WebGPU.buildRequiredLimits(adapterLike, {
+  ...desired,
+  maxStorageTextureDimension3D: 2048, // invented: must be dropped, not passed through
+  nonexistentThing: 5,
+});
+check(
+  'unknown limit names are filtered out of requiredLimits',
+  !('maxStorageTextureDimension3D' in negotiated) && !('nonexistentThing' in negotiated) && negotiated.maxTextureDimension3D === 256,
+  JSON.stringify(negotiated)
+);
+check(
+  'limits above what the adapter supports are dropped',
+  Object.keys(WebGPU.buildRequiredLimits({ maxTextureDimension3D: 64 }, { maxTextureDimension3D: 256 })).length === 0,
+  ''
+);
+check(
+  'missing/odd limits objects never throw',
+  Object.keys(WebGPU.buildRequiredLimits(undefined, desired)).length === 0 &&
+    Object.keys(WebGPU.buildRequiredLimits({}, desired)).length === 0 &&
+    Object.keys(WebGPU.buildRequiredLimits({ maxTextureDimension3D: NaN }, desired)).length === 0,
+  ''
+);
+
 // 4b. readback probe ------------------------------------------------------
 const fieldProbe = await solver.probeVolume();
 check(
