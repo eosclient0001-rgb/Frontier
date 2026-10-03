@@ -888,7 +888,8 @@ fn csHydroVolume(@builtin(global_invocation_id) gid: vec3<u32>) {
   let lF = thermoIn[voxelIndex(v + vec3<i32>( 0, 0, 1), res)].r;
   velocity -= 0.42 * u.surfaceTension * u.dt * vec3<f32>(lR - lL, lU - lD, lF - lB) * 0.5;
   if (v.y <= 1 && velocity.y < 0.0) { velocity.y = 0.0; }
-  state.g = max(state.g * exp(-u.foamDissipation * u.dt), clamp(length(velocity) * 0.075 * u.foamGeneration, 0.0, 0.75));
+  let interfaceMask = smoothstep(0.035, 0.18, length(vec3<f32>(lR - lL, lU - lD, lF - lB)));
+  state.g = max(state.g * exp(-u.foamDissipation * u.dt) * mix(0.18, 1.0, interfaceMask), clamp(length(velocity) * 0.035 * u.foamGeneration * interfaceMask, 0.0, 0.55));
   state.a = clamp(length(vec3<f32>(lR - lL, lU - lD, lF - lB)) * 0.55 + length(velocity) * 0.025, 0.0, 1.0);
   outBuf0[idx] = vec4<f32>(clamp(velocity, vec3<f32>(-8.0), vec3<f32>(8.0)), 0.0);
   outBuf1[idx] = clamp(state, vec4<f32>(0.0), vec4<f32>(1.0));
@@ -952,8 +953,18 @@ struct RenderUniforms {
 
   causticsIntensity: f32,
   waterPoolLevel: f32,
-  pad2: f32,
-  pad3: f32,
+  waterAbsorption: f32,
+  waterScattering: f32,
+
+  waterRoughness: f32,
+  waterSurfaceThreshold: f32,
+  waterRefraction: f32,
+  waterLightIntensity: f32,
+
+  waterAmbientIntensity: f32,
+  waterExposure: f32,
+  pad4: f32,
+  pad5: f32,
 };
 
 @group(0) @binding(0) var<uniform> r: RenderUniforms;
@@ -1193,9 +1204,19 @@ fn fsMain(in: VSOut) -> @location(0) vec4<f32> {
   let quantize = select(r.voxelQuantization, 1.0, r.renderChannel == 1u);
 
   if (r.simMode == 1u) {
-    for (var i = 0u; i < 160u; i = i + 1u) {
-      if (i >= numSteps || t >= tExit) { break; }
-      let pWorld = rayOrigin + rayDir * t;
+    let hydroSteps = min(r.raymarchSteps, 192u);
+    let hydroDiag = length(boxMax - boxMin);
+    let hydroStep = hydroDiag / f32(hydroSteps);
+    let hydroOpticalScale = 1.0 / max(1.0, hydroDiag);
+    var hydroT = tEnter + jitter * hydroStep;
+    var hydroLight = vec3<f32>(0.0);
+    var hydroTrans = 1.0;
+    let sunWater = vec3<f32>(0.78, 0.91, 1.0) * r.waterLightIntensity;
+    let ambientWater = vec3<f32>(0.035, 0.095, 0.16) * r.waterAmbientIntensity;
+
+    for (var i = 0u; i < 192u; i = i + 1u) {
+      if (i >= hydroSteps || hydroT >= tExit) { break; }
+      let pWorld = rayOrigin + rayDir * hydroT;
       let uvw = (pWorld - boxMin) / (boxMax - boxMin);
       let objectDistance = hydroObjectDistance(uvw);
       if (r.obstacleType != 0u && objectDistance < 0.0) {
@@ -1204,15 +1225,15 @@ fn fsMain(in: VSOut) -> @location(0) vec4<f32> {
         let objectDiff = max(0.14, dot(normal, r.sunDir));
         let objectBase = select(vec3<f32>(0.25, 0.29, 0.34), vec3<f32>(0.035, 0.042, 0.052), r.obstacleType == 5u);
         let objectGloss = pow(max(dot(reflect(-r.sunDir, normal), -rayDir), 0.0), 42.0);
-        accumLight += transmittance * (objectBase * objectDiff + vec3<f32>(0.28, 0.35, 0.42) * objectGloss);
-        transmittance = 0.0;
+        hydroLight += hydroTrans * (objectBase * objectDiff + vec3<f32>(0.28, 0.35, 0.42) * objectGloss);
+        hydroTrans = 0.0;
         break;
       }
+
       let state = sampleThermo(uvw, quantize);
       let liquid = clamp(state.r, 0.0, 1.0);
       let foam = clamp(state.g, 0.0, 1.0);
       let adhesion = clamp(state.b, 0.0, 1.0);
-
       if (liquid > 0.003 || foam > 0.008 || adhesion > 0.008) {
         let e = max(0.75 / f32(r.gridRes), 0.0035);
         let gx = sampleThermo(clamp(uvw + vec3<f32>(e, 0.0, 0.0), vec3<f32>(0.0), vec3<f32>(1.0)), 0.0).r
@@ -1221,34 +1242,52 @@ fn fsMain(in: VSOut) -> @location(0) vec4<f32> {
           - sampleThermo(clamp(uvw - vec3<f32>(0.0, e, 0.0), vec3<f32>(0.0), vec3<f32>(1.0)), 0.0).r;
         let gz = sampleThermo(clamp(uvw + vec3<f32>(0.0, 0.0, e), vec3<f32>(0.0), vec3<f32>(1.0)), 0.0).r
           - sampleThermo(clamp(uvw - vec3<f32>(0.0, 0.0, e), vec3<f32>(0.0), vec3<f32>(1.0)), 0.0).r;
-        let g = vec3<f32>(gx, gy, gz);
-        let normal = select(vec3<f32>(0.0, 1.0, 0.0), normalize(-g), length(g) > 1e-4);
-        let edge = clamp(length(g) / max(e * 2.0, 1e-4), 0.0, 1.0);
-        let diffuse = max(0.12, dot(normal, r.sunDir));
-        let thickness = mix(4.5, max(7.0, r.densityExtinction * 0.88), clamp(r.liquidViscosity, 0.0, 1.0));
-        let extinction = max(0.001, thickness * liquid + foam * 2.2 + adhesion * 0.8);
-        let stepTrans = exp(-extinction * baseStepSize);
-        let weight = 1.0 - stepTrans;
-        let base = evaluateLiquidPalette(r.colorPalette, foam, adhesion);
-        let lit = base * (0.28 + 0.74 * diffuse) + skyAmbientColor * 0.45;
-        let foamLit = mix(vec3<f32>(0.72, 0.90, 1.0), vec3<f32>(1.0, 0.98, 0.84), clamp(diffuse, 0.0, 1.0));
-        let litMixed = mix(lit, foamLit * (0.52 + 0.48 * diffuse), foam * 0.74);
-        let fresnel = pow(1.0 - max(dot(normal, -rayDir), 0.0), 5.0);
-        let specular = pow(max(dot(reflect(-r.sunDir, normal), -rayDir), 0.0), 28.0 + r.liquidSpecular * 18.0)
-          * r.liquidSpecular * (0.45 + 0.55 * edge);
-        let reflection = mix(vec3<f32>(0.20, 0.40, 0.58), vec3<f32>(0.82, 0.95, 1.0), fresnel) * fresnel * 0.38;
-        accumLight += transmittance * (litMixed * weight + reflection * weight
-          + vec3<f32>(1.0, 0.93, 0.70) * specular * edge * baseStepSize * 3.5);
-        transmittance *= stepTrans;
-        if (transmittance < 0.008) { transmittance = 0.0; break; }
+        let gradient = vec3<f32>(gx, gy, gz);
+        let gradLen = length(gradient);
+        let interface = smoothstep(0.035, 0.22, gradLen);
+        let filled = smoothstep(r.waterSurfaceThreshold * 0.42, r.waterSurfaceThreshold + 0.16, liquid);
+        var normal = select(vec3<f32>(0.0, 1.0, 0.0), normalize(-gradient), gradLen > 1e-4);
+        if (normal.y < 0.0) { normal = -normal; }
+
+        let opticalDepth = liquid * r.waterAbsorption * hydroStep * hydroOpticalScale;
+        let volumeWeight = 1.0 - exp(-opticalDepth);
+        let waterBody = vec3<f32>(0.012, 0.065, 0.13) + ambientWater;
+        hydroLight += hydroTrans * waterBody * volumeWeight;
+        hydroLight += hydroTrans * sunWater * volumeWeight * r.waterScattering * 0.12;
+        hydroTrans *= exp(-opticalDepth);
+
+        let surfaceEvent = interface * filled;
+        if (surfaceEvent > 0.004) {
+          let diffuse = max(0.10, dot(normal, r.sunDir));
+          let viewFacing = max(dot(normal, -rayDir), 0.0);
+          let fresnel = pow(1.0 - viewFacing, 5.0);
+          let base = evaluateLiquidPalette(r.colorPalette, 0.0, adhesion * interface);
+          let reflectedSky = mix(vec3<f32>(0.025, 0.075, 0.13), vec3<f32>(0.28, 0.60, 0.82), clamp(0.35 + 0.65 * normal.y, 0.0, 1.0));
+          let refractedTint = mix(base, vec3<f32>(0.04, 0.22, 0.34), clamp(r.waterRefraction, 0.0, 1.0));
+          let specular = pow(max(dot(reflect(-r.sunDir, normal), -rayDir), 0.0), mix(96.0, 24.0, clamp(r.waterRoughness, 0.0, 1.0)))
+            * (0.12 + 0.28 * r.liquidSpecular) * (1.0 - 0.45 * r.waterRoughness);
+          let surface = refractedTint * (0.30 + 0.70 * diffuse)
+            + reflectedSky * fresnel * (0.22 + 0.48 * r.waterRefraction)
+            + vec3<f32>(0.70, 0.86, 1.0) * specular;
+          let surfaceAlpha = clamp(surfaceEvent * (0.30 + 0.38 * interface + 0.22 * foam), 0.0, 0.82);
+          hydroLight += hydroTrans * surface * surfaceAlpha;
+          hydroTrans *= 1.0 - surfaceAlpha * 0.58;
+
+          let foamLayer = clamp(foam * interface, 0.0, 1.0);
+          if (foamLayer > 0.003) {
+            let foamColor = mix(vec3<f32>(0.55, 0.75, 0.88), vec3<f32>(0.92, 0.98, 1.0), diffuse);
+            let foamAlpha = foamLayer * 0.34;
+            hydroLight += hydroTrans * foamColor * foamAlpha;
+            hydroTrans *= 1.0 - foamAlpha * 0.35;
+          }
+        }
       }
-      t += baseStepSize;
+      hydroT += hydroStep;
     }
-    var hydroFinal = accumLight + bgSky * transmittance;
-    hydroFinal = acesToneMap(hydroFinal * r.exposure);
+    var hydroFinal = hydroLight + bgSky * hydroTrans;
+    hydroFinal = acesToneMap(hydroFinal * r.waterExposure);
     return vec4<f32>(pow(hydroFinal, vec3<f32>(1.0 / 2.2)), 1.0);
   }
-
   for (var i = 0u; i < 160u; i = i + 1u) {
     if (i >= numSteps || t >= tExit) { break; }
     let pWorld = rayOrigin + rayDir * t;

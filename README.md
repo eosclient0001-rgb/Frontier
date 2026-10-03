@@ -23,6 +23,8 @@ Hydro mode reuses the same GPU voxel memory with a different state layout:
 
 This is still a deliberately compact real-time Eulerian/VOF-style solver rather than a full production FLIP solver, but the liquid is now an evolving 3D voxel field rather than a procedural screen-space water surface. It is designed to remain interactive at low resolutions while showing actual volume advection, dam-break motion, collider impulses, foam, and pressure projection.
 
+The implementation follows the important Niagara/real-time-fluid split: FLIP-style liquid solvers use a grid for incompressible velocity and particles/markers for the liquid shape, while 3D liquid renderers reconstruct a narrow surface/SDF and use clear-water absorption rather than rendering liquid as gas density. This project keeps the marker field in the voxel atlas as a VOF fraction and uses its gradient as a low-resolution surface reconstruction. See [Epic's fluid overview](https://dev.epicgames.com/documentation/en-us/unreal-engine/fluid-simulation-in-unreal-engine---overview), the [Niagara liquid rendering notes](https://80.lv/articles/working-with-niagara-fluids-to-create-water-simulations), and the [real-time screen-space fluid pipeline overview](https://tympanus.net/codrops/2025/02/26/webgpu-fluid-simulations-high-performance-real-time-rendering/).
+
 ## Liquid presets
 
 The preset dock includes:
@@ -36,7 +38,7 @@ The preset dock includes:
 - **Fire Tornado / Alchemical Vortex** — high-swirl rising column with strong vorticity confinement.
 - **Ashfall / Grey Fireflies** — cooling smoke with adjustable grey ash motes.
 
-The inspector exposes pool level, viscosity, adhesion/wetting, surface tension, foam lifetime, splash energy, wave mode/height/speed, and liquid specular response. The `🌊 WATER SPLASH` and `🏄 SURF WAVE` viewport actions provide quick demonstrations without opening the inspector.
+The inspector exposes pool level, viscosity, adhesion/wetting, surface tension, foam lifetime, splash energy, wave mode/height/speed, liquid specular response, and water-only absorption/scattering/roughness/refraction controls. The `🌊 WATER SPLASH`, `🏄 SURF WAVE`, and `🧱 DAM BREAK` viewport actions provide quick demonstrations without opening the inspector.
 
 ## Performance notes
 

@@ -143,7 +143,7 @@ export class WebGPUPyroEngine {
     });
 
     this.renderUniformBuffer = device.createBuffer({
-      size: 256,
+      size: 272,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
   }
@@ -536,7 +536,7 @@ export class WebGPUPyroEngine {
     const sunZ = Math.cos(el) * Math.cos(az);
     const tanHalfFov = Math.tan(camera.fovY * 0.5);
 
-    const buf = new ArrayBuffer(240);
+    const buf = new ArrayBuffer(272);
     const f32 = new Float32Array(buf);
     const u32 = new Uint32Array(buf);
     const { boxMin, boxMax } = this.getBoundsBox();
@@ -612,8 +612,16 @@ export class WebGPUPyroEngine {
     f32[55] = p.liquidSpecular ?? 1.35;
     f32[56] = p.causticsIntensity ?? 0.70;
     f32[57] = p.waterPoolLevel ?? 0.25;
-    f32[58] = 0.0;
-    f32[59] = 0.0;
+    f32[58] = p.waterAbsorption ?? 0.72;
+    f32[59] = p.waterScattering ?? 0.08;
+    f32[60] = p.waterRoughness ?? 0.14;
+    f32[61] = p.waterSurfaceThreshold ?? 0.18;
+    f32[62] = p.waterRefraction ?? 0.78;
+    f32[63] = p.waterLightIntensity ?? 1.15;
+    f32[64] = p.waterAmbientIntensity ?? 0.34;
+    f32[65] = p.waterExposure ?? 1.0;
+    f32[66] = 0.0;
+    f32[67] = 0.0;
 
     this.device.queue.writeBuffer(this.renderUniformBuffer, 0, buf);
 

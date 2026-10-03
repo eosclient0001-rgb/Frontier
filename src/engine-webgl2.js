@@ -828,6 +828,14 @@ export class WebGL2PyroEngine {
       gl.uniform1f(u.uSurfaceAdhesion, p.surfaceAdhesion ?? 0.65);
       gl.uniform1f(u.uSurfaceTension, p.surfaceTension ?? 0.52);
       gl.uniform1f(u.uLiquidSpecular, p.liquidSpecular ?? 1.35);
+      gl.uniform1f(u.uWaterAbsorption, p.waterAbsorption ?? 0.72);
+      gl.uniform1f(u.uWaterScattering, p.waterScattering ?? 0.08);
+      gl.uniform1f(u.uWaterRoughness, p.waterRoughness ?? 0.14);
+      gl.uniform1f(u.uWaterSurfaceThreshold, p.waterSurfaceThreshold ?? 0.18);
+      gl.uniform1f(u.uWaterRefraction, p.waterRefraction ?? 0.78);
+      gl.uniform1f(u.uWaterLightIntensity, p.waterLightIntensity ?? 1.15);
+      gl.uniform1f(u.uWaterAmbientIntensity, p.waterAmbientIntensity ?? 0.34);
+      gl.uniform1f(u.uWaterExposure, p.waterExposure ?? 1.0);
       gl.uniform1f(u.uCausticsIntensity, p.causticsIntensity ?? 0.70);
       gl.uniform1f(u.uWaterPoolLevel, p.waterPoolLevel ?? 0.25);
 

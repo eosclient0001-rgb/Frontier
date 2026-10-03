@@ -1191,6 +1191,31 @@ class PyroStudioApp {
       label: 'Wet Gloss / Specular Highlight',
       min: 0.1, max: 2.5, step: 0.05,
     });
+    this.addSlider(secHydro, {
+      key: 'waterAbsorption',
+      label: 'Water Absorption (Clear ↔ Deep)',
+      min: 0.05, max: 2.5, step: 0.05,
+    });
+    this.addSlider(secHydro, {
+      key: 'waterScattering',
+      label: 'Water Scattering (Keep Low)',
+      min: 0.0, max: 0.6, step: 0.01,
+    });
+    this.addSlider(secHydro, {
+      key: 'waterRoughness',
+      label: 'Water Surface Roughness',
+      min: 0.02, max: 0.8, step: 0.01,
+    });
+    this.addSlider(secHydro, {
+      key: 'waterSurfaceThreshold',
+      label: 'VOF Surface Threshold',
+      min: 0.03, max: 0.6, step: 0.01,
+    });
+    this.addSlider(secHydro, {
+      key: 'waterRefraction',
+      label: 'Clear-Water Refraction / Reflection',
+      min: 0.0, max: 1.0, step: 0.01,
+    });
 
     // --- TAB 3: VOLUMETRIC RAYMARCHING & SHADING ---
     const tabRay = document.getElementById('tab-raymarch');

@@ -583,8 +583,11 @@ void main() {
     if ((v.z <= 1 && nextVelocity.z < 0.0) || (v.z >= uGridRes - 2 && nextVelocity.z > 0.0)) nextVelocity.z = 0.0;
   }
 
-  float velocityFoam = clamp(length(nextVelocity) * 0.075, 0.0, 0.75);
-  foam = max(foam, velocityFoam * uFoamGeneration * smoothstep(0.08, 0.55, liquid));
+  // Foam is a surface/impact field, not smoke density. Keep it narrow to the
+  // reconstructed liquid interface so the pool stays clear and blue.
+  float interfaceMask = smoothstep(0.035, 0.18, length(liquidGrad));
+  float velocityFoam = clamp(length(nextVelocity) * 0.035, 0.0, 0.55);
+  foam = max(foam * mix(0.18, 1.0, interfaceMask), velocityFoam * uFoamGeneration * interfaceMask);
   float pressureHint = clamp(length(liquidGrad) * 0.55 + length(nextVelocity) * 0.025, 0.0, 1.0);
   outVelocity = vec4(clamp(nextVelocity, vec3(-8.0), vec3(8.0)), 0.0);
   outThermo = vec4(liquid, clamp(foam, 0.0, 1.0), clamp(adhesion, 0.0, 1.0), pressureHint);
@@ -1103,6 +1106,14 @@ uniform float uSurfaceTension;
 uniform float uLiquidSpecular;
 uniform float uCausticsIntensity;
 uniform float uWaterPoolLevel;
+uniform float uWaterAbsorption;
+uniform float uWaterScattering;
+uniform float uWaterRoughness;
+uniform float uWaterSurfaceThreshold;
+uniform float uWaterRefraction;
+uniform float uWaterLightIntensity;
+uniform float uWaterAmbientIntensity;
+uniform float uWaterExposure;
 
 // Camera & Viewport
 uniform vec3 uCamPos;
@@ -1254,7 +1265,7 @@ vec3 evaluateLiquidPalette(int palette, float foam, float adhesion) {
   } else if (palette == 9) {
     base = vec3(0.06, 0.32, 0.18);
   } else {
-    // Physical-looking deep shallow water; foam is added separately below.
+    // Clear-water palette; foam is added separately at the reconstructed interface.
     base = vec3(0.012, 0.105, 0.19);
   }
 
@@ -1480,26 +1491,30 @@ void main() {
     boxWireColor = vec3(1.0, 0.48, 0.14) * wEnter + vec3(0.32, 0.55, 0.85) * wExit;
   }
 
-  // --- HYDRO: volumetric liquid-fraction raymarch ---
+  // --- HYDRO: reconstructed water surface + low-scattering liquid volume ---
+  // Unreal's 3D liquid path uses FLIP particles for motion and a surface/SDF
+  // representation for rendering. This Eulerian approximation uses the voxel
+  // fraction and its gradient as a narrow-band surface, instead of rendering
+  // liquid like smoke density. That distinction is what keeps water clear,
+  // dark blue, and reflective rather than a white volumetric cloud.
   if (uSimMode == 1) {
-    int hydroSteps = min(uRaymarchSteps, 160);
+    int hydroSteps = min(uRaymarchSteps, 192);
     float hydroDiag = length(uBoxMax - uBoxMin);
-    float hydroStep = (hydroDiag * 0.82) / float(hydroSteps);
-    float hydroOpticalScale = 1.75 / max(1.0, hydroDiag);
+    float hydroStep = hydroDiag / float(hydroSteps);
+    float hydroOpticalScale = 1.0 / max(1.0, hydroDiag);
     float hydroJitter = interleavedGradientNoise(gl_FragCoord.xy);
     float hydroT = tEnter + hydroJitter * hydroStep;
     vec3 hydroLight = vec3(0.0);
     float hydroTrans = 1.0;
-    vec3 sunWater = vec3(0.88, 0.96, 1.0) * uSunIntensity;
-    vec3 ambientWater = vec3(0.18, 0.28, 0.38) * uAmbientIntensity;
+    vec3 sunWater = vec3(0.78, 0.91, 1.0) * uWaterLightIntensity;
+    vec3 ambientWater = vec3(0.035, 0.095, 0.16) * uWaterAmbientIntensity;
 
-    for (int i = 0; i < 160; i++) {
+    for (int i = 0; i < 192; i++) {
       if (i >= hydroSteps || hydroT >= tExit) break;
       vec3 pWorld = rayOrigin + rayDir * hydroT;
       vec3 uvw = worldToUVW(pWorld);
 
-      // Solid geometry remains visible through/inside the liquid and receives
-      // the same directional shadow treatment as the pyro obstacle pass.
+      // Keep collider geometry opaque and separate from the water surface.
       if (uObstacleType != 0 && sdObstacle(uvw) < 0.0) {
         vec3 objectNormal = normalize(vec3(
           sdObstacle(uvw + vec3(0.006, 0.0, 0.0)) - sdObstacle(uvw - vec3(0.006, 0.0, 0.0)),
@@ -1518,7 +1533,6 @@ void main() {
       float liquid = clamp(state.r, 0.0, 1.0);
       float foam = clamp(state.g, 0.0, 1.0);
       float adhesion = clamp(state.b, 0.0, 1.0);
-
       if (liquid > 0.003 || foam > 0.008 || adhesion > 0.008) {
         float e = max(0.75 / float(uGridRes), 0.0035);
         float gx = sampleVolumeTrilinear(uThermoTex, clamp(uvw + vec3(e, 0.0, 0.0), 0.0, 1.0)).r
@@ -1527,42 +1541,55 @@ void main() {
                  - sampleVolumeTrilinear(uThermoTex, clamp(uvw - vec3(0.0, e, 0.0), 0.0, 1.0)).r;
         float gz = sampleVolumeTrilinear(uThermoTex, clamp(uvw + vec3(0.0, 0.0, e), 0.0, 1.0)).r
                  - sampleVolumeTrilinear(uThermoTex, clamp(uvw - vec3(0.0, 0.0, e), 0.0, 1.0)).r;
-        float edge = clamp(length(vec3(gx, gy, gz)) / max(e * 2.0, 1e-4), 0.0, 1.0);
-        vec3 normal = length(vec3(gx, gy, gz)) > 1e-4
-          ? normalize(-vec3(gx, gy, gz))
-          : vec3(0.0, 1.0, 0.0);
+        vec3 liquidGrad = vec3(gx, gy, gz);
+        float gradLen = length(liquidGrad);
+        float interface = smoothstep(0.035, 0.22, gradLen);
+        float filled = smoothstep(uWaterSurfaceThreshold * 0.42, uWaterSurfaceThreshold + 0.16, liquid);
+        vec3 normal = gradLen > 1e-4 ? normalize(-liquidGrad) : vec3(0.0, 1.0, 0.0);
         if (normal.y < 0.0) normal = -normal;
 
-        float diffuse = max(0.12, dot(normal, uSunDir));
-        float sunTrans = exp(-liquid * 0.42 * uShadowDensity);
-        float thickness = mix(4.5, max(7.0, uDensityExtinction * 0.88), clamp(uLiquidViscosity, 0.0, 1.0));
-        float extinction = max(0.001, thickness * liquid + foam * 2.2 + adhesion * 0.8);
-        float stepTrans = exp(-extinction * hydroStep * hydroOpticalScale);
-        float weight = 1.0 - stepTrans;
+        // Low-scattering Beer-Lambert absorption: water transmits a tinted
+        // background instead of accumulating as opaque smoke.
+        float opticalDepth = liquid * uWaterAbsorption * hydroStep * hydroOpticalScale;
+        float volumeWeight = 1.0 - exp(-opticalDepth);
+        vec3 waterBody = vec3(0.012, 0.065, 0.13) + ambientWater;
+        hydroLight += hydroTrans * waterBody * volumeWeight;
+        hydroLight += hydroTrans * sunWater * volumeWeight * uWaterScattering * 0.12;
+        hydroTrans *= exp(-opticalDepth);
 
-        vec3 base = evaluateLiquidPalette(uColorPalette, foam, adhesion);
-        vec3 lit = base * (0.28 + 0.74 * diffuse * sunTrans) + ambientWater * 0.45;
-        vec3 foamLit = mix(vec3(0.72, 0.90, 1.0), vec3(1.0, 0.98, 0.84), clamp(diffuse, 0.0, 1.0));
-        lit = mix(lit, foamLit * (0.52 + 0.48 * diffuse), foam * 0.74);
+        // The narrow band is the actual liquid surface. Foam and adhesion only
+        // affect this band, preventing the whole filled pool from turning white.
+        float surfaceEvent = interface * filled;
+        if (surfaceEvent > 0.004) {
+          float diffuse = max(0.10, dot(normal, uSunDir));
+          float viewFacing = max(dot(normal, -rayDir), 0.0);
+          float fresnel = pow(1.0 - viewFacing, 5.0);
+          vec3 base = evaluateLiquidPalette(uColorPalette, 0.0, adhesion * interface);
+          vec3 reflectedSky = mix(vec3(0.025, 0.075, 0.13), vec3(0.28, 0.60, 0.82), clamp(0.35 + 0.65 * normal.y, 0.0, 1.0));
+          vec3 refractedTint = mix(base, vec3(0.04, 0.22, 0.34), clamp(uWaterRefraction, 0.0, 1.0));
+          float specular = pow(max(dot(reflect(-uSunDir, normal), -rayDir), 0.0), mix(96.0, 24.0, clamp(uWaterRoughness, 0.0, 1.0)))
+                         * (0.12 + 0.28 * uLiquidSpecular) * (1.0 - 0.45 * uWaterRoughness);
+          vec3 surface = refractedTint * (0.30 + 0.70 * diffuse)
+                       + reflectedSky * fresnel * (0.22 + 0.48 * uWaterRefraction)
+                       + vec3(0.70, 0.86, 1.0) * specular;
+          float surfaceAlpha = clamp(surfaceEvent * (0.30 + 0.38 * interface + 0.22 * foam), 0.0, 0.82);
+          hydroLight += hydroTrans * surface * surfaceAlpha;
+          hydroTrans *= 1.0 - surfaceAlpha * 0.58;
 
-        float fresnel = pow(1.0 - max(dot(normal, -rayDir), 0.0), 5.0);
-        float specular = pow(max(dot(reflect(-uSunDir, normal), -rayDir), 0.0), 28.0 + uLiquidSpecular * 18.0)
-                       * uLiquidSpecular * (0.45 + 0.55 * edge);
-        vec3 reflection = mix(vec3(0.20, 0.40, 0.58), vec3(0.82, 0.95, 1.0), fresnel) * fresnel * 0.38;
-        vec3 source = lit * weight + reflection * weight + vec3(1.0, 0.93, 0.70) * specular * edge * hydroStep * 3.5;
-        hydroLight += hydroTrans * source;
-        hydroTrans *= stepTrans;
-
-        if (hydroTrans < 0.008) {
-          hydroTrans = 0.0;
-          break;
+          float foamLayer = clamp(foam * interface, 0.0, 1.0);
+          if (foamLayer > 0.003) {
+            vec3 foamColor = mix(vec3(0.55, 0.75, 0.88), vec3(0.92, 0.98, 1.0), diffuse);
+            float foamAlpha = foamLayer * 0.34;
+            hydroLight += hydroTrans * foamColor * foamAlpha;
+            hydroTrans *= 1.0 - foamAlpha * 0.35;
+          }
         }
       }
       hydroT += hydroStep;
     }
 
     vec3 hydroFinal = hydroLight + bgSky * hydroTrans + boxWireColor;
-    hydroFinal = acesToneMap(hydroFinal * uExposure);
+    hydroFinal = acesToneMap(hydroFinal * uWaterExposure);
     outColor = vec4(pow(hydroFinal, vec3(1.0 / 2.2)), 1.0);
     return;
   }
