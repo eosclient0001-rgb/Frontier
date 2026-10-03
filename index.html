@@ -16,7 +16,7 @@
           </div>
           <div class="brand-text">
             <h1>NIAGARA GRID3D // PYRO + HYDRO LAB</h1>
-            <span class="subtitle">3D Voxel Gas, Volumetric Liquid &amp; Raymarcher</span>
+            <span class="subtitle">3D Voxel Gas, GPU Particle Water &amp; Separate Surface Renderer</span>
           </div>
         </div>
 
@@ -39,7 +39,7 @@
           <span class="group-label">SIM</span>
           <div class="segmented-control" id="sim-mode-switcher">
             <button data-sim-mode="0" class="active">🔥 Pyro</button>
-            <button data-sim-mode="1">🌊 Hydro</button>
+            <button data-sim-mode="1">💧 Water / Hydro</button>
           </div>
         </div>
 
@@ -65,7 +65,7 @@
             <span class="stat-value" id="stat-fps">60</span>
           </div>
           <div class="stat-pill">
-            <span class="stat-label">VOXELS</span>
+            <span class="stat-label" id="stat-voxels-label">VOXELS</span>
             <span class="stat-value" id="stat-voxels">262.1K</span>
           </div>
           <div class="stat-pill">
@@ -163,7 +163,7 @@
                 🌪️ FIRE TORNADO
               </button>
               <button class="action-btn" id="btn-collider-toggle">
-                🧱 VOXEL COLLIDER
+                🧱 SOLID COLLIDER
               </button>
               <button class="action-btn hydro-action" id="btn-water-splash">
                 🌊 WATER SPLASH
@@ -181,7 +181,7 @@
               <button class="action-btn icon-btn" id="btn-step" title="Step Single Simulation Frame [S]">
                 ⏭ Step
               </button>
-              <button class="action-btn icon-btn danger" id="btn-clear" title="Clear All Voxels [C]">
+              <button class="action-btn icon-btn danger" id="btn-clear" title="Clear Simulation State [C]">
                 🧹 Clear
               </button>
             </div>
@@ -198,7 +198,7 @@
         <aside class="inspector-panel">
           <div class="inspector-tabs">
             <button class="tab-btn active" data-tab="tab-grid">Grid &amp; Bounds</button>
-            <button class="tab-btn" data-tab="tab-pyro">Gas &amp; Hydro</button>
+            <button class="tab-btn" data-tab="tab-pyro">Gas &amp; Water</button>
             <button class="tab-btn" data-tab="tab-raymarch">Raymarching</button>
             <button class="tab-btn" data-tab="tab-emitter">Emitters &amp; Scene</button>
           </div>

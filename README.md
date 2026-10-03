@@ -1,6 +1,6 @@
 # Niagara Grid3D // Real-Time Pyro + Hydro Liquid Lab (WebGL2 & WebGPU)
 
-A browser GPU laboratory for **3D Eulerian fire/smoke/explosion simulation** and a complementary **volumetric voxel-liquid mode**. It is inspired by the workflow and visual language of Unreal Engine 5 Niagara Fluids and EmberGen, while keeping the implementation self-contained in WebGL2/WebGPU.
+A browser GPU laboratory for **3D Eulerian fire/smoke/explosion simulation** and a genuinely separate **GPU particle-liquid mode**. It is inspired by the workflow and visual language of Unreal Engine 5 Niagara Fluids and EmberGen, while keeping the implementation self-contained in WebGL2/WebGPU.
 
 ## Simulation modes
 
@@ -12,18 +12,16 @@ The existing fire mode uses a 3D Eulerian voxel state and volumetric raymarcher:
 - Dynamic world bounds, 16³–128³ tiled volume atlases, voxel DDA display, self-shadowing, fire irradiance, bloom, god-rays, embers, and lit solid obstacles.
 
 ### Hydro / liquid
-Hydro mode reuses the same GPU voxel memory with a different state layout:
+Hydro is not a branch of the gas solver. Selecting Water replaces the Pyro engine with `ParticleFluidWebGL2Engine` and uses a persistent marker state:
 
-- `R = liquid fraction / volume`, `G = whitewater foam`, `B = surface adhesion/wetting film`, `A = interface / pressure hint`.
-- A seeded 3D liquid volume with semi-Lagrangian advection, gravity, viscosity, surface-tension force, divergence, Jacobi pressure projection, and pressure-gradient velocity correction.
-- A kinematic moving **ball** and a rolling **treaded tyre** are available as animated voxel colliders. They push the liquid in three dimensions, generate wakes/foam/splash shells, and can carry a wet film.
-- A true volumetric **3D dam-break** initial condition is available; the raised column collapses through the domain instead of simply changing a flat water shader.
-- Viscosity changes the look from water to thick mud or melted chocolate. Surface tension gathers liquid into sheets and droplets; **surface adhesion/wetting** is the term for liquid sticking to a tyre, ball, or other surface.
-- The liquid raymarcher adds volume absorption, free-surface normals, glossy Fresnel/specular highlights, foam shading, object shadows, and animated floor caustics.
+- Two ping-pong floating-point textures store normalized particle position and velocity/foam for a fixed marker count. Markers are clamped into the physical container; they do not fade, evaporate, or disappear when displaced or outside the camera view.
+- Each update performs compact GPU pairwise density/pressure separation, viscosity, gravity, surface tension/cohesion, and velocity integration. It is an intentionally practical SPH/PIC-style browser solver, not a full production FLIP implementation.
+- A raised **3D dam-break** marker volume collapses, spreads across the floor, piles up, and produces an impulse-driven front. Pool volume is preserved because the same markers continue moving rather than being replaced by a smoke-density field.
+- Analytic SDF response handles sphere, tyre, pillar, bar, and cube obstacles. Collision response pushes markers out of solids, retains tangential motion, damps relative velocity, and applies adhesion/wetting so water can stick and slide along a collider.
+- Splash actions write a real expanding impulse into particle velocity. Emitters accelerate existing markers instead of spawning disposable gas dye; viscosity, gravity, adhesion, foam, absorption, roughness, refraction, and lighting remain water-specific controls.
+- Rendering is a separate screen-space fluid pipeline: particle sphere depth, additive thickness/foam, reconstructed normals, clear-water absorption, refraction, Fresnel reflection, restrained specular/caustic light, and a dark floor/background. It is not volumetric gas accumulation.
 
-This is still a deliberately compact real-time Eulerian/VOF-style solver rather than a full production FLIP solver, but the liquid is now an evolving 3D voxel field rather than a procedural screen-space water surface. It is designed to remain interactive at low resolutions while showing actual volume advection, dam-break motion, collider impulses, foam, and pressure projection.
-
-The implementation follows the important Niagara/real-time-fluid split: FLIP-style liquid solvers use a grid for incompressible velocity and particles/markers for the liquid shape, while 3D liquid renderers reconstruct a narrow surface/SDF and use clear-water absorption rather than rendering liquid as gas density. This project keeps the marker field in the voxel atlas as a VOF fraction and uses its gradient as a low-resolution surface reconstruction. See [Epic's fluid overview](https://dev.epicgames.com/documentation/en-us/unreal-engine/fluid-simulation-in-unreal-engine---overview), the [Niagara liquid rendering notes](https://80.lv/articles/working-with-niagara-fluids-to-create-water-simulations), and the [real-time screen-space fluid pipeline overview](https://tympanus.net/codrops/2025/02/26/webgpu-fluid-simulations-high-performance-real-time-rendering/).
+This is designed for practical low-resolution browser execution while visibly retaining a coherent liquid body. See [Epic's fluid overview](https://dev.epicgames.com/documentation/en-us/unreal-engine/fluid-simulation-in-unreal-engine---overview), the [Niagara liquid rendering notes](https://80.lv/articles/working-with-niagara-fluids-to-create-water-simulations), and the [real-time screen-space fluid pipeline overview](https://tympanus.net/codrops/2025/02/26/webgpu-fluid-simulations-high-performance-real-time-rendering/).
 
 ## Liquid presets
 
@@ -38,11 +36,11 @@ The preset dock includes:
 - **Fire Tornado / Alchemical Vortex** — high-swirl rising column with strong vorticity confinement.
 - **Ashfall / Grey Fireflies** — cooling smoke with adjustable grey ash motes.
 
-The inspector exposes pool level, viscosity, adhesion/wetting, surface tension, foam lifetime, splash energy, wave mode/height/speed, liquid specular response, and water-only absorption/scattering/roughness/refraction controls. The `🌊 WATER SPLASH`, `🏄 SURF WAVE`, and `🧱 DAM BREAK` viewport actions provide quick demonstrations without opening the inspector.
+The inspector exposes pool level, viscosity, adhesion/wetting, surface tension, particle pressure/rest density/neighbour radius, foam lifetime, splash energy, wave mode/height/speed, independent water tint/specular response, and water-only absorption/scattering/roughness/refraction controls. The `🌊 WATER SPLASH`, `🏄 SURF WAVE`, and `🧱 DAM BREAK` viewport actions provide quick demonstrations without opening the inspector.
 
 ## Performance notes
 
-- **Dynamic bounds** change the physical box used by the solver and raymarcher, but they do not change the selected `N³` voxel count. Expansion normally costs about the same GPU simulation time; it prevents explosions/waves from hitting the box boundary. A larger box spreads the same voxels over more space, so it can reduce detail per metre.
+- **Dynamic bounds** change the physical box used by the Pyro solver and raymarcher, but they do not change the selected `N³` voxel count. Expansion normally costs about the same GPU simulation time; it prevents explosions from hitting the box boundary. The particle-liquid path deliberately keeps a stable container so markers remain persistent and pool collision behavior remains predictable.
 - **Voxel Quantization** is primarily a rendering/debug control. `0%` trilinear sampling is usually the fastest. Intermediate quantization can be slightly slower because it adds sampling/blending work; the discrete DDA render mode has a different ray traversal cost and is not automatically faster.
 - For FPS, reduce grid resolution first, then render scale/raymarch steps, enable the GPU governor, and reduce ember count. Dynamic bounds are for physical room, not an FPS optimization.
 
@@ -52,9 +50,9 @@ No. The controls and concepts are Niagara-Fluids-inspired, not a copy of Unreal'
 
 ## GPU architecture
 
-- **WebGL2:** 2D tiled `RGBA16F` atlases store the 3D voxel state. Hydro runs separate injection, advection, divergence, Jacobi pressure, and gradient passes as fullscreen draws; pyro keeps its existing gas pipeline. Both share allocation and the liquid raymarcher.
-- **WebGPU:** `@compute @workgroup_size(4, 4, 4)` updates storage buffers directly and retains the hydro/raymarch integration for compatible browsers.
-- Resolutions include `16³`, `24³`, `32³`, `48³`, `64³`, `96³`, and `128³`; use 16³/24³ for integrated or low-end GPUs.
+- **Pyro:** WebGL2 and WebGPU keep the existing Eulerian voxel gas pipeline, with tiled `RGBA16F` atlases or compute storage buffers, combustion, buoyancy, smoke, and volumetric fire rendering.
+- **Water:** Hydro always selects `ParticleFluidWebGL2Engine` for now. It owns its own GLSL programs, persistent ping-pong particle textures, pressure/viscosity update pass, particle depth/thickness passes, and water composite. The WebGPU Pyro backend is intentionally not used for Hydro until a separate particle WebGPU backend exists.
+- Pyro grid resolutions remain `16³`, `24³`, `32³`, `48³`, `64³`, `96³`, and `128³`. They select practical fixed particle counts in Hydro (768–1536 markers) rather than allocating a voxel water atlas.
 
 ## Running locally
 

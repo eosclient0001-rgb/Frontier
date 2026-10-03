@@ -1,7 +1,7 @@
 /**
- * GLSL 300 es Shaders for 3D Voxelized Eulerian Pyro + Hydro Liquid Simulation
+ * GLSL 300 es Shaders for the 3D Voxelized Eulerian Pyro Gas Simulation
  * and Physically-Based Volumetric Raymarching (Niagara Fluids-inspired).
- * Supports dynamic world bounds, volumetric VOF liquids, and low-end GPU 16³–128³ grids.
+ * Supports dynamic world bounds and low-end GPU 16³–128³ grids.
  */
 
 export const FULLSCREEN_VERT = `#version 300 es
@@ -338,374 +338,6 @@ void main() {
 }
 `;
 
-
-// Shared field declarations/helpers for the multi-pass 3D liquid solver. Unlike
-// the previous analytic water surface, these passes advect liquid fraction in
-// three dimensions, project velocity with a pressure solve, and only seed the
-// pool once after a clear/mode switch.
-const HYDRO_SHARED_HEADER = `
-uniform sampler2D uVelocityTex;
-uniform sampler2D uThermoTex;
-uniform sampler2D uPressureTex;
-uniform sampler2D uDivergenceTex;
-uniform float uDt;
-uniform float uTime;
-uniform vec3 uDomainScale;
-
-uniform int uHydroScene;       // 0 = pool, 1 = dam-break column
-uniform int uSeedPool;
-uniform float uWaterLevel;
-uniform float uDamGateX;
-uniform float uLiquidGravity;
-uniform float uLiquidViscosity;
-uniform float uSurfaceAdhesion;
-uniform float uSurfaceTension;
-uniform float uFoamGeneration;
-uniform float uFoamDissipation;
-uniform float uSplashEnergy;
-uniform int uWaveMode;
-uniform float uWaveHeight;
-uniform float uWaveSpeed;
-uniform int uEnclosedBox;
-
-uniform int uObstacleType;
-uniform vec3 uColliderPos;
-uniform vec3 uColliderVel;
-uniform float uColliderRadius;
-
-uniform vec3 uSplashCenter;
-uniform float uSplashAge;
-uniform float uSplashImpulse;
-
-uniform int uEmitterEnabled;
-uniform float uEmitterRate;
-uniform float uEmitterRadius;
-uniform float uEmitterPosY;
-
-float hydroColliderSdf(vec3 uvw) {
-  if (uObstacleType == 0) return 1e5;
-  vec3 d = (uvw - uColliderPos) * max(uDomainScale, vec3(0.75));
-  float rad = max(uColliderRadius, 0.06);
-  if (uObstacleType == 1) return length(d) - rad;
-  if (uObstacleType == 2) {
-    vec2 w = vec2(length(d.xz) - rad * 0.75, abs(d.y) - rad * 1.4);
-    return min(max(w.x, w.y), 0.0) + length(max(w, vec2(0.0)));
-  }
-  if (uObstacleType == 3) {
-    vec2 w = vec2(length(d.yz) - rad * 0.72, abs(d.x) - rad * 1.9);
-    return min(max(w.x, w.y), 0.0) + length(max(w, vec2(0.0)));
-  }
-  if (uObstacleType == 4) {
-    vec3 q = abs(d) - vec3(rad * 1.5, rad * 0.45, rad * 1.5);
-    return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
-  }
-  if (uObstacleType == 5) {
-    return length(vec2(length(d.xy) - rad * 0.76, d.z)) - rad * 0.24;
-  }
-  return 1e5;
-}
-
-float hydroSolidMask(vec3 uvw) {
-  return hydroColliderSdf(uvw) < 0.0 ? 1.0 : 0.0;
-}
-
-float hydroSeedFill(vec3 uvw) {
-  float cell = 1.0 / float(uGridRes);
-  float level = uWaterLevel;
-  if (uWaveMode == 1) {
-    level += uWaveHeight * (0.075 * sin(uvw.x * 17.0) + 0.040 * sin(uvw.z * 12.0));
-  } else if (uWaveMode == 2) {
-    float travel = 0.18;
-    float front = exp(-pow((uvw.x - travel) * 7.0, 2.0));
-    float shoulder = 0.55 + 0.45 * sin(uvw.z * 6.2831853);
-    level += uWaveHeight * front * (0.16 + 0.10 * shoulder);
-  }
-  float verticalFill = 1.0 - smoothstep(level - cell * 1.2, level + cell * 1.2, uvw.y);
-  if (uHydroScene == 1) {
-    float damMask = 1.0 - smoothstep(uDamGateX - cell * 2.0, uDamGateX + cell * 2.0, uvw.x);
-    return verticalFill * damMask;
-  }
-  return verticalFill;
-}
-
-vec3 hydroFluidVelocity(ivec3 v) {
-  vec4 vv = fetchVoxel(uVelocityTex, v);
-  vec4 ss = fetchVoxel(uThermoTex, v);
-  return (vv.a > 0.5 || ss.r < 0.002) ? vec3(0.0) : vv.xyz;
-}
-
-float hydroLiquidAt(ivec3 v) {
-  return fetchVoxel(uThermoTex, v).r;
-}
-
-`;
-
-export const HYDRO_INJECT_FRAG = `${COMMON_VOLUME_HEADER}${HYDRO_SHARED_HEADER}
-layout(location = 0) out vec4 outVelocity;
-layout(location = 1) out vec4 outThermo;
-
-void main() {
-  ivec2 fc = ivec2(gl_FragCoord.xy);
-  ivec3 v = fragToVoxel(fc);
-  if (v.z >= uGridRes) {
-    outVelocity = vec4(0.0);
-    outThermo = vec4(0.0);
-    return;
-  }
-
-  vec3 uvw = (vec3(v) + 0.5) / float(uGridRes);
-  vec4 velocity = texelFetch(uVelocityTex, fc, 0);
-  vec4 state = texelFetch(uThermoTex, fc, 0);
-  float cell = 1.0 / float(uGridRes);
-
-  if (uSeedPool == 1) {
-    state = vec4(hydroSeedFill(uvw), 0.0, 0.0, 0.0);
-    velocity = vec4(0.0);
-    if (uHydroScene == 1) {
-      float gateFront = exp(-pow((uvw.x - uDamGateX) * 22.0, 2.0)) * state.r;
-      velocity.x += gateFront * 2.8;
-    }
-    if (uWaveMode == 1) {
-      velocity.x += cos(uvw.x * 17.0) * uWaveHeight * uWaveSpeed * 0.22 * state.r;
-    } else if (uWaveMode == 2) {
-      float crest = exp(-pow((uvw.x - 0.18) * 7.0, 2.0));
-      velocity.x += uWaveSpeed * (0.45 + crest) * state.r;
-      velocity.y += crest * uWaveHeight * 0.65 * state.r;
-    }
-  }
-
-  float solid = hydroSolidMask(uvw);
-  if (solid > 0.5) {
-    outVelocity = vec4(0.0, 0.0, 0.0, 1.0);
-    outThermo = vec4(0.0);
-    return;
-  }
-
-  // Moving collider impulse. The shell is deliberately three-dimensional, so
-  // a tyre or ball throws liquid sideways, upward, and behind its trajectory.
-  vec3 metricDelta = (uvw - uColliderPos) * max(uDomainScale, vec3(0.75));
-  float bodyDistance = length(metricDelta);
-  float colliderSdf = hydroColliderSdf(uvw);
-  float shell = exp(-abs(colliderSdf) * 20.0);
-  float speed = length(uColliderVel);
-  float impact = clamp(speed * 2.8 + uSplashEnergy * 0.18, 0.0, 3.0);
-  vec3 radialDir = bodyDistance > 0.001 ? metricDelta / bodyDistance : vec3(0.0, 1.0, 0.0);
-  float fluidNearBody = clamp(state.r * 1.8 + shell * 0.25, 0.0, 1.0);
-  velocity.xyz += (radialDir * (0.50 + 0.35 * max(uColliderVel.y, 0.0)) + vec3(0.0, 0.78, 0.0))
-                * shell * impact * fluidNearBody;
-  velocity.xyz += (uColliderVel - velocity.xyz) * shell * clamp(uDt * 18.0, 0.0, 0.72);
-  state.r = max(state.r, shell * impact * 0.28);
-  state.g = max(state.g, shell * impact * uFoamGeneration * 0.55);
-  state.b = max(state.b, shell * clamp(uSurfaceAdhesion * 0.85, 0.0, 1.0));
-
-  // Radial hand-triggered impact / dam-break impulse. This writes a short-lived
-  // liquid shell into the volume instead of merely changing a surface normal.
-  if (uSplashImpulse > 0.001 && uSplashAge < 2.6) {
-    vec3 splashDelta = (uvw - uSplashCenter) * max(uDomainScale, vec3(0.75));
-    float splashR = length(splashDelta);
-    float fade = exp(-uSplashAge * 2.2) * uSplashImpulse;
-    float shellR = exp(-pow((splashR - (0.035 + uSplashAge * 0.22)) * 16.0, 2.0));
-    float coreR = exp(-splashR * splashR * 170.0);
-    float splashLiquid = clamp(max(shellR * 0.68, coreR * 0.90) * fade, 0.0, 0.90);
-    state.r = max(state.r, splashLiquid);
-    vec3 splashDir = splashR > 0.001 ? splashDelta / splashR : vec3(0.0, 1.0, 0.0);
-    velocity.xyz += (splashDir + vec3(0.0, 1.15, 0.0)) * fade * (shellR * 0.75 + coreR * 0.55);
-    state.g = max(state.g, shellR * fade * uFoamGeneration);
-  }
-
-  // Optional overhead source for the chocolate/mud pour preset.
-  if (uEmitterEnabled == 1) {
-    float pourR = length((uvw.xz - vec2(0.54, 0.50)) * max(uDomainScale.xz, vec2(0.75)));
-    float pour = smoothstep(uEmitterRadius, uEmitterRadius * 0.22, pourR)
-               * step(uWaterLevel - cell, uvw.y) * step(uvw.y, uEmitterPosY)
-               * clamp(uEmitterRate, 0.0, 2.5);
-    state.r = max(state.r, pour);
-    velocity.y += pour * 0.85;
-  }
-
-  velocity.xyz = clamp(velocity.xyz, vec3(-8.0), vec3(8.0));
-  outVelocity = vec4(velocity.xyz, 0.0);
-  outThermo = state;
-}
-`;
-
-export const HYDRO_ADVECT_FRAG = `${COMMON_VOLUME_HEADER}${HYDRO_SHARED_HEADER}
-layout(location = 0) out vec4 outVelocity;
-layout(location = 1) out vec4 outThermo;
-
-void main() {
-  ivec2 fc = ivec2(gl_FragCoord.xy);
-  ivec3 v = fragToVoxel(fc);
-  if (v.z >= uGridRes) {
-    outVelocity = vec4(0.0);
-    outThermo = vec4(0.0);
-    return;
-  }
-
-  vec4 currentVelocity = texelFetch(uVelocityTex, fc, 0);
-  vec4 currentState = texelFetch(uThermoTex, fc, 0);
-  vec3 uvw = (vec3(v) + 0.5) / float(uGridRes);
-  if (currentVelocity.a > 0.5) {
-    outVelocity = vec4(0.0, 0.0, 0.0, 1.0);
-    outThermo = vec4(0.0);
-    return;
-  }
-
-  vec3 backUVW = uvw - currentVelocity.xyz * (uDt * 0.62);
-  vec4 advVelocity = sampleVolumeTrilinear(uVelocityTex, backUVW);
-  vec4 advState = sampleVolumeTrilinear(uThermoTex, backUVW);
-  float liquid = clamp(advState.r, 0.0, 1.0);
-  float foam = max(0.0, advState.g * exp(-uFoamDissipation * uDt));
-  float adhesion = max(0.0, advState.b * exp(-uFoamDissipation * 0.28 * uDt));
-
-  if (liquid < 0.001 && currentState.r < 0.001) {
-    outVelocity = vec4(0.0);
-    outThermo = vec4(0.0, foam, adhesion, 0.0);
-    return;
-  }
-
-  vec3 nextVelocity = advVelocity.xyz;
-  nextVelocity.y -= uLiquidGravity * uDt * 0.105;
-  nextVelocity *= exp(-uLiquidViscosity * uDt * 4.5);
-
-  // A VOF-like capillary force pulls the liquid interfaceBand together while the
-  // pressure pass handles incompressibility and the dam-break acceleration.
-  vec3 liquidGrad = 0.5 * vec3(
-    fetchVoxel(uThermoTex, v + ivec3(1, 0, 0)).r - fetchVoxel(uThermoTex, v + ivec3(-1, 0, 0)).r,
-    fetchVoxel(uThermoTex, v + ivec3(0, 1, 0)).r - fetchVoxel(uThermoTex, v + ivec3(0, -1, 0)).r,
-    fetchVoxel(uThermoTex, v + ivec3(0, 0, 1)).r - fetchVoxel(uThermoTex, v + ivec3(0, 0, -1)).r
-  );
-  nextVelocity -= liquidGrad * uSurfaceTension * uDt * 0.42;
-
-  if (v.y <= 1 && nextVelocity.y < 0.0) nextVelocity.y = 0.0;
-  if (uEnclosedBox == 1) {
-    if ((v.x <= 1 && nextVelocity.x < 0.0) || (v.x >= uGridRes - 2 && nextVelocity.x > 0.0)) nextVelocity.x = 0.0;
-    if ((v.z <= 1 && nextVelocity.z < 0.0) || (v.z >= uGridRes - 2 && nextVelocity.z > 0.0)) nextVelocity.z = 0.0;
-  }
-
-  // Foam is a surface/impact field, not smoke density. Keep it narrow to the
-  // reconstructed liquid interfaceBand so the pool stays clear and blue.
-  float interfaceBandMask = smoothstep(0.035, 0.18, length(liquidGrad));
-  float velocityFoam = clamp(length(nextVelocity) * 0.035, 0.0, 0.55);
-  foam = max(foam * mix(0.18, 1.0, interfaceBandMask), velocityFoam * uFoamGeneration * interfaceBandMask);
-  float pressureHint = clamp(length(liquidGrad) * 0.55 + length(nextVelocity) * 0.025, 0.0, 1.0);
-  outVelocity = vec4(clamp(nextVelocity, vec3(-8.0), vec3(8.0)), 0.0);
-  outThermo = vec4(liquid, clamp(foam, 0.0, 1.0), clamp(adhesion, 0.0, 1.0), pressureHint);
-}
-`;
-
-export const HYDRO_DIVERGENCE_FRAG = `${COMMON_VOLUME_HEADER}${HYDRO_SHARED_HEADER}
-layout(location = 0) out vec4 outDivergence;
-
-void main() {
-  ivec2 fc = ivec2(gl_FragCoord.xy);
-  ivec3 v = fragToVoxel(fc);
-  if (v.z >= uGridRes) {
-    outDivergence = vec4(0.0);
-    return;
-  }
-
-  float liquid = texelFetch(uThermoTex, fc, 0).r;
-  if (liquid < 0.001) {
-    outDivergence = vec4(0.0);
-    return;
-  }
-
-  vec3 vL = hydroFluidVelocity(v + ivec3(-1, 0, 0));
-  vec3 vR = hydroFluidVelocity(v + ivec3( 1, 0, 0));
-  vec3 vD = hydroFluidVelocity(v + ivec3( 0,-1, 0));
-  vec3 vU = hydroFluidVelocity(v + ivec3( 0, 1, 0));
-  vec3 vB = hydroFluidVelocity(v + ivec3( 0, 0,-1));
-  vec3 vF = hydroFluidVelocity(v + ivec3( 0, 0, 1));
-  float div = 0.5 * ((vR.x - vL.x) + (vU.y - vD.y) + (vF.z - vB.z));
-  outDivergence = vec4(div, 0.0, 0.0, 0.0);
-}
-`;
-
-export const HYDRO_PRESSURE_FRAG = `${COMMON_VOLUME_HEADER}${HYDRO_SHARED_HEADER}
-layout(location = 0) out vec4 outPressure;
-
-void main() {
-  ivec2 fc = ivec2(gl_FragCoord.xy);
-  ivec3 v = fragToVoxel(fc);
-  if (v.z >= uGridRes) {
-    outPressure = vec4(0.0);
-    return;
-  }
-
-  float centerLiquid = texelFetch(uThermoTex, fc, 0).r;
-  float centerP = texelFetch(uPressureTex, fc, 0).r;
-  float div = texelFetch(uDivergenceTex, fc, 0).r;
-  float pL = fetchVoxel(uPressureTex, v + ivec3(-1, 0, 0)).r;
-  float pR = fetchVoxel(uPressureTex, v + ivec3( 1, 0, 0)).r;
-  float pD = fetchVoxel(uPressureTex, v + ivec3( 0,-1, 0)).r;
-  float pU = fetchVoxel(uPressureTex, v + ivec3( 0, 1, 0)).r;
-  float pB = fetchVoxel(uPressureTex, v + ivec3( 0, 0,-1)).r;
-  float pF = fetchVoxel(uPressureTex, v + ivec3( 0, 0, 1)).r;
-  float sL = hydroLiquidAt(v + ivec3(-1, 0, 0));
-  float sR = hydroLiquidAt(v + ivec3( 1, 0, 0));
-  float sD = hydroLiquidAt(v + ivec3( 0,-1, 0));
-  float sU = hydroLiquidAt(v + ivec3( 0, 1, 0));
-  float sB = hydroLiquidAt(v + ivec3( 0, 0,-1));
-  float sF = hydroLiquidAt(v + ivec3( 0, 0, 1));
-  if (centerLiquid < 0.001) {
-    outPressure = vec4(0.0);
-    return;
-  }
-
-  float sum = 0.0;
-  float count = 0.0;
-  if (sL > 0.001) { sum += pL; count += 1.0; }
-  if (sR > 0.001) { sum += pR; count += 1.0; }
-  if (sD > 0.001) { sum += pD; count += 1.0; }
-  if (sU > 0.001) { sum += pU; count += 1.0; }
-  if (sB > 0.001) { sum += pB; count += 1.0; }
-  if (sF > 0.001) { sum += pF; count += 1.0; }
-  float pNew = count > 0.0 ? (sum - div) / count : centerP;
-  outPressure = vec4(clamp(pNew, -8.0, 8.0), 0.0, 0.0, 1.0);
-}
-`;
-
-export const HYDRO_GRADIENT_FRAG = `${COMMON_VOLUME_HEADER}${HYDRO_SHARED_HEADER}
-layout(location = 0) out vec4 outVelocity;
-layout(location = 1) out vec4 outThermo;
-
-void main() {
-  ivec2 fc = ivec2(gl_FragCoord.xy);
-  ivec3 v = fragToVoxel(fc);
-  if (v.z >= uGridRes) {
-    outVelocity = vec4(0.0);
-    outThermo = vec4(0.0);
-    return;
-  }
-
-  vec4 velocity = texelFetch(uVelocityTex, fc, 0);
-  vec4 state = texelFetch(uThermoTex, fc, 0);
-  if (velocity.a > 0.5) {
-    outVelocity = velocity;
-    outThermo = state;
-    return;
-  }
-  if (state.r < 0.001) {
-    outVelocity = vec4(0.0);
-    outThermo = state;
-    return;
-  }
-
-  float pc = texelFetch(uPressureTex, fc, 0).r;
-  float pL = hydroLiquidAt(v + ivec3(-1, 0, 0)) > 0.001 ? fetchVoxel(uPressureTex, v + ivec3(-1, 0, 0)).r : pc;
-  float pR = hydroLiquidAt(v + ivec3( 1, 0, 0)) > 0.001 ? fetchVoxel(uPressureTex, v + ivec3( 1, 0, 0)).r : pc;
-  float pD = hydroLiquidAt(v + ivec3( 0,-1, 0)) > 0.001 ? fetchVoxel(uPressureTex, v + ivec3( 0,-1, 0)).r : pc;
-  float pU = hydroLiquidAt(v + ivec3( 0, 1, 0)) > 0.001 ? fetchVoxel(uPressureTex, v + ivec3( 0, 1, 0)).r : pc;
-  float pB = hydroLiquidAt(v + ivec3( 0, 0,-1)) > 0.001 ? fetchVoxel(uPressureTex, v + ivec3( 0, 0,-1)).r : pc;
-  float pF = hydroLiquidAt(v + ivec3( 0, 0, 1)) > 0.001 ? fetchVoxel(uPressureTex, v + ivec3( 0, 0, 1)).r : pc;
-  velocity.xyz -= 0.72 * 0.5 * vec3(pR - pL, pU - pD, pF - pB);
-  if (v.y <= 1 && velocity.y < 0.0) velocity.y = 0.0;
-  velocity.xyz = clamp(velocity.xyz, vec3(-8.0), vec3(8.0));
-  outVelocity = vec4(velocity.xyz, 0.0);
-  outThermo = state;
-}
-`;
 
 /**
  * PASS 2: Semi-Lagrangian + Sharpened MacCormack Advection + Pyro Combustion Chemistry
@@ -1098,23 +730,6 @@ uniform vec3 uBoxMin;
 uniform vec3 uBoxMax;
 uniform vec3 uDomainScale;
 
-// Domain simulation mode: 0 = pyro, 1 = volumetric / viscous liquid
-uniform int uSimMode;
-uniform float uLiquidViscosity;
-uniform float uSurfaceAdhesion;
-uniform float uSurfaceTension;
-uniform float uLiquidSpecular;
-uniform float uCausticsIntensity;
-uniform float uWaterPoolLevel;
-uniform float uWaterAbsorption;
-uniform float uWaterScattering;
-uniform float uWaterRoughness;
-uniform float uWaterSurfaceThreshold;
-uniform float uWaterRefraction;
-uniform float uWaterLightIntensity;
-uniform float uWaterAmbientIntensity;
-uniform float uWaterExposure;
-
 // Camera & Viewport
 uniform vec3 uCamPos;
 uniform vec3 uCamForward;
@@ -1252,29 +867,6 @@ vec3 evaluateBlackbodyPalette(float tempRaw, int palette) {
     col = mix(col, c4, smoothstep(0.88, 1.35, t));
     return col * (t * t * 1.75);
   }
-}
-
-vec3 evaluateLiquidPalette(int palette, float foam, float adhesion) {
-  vec3 base;
-  if (palette == 7) {
-    // Melted chocolate: low-saturation cocoa with a warm specular film.
-    base = vec3(0.19, 0.045, 0.012);
-  } else if (palette == 8) {
-    // Wet mud/clay: earthy brown with a cool, wet reflected component.
-    base = vec3(0.16, 0.075, 0.028);
-  } else if (palette == 9) {
-    base = vec3(0.06, 0.32, 0.18);
-  } else {
-    // Clear-water palette; foam is added separately at the reconstructed interfaceBand.
-    base = vec3(0.012, 0.105, 0.19);
-  }
-
-  float wet = clamp(adhesion * 0.45 + uLiquidViscosity * 0.22, 0.0, 1.0);
-  base = mix(base, base * vec3(1.25, 1.08, 0.92), wet);
-  vec3 foamColor = palette == 8
-    ? vec3(0.62, 0.48, 0.30)
-    : (palette == 7 ? vec3(0.72, 0.52, 0.30) : vec3(0.72, 0.92, 1.0));
-  return mix(base, foamColor, clamp(foam * 0.88, 0.0, 0.92));
 }
 
 float sdObstacle(vec3 uvw) {
@@ -1457,18 +1049,8 @@ void main() {
     vec3 sampleAboveUVW = clamp(worldToUVW(vec3(gp.x, uBoxMin.y + 0.18, gp.z)), 0.0, 1.0);
     float distFromDomain = length(max(abs(gp.xz) - uBoxMax.xz, 0.0));
     float bounceIrr = sampleVolumeTrilinear(uPressureTex, sampleAboveUVW).g * exp(-distFromDomain * 2.5);
-    vec3 bounceColor = uSimMode == 1
-      ? vec3(0.0)
-      : evaluateBlackbodyPalette(max(0.85, bounceIrr * 1.4), uColorPalette) * bounceIrr * 0.55;
-
+    vec3 bounceColor = evaluateBlackbodyPalette(max(0.85, bounceIrr * 1.4), uColorPalette) * bounceIrr * 0.55;
     vec3 floorLit = floorBase * (0.35 + 0.65 * floorShadow * uSunIntensity * 0.5) + bounceColor;
-    if (uSimMode == 1) {
-      vec2 waterXZ = gp.xz * 7.0 + vec2(uTime * 0.55, -uTime * 0.32);
-      float caustic = (0.5 + 0.5 * sin(waterXZ.x + sin(waterXZ.y * 1.7)))
-                   * (0.5 + 0.5 * sin(waterXZ.y * 1.35 - waterXZ.x * 0.55));
-      float waterMask = sampleVolumeTrilinear(uThermoTex, clamp(worldToUVW(vec3(gp.x, uBoxMin.y + 0.06, gp.z)), 0.0, 1.0)).r;
-      floorLit += vec3(0.06, 0.25, 0.42) * caustic * waterMask * uCausticsIntensity * 0.72;
-    }
     bgSky = mix(bgSky, floorLit, radialFade);
   }
 
@@ -1489,109 +1071,6 @@ void main() {
     float wEnter = boxHit.x > 0.0 ? computeBoxWireframe(pEnter, boxHit.x) : 0.0;
     float wExit  = (boxHit.y < tGround ? computeBoxWireframe(pExit, boxHit.y) : 0.0) * 0.35;
     boxWireColor = vec3(1.0, 0.48, 0.14) * wEnter + vec3(0.32, 0.55, 0.85) * wExit;
-  }
-
-  // --- HYDRO: reconstructed water surface + low-scattering liquid volume ---
-  // Unreal's 3D liquid path uses FLIP particles for motion and a surface/SDF
-  // representation for rendering. This Eulerian approximation uses the voxel
-  // fraction and its gradient as a narrow-band surface, instead of rendering
-  // liquid like smoke density. That distinction is what keeps water clear,
-  // dark blue, and reflective rather than a white volumetric cloud.
-  if (uSimMode == 1) {
-    int hydroSteps = min(uRaymarchSteps, 192);
-    float hydroDiag = length(uBoxMax - uBoxMin);
-    float hydroStep = hydroDiag / float(hydroSteps);
-    float hydroOpticalScale = 1.0 / max(1.0, hydroDiag);
-    float hydroJitter = interleavedGradientNoise(gl_FragCoord.xy);
-    float hydroT = tEnter + hydroJitter * hydroStep;
-    vec3 hydroLight = vec3(0.0);
-    float hydroTrans = 1.0;
-    vec3 sunWater = vec3(0.78, 0.91, 1.0) * uWaterLightIntensity;
-    vec3 ambientWater = vec3(0.035, 0.095, 0.16) * uWaterAmbientIntensity;
-
-    for (int i = 0; i < 192; i++) {
-      if (i >= hydroSteps || hydroT >= tExit) break;
-      vec3 pWorld = rayOrigin + rayDir * hydroT;
-      vec3 uvw = worldToUVW(pWorld);
-
-      // Keep collider geometry opaque and separate from the water surface.
-      if (uObstacleType != 0 && sdObstacle(uvw) < 0.0) {
-        vec3 objectNormal = normalize(vec3(
-          sdObstacle(uvw + vec3(0.006, 0.0, 0.0)) - sdObstacle(uvw - vec3(0.006, 0.0, 0.0)),
-          sdObstacle(uvw + vec3(0.0, 0.006, 0.0)) - sdObstacle(uvw - vec3(0.0, 0.006, 0.0)),
-          sdObstacle(uvw + vec3(0.0, 0.0, 0.006)) - sdObstacle(uvw - vec3(0.0, 0.0, 0.006))
-        ));
-        float objectDiff = max(0.14, dot(objectNormal, uSunDir));
-        vec3 objectBase = uObstacleType == 5 ? vec3(0.035, 0.042, 0.052) : vec3(0.25, 0.29, 0.34);
-        float objectGloss = pow(max(dot(reflect(-uSunDir, objectNormal), -rayDir), 0.0), 42.0);
-        hydroLight += hydroTrans * (objectBase * objectDiff + vec3(0.28, 0.35, 0.42) * objectGloss);
-        hydroTrans = 0.0;
-        break;
-      }
-
-      vec4 state = sampleVolumeQuantized(uThermoTex, uvw, uVoxelQuantization);
-      float liquid = clamp(state.r, 0.0, 1.0);
-      float foam = clamp(state.g, 0.0, 1.0);
-      float adhesion = clamp(state.b, 0.0, 1.0);
-      if (liquid > 0.003 || foam > 0.008 || adhesion > 0.008) {
-        float e = max(0.75 / float(uGridRes), 0.0035);
-        float gx = sampleVolumeTrilinear(uThermoTex, clamp(uvw + vec3(e, 0.0, 0.0), 0.0, 1.0)).r
-                 - sampleVolumeTrilinear(uThermoTex, clamp(uvw - vec3(e, 0.0, 0.0), 0.0, 1.0)).r;
-        float gy = sampleVolumeTrilinear(uThermoTex, clamp(uvw + vec3(0.0, e, 0.0), 0.0, 1.0)).r
-                 - sampleVolumeTrilinear(uThermoTex, clamp(uvw - vec3(0.0, e, 0.0), 0.0, 1.0)).r;
-        float gz = sampleVolumeTrilinear(uThermoTex, clamp(uvw + vec3(0.0, 0.0, e), 0.0, 1.0)).r
-                 - sampleVolumeTrilinear(uThermoTex, clamp(uvw - vec3(0.0, 0.0, e), 0.0, 1.0)).r;
-        vec3 liquidGrad = vec3(gx, gy, gz);
-        float gradLen = length(liquidGrad);
-        float interfaceBand = smoothstep(0.035, 0.22, gradLen);
-        float filled = smoothstep(uWaterSurfaceThreshold * 0.42, uWaterSurfaceThreshold + 0.16, liquid);
-        vec3 normal = gradLen > 1e-4 ? normalize(-liquidGrad) : vec3(0.0, 1.0, 0.0);
-        if (normal.y < 0.0) normal = -normal;
-
-        // Low-scattering Beer-Lambert absorption: water transmits a tinted
-        // background instead of accumulating as opaque smoke.
-        float opticalDepth = liquid * uWaterAbsorption * hydroStep * hydroOpticalScale;
-        float volumeWeight = 1.0 - exp(-opticalDepth);
-        vec3 waterBody = vec3(0.012, 0.065, 0.13) + ambientWater;
-        hydroLight += hydroTrans * waterBody * volumeWeight;
-        hydroLight += hydroTrans * sunWater * volumeWeight * uWaterScattering * 0.12;
-        hydroTrans *= exp(-opticalDepth);
-
-        // The narrow band is the actual liquid surface. Foam and adhesion only
-        // affect this band, preventing the whole filled pool from turning white.
-        float surfaceEvent = interfaceBand * filled;
-        if (surfaceEvent > 0.004) {
-          float diffuse = max(0.10, dot(normal, uSunDir));
-          float viewFacing = max(dot(normal, -rayDir), 0.0);
-          float fresnel = pow(1.0 - viewFacing, 5.0);
-          vec3 base = evaluateLiquidPalette(uColorPalette, 0.0, adhesion * interfaceBand);
-          vec3 reflectedSky = mix(vec3(0.025, 0.075, 0.13), vec3(0.28, 0.60, 0.82), clamp(0.35 + 0.65 * normal.y, 0.0, 1.0));
-          vec3 refractedTint = mix(base, vec3(0.04, 0.22, 0.34), clamp(uWaterRefraction, 0.0, 1.0));
-          float specular = pow(max(dot(reflect(-uSunDir, normal), -rayDir), 0.0), mix(96.0, 24.0, clamp(uWaterRoughness, 0.0, 1.0)))
-                         * (0.12 + 0.28 * uLiquidSpecular) * (1.0 - 0.45 * uWaterRoughness);
-          vec3 surface = refractedTint * (0.30 + 0.70 * diffuse)
-                       + reflectedSky * fresnel * (0.22 + 0.48 * uWaterRefraction)
-                       + vec3(0.70, 0.86, 1.0) * specular;
-          float surfaceAlpha = clamp(surfaceEvent * (0.30 + 0.38 * interfaceBand + 0.22 * foam), 0.0, 0.82);
-          hydroLight += hydroTrans * surface * surfaceAlpha;
-          hydroTrans *= 1.0 - surfaceAlpha * 0.58;
-
-          float foamLayer = clamp(foam * interfaceBand, 0.0, 1.0);
-          if (foamLayer > 0.003) {
-            vec3 foamColor = mix(vec3(0.55, 0.75, 0.88), vec3(0.92, 0.98, 1.0), diffuse);
-            float foamAlpha = foamLayer * 0.34;
-            hydroLight += hydroTrans * foamColor * foamAlpha;
-            hydroTrans *= 1.0 - foamAlpha * 0.35;
-          }
-        }
-      }
-      hydroT += hydroStep;
-    }
-
-    vec3 hydroFinal = hydroLight + bgSky * hydroTrans + boxWireColor;
-    hydroFinal = acesToneMap(hydroFinal * uWaterExposure);
-    outColor = vec4(pow(hydroFinal, vec3(1.0 / 2.2)), 1.0);
-    return;
   }
 
   // --- MODE 8: 2D Axis Cross-Section Slice Inspector ---
@@ -1961,7 +1440,6 @@ layout(location = 0) out vec4 outColor;
 
 uniform sampler2D uAtlasTex;
 uniform int uFieldMode;
-uniform int uSimMode;
 uniform int uTilesX;
 uniform int uTilesY;
 
@@ -1970,16 +1448,9 @@ void main() {
   vec3 col = vec3(0.03, 0.04, 0.055);
 
   if (uFieldMode == 0) {
-    if (uSimMode == 1) {
-      vec3 liquid = vec3(0.02, 0.25, 0.52) * s.r * 0.72;
-      vec3 foam = vec3(0.80, 0.94, 1.0) * s.g * 0.70;
-      vec3 wetFilm = vec3(0.42, 0.25, 0.10) * s.b * 0.34;
-      col += liquid + foam + wetFilm;
-    } else {
-      vec3 fire = vec3(1.0, 0.38, 0.05) * s.g * 0.45 + vec3(1.0, 0.88, 0.35) * s.b * 0.35;
-      vec3 smoke = vec3(0.55, 0.62, 0.72) * s.r * 0.45;
-      col += smoke + fire;
-    }
+    vec3 fire = vec3(1.0, 0.38, 0.05) * s.g * 0.45 + vec3(1.0, 0.88, 0.35) * s.b * 0.35;
+    vec3 smoke = vec3(0.55, 0.62, 0.72) * s.r * 0.45;
+    col += smoke + fire;
   } else if (uFieldMode == 1) {
     col += abs(s.xyz) * 0.28;
   } else if (uFieldMode == 2) {

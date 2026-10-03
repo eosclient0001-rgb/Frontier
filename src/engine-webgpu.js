@@ -1,6 +1,7 @@
 /**
- * WebGPU 3D Eulerian Voxel Grid Pyro + Volumetric Hydro Solver
+ * WebGPU 3D Eulerian Voxel Grid Pyro Solver
  * Uses WGSL @compute @workgroup_size(4, 4, 4) shaders over 3D storage buffers.
+ * Hydro is intentionally rejected here; the app routes it to the dedicated WebGL2 particle engine.
  */
 
 import { WGSL_COMPUTE_SHADER, WGSL_RAYMARCH_SHADER } from './shaders-wgsl.js';
@@ -17,6 +18,9 @@ export class WebGPUPyroEngine {
   }
 
   static async create(canvas, params) {
+    if (Number(params?.simMode) === 1) {
+      throw new Error('Hydro uses the dedicated WebGL2 particle-liquid engine.');
+    }
     if (!navigator.gpu) {
       throw new Error('WebGPU is not supported in this browser.');
     }

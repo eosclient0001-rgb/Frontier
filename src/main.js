@@ -1,7 +1,7 @@
 /**
  * Main Application Entry Point
- * Orchestrates the 3D Voxel Grid Pyro/Hydro Solvers, liquid interactions,
- * Volumetric Raymarcher, Dynamic World Bounds, 16³–128³ Grids, and Studio UI.
+ * Orchestrates the separate 3D voxel Pyro gas and GPU particle Hydro solvers,
+ * liquid interactions, water surface renderer, dynamic bounds, and Studio UI.
  */
 
 import {
@@ -17,6 +17,7 @@ import {
 } from './presets.js';
 import { OrbitCamera } from './camera.js';
 import { WebGL2PyroEngine } from './engine-webgl2.js';
+import { ParticleFluidWebGL2Engine } from './engine-fluid-webgl2.js';
 import { WebGPUPyroEngine } from './engine-webgpu.js';
 
 class PyroStudioApp {
@@ -25,6 +26,7 @@ class PyroStudioApp {
     this.camera = new OrbitCamera();
     this.engine = null;
     this.activeBackend = 'webgl2';
+    this.preferredBackend = 'webgl2';
     this.activePresetKey = 'ue5_pyro_default';
     this.uiBindings = new Map();
 
@@ -70,6 +72,21 @@ class PyroStudioApp {
     }, 2400);
   }
 
+  async switchSimulationMode(mode) {
+    const nextMode = Number(mode) || 0;
+    const previousMode = Number(this.params.simMode) || 0;
+    this.setParam('simMode', nextMode);
+    const needsFluidEngine = nextMode === 1 && !this.engine?.isParticleFluid;
+    const needsPyroEngine = nextMode === 0 && this.engine?.isParticleFluid;
+    if (previousMode !== nextMode || needsFluidEngine || needsPyroEngine || !this.engine) {
+      const targetBackend = nextMode === 1 ? this.activeBackend : this.preferredBackend;
+      await this.initEngine(targetBackend);
+      this.showToast(nextMode === 1
+        ? '💧 Dedicated particle liquid active: persistent markers + pressure + collisions'
+        : '🔥 Dedicated Pyro gas solver active');
+    }
+  }
+
   async initEngine(targetBackend) {
     const oldCanvas = document.getElementById('pyro-canvas');
 
@@ -86,27 +103,41 @@ class PyroStudioApp {
     this.handleResize();
 
     try {
-      if (targetBackend === 'webgpu') {
+      // Liquid is a separate marker/particle engine. It is intentionally not
+      // routed through the Pyro gas atlas, gas pressure pass, or fire renderer.
+      if (Number(this.params.simMode) === 1) {
+        if (targetBackend === 'webgpu') {
+          this.showToast('💧 Dedicated particle liquid uses the WebGL2 surface-fluid path');
+        }
+        this.engine = new ParticleFluidWebGL2Engine(newCanvas, this.params);
+        this.activeBackend = 'webgl2';
+      } else if (targetBackend === 'webgpu') {
         this.engine = await WebGPUPyroEngine.create(newCanvas, this.params);
         this.activeBackend = 'webgpu';
+        this.preferredBackend = 'webgpu';
       } else {
         this.engine = new WebGL2PyroEngine(newCanvas, this.params);
         this.activeBackend = 'webgl2';
+        this.preferredBackend = 'webgl2';
       }
     } catch (err) {
       console.warn(`Backend ${targetBackend} initialization failed:`, err);
-      if (targetBackend === 'webgpu') {
-        this.showToast(`WebGPU unavailable (${err.message}) — Active on WebGL2`);
+      try {
         const fallbackCanvas = document.createElement('canvas');
         fallbackCanvas.id = 'pyro-canvas';
         newCanvas.replaceWith(fallbackCanvas);
         this.canvas = fallbackCanvas;
         this.bindCanvasPointerEvents(fallbackCanvas);
         this.handleResize();
-        this.engine = new WebGL2PyroEngine(fallbackCanvas, this.params);
+        const liquidFallback = Number(this.params.simMode) === 1;
+        this.engine = liquidFallback
+          ? new ParticleFluidWebGL2Engine(fallbackCanvas, this.params)
+          : new WebGL2PyroEngine(fallbackCanvas, this.params);
         this.activeBackend = 'webgl2';
-      } else {
-        this.showToast(`WebGL2 Error: ${err.message}`);
+        if (!liquidFallback) this.preferredBackend = 'webgl2';
+        this.showToast(`GPU path recovered with ${liquidFallback ? 'particle liquid' : 'WebGL2 pyro'}`);
+      } catch (fallbackError) {
+        this.showToast(`GPU initialization error: ${fallbackError.message}`);
       }
     }
 
@@ -137,7 +168,9 @@ class PyroStudioApp {
   updateAtlasPipHeaderPosition() {
     const pipHeader = document.getElementById('atlas-pip-header');
     if (!pipHeader || !this.canvas) return;
-    const show = this.params.showAtlasMinimap && this.activeBackend === 'webgl2';
+    const show = this.params.showAtlasMinimap
+      && this.activeBackend === 'webgl2'
+      && !this.engine?.isParticleFluid;
     pipHeader.classList.toggle('hidden', !show);
 
     if (show && this.engine) {
@@ -288,7 +321,9 @@ class PyroStudioApp {
           this.triggerSignatureExplosion();
         }
         this.updateAtlasPipHeaderPosition();
-        this.showToast(`Voxel Grid Resolution set to ${res}³ (${(res ** 3).toLocaleString()} voxels)`);
+        this.showToast(this.engine?.isParticleFluid
+          ? `Particle liquid density set from ${res}³ preset (${this.engine.particleCount.toLocaleString()} persistent markers)`
+          : `Voxel Grid Resolution set to ${res}³ (${(res ** 3).toLocaleString()} voxels)`);
       });
     });
 
@@ -307,15 +342,12 @@ class PyroStudioApp {
 
     // 3. Pyro / Hydro domain switch
     document.querySelectorAll('#sim-mode-switcher button').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const mode = Number(btn.dataset.simMode);
-        this.setParam('simMode', mode);
         document.querySelectorAll('#sim-mode-switcher button').forEach((b) => {
           b.classList.toggle('active', Number(b.dataset.simMode) === mode);
         });
-        this.showToast(mode === 1
-          ? '🌊 Hydro active: 3D liquid advection, pressure projection, foam & splashes'
-          : '🔥 Pyro active: Eulerian gas combustion & volumetric fire');
+        await this.switchSimulationMode(mode);
       });
     });
 
@@ -323,6 +355,10 @@ class PyroStudioApp {
     document.querySelectorAll('#backend-switcher button').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const target = btn.dataset.backend;
+        if (Number(this.params.simMode) === 1 && target === 'webgpu') {
+          this.showToast('💧 Hydro currently runs on the dedicated WebGL2 particle-liquid backend');
+          return;
+        }
         if (target === this.activeBackend) return;
         await this.initEngine(target);
         this.triggerSignatureExplosion();
@@ -454,8 +490,9 @@ class PyroStudioApp {
       this.showToast('☢️ High-Yield Thermobaric Mushroom Cloud Initiated!');
     });
 
-    document.getElementById('btn-vortex').addEventListener('click', () => {
+    document.getElementById('btn-vortex').addEventListener('click', async () => {
       this.setParam('simMode', 0);
+      await this.switchSimulationMode(0);
       this.setParam('colorPalette', 3);
       this.setParam('obstacleType', 0);
       this.setParam('emitterEnabled', true);
@@ -474,23 +511,23 @@ class PyroStudioApp {
       this.showToast(`🧱 Voxel Collider: ${label}`);
     });
 
-    document.getElementById('btn-water-splash')?.addEventListener('click', () => {
+    document.getElementById('btn-water-splash')?.addEventListener('click', async () => {
       this.setParam('simMode', 1);
       this.setParam('obstacleType', this.params.obstacleType === 5 ? 5 : 1);
+      await this.switchSimulationMode(1);
       if (this.engine?.triggerLiquidSplash) {
         this.engine.triggerLiquidSplash({ center: [0.5, this.params.waterPoolLevel + 0.04, 0.5], impulse: 1.8 });
       }
-      document.querySelector('#sim-mode-switcher button[data-sim-mode="1"]')?.click();
-      this.showToast('🌊 Liquid impact: crown splash + foam + wake impulse');
+      this.showToast('🌊 Particle impact: crown splash + displaced-water impulse');
     });
 
-    document.getElementById('btn-surf-wave')?.addEventListener('click', () => {
+    document.getElementById('btn-surf-wave')?.addEventListener('click', async () => {
       this.setParam('simMode', 1);
       this.setParam('waveMode', 2);
       this.setParam('waveHeight', Math.max(this.params.waveHeight || 0.0, 0.62));
       this.setParam('obstacleType', 0);
-      document.querySelector('#sim-mode-switcher button[data-sim-mode="1"]')?.click();
-      this.showToast('🏄 Pipeline surf wave: travelling crest, hollow shoulder & whitewater foam');
+      await this.switchSimulationMode(1);
+      this.showToast('🏄 Particle-liquid wave: travelling crest and restrained whitewater foam');
     });
 
     document.getElementById('btn-dam-break')?.addEventListener('click', () => {
@@ -630,7 +667,7 @@ class PyroStudioApp {
     });
   }
 
-  applyPreset(key) {
+  async applyPreset(key) {
     const preset = PRESETS[key];
     if (!preset) return;
     this.activePresetKey = key;
@@ -640,12 +677,18 @@ class PyroStudioApp {
     });
 
     const prevRes = this.params.gridResolution;
+    const prevMode = Number(this.params.simMode) || 0;
     Object.entries(preset.params).forEach(([k, v]) => {
       this.setParam(k, v);
     });
 
     if (this.engine) {
-      if (this.params.gridResolution !== prevRes) {
+      const nextMode = Number(this.params.simMode) || 0;
+      const modeChanged = prevMode !== nextMode
+        || (nextMode === 1) !== !!this.engine.isParticleFluid;
+      if (modeChanged) {
+        await this.initEngine(nextMode === 1 ? this.activeBackend : this.preferredBackend);
+      } else if (this.params.gridResolution !== prevRes) {
         this.engine.setGridResolution(this.params.gridResolution);
       } else {
         this.engine.clearGrid();
@@ -744,8 +787,8 @@ class PyroStudioApp {
     const hudShading = document.getElementById('hud-shader-desc');
     if (hudSolver && hudShading) {
       if (Number(this.params.simMode) === 1) {
-        hudSolver.textContent = '3D VOF Liquid Fraction + Advection + Divergence/Pressure Projection + Colliders';
-        hudShading.textContent = 'Volumetric Liquid Raymarch + Fresnel Specular + Foam + Caustic Floor';
+        hudSolver.textContent = 'GPU Particle Liquid + SPH Pressure + Persistent Markers + Colliders';
+        hudShading.textContent = 'Particle Depth/Thickness Surface + Clear-Water Absorption + Foam';
       } else {
         hudSolver.textContent = 'Eulerian 3D Grid + BFECC Advection + Jacobi Poisson + 3D Fire Irradiance';
         hudShading.textContent = 'Planckian Blackbody + Beer-Lambert + Henyey-Greenstein + Fireflies';
@@ -753,20 +796,29 @@ class PyroStudioApp {
     }
 
     const statVoxels = document.getElementById('stat-voxels');
+    const statVoxelsLabel = document.getElementById('stat-voxels-label');
     if (statVoxels) {
-      statVoxels.textContent =
-        totalVoxels >= 1000000
-          ? `${(totalVoxels / 1000000).toFixed(2)}M`
-          : `${(totalVoxels / 1000).toFixed(1)}K`;
+      if (Number(this.params.simMode) === 1 && this.engine?.isParticleFluid) {
+        statVoxels.textContent = `${this.engine.particleCount.toLocaleString()}`;
+        if (statVoxelsLabel) statVoxelsLabel.textContent = 'MARKERS';
+      } else {
+        statVoxels.textContent =
+          totalVoxels >= 1000000
+            ? `${(totalVoxels / 1000000).toFixed(2)}M`
+            : `${(totalVoxels / 1000).toFixed(1)}K`;
+        if (statVoxelsLabel) statVoxelsLabel.textContent = 'VOXELS';
+      }
     }
 
     const lblPip = document.getElementById('lbl-atlas-pip');
     if (lblPip) {
-      const shortNames = Number(this.params.simMode) === 1
-        ? ['LIQUID · FOAM · WETTING', 'VELOCITY UVW', 'VORTICITY CURL', 'PRESSURE + IRRADIANCE']
-        : ['THERMO', 'VELOCITY UVW', 'VORTICITY CURL', 'PRESSURE + IRRADIANCE'];
-      const fieldName = shortNames[this.params.atlasMinimapField || 0];
-      lblPip.textContent = `3D VOXEL ATLAS: ${fieldName} (${res} Z-SLICES)`;
+      if (Number(this.params.simMode) === 1) {
+        lblPip.textContent = 'PARTICLE LIQUID: DEPTH · THICKNESS · FOAM';
+      } else {
+        const shortNames = ['THERMO', 'VELOCITY UVW', 'VORTICITY CURL', 'PRESSURE + IRRADIANCE'];
+        const fieldName = shortNames[this.params.atlasMinimapField || 0];
+        lblPip.textContent = `3D VOXEL ATLAS: ${fieldName} (${res} Z-SLICES)`;
+      }
     }
     this.updateAtlasPipHeaderPosition();
   }
@@ -899,12 +951,10 @@ class PyroStudioApp {
       label: 'Simulation Family',
       options: [
         { id: 0, label: '🔥 Pyro / Gas (Eulerian Combustion)' },
-        { id: 1, label: '🌊 Hydro / Liquid (3D VOF + Pressure)' },
+        { id: 1, label: '💧 Water / Liquid (Particle + Pressure)' },
       ],
       onChange: (mode) => {
-        this.showToast(mode === 1
-          ? '🌊 Hydro liquid solver enabled'
-          : '🔥 Pyro gas solver enabled');
+        void this.switchSimulationMode(mode);
       },
     });
 
@@ -1118,7 +1168,7 @@ class PyroStudioApp {
       step: 0.05,
     });
 
-    const secHydro = this.createSection(tabPyro, 'Volumetric Liquid / Fluid Physics', 'HYDRO · 3D VOF');
+    const secHydro = this.createSection(tabPyro, 'Dedicated Particle Liquid Physics', 'WATER · GPU PARTICLES');
     this.addSelect(secHydro, {
       key: 'hydroScene',
       label: 'Liquid Scene / Initial Condition',
@@ -1202,19 +1252,54 @@ class PyroStudioApp {
       min: 0.0, max: 0.6, step: 0.01,
     });
     this.addSlider(secHydro, {
+      key: 'waterTintR',
+      label: 'Water Tint Red',
+      min: 0.0, max: 0.5, step: 0.005,
+    });
+    this.addSlider(secHydro, {
+      key: 'waterTintG',
+      label: 'Water Tint Green',
+      min: 0.0, max: 0.7, step: 0.005,
+    });
+    this.addSlider(secHydro, {
+      key: 'waterTintB',
+      label: 'Water Tint Blue',
+      min: 0.0, max: 0.9, step: 0.005,
+    });
+    this.addSlider(secHydro, {
       key: 'waterRoughness',
       label: 'Water Surface Roughness',
       min: 0.02, max: 0.8, step: 0.01,
     });
     this.addSlider(secHydro, {
       key: 'waterSurfaceThreshold',
-      label: 'VOF Surface Threshold',
+      label: 'Water Surface Coverage Threshold',
       min: 0.03, max: 0.6, step: 0.01,
     });
     this.addSlider(secHydro, {
       key: 'waterRefraction',
       label: 'Clear-Water Refraction / Reflection',
       min: 0.0, max: 1.0, step: 0.01,
+    });
+    this.addSlider(secHydro, {
+      key: 'pressureStiffness',
+      label: 'Particle Pressure / Incompressibility',
+      min: 0.2, max: 5.0, step: 0.05,
+    });
+    this.addSlider(secHydro, {
+      key: 'particleSmoothingRadius',
+      label: 'Particle Neighbor Radius',
+      min: 0.035, max: 0.14, step: 0.005,
+    });
+    this.addSlider(secHydro, {
+      key: 'restDensity',
+      label: 'Marker Rest Density',
+      min: 0.2, max: 4.0, step: 0.05,
+    });
+    this.addSlider(secHydro, {
+      key: 'particleRenderRadius',
+      label: 'Surface Particle Radius',
+      min: 0.012, max: 0.065, step: 0.001,
     });
 
     // --- TAB 3: VOLUMETRIC RAYMARCHING & SHADING ---

@@ -1,5 +1,5 @@
 /**
- * Unreal Engine 5 Niagara Fluids (Grid3D_Gas + Grid2D_ShallowWater + Grid3D_FLIP)
+ * Unreal Engine 5 Niagara Fluids (Grid3D_Gas + particle/FLIP liquid)
  * & EmberGen inspired presets, choreographed sequences, and default parameters.
  */
 
@@ -9,19 +9,19 @@ export const RESOLUTION_OPTIONS = [
   { value: 32, label: '32³  (32.7K Voxels — Stylized / Fast)', tilesX: 8, tilesY: 4 },
   { value: 48, label: '48³  (110.6K Voxels — Balanced)', tilesX: 8, tilesY: 6 },
   { value: 64, label: '64³  (262.1K Voxels — UE5 Niagara Default)', tilesX: 8, tilesY: 8 },
-  { value: 96, label: '96³  (884.7K Voxels — High Detail Pyro/Hydro)', tilesX: 12, tilesY: 8 },
+  { value: 96, label: '96³  (884.7K Voxels — High Detail Pyro)', tilesX: 12, tilesY: 8 },
   { value: 128, label: '128³ (2.10M Voxels — Ultra Cinema Grid)', tilesX: 16, tilesY: 8 },
 ];
 
 export const DEBUG_CHANNELS = [
-  { id: 0, label: 'Combined Lit Volumetric (Pyro / Liquid PBR)' },
+  { id: 0, label: 'Combined Lit (Pyro Gas / Particle Water)' },
   { id: 1, label: 'Voxelized DDA Cubes (Discrete Voxel Grid)' },
-  { id: 2, label: 'Primary Density ρ / Liquid Fraction φ(x,y,z)' },
-  { id: 3, label: 'Temperature T / Whitewater Foam Field F(x,y,z)' },
-  { id: 4, label: 'Fuel Core f / Surface Adhesion Film A(x,y,z)' },
-  { id: 5, label: '3D Velocity Vectors u(x,y,z)' },
-  { id: 6, label: 'Vorticity / Curl Magnitude |∇×u|' },
-  { id: 7, label: 'Poisson Pressure & Irradiance p(x,y,z)' },
+  { id: 2, label: 'Primary Density ρ (Pyro-only voxel channel)' },
+  { id: 3, label: 'Temperature T (Pyro-only voxel channel)' },
+  { id: 4, label: 'Fuel Core f (Pyro-only voxel channel)' },
+  { id: 5, label: '3D Velocity Vectors u(x,y,z) (Pyro voxel debug)' },
+  { id: 6, label: 'Vorticity / Curl Magnitude |∇×u| (Pyro voxel debug)' },
+  { id: 7, label: 'Poisson Pressure & Irradiance p(x,y,z) (Pyro voxel debug)' },
   { id: 8, label: '3D Grid Cross-Section Slice Inspector' },
 ];
 
@@ -67,7 +67,7 @@ export const ATLAS_MINIMAP_FIELDS = [
 
 export function createDefaultParams() {
   return {
-    // Domain Solver Mode: 0 = Pyro (Fire/Smoke/Gas), 1 = Hydro (Volumetric 3D Liquid VOF)
+    // Domain Solver Mode: 0 = Pyro (Fire/Smoke/Gas), 1 = Hydro (Dedicated GPU Particle Liquid)
     simMode: 0,
 
     // Grid & Solver
@@ -123,12 +123,19 @@ export function createDefaultParams() {
     liquidSpecular: 1.35,     // Wet specular glossiness
     waterAbsorption: 0.72,    // Water-only Beer-Lambert absorption; independent from pyro density
     waterScattering: 0.08,    // Low forward scattering for clear liquid
+    waterTintR: 0.018,        // Independent water body color (not the Pyro palette)
+    waterTintG: 0.105,
+    waterTintB: 0.240,
     waterRoughness: 0.14,    // Surface roughness for broad water highlights
-    waterSurfaceThreshold: 0.18, // VOF fraction used to reconstruct the visible interface
+    waterSurfaceThreshold: 0.18, // Particle thickness threshold used for the visible surface/foam response
     waterRefraction: 0.78,    // Clear-water tint/reflection balance
     waterLightIntensity: 1.15, // Hydro-only key light, independent from pyro sun intensity
     waterAmbientIntensity: 0.34, // Hydro-only ambient fill
     waterExposure: 1.0,      // Hydro-only exposure, independent from fire exposure
+    pressureStiffness: 1.8,  // Particle pressure response / incompressibility gain
+    restDensity: 2.20,        // Compact marker neighborhood rest density
+    particleSmoothingRadius: 0.090, // Particle neighbor radius in normalized volume space
+    particleRenderRadius: 0.032,    // Screen-space surface splat radius
     causticsIntensity: 0.70,  // Underwater refractive solar caustics on floor
 
     // Continuous Emitter (Fire Plume in Pyro / Fountain Jet in Hydro)
@@ -228,6 +235,10 @@ export const PRESETS = {
       waveMode: 0,
       waveHeight: 0.10,
       waveSpeed: 1.0,
+      pressureStiffness: 2.0,
+      restDensity: 2.20,
+      particleSmoothingRadius: 0.090,
+      particleRenderRadius: 0.034,
       waterAbsorption: 0.68,
       waterScattering: 0.06,
       waterRoughness: 0.12,
@@ -273,6 +284,10 @@ export const PRESETS = {
       waveMode: 0,
       waveHeight: 0.22,
       waveSpeed: 1.25,
+      pressureStiffness: 2.0,
+      restDensity: 2.20,
+      particleSmoothingRadius: 0.090,
+      particleRenderRadius: 0.034,
       waterAbsorption: 0.72,
       waterScattering: 0.08,
       waterRoughness: 0.13,
@@ -329,6 +344,10 @@ export const PRESETS = {
       waveMode: 2, // Pipeline Surfing Barrel Wave
       waveHeight: 0.68,
       waveSpeed: 1.35,
+      pressureStiffness: 2.0,
+      restDensity: 2.20,
+      particleSmoothingRadius: 0.090,
+      particleRenderRadius: 0.034,
       waterAbsorption: 0.68,
       waterScattering: 0.08,
       waterRoughness: 0.12,
@@ -381,6 +400,10 @@ export const PRESETS = {
       waveMode: 1,
       waveHeight: 0.24,
       waveSpeed: 1.20,
+      pressureStiffness: 2.0,
+      restDensity: 2.20,
+      particleSmoothingRadius: 0.090,
+      particleRenderRadius: 0.034,
       waterAbsorption: 0.74,
       waterScattering: 0.09,
       waterRoughness: 0.14,
@@ -435,6 +458,10 @@ export const PRESETS = {
       waveMode: 0,
       waveHeight: 0.20,
       waveSpeed: 0.85,
+      pressureStiffness: 2.0,
+      restDensity: 2.20,
+      particleSmoothingRadius: 0.090,
+      particleRenderRadius: 0.034,
       waterAbsorption: 1.15,
       waterScattering: 0.16,
       waterRoughness: 0.27,
@@ -494,6 +521,10 @@ export const PRESETS = {
       waveMode: 0,
       waveHeight: 0.22,
       waveSpeed: 0.95,
+      pressureStiffness: 2.0,
+      restDensity: 2.20,
+      particleSmoothingRadius: 0.090,
+      particleRenderRadius: 0.034,
       waterAbsorption: 1.30,
       waterScattering: 0.18,
       waterRoughness: 0.38,

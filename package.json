@@ -1,7 +1,7 @@
 {
   "name": "frontier-pyro-voxel-engine",
   "version": "1.0.0",
-  "description": "Real-time 3D Eulerian voxel Pyro and shallow-water Hydro liquid simulator with volumetric raymarching (WebGPU + WebGL2)",
+  "description": "Real-time 3D Eulerian Pyro gas and dedicated GPU particle Hydro liquid simulator (WebGPU + WebGL2)",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
