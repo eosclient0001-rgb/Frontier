@@ -54,6 +54,17 @@ try {
 }
 const perPane = PANES.map((p) => `${p.dataset.pane}=${p.children.length}`);
 console.log(`  ✓ pane sections: ${perPane.join(', ')}`);
+// exercise the interactive material-graph nodes (each click toggles a layer)
+const all = [];
+(function walk(n) { all.push(n); for (const c of n.children) walk(c); })(PANES[0]);
+const nodes = all.filter((x) => x.className.includes('gnode'));
+let clicks = 0;
+for (const n of nodes) { if (n.className.includes('interactive') && n.onclick) { n.onclick(); clicks++; } }
+const stripes = m.FABRIC.amountStripe;
+for (const n of nodes) { if (n.className.includes('interactive') && n.onclick) { n.onclick(); } }
+if (clicks !== 4) { failures++; console.log(`  ✗ expected 4 interactive graph nodes, found ${clicks}`); }
+else console.log(`  ✓ material graph: ${nodes.length} nodes, ${clicks} toggleable overlays (amountStripe ${stripes} -> ${m.FABRIC.amountStripe} -> back)`);
+
 const cfg = m.simConfig();
 const keys = Object.keys(cfg);
 const required = ['gravity', 'wind', 'airDrag', 'damping', 'thickness', 'friction', 'restitution',

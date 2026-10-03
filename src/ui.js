@@ -113,6 +113,73 @@ export function buttonRow(parent, buttons) {
   return made;
 }
 
+/**
+ * Material graph panel.
+ *
+ * Substance-style node stack: each row is one stage of the fabric pipeline the
+ * WGSL `evalFabric` actually evaluates, with a live LED showing whether that
+ * node contributes and a value readout. Overlay nodes are interactive — click
+ * one to fold that layer into the graph (the stacked-layer sliders below are
+ * the same state).
+ */
+export function nodeGraph(parent, fabric, onChange) {
+  const wrap = el('div', 'graph');
+
+  const PATTERN_LABEL = Object.fromEntries(PATTERN_TYPES.map((t) => [t.value, t.label]));
+  const overlays = [
+    { key: 'amountStripe', label: 'Stripes', src: 'stripesFn' },
+    { key: 'amountPlaid', label: 'Plaid', src: 'plaidFn' },
+    { key: 'amountDot', label: 'Polka dots', src: 'dotsFn' },
+    { key: 'amountMotif', label: 'Motifs', src: 'motifFn' },
+  ];
+
+  const node = (title, sub, kind) => {
+    const n = el('div', `gnode ${kind ?? ''}`);
+    n.innerHTML = `<span class="led"></span><span class="gtitle">${title}</span>`
+      + `<span class="gsub">${sub}</span><span class="gval"></span>`;
+    wrap.appendChild(n);
+    return n;
+  };
+
+  const nColour = node('Colour roles', 'base → accent → shadow');
+  const nPattern = node('Pattern generator', 'evalFabric(uv)');
+  const overlayNodes = overlays.map((o) => {
+    const n = node(`Overlay · ${o.label}`, o.src, 'interactive');
+    n.onclick = () => {
+      fabric[o.key] = fabric[o.key] > 0.01 ? 0 : 0.5;
+      sync();
+      onChange?.();
+    };
+    return { ...o, el: n };
+  });
+  const nWeave = node('Weave bump', 'weaveFn micro-normal');
+  const nDye = node('Dye variation', 'fbm mottling');
+  const nOut = node('Output', 'dress + swatch', 'out');
+
+  const setVal = (n, text, live) => {
+    n.querySelector('.gval').textContent = text;
+    n.querySelector('.led').classList.toggle('on', !!live);
+  };
+
+  const sync = () => {
+    setVal(nColour, `${fabric.colA} · ${fabric.colB} · ${fabric.colC}`, true);
+    const type = Math.round(fabric.type);
+    setVal(nPattern, `${PATTERN_LABEL[type] ?? 'Solid'} · scale ${Number(fabric.scale).toFixed(1)}`, type > 0);
+    for (const o of overlayNodes) {
+      const on = fabric[o.key] > 0.01;
+      setVal(o.el, on ? `mix ${Number(fabric[o.key]).toFixed(2)}` : 'off', on);
+    }
+    setVal(nWeave, `${Number(fabric.weaveAmount).toFixed(2)} × ${Number(fabric.weaveScale).toFixed(2)}`, fabric.weaveAmount > 0.01);
+    setVal(nDye, Number(fabric.noiseAmount).toFixed(2), fabric.noiseAmount > 0.01);
+    setVal(nOut, 'linear space → tonemapped', true);
+  };
+  sync();
+  registry.push(sync);
+
+  parent.appendChild(wrap);
+  return { wrap, sync };
+}
+
 const isNumeric = (v) => typeof v === 'number';
 
 /** Fabric preset chips. */

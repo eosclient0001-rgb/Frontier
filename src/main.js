@@ -141,6 +141,9 @@ function buildUI() {
   // ---------------------------------------------------------------- FABRIC
   {
     const pane = panes.fabric;
+    const s0 = UI.section(pane, 'Material Graph', 'node stack');
+    UI.nodeGraph(s0, FABRIC, pushFabric);
+
     const s1 = UI.section(pane, 'Fabric Library', 'presets');
     UI.presetGrid(s1, (preset) => {
       Object.assign(FABRIC, preset);
@@ -292,6 +295,7 @@ function buildUI() {
     ]);
   }
 
+  document.getElementById('fabricName').textContent = FABRIC.name;
   syncFabricControls();
   updateHudCounts();
 }

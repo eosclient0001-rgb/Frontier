@@ -181,3 +181,39 @@ input[type="color"] { height: 30px; padding: 2px 3px; cursor: pointer; }
   #stage { height: 54vh; }
   #fabricCanvas { height: 150px; }
 }
+
+/* ---------------------------------------------------------------- material graph */
+.graph { display: flex; flex-direction: column; gap: 4px; }
+.gnode {
+  position: relative;
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 7px 9px 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012));
+}
+.gnode::before {
+  content: '';
+  position: absolute;
+  left: 13px; bottom: -5px;
+  width: 1px; height: 5px;
+  background: var(--line);
+}
+.gnode:last-child::before { display: none; }
+.gnode .led {
+  grid-row: 1 / span 2;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #3a3f4a;
+  box-shadow: none;
+}
+.gnode .led.on { background: var(--accent); box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 70%, transparent); }
+.gnode .gtitle { font-size: 11.5px; color: var(--fg); letter-spacing: 0.01em; }
+.gnode .gsub { grid-column: 2; font-size: 10px; color: var(--dim); font-family: ui-monospace, monospace; }
+.gnode .gval { grid-column: 3; grid-row: 1 / span 2; font-size: 10px; color: var(--dim); font-family: ui-monospace, monospace; text-align: right; }
+.gnode.interactive { cursor: pointer; }
+.gnode.interactive:hover { border-color: var(--accent); background: rgba(255,255,255,0.06); }
+.gnode.out { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
