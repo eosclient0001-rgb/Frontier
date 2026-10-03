@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frontier — Realtime WebGPU Cloth Studio</title>
+<link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="editor">
+      <header class="brand">
+        <div class="logo">FR</div>
+        <div>
+          <h1>Frontier <span>Cloth Studio</span></h1>
+          <p id="gpuinfo">Initialising WebGPU…</p>
+        </div>
+      </header>
+
+      <div class="swatch-wrap">
+        <canvas id="fabricCanvas"></canvas>
+        <div class="swatch-tag">
+          <span id="fabricName">Indigo Silk</span>
+          <span class="hint">material editor</span>
+        </div>
+      </div>
+
+      <nav class="tabs">
+        <button data-tab="fabric" class="active">Material</button>
+        <button data-tab="dress">Dress</button>
+        <button data-tab="physics">Physics</button>
+        <button data-tab="body">Body</button>
+        <button data-tab="scene">Scene</button>
+      </nav>
+
+      <div class="panes">
+        <div class="pane active" data-pane="fabric"></div>
+        <div class="pane" data-pane="dress"></div>
+        <div class="pane" data-pane="physics"></div>
+        <div class="pane" data-pane="body"></div>
+        <div class="pane" data-pane="scene"></div>
+      </div>
+    </aside>
+
+    <main id="stage">
+      <canvas id="viewport"></canvas>
+      <div class="hud top-left">
+        <div class="pill"><b id="fps">—</b> fps</div>
+        <div class="pill"><b id="verts">—</b> cloth points</div>
+        <div class="pill"><b id="cons">—</b> constraints</div>
+        <div class="pill" id="statuspill">simulating</div>
+      </div>
+      <div class="hud bottom-left">
+        <div class="hint">drag orbit · wheel zoom · right-drag pan</div>
+      </div>
+      <div class="hud bottom-right">
+        <button class="btn primary" id="btnPlay">Pause</button>
+        <button class="btn" id="btnReset">Reset cloth</button>
+        <button class="btn" id="btnDrop">Drop from body</button>
+        <button class="btn" id="btnDance">Dance</button>
+      </div>
+      <div id="error" class="error" hidden></div>
+    </main>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
