@@ -40,16 +40,22 @@ export class ClothStudio {
     if (!adapter) throw new Error('No suitable GPU adapter found.');
     this.adapter = adapter;
     const limits = adapter.limits;
-    this.device = await adapter.requestDevice({
-      requiredLimits: {
-        maxStorageBufferBindingSize: Math.min(limits.maxStorageBufferBindingSize, 512 * 1024 * 1024),
-        maxBufferSize: Math.min(limits.maxBufferSize, 512 * 1024 * 1024),
-        maxComputeWorkgroupsPerDimension: limits.maxComputeWorkgroupsPerDimension,
-      },
-    });
+    const requiredLimits = {};
+    if (typeof limits.maxStorageBufferBindingSize === 'number') {
+      requiredLimits.maxStorageBufferBindingSize = Math.min(limits.maxStorageBufferBindingSize, 512 * 1024 * 1024);
+    }
+    if (typeof limits.maxBufferSize === 'number') {
+      requiredLimits.maxBufferSize = Math.min(limits.maxBufferSize, 512 * 1024 * 1024);
+    }
+    this.device = await adapter.requestDevice({ requiredLimits });
     this.device.lost.then((info) => {
       console.error('Device lost:', info.message);
       this.onError?.(`GPU device lost: ${info.message}`);
+    });
+    // Surface validation errors instead of failing silently to a blank canvas.
+    this.device.addEventListener?.('uncapturederror', (ev) => {
+      console.error('WebGPU error:', ev.error);
+      this.onError?.(`WebGPU error: ${ev.error?.message ?? ev.error}`);
     });
     this.info = adapter.info ?? {};
 

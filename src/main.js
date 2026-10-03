@@ -104,6 +104,12 @@ function showError(msg) {
     showError(String(e.message ?? e));
     return;
   }
+  studio.onError = (msg) => {
+    console.error(msg);
+    const box = document.getElementById('error');
+    box.hidden = false;
+    box.textContent = msg;
+  };
   const info = studio.info ?? {};
   const gpuName = info.description || info.device || info.vendor || 'WebGPU device';
   document.getElementById('gpuinfo').textContent = String(gpuName).slice(0, 42);
