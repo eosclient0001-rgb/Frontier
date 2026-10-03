@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>XPBD Metal Crumple - Realistic Plastic Deformation</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0a0f;color:#e0e0e0;font-family:Inter,system-ui,sans-serif;overflow:hidden}
+  #canvas{width:100vw;height:100vh;display:block}
+  #overlay{
+    position:fixed;top:0;left:0;right:0;padding:12px 20px;
+    background:linear-gradient(180deg,rgba(0,0,0,0.9),rgba(0,0,0,0));
+    pointer-events:none;z-index:10;
+    display:flex;justify-content:space-between;align-items:flex-start;
+  }
+  #title h1{font-size:18px;letter-spacing:0.04em;font-weight:700}
+  #title p{font-size:12px;opacity:0.7;margin-top:4px;max-width:520px;line-height:1.4}
+  #stats{
+    font-size:11px;opacity:0.8;text-align:right;
+    font-family:monospace;
+    background:rgba(0,0,0,0.5);padding:8px 10px;border-radius:8px;
+  }
+  #help{
+    position:fixed;bottom:0;left:0;right:0;padding:12px 20px;
+    background:linear-gradient(0deg,rgba(0,0,0,0.85),rgba(0,0,0,0));
+    font-size:11px;opacity:0.6;pointer-events:none;z-index:10;line-height:1.5
+  }
+  .badge{display:inline-block;padding:2px 6px;border-radius:4px;background:#ffffff15;margin-right:6px;font-size:10px;letter-spacing:0.05em}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/node_modules/three/build/three.module.js",
+    "three/addons/": "/node_modules/three/examples/jsm/",
+    "lil-gui": "/node_modules/lil-gui/dist/lil-gui.esm.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="overlay">
+  <div id="title">
+    <h1>XPBD REAL METAL • PLASTIC CRUMPLE</h1>
+    <p>Not cloth. XPBD with <b>yield surface + plastic flow + hardening</b>. Distance constraints have rest-length plasticity. Bending has rest-angle plasticity. Compliance → 1e-7 (steel). No elastic rebound because rest state permanently updates.</p>
+  </div>
+  <div id="stats">
+    <div><span class="badge">XPBD</span><span id="solver-info">-</span></div>
+    <div id="perf">-</div>
+    <div id="plastic-info">-</div>
+  </div>
+</div>
+<div id="help">
+  <span class="badge">CONTROLS</span> Drag hammer with mouse • Scroll to zoom • Right-drag orbit • <b>R</b> reset • <b>Space</b> drop • <b>1/2/3</b> switch demo • Metal stays crumpled because plasticity > elasticity after yield.
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
