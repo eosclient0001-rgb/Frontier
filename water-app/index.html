@@ -13,11 +13,11 @@
         <div>
           <p class="eyebrow">STANDALONE WATER LAB</p>
           <h1>Liquid Surface / Dam Break</h1>
-          <p class="subhead">Persistent water markers · screen-space surface reconstruction · no Pyro or smoke path</p>
+          <p class="subhead">GPU volume markers → water-depth grid → continuous indexed surface</p>
         </div>
         <div class="readouts">
           <span><b id="fps-readout">60</b> FPS</span>
-          <span><b id="marker-readout">1,536</b> MARKERS</span>
+          <span><b id="marker-readout">1,536 / 192×128</b> MARKERS / CELLS</span>
           <span id="status-readout" class="status">RUNNING</span>
         </div>
       </header>
@@ -41,7 +41,7 @@
         </div>
       </section>
 
-      <footer class="hint"><span>Drag to orbit</span><span>Wheel to zoom</span><span>Click the water to kick a real particle impulse</span></footer>
+      <footer class="hint"><span>Drag to orbit</span><span>Wheel to zoom</span><span>Click the water to inject a grid wave</span></footer>
     </main>
     <div id="error-panel" class="error-panel" hidden></div>
     <script type="module" src="./water.js"></script>

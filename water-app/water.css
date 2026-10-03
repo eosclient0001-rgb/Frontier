@@ -36,7 +36,7 @@ label { display: grid; grid-template-columns: 1fr auto; gap: 7px; color: #a9c0d2
 output { color: #eaf7ff; font-variant-numeric: tabular-nums; }
 input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--cyan); }
 .hint { align-self: center; display: flex; gap: 18px; padding: 9px 14px; border: 1px solid var(--line); border-radius: 999px; background: rgba(5, 12, 20, .6); color: #92aabe; font-size: 11px; backdrop-filter: blur(12px); }
-.error-panel { position: fixed; inset: 20px; display: grid; place-items: center; padding: 30px; border: 1px solid #f07b7b; border-radius: 12px; background: rgba(28, 5, 10, .94); color: #ffd8dc; font: 14px/1.6 ui-monospace, monospace; white-space: pre-wrap; z-index: 10; }
+.error-panel { position: fixed; inset: 20px; display: grid; place-items: center; padding: 30px; border: 2px solid #ff6c7a; border-radius: 12px; background: #24070d; color: #fff1f3; font: 16px/1.65 ui-monospace, monospace; text-align: left; white-space: pre-wrap; z-index: 10; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .72); }
 
 @media (max-width: 760px) {
   .ui-shell { padding: 12px; }
