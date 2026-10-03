@@ -1,6 +1,6 @@
 # Niagara Grid3D // Real-Time Pyro + Hydro Liquid Lab (WebGL2 & WebGPU)
 
-A browser GPU laboratory for **3D Eulerian fire/smoke/explosion simulation** and a complementary **shallow-water / voxel liquid mode**. It is inspired by the workflow and visual language of Unreal Engine 5 Niagara Fluids and EmberGen, while keeping the implementation self-contained in WebGL2/WebGPU.
+A browser GPU laboratory for **3D Eulerian fire/smoke/explosion simulation** and a complementary **volumetric voxel-liquid mode**. It is inspired by the workflow and visual language of Unreal Engine 5 Niagara Fluids and EmberGen, while keeping the implementation self-contained in WebGL2/WebGPU.
 
 ## Simulation modes
 
@@ -14,19 +14,21 @@ The existing fire mode uses a 3D Eulerian voxel state and volumetric raymarcher:
 ### Hydro / liquid
 Hydro mode reuses the same GPU voxel memory with a different state layout:
 
-- `R = liquid fraction`, `G = whitewater foam`, `B = surface adhesion/wetting film`, `A = shallow-water slope/pressure`.
-- A primary shallow-water free surface with travelling swells, a compact plunging/surfing crest, moving-collider wakes, crown splashes, rooster tails, and decaying foam.
-- A kinematic moving **ball** and a rolling **treaded tyre** are available as animated voxel colliders. They push the liquid, generate wakes/foam, and can carry a wet film.
+- `R = liquid fraction / volume`, `G = whitewater foam`, `B = surface adhesion/wetting film`, `A = interface / pressure hint`.
+- A seeded 3D liquid volume with semi-Lagrangian advection, gravity, viscosity, surface-tension force, divergence, Jacobi pressure projection, and pressure-gradient velocity correction.
+- A kinematic moving **ball** and a rolling **treaded tyre** are available as animated voxel colliders. They push the liquid in three dimensions, generate wakes/foam/splash shells, and can carry a wet film.
+- A true volumetric **3D dam-break** initial condition is available; the raised column collapses through the domain instead of simply changing a flat water shader.
 - Viscosity changes the look from water to thick mud or melted chocolate. Surface tension gathers liquid into sheets and droplets; **surface adhesion/wetting** is the term for liquid sticking to a tyre, ball, or other surface.
 - The liquid raymarcher adds volume absorption, free-surface normals, glossy Fresnel/specular highlights, foam shading, object shadows, and animated floor caustics.
 
-The hydro pass is a deliberately compact real-time shallow-water/VOF-style approximation rather than a full production FLIP solver. It is designed to remain interactive at low resolutions and to demonstrate the correct controls and visual behaviours.
+This is still a deliberately compact real-time Eulerian/VOF-style solver rather than a full production FLIP solver, but the liquid is now an evolving 3D voxel field rather than a procedural screen-space water surface. It is designed to remain interactive at low resolutions while showing actual volume advection, dam-break motion, collider impulses, foam, and pressure projection.
 
 ## Liquid presets
 
 The preset dock includes:
 
-- **Tire in Shallow Water** — moving off-road tyre, wakes, splashes, foam, and wetting.
+- **3D Dam Breaker** — raised liquid column collapsing through the open domain.
+- **Tire in Volumetric Water** — moving off-road tyre, wakes, splashes, foam, and wetting.
 - **Surfing Barrel Wave** — travelling crest/shoulder, hollow surf-like wave, and whitewater.
 - **Moving Ball in Water** — animated sphere with a crown splash and foam trail.
 - **Melted Chocolate + Spinning Wheel** — high viscosity, strong adhesion, glossy cocoa shading.
@@ -48,8 +50,8 @@ No. The controls and concepts are Niagara-Fluids-inspired, not a copy of Unreal'
 
 ## GPU architecture
 
-- **WebGL2:** 2D tiled `RGBA16F` atlases store the 3D voxel state. Each simulation pass is a fullscreen draw over the atlas. Hydro and pyro share allocation but switch to separate update/render logic when the user changes mode.
-- **WebGPU:** `@compute @workgroup_size(4, 4, 4)` updates storage buffers directly. The hydro compute path and liquid raymarcher use the same controls as WebGL2.
+- **WebGL2:** 2D tiled `RGBA16F` atlases store the 3D voxel state. Hydro runs separate injection, advection, divergence, Jacobi pressure, and gradient passes as fullscreen draws; pyro keeps its existing gas pipeline. Both share allocation and the liquid raymarcher.
+- **WebGPU:** `@compute @workgroup_size(4, 4, 4)` updates storage buffers directly and retains the hydro/raymarch integration for compatible browsers.
 - Resolutions include `16³`, `24³`, `32³`, `48³`, `64³`, `96³`, and `128³`; use 16³/24³ for integrated or low-end GPUs.
 
 ## Running locally

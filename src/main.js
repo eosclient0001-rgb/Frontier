@@ -10,6 +10,7 @@ import {
   COLOR_PALETTES,
   OBSTACLE_TYPES,
   WAVE_MODES,
+  HYDRO_SCENES,
   ATLAS_MINIMAP_FIELDS,
   createDefaultParams,
   PRESETS,
@@ -313,7 +314,7 @@ class PyroStudioApp {
           b.classList.toggle('active', Number(b.dataset.simMode) === mode);
         });
         this.showToast(mode === 1
-          ? '🌊 Hydro active: shallow-water waves, VOF liquid, foam & surface adhesion'
+          ? '🌊 Hydro active: 3D liquid advection, pressure projection, foam & splashes'
           : '🔥 Pyro active: Eulerian gas combustion & volumetric fire');
       });
     });
@@ -490,6 +491,11 @@ class PyroStudioApp {
       this.setParam('obstacleType', 0);
       document.querySelector('#sim-mode-switcher button[data-sim-mode="1"]')?.click();
       this.showToast('🏄 Pipeline surf wave: travelling crest, hollow shoulder & whitewater foam');
+    });
+
+    document.getElementById('btn-dam-break')?.addEventListener('click', () => {
+      this.applyPreset('hydro_dam_breaker');
+      this.showToast('🧱 3D dam break released: volumetric water column + pressure surge');
     });
 
     const btnPause = document.getElementById('btn-pause');
@@ -738,8 +744,8 @@ class PyroStudioApp {
     const hudShading = document.getElementById('hud-shader-desc');
     if (hudSolver && hudShading) {
       if (Number(this.params.simMode) === 1) {
-        hudSolver.textContent = 'Shallow Water Height Field + VOF Liquid Fraction + Collider Wake + Foam';
-        hudShading.textContent = 'Glossy Free Surface + Fresnel Specular + Whitewater + Caustic Floor';
+        hudSolver.textContent = '3D VOF Liquid Fraction + Advection + Divergence/Pressure Projection + Colliders';
+        hudShading.textContent = 'Volumetric Liquid Raymarch + Fresnel Specular + Foam + Caustic Floor';
       } else {
         hudSolver.textContent = 'Eulerian 3D Grid + BFECC Advection + Jacobi Poisson + 3D Fire Irradiance';
         hudShading.textContent = 'Planckian Blackbody + Beer-Lambert + Henyey-Greenstein + Fireflies';
@@ -893,7 +899,7 @@ class PyroStudioApp {
       label: 'Simulation Family',
       options: [
         { id: 0, label: '🔥 Pyro / Gas (Eulerian Combustion)' },
-        { id: 1, label: '🌊 Hydro / Liquid (Shallow Water + VOF)' },
+        { id: 1, label: '🌊 Hydro / Liquid (3D VOF + Pressure)' },
       ],
       onChange: (mode) => {
         this.showToast(mode === 1
@@ -1112,7 +1118,21 @@ class PyroStudioApp {
       step: 0.05,
     });
 
-    const secHydro = this.createSection(tabPyro, 'Shallow Water / Liquid Physics', 'HYDRO · VOF');
+    const secHydro = this.createSection(tabPyro, 'Volumetric Liquid / Fluid Physics', 'HYDRO · 3D VOF');
+    this.addSelect(secHydro, {
+      key: 'hydroScene',
+      label: 'Liquid Scene / Initial Condition',
+      options: HYDRO_SCENES,
+      onChange: () => {
+        if (this.engine && Number(this.params.simMode) === 1) this.engine.clearGrid();
+      },
+    });
+    this.addSlider(secHydro, {
+      key: 'damGateX',
+      label: 'Dam Face X Position',
+      min: 0.18, max: 0.62, step: 0.01,
+      format: (v) => `${Math.round(v * 100)}%`,
+    });
     this.addSlider(secHydro, {
       key: 'waterPoolLevel',
       label: 'Pool Depth / Free-Surface Level',

@@ -1,5 +1,5 @@
 /**
- * WebGPU 3D Eulerian Voxel Grid Pyro + Shallow-Water Hydro Solver
+ * WebGPU 3D Eulerian Voxel Grid Pyro + Volumetric Hydro Solver
  * Uses WGSL @compute @workgroup_size(4, 4, 4) shaders over 3D storage buffers.
  */
 
@@ -57,6 +57,7 @@ export class WebGPUPyroEngine {
     this.hydroCollider = null;
     this.lastSimMode = Number(params.simMode) || 0;
     this.hydroParity = 0;
+    this.hydroInitialized = false;
 
     this.initPipelines();
     this.initGridBuffers(params.gridResolution);
@@ -102,7 +103,10 @@ export class WebGPUPyroEngine {
 
     this.pipelines = {
       splat: makeCompute('csSplat'),
-      hydro: makeCompute('csHydro'),
+      hydro: makeCompute('csHydroVolume'),
+      hydroDivergence: makeCompute('csHydroDivergence'),
+      hydroPressure: makeCompute('csHydroPressure'),
+      hydroGradient: makeCompute('csHydroGradient'),
       advect: makeCompute('csAdvect'),
       curl: makeCompute('csCurl'),
       forces: makeCompute('csForces'),
@@ -190,6 +194,14 @@ export class WebGPUPyroEngine {
       splat: makeBG(B.vel0, B.thermo0, B.dummy, B.vel1, B.thermo1),
       hydro0to1: makeBG(B.vel0, B.thermo0, B.dummy, B.vel1, B.thermo1),
       hydro1to0: makeBG(B.vel1, B.thermo1, B.dummy, B.vel0, B.thermo0),
+      hydroDiv0: makeBG(B.vel0, B.thermo0, B.dummy, B.div, B.dummy),
+      hydroDiv1: makeBG(B.vel1, B.thermo1, B.dummy, B.div, B.dummy),
+      hydroPressure0to1: makeBG(B.pres0, B.thermo0, B.div, B.pres1, B.dummy),
+      hydroPressure1to0: makeBG(B.pres1, B.thermo0, B.div, B.pres0, B.dummy),
+      hydroPressure0to1State1: makeBG(B.pres0, B.thermo1, B.div, B.pres1, B.dummy),
+      hydroPressure1to0State1: makeBG(B.pres1, B.thermo1, B.div, B.pres0, B.dummy),
+      hydroGradient0to1: makeBG(B.vel0, B.thermo0, B.pres0, B.vel1, B.thermo1),
+      hydroGradient1to0: makeBG(B.vel1, B.thermo1, B.pres0, B.vel0, B.thermo0),
       advect: makeBG(B.vel1, B.thermo1, B.dummy, B.vel0, B.thermo0),
       curl: makeBG(B.vel0, B.dummy, B.dummy, B.curl, B.dummy),
       forces: makeBG(B.vel0, B.thermo0, B.curl, B.vel1, B.dummy),
@@ -219,6 +231,7 @@ export class WebGPUPyroEngine {
       }),
     };
     this.hydroParity = 0;
+    this.hydroInitialized = false;
   }
 
   setGridResolution(resolution) {
@@ -229,6 +242,7 @@ export class WebGPUPyroEngine {
 
   clearGrid() {
     this.hydroParity = 0;
+    this.hydroInitialized = false;
     this.liquidSplash = null;
     this.hydroCollider = null;
     const encoder = this.device.createCommandEncoder();
@@ -353,7 +367,7 @@ export class WebGPUPyroEngine {
     }
 
     const blast = this.pendingBlasts.shift();
-    const buf = new ArrayBuffer(272);
+    const buf = new ArrayBuffer(288);
     const u32 = new Uint32Array(buf);
     const f32 = new Float32Array(buf);
 
@@ -438,6 +452,10 @@ export class WebGPUPyroEngine {
     f32[65] = splash?.age ?? 99.0;
     f32[66] = splash ? splash.impulse : 0.0;
     f32[67] = p.emitterPosY ?? 0.76;
+    u32[68] = p.hydroScene ?? 0;
+    u32[69] = this.hydroInitialized ? 0 : 1;
+    f32[70] = p.damGateX ?? 0.36;
+    f32[71] = 0.0;
 
     this.hydroCollider = collider;
     if (splash) {
@@ -460,6 +478,29 @@ export class WebGPUPyroEngine {
     if (simMode === 1) {
       dispatch(this.pipelines.hydro, this.hydroParity === 0 ? this.bindGroups.hydro0to1 : this.bindGroups.hydro1to0);
       this.hydroParity = 1 - this.hydroParity;
+
+      dispatch(
+        this.pipelines.hydroDivergence,
+        this.hydroParity === 0 ? this.bindGroups.hydroDiv0 : this.bindGroups.hydroDiv1
+      );
+      const hydroPressurePairs = Math.max(3, Math.min(24, Math.round((p.pressureIterations || 16) / 2)));
+      const pressureState0 = this.hydroParity === 0;
+      for (let i = 0; i < hydroPressurePairs; i++) {
+        dispatch(
+          this.pipelines.hydroPressure,
+          pressureState0 ? this.bindGroups.hydroPressure0to1 : this.bindGroups.hydroPressure0to1State1
+        );
+        dispatch(
+          this.pipelines.hydroPressure,
+          pressureState0 ? this.bindGroups.hydroPressure1to0 : this.bindGroups.hydroPressure1to0State1
+        );
+      }
+      dispatch(
+        this.pipelines.hydroGradient,
+        this.hydroParity === 0 ? this.bindGroups.hydroGradient0to1 : this.bindGroups.hydroGradient1to0
+      );
+      this.hydroParity = 1 - this.hydroParity;
+      this.hydroInitialized = true;
       pass.end();
       this.device.queue.submit([encoder.finish()]);
       this.simDurationMs = performance.now() - t0;

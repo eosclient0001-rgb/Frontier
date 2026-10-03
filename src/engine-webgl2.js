@@ -1,5 +1,5 @@
 /**
- * WebGL2 3D Eulerian Voxel Grid Pyro + Shallow-Water Hydro Solver
+ * WebGL2 3D Eulerian Voxel Grid Pyro + Volumetric Hydro Solver
  * Uses 2D Tiled Volume Atlases (RGBA16F) so each 3D grid pass runs in a single draw call.
  * Supports liquid viscosity/foam/adhesion, 16³–128³ grids, and dynamic world bounds.
  */
@@ -8,7 +8,11 @@ import { RESOLUTION_OPTIONS } from './presets.js';
 import {
   FULLSCREEN_VERT,
   EMITTER_SPLAT_FRAG,
-  HYDRO_STEP_FRAG,
+  HYDRO_INJECT_FRAG,
+  HYDRO_ADVECT_FRAG,
+  HYDRO_DIVERGENCE_FRAG,
+  HYDRO_PRESSURE_FRAG,
+  HYDRO_GRADIENT_FRAG,
   ADVECTION_PYRO_FRAG,
   CURL_FRAG,
   FORCES_FRAG,
@@ -68,13 +72,18 @@ export class WebGL2PyroEngine {
     // Ballistic Shrapnel / Debris Streamer Projectiles (up to 6 active)
     this.projectiles = [];
     this.liquidSplash = null;
+    this.hydroInitialized = false;
     this.lastSimMode = Number(params.simMode) || 0;
 
     this.quadVAO = gl.createVertexArray();
 
     this.programs = {
       splat: this.createProgram(FULLSCREEN_VERT, EMITTER_SPLAT_FRAG),
-      hydro: this.createProgram(FULLSCREEN_VERT, HYDRO_STEP_FRAG),
+      hydroInject: this.createProgram(FULLSCREEN_VERT, HYDRO_INJECT_FRAG),
+      hydroAdvect: this.createProgram(FULLSCREEN_VERT, HYDRO_ADVECT_FRAG),
+      hydroDivergence: this.createProgram(FULLSCREEN_VERT, HYDRO_DIVERGENCE_FRAG),
+      hydroPressure: this.createProgram(FULLSCREEN_VERT, HYDRO_PRESSURE_FRAG),
+      hydroGradient: this.createProgram(FULLSCREEN_VERT, HYDRO_GRADIENT_FRAG),
       advect: this.createProgram(FULLSCREEN_VERT, ADVECTION_PYRO_FRAG),
       curl: this.createProgram(FULLSCREEN_VERT, CURL_FRAG),
       forces: this.createProgram(FULLSCREEN_VERT, FORCES_FRAG),
@@ -243,6 +252,7 @@ export class WebGL2PyroEngine {
     this.dynamicBoundsTarget = 0.0;
     this.projectiles = [];
     this.liquidSplash = null;
+    this.hydroInitialized = false;
     this.hydroCollider = null;
   }
 
@@ -381,53 +391,138 @@ export class WebGL2PyroEngine {
     return { pos, vel };
   }
 
-  stepHydroSimulation(dt, domainScale) {
-    const gl = this.gl;
-    const p = this.params;
-    const { prog, uniforms: u } = this.programs.hydro;
-    const collider = this.getHydroColliderState();
-
-    gl.useProgram(prog);
-    this.setCommonVolumeUniforms(u);
-    gl.uniform1f(u.uDt, dt);
-    gl.uniform1f(u.uTime, this.time);
-    gl.uniform3fv(u.uDomainScale, domainScale);
-    gl.uniform1i(u.uObstacleType, Number(p.obstacleType) || 0);
-    gl.uniform3fv(u.uColliderPos, collider.pos);
-    gl.uniform3fv(u.uColliderVel, collider.vel);
-    const splash = this.liquidSplash;
-    gl.uniform3fv(u.uSplashCenter, splash?.center || [0.5, p.waterPoolLevel ?? 0.25, 0.5]);
-    gl.uniform1f(u.uSplashAge, splash?.age ?? 99.0);
-    gl.uniform1f(u.uSplashImpulse, splash ? splash.impulse : 0.0);
-    gl.uniform1f(u.uWaterLevel, p.waterPoolLevel ?? 0.25);
-    gl.uniform1f(u.uLiquidGravity, p.liquidGravity ?? 9.8);
-    gl.uniform1f(u.uLiquidViscosity, p.liquidViscosity ?? 0.04);
-    gl.uniform1f(u.uSurfaceAdhesion, p.surfaceAdhesion ?? 0.65);
-    gl.uniform1f(u.uSurfaceTension, p.surfaceTension ?? 0.52);
-    gl.uniform1f(u.uFoamGeneration, p.foamGeneration ?? 1.45);
-    gl.uniform1f(u.uFoamDissipation, p.foamDissipation ?? 0.42);
-    gl.uniform1f(u.uSplashEnergy, p.splashEnergy ?? 1.5);
-    gl.uniform1i(u.uWaveMode, p.waveMode ?? 0);
-    gl.uniform1f(u.uWaveHeight, p.waveHeight ?? 0.25);
-    gl.uniform1f(u.uWaveSpeed, p.waveSpeed ?? 1.2);
-    gl.uniform1i(u.uEmitterEnabled, p.emitterEnabled ? 1 : 0);
-    gl.uniform1f(u.uEmitterRate, p.emitterRate ?? 1.0);
-    gl.uniform1f(u.uEmitterRadius, p.emitterRadius ?? 0.09);
-    gl.uniform1f(u.uEmitterPosY, p.emitterPosY ?? 0.76);
-
-    this.bindTex(0, this.buffers.vel0, u.uVelocityTex);
-    this.bindTex(1, this.buffers.thermo0, u.uThermoTex);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbos.velThermo1);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-    // The hydro pass writes the next state into the alternate atlas. Swap the
-    // labels and their FBO labels so render/atlas always read the newest state.
+  swapHydroState() {
     [this.buffers.vel0, this.buffers.vel1] = [this.buffers.vel1, this.buffers.vel0];
     [this.buffers.thermo0, this.buffers.thermo1] = [this.buffers.thermo1, this.buffers.thermo0];
     [this.fbos.velThermo0, this.fbos.velThermo1] = [this.fbos.velThermo1, this.fbos.velThermo0];
     [this.fbos.vel0, this.fbos.vel1] = [this.fbos.vel1, this.fbos.vel0];
+  }
 
+  setHydroUniforms(u, dt, domainScale, collider, seedPool = 0) {
+    const gl = this.gl;
+    const p = this.params;
+    const setI = (name, value) => {
+      if (u[name] !== undefined && u[name] !== null) gl.uniform1i(u[name], value);
+    };
+    const setF = (name, value) => {
+      if (u[name] !== undefined && u[name] !== null) gl.uniform1f(u[name], value);
+    };
+    const set3 = (name, value) => {
+      if (u[name] !== undefined && u[name] !== null) gl.uniform3fv(u[name], value);
+    };
+
+    this.setCommonVolumeUniforms(u);
+    setF('uDt', dt);
+    setF('uTime', this.time);
+    set3('uDomainScale', domainScale);
+    setI('uHydroScene', p.hydroScene ?? 0);
+    setI('uSeedPool', seedPool);
+    setF('uWaterLevel', p.waterPoolLevel ?? 0.25);
+    setF('uDamGateX', p.damGateX ?? 0.36);
+    setF('uLiquidGravity', p.liquidGravity ?? 9.8);
+    setF('uLiquidViscosity', p.liquidViscosity ?? 0.04);
+    setF('uSurfaceAdhesion', p.surfaceAdhesion ?? 0.65);
+    setF('uSurfaceTension', p.surfaceTension ?? 0.52);
+    setF('uFoamGeneration', p.foamGeneration ?? 1.45);
+    setF('uFoamDissipation', p.foamDissipation ?? 0.42);
+    setF('uSplashEnergy', p.splashEnergy ?? 1.5);
+    setI('uWaveMode', p.waveMode ?? 0);
+    setF('uWaveHeight', p.waveHeight ?? 0.25);
+    setF('uWaveSpeed', p.waveSpeed ?? 1.2);
+    setI('uEnclosedBox', p.enclosedBox ? 1 : 0);
+
+    setI('uObstacleType', Number(p.obstacleType) || 0);
+    set3('uColliderPos', collider.pos);
+    set3('uColliderVel', collider.vel);
+    setF('uColliderRadius', p.obstacleRadius ?? 0.16);
+
+    const splash = this.liquidSplash;
+    set3('uSplashCenter', splash?.center || [0.5, p.waterPoolLevel ?? 0.25, 0.5]);
+    setF('uSplashAge', splash?.age ?? 99.0);
+    setF('uSplashImpulse', splash ? splash.impulse : 0.0);
+
+    setI('uEmitterEnabled', p.emitterEnabled ? 1 : 0);
+    setF('uEmitterRate', p.emitterRate ?? 1.0);
+    setF('uEmitterRadius', p.emitterRadius ?? 0.09);
+    setF('uEmitterPosY', p.emitterPosY ?? 0.76);
+  }
+
+  stepHydroSimulation(dt, domainScale) {
+    const gl = this.gl;
+    const p = this.params;
+    const collider = this.getHydroColliderState();
     this.hydroCollider = collider;
+
+    const drawStatePass = (programName, seedPool = 0, pressure = false) => {
+      const { prog, uniforms: u } = this.programs[programName];
+      gl.useProgram(prog);
+      this.setHydroUniforms(u, dt, domainScale, collider, seedPool);
+      this.bindTex(0, this.buffers.vel0, u.uVelocityTex);
+      this.bindTex(1, this.buffers.thermo0, u.uThermoTex);
+      if (pressure) {
+        this.bindTex(2, this.buffers.pres0, u.uPressureTex);
+        this.bindTex(3, this.buffers.div, u.uDivergenceTex);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbos.velThermo1);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      this.swapHydroState();
+    };
+
+    // 1. Seed a real 3D liquid volume only once, then inject moving-body and
+    // hand-triggered impulses into the evolving field.
+    drawStatePass('hydroInject', this.hydroInitialized ? 0 : 1);
+
+    // 2. Semi-Lagrangian advection + gravity + viscosity + surface tension.
+    drawStatePass('hydroAdvect');
+
+    // 3. Incompressibility projection.
+    {
+      const { prog, uniforms: u } = this.programs.hydroDivergence;
+      gl.useProgram(prog);
+      this.setHydroUniforms(u, dt, domainScale, collider, 0);
+      this.bindTex(0, this.buffers.vel0, u.uVelocityTex);
+      this.bindTex(1, this.buffers.thermo0, u.uThermoTex);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbos.div);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+
+    // 4. Jacobi pressure iterations. More iterations reduce compressibility in
+    // the dam-break and make the splash volume behave less like a decal.
+    {
+      const { prog, uniforms: u } = this.programs.hydroPressure;
+      gl.useProgram(prog);
+      this.setHydroUniforms(u, dt, domainScale, collider, 0);
+      this.bindTex(0, this.buffers.vel0, u.uVelocityTex);
+      this.bindTex(1, this.buffers.thermo0, u.uThermoTex);
+      this.bindTex(3, this.buffers.div, u.uDivergenceTex);
+      const iterations = Math.max(6, Math.min(48, Math.round(p.pressureIterations)));
+      for (let i = 0; i < iterations; i++) {
+        const readTex = i % 2 === 0 ? this.buffers.pres0 : this.buffers.pres1;
+        const writeFbo = i % 2 === 0 ? this.fbos.pres1 : this.fbos.pres0;
+        this.bindTex(2, readTex, u.uPressureTex);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, writeFbo);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      if (iterations % 2 === 1) {
+        [this.buffers.pres0, this.buffers.pres1] = [this.buffers.pres1, this.buffers.pres0];
+        [this.fbos.pres0, this.fbos.pres1] = [this.fbos.pres1, this.fbos.pres0];
+      }
+    }
+
+    // 5. Subtract pressure gradient and keep the liquid fraction/foam state.
+    {
+      const { prog, uniforms: u } = this.programs.hydroGradient;
+      gl.useProgram(prog);
+      this.setHydroUniforms(u, dt, domainScale, collider, 0);
+      this.bindTex(0, this.buffers.vel0, u.uVelocityTex);
+      this.bindTex(1, this.buffers.thermo0, u.uThermoTex);
+      this.bindTex(2, this.buffers.pres0, u.uPressureTex);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbos.velThermo1);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      this.swapHydroState();
+    }
+
+    this.hydroInitialized = true;
     if (this.liquidSplash) {
       this.liquidSplash.age += dt;
       if (this.liquidSplash.age > 2.75) this.liquidSplash = null;

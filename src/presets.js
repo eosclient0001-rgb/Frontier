@@ -53,6 +53,11 @@ export const WAVE_MODES = [
   { id: 2, label: '🌊 Pipeline Surfing Wave (Overturning Barrel / Tube)' },
 ];
 
+export const HYDRO_SCENES = [
+  { id: 0, label: 'Open Pool (3D Liquid Volume)' },
+  { id: 1, label: '🧱 Dam Breaker (Raised Water Column)' },
+];
+
 export const ATLAS_MINIMAP_FIELDS = [
   { id: 0, label: 'State Atlas (Pyro: R=Smoke G=Temp / Hydro: R=Liq G=Foam B=Adhesion)' },
   { id: 1, label: 'Velocity Atlas (RGB: Vx, Vy, Vz)' },
@@ -62,7 +67,7 @@ export const ATLAS_MINIMAP_FIELDS = [
 
 export function createDefaultParams() {
   return {
-    // Domain Solver Mode: 0 = Pyro (Fire/Smoke/Gas), 1 = Hydro (Shallow Water + 3D Liquid VOF)
+    // Domain Solver Mode: 0 = Pyro (Fire/Smoke/Gas), 1 = Hydro (Volumetric 3D Liquid VOF)
     simMode: 0,
 
     // Grid & Solver
@@ -101,8 +106,10 @@ export function createDefaultParams() {
     windX: 0.22,
     windZ: 0.0,
 
-    // Hydro / Shallow Water & Viscous 3D Liquid Physics
-    waterPoolLevel: 0.25,     // Base depth of shallow water/mud/chocolate pool (0.08 to 0.55)
+    // Hydro / Volumetric 3D Liquid & Viscous Fluid Physics
+    hydroScene: 0,            // 0 = open pool, 1 = raised dam-break column
+    damGateX: 0.36,           // Initial dam face X position in normalized volume coordinates
+    waterPoolLevel: 0.25,     // Base liquid fill height for pool/mud/chocolate (0.08 to 0.55)
     liquidGravity: 9.8,       // Downward gravity restoring splashes into pool
     liquidViscosity: 0.04,    // 0.02 = Water, 0.55 = Thick Mud, 0.80 = Melted Chocolate
     surfaceAdhesion: 0.65,    // Surface Wetting / Adhesion (sticks & climbs spinning tire / ball)
@@ -189,13 +196,49 @@ export function createDefaultParams() {
 }
 
 export const PRESETS = {
-  hydro_tire_splash: {
-    name: '🛞 Tire in Shallow Water (Splash + Foam)',
-    description: 'Spinning off-road treaded tire plowing through shallow water—throwing rooster-tail splashes, Kelvin wakes, whitewater foam, and surface adhesion.',
+  hydro_dam_breaker: {
+    name: '🧱 3D Dam Breaker (Water Column)',
+    description: 'A raised 3D water column collapses through the open domain, forming a volumetric surge, rolling front, splash sheet, droplets, and foam in every direction.',
     triggerExplosionOnLoad: false,
     params: {
       simMode: 1,
+      hydroScene: 1,
       gridResolution: 64,
+      pressureIterations: 16,
+      boundsWidth: 2.75,
+      boundsHeight: 1.90,
+      dynamicBounds: false,
+      waterPoolLevel: 0.58,
+      damGateX: 0.34,
+      liquidGravity: 9.8,
+      liquidViscosity: 0.035,
+      surfaceAdhesion: 0.18,
+      surfaceTension: 0.44,
+      foamGeneration: 1.85,
+      foamDissipation: 0.34,
+      splashEnergy: 1.85,
+      waveMode: 0,
+      waveHeight: 0.10,
+      waveSpeed: 1.0,
+      liquidSpecular: 1.35,
+      causticsIntensity: 0.72,
+      emitterEnabled: false,
+      obstacleType: 0,
+      showEmbers: false,
+      showVoxelGridLines: false,
+      showActiveVoxelCells: false,
+    },
+  },
+
+  hydro_tire_splash: {
+    name: '🛞 Tire in Volumetric Water (Splash + Foam)',
+    description: 'Spinning off-road treaded tire plowing through a voxel liquid volume—throwing 3D rooster-tail splashes, wakes, whitewater foam, and surface adhesion.',
+    triggerExplosionOnLoad: false,
+    params: {
+      simMode: 1,
+      hydroScene: 0,
+      gridResolution: 64,
+      pressureIterations: 16,
       boundsWidth: 2.35,
       boundsHeight: 1.75,
       dynamicBounds: true,
@@ -229,6 +272,7 @@ export const PRESETS = {
       sunElevation: 56.0,
       godRaysIntensity: 0.40,
       showEmbers: false,
+      showVoxelGridLines: false,
       showActiveVoxelCells: false,
     },
   },
@@ -239,7 +283,9 @@ export const PRESETS = {
     triggerExplosionOnLoad: false,
     params: {
       simMode: 1,
+      hydroScene: 0,
       gridResolution: 64,
+      pressureIterations: 16,
       boundsWidth: 2.50,
       boundsHeight: 1.85,
       dynamicBounds: true,
@@ -269,17 +315,20 @@ export const PRESETS = {
       sunElevation: 48.0,
       godRaysIntensity: 0.55,
       showEmbers: false,
+      showVoxelGridLines: false,
       showActiveVoxelCells: false,
     },
   },
 
   hydro_ball_splash: {
     name: '⚽ Moving Ball in Water (Crown Splash)',
-    description: 'Slaloming & plunging sphere skimming through shallow water, creating 3D crown splashes, surface-tension water sheets clinging to the ball, and foam trails.',
+    description: 'Slaloming & plunging sphere through a voxel liquid volume, creating 3D crown splashes, surface-tension sheets clinging to the ball, and foam trails.',
     triggerExplosionOnLoad: true,
     params: {
       simMode: 1,
+      hydroScene: 0,
       gridResolution: 64,
+      pressureIterations: 16,
       boundsWidth: 2.30,
       boundsHeight: 1.75,
       dynamicBounds: true,
@@ -311,6 +360,7 @@ export const PRESETS = {
       shadowDensity: 13.0,
       sunIntensity: 2.5,
       showEmbers: false,
+      showVoxelGridLines: false,
       showActiveVoxelCells: false,
     },
   },
@@ -321,7 +371,9 @@ export const PRESETS = {
     triggerExplosionOnLoad: false,
     params: {
       simMode: 1,
+      hydroScene: 0,
       gridResolution: 64,
+      pressureIterations: 16,
       boundsWidth: 2.15,
       boundsHeight: 1.70,
       dynamicBounds: true,
@@ -358,6 +410,7 @@ export const PRESETS = {
       sunElevation: 54.0,
       godRaysIntensity: 0.25,
       showEmbers: false,
+      showVoxelGridLines: false,
       showActiveVoxelCells: false,
     },
   },
@@ -368,7 +421,9 @@ export const PRESETS = {
     triggerExplosionOnLoad: false,
     params: {
       simMode: 1,
+      hydroScene: 0,
       gridResolution: 64,
+      pressureIterations: 16,
       boundsWidth: 2.25,
       boundsHeight: 1.75,
       dynamicBounds: true,
@@ -402,6 +457,7 @@ export const PRESETS = {
       sunElevation: 52.0,
       godRaysIntensity: 0.30,
       showEmbers: false,
+      showVoxelGridLines: false,
       showActiveVoxelCells: false,
     },
   },

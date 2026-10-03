@@ -1,6 +1,6 @@
 /**
  * WGSL Compute & Volumetric Raymarching Shaders for WebGPU Backend
- * Executes 3D Eulerian Pyro or shallow-water Hydro via @compute @workgroup_size(4, 4, 4)
+ * Executes 3D Eulerian Pyro or volumetric Hydro via @compute @workgroup_size(4, 4, 4)
  * and renders via full-viewport WGSL liquid/volumetric raymarching.
  */
 
@@ -90,6 +90,11 @@ struct SimUniforms {
   splashAge: f32,
   splashImpulse: f32,
   emitterPosY: f32,
+
+  hydroScene: u32,
+  hydroSeed: u32,
+  damGateX: f32,
+  padHydro0: f32,
 };
 
 fn voxelIndex(v: vec3<i32>, res: i32) -> u32 {
@@ -655,7 +660,241 @@ fn csHydro(@builtin(global_invocation_id) gid: vec3<u32>) {
   outBuf1[idx] = vec4<f32>(liquid, foam, adhesion, pressure);
 }
 
+@compute @workgroup_size(4, 4, 4)
+fn csHydroDivergence(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let res = i32(u.gridRes);
+  let v = vec3<i32>(gid);
+  if (v.x >= res || v.y >= res || v.z >= res) { return; }
+  let idx = voxelIndex(v, res);
+  let center = thermoIn[idx].r;
+  if (center < 0.001) {
+    outBuf0[idx] = vec4<f32>(0.0);
+    return;
+  }
+  let iL = voxelIndex(v + vec3<i32>(-1, 0, 0), res);
+  let iR = voxelIndex(v + vec3<i32>( 1, 0, 0), res);
+  let iD = voxelIndex(v + vec3<i32>( 0,-1, 0), res);
+  let iU = voxelIndex(v + vec3<i32>( 0, 1, 0), res);
+  let iB = voxelIndex(v + vec3<i32>( 0, 0,-1), res);
+  let iF = voxelIndex(v + vec3<i32>( 0, 0, 1), res);
+  let vL = select(vec3<f32>(0.0), velIn[iL].xyz, thermoIn[iL].r > 0.001);
+  let vR = select(vec3<f32>(0.0), velIn[iR].xyz, thermoIn[iR].r > 0.001);
+  let vD = select(vec3<f32>(0.0), velIn[iD].xyz, thermoIn[iD].r > 0.001);
+  let vU = select(vec3<f32>(0.0), velIn[iU].xyz, thermoIn[iU].r > 0.001);
+  let vB = select(vec3<f32>(0.0), velIn[iB].xyz, thermoIn[iB].r > 0.001);
+  let vF = select(vec3<f32>(0.0), velIn[iF].xyz, thermoIn[iF].r > 0.001);
+  outBuf0[idx] = vec4<f32>(0.5 * ((vR.x - vL.x) + (vU.y - vD.y) + (vF.z - vB.z)), 0.0, 0.0, 0.0);
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn csHydroPressure(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let res = i32(u.gridRes);
+  let v = vec3<i32>(gid);
+  if (v.x >= res || v.y >= res || v.z >= res) { return; }
+  let idx = voxelIndex(v, res);
+  if (thermoIn[idx].r < 0.001) {
+    outBuf0[idx] = vec4<f32>(0.0);
+    return;
+  }
+  let pC = velIn[idx].r;
+  let div = auxIn[idx].r;
+  let iL = voxelIndex(v + vec3<i32>(-1, 0, 0), res);
+  let iR = voxelIndex(v + vec3<i32>( 1, 0, 0), res);
+  let iD = voxelIndex(v + vec3<i32>( 0,-1, 0), res);
+  let iU = voxelIndex(v + vec3<i32>( 0, 1, 0), res);
+  let iB = voxelIndex(v + vec3<i32>( 0, 0,-1), res);
+  let iF = voxelIndex(v + vec3<i32>( 0, 0, 1), res);
+  let sL = thermoIn[iL].r;
+  let sR = thermoIn[iR].r;
+  let sD = thermoIn[iD].r;
+  let sU = thermoIn[iU].r;
+  let sB = thermoIn[iB].r;
+  let sF = thermoIn[iF].r;
+  var sum = 0.0;
+  var count = 0.0;
+  if (sL > 0.001) { sum += velIn[iL].r; count += 1.0; }
+  if (sR > 0.001) { sum += velIn[iR].r; count += 1.0; }
+  if (sD > 0.001) { sum += velIn[iD].r; count += 1.0; }
+  if (sU > 0.001) { sum += velIn[iU].r; count += 1.0; }
+  if (sB > 0.001) { sum += velIn[iB].r; count += 1.0; }
+  if (sF > 0.001) { sum += velIn[iF].r; count += 1.0; }
+  let pNew = select(pC, (sum - div) / max(count, 1.0), count > 0.0);
+  outBuf0[idx] = vec4<f32>(clamp(pNew, -8.0, 8.0), 0.0, 0.0, 1.0);
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn csHydroGradient(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let res = i32(u.gridRes);
+  let v = vec3<i32>(gid);
+  if (v.x >= res || v.y >= res || v.z >= res) { return; }
+  let idx = voxelIndex(v, res);
+  let state = thermoIn[idx];
+  var velocity = velIn[idx];
+  if (state.r < 0.001 || velocity.w > 0.5) {
+    outBuf0[idx] = velocity;
+    outBuf1[idx] = state;
+    return;
+  }
+  let pc = auxIn[idx].r;
+  let iL = voxelIndex(v + vec3<i32>(-1, 0, 0), res);
+  let iR = voxelIndex(v + vec3<i32>( 1, 0, 0), res);
+  let iD = voxelIndex(v + vec3<i32>( 0,-1, 0), res);
+  let iU = voxelIndex(v + vec3<i32>( 0, 1, 0), res);
+  let iB = voxelIndex(v + vec3<i32>( 0, 0,-1), res);
+  let iF = voxelIndex(v + vec3<i32>( 0, 0, 1), res);
+  let pL = select(pc, auxIn[iL].r, thermoIn[iL].r > 0.001);
+  let pR = select(pc, auxIn[iR].r, thermoIn[iR].r > 0.001);
+  let pD = select(pc, auxIn[iD].r, thermoIn[iD].r > 0.001);
+  let pU = select(pc, auxIn[iU].r, thermoIn[iU].r > 0.001);
+  let pB = select(pc, auxIn[iB].r, thermoIn[iB].r > 0.001);
+  let pF = select(pc, auxIn[iF].r, thermoIn[iF].r > 0.001);
+  velocity.xyz -= 0.72 * 0.5 * vec3<f32>(pR - pL, pU - pD, pF - pB);
+  if (v.y <= 1 && velocity.y < 0.0) { velocity.y = 0.0; }
+  outBuf0[idx] = vec4<f32>(clamp(velocity.xyz, vec3<f32>(-8.0), vec3<f32>(8.0)), 0.0);
+  outBuf1[idx] = state;
+}
+
+fn hydroColliderSdfVolume(uvw: vec3<f32>) -> f32 {
+  if (u.obstacleType == 0u) { return 1.0e5; }
+  let d = uvw - vec3<f32>(u.colliderX, u.colliderY, u.colliderZ);
+  let rad = max(u.obstacleRadius, 0.06);
+  if (u.obstacleType == 1u) { return length(d) - rad; }
+  if (u.obstacleType == 2u) {
+    let w = vec2<f32>(length(d.xz) - rad * 0.75, abs(d.y) - rad * 1.4);
+    return min(max(w.x, w.y), 0.0) + length(max(w, vec2<f32>(0.0)));
+  }
+  if (u.obstacleType == 3u) {
+    let w = vec2<f32>(length(d.yz) - rad * 0.72, abs(d.x) - rad * 1.9);
+    return min(max(w.x, w.y), 0.0) + length(max(w, vec2<f32>(0.0)));
+  }
+  if (u.obstacleType == 4u) {
+    let q = abs(d) - vec3<f32>(rad * 1.5, rad * 0.45, rad * 1.5);
+    return length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+  }
+  if (u.obstacleType == 5u) {
+    return length(vec2<f32>(length(d.xy) - rad * 0.76, d.z)) - rad * 0.24;
+  }
+  return 1.0e5;
+}
+
+fn hydroSolidVolume(uvw: vec3<f32>) -> f32 {
+  return select(0.0, 1.0, hydroColliderSdfVolume(uvw) < 0.0);
+}
+
+fn hydroSeedVolume(uvw: vec3<f32>) -> f32 {
+  let cell = 1.0 / f32(u.gridRes);
+  var level = u.waterLevel;
+  if (u.waveMode == 1u) {
+    level += u.waveHeight * (0.075 * sin(uvw.x * 17.0) + 0.040 * sin(uvw.z * 12.0));
+  } else if (u.waveMode == 2u) {
+    let front = exp(-pow((uvw.x - 0.18) * 7.0, 2.0));
+    let shoulder = 0.55 + 0.45 * sin(uvw.z * 6.2831853);
+    level += u.waveHeight * front * (0.16 + 0.10 * shoulder);
+  }
+  let vertical = 1.0 - smoothstep(level - cell * 1.2, level + cell * 1.2, uvw.y);
+  if (u.hydroScene == 1u) {
+    let dam = 1.0 - smoothstep(u.damGateX - cell * 2.0, u.damGateX + cell * 2.0, uvw.x);
+    return vertical * dam;
+  }
+  return vertical;
+}
+
+@compute @workgroup_size(4, 4, 4)
+fn csHydroVolume(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let res = i32(u.gridRes);
+  let v = vec3<i32>(gid);
+  if (v.x >= res || v.y >= res || v.z >= res) { return; }
+  let idx = voxelIndex(v, res);
+  let uvw = (vec3<f32>(v) + vec3<f32>(0.5)) / f32(res);
+  let cell = 1.0 / f32(res);
+  var previousVelocity = velIn[idx];
+  var previous = thermoIn[idx];
+  var velocity = previousVelocity.xyz;
+  var state = previous;
+
+  if (u.hydroSeed == 1u) {
+    state = vec4<f32>(hydroSeedVolume(uvw), 0.0, 0.0, 0.0);
+    velocity = vec3<f32>(0.0);
+    if (u.hydroScene == 1u) {
+      let gate = exp(-pow((uvw.x - u.damGateX) * 22.0, 2.0)) * state.r;
+      velocity.x += gate * 2.8;
+    }
+    if (u.waveMode == 1u) {
+      velocity.x += cos(uvw.x * 17.0) * u.waveHeight * u.waveSpeed * 0.22 * state.r;
+    } else if (u.waveMode == 2u) {
+      let crest = exp(-pow((uvw.x - 0.18) * 7.0, 2.0));
+      velocity.x += u.waveSpeed * (0.45 + crest) * state.r;
+      velocity.y += crest * u.waveHeight * 0.65 * state.r;
+    }
+  } else {
+    let backUVW = uvw - velocity * (u.dt * 0.62);
+    velocity = sampleVelTrilinear(backUVW, res).xyz;
+    state = sampleThermoTrilinear(backUVW, res);
+  }
+
+  if (hydroSolidVolume(uvw) > 0.5) {
+    outBuf0[idx] = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    outBuf1[idx] = vec4<f32>(0.0);
+    return;
+  }
+
+  let metric = uvw - vec3<f32>(u.colliderX, u.colliderY, u.colliderZ);
+  let bodyDistance = length(metric);
+  let colliderSdf = hydroColliderSdfVolume(uvw);
+  let shell = exp(-abs(colliderSdf) * 20.0);
+  let speed = length(vec3<f32>(u.colliderVX, u.colliderVY, u.colliderVZ));
+  let impact = clamp(speed * 2.8 + u.splashEnergy * 0.18, 0.0, 3.0);
+  let radialDir = select(vec3<f32>(0.0, 1.0, 0.0), metric / max(bodyDistance, 0.001), bodyDistance > 0.001);
+  let fluidNearBody = clamp(state.r * 1.8 + shell * 0.25, 0.0, 1.0);
+  velocity += (radialDir * 0.50 + vec3<f32>(0.0, 0.78, 0.0)) * shell * impact * fluidNearBody;
+  velocity += (vec3<f32>(u.colliderVX, u.colliderVY, u.colliderVZ) - velocity) * shell * clamp(u.dt * 18.0, 0.0, 0.72);
+  state.r = max(state.r, shell * impact * 0.28);
+  state.g = max(state.g, shell * impact * u.foamGeneration * 0.55);
+  state.b = max(state.b, shell * clamp(u.surfaceAdhesion * 0.85, 0.0, 1.0));
+
+  if (u.splashImpulse > 0.001 && u.splashAge < 2.6) {
+    let splashDelta = uvw - vec3<f32>(u.splashX, u.splashY, u.splashZ);
+    let splashR = length(splashDelta);
+    let fade = exp(-u.splashAge * 2.2) * u.splashImpulse;
+    let shellR = exp(-pow((splashR - (0.035 + u.splashAge * 0.22)) * 16.0, 2.0));
+    let coreR = exp(-splashR * splashR * 170.0);
+    state.r = max(state.r, clamp(max(shellR * 0.68, coreR * 0.90) * fade, 0.0, 0.90));
+    let splashDir = select(vec3<f32>(0.0, 1.0, 0.0), splashDelta / max(splashR, 0.001), splashR > 0.001);
+    velocity += (splashDir + vec3<f32>(0.0, 1.15, 0.0)) * fade * (shellR * 0.75 + coreR * 0.55);
+    state.g = max(state.g, shellR * fade * u.foamGeneration);
+  }
+
+  if (u.emitterEnabled == 1u) {
+    let pourR = length(uvw.xz - vec2<f32>(0.54, 0.50));
+    let pour = smoothstep(u.emitterRadius, u.emitterRadius * 0.22, pourR)
+      * step(u.waterLevel - cell, uvw.y) * step(uvw.y, u.emitterPosY) * clamp(u.emitterRate, 0.0, 2.5);
+    state.r = max(state.r, pour);
+    velocity.y += pour * 0.85;
+  }
+
+  if (state.r < 0.001) {
+    outBuf0[idx] = vec4<f32>(0.0);
+    outBuf1[idx] = vec4<f32>(0.0, state.g, state.b, 0.0);
+    return;
+  }
+
+  velocity.y -= u.liquidGravity * u.dt * 0.105;
+  velocity *= exp(-u.liquidViscosity * u.dt * 4.5);
+  let lL = thermoIn[voxelIndex(v + vec3<i32>(-1, 0, 0), res)].r;
+  let lR = thermoIn[voxelIndex(v + vec3<i32>( 1, 0, 0), res)].r;
+  let lD = thermoIn[voxelIndex(v + vec3<i32>( 0,-1, 0), res)].r;
+  let lU = thermoIn[voxelIndex(v + vec3<i32>( 0, 1, 0), res)].r;
+  let lB = thermoIn[voxelIndex(v + vec3<i32>( 0, 0,-1), res)].r;
+  let lF = thermoIn[voxelIndex(v + vec3<i32>( 0, 0, 1), res)].r;
+  velocity -= 0.42 * u.surfaceTension * u.dt * vec3<f32>(lR - lL, lU - lD, lF - lB) * 0.5;
+  if (v.y <= 1 && velocity.y < 0.0) { velocity.y = 0.0; }
+  state.g = max(state.g * exp(-u.foamDissipation * u.dt), clamp(length(velocity) * 0.075 * u.foamGeneration, 0.0, 0.75));
+  state.a = clamp(length(vec3<f32>(lR - lL, lU - lD, lF - lB)) * 0.55 + length(velocity) * 0.025, 0.0, 1.0);
+  outBuf0[idx] = vec4<f32>(clamp(velocity, vec3<f32>(-8.0), vec3<f32>(8.0)), 0.0);
+  outBuf1[idx] = clamp(state, vec4<f32>(0.0), vec4<f32>(1.0));
+}
 `;
+
 
 export const WGSL_RAYMARCH_SHADER = /* wgsl */ `
 struct RenderUniforms {
