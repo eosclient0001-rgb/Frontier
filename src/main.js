@@ -1182,12 +1182,18 @@ class PyroStudioApp {
       label: 'Dam Face X Position',
       min: 0.18, max: 0.62, step: 0.01,
       format: (v) => `${Math.round(v * 100)}%`,
+      onChange: () => {
+        if (this.engine?.isParticleFluid) this.engine.clearGrid();
+      },
     });
     this.addSlider(secHydro, {
       key: 'waterPoolLevel',
       label: 'Pool Depth / Free-Surface Level',
       min: 0.08, max: 0.55, step: 0.01,
       format: (v) => `${Math.round(v * 100)}%`,
+      onChange: () => {
+        if (this.engine?.isParticleFluid) this.engine.clearGrid();
+      },
     });
     this.addSlider(secHydro, {
       key: 'liquidViscosity',
