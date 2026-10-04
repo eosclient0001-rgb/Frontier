@@ -1,0 +1,1019 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0b0b" />
+    <title>Frontier — Texture Paint</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/ThemeSpecification.css" />
+    <link rel="stylesheet" href="./src/TexturePaint.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- App Header -->
+      <header class="app-header">
+        <a href="#" class="brand">
+          <span class="brand-icon" data-icon="palette"></span>
+          <strong>FRONTIER</strong>
+          <span class="experimental">PAINT</span>
+        </a>
+
+        <!-- Slanted Document Tabs Dock -->
+        <div class="document-dock">
+          <div id="document-tabs" class="document-tabs" role="tablist" aria-label="Open documents">
+            <div class="document-tab active" data-doc="helmet">
+              <span data-icon="cube"></span>
+              <span class="document-label">Combat Helmet</span>
+              <span class="tab-dirty" id="tab-dirty-dot"></span>
+            </div>
+            <div class="document-tab" data-doc="drone">
+              <span data-icon="cube"></span>
+              <span class="document-label">Mech Drone</span>
+            </div>
+          </div>
+          <button id="new-document" class="icon-button" title="New project" aria-label="New project" data-icon="plus"></button>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="top-nav" aria-label="Workspace">
+          <button class="nav-button active" id="workspace-nav">Workspace</button>
+          <button class="nav-button" id="materials-nav">Materials</button>
+          <button class="nav-button" id="decals-nav">Decals</button>
+        </nav>
+
+        <!-- Header End Actions -->
+        <div class="header-end">
+          <span class="gas-tag"><i></i> PBR 2048²</span>
+          <button class="icon-button" id="help-button" title="Shortcuts & Info" aria-label="Help" data-icon="help"></button>
+          <button id="export-dialog-btn" class="button export-button primary">
+            <span data-icon="download"></span>Export Textures
+          </button>
+        </div>
+      </header>
+
+      <!-- Document Bar -->
+      <div class="document-bar">
+        <span data-icon="file"></span>
+        <input id="document-name" value="Combat Helmet PBR" aria-label="Scene name" maxlength="64" />
+        <span class="document-extension">.paint</span>
+        <span id="dirty-indicator" title="Unsaved changes" class="dirty-indicator"></span>
+        <span class="document-note">4K Multi-Channel PBR Painting · Tangent Normal Mapping</span>
+
+        <div class="bar-end-actions">
+          <button id="import-btn" class="text-button">
+            <span data-icon="folder"></span>Open Project
+          </button>
+          <input type="file" id="project-file-input" accept=".paint,.json" hidden />
+
+          <button id="import-obj-btn" class="text-button">
+            <span data-icon="box"></span>Load OBJ Mesh
+          </button>
+          <input type="file" id="obj-file-input" accept=".obj" hidden />
+
+          <button id="save-project-btn" class="text-button">
+            <span data-icon="download"></span>Save Project
+          </button>
+        </div>
+      </div>
+
+      <!-- Main 3-Column Workspace -->
+      <main class="workspace" id="paint-workspace">
+        <!-- Left Panel: Layer Stack & Material Presets -->
+        <aside class="left-panel">
+          <div class="outliner-heading">
+            <div>
+              <h1 id="outliner-title">Layer Stack</h1>
+              <span class="outliner-subtitle"><span id="layer-count-badge">4</span> layers · PBR</span>
+            </div>
+            <button id="compact-outliner" class="icon-button" title="Toggle Compact Outliner" aria-label="Compact outliner">
+              <span data-icon="sliders"></span>
+            </button>
+          </div>
+
+          <!-- Statistics Tiles -->
+          <div class="scene-statistics">
+            <div class="scene-stat">
+              <span class="stat-symbol enabled-symbol">✓</span>
+              <span class="stat-label">Visible</span>
+              <strong id="visible-count">4</strong>
+            </div>
+            <div class="scene-stat">
+              <span class="stat-symbol disabled-symbol" data-icon="stamp"></span>
+              <span class="stat-label">Decals</span>
+              <strong id="decal-count">1</strong>
+            </div>
+          </div>
+
+          <!-- Layer Search -->
+          <label class="search scene-search">
+            <span data-icon="search"></span>
+            <input type="search" id="layer-search" placeholder="Search layer stack…" aria-label="Search layers" />
+            <kbd>Ctrl ⇧ F</kbd>
+          </label>
+
+          <!-- Layer Category Filter Pills -->
+          <div class="scene-filters" id="layer-filters" aria-label="Layer filters">
+            <button data-filter="all" class="active">All</button>
+            <button data-filter="paint">Paint</button>
+            <button data-filter="fill">Fill</button>
+            <button data-filter="decal">Decals</button>
+            <button data-filter="text">Text</button>
+          </div>
+
+          <!-- Layer Stack Toolbar -->
+          <div class="scene-toolbar">
+            <div class="scene-toolbar-title">
+              <span data-icon="layers"></span>
+              <span>Layers (Top to Bottom)</span>
+            </div>
+            <button id="add-layer-btn" class="icon-button" title="Add Layer" aria-label="Add layer" data-icon="plus"></button>
+            <button id="duplicate-layer-btn" class="icon-button" title="Duplicate Layer" aria-label="Duplicate layer" data-icon="duplicate"></button>
+            <button id="merge-down-btn" class="icon-button" title="Merge Down" aria-label="Merge down" data-icon="layers"></button>
+            <button id="delete-layer-btn" class="icon-button" title="Delete Layer" aria-label="Delete layer" data-icon="trash"></button>
+          </div>
+
+          <!-- Layer Stack Tree -->
+          <div id="scene-tree" class="scene-tree" role="tree" aria-label="Layer stack list"></div>
+
+          <!-- Material Presets Library -->
+          <div class="library" id="material-library">
+            <div class="panel-heading">
+              <div class="panel-heading-title">
+                <span data-icon="palette"></span>
+                <span>Material Presets</span>
+              </div>
+              <span class="count" id="preset-count">16</span>
+            </div>
+
+            <label class="search">
+              <span data-icon="search"></span>
+              <input type="search" id="preset-search" placeholder="Find material…" aria-label="Search materials" />
+              <kbd>/</kbd>
+            </label>
+
+            <div class="scene-filters" id="preset-filters">
+              <button data-cat="all" class="active">All</button>
+              <button data-cat="metal">Metal</button>
+              <button data-cat="plastic">Plastic</button>
+              <button data-cat="cyber">Cyber</button>
+              <button data-cat="weathered">Weathered</button>
+            </div>
+
+            <div class="preset-list" id="presets-list"></div>
+          </div>
+
+          <div class="left-footer">
+            <span data-icon="box"></span>
+            <span>Substance PBR Channels: Albedo · Rough · Metal · Normal · Height</span>
+          </div>
+        </aside>
+
+        <!-- Center Panel: Viewport -->
+        <section class="center-panel">
+          <!-- Viewport Bar -->
+          <div class="viewport-bar">
+            <span data-icon="viewport"></span>
+            <strong>Scene View</strong>
+            <span class="bar-divider"></span>
+
+            <!-- View Mode (3D / 2D / Split) -->
+            <select id="viewport-mode-select" aria-label="Viewport mode">
+              <option value="3d">3D Viewport</option>
+              <option value="2d">2D UV Map</option>
+              <option value="split">Split 3D + 2D</option>
+            </select>
+
+            <!-- Camera View -->
+            <select id="camera-view-select" aria-label="Camera view">
+              <option value="perspective">Perspective</option>
+              <option value="front">Front</option>
+              <option value="side">Side</option>
+              <option value="top">Top</option>
+              <option value="iso">Isometric</option>
+            </select>
+
+            <!-- Model Selector -->
+            <select id="model-select" aria-label="Model selector">
+              <option value="helmet">Sci-Fi Helmet</option>
+              <option value="drone">Mech Drone</option>
+              <option value="teapot">Ceramic Teapot</option>
+              <option value="blaster">Sci-Fi Blaster</option>
+              <option value="crate">Cargo Crate (Box)</option>
+              <option value="canister">Fuel Canister</option>
+              <option value="sphere">Material Ball (Sphere)</option>
+              <option value="torus">Curved Torus</option>
+            </select>
+
+            <!-- Viewport End Controls -->
+            <div class="viewport-bar-end">
+              <!-- Render Channel View -->
+              <select id="render-channel-select" aria-label="Render channel">
+                <option value="lit">Full PBR Lit</option>
+                <option value="base_color">Albedo / Base Color</option>
+                <option value="roughness">Roughness Channel</option>
+                <option value="metallic">Metallic Channel</option>
+                <option value="normal">Tangent Normal Map</option>
+                <option value="height">Height / Bump Map</option>
+              </select>
+
+              <!-- Lighting Preset -->
+              <select id="lighting-select" aria-label="Lighting preset">
+                <option value="studio">Studio Neutral</option>
+                <option value="cyberpunk">Cyberpunk Neon</option>
+                <option value="sunset">Warm Sunset</option>
+                <option value="dark_rim">Dark Rimlight</option>
+                <option value="warehouse">Industrial Warehouse</option>
+              </select>
+
+              <button id="wireframe-toggle-btn" class="icon-button" title="Wireframe Overlay" aria-label="Toggle wireframe" data-icon="grid"></button>
+              <button id="focus-btn" class="icon-button" title="Focus Model · F" aria-label="Focus camera" data-icon="focus"></button>
+              <button id="maximize-btn" class="icon-button" title="Maximize Viewport" aria-label="Maximize viewport" data-icon="maximize"></button>
+            </div>
+          </div>
+
+          <!-- Viewport Workspace Canvas Area -->
+          <div class="viewport" id="viewport">
+            <div class="viewport-canvas-container" id="canvas-container">
+              <!-- 3D Canvas Pane -->
+              <div class="canvas-pane" id="pane-3d">
+                <canvas id="paint-canvas-3d"></canvas>
+              </div>
+
+              <!-- 2D UV Map Canvas Pane -->
+              <div class="canvas-pane uv-editor-pane" id="pane-2d" hidden>
+                <div class="uv-badge">
+                  <span data-icon="grid"></span>
+                  <span>2D UV Texture Map</span>
+                </div>
+                <canvas id="paint-canvas-2d"></canvas>
+              </div>
+            </div>
+
+            <!-- Viewport HUD Caption -->
+            <div class="viewport-caption">
+              <span class="live-pill" id="live-paint-pill">
+                <i></i><span>INTERACTIVE PAINT</span>
+              </span>
+              <strong id="active-model-name">Sci-Fi Combat Helmet</strong>
+              <small id="active-channel-name">Full Physical PBR Shading</small>
+            </div>
+
+            <!-- Floating Viewport Tools Dock -->
+            <div class="viewport-tools" aria-label="Paint tools">
+              <button class="icon-button" data-tool="orbit" title="Orbit Camera · 1" aria-label="Orbit camera" data-icon="orbit"></button>
+              <button class="icon-button active" data-tool="brush" title="Paint Brush · 2" aria-label="Paint brush" data-icon="brush"></button>
+              <button class="icon-button" data-tool="eraser" title="Eraser · 3" aria-label="Eraser" data-icon="eraser"></button>
+              <button class="icon-button" data-tool="bucket" title="Fill Bucket · 4" aria-label="Fill bucket" data-icon="paint-bucket"></button>
+              <button class="icon-button" data-tool="stamp" title="Decal Stamp · 5" aria-label="Decal stamp" data-icon="stamp"></button>
+              <button class="icon-button" data-tool="eyedropper" title="Eyedropper · 6" aria-label="Eyedropper" data-icon="pipette"></button>
+              <span class="tool-sep"></span>
+              <button id="turntable-btn" class="icon-button" title="Turntable Spin · T" aria-label="Turntable" data-icon="rotate"></button>
+            </div>
+
+            <!-- Floating Right HUD -->
+            <div class="viewport-right-hud">
+              <span class="live-metric"><b id="fps-hud">60</b> FPS</span>
+              <span class="live-metric">2048² PBR</span>
+              <span class="live-metric" id="tool-hud">BRUSH · 45px</span>
+            </div>
+
+            <!-- Viewport Interaction Hints -->
+            <div class="viewport-help">
+              <span>Left-drag to Paint</span>
+              <i>·</i>
+              <span>Right-drag to Orbit</span>
+              <i>·</i>
+              <span>Scroll to Zoom</span>
+            </div>
+
+            <!-- Axis Gizmo -->
+            <div class="axis-gizmo" aria-label="World orientation">
+              <svg viewBox="0 0 60 60">
+                <line x1="30" y1="30" x2="30" y2="8" stroke="#34c759" stroke-width="2.5" />
+                <line x1="30" y1="30" x2="10" y2="44" stroke="#ff453a" stroke-width="2.5" />
+                <line x1="30" y1="30" x2="50" y2="44" stroke="#0a84ff" stroke-width="2.5" />
+                <circle cx="30" cy="30" r="3" fill="#fff" />
+                <text x="27" y="6" class="axis-y">Y</text>
+                <text x="4" y="52" class="axis-x">X</text>
+                <text x="52" y="52" class="axis-z">Z</text>
+              </svg>
+            </div>
+
+            <!-- Toast Element -->
+            <div id="toast" class="toast" role="status" hidden></div>
+          </div>
+
+          <!-- Transport Bar -->
+          <div class="transport">
+            <div class="transport-buttons">
+              <button class="icon-button" id="undo-btn" title="Undo · Ctrl+Z" aria-label="Undo" data-icon="undo"></button>
+              <button class="icon-button" id="redo-btn" title="Redo · Ctrl+Y" aria-label="Redo" data-icon="redo"></button>
+              <button class="icon-button" id="reset-cam-btn" title="Reset Camera · R" aria-label="Reset camera" data-icon="rewind"></button>
+              <button class="play-button" id="play-turntable-btn" title="Turntable Spin · Space" aria-label="Turntable spin" data-icon="play"></button>
+            </div>
+
+            <span class="timecode" id="history-timecode">STEP 01 / 01</span>
+            <span class="transport-divider"></span>
+
+            <!-- Quick Brush Adjustments -->
+            <div class="quick-brush-controls">
+              <label>
+                <span>Size</span>
+                <div class="value-pill">
+                  <input type="number" id="quick-brush-size" min="1" max="256" value="45" />
+                  <span class="unit">px</span>
+                </div>
+              </label>
+
+              <label>
+                <span>Opacity</span>
+                <div class="value-pill">
+                  <input type="number" id="quick-brush-opacity" min="1" max="100" value="100" />
+                  <span class="unit">%</span>
+                </div>
+              </label>
+
+              <div class="quick-color-preview" id="quick-color-swatch" style="background: #e03e3e;" title="Pick Color">
+                <input type="color" id="quick-color-input" class="quick-color-input" value="#e03e3e" />
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="transport-actions">
+              <button class="button" id="fill-active-layer-btn">
+                <span data-icon="paint-bucket"></span>Fill Layer
+              </button>
+              <button class="button primary" id="quick-export-orm-btn">
+                <span data-icon="download"></span>Export ORM
+              </button>
+            </div>
+          </div>
+
+          <!-- History Timeline Ruler -->
+          <div class="timeline" aria-label="Paint stroke history timeline">
+            <div class="timeline-label">
+              <span data-icon="clock"></span>HISTORY STACK
+            </div>
+            <div class="timeline-track" id="history-timeline-track">
+              <div class="timeline-step active"></div>
+              <div class="timeline-playhead" id="history-playhead" style="left: 100%;"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right Panel: Inspector -->
+        <aside class="inspector-panel">
+          <div class="panel-heading">
+            <div class="panel-heading-title">
+              <span data-icon="sliders"></span>
+              <span>Inspector</span>
+            </div>
+            <button id="reset-inspector-btn" class="icon-button" title="Reset properties" aria-label="Reset properties" data-icon="rotate"></button>
+          </div>
+
+          <!-- Selected Object Heading -->
+          <div class="object-heading">
+            <div class="object-symbol" id="selected-layer-symbol" data-icon="brush"></div>
+            <div>
+              <input id="selected-layer-name" value="Armor Base Paint" aria-label="Layer name" maxlength="48" />
+              <span class="object-type-badge" id="selected-layer-type">PAINT LAYER</span>
+            </div>
+            <label class="switch" title="Toggle Layer Visibility">
+              <input type="checkbox" id="selected-layer-visible" checked />
+              <span></span>
+            </label>
+          </div>
+
+          <!-- Inspector Tabs -->
+          <div class="inspector-tabs" id="inspector-tabs">
+            <button class="active" data-tab="brush">Brush</button>
+            <button data-tab="material">Material</button>
+            <button data-tab="decals">Decals</button>
+            <button data-tab="layer">Layer</button>
+          </div>
+
+          <!-- Inspector Tab: Brush -->
+          <div class="tab-pane" id="pane-brush">
+            <!-- Brush Dynamics -->
+            <details class="property-group" open>
+              <summary>
+                <span>Brush Dynamics</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <!-- Size -->
+                <div class="property-row">
+                  <span class="property-label">Radius</span>
+                  <div class="slider-control">
+                    <input type="range" id="brush-size-range" min="2" max="250" value="45" />
+                    <div class="value-pill">
+                      <input type="number" id="brush-size-number" min="2" max="250" value="45" />
+                      <span class="unit">px</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Hardness -->
+                <div class="property-row">
+                  <span class="property-label">Hardness</span>
+                  <div class="slider-control">
+                    <input type="range" id="brush-hardness-range" min="0" max="100" value="75" />
+                    <div class="value-pill">
+                      <input type="number" id="brush-hardness-number" min="0" max="100" value="75" />
+                      <span class="unit">%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Opacity -->
+                <div class="property-row">
+                  <span class="property-label">Opacity</span>
+                  <div class="slider-control">
+                    <input type="range" id="brush-opacity-range" min="1" max="100" value="100" />
+                    <div class="value-pill">
+                      <input type="number" id="brush-opacity-number" min="1" max="100" value="100" />
+                      <span class="unit">%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Spacing -->
+                <div class="property-row">
+                  <span class="property-label">Spacing</span>
+                  <div class="slider-control">
+                    <input type="range" id="brush-spacing-range" min="2" max="50" value="10" />
+                    <div class="value-pill">
+                      <input type="number" id="brush-spacing-number" min="2" max="50" value="10" />
+                      <span class="unit">%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <!-- Brush Shape -->
+            <details class="property-group" open>
+              <summary>
+                <span>Brush Shape & Tip</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <div class="brush-shapes-grid" id="brush-shapes-grid">
+                  <button class="shape-btn active" data-shape="round_soft">
+                    <div class="shape-preview-circle shape-preview-soft"></div>
+                    <span>Soft Round</span>
+                  </button>
+                  <button class="shape-btn" data-shape="round_hard">
+                    <div class="shape-preview-circle"></div>
+                    <span>Hard Round</span>
+                  </button>
+                  <button class="shape-btn" data-shape="square">
+                    <div class="shape-preview-circle shape-preview-square"></div>
+                    <span>Square</span>
+                  </button>
+                  <button class="shape-btn" data-shape="noise">
+                    <div class="shape-preview-circle shape-preview-noise"></div>
+                    <span>Noise Grain</span>
+                  </button>
+                </div>
+              </div>
+            </details>
+
+            <!-- Symmetry -->
+            <details class="property-group" open>
+              <summary>
+                <span>Mirror Symmetry</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <div class="property-row">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="symmetry-x-chk" />
+                    <span>Mirror X Axis (Left / Right)</span>
+                  </label>
+                </div>
+                <div class="property-row">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="symmetry-y-chk" />
+                    <span>Mirror Y Axis (Top / Bottom)</span>
+                  </label>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <!-- Inspector Tab: Material Channels -->
+          <div class="tab-pane" id="pane-material" hidden>
+            <!-- Channel Write Toggles -->
+            <details class="property-group" open>
+              <summary>
+                <span>Active Paint Channels</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <div class="channels-toggle-grid">
+                  <button class="channel-check-btn active" data-channel="color">
+                    <b>C</b><span>Color</span>
+                  </button>
+                  <button class="channel-check-btn active" data-channel="roughness">
+                    <b>R</b><span>Rough</span>
+                  </button>
+                  <button class="channel-check-btn active" data-channel="metallic">
+                    <b>M</b><span>Metal</span>
+                  </button>
+                  <button class="channel-check-btn active" data-channel="height">
+                    <b>H</b><span>Height</span>
+                  </button>
+                  <button class="channel-check-btn" data-channel="emission">
+                    <b>E</b><span>Emiss</span>
+                  </button>
+                </div>
+              </div>
+            </details>
+
+            <!-- Base Color -->
+            <details class="property-group" open>
+              <summary>
+                <span>Base Color (Albedo)</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <div class="color-picker-row">
+                  <div class="swatch-display" id="color-swatch-display" style="background: #e03e3e;">
+                    <input type="color" id="material-color-input" value="#e03e3e" />
+                  </div>
+                  <input type="text" id="material-color-hex" class="color-hex-input" value="#E03E3E" maxlength="7" />
+                  <span style="font-size: 11px; color: #888;">Hex Code</span>
+                </div>
+
+                <!-- Palette Swatches -->
+                <div class="palette-grid" id="quick-palette-grid">
+                  <button class="palette-btn" style="background: #e03e3e;" data-color="#e03e3e"></button>
+                  <button class="palette-btn" style="background: #ff9f0a;" data-color="#ff9f0a"></button>
+                  <button class="palette-btn" style="background: #ffd60a;" data-color="#ffd60a"></button>
+                  <button class="palette-btn" style="background: #34c759;" data-color="#34c759"></button>
+                  <button class="palette-btn" style="background: #0a84ff;" data-color="#0a84ff"></button>
+                  <button class="palette-btn" style="background: #bf5af2;" data-color="#bf5af2"></button>
+                  <button class="palette-btn" style="background: #ffffff;" data-color="#ffffff"></button>
+                  <button class="palette-btn" style="background: #111111;" data-color="#111111"></button>
+                  <button class="palette-btn" style="background: #7a818c;" data-color="#7a818c"></button>
+                  <button class="palette-btn" style="background: #4a2416;" data-color="#4a2416"></button>
+                  <button class="palette-btn" style="background: #cb6e51;" data-color="#cb6e51"></button>
+                  <button class="palette-btn" style="background: #00f0ff;" data-color="#00f0ff"></button>
+                  <button class="palette-btn" style="background: #444c2a;" data-color="#444c2a"></button>
+                  <button class="palette-btn" style="background: #252528;" data-color="#252528"></button>
+                  <button class="palette-btn" style="background: #ff2d55;" data-color="#ff2d55"></button>
+                  <button class="palette-btn" style="background: #ffd24d;" data-color="#ffd24d"></button>
+                </div>
+              </div>
+            </details>
+
+            <!-- Roughness -->
+            <details class="property-group" open>
+              <summary>
+                <span>Roughness (Surface Finish)</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <div class="property-row">
+                  <span class="property-label">Roughness</span>
+                  <div class="slider-control">
+                    <input type="range" id="roughness-range" min="0" max="100" value="35" />
+                    <div class="value-pill">
+                      <input type="number" id="roughness-number" min="0" max="1" step="0.01" value="0.35" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="finish-buttons">
+                  <button class="finish-btn" data-roughness="0.05">Mirror</button>
+                  <button class="finish-btn" data-roughness="0.25">Satin</button>
+                  <button class="finish-btn active" data-roughness="0.5">Semi</button>
+                  <button class="finish-btn" data-roughness="0.8">Matte</button>
+                  <button class="finish-btn" data-roughness="1.0">Chalk</button>
+                </div>
+              </div>
+            </details>
+
+            <!-- Metallic -->
+            <details class="property-group" open>
+              <summary>
+                <span>Metallic (Dielectric vs Conductor)</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <div class="property-row">
+                  <span class="property-label">Metallic</span>
+                  <div class="slider-control">
+                    <input type="range" id="metallic-range" min="0" max="100" value="90" />
+                    <div class="value-pill">
+                      <input type="number" id="metallic-number" min="0" max="1" step="0.01" value="0.90" />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="finish-buttons">
+                  <button class="finish-btn" data-metallic="0.0">Plastic</button>
+                  <button class="finish-btn" data-metallic="0.5">Oxide</button>
+                  <button class="finish-btn" data-metallic="0.85">Steel</button>
+                  <button class="finish-btn active" data-metallic="1.0">Metal</button>
+                </div>
+              </div>
+            </details>
+
+            <!-- Height & Normal Bump -->
+            <details class="property-group" open>
+              <summary>
+                <span>Height & Normal Bump</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <div class="property-row">
+                  <span class="property-label">Height</span>
+                  <div class="slider-control">
+                    <input type="range" id="height-range" min="-100" max="100" value="20" />
+                    <div class="value-pill">
+                      <input type="number" id="height-number" min="-1" max="1" step="0.05" value="0.20" />
+                    </div>
+                  </div>
+                </div>
+                <div style="font-size: 10px; color: #777;">
+                  &gt;0: Embossed ridge / rivet · &lt;0: Carved cut / scratch
+                </div>
+              </div>
+            </details>
+
+            <!-- Emission -->
+            <details class="property-group">
+              <summary>
+                <span>Emissive Glow</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <div class="color-picker-row">
+                  <div class="swatch-display" id="emissive-swatch-display" style="background: #00f0ff;">
+                    <input type="color" id="emissive-color-input" value="#00f0ff" />
+                  </div>
+                  <input type="text" id="emissive-color-hex" class="color-hex-input" value="#00F0FF" />
+                  <span style="font-size: 11px; color: #888;">Glow Color</span>
+                </div>
+                <div class="property-row">
+                  <span class="property-label">Intensity</span>
+                  <div class="slider-control">
+                    <input type="range" id="emissive-intensity-range" min="0" max="10" step="0.5" value="0" />
+                    <div class="value-pill">
+                      <input type="number" id="emissive-intensity-number" min="0" max="10" step="0.5" value="0" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <!-- Inspector Tab: Decals (SVG & Text) -->
+          <div class="tab-pane" id="pane-decals" hidden>
+            <!-- Decal Type Selector -->
+            <div class="decal-type-toggle">
+              <button class="decal-type-btn active" id="decal-type-svg" data-decal-type="svg">
+                <span data-icon="image"></span>SVG Decals
+              </button>
+              <button class="decal-type-btn" id="decal-type-text" data-decal-type="text">
+                <span data-icon="type"></span>Text Decals
+              </button>
+            </div>
+
+            <!-- SVG Decal Section -->
+            <div id="section-svg-decal">
+              <!-- Preset SVGs Library -->
+              <details class="property-group" open>
+                <summary>
+                  <span>Vector Decal Library</span>
+                  <span class="chevron" data-icon="chevron-right"></span>
+                </summary>
+                <div class="group-content">
+                  <div class="decal-library-grid" id="decal-library-grid"></div>
+
+                  <div style="margin-top: 6px;">
+                    <button class="button" id="upload-svg-btn" style="width: 100%;">
+                      <span data-icon="download"></span>Upload Custom SVG
+                    </button>
+                    <input type="file" id="svg-file-input" accept=".svg,image/svg+xml" hidden />
+                  </div>
+                </div>
+              </details>
+
+              <!-- Decal Preview & Placement -->
+              <details class="property-group" open>
+                <summary>
+                  <span>Transform & Placement</span>
+                  <span class="chevron" data-icon="chevron-right"></span>
+                </summary>
+                <div class="group-content">
+                  <div class="decal-preview-box" id="decal-preview-box"></div>
+
+                  <!-- Position U & V -->
+                  <div class="property-row">
+                    <span class="property-label">Position U</span>
+                    <div class="slider-control">
+                      <input type="range" id="decal-u-range" min="0" max="100" value="50" />
+                      <div class="value-pill">
+                        <input type="number" id="decal-u-number" min="0" max="1" step="0.01" value="0.50" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="property-row">
+                    <span class="property-label">Position V</span>
+                    <div class="slider-control">
+                      <input type="range" id="decal-v-range" min="0" max="100" value="50" />
+                      <div class="value-pill">
+                        <input type="number" id="decal-v-number" min="0" max="1" step="0.01" value="0.50" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Scale -->
+                  <div class="property-row">
+                    <span class="property-label">Scale</span>
+                    <div class="slider-control">
+                      <input type="range" id="decal-scale-range" min="5" max="80" value="25" />
+                      <div class="value-pill">
+                        <input type="number" id="decal-scale-number" min="0.05" max="0.8" step="0.01" value="0.25" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Rotation -->
+                  <div class="property-row">
+                    <span class="property-label">Rotation</span>
+                    <div class="slider-control">
+                      <input type="range" id="decal-rot-range" min="-180" max="180" value="0" />
+                      <div class="value-pill">
+                        <input type="number" id="decal-rot-number" min="-180" max="180" value="0" />
+                        <span class="unit">°</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Tint & Style -->
+                  <div class="property-row">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="decal-use-tint" />
+                      <span>Apply Color Tint:</span>
+                    </label>
+                    <input type="color" id="decal-tint-color" value="#ffd24d" />
+                  </div>
+
+                  <!-- Action Buttons -->
+                  <div class="decal-actions">
+                    <button class="button primary" id="stamp-decal-btn">
+                      <span data-icon="stamp"></span>Stamp onto Active Layer
+                    </button>
+                    <button class="button" id="create-decal-layer-btn">
+                      <span data-icon="plus"></span>Create as New Decal Layer
+                    </button>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <!-- Text Decal Section -->
+            <div id="section-text-decal" hidden>
+              <details class="property-group" open>
+                <summary>
+                  <span>Typography Decal</span>
+                  <span class="chevron" data-icon="chevron-right"></span>
+                </summary>
+                <div class="group-content">
+                  <!-- Text string -->
+                  <div class="property-row">
+                    <input type="text" id="text-decal-string" class="text-input-field" value="DANGER // HIGH VOLTAGE" placeholder="Enter decal text..." />
+                  </div>
+
+                  <!-- Font Family -->
+                  <div class="property-row">
+                    <span class="property-label">Font Family</span>
+                    <select id="text-decal-font" class="text-font-select">
+                      <option value="DM Sans">DM Sans (Clean Modern)</option>
+                      <option value="JetBrains Mono">JetBrains Mono (Tech/Code)</option>
+                      <option value="Impact">Impact (Heavy Stencil)</option>
+                      <option value="Georgia">Georgia (Serif Elegant)</option>
+                      <option value="Courier New">Courier (Military Teletype)</option>
+                    </select>
+                  </div>
+
+                  <!-- Badge / Frame Style -->
+                  <div class="property-row">
+                    <span class="property-label">Badge Frame</span>
+                  </div>
+                  <div class="text-badges-grid">
+                    <button class="badge-style-btn active" data-badge="hazard_box">Warning Box</button>
+                    <button class="badge-style-btn" data-badge="pill">Pill Stadium</button>
+                    <button class="badge-style-btn" data-badge="reticle">Corner Brackets</button>
+                    <button class="badge-style-btn" data-badge="inverted_box">Dark Card</button>
+                    <button class="badge-style-btn" data-badge="none">Plain Text</button>
+                  </div>
+
+                  <!-- Colors -->
+                  <div class="property-row">
+                    <span class="property-label">Text Color</span>
+                    <input type="color" id="text-decal-color" value="#ffffff" />
+                    <span class="property-label">Badge Color</span>
+                    <input type="color" id="text-decal-badge-color" value="#ffcc00" />
+                  </div>
+
+                  <!-- Text Transform & Action Buttons -->
+                  <div class="property-row">
+                    <span class="property-label">Scale</span>
+                    <div class="slider-control">
+                      <input type="range" id="text-decal-scale-range" min="10" max="80" value="30" />
+                    </div>
+                  </div>
+
+                  <div class="property-row">
+                    <span class="property-label">Rotation</span>
+                    <div class="slider-control">
+                      <input type="range" id="text-decal-rot-range" min="-180" max="180" value="0" />
+                    </div>
+                  </div>
+
+                  <div class="decal-actions">
+                    <button class="button primary" id="stamp-text-btn">
+                      <span data-icon="stamp"></span>Stamp Text to Layer
+                    </button>
+                    <button class="button" id="create-text-layer-btn">
+                      <span data-icon="type"></span>Create Text Decal Layer
+                    </button>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <!-- Inspector Tab: Layer Settings -->
+          <div class="tab-pane" id="pane-layer" hidden>
+            <details class="property-group" open>
+              <summary>
+                <span>Layer Compositing</span>
+                <span class="chevron" data-icon="chevron-right"></span>
+              </summary>
+              <div class="group-content">
+                <!-- Blend Mode -->
+                <div class="property-row">
+                  <span class="property-label">Blend Mode</span>
+                  <select id="layer-blend-select">
+                    <option value="source-over">Normal</option>
+                    <option value="multiply">Multiply</option>
+                    <option value="screen">Screen</option>
+                    <option value="overlay">Overlay</option>
+                    <option value="lighter">Add / Lighter</option>
+                    <option value="darken">Darken</option>
+                    <option value="color-dodge">Color Dodge</option>
+                  </select>
+                </div>
+
+                <!-- Opacity -->
+                <div class="property-row">
+                  <span class="property-label">Opacity</span>
+                  <div class="slider-control">
+                    <input type="range" id="layer-opacity-range" min="0" max="100" value="100" />
+                    <div class="value-pill">
+                      <input type="number" id="layer-opacity-number" min="0" max="100" value="100" />
+                      <span class="unit">%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Channel Masks -->
+                <div class="property-row">
+                  <span class="property-label">Affects Channels:</span>
+                </div>
+                <div class="property-row">
+                  <label class="checkbox-label"><input type="checkbox" id="layer-ch-color" checked /> Color</label>
+                  <label class="checkbox-label"><input type="checkbox" id="layer-ch-rough" checked /> Rough</label>
+                  <label class="checkbox-label"><input type="checkbox" id="layer-ch-metal" checked /> Metal</label>
+                  <label class="checkbox-label"><input type="checkbox" id="layer-ch-height" checked /> Height</label>
+                </div>
+
+                <!-- Layer Actions -->
+                <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 10px;">
+                  <button class="button" id="clear-layer-canvas-btn">
+                    <span data-icon="rotate"></span>Clear Layer Paint
+                  </button>
+                </div>
+              </div>
+            </details>
+          </div>
+        </aside>
+      </main>
+
+      <!-- Export Modal Dialog -->
+      <dialog id="export-dialog">
+        <div class="dialog-heading">
+          <h2>Export PBR Texture Maps</h2>
+          <button id="close-export-dialog" class="icon-button" aria-label="Close" data-icon="close"></button>
+        </div>
+        <p style="color: #888; font-size: 12px; margin-top: 0;">
+          Export individual 16-bit/8-bit lossless PNG channel maps, packed ORM textures for game engines, or 3D meshes.
+        </p>
+
+        <div class="export-grid">
+          <fieldset class="export-fieldset">
+            <legend>Texture Channels</legend>
+            <label class="checkbox-label"><input type="checkbox" id="exp-albedo" checked /> Base Color (Albedo)</label>
+            <label class="checkbox-label"><input type="checkbox" id="exp-roughness" checked /> Roughness</label>
+            <label class="checkbox-label"><input type="checkbox" id="exp-metallic" checked /> Metallic</label>
+            <label class="checkbox-label"><input type="checkbox" id="exp-normal" checked /> Tangent Normal Map</label>
+            <label class="checkbox-label"><input type="checkbox" id="exp-height" checked /> Height / Displacement</label>
+            <label class="checkbox-label"><input type="checkbox" id="exp-orm" checked /> Packed ORM (AO/Rough/Metal)</label>
+          </fieldset>
+
+          <fieldset class="export-fieldset">
+            <legend>Resolution & Format</legend>
+            <label class="property-row">
+              <span class="property-label">Resolution</span>
+              <select id="export-res-select">
+                <option value="1024">1024 × 1024</option>
+                <option value="2048" selected>2048 × 2048 (Crisp)</option>
+                <option value="4096">4096 × 4096 (4K Ultra)</option>
+              </select>
+            </label>
+            <label class="property-row">
+              <span class="property-label">3D Model</span>
+              <select id="export-mesh-format">
+                <option value="gltf">glTF 2.0 (.gltf)</option>
+                <option value="obj">Wavefront OBJ (.obj)</option>
+              </select>
+            </label>
+          </fieldset>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+          <button class="button" id="btn-export-mesh">Export 3D Model</button>
+          <button class="button primary" id="btn-export-textures">Download Texture Maps</button>
+        </div>
+      </dialog>
+
+      <!-- Help / Shortcuts Dialog -->
+      <dialog id="help-dialog">
+        <div class="dialog-heading">
+          <h2>Shortcuts & Workstation Help</h2>
+          <button id="close-help-dialog" class="icon-button" aria-label="Close" data-icon="close"></button>
+        </div>
+        <div class="help-shortcut-list">
+          <div class="shortcut-row">
+            <span>Paint Brush Tool</span>
+            <kbd>2</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Eraser Tool</span>
+            <kbd>3</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Fill Bucket Tool</span>
+            <kbd>4</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Decal Stamp Tool</span>
+            <kbd>5</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Eyedropper Color Pick</span>
+            <kbd>6</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Turntable 360° Spin</span>
+            <kbd>T</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Undo Paint Stroke</span>
+            <kbd>Ctrl + Z</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Redo Paint Stroke</span>
+            <kbd>Ctrl + Y</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Focus Model in Viewport</span>
+            <kbd>F</kbd>
+          </div>
+          <div class="shortcut-row">
+            <span>Reset Camera</span>
+            <kbd>R</kbd>
+          </div>
+        </div>
+        <div style="text-align: right; margin-top: 16px;">
+          <button class="button primary" id="btn-close-help">Got it</button>
+        </div>
+      </dialog>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
