@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frontier — Project-Zero editor</title>
+<link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════════════════════════
+       THE TAB BAND — the three docked panels and the project window, the trapezoid sheet of
+       Engine/Editor/EditorStyleSpecification.h (TabSlant 14, TabOverlap 24, TabHeight 24).
+       ═══════════════════════════════════════════════════════════════════════════════════════════ -->
+  <header class="tabband" id="tabband">
+    <div class="tabdock" id="tabdock-left"></div>
+    <div class="tabdock tabdock-centre" id="tabdock-centre"></div>
+    <div class="tabdock" id="tabdock-right"></div>
+    <div class="tabband-spacer"></div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════════════════════════
+       THE COLUMNS — outliner | viewport | inspector
+       ═══════════════════════════════════════════════════════════════════════════════════════════ -->
+  <main class="columns" id="columns">
+
+    <!-- ── OUTLINER ─────────────────────────────────────────────────────────────────────────── -->
+    <section class="panel panel-outliner" id="panel-outliner">
+      <div class="panel-body" id="outliner-body"></div>
+    </section>
+
+    <div class="splitter" id="splitter-left" title="Resize outliner"></div>
+
+    <!-- ── VIEWPORT ─────────────────────────────────────────────────────────────────────────── -->
+    <section class="panel panel-viewport" id="panel-viewport">
+      <div class="panel-body" id="viewport-body"></div>
+    </section>
+
+    <div class="splitter" id="splitter-right" title="Resize inspector"></div>
+
+    <!-- ── INSPECTOR ────────────────────────────────────────────────────────────────────────── -->
+    <section class="panel panel-inspector" id="panel-inspector">
+      <div class="panel-body" id="inspector-body"></div>
+    </section>
+  </main>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════════════════════════
+       THE SHADE — the Control Centre sheet the gear slides in, and the toasts
+       ═══════════════════════════════════════════════════════════════════════════════════════════ -->
+  <div class="shade" id="shade" hidden></div>
+  <div class="toasts" id="toasts"></div>
+
+  <!-- The Construct sheet (Shift+A): the native catalogue, not a browser template library. -->
+  <div class="modal-scrim" id="construct-scrim" hidden>
+    <div class="construct" id="construct">
+      <header class="construct-head">
+        <span class="construct-brand">CONSTRUCT&nbsp;&nbsp;/&nbsp;&nbsp;FRONTIER</span>
+        <span class="construct-crumb" id="construct-crumb">01 Entities&nbsp;&nbsp;&gt;&nbsp;&nbsp;02 Properties</span>
+        <button class="construct-close" id="construct-close" title="Close (Esc)">✕</button>
+      </header>
+      <div class="construct-slide" id="construct-slide">
+        <div class="construct-catalogue" id="construct-catalogue">
+          <input class="construct-search" id="construct-search" type="text" placeholder="Search existing engine entities…">
+          <div class="construct-columns">
+            <nav class="construct-groups" id="construct-groups"></nav>
+            <div class="construct-tiles" id="construct-tiles"></div>
+          </div>
+          <p class="construct-note">Existing scene records only. Select an entity to activate it or edit its native properties.</p>
+        </div>
+        <div class="construct-properties" id="construct-properties">
+          <button class="construct-back" id="construct-back">&lt; Entities</button>
+          <span class="construct-subject" id="construct-subject"></span>
+          <div class="construct-inspector" id="construct-inspector"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip" hidden></div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/data.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/outliner.js"></script>
+<script src="js/viewport.js"></script>
+<script src="js/inspector.js"></script>
+<script src="js/construct.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
