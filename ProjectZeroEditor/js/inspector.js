@@ -50,6 +50,31 @@ const Inspector = (() => {
   }
 
   /*── the sheets, the standing card, the notes ──────────────────────────────────────────────────*/
+  /* a folder is not a material: it gets the count of what it holds, not a sheet of sliders */
+  function folderCard(row) {
+    const i = SCENE.rows.indexOf(row);
+    let n = 0, shown = 0;
+    for (let j = i + 1; j < SCENE.rows.length && SCENE.rows[j].depth > row.depth; j++) {
+      if (SCENE.rows[j].category === 'Folder') continue;
+      n++; if (SCENE.rows[j].visible) shown++;
+    }
+    const box = el('div', 'card');
+    box.appendChild(el('div', 'card-head', '<div class="tri"></div><div class="caps">Collection</div>'));
+    const body = el('div', 'card-body');
+    [['Records', String(n)], ['Visible', `${shown}`], ['Hidden', `${n - shown}`], ['Depth', row.depth === 0 ? 'top level' : `child of level ${row.depth}`]]
+      .forEach(([k, v]) => {
+        const p = el('div', 'prop p-readout');
+        p.appendChild(el('div', 'label', k));
+        const z = el('div', 'zone');
+        z.appendChild(el('div', 'readout', v));
+        p.appendChild(z);
+        body.appendChild(p);
+      });
+    body.appendChild(el('div', 'caption', 'A folder carries the rows under it; opening it here is the same as the chevron out there.'));
+    box.appendChild(body);
+    return box;
+  }
+
   function sheetCards(row, target) {
     const sheet = SHEETS[row.sheet] || SHEETS.material;
     (sheet.groups || []).forEach(group => {
@@ -201,10 +226,13 @@ const Inspector = (() => {
     }
     host.appendChild(ident(row));
     const scroll = el('div', 'insp-scroll');
-    if (row.sheet === 'tyre' || row.sheet === 'tyreTread' || row.sheet === 'tyreLattice') scroll.appendChild(tyreHero(row));
-    const bake = bakeTiles(row);
-    if (bake) scroll.appendChild(bake);
-    sheetCards(row, scroll);
+    if (row.category === 'Folder') scroll.appendChild(folderCard(row));
+    else {
+      if (row.sheet === 'tyre' || row.sheet === 'tyreTread' || row.sheet === 'tyreLattice') scroll.appendChild(tyreHero(row));
+      const bake = bakeTiles(row);
+      if (bake) scroll.appendChild(bake);
+      sheetCards(row, scroll);
+    }
     scroll.appendChild(renderStanding(row, () => { }));
     scroll.appendChild(renderNotes(row));
     host.appendChild(scroll);
