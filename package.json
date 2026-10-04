@@ -16,7 +16,7 @@
     "render": "node tools/software-render.mjs",
     "preview": "node tools/preview.mjs"
   },
-  "dependencies": {
+  "optionalDependencies": {
     "wgsl_reflect": "^1.6.0"
   }
 }

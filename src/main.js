@@ -4,6 +4,9 @@ import { m4, v3, clamp, TAU } from './math.js';
 import { DEFAULT_FABRIC, packFabric, FABRIC_PRESETS, PATTERN_TYPES, MOTIF_STYLES } from './fabric.js';
 import * as UI from './ui.js';
 
+// Signals the boot watchdog in index.html that the modules ran.
+window.__frontierBooted = true;
+
 // ------------------------------------------------------------------ state
 const P = {
   // --- mannequin

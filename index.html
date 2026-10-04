@@ -62,6 +62,35 @@
       <div id="error" class="error" hidden></div>
     </main>
   </div>
+  <script>
+    // A raw-file proxy (raw.githack, raw.githubusercontent, ...) can return an
+    // HTML error page for a .js request, which makes the module never execute.
+    // Rather than leave a blank viewport, say what happened and where to go.
+    (function () {
+      var tries = 0;
+      var timer = setInterval(function () {
+        if (window.__frontierBooted) {
+          clearInterval(timer);
+          var hint = document.querySelector('#error[data-hint]');
+          if (hint) hint.hidden = true;
+          return;
+        }
+        if (++tries < 6) return;
+        clearInterval(timer);
+        var box = document.getElementById('error');
+        if (!box || !box.hidden) return;
+        box.hidden = false;
+        box.dataset.hint = '1';
+        box.innerHTML = '<b>The app modules did not load.</b><br><br>'
+          + 'This page looks like it was opened through a raw file proxy, which sometimes serves '
+          + '<code>.js</code> files with the wrong content type, so the browser refuses to run them as modules.'
+          + '<br><br>Open the CDN mirror instead:<br>'
+          + '<a href="https://cdn.jsdelivr.net/gh/eosclient0001-rgb/Frontier@arena/01a103c4-frontier/index.html">'
+          + 'cdn.jsdelivr.net/gh/eosclient0001-rgb/Frontier@arena/01a103c4-frontier/index.html</a>'
+          + '<br><br>or serve the folder locally: <code>npm run dev</code>';
+      }, 1000);
+    })();
+  </script>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

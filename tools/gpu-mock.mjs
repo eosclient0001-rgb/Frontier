@@ -1,22 +1,11 @@
 // A validating WebGPU mock.
 //
 // There is no GPU (and no browser) in this environment, so instead of ignoring
-// the GPU layer we *check* it: every pipeline is parsed out of its WGSL with
-// wgsl_reflect, and every bind group, buffer usage, buffer size, vertex layout
-// and draw/dispatch call is validated against that shader. This catches the
-// class of bug that would otherwise only show up as a blank canvas.
-import { createRequire } from 'node:module';
-import { copyFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const pkg = join(here, '..', 'node_modules', 'wgsl_reflect');
-if (!existsSync(join(pkg, 'wgsl_reflect.cjs'))) {
-  copyFileSync(join(pkg, 'wgsl_reflect.node.js'), join(pkg, 'wgsl_reflect.cjs'));
-}
-const require = createRequire(import.meta.url);
-const { WgslReflect } = require('wgsl_reflect/wgsl_reflect.cjs');
+// the GPU layer we *check* it: every pipeline is scanned out of its WGSL, and
+// every bind group, buffer usage, buffer size, vertex layout and draw/dispatch
+// call is validated against that shader. This catches the class of bug that
+// would otherwise only show up as a blank canvas.
+import { parseShader } from './wgsl-parse.mjs';
 
 export const GPUBufferUsage = {
   MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, INDEX: 16, VERTEX: 32,
@@ -28,34 +17,13 @@ export const GPUTextureUsage = {
 export const GPUShaderStage = { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 };
 export const GPUMapMode = { READ: 1, WRITE: 2 };
 
-const STORAGE_RW = /@group\(0\)\s*@binding\((\d+)\)\s*var<\s*storage\s*,\s*(read_write|read)\s*>/g;
-
-/** bindings the shader actually declares, with access mode, from source text */
-function declaredBindings(code) {
-  const out = new Map();
-  for (const m of code.matchAll(STORAGE_RW)) out.set(Number(m[1]), { access: m[2] });
-  const re = /@group\((\d+)\)\s*@binding\((\d+)\)\s*var<\s*([a-z_]+)\s*>\s*([A-Za-z0-9_]+)\s*:\s*([A-Za-z0-9_<>[\]f ]+)\s*;/g;
-  for (const m of code.matchAll(re)) {
-    const [, group, binding, space, name, type] = m;
-    if (Number(group) !== 0) continue;
-    out.set(Number(binding), {
-      ...(out.get(Number(binding)) ?? {}), space, name: name.trim(), type: type.trim(),
-      access: out.get(Number(binding))?.access ?? 'read',
-    });
-  }
-  return out;
-}
-
 export function installGPU({ maxBufferSize = 1 << 30 } = {}) {
   const errors = [];
   const log = [];
   const fail = (msg) => { errors.push(msg); log.push(`ERROR ${msg}`); };
-  const note = (msg) => log.push(msg);
 
   const stats = { buffers: 0, pipelines: 0, bindGroups: 0, dispatches: 0, draws: 0, submits: 0, writeBytes: 0 };
-
   let nextId = 0;
-  const buffers = new Set();
 
   const limits = {
     maxTextureDimension2D: 8192, maxStorageBufferBindingSize: 1 << 28, maxBufferSize,
@@ -73,7 +41,8 @@ export function installGPU({ maxBufferSize = 1 << 30 } = {}) {
         return fail(`writeBuffer: buffer "${buffer.label}" lacks COPY_DST`);
       }
       if (!data || data.byteLength === undefined) return fail('writeBuffer: data is not a typed array');
-      const bytes = size ?? (data.byteLength - dataOffset * (data.BYTES_PER_ELEMENT ?? 1));
+      const per = data.BYTES_PER_ELEMENT ?? 1;
+      const bytes = size ?? (data.byteLength - dataOffset * per);
       if (offset + bytes > buffer.size) {
         return fail(`writeBuffer: "${buffer.label}" overflow (${offset}+${bytes} > ${buffer.size})`);
       }
@@ -87,38 +56,34 @@ export function installGPU({ maxBufferSize = 1 << 30 } = {}) {
     writeTexture() {},
   };
 
+  /** Pipeline handle: the shader has been scanned for its contract up front. */
   function makePipeline(desc, kind) {
-    const mod = kind === 'compute' ? desc.compute.module : desc.vertex.module;
-    const code = mod.code;
-    const entryPoints = [];
-    if (kind === 'compute') entryPoints.push(desc.compute.entryPoint);
-    else {
-      entryPoints.push(desc.vertex.entryPoint);
-      if (desc.fragment) entryPoints.push(desc.fragment.entryPoint);
-    }
-    let reflect;
-    try {
-      reflect = new WgslReflect(code);
-    } catch (e) {
-      fail(`shader "${mod.label}" failed to parse: ${e.message ?? e}`);
-      reflect = null;
-    }
-    const names = kind === 'compute'
-      ? reflect?.entry.compute.map((e) => e.name) ?? []
-      : [...(reflect?.entry.vertex ?? []), ...(reflect?.entry.fragment ?? [])].map((e) => e.name);
+    const module = kind === 'compute' ? desc.compute.module : desc.vertex.module;
+    const shader = parseShader(module.code);
+    const entryPoints = kind === 'compute'
+      ? [desc.compute.entryPoint]
+      : [desc.vertex.entryPoint, ...(desc.fragment ? [desc.fragment.entryPoint] : [])];
+    const declaredNames = [
+      ...shader.entries.compute.map((e) => e.name),
+      ...shader.entries.vertex.map((e) => e.name),
+      ...shader.entries.fragment.map((e) => e.name),
+    ];
     for (const ep of entryPoints) {
-      if (reflect && !names.includes(ep)) fail(`shader "${mod.label}" has no entry point "${ep}"`);
+      if (!declaredNames.includes(ep)) fail(`shader "${module.label}" has no entry point "${ep}"`);
     }
-    const declared = declaredBindings(code);
-    const pipeline = {
-      kind, label: desc.label, code, entryPoints, declared,
-      reflect, vertexBuffers: desc.vertex?.buffers ?? [],
-      getBindGroupLayout: (i) => ({ __pipeline: pipeline, __index: i }),
-      bindGroupLayouts: [],
+    const keys = [...shader.bindings.keys()].sort((a, b) => a - b);
+    for (const [i, b] of keys.entries()) {
+      if (b !== i) fail(`"${module.label}" @bindings are not contiguous: ${keys.join(',')}`);
+    }
+    const handle = {
+      kind, label: desc.label, code: module.code, entryPoints, shader,
+      declared: shader.bindings,
+      vertexBuffers: desc.vertex?.buffers ?? [],
     };
-    // every declared binding must be present in the bind group the app builds
-    stats.pipelines++;
-    return pipeline;
+    // app.js passes pipeline.getBindGroupLayout(0) into createBindGroup, so the
+    // layout handle has to point back at the pipeline whose shader we scanned
+    handle.getBindGroupLayout = () => ({ __pipeline: handle });
+    return handle;
   }
 
   function createCommandEncoder() {
@@ -126,54 +91,48 @@ export function installGPU({ maxBufferSize = 1 << 30 } = {}) {
       beginComputePass() {
         let pipeline = null;
         let bg = null;
-        const pass = {
+        return {
           setPipeline(p) { pipeline = p; },
           setBindGroup(idx, group) { if (idx === 0) bg = group; },
           dispatchWorkgroups(x, y = 1, z = 1) {
             stats.dispatches++;
             if (!pipeline) return fail('dispatch without a pipeline');
-            if (x < 0 || !Number.isFinite(x)) return fail(`dispatchWorkgroups(${x})`);
-            if (bg && bg.__pipeline && bg.__pipeline !== pipeline) {
-              fail(`dispatch bound a bind group made for "${bg.__pipeline.label}" to "${pipeline.label}"`);
-            }
+            if (!Number.isFinite(x) || x <= 0) return fail(`dispatchWorkgroups(${x}, ${y}, ${z})`);
             if (!bg) fail(`dispatch on "${pipeline.label}" without a bind group`);
+            else if (bg.__pipeline && bg.__pipeline !== pipeline) {
+              fail(`bind group made for "${bg.__pipeline.label}" bound to "${pipeline.label}"`);
+            }
           },
           end() {},
         };
-        return pass;
       },
       beginRenderPass(desc) {
         for (const a of desc.colorAttachments ?? []) {
           if (!a?.view) fail('render pass: colour attachment has no view');
         }
-        // depth is optional (the 2D fabric swatch pass has none)
         let pipeline = null;
         let bg = null;
-        const pass = {
+        return {
           setPipeline(p) { pipeline = p; },
           setBindGroup(idx, group) { if (idx === 0) bg = group; },
           setVertexBuffer() {},
-          setIndexBuffer(b, fmt) {
-            if (!b) fail('setIndexBuffer: null buffer');
-            if (!(b.usage & GPUBufferUsage.INDEX)) fail(`setIndexBuffer: "${b.label}" lacks INDEX usage`);
+          setIndexBuffer(buffer, fmt) {
+            if (!buffer) return fail('setIndexBuffer: null buffer');
+            if (!(buffer.usage & GPUBufferUsage.INDEX)) fail(`setIndexBuffer: "${buffer.label}" lacks INDEX usage`);
             if (fmt !== 'uint32' && fmt !== 'uint16') fail(`setIndexBuffer format ${fmt}`);
           },
-          draw(count) { stats.draws++; validateDraw(pipeline, bg, count); },
-          drawIndexed(count) { stats.draws++; validateDraw(pipeline, bg, count); },
+          draw(count) {
+            stats.draws++;
+            if (!pipeline) return fail('draw without a pipeline');
+            if (!bg) return fail(`draw on "${pipeline.label}" without a bind group`);
+            if (!(count > 0)) fail(`draw with count ${count}`);
+          },
+          drawIndexed(count) { this.draw(count); },
           end() {},
         };
-        return pass;
       },
       finish() { return { __commandBuffer: true }; },
     };
-  }
-
-  function validateDraw(pipeline, bg, count) {
-    if (!pipeline) return fail('draw without a pipeline');
-    if (!bg) return fail(`draw on "${pipeline.label}" without a bind group`);
-    if (count <= 0) fail(`draw with count ${count}`);
-    const needed = pipeline.vertexBuffers.map((b) => b.attributes.length).reduce((a, b) => a + b, 0);
-    if (needed && !pipeline.__boundVerts) note(`draw "${pipeline.label}" uses ${needed} vertex attributes`);
   }
 
   const device = {
@@ -187,36 +146,30 @@ export function installGPU({ maxBufferSize = 1 << 30 } = {}) {
       if (!(size > 0)) fail(`createBuffer "${label}" size ${size}`);
       if (size > limits.maxBufferSize) fail(`createBuffer "${label}" exceeds maxBufferSize`);
       stats.buffers++;
-      const buf = {
-        size, usage, label, mappedAtCreation, id: nextId++, __writes: [],
-        destroyed: false, destroy() { this.destroyed = true; buffers.delete(this); },
+      return {
+        size, usage, label, mappedAtCreation, id: nextId++, __writes: [], destroyed: false,
+        destroy() { this.destroyed = true; },
         getMappedRange() { return new ArrayBuffer(size); },
         unmap() {}, mapAsync: async () => {},
       };
-      buffers.add(buf);
-      return buf;
     },
     createShaderModule({ code, label = 'shader' }) {
       return { code, label };
     },
     createComputePipeline(desc) {
       if (desc.layout !== 'auto') fail('compute pipeline expects layout "auto" in this test');
+      stats.pipelines++;
       return makePipeline(desc, 'compute');
     },
     createRenderPipeline(desc) {
+      stats.pipelines++;
       const p = makePipeline(desc, 'render');
-      for (const vb of p.vertexBuffers) {
-        for (const attr of vb.attributes) {
-          if (attr.format !== 'float32x3' && attr.format !== 'float32x2' && attr.format !== 'float32x4'
-            && attr.format !== 'unorm8x4' && attr.format !== 'sint32x4') {
-            fail(`vertex attribute format ${attr.format} unsupported in this mock`);
-          }
-        }
-      }
-      const verts = p.reflect?.entry.vertex?.[0];
+      const verts = p.shader.vertexInputs.get(desc.vertex.entryPoint);
       if (verts && p.vertexBuffers.length) {
-        const declaredLocs = verts.inputs.map((i) => i.location).sort((a, b) => a - b);
-        const boundLocs = p.vertexBuffers.flatMap((vb) => vb.attributes.map((a) => a.shaderLocation)).sort((a, b) => a - b);
+        const declaredLocs = verts.map((i) => i.location).sort((a, b) => a - b);
+        const boundLocs = p.vertexBuffers
+          .flatMap((vb) => vb.attributes.map((a) => a.shaderLocation))
+          .sort((a, b) => a - b);
         if (declaredLocs.join(',') !== boundLocs.join(',')) {
           fail(`"${p.label}" vertex inputs [${declaredLocs}] != buffer attributes [${boundLocs}]`);
         }
@@ -225,30 +178,29 @@ export function installGPU({ maxBufferSize = 1 << 30 } = {}) {
     },
     createBindGroup(desc) {
       stats.bindGroups++;
-      const pipeline = desc.layout?.__pipeline;
+      const pipeline = desc.layout?.__pipeline ?? null;
       const entries = desc.entries ?? [];
       const seen = new Set();
       for (const e of entries) {
         if (seen.has(e.binding)) fail(`duplicate binding ${e.binding}`);
         seen.add(e.binding);
-        const b = e.resource?.buffer;
-        if (!b) { fail(`binding ${e.binding} is not a buffer`); continue; }
+        const buffer = e.resource?.buffer;
+        if (!buffer) { fail(`binding ${e.binding} is not a buffer`); continue; }
         const decl = pipeline?.declared?.get(e.binding);
         if (!decl) {
-          fail(`bind group has binding ${e.binding} but "${pipeline?.label}" declares no such binding`);
+          fail(`bind group has binding ${e.binding} but "${pipeline?.label ?? '?'}" declares no such binding`);
           continue;
         }
-        if (decl.space === 'uniform' && !(b.usage & GPUBufferUsage.UNIFORM)) {
-          fail(`"${pipeline.label}" binding ${e.binding} (${decl.type}) needs UNIFORM usage, buffer "${b.label}" has ${b.usage}`);
+        if (decl.space === 'uniform' && !(buffer.usage & GPUBufferUsage.UNIFORM)) {
+          fail(`"${pipeline.label}" binding ${e.binding} (${decl.type}) needs UNIFORM, "${buffer.label}" is ${buffer.usage}`);
         }
-        if (decl.space === 'storage' && !(b.usage & GPUBufferUsage.STORAGE)) {
-          fail(`"${pipeline.label}" binding ${e.binding} (${decl.type}) needs STORAGE usage, buffer "${b.label}" has ${b.usage}`);
+        if (decl.space === 'storage' && !(buffer.usage & GPUBufferUsage.STORAGE)) {
+          fail(`"${pipeline.label}" binding ${e.binding} (${decl.type}) needs STORAGE, "${buffer.label}" is ${buffer.usage}`);
         }
         if (decl.space === 'uniform') {
-          const need = pipeline.reflect?.getBindGroups()?.flat()
-            ?.find((x) => x.binding === e.binding)?.type?.size;
-          if (need && b.size < need) {
-            fail(`"${pipeline.label}" binding ${e.binding} needs >= ${need} bytes, "${b.label}" is ${b.size}`);
+          const st = pipeline.shader.structs.get(String(decl.type).trim());
+          if (st && buffer.size < st.size) {
+            fail(`"${pipeline.label}" binding ${e.binding} needs >= ${st.size} B for ${decl.type}, "${buffer.label}" is ${buffer.size}`);
           }
         }
       }
@@ -266,8 +218,6 @@ export function installGPU({ maxBufferSize = 1 << 30 } = {}) {
       };
     },
     createSampler: () => ({}),
-    createBindGroupLayout: (d) => d,
-    createPipelineLayout: (d) => d,
     createCommandEncoder,
     createRenderBundleEncoder: createCommandEncoder,
     pushErrorScope() {}, popErrorScope: async () => null,

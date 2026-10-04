@@ -30,6 +30,24 @@ Open it in a WebGPU-capable browser — Chrome/Edge 113+, Safari 26+, or
 Firefox 141+ (WebGPU enabled). No build step: the app is plain ES modules,
 served by a dependency-free static server.
 
+### Open it straight from GitHub (no server)
+
+The app has no build step and only uses relative paths, so a static CDN can host
+this branch directly:
+
+| host | URL | notes |
+|------|-----|-------|
+| jsDelivr | `https://cdn.jsdelivr.net/gh/eosclient0001-rgb/Frontier@arena/01a103c4-frontier/index.html` | fastest, no interstitial |
+| raw.githack | `https://raw.githack.com/eosclient0001-rgb/Frontier/arena/01a103c4-frontier/index.html` | shows a one-time "Open the page" notice |
+
+Pin an immutable build by swapping the branch for a commit SHA, e.g.
+`.../Frontier@a6d7cbe/index.html`. If a proxy ever hands back HTML for a `.js`
+request the modules will not run — the viewport then explains that in place and
+links to the working mirror.
+
+WebGPU itself needs a secure context, so use `https://` (both links above) or
+`http://localhost`.
+
 ## What you can do
 
 **Material tab** — pick one of 12 fabric presets (Indigo Silk, Red Tartan, Gold
@@ -131,8 +149,11 @@ renders/               PNG previews produced by tools/software-render.mjs
 
 ## Tests
 
-A browser is not needed to run the suite — the GPU layer is verified against a
-validating WebGPU mock and the shaders are mirrored on the CPU.
+A browser is not needed to run the suite, and **neither is an install**: the GPU
+layer is verified against a validating WebGPU mock, the shaders are scanned by
+`tools/wgsl-parse.mjs`, and the solver is mirrored on the CPU. `npm test` works on
+a fresh clone; `npm install` only adds `wgsl_reflect` for an extra full-parse pass
+(the app itself has no runtime dependencies).
 
 ```bash
 npm test            # all five suites
@@ -146,11 +167,15 @@ npm run test:ui     # builds every control-panel widget in a stubbed DOM
 * **validate** — mannequin surface queries, dress generation for all 54 style
   combinations, constraint-graph and state packing, strap clearance against the
   analytic body, fabric uniform packing, mat4 maths.
-* **wgsl-check** — parses every WGSL source with `wgsl_reflect`, proves the byte
-  offsets in `src/layout.js` match the structs the shaders declare (member for
-  member, not just the total size), checks `@binding` contiguity and that each
-  shader binds exactly what `app.js` binds, and asserts the solver-loop
-  invariants (predict integrates, collide folds friction into `prev`, ...).
+* **wgsl-check** — scans every WGSL source: entry points, `@binding` contiguity
+  and that each shader binds exactly what `app.js` binds, that the byte offsets in
+  `src/layout.js` match the declared structs member-for-member (not just the total
+  size), the vertex layouts, the solver-loop invariants (predict integrates,
+  collide folds friction into `prev`, ...), and the WGSL shaping rules this
+  codebase must respect (no ternaries, no backticks, scalar types must match —
+  the last one catches `u32 * float` expressions, which have no implicit
+  conversion and would fail to compile). With `npm install` it additionally runs
+  a full `wgsl_reflect` parse.
 * **sim-test** — CPU mirror of the compute shaders: the projection lands exactly
   on the analytic surface, no vertex ever penetrates the figure, pins hold to
   < 1 mm, and the hem never sinks through the floor. `VERBOSE=1` prints telemetry.

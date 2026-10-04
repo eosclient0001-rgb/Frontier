@@ -296,7 +296,7 @@ fn main(@builtin(global_invocation_id) gid : vec3u) {
     let wn = normalize(wdir);
     let dn = dot(n, wn);
     let facing = abs(dn);
-    let swirl = 0.75 + 0.55 * sin(sim.wind.w * 4.0 + i * 0.37);
+    let swirl = 0.75 + 0.55 * sin(sim.wind.w * 4.0 + f32(i) * 0.37);
     var force = wn * (dn * sim.params.x * 9.0 * facing * facing * swirl);
     let vrel = v - wdir * 0.35;
     force = force - vrel * facing * sim.params.x * 1.8;
