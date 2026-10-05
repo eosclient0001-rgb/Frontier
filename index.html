@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101713">
+  <meta name="description" content="A practical, visual refresher in the mathematics behind fluid simulation and rendering.">
+  <title>Fieldwork — Applied Math for Simulation & Rendering</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="dark-theme.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#course-content">Skip to course content</a>
+
+  <header class="topbar">
+    <button class="mobile-menu" id="mobileMenu" type="button" aria-label="Open course navigation" aria-expanded="false" aria-controls="sidebar">
+      <span></span><span></span><span></span>
+    </button>
+    <a class="brand" href="#course" aria-label="Fieldwork course home">
+      <span class="brand-mark" aria-hidden="true">∇</span>
+      <span class="brand-name">FIELDWORK<span class="brand-subtitle">APPLIED MATH LAB</span></span>
+    </a>
+    <span class="topbar-divider" aria-hidden="true"></span>
+    <div class="topbar-context"><span class="context-dot"></span> SIMULATION <span class="context-slash">/</span> RENDERING</div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-progress" aria-live="polite"><span class="topbar-progress-count" id="headerProgressText">0 / 15 lessons</span><span class="topbar-progress-track"><span id="headerProgressBar"></span></span></div>
+    <button class="decoder-open topbar-guide" type="button" aria-haspopup="dialog">
+      <span class="guide-icon" aria-hidden="true">?</span><span>Formula guide</span>
+    </button>
+  </header>
+
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar" aria-label="Course navigation">
+      <div class="sidebar-top">
+        <div class="sidebar-eyebrow">YOUR LEARNING PATH</div>
+        <div class="sidebar-course-title">Applied math for<br>moving things &amp; light</div>
+        <div class="sidebar-progress-copy"><span id="sidebarProgressText">0 of 15 lessons complete</span><span id="sidebarProgressPercent">0%</span></div>
+        <div class="progress-track"><span id="sidebarProgressBar"></span></div>
+        <button class="course-home-button" type="button" data-action="home">
+          <span class="home-nav-icon" aria-hidden="true">⌂</span> Course overview <span class="home-nav-arrow" aria-hidden="true">↗</span>
+        </button>
+      </div>
+      <nav class="course-nav" id="courseNav" aria-label="Lessons"></nav>
+      <div class="sidebar-footer">
+        <div class="footer-spark" aria-hidden="true">✳</div>
+        <div><strong>Understand it, then use it.</strong><span>Every idea connects to a real simulation or render.</span></div>
+        <button class="decoder-open sidebar-decoder" type="button" aria-haspopup="dialog">How to read a formula <span aria-hidden="true">↗</span></button>
+      </div>
+    </aside>
+
+    <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close course navigation" hidden></button>
+
+    <main class="main-column" id="course-content" tabindex="-1"></main>
+
+    <aside class="right-rail" aria-label="Interactive math tools">
+      <section class="field-lab-card" id="fieldLab" aria-labelledby="fieldLabTitle">
+        <div class="tool-card-heading">
+          <div>
+            <div class="tool-kicker"><span class="live-indicator"></span> INTERACTIVE FIELD LAB</div>
+            <h2 id="fieldLabTitle">See the field.</h2>
+          </div>
+          <span class="dimension-badge">2D</span>
+        </div>
+        <p class="tool-intro">Arrows show a velocity field. Change its shape and watch divergence and curl respond. Demo coordinates are normalized.</p>
+        <div class="field-mode-switch" role="group" aria-label="Choose a vector field">
+          <button type="button" class="field-mode active" data-field-mode="source" aria-pressed="true">Source</button>
+          <button type="button" class="field-mode" data-field-mode="swirl" aria-pressed="false">Swirl</button>
+          <button type="button" class="field-mode" data-field-mode="saddle" aria-pressed="false">Saddle</button>
+        </div>
+        <div class="field-canvas-wrap">
+          <canvas id="fieldCanvas" aria-label="Interactive two-dimensional vector field"></canvas>
+          <span class="canvas-axis-label axis-y" aria-hidden="true">y</span>
+          <span class="canvas-axis-label axis-x" aria-hidden="true">x</span>
+        </div>
+        <div class="field-readouts">
+          <div class="field-readout">
+            <span class="readout-label">DIVERGENCE <span aria-hidden="true">∇ · u</span></span>
+            <strong id="divergenceReadout">+1.20</strong>
+            <span class="readout-unit">net outflow</span>
+          </div>
+          <div class="field-readout">
+            <span class="readout-label">CURL · z <span aria-hidden="true">(∇ × u)z</span></span>
+            <strong id="curlReadout">0.00</strong>
+            <span class="readout-unit">local spin</span>
+          </div>
+        </div>
+        <label class="intensity-control" for="fieldIntensity"><span>Field strength</span><output id="intensityValue" for="fieldIntensity">0.60</output></label>
+        <input id="fieldIntensity" class="range-input" type="range" min="0" max="100" value="60" aria-label="Vector field strength">
+        <p class="field-caption" id="fieldCaption" aria-live="polite">A source: arrows spread outward. Positive divergence, no local spin.</p>
+      </section>
+
+      <section class="decoder-card" aria-labelledby="decoderCardTitle">
+        <div class="decoder-card-mark" aria-hidden="true">⌘</div>
+        <div class="tool-kicker">A PAPER-READING HABIT</div>
+        <h2 id="decoderCardTitle">Don't just look at the symbols.</h2>
+        <p>Ask what changes, what causes it, and what the units say. Use the five-pass formula guide whenever a paper gets dense.</p>
+        <button class="text-link decoder-open" type="button" aria-haspopup="dialog">Open the formula guide <span aria-hidden="true">↗</span></button>
+      </section>
+
+      <div class="right-rail-note"><span aria-hidden="true">✳</span> Short lessons. Real equations. No assumed memory.</div>
+    </aside>
+  </div>
+
+  <div class="decoder-dialog" id="decoderDialog" role="dialog" aria-modal="true" aria-labelledby="decoderTitle" aria-describedby="decoderDescription" hidden>
+    <button class="dialog-backdrop" type="button" data-action="close-decoder" aria-label="Close formula guide"></button>
+    <section class="dialog-panel">
+      <button class="dialog-close" type="button" data-action="close-decoder" aria-label="Close formula guide">×</button>
+      <div class="dialog-kicker"><span class="dialog-kicker-mark">∇</span> FIELDWORK FIELD GUIDE · 01</div>
+      <h2 id="decoderTitle">A five-pass formula read.</h2>
+      <p class="dialog-intro" id="decoderDescription">When an equation in a paper feels impenetrable, slow it down. You don't need to remember every identity; you need a reliable way into the notation.</p>
+      <ol class="decoder-steps">
+        <li><span>01</span><div><strong>Name the quantities.</strong><p>Scalar, vector, field, or rate? Write down the units beside each symbol.</p></div></li>
+        <li><span>02</span><div><strong>Translate the operators.</strong><p>A derivative measures change; ∇ points uphill; ∇ · measures net outflow; ∇ × measures local spin.</p></div></li>
+        <li><span>03</span><div><strong>Read left to right.</strong><p>The left often says what is changing. The right often says why, or what balances it.</p></div></li>
+        <li><span>04</span><div><strong>Check the units.</strong><p>Every term being added must have matching dimensions. Units catch missing factors fast.</p></div></li>
+        <li><span>05</span><div><strong>Try an easy case.</strong><p>Set the flow to zero, make a field uniform, or remove a force. Does the equation behave as expected?</p></div></li>
+      </ol>
+      <div class="decoder-example">
+        <div class="example-label">A familiar example · incompressible flow</div>
+        <code>∂u/∂t + (u · ∇)u = −∇p/ρ + ν∇²u + f</code>
+        <p>Say it in one breath: “The fluid's acceleration equals pressure, viscosity, and applied forces.” Then inspect each term. That's the whole course in miniature.</p>
+      </div>
+      <button class="button button-primary dialog-done" type="button" data-action="close-decoder">Got it — back to the math <span aria-hidden="true">→</span></button>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

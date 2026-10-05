@@ -1,0 +1,211 @@
+/* Fieldwork's default palette: charcoal, pine, and restrained sage. */
+:root {
+  color-scheme: dark;
+  --ink: #e4ece5;
+  --ink-soft: #b2c0b4;
+  --ink-faint: #84938a;
+  --paper: #101713;
+  --paper-bright: #18221b;
+  --line: #2b3930;
+  --forest: #132019;
+  --forest-2: #1c2b22;
+  --green: #bfdc83;
+  --green-bright: #d5f39d;
+}
+
+body { background: #101713; color: #e4ece5; }
+.topbar { border-color: #29372e; background: rgba(17,25,21,.94); }
+.brand { color: #edf2eb; }
+.brand-mark { border: 1px solid rgba(213,243,157,.1); background: #1c2c22; }
+.brand-subtitle, .topbar-context { color: #9cab9f; }
+.topbar-divider { background: #304036; }
+.context-dot { background: #8cbe98; box-shadow: 0 0 0 3px #26372c; }
+.context-slash { color: #607166; }
+.topbar-progress { color: #9aa89d; }
+.topbar-progress-track { background: #29372e; }
+.topbar-progress-track span { background: #a4c77f; }
+.topbar-guide { border-color: #34453a; background: #1a261e; color: #d0ddcf; }
+.topbar-guide:hover { border-color: #516d57; background: #233328; }
+.guide-icon { background: #2a3b2d; color: #c6dfa9; }
+.mobile-menu { border-color: #34443a; background: #18231c; }
+.mobile-menu span { background: #c4d4c3; }
+
+.sidebar { background: #132019; box-shadow: 0 14px 36px rgba(0,0,0,.28); }
+
+.field-lab-card { border-color: #2c3a30; background: #18221b; box-shadow: 0 10px 28px rgba(0,0,0,.14); }
+.field-lab-card h2, .decoder-card h2 { color: #e8efe6; }
+.tool-kicker { color: #9aab9d; }
+.live-indicator { background: #8dbd91; box-shadow: 0 0 0 3px #26382b; }
+.dimension-badge { border-color: #34453a; color: #a7b4a8; }
+.tool-intro { color: #a5b4a8; }
+.field-mode-switch { border-color: #334338; background: #111a15; }
+.field-mode { color: #a1afa3; }
+.field-mode:hover { color: #e4ece4; }
+.field-mode.active { background: #293a2e; color: #e5eee1; box-shadow: 0 1px 5px rgba(0,0,0,.3); }
+.field-canvas-wrap { border-color: #34473a; background: #17231b; }
+.canvas-axis-label { color: #a0b1a2; }
+.field-readout { border-color: #334237; background: #202d24; }
+.readout-label { color: #a0aea1; }
+.readout-label span { color: #a5c19c; }
+.field-readout strong { color: #d0e6b0; }
+.readout-unit { color: #a0aea2; }
+.intensity-control { color: #b5c2b5; }
+.intensity-control output { color: #d0e6b0; }
+.range-input { accent-color: #b4d58d; }
+.field-caption { color: #aab8ab; }
+.decoder-card { border-color: #344338; background: #202d23; }
+.decoder-card::after { border-color: rgba(169,205,154,.18); box-shadow: 0 0 0 13px rgba(169,205,154,.05), 0 0 0 27px rgba(169,205,154,.035); }
+.decoder-card-mark { color: #b1c8a2; }
+.decoder-card .tool-kicker { color: #afc2a8; }
+.decoder-card p { color: #b1beb2; }
+.text-link { color: #c8dfa9; }
+.text-link:hover { color: #e1f4c8; }
+.right-rail-note { color: #94a397; }
+
+/* Overview */
+.home-hero { background: #1b3024; box-shadow: 0 14px 35px rgba(0,0,0,.22); }
+.home-hero::before { border-color: rgba(211,238,170,.12); box-shadow: 0 0 0 35px rgba(211,238,170,.035), 0 0 0 72px rgba(211,238,170,.025); }
+.home-hero::after { border-color: rgba(211,238,170,.1); }
+.home-hero h1 { color: #f0f4e9; }
+.home-hero-copy { color: #bfccbf; }
+.hero-foot { color: #a9bdaa; }
+.home-method { border-color: #2e3b32; background: #18221b; }
+.method-label { color: #9aa99c; }
+.method-step { color: #c0cdc2; }
+.method-step b { border-color: #3b4b3c; color: #c1d9a5; }
+.method-step:not(:last-child)::after { background: #344337; }
+.home-section-heading h2 { color: #e6ede5; }
+.home-section-heading p { color: #a1afa4; }
+.home-section-eyebrow { color: #a0b09f; }
+.unit-card { border-color: #2c3a30; background: #18221b; }
+.unit-card:hover { border-color: #4a604c; box-shadow: 0 10px 25px rgba(0,0,0,.18); }
+.unit-card-index, .unit-card-count { color: #a7b4a8; }
+.unit-card-count { border-color: #354438; }
+.unit-card h3 { color: #e2ebe1; }
+.unit-card-description { color: #a4b1a5; }
+.unit-card-lessons { border-color: #2b392f; }
+.home-lesson-link { border-color: #27352c; color: #c2cec2; }
+.home-lesson-link:hover { color: #d4edb2; }
+.home-lesson-number { color: #98a99b; }
+.home-lesson-status { color: #bad59d; }
+.application-strip { background: #1b2820; }
+.application-strip h2 { color: #e2ebe1; }
+.application-stage { border-color: rgba(168,199,159,.15); background: rgba(29,44,34,.74); }
+.application-stage span { color: #9ead9d; }
+.application-stage b { color: #d0ddce; }
+.application-stage i { color: #b6ce9f; }
+.home-signoff { color: #94a397; }
+
+/* Lesson reading surface */
+.lesson-breadcrumb { color: #98a69b; }
+.lesson-breadcrumb .crumb-sep { color: #607066; }
+.lesson-breadcrumb .crumb-current { color: #c0cec0; }
+.lesson-heading { border-color: #2b3930; }
+.lesson-kicker { color: #b0c7a9; }
+.lesson-number-pill, .lesson-duration { border-color: #344339; color: #b0bdb1; }
+.lesson-duration::before { background: #a3c691; }
+.lesson-heading h1 { color: #e8efe7; }
+.lesson-deck { color: #b0bdb2; }
+.lesson-objective { border-color: #344438; background: #1d2a20; }
+.objective-mark { background: #2c3d2b; color: #c0d8a4; }
+.lesson-objective b { color: #d2e1c8; }
+.lesson-objective p { color: #b1c0ae; }
+.section-eyebrow { color: #a0afa3; }
+.lesson-section h2, .practice-heading h2 { color: #e1e9e0; }
+.lesson-section > p, .lesson-section .body-copy { color: #b2beb4; }
+.lesson-section strong, .body-copy strong { color: #dce8d7; }
+.intuition-callout { border-left-color: #9ebd7d; background: #1c2920; color: #bfccbf; }
+.intuition-callout .callout-symbol { color: #b4d092; }
+.equation-card { border-color: #334a3b; background: #17271e; }
+.equation-card::after { border-color: rgba(195,228,169,.16); }
+.equation-topline { color: #adc2ad; }
+.equation-tag { color: #d0e0bd; }
+.equation-expression { color: #f0f4eb; }
+.equation-note { color: #c1cec1; }
+.term-chip { border-color: rgba(227,239,220,.2); background: rgba(255,255,255,.035); color: #d2e2d0; }
+.term-chip:hover, .term-chip[aria-pressed="true"] { border-color: rgba(209,243,157,.6); background: rgba(213,243,157,.14); color: #e5f5ce; }
+.term-detail { border-color: rgba(255,255,255,.13); color: #c4d0c3; }
+.symbols-heading { color: #a8b5a8; }
+.symbol-item { border-color: #303e33; background: #18221b; }
+.symbol-token { color: #c2daa9; }
+.symbol-description { color: #b0bdb2; }
+.worked-example { border-color: #303e33; background: #18221b; }
+.worked-example h3 { color: #b8c9b7; }
+.worked-example p { color: #b1beb4; }
+.worked-math { background: #26362a; color: #d2e3bf; }
+.paper-bridge { border-color: #3b493d; }
+.paper-bridge-mark { color: #b5c99f; }
+.paper-bridge strong { color: #c7d5c5; }
+.paper-bridge p { color: #adbaaf; }
+
+/* Labs and check-ins */
+.lesson-experiment { border-color: #344b3b; background: #17271e; }
+.experiment-header .section-eyebrow { color: #aec2ad; }
+.experiment-header h3 { color: #edf2e9; }
+.experiment-header p { color: #bdcbbd; }
+.experiment-tag { border-color: rgba(223,238,215,.2); color: #c5d6c3; }
+.experiment-legend { color: #bfccbf; }
+.experiment-control { color: #d0dbcf; }
+.experiment-control output { color: #d5f39d; }
+.experiment-control input { accent-color: #c6e79c; }
+.experiment-stat { border-color: rgba(255,255,255,.14); }
+.experiment-stat span { color: #a8bdab; }
+.experiment-stat strong { color: #e2efce; }
+.experiment-readout { border-color: rgba(255,255,255,.12); }
+.lab-link { color: #d5f39d; }
+.lab-link:hover { color: #ecffd2; }
+.lesson-practice { border-color: #344538; background: #1b2920; }
+.practice-icon { border-color: #3b4a3b; background: #26352a; color: #c0d7a7; }
+.practice-heading .section-eyebrow { color: #a9b8a9; }
+.practice-question { color: #bdc9bf; }
+.quiz-option { border-color: #37463a; background: #202d24; color: #d0dbd1; }
+.quiz-option:hover { border-color: #6a8567; background: #26372b; }
+.quiz-option .choice-key { border-color: #465547; color: #b2c0b2; }
+.quiz-option.is-correct { border-color: #71986c; background: #263b2a; color: #e1f0d5; }
+.quiz-option.is-correct .choice-key { border-color: #84a87a; background: #334b31; color: #e0efce; }
+.quiz-option.is-wrong { border-color: #94675a; background: #382720; color: #f0d1c5; }
+.quiz-option.is-wrong .choice-key { border-color: #956858; background: #4a2f27; color: #f3d2c5; }
+.quiz-feedback { color: #b5c1b6; }
+.quiz-feedback.is-correct { color: #b9d8a5; }
+.quiz-feedback.is-wrong { color: #e2aa96; }
+.challenge-reveal { border-color: #39483a; }
+.challenge-reveal summary { color: #c1d4ae; }
+.challenge-reveal p { color: #bdc9bd; }
+.lesson-navigation { border-color: #2c3a31; }
+.lesson-nav-button { color: #b4c5b6; }
+.lesson-nav-button:hover:not(:disabled) { color: #e0edda; }
+.lesson-nav-arrow { color: #b3ce98; }
+.lesson-nav-label small { color: #9ba99e; }
+.complete-button { border-color: #4a614b; background: #26372a; color: #d4e5c5; }
+.complete-button:hover { border-color: #76986b; background: #2e432f; }
+.complete-button.is-complete { border-color: #72936b; background: #304730; color: #e0efd4; }
+.lesson-end-note { color: #9aa99c; }
+
+/* Formula guide */
+.dialog-backdrop { background: rgba(2,8,5,.76); }
+.dialog-panel { border-color: #354439; background: #17221b; box-shadow: 0 28px 80px rgba(0,0,0,.55); }
+.dialog-close { border-color: #3a493c; background: #202d24; color: #c7d4c8; }
+.dialog-close:hover { background: #293a2d; }
+.dialog-kicker { color: #a7bd9e; }
+.dialog-kicker-mark { background: #2a3b2d; color: #d0e3b7; }
+.dialog-panel h2 { color: #e8efe5; }
+.dialog-intro { color: #b5c2b7; }
+.decoder-steps li { border-color: #2e3b31; }
+.decoder-steps li > span { color: #a9c492; }
+.decoder-steps strong { color: #d9e5d8; }
+.decoder-steps p { color: #b0beb2; }
+.decoder-example { background: #203329; }
+.example-label { color: #aec5ad; }
+.decoder-example code { color: #e1efc9; }
+.decoder-example p { color: #c1d0c1; }
+.dialog-done { border-color: #d5f39d; background: #d5f39d; color: #1e3023; }
+.dialog-done:hover { border-color: #e0ffb4; background: #e0ffb4; }
+.toast { border-color: rgba(215,239,190,.3); background: #20382b; color: #edf4e7; }
+
+@media (max-width: 790px) {
+  .sidebar-backdrop:not([hidden]) { background: rgba(0,0,0,.58); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-hero, .field-lab-card, .lesson-experiment, .unit-card { scroll-behavior: auto; }
+}
