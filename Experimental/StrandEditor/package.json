@@ -1,0 +1,16 @@
+{
+  "name": "strand-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WebGL2 light-fibre and ribbon motion editor for automotive ambient UI.",
+  "scripts": {
+    "test": "node --test Tests/LinearAlgebra.test.mjs Tests/SceneModel.test.mjs Tests/Presets.test.mjs",
+    "proof": "node Tests/BrowserProof.mjs",
+    "serve": "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "@sparticuz/chromium": "^153.0.0",
+    "puppeteer-core": "^25.12.0"
+  }
+}

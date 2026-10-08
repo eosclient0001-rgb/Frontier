@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Strand Editor · WebGL2</title>
+    <link rel="stylesheet" href="Styles/StrandEditor.css">
+</head>
+<body>
+<div class="Shell">
+    <header class="TopBar">
+        <div class="Brand">Strand Editor<span>WebGL2 light-fibre motion for automotive UI</span></div>
+        <div class="Group">
+            <label>Preset <select id="PresetSelect"></select></label>
+            <button id="ApplyPreset" type="button">Apply</button>
+        </div>
+        <div class="Group">
+            <button id="NewScene" type="button">New</button>
+            <button id="OpenScene" type="button">Open JSON</button>
+            <button id="SaveScene" type="button">Save JSON</button>
+            <input id="SceneFile" type="file" accept="application/json,.json" hidden>
+        </div>
+        <div class="Group">
+            <button id="ExportPng" type="button">Export PNG</button>
+            <button id="ExportWebm" type="button">Record loop WebM</button>
+        </div>
+    </header>
+
+    <aside class="Outliner">
+        <h2>Layers</h2>
+        <ul id="LayerList" class="LayerList"></ul>
+        <h2>Add layer</h2>
+        <div class="AddButtons">
+            <button type="button" data-add="Bezier">Bezier fibres</button>
+            <button type="button" data-add="Bloom">Radial bloom</button>
+            <button type="button" data-add="Wave">Wave sheet</button>
+            <button type="button" data-add="Dust">Dust</button>
+            <button type="button" data-add="Text">Title text</button>
+        </div>
+        <div class="LayerActions">
+            <button id="LayerUp" type="button">Up</button>
+            <button id="LayerDown" type="button">Down</button>
+            <button id="LayerDuplicate" type="button">Duplicate</button>
+            <button id="LayerDelete" type="button">Delete</button>
+        </div>
+        <p class="Hint">Drag on the view to orbit, scroll to zoom, press R to reset, Space to play or pause.</p>
+    </aside>
+
+    <main class="Central">
+        <div id="Viewport" class="Viewport">
+            <canvas id="Canvas"></canvas>
+            <div id="Message" class="Message" hidden></div>
+        </div>
+        <div class="Transport">
+            <button id="PlayPause" type="button">Pause</button>
+            <input id="Scrub" type="range" min="0" max="8" step="0.01" value="0">
+            <span id="TimeReadout" class="Readout">0.00 / 8.00 s</span>
+            <label>Speed
+                <select id="SpeedSelect">
+                    <option value="0.25">0.25×</option>
+                    <option value="0.5">0.5×</option>
+                    <option value="1" selected>1×</option>
+                    <option value="2">2×</option>
+                </select>
+            </label>
+            <span id="Stats" class="Stats"></span>
+        </div>
+    </main>
+
+    <aside class="Inspector">
+        <h2 id="InspectorTitle">Scene</h2>
+        <div id="InspectorBody" class="InspectorBody"></div>
+        <pre id="InspectorNote" class="Note"></pre>
+    </aside>
+</div>
+<script type="module" src="Source/StrandEditorApp.js"></script>
+</body>
+</html>

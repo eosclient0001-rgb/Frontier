@@ -1,0 +1,52 @@
+StrandEditor browser proof
+Generated: 2026-10-08T11:54:40.413Z
+Engine: headless Chromium with WebGL2 through SwiftShader (no GPU); WebGPU is not exposed by this build.
+Limits: {"ExactWrap":0.05,"ContinuityRatio":1.5,"MaximumStep":30,"MotionStep":0.5,"TextStep":0.05,"MinimumLuma":0.01,"MaximumLuma":0.7,"DimHeadroom":1.5}
+
+PASS  five starter scenes are offered: Organic fibres, Emerald sweep, Radial bloom, Ember ribbons, Sheet lines
+PASS  Organic fibres: editor reports no errors
+PASS  Organic fibres: mean luma 0.266 inside [0.01, 0.7]
+PASS  Organic fibres: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Organic fibres: the wrap is no more abrupt than ordinary motion (across the wrap 19.96, forward 20.08)
+PASS  Organic fibres: no teleporting, one-frame step 20.08 (limit 30)
+PASS  Organic fibres: motion present, half-loop difference 25.07 (minimum 0.5)
+PASS  Organic fibres: text layer draws, mean change 1.03 when hidden
+PASS  Organic fibres: output brightness 0.5 caps the frame at 128 of 255
+PASS  Organic fibres: 312,000 strand vertices and 900 dust inside the budget
+PASS  Emerald sweep: editor reports no errors
+PASS  Emerald sweep: mean luma 0.109 inside [0.01, 0.7]
+PASS  Emerald sweep: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Emerald sweep: the wrap is no more abrupt than ordinary motion (across the wrap 11.43, forward 11.46)
+PASS  Emerald sweep: no teleporting, one-frame step 11.46 (limit 30)
+PASS  Emerald sweep: motion present, half-loop difference 16.82 (minimum 0.5)
+PASS  Emerald sweep: text layer draws, mean change 0.56 when hidden
+PASS  Emerald sweep: output brightness 0.5 caps the frame at 128 of 255
+PASS  Emerald sweep: 52,800 strand vertices and 40 dust inside the budget
+PASS  Radial bloom: editor reports no errors
+PASS  Radial bloom: mean luma 0.151 inside [0.01, 0.7]
+PASS  Radial bloom: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Radial bloom: the wrap is no more abrupt than ordinary motion (across the wrap 3.20, forward 3.17)
+PASS  Radial bloom: no teleporting, one-frame step 3.17 (limit 30)
+PASS  Radial bloom: motion present, half-loop difference 12.18 (minimum 0.5)
+PASS  Radial bloom: output brightness 0.5 caps the frame at 129 of 255
+PASS  Radial bloom: 302,400 strand vertices and 40 dust inside the budget
+PASS  Ember ribbons: editor reports no errors
+PASS  Ember ribbons: mean luma 0.127 inside [0.01, 0.7]
+PASS  Ember ribbons: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Ember ribbons: the wrap is no more abrupt than ordinary motion (across the wrap 1.80, forward 1.79)
+PASS  Ember ribbons: no teleporting, one-frame step 1.79 (limit 30)
+PASS  Ember ribbons: motion present, half-loop difference 12.71 (minimum 0.5)
+PASS  Ember ribbons: output brightness 0.5 caps the frame at 129 of 255
+PASS  Ember ribbons: 133,200 strand vertices and 300 dust inside the budget
+PASS  Sheet lines: editor reports no errors
+PASS  Sheet lines: mean luma 0.069 inside [0.01, 0.7]
+PASS  Sheet lines: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Sheet lines: the wrap is no more abrupt than ordinary motion (across the wrap 7.63, forward 7.66)
+PASS  Sheet lines: no teleporting, one-frame step 7.66 (limit 30)
+PASS  Sheet lines: motion present, half-loop difference 14.66 (minimum 0.5)
+PASS  Sheet lines: output brightness 0.5 caps the frame at 126 of 255
+PASS  Sheet lines: 187,200 strand vertices and 1400 dust inside the budget
+PASS  every starter scene renders a different frame
+PASS  the browser console reports no errors or warnings (0)
+
+RESULT: PASS (45 checks)

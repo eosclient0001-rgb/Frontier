@@ -1,0 +1,255 @@
+:root {
+    --Panel: #0b1120;
+    --PanelRaised: #111a2e;
+    --Line: #1f2b45;
+    --Text: #d7e6ff;
+    --Muted: #7f93b8;
+    --Accent: #34c8ff;
+    --Danger: #ff7a7a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    height: 100%;
+    margin: 0;
+    background: #05070d;
+    color: var(--Text);
+    font: 13px/1.4 "Helvetica Neue", Arial, sans-serif;
+}
+
+.Shell {
+    display: grid;
+    grid-template-columns: 260px 1fr 310px;
+    grid-template-rows: 52px 1fr;
+    height: 100vh;
+    min-height: 560px;
+}
+
+.TopBar {
+    grid-column: 1 / 4;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 0 14px;
+    background: var(--Panel);
+    border-bottom: 1px solid var(--Line);
+}
+
+.Brand {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+
+.Brand span {
+    font-weight: 400;
+    font-size: 11px;
+    color: var(--Muted);
+}
+
+.Group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 14px;
+    border-left: 1px solid var(--Line);
+}
+
+button, select, input[type="text"], input[type="number"] {
+    font: inherit;
+    color: var(--Text);
+    background: var(--PanelRaised);
+    border: 1px solid var(--Line);
+    border-radius: 6px;
+    padding: 5px 9px;
+}
+
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--Accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+
+input[type="color"] {
+    width: 42px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--Line);
+    background: none;
+}
+
+.Outliner, .Inspector {
+    background: var(--Panel);
+    overflow-y: auto;
+    padding: 12px 14px 18px;
+}
+
+.Outliner { border-right: 1px solid var(--Line); }
+.Inspector { border-left: 1px solid var(--Line); }
+
+h2 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--Muted);
+    margin: 14px 0 8px;
+}
+
+.LayerList {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.LayerRow {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 6px;
+    background: var(--PanelRaised);
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+
+.LayerRow.Selected { border-color: var(--Accent); }
+.LayerName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.LayerMeta { color: var(--Muted); font-size: 11px; }
+
+.AddButtons, .LayerActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.LayerActions { margin-top: 10px; }
+
+.Hint {
+    color: var(--Muted);
+    font-size: 11px;
+    margin-top: 16px;
+}
+
+.Central {
+    display: grid;
+    grid-template-rows: 1fr 56px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.Viewport {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #03050a;
+    overflow: hidden;
+}
+
+canvas {
+    display: block;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    touch-action: none;
+    cursor: grab;
+}
+
+.Message {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    top: 16px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: rgba(255, 90, 90, 0.12);
+    border: 1px solid var(--Danger);
+    color: var(--Danger);
+}
+
+.Transport {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    background: var(--Panel);
+    border-top: 1px solid var(--Line);
+}
+
+.Transport input[type="range"] { flex: 1; }
+
+.Readout, .Stats {
+    font-variant-numeric: tabular-nums;
+    color: var(--Muted);
+    white-space: nowrap;
+}
+
+.Stats { font-size: 11px; }
+
+details.InspectorGroup {
+    border-top: 1px solid var(--Line);
+    padding: 6px 0 10px;
+}
+
+details.Group summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--Muted);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 4px 0;
+}
+
+.Row {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+}
+
+.Caption { color: var(--Muted); min-width: 0; }
+
+.Pair {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 66px;
+    gap: 6px;
+    align-items: center;
+}
+
+.Pair input[type="number"], .Vector input, .Row input[type="text"], .Row select {
+    width: 100%;
+    min-width: 0;
+}
+
+.Pair input[type="range"] { width: 100%; }
+
+.Vector {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+}
+
+.Vector input { padding: 4px 5px; }
+
+.Row input[type="checkbox"] { justify-self: start; }
+
+.Note {
+    margin: 14px 0 0;
+    padding: 10px;
+    white-space: pre-wrap;
+    border-radius: 6px;
+    background: var(--PanelRaised);
+    color: var(--Muted);
+    font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
+}
+
+@media (max-width: 1100px) {
+    .Shell { grid-template-columns: 220px 1fr 280px; }
+    .TopBar { flex-wrap: wrap; height: auto; padding: 8px 14px; }
+}
