@@ -23,12 +23,12 @@ python3 -m http.server 8080      # or: npm run serve
 # open http://localhost:8080/index.html   and   http://localhost:8080/play.html?preset=6
 ```
 
-No local server? The same files are served from the public repository by [raw.githack.com](https://raw.githack.com/).
-The links below are pinned to commit `b89a395`, which holds the current editor code:
+No local server? The same files are served from the public repository by [raw.githack.com](https://raw.githack.com/), pinned to commit `2ec2863`, which has the layout fix:
 
-- [Editor](https://raw.githack.com/eosclient0001-rgb/Frontier/b89a395820a1def8bd74c4641b04fb2d977c11b3/Experimental/StrandEditor/index.html)
-- [Start transition, full-window player](https://raw.githack.com/eosclient0001-rgb/Frontier/b89a395820a1def8bd74c4641b04fb2d977c11b3/Experimental/StrandEditor/play.html?preset=9)
-- [Visual proof](https://raw.githack.com/eosclient0001-rgb/Frontier/b89a395820a1def8bd74c4641b04fb2d977c11b3/VisualProof/StrandEditor/index.html)
+- [Editor](https://raw.githack.com/eosclient0001-rgb/Frontier/2ec28632dddd551c6b13ee94bd023cd439b3096d/Experimental/StrandEditor/index.html)
+- [Visual proof](https://raw.githack.com/eosclient0001-rgb/Frontier/2ec28632dddd551c6b13ee94bd023cd439b3096d/VisualProof/StrandEditor/index.html)
+
+raw.githack shows a notice before HTML pages; choose *Open the page*. If the controls stay empty, the editor's script did not start. Open the browser console (F12) to see the first error, or use the local server above. To see the start transition, choose *Start transition* in the Preset menu and press *Apply*.
 
 GitHub's file viewer shows `.html` as source code, so use these links to open the pages. When the editor changes,
 update the commit in the links.

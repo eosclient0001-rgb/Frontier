@@ -166,6 +166,24 @@ built-ins such as `Map`, `Object` and `Array`, and the legacy keys in `SceneStru
 **Not settled.** A sweep runs one way, from the start of each fibre to its end. A centre-out or bilateral sweep would be
 a different pulse, and it is not built. Every comparison is by eye, and no GPU has run these frames.
 
+## Fifth pass: layout fix and hosted copy (2026-10-08)
+
+The layout broke in the naming pass. The root class was renamed from `Shell` to `Workspace` in `index.html`, but the grid rule in `Styles/StrandEditor.css` still targeted `.Shell`, so the sidebar, viewport and inspector stacked full width. The inspector group selector had the same problem: `details.Group summary` no longer matched `InspectorGroup`. Before the fix, at 1366×768 (headless Chromium, SwiftShader), the viewport was 118 px tall and the inspector sat below the transport bar.
+
+Commit `2ec2863` fixes it. It renames the grid rules to `.Workspace` (base and 1100 px), sets the top bar to 52 px, keeps the centre column from growing past its track, keeps the transport labels on one line, lets the stats truncate, widens the number column to 74 px so "1280" is not clipped, and adds an on-page message when the editor script does not start.
+
+Measured after the fix (`CaptureLayout.mjs`, headless Chromium, 0 page errors; 10 presets, 5 layer rows, 7 inspector children):
+
+| Viewport | Top bar | Sidebar | Centre | Inspector |
+|---|---|---|---|---|
+| 1366 × 768 | 1366 × 52 | 260 × 716 | 796 × 660 | 310 × 716 at x 1056 |
+| 1024 × 768 | 1024 × 95 (wraps to two rows) | 220 × 673 | 524 × 617 | 280 × 673 at x 744 |
+| 1920 × 1080 | 1920 × 52 | 260 × 1028 | 1350 × 972 | 310 × 1028 at x 1610 |
+
+Message check: a copy of `index.html` with a missing module script showed "The editor script did not start (a file failed to load)…", and the console recorded `ERR_FILE_NOT_FOUND`. This headless Chromium loads module scripts from `file://`, so the test used a missing file, not the `file://` block that normal browsers apply.
+
+Hosted copy: the raw.githack link pinned to `b89a395` showed the stacked layout and empty controls in the user's browser. The same commit runs in headless Chromium, so the difference is on the hosted side. The cause is not confirmed; the sandbox cannot reach raw.githack. raw.githack shows a notice before HTML pages and describes itself as serving HTML as-is. A raw.githack 404 page also appeared in the user's browser; the link that produced it is not identified. The `play.html?preset=9` link was removed from the README: its query string is the likeliest cause (not confirmed), and the Preset menu reaches the same scene.
+
 ## Sources
 
 1. Creative COW, "Particular trail", Peder Norrby's advice on Aux glow spheres and size over life. https://creativecow.net/forums/thread/particular-trail/
