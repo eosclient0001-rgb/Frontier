@@ -1,0 +1,146 @@
+{
+  "Frames": {
+    "panel-preset-01.png": {
+      "Active": 0,
+      "Size": [
+        1280,
+        800
+      ],
+      "ActiveEdge": [
+        95,
+        216,
+        255
+      ],
+      "OtherEdge": [
+        78,
+        125,
+        149
+      ],
+      "ChangedInside": 84719,
+      "ChangedOutside": 0,
+      "LitBare": 570056,
+      "TitlePixels": 4956
+    },
+    "panel-preset-03.png": {
+      "Active": 2,
+      "Size": [
+        1280,
+        800
+      ],
+      "ActiveEdge": [
+        95,
+        216,
+        255
+      ],
+      "OtherEdge": [
+        53,
+        70,
+        85
+      ],
+      "ChangedInside": 82097,
+      "ChangedOutside": 0,
+      "LitBare": 229636,
+      "TitlePixels": 4759
+    },
+    "panel-preset-10.png": {
+      "Active": 9,
+      "Size": [
+        1280,
+        800
+      ],
+      "ActiveEdge": [
+        95,
+        216,
+        255
+      ],
+      "OtherEdge": [
+        57,
+        90,
+        109
+      ],
+      "ChangedInside": 120859,
+      "ChangedOutside": 0,
+      "LitBare": 268568,
+      "TitlePixels": 5390
+    }
+  },
+  "Layout": {
+    "Width": 1280,
+    "Height": 800,
+    "Chips": [
+      {
+        "Index": 0,
+        "X": 77,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 1,
+        "X": 191,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 2,
+        "X": 305,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 3,
+        "X": 419,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 4,
+        "X": 533,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 5,
+        "X": 647,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 6,
+        "X": 761,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 7,
+        "X": 875,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 8,
+        "X": 989,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      },
+      {
+        "Index": 9,
+        "X": 1103,
+        "Y": 620,
+        "Width": 100,
+        "Height": 56
+      }
+    ],
+    "TrackLeft": 77,
+    "TrackRight": 1203,
+    "TrackY": 752
+  }
+}

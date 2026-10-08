@@ -5,8 +5,9 @@
   "type": "module",
   "description": "WebGL2 light-fibre, flower and path motion editor for automotive ambient UI, on black.",
   "scripts": {
-    "test": "node --test Checks/LinearAlgebraChecks.mjs Checks/SceneStructureChecks.mjs Checks/PresetsChecks.mjs Checks/PathSpecificationChecks.mjs Checks/PulseSpecificationChecks.mjs",
+    "test": "node --test Checks/LinearAlgebraChecks.mjs Checks/SceneStructureChecks.mjs Checks/PresetsChecks.mjs Checks/PathSpecificationChecks.mjs Checks/PulseSpecificationChecks.mjs Checks/DisplayPanelChecks.mjs",
     "proof": "node Checks/BrowserProof.mjs",
+    "panel-proof": "node Checks/DisplayPanelProof.mjs",
     "serve": "python3 -m http.server 8080"
   },
   "devDependencies": {

@@ -194,7 +194,7 @@ export class StrandRenderer {
         this.Targets = Targets;
     }
 
-    Draw(Scene, Seconds) {
+    Draw(Scene, Seconds, Overlay = null) {
         const Gl = this.Gl;
         const Width = Scene.Width;
         const Height = Scene.Height;
@@ -251,6 +251,11 @@ export class StrandRenderer {
         Gl.blendFunc(Gl.ONE, Gl.ONE_MINUS_SRC_ALPHA);
         for (const Layer of Scene.Layers) {
             if (Layer.Visible && Layer.Mechanism === 'Text') this.DrawText(Layer, Snapshot);
+        }
+        // 📝 The display panel is a 2D overlay, drawn last so it is in the frame, the PNG export and the loop recording.
+        if (Overlay) {
+            const Key = Overlay.Key + '@' + Snapshot.Resolution.join('x');
+            this.DrawOverlay(this.OverlayTexture(Key, () => Overlay.Rasterize(Snapshot.Resolution[0], Snapshot.Resolution[1])), Snapshot);
         }
         Gl.disable(Gl.BLEND);
         return { DrawCalls: this.DrawCalls, Vertices: this.VertexCount };
@@ -438,7 +443,11 @@ export class StrandRenderer {
     }
 
     DrawText(Layer, Snapshot) {
-        const Entry = this.TextTexture(Layer, Snapshot.Resolution[0], Snapshot.Resolution[1]);
+        this.DrawOverlay(this.TextTexture(Layer, Snapshot.Resolution[0], Snapshot.Resolution[1]), Snapshot);
+    }
+
+    // 📝 Composites a cached 2D overlay texture over the finished frame. The texels are premultiplied and LDR.
+    DrawOverlay(Entry, Snapshot) {
         const Pack = this.UseProgram('Text');
         this.BindTexture(0, Entry.Texture);
         this.SetUniform(Pack, 'TextTex', 0);
@@ -447,11 +456,15 @@ export class StrandRenderer {
     }
 
     TextTexture(Layer, Width, Height) {
-        const Key = JSON.stringify([Layer, Width, Height]);
+        return this.OverlayTexture(JSON.stringify([Layer, Width, Height]), () => RasterizeText(Layer, Width, Height));
+    }
+
+    // 📝 Text and panel overlays share one cache. A key is rasterised once and reused, so an unchanged overlay costs nothing per frame.
+    OverlayTexture(Key, Rasterize) {
         const Known = this.TextTextures.get(Key);
         if (Known) return Known;
         const Gl = this.Gl;
-        const Canvas2d = RasterizeText(Layer, Width, Height);
+        const Canvas2d = Rasterize();
         const Texture = Gl.createTexture();
         Gl.bindTexture(Gl.TEXTURE_2D, Texture);
         Gl.pixelStorei(Gl.UNPACK_FLIP_Y_WEBGL, true);

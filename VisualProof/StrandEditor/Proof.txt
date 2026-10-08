@@ -1,5 +1,5 @@
 StrandEditor browser proof
-Generated: 2026-10-08T13:57:26.371Z
+Generated: 2026-10-08T16:28:48.093Z
 Platform: headless Chromium with WebGL2 through SwiftShader (no GPU); WebGPU is not exposed by this build.
 Limits: {"ExactWrap":0.05,"ContinuityRatio":1.5,"StepCeiling":30,"MotionStep":0.5,"TextStep":0.05,"MinimumLuma":0.01,"LumaCeiling":0.7,"DimHeadroom":1.5,"BackgroundPeakCeiling":0,"LumaSwingMinimum":0.002,"PathFractionMinimum":0.9,"PathPixelsMinimum":500,"FibreWidthSlack":0.1,"FibreWidthOffset":0.05,"FibreDistanceSpread":0.05,"SweepDark":0.01,"SweepPlateau":0.95,"SweepLitMinimum":0.01}
 

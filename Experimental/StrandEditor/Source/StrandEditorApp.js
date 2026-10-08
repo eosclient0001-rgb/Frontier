@@ -8,6 +8,7 @@ import {
     SceneToJson, WritePath, LayerLimit,
 } from './SceneStructure.js';
 import { BuildPreset, PresetList } from './Presets.js';
+import { DisplayPanel, PanelHeight, PanelWidth } from './DisplayPanel.js';
 import { StrandRenderer } from './StrandRenderer.js';
 import { PlaybackTimeline } from './PlaybackTimeline.js';
 import { BuildInspector } from './InspectorPanel.js';
@@ -60,6 +61,7 @@ class StrandEditorApp {
             Viewport: document.getElementById('Viewport'),
             Message: document.getElementById('Message'),
             PresetSelect: document.getElementById('PresetSelect'),
+            PanelToggle: document.getElementById('PanelToggle'),
             ApplyPreset: document.getElementById('ApplyPreset'),
             NewScene: document.getElementById('NewScene'),
             OpenScene: document.getElementById('OpenScene'),
@@ -89,6 +91,10 @@ class StrandEditorApp {
         this.PreviousTime = 0;
         this.Stats = { DrawCalls: 0, Vertices: 0 };
         this.Timeline = new PlaybackTimeline();
+        this.Panel = new DisplayPanel(PresetList.map((Preset) => Preset.Label));
+        this.PanelOn = false;
+        this.PanelSliding = false;
+        this.FormatBeforePanel = null;
         this.Scene = BuildPreset(0);
         try {
             this.Renderer = new StrandRenderer(this.Canvas);
@@ -133,12 +139,19 @@ class StrandEditorApp {
         Dom.LayerDuplicate.addEventListener('click', () => this.DuplicateSelected());
         Dom.LayerDelete.addEventListener('click', () => this.DeleteSelected());
         Dom.PlayPause.addEventListener('click', () => this.TogglePlay());
+        Dom.PanelToggle.addEventListener('click', () => this.TogglePanel());
         Dom.Scrub.addEventListener('input', () => this.Timeline.Seek(Number(Dom.Scrub.value), this.Scene));
         Dom.SpeedSelect.addEventListener('change', () => {
             this.Scene.Playback.Speed = Number(Dom.SpeedSelect.value);
         });
 
         const Canvas = this.Canvas;
+        // 📝 Panel controls take pointer input first (capture phase, stopped when hit), so a press on a control never starts an orbit.
+        Canvas.addEventListener('pointerdown', (Event) => this.PanelPointerDown(Event), { capture: true });
+        Canvas.addEventListener('pointermove', (Event) => this.PanelPointerMove(Event), { capture: true });
+        Canvas.addEventListener('pointerup', () => {
+            this.PanelSliding = false;
+        });
         Canvas.addEventListener('pointerdown', (Event) => {
             this.Dragging = { X: Event.clientX, Y: Event.clientY };
             Canvas.setPointerCapture(Event.pointerId);
@@ -173,6 +186,69 @@ class StrandEditorApp {
         window.addEventListener('resize', () => this.FitCanvas());
     }
 
+    // 📝 Panel view: a fixed 1280×800 frame with the light behind 2D preset controls. Turning it off restores the previous frame size.
+    TogglePanel() {
+        this.PanelOn = !this.PanelOn;
+        const Button = this.Dom.PanelToggle;
+        Button.setAttribute('aria-pressed', String(this.PanelOn));
+        Button.textContent = this.PanelOn ? 'Hide panel view' : 'Panel view';
+        if (this.PanelOn) {
+            this.FormatBeforePanel = { Width: this.Scene.Width, Height: this.Scene.Height };
+            this.Scene.Width = PanelWidth;
+            this.Scene.Height = PanelHeight;
+        } else if (this.FormatBeforePanel) {
+            this.Scene.Width = this.FormatBeforePanel.Width;
+            this.Scene.Height = this.FormatBeforePanel.Height;
+            this.FormatBeforePanel = null;
+        }
+        this.RefreshAll();
+    }
+
+    // 📝 The overlay is keyed by the active preset. The renderer rasterises each key once per frame size and caches it.
+    PanelOverlay() {
+        if (!this.PanelOn) return null;
+        const Active = Number(this.Dom.PresetSelect.value);
+        return { Key: 'panel-' + Active, Rasterize: (Width, Height) => this.Panel.Rasterize(Active, Width, Height) };
+    }
+
+    // 📝 Converts a pointer position to panel pixels, origin top-left, using the canvas's displayed size.
+    PanelPoint(Event) {
+        const Box = this.Canvas.getBoundingClientRect();
+        return {
+            X: (Event.clientX - Box.left) * (this.Canvas.width / Box.width),
+            Y: (Event.clientY - Box.top) * (this.Canvas.height / Box.height),
+        };
+    }
+
+    PanelPointerDown(Event) {
+        if (!this.PanelOn || Event.button !== 0) return;
+        const Point = this.PanelPoint(Event);
+        const Hit = this.Panel.HitTest(Point.X, Point.Y);
+        if (!Hit) return;
+        Event.stopImmediatePropagation();
+        this.Canvas.setPointerCapture(Event.pointerId);
+        this.PanelSliding = Hit.Action === 'Slide';
+        this.ChoosePreset(Hit.Index);
+    }
+
+    PanelPointerMove(Event) {
+        if (!this.PanelOn) return;
+        const Point = this.PanelPoint(Event);
+        if (this.PanelSliding) {
+            Event.stopImmediatePropagation();
+            this.ChoosePreset(this.Panel.IndexAtX(Point.X));
+            return;
+        }
+        this.Canvas.style.cursor = this.Panel.HitTest(Point.X, Point.Y) ? 'pointer' : '';
+    }
+
+    // 📝 Loads a preset only when its index differs, so a slider drag across one preset does not rebuild it.
+    ChoosePreset(Index) {
+        if (Number(this.Dom.PresetSelect.value) === Index) return;
+        this.Dom.PresetSelect.value = String(Index);
+        this.LoadPreset(Index);
+    }
+
     FileStem() {
         return (this.Scene.Name || 'strand-scene').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'strand-scene';
     }
@@ -190,7 +266,7 @@ class StrandEditorApp {
     Render() {
         if (!this.Renderer) return;
         try {
-            this.Stats = this.Renderer.Draw(this.Scene, this.Timeline.Seconds);
+            this.Stats = this.Renderer.Draw(this.Scene, this.Timeline.Seconds, this.PanelOverlay());
         } catch (Failure) {
             this.Report(Failure);
         }
@@ -222,6 +298,10 @@ class StrandEditorApp {
 
     SetScene(Next) {
         this.Scene = NormalizeScene(Next);
+        if (this.PanelOn) {
+            this.Scene.Width = PanelWidth;
+            this.Scene.Height = PanelHeight;
+        }
         this.Selected = null;
         this.Dom.PresetSelect.value = this.Dom.PresetSelect.value || '0';
         this.RefreshAll();
@@ -442,8 +522,8 @@ class StrandEditorApp {
             Errors() {
                 return App.Errors.slice();
             },
-            PngUrl(Seconds) {
-                App.Renderer.Draw(App.Scene, Seconds);
+            PngUrl(Seconds, WithPanel = true) {
+                App.Renderer.Draw(App.Scene, Seconds, WithPanel ? App.PanelOverlay() : null);
                 return App.Canvas.toDataURL('image/png');
             },
             Measure(Index) {
@@ -457,6 +537,19 @@ class StrandEditorApp {
             },
             MeasureSweep(Index) {
                 return App.MeasureSweep(Index);
+            },
+            PanelLayout() {
+                return {
+                    Width: PanelWidth,
+                    Height: PanelHeight,
+                    Chips: App.Panel.Chips.map((Cell) => ({ Index: Cell.Index, X: Cell.X, Y: Cell.Y, Width: Cell.Width, Height: Cell.Height })),
+                    TrackLeft: App.Panel.TrackLeft,
+                    TrackRight: App.Panel.TrackRight,
+                    TrackY: App.Panel.TrackY,
+                };
+            },
+            PanelStatus() {
+                return { On: App.PanelOn, Active: Number(App.Dom.PresetSelect.value), Width: App.Scene.Width, Height: App.Scene.Height };
             },
         };
     }

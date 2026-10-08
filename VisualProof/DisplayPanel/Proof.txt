@@ -1,0 +1,37 @@
+# Display panel browser proof
+
+Run with `npm run panel-proof` (headless Chromium, SwiftShader WebGL2). Each frame is read back from the PNG export and compared with the same frame rendered without the panel. Frames are rendered 2.5 s into the loop.
+
+PASS the panel view starts off
+PASS the Panel view button turns the panel on at 1280 by 800 (1280x800)
+PASS panel-preset-01.png is 1280 by 800 pixels (1280x800)
+PASS panel-preset-01.png draws the active toggle in the accent colour (95,216,255)
+PASS panel-preset-01.png leaves an inactive toggle without the accent edge (78,125,149)
+PASS panel-preset-01.png draws the controls over the frame (84719 changed pixels inside the controls)
+PASS panel-preset-01.png changes no pixel outside its controls (0 changed outside)
+PASS panel-preset-01.png draws the title text (4956 bright title pixels)
+PASS panel-preset-01.png has light behind the controls (570056 lit pixels without the panel)
+PASS the panel opens on the current preset (active 0)
+PASS a click on toggle 7 switches to preset 7
+PASS a press and drag that starts on a toggle does not orbit the camera
+PASS a drag on the light still orbits the camera
+PASS dragging the slider from preset 7 to preset 3 ends on preset 3
+PASS panel-preset-03.png is 1280 by 800 pixels (1280x800)
+PASS panel-preset-03.png draws the active toggle in the accent colour (95,216,255)
+PASS panel-preset-03.png leaves an inactive toggle without the accent edge (53,70,85)
+PASS panel-preset-03.png draws the controls over the frame (82097 changed pixels inside the controls)
+PASS panel-preset-03.png changes no pixel outside its controls (0 changed outside)
+PASS panel-preset-03.png draws the title text (4759 bright title pixels)
+PASS panel-preset-03.png has light behind the controls (229636 lit pixels without the panel)
+PASS a click on toggle 10 switches to preset 10
+PASS panel-preset-10.png is 1280 by 800 pixels (1280x800)
+PASS panel-preset-10.png draws the active toggle in the accent colour (95,216,255)
+PASS panel-preset-10.png leaves an inactive toggle without the accent edge (57,90,109)
+PASS panel-preset-10.png draws the controls over the frame (120859 changed pixels inside the controls)
+PASS panel-preset-10.png changes no pixel outside its controls (0 changed outside)
+PASS panel-preset-10.png draws the title text (5390 bright title pixels)
+PASS panel-preset-10.png has light behind the controls (268568 lit pixels without the panel)
+PASS the panel view is still on at the end
+PASS no page errors or console errors
+
+RESULT: PASS (31 checks)

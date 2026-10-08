@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Display panel: visual proof</title>
+<style>
+body { margin: 24px; background: #0b0f17; color: #d8e6f5; font: 15px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+p { margin: 0 0 16px; max-width: 900px; }
+figure { margin: 0 0 28px; }
+img { display: block; width: 100%; max-width: 1280px; border: 1px solid #1d2a3c; border-radius: 6px; }
+figcaption { margin-top: 6px; color: #9fb4cc; }
+a { color: #5fd8ff; }
+</style>
+</head>
+<body>
+<h1>Display panel: visual proof</h1>
+<p>Frames are the PNG export of the editor in Panel view (1280 × 800), read back by <code>npm run panel-proof</code>. Each frame is compared with the same frame rendered without the panel. The panel changes pixels only inside its controls. The full report is in <a href="Proof.txt">Proof.txt</a>.</p>
+<figure><img src="panel-preset-01.png" alt="Preset 1 in the display panel"><figcaption>Preset 1, with toggle 1 active.</figcaption></figure>
+<figure><img src="panel-preset-03.png" alt="Preset 3 in the display panel"><figcaption>Preset 3, reached by dragging the slider from preset 7.</figcaption></figure>
+<figure><img src="panel-preset-10.png" alt="Preset 10 in the display panel"><figcaption>Preset 10, Start transition, 2.5 s into the loop.</figcaption></figure>
+<figure><img src="panel-editor-page.png" alt="The editor page with Panel view on"><figcaption>The editor page with Panel view on, at a 1600 × 1000 viewport.</figcaption></figure>
+</body>
+</html>
