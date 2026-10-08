@@ -25,6 +25,19 @@ void Triangle(GeometryStructure& Mesh, Point A, Point B, Point C) {
 void Quad(GeometryStructure& M, Point A, Point B, Point C, Point D) {
     Triangle(M,A,B,C); Triangle(M,A,C,D);
 }
+// 📝 The identity a construct carries. Area is a flat emitter, so its geometry is the plane; lights and cameras have no solid.
+PrimitiveShape PrimitiveFor(ConstructKind K) {
+    switch (K) {
+    case ConstructKind::Cube:     return PrimitiveShape::Cube;
+    case ConstructKind::Sphere:   return PrimitiveShape::Sphere;
+    case ConstructKind::Cylinder: return PrimitiveShape::Cylinder;
+    case ConstructKind::Cone:     return PrimitiveShape::Cone;
+    case ConstructKind::Torus:    return PrimitiveShape::Torus;
+    case ConstructKind::Plane:
+    case ConstructKind::Area:     return PrimitiveShape::Plane;
+    default:                      return PrimitiveShape::Unlisted;
+    }
+}
 void Build(GeometryStructure& M, ConstructKind K) {
     if (K==ConstructKind::Cube) {
         for(int Axis=0;Axis<3;++Axis) for(float Sign:{-1.f,1.f}) {
@@ -108,10 +121,16 @@ ConstructResult ConstructEntity(SceneStructure& World,const ConstructRequest& R,
     const bool IsLight=R.Kind>=ConstructKind::PointLight&&R.Kind<=ConstructKind::StripLight;
     if(IsMesh) Build(Mesh,R.Kind);
     uint32_t P=World.RegisterPlacement(Name,kPlacementNone,T,T);
+    World.AssignPlacementPrimitive(P,PrimitiveFor(R.Kind));
     if(IsMesh) {
         MaterialDescriptor Material; Material.Name=Name+" surface"; Material.Slabs.emplace_back();
         const bool Emissive=R.Kind==ConstructKind::Area;
         if(Emissive) Material.Slabs[0].EmissionLuminance=1000;
+        else {
+            // 🔢 The link's geometry Surface defaults: Albedo #c06bbf linearised, Roughness 0.40, Metallic 0.00, Emission 0 lx.
+            auto& Slab=Material.Slabs[0]; Slab.BaseColor[0]=.5271f; Slab.BaseColor[1]=.1470f; Slab.BaseColor[2]=.5210f;
+            Slab.SpecularRoughness=.4f;
+        }
         auto Slot=World.RegisterMaterial(Material);
         auto First=World.RegisterInstance(Mesh,T,Slot,Emissive?InstanceFlagEmissive:0u);
         World.AttachInstances(P,First,static_cast<uint32_t>(World.QueryInstances().size())-First);

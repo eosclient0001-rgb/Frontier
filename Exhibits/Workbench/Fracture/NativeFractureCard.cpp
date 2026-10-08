@@ -12,6 +12,7 @@
 #include "FractureCardSurface.h"
 #include "CpuDraw.h"
 #include "PngWriteCounterpart.h"
+#include "GeometricRaster/PrimitiveShape.h"
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -274,6 +275,29 @@ int main()
         Check(Odd.HasPending, "an unsupported primitive adds its note");
         Check(std::fabs(Odd.Tall - Live.Tall - 48.0f) < 1e-3f,
               "whose two lines and collapsed 14 px margin add 48 px over the same card on a cube");
+    }
+
+    //-----------------------------------------------------------------------------------------------------
+    // Identity is carried by the placement, never read from the label. The browser reads the outliner icon,
+    //    so a renamed cube keeps its preview, and an imported object called "Cone Holder" gets none.
+    //-----------------------------------------------------------------------------------------------------
+    {
+        Settings Enabled;
+        Enabled.Enabled = true;
+        const Owner Renamed { "Crate", PrimitiveIconWord(PrimitiveShape::Cube) };
+        Check(!Measure(Light, Regular, CardWide, Enabled, Renamed).HasPending, "a cube renamed Crate keeps its preview");
+        const Owner Imported { "Cone Holder", PrimitiveIconWord(PrimitiveShape::Unlisted) };
+        Check(Measure(Light, Regular, CardWide, Enabled, Imported).HasPending,
+              "an imported object is pending whatever its label says");
+        const PrimitiveShape Shapes[] = { PrimitiveShape::Cube, PrimitiveShape::Sphere, PrimitiveShape::Cylinder,
+                                          PrimitiveShape::Cone, PrimitiveShape::Plane, PrimitiveShape::Torus,
+                                          PrimitiveShape::Unlisted };
+        const char* Words[] = { "cube", "sphere", "cylinder", "cone", "plane", "torus", "mesh" };
+        for (size_t I = 0; I < 7; ++I)
+            Check(std::strcmp(PrimitiveIconWord(Shapes[I]), Words[I]) == 0, "each solid reads as its icon word");
+        for (size_t I = 0; I < 7; ++I)
+            Check(Supported(PrimitiveIconWord(Shapes[I])) == (I < 4),
+                  "the card previews exactly cube, sphere, cylinder and cone, as the browser does");
     }
 
     //-----------------------------------------------------------------------------------------------------

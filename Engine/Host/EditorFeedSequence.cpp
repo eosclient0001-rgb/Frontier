@@ -343,6 +343,7 @@ uint32_t EditorFeedSequence::FillRoster(EditorInstance* Instances, const SceneSt
             else
             {
                 Row.Category = EditorInstanceCategory::Geometry;
+                Row.Primitive = P.Primitive;
                 const uint32_t First = P.FirstInstance < LevelInstances.size() ? P.FirstInstance : 0u;
                 const uint32_t Slot = (P.InstanceCount > 0u && First < LevelInstances.size())
                     ? LevelInstances[First].MaterialIndex : 0xFFFFFFFFu;

@@ -314,18 +314,9 @@ void InspectorPanel::RecordFracture(EditorInstance& Picked, uint32_t PickedIndex
         if (!std::strcmp(Face->GetDebugName(), "Sun reference / regular")) Regular = Face;
     }
 
-    // The engine's geometry rows carry no primitive kind, so the preview note falls back to "pending"
-    //    unless the row is plainly named after one of the four the browser previews.
-    auto Starts = [](const char* Text, const char* Word)
-    {
-        for (; *Word; ++Text, ++Word)
-            if (std::tolower(static_cast<unsigned char>(*Text)) != *Word) return false;
-        return true;
-    };
-    const char* Primitive = "mesh";
-    for (const char* Word : { "cube", "sphere", "cylinder", "cone", "torus" })
-        if (Starts(Picked.Label, Word)) { Primitive = Word; break; }
-    const FR::Owner Who { Picked.Label[0] ? Picked.Label : "Object", Primitive };
+    // The solid this row was constructed as, read from the placement's identity and never from its label. Renaming a
+    //    cube keeps it a cube; an imported object called "Cone Holder" stays pending, as the browser's icon read does.
+    const FR::Owner Who { Picked.Label[0] ? Picked.Label : "Object", PrimitiveIconWord(Picked.Primitive) };
 
     const float Wide = ImGui::GetContentRegionAvail().x;
     if (Wide < 120.0f) return;

@@ -22,7 +22,7 @@ void Test(){
  Check(W.QueryCameras().size()==1&&W.QueryPlacements()[7].Camera==0,"camera attachment");
  Check(W.QueryPunctualLuminaires().size()==6,"all native light component kinds created");
  for(unsigned I=9;I<15;++I)Check(W.QueryPlacements()[I].Luminaire==I-9,"light placement attachment");
- Check(W.QueryPunctualLuminaires()[5].Category==PunctualLuminaireCategory::Strip&&W.QueryPunctualLuminaires()[5].Size[0]==2.f,"strip preset owns horizontal dimensions");
+ Check(W.QueryPunctualLuminaires()[5].Category==PunctualLuminaireCategory::Strip&&W.QueryPunctualLuminaires()[5].Size[0]==2.4f,"strip preset owns horizontal dimensions");  // 🔢 [m] reference LED Strip length:2.4
  Check(W.QueryLuminaires().size()==2&&W.QueryLuminairePower()>0,"emission sampler rebuilt");
  for(auto& I:W.QueryInstances())for(unsigned T=0;T<I.TriangleCount;++T){
   auto V=[&](unsigned J)->const VertexRecord&{return W.QueryVertices()[I.VertexOffset+W.QueryIndices()[I.FirstIndex+T*3+J]];};

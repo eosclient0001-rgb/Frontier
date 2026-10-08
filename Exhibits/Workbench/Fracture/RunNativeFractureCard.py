@@ -22,7 +22,7 @@ if not (Root / 'ExternalPackages/imgui/imgui.h').exists():
     subprocess.run([sys.executable, str(Root / 'Tools/Bootstrap.py'), '--package', 'imgui', '--repair'],
                    cwd=Root, check=True)
 
-Include = ['-IExternalPackages/imgui', '-IEngine/Editor', '-IEngine/ContentInterchange',
+Include = ['-IExternalPackages/imgui', '-IEngine', '-IEngine/Editor', '-IEngine/ContentInterchange',
            '-IExhibits/Workbench/IconArt', '-IExhibits/Workbench/Editor']
 Flags = ['-std=c++20', '-O1', '-fno-strict-aliasing', '-Wall', '-Wno-unused-parameter', '-Wno-unused-variable']
 

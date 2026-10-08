@@ -25,6 +25,7 @@
 #endif
 
 #include "GeometryStructure.h"
+#include "PrimitiveShape.h"
 #include "../DeviceExchange/SwapchainExchange.h"
 #include "../ContentInterchange/MaterialIndex.h"
 #include <cstdint>
@@ -125,6 +126,7 @@ struct PlacementRecord
     uint32_t    Camera          = kPlacementNone;   // [idx] CameraRecord
     uint32_t    Luminaire       = kPlacementNone;   // [idx] PunctualLuminaireRecord
     bool        Dynamic         = false;            // [-] the object moves (--animate / physics drive it)
+    PrimitiveShape Primitive    = PrimitiveShape::Unlisted;   // [-] solid it was constructed as; never read from Name
 };
 
 struct CameraRecord
@@ -234,6 +236,7 @@ public:
     void                    AttachCamera(uint32_t Placement, uint32_t Camera) noexcept            { if (Placement < Placements.size() && Camera < Cameras.size()) Placements[Placement].Camera = Camera; }
     void                    AttachPunctualLuminaire(uint32_t Placement, uint32_t Luminaire) noexcept { if (Placement < Placements.size() && Luminaire < PunctualLuminaires.size()) Placements[Placement].Luminaire = Luminaire; }
     void                    AssignPlacementDynamic(uint32_t Placement, bool Dynamic) noexcept { if (Placement < Placements.size()) Placements[Placement].Dynamic = Dynamic; }
+    void                    AssignPlacementPrimitive(uint32_t Placement, PrimitiveShape Shape) noexcept { if (Placement < Placements.size()) Placements[Placement].Primitive = Shape; }
 
     // Finalise: flatten materials at `SlabLimit`, flatten world-space triangles, gather luminaires, build the alias
     //    table. `Report` receives the material fold lines.

@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include "../DisplayPresentation/IconArt.h"
+#include "../GeometricRaster/PrimitiveShape.h"
 
 namespace Frontier {
 
@@ -101,6 +102,7 @@ struct EditorInstance
     bool             Solo      = false;
     bool             Dynamic   = false;                     // the DYN badge
     bool             Physics   = false;                     // the PHYS badge
+    PrimitiveShape   Primitive = PrimitiveShape::Unlisted;  // the solid a geometry row was constructed as; the card reads this, never Label
 
     // The outliner's extra columns — all optional; a feed that leaves them alone gets the category defaults.
     IconSymbol       Artwork = IconSymbol::Count;           // Count keeps semantic glyph/category mapping
