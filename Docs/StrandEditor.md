@@ -23,10 +23,11 @@ python3 -m http.server 8080      # or: npm run serve
 # open http://localhost:8080/index.html   and   http://localhost:8080/play.html?preset=6
 ```
 
-No local server? The same files are served from the public repository by [raw.githack.com](https://raw.githack.com/), pinned to commit `2ec2863`, which has the layout fix:
+No local server? The same files are served from the public repository by [raw.githack.com](https://raw.githack.com/), pinned to commit `7c0fd1d`, which has the layout fix and the display panel:
 
-- [Editor](https://raw.githack.com/eosclient0001-rgb/Frontier/2ec28632dddd551c6b13ee94bd023cd439b3096d/Experimental/StrandEditor/index.html)
-- [Visual proof](https://raw.githack.com/eosclient0001-rgb/Frontier/2ec28632dddd551c6b13ee94bd023cd439b3096d/VisualProof/StrandEditor/index.html)
+- [Editor](https://raw.githack.com/eosclient0001-rgb/Frontier/7c0fd1da1c21d006b240c92057c5d888fca5700f/Experimental/StrandEditor/index.html)
+- [Visual proof](https://raw.githack.com/eosclient0001-rgb/Frontier/7c0fd1da1c21d006b240c92057c5d888fca5700f/VisualProof/StrandEditor/index.html)
+- [Display panel proof](https://raw.githack.com/eosclient0001-rgb/Frontier/7c0fd1da1c21d006b240c92057c5d888fca5700f/VisualProof/DisplayPanel/index.html)
 
 raw.githack shows a notice before HTML pages; choose *Open the page*. If the controls stay empty, the editor's script did not start. Open the browser console (F12) to see the first error, or use the local server above. To see the start transition, choose *Start transition* in the Preset menu and press *Apply*.
 
@@ -91,6 +92,19 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
 - **Export.** PNG of the current frame, real-time WebM of one loop (MediaRecorder), and scene JSON save and
   open. The Add buttons create strands (Bezier, Bloom, Wave, Flower head, Path trail, Light guide), dust and title text.
 
+## Display panel
+
+Click **Panel view** in the top bar. The editor switches to a fixed 1280 × 800 tablet frame, 16:10. The light fills
+the frame, and 2D controls sit on top: a title with the preset number and name, ten toggles numbered 1 to 10, and a
+preset slider. Click a toggle, or drag the slider's knob, to switch presets. A press on a control never orbits the
+camera; a press elsewhere still does.
+
+The controls are drawn into the frame, so **Export PNG** and **Record loop WebM** include them. Turning Panel view off
+restores the frame size from before you turned it on.
+
+`npm run panel-proof` drives these controls with real clicks and drags in headless Chromium, then reads the exported
+frames back. It writes `VisualProof/DisplayPanel/`, with a page that shows the frames.
+
 ## Look defaults
 
 - **Black.** The default background is `#000000` with no vignette and no grain. Grain now multiplies the
@@ -147,8 +161,9 @@ the default, and the new fields take their defaults. A version 1 file gains no p
 ```sh
 cd Experimental/StrandEditor
 npm install                     # test dependencies only; the editor itself needs none
-npm test                        # 102 Node checks: maths, schema, idempotence, presets, paths, pulses, sweep, thickness
+npm test                        # 107 Node checks: maths, schema, idempotence, presets, paths, pulses, sweep, thickness, panel layout
 npm run proof                   # headless Chromium: renders every preset and writes VisualProof/StrandEditor
+npm run panel-proof             # headless Chromium: drives the display panel and writes VisualProof/DisplayPanel
 ```
 
 `npm run proof` uses `@sparticuz/chromium`, or the browser named by `CHROME_PATH`. For each preset it checks:
@@ -187,3 +202,7 @@ frame's own pixels.
 - **No keyframes or undo yet.** Animation is one loop driven by the schema; a keyframe track and an undo
   stack are the next features.
 - **System fonts.** Title text uses the operating system's sans-serif families (Helvetica, Avenir, Arial).
+- **Panel view is not saved.** It is a view mode: it is not written into the scene JSON, and the frame is fixed at
+  1280 × 800 while it is on. The toggles switch presets, not single layers.
+- **Presets keep their own framing.** At 16:10 the start transition's ring runs along the top and bottom edges, under
+  the title and the toggle row. Its sweep starts after the loop begins, so its first frames are dark.

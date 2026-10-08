@@ -184,6 +184,28 @@ Message check: a copy of `index.html` with a missing module script showed "The e
 
 Hosted copy: the raw.githack link pinned to `b89a395` showed the stacked layout and empty controls in the user's browser. The same commit runs in headless Chromium, so the difference is on the hosted side. The cause is not confirmed; the sandbox cannot reach raw.githack. raw.githack shows a notice before HTML pages and describes itself as serving HTML as-is. A raw.githack 404 page also appeared in the user's browser; the link that produced it is not identified. The `play.html?preset=9` link was removed from the README: its query string is the likeliest cause (not confirmed), and the Preset menu reaches the same scene.
 
+## Sixth pass: display panel (2026-10-08)
+
+The user asked for the display to show in panels (a tablet or HUD), with a 3D light and 2D controls: text, toggles and sliders. The answers given in chat set the first version: a light-strip glow, a 1280 × 800 tablet frame, toggles and a slider that switch between the ten presets, and the light filling each panel with the text and controls on top.
+
+Design. The light stays in the WebGL scene. The controls are a 2D canvas, transparent except where a control is drawn. It is drawn last, after the text layers, through the same cached texture path as the title text, so the PNG export and the loop recording include it. Pointer input is in panel pixels. A capture-phase listener takes presses on a control and stops them before the orbit camera, so a press on a control never orbits, while a press elsewhere still does.
+
+Not decided yet: the panel is a view mode, not a scene layer. It is not written to the scene JSON, and its toggles select presets, not single layers.
+
+Measured with `npm run panel-proof` (headless Chromium, SwiftShader, 31 checks, RESULT PASS). Frames are rendered 2.5 s into the loop, and each is compared with the same frame rendered without the panel.
+
+| Frame | Pixels changed inside the controls | Pixels changed outside | Lit pixels without the panel |
+|---|---|---|---|
+| Preset 1 | 84,719 | 0 | 570,056 |
+| Preset 3 | 82,097 | 0 | 229,636 |
+| Preset 10 (Start transition) | 120,859 | 0 | 268,568 |
+
+Other checks: a real click on toggle 7 loads preset 7; a press on toggle 7 followed by a 96 px drag leaves the camera unchanged; a drag on the light still orbits; a slider drag from preset 7 to preset 3 ends on preset 3; the console is clean.
+
+Corrections made while proving. The first run rendered at t = 0, where the start transition is dark because its sweep rises after about 10 % of the loop, so the light check failed. The frames now render at 2.5 s. The first light check also sampled only the middle of the frame, where that preset is dark; each frame is now compared with its bare render instead.
+
+The existing `npm run proof` still passes 118 checks. Its PNGs and hashes are unchanged, so the text-overlay refactor did not change any existing frame.
+
 ## Sources
 
 1. Creative COW, "Particular trail", Peder Norrby's advice on Aux glow spheres and size over life. https://creativecow.net/forums/thread/particular-trail/
