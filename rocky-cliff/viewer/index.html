@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rocky cliff · PBR texture viewer</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0d1116;
+      }
+      #scene {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: #cdd6e3;
+        font-size: 15px;
+        background: #0d1116;
+        transition: opacity 0.4s;
+      }
+      #loading.done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #panel {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        width: 288px;
+        max-height: calc(100vh - 32px);
+        overflow: auto;
+        box-sizing: border-box;
+        padding: 14px 16px 12px;
+        border-radius: 12px;
+        background: rgba(12, 16, 22, 0.8);
+        backdrop-filter: blur(6px);
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+        color: #e6ebf2;
+        font-size: 13px;
+      }
+      h1 {
+        margin: 0 0 2px;
+        font-size: 16px;
+        font-weight: 650;
+      }
+      .muted {
+        margin: 0 0 12px;
+        color: #8d99aa;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .group {
+        margin: 12px 0;
+      }
+      .label {
+        margin-bottom: 6px;
+        color: #8d99aa;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .seg {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+      }
+      .seg.six {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .seg button {
+        padding: 6px 0;
+        border: 1px solid #2c3644;
+        border-radius: 7px;
+        background: #161d27;
+        color: #cdd6e3;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .seg button:hover {
+        border-color: #3f4d62;
+      }
+      .seg button.active {
+        border-color: #6aa0ff;
+        background: #1d2b41;
+        color: #fff;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+      }
+      output {
+        color: #8ec5ff;
+        font-variant-numeric: tabular-nums;
+      }
+      input[type='range'] {
+        width: 100%;
+        margin: 4px 0 0;
+        accent-color: #6aa0ff;
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .hint {
+        margin: 14px 0 0;
+        color: #6f7b8c;
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      #stats {
+        margin-top: 8px;
+        color: #6f7b8c;
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="loading">Loading textures…</div>
+
+    <aside id="panel">
+      <h1>Rocky cliff</h1>
+      <p class="muted">Photoscan-style PBR set: albedo, normal, roughness, AO and height, applied to a cliff face.</p>
+
+      <div class="group">
+        <div class="label">View</div>
+        <div class="seg six" id="modes">
+          <button data-mode="lit" class="active">Lit</button>
+          <button data-mode="albedo">Albedo</button>
+          <button data-mode="normal">Normal</button>
+          <button data-mode="ao">AO</button>
+          <button data-mode="roughness">Rough</button>
+          <button data-mode="height">Height</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="label">Camera</div>
+        <div class="seg" id="views">
+          <button data-view="overview">Overview</button>
+          <button data-view="closeup" class="active">Close-up</button>
+          <button data-view="ground">Ground</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="label">Material</div>
+        <div class="row"><span>Tile size</span><output id="tileOut"></output></div>
+        <input type="range" id="tile" min="1" max="8" step="0.1" value="3" />
+        <div class="row"><span>Normal strength</span><output id="normalOut"></output></div>
+        <input type="range" id="normal" min="0" max="2" step="0.05" value="1" />
+        <div class="row"><span>AO strength</span><output id="aoOut"></output></div>
+        <input type="range" id="ao" min="0" max="1" step="0.05" value="1" />
+        <div class="row"><span>Relief (geometry)</span><output id="reliefOut"></output></div>
+        <input type="range" id="relief" min="0" max="2" step="0.05" value="1" />
+        <label class="check"><input type="checkbox" id="breakup" checked /> Break up tiling</label>
+      </div>
+
+      <div class="group">
+        <div class="label">Light</div>
+        <div class="row"><span>Sun angle</span><output id="azOut"></output></div>
+        <input type="range" id="az" min="0" max="180" step="1" value="72" />
+        <div class="row"><span>Sun height</span><output id="elOut"></output></div>
+        <input type="range" id="el" min="4" max="80" step="1" value="22" />
+        <label class="check"><input type="checkbox" id="shadows" checked /> Shadows</label>
+      </div>
+
+      <p class="hint">Drag to orbit · right-drag to pan · scroll to zoom. Lower the sun height to bring out the relief.</p>
+      <p id="stats"></p>
+    </aside>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,4 @@
+# Minimum versions. Tested with numpy 2.4, pillow 12.3 and scipy 1.17 on Python 3.11.
+numpy>=1.26
+pillow>=10
+scipy>=1.11
