@@ -18,16 +18,17 @@ html, body {
     font: 13px/1.4 "Helvetica Neue", Arial, sans-serif;
 }
 
-.Shell {
+.Workspace {
     display: grid;
     grid-template-columns: 260px 1fr 310px;
-    grid-template-rows: 52px 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
     height: 100vh;
     min-height: 560px;
 }
 
 .TopBar {
     grid-column: 1 / 4;
+    height: 52px;
     display: flex;
     align-items: center;
     gap: 18px;
@@ -138,6 +139,7 @@ h2 {
 
 .Central {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 1fr 56px;
     min-width: 0;
     min-height: 0;
@@ -174,13 +176,23 @@ canvas {
 .Transport {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     padding: 0 14px;
     background: var(--Panel);
     border-top: 1px solid var(--Line);
 }
 
-.Transport input[type="range"] { flex: 1; }
+.Transport input[type="range"] {
+    flex: 1 1 120px;
+    min-width: 80px;
+}
+
+.Transport label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
 
 .Readout, .Stats {
     font-variant-numeric: tabular-nums;
@@ -188,14 +200,19 @@ canvas {
     white-space: nowrap;
 }
 
-.Stats { font-size: 11px; }
+.Stats {
+    font-size: 11px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 details.InspectorGroup {
     border-top: 1px solid var(--Line);
     padding: 6px 0 10px;
 }
 
-details.Group summary {
+details.InspectorGroup summary {
     cursor: pointer;
     font-weight: 600;
     color: var(--Muted);
@@ -217,7 +234,7 @@ details.Group summary {
 
 .Pair {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 66px;
+    grid-template-columns: minmax(0, 1fr) 74px;
     gap: 6px;
     align-items: center;
 }
@@ -250,6 +267,6 @@ details.Group summary {
 }
 
 @media (max-width: 1100px) {
-    .Shell { grid-template-columns: 220px 1fr 280px; }
+    .Workspace { grid-template-columns: 220px 1fr 280px; }
     .TopBar { flex-wrap: wrap; height: auto; padding: 8px 14px; }
 }

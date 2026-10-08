@@ -76,6 +76,20 @@
         <pre id="InspectorNote" class="Note"></pre>
     </aside>
 </div>
-<script type="module" src="Source/StrandEditorApp.js"></script>
+<script type="module" id="EditorScript" src="Source/StrandEditorApp.js"></script>
+<script>
+    // If the editor script never starts, say so on the page instead of leaving the controls empty.
+    // The module sets window.StrandEditor when it is ready.
+    (function () {
+        const Explain = (Reason) => {
+            const Box = document.getElementById('Message');
+            if (window.StrandEditor || !Box) return;
+            Box.textContent = 'The editor script did not start (' + Reason + '). Open the browser console (F12) to see the first error.';
+            Box.hidden = false;
+        };
+        document.getElementById('EditorScript').addEventListener('error', () => Explain('a file failed to load'));
+        setTimeout(() => Explain('no start after 15 seconds'), 15000);
+    })();
+</script>
 </body>
 </html>
