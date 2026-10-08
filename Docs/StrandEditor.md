@@ -23,6 +23,16 @@ python3 -m http.server 8080      # or: npm run serve
 # open http://localhost:8080/index.html   and   http://localhost:8080/play.html?preset=6
 ```
 
+No local server? The same files are served from the public repository by [raw.githack.com](https://raw.githack.com/).
+The links below are pinned to commit `b89a395`, which holds the current editor code:
+
+- [Editor](https://raw.githack.com/eosclient0001-rgb/Frontier/b89a395820a1def8bd74c4641b04fb2d977c11b3/Experimental/StrandEditor/index.html)
+- [Start transition, full-window player](https://raw.githack.com/eosclient0001-rgb/Frontier/b89a395820a1def8bd74c4641b04fb2d977c11b3/Experimental/StrandEditor/play.html?preset=9)
+- [Visual proof](https://raw.githack.com/eosclient0001-rgb/Frontier/b89a395820a1def8bd74c4641b04fb2d977c11b3/VisualProof/StrandEditor/index.html)
+
+GitHub's file viewer shows `.html` as source code, so use these links to open the pages. When the editor changes,
+update the commit in the links.
+
 WebGL2 is required. The editor reports a clear message if it is missing. WebGPU is not used yet; see
 *Limits*.
 
