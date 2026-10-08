@@ -1,42 +1,47 @@
 [
   {
     "File": "organic-fibres.png",
-    "Sha256": "43061de8fa99b9854cafa5039f55844e341078ea0fe30fc06aeae6fdf770a27e",
-    "Bytes": 1741779
+    "Sha256": "a054148789ad770a7839ab627dce8e1b4c2bfae2447b18e3f55ec971cca7137f",
+    "Bytes": 2386445
   },
   {
     "File": "emerald-sweep.png",
-    "Sha256": "157aa3d0fefb2e10a29d2ced309748a9aae6892ff7221af68e3d7a46dd84c979",
-    "Bytes": 805166
+    "Sha256": "9e7494241bab21facd39726c86fbfb316c0cf26b3ef217c4bd9bcd9c8e011944",
+    "Bytes": 1988108
   },
   {
     "File": "radial-bloom.png",
-    "Sha256": "c21e00aedef6148c208a17cb60d70268c2055be15fe35911faeb5334a42e9b5d",
-    "Bytes": 740507
+    "Sha256": "e18d47ce182b959f5bc8d44f8039c809898d77d134f7125648603a00b6b22a4a",
+    "Bytes": 978988
   },
   {
     "File": "ember-ribbons.png",
-    "Sha256": "7f38e45cc2953ad4d2a31a1ebf18e312b7294ef80bacf5b9fc87a9b56998cb1e",
-    "Bytes": 769407
+    "Sha256": "29c365d4d0b0c766128eb3aade98163e6dfbfceac74b5fd74341dc4b3a097952",
+    "Bytes": 1243765
   },
   {
     "File": "sheet-lines.png",
-    "Sha256": "6eb19a8fdd3f1830eea226c4988147401bfd5460d9245ddc4c25d875ffbdb96d",
-    "Bytes": 766949
+    "Sha256": "add5ebbb66ae79102617fa1bad02af9054afa9b56d9f29ac4ea553f08d38aa4a",
+    "Bytes": 2165180
   },
   {
     "File": "flower-bloom.png",
-    "Sha256": "83fb91b7c5450c5dccd32501bdaee827425934205034a40937fe203829f7e7a2",
-    "Bytes": 719622
+    "Sha256": "7ff1d781ae45186cba287dded66b35da4b3499a1dd468da024d2b2b50f737660",
+    "Bytes": 844476
   },
   {
     "File": "flower-path.png",
-    "Sha256": "da00b79bcf1583e28f6943784917272f0ed628f2e6b313ad05d8f37d34c515a4",
-    "Bytes": 534648
+    "Sha256": "abd9f06f8e58c348baf96eade268c40c9601ec9813609fa31118c97cf8fd1a7c",
+    "Bytes": 954892
   },
   {
     "File": "path-weave.png",
-    "Sha256": "2990fecfe5cfa6e3392c4d2677c42a396c8199675c8ff08f414c01181c888b2b",
-    "Bytes": 365853
+    "Sha256": "48490315b3e9877dffea805517551ac1bb75afaac99650a92d3be572f480c2ad",
+    "Bytes": 414342
+  },
+  {
+    "File": "automotive-trim.png",
+    "Sha256": "074c6456265dcff790d3f0c9ae6feb49ec052ce09cf716bdee82228267eaf2e8",
+    "Bytes": 755781
   }
 ]

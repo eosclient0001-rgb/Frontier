@@ -15,27 +15,27 @@ import { CanvasToPng, DownloadBlob, DownloadText, RecordLoop } from './SceneExpo
 import { ApplyDrag, ApplyZoom, CameraMatrices, ResetView } from './OrbitCamera.js';
 import { Mat3FromEulerDegrees } from './LinearAlgebra.js';
 import { SamplePath } from './PathSpecification.js';
-import { MaxChannel, MeanDifference, Summarise } from './PixelStatistics.js';
+import { BrightestChannel, MeanDifference, Summarise } from './PixelStatistics.js';
 
 // 📝 Starter layers for the Add buttons. Each is a complete layer; the user edits it from the inspector afterwards.
 const Starters = {
     Bezier: ['Strands', { Label: 'Bezier fibres', Shape: 'Bezier', Strands: 200, Segments: 64, Length: 10, Spread: 0.8, Position: [-5, -1, 0] }],
     Bloom: ['Strands', {
         Label: 'Radial bloom', Shape: 'Bloom', Strands: 700, Segments: 56, Length: 3.2, Spread: 0, Ruffle: 0.6,
-        Window: 0.4, Width: 0.02, Taper: 0.5, Intensity: 1.6,
+        Window: 0.4, Thickness: 1.6, Taper: 0.5, Intensity: 1.4,
     }],
     Wave: ['Strands', {
         Label: 'Wave sheet', Shape: 'Wave', Strands: 48, Segments: 96, Length: 12, SheetWidth: 6, Ripple: 1.2,
-        Waves: 0.8, Width: 0.02, Taper: 0.3, Intensity: 1.3, Baseline: 0.2,
+        Waves: 0.8, Thickness: 1.6, Taper: 0.3, Intensity: 1.3, Baseline: 0.2,
     }],
     Flower: ['Strands', {
         Label: 'Flower', Shape: 'Flower', Strands: 600, Segments: 48, Length: 2.4, Spread: 0.15, Petals: 6, Cup: 0.4,
-        Ruffle: 0.5, Width: 0.005, Taper: 0.4, Intensity: 2, Sharpness: 30, Baseline: 0.06, Sparks: 1,
+        Ruffle: 0.5, Thickness: 1.2, Taper: 0.4, Intensity: 1.3, Baseline: 0.06, Sparks: 1,
         PulseRate: 2, PulseDepth: 0.5, PulseShape: 'Breathe',
     }],
     Trail: ['Strands', {
         Label: 'Path trail', Shape: 'Trail', Strands: 480, Segments: 96, TrailLength: 0.25, PhaseSpread: 0.3, Spread: 0.06,
-        Width: 0.0035, Taper: 0.3, Intensity: 1.8, Sharpness: 36, Baseline: 0.04, FollowPath: true,
+        Thickness: 1.2, Taper: 0.3, Intensity: 1.2, Baseline: 0.04, FollowPath: true,
     }],
     Dust: ['Particles', { Label: 'Dust', Count: 600, Size: 0.01, Brightness: 2, Spread: 6 }],
     Text: ['Text', { Label: 'Title', Title: 'TITLE', Subtitle: 'Subtitle', Face: 'Light', Align: 'Left', X: 0.66, Y: 0.36 }],
@@ -448,6 +448,9 @@ class StrandEditorApp {
             PathCoverage(Index) {
                 return App.MeasurePathCoverage(Index);
             },
+            MeasureFibreColumn(Scene) {
+                return App.MeasureFibreColumn(Scene);
+            },
         };
     }
 
@@ -476,7 +479,7 @@ class StrandEditorApp {
         Scene.Layers.forEach((Layer) => {
             Layer.Visible = false;
         });
-        const BackgroundPeak = MaxChannel(Read(0));
+        const BackgroundPeak = BrightestChannel(Read(0));
         Scene.Layers.forEach((Layer, Position) => {
             Layer.Visible = Visibility[Position];
         });
@@ -513,7 +516,7 @@ class StrandEditorApp {
             MidDifference: MeanDifference(Zero, Middle),
             HasText: TextLayers.length > 0,
             TextEffect,
-            DimmedMax: Dimmed.MaxChannel,
+            DimmedPeak: Dimmed.BrightestChannel,
             BackgroundPeak,
             LumaSwing,
             Cost: EstimateCost(Scene),
@@ -521,6 +524,24 @@ class StrandEditorApp {
             DataUrl,
         };
     }
+    // 📝 Thin-fibre check: draws the scene it is given (one straight fibre on black) and returns the luminance of the
+    //    centre column, bottom to top as the GPU reads it, so the proof can measure the fibre's width in pixels.
+    MeasureFibreColumn(Scene) {
+        this.SetScene(Scene);
+        this.Timeline.Playing = false;
+        this.Renderer.Draw(this.Scene, 0.5);
+        const Width = this.Canvas.width;
+        const Height = this.Canvas.height;
+        const Pixels = this.Renderer.ReadPixels();
+        const Column = Math.floor(Width / 2);
+        const Luma = [];
+        for (let Row = 0; Row < Height; Row++) {
+            const At = (Row * Width + Column) * 4;
+            Luma.push((Pixels[At] + Pixels[At + 1] + Pixels[At + 2]) / 3);
+        }
+        return { Width, Height, Luma };
+    }
+
     // 📝 Trail check: renders the first trail layer alone, then counts how many of its bright pixels lie within ten pixels
     //    of the scene path as the camera projects it. A trail that rides the path scores close to one.
     MeasurePathCoverage(Index) {

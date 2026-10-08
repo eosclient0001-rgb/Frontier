@@ -1,7 +1,7 @@
 //============================================================================================================================================
 //                                                              BROWSERPROOF.MJS                                                              
 //============================================================================================================================================
-// 📦 Headless Chromium proof: renders every starter scene, checks black backgrounds, loop seams, pulses, trails on their paths, text and brightness headroom, and saves the frames.
+// 📦 Headless Chromium proof: renders every starter scene, checks black backgrounds, loop seams, pulses, trails on their paths, fibre width in pixels, text and brightness headroom, and saves the frames.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
 import { BuildPreset, PresetList } from '../Source/Presets.js';
+import { CreateLayer, CreateScene } from '../Source/SceneStructure.js';
 
 const Here = path.dirname(fileURLToPath(import.meta.url));
 const Root = path.resolve(Here, '..');
@@ -20,9 +21,10 @@ const Output = path.resolve(process.argv[2] ?? path.join(Repo, 'VisualProof', 'S
 // 📝 Thresholds are mean absolute differences on the 0..255 byte scale between frames one sixtieth of a second apart.
 //    Background and path limits are measured on frames with every other layer hidden, so they read the object alone.
 const Limits = {
-    ExactWrap: 0.05, ContinuityRatio: 1.5, MaximumStep: 30, MotionStep: 0.5, TextStep: 0.05,
-    MinimumLuma: 0.01, MaximumLuma: 0.7, DimHeadroom: 1.5, BackgroundPeakMaximum: 0,
+    ExactWrap: 0.05, ContinuityRatio: 1.5, StepCeiling: 30, MotionStep: 0.5, TextStep: 0.05,
+    MinimumLuma: 0.01, LumaCeiling: 0.7, DimHeadroom: 1.5, BackgroundPeakCeiling: 0,
     LumaSwingMinimum: 0.002, PathFractionMinimum: 0.9, PathPixelsMinimum: 500,
+    FibreWidthSlack: 0.1, FibreWidthOffset: 0.05, FibreDistanceSpread: 0.05,
 };
 const MimeTypes = {
     '.html': 'text/html; charset=utf-8',
@@ -69,6 +71,48 @@ function Check(Lines, Failures, Condition, Message) {
     if (!Condition) Failures.push(Message);
 }
 
+// 📝 One straight fibre on black, at full baseline with no halo, glow or taper, so the frame shows the core profile alone.
+function FibreScene(Thickness, Distance, Width, Height) {
+    return CreateScene({
+        Name: 'Single fibre probe',
+        Width,
+        Height,
+        Background: { Inner: '#000000', Outer: '#000000', Vignette: 0, Grain: 0 },
+        Post: { Exposure: 1, Glow: 0, GlowSpread: 0.5, Saturation: 1, Brightness: 1 },
+        Camera: { Yaw: 0, Pitch: 0, Distance, Fov: 34 },
+        Layers: [CreateLayer('Strands', {
+            Shape: 'Bezier', Strands: 1, Segments: 128, Spread: 0, Length: 6, Direction: [1, 0, 0],
+            Position: [-3, 0, 0], Rotation: [0, 0, 0], Amplitude: 0, Frequency: 1, Ruffle: 0,
+            Thickness, Taper: 0, Intensity: 2, Halo: 0, Baseline: 1, PulseRate: 0, Sparks: 0,
+            ColourStart: '#ffffff', ColourEnd: '#ffffff', ColourAccent: '#ffffff', AccentMix: 0,
+        })],
+    });
+}
+
+// 📝 The composite maps light X to Filmic(X) and then to the 1/2.2 power. This inverts the Filmic curve (a quadratic),
+//    so the proof reads linear light and not the display values.
+function InvertFilmic(Target) {
+    const Y = Math.min(Math.max(Target, 1e-6), 0.9999);
+    const A = 2.43 * Y - 2.51;
+    const B = 0.59 * Y - 0.03;
+    const C = 0.14 * Y;
+    const Root = Math.sqrt(B * B - 4 * A * C);
+    const Positive = [(-B + Root) / (2 * A), (-B - Root) / (2 * A)].filter((X) => X > 0);
+    return Positive.length ? Math.max(...Positive) : 0;
+}
+
+// 📝 Full width at half maximum, in pixels. A Gaussian through the brightest sample and its two neighbours has an exact
+//    log-parabola, whatever the sub-pixel position of the centre line, so three samples give the width.
+function FibreWidthPixels(Luma) {
+    const Linear = Luma.map((Reading) => InvertFilmic(Math.pow(Math.min(Reading, 254.5) / 255, 2.2)));
+    let Peak = 1;
+    for (let Row = 1; Row < Linear.length - 1; Row++) if (Linear[Row] > Linear[Peak]) Peak = Row;
+    const Log = (Row) => Math.log(Math.max(Linear[Row], 1e-12));
+    const Curvature = Log(Peak - 1) - 2 * Log(Peak) + Log(Peak + 1);
+    const Sigma = Math.sqrt(-1 / Curvature);
+    return 2 * Math.sqrt(2 * Math.log(2)) * Sigma;
+}
+
 async function Main() {
     fs.mkdirSync(Output, { recursive: true });
     const Server = await Serve();
@@ -90,8 +134,8 @@ async function Main() {
         await Page.waitForFunction(() => Boolean(window.StrandEditor && window.StrandEditor.Ready), { timeout: 120000 });
 
         const Labels = await Page.evaluate(() => window.StrandEditor.PresetLabels);
-        Check(Lines, Failures, Labels.length === 8 && PresetList.length === 8,
-            'eight starter scenes are offered: ' + Labels.join(', '));
+        Check(Lines, Failures, Labels.length === 9 && PresetList.length === 9,
+            'nine starter scenes are offered: ' + Labels.join(', '));
 
         for (let Index = 0; Index < Labels.length; Index++) {
             const Result = await Page.evaluate((Position) => window.StrandEditor.Measure(Position), Index);
@@ -108,9 +152,9 @@ async function Main() {
             }
             Measurements.push({
                 Label: Result.Label, Width: Result.Width, Height: Result.Height, MeanLuma: Result.Summary.MeanLuma,
-                MaxChannel: Result.Summary.MaxChannel, BrightShare: Result.Summary.BrightShare,
+                BrightestChannel: Result.Summary.BrightestChannel, BrightShare: Result.Summary.BrightShare,
                 ForwardStep: Result.ForwardStep, WrapStep: Result.WrapStep, MidDifference: Result.MidDifference,
-                TextEffect: Result.TextEffect, DimmedMax: Result.DimmedMax, HasText: Result.HasText,
+                TextEffect: Result.TextEffect, DimmedPeak: Result.DimmedPeak, HasText: Result.HasText,
                 ExactWrap: Result.ExactWrap, BackgroundPeak: Result.BackgroundPeak, LumaSwing: Result.LumaSwing,
                 Pulsing, Trailing, PathFraction: Path ? Path.Fraction : null, PathLit: Path ? Path.Lit : null,
                 PathMeanDistance: Path ? Path.MeanDistance : null,
@@ -119,17 +163,17 @@ async function Main() {
             const Name = Result.Label;
             const Luma = Result.Summary.MeanLuma;
             Check(Lines, Failures, Result.Errors.length === 0, Name + ': editor reports no errors');
-            Check(Lines, Failures, Luma >= Limits.MinimumLuma && Luma <= Limits.MaximumLuma,
-                Name + ': mean luma ' + Luma.toFixed(3) + ' inside [' + Limits.MinimumLuma + ', ' + Limits.MaximumLuma + ']');
-            Check(Lines, Failures, Result.BackgroundPeak <= Limits.BackgroundPeakMaximum,
+            Check(Lines, Failures, Luma >= Limits.MinimumLuma && Luma <= Limits.LumaCeiling,
+                Name + ': mean luma ' + Luma.toFixed(3) + ' inside [' + Limits.MinimumLuma + ', ' + Limits.LumaCeiling + ']');
+            Check(Lines, Failures, Result.BackgroundPeak <= Limits.BackgroundPeakCeiling,
                 Name + ': with every layer hidden the frame is black (peak ' + Result.BackgroundPeak + ' of 255)');
             Check(Lines, Failures, Result.ExactWrap <= Limits.ExactWrap,
                 Name + ': the frame at the loop length equals frame 0 (difference ' + Result.ExactWrap.toFixed(3) + ')');
             Check(Lines, Failures, Result.WrapStep <= Limits.ContinuityRatio * Math.max(Result.ForwardStep, 0.5),
                 Name + ': the wrap is no more abrupt than ordinary motion (across the wrap '
                 + Result.WrapStep.toFixed(2) + ', forward ' + Result.ForwardStep.toFixed(2) + ')');
-            Check(Lines, Failures, Result.ForwardStep <= Limits.MaximumStep,
-                Name + ': no teleporting, one-frame step ' + Result.ForwardStep.toFixed(2) + ' (limit ' + Limits.MaximumStep + ')');
+            Check(Lines, Failures, Result.ForwardStep <= Limits.StepCeiling,
+                Name + ': no teleporting, one-frame step ' + Result.ForwardStep.toFixed(2) + ' (limit ' + Limits.StepCeiling + ')');
             Check(Lines, Failures, Result.MidDifference >= Limits.MotionStep,
                 Name + ': motion present, half-loop difference ' + Result.MidDifference.toFixed(2) + ' (minimum ' + Limits.MotionStep + ')');
             if (Pulsing) {
@@ -145,11 +189,37 @@ async function Main() {
                 Check(Lines, Failures, Result.TextEffect > Limits.TextStep,
                     Name + ': text layer draws, mean change ' + Result.TextEffect.toFixed(2) + ' when hidden');
             }
-            Check(Lines, Failures, Result.DimmedMax <= 0.5 * 255 + Limits.DimHeadroom,
-                Name + ': output brightness 0.5 caps the frame at ' + Result.DimmedMax + ' of 255');
+            Check(Lines, Failures, Result.DimmedPeak <= 0.5 * 255 + Limits.DimHeadroom,
+                Name + ': output brightness 0.5 caps the frame at ' + Result.DimmedPeak + ' of 255');
             Check(Lines, Failures, !Result.Cost.OverBudget,
                 Name + ': ' + Result.Cost.Vertices.toLocaleString('en-US') + ' strand vertices and ' + Result.Cost.Dust + ' dust inside the budget');
         }
+
+        // 📝 Thin fibres, measured. One straight fibre must read Thickness scaled by frame height (1.6 px at 1080 p is
+        //    1.07 px at 720 p), must not widen with distance, and must read 1.6 px at 1080 p. Each width is read from pixels.
+        const FibreCases = [
+            { Thickness: 1.6, Distance: 6, Width: 1280, Height: 720 },
+            { Thickness: 1.6, Distance: 24, Width: 1280, Height: 720 },
+            { Thickness: 1.6, Distance: 12, Width: 1920, Height: 1080 },
+        ];
+        const FibreWidths = [];
+        for (const Case of FibreCases) {
+            const Column = await Page.evaluate((Scene) => window.StrandEditor.MeasureFibreColumn(Scene),
+                FibreScene(Case.Thickness, Case.Distance, Case.Width, Case.Height));
+            const Expected = Math.max(0.8, Case.Thickness * Case.Height / 1080);
+            const Measured = FibreWidthPixels(Column.Luma);
+            FibreWidths.push(Measured);
+            Measurements.push({
+                Label: 'Single fibre probe', Width: Column.Width, Height: Column.Height, Thickness: Case.Thickness,
+                Distance: Case.Distance, FibreWidth: Measured, ExpectedWidth: Expected,
+            });
+            Check(Lines, Failures, Math.abs(Measured - Expected) <= Limits.FibreWidthSlack * Expected + Limits.FibreWidthOffset,
+                'a single fibre at ' + Case.Width + 'x' + Case.Height + ' and ' + Case.Distance + ' m reads ' + Measured.toFixed(2)
+                + ' px wide (Thickness ' + Case.Thickness + ' gives ' + Expected.toFixed(2) + ' px)');
+        }
+        Check(Lines, Failures, Math.abs(FibreWidths[0] - FibreWidths[1]) <= Limits.FibreDistanceSpread,
+            'the fibre keeps its pixel width from near and far (6 m ' + FibreWidths[0].toFixed(2) + ' px, 24 m '
+            + FibreWidths[1].toFixed(2) + ' px)');
 
         const Distinct = new Set(Images.map((Image) => Image.Sha256));
         Check(Lines, Failures, Distinct.size === Images.length, 'every starter scene renders a different frame');

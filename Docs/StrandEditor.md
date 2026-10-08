@@ -53,20 +53,23 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
   Flower heads open with the same pulse, offset by head index, so a chain of blooms opens in sequence.
   *Light heads per loop* is the older light-window control: how many light heads travel each fibre per loop.
 - **Path.** One closed scene path, shared by every layer. *Path shape* is Ring, Figure eight, Rose (five
-  petals), Weave or Loop (a limaçon with an inner loop). *Path radius* sets its furthest point in metres.
+  petals), Weave, Loop (a limaçon with an inner loop) or Stadium (a squircle, flat along X, for a light guide
+  round a dashboard or door trim). *Path radius* sets its furthest point in metres.
   Every path is sampled at equal arc length, so light moves at one speed along it.
 - **Scene.** Format (width and height), background, post (exposure, glow amount and spread, saturation,
   output brightness), loop length and playback speed, and an orbit camera (yaw, pitch, distance, field of
   view). Drag on the view to orbit, scroll to zoom, press **R** to reset.
-- **Presets.** Eight starter scenes:
+- **Presets.** Nine starter scenes:
   - *Organic fibres* is a blue sweep of thin fibres with dust and a title.
   - *Emerald sweep* is green fibres with bokeh and the *TO BE* title.
   - *Radial bloom* is a radial burst with bokeh.
-  - *Ember ribbons* is a portrait frame of orange ribbons over lavender lines.
+  - *Ember ribbons* is a portrait frame of warm fibres over lavender lines.
   - *Sheet lines* is a dense oblique sheet with glints.
   - *Flower bloom* is one breathing flower head with pollen.
-  - *Flower path* is three flower heads riding a rose path, each with a comet tail.
+  - *Flower path* is three flower heads riding a rose path, with fibre tails streaming along the whole path.
   - *Path weave* is light trails streaming along a weaving path, with ripple pulses.
+  - *Automotive trim* is a wide 1920 × 720 light guide round a stadium loop: a comet sweeps round it once per loop,
+    two flower heads ride it, and ripple pulses run along each fibre.
 - **Export.** PNG of the current frame, real-time WebM of one loop (MediaRecorder), and scene JSON save and
   open. The Add buttons create strands (Bezier, Bloom, Wave, Flower head, Path trail), dust and title text.
 
@@ -75,8 +78,12 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
 - **Black.** The default background is `#000000` with no vignette and no grain. Grain now multiplies the
   frame instead of adding to it, so true black stays exactly zero. With every layer hidden, the frame of
   every preset reads 0 of 255.
-- **Thin.** Fibre width defaults to 6 mm (`0.006` m). The presets use 3 to 6 mm, except the portrait ribbons at
-  22 mm. At the default camera 6 mm is about one pixel at 720p. *Fibre sharpness* keeps the core tight, and *Halo* supplies the glow.
+- **Thin.** *Thickness* is the fibre's full width at half brightness, in pixels at 1080 p, and it scales with the frame
+  height. The default is 1.6 px, which reads 1.07 px at 720 p. The core is sized in pixels, so a fibre keeps its width
+  at any distance. Nothing narrower than 0.8 px is drawn, so the thinnest setting is still one full pixel of coverage.
+  *Halo* sets the soft glow around each core, and *Taper* fades a fibre toward its ends; it no longer thins it.
+  Earlier builds set width in metres (3.5 to 6 mm). That is under one pixel at these distances, so fibres drew as
+  beads and the glow turned them into bands.
 
 ## Automotive settings
 
@@ -89,14 +96,17 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
   Nothing flashes.
 - **Budget.** The estimate in the inspector counts strand vertices (strands × segments × 6) and dust. Scenes
   above 2.4 M vertices are flagged. Shrink *Strands* or *Segments* to fit a target GPU.
+- **Trim loop.** *Path shape: Stadium* is the light-guide loop. *Idle trim* keeps the loop lit at low brightness, a
+  welcome comet sweeps round it once per loop, and ripple pulses run along each fibre. The reasoning and sources are
+  in the reference notes.
 
 ## Scene format
 
-A scene is JSON with `Format: "StrandEditor/2"`. Scene-level settings are nested (`Post.Glow`, `Camera.Yaw`,
+A scene is JSON with `Format: "StrandEditor/3"`. Scene-level settings are nested (`Post.Glow`, `Camera.Yaw`,
 `Path.Shape`); layers are a list of flat records keyed by `Mechanism` (`Strands`, `Particles`, `Text`).
-`Source/SceneStructure.js` is the authority for names, ranges and defaults. A version 1 file loads without
-error. Its `Core` value carries over to `Sharpness`, its fibre widths are kept, and the new fields take their
-defaults, so it gains no pulses or flowers unless you add them. `NormalizeScene` is idempotent, and a check pins that a saved file reloads unchanged.
+`Source/SceneStructure.js` is the authority for names, ranges and defaults. Versions 1 and 2 load without
+error. Their `Width`, `Sharpness` and `Core` settings no longer exist and are dropped, so fibre thickness falls back to
+the default, and the new fields take their defaults. A version 1 file gains no pulses or flowers unless you add them. `NormalizeScene` is idempotent, and a check pins that a saved file reloads unchanged.
 
 ## How it renders
 
@@ -117,7 +127,7 @@ defaults, so it gains no pulses or flowers unless you add them. `NormalizeScene`
 ```sh
 cd Experimental/StrandEditor
 npm install                     # test dependencies only; the editor itself needs none
-npm test                        # 79 Node checks: maths, schema, idempotence, presets, paths, pulses
+npm test                        # 88 Node checks: maths, schema, idempotence, presets, paths, pulses, thickness
 npm run proof                   # headless Chromium: renders every preset and writes VisualProof/StrandEditor
 ```
 
@@ -127,9 +137,11 @@ no editor errors; mean luma inside a sane band; **black**, meaning the frame wit
 levels in one sixtieth of a second; visible motion; **visible pulses** for every scene that has them, as a mean
 luma swing of at least 0.002 over one loop; for scenes with a trail, that at least 90 % of the bright trail
 pixels lie within 10 px of the scene path as the camera projects it; text drawn when present; output brightness
-0.5 capping the frame; the vertex budget; and an empty browser console. The run in this workspace passed 87
-checks. The trail results were 100.0 % of 15,133 pixels on *Flower path* and 100.0 % of 16,893 on *Path weave*,
-with a mean distance of 2.4 px to the path.
+0.5 capping the frame; the vertex budget; and an empty browser console. The run in this workspace passed 102
+checks. Trail results: 96.7 % of 66,082 bright pixels on *Flower path* and 93.4 % of 53,636 on *Path weave* lie
+within 10 px of the path (mean 4.7 and 4.5 px), and 100.0 % of 56,247 on *Automotive trim* (mean 4.2 px). A single
+straight fibre measures 1.07 px wide at 1280 × 720, at 6 m and at 24 m, and 1.60 px at 1920 × 1080, read from the
+frame's own pixels.
 
 ## Limits
 
@@ -140,6 +152,8 @@ with a mean distance of 2.4 px to the path.
 - **Camera-facing paths.** Scene paths lie in the XY plane. Rotate the layer to tilt them.
 - **Dense sheets alias.** *Sheet lines* at small sizes shows moiré. Fewer strands or thicker fibres
   reduce it.
+- **Bundles add up.** Where many fibres overlap, the glow turns them into a solid band. The trails use sparse
+  bundles spread round the path for that reason; a dense bundle on one arc reads as a tube.
 - **WebGL2 only.** WebGPU is the planned second backend. The headless Chromium used for verification does
   not expose `navigator.gpu`, so the WebGPU path cannot be exercised here.
 - **Verified on software GL.** Proof frames come from SwiftShader, not a GPU or automotive hardware. Frame

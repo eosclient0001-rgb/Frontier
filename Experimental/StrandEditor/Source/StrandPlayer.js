@@ -24,14 +24,14 @@ async function Start() {
     const Renderer = new StrandRenderer(Canvas);
     const Timeline = new PlaybackTimeline();
     let Last = 0;
-    const Frame = (Now) => {
+    const Tick = (Now) => {
         const Delta = Last ? Math.min(0.25, (Now - Last) / 1000) : 0;
         Last = Now;
         Timeline.Advance(Delta, Scene);
         Renderer.Draw(Scene, Timeline.Seconds);
-        requestAnimationFrame(Frame);
+        requestAnimationFrame(Tick);
     };
-    requestAnimationFrame(Frame);
+    requestAnimationFrame(Tick);
     window.StrandPlayer = { Ready: true, Name: Scene.Name, LoopSeconds: Scene.Playback.LoopSeconds };
 }
 

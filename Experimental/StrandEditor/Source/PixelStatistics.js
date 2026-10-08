@@ -13,7 +13,7 @@ export function MeanLuma(Pixels) {
     return Count > 0 ? Sum / Count : 0;
 }
 
-export function MaxChannel(Pixels) {
+export function BrightestChannel(Pixels) {
     let Largest = 0;
     for (let Index = 0; Index < Pixels.length; Index += 4) {
         Largest = Math.max(Largest, Pixels[Index], Pixels[Index + 1], Pixels[Index + 2]);
@@ -30,7 +30,7 @@ export function Summarise(Pixels) {
     }
     return {
         MeanLuma: MeanLuma(Pixels),
-        MaxChannel: MaxChannel(Pixels),
+        BrightestChannel: BrightestChannel(Pixels),
         BrightShare: Count > 0 ? Bright / Count : 0,
     };
 }

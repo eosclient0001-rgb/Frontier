@@ -6,7 +6,7 @@
 // 📝 Each curve is closed over one period of its parameter, so the first and last samples meet and a trail can cross
 //    the seam without a jump. Every curve is scaled so its furthest point sits Size metres from the origin, in the
 //    XY plane, which is the plane the camera looks at.
-export const PathShapeNames = Object.freeze(['Ring', 'Figure eight', 'Rose', 'Weave', 'Loop']);
+export const PathShapeNames = Object.freeze(['Ring', 'Figure eight', 'Rose', 'Weave', 'Loop', 'Stadium']);
 
 // 🔢 Samples in the table. The shader indexes it with one fraction, so this sets the arc resolution of a path.
 export const PathSampleCount = 512;
@@ -24,6 +24,13 @@ const Curves = {
     Loop: (Angle) => {
         const Radius = (0.5 + Math.cos(Angle)) / 1.5;
         return [Radius * Math.cos(Angle), Radius * Math.sin(Angle)];
+    },
+    // 📝 Stadium is a squircle, flat along X: the loop a light guide follows round a dashboard or door trim.
+    //    Its exponent is four, so x to the fourth plus (y over 0.36) to the fourth equals one.
+    Stadium: (Angle) => {
+        const Cosine = Math.cos(Angle);
+        const Sine = Math.sin(Angle);
+        return [Math.sign(Cosine) * Math.abs(Cosine) ** 0.5, 0.36 * Math.sign(Sine) * Math.abs(Sine) ** 0.5];
     },
 };
 

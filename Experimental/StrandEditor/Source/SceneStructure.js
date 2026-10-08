@@ -9,7 +9,7 @@
 import { PathShapeNames } from './PathSpecification.js';
 import { PulseShapeNames } from './PulseSpecification.js';
 
-export const SceneFormat = 'StrandEditor/2';
+export const SceneFormat = 'StrandEditor/3';
 export const MechanismNames = Object.freeze(['Strands', 'Particles', 'Text']);
 export const StrandShapeNames = Object.freeze(['Bezier', 'Bloom', 'Wave', 'Flower', 'Trail']);
 export const LayerLimit = 24;
@@ -25,20 +25,20 @@ function Field(Key, Label, Control, Options) {
     return Object.assign({ Key, Label, Control }, Options);
 }
 
-function NumberField(Key, Label, Min, Max, Step, Default, Group) {
-    return Field(Key, Label, 'Number', { Min, Max, Step, Default, Group });
+function NumberField(Key, Label, Lowest, Highest, Step, Default, Group) {
+    return Field(Key, Label, 'Number', { Lowest, Highest, Step, Default, Group });
 }
 
-function IntegerField(Key, Label, Min, Max, Default, Group) {
-    return Field(Key, Label, 'Integer', { Min, Max, Step: 1, Default, Group });
+function IntegerField(Key, Label, Lowest, Highest, Default, Group) {
+    return Field(Key, Label, 'Integer', { Lowest, Highest, Step: 1, Default, Group });
 }
 
 function ColourField(Key, Label, Default, Group) {
     return Field(Key, Label, 'Colour', { Default, Group });
 }
 
-function VectorField(Key, Label, Default, Min, Max, Group) {
-    return Field(Key, Label, 'Vector', { Default, Min, Max, Step: 0.01, Group });
+function VectorField(Key, Label, Default, Lowest, Highest, Group) {
+    return Field(Key, Label, 'Vector', { Default, Lowest, Highest, Step: 0.01, Group });
 }
 
 function ChoiceField(Key, Label, Choices, Default, Group) {
@@ -49,8 +49,8 @@ function ToggleField(Key, Label, Default, Group) {
     return Field(Key, Label, 'Toggle', { Default, Group });
 }
 
-function TextField(Key, Label, Default, Group, MaxLength = 120) {
-    return Field(Key, Label, 'Text', { Default, Group, MaxLength });
+function TextField(Key, Label, Default, Group, CharacterLimit = 120) {
+    return Field(Key, Label, 'Text', { Default, Group, CharacterLimit });
 }
 
 // 📝 Paths use dots for nesting (Post.Glow). Layers keep flat keys because a layer is one record.
@@ -104,11 +104,10 @@ const StrandFieldList = Object.freeze([
     IntegerField('WindowCycles', 'Light heads per loop', 1, 6, 1, 'Motion'),
     NumberField('Window', 'Light window', 0.02, 1, 0.01, 0.5, 'Motion'),
     NumberField('TrailLength', 'Trail length (share of path)', 0.02, 1, 0.01, 0.3, 'Motion'),
-    NumberField('Width', 'Fibre width (m)', 0.001, 0.4, 0.0005, 0.006, 'Look'),
-    NumberField('Taper', 'Taper', 0, 1, 0.01, 0.5, 'Look'),
-    NumberField('Intensity', 'Intensity', 0, 12, 0.01, 2, 'Look'),
-    NumberField('Sharpness', 'Fibre sharpness', 2, 200, 0.5, 30, 'Look'),
-    NumberField('Halo', 'Halo', 0, 2, 0.01, 0.3, 'Look'),
+    NumberField('Thickness', 'Fibre thickness (px at 1080 p, 0.8 px floor)', 0.5, 8, 0.05, 1.6, 'Look'),
+    NumberField('Taper', 'Taper: fade toward each end', 0, 1, 0.01, 0.5, 'Look'),
+    NumberField('Intensity', 'Intensity', 0, 12, 0.01, 1.4, 'Look'),
+    NumberField('Halo', 'Glow halo around each fibre', 0, 2, 0.01, 0.25, 'Look'),
     NumberField('Baseline', 'Idle brightness', 0, 1, 0.01, 0.1, 'Look'),
     ColourField('ColourStart', 'Colour start', '#18b4ff', 'Look'),
     ColourField('ColourEnd', 'Colour end', '#5fd9ff', 'Look'),
@@ -173,7 +172,7 @@ export function CoerceField(Definition, Raw) {
             const Candidate = typeof Raw === 'string' && Raw.trim() !== '' ? Number(Raw) : Raw;
             if (typeof Candidate !== 'number' || !Number.isFinite(Candidate)) return Fallback;
             const Rounded = Definition.Control === 'Integer' ? Math.round(Candidate) : Candidate;
-            return Math.min(Definition.Max, Math.max(Definition.Min, Rounded));
+            return Math.min(Definition.Highest, Math.max(Definition.Lowest, Rounded));
         }
         case 'Colour':
             return typeof Raw === 'string' && HexColour.test(Raw) ? Raw.toLowerCase() : Fallback;
@@ -181,13 +180,13 @@ export function CoerceField(Definition, Raw) {
             if (!Array.isArray(Raw) || Raw.length !== 3 || !Raw.every((Part) => typeof Part === 'number' && Number.isFinite(Part))) {
                 return Fallback;
             }
-            return Raw.map((Part) => Math.min(Definition.Max, Math.max(Definition.Min, Part)));
+            return Raw.map((Part) => Math.min(Definition.Highest, Math.max(Definition.Lowest, Part)));
         case 'Choice':
             return Definition.Choices.includes(Raw) ? Raw : Fallback;
         case 'Toggle':
             return typeof Raw === 'boolean' ? Raw : Fallback;
         case 'Text':
-            return typeof Raw === 'string' ? Raw.slice(0, Definition.MaxLength) : Fallback;
+            return typeof Raw === 'string' ? Raw.slice(0, Definition.CharacterLimit) : Fallback;
         default:
             return Fallback;
     }
@@ -221,18 +220,16 @@ export function NewLayerId() {
 
 export function CreateLayer(Mechanism, Incoming = {}) {
     if (!MechanismNames.includes(Mechanism)) throw new Error('Unknown layer mechanism: ' + Mechanism);
-    // 📝 Version one called the fibre core setting Core. Carry that saved value over rather than dropping it.
-    const Overrides = Incoming.Sharpness === undefined && typeof Incoming.Core === 'number'
-        ? { ...Incoming, Sharpness: Incoming.Core }
-        : Incoming;
+    // 📝 Settings from an older format that no longer exist (Width, Sharpness, Core) are dropped by the schema.
+    //    Every surviving setting is clamped; a missing one takes its schema default.
     const Layer = {
         Id: NewLayerId(),
         Mechanism,
-        Label: CoerceField(LayerFields[0], Overrides.Label ?? DefaultLabels[Mechanism]),
-        Visible: CoerceField(LayerFields[1], Overrides.Visible),
+        Label: CoerceField(LayerFields[0], Incoming.Label ?? DefaultLabels[Mechanism]),
+        Visible: CoerceField(LayerFields[1], Incoming.Visible),
     };
     for (const Definition of FieldsFor(Mechanism)) {
-        Layer[Definition.Key] = CoerceField(Definition, Overrides[Definition.Key]);
+        Layer[Definition.Key] = CoerceField(Definition, Incoming[Definition.Key]);
     }
     return Layer;
 }

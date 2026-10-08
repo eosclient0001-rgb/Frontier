@@ -63,13 +63,55 @@ Pulses are periodic in the loop, so the frame at the loop length equals frame 0.
 - **Black is exact.** The background is `#000000`, and grain multiplies the frame rather than adding to it. With
   every layer hidden, every preset reads 0 of 255, which the proof measures.
 - **Thin is one pixel at the default view.** Widths are 3 to 6 mm, and a sharp core carries the line while a halo
-  carries the glow.
+  carries the glow. *Superseded in the third pass; see below.*
 - **Flowers are procedural.** A flower is a root cluster with petal fibres to a lobed rim, a cup depth, a petal
   count and an opening pulse. No mesh is imported.
 - **Paths are sampled at equal arc length.** A parametric curve speeds up and slows down, and light would bunch where
   it slows. The table is resampled by chord length, so the speed is even. The check bounds the spacing ratio at 1.1. A table spaced by parameter would reach about 5 on the rose, where the curve speed varies from 1 to 5.
 - **The proof measures what it claims.** Path following is checked on pixels: the bright pixels of a trail, rendered
   alone with glow off, are counted against the path as the camera projects it.
+
+## Third pass: thin fibres, sparse trails and the automotive trim
+
+**The fault.** Checked by eye against the references, the second-pass frames had two faults. Fibres were drawn as beads,
+and trails were tubes. Width was set in metres (3.5 to 6 mm). At the default camera that is under one pixel, so each quad
+rasterised as a short run of dots, and the halo and bloom turned the dots into bands. Trails had up to 1,100 fibres
+bunched within a few percent of one arc, so their glow stacked into a solid neon tube.
+
+**Thin fibres, in pixels.** The core is a Gaussian whose full width at half brightness is `Thickness` pixels at 1080 p,
+scaled by frame height, with a floor of 0.8 px. The quad is widened in pixels to the halo envelope, so the width holds
+at any distance. *Taper* now fades a fibre toward its ends. The width is measured, not assumed: a single straight fibre
+reads 1.07 px at 1280 × 720 at 6 m and at 24 m, and 1.60 px at 1920 × 1080, which is what the model predicts for
+Thickness 1.6. The probe runs in the browser proof.
+
+**Sparse trails.** Trails have 120 to 340 fibres spread around the whole path (*Phase spread* 2π), each covering 10 % of
+the loop, in place of 500 fibres bunched within 4 %. Where fibres overlap, the bloom merges them, so a sparse spread
+keeps each one visible.
+
+**Automotive trim.** A *Stadium* path (a squircle, flat along X) and a 1920 × 720 preset with three layers. *Idle trim* is
+a trail that covers the loop at low brightness, so the light guide stays lit between pulses. *Welcome comet* is a short
+bright sweep that runs round the loop once per loop. Two *flower heads* ride the loop with their own opening pulse, and
+ripple pulses run along each fibre from tail to head. The sources describe the vocabulary: OEM systems pulse for states,
+including welcome and goodbye animations [6]; aftermarket strips offer breathing and gradient modes [8]; addressable LEDs
+run flowing waves [7]. The idle line and the comet are design choices built from that vocabulary.
+
+**Trapcode, restated for the new fibres.** Particular's trail is a stream of small glow spheres whose size falls over
+life [1]. Here the fibre core plays the sphere, the halo plays the glow, and *Taper* is the size-over-life fade.
+Particular's path emitter [2][3] is the shared scene path, and a flower head rides it as its emitter. Tao's taper and
+animated growth [4][5] correspond to the fade and the moving head. The nearest equivalent to Tao's offset looping is
+*Phase spread*, which offsets each fibre's head along the loop. That is an interpretation, not a feature of Tao.
+
+**Naming.** `Width` and `Sharpness` are replaced by `Thickness`. Identifiers that the repo rules ban were renamed in the
+editor: `Frame` became `Snapshot` (the per-render parameters) and `Tick` (the player loop); `MaxChannel` became
+`BrightestChannel`; `DimmedMax` became `DimmedPeak`; `MaxLength` became `CharacterLimit`; and the schema's `Min` and
+`Max` keys became `Lowest` and `Highest`. The DOM's own `min`, `max` and `maxLength` properties are unchanged.
+
+**Checks.** `npm test` runs 88 Node checks. `npm run proof` runs 102 checks, all passing on SwiftShader. Trails sit on
+their path: 96.7 % of 66,082 bright pixels on *Flower path*, 93.4 % of 53,636 on *Path weave*, and 100.0 % of 56,247 on
+*Automotive trim* lie within 10 px of the path.
+
+**Not settled.** The reference images are not on disk, so every comparison is by eye, not a pixel match. No GPU has run
+these frames, and the proof is SwiftShader only.
 
 ## Sources
 

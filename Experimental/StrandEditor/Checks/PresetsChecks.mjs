@@ -8,10 +8,10 @@ import { test } from 'node:test';
 import { BuildPreset, PresetList } from '../Source/Presets.js';
 import { EstimateCost, NormalizeScene, VertexBudget } from '../Source/SceneStructure.js';
 
-test('there are eight starter scenes with unique keys and labels', () => {
-    assert.equal(PresetList.length, 8);
-    assert.equal(new Set(PresetList.map((Preset) => Preset.Key)).size, 8);
-    assert.equal(new Set(PresetList.map((Preset) => Preset.Label)).size, 8);
+test('there are nine starter scenes with unique keys and labels', () => {
+    assert.equal(PresetList.length, 9);
+    assert.equal(new Set(PresetList.map((Preset) => Preset.Key)).size, 9);
+    assert.equal(new Set(PresetList.map((Preset) => Preset.Label)).size, 9);
 });
 
 PresetList.forEach((Preset, Index) => {
@@ -50,14 +50,21 @@ test('the text presets carry copy that fits the reference layouts', () => {
     }
 });
 
-test('every strand in every preset is thin: fibre width at most 8 mm, except the portrait ribbons', () => {
+test('every strand in every preset is a fine fibre: thickness at most 2 px at 1080 p, portrait included', () => {
     for (let Index = 0; Index < PresetList.length; Index++) {
         const Scene = BuildPreset(Index);
         for (const Layer of Scene.Layers.filter((Member) => Member.Mechanism === 'Strands')) {
-            if (Scene.Width === 1080) continue;
-            assert.ok(Layer.Width <= 0.008, PresetList[Index].Label + ' / ' + Layer.Label + ' is ' + Layer.Width + ' m wide');
+            assert.ok(Layer.Thickness <= 2, PresetList[Index].Label + ' / ' + Layer.Label + ' is ' + Layer.Thickness + ' px at 1080 p');
         }
     }
+});
+
+test('the automotive trim is a wide strip on a closed stadium loop, with flower heads and a comet riding the loop', () => {
+    const Trim = BuildPreset(PresetList.findIndex((Preset) => Preset.Key === 'automotive-trim'));
+    assert.equal(Trim.Path.Shape, 'Stadium');
+    assert.ok(Trim.Width > Trim.Height, 'the strip is wider than it is tall');
+    assert.ok(Trim.Layers.some((Layer) => Layer.Shape === 'Flower' && Layer.FollowPath && Layer.Flowers >= 2));
+    assert.ok(Trim.Layers.some((Layer) => Layer.Shape === 'Trail' && Layer.PulseRate > 0));
 });
 
 test('the flower and trail presets carry the objects they are named for', () => {
@@ -74,7 +81,7 @@ test('the flower and trail presets carry the objects they are named for', () => 
     assert.ok(Bloom.Layers.some((Layer) => Layer.Shape === 'Flower' && Layer.Petals >= 3));
 });
 
-test('most presets pulse: at least six of the eight carry a non-zero pulse rate', () => {
+test('most presets pulse: at least six of the nine carry a non-zero pulse rate', () => {
     const Pulsing = PresetList.filter((Preset, Index) =>
         BuildPreset(Index).Layers.some((Layer) => Layer.Mechanism === 'Strands' && Layer.PulseRate > 0));
     assert.ok(Pulsing.length >= 6, 'pulsing presets: ' + Pulsing.length);

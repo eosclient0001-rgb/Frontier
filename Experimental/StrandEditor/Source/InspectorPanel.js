@@ -78,7 +78,7 @@ function BuildControl(Definition, Accessors) {
         case 'Text': {
             const Input = document.createElement('input');
             Input.type = 'text';
-            Input.maxLength = Definition.MaxLength;
+            Input.maxLength = Definition.CharacterLimit;
             Input.value = Current;
             Input.addEventListener('input', () => Commit(Definition, Accessors, Input.value));
             Row.append(Input);
@@ -96,14 +96,14 @@ function NumberControl(Definition, Accessors) {
     const Current = Accessors.Read(Definition);
     const Slider = document.createElement('input');
     Slider.type = 'range';
-    Slider.min = Definition.Min;
-    Slider.max = Definition.Max;
+    Slider.min = Definition.Lowest;
+    Slider.max = Definition.Highest;
     Slider.step = Definition.Step;
     Slider.value = Current;
     const Entry = document.createElement('input');
     Entry.type = 'number';
-    Entry.min = Definition.Min;
-    Entry.max = Definition.Max;
+    Entry.min = Definition.Lowest;
+    Entry.max = Definition.Highest;
     Entry.step = Definition.Step;
     Entry.value = Current;
     Slider.addEventListener('input', () => {
@@ -127,8 +127,8 @@ function VectorControl(Definition, Accessors) {
         const Entry = document.createElement('input');
         Entry.type = 'number';
         Entry.step = Definition.Step;
-        Entry.min = Definition.Min;
-        Entry.max = Definition.Max;
+        Entry.min = Definition.Lowest;
+        Entry.max = Definition.Highest;
         Entry.title = Definition.Label + ' ' + Name;
         Entry.value = Accessors.Read(Definition)[Index];
         Entry.addEventListener('change', () => {

@@ -12,14 +12,14 @@ import {
 
 test('the default scene carries every scene field at its declared default', () => {
     const Scene = CreateScene();
-    assert.equal(Scene.Format, 'StrandEditor/2');
+    assert.equal(Scene.Format, 'StrandEditor/3');
     assert.equal(Scene.Width, 1280);
     assert.equal(Scene.Height, 720);
     assert.equal(Scene.Playback.LoopSeconds, 8);
     assert.equal(Scene.Camera.Distance, 9);
     assert.deepEqual(Scene.Layers, []);
     for (const Definition of SceneFields) {
-        assert.notEqual(Definition.Default ?? Definition.Min, undefined, Definition.Key);
+        assert.notEqual(Definition.Default ?? Definition.Lowest, undefined, Definition.Key);
     }
 });
 
@@ -122,9 +122,9 @@ test('the scene path takes only known shapes and a radius inside its range', () 
     assert.equal(CoerceField(PathSize, 500), 30);
 });
 
-test('a new scene is on black and writes format version two', () => {
+test('a new scene is on black and writes format version three', () => {
     const Scene = CreateScene();
-    assert.equal(Scene.Format, 'StrandEditor/2');
+    assert.equal(Scene.Format, 'StrandEditor/3');
     assert.equal(Scene.Background.Inner, '#000000');
     assert.equal(Scene.Background.Outer, '#000000');
     assert.equal(Scene.Background.Grain, 0);
@@ -134,20 +134,30 @@ test('a new scene is on black and writes format version two', () => {
 test('a version one file loads with the new fields at their defaults and keeps its own values', () => {
     const Old = SceneFromJson(JSON.stringify({
         Format: 'StrandEditor/1',
-        Layers: [{ Mechanism: 'Strands', Shape: 'Bezier', Strands: 20, Width: 0.03 }],
+        Layers: [{ Mechanism: 'Strands', Shape: 'Bezier', Strands: 20, Intensity: 2.5 }],
     }));
     const Layer = Old.Layers[0];
-    assert.equal(Layer.Width, 0.03);
+    assert.equal(Layer.Intensity, 2.5);
+    assert.equal(Layer.Thickness, 1.6);
     assert.equal(Layer.FollowPath, false);
     assert.equal(Layer.PulseRate, 0);
     assert.equal(Layer.Flowers, 1);
 });
 
-test('a version one fibre core value carries over to the renamed sharpness setting', () => {
+test('settings from older formats that no longer exist (width, sharpness, core) are dropped, not carried over', () => {
     const Old = SceneFromJson(JSON.stringify({
-        Format: 'StrandEditor/1',
-        Layers: [{ Mechanism: 'Strands', Shape: 'Bezier', Core: 57 }],
+        Format: 'StrandEditor/2',
+        Layers: [{ Mechanism: 'Strands', Shape: 'Bezier', Width: 0.03, Sharpness: 57, Core: 12 }],
     }));
-    assert.equal(Old.Layers[0].Sharpness, 57);
-    assert.equal(Old.Layers[0].Core, undefined);
+    const Layer = Old.Layers[0];
+    assert.equal(Layer.Width, undefined);
+    assert.equal(Layer.Sharpness, undefined);
+    assert.equal(Layer.Core, undefined);
+    assert.equal(Layer.Thickness, 1.6);
+});
+
+test('fibre thickness is clamped to its range, so no fibre can vanish or swell into a band', () => {
+    const Scene = NormalizeScene({ Layers: [{ Mechanism: 'Strands', Thickness: 0.01 }, { Mechanism: 'Strands', Thickness: 40 }] });
+    assert.equal(Scene.Layers[0].Thickness, 0.5);
+    assert.equal(Scene.Layers[1].Thickness, 8);
 });

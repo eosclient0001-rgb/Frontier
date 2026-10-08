@@ -232,12 +232,17 @@ float HeadOf(float Id)
 `;
 
 export const StrandVertex = `
-uniform float Width;
+uniform float Thickness;
+uniform float PixelScale;
+uniform float ProjectionScale;
 uniform float Taper;
 
 out float VAlong;
 out float VAcross;
 out float VId;
+out float VCore;
+out float VHalo;
+out float VFade;
 
 void main()
 {
@@ -259,13 +264,22 @@ void main()
     float LateralLength = length(Lateral);
     Lateral = LateralLength > 1e-7 ? Lateral / LateralLength : vec3(0.0, 1.0, 0.0);
 
-    float Profile = mix(1.0, max(0.12, pow(max(sin(3.14159265 * S), 0.0), 0.5)), Taper);
-    float HalfWidth = 0.5 * Width * ModelScale * Profile;
-    vec3 World = Centre + Lateral * (Side * HalfWidth);
+    // 📝 The core is sized in pixels, so a fibre keeps its width at any distance and never drops below one pixel of
+    //    coverage. The quad is widened to the halo envelope, also in pixels, and the fragment shader reads the offset.
+    vec4 Clip = ViewProjection * vec4(Centre, 1.0);
+    float PixelsPerMetre = ProjectionScale / max(Clip.w, 1e-3);
+    float CorePixels = max(0.8, Thickness * PixelScale) * 0.42466;
+    float HaloPixels = max(2.4 * PixelScale, 2.0 * CorePixels);
+    float EnvelopePixels = 3.6 * HaloPixels;
+    float Fade = mix(1.0, pow(max(sin(3.14159265 * S), 0.0), 0.5), Taper);
+    vec3 World = Centre + Lateral * (Side * EnvelopePixels / max(PixelsPerMetre, 1e-6));
     gl_Position = ViewProjection * vec4(World, 1.0);
     VAlong = S;
-    VAcross = Side;
+    VAcross = Side * EnvelopePixels;
     VId = Id;
+    VCore = CorePixels;
+    VHalo = HaloPixels;
+    VFade = Fade;
 }
 `;
 
@@ -273,9 +287,11 @@ export const StrandFragment = `
 in float VAlong;
 in float VAcross;
 in float VId;
+in float VCore;
+in float VHalo;
+in float VFade;
 
 uniform float Intensity;
-uniform float Sharpness;
 uniform float Halo;
 uniform float Baseline;
 uniform float Window;
@@ -288,8 +304,10 @@ out vec4 OutColour;
 
 void main()
 {
-    float Across2 = VAcross * VAcross;
-    float Profile = exp(-Across2 * Sharpness) + Halo * exp(-Across2 * Sharpness * 0.08);
+    // 📝 VAcross is a pixel offset from the fibre's centre line. The core is a Gaussian about one pixel wide, so its
+    //    peak is Intensity at every distance. The halo is a wider, dimmer Gaussian that carries the glow.
+    float Core = exp(-0.5 * VAcross * VAcross / (VCore * VCore));
+    float Glow = Halo * exp(-0.5 * VAcross * VAcross / (VHalo * VHalo));
     float Head = fract(Unit(VId, 9.0) + float(WindowCycles) * LoopFraction);
     float Behind = fract(Head - VAlong);
     float Front = smoothstep(0.0, 0.05, Behind);
@@ -299,7 +317,7 @@ void main()
     vec3 Along = mix(ColourStart, ColourEnd, VAlong);
     vec3 Tint = mix(Along, ColourAccent, AccentMix * Unit(VId, 12.0));
     float Vary = 0.4 + 0.9 * Unit(VId, 13.0);
-    OutColour = vec4(Tint * (Intensity * Vary * Profile * Lit * Ends * PulseFactorAt(VAlong)), 1.0);
+    OutColour = vec4(Tint * (Intensity * Vary * (Core + Glow) * Lit * Ends * VFade * PulseFactorAt(VAlong)), 1.0);
 }
 `;
 

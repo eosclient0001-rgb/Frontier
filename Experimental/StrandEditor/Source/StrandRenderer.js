@@ -206,7 +206,7 @@ export class StrandRenderer {
         this.VertexCount = 0;
 
         const Camera = CameraMatrices(Scene.Camera, Width / Height);
-        const Frame = {
+        const Snapshot = {
             ViewProjection: Camera.ViewProjection,
             CameraPosition: Camera.Position,
             LoopFraction: WrapFraction(Seconds / Scene.Playback.LoopSeconds),
@@ -223,13 +223,13 @@ export class StrandRenderer {
         Gl.disable(Gl.BLEND);
         Gl.clearColor(0, 0, 0, 1);
         Gl.clear(Gl.COLOR_BUFFER_BIT);
-        this.DrawBackground(Scene, Frame);
+        this.DrawBackground(Scene, Snapshot);
         Gl.enable(Gl.BLEND);
         Gl.blendFunc(Gl.ONE, Gl.ONE);
         for (const Layer of Scene.Layers) {
             if (!Layer.Visible) continue;
-            if (Layer.Mechanism === 'Strands') this.DrawStrands(Layer, Frame);
-            else if (Layer.Mechanism === 'Particles') this.DrawParticles(Layer, Frame);
+            if (Layer.Mechanism === 'Strands') this.DrawStrands(Layer, Snapshot);
+            else if (Layer.Mechanism === 'Particles') this.DrawParticles(Layer, Snapshot);
         }
         Gl.disable(Gl.BLEND);
         if (Targets.Msaa) {
@@ -244,13 +244,13 @@ export class StrandRenderer {
         // Step 3: filmic composite onto the canvas.
         Gl.bindFramebuffer(Gl.FRAMEBUFFER, null);
         Gl.viewport(0, 0, Width, Height);
-        this.DrawComposite(Scene, Frame);
+        this.DrawComposite(Scene, Snapshot);
 
         // Step 4: text overlays are LDR and sit on top of the finished frame.
         Gl.enable(Gl.BLEND);
         Gl.blendFunc(Gl.ONE, Gl.ONE_MINUS_SRC_ALPHA);
         for (const Layer of Scene.Layers) {
-            if (Layer.Visible && Layer.Mechanism === 'Text') this.DrawText(Layer, Frame);
+            if (Layer.Visible && Layer.Mechanism === 'Text') this.DrawText(Layer, Snapshot);
         }
         Gl.disable(Gl.BLEND);
         return { DrawCalls: this.DrawCalls, Vertices: this.VertexCount };
@@ -263,11 +263,11 @@ export class StrandRenderer {
         this.VertexCount += 3;
     }
 
-    DrawBackground(Scene, Frame) {
+    DrawBackground(Scene, Snapshot) {
         const Pack = this.UseProgram('Background');
         this.SetUniform(Pack, 'InnerColour', HexToLinear(Scene.Background.Inner));
         this.SetUniform(Pack, 'OuterColour', HexToLinear(Scene.Background.Outer));
-        this.SetUniform(Pack, 'Resolution', Frame.Resolution);
+        this.SetUniform(Pack, 'Resolution', Snapshot.Resolution);
         this.Draw3();
     }
 
@@ -287,7 +287,7 @@ export class StrandRenderer {
         this.PathKey = Key;
     }
 
-    ApplyCurveUniforms(Pack, Layer, Frame) {
+    ApplyCurveUniforms(Pack, Layer, Snapshot) {
         this.SetUniform(Pack, 'Shape', ShapeIndexes[Layer.Shape]);
         this.SetUniform(Pack, 'StrandCount', Layer.Strands);
         this.SetUniform(Pack, 'SegmentCount', Layer.Segments);
@@ -304,13 +304,13 @@ export class StrandRenderer {
         this.SetUniform(Pack, 'PhaseSpread', Layer.PhaseSpread);
         this.SetUniform(Pack, 'Harmonic', Layer.Harmonic);
         this.SetUniform(Pack, 'WindowCycles', Layer.WindowCycles);
-        this.SetUniform(Pack, 'LoopFraction', Frame.LoopFraction);
+        this.SetUniform(Pack, 'LoopFraction', Snapshot.LoopFraction);
         this.SetUniform(Pack, 'ModelRotation', Mat3FromEulerDegrees(Layer.Rotation[0], Layer.Rotation[1], Layer.Rotation[2]));
         this.SetUniform(Pack, 'ModelPosition', Layer.Position);
         this.SetUniform(Pack, 'ModelScale', Layer.Scale);
-        this.SetUniform(Pack, 'ViewProjection', Frame.ViewProjection);
-        this.SetUniform(Pack, 'CameraPosition', Frame.CameraPosition);
-        this.SetUniform(Pack, 'ProjectionScale', Frame.ProjectionScale);
+        this.SetUniform(Pack, 'ViewProjection', Snapshot.ViewProjection);
+        this.SetUniform(Pack, 'CameraPosition', Snapshot.CameraPosition);
+        this.SetUniform(Pack, 'ProjectionScale', Snapshot.ProjectionScale);
         this.SetUniform(Pack, 'FollowPath', Layer.FollowPath ? 1 : 0);
         this.SetUniform(Pack, 'FlowerCount', Layer.Flowers);
         this.SetUniform(Pack, 'Petals', Layer.Petals);
@@ -324,14 +324,14 @@ export class StrandRenderer {
         this.SetUniform(Pack, 'PathTexture', PathTextureUnit);
     }
 
-    DrawStrands(Layer, Frame) {
+    DrawStrands(Layer, Snapshot) {
         const Gl = this.Gl;
         const Pack = this.UseProgram('Strand');
-        this.ApplyCurveUniforms(Pack, Layer, Frame);
-        this.SetUniform(Pack, 'Width', Layer.Width);
+        this.ApplyCurveUniforms(Pack, Layer, Snapshot);
+        this.SetUniform(Pack, 'Thickness', Layer.Thickness);
+        this.SetUniform(Pack, 'PixelScale', Snapshot.ViewportHeight / 1080);
         this.SetUniform(Pack, 'Taper', Layer.Taper);
         this.SetUniform(Pack, 'Intensity', Layer.Intensity);
-        this.SetUniform(Pack, 'Sharpness', Layer.Sharpness);
         this.SetUniform(Pack, 'Halo', Layer.Halo);
         this.SetUniform(Pack, 'Baseline', Layer.Baseline);
         this.SetUniform(Pack, 'Window', Layer.Window);
@@ -347,7 +347,7 @@ export class StrandRenderer {
 
         if (Layer.Sparks > 0 && Layer.SparkSize > 0) {
             const Spark = this.UseProgram('Spark');
-            this.ApplyCurveUniforms(Spark, Layer, Frame);
+            this.ApplyCurveUniforms(Spark, Layer, Snapshot);
             this.SetUniform(Spark, 'SparkSize', Layer.SparkSize);
             this.SetUniform(Spark, 'SparkBrightness', Layer.SparkBrightness);
             this.SetUniform(Spark, 'Sparks', Layer.Sparks);
@@ -359,16 +359,16 @@ export class StrandRenderer {
         }
     }
 
-    DrawParticles(Layer, Frame) {
+    DrawParticles(Layer, Snapshot) {
         if (Layer.Count === 0) return;
         const Gl = this.Gl;
         const Pack = this.UseProgram('Particle');
         this.SetUniform(Pack, 'ModelRotation', Mat3FromEulerDegrees(Layer.Rotation[0], Layer.Rotation[1], Layer.Rotation[2]));
         this.SetUniform(Pack, 'ModelPosition', Layer.Position);
         this.SetUniform(Pack, 'ModelScale', Layer.Scale);
-        this.SetUniform(Pack, 'ViewProjection', Frame.ViewProjection);
-        this.SetUniform(Pack, 'ProjectionScale', Frame.ProjectionScale);
-        this.SetUniform(Pack, 'LoopFraction', Frame.LoopFraction);
+        this.SetUniform(Pack, 'ViewProjection', Snapshot.ViewProjection);
+        this.SetUniform(Pack, 'ProjectionScale', Snapshot.ProjectionScale);
+        this.SetUniform(Pack, 'LoopFraction', Snapshot.LoopFraction);
         this.SetUniform(Pack, 'Seed', Layer.Seed);
         this.SetUniform(Pack, 'ParticleSize', Layer.Size);
         this.SetUniform(Pack, 'ParticleBrightness', Layer.Brightness);
@@ -415,7 +415,7 @@ export class StrandRenderer {
         }
     }
 
-    DrawComposite(Scene, Frame) {
+    DrawComposite(Scene, Snapshot) {
         const Targets = this.Targets;
         const Pack = this.UseProgram('Composite');
         this.BindTexture(0, Targets.Scene.Texture);
@@ -433,16 +433,16 @@ export class StrandRenderer {
         this.SetUniform(Pack, 'Brightness', Scene.Post.Brightness);
         this.SetUniform(Pack, 'Vignette', Scene.Background.Vignette);
         this.SetUniform(Pack, 'Grain', Scene.Background.Grain);
-        this.SetUniform(Pack, 'Resolution', Frame.Resolution);
+        this.SetUniform(Pack, 'Resolution', Snapshot.Resolution);
         this.Draw3();
     }
 
-    DrawText(Layer, Frame) {
-        const Entry = this.TextTexture(Layer, Frame.Resolution[0], Frame.Resolution[1]);
+    DrawText(Layer, Snapshot) {
+        const Entry = this.TextTexture(Layer, Snapshot.Resolution[0], Snapshot.Resolution[1]);
         const Pack = this.UseProgram('Text');
         this.BindTexture(0, Entry.Texture);
         this.SetUniform(Pack, 'TextTex', 0);
-        this.SetUniform(Pack, 'Brightness', Frame.Brightness);
+        this.SetUniform(Pack, 'Brightness', Snapshot.Brightness);
         this.Draw3();
     }
 

@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PathSampleCount, PathShapeNames, SamplePath } from '../Source/PathSpecification.js';
 
-test('there are five path shapes, matching the choices the inspector offers', () => {
-    assert.deepEqual([...PathShapeNames], ['Ring', 'Figure eight', 'Rose', 'Weave', 'Loop']);
+test('there are six path shapes, matching the choices the inspector offers', () => {
+    assert.deepEqual([...PathShapeNames], ['Ring', 'Figure eight', 'Rose', 'Weave', 'Loop', 'Stadium']);
 });
 
 for (const Shape of PathShapeNames) {
