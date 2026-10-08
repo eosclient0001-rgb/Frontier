@@ -1,7 +1,7 @@
 //============================================================================================================================================
-//                                                           LINEARALGEBRA.TEST.MJS
+//                                                          LINEARALGEBRACHECKS.MJS                                                           
 //============================================================================================================================================
-// 📦 Node tests for matrices, rotations and sRGB conversion used by the renderer and camera.
+// 📦 Node checks for the matrix conventions the camera and shaders rely on: look-at, projection, Euler rotations and sRGB.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -47,7 +47,7 @@ test('Euler rotation matrices are orthonormal with determinant one', () => {
     const Column = (Index) => [Rotation[Index * 3], Rotation[Index * 3 + 1], Rotation[Index * 3 + 2]];
     for (let A = 0; A < 3; A++) {
         for (let B = 0; B < 3; B++) {
-            const Dot = Column(A).reduce((Sum, Value, Index) => Sum + Value * Column(B)[Index], 0);
+            const Dot = Column(A).reduce((Sum, Setting, Index) => Sum + Setting * Column(B)[Index], 0);
             Near(Dot, A === B ? 1 : 0, 1e-5);
         }
     }
@@ -68,8 +68,8 @@ test('yaw of ninety degrees turns +X into -Z in the engine convention', () => {
 });
 
 test('sRGB hex conversion matches the transfer function at the ends and at mid grey', () => {
-    assert.deepEqual(HexToLinear('#000000').map((Value) => Math.round(Value * 1e6)), [0, 0, 0]);
-    assert.deepEqual(HexToLinear('#ffffff').map((Value) => Math.round(Value * 1e6)), [1e6, 1e6, 1e6]);
+    assert.deepEqual(HexToLinear('#000000').map((Setting) => Math.round(Setting * 1e6)), [0, 0, 0]);
+    assert.deepEqual(HexToLinear('#ffffff').map((Setting) => Math.round(Setting * 1e6)), [1e6, 1e6, 1e6]);
     Near(HexToLinear('#808080')[0], 0.2158605, 1e-6);
     const Albedo = HexToLinear('#c06bbf');
     Near(Albedo[0], 0.527115, 1e-5);

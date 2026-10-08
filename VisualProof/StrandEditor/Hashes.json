@@ -1,27 +1,42 @@
 [
   {
-    "File": "ember-ribbons.png",
-    "Sha256": "2e2959c0a9368841441da0e9cce14ae608ec33d0b0a59082aaff43bab9db0857",
-    "Bytes": 2536075
+    "File": "organic-fibres.png",
+    "Sha256": "43061de8fa99b9854cafa5039f55844e341078ea0fe30fc06aeae6fdf770a27e",
+    "Bytes": 1741779
   },
   {
     "File": "emerald-sweep.png",
-    "Sha256": "6c5f29e143324128eff7aeea175ab470619009780a9961a5378453e99866da90",
-    "Bytes": 1745151
-  },
-  {
-    "File": "organic-fibres.png",
-    "Sha256": "78a5c9a1e681f169b166cd8abe2f63708a4e2c9997653cbcf317eb4ef0c9be58",
-    "Bytes": 2404101
+    "Sha256": "157aa3d0fefb2e10a29d2ced309748a9aae6892ff7221af68e3d7a46dd84c979",
+    "Bytes": 805166
   },
   {
     "File": "radial-bloom.png",
-    "Sha256": "821de1a15f2ea8dc3dee2c173e18d848a495873bd274804b7a719771fad349f6",
-    "Bytes": 1491705
+    "Sha256": "c21e00aedef6148c208a17cb60d70268c2055be15fe35911faeb5334a42e9b5d",
+    "Bytes": 740507
+  },
+  {
+    "File": "ember-ribbons.png",
+    "Sha256": "7f38e45cc2953ad4d2a31a1ebf18e312b7294ef80bacf5b9fc87a9b56998cb1e",
+    "Bytes": 769407
   },
   {
     "File": "sheet-lines.png",
-    "Sha256": "97a45134edf6cf820e48579fa6a4ff56a9f6e27b303699c6bae4d26b73eb0d75",
-    "Bytes": 1790221
+    "Sha256": "6eb19a8fdd3f1830eea226c4988147401bfd5460d9245ddc4c25d875ffbdb96d",
+    "Bytes": 766949
+  },
+  {
+    "File": "flower-bloom.png",
+    "Sha256": "83fb91b7c5450c5dccd32501bdaee827425934205034a40937fe203829f7e7a2",
+    "Bytes": 719622
+  },
+  {
+    "File": "flower-path.png",
+    "Sha256": "da00b79bcf1583e28f6943784917272f0ed628f2e6b313ad05d8f37d34c515a4",
+    "Bytes": 534648
+  },
+  {
+    "File": "path-weave.png",
+    "Sha256": "2990fecfe5cfa6e3392c4d2677c42a396c8199675c8ff08f414c01181c888b2b",
+    "Bytes": 365853
   }
 ]

@@ -6,14 +6,16 @@
 import {
     CreateLayer, EstimateCost, FieldsFor, LayerFields, NormalizeScene, ReadPath, SceneFields, SceneFromJson,
     SceneToJson, WritePath, LayerLimit,
-} from './SceneModel.js';
+} from './SceneStructure.js';
 import { BuildPreset, PresetList } from './Presets.js';
 import { StrandRenderer } from './StrandRenderer.js';
 import { PlaybackTimeline } from './PlaybackTimeline.js';
 import { BuildInspector } from './InspectorPanel.js';
 import { CanvasToPng, DownloadBlob, DownloadText, RecordLoop } from './SceneExport.js';
-import { ApplyDrag, ApplyZoom, ResetView } from './OrbitCamera.js';
-import { MeanDifference, Summarise } from './PixelStatistics.js';
+import { ApplyDrag, ApplyZoom, CameraMatrices, ResetView } from './OrbitCamera.js';
+import { Mat3FromEulerDegrees } from './LinearAlgebra.js';
+import { SamplePath } from './PathSpecification.js';
+import { MaxChannel, MeanDifference, Summarise } from './PixelStatistics.js';
 
 // 📝 Starter layers for the Add buttons. Each is a complete layer; the user edits it from the inspector afterwards.
 const Starters = {
@@ -25,6 +27,15 @@ const Starters = {
     Wave: ['Strands', {
         Label: 'Wave sheet', Shape: 'Wave', Strands: 48, Segments: 96, Length: 12, SheetWidth: 6, Ripple: 1.2,
         Waves: 0.8, Width: 0.02, Taper: 0.3, Intensity: 1.3, Baseline: 0.2,
+    }],
+    Flower: ['Strands', {
+        Label: 'Flower', Shape: 'Flower', Strands: 600, Segments: 48, Length: 2.4, Spread: 0.15, Petals: 6, Cup: 0.4,
+        Ruffle: 0.5, Width: 0.005, Taper: 0.4, Intensity: 2, Sharpness: 30, Baseline: 0.06, Sparks: 1,
+        PulseRate: 2, PulseDepth: 0.5, PulseShape: 'Breathe',
+    }],
+    Trail: ['Strands', {
+        Label: 'Path trail', Shape: 'Trail', Strands: 480, Segments: 96, TrailLength: 0.25, PhaseSpread: 0.3, Spread: 0.06,
+        Width: 0.0035, Taper: 0.3, Intensity: 1.8, Sharpness: 36, Baseline: 0.04, FollowPath: true,
     }],
     Dust: ['Particles', { Label: 'Dust', Count: 600, Size: 0.01, Brightness: 2, Spread: 6 }],
     Text: ['Text', { Label: 'Title', Title: 'TITLE', Subtitle: 'Subtitle', Face: 'Light', Align: 'Left', X: 0.66, Y: 0.36 }],
@@ -261,8 +272,8 @@ class StrandEditorApp {
         };
         AddRow(null, 'Scene', this.Scene.Name, true, () => {});
         for (const Layer of this.Scene.Layers) {
-            AddRow(Layer.Id, Layer.Label, MechanismCaption(Layer), Layer.Visible, (Value) => {
-                Layer.Visible = Value;
+            AddRow(Layer.Id, Layer.Label, MechanismCaption(Layer), Layer.Visible, (Setting) => {
+                Layer.Visible = Setting;
             });
         }
         this.Dom.LayerDelete.disabled = this.Selected === null;
@@ -283,7 +294,7 @@ class StrandEditorApp {
             Dom.InspectorTitle.textContent = 'Scene';
             BuildInspector(Dom.InspectorBody, SceneFields, {
                 Read: (Definition) => ReadPath(this.Scene, Definition.Key),
-                Write: (Definition, Value) => WritePath(this.Scene, Definition.Key, Value),
+                Write: (Definition, Setting) => WritePath(this.Scene, Definition.Key, Setting),
                 Changed: () => this.OnEdited(),
             });
         } else {
@@ -297,8 +308,8 @@ class StrandEditorApp {
             Dom.InspectorTitle.textContent = Layer.Label;
             BuildInspector(Dom.InspectorBody, [...LayerFields, ...FieldsFor(Layer.Mechanism)], {
                 Read: (Definition) => Layer[Definition.Key],
-                Write: (Definition, Value) => {
-                    Layer[Definition.Key] = Value;
+                Write: (Definition, Setting) => {
+                    Layer[Definition.Key] = Setting;
                 },
                 Changed: () => this.OnEdited(),
             });
@@ -321,8 +332,8 @@ class StrandEditorApp {
         this.Dom.InspectorNote.textContent = Lines.join('\n');
     }
 
-    AddLayer(Kind) {
-        const Entry = Starters[Kind];
+    AddLayer(Starter) {
+        const Entry = Starters[Starter];
         if (!Entry || this.Scene.Layers.length >= LayerLimit) return;
         const [Mechanism, Overrides] = Entry;
         const Layer = CreateLayer(Mechanism, Overrides);
@@ -407,7 +418,7 @@ class StrandEditorApp {
         }
     }
 
-    // 📝 Test surface for the browser proof. It is read-only apart from the explicit setters.
+    // 📝 Check surface for the browser proof. It is read-only apart from the explicit setters.
     Api() {
         const App = this;
         return {
@@ -434,6 +445,9 @@ class StrandEditorApp {
             Measure(Index) {
                 return App.MeasurePreset(Index);
             },
+            PathCoverage(Index) {
+                return App.MeasurePathCoverage(Index);
+            },
         };
     }
 
@@ -454,6 +468,18 @@ class StrandEditorApp {
         const AtLoop = Read(Loop);
         const Middle = Read(Loop / 2);
         const Summary = Summarise(Zero);
+        const Swing = [];
+        for (let Slot = 0; Slot < 8; Slot++) Swing.push(Summarise(Read((Loop * Slot) / 8)).MeanLuma);
+        const LumaSwing = Math.max(...Swing) - Math.min(...Swing);
+        // 📝 With every layer hidden the frame is only the background; a black scene must read zero everywhere.
+        const Visibility = Scene.Layers.map((Layer) => Layer.Visible);
+        Scene.Layers.forEach((Layer) => {
+            Layer.Visible = false;
+        });
+        const BackgroundPeak = MaxChannel(Read(0));
+        Scene.Layers.forEach((Layer, Position) => {
+            Layer.Visible = Visibility[Position];
+        });
 
         let TextEffect = 0;
         const TextLayers = Scene.Layers.filter((Layer) => Layer.Mechanism === 'Text');
@@ -488,9 +514,73 @@ class StrandEditorApp {
             HasText: TextLayers.length > 0,
             TextEffect,
             DimmedMax: Dimmed.MaxChannel,
+            BackgroundPeak,
+            LumaSwing,
             Cost: EstimateCost(Scene),
             Errors: this.Errors.slice(),
             DataUrl,
+        };
+    }
+    // 📝 Trail check: renders the first trail layer alone, then counts how many of its bright pixels lie within ten pixels
+    //    of the scene path as the camera projects it. A trail that rides the path scores close to one.
+    MeasurePathCoverage(Index) {
+        this.LoadPreset(Index);
+        this.Timeline.Playing = false;
+        const Scene = this.Scene;
+        const Layer = Scene.Layers.find((Member) => Member.Mechanism === 'Strands' && Member.Shape === 'Trail');
+        if (!Layer) return null;
+        const Visibility = Scene.Layers.map((Member) => Member.Visible);
+        const Glow = Scene.Post.Glow;
+        Scene.Layers.forEach((Member) => {
+            Member.Visible = Member === Layer;
+        });
+        Scene.Post.Glow = 0;
+        this.Renderer.Draw(Scene, 0.37 * Scene.Playback.LoopSeconds);
+        const Pixels = this.Renderer.ReadPixels();
+        Scene.Layers.forEach((Member, Position) => {
+            Member.Visible = Visibility[Position];
+        });
+        Scene.Post.Glow = Glow;
+
+        // 📝 Same transform as the shader: local path point scaled, rotated (column-major), then placed, then projected.
+        const View = CameraMatrices(Scene.Camera, Scene.Width / Scene.Height).ViewProjection;
+        const Rotation = Mat3FromEulerDegrees(Layer.Rotation[0], Layer.Rotation[1], Layer.Rotation[2]);
+        const Table = SamplePath(Scene.Path.Shape, Scene.Path.Size, 2048);
+        const Projected = [];
+        for (let Sample = 0; Sample < Table.Count; Sample++) {
+            const X = Table.Samples[Sample * 4] * Layer.Scale;
+            const Y = Table.Samples[Sample * 4 + 1] * Layer.Scale;
+            const World = [0, 1, 2].map((Row) => Rotation[Row] * X + Rotation[3 + Row] * Y + Layer.Position[Row]);
+            const Clip = [0, 1, 2, 3].map((Row) => View[Row] * World[0] + View[4 + Row] * World[1] + View[8 + Row] * World[2] + View[12 + Row]);
+            Projected.push([(Clip[0] / Clip[3] * 0.5 + 0.5) * Scene.Width, (Clip[1] / Clip[3] * 0.5 + 0.5) * Scene.Height]);
+        }
+
+        const Tolerance = 10;
+        let Lit = 0;
+        let Near = 0;
+        let DistanceSum = 0;
+        for (let Row = 0; Row < Scene.Height; Row++) {
+            for (let Column = 0; Column < Scene.Width; Column++) {
+                const Byte = (Row * Scene.Width + Column) * 4;
+                const Luma = (0.2126 * Pixels[Byte] + 0.7152 * Pixels[Byte + 1] + 0.0722 * Pixels[Byte + 2]) / 255;
+                if (Luma < 0.15) continue;
+                Lit += 1;
+                let Best = Infinity;
+                for (const [X, Y] of Projected) {
+                    const Gap = (X - (Column + 0.5)) ** 2 + (Y - (Row + 0.5)) ** 2;
+                    if (Gap < Best) Best = Gap;
+                }
+                const Distance = Math.sqrt(Best);
+                DistanceSum += Distance;
+                if (Distance <= Tolerance) Near += 1;
+            }
+        }
+        return {
+            Label: PresetList[Index].Label,
+            Lit,
+            Fraction: Lit > 0 ? Near / Lit : 0,
+            MeanDistance: Lit > 0 ? DistanceSum / Lit : 0,
+            Tolerance,
         };
     }
 }

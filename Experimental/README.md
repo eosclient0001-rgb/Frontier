@@ -9,7 +9,7 @@ These browser design studies are separate from the native C++ editor.
 | Radiance Transport — native WebGPU | [Open demo](RadianceIntegrator/index.html) |
 | SolidArc — native CAD in WebAssembly with a Fluid-style workspace | [SolidArc/index.html](SolidArc/index.html) |
 | Frontier Editor — outliner, inspector and sliding Construct menu | [FrontierEditor/index.html](FrontierEditor/index.html) |
-| Strand Editor — WebGL2 light-fibre and ribbon motion editor for automotive ambient UI | [StrandEditor/index.html](StrandEditor/index.html) |
+| Strand Editor — WebGL2 light-fibre, flower and path motion editor for automotive ambient UI, on black | [StrandEditor/index.html](StrandEditor/index.html) |
 | SVG icon gallery | [FrontierEditor/icons.html](FrontierEditor/icons.html) |
 | Collection-icon options | [FrontierEditor/collection-icon-options.html](FrontierEditor/collection-icon-options.html) |
 

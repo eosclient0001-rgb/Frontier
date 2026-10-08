@@ -3,9 +3,9 @@
 //============================================================================================================================================
 // 📦 Builds grouped DOM controls from schema fields and writes every edit back through accessors.
 
-import { CoerceField } from './SceneModel.js';
+import { CoerceField } from './SceneStructure.js';
 
-// 📝 Accessors: Read(Definition) returns the stored value, Write(Definition, Value) stores the coerced value, and the
+// 📝 Accessors: Read(Definition) returns the stored value, Write(Definition, Setting) stores the coerced value, and the
 //    optional Changed() lets the shell refresh anything that summarises the edit (the layer list, the cost note).
 export function BuildInspector(Container, Fields, Accessors) {
     Container.textContent = '';
@@ -38,7 +38,7 @@ function BuildControl(Definition, Accessors) {
     Caption.textContent = Definition.Label;
     Row.append(Caption);
     const Current = Accessors.Read(Definition);
-    switch (Definition.Kind) {
+    switch (Definition.Control) {
         case 'Number':
         case 'Integer':
             Row.append(NumberControl(Definition, Accessors));

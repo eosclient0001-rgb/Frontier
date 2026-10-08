@@ -1,7 +1,7 @@
 //============================================================================================================================================
-//                                                              BROWSERPROOF.MJS
+//                                                              BROWSERPROOF.MJS                                                              
 //============================================================================================================================================
-// 📦 Headless Chromium proof: renders every starter scene, checks loop seams, motion, text and brightness headroom, and saves the frames.
+// 📦 Headless Chromium proof: renders every starter scene, checks black backgrounds, loop seams, pulses, trails on their paths, text and brightness headroom, and saves the frames.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chromium from '@sparticuz/chromium';
 import puppeteer from 'puppeteer-core';
+import { BuildPreset, PresetList } from '../Source/Presets.js';
 
 const Here = path.dirname(fileURLToPath(import.meta.url));
 const Root = path.resolve(Here, '..');
@@ -17,9 +18,11 @@ const Repo = path.resolve(Root, '..', '..');
 const Output = path.resolve(process.argv[2] ?? path.join(Repo, 'VisualProof', 'StrandEditor'));
 
 // 📝 Thresholds are mean absolute differences on the 0..255 byte scale between frames one sixtieth of a second apart.
+//    Background and path limits are measured on frames with every other layer hidden, so they read the object alone.
 const Limits = {
     ExactWrap: 0.05, ContinuityRatio: 1.5, MaximumStep: 30, MotionStep: 0.5, TextStep: 0.05,
-    MinimumLuma: 0.01, MaximumLuma: 0.7, DimHeadroom: 1.5,
+    MinimumLuma: 0.01, MaximumLuma: 0.7, DimHeadroom: 1.5, BackgroundPeakMaximum: 0,
+    LumaSwingMinimum: 0.002, PathFractionMinimum: 0.9, PathPixelsMinimum: 500,
 };
 const MimeTypes = {
     '.html': 'text/html; charset=utf-8',
@@ -87,7 +90,8 @@ async function Main() {
         await Page.waitForFunction(() => Boolean(window.StrandEditor && window.StrandEditor.Ready), { timeout: 120000 });
 
         const Labels = await Page.evaluate(() => window.StrandEditor.PresetLabels);
-        Check(Lines, Failures, Labels.length === 5, 'five starter scenes are offered: ' + Labels.join(', '));
+        Check(Lines, Failures, Labels.length === 8 && PresetList.length === 8,
+            'eight starter scenes are offered: ' + Labels.join(', '));
 
         for (let Index = 0; Index < Labels.length; Index++) {
             const Result = await Page.evaluate((Position) => window.StrandEditor.Measure(Position), Index);
@@ -95,12 +99,21 @@ async function Main() {
             const Bytes = Buffer.from(Result.DataUrl.split(',')[1], 'base64');
             fs.writeFileSync(path.join(Output, Slug + '.png'), Bytes);
             Images.push({ File: Slug + '.png', Sha256: Digest(Bytes), Bytes: Bytes.length });
+            const Scene = BuildPreset(Index);
+            const Pulsing = Scene.Layers.some((Layer) => Layer.Mechanism === 'Strands' && Layer.PulseRate > 0);
+            const Trailing = Scene.Layers.some((Layer) => Layer.Shape === 'Trail');
+            let Path = null;
+            if (Trailing) {
+                Path = await Page.evaluate((Position) => window.StrandEditor.PathCoverage(Position), Index);
+            }
             Measurements.push({
                 Label: Result.Label, Width: Result.Width, Height: Result.Height, MeanLuma: Result.Summary.MeanLuma,
                 MaxChannel: Result.Summary.MaxChannel, BrightShare: Result.Summary.BrightShare,
                 ForwardStep: Result.ForwardStep, WrapStep: Result.WrapStep, MidDifference: Result.MidDifference,
                 TextEffect: Result.TextEffect, DimmedMax: Result.DimmedMax, HasText: Result.HasText,
-                ExactWrap: Result.ExactWrap,
+                ExactWrap: Result.ExactWrap, BackgroundPeak: Result.BackgroundPeak, LumaSwing: Result.LumaSwing,
+                Pulsing, Trailing, PathFraction: Path ? Path.Fraction : null, PathLit: Path ? Path.Lit : null,
+                PathMeanDistance: Path ? Path.MeanDistance : null,
                 Vertices: Result.Cost.Vertices, Dust: Result.Cost.Dust,
             });
             const Name = Result.Label;
@@ -108,6 +121,8 @@ async function Main() {
             Check(Lines, Failures, Result.Errors.length === 0, Name + ': editor reports no errors');
             Check(Lines, Failures, Luma >= Limits.MinimumLuma && Luma <= Limits.MaximumLuma,
                 Name + ': mean luma ' + Luma.toFixed(3) + ' inside [' + Limits.MinimumLuma + ', ' + Limits.MaximumLuma + ']');
+            Check(Lines, Failures, Result.BackgroundPeak <= Limits.BackgroundPeakMaximum,
+                Name + ': with every layer hidden the frame is black (peak ' + Result.BackgroundPeak + ' of 255)');
             Check(Lines, Failures, Result.ExactWrap <= Limits.ExactWrap,
                 Name + ': the frame at the loop length equals frame 0 (difference ' + Result.ExactWrap.toFixed(3) + ')');
             Check(Lines, Failures, Result.WrapStep <= Limits.ContinuityRatio * Math.max(Result.ForwardStep, 0.5),
@@ -117,6 +132,15 @@ async function Main() {
                 Name + ': no teleporting, one-frame step ' + Result.ForwardStep.toFixed(2) + ' (limit ' + Limits.MaximumStep + ')');
             Check(Lines, Failures, Result.MidDifference >= Limits.MotionStep,
                 Name + ': motion present, half-loop difference ' + Result.MidDifference.toFixed(2) + ' (minimum ' + Limits.MotionStep + ')');
+            if (Pulsing) {
+                Check(Lines, Failures, Result.LumaSwing >= Limits.LumaSwingMinimum,
+                    Name + ': pulses are visible, mean luma swings ' + Result.LumaSwing.toFixed(4) + ' over one loop (minimum ' + Limits.LumaSwingMinimum + ')');
+            }
+            if (Path) {
+                Check(Lines, Failures, Path.Fraction >= Limits.PathFractionMinimum && Path.Lit >= Limits.PathPixelsMinimum,
+                    Name + ': ' + (Path.Fraction * 100).toFixed(1) + '% of ' + Path.Lit.toLocaleString('en-US')
+                    + ' bright trail pixels lie within ' + Path.Tolerance + ' px of the projected path (mean ' + Path.MeanDistance.toFixed(1) + ' px)');
+            }
             if (Result.HasText) {
                 Check(Lines, Failures, Result.TextEffect > Limits.TextStep,
                     Name + ': text layer draws, mean change ' + Result.TextEffect.toFixed(2) + ' when hidden');

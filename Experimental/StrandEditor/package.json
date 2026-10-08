@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "WebGL2 light-fibre and ribbon motion editor for automotive ambient UI.",
+  "description": "WebGL2 light-fibre, flower and path motion editor for automotive ambient UI, on black.",
   "scripts": {
-    "test": "node --test Tests/LinearAlgebra.test.mjs Tests/SceneModel.test.mjs Tests/Presets.test.mjs",
-    "proof": "node Tests/BrowserProof.mjs",
+    "test": "node --test Checks/LinearAlgebraChecks.mjs Checks/SceneStructureChecks.mjs Checks/PresetsChecks.mjs Checks/PathSpecificationChecks.mjs Checks/PulseSpecificationChecks.mjs",
+    "proof": "node Checks/BrowserProof.mjs",
     "serve": "python3 -m http.server 8080"
   },
   "devDependencies": {

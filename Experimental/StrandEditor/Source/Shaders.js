@@ -50,11 +50,59 @@ uniform vec3 ModelPosition;
 uniform float ModelScale;
 uniform mat4 ViewProjection;
 uniform vec3 CameraPosition;
+uniform int FollowPath;
+uniform int FlowerCount;
+uniform int Petals;
+uniform float Cup;
+uniform float TrailLength;
+uniform int PulseRate;
+uniform float PulseDepth;
+uniform int PulseShape;
+uniform int PathSamples;
+uniform highp sampler2D PathTexture;
+`;
+
+// 📝 Pulse curves are periodic in the loop, so a pulse lands on the same brightness at the seam. Shapes: 0 Breathe is an
+//    eased sine that rests at the bottom and crests mid-cycle; 1 Heartbeat is two short beats then rest; 2 Ripple uses
+//    the Breathe curve with each fibre's cycle delayed by its arc position, so the pulse runs outward from the root.
+export const PulseChunk = `
+const float Tau = 6.283185307;
+
+float PeriodicGap(float First, float Second)
+{
+    float Gap = abs(fract(First) - fract(Second));
+    return min(Gap, 1.0 - Gap);
+}
+
+float PulseLevel(float Cycle)
+{
+    if (PulseShape == 1)
+    {
+        float FirstBeat = exp(-pow(PeriodicGap(Cycle, 0.10) / 0.045, 2.0));
+        float SecondBeat = 0.55 * exp(-pow(PeriodicGap(Cycle, 0.27) / 0.055, 2.0));
+        return clamp(FirstBeat + SecondBeat, 0.0, 1.0);
+    }
+    return 0.5 - 0.5 * cos(Tau * Cycle);
+}
+
+// 📝 Brightness factor for a fibre at arc position Along. Depth 0 leaves the layer unchanged; depth 1 swings from dark to full.
+float PulseFactorAt(float Along)
+{
+    if (PulseRate == 0 || PulseDepth <= 0.0) return 1.0;
+    float Phase = float(PulseRate) * LoopFraction - (PulseShape == 2 ? Along : 0.0);
+    return 1.0 - PulseDepth + PulseDepth * PulseLevel(fract(Phase));
+}
+
+// 📝 Flower heads open with the same pulse, delayed by head index, so a chain of blooms opens in sequence.
+float FlowerOpening(float Flower)
+{
+    if (PulseRate == 0) return 0.0;
+    return PulseDepth * PulseLevel(fract(float(PulseRate) * LoopFraction - Flower / float(FlowerCount)));
+}
 `;
 
 // 📝 Every time term is an integer multiple of the loop phase, so each animation repeats exactly at LoopSeconds.
 export const CurveChunk = `
-const float Tau = 6.283185307;
 
 vec3 BezierAt(float S, float Id)
 {
@@ -105,11 +153,75 @@ vec3 WaveAt(float S, float Id)
     return vec3(Along, Across * SheetWidth, Lift);
 }
 
+// 📝 The path table holds the closed curve at equal arc length, so Fraction is the share of the path travelled and the
+//    speed along it is even. Blend is linear between samples, and the last sample wraps to the first.
+vec3 PathPointAt(float Fraction)
+{
+    float Position = fract(Fraction) * float(PathSamples);
+    int Index = clamp(int(floor(Position)), 0, PathSamples - 1);
+    int Next = Index + 1 < PathSamples ? Index + 1 : 0;
+    float Blend = Position - float(Index);
+    vec3 From = texelFetch(PathTexture, ivec2(Index, 0), 0).xyz;
+    vec3 To = texelFetch(PathTexture, ivec2(Next, 0), 0).xyz;
+    return mix(From, To, Blend);
+}
+
+vec3 PathTangentAt(float Fraction)
+{
+    float Step = 1.0 / float(PathSamples);
+    vec3 Span = PathPointAt(Fraction + Step) - PathPointAt(Fraction - Step);
+    return length(Span) > 1e-7 ? normalize(Span) : vec3(1.0, 0.0, 0.0);
+}
+
+float FlowerOf(float Id)
+{
+    return floor(mod(Id, float(FlowerCount)));
+}
+
+// 📝 A flower is a root cluster with petal fibres. Each fibre runs from the root to a rim whose radius follows the petal
+//    lobes, curls by Ruffle, bends into a cup by Cup, and opens and closes with the flower's pulse.
+vec3 FlowerAt(float S, float Id)
+{
+    float Lobes = float(Petals);
+    float Petal = floor(Unit(Id, 2.0) * Lobes);
+    float Theta = Tau * (Petal + 0.5 + 0.8 * (Unit(Id, 6.0) - 0.5)) / Lobes;
+    float Lobe = pow(abs(sin(0.5 * Lobes * Theta)), 0.5);
+    float Rim = Length * (0.45 + 0.55 * Lobe) * (1.0 + 0.3 * FlowerOpening(FlowerOf(Id)));
+    float Root = Spread * sqrt(Unit(Id, 3.0));
+    float K = max(1.0, floor(Frequency + 0.5));
+    float Wt = Tau * LoopFraction * float(Harmonic);
+    float Radius = mix(Root, Rim, S) + Amplitude * S * sin(Tau * K * S + Tau * Unit(Id, 4.0) + Wt);
+    float Angle = Theta + 0.35 * Ruffle * sin(3.14159265 * S) * (2.0 * Unit(Id, 5.0) - 1.0);
+    float Lift = Cup * Length * S * S * (0.6 + 0.4 * Unit(Id, 7.0));
+    return vec3(Radius * cos(Angle), Radius * sin(Angle), Lift);
+}
+
+// 📝 A trail is a bundle of fibres riding the path. Each fibre covers TrailLength of the loop behind its head. Heads share
+//    one phase per flower, so a flower leaves a comet tail, and PhaseSpread spreads the heads into a stream.
+vec3 TrailAt(float S, float Id)
+{
+    float Head = fract(Unit(Id, 9.0) * PhaseSpread / Tau + FlowerOf(Id) / float(FlowerCount) + LoopFraction * float(Harmonic));
+    float Arc = fract(Head - TrailLength * (1.0 - S));
+    vec3 Axis = PathTangentAt(Arc);
+    vec3 Side = normalize(cross(Axis, vec3(0.0, 0.0, 1.0)));
+    float Angle = Tau * Unit(Id, 3.0);
+    float Radius = Spread * sqrt(Unit(Id, 4.0));
+    float K = max(1.0, floor(Frequency + 0.5));
+    float Wobble = Amplitude * S * sin(Tau * K * S + Tau * Unit(Id, 5.0) + Tau * LoopFraction * float(Harmonic));
+    return PathPointAt(Arc) + (Side * cos(Angle) + vec3(0.0, 0.0, sin(Angle))) * Radius + Side * Wobble;
+}
+
+// 📝 Every shape returns local coordinates. Ride-the-path layers add the path point of their flower, so one world transform
+//    serves all shapes. Trails already include their path position.
 vec3 CurveAt(float S, float Id)
 {
-    if (Shape == 1) return BloomAt(S, Id);
-    if (Shape == 2) return WaveAt(S, Id);
-    return BezierAt(S, Id);
+    if (Shape == 4) return TrailAt(S, Id);
+    vec3 Local = BezierAt(S, Id);
+    if (Shape == 1) Local = BloomAt(S, Id);
+    else if (Shape == 2) Local = WaveAt(S, Id);
+    else if (Shape == 3) Local = FlowerAt(S, Id);
+    if (FollowPath == 1) Local += PathPointAt(LoopFraction * float(Harmonic) + FlowerOf(Id) / float(FlowerCount));
+    return Local;
 }
 
 // 📝 The light head of a strand moves along it once per pulse; sparks and streaks read the same head.
@@ -163,7 +275,7 @@ in float VAcross;
 in float VId;
 
 uniform float Intensity;
-uniform float Core;
+uniform float Sharpness;
 uniform float Halo;
 uniform float Baseline;
 uniform float Window;
@@ -177,7 +289,7 @@ out vec4 OutColour;
 void main()
 {
     float Across2 = VAcross * VAcross;
-    float Profile = exp(-Across2 * Core) + Halo * exp(-Across2 * Core * 0.08);
+    float Profile = exp(-Across2 * Sharpness) + Halo * exp(-Across2 * Sharpness * 0.08);
     float Head = fract(Unit(VId, 9.0) + float(WindowCycles) * LoopFraction);
     float Behind = fract(Head - VAlong);
     float Front = smoothstep(0.0, 0.05, Behind);
@@ -187,7 +299,7 @@ void main()
     vec3 Along = mix(ColourStart, ColourEnd, VAlong);
     vec3 Tint = mix(Along, ColourAccent, AccentMix * Unit(VId, 12.0));
     float Vary = 0.4 + 0.9 * Unit(VId, 13.0);
-    OutColour = vec4(Tint * (Intensity * Vary * Profile * Lit * Ends), 1.0);
+    OutColour = vec4(Tint * (Intensity * Vary * Profile * Lit * Ends * PulseFactorAt(VAlong)), 1.0);
 }
 `;
 
@@ -217,7 +329,7 @@ void main()
     gl_Position = Clip;
     float Depth = max(Clip.w, 0.001);
     gl_PointSize = clamp(SparkSize * ModelScale * ProjectionScale / Depth, 1.0, 48.0);
-    VColour = mix(ColourStart, ColourEnd, S) * SparkBrightness * (0.6 + 0.8 * Unit(Id, 10.0));
+    VColour = mix(ColourStart, ColourEnd, S) * SparkBrightness * (0.6 + 0.8 * Unit(Id, 10.0)) * PulseFactorAt(S);
 }
 `;
 
@@ -230,8 +342,8 @@ void main()
 {
     vec2 P = gl_PointCoord * 2.0 - 1.0;
     float R2 = dot(P, P);
-    float Core = exp(-R2 * 7.0) * (1.0 - smoothstep(0.7, 1.0, R2));
-    OutColour = vec4(VColour * Core, 1.0);
+    float Disc = exp(-R2 * 7.0) * (1.0 - smoothstep(0.7, 1.0, R2));
+    OutColour = vec4(VColour * Disc, 1.0);
 }
 `;
 
@@ -252,12 +364,12 @@ out float VBokeh;
 void main()
 {
     float Id = float(gl_VertexID);
-    vec3 Base = (vec3(Unit(Id, 1.0), Unit(Id, 2.0), Unit(Id, 3.0)) - 0.5) * (2.0 * ParticleSpread);
+    vec3 Origin = (vec3(Unit(Id, 1.0), Unit(Id, 2.0), Unit(Id, 3.0)) - 0.5) * (2.0 * ParticleSpread);
     float Wt = Tau * LoopFraction * float(ParticleHarmonic);
     float Angle = Tau * Unit(Id, 4.0);
     vec3 Drift = vec3(sin(Wt + Angle), sin(2.0 * Wt + 1.7 * Angle), cos(Wt + 0.6 * Angle))
                * (0.25 + 0.75 * Unit(Id, 5.0)) * (0.08 * ParticleSpread * ParticleDrift);
-    vec3 World = ModelRotation * ((Base + Drift) * ModelScale) + ModelPosition;
+    vec3 World = ModelRotation * ((Origin + Drift) * ModelScale) + ModelPosition;
     vec4 Clip = ViewProjection * vec4(World, 1.0);
     float Depth = max(Clip.w, 0.001);
     float IsBokeh = Unit(Id, 6.0) < Bokeh ? 1.0 : 0.0;
@@ -400,7 +512,8 @@ void main()
     float Dark = 1.0 - Vignette * smoothstep(0.3, 0.95, length(P));
     float Noise = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
     // 📝 Output brightness is the last multiplication, so no frame can exceed it, grain included.
-    Mapped = Mapped * Dark + Noise * (Grain + 1.0 / 255.0);
+    // 📝 Grain multiplies the frame, so true black stays exactly zero and no dither lifts the background.
+    Mapped = Mapped * Dark * (1.0 + 2.0 * Grain * Noise);
     OutColour = vec4(clamp(Mapped * Brightness, 0.0, 1.0), 1.0);
 }
 `;

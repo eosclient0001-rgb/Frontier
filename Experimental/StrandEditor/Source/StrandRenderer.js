@@ -6,13 +6,17 @@
 import { HexToLinear, Mat3FromEulerDegrees } from './LinearAlgebra.js';
 import { CameraMatrices } from './OrbitCamera.js';
 import { RasterizeText } from './TextOverlay.js';
+import { PathSampleCount, SamplePath } from './PathSpecification.js';
 import * as Shaders from './Shaders.js';
 
-const ShapeIndexes = { Bezier: 0, Bloom: 1, Wave: 2 };
+const ShapeIndexes = { Bezier: 0, Bloom: 1, Wave: 2, Flower: 3, Trail: 4 };
+const PulseShapeIndexes = { Breathe: 0, Heartbeat: 1, Ripple: 2 };
+const PathTextureUnit = 5;
 
 // 📝 Names that the GLSL declares as int. Everything else numeric is a float uniform.
 const IntegerNames = new Set([
     'Shape', 'StrandCount', 'SegmentCount', 'Seed', 'Harmonic', 'WindowCycles', 'ParticleHarmonic',
+    'FollowPath', 'FlowerCount', 'Petals', 'PulseRate', 'PulseShape', 'PathSamples', 'PathTexture',
     'Mode', 'SceneTex', 'GlowA', 'GlowB', 'GlowC', 'GlowD', 'Source', 'TextTex',
 ]);
 
@@ -20,8 +24,8 @@ const GlowLevelCount = 4;
 const BrightThreshold = 0.55;
 const TextCacheLimit = 12;
 
-function WrapFraction(Value) {
-    return Value - Math.floor(Value);
+function WrapFraction(Setting) {
+    return Setting - Math.floor(Setting);
 }
 
 function CheckFramebuffer(Gl) {
@@ -78,6 +82,8 @@ export class StrandRenderer {
         this.Programs = new Map();
         this.Targets = null;
         this.TextTextures = new Map();
+        this.PathTexture = null;
+        this.PathKey = '';
         this.VertexArray = Gl.createVertexArray();
         this.DrawCalls = 0;
         this.VertexCount = 0;
@@ -86,8 +92,8 @@ export class StrandRenderer {
 
     DefineAll() {
         const Head = Shaders.Header;
-        const Shared = Shaders.UniformChunk + Shaders.HashChunk + Shaders.CurveChunk;
-        const Lookup = Shaders.UniformChunk + Shaders.HashChunk;
+        const Shared = Shaders.UniformChunk + Shaders.HashChunk + Shaders.PulseChunk + Shaders.CurveChunk;
+        const Lookup = Shaders.UniformChunk + Shaders.HashChunk + Shaders.PulseChunk;
         this.Define('Strand', Head + Shared + Shaders.StrandVertex, Head + Lookup + Shaders.StrandFragment);
         this.Define('Spark', Head + Shared + Shaders.SparkVertex, Head + Lookup + Shaders.SparkFragment);
         this.Define('Particle', Head + Shared + Shaders.ParticleVertex, Head + Shaders.ParticleFragment);
@@ -129,7 +135,7 @@ export class StrandRenderer {
         return Pack;
     }
 
-    SetUniform(Pack, Name, Value) {
+    SetUniform(Pack, Name, Setting) {
         const Gl = this.Gl;
         let Location = Pack.Locations.get(Name);
         if (Location === undefined) {
@@ -137,17 +143,17 @@ export class StrandRenderer {
             Pack.Locations.set(Name, Location);
         }
         if (Location === null) return;
-        if (typeof Value === 'number') {
-            if (IntegerNames.has(Name)) Gl.uniform1i(Location, Value);
-            else Gl.uniform1f(Location, Value);
+        if (typeof Setting === 'number') {
+            if (IntegerNames.has(Name)) Gl.uniform1i(Location, Setting);
+            else Gl.uniform1f(Location, Setting);
             return;
         }
-        switch (Value.length) {
-            case 2: Gl.uniform2fv(Location, Value); break;
-            case 3: Gl.uniform3fv(Location, Value); break;
-            case 4: Gl.uniform4fv(Location, Value); break;
-            case 9: Gl.uniformMatrix3fv(Location, false, Value); break;
-            case 16: Gl.uniformMatrix4fv(Location, false, Value); break;
+        switch (Setting.length) {
+            case 2: Gl.uniform2fv(Location, Setting); break;
+            case 3: Gl.uniform3fv(Location, Setting); break;
+            case 4: Gl.uniform4fv(Location, Setting); break;
+            case 9: Gl.uniformMatrix3fv(Location, false, Setting); break;
+            case 16: Gl.uniformMatrix4fv(Location, false, Setting); break;
             default: throw new Error('Unsupported uniform length for ' + Name);
         }
     }
@@ -195,6 +201,7 @@ export class StrandRenderer {
         if (this.Canvas.width !== Width) this.Canvas.width = Width;
         if (this.Canvas.height !== Height) this.Canvas.height = Height;
         this.EnsureTargets(Width, Height);
+        this.EnsurePath(Scene.Path);
         this.DrawCalls = 0;
         this.VertexCount = 0;
 
@@ -264,6 +271,22 @@ export class StrandRenderer {
         this.Draw3();
     }
 
+    // 📝 The path is uploaded once per path setting: a 512 x 1 float texture of closed-curve points at equal arc length.
+    EnsurePath(Path) {
+        const Key = Path.Shape + ':' + Path.Size;
+        if (this.PathKey === Key) return;
+        const Gl = this.Gl;
+        const Table = SamplePath(Path.Shape, Path.Size, PathSampleCount);
+        if (!this.PathTexture) this.PathTexture = Gl.createTexture();
+        Gl.bindTexture(Gl.TEXTURE_2D, this.PathTexture);
+        Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_MIN_FILTER, Gl.NEAREST);
+        Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_MAG_FILTER, Gl.NEAREST);
+        Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_S, Gl.CLAMP_TO_EDGE);
+        Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_T, Gl.CLAMP_TO_EDGE);
+        Gl.texImage2D(Gl.TEXTURE_2D, 0, Gl.RGBA32F, PathSampleCount, 1, 0, Gl.RGBA, Gl.FLOAT, Table.Samples);
+        this.PathKey = Key;
+    }
+
     ApplyCurveUniforms(Pack, Layer, Frame) {
         this.SetUniform(Pack, 'Shape', ShapeIndexes[Layer.Shape]);
         this.SetUniform(Pack, 'StrandCount', Layer.Strands);
@@ -288,6 +311,17 @@ export class StrandRenderer {
         this.SetUniform(Pack, 'ViewProjection', Frame.ViewProjection);
         this.SetUniform(Pack, 'CameraPosition', Frame.CameraPosition);
         this.SetUniform(Pack, 'ProjectionScale', Frame.ProjectionScale);
+        this.SetUniform(Pack, 'FollowPath', Layer.FollowPath ? 1 : 0);
+        this.SetUniform(Pack, 'FlowerCount', Layer.Flowers);
+        this.SetUniform(Pack, 'Petals', Layer.Petals);
+        this.SetUniform(Pack, 'Cup', Layer.Cup);
+        this.SetUniform(Pack, 'TrailLength', Layer.TrailLength);
+        this.SetUniform(Pack, 'PulseRate', Layer.PulseRate);
+        this.SetUniform(Pack, 'PulseDepth', Layer.PulseDepth);
+        this.SetUniform(Pack, 'PulseShape', PulseShapeIndexes[Layer.PulseShape]);
+        this.SetUniform(Pack, 'PathSamples', PathSampleCount);
+        this.BindTexture(PathTextureUnit, this.PathTexture);
+        this.SetUniform(Pack, 'PathTexture', PathTextureUnit);
     }
 
     DrawStrands(Layer, Frame) {
@@ -297,7 +331,7 @@ export class StrandRenderer {
         this.SetUniform(Pack, 'Width', Layer.Width);
         this.SetUniform(Pack, 'Taper', Layer.Taper);
         this.SetUniform(Pack, 'Intensity', Layer.Intensity);
-        this.SetUniform(Pack, 'Core', Layer.Core);
+        this.SetUniform(Pack, 'Sharpness', Layer.Sharpness);
         this.SetUniform(Pack, 'Halo', Layer.Halo);
         this.SetUniform(Pack, 'Baseline', Layer.Baseline);
         this.SetUniform(Pack, 'Window', Layer.Window);

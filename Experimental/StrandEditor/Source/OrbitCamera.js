@@ -21,8 +21,8 @@ export function CameraMatrices(Camera, Aspect) {
     return { ViewProjection: Mat4Multiply(Projection, View), Position: Eye };
 }
 
-function WrapDegrees(Value) {
-    return ((Value + 540) % 360) - 180;
+function WrapDegrees(Setting) {
+    return ((Setting + 540) % 360) - 180;
 }
 
 export function ApplyDrag(Camera, DeltaX, DeltaY) {

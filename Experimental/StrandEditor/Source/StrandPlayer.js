@@ -3,7 +3,7 @@
 //============================================================================================================================================
 // 📦 Full-window loop player for a saved scene, the entry point play.html uses to embed a scene.
 
-import { SceneFromJson } from './SceneModel.js';
+import { SceneFromJson } from './SceneStructure.js';
 import { BuildPreset } from './Presets.js';
 import { StrandRenderer } from './StrandRenderer.js';
 import { PlaybackTimeline } from './PlaybackTimeline.js';

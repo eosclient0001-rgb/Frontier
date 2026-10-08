@@ -1,52 +1,94 @@
 StrandEditor browser proof
-Generated: 2026-10-08T11:54:40.413Z
+Generated: 2026-10-08T12:47:19.267Z
 Engine: headless Chromium with WebGL2 through SwiftShader (no GPU); WebGPU is not exposed by this build.
-Limits: {"ExactWrap":0.05,"ContinuityRatio":1.5,"MaximumStep":30,"MotionStep":0.5,"TextStep":0.05,"MinimumLuma":0.01,"MaximumLuma":0.7,"DimHeadroom":1.5}
+Limits: {"ExactWrap":0.05,"ContinuityRatio":1.5,"MaximumStep":30,"MotionStep":0.5,"TextStep":0.05,"MinimumLuma":0.01,"MaximumLuma":0.7,"DimHeadroom":1.5,"BackgroundPeakMaximum":0,"LumaSwingMinimum":0.002,"PathFractionMinimum":0.9,"PathPixelsMinimum":500}
 
-PASS  five starter scenes are offered: Organic fibres, Emerald sweep, Radial bloom, Ember ribbons, Sheet lines
+PASS  eight starter scenes are offered: Organic fibres, Emerald sweep, Radial bloom, Ember ribbons, Sheet lines, Flower bloom, Flower path, Path weave
 PASS  Organic fibres: editor reports no errors
-PASS  Organic fibres: mean luma 0.266 inside [0.01, 0.7]
+PASS  Organic fibres: mean luma 0.053 inside [0.01, 0.7]
+PASS  Organic fibres: with every layer hidden the frame is black (peak 0 of 255)
 PASS  Organic fibres: the frame at the loop length equals frame 0 (difference 0.000)
-PASS  Organic fibres: the wrap is no more abrupt than ordinary motion (across the wrap 19.96, forward 20.08)
-PASS  Organic fibres: no teleporting, one-frame step 20.08 (limit 30)
-PASS  Organic fibres: motion present, half-loop difference 25.07 (minimum 0.5)
-PASS  Organic fibres: text layer draws, mean change 1.03 when hidden
+PASS  Organic fibres: the wrap is no more abrupt than ordinary motion (across the wrap 15.23, forward 15.30)
+PASS  Organic fibres: no teleporting, one-frame step 15.30 (limit 30)
+PASS  Organic fibres: motion present, half-loop difference 16.52 (minimum 0.5)
+PASS  Organic fibres: pulses are visible, mean luma swings 0.0139 over one loop (minimum 0.002)
+PASS  Organic fibres: text layer draws, mean change 1.69 when hidden
 PASS  Organic fibres: output brightness 0.5 caps the frame at 128 of 255
 PASS  Organic fibres: 312,000 strand vertices and 900 dust inside the budget
 PASS  Emerald sweep: editor reports no errors
-PASS  Emerald sweep: mean luma 0.109 inside [0.01, 0.7]
+PASS  Emerald sweep: mean luma 0.033 inside [0.01, 0.7]
+PASS  Emerald sweep: with every layer hidden the frame is black (peak 0 of 255)
 PASS  Emerald sweep: the frame at the loop length equals frame 0 (difference 0.000)
-PASS  Emerald sweep: the wrap is no more abrupt than ordinary motion (across the wrap 11.43, forward 11.46)
-PASS  Emerald sweep: no teleporting, one-frame step 11.46 (limit 30)
-PASS  Emerald sweep: motion present, half-loop difference 16.82 (minimum 0.5)
-PASS  Emerald sweep: text layer draws, mean change 0.56 when hidden
+PASS  Emerald sweep: the wrap is no more abrupt than ordinary motion (across the wrap 4.42, forward 4.40)
+PASS  Emerald sweep: no teleporting, one-frame step 4.40 (limit 30)
+PASS  Emerald sweep: motion present, half-loop difference 6.32 (minimum 0.5)
+PASS  Emerald sweep: pulses are visible, mean luma swings 0.0027 over one loop (minimum 0.002)
+PASS  Emerald sweep: text layer draws, mean change 0.64 when hidden
 PASS  Emerald sweep: output brightness 0.5 caps the frame at 128 of 255
 PASS  Emerald sweep: 52,800 strand vertices and 40 dust inside the budget
 PASS  Radial bloom: editor reports no errors
-PASS  Radial bloom: mean luma 0.151 inside [0.01, 0.7]
+PASS  Radial bloom: mean luma 0.046 inside [0.01, 0.7]
+PASS  Radial bloom: with every layer hidden the frame is black (peak 0 of 255)
 PASS  Radial bloom: the frame at the loop length equals frame 0 (difference 0.000)
-PASS  Radial bloom: the wrap is no more abrupt than ordinary motion (across the wrap 3.20, forward 3.17)
-PASS  Radial bloom: no teleporting, one-frame step 3.17 (limit 30)
-PASS  Radial bloom: motion present, half-loop difference 12.18 (minimum 0.5)
-PASS  Radial bloom: output brightness 0.5 caps the frame at 129 of 255
+PASS  Radial bloom: the wrap is no more abrupt than ordinary motion (across the wrap 3.09, forward 3.04)
+PASS  Radial bloom: no teleporting, one-frame step 3.04 (limit 30)
+PASS  Radial bloom: motion present, half-loop difference 7.85 (minimum 0.5)
+PASS  Radial bloom: pulses are visible, mean luma swings 0.0197 over one loop (minimum 0.002)
+PASS  Radial bloom: output brightness 0.5 caps the frame at 128 of 255
 PASS  Radial bloom: 302,400 strand vertices and 40 dust inside the budget
 PASS  Ember ribbons: editor reports no errors
-PASS  Ember ribbons: mean luma 0.127 inside [0.01, 0.7]
+PASS  Ember ribbons: mean luma 0.014 inside [0.01, 0.7]
+PASS  Ember ribbons: with every layer hidden the frame is black (peak 0 of 255)
 PASS  Ember ribbons: the frame at the loop length equals frame 0 (difference 0.000)
-PASS  Ember ribbons: the wrap is no more abrupt than ordinary motion (across the wrap 1.80, forward 1.79)
-PASS  Ember ribbons: no teleporting, one-frame step 1.79 (limit 30)
-PASS  Ember ribbons: motion present, half-loop difference 12.71 (minimum 0.5)
-PASS  Ember ribbons: output brightness 0.5 caps the frame at 129 of 255
+PASS  Ember ribbons: the wrap is no more abrupt than ordinary motion (across the wrap 1.91, forward 1.90)
+PASS  Ember ribbons: no teleporting, one-frame step 1.90 (limit 30)
+PASS  Ember ribbons: motion present, half-loop difference 5.82 (minimum 0.5)
+PASS  Ember ribbons: pulses are visible, mean luma swings 0.0023 over one loop (minimum 0.002)
+PASS  Ember ribbons: output brightness 0.5 caps the frame at 128 of 255
 PASS  Ember ribbons: 133,200 strand vertices and 300 dust inside the budget
 PASS  Sheet lines: editor reports no errors
-PASS  Sheet lines: mean luma 0.069 inside [0.01, 0.7]
+PASS  Sheet lines: mean luma 0.013 inside [0.01, 0.7]
+PASS  Sheet lines: with every layer hidden the frame is black (peak 0 of 255)
 PASS  Sheet lines: the frame at the loop length equals frame 0 (difference 0.000)
-PASS  Sheet lines: the wrap is no more abrupt than ordinary motion (across the wrap 7.63, forward 7.66)
-PASS  Sheet lines: no teleporting, one-frame step 7.66 (limit 30)
-PASS  Sheet lines: motion present, half-loop difference 14.66 (minimum 0.5)
+PASS  Sheet lines: the wrap is no more abrupt than ordinary motion (across the wrap 3.85, forward 3.91)
+PASS  Sheet lines: no teleporting, one-frame step 3.91 (limit 30)
+PASS  Sheet lines: motion present, half-loop difference 6.20 (minimum 0.5)
+PASS  Sheet lines: pulses are visible, mean luma swings 0.0046 over one loop (minimum 0.002)
 PASS  Sheet lines: output brightness 0.5 caps the frame at 126 of 255
-PASS  Sheet lines: 187,200 strand vertices and 1400 dust inside the budget
+PASS  Sheet lines: 108,000 strand vertices and 1400 dust inside the budget
+PASS  Flower bloom: editor reports no errors
+PASS  Flower bloom: mean luma 0.033 inside [0.01, 0.7]
+PASS  Flower bloom: with every layer hidden the frame is black (peak 0 of 255)
+PASS  Flower bloom: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Flower bloom: the wrap is no more abrupt than ordinary motion (across the wrap 2.75, forward 2.71)
+PASS  Flower bloom: no teleporting, one-frame step 2.71 (limit 30)
+PASS  Flower bloom: motion present, half-loop difference 6.97 (minimum 0.5)
+PASS  Flower bloom: pulses are visible, mean luma swings 0.0456 over one loop (minimum 0.002)
+PASS  Flower bloom: output brightness 0.5 caps the frame at 127 of 255
+PASS  Flower bloom: 403,200 strand vertices and 260 dust inside the budget
+PASS  Flower path: editor reports no errors
+PASS  Flower path: mean luma 0.017 inside [0.01, 0.7]
+PASS  Flower path: with every layer hidden the frame is black (peak 0 of 255)
+PASS  Flower path: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Flower path: the wrap is no more abrupt than ordinary motion (across the wrap 3.50, forward 3.46)
+PASS  Flower path: no teleporting, one-frame step 3.46 (limit 30)
+PASS  Flower path: motion present, half-loop difference 3.87 (minimum 0.5)
+PASS  Flower path: pulses are visible, mean luma swings 0.0072 over one loop (minimum 0.002)
+PASS  Flower path: 100.0% of 15,133 bright trail pixels lie within 10 px of the projected path (mean 2.4 px)
+PASS  Flower path: output brightness 0.5 caps the frame at 126 of 255
+PASS  Flower path: 489,600 strand vertices and 260 dust inside the budget
+PASS  Path weave: editor reports no errors
+PASS  Path weave: mean luma 0.019 inside [0.01, 0.7]
+PASS  Path weave: with every layer hidden the frame is black (peak 0 of 255)
+PASS  Path weave: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Path weave: the wrap is no more abrupt than ordinary motion (across the wrap 2.39, forward 2.43)
+PASS  Path weave: no teleporting, one-frame step 2.43 (limit 30)
+PASS  Path weave: motion present, half-loop difference 2.95 (minimum 0.5)
+PASS  Path weave: pulses are visible, mean luma swings 0.0045 over one loop (minimum 0.002)
+PASS  Path weave: 100.0% of 16,893 bright trail pixels lie within 10 px of the projected path (mean 2.4 px)
+PASS  Path weave: output brightness 0.5 caps the frame at 127 of 255
+PASS  Path weave: 633,600 strand vertices and 500 dust inside the budget
 PASS  every starter scene renders a different frame
 PASS  the browser console reports no errors or warnings (0)
 
-RESULT: PASS (45 checks)
+RESULT: PASS (87 checks)
