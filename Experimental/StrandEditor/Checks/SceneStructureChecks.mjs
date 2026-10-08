@@ -94,9 +94,10 @@ test('hidden layers do not count towards the estimate', () => {
     assert.equal(EstimateCost(Scene).Dust, 0);
 });
 
-test('the schema offers the flower and trail shapes and rejects an unknown shape', () => {
+test('the schema offers the flower, trail and guide shapes and rejects an unknown shape', () => {
     assert.equal(CoerceField(FieldsFor('Strands').find((Field) => Field.Key === 'Shape'), 'Flower'), 'Flower');
     assert.equal(CoerceField(FieldsFor('Strands').find((Field) => Field.Key === 'Shape'), 'Trail'), 'Trail');
+    assert.equal(CoerceField(FieldsFor('Strands').find((Field) => Field.Key === 'Shape'), 'Guide'), 'Guide');
     assert.equal(CoerceField(FieldsFor('Strands').find((Field) => Field.Key === 'Shape'), 'Spiral'), 'Bezier');
 });
 
@@ -110,6 +111,7 @@ test('the pulse rate is a whole number of cycles per loop, clamped between zero 
 test('the pulse shape falls back to Breathe for an unknown name', () => {
     const Shape = FieldsFor('Strands').find((Field) => Field.Key === 'PulseShape');
     assert.equal(CoerceField(Shape, 'Ripple'), 'Ripple');
+    assert.equal(CoerceField(Shape, 'Sweep'), 'Sweep');
     assert.equal(CoerceField(Shape, 'Strobe'), 'Breathe');
 });
 

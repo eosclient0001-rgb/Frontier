@@ -37,7 +37,7 @@ export function Summarise(Pixels) {
 
 // 🔢 Mean absolute difference over the colour channels, on the 0..255 byte scale.
 export function MeanDifference(First, Second) {
-    if (First.length !== Second.length) throw new Error('Frames differ in size');
+    if (First.length !== Second.length) throw new Error('Images differ in size');
     let Sum = 0;
     let Channels = 0;
     for (let Index = 0; Index < First.length; Index += 4) {

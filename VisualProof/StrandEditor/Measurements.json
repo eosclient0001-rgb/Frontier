@@ -216,6 +216,58 @@
     "Dust": 400
   },
   {
+    "Label": "Start transition",
+    "Width": 1920,
+    "Height": 720,
+    "MeanLuma": 0.02450518646397304,
+    "BrightestChannel": 247,
+    "BrightShare": 0.02173683449074074,
+    "ForwardStep": 0.01609399112654321,
+    "WrapStep": 0.025969810956790122,
+    "MidDifference": 23.86428192515432,
+    "TextEffect": 0,
+    "DimmedPeak": 123,
+    "HasText": false,
+    "ExactWrap": 0,
+    "BackgroundPeak": 0,
+    "LumaSwing": 0.09937363937082101,
+    "Pulsing": true,
+    "Trailing": true,
+    "PathFraction": 0.9957378423700392,
+    "PathLit": 57248,
+    "PathMeanDistance": 4.307355486900578,
+    "Vertices": 86016,
+    "Dust": 300
+  },
+  {
+    "Label": "Start transition sweep",
+    "Fractions": [
+      0,
+      0.1,
+      0.2,
+      0.3,
+      0.45,
+      0.6,
+      0.75,
+      0.85,
+      0.95,
+      0.99
+    ],
+    "LitShares": [
+      0,
+      0.01168041087962963,
+      0.02480758101851852,
+      0.038111255787037036,
+      0.0554173900462963,
+      0.0554173900462963,
+      0.0554173900462963,
+      0.05360243055555555,
+      0.044560908564814816,
+      0
+    ],
+    "Plateau": 0.0554173900462963
+  },
+  {
     "Label": "Single fibre probe",
     "Width": 1280,
     "Height": 720,

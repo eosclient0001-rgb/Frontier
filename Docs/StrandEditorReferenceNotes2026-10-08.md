@@ -113,6 +113,59 @@ their path: 96.7 % of 66,082 bright pixels on *Flower path*, 93.4 % of 53,636 on
 **Not settled.** The reference images are not on disk, so every comparison is by eye, not a pixel match. No GPU has run
 these frames, and the proof is SwiftShader only.
 
+## Fourth pass: automotive start transition
+
+**The request.** An automotive LED display with a start transition, "or something". The reading taken is a light strip,
+the kind that runs along a dashboard or door trim. A dot-matrix LED panel is a different renderer. It is an open
+question for the user, not built.
+
+**What the sources show.** Start-up animation is a product feature. One kit describes a custom power-on sequence that
+runs each time the car starts [9]. A welcome animation can end in a colour gradient that sweeps through the interior
+[10]. As the engine starts, the glow lights up along the doors and across the dashboard, and fibre-optic guides follow
+the trim lines [11].
+
+**What was built.**
+- A *Guide* shape. Each fibre lies along the whole scene path, offset by the bundle spread, so the path is the shape.
+  Guides are static; the motion comes from a pulse.
+- A *Sweep* pulse shape. One front runs from the start of the fibre to its end over the first 45 % of the cycle, with
+  the lit part left on behind it and a brighter ridge on the front. The lit part holds to 75 %, then fades, so the next
+  sweep starts from black and the loop closes. Under a sweep, flower heads open in index order.
+- A *Start transition* preset: 1920 × 720, a stadium loop of 6 s. A dim resting glow runs round the loop, a start sweep
+  lights it once per loop, and glints sit above.
+- A *Light guide* Add button. It is a starter with a sweep.
+
+**Seams, found by eye and fixed.** Three defects showed in the browser frames.
+1. The colour gradient did not wrap, so the right end changed hue abruptly. It is now periodic through the seam.
+2. The front's ridge still overlapped the end at the plateau, so the positions either side of the seam differed in
+   brightness. The ridge now dissolves before the end.
+3. The lit part began with a hard edge at the seam. It now fades in over 4 % of the path while the front runs, and it
+   is full once the front has completed the loop.
+The second and third are pinned in Node: a completed sweep matches at its seam, and the fade-in is complete within 4 %.
+The first is checked by eye only.
+
+**Tuning.** The first plateau was almost white and about 70 px thick, which read as a neon ring. Intensity, halo and
+bloom were lowered, and the trim's blue-to-cyan palette was used. A bundle of 56 strands at 0.1 spread keeps the
+individual fibres visible as striations. The first build, with 120 strands at 0.08 and more intensity, read as a solid tube.
+
+**Checks.** `npm test` runs 102 Node checks, up from 88. The sweep curve has its own checks: range, periodicity, dark at
+0 and at 99 %, a lit share that never falls on the rise, a plateau from 45 % to 75 %, a fade after the hold, a ridge that
+is brightest at the front, a seam that matches once complete, and a fade-in at the start. The browser proof measures
+the sweep on the rendered frame, with the other layers hidden and the glow off. It checks that the frame starts dark, rises
+at 10, 20 and 30 %, reaches its plateau by 45 %, fades after its hold, and is dark again by 99 %. The guide's bright
+pixels are checked against the path, as the trails are. The browser proof passes 118 checks with no failures
+(`VisualProof/StrandEditor/Proof.txt`).
+
+**Naming.** The remaining banned identifiers in the Strand Editor were renamed in the same pass: `Header` to
+`VersionLine`, `Blend` to `Ratio`, `Core` to `Line`, `CorePixels` to `SigmaPixels` (it is a Gaussian sigma), `VCore` to
+`VSigma`, `Mapped` to `Toned`, `Table` to `Curve`, `Type` to `Encoding` or `Slot`, `MimeType` to `Codec`, `DataUrl` to
+`PngUrl`, `LastFrameTime` to `PreviousTime`, `CheckFramebuffer` to `ValidateTarget`, `TextCacheLimit` to `TextTextureLimit`,
+`Composite` to `Output`, and the `Shell` class to `Workspace`. Three kinds of name stay: browser and WebGL API names,
+built-ins such as `Map`, `Object` and `Array`, and the legacy keys in `SceneStructureChecks.mjs` (`Core`, `Sharpness`,
+`Width`), which are old file data that the schema must drop.
+
+**Not settled.** A sweep runs one way, from the start of each fibre to its end. A centre-out or bilateral sweep would be
+a different pulse, and it is not built. Every comparison is by eye, and no GPU has run these frames.
+
 ## Sources
 
 1. Creative COW, "Particular trail", Peder Norrby's advice on Aux glow spheres and size over life. https://creativecow.net/forums/thread/particular-trail/
@@ -123,3 +176,6 @@ these frames, and the proof is SwiftShader only.
 6. CarExpert, "Ambient lighting: Beyond just looks", lock and unlock animations, park and drive pulses, welcome and goodbye animations. https://www.carexpert.com.au/car-news/ambient-lighting-beyond-just-looks
 7. CarTipsDaily, "Cars With Ambient Lighting", addressable LEDs and wave-like flowing animations. https://cartipsdaily.com/cars-with-ambient-lighting
 8. Aoonu product listing, ambient light strip with breathing, flashing and gradient modes. https://aoonuauto.com/products/ambient-lighting-car-interior-light-strips-new-advanced-fiber-optic-light
+9. BeastLighting, ambient lighting kits: a custom power-on animation that runs each time the car starts, and customisable startup animations. https://beastlighting.com/
+10. Maxhaust, "Retrofit Ambient Light": a welcome animation, after which a colour gradient sweeps through the interior. https://www.maxhaust.com/en/ambient-light/
+11. A80caidi, "Best Car Ambient Lighting: Everything You Need to Know": the glow lights up along the doors and across the dashboard as the engine starts, and fibre-optic kits run light guides along door panels and trim lines. https://www.a80caidi.com/blogs/blog/best-car-ambient-lighting-everything-you-need-to-know

@@ -1,7 +1,7 @@
 //============================================================================================================================================
 //                                                              BROWSERPROOF.MJS                                                              
 //============================================================================================================================================
-// 📦 Headless Chromium proof: renders every starter scene, checks black backgrounds, loop seams, pulses, trails on their paths, fibre width in pixels, text and brightness headroom, and saves the frames.
+// 📦 Headless Chromium proof: renders every starter scene, checks black backgrounds, loop seams, pulses, the start-transition sweep, trails and guides on their paths, fibre width in pixels, text and brightness headroom, and saves the frames.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -25,8 +25,9 @@ const Limits = {
     MinimumLuma: 0.01, LumaCeiling: 0.7, DimHeadroom: 1.5, BackgroundPeakCeiling: 0,
     LumaSwingMinimum: 0.002, PathFractionMinimum: 0.9, PathPixelsMinimum: 500,
     FibreWidthSlack: 0.1, FibreWidthOffset: 0.05, FibreDistanceSpread: 0.05,
+    SweepDark: 0.01, SweepPlateau: 0.95, SweepLitMinimum: 0.01,
 };
-const MimeTypes = {
+const ContentFormats = {
     '.html': 'text/html; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
@@ -44,7 +45,7 @@ function Serve() {
             Response.end();
             return;
         }
-        Response.writeHead(200, { 'Content-Type': MimeTypes[path.extname(File)] ?? 'application/octet-stream' });
+        Response.writeHead(200, { 'Content-Type': ContentFormats[path.extname(File)] ?? 'application/octet-stream' });
         fs.createReadStream(File).pipe(Response);
     });
     return new Promise((Resolve) => Server.listen(0, '127.0.0.1', () => Resolve(Server)));
@@ -134,18 +135,18 @@ async function Main() {
         await Page.waitForFunction(() => Boolean(window.StrandEditor && window.StrandEditor.Ready), { timeout: 120000 });
 
         const Labels = await Page.evaluate(() => window.StrandEditor.PresetLabels);
-        Check(Lines, Failures, Labels.length === 9 && PresetList.length === 9,
-            'nine starter scenes are offered: ' + Labels.join(', '));
+        Check(Lines, Failures, Labels.length === 10 && PresetList.length === 10,
+            'ten starter scenes are offered: ' + Labels.join(', '));
 
         for (let Index = 0; Index < Labels.length; Index++) {
             const Result = await Page.evaluate((Position) => window.StrandEditor.Measure(Position), Index);
             const Slug = Result.Label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-            const Bytes = Buffer.from(Result.DataUrl.split(',')[1], 'base64');
+            const Bytes = Buffer.from(Result.PngUrl.split(',')[1], 'base64');
             fs.writeFileSync(path.join(Output, Slug + '.png'), Bytes);
             Images.push({ File: Slug + '.png', Sha256: Digest(Bytes), Bytes: Bytes.length });
             const Scene = BuildPreset(Index);
             const Pulsing = Scene.Layers.some((Layer) => Layer.Mechanism === 'Strands' && Layer.PulseRate > 0);
-            const Trailing = Scene.Layers.some((Layer) => Layer.Shape === 'Trail');
+            const Trailing = Scene.Layers.some((Layer) => Layer.Shape === 'Trail' || Layer.Shape === 'Guide');
             let Path = null;
             if (Trailing) {
                 Path = await Page.evaluate((Position) => window.StrandEditor.PathCoverage(Position), Index);
@@ -195,6 +196,30 @@ async function Main() {
                 Name + ': ' + Result.Cost.Vertices.toLocaleString('en-US') + ' strand vertices and ' + Result.Cost.Dust + ' dust inside the budget');
         }
 
+        // 📝 Start transition, measured. The sweep layer alone, with no glow: the lit share must be dark at the loop's start,
+        //    rise along the guide, reach its plateau by 45 % of the loop, fade after its hold, and be dark again by 99 %, so the
+        //    loop restarts from black.
+        const SweepIndex = PresetList.findIndex((Preset) => Preset.Key === 'start-transition');
+        const Sweep = await Page.evaluate((Position) => window.StrandEditor.MeasureSweep(Position), SweepIndex);
+        if (Sweep) {
+            const At = (Fraction) => Sweep.Shares[Sweep.Fractions.indexOf(Fraction)];
+            const Plateau = Math.max(At(0.45), At(0.6), At(0.75));
+            Measurements.push({ Label: 'Start transition sweep', Fractions: Sweep.Fractions, LitShares: Sweep.Shares, Plateau });
+            Check(Lines, Failures, At(0) <= Limits.SweepDark,
+                'the start transition is dark at the start of the loop (lit share ' + At(0).toFixed(4) + ')');
+            Check(Lines, Failures, At(0.1) < At(0.2) && At(0.2) < At(0.3),
+                'the sweep rises along the guide (lit share ' + At(0.1).toFixed(3) + ', ' + At(0.2).toFixed(3) + ', ' + At(0.3).toFixed(3)
+                + ' at 10, 20 and 30 %)');
+            Check(Lines, Failures, Plateau >= Limits.SweepLitMinimum && At(0.45) >= Limits.SweepPlateau * Plateau,
+                'the sweep reaches its plateau by 45 % of the loop (' + (Plateau * 100).toFixed(1) + ' % of the frame lit)');
+            Check(Lines, Failures, At(0.95) < At(0.6),
+                'the lit part fades after its hold (' + (At(0.6) * 100).toFixed(1) + ' % at 60 %, ' + (At(0.95) * 100).toFixed(2) + ' % at 95 %)');
+            Check(Lines, Failures, At(0.99) <= Limits.SweepDark,
+                'the start transition is dark again by 99 % of the loop, so it restarts from black (lit share ' + At(0.99).toFixed(4) + ')');
+        } else {
+            Check(Lines, Failures, false, 'the start transition has a sweep layer');
+        }
+
         // 📝 Thin fibres, measured. One straight fibre must read Thickness scaled by frame height (1.6 px at 1080 p is
         //    1.07 px at 720 p), must not widen with distance, and must read 1.6 px at 1080 p. Each width is read from pixels.
         const FibreCases = [
@@ -230,14 +255,14 @@ async function Main() {
         Server.close();
     }
 
-    const Header = [
+    const Report = [
         'StrandEditor browser proof',
         'Generated: ' + new Date().toISOString(),
-        'Engine: headless Chromium with WebGL2 through SwiftShader (no GPU); WebGPU is not exposed by this build.',
+        'Platform: headless Chromium with WebGL2 through SwiftShader (no GPU); WebGPU is not exposed by this build.',
         'Limits: ' + JSON.stringify(Limits),
         '',
     ];
-    fs.writeFileSync(path.join(Output, 'Proof.txt'), Header.concat(Lines, ['', Failures.length ? 'RESULT: FAIL (' + Failures.length + ')' : 'RESULT: PASS (' + Lines.length + ' checks)', '']).join('\n'));
+    fs.writeFileSync(path.join(Output, 'Proof.txt'), Report.concat(Lines, ['', Failures.length ? 'RESULT: FAIL (' + Failures.length + ')' : 'RESULT: PASS (' + Lines.length + ' checks)', '']).join('\n'));
     fs.writeFileSync(path.join(Output, 'Measurements.json'), JSON.stringify(Measurements, null, 2) + '\n');
     fs.writeFileSync(path.join(Output, 'Hashes.json'), JSON.stringify(Images, null, 2) + '\n');
     console.log(Lines.join('\n'));

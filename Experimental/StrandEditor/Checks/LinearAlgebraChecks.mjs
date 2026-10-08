@@ -15,10 +15,10 @@ function Near(Actual, Expected, Tolerance = 1e-5) {
 
 test('look-at maps the target onto the negative Z axis at the eye distance', () => {
     const View = Mat4LookAt([0, 0, 5], [0, 0, 0], [0, 1, 0]);
-    const Mapped = TransformPoint(View, [0, 0, 0]);
-    Near(Mapped[0], 0);
-    Near(Mapped[1], 0);
-    Near(Mapped[2], -5);
+    const Transformed = TransformPoint(View, [0, 0, 0]);
+    Near(Transformed[0], 0);
+    Near(Transformed[1], 0);
+    Near(Transformed[2], -5);
 });
 
 test('perspective projection puts the view centre at NDC zero and keeps w equal to depth', () => {
@@ -58,13 +58,13 @@ test('Euler rotation matrices are orthonormal with determinant one', () => {
 
 test('yaw of ninety degrees turns +X into -Z in the engine convention', () => {
     const Rotation = Mat3FromEulerDegrees(90, 0, 0);
-    const Mapped = [
+    const Transformed = [
         Rotation[0] * 1 + Rotation[3] * 0 + Rotation[6] * 0,
         Rotation[1] * 1 + Rotation[4] * 0 + Rotation[7] * 0,
         Rotation[2] * 1 + Rotation[5] * 0 + Rotation[8] * 0,
     ];
-    Near(Mapped[0], 0, 1e-6);
-    Near(Mapped[2], -1, 1e-6);
+    Near(Transformed[0], 0, 1e-6);
+    Near(Transformed[2], -1, 1e-6);
 });
 
 test('sRGB hex conversion matches the transfer function at the ends and at mid grey', () => {

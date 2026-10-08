@@ -9,8 +9,8 @@ import { RasterizeText } from './TextOverlay.js';
 import { PathSampleCount, SamplePath } from './PathSpecification.js';
 import * as Shaders from './Shaders.js';
 
-const ShapeIndexes = { Bezier: 0, Bloom: 1, Wave: 2, Flower: 3, Trail: 4 };
-const PulseShapeIndexes = { Breathe: 0, Heartbeat: 1, Ripple: 2 };
+const ShapeIndexes = { Bezier: 0, Bloom: 1, Wave: 2, Flower: 3, Trail: 4, Guide: 5 };
+const PulseShapeIndexes = { Breathe: 0, Heartbeat: 1, Ripple: 2, Sweep: 3 };
 const PathTextureUnit = 5;
 
 // 📝 Names that the GLSL declares as int. Everything else numeric is a float uniform.
@@ -22,23 +22,23 @@ const IntegerNames = new Set([
 
 const GlowLevelCount = 4;
 const BrightThreshold = 0.55;
-const TextCacheLimit = 12;
+const TextTextureLimit = 12;
 
 function WrapFraction(Setting) {
     return Setting - Math.floor(Setting);
 }
 
-function CheckFramebuffer(Gl) {
+function ValidateTarget(Gl) {
     const Status = Gl.checkFramebufferStatus(Gl.FRAMEBUFFER);
     if (Status !== Gl.FRAMEBUFFER_COMPLETE) {
         throw new Error('Framebuffer incomplete: 0x' + Status.toString(16));
     }
 }
 
-function CreateColourTarget(Gl, Width, Height, Internal, Type) {
+function CreateColourTarget(Gl, Width, Height, Internal, Encoding) {
     const Texture = Gl.createTexture();
     Gl.bindTexture(Gl.TEXTURE_2D, Texture);
-    Gl.texImage2D(Gl.TEXTURE_2D, 0, Internal, Width, Height, 0, Gl.RGBA, Type, null);
+    Gl.texImage2D(Gl.TEXTURE_2D, 0, Internal, Width, Height, 0, Gl.RGBA, Encoding, null);
     Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_MIN_FILTER, Gl.LINEAR);
     Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_MAG_FILTER, Gl.LINEAR);
     Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_S, Gl.CLAMP_TO_EDGE);
@@ -46,7 +46,7 @@ function CreateColourTarget(Gl, Width, Height, Internal, Type) {
     const Framebuffer = Gl.createFramebuffer();
     Gl.bindFramebuffer(Gl.FRAMEBUFFER, Framebuffer);
     Gl.framebufferTexture2D(Gl.FRAMEBUFFER, Gl.COLOR_ATTACHMENT0, Gl.TEXTURE_2D, Texture, 0);
-    CheckFramebuffer(Gl);
+    ValidateTarget(Gl);
     return { Texture, Framebuffer, Width, Height };
 }
 
@@ -57,7 +57,7 @@ function CreateMultisampleTarget(Gl, Width, Height, Internal, Samples) {
     const Framebuffer = Gl.createFramebuffer();
     Gl.bindFramebuffer(Gl.FRAMEBUFFER, Framebuffer);
     Gl.framebufferRenderbuffer(Gl.FRAMEBUFFER, Gl.COLOR_ATTACHMENT0, Gl.RENDERBUFFER, Renderbuffer);
-    CheckFramebuffer(Gl);
+    ValidateTarget(Gl);
     return { Framebuffer, Renderbuffer, Samples, Width, Height };
 }
 
@@ -91,7 +91,7 @@ export class StrandRenderer {
     }
 
     DefineAll() {
-        const Head = Shaders.Header;
+        const Head = Shaders.VersionLine;
         const Shared = Shaders.UniformChunk + Shaders.HashChunk + Shaders.PulseChunk + Shaders.CurveChunk;
         const Lookup = Shaders.UniformChunk + Shaders.HashChunk + Shaders.PulseChunk;
         this.Define('Strand', Head + Shared + Shaders.StrandVertex, Head + Lookup + Shaders.StrandFragment);
@@ -100,7 +100,7 @@ export class StrandRenderer {
         this.Define('Background', Head + Shaders.FullscreenVertex, Head + Shaders.BackgroundFragment);
         this.Define('Downsample', Head + Shaders.FullscreenVertex, Head + Shaders.DownsampleFragment);
         this.Define('Blur', Head + Shaders.FullscreenVertex, Head + Shaders.BlurFragment);
-        this.Define('Composite', Head + Shaders.FullscreenVertex, Head + Shaders.CompositeFragment);
+        this.Define('Output', Head + Shaders.FullscreenVertex, Head + Shaders.OutputFragment);
         this.Define('Text', Head + Shaders.FullscreenVertex, Head + Shaders.TextFragment);
     }
 
@@ -118,9 +118,9 @@ export class StrandRenderer {
         this.Programs.set(Name, { Program, Locations: new Map() });
     }
 
-    Compile(Type, Source, Name) {
+    Compile(Slot, Source, Name) {
         const Gl = this.Gl;
-        const Shader = Gl.createShader(Type);
+        const Shader = Gl.createShader(Slot);
         Gl.shaderSource(Shader, Source);
         Gl.compileShader(Shader);
         if (!Gl.getShaderParameter(Shader, Gl.COMPILE_STATUS)) {
@@ -168,11 +168,11 @@ export class StrandRenderer {
         if (Existing && Existing.Width === Width && Existing.Height === Height) return;
         const Gl = this.Gl;
         const Internal = this.FloatTargets ? Gl.RGBA16F : Gl.RGBA8;
-        const Type = this.FloatTargets ? Gl.HALF_FLOAT : Gl.UNSIGNED_BYTE;
+        const Encoding = this.FloatTargets ? Gl.HALF_FLOAT : Gl.UNSIGNED_BYTE;
         const Targets = {
             Width,
             Height,
-            Scene: CreateColourTarget(Gl, Width, Height, Internal, Type),
+            Scene: CreateColourTarget(Gl, Width, Height, Internal, Encoding),
             Glow: [],
             Msaa: null,
         };
@@ -184,8 +184,8 @@ export class StrandRenderer {
             Targets.Glow.push({
                 Width: LevelWidth,
                 Height: LevelHeight,
-                A: CreateColourTarget(Gl, LevelWidth, LevelHeight, Internal, Type),
-                B: CreateColourTarget(Gl, LevelWidth, LevelHeight, Internal, Type),
+                A: CreateColourTarget(Gl, LevelWidth, LevelHeight, Internal, Encoding),
+                B: CreateColourTarget(Gl, LevelWidth, LevelHeight, Internal, Encoding),
             });
         }
         if (this.FloatTargets && this.Samples > 1) {
@@ -244,7 +244,7 @@ export class StrandRenderer {
         // Step 3: filmic composite onto the canvas.
         Gl.bindFramebuffer(Gl.FRAMEBUFFER, null);
         Gl.viewport(0, 0, Width, Height);
-        this.DrawComposite(Scene, Snapshot);
+        this.DrawOutput(Scene, Snapshot);
 
         // Step 4: text overlays are LDR and sit on top of the finished frame.
         Gl.enable(Gl.BLEND);
@@ -276,14 +276,14 @@ export class StrandRenderer {
         const Key = Path.Shape + ':' + Path.Size;
         if (this.PathKey === Key) return;
         const Gl = this.Gl;
-        const Table = SamplePath(Path.Shape, Path.Size, PathSampleCount);
+        const Curve = SamplePath(Path.Shape, Path.Size, PathSampleCount);
         if (!this.PathTexture) this.PathTexture = Gl.createTexture();
         Gl.bindTexture(Gl.TEXTURE_2D, this.PathTexture);
         Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_MIN_FILTER, Gl.NEAREST);
         Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_MAG_FILTER, Gl.NEAREST);
         Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_S, Gl.CLAMP_TO_EDGE);
         Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_T, Gl.CLAMP_TO_EDGE);
-        Gl.texImage2D(Gl.TEXTURE_2D, 0, Gl.RGBA32F, PathSampleCount, 1, 0, Gl.RGBA, Gl.FLOAT, Table.Samples);
+        Gl.texImage2D(Gl.TEXTURE_2D, 0, Gl.RGBA32F, PathSampleCount, 1, 0, Gl.RGBA, Gl.FLOAT, Curve.Samples);
         this.PathKey = Key;
     }
 
@@ -415,9 +415,9 @@ export class StrandRenderer {
         }
     }
 
-    DrawComposite(Scene, Snapshot) {
+    DrawOutput(Scene, Snapshot) {
         const Targets = this.Targets;
-        const Pack = this.UseProgram('Composite');
+        const Pack = this.UseProgram('Output');
         this.BindTexture(0, Targets.Scene.Texture);
         Targets.Glow.forEach((Glow, Index) => this.BindTexture(1 + Index, Glow.A.Texture));
         this.SetUniform(Pack, 'SceneTex', 0);
@@ -464,7 +464,7 @@ export class StrandRenderer {
         Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_S, Gl.CLAMP_TO_EDGE);
         Gl.texParameteri(Gl.TEXTURE_2D, Gl.TEXTURE_WRAP_T, Gl.CLAMP_TO_EDGE);
         const Entry = { Texture };
-        if (this.TextTextures.size >= TextCacheLimit) {
+        if (this.TextTextures.size >= TextTextureLimit) {
             const Oldest = this.TextTextures.keys().next().value;
             Gl.deleteTexture(this.TextTextures.get(Oldest).Texture);
             this.TextTextures.delete(Oldest);

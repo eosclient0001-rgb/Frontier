@@ -8,10 +8,10 @@ import { test } from 'node:test';
 import { BuildPreset, PresetList } from '../Source/Presets.js';
 import { EstimateCost, NormalizeScene, VertexBudget } from '../Source/SceneStructure.js';
 
-test('there are nine starter scenes with unique keys and labels', () => {
-    assert.equal(PresetList.length, 9);
-    assert.equal(new Set(PresetList.map((Preset) => Preset.Key)).size, 9);
-    assert.equal(new Set(PresetList.map((Preset) => Preset.Label)).size, 9);
+test('there are ten starter scenes with unique keys and labels', () => {
+    assert.equal(PresetList.length, 10);
+    assert.equal(new Set(PresetList.map((Preset) => Preset.Key)).size, 10);
+    assert.equal(new Set(PresetList.map((Preset) => Preset.Label)).size, 10);
 });
 
 PresetList.forEach((Preset, Index) => {
@@ -81,8 +81,17 @@ test('the flower and trail presets carry the objects they are named for', () => 
     assert.ok(Bloom.Layers.some((Layer) => Layer.Shape === 'Flower' && Layer.Petals >= 3));
 });
 
-test('most presets pulse: at least six of the nine carry a non-zero pulse rate', () => {
+test('most presets pulse: at least six of the ten carry a non-zero pulse rate', () => {
     const Pulsing = PresetList.filter((Preset, Index) =>
         BuildPreset(Index).Layers.some((Layer) => Layer.Mechanism === 'Strands' && Layer.PulseRate > 0));
     assert.ok(Pulsing.length >= 6, 'pulsing presets: ' + Pulsing.length);
+});
+
+test('the start transition is a closed light guide on the stadium loop, with one sweep per loop and a dim resting glow', () => {
+    const Start = BuildPreset(PresetList.findIndex((Preset) => Preset.Key === 'start-transition'));
+    assert.equal(Start.Path.Shape, 'Stadium');
+    assert.ok(Start.Width > Start.Height, 'a wide strip');
+    const Sweeps = Start.Layers.filter((Layer) => Layer.Shape === 'Guide' && Layer.PulseShape === 'Sweep');
+    assert.ok(Sweeps.length >= 1 && Sweeps.every((Layer) => Layer.PulseRate === 1 && Layer.PulseDepth === 1), 'one sweep per loop');
+    assert.ok(Start.Layers.some((Layer) => Layer.Shape === 'Guide' && Layer.PulseRate === 0 && Layer.Intensity < 0.5), 'a dim resting glow');
 });

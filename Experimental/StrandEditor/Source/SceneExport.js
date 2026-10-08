@@ -34,8 +34,8 @@ export function RecordLoop(Canvas, Seconds, Fps = 60) {
             return;
         }
         const Candidates = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-        const MimeType = Candidates.find((Type) => MediaRecorder.isTypeSupported(Type)) || '';
-        const Recorder = new MediaRecorder(Canvas.captureStream(Fps), MimeType ? { mimeType: MimeType, videoBitsPerSecond: 12000000 } : undefined);
+        const Codec = Candidates.find((Option) => MediaRecorder.isTypeSupported(Option)) || '';
+        const Recorder = new MediaRecorder(Canvas.captureStream(Fps), Codec ? { mimeType: Codec, videoBitsPerSecond: 12000000 } : undefined);
         const Parts = [];
         Recorder.ondataavailable = (Incoming) => {
             if (Incoming.data && Incoming.data.size > 0) Parts.push(Incoming.data);

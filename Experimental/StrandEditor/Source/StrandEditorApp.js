@@ -37,6 +37,10 @@ const Starters = {
         Label: 'Path trail', Shape: 'Trail', Strands: 480, Segments: 96, TrailLength: 0.25, PhaseSpread: 0.3, Spread: 0.06,
         Thickness: 1.2, Taper: 0.3, Intensity: 1.2, Baseline: 0.04, FollowPath: true,
     }],
+    Guide: ['Strands', {
+        Label: 'Light guide', Shape: 'Guide', Strands: 120, Segments: 128, Spread: 0.08, Amplitude: 0,
+        Thickness: 1.2, Intensity: 1.3, Halo: 0.35, Baseline: 1, PulseRate: 1, PulseDepth: 1, PulseShape: 'Sweep',
+    }],
     Dust: ['Particles', { Label: 'Dust', Count: 600, Size: 0.01, Brightness: 2, Spread: 6 }],
     Text: ['Text', { Label: 'Title', Title: 'TITLE', Subtitle: 'Subtitle', Face: 'Light', Align: 'Left', X: 0.66, Y: 0.36 }],
 };
@@ -82,7 +86,7 @@ class StrandEditorApp {
         this.Selected = null;
         this.Dragging = null;
         this.Fps = 0;
-        this.LastFrameTime = 0;
+        this.PreviousTime = 0;
         this.Stats = { DrawCalls: 0, Vertices: 0 };
         this.Timeline = new PlaybackTimeline();
         this.Scene = BuildPreset(0);
@@ -174,8 +178,8 @@ class StrandEditorApp {
     }
 
     Tick(Now) {
-        const Delta = this.LastFrameTime ? Math.min(0.25, (Now - this.LastFrameTime) / 1000) : 0;
-        this.LastFrameTime = Now;
+        const Delta = this.PreviousTime ? Math.min(0.25, (Now - this.PreviousTime) / 1000) : 0;
+        this.PreviousTime = Now;
         if (Delta > 0) this.Fps = this.Fps * 0.9 + (1 / Delta) * 0.1;
         this.Timeline.Advance(Delta, this.Scene);
         this.Render();
@@ -438,7 +442,7 @@ class StrandEditorApp {
             Errors() {
                 return App.Errors.slice();
             },
-            DataUrl(Seconds) {
+            PngUrl(Seconds) {
                 App.Renderer.Draw(App.Scene, Seconds);
                 return App.Canvas.toDataURL('image/png');
             },
@@ -450,6 +454,9 @@ class StrandEditorApp {
             },
             MeasureFibreColumn(Scene) {
                 return App.MeasureFibreColumn(Scene);
+            },
+            MeasureSweep(Index) {
+                return App.MeasureSweep(Index);
             },
         };
     }
@@ -504,7 +511,7 @@ class StrandEditorApp {
         Scene.Post.Brightness = Brightness;
 
         Renderer.Draw(Scene, 0);
-        const DataUrl = this.Canvas.toDataURL('image/png');
+        const PngUrl = this.Canvas.toDataURL('image/png');
         return {
             Label: PresetList[Index].Label,
             Width: Scene.Width,
@@ -521,9 +528,41 @@ class StrandEditorApp {
             LumaSwing,
             Cost: EstimateCost(Scene),
             Errors: this.Errors.slice(),
-            DataUrl,
+            PngUrl,
         };
     }
+    // 📝 Start-transition check: renders the first sweep layer alone with no glow, at several points in the loop, and reads the
+    //    share of its pixels that are lit. A sweep starts dark, rises to a plateau, holds, and is dark before the loop ends.
+    MeasureSweep(Index) {
+        this.LoadPreset(Index);
+        this.Timeline.Playing = false;
+        const Scene = this.Scene;
+        const Layer = Scene.Layers.find((Member) => Member.Mechanism === 'Strands' && Member.PulseShape === 'Sweep' && Member.PulseRate > 0);
+        if (!Layer) return null;
+        const Visibility = Scene.Layers.map((Member) => Member.Visible);
+        const Glow = Scene.Post.Glow;
+        Scene.Layers.forEach((Member) => {
+            Member.Visible = Member === Layer;
+        });
+        Scene.Post.Glow = 0;
+        const Loop = Scene.Playback.LoopSeconds;
+        const Fractions = [0, 0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.85, 0.95, 0.99];
+        const Shares = Fractions.map((Fraction) => {
+            this.Renderer.Draw(Scene, Fraction * Loop);
+            const Pixels = this.Renderer.ReadPixels();
+            let Lit = 0;
+            for (let At = 0; At < Pixels.length; At += 4) {
+                if ((Pixels[At] + Pixels[At + 1] + Pixels[At + 2]) / 3 > 0.12 * 255) Lit += 1;
+            }
+            return Lit / (Pixels.length / 4);
+        });
+        Scene.Layers.forEach((Member, Position) => {
+            Member.Visible = Visibility[Position];
+        });
+        Scene.Post.Glow = Glow;
+        return { Fractions, Shares };
+    }
+
     // 📝 Thin-fibre check: draws the scene it is given (one straight fibre on black) and returns the luminance of the
     //    centre column, bottom to top as the GPU reads it, so the proof can measure the fibre's width in pixels.
     MeasureFibreColumn(Scene) {
@@ -542,13 +581,13 @@ class StrandEditorApp {
         return { Width, Height, Luma };
     }
 
-    // 📝 Trail check: renders the first trail layer alone, then counts how many of its bright pixels lie within ten pixels
+    // 📝 Trail check: renders the first trail or guide layer alone, then counts how many of its bright pixels lie within ten pixels
     //    of the scene path as the camera projects it. A trail that rides the path scores close to one.
     MeasurePathCoverage(Index) {
         this.LoadPreset(Index);
         this.Timeline.Playing = false;
         const Scene = this.Scene;
-        const Layer = Scene.Layers.find((Member) => Member.Mechanism === 'Strands' && Member.Shape === 'Trail');
+        const Layer = Scene.Layers.find((Member) => Member.Mechanism === 'Strands' && (Member.Shape === 'Trail' || Member.Shape === 'Guide'));
         if (!Layer) return null;
         const Visibility = Scene.Layers.map((Member) => Member.Visible);
         const Glow = Scene.Post.Glow;
@@ -566,11 +605,11 @@ class StrandEditorApp {
         // 📝 Same transform as the shader: local path point scaled, rotated (column-major), then placed, then projected.
         const View = CameraMatrices(Scene.Camera, Scene.Width / Scene.Height).ViewProjection;
         const Rotation = Mat3FromEulerDegrees(Layer.Rotation[0], Layer.Rotation[1], Layer.Rotation[2]);
-        const Table = SamplePath(Scene.Path.Shape, Scene.Path.Size, 2048);
+        const Curve = SamplePath(Scene.Path.Shape, Scene.Path.Size, 2048);
         const Projected = [];
-        for (let Sample = 0; Sample < Table.Count; Sample++) {
-            const X = Table.Samples[Sample * 4] * Layer.Scale;
-            const Y = Table.Samples[Sample * 4 + 1] * Layer.Scale;
+        for (let Sample = 0; Sample < Curve.Count; Sample++) {
+            const X = Curve.Samples[Sample * 4] * Layer.Scale;
+            const Y = Curve.Samples[Sample * 4 + 1] * Layer.Scale;
             const World = [0, 1, 2].map((Row) => Rotation[Row] * X + Rotation[3 + Row] * Y + Layer.Position[Row]);
             const Clip = [0, 1, 2, 3].map((Row) => View[Row] * World[0] + View[4 + Row] * World[1] + View[8 + Row] * World[2] + View[12 + Row]);
             Projected.push([(Clip[0] / Clip[3] * 0.5 + 0.5) * Scene.Width, (Clip[1] / Clip[3] * 0.5 + 0.5) * Scene.Height]);

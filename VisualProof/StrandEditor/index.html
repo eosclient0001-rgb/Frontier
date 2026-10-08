@@ -10,8 +10,8 @@ figcaption{color:#7f93b8;font-size:12px;margin-top:8px}
 h2{font-size:16px;margin:28px 0 8px} ul{color:#7f93b8;margin:0;padding-left:20px}
 </style></head><body>
 <h1>Strand Editor · browser proof</h1>
-<p class="note">Rendered by headless Chromium with WebGL2 (SwiftShader, no GPU) from the nine starter scenes in
-<code>Experimental/StrandEditor/Source/Presets.js</code>. The browser proof passed 102 checks (<code>Proof.txt</code>).
+<p class="note">Rendered by headless Chromium with WebGL2 (SwiftShader, no GPU) from the ten starter scenes in
+<code>Experimental/StrandEditor/Source/Presets.js</code>. The browser proof passed 118 checks (<code>Proof.txt</code>).
 Raw numbers are in <code>Measurements.json</code>. Frames are at t = 0.</p>
 <div class="grid">
 <figure><a href="organic-fibres.png"><img src="organic-fibres.png" alt="Organic fibres starter frame at t = 0"></a><figcaption><strong>Organic fibres</strong> · 1280 × 720 · 216,960 strand vertices · 700 dust<br>mean luma 0.200 · pulse swing 0.0399 · black floor 0 of 255</figcaption></figure>
@@ -23,11 +23,26 @@ Raw numbers are in <code>Measurements.json</code>. Frames are at t = 0.</p>
 <figure><a href="flower-path.png"><img src="flower-path.png" alt="Flower path starter frame at t = 0"></a><figcaption><strong>Flower path</strong> · 1280 × 720 · 213,120 strand vertices · 260 dust<br>mean luma 0.074 · pulse swing 0.0129 · black floor 0 of 255<br>trail on path: 96.7% of 66,082 bright pixels within 10 px (mean 4.7 px)</figcaption></figure>
 <figure><a href="path-weave.png"><img src="path-weave.png" alt="Path weave starter frame at t = 0"></a><figcaption><strong>Path weave</strong> · 1280 × 720 · 86,400 strand vertices · 500 dust<br>mean luma 0.036 · pulse swing 0.0067 · black floor 0 of 255<br>trail on path: 93.4% of 53,636 bright pixels within 10 px (mean 4.5 px)</figcaption></figure>
 <figure><a href="automotive-trim.png"><img src="automotive-trim.png" alt="Automotive trim starter frame at t = 0"></a><figcaption><strong>Automotive trim</strong> · 1920 × 720 · 177,984 strand vertices · 400 dust<br>mean luma 0.086 · pulse swing 0.0059 · black floor 0 of 255<br>trail on path: 100.0% of 56,247 bright pixels within 10 px (mean 4.2 px)</figcaption></figure>
+<figure><a href="start-transition.png"><img src="start-transition.png" alt="Start transition starter frame at t = 0"></a><figcaption><strong>Start transition</strong> · 1920 × 720 · 86,016 strand vertices · 300 dust<br>mean luma 0.025 · pulse swing 0.0994 · black floor 0 of 255<br>trail on path: 99.6% of 57,248 bright pixels within 10 px (mean 4.3 px)</figcaption></figure>
 </div>
 <h2>Fibre width, measured from pixels</h2>
 <ul>
 <li>1280 × 720 at 6 m: 1.07 px measured, 1.07 px expected (Thickness 1.6)</li>
 <li>1280 × 720 at 24 m: 1.07 px measured, 1.07 px expected (Thickness 1.6)</li>
 <li>1920 × 1080 at 12 m: 1.60 px measured, 1.60 px expected (Thickness 1.6)</li>
+</ul>
+<h2>Start transition sweep, measured</h2>
+<p class="note">The sweep layer alone with the glow off. Lit share is the fraction of frame pixels brighter than 12 % of white.</p>
+<ul>
+<li>0 % of the loop: 0.00 % of the frame lit</li>
+<li>10 % of the loop: 1.17 % of the frame lit</li>
+<li>20 % of the loop: 2.48 % of the frame lit</li>
+<li>30 % of the loop: 3.81 % of the frame lit</li>
+<li>45 % of the loop: 5.54 % of the frame lit</li>
+<li>60 % of the loop: 5.54 % of the frame lit</li>
+<li>75 % of the loop: 5.54 % of the frame lit</li>
+<li>85 % of the loop: 5.36 % of the frame lit</li>
+<li>95 % of the loop: 4.46 % of the frame lit</li>
+<li>99 % of the loop: 0.00 % of the frame lit</li>
 </ul>
 </body></html>

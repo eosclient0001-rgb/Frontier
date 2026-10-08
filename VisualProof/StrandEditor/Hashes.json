@@ -43,5 +43,10 @@
     "File": "automotive-trim.png",
     "Sha256": "074c6456265dcff790d3f0c9ae6feb49ec052ce09cf716bdee82228267eaf2e8",
     "Bytes": 755781
+  },
+  {
+    "File": "start-transition.png",
+    "Sha256": "4a09bc85378267590d9781e6ce9cfa13dbe03880132865f49f31f8588ed65954",
+    "Bytes": 385211
   }
 ]

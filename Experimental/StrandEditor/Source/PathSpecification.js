@@ -58,11 +58,11 @@ export function SamplePath(Shape, Size, Count = PathSampleCount) {
         const Target = (Sample / Count) * Total;
         while (Cursor < DenseSampleCount - 1 && Cumulative[Cursor + 1] < Target) Cursor++;
         const Span = Cumulative[Cursor + 1] - Cumulative[Cursor];
-        const Blend = Span > 0 ? (Target - Cumulative[Cursor]) / Span : 0;
+        const Ratio = Span > 0 ? (Target - Cumulative[Cursor]) / Span : 0;
         const [AX, AY] = Dense[Cursor];
         const [BX, BY] = Dense[Cursor + 1];
-        Samples[Sample * 4] = (AX + (BX - AX) * Blend) * Scale;
-        Samples[Sample * 4 + 1] = (AY + (BY - AY) * Blend) * Scale;
+        Samples[Sample * 4] = (AX + (BX - AX) * Ratio) * Scale;
+        Samples[Sample * 4 + 1] = (AY + (BY - AY) * Ratio) * Scale;
         Samples[Sample * 4 + 2] = 0;
         Samples[Sample * 4 + 3] = 0;
     }

@@ -1,7 +1,7 @@
 //============================================================================================================================================
 //                                                                 PRESETS.JS                                                                 
 //============================================================================================================================================
-// 📦 Nine starting scenes built from schema defaults and overrides: fibres, flowers, a rose path, a weave and an automotive trim loop, all on black.
+// 📦 Ten starting scenes built from schema defaults and overrides: fibres, flowers, a rose path, a weave, an automotive trim loop and a start transition, all on black.
 
 import { CreateLayer, CreateScene } from './SceneStructure.js';
 
@@ -289,6 +289,39 @@ function AutomotiveTrim() {
     });
 }
 
+// 📝 A light guide starts from dark. A sweep runs once round the loop from its start point, lights every part it passes,
+//    holds, and fades out before the loop restarts. A dim resting glow sits under it, so the guide never reads as off between events.
+function StartTransition() {
+    return CreateScene({
+        Name: 'Start transition',
+        Width: 1920,
+        Height: 720,
+        Background: Black(),
+        Post: { Exposure: 1, Glow: 0.5, GlowSpread: 0.3, Saturation: 1, Brightness: 1 },
+        Playback: { LoopSeconds: 6, Speed: 1 },
+        Camera: { Yaw: 0, Pitch: 0, Distance: 16, Fov: 34 },
+        Path: { Shape: 'Stadium', Size: 9.5 },
+        Layers: [
+            Strand('Resting glow', {
+                Shape: 'Guide', Strands: 56, Segments: 128, Seed: 111, Spread: 0.1, Amplitude: 0.02, Frequency: 2,
+                Thickness: 1.2, Taper: 0, Intensity: 0.12, Halo: 0.2, Baseline: 1, ColourStart: '#1f6fff',
+                ColourEnd: '#5fd8ff', ColourAccent: '#ffffff', AccentMix: 0, Window: 0.5, WindowCycles: 1, Sparks: 0,
+                PulseRate: 0, PulseDepth: 0, PulseShape: 'Breathe', Position: [0, 0, 0], Rotation: [0, 0, 0],
+            }),
+            Strand('Start sweep', {
+                Shape: 'Guide', Strands: 56, Segments: 128, Seed: 112, Spread: 0.1, Amplitude: 0.02, Frequency: 2,
+                Thickness: 1.2, Taper: 0, Intensity: 0.8, Halo: 0.2, Baseline: 1, ColourStart: '#2d9bff',
+                ColourEnd: '#7af0ff', ColourAccent: '#ffffff', AccentMix: 0.15, Window: 0.5, WindowCycles: 1, Sparks: 0,
+                PulseRate: 1, PulseDepth: 1, PulseShape: 'Sweep', Position: [0, 0, 0], Rotation: [0, 0, 0],
+            }),
+            Dust('Glints', {
+                Count: 300, Size: 0.006, Brightness: 2, Colour: '#dff6ff', Bokeh: 0.05, Focus: 14,
+                Spread: 9, Drift: 0.3, Seed: 113,
+            }),
+        ],
+    });
+}
+
 export const PresetList = Object.freeze([
     { Key: 'organic-fibres', Label: 'Organic fibres', Build: OrganicFibres },
     { Key: 'emerald-sweep', Label: 'Emerald sweep', Build: EmeraldSweep },
@@ -299,6 +332,7 @@ export const PresetList = Object.freeze([
     { Key: 'flower-path', Label: 'Flower path', Build: FlowerPath },
     { Key: 'path-weave', Label: 'Path weave', Build: PathWeave },
     { Key: 'automotive-trim', Label: 'Automotive trim', Build: AutomotiveTrim },
+    { Key: 'start-transition', Label: 'Start transition', Build: StartTransition },
 ]);
 
 export function BuildPreset(Index) {

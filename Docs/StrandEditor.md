@@ -28,7 +28,7 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
 
 ## What it does
 
-- **Strands.** Five shapes, all made of thin fibres that are generated on the GPU:
+- **Strands.** Six shapes, all made of thin fibres that are generated on the GPU:
   - **Bezier** fibres sweep from a root bundle.
   - **Bloom** strands radiate from a centre with ruffled rims.
   - **Wave** sheets ripple across their width.
@@ -38,6 +38,9 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
   - **Trail** bundles are fibres that stream along the scene path. Each fibre covers *Trail length* of the
     loop behind its head, so one flower head leaves a comet tail. *Phase spread* controls whether heads
     share one point (a tail) or spread around the whole path (a stream).
+  - **Guide** fibres lie along the whole scene path, offset sideways by *Spread*, so the path itself is the shape.
+    Guides are static, so a *Sweep* pulse is what moves along them. Their ends meet at the seam, so they ignore
+    *Taper*.
 
   Every strands layer can throw head sparks along its fibres.
 - **Ride the scene path.** A layer switch that moves its flower or bezier, bloom and wave geometry along the
@@ -49,6 +52,9 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
   - **Breathe** is one eased inhale and exhale per pulse, the whole layer together.
   - **Heartbeat** is two short beats, then rest.
   - **Ripple** is a sine that runs outward along each fibre, from root to tip.
+  - **Sweep** is one front that runs from the start of each fibre to its end over the first 45 % of the cycle. The
+    lit part stays on behind it, holds to 75 %, then fades, so the next sweep starts from black and the loop closes.
+    On a guide the front runs once round the path. Under a sweep, flower heads open in index order.
 
   Flower heads open with the same pulse, offset by head index, so a chain of blooms opens in sequence.
   *Light heads per loop* is the older light-window control: how many light heads travel each fibre per loop.
@@ -59,7 +65,7 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
 - **Scene.** Format (width and height), background, post (exposure, glow amount and spread, saturation,
   output brightness), loop length and playback speed, and an orbit camera (yaw, pitch, distance, field of
   view). Drag on the view to orbit, scroll to zoom, press **R** to reset.
-- **Presets.** Nine starter scenes:
+- **Presets.** Ten starter scenes:
   - *Organic fibres* is a blue sweep of thin fibres with dust and a title.
   - *Emerald sweep* is green fibres with bokeh and the *TO BE* title.
   - *Radial bloom* is a radial burst with bokeh.
@@ -70,8 +76,10 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
   - *Path weave* is light trails streaming along a weaving path, with ripple pulses.
   - *Automotive trim* is a wide 1920 × 720 light guide round a stadium loop: a comet sweeps round it once per loop,
     two flower heads ride it, and ripple pulses run along each fibre.
+  - *Start transition* is a light guide round the stadium loop, dark at the start. A sweep runs once round it per loop,
+    holds, and fades out. A dim resting glow stays under it, so the guide never reads as off between events.
 - **Export.** PNG of the current frame, real-time WebM of one loop (MediaRecorder), and scene JSON save and
-  open. The Add buttons create strands (Bezier, Bloom, Wave, Flower head, Path trail), dust and title text.
+  open. The Add buttons create strands (Bezier, Bloom, Wave, Flower head, Path trail, Light guide), dust and title text.
 
 ## Look defaults
 
@@ -98,7 +106,7 @@ WebGL2 is required. The editor reports a clear message if it is missing. WebGPU 
   above 2.4 M vertices are flagged. Shrink *Strands* or *Segments* to fit a target GPU.
 - **Trim loop.** *Path shape: Stadium* is the light-guide loop. *Idle trim* keeps the loop lit at low brightness, a
   welcome comet sweeps round it once per loop, and ripple pulses run along each fibre. The reasoning and sources are
-  in the reference notes.
+  in the reference notes. *Start transition* is the same kind of loop, built from a guide and a sweep.
 
 ## Scene format
 
@@ -115,6 +123,8 @@ the default, and the new fields take their defaults. A version 1 file gains no p
   changes.
 - Trails and flowers return local coordinates, and one world transform (rotation, scale, position) serves
   every shape.
+- A sweep is evaluated per fragment from the fibre's arc position and the loop phase (`SweepLevel`). Its CPU
+  mirror is `SweepLevelAt`, which the checks pin.
 - Pulse curves run in the fibre fragment shader and in the spark vertex shader. `Source/PulseSpecification.js`
   holds the CPU mirror that the checks compare against.
 - Strands, sparks and dust are additive into a half-float HDR target (multisampled where supported). A
@@ -127,7 +137,7 @@ the default, and the new fields take their defaults. A version 1 file gains no p
 ```sh
 cd Experimental/StrandEditor
 npm install                     # test dependencies only; the editor itself needs none
-npm test                        # 88 Node checks: maths, schema, idempotence, presets, paths, pulses, thickness
+npm test                        # 102 Node checks: maths, schema, idempotence, presets, paths, pulses, sweep, thickness
 npm run proof                   # headless Chromium: renders every preset and writes VisualProof/StrandEditor
 ```
 
@@ -137,9 +147,11 @@ no editor errors; mean luma inside a sane band; **black**, meaning the frame wit
 levels in one sixtieth of a second; visible motion; **visible pulses** for every scene that has them, as a mean
 luma swing of at least 0.002 over one loop; for scenes with a trail, that at least 90 % of the bright trail
 pixels lie within 10 px of the scene path as the camera projects it; text drawn when present; output brightness
-0.5 capping the frame; the vertex budget; and an empty browser console. The run in this workspace passed 102
+0.5 capping the frame; the vertex budget; and an empty browser console. The run in this workspace passed 118
 checks. Trail results: 96.7 % of 66,082 bright pixels on *Flower path* and 93.4 % of 53,636 on *Path weave* lie
-within 10 px of the path (mean 4.7 and 4.5 px), and 100.0 % of 56,247 on *Automotive trim* (mean 4.2 px). A single
+within 10 px of the path (mean 4.7 and 4.5 px), and 100.0 % of 56,247 on *Automotive trim* (mean 4.2 px), and 99.6 % of 57,248 on *Start transition* (mean 4.3 px).
+With only its sweep layer drawn and the glow off, *Start transition* lights 0 % of the frame at the start of the loop,
+1.2 %, 2.5 % and 3.8 % at 10, 20 and 30 % of the loop, 5.5 % from 45 % to 75 %, and 0 % by 99 %. A single
 straight fibre measures 1.07 px wide at 1280 × 720, at 6 m and at 24 m, and 1.60 px at 1920 × 1080, read from the
 frame's own pixels.
 
@@ -149,6 +161,8 @@ frame's own pixels.
   path and tapered, looping geometry along a path. It does not reproduce their particle systems, physics,
   turbulence, motion blur or lighting. Trails are bundles of fibres with a wobble, and sparks are the only
   particles along them.
+- **One sweep direction.** A sweep runs from the start of each fibre to its end. Centre-out and bilateral sweeps are
+  not built yet.
 - **Camera-facing paths.** Scene paths lie in the XY plane. Rotate the layer to tilt them.
 - **Dense sheets alias.** *Sheet lines* at small sizes shows moiré. Fewer strands or thicker fibres
   reduce it.

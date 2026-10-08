@@ -1,9 +1,9 @@
 StrandEditor browser proof
-Generated: 2026-10-08T13:30:07.520Z
-Engine: headless Chromium with WebGL2 through SwiftShader (no GPU); WebGPU is not exposed by this build.
-Limits: {"ExactWrap":0.05,"ContinuityRatio":1.5,"StepCeiling":30,"MotionStep":0.5,"TextStep":0.05,"MinimumLuma":0.01,"LumaCeiling":0.7,"DimHeadroom":1.5,"BackgroundPeakCeiling":0,"LumaSwingMinimum":0.002,"PathFractionMinimum":0.9,"PathPixelsMinimum":500,"FibreWidthSlack":0.1,"FibreWidthOffset":0.05,"FibreDistanceSpread":0.05}
+Generated: 2026-10-08T13:57:26.371Z
+Platform: headless Chromium with WebGL2 through SwiftShader (no GPU); WebGPU is not exposed by this build.
+Limits: {"ExactWrap":0.05,"ContinuityRatio":1.5,"StepCeiling":30,"MotionStep":0.5,"TextStep":0.05,"MinimumLuma":0.01,"LumaCeiling":0.7,"DimHeadroom":1.5,"BackgroundPeakCeiling":0,"LumaSwingMinimum":0.002,"PathFractionMinimum":0.9,"PathPixelsMinimum":500,"FibreWidthSlack":0.1,"FibreWidthOffset":0.05,"FibreDistanceSpread":0.05,"SweepDark":0.01,"SweepPlateau":0.95,"SweepLitMinimum":0.01}
 
-PASS  nine starter scenes are offered: Organic fibres, Emerald sweep, Radial bloom, Ember ribbons, Sheet lines, Flower bloom, Flower path, Path weave, Automotive trim
+PASS  ten starter scenes are offered: Organic fibres, Emerald sweep, Radial bloom, Ember ribbons, Sheet lines, Flower bloom, Flower path, Path weave, Automotive trim, Start transition
 PASS  Organic fibres: editor reports no errors
 PASS  Organic fibres: mean luma 0.200 inside [0.01, 0.7]
 PASS  Organic fibres: with every layer hidden the frame is black (peak 0 of 255)
@@ -99,6 +99,22 @@ PASS  Automotive trim: pulses are visible, mean luma swings 0.0059 over one loop
 PASS  Automotive trim: 100.0% of 56,247 bright trail pixels lie within 10 px of the projected path (mean 4.2 px)
 PASS  Automotive trim: output brightness 0.5 caps the frame at 128 of 255
 PASS  Automotive trim: 177,984 strand vertices and 400 dust inside the budget
+PASS  Start transition: editor reports no errors
+PASS  Start transition: mean luma 0.025 inside [0.01, 0.7]
+PASS  Start transition: with every layer hidden the frame is black (peak 0 of 255)
+PASS  Start transition: the frame at the loop length equals frame 0 (difference 0.000)
+PASS  Start transition: the wrap is no more abrupt than ordinary motion (across the wrap 0.03, forward 0.02)
+PASS  Start transition: no teleporting, one-frame step 0.02 (limit 30)
+PASS  Start transition: motion present, half-loop difference 23.86 (minimum 0.5)
+PASS  Start transition: pulses are visible, mean luma swings 0.0994 over one loop (minimum 0.002)
+PASS  Start transition: 99.6% of 57,248 bright trail pixels lie within 10 px of the projected path (mean 4.3 px)
+PASS  Start transition: output brightness 0.5 caps the frame at 123 of 255
+PASS  Start transition: 86,016 strand vertices and 300 dust inside the budget
+PASS  the start transition is dark at the start of the loop (lit share 0.0000)
+PASS  the sweep rises along the guide (lit share 0.012, 0.025, 0.038 at 10, 20 and 30 %)
+PASS  the sweep reaches its plateau by 45 % of the loop (5.5 % of the frame lit)
+PASS  the lit part fades after its hold (5.5 % at 60 %, 4.46 % at 95 %)
+PASS  the start transition is dark again by 99 % of the loop, so it restarts from black (lit share 0.0000)
 PASS  a single fibre at 1280x720 and 6 m reads 1.07 px wide (Thickness 1.6 gives 1.07 px)
 PASS  a single fibre at 1280x720 and 24 m reads 1.07 px wide (Thickness 1.6 gives 1.07 px)
 PASS  a single fibre at 1920x1080 and 12 m reads 1.60 px wide (Thickness 1.6 gives 1.60 px)
@@ -106,4 +122,4 @@ PASS  the fibre keeps its pixel width from near and far (6 m 1.07 px, 24 m 1.07 
 PASS  every starter scene renders a different frame
 PASS  the browser console reports no errors or warnings (0)
 
-RESULT: PASS (102 checks)
+RESULT: PASS (118 checks)

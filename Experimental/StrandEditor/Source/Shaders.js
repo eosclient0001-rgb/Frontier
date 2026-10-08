@@ -6,7 +6,7 @@
 // 📝 Strands are generated entirely in the vertex shader from gl_VertexID. No geometry is uploaded, so changing a
 //    count, a shape or a colour costs one uniform update and every animation is evaluated on the GPU.
 
-export const Header = '#version 300 es\nprecision highp float;\nprecision highp int;\n';
+export const VersionLine = '#version 300 es\nprecision highp float;\nprecision highp int;\n';
 
 export const HashChunk = `
 uniform int Seed;
@@ -65,6 +65,7 @@ uniform highp sampler2D PathTexture;
 // 📝 Pulse curves are periodic in the loop, so a pulse lands on the same brightness at the seam. Shapes: 0 Breathe is an
 //    eased sine that rests at the bottom and crests mid-cycle; 1 Heartbeat is two short beats then rest; 2 Ripple uses
 //    the Breathe curve with each fibre's cycle delayed by its arc position, so the pulse runs outward from the root.
+//    3 Sweep is one front that runs along the fibre once per cycle, then holds and fades; see SweepLevel.
 export const PulseChunk = `
 const float Tau = 6.283185307;
 
@@ -85,18 +86,38 @@ float PulseLevel(float Cycle)
     return 0.5 - 0.5 * cos(Tau * Cycle);
 }
 
+// 📝 Sweep is one front that runs from the start of the fibre (Position 0) to its end (Position 1) over the first 45 % of
+//    each cycle, lighting what it passes, with a brighter ridge on the front. The lit part holds to 75 % and fades to dark
+//    by the end of the cycle, so the next sweep starts from darkness and the loop closes on itself. Periodic and bounded.
+float SweepLevel(float Position, float Cycle)
+{
+    float Front = -0.03 + 1.06 * min(Cycle / 0.45, 1.0);
+    // 📝 The lit part fades in from the seam while the front runs, and is full once the front has completed the loop, so the
+    //    completed plateau has no step where the fibre closes. The ridge dissolves as it nears the end, for the same reason.
+    float Done = smoothstep(1.0, 1.01, Front - 0.02);
+    float Origin = mix(smoothstep(0.0, 0.04, Position), 1.0, Done);
+    float Body = Origin * (1.0 - smoothstep(Front - 0.02, Front + 0.005, Position));
+    float Offset = (Position - (Front - 0.012)) / 0.012;
+    float Ridge = Origin * exp(-0.5 * Offset * Offset) * smoothstep(0.0, 0.04, Cycle) * (1.0 - smoothstep(0.85, 1.0, Front - 0.012));
+    float Hold = 1.0 - smoothstep(0.75, 1.0, Cycle);
+    return clamp(Hold * clamp(0.65 * Body + 0.35 * Ridge, 0.0, 1.0), 0.0, 1.0);
+}
+
 // 📝 Brightness factor for a fibre at arc position Along. Depth 0 leaves the layer unchanged; depth 1 swings from dark to full.
 float PulseFactorAt(float Along)
 {
     if (PulseRate == 0 || PulseDepth <= 0.0) return 1.0;
+    if (PulseShape == 3) return 1.0 - PulseDepth + PulseDepth * SweepLevel(Along, fract(float(PulseRate) * LoopFraction));
     float Phase = float(PulseRate) * LoopFraction - (PulseShape == 2 ? Along : 0.0);
     return 1.0 - PulseDepth + PulseDepth * PulseLevel(fract(Phase));
 }
 
-// 📝 Flower heads open with the same pulse, delayed by head index, so a chain of blooms opens in sequence.
+// 📝 Flower heads open with the same pulse, delayed by head index, so a chain of blooms opens in sequence. Under a sweep the
+//    front passes the heads in index order instead.
 float FlowerOpening(float Flower)
 {
     if (PulseRate == 0) return 0.0;
+    if (PulseShape == 3) return PulseDepth * SweepLevel(Flower / float(FlowerCount), fract(float(PulseRate) * LoopFraction));
     return PulseDepth * PulseLevel(fract(float(PulseRate) * LoopFraction - Flower / float(FlowerCount)));
 }
 `;
@@ -154,16 +175,16 @@ vec3 WaveAt(float S, float Id)
 }
 
 // 📝 The path table holds the closed curve at equal arc length, so Fraction is the share of the path travelled and the
-//    speed along it is even. Blend is linear between samples, and the last sample wraps to the first.
+//    speed along it is even. Interpolation is linear between samples, and the last sample wraps to the first.
 vec3 PathPointAt(float Fraction)
 {
     float Position = fract(Fraction) * float(PathSamples);
     int Index = clamp(int(floor(Position)), 0, PathSamples - 1);
     int Next = Index + 1 < PathSamples ? Index + 1 : 0;
-    float Blend = Position - float(Index);
+    float Ratio = Position - float(Index);
     vec3 From = texelFetch(PathTexture, ivec2(Index, 0), 0).xyz;
     vec3 To = texelFetch(PathTexture, ivec2(Next, 0), 0).xyz;
-    return mix(From, To, Blend);
+    return mix(From, To, Ratio);
 }
 
 vec3 PathTangentAt(float Fraction)
@@ -211,11 +232,25 @@ vec3 TrailAt(float S, float Id)
     return PathPointAt(Arc) + (Side * cos(Angle) + vec3(0.0, 0.0, sin(Angle))) * Radius + Side * Wobble;
 }
 
+// 📝 A guide is a light guide: each fibre lies along the whole scene path, offset sideways by its share of the bundle, so
+//    the path itself is the shape. Guides are static, so a Sweep pulse is what travels along them. Their ends meet at the seam.
+vec3 GuideAt(float S, float Id)
+{
+    vec3 Axis = PathTangentAt(S);
+    vec3 Side = normalize(cross(Axis, vec3(0.0, 0.0, 1.0)));
+    float Angle = Tau * Unit(Id, 3.0);
+    float Radius = Spread * sqrt(Unit(Id, 4.0));
+    float K = max(1.0, floor(Frequency + 0.5));
+    float Wobble = Amplitude * sin(Tau * K * S + Tau * Unit(Id, 5.0));
+    return PathPointAt(S) + (Side * cos(Angle) + vec3(0.0, 0.0, sin(Angle))) * Radius + Side * Wobble;
+}
+
 // 📝 Every shape returns local coordinates. Ride-the-path layers add the path point of their flower, so one world transform
-//    serves all shapes. Trails already include their path position.
+//    serves all shapes. Trails and guides already include their path position.
 vec3 CurveAt(float S, float Id)
 {
     if (Shape == 4) return TrailAt(S, Id);
+    if (Shape == 5) return GuideAt(S, Id);
     vec3 Local = BezierAt(S, Id);
     if (Shape == 1) Local = BloomAt(S, Id);
     else if (Shape == 2) Local = WaveAt(S, Id);
@@ -240,7 +275,7 @@ uniform float Taper;
 out float VAlong;
 out float VAcross;
 out float VId;
-out float VCore;
+out float VSigma;
 out float VHalo;
 out float VFade;
 
@@ -268,16 +303,17 @@ void main()
     //    coverage. The quad is widened to the halo envelope, also in pixels, and the fragment shader reads the offset.
     vec4 Clip = ViewProjection * vec4(Centre, 1.0);
     float PixelsPerMetre = ProjectionScale / max(Clip.w, 1e-3);
-    float CorePixels = max(0.8, Thickness * PixelScale) * 0.42466;
-    float HaloPixels = max(2.4 * PixelScale, 2.0 * CorePixels);
+    float SigmaPixels = max(0.8, Thickness * PixelScale) * 0.42466;
+    float HaloPixels = max(2.4 * PixelScale, 2.0 * SigmaPixels);
     float EnvelopePixels = 3.6 * HaloPixels;
-    float Fade = mix(1.0, pow(max(sin(3.14159265 * S), 0.0), 0.5), Taper);
+    // 📝 Guides are closed loops, so their ends are not tapered: the seam would otherwise go dark.
+    float Fade = Shape == 5 ? 1.0 : mix(1.0, pow(max(sin(3.14159265 * S), 0.0), 0.5), Taper);
     vec3 World = Centre + Lateral * (Side * EnvelopePixels / max(PixelsPerMetre, 1e-6));
     gl_Position = ViewProjection * vec4(World, 1.0);
     VAlong = S;
     VAcross = Side * EnvelopePixels;
     VId = Id;
-    VCore = CorePixels;
+    VSigma = SigmaPixels;
     VHalo = HaloPixels;
     VFade = Fade;
 }
@@ -287,7 +323,7 @@ export const StrandFragment = `
 in float VAlong;
 in float VAcross;
 in float VId;
-in float VCore;
+in float VSigma;
 in float VHalo;
 in float VFade;
 
@@ -306,18 +342,21 @@ void main()
 {
     // 📝 VAcross is a pixel offset from the fibre's centre line. The core is a Gaussian about one pixel wide, so its
     //    peak is Intensity at every distance. The halo is a wider, dimmer Gaussian that carries the glow.
-    float Core = exp(-0.5 * VAcross * VAcross / (VCore * VCore));
+    float Line = exp(-0.5 * VAcross * VAcross / (VSigma * VSigma));
     float Glow = Halo * exp(-0.5 * VAcross * VAcross / (VHalo * VHalo));
     float Head = fract(Unit(VId, 9.0) + float(WindowCycles) * LoopFraction);
     float Behind = fract(Head - VAlong);
     float Front = smoothstep(0.0, 0.05, Behind);
     float Streak = Behind < Window ? pow(1.0 - Behind / Window, 2.0) * Front : 0.0;
     float Lit = Baseline + (1.0 - Baseline) * Streak;
-    float Ends = smoothstep(0.0, 0.04, VAlong) * smoothstep(1.0, 0.96, VAlong);
-    vec3 Along = mix(ColourStart, ColourEnd, VAlong);
+    // 📝 Guides are closed, so their ends meet at the seam and are not faded (see GuideAt).
+    float Ends = Shape == 5 ? 1.0 : smoothstep(0.0, 0.04, VAlong) * smoothstep(1.0, 0.96, VAlong);
+    // 📝 Guides run their colour gradient through the seam (blue at the start, cyan mid-loop, blue again), so it never steps.
+    float Phase = Shape == 5 ? 0.5 - 0.5 * cos(Tau * VAlong) : VAlong;
+    vec3 Along = mix(ColourStart, ColourEnd, Phase);
     vec3 Tint = mix(Along, ColourAccent, AccentMix * Unit(VId, 12.0));
     float Vary = 0.4 + 0.9 * Unit(VId, 13.0);
-    OutColour = vec4(Tint * (Intensity * Vary * (Core + Glow) * Lit * Ends * VFade * PulseFactorAt(VAlong)), 1.0);
+    OutColour = vec4(Tint * (Intensity * Vary * (Line + Glow) * Lit * Ends * VFade * PulseFactorAt(VAlong)), 1.0);
 }
 `;
 
@@ -487,7 +526,7 @@ void main()
 `;
 
 // 📝 Filmic curve (Narkowicz ACES fit) keeps the white-hot core of a strand from clipping to flat colour.
-export const CompositeFragment = `
+export const OutputFragment = `
 uniform sampler2D SceneTex;
 uniform sampler2D GlowA;
 uniform sampler2D GlowB;
@@ -525,14 +564,14 @@ void main()
     vec3 Light = (Scene + Glow * GlowAmount) * Exposure;
     float Luma = dot(Light, vec3(0.2126, 0.7152, 0.0722));
     Light = max(mix(vec3(Luma), Light, Saturation), vec3(0.0));
-    vec3 Mapped = pow(Filmic(Light), vec3(1.0 / 2.2));
+    vec3 Toned = pow(Filmic(Light), vec3(1.0 / 2.2));
     vec2 P = (VUv - 0.5) * vec2(Resolution.x / Resolution.y, 1.0);
     float Dark = 1.0 - Vignette * smoothstep(0.3, 0.95, length(P));
     float Noise = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
     // 📝 Output brightness is the last multiplication, so no frame can exceed it, grain included.
     // 📝 Grain multiplies the frame, so true black stays exactly zero and no dither lifts the background.
-    Mapped = Mapped * Dark * (1.0 + 2.0 * Grain * Noise);
-    OutColour = vec4(clamp(Mapped * Brightness, 0.0, 1.0), 1.0);
+    Toned = Toned * Dark * (1.0 + 2.0 * Grain * Noise);
+    OutColour = vec4(clamp(Toned * Brightness, 0.0, 1.0), 1.0);
 }
 `;
 

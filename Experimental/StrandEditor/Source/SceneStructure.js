@@ -11,7 +11,7 @@ import { PulseShapeNames } from './PulseSpecification.js';
 
 export const SceneFormat = 'StrandEditor/3';
 export const MechanismNames = Object.freeze(['Strands', 'Particles', 'Text']);
-export const StrandShapeNames = Object.freeze(['Bezier', 'Bloom', 'Wave', 'Flower', 'Trail']);
+export const StrandShapeNames = Object.freeze(['Bezier', 'Bloom', 'Wave', 'Flower', 'Trail', 'Guide']);
 export const LayerLimit = 24;
 export const StrandLimit = 4000;
 export const SegmentLimit = 128;
