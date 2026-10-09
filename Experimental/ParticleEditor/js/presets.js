@@ -460,14 +460,14 @@
     },
     {
       id: "sandstorm", name: "Sandstorm", group: "Storms",
-      blurb: "Dust driven across the scene. Adding it sets Prevailing wind to 8 m/s at bearing 70°.",
-      windLink: { type: 0, name: "Prevailing wind", set: { strength: 8, bearing: 70 } },
+      blurb: "A low, dense brown wall of wind-blasted grains: streaks race along the ground and hop as they saltate, with a thinner dust haze above. Adding it sets Prevailing wind to 10 m/s at bearing 70°.",
+      windLink: { type: 0, name: "Prevailing wind", set: { strength: 10, bearing: 70 } },
       p: P({
-        kind: 1, shape: 3, blend: "alpha", capacity: 6000, rate: 900,
-        emitShape: 3, origin: [-5.6, 1.1, 0], boxHalf: [0.3, 0.9, 5.2], dir: [0.94, 0, 0.342], spread: 0.25,
-        speedMin: 5, speedMax: 8, drag: 1.0, gravity: 0.2, lifeMin: 4, lifeMax: 7,
-        sizeStart: 0.07, sizeEnd: 0.05, colA: [0.82, 0.66, 0.42, 0.55], colB: [0.7, 0.55, 0.34, 0],
-        windCoupling: 4, flutter: 0.6, bounce: 0,
+        kind: 0, shape: 0, blend: "alpha", capacity: 6000, rate: 1400,
+        emitShape: 3, origin: [-5.6, 0.45, 0], boxHalf: [0.3, 0.35, 5.2], dir: [0.94, 0.05, 0.342], spread: 0.12,
+        speedMin: 6, speedMax: 11, drag: 0.35, gravity: 1.2, lifeMin: 3, lifeMax: 6,
+        sizeStart: 0.03, sizeEnd: 0.025, colA: [0.8, 0.62, 0.4, 0.7], colB: [0.6, 0.45, 0.28, 0],
+        windCoupling: 3.0, flutter: 0.4, bounce: 0.25,
       }),
     },
     {

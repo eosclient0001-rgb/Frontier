@@ -23,7 +23,7 @@ Query parameters:
 | Lightning web | Lightning, procedural | Branching arcs between scene objects. Every visible particle system's origin is a node, linked to its nearest neighbours and redrawn on an interval. Arcs are drawn only; they do not strike or light particles. Turn on in the **Lightning web** card. |
 | Leaves | Wind-driven, GPU-simulated | Leaf or paper sprites (selectable). They take their velocity from the wind field at their position.
 | Tornado debris | Wind-driven, GPU-simulated | Paper debris lifted from a ring around a vortex. Adding it enables the **Tornado** wind component at its origin. |
-| Sandstorm | Wind-driven, GPU-simulated | Dense dust (up to about 6,000 grains) fired from the upwind edge. Adding it sets **Prevailing wind** to 8 m/s at bearing 70°. |
+| Sandstorm | Particles (kind 0), GPU-simulated, wind-driven | A low, dense wall of up to about 6,000 wind-blasted grains fired from the upwind edge. Grains are streaks that stretch with speed, they hop off the ground (bounce with gravity), and they are ochre. Adding it sets **Prevailing wind** to 10 m/s at bearing 70°. This is a particle approximation: grains do not collide or pile up, and there is no volumetric haze. |
 | Rain streaks | Precipitation, GPU-simulated | Streaked drops that fall through the wind field and rebound a little off the floor. |
 | Hail | Precipitation, GPU-simulated | Ice pellets that drop fast and bounce high off the floor before settling. |
 | Snow | Precipitation, GPU-simulated | Flakes that drift through the wind field and land with a soft rebound. |
