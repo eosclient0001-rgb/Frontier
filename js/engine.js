@@ -149,6 +149,25 @@ export async function createEngine(canvas, state) {
     busy: false,
   };
 
+  /* Pipeline creation is synchronous and throws on WGSL problems — wrap it so
+     the failing stage/module is named in the message surfaced to the user. */
+  const moduleLabel = (m) => (m && m.label) || 'shader';
+  {
+    const origRP = device.createRenderPipeline.bind(device);
+    device.createRenderPipeline = (desc) => {
+      try { return origRP(desc); }
+      catch (err) {
+        const stages = [desc.vertex && `vertex:${moduleLabel(desc.vertex.module)}`, desc.fragment && `fragment:${moduleLabel(desc.fragment.module)}`].filter(Boolean).join(' ');
+        throw new Error(`Render pipeline (${stages || 'unknown'}) failed: ${err.reason || err.message}`);
+      }
+    };
+    const origCP = device.createComputePipeline.bind(device);
+    device.createComputePipeline = (desc) => {
+      try { return origCP(desc); }
+      catch (err) { throw new Error(`Compute pipeline (${moduleLabel(desc.compute && desc.compute.module)}) failed: ${err.reason || err.message}`); }
+    };
+  }
+
   /* ── samplers ── */
   const linearSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
   const comparisonSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', compare: 'less' });

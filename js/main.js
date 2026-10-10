@@ -36,7 +36,13 @@ function showError(err) {
   console.error(err);
   const box = $('#viewport-error');
   box.hidden = false;
-  $('#viewport-error-message').textContent = err.message || String(err);
+  const detail = err.reason || err.message || String(err);
+  const isPipeline = /pipeline/i.test(detail) || err.name === 'GPUPipelineError';
+  $('#viewport-error-title').textContent = isPipeline ? 'Shader pipeline error' : 'WebGPU unavailable';
+  $('#viewport-error-message').textContent = detail;
+  $('#viewport-error-hint').textContent = isPipeline
+    ? 'A WGSL shader failed to compile — open the browser console for the full diagnostic.'
+    : 'Try a recent Chrome, Edge, or Safari 18+ build with hardware acceleration enabled.';
 }
 
 let ui = null;
