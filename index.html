@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Frontier — Terrain Forge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;450;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/editor.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d6a078' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 20 6.5-11 4 6 2.5-3.5L21 20Z'/%3E%3C/svg%3E">
+</head>
+<body>
+<div id="root">
+  <main class="shell">
+
+    <!-- ═══════════════ Left rail · world outliner ═══════════════ -->
+    <aside class="outliner">
+      <div class="brand">
+        <div class="brand-symbol" id="brand-symbol"></div>
+        <span>frontier<span class="brand-dot">.</span></span>
+        <span class="version">TERRAIN&nbsp;/&nbsp;01</span>
+      </div>
+      <div class="scene-label">WORKSPACE <span class="status-dot"></span></div>
+      <div class="scene-title"><span id="scene-name">Untitled world</span><span class="scene-extension">.terrain</span></div>
+
+      <div class="outliner-heading">
+        <h2>Outliner <span id="outliner-count">00</span></h2>
+        <button class="icon-button" id="add-layer-button" aria-label="Add layer" title="Add layer · Shift+A"></button>
+      </div>
+
+      <label class="search">
+        <span id="search-icon"></span>
+        <input id="search-input" placeholder="Find a layer or setting…" autocomplete="off">
+        <button id="search-clear" aria-label="Clear search" hidden></button>
+      </label>
+
+      <div class="tree" id="world-tree" aria-label="World outliner"></div>
+
+      <div class="outliner-bottom">
+        <div class="world-icon" id="world-icon"></div>
+        <div><strong>Evergreen valley</strong><span>Local project</span></div>
+        <span class="little-dot"></span>
+      </div>
+    </aside>
+
+    <!-- ═══════════════ Center · WebGPU viewport ═══════════════ -->
+    <section class="viewport" id="viewport">
+      <canvas id="gpu-canvas"></canvas>
+
+      <div class="viewport-top">
+        <div class="view-modes" id="view-modes" role="group" aria-label="View mode"></div>
+        <div class="viewport-top-right">
+          <button class="chip-toggle" id="toggle-shadows" aria-pressed="true" title="Sun shadows"><span class="chip-dot"></span>Shadows</button>
+          <button class="chip-toggle" id="toggle-water" aria-pressed="true" title="Water plane"><span class="chip-dot"></span>Water</button>
+          <div class="stats-pill" id="stats-pill"><b>—</b> fps<span class="stats-sep"></span><b>—</b> tris<span class="stats-sep"></span><b>—</b></div>
+        </div>
+      </div>
+
+      <div class="viewport-hint" id="viewport-hint">Drag to orbit · Wheel to zoom · Shift + drag to pan</div>
+
+      <div class="viewport-bottom">
+        <div class="generate-block">
+          <button class="generate-button" id="generate-button">
+            <span class="generate-label">Generate terrain</span>
+            <span class="generate-sub">GPU erosion sim</span>
+          </button>
+          <div class="generate-progress" id="generate-progress" hidden>
+            <div class="generate-progress-bar"><i id="generate-progress-fill"></i></div>
+            <span id="generate-progress-label">Simulating…</span>
+          </div>
+        </div>
+        <div class="sun-strip" id="sun-strip">
+          <span class="sun-strip-label">SUN</span>
+          <input type="range" id="quick-azimuth" min="0" max="360" step="1" aria-label="Sun azimuth">
+          <input type="range" id="quick-elevation" min="-8" max="88" step="0.5" aria-label="Sun elevation">
+          <span class="sun-strip-value" id="sun-strip-value">—</span>
+        </div>
+      </div>
+
+      <div class="viewport-error" id="viewport-error" hidden>
+        <div class="viewport-error-card">
+          <h2>WebGPU unavailable</h2>
+          <p id="viewport-error-message">This browser or device does not expose a WebGPU adapter. Terrain Forge renders its simulation and viewport through WebGPU compute and render pipelines.</p>
+          <p class="muted">Try a recent Chrome, Edge, or Safari 18+ build with hardware acceleration enabled.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ Right · layer stacks + inspector ═══════════════ -->
+    <aside class="inspector" id="inspector-panel">
+      <header class="inspector-top">
+        <div>Inspector <span class="crumb-sep" id="crumb-sep">/</span><span id="inspector-crumb">Terrain</span></div>
+        <button class="save-status saved" id="save-status"><span class="save-check"></span><span id="save-status-label">All changes saved</span></button>
+      </header>
+
+      <div class="stack-tabs" role="tablist">
+        <button class="stack-tab is-active" id="tab-terrain" role="tab" aria-selected="true">Terrain stack <span class="stack-count" id="terrain-count">0</span></button>
+        <button class="stack-tab" id="tab-texture" role="tab" aria-selected="false">Texture stack <span class="stack-count" id="texture-count">0</span></button>
+      </div>
+
+      <div class="layerstack-wrap" id="layerstack-wrap">
+        <div class="layerstack" id="layerstack" role="listbox" aria-label="Layer stack"></div>
+        <div class="layerstack-foot">
+          <span>Evaluated bottom → top</span>
+          <button class="add-layer-inline" id="add-layer-inline">+ Add layer</button>
+        </div>
+      </div>
+
+      <div class="inspector-scroll" id="inspector-scroll">
+        <div class="object-header">
+          <div class="object-title">
+            <div class="object-icon" id="object-icon"></div>
+            <div>
+              <div class="eyebrow" id="object-eyebrow">Landscape</div>
+              <h1 id="object-name">Terrain</h1>
+            </div>
+          </div>
+          <div class="object-actions">
+            <button class="reset" id="reset-button" title="Reset layer properties"><span class="reset-icon" id="reset-icon"></span>Reset</button>
+            <button class="enabled-pill" id="enabled-pill"><span></span><span id="enabled-label">Enabled</span></button>
+          </div>
+        </div>
+        <div class="section-label"><span id="section-kind">PROPERTIES</span><span id="section-desc"></span></div>
+        <div class="property-switches" id="property-switches" role="group" aria-label="Property switches"></div>
+        <div class="cards" id="property-cards"></div>
+        <footer class="inspector-footer">
+          <span><span class="footer-dot"></span><span id="footer-status">Changes apply in real time</span></span>
+          <span><span id="footer-name">Terrain</span> <span class="footer-slash">/</span> <span id="footer-type">Landscape</span></span>
+        </footer>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Add-layer dialog (Construct-style sliding panel) -->
+  <div class="construct-backdrop" id="add-layer-backdrop" hidden>
+    <section class="construct-panel construct-sliding" role="dialog" aria-modal="true" aria-labelledby="construct-title">
+      <header>
+        <div class="construct-emblem" id="construct-emblem"></div>
+        <div>
+          <h2 id="construct-title">Add layer</h2>
+          <p id="construct-subtitle">Choose a shape, modifier or erosion pass</p>
+        </div>
+        <span class="construct-engine">TERRAIN FORGE</span>
+        <button class="construct-close" id="construct-close" aria-label="Close"></button>
+      </header>
+      <div class="construct-context">
+        <span class="current" id="ctx-step1">01 &nbsp; Catalogue</span>
+        <span class="ctx-arrow">→</span>
+        <span id="ctx-step2">02 &nbsp; Configure</span>
+        <span class="construct-context-end" id="ctx-note">Shape · modify · erode</span>
+      </div>
+      <div class="construct-slide-window">
+        <div class="construct-slide-track" id="construct-track">
+          <div class="construct-step construct-catalogue" id="construct-step1">
+            <div class="construct-layout">
+              <nav aria-label="Layer categories" id="construct-nav"></nav>
+              <div class="construct-content">
+                <label class="construct-search">
+                  <span id="construct-search-icon"></span>
+                  <input id="construct-search" placeholder="Search all layers…" autocomplete="off">
+                  <kbd>⌕</kbd>
+                </label>
+                <div class="construct-section-title"><span id="construct-section-name">Shapes</span><span id="construct-section-count"></span></div>
+                <div class="construct-grid" id="construct-grid"></div>
+                <p class="construct-caveat">Layers are evaluated bottom → top. Shape layers build elevation, modifiers reshape it, erosion simulates hydraulic drainage.</p>
+              </div>
+            </div>
+          </div>
+          <div class="construct-step construct-detail" id="construct-step2">
+            <div class="construct-backbar">
+              <button id="construct-back"><span class="back-arrow"></span> Catalogue</button>
+              <span id="construct-detail-name">Layer</span>
+              <small id="construct-detail-kind">NEW LAYER</small>
+            </div>
+            <div class="construct-detail-body" id="construct-detail-body"></div>
+            <footer>
+              <span><kbd>Esc</kbd> close</span>
+              <button class="construct-submit" id="construct-submit">Add layer</button>
+            </footer>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <input type="file" id="project-file" accept=".terrain,.json" hidden>
+</div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
