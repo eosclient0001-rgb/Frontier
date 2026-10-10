@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Frontier — Terrain</title>
+<link rel="stylesheet" href="src/css/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%23151'/></svg>">
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ top bar ══════════════════════════════════════════════════════════ -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">F</span>
+      <div class="brand-text">
+        <b>Frontier</b>
+        <span>Terrain</span>
+      </div>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tb-group" id="tb-project">
+      <button class="btn ghost" data-act="new"><span class="caps">New</span></button>
+      <button class="btn ghost" data-act="open"><span class="caps">Open</span></button>
+      <button class="btn ghost" data-act="save"><span class="caps">Save</span></button>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tb-group">
+      <label class="field inline">
+        <span class="caps dim">Preset</span>
+        <select id="preset-select" class="sel"></select>
+      </label>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="tb-group">
+      <label class="field inline">
+        <span class="caps dim">Field</span>
+        <select id="res-select" class="sel">
+          <option value="512">512²</option>
+          <option value="1024">1024²</option>
+          <option value="2048">2048²</option>
+        </select>
+      </label>
+      <label class="field inline">
+        <span class="caps dim">Mesh</span>
+        <select id="rres-select" class="sel">
+          <option value="384">384</option>
+          <option value="512">512</option>
+          <option value="768">768</option>
+          <option value="1024">1024</option>
+          <option value="1536">1536</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tb-group">
+      <button class="btn toggle" id="autobuild-btn" title="Rebuild automatically when parameters change">
+        <span class="dot"></span><span class="caps">Live</span>
+      </button>
+      <button class="btn primary" id="build-btn">
+        <svg viewBox="0 0 16 16"><path d="M2 13l5-6 3 3 4-5 0 8z" fill="currentColor"/></svg>
+        <span class="caps">Build</span>
+        <kbd>B</kbd>
+      </button>
+      <button class="btn icon" data-act="export" title="Export">
+        <svg viewBox="0 0 16 16"><path d="M8 1v8M4.5 5.5L8 9l3.5-3.5M2.5 12v2h11v-2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="body">
+    <!-- ══ viewport ══════════════════════════════════════════════════════ -->
+    <section class="stage">
+      <div class="strip" id="vstrip">
+        <div class="zone">
+          <div class="seg mini" id="quality-seg"></div>
+          <div class="tb-sep"></div>
+          <button class="btn ghost" id="water-btn" title="Water surface"><span class="caps">Water</span></button>
+          <button class="btn ghost" id="taa-btn" title="Temporal anti-aliasing"><span class="caps">TAA</span></button>
+          <button class="btn ghost" id="shadow-btn" title="Ray-marched sun shadows"><span class="caps">Shadows</span></button>
+          <div class="seg mini" id="debug-seg" hidden></div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="zone">
+          <div class="mode" id="run-mode">
+            <button class="btn sel" data-m="shaded"><span class="caps">Shaded</span></button>
+            <button class="btn" data-m="data"><span class="caps">Data</span></button>
+          </div>
+          <div class="status" id="build-status">
+            <span class="live done"></span>
+            <b id="status-text">Ready</b>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="zone">
+          <label class="slider compact" id="exposure-ctl"></label>
+          <div class="tb-sep"></div>
+          <div class="seg mini" id="cam-seg"></div>
+          <button class="btn ghost" id="frame-btn" title="Frame the terrain"><span class="caps">Frame</span></button>
+          <div class="tb-sep"></div>
+          <div class="status mono" id="fps-status"><b>—</b><span>fps</span></div>
+        </div>
+      </div>
+      <div class="conv" id="conv"><i></i></div>
+
+      <div class="view" id="view">
+        <canvas id="gpu"></canvas>
+        <div class="view-overlay" id="overlay"></div>
+        <div class="sun-dial" id="sundial" title="Drag to move the sun">
+          <svg viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="52" class="ring"/>
+            <circle cx="60" cy="60" r="34" class="ring faint"/>
+            <line x1="8" y1="60" x2="112" y2="60" class="ring faint"/>
+            <line x1="60" y1="8" x2="60" y2="112" class="ring faint"/>
+            <line id="sun-ray" x1="60" y1="60" x2="90" y2="40" class="ray"/>
+            <circle id="sun-knob" cx="90" cy="40" r="6" class="knob"/>
+          </svg>
+          <div class="sun-readout"><b id="sun-readout">—</b></div>
+        </div>
+        <div class="gl-loading" id="loading">
+          <div class="gl-card">
+            <div class="spin"></div>
+            <div id="loading-text">Starting WebGPU…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ right dock ════════════════════════════════════════════════════ -->
+    <aside class="dock" id="dock">
+      <section class="panel stack-panel" id="stack-panel">
+        <header class="panel-head">
+          <div class="tabs" id="stack-tabs">
+            <button class="tab sel" data-stack="terrain"><span class="caps">Terrain</span></button>
+            <button class="tab" data-stack="texture"><span class="caps">Texture</span></button>
+          </div>
+          <div class="grow"></div>
+          <button class="btn icon" id="add-layer" title="Add layer">
+            <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </header>
+        <div class="stack-hint" id="stack-hint"></div>
+        <div class="stack-list" id="stack-list"></div>
+      </section>
+
+      <div class="splitter" id="splitter"></div>
+
+      <section class="panel inspector" id="inspector">
+        <header class="panel-head">
+          <span class="eyebrow" id="insp-eyebrow">Inspector</span>
+          <div class="grow"></div>
+          <button class="btn icon subtle" id="insp-menu" title="More">
+            <svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="13" cy="8" r="1.4" fill="currentColor"/></svg>
+          </button>
+        </header>
+        <div class="insp-body" id="insp-body"></div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span id="sb-left">—</span>
+    <div class="grow"></div>
+    <span id="sb-right" class="dim"></span>
+  </footer>
+</div>
+
+<div class="modal-root" id="modal-root"></div>
+<div class="toast-root" id="toast-root"></div>
+
+<script type="module" src="src/js/main.js"></script>
+</body>
+</html>
