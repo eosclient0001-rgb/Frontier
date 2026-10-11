@@ -317,12 +317,41 @@ refs.projectCard.addEventListener('click', (event) => {
       { label: 'Save project (.json)', icon: 'download', dividerBefore: true, onClick: () => {
         download(new Blob([serializeProject(project)], { type: 'application/json' }), `${project.name.replace(/\s+/g, '-').toLowerCase()}.frontier.json`);
       } },
+      { label: 'Load project…', icon: 'upload', onClick: () => pickProjectFile() },
       { label: 'Export height map', icon: 'download', onClick: () => app.exportMap('height') },
       { label: 'Export baked albedo', icon: 'download', onClick: () => app.exportMap('albedo') },
       { label: 'Console', icon: 'grid', dividerBefore: true, onClick: () => { refs.log.hidden = !refs.log.hidden; } },
     ],
   });
 });
+
+/* project files --------------------------------------------------------- */
+function pickProjectFile() {
+  const input = el('input', { type: 'file', accept: '.json,application/json', style: { display: 'none' } });
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.remove();
+    if (!file) return;
+    try {
+      const loaded = normalizeProject(JSON.parse(await file.text()));
+      editor.replaceProject(loaded);
+      camera.frame(loaded.world);
+      editor.select({ kind: 'layer', id: loaded.terrain[0]?.id ?? null });
+      syncDocumentTitle();
+      await generate();
+      pushLog('info', `loaded ${file.name}`);
+    } catch (error) {
+      pushLog('error', `could not load ${file.name}: ${error.message}`);
+    }
+  });
+  document.body.append(input);
+  input.click();
+}
+
+function syncDocumentTitle() {
+  refs.docTitle.textContent = project.name;
+  refreshHud();
+}
 
 /* keyboard -------------------------------------------------------------- */
 window.addEventListener('keydown', (event) => {
