@@ -242,6 +242,29 @@ export default function App() {
     return () => clearTimeout(t);
   }, [message]);
 
+  // Anything that escapes React ends up on screen rather than only in a console the user has to
+  // know to open. This is the difference between "it's black" and a bug report.
+  useEffect(() => {
+    const push = (text) => setErrors((list) => (list.includes(text) ? list : [...list.slice(-2), text]));
+    const onError = (e) => {
+      const err = e.error;
+      const head = err?.message ?? e.message ?? 'Unknown error';
+      const where = e.filename ? `${e.filename.split('/').pop()}:${e.lineno}` : '';
+      const stack = err?.stack ? err.stack.split('\n').slice(0, 4).join('\n') : '';
+      push([where ? `${where}\n` : '', head, stack ? `\n${stack}` : ''].join(''));
+    };
+    const onRejected = (e) => {
+      const r = e.reason;
+      push(`Unhandled rejection: ${r?.message ?? r}`);
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onRejected);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onRejected);
+    };
+  }, []);
+
   /* ---------------------------------------------------------------- keyboard */
 
   useEffect(() => {
@@ -528,7 +551,14 @@ export default function App() {
         <div className="gpu-errors">
           {errors.map((e) => (
             <div key={e} className="gpu-error">
-              <b>GPU</b> {e}
+              <b>ERROR</b>
+              <pre>{e}</pre>
+              <button
+                aria-label="Dismiss"
+                onClick={() => setErrors((list) => list.filter((x) => x !== e))}
+              >
+                ×
+              </button>
             </div>
           ))}
         </div>

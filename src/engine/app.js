@@ -19,7 +19,9 @@ export async function createDevice(onError = () => {}) {
   if (!navigator.gpu) {
     throw new Error('WebGPU is not available in this browser. Try Chrome 113+, Edge 113+ or Safari 18.');
   }
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  // No powerPreference: Chrome ignores it on Windows and logs an advisory for doing so, and on
+  // every other platform the browser already picks the discrete GPU for a WebGPU context.
+  const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) throw new Error('No WebGPU adapter could be created on this machine.');
   // Ask for the headroom a 4K heightfield needs, clamped to what the adapter can actually give.
   // Without this the erosion flux buffer is capped at the default 128 MiB and 4K is unreachable

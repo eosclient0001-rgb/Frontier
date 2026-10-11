@@ -339,3 +339,8 @@ input[type=range]:hover::-webkit-slider-thumb { background: #fff; border-color: 
   line-height: 1.5; word-break: break-word; pointer-events: auto;
 }
 .gpu-error b { color: #e08a8a; margin-right: 6px; letter-spacing: 0.6px; }
+
+.gpu-error { display: flex; align-items: flex-start; gap: 8px; }
+.gpu-error pre { margin: 0; white-space: pre-wrap; font: inherit; flex: 1; }
+.gpu-error button { color: #d09a9a; font-size: 15px; line-height: 1; padding: 0 2px; }
+.gpu-error button:hover { color: #fff; }
