@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frontier · Terrain Forge</title>
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="Procedural terrain and material authoring on WebGPU — layer stacks, no node graphs." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script type="module" src="src/main.js"></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- ------------------------------------------------------- layer rail -->
+    <aside class="rail" id="rail">
+      <header class="brand">
+        <span class="brand-mark">frontier.</span>
+        <span class="eyebrow">terrain forge</span>
+      </header>
+
+      <div class="tabs" id="rail-tabs"></div>
+
+      <div class="rail-search">
+        <input id="layer-search" type="search" placeholder="Filter layers" spellcheck="false" autocomplete="off" />
+      </div>
+
+      <div class="rail-scroll" id="rail-scroll"></div>
+
+      <div class="card-project" id="project-card" title="Project actions">
+        <div class="eyebrow">project</div>
+        <input class="project-name" id="project-name" value="Untitled terrain" spellcheck="false" />
+        <div class="project-meta" id="project-meta">—</div>
+      </div>
+    </aside>
+
+    <!-- ----------------------------------------------------------- stage -->
+    <main class="stage">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="tile" id="brand-tile">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+              <path d="M3 19h18L14 7l-3 5-2-3z" />
+            </svg>
+          </div>
+          <div class="topbar-titles">
+            <span class="eyebrow" id="preset-label">—</span>
+            <h1 id="doc-title">Terrain</h1>
+          </div>
+          <button class="chip" id="preset-button">Presets</button>
+          <button class="chip" id="reset-button">Reset view</button>
+        </div>
+        <div class="topbar-center"><div class="pills" id="view-modes"></div></div>
+        <div class="topbar-right">
+          <div class="metric"><span class="metric-value" id="stat-relief">—</span><span class="eyebrow">relief</span></div>
+          <div class="metric"><span class="metric-value" id="stat-memory">—</span><span class="eyebrow">fields</span></div>
+          <div class="metric"><span class="metric-value" id="stat-fps">—</span><span class="eyebrow">fps</span></div>
+          <button class="primary" id="generate">Generate</button>
+        </div>
+      </header>
+
+      <div class="viewport" id="viewport">
+        <canvas id="viewport-canvas"></canvas>
+        <div class="viewport-tools" id="display-toggles"></div>
+        <div class="brush-bar" id="brush-bar"></div>
+        <div class="banner" id="banner" hidden>
+          <div class="banner-title" id="banner-title">WebGPU required</div>
+          <div class="banner-body" id="banner-body"></div>
+        </div>
+        <div class="status" id="status">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">starting…</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- ------------------------------------------------------- inspector -->
+    <aside class="inspector" id="inspector">
+      <div class="inspector-head" id="inspector-head"></div>
+      <div class="inspector-body" id="inspector-body"></div>
+    </aside>
+  </div>
+
+  <div class="log" id="log" hidden>
+    <div class="log-head">
+      <span class="eyebrow">console</span>
+      <button class="ghost" id="log-close" title="Close">×</button>
+    </div>
+    <div class="log-body" id="log-body"></div>
+  </div>
+</body>
+</html>

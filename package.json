@@ -1,0 +1,17 @@
+{
+  "name": "frontier-terrain-forge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontier Terrain Forge — WebGPU procedural terrain generator (layer-stack workflow, no node graphs)",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "check": "node tools/check.mjs",
+    "layout": "node tools/gen-layout.mjs",
+    "simulate": "node tools/simulate.mjs",
+    "ui": "node tools/uitest.mjs"
+  },
+  "devDependencies": {
+    "naga-wasm": "^30.2.0"
+  }
+}
