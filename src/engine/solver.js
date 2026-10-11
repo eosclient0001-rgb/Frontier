@@ -36,9 +36,9 @@ export class TerrainSolver {
     this.res = 1024;
     this.extent = 4000;
     this.heightMeters = 1200;
-    this.aoDirs = 12;
-    this.aoSteps = 10;
-    this.aoRadius = 900;
+    this.aoDirs = 16;
+    this.aoSteps = 16;
+    this.aoRadius = 90;
 
     this.fieldA = null;
     this.fieldB = null;
@@ -143,9 +143,11 @@ export class TerrainSolver {
     this.res = res;
     this.extent = extent;
     this.heightMeters = heightMeters;
-    this.aoDirs = aoDirs ?? this.aoDirs;
-    this.aoSteps = aoSteps ?? this.aoSteps;
-    this.aoRadius = aoRadius ?? this.aoRadius;
+    this.aoDirs = aoDirs ?? 16;
+    this.aoSteps = aoSteps ?? 16;
+    // Derived from the tile rather than fixed: a 34 m radius is contact shadow on a 4 km tile and
+    // invisible on a 20 km one.
+    this.aoRadius = aoRadius ?? Math.max(20, extent * 0.022);
     if (changed || !this.fieldA) this._allocate();
     else this._writeDeriveUniform();
   }
