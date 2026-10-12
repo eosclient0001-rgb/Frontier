@@ -38,6 +38,35 @@ function endInfo(net, edge, nodeId) {
   };
 }
 
+// Taper detection: two roads meeting end to end (nearly straight) whose lane layouts differ.
+// Returns the change magnitude, or null when a plain continuation/junction is correct.
+function laneSig(lay) { return lay.lanes.map(l => l.type).join(','); }
+function taperCheck(net, A, B) {
+  if (A.dx * B.dx + A.dz * B.dz > -0.7) return null;
+  const sameLanes = laneSig(A.lay) === laneSig(B.lay);
+  const dTot = Math.abs(A.lay.total - B.lay.total);
+  if (sameLanes && dTot < 0.6) return null;
+  const dLanes = Math.abs(A.lay.lanes.length - B.lay.lanes.length);
+  return { lanes: dLanes + (sameLanes ? 0 : 1), width: dTot };
+}
+
+// Merge / diverge: three arms, two near-opposite "major" arms and one minor arm at an acute angle.
+// Narrow (<~62°) approaches get the wedge; wider branches stay plain junctions.
+function mergeCheck(ends) {
+  for (let i = 0; i < 3; i++) {
+    const M = ends[i], P = ends[(i + 1) % 3], Q = ends[(i + 2) % 3];
+    if (P.dx * Q.dx + P.dz * Q.dz > -0.85) continue;
+    const dP = M.dx * P.dx + M.dz * P.dz, dQ = M.dx * Q.dx + M.dz * Q.dz;
+    const major = dP >= dQ ? P : Q;
+    const cos = Math.max(dP, dQ);
+    if (cos < 0.45 || cos > 0.93) continue;
+    const traffic = M.lay.lanes.filter(l => l.meta.traffic && l.dir);
+    const inbound = !traffic.length || traffic.some(l => (M.atA ? l.dir === -1 : l.dir === 1) || l.dir === 0);
+    return { minor: M, major, type: inbound ? 'merge' : 'diverge' };
+  }
+  return null;
+}
+
 // Position at distance t along d from node, lateral offset w along right-of-d.
 const P = (N, e, t, w) => [N.x + e.dx * t + e.rx * w, N.z + e.dz * t + e.rz * w];
 
@@ -50,9 +79,17 @@ function arcPts(cx, cz, r, a0, sweep) {
 
 export function computeJunction(net, nodeId) {
   const N = net.nodes.get(nodeId);
-  const edges = net.nodeEdges(nodeId);
+  const allEdges = net.nodeEdges(nodeId);
   const J = { id: nodeId, node: N, y: N.y, ends: [], gaps: [], kind: 'none', polygon: null, hole: null };
-  if (!edges.length) return J;
+  if (!allEdges.length) return J;
+  // Railways form their own graph: a rail-only node carries no road surface, just the rail ends.
+  const railEdges = allEdges.filter(e => net.isRail(e));
+  const edges = allEdges.filter(e => !net.isRail(e));
+  if (!edges.length) {
+    J.ends = railEdges.map(e => endInfo(net, e, nodeId));
+    J.kind = railEdges.length === 1 ? 'railEnd' : 'railNode';
+    return J;
+  }
   const ends = edges.map(e => endInfo(net, e, nodeId)).sort((a, b) => a.ang - b.ang);
   J.ends = ends;
   const map = new Map(ends.map(e => [e.id + (e.atA ? ':a' : ':b'), e]));
@@ -75,6 +112,29 @@ export function computeJunction(net, nodeId) {
     const Rc = N.rbRadius || Math.max(20, wmax + 9);
     circular(J, N, ends, Rc, Math.max(Rc - 9, 5));
     return J;
+  }
+  // Lane-count / width change in line through a node: a tapered transition, not a corner.
+  if (ends.length === 2) {
+    const dW = taperCheck(net, ends[0], ends[1]);
+    if (dW) {
+      J.kind = 'taper'; J.polygon = null;
+      const T = Math.min(44, Math.max(16, 14 + 3 * dW.lanes + 2 * dW.width));
+      for (const e of ends) e.setback = Math.min(T / 2, e.len * 0.45);
+      J.taperLength = T;
+      return J;
+    }
+  }
+  // Shallow-angle Y: a minor arm joins (or leaves) a through road. Lanes collapse into a wedge.
+  if (ends.length === 3) {
+    const m = mergeCheck(ends);
+    if (m) {
+      J.kind = 'merge'; J.polygon = null;
+      J.minorId = m.minor.id; J.majorId = m.major.id;
+      J.mergeType = m.type;
+      m.minor.setback = Math.min(Math.max(12, 6 + 0.9 * m.minor.lay.total), m.minor.len * 0.45);
+      J.mergeLength = m.minor.setback;
+      return J;
+    }
   }
   J.kind = 'junction';
   const R = N.radius || autoRadius(ends);

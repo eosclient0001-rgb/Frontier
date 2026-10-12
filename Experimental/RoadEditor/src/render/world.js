@@ -6,13 +6,14 @@ import { buildMaterials, buildPropMaterials } from './materials.js';
 import { propLibrary, SHADOW_PROPS } from './propsLib.js';
 import { CameraController } from './camera.js';
 import { getProfile, layout } from '../road/profiles.js';
+import { TrainSystem } from './trains.js';
 
 const CHUNK = 512;
 const PCHUNK = 400;
 const PICK_MATS = new Set(['asphalt', 'asphaltOld', 'concrete', 'sidewalk', 'pavers', 'cobble', 'gravel', 'dirt', 'busRed', 'bikeGreen', 'ballast', 'crossPanel']);
 const MARK_MATS = new Set(['markWhite', 'markYellow', 'decal']);
 const DISTRICT_COLORS = { downtown: [0.30, 0.30, 0.29], midtown: [0.31, 0.32, 0.29], oldtown: [0.36, 0.33, 0.28], residential: [0.27, 0.34, 0.20], industrial: [0.34, 0.33, 0.29], park: [0.22, 0.36, 0.16], suburb: [0.28, 0.37, 0.20], rural: [0.33, 0.38, 0.19] };
-export const CATEGORY_COLORS = { highway: '#f59e0b', arterial: '#4fd8e0', urban: '#e6e6e6', residential: '#a3a3a3', rural: '#a3c76b', active: '#22c55e' };
+export const CATEGORY_COLORS = { highway: '#f59e0b', arterial: '#4fd8e0', urban: '#e6e6e6', residential: '#a3a3a3', rural: '#a3c76b', active: '#22c55e', rail: '#d0d0d0' };
 
 export class World {
   constructor(canvas) {
@@ -48,10 +49,12 @@ export class World {
     this.elemChunk = new Map();  // element id -> key
     this.propChunks = new Map(); // key -> {key, elements:Set, group, center}
     this.elemProps = new Map();  // element id -> Set(prop chunk keys)
-    this.settings = { markings: true, props: true, trees: true, shadows: true, propDist: 620, markDist: 1600, view: 'lit', hour: 15.5 };
+    this.settings = { markings: true, props: true, trees: true, shadows: true, trains: true, propDist: 620, markDist: 1600, view: 'lit', hour: 15.5 };
     this.stats = { tris: 0, calls: 0, fps: 0 };
     this.clock = new THREE.Clock();
     this.frameCbs = new Set();
+    this.trains = new TrainSystem(this.scene, this.PM);
+    this.frameCbs.add(dt => this.trains.update(dt));
     this.raycaster = new THREE.Raycaster();
     this._ft = 0; this._fc = 0;
     this.resize();
@@ -159,6 +162,8 @@ export class World {
     for (const ch of this.chunks.values()) this.buildChunk(ch);
     for (const pc of this.propChunks.values()) this.buildPropChunk(pc);
     this.buildGround(net);
+    this.trains.setNetwork(net);
+    this.trains.setVisible(this.settings.trains && this.settings.view !== 'topology');
     if (this.settings.view === 'topology') this.buildTopology();
   }
   assign(id, out) {
@@ -192,6 +197,7 @@ export class World {
     for (const id of updated) { const out = this.builder.outs.get(id); if (out) { dirty.add(this.assign(id, out).key); for (const k of this.assignProps(id, out)) dirtyP.add(k); } }
     for (const k of dirty) { const ch = this.chunks.get(k); if (ch) this.buildChunk(ch); }
     for (const k of dirtyP) { const pc = this.propChunks.get(k); if (pc) this.buildPropChunk(pc); }
+    this.trains.schedule();
     if (this.settings.view === 'topology') this.buildTopology();
   }
   disposePropChunk(pc) {
@@ -314,6 +320,7 @@ export class World {
       m.needsUpdate = true;
     }
     this.topoGroup.visible = clay;
+    this.trains.setVisible(this.settings.trains && !clay);
     if (clay) this.buildTopology();
     for (const ch of this.allChunks()) this.applyChunkVisibility(ch, true);
   }
@@ -347,6 +354,7 @@ export class World {
     this.settings[k] = v;
     if (k === 'shadows') { this.sun.castShadow = v; }
     if (k === 'hour') this.setHour(v);
+    if (k === 'trains') this.trains.setVisible(v && this.settings.view !== 'topology');
     for (const ch of this.allChunks()) this.applyChunkVisibility(ch, true);
   }
 
@@ -381,7 +389,7 @@ export class World {
     m.position.set(x, y + 0.4, z); m.renderOrder = 18;
     return m;
   }
-  // selection: {type:'edge'|'node'|'street'|'rail'|'subway', id, ids?}
+  // selection: {type:'edge'|'node'|'street'|'subway', id, ids?}  (railways are edges)
   setSelection(sel, accent = 0x4fd8e0) {
     this.clearGroup(this.overlay);
     if (!sel || !this.net) return;
@@ -401,9 +409,9 @@ export class World {
       for (const e of this.net.nodeEdges(n.id)) g.add(...this.edgeBand(e, accent, 0.1));
       g.add(this.handle(n.x, n.y, n.z, 3.2, accent, true));
       g.add(this.handle(n.x, n.y, n.z, 1.2, 0xffffff));
-    } else if (sel.type === 'rail' || sel.type === 'subway') {
-      const L = (sel.type === 'rail' ? this.net.rails : this.net.subways).get(sel.id); if (!L) return;
-      const y = sel.type === 'rail' ? 1.5 : -L.depth + 1;
+    } else if (sel.type === 'subway') {
+      const L = this.net.subways.get(sel.id); if (!L) return;
+      const y = -L.depth + 1;
       const lp = []; for (const p of L.pts) lp.push(p.x, (p.y ?? 0) + y, p.z);
       const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
       const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: accent, depthTest: false })); line.renderOrder = 16; g.add(line);

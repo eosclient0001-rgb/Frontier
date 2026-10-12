@@ -3,7 +3,7 @@ import { SpatialIndex } from './network.js';
 import { computeJunction } from './junction.js';
 import { buildEdge } from './geom/edge.js';
 import { buildJunction } from './geom/junctionMesh.js';
-import { buildRail, findCrossings, railCenterline } from './geom/rail.js';
+import { buildRailEdge } from './geom/rail.js';
 import { buildSubway } from './geom/subway.js';
 import { buildRiver } from './geom/water.js';
 import { Out } from './geom/out.js';
@@ -17,7 +17,6 @@ export class NetworkBuilder {
     this.index = new SpatialIndex(net);
     this.junctions = new Map();
     this.outs = new Map();
-    this.railCl = new Map();
     this.setupWater();
   }
 
@@ -62,7 +61,6 @@ export class NetworkBuilder {
           const rad = Math.max(...J.ends.map(e => Math.hypot(e.setback, Math.max(e.wl, e.wr) + Math.max(e.sl, e.sr)))) + r;
           if (Math.hypot(J.node.x - x, J.node.z - z) < rad && J.node.y < deckY - 2) return true;
         }
-        for (const [id, rc] of self.railCl) { const q = rc.nearest(x, z); if (q.d < 7 + r) return true; }
         return false;
       },
       roadAt: (x, z, r) => {
@@ -72,41 +70,39 @@ export class NetworkBuilder {
     };
   }
 
+  // Road segments and railway edges share the same junction solver; railways use their own builder.
+  buildOne(e, ctx) {
+    const net = this.net;
+    if (net.isRail(e)) return buildRailEdge(net, e, this.junctions.get(e.a), this.junctions.get(e.b), ctx, this.index);
+    return buildEdge(net, e, this.junctions.get(e.a), this.junctions.get(e.b), ctx);
+  }
+
   // Full build. onProgress(fraction, label); yields to the event loop between batches.
   async buildAll(onProgress = () => {}) {
     const net = this.net;
     this.index.rebuild();
     this.junctions.clear(); this.outs.clear();
-    for (const r of net.rails.values()) this.railCl.set(r.id, railCenterline(r));
     const ctx = this.ctx();
     const nodes = [...net.nodes.keys()], edges = [...net.edges.values()];
-    const total = nodes.length * 2 + edges.length + net.rails.size + net.subways.size + 2;
+    const total = nodes.length * 2 + edges.length + net.subways.size + 2;
     let done = 0;
     const tick = async (label) => { if (done % 150 === 0) { onProgress(done / total, label); await new Promise(r => setTimeout(r, 0)); } };
     for (const id of nodes) { this.junctions.set(id, computeJunction(net, id)); done++; await tick('Solving junctions'); }
     for (const e of edges) {
-      try { this.outs.set(e.id, buildEdge(net, e, this.junctions.get(e.a), this.junctions.get(e.b), ctx)); }
+      try { this.outs.set(e.id, this.buildOne(e, ctx)); }
       catch (err) { console.warn('edge build failed', e.id, err); this.outs.set(e.id, new Out(e.id)); }
-      done++; await tick('Building road segments');
+      done++; await tick(net.isRail(e) ? 'Laying railways' : 'Building road segments');
     }
     for (const id of nodes) {
       try { this.outs.set(id, buildJunction(net, this.junctions.get(id), ctx)); }
       catch (err) { console.warn('junction build failed', id, err); }
       done++; await tick('Building junctions');
     }
-    for (const r of net.rails.values()) { this.buildRailEl(r, ctx); done++; await tick('Laying railways'); }
     for (const s of net.subways.values()) { this.outs.set(s.id, buildSubway(net, s, this.index, ctx)); done++; await tick('Boring subway'); }
     if (net.river) this.outs.set('river', buildRiver(net.river, ctx));
     if (net.trees?.length) this.outs.set('veg', this.buildVegetation());
     onProgress(1, 'Done');
     return [...this.outs.keys()];
-  }
-
-  buildRailEl(r, ctx) {
-    const rc = this.railCl.get(r.id) || railCenterline(r);
-    this.railCl.set(r.id, rc);
-    const crossings = findCrossings(this.net, r, rc, this.index);
-    this.outs.set(r.id, buildRail(this.net, r, rc, crossings, ctx));
   }
 
   buildVegetation() {
@@ -120,10 +116,15 @@ export class NetworkBuilder {
     const net = this.net;
     const nodes = new Set(changedNodes.filter(id => net.nodes.has(id)));
     const removed = [];
+    const vacated = [];   // footprints of removed road pieces: railways crossing them must be re-laid
     for (const id of changedNodes) if (!net.nodes.has(id)) { removed.push(id); this.junctions.delete(id); this.outs.delete(id); }
     for (const id of changedEdges) {
       const e = net.edges.get(id);
-      if (!e) { removed.push(id); this.outs.delete(id); this.index.removeEdge(id); continue; }
+      if (!e) {
+        removed.push(id);
+        const o = this.outs.get(id); if (o && o.min[0] !== Infinity) vacated.push(o);
+        this.outs.delete(id); this.index.removeEdge(id); continue;
+      }
       nodes.add(e.a); nodes.add(e.b);
     }
     // first ring: edges touching affected nodes
@@ -141,20 +142,22 @@ export class NetworkBuilder {
     const updated = [];
     for (const id of edges2) {
       const e = net.edges.get(id);
-      try { this.outs.set(id, buildEdge(net, e, this.junctions.get(e.a), this.junctions.get(e.b), ctx)); } catch (err) { console.warn(err); this.outs.set(id, new Out(id)); }
+      try { this.outs.set(id, this.buildOne(e, ctx)); } catch (err) { console.warn(err); this.outs.set(id, new Out(id)); }
       updated.push(id);
     }
     for (const n of nodes2) { try { this.outs.set(n, buildJunction(net, this.junctions.get(n), ctx)); updated.push(n); } catch (err) { console.warn(err); } }
-    // rails crossing any rebuilt edge
-    for (const r of net.rails.values()) {
-      const rc = this.railCl.get(r.id); if (!rc) continue;
-      let touch = false;
-      for (const id of edges2) {
-        const o = this.outs.get(id); if (!o || o.min[0] === Infinity) continue;
-        for (let i = 0; i < rc.X.length && !touch; i += 10) if (rc.X[i] > o.min[0] - 10 && rc.X[i] < o.max[0] + 10 && rc.Z[i] > o.min[2] - 10 && rc.Z[i] < o.max[2] + 10) touch = true;
-        if (touch) break;
+    // railways whose crossings may have changed: any railway passing through a rebuilt or vacated road footprint
+    const boxes = vacated.concat([...edges2].filter(id => !net.isRail(net.edges.get(id)))
+      .map(id => this.outs.get(id)).filter(o => o && o.min[0] !== Infinity));
+    if (boxes.length) {
+      for (const e of net.edges.values()) {
+        if (!net.isRail(e) || edges2.has(e.id)) continue;
+        const c = net.centerline(e);
+        const hit = i => boxes.some(o => c.X[i] > o.min[0] - 10 && c.X[i] < o.max[0] + 10 && c.Z[i] > o.min[2] - 10 && c.Z[i] < o.max[2] + 10);
+        let touch = false;
+        for (let i = 0; i < c.X.length && !touch; i += 8) touch = hit(i);
+        if (touch) { this.outs.set(e.id, this.buildOne(e, ctx)); updated.push(e.id); }
       }
-      if (touch) { this.buildRailEl(r, ctx); updated.push(r.id); }
     }
     return { updated, removed };
   }

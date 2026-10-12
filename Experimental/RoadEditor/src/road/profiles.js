@@ -20,6 +20,9 @@ export const LANE_TYPES = {
   gravel:     { label: 'Gravel shoulder', level: 'ground', mat: 'gravel',    color: '#7d7466', w: 1.5 },
   verge:      { label: 'Grass verge',     level: 'ground', mat: 'grass',     color: '#55703f', w: 1.5 },
   path:       { label: 'Path',            level: 'road',   mat: 'surface',   color: '#8d877c', w: 3.0 },
+  // railway lanes (rail profiles only): a ballasted track bed, and the girder of a suspended monorail
+  track:      { label: 'Track bed',       level: 'ground', mat: 'ballast',   color: '#6e6a62', w: 8.0 },
+  beam:       { label: 'Monorail beam',   level: 'road',   mat: 'girder',    color: '#8c949c', w: 1.4 },
 };
 
 const L = (type, width, dir, extra) => ({ type, width: width ?? LANE_TYPES[type].w, ...(dir !== undefined ? { dir } : {}), ...(extra || {}) });
@@ -34,6 +37,7 @@ export const CATEGORIES = [
   { id: 'residential', label: 'Residential', blurb: 'Quiet, shared and historic' },
   { id: 'rural', label: 'Rural', blurb: 'Country roads, dirt and gravel' },
   { id: 'active', label: 'Active travel', blurb: 'Paths, cycleways, promenades' },
+  { id: 'rail', label: 'Railways', blurb: 'Mainline and elevated monorail' },
 ];
 
 export const PROFILES = {
@@ -240,6 +244,31 @@ export function cloneProfile(p) {
   return JSON.parse(JSON.stringify({ ...p, lanes: p.lanes }));
 }
 
+// Railway profiles. railKind selects the geometry + vehicle family:
+//   mainline  - ballasted at-grade track with sleepers, catenary and level crossings
+//   monorail  - suspended monorail: a girder beam on pillars, cars hang beneath it (no wheels on top)
+//   (street-running tram rails are grooved lanes of road profiles: the 'tram' lane type)
+export const RAIL_PROFILES = {
+  mainline: {
+    name: 'Mainline railway · 2 tracks', category: 'rail', railKind: 'mainline', tracks: 2, speed: 120, surface: 'ballast', lamps: 'none',
+    desc: 'Ballasted double track with sleepers, electrified catenary, fencing and level crossings with the road network.',
+    lanes: [L('track', 8.0)],
+  },
+  mainline1: {
+    name: 'Branch line · 1 track', category: 'rail', railKind: 'mainline', tracks: 1, speed: 80, surface: 'ballast', lamps: 'none',
+    desc: 'Single ballasted track, catenary masts on one side, level crossings.',
+    lanes: [L('track', 5.0)],
+  },
+  monorail: {
+    name: 'Suspended monorail · elevated', category: 'rail', railKind: 'monorail', tracks: 1, speed: 70, surface: 'girder', lamps: 'none', deckY: 9,
+    desc: 'Schwebebahn-style suspended monorail: a box-girder beam on pillars over the streets; cars hang from bogies inside the beam.',
+    lanes: [L('beam', 1.4)],
+  },
+};
+for (const [id, p] of Object.entries(RAIL_PROFILES)) PROFILES[id] = p;
+
+export const isRailProfile = p => !!p && p.category === 'rail';
+
 // Road hierarchy rank for junction priority / naming / LOD.
-export const RANK = { freeway6: 9, freeway4: 9, ramp1: 8, ramp2: 8, expressway: 8, boulevard: 7, avenueBike: 6, arterialBRT: 7, tramAvenue: 6, arterial4: 6, collector: 5, industrial: 5, oneway: 4, local: 3, residential: 3, cobblestone: 3, sharedStreet: 2, alley: 1, rural2: 5, countryLane: 2, gravelRoad: 2, dirtRoad: 1, footpath: 0, gravelPath: 0, cycleway: 0, promenade: 0 };
+export const RANK = { freeway6: 9, freeway4: 9, ramp1: 8, ramp2: 8, expressway: 8, boulevard: 7, avenueBike: 6, arterialBRT: 7, tramAvenue: 6, arterial4: 6, collector: 5, industrial: 5, oneway: 4, local: 3, residential: 3, cobblestone: 3, sharedStreet: 2, alley: 1, rural2: 5, countryLane: 2, gravelRoad: 2, dirtRoad: 1, footpath: 0, gravelPath: 0, cycleway: 0, promenade: 0, mainline: 5, mainline1: 4, monorail: 5 };
 export const isPath = p => (p.category === 'active');

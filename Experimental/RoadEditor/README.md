@@ -24,19 +24,21 @@ npm run test:gen       # headless generator smoke test (node only, no browser)
 | **Markings** | dashed/solid lane rules per adjacent lane pair (US yellow centre / EU white), edge lines, stop bars, continental (zebra) crosswalks with tactile paving at the curb ramps, give-way teeth, hatched channelisation, turn arrows (`arrowS/L/R/SL/SR`), word decals (`BUS`, `ONLY`, `STOP`, `SLOW`, `KEEP CLEAR`, `BUS STOP`, `RXR`, tram and bike glyphs), zebra- and chevron-painted crossing tables |
 | **Junctions** | auto-classified as `junction · roundabout · flush T · cul-de-sac · continuation`; corner fillets and radii fitted from each approach's width and rank; paved apron with a triangulated surface that absorbs all approaches; roundabouts get a central island with curb ring, truck-mountable cobble apron, grass centre and trees, plus the circulating edge line; tram rails run straight through opposing approaches; per-approach traffic control (signals, stop or yield) with mast arms, three-lamp signal heads and pedestrian signals |
 | **Bridges & water** | elevated decks with concrete side walls down to the ground, parapets/railings, pier columns and caps placed clear of the carriageway below (piers are refused where they would land in a live lane); river with stone quay walls, coping and railing (skipped where roads and rail cross), riverbed, and an animated water-normal surface, with the terrain hole cut along the channel |
-| **Railway** | ballast section, concrete sleepers, twin rails, overhead-line masts and cantilever arms, lineside fencing, paved crossing panels, crossbucks, gate posts and striped gate arms, advance `RXR` warnings, and through-tram rails embedded in the carriageway |
+| **Railway** | rail is graph data like roads: mainline and branch-line edges (`mainline`, `mainline1`) and an elevated `monorail` edge, joined at `railEnd`/`railNode` nodes and split where a line crosses a road. Mainline: ballast section, concrete sleepers, twin rails, overhead-line masts and cantilever arms, lineside fencing, paved crossing panels, crossbucks, gate posts and striped gate arms, advance `RXR` warnings. Monorail: a girder deck on pillars (pier placement uses the same clearance rules as roads), with the cars hanging beneath it. Street tram: `tram` lanes cut grooved rail heads into the carriageway, with through-tram ribbons at junctions |
+| **Lane transitions** | where lane counts change along a road (e.g. 2 → 3 lanes) a taper is built with a shared lateral frame, lane markings and kerb faces that blend across the transition rather than merging abruptly; angled merges and diverges get a gore-shaped taper (`taper`, `merge`, `diverge` junction kinds) |
+| **Trains** | `TrainSystem` (`src/render/trains.js`) places consists on routes derived from the graph (`src/road/routes.js`), following the straightest continuation through junctions. Mainline runs two consists on separate tracks when the line has two tracks; shuttle routes reverse after a short dwell and loops wrap. Trains are toggled with *Trains on railways, monorail & trams* in Display |
 | **Subway** | cut-and-cover box tunnel with twin tracks, station boxes with side platforms, platform-edge walls and yellow caution strips, station columns, and up to 4 street entrances per station snapped onto nearby sidewalks |
 | **Props** | 56 039 instanced placements: `lamp, lampPost, lampDouble, lampHigh` (with arms and luminaire), `signalPole / signalArm / signalHead / pedSignal`, `signStop, signYield, signHump, signCrossing, signRail, crossbuck`, `bollard, bollardSign, delineator, hydrant, bin, bench, busShelter`, `treeA, treeB`, bridge `pierCol / pierColWide / pierCap`, rail `sleeper, catenaryMast, catenaryArm, fencePost, gatePost, gateArm` (half-barriers are split into ≤ 7 m arms with a cabinet at each pivot, and each arm gets a counterweight housing behind it), subway `stationColumn, subwayEntrance` |
 
 ### Reference build — seed 1337, 4 × 4 km
 
 ```
-1192 nodes · 1629 edges · 224 km of road · 519 lane-km
+1196 nodes · 1631 edges · 230 km of road · 519 lane-km
 792 junctions · 18 roundabouts · 196 cul-de-sacs · 71 flush T · 115 continuations
-4.5 km railway (level crossings) · 5.1 km subway (2 lines × 5 stations)
+4.5 km railway (level crossings) · 1.5 km elevated monorail · 3.3 km street tram · 5.1 km subway (2 lines × 5 stations)
 20.1 km bus lanes · 57.8 km cycle lanes · 97.9 km parking lanes
 1.20 M triangles · 0 warnings · 0 non-finite values
-generate 1.3 s · mesh build 0.9 s (single node thread)
+generate 1.3 s · mesh build 1.0 s (single node thread)
 ```
 
 ---
@@ -112,6 +114,9 @@ src/
     geom/markings.js decals.js         line/dashed/bar/tooth/hatch + decal-atlas quads
     geom/control.js                    traffic-control resolution & hardware placement
     geom/water.js rail.js subway.js    river & quays, railway, tunnels & stations
+    geom/transition.js tri.js          lane-count tapers, merges/diverges, shared tri/quad helpers
+    routes.js                          rail/tram routes over the graph (chaining, lateral offsets)
+    trains.js                          TrainSystem: consists, shuttle/loop motion, car placement
     builder.js                         NetworkBuilder: element -> renderable + prop instances
     cityGen.js                         DEFAULT_GEN, generateCity()
   render/                              three.js layer
@@ -143,8 +148,13 @@ from acne-ing themselves.
 
 * `scripts/smoke-generate.mjs` — generate + build headlessly, print triangle/prop/material counts,
   assert no NaN and no missing materials.
-* `scripts/winding-test.mjs` — checks every swept quad and arc strip is CCW when seen from outside,
-  so the merged mesh can never show a flipped face.
+* `scripts/winding-test.mjs` — prints the winding of each geometry helper (ribbon, wall, sweep, quad,
+  box, strip, polyWall) and counts inward-facing box faces. It is a diagnostic: it prints results and
+  does not assert.
+* `scripts/routes-check.mjs` — builds the reference city's rail and tram routes and reports their
+  lengths and the largest lateral step between samples (should be ~0, so routes never jump).
+* `scripts/trains-check.mjs` — places the trains on the reference city, steps them, and checks each car
+  stays on its route at its track offset.
 
 ## Notes & limits
 

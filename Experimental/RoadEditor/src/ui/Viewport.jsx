@@ -129,7 +129,7 @@ function Footer() {
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick(x => x + 1), 200); return () => clearInterval(t); }, []);
   const c = editor.cursorPos;
-  const hover = st.hover && editor.net ? (st.hover.type === 'edge' ? (() => { const e = editor.net.edges.get(st.hover.id); return e ? `${e.name || 'Road'} · ${getProfile(e).name}` : ''; })() : st.hover.type === 'node' ? 'Junction ' + st.hover.id : st.hover.type === 'rail' ? 'Railway' : '') : '';
+  const hover = st.hover && editor.net ? (st.hover.type === 'edge' ? (() => { const e = editor.net.edges.get(st.hover.id); return e ? `${e.name || 'Road'} · ${getProfile(e).name}` : ''; })() : st.hover.type === 'node' ? 'Junction ' + st.hover.id : '') : '';
   const hints = {
     select: <>Click to select · drag handles to move · <kbd>Del</kbd> delete · <kbd>Ctrl</kbd>+click multi-select</>,
     draw: <>Snaps to junctions <span style={{ color: '#22c55e' }}>●</span> and roads <span style={{ color: '#f59e0b' }}>●</span> · crossings become junctions, different heights become bridges</>,
@@ -156,18 +156,18 @@ function Minimap() {
     const P = (x, z) => [(x + ext) * k, (z + ext) * k];
     g.fillStyle = '#14171b'; g.fillRect(0, 0, S * 2, S * 2);
     if (net.river) { g.strokeStyle = '#1f4a5a'; g.lineWidth = net.river.width * k; g.lineJoin = 'round'; g.beginPath(); net.river.pts.forEach(([x, z], i) => { const [a, b] = P(x, z); i ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke(); }
-    const order = ['active', 'rural', 'residential', 'urban', 'arterial', 'highway'];
+    const order = ['active', 'rural', 'residential', 'urban', 'arterial', 'highway', 'rail'];
     const by = new Map(order.map(o => [o, []]));
     for (const e of net.edges.values()) by.get(getProfile(e).category)?.push(e);
     for (const cat of order) {
-      g.strokeStyle = CATEGORY_COLORS[cat]; g.globalAlpha = cat === 'active' ? 0.45 : 0.9;
-      g.lineWidth = cat === 'highway' ? 2.6 : cat === 'arterial' ? 1.8 : 0.9;
+      g.strokeStyle = CATEGORY_COLORS[cat]; g.globalAlpha = cat === 'active' ? 0.45 : cat === 'rail' ? 0.75 : 0.9;
+      g.lineWidth = cat === 'highway' ? 2.6 : cat === 'arterial' ? 1.8 : cat === 'rail' ? 1.4 : 0.9;
+      if (cat === 'rail') g.setLineDash([4, 3]);
       g.beginPath();
       for (const e of by.get(cat)) { const cl = net.centerline(e); for (let i = 0; i < cl.X.length; i += 3) { const [a, b] = P(cl.X[i], cl.Z[i]); i ? g.lineTo(a, b) : g.moveTo(a, b); } const [a, b] = P(cl.X[cl.X.length - 1], cl.Z[cl.Z.length - 1]); g.lineTo(a, b); }
-      g.stroke();
+      g.stroke(); g.setLineDash([]);
     }
-    g.globalAlpha = 1; g.setLineDash([4, 3]); g.strokeStyle = '#d0d0d0'; g.lineWidth = 1.4;
-    for (const r of net.rails.values()) { g.beginPath(); r.pts.forEach((p, i) => { const [a, b] = P(p.x, p.z); i ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke(); }
+    g.globalAlpha = 1;
     g.setLineDash([]);
     bg.current = { c, ext, k };
   }, [st.version]);

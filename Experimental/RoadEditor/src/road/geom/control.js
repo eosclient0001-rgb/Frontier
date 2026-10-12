@@ -20,6 +20,13 @@ export function endControl(J, end, net) {
   const sidewalks = end.edge && (end.lay.hasCurbL || end.lay.hasCurbR);
   const res = { kind, signal: false, stop: false, yield: false, crosswalk: false };
   if (J.kind === 'continuation') { res.kind = 'continuation'; return res; }
+  if (J.kind === 'taper') { res.kind = 'taper'; return res; }
+  if (J.kind === 'merge') {
+    // only the minor arm gives way at a merge; a diverge has nothing to give way to
+    res.kind = 'merge'; res.yield = J.mergeType === 'merge' && end.id === J.minorId;
+    return res;
+  }
+  if (J.kind === 'railEnd' || J.kind === 'railNode') { res.kind = 'none'; return res; }
   if (isPath) return res;
   if (kind === 'signal') { res.signal = true; res.crosswalk = sidewalks; }
   else if (kind === 'allWayStop') { res.stop = true; res.crosswalk = sidewalks; }

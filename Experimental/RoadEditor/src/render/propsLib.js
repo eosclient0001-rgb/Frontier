@@ -169,6 +169,76 @@ const DEFS = {
   },
 };
 
+// ------------------------------------------------------------------ vehicles
+// Train bodies, built in local coordinates: +x is the direction of travel, y = 0 is the datum
+// each family runs on (rail head for mainline, beam underside for the suspended monorail, road
+// surface for street trams). Parts are merged per material, like props.
+const wheelZ = (b, x, y, z, r, w, color = 0x1a1a1c) => b.add('vcol', new THREE.CylinderGeometry(r, r, w, 12), color,
+  new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0)), new THREE.Vector3(1, 1, 1)));
+
+function bogieMain(b, x) {
+  b.box('vcol', 2.2, 0.3, 2.5, x, 0.62, 0, 0x2b2d31);
+  for (const dx of [-0.9, 0.9]) for (const z of [-1.1, 1.1]) wheelZ(b, x + dx, 0.46, z, 0.46, 0.22);
+}
+
+function vehicleDefs() {
+  const DEF = {};
+  // Mainline coach: 18 m, wheels on the rail head.
+  DEF.mainCar = { len: 18, build(b, body = 0xe8e4da, stripe = 0xc0392b) {
+    b.box('vcol', 17.2, 0.5, 2.6, 0, 0.85, 0, 0x3a3d42);
+    b.box('vcol', 18, 2.7, 2.9, 0, 2.25, 0, body);
+    b.box('vcol', 17.6, 0.15, 2.7, 0, 3.7, 0, 0x9aa0a6);
+    b.box('glass', 15.6, 1.1, 0.06, 0, 2.5, 1.47, C.shelter); b.box('glass', 15.6, 1.1, 0.06, 0, 2.5, -1.47, C.shelter);
+    b.box('vcol', 18.02, 0.3, 0.04, 0, 1.25, 1.48, stripe); b.box('vcol', 18.02, 0.3, 0.04, 0, 1.25, -1.48, stripe);
+    bogieMain(b, -6); bogieMain(b, 6);
+    b.box('vcol', 0.4, 0.3, 0.3, -9.1, 0.9, 0, 0x2b2d31); b.box('vcol', 0.4, 0.3, 0.3, 9.1, 0.9, 0, 0x2b2d31);
+  } };
+  // Mainline locomotive: 16 m, nose at +x, pantograph under the catenary.
+  DEF.mainLoco = { len: 16, build(b) {
+    b.box('vcol', 14, 0.5, 2.8, -1, 0.85, 0, 0x2b2d31);
+    b.box('vcol', 14, 2.9, 3.0, -1, 2.3, 0, 0xc0392b);
+    b.box('vcol', 2.6, 2.4, 2.8, 7.6, 2.1, 0, 0xc0392b);
+    b.box('vcol', 14.02, 0.25, 3.02, -1, 1.2, 0, 0x2b2d31);
+    b.box('glass', 0.1, 1.2, 2.2, 8.92, 2.6, 0, C.shelter);
+    for (const z of [-0.85, 0.85]) b.box('vcol', 0.1, 0.3, 0.6, 8.92, 1.45, z, 0xfff1d0);
+    b.box('vcol', 14, 0.2, 2.9, -1, 3.8, 0, 0x2b2d31);
+    b.box('vcol', 2.2, 0.08, 0.08, 0, 5.0, 0, 0x9ea3a8); b.box('vcol', 0.06, 1.2, 0.06, -0.8, 4.4, 0, 0x9ea3a8); b.box('vcol', 0.06, 1.2, 0.06, 0.8, 4.4, 0, 0x9ea3a8);
+    bogieMain(b, -5); bogieMain(b, 5);
+  } };
+  // Suspended monorail car: hangs from hangers under the beam (datum = beam underside).
+  DEF.monoCar = { len: 11, build(b) {
+    for (const x of [-3.6, 3.6]) for (const z of [-0.6, 0.6]) b.box('vcol', 0.12, 1.3, 0.12, x, -0.65, z, 0x2b2d31);
+    b.box('vcol', 10.6, 2.5, 2.2, 0, -2.55, 0, 0xe0b021);
+    b.box('vcol', 10.2, 0.1, 2.0, 0, -1.25, 0, 0xeeeeea);
+    for (const z of [-1.12, 1.12]) {
+      b.box('glass', 9.4, 0.9, 0.05, 0, -2.2, z, C.shelter);
+      b.box('vcol', 10.62, 0.22, 0.04, 0, -3.0, z, 0x1b1c1e);
+    }
+    b.box('glass', 0.05, 1.1, 1.8, 5.32, -2.2, 0, C.shelter);
+  } };
+  // Street tram: 22 m, wheels in the flangeway grooves (datum = road surface).
+  DEF.tramCar = { len: 22, build(b) {
+    b.box('vcol', 21, 0.5, 2.3, 0, 0.8, 0, 0x3a3d42);
+    b.box('vcol', 21.4, 2.6, 2.5, 0, 2.2, 0, 0xf2efe6);
+    b.box('vcol', 21, 0.15, 2.3, 0, 3.5, 0, 0x9aa0a6);
+    for (const z of [-1.26, 1.26]) { b.box('glass', 19.8, 1.0, 0.05, 0, 2.5, z, C.shelter); b.box('vcol', 21.42, 0.35, 0.04, 0, 1.3, z * 1.01, 0x1b6fb0); }
+    for (const x of [-6.8, 6.8]) {
+      b.box('vcol', 2.4, 0.3, 2.2, x, 0.55, 0, 0x2b2d31);
+      for (const dx of [-0.9, 0.9]) for (const z of [-0.72, 0.72]) wheelZ(b, x + dx, 0.36, z, 0.36, 0.12);
+    }
+  } };
+  return DEF;
+}
+
+let VEH = null;
+// { key: {len, parts:[{mat, geo}]} } for the train families.
+export function vehicleLibrary() {
+  if (VEH) return VEH;
+  VEH = {};
+  for (const [k, d] of Object.entries(vehicleDefs())) { const b = new PropBuilder(); d.build(b); VEH[k] = { len: d.len, parts: b.build() }; }
+  return VEH;
+}
+
 let LIB = null;
 export function propLibrary() {
   if (LIB) return LIB;

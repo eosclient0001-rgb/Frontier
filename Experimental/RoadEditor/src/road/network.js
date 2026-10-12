@@ -1,14 +1,13 @@
 // Road network data model: nodes (junction points), edges (road segments with a cross-section
 // profile and curved centreline), plus non-graph layers (rail, subway, river, parks).
 import { Centerline } from './centerline.js';
-import { getProfile, layout } from './profiles.js';
+import { getProfile, layout, isRailProfile, LANE_TYPES } from './profiles.js';
 
 export class RoadNetwork {
   constructor() {
     this.nodes = new Map();
     this.edges = new Map();
     this.adj = new Map();       // nodeId -> Set(edgeId)
-    this.rails = new Map();     // id -> {id, kind:'rail', pts:[{x,z}], tracks, name}
     this.subways = new Map();   // id -> {id, pts:[{x,z}], depth, stations:[{s,name}], name, color}
     this.river = null;          // {pts:[[x,z]], width}
     this.parks = [];            // polygons [[x,z]...]
@@ -49,6 +48,9 @@ export class RoadNetwork {
   }
   touchNode(id) { if (this.onTouch) this.onTouch('node', id); }
   touchEdge(id) { if (this.onTouch) this.onTouch('edge', id); this.cl.delete(id); }
+  // Railway edges share the graph (nodes, junctions, splitting, undo) with roads but use rail profiles.
+  isRail(edge) { return isRailProfile(getProfile(edge)); }
+  railKind(edge) { return getProfile(edge).railKind || null; }
   nodeEdges(id) { return [...(this.adj.get(id) || [])].map(e => this.edges.get(e)).filter(Boolean); }
   other(edge, nodeId) { return edge.a === nodeId ? edge.b : edge.a; }
 
@@ -104,16 +106,22 @@ export class RoadNetwork {
       const c = this.centerline(e); km += c.length / 1000;
       lanesKm += c.length / 1000 * getProfile(e).lanes.filter(l => l.type === 'drive').length;
     }
-    let railKm = 0; for (const r of this.rails.values()) railKm += polyLen(r.pts) / 1000;
+    const rk = { mainline: 0, monorail: 0, tram: 0 };
+    for (const e of this.edges.values()) {
+      const p = getProfile(e), k = p.railKind, km = this.centerline(e).length / 1000;
+      if (k) rk[k] += km;
+      else if (p.lanes?.some(l => LANE_TYPES[l.type]?.rails)) rk.tram += km; // street tram on a road
+    }
+    const railKm = rk.mainline + rk.monorail + rk.tram;
     let subKm = 0; for (const r of this.subways.values()) subKm += polyLen(r.pts) / 1000;
-    return { nodes: this.nodes.size, edges: this.edges.size, km, lanesKm, railKm, subKm };
+    return { nodes: this.nodes.size, edges: this.edges.size, km, lanesKm, railKm, subKm, railMainKm: rk.mainline, monorailKm: rk.monorail, tramKm: rk.tram };
   }
 
   toJSON() {
     return {
       format: 'frontier-roads', version: 1, meta: this.meta, seq: this.seq,
       nodes: [...this.nodes.values()], edges: [...this.edges.values()],
-      rails: [...this.rails.values()], subways: [...this.subways.values()],
+      subways: [...this.subways.values()],
       river: this.river, parks: this.parks, districts: this.districts, trees: this.trees || [],
       districtRaster: this.districtRaster ? { ...this.districtRaster, data: b64(this.districtRaster.data) } : null,
     };
@@ -123,7 +131,15 @@ export class RoadNetwork {
     n.meta = { ...n.meta, ...j.meta }; n.seq = j.seq || 1;
     for (const x of j.nodes) n.addNode(x);
     for (const e of j.edges) if (n.nodes.has(e.a) && n.nodes.has(e.b)) n.addEdge(e);
-    for (const r of j.rails || []) n.rails.set(r.id, r);
+    // Legacy saves kept railways as free polylines (j.rails). Convert each to a rail edge
+    // between two new junction nodes, thinned to roughly one control point per 60 samples.
+    for (const r of j.rails || []) {
+      const pts = r.pts || []; if (pts.length < 2) continue;
+      const step = Math.max(1, Math.ceil(pts.length / 60));
+      const first = n.addNode({ x: pts[0].x, z: pts[0].z }), last = n.addNode({ x: pts[pts.length - 1].x, z: pts[pts.length - 1].z });
+      const mid = []; for (let i = step; i < pts.length - 1; i += step) mid.push({ x: pts[i].x, z: pts[i].z });
+      n.addEdge({ a: first.id, b: last.id, profile: r.tracks === 1 ? 'mainline1' : 'mainline', pts: mid, name: r.name || 'Railway' });
+    }
     for (const r of j.subways || []) n.subways.set(r.id, r);
     n.river = j.river || null; n.parks = j.parks || []; n.districts = j.districts || [];
     n.trees = j.trees || [];

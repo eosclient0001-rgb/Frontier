@@ -10,7 +10,7 @@ const NAMES = ['Harbor', 'Union', 'Market', 'Grand', 'Lincoln', 'Mission', 'Suns
 const ORD = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
 const SUFFIX = { boulevard: 'Boulevard', avenueBike: 'Avenue', arterialBRT: 'Avenue', tramAvenue: 'Avenue', arterial4: 'Road', collector: 'Street', local: 'Street', oneway: 'Street', residential: 'Drive', cobblestone: 'Lane', sharedStreet: 'Mews', alley: 'Alley', industrial: 'Way', rural2: 'Road', countryLane: 'Lane', gravelRoad: 'Track', dirtRoad: 'Trail', expressway: 'Parkway', footpath: 'Walk', gravelPath: 'Trail', promenade: 'Promenade', cycleway: 'Cycleway' };
 
-export const DEFAULT_GEN = { seed: 1337, size: 4096, density: 1, river: true, freeway: true, rail: true, subway: true, tram: true, roundabouts: true, parks: true, oldTown: true, suburbs: true, markingStyle: 'us' };
+export const DEFAULT_GEN = { seed: 1337, size: 4096, density: 1, river: true, freeway: true, rail: true, monorail: true, trains: true, subway: true, tram: true, roundabouts: true, parks: true, oldTown: true, suburbs: true, markingStyle: 'us' };
 
 export function generateCity(options = {}) {
   const o = { ...DEFAULT_GEN, ...options };
@@ -599,9 +599,22 @@ export function generateCity(options = {}) {
 
   // ---------------------------------------------------------------- river, rail, subway (world space)
   if (riverUV) net.river = { pts: riverUV.map(([u, v]) => warp(u, v)), width: riverHalf * 2, name: 'Frontier River' };
+  // Mainline railway: one graph edge across the city (its level crossings are found by the builder).
   if (railPts) {
-    const pts = railPts.map(([u, v]) => { const [x, z] = warp(u, v); return { x, z }; });
-    net.rails.set('rail1', { id: 'rail1', kind: 'rail', tracks: 2, pts, name: 'Harbor Line (Freight & Commuter)' });
+    const at = ([u, v]) => { const [x, z] = warp(u, v); return { x, z }; };
+    const a = net.addNode(at(railPts[0])), b = net.addNode(at(railPts[railPts.length - 1]));
+    net.addEdge({ a: a.id, b: b.id, profile: 'mainline', pts: railPts.slice(1, -1).map(at), name: 'Harbor Line (Freight & Commuter)' });
+  }
+  // Elevated suspended monorail: a straight graph edge at deck height, inside the freeway ring and
+  // on the opposite side of the city from the railway.
+  if (o.monorail) {
+    const DECK = PROFILES.monorail.deckY;
+    const uM = railU !== null ? -Math.sign(railU) * half * 0.22 : half * 0.22;
+    const vA = -half * 0.36, vB = half * 0.36;
+    const at = v => { const [x, z] = warp(uM, v); return { x, z, y: DECK }; };
+    const pts = []; for (let v = vA + 40; v <= vB - 40; v += 40) pts.push(at(v));
+    const a = net.addNode(at(vA)), b = net.addNode(at(vB));
+    net.addEdge({ a: a.id, b: b.id, profile: 'monorail', pts, name: 'Skyline Monorail' });
   }
   if (o.subway) {
     const lineAlong = (axis, at, color, name, depth) => {

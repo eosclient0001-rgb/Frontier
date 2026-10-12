@@ -51,13 +51,12 @@ export function Inspector() {
   else if (s?.type === 'edge' && net.edges.has(s.id)) body = <EdgeInspector key={s.id} id={s.id} st={st} />;
   else if (s?.type === 'street') body = <StreetInspector sel={s} st={st} />;
   else if (s?.type === 'node' && net.nodes.has(s.id)) body = <NodeInspector key={s.id} id={s.id} st={st} />;
-  else if (s?.type === 'rail' && net.rails.has(s.id)) body = <RailInspector id={s.id} />;
   else if (s?.type === 'subway' && net.subways.has(s.id)) body = <SubwayInspector id={s.id} />;
   else body = <CityInspector st={st} />;
   return (
     <aside className="inspector">
       <div className="inspector-top">
-        <div><span>Inspector</span><span>/</span>{s ? ({ edge: 'Road segment', street: 'Street', node: 'Junction', rail: 'Railway', subway: 'Subway' })[s.type] : 'City'}</div>
+        <div><span>Inspector</span><span>/</span>{s ? ({ edge: 'Road segment', street: 'Street', node: 'Junction', subway: 'Subway' })[s.type] : 'City'}</div>
         <div className="save-status"><span className="status-dot" />{st.canUndo ? editor.undoStack.length + ' edits' : 'Saved'}</div>
       </div>
       <div className="inspector-content">{body}
@@ -274,28 +273,6 @@ function NodeInspector({ id, st }) {
 }
 
 // ------------------------------------------------------------------ transit
-function RailInspector({ id }) {
-  const net = editor.net, r = net.rails.get(id);
-  const len = r.pts.reduce((a, p, i) => (i ? a + Math.hypot(p.x - r.pts[i - 1].x, p.z - r.pts[i - 1].z) : 0), 0);
-  const out = editor.builder.outs.get(id);
-  const crossings = out?.props?.gateArm ? out.props.gateArm.length / 8 / 2 : 0;
-  return (
-    <>
-      <Header icon={TrainFront} eyebrow="Railway · electrified" title={r.name || 'Railway'} actions={<button className="icon-button" onClick={() => editor.focusSelection()}><Crosshair size={15} /></button>} />
-      <div className="cards">
-        <div className="card">
-          <div className="card-heading"><span><Ruler size={14} />Line</span></div>
-          <div className="metric">{(len / 1000).toFixed(2)}<small>km</small></div>
-          <div className="stat-grid"><div>Tracks<b>{r.tracks}</b></div><div>Level crossings<b>{Math.round(crossings)}</b></div></div>
-          <div className="pseg" style={{ marginTop: 14 }}>
-            {[1, 2].map(t => <button key={t} className={r.tracks === t ? 'on' : ''} onClick={() => { r.tracks = t; editor.builder.buildRailEl(r, editor.builder.ctx()); editor.world.applyUpdate({ updated: [id] }); editor.bump(); }}>{t} track{t > 1 ? 's' : ''}</button>)}
-          </div>
-          <p className="empty-note">Ballast bed, sleepers, rails, catenary masts and fencing; level crossings get full-width panels, crossbucks, flashing lights, half-barrier gates, RXR markings and advance warning signs. Over water and roads the line rises on girder bridges.</p>
-        </div>
-      </div>
-    </>
-  );
-}
 function SubwayInspector({ id }) {
   const net = editor.net, s = net.subways.get(id);
   return (
@@ -339,7 +316,7 @@ function CityInspector({ st }) {
             <div>Intersections<b>{stats.k.junction || 0}</b></div><div>Roundabouts<b>{stats.k.roundabout || 0}</b></div>
             <div>Cul-de-sacs<b>{stats.k.culdesac || 0}</b></div><div>Bus lanes<b>{stats.bus.toFixed(1)} km</b></div>
             <div>Cycle lanes<b>{stats.bike.toFixed(1)} km</b></div><div>Parking lanes<b>{stats.park.toFixed(1)} km</b></div>
-            <div>Railway<b>{stats.railKm.toFixed(1)} km</b></div><div>Subway<b>{stats.subKm.toFixed(1)} km</b></div>
+            <div>Railway<b>{stats.railMainKm.toFixed(1)} km</b></div><div>Monorail<b>{stats.monorailKm.toFixed(1)} km</b></div><div>Street tram<b>{stats.tramKm.toFixed(1)} km</b></div><div>Subway<b>{stats.subKm.toFixed(1)} km</b></div>
           </div>
         </div>
 
@@ -350,7 +327,7 @@ function CityInspector({ st }) {
             <label className="field">Map size<select value={g.size} onChange={e => setGen({ size: +e.target.value })}><option value={2048}>2 × 2 km</option><option value={4096}>4 × 4 km</option><option value={6144}>6 × 6 km</option><option value={8192}>8 × 8 km</option></select></label>
           </div>
           <Slider label="Street density" min={0.7} max={1.4} step={0.05} value={g.density} fmt={v => v.toFixed(2)} unit="×" onChange={v => setGen({ density: v })} />
-          {[['river', 'River with quays & bridges'], ['freeway', 'Elevated freeway ring + interchanges'], ['rail', 'Railway with level crossings'], ['subway', 'Subway lines & stations'], ['tram', 'Tram avenues'], ['roundabouts', 'Roundabouts'], ['oldTown', 'Old town (cobblestone)'], ['suburbs', 'Suburbs with cul-de-sacs'], ['parks', 'Parks & paths']].map(([k, l]) => (
+          {[['river', 'River with quays & bridges'], ['freeway', 'Elevated freeway ring + interchanges'], ['rail', 'Railway with level crossings'], ['monorail', 'Elevated monorail'], ['subway', 'Subway lines & stations'], ['tram', 'Tram avenues'], ['roundabouts', 'Roundabouts'], ['oldTown', 'Old town (cobblestone)'], ['suburbs', 'Suburbs with cul-de-sacs'], ['parks', 'Parks & paths']].map(([k, l]) => (
             <div key={k} className="control-line"><span>{l}</span><Toggle on={g[k]} onClick={() => setGen({ [k]: !g[k] })} /></div>
           ))}
           <div className="control-line"><span>Road markings</span><div className="pseg">{[['us', 'US'], ['eu', 'EU']].map(([k, l]) => <button key={k} className={g.markingStyle === k ? 'on' : ''} onClick={() => setGen({ markingStyle: k })}>{l}</button>)}</div></div>
@@ -359,7 +336,7 @@ function CityInspector({ st }) {
 
         <div className="card">
           <div className="card-heading"><span><Eye size={14} />Display</span></div>
-          {[['markings', 'Road markings & decals'], ['props', 'Street furniture & signals'], ['trees', 'Trees'], ['shadows', 'Sun shadows']].map(([k, l]) => (
+          {[['markings', 'Road markings & decals'], ['props', 'Street furniture & signals'], ['trees', 'Trees'], ['trains', 'Trains on railways, monorail & trams'], ['shadows', 'Sun shadows']].map(([k, l]) => (
             <div key={k} className="control-line"><span>{l}</span><Toggle on={st.settings[k]} onClick={() => setDisp(k, !st.settings[k])} /></div>
           ))}
           <Slider label={<span style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Clock3 size={11} />Time of day</span>} min={0} max={24} step={0.25} value={st.settings.hour} fmt={() => `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`} onChange={v => setDisp('hour', v)} />

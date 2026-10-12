@@ -5,6 +5,7 @@ import { CURB_W, GROUND } from './edge.js';
 import { LEVEL, getProfile, layout } from '../profiles.js';
 import { line } from './markings.js';
 import { nodeControl } from './control.js';
+import { buildTransition } from './transition.js';
 
 const H = LEVEL.raised;
 
@@ -21,6 +22,11 @@ const lift = (P, h) => P.map(p => [p[0], p[1] + h, p[2]]);
 export function buildJunction(net, J, ctx) {
   const out = new Out(J.id);
   out.kind = J.kind;
+  if (J.kind === 'taper' || J.kind === 'merge') {
+    if (J.node) out.grow(J.node.x, J.node.y, J.node.z);
+    buildTransition(out, J);
+    return out;
+  }
   if (!J.polygon || J.polygon.length < 3) {
     if (J.node) out.grow(J.node.x, J.node.y, J.node.z);
     return out;

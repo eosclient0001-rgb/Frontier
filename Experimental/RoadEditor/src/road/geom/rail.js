@@ -1,19 +1,31 @@
-// Railways (ballast, sleepers, rails, catenary, fences, bridges) and level crossings
-// (rubber panels, gates, crossbuck signals, RXR pavement markings, stop lines).
-import { Centerline } from '../centerline.js';
-import { Out, ribbon, sweep, wall, yawFor } from './out.js';
+// Railway geometry on graph edges.
+//   mainline  - ballasted track, sleepers, rails, catenary, fences, bridges, level crossings
+//               (rubber panels, gates, crossbuck signals, RXR markings, stop lines)
+//   monorail  - suspended monorail: a box-girder beam on pillars, running above the streets
+// Trains are animated elsewhere (render/trains.js); this file only builds the static track.
+import { Out, ribbon, sweep, wall, box, yawFor } from './out.js';
 import { getProfile, layout, LEVEL } from '../profiles.js';
 import { decal, bar } from './markings.js';
 import { segIntersect } from '../math.js';
+import { quad } from './tri.js';
 
 const GAUGE = 1.435;
 export const TRACK_SPACING = 4.2;
+const GROUNDY = -0.06;
+const MONO_BEAM_TOP = 0;          // beam top is the edge's deck height
+const MONO_BEAM_BOTTOM = -1.6;    // beam underside, relative to the deck
+const MONO_PILLAR_SPACING = 24;
 
-export function railCenterline(rail) {
-  return new Centerline(rail.pts.map(p => ({ x: p.x, z: p.z })));
+// Entry point used by the builder for any railway edge.
+export function buildRailEdge(net, edge, JA, JB, ctx, index) {
+  const prof = getProfile(edge);
+  const c = net.centerline(edge);
+  if (prof.railKind === 'monorail') return buildMonorail(net, edge, c, JA, JB, ctx);
+  const crossings = findCrossings(net, edge, c, index);
+  return buildMainline(net, edge, c, crossings, ctx, prof, JA, JB);
 }
 
-// Find at-grade crossings between a rail and road edges.
+// Find at-grade crossings between a railway edge and road edges (other railways are ignored).
 export function findCrossings(net, rail, rc, index) {
   const res = [];
   const X = rc.X, Z = rc.Z, S = rc.S;
@@ -23,6 +35,7 @@ export function findCrossings(net, rail, rc, index) {
     const j = Math.min(X.length - 1, i + step);
     const cand = index.query((X[i] + X[j]) / 2, (Z[i] + Z[j]) / 2, 20);
     for (const e of cand) {
+      if (e.id === rail.id || net.isRail(e)) continue;
       const c = net.centerline(e);
       for (let k = 0; k < c.X.length - 1; k += 3) {
         const k2 = Math.min(c.X.length - 1, k + 3);
@@ -42,9 +55,9 @@ export function findCrossings(net, rail, rc, index) {
   return res.sort((a, b) => a.sRail - b.sRail);
 }
 
-export function buildRail(net, rail, rc, crossings, ctx) {
+export function buildMainline(net, rail, rc, crossings, ctx, prof, JA, JB) {
   const out = new Out(rail.id);
-  const tracks = rail.tracks || 2;
+  const tracks = prof.tracks || 2;
   const offs = tracks === 1 ? [0] : Array.from({ length: tracks }, (_, k) => (k - (tracks - 1) / 2) * TRACK_SPACING);
   const W = (tracks - 1) * TRACK_SPACING + 3.2;           // ballast top width
   const zones = crossings.map(x => { const h = x.half / x.sin + 2.5; return [x.sRail - h, x.sRail + h]; });
@@ -135,10 +148,65 @@ export function buildRail(net, rail, rc, crossings, ctx) {
   }
   // level crossings
   for (const x of crossings) crossing(out, net, rail, rc, x, offs, half);
+  // buffer stops at dead ends
+  for (const [J, s, dir] of [[JA, 0, 1], [JB, rc.length, -1]]) {
+    if (!J || J.kind !== 'railEnd') continue;
+    const f = rc.frameAt(s);
+    box(out, 'concrete', f.x + f.tx * dir * 1.2, GROUNDY + 0.4, f.z + f.tz * dir * 1.2, f.tx, f.tz, 0.6, half + 0.4, 0.4);
+  }
   return out;
 }
 
-const GROUNDY = -0.06;
+// ------------------------------------------------------------------ monorail
+// Suspended monorail: a box-girder beam carried on pillars. Track sits inside the beam and the
+// cars hang beneath it, so nothing runs on top apart from the decorative rail heads.
+function buildMonorail(net, edge, c, JA, JB, ctx) {
+  const out = new Out(edge.id);
+  const L = c.length;
+  const stations = c.stations(0, L, [], 10, 0.03);
+  const fr = stations.map(s => c.frameAt(s));
+  const deck = fr.map(f => f.y);
+  // beam cross-section as a closed outline in (o, h) relative to the deck, counter-clockwise
+  const outline = [[-0.7, MONO_BEAM_TOP], [-0.7, -1.2], [-0.22, MONO_BEAM_BOTTOM], [0.22, MONO_BEAM_BOTTOM], [0.7, -1.2], [0.7, MONO_BEAM_TOP]];
+  const at = (f, o, h, yd) => [f.x + f.nx * o, yd + h, f.z + f.nz * o];
+  for (let i = 0; i < outline.length; i++) {
+    const a = outline[i], b = outline[(i + 1) % outline.length];
+    const mo = (a[0] + b[0]) / 2, mh = (a[1] + b[1]) / 2;
+    const cen = [0, -0.8];
+    const dO = mo - cen[0], dH = mh - cen[1], dl = Math.hypot(dO, dH) || 1;
+    for (let k = 0; k < fr.length - 1; k++) {
+      const f0 = fr[k], f1 = fr[k + 1];
+      const want0 = [f0.nx * dO / dl, dH / dl, f0.nz * dO / dl], want1 = [f1.nx * dO / dl, dH / dl, f1.nz * dO / dl];
+      const want = [(want0[0] + want1[0]) / 2, (want0[1] + want1[1]) / 2, (want0[2] + want1[2]) / 2];
+      quad(out, 'girder', at(f0, a[0], a[1], deck[k]), at(f0, b[0], b[1], deck[k]),
+        at(f1, b[0], b[1], deck[k + 1]), at(f1, a[0], a[1], deck[k + 1]), want);
+    }
+  }
+  // decorative rail heads along the beam's top
+  for (const o of [-0.3, 0.3]) ribbon(out, 'steel', fr.map((f, k) => ({ ...f, y: deck[k] })), o - 0.04, o + 0.04, MONO_BEAM_TOP + 0.01);
+  // beam end caps at dead ends
+  for (const [J, i, dir] of [[JA, 0, 1], [JB, fr.length - 1, -1]]) {
+    if (!J || J.kind !== 'railEnd') continue;
+    const f = fr[i];
+    box(out, 'girder', f.x + f.tx * dir * 0.4, deck[i] - 0.8, f.z + f.tz * dir * 0.4, f.tx, f.tz, 0.4, 0.7, 0.8);
+  }
+  // pillars at regular spacing and at both ends; a spot blocked by a road or another line is
+  // nudged along the beam, and skipped if no nearby position is clear
+  const spots = [1.5, L - 1.5];
+  for (let s = MONO_PILLAR_SPACING / 2; s < L - 4; s += MONO_PILLAR_SPACING) spots.push(s);
+  for (const s of spots) {
+    const f = c.frameAt(s), y = f.y + MONO_BEAM_BOTTOM;
+    const g = ctx.groundAt(f.x, f.z);
+    for (const shift of [0, 3, -3, 6, -6]) {
+      const fs = c.frameAt(Math.max(0.5, Math.min(L - 0.5, s + shift)));
+      if (ctx.pierBlocked && ctx.pierBlocked(fs.x, fs.z, 0.9, f.y, edge.id)) continue;
+      out.prop('pierCol', fs.x, g, fs.z, yawFor(fs.tx, fs.tz), 0.75, Math.max(1, y - g), 0.75);
+      out.prop('pierCap', fs.x, y - 0.9, fs.z, yawFor(fs.tx, fs.tz), 1.8, 0.9, 1.3);
+      break;
+    }
+  }
+  return out;
+}
 
 function crossing(out, net, rail, rc, x, offs, half) {
   const e = net.edges.get(x.edgeId); if (!e) return;

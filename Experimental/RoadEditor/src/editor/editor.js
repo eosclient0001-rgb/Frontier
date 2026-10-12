@@ -4,7 +4,7 @@ import { generateCity, DEFAULT_GEN, splitEdgeAt } from '../road/cityGen.js';
 import { RoadNetwork } from '../road/network.js';
 import { NetworkBuilder } from '../road/builder.js';
 import { Centerline } from '../road/centerline.js';
-import { PROFILES, getProfile, layout, cloneProfile } from '../road/profiles.js';
+import { PROFILES, getProfile, layout, cloneProfile, isRailProfile } from '../road/profiles.js';
 import { segIntersect } from '../road/math.js';
 
 const clone = o => (o == null ? null : JSON.parse(JSON.stringify(o)));
@@ -130,7 +130,7 @@ export class Editor {
   }
   refreshSelection() {
     const s = this.state.selection; if (!s) return;
-    const exists = s.type === 'edge' ? this.net.edges.has(s.id) : s.type === 'node' ? this.net.nodes.has(s.id) : s.type === 'street' ? s.ids.some(id => this.net.edges.has(id)) : s.type === 'rail' ? this.net.rails.has(s.id) : s.type === 'subway' ? this.net.subways.has(s.id) : true;
+    const exists = s.type === 'edge' ? this.net.edges.has(s.id) : s.type === 'node' ? this.net.nodes.has(s.id) : s.type === 'street' ? s.ids.some(id => this.net.edges.has(id)) : s.type === 'subway' ? this.net.subways.has(s.id) : true;
     if (!exists) this.select(null); else this.world.setSelection(s.type === 'street' ? { ...s, ids: s.ids.filter(id => this.net.edges.has(id)) } : s);
   }
   focusSelection() {
@@ -141,8 +141,8 @@ export class Editor {
       const ids = s.type === 'edge' ? [s.id] : s.ids; let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
       for (const id of ids) { const e = this.net.edges.get(id); if (!e) continue; const c = this.net.centerline(e); for (let i = 0; i < c.X.length; i += 4) { mnx = Math.min(mnx, c.X[i]); mxx = Math.max(mxx, c.X[i]); mnz = Math.min(mnz, c.Z[i]); mxz = Math.max(mxz, c.Z[i]); y = c.Y[i]; } }
       x = (mnx + mxx) / 2; z = (mnz + mxz) / 2; d = Math.max(60, Math.hypot(mxx - mnx, mxz - mnz) * 0.9);
-    } else if (s.type === 'rail' || s.type === 'subway') {
-      const L = (s.type === 'rail' ? this.net.rails : this.net.subways).get(s.id); const p = L.pts[Math.floor(L.pts.length / 2)]; x = p.x; z = p.z; d = 400; y = s.type === 'subway' ? -L.depth : 0;
+    } else if (s.type === 'subway') {
+      const L = this.net.subways.get(s.id); const p = L.pts[Math.floor(L.pts.length / 2)]; x = p.x; z = p.z; d = 400; y = -L.depth;
     } else return;
     this.world.focus(x, y, z, d);
   }
@@ -166,11 +166,6 @@ export class Editor {
     if (bestN) return { type: 'node', id: bestN.n.id, p };
     const hit = idx.nearestEdge(p.x, p.z, 4, p.y);
     if (hit && hit.d < 2) return { type: 'edge', id: hit.edge.id, s: hit.s, p };
-    // rails
-    for (const r of net.rails.values()) {
-      const rc = this.builder.railCl.get(r.id); if (!rc) continue;
-      if (rc.nearest(p.x, p.z).d < 5) return { type: 'rail', id: r.id, p };
-    }
     if (w.settings.view === 'underground') for (const s of net.subways.values()) {
       const c = new Centerline(s.pts.map(q => ({ x: q.x, z: q.z }))); if (c.nearest(p.x, p.z).d < 8) return { type: 'subway', id: s.id, p };
     }
@@ -272,6 +267,9 @@ export class Editor {
   endDrag() { if (!this.drag) return; const k = this.drag.kind; this.drag = null; this.commit(k === 'node' ? 'Move junction' : 'Bend road'); }
 
   // ------------------------------------------------------------------ draw tool
+  // Roads and railways form separate graphs: a draft only snaps to, and splits, its own kind.
+  snapKindOk(edge) { return this.net.isRail(edge) === isRailProfile(PROFILES[this.state.drawProfile]); }
+  nodeKindOk(nid) { const es = this.net.nodeEdges(nid); return !es.length || this.net.isRail(es[0]) === isRailProfile(PROFILES[this.state.drawProfile]); }
   snapPoint(cx, cy, forDraw = true) {
     const w = this.world, net = this.net, y0 = this.state.drawElevation;
     const surf = w.pickSurface(cx, cy);
@@ -282,11 +280,11 @@ export class Editor {
     let best = null;
     for (const e of idx.query(p.x, p.z, 25)) for (const nid of [e.a, e.b]) {
       const n = net.nodes.get(nid), d = Math.hypot(n.x - p.x, n.z - p.z);
-      if (d < 9 && Math.abs(n.y - p.y) < 3 && (!best || d < best.d)) best = { d, n };
+      if (d < 9 && Math.abs(n.y - p.y) < 3 && (!best || d < best.d) && this.nodeKindOk(nid)) best = { d, n };
     }
     if (best) return { x: best.n.x, y: best.n.y, z: best.n.z, node: best.n.id, kind: 'node' };
     const hit = idx.nearestEdge(p.x, p.z, 3, p.y);
-    if (hit && hit.d < 0.5) {
+    if (hit && hit.d < 0.5 && this.snapKindOk(hit.edge)) {
       const f = net.centerline(hit.edge).frameAt(hit.s);
       if (Math.abs(f.y - p.y) < 3) return { x: f.x, y: f.y, z: f.z, edge: hit.edge.id, s: hit.s, kind: 'edge' };
     }
@@ -344,6 +342,7 @@ export class Editor {
       for (let i = 0; i < N; i += 5) for (const e of this.builder.index.query(curve.X[i], curve.Z[i], 20)) cand.add(e);
       for (const e of cand) {
         if (!net.edges.has(e.id) || [e.a, e.b].some(id => id === A.id || id === B.id)) continue;
+        if (!this.snapKindOk(e)) continue;                              // road ↔ rail: level crossing, not a junction
         const c = net.centerline(e);
         for (let i = 0; i < N - 1; i++) for (let j = 0; j < c.X.length - 1; j++) {
           const r = segIntersect(curve.X[i], curve.Z[i], curve.X[i + 1], curve.Z[i + 1], c.X[j], c.Z[j], c.X[j + 1], c.Z[j + 1]);
@@ -379,7 +378,8 @@ export class Editor {
   }
   autoName(profile) {
     const p = PROFILES[profile];
-    const suffix = { highway: 'Highway', arterial: 'Avenue', urban: 'Street', residential: 'Lane', rural: 'Road', active: 'Path' }[p.category] || 'Road';
+    const suffix = p.category === 'rail' ? (p.railKind === 'monorail' ? 'Monorail' : 'Line')
+      : { highway: 'Highway', arterial: 'Avenue', urban: 'Street', residential: 'Lane', rural: 'Road', active: 'Path' }[p.category] || 'Road';
     this._nameSeq = (this._nameSeq || 0) + 1;
     const names = ['Aurora', 'Beacon', 'Cypress', 'Delta', 'Ember', 'Falcon', 'Granite', 'Harbor', 'Iris', 'Juniper', 'Kestrel', 'Linden', 'Meridian', 'Nova', 'Orchard', 'Pioneer', 'Quarry', 'Ridge', 'Summit', 'Tidal'];
     return names[(this._nameSeq - 1) % names.length] + ' ' + suffix;

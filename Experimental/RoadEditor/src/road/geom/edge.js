@@ -38,8 +38,10 @@ export function buildEdge(net, edge, JA, JB, ctx) {
   const ctlB = JB && eB ? endControl(JB, eB, net) : null;
   const CW = 3.2;
   const cwRoom = ctl => (ctl?.crosswalk ? CW + 2.2 : ctl && ctl.kind !== 'continuation' ? 1.4 : 0);
-  const pullA = (JA && JA.kind !== 'continuation' && JA.kind !== 'flush') ? cwRoom(ctlA) + (JA.kind === 'roundabout' ? 3 : 0) : 0;
-  const pullB = (JB && JB.kind !== 'continuation' && JB.kind !== 'flush') ? cwRoom(ctlB) + (JB.kind === 'roundabout' ? 3 : 0) : 0;
+  // Tapers and merges own their own geometry at the node: the lanes run straight into it.
+  const open = (J, E) => !J || J.kind === 'continuation' || J.kind === 'flush' || J.kind === 'taper' || (J.kind === 'merge' && J.majorId === E?.id);
+  const pullA = !open(JA, edge) ? cwRoom(ctlA) + (JA.kind === 'roundabout' ? 3 : 0) : 0;
+  const pullB = !open(JB, edge) ? cwRoom(ctlB) + (JB.kind === 'roundabout' ? 3 : 0) : 0;
 
   // --- elevation / water analysis on fine samples
   const elevAt = f => f.y > 0.35 || (ctx.waterAt && ctx.waterAt(f.x, f.z));
@@ -183,10 +185,13 @@ function barrierRuns(out, frames, ln, edge, laneIndex) {
   return traced;
 }
 
+// Street-running tram track: each rail sits in a flangeway groove cut into the carriageway.
+// The groove is a dark channel slightly below the surface, the rail head stands proud of it.
 function tramRails(out, frames, oc, h) {
   for (const side of [-0.7175, 0.7175]) {
-    ribbon(out, 'steel', frames, oc + side - 0.04, oc + side + 0.04, h + 0.006);
-    ribbon(out, 'railGroove', frames, oc + side + (side < 0 ? 0.04 : -0.08), oc + side + (side < 0 ? 0.08 : -0.04), h + 0.004);
+    const c = oc + side;
+    ribbon(out, 'railGroove', frames, c - 0.2, c + 0.2, h + 0.004);          // flangeway channel
+    ribbon(out, 'steel', frames, c - 0.05, c + 0.05, h + 0.012);             // rail head
   }
 }
 
@@ -316,7 +321,7 @@ function paint(out, net, edge, c, lay, prof, s0, s1, ctlA, ctlB, JA, JB, ctx) {
   const lanes = lay.lanes, style = net.meta.markingStyle || 'us';
   const CW = 3.2;
   const endInfo = (ctl, J, atA) => {
-    const cont = !J || J.kind === 'continuation' || J.kind === 'flush';
+    const cont = !J || J.kind === 'continuation' || J.kind === 'flush' || J.kind === 'taper' || (J.kind === 'merge' && J.majorId === edge.id);
     const cross = ctl?.crosswalk;
     const stopOff = cross ? 0.6 + CW + 1.2 : (ctl && (ctl.stop || ctl.signal) ? 1.0 : 0);
     return { cont, cross, stopOff, ctl };

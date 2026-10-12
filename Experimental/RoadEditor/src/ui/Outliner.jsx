@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Layers, Search, Plus, ChevronRight, Route, Waypoints, TrainFront, TramFront, Waves, CircleDot, TrafficCone, Milestone, Footprints, Signpost, X, Map as MapIcon, Bike } from 'lucide-react';
 import { useEditor, editor } from './useEditor.js';
-import { CATEGORIES, getProfile, RANK } from '../road/profiles.js';
+import { CATEGORIES, getProfile, RANK, isRailProfile } from '../road/profiles.js';
 
 const CAT_ICON = { highway: Milestone, arterial: Route, urban: Signpost, residential: Waypoints, rural: MapIcon, active: Footprints };
 const LIMIT = 120;
@@ -29,7 +29,16 @@ function buildTree(net, junctions) {
     else if (J.kind === 'culdesac') jk.culdesac.push(id);
     else if (J.kind === 'junction') (J.ends.length >= 3 && J.ends.filter(e => e.rank >= 4).length >= 2 ? jk.signal : jk.stop).push(id);
   }
-  return { cats: [...cats.values()].filter(c => c.count), jk };
+  // railway lines: rail edges grouped by name (a line is split wherever it meets another line)
+  const lines = new Map();
+  for (const e of net.edges.values()) {
+    const p = getProfile(e);
+    if (!isRailProfile(p)) continue;
+    const key = e.name || 'Railway';
+    if (!lines.has(key)) lines.set(key, { name: key, ids: [], profile: p, km: 0 });
+    const L = lines.get(key); L.ids.push(e.id); L.km += net.centerline(e).length / 1000;
+  }
+  return { cats: [...cats.values()].filter(c => c.count), jk, lines: [...lines.values()] };
 }
 
 export function Outliner() {
@@ -118,11 +127,11 @@ export function Outliner() {
             })}
           </Group>
         )}
-        {net && (net.rails.size > 0 || net.subways.size > 0) && (
-          <Group k="transit" icon={TrainFront} label="Transit" count={net.rails.size + net.subways.size}>
-            {[...net.rails.values()].map(r => (
-              <div key={r.id} className={'tree-row' + (isSel('rail', r.id) ? ' selected' : '')}>
-                <button className="object-button" onClick={() => editor.select({ type: 'rail', id: r.id }, { focus: true })}><TrainFront size={14} strokeWidth={1.6} /><span className="name">{r.name || 'Railway'}</span><small>{r.tracks} trk</small></button>
+        {net && (tree?.lines.length > 0 || net.subways.size > 0) && (
+          <Group k="transit" icon={TrainFront} label="Transit" count={(tree?.lines.length || 0) + net.subways.size}>
+            {(tree?.lines || []).map(L => (
+              <div key={L.name} className={'tree-row' + (L.ids.length === 1 && isSel('edge', L.ids[0]) ? ' selected' : '')}>
+                <button className="object-button" onClick={() => editor.select({ type: 'edge', id: L.ids[0] }, { focus: true })}><TrainFront size={14} strokeWidth={1.6} /><span className="name">{L.name}</span><small>{L.profile.railKind === 'monorail' ? 'monorail' : L.profile.tracks + ' trk'} · {L.km.toFixed(1)} km</small></button>
               </div>
             ))}
             {[...net.subways.values()].map(s => (
