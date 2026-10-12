@@ -1,0 +1,22 @@
+{
+  "name": "project-zero-road-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Experimental browser road editor for large open-world (NFS-style) city maps.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/three": "^0.170.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "typescript": "5.6",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
+  }
+}
