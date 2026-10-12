@@ -1,0 +1,19 @@
+{
+  "name": "frontier-road-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontier — Road Editor design prototype (network, junctions, cross-sections, details, city generation)",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "node scripts/check.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^6.0.0"
+  }
+}
