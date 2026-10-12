@@ -271,7 +271,9 @@ export function RoadInspector({ project, road, onEdit, onFocus, selection, onSel
     );
   }
   const profile = project.profiles.find((p) => p.id === road.profileId) || project.profiles[0];
-  const offsets = useMemo(() => profileOffsets(profile), [profile]);
+  // No hook here: this component returns early when nothing is selected, and a hook below an early
+  // return is a render-order bug the moment the first road is clicked.
+  const offsets = profileOffsets(profile);
   const cls = ROAD_CLASSES[road.class] || {};
   const details = road.details || {};
   const structure = (road.spans || []).map((s) => s.kind);
