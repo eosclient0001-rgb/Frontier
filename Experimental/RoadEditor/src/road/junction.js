@@ -167,36 +167,30 @@ function buildGap(N, g) {
   }
   push(P(N, B, B.setback, -B.wl), P(N, B, B.setback, -B.wl - g.swB), yB);
 
-  // Flare: a chamfer on the wide end that pulls its outer curb in by flare.drop
-  // over flare.len metres. The chamfer is inserted into BOTH the curb and outer
-  // polylines, at the END of the polygon (on the wide's side, AFTER the wide's
-  // natural end). The visual result: the wide end's outer curb is full-width at
-  // its natural setback, then narrows over flare.len metres as you walk toward
-  // the node, ending at (full - drop) at the chamfer. The narrow end is unchanged.
+  // Flare: a chamfer on the wide end's OUTER polyline (sidewalk edge) only. The
+  // wide end's outer curb is pulled in by flare.drop over flare.len metres, so the
+  // sidewalk tapers in as you approach the junction. The CURB polyline is not
+  // modified — it stays at the wide's natural end, so the road surface polygon
+  // (J.polygon) is well-defined (no self-intersecting U-turn). The outer polyline
+  // has a "spike" between the wide's natural end and the chamfer point, which is
+  // collapsed during the curb-return / sidewalk strip construction.
   //
-  // Polygon order (no flare): A.setback, A.wr → arc → B.setback, B.wr
-  // Polygon order (with flare, wide=B): A.setback, A.wr → arc → B.setback, B.wr → B.t, B.wr
-  // Note: t < setback, so the chamfer is "inside" the natural end. The polygon
-  // doubles back on itself on the wide's side, but this only happens for the
-  // OUTER polyline (not the curb), so the surface is still well-defined.
+  // The chamfer is inserted at the side of the outer array where the wide end's
+  // outer point is (A's outer if wide===A, B's outer if wide===B), placed AFTER
+  // the wide's natural end in the order in which the polyline is read.
   if (g.flare) {
     const wide = g.flare.wide, t = g.flare.len, drop = g.flare.drop;
-    const inO = wide.wr;                                 // curb stays at full width
-    const outO = wide.wr - drop;                         // outer pulled in
-    const pc = P(N, wide, t, inO);
+    const outO = wide.wr + (wide === A ? g.swA : g.swB) - drop;  // outer pulled in
     const po = P(N, wide, t, outO);
-    // For the wide's side of the gap (last entries on both arrays), append the
-    // chamfer point AFTER the wide's natural end. The polygon doubles back, which
-    // creates a triangular sliver in the surface but no self-intersection because
-    // the chamfer is at a smaller offset than the natural end.
     if (wide === B) {
-      // the wide's natural end is at the last index; append after it
-      curb.push([pc[0], yAt(N, wide, t), pc[1]]);
+      // B's outer is at the last index of outer; append the chamfer after it.
       outer.push([po[0], yAt(N, wide, t), po[1]]);
     } else {
-      // the wide's natural end is at index 0; prepend before it
-      curb.unshift([pc[0], yAt(N, wide, t), pc[1]]);
-      outer.unshift([po[0], yAt(N, wide, t), po[1]]);
+      // A's outer is at index 0 of outer (or 1 if g.tA was pushed); insert chamfer
+      // right after A's natural end outer point (the second-to-last one, since
+      // the very last point of the array is the A.push outer at A.setback).
+      // The first outer point IS A's natural end at A.setback; insert at index 1.
+      outer.splice(1, 0, [po[0], yAt(N, wide, t), po[1]]);
     }
   }
   return { curb, outer, swA: g.swA, swB: g.swB, hasCurb: g.hasCurb, type: g.type, A: A.id, B: B.id, flare: g.flare };
