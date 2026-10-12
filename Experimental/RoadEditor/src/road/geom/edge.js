@@ -4,6 +4,7 @@ import { Out, ribbon, wall, sweep, box, polyWall, strip, yawFor } from './out.js
 import { line, dashed, decal, bar, tooth, hatch } from './markings.js';
 import { getProfile, layout, LEVEL, RANK } from '../profiles.js';
 import { endControl } from './control.js';
+import { buildMerge } from './merge.js';
 
 export const CURB_W = 0.2;
 export const GROUND = -0.06;
@@ -32,6 +33,40 @@ export function buildEdge(net, edge, JA, JB, ctx) {
   if (s1 - s0 < 0.4) { out.warning = 'Segment too short for its junctions'; return out; }
   const lanes = lay.lanes;
   const isPathProfile = prof.category === 'active';
+
+  // --- tip taper ("pinch"): the whole cross-section folds onto its inboard edge line so a ramp lane
+  // physically dies out instead of ending as a sliced slab. edge.tipTaper = {end, len, inb:'l'|'r'}.
+  let pinch = null;
+  if (edge.tipTaper) {
+    const list = Array.isArray(edge.tipTaper) ? edge.tipTaper : [edge.tipTaper];
+    const TT = list[0];
+    const inb = TT.inb === 'r' ? lay.right : lay.left;
+    const sign = TT.inb === 'r' ? -1 : 1;
+    const sm = t => t * t * (3 - 2 * t);
+    // one fold line for the whole edge (both ends of a ramp pinch towards the anchor they run
+    // alongside, which is the same side of the ramp), one factor per end, multiplied together
+    const spec = list.map(t => ({ sTip: t.end === 'a' ? s0 : s1, dn: t.end === 'a' ? 1 : -1, len: Math.max(4, t.len || 60) }));
+    const m = f => { let v = 1; for (const sp of spec) { const d = (f.s - sp.sTip) * sp.dn; if (d < sp.len) v = Math.min(v, d <= 0 ? 0 : sm(d / sp.len)); } return v; };
+    const PO = (o, f) => ((o - inb) * sign > 0 ? inb + (o - inb) * m(f) : o);
+    const first = spec[0];
+    pinch = { PO, m, sTip: first.sTip, dn: first.dn, len: first.len };
+  }
+  // ribbon / wall wrappers that honour the pinch without touching any other call site's behaviour
+  const rib = (o, mat, frames, a, b, h, h1) => pinch
+    ? ribbon(o, mat, frames, (k, f) => pinch.PO(a, f), (k, f) => pinch.PO(b, f), h, h1)
+    : ribbon(o, mat, frames, a, b, h, h1);
+  const wl = (o, mat, frames, a, hb, ht, side) => pinch
+    ? wall(o, mat, frames, f => pinch.PO(a, f), hb, ht, side)
+    : wall(o, mat, frames, a, hb, ht, side);
+  // paint stops where the taper starts, so no lane line floats outside the pavement
+  let clip = null;
+  if (pinch) {
+    const rs = (Array.isArray(edge.tipTaper) ? edge.tipTaper : [edge.tipTaper]).map(t => {
+      const a = t.end === 'a' ? s0 : s1, b = a + (t.end === 'a' ? 1 : -1) * ((t.len || 60) + 10);
+      return [Math.min(a, b), Math.max(a, b)];
+    });
+    clip = rs.length === 1 ? rs[0] : (rs[0][1] < rs[1][0] ? [rs[0][1], rs[1][0]] : [Math.min(...rs.map(r => r[0])), Math.max(...rs.map(r => r[1]))]);
+  }
 
   // --- control / crosswalk context at each end
   const ctlA = JA && eA ? endControl(JA, eA, net) : null;
@@ -75,48 +110,54 @@ export function buildEdge(net, edge, JA, JB, ctx) {
       if (isMedian && (pullA > 0 || pullB > 0)) {
         const r = ln.width / 2;
         const m0 = s0 + pullA + (pullA > 0 ? r : 0), m1 = s1 - pullB - (pullB > 0 ? r : 0);
-        if (m1 - m0 < 1) { ribbon(out, surfaceMat, frames, ln.o0, ln.o1, 0); return; }
+        if (m1 - m0 < 1) { rib(out, surfaceMat, frames, ln.o0, ln.o1, 0); return; }
         fr = frames.filter(f => f.s >= m0 - 1e-6 && f.s <= m1 + 1e-6);
         if (!fr.length || fr[0].s > m0 + 1e-3) fr.unshift(c.frameAt(m0));
         if (fr[fr.length - 1].s < m1 - 1e-3) fr.push(c.frameAt(m1));
         // asphalt under pulled-back sections
         const pre = frames.filter(f => f.s <= m0 + 1e-6); if (pre.length && pre[pre.length - 1].s < m0) pre.push(c.frameAt(m0));
         const post = frames.filter(f => f.s >= m1 - 1e-6); if (post.length && post[0].s > m1) post.unshift(c.frameAt(m1));
-        if (pullA > 0 && pre.length >= 2) ribbon(out, surfaceMat, pre, ln.o0, ln.o1, 0);
-        if (pullB > 0 && post.length >= 2) ribbon(out, surfaceMat, post, ln.o0, ln.o1, 0);
+        if (pullA > 0 && pre.length >= 2) rib(out, surfaceMat, pre, ln.o0, ln.o1, 0);
+        if (pullB > 0 && post.length >= 2) rib(out, surfaceMat, post, ln.o0, ln.o1, 0);
         if (pullA > 0) medianNose(out, c, m0, ln, -1, ln.mat);
         if (pullB > 0) medianNose(out, c, m1, ln, +1, ln.mat);
       }
-      ribbon(out, ln.mat, fr, a, b, ln.h);
-      if (curbL) { ribbon(out, 'curb', fr, ln.o0 + 0.03, a, ln.h); sweep(out, 'curb', fr, curbShapeLeftRoad(ln.h, nbL).slice(1), ln.o0); }
-      if (curbR) { ribbon(out, 'curb', fr, b, ln.o1 - 0.03, ln.h); sweep(out, 'curb', fr, curbShapeRightRoad(ln.h, nbR).slice(0, 3), ln.o1); }
-      if (!left && !anyElevated) wall(out, 'curb', fr, ln.o0, GROUND, ln.h, -1);
-      if (!right && !anyElevated) wall(out, 'curb', fr, ln.o1, GROUND, ln.h, +1);
+      rib(out, ln.mat, fr, a, b, ln.h);
+      if (curbL) { rib(out, 'curb', fr, ln.o0 + 0.03, a, ln.h); sweep(out, 'curb', fr, curbShapeLeftRoad(ln.h, nbL).slice(1), ln.o0); }
+      if (curbR) { rib(out, 'curb', fr, b, ln.o1 - 0.03, ln.h); sweep(out, 'curb', fr, curbShapeRightRoad(ln.h, nbR).slice(0, 3), ln.o1); }
+      if (!left && !anyElevated) wl(out, 'curb', fr, ln.o0, GROUND, ln.h, -1);
+      if (!right && !anyElevated) wl(out, 'curb', fr, ln.o1, GROUND, ln.h, +1);
     } else {
-      ribbon(out, ln.mat === 'surface' ? surfaceMat : ln.mat, frames, ln.o0, ln.o1, ln.h);
+      rib(out, ln.mat === 'surface' ? surfaceMat : ln.mat, frames, ln.o0, ln.o1, ln.h);
       // tiny step between ground-level verges and the paved surface
-      if (left && left.level === 'ground' && ln.level === 'road') wall(out, surfaceMat, frames, ln.o0, left.h, ln.h, -1);
-      if (right && right.level === 'ground' && ln.level === 'road') wall(out, surfaceMat, frames, ln.o1, right.h, ln.h, +1);
-      if (!left && !anyElevated) wall(out, 'curb', frames, ln.o0, GROUND, ln.h, -1);
-      if (!right && !anyElevated) wall(out, 'curb', frames, ln.o1, GROUND, ln.h, +1);
+      if (left && left.level === 'ground' && ln.level === 'road') wl(out, surfaceMat, frames, ln.o0, left.h, ln.h, -1);
+      if (right && right.level === 'ground' && ln.level === 'road') wl(out, surfaceMat, frames, ln.o1, right.h, ln.h, +1);
+      if (!left && !anyElevated) wl(out, 'curb', frames, ln.o0, GROUND, ln.h, -1);
+      if (!right && !anyElevated) wl(out, 'curb', frames, ln.o1, GROUND, ln.h, +1);
       if (ln.type === 'barrier') barrierRuns(out, frames, ln, edge, i);
       if (ln.type === 'tram') tramRails(out, frames, (ln.o0 + ln.o1) / 2, ln.h);
     }
   });
 
   // --- bridges / elevated sections
-  if (anyElevated) bridge(out, net, edge, c, frames, elevated, lay, prof, ctx);
+  if (anyElevated) bridge(out, net, edge, c, frames, elevated, lay, prof, ctx, pinch);
 
   // --- end caps for dead ends
   if (JA?.kind === 'flat') endCap(out, c, s0, -1, lay);
   if (JB?.kind === 'flat') endCap(out, c, s1, +1, lay);
 
   // --- paint
-  if (ctx.markings !== false && !isPathProfile) paint(out, net, edge, c, lay, prof, s0, s1, ctlA, ctlB, JA, JB, ctx);
+  if (ctx.markings !== false && !isPathProfile) {
+    const pa = clip ? Math.max(s0, clip[1]) : s0, pb = clip ? Math.min(s1, clip[0]) : s1;
+    if (pb - pa > 4) paint(out, net, edge, c, lay, prof, pa, pb, ctlA, ctlB, JA, JB, ctx);
+  }
   if (isPathProfile && prof.lanes.length > 1 && ctx.markings !== false) {
     for (let i = 0; i < lanes.length - 1; i++) if (lanes[i].type === 'bike' && lanes[i + 1].type === 'bike') dashed(out, 'markWhite', c, s0, s1, lanes[i].o1, 0.1, 1.5, 2.5, 0);
     for (let i = 0; i < lanes.length - 1; i++) if ((lanes[i].type === 'path') !== (lanes[i + 1].type === 'path')) line(out, 'markWhite', c, s0, s1, lanes[i].o1, 0.08, 0);
   }
+
+  // --- interchange ramp blend: gore, nose paint and terminals where this edge meets its mainline
+  if (edge.merge) buildMerge(out, net, edge, ctx);
 
   // --- features
   for (const ft of edge.features || []) {
@@ -200,7 +241,10 @@ function endCap(out, c, s, dir, lay) {
 }
 
 // ----------------------------------------------------------------------------------- bridges
-function bridge(out, net, edge, c, frames, elevated, lay, prof, ctx) {
+function bridge(out, net, edge, c, frames, elevated, lay, prof, ctx, pinch) {
+  const PO = pinch ? pinch.PO : (o => o);
+  const rib = (o, mat, fr, a, b, h) => pinch ? ribbon(o, mat, fr, (k, f) => PO(a, f), (k, f) => PO(b, f), h) : ribbon(o, mat, fr, a, b, h);
+  const wl = (o, mat, fr, a, hb, ht, side) => pinch ? wall(o, mat, fr, f => PO(a, f), hb, ht, side) : wall(o, mat, fr, a, hb, ht, side);
   const runs = [];
   let cur = null;
   frames.forEach((f, k) => {
@@ -217,11 +261,11 @@ function bridge(out, net, edge, c, frames, elevated, lay, prof, ctx) {
     // underside
     if (hiFrames.length > 1) {
       let seg = [];
-      for (const f of run) { if (high(f)) seg.push(f); else { if (seg.length > 1) ribbon(out, 'concrete', seg, lay.right, lay.left, -deck); seg = []; } }
-      if (seg.length > 1) ribbon(out, 'concrete', seg, lay.right, lay.left, -deck);
+      for (const f of run) { if (high(f)) seg.push(f); else { if (seg.length > 1) rib(out, 'concrete', seg, lay.right, lay.left, -deck); seg = []; } }
+      if (seg.length > 1) rib(out, 'concrete', seg, lay.right, lay.left, -deck);
     }
-    wall(out, 'concrete', run, lay.left - 0.02, bottom, f => f.y + outerL.h + 0.02, -1);
-    wall(out, 'concrete', run, lay.right + 0.02, bottom, f => f.y + outerR.h + 0.02, +1);
+    wl(out, 'concrete', run, lay.left - 0.02, bottom, f => f.y + outerL.h + 0.02, -1);
+    wl(out, 'concrete', run, lay.right + 0.02, bottom, f => f.y + outerR.h + 0.02, +1);
     // parapets / railings where the outer lane is not already a barrier
     for (const [ln, side] of [[outerL, -1], [outerR, 1]]) {
       if (ln.type === 'barrier') continue;

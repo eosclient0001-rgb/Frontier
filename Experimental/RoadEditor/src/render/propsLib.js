@@ -6,7 +6,7 @@ import { SIGNS, signUV } from './textures.js';
 
 const C = {
   poleDark: 0x3d4146, galv: 0x9aa0a6, black: 0x1b1c1e, white: 0xeeeeea, concrete: 0xb9b4aa, red: 0xb3171d,
-  yellow: 0xe0b021, green: 0x2f5a3b, wood: 0x6b4e33, bark: 0x5b4636, leafA: 0x4f7a38, leafB: 0x3e6b34, conifer: 0x2e5232,
+  yellow: 0xe0b021, orange: 0xd2601a, green: 0x2f5a3b, wood: 0x6b4e33, bark: 0x5b4636, leafA: 0x4f7a38, leafB: 0x3e6b34, conifer: 0x2e5232,
   housing: 0x262829, lamp: 0x4a4e53, shelter: 0x5a6068,
 };
 
@@ -109,6 +109,17 @@ const DEFS = {
   pierColWide: b => { b.box('vcol', 3.2, 1, 1.1, 0, 0.5, 0, C.concrete); b.cyl('vcol', 0.55, 0.55, 1, 1.6, 0, 0, C.concrete, 10); b.cyl('vcol', 0.55, 0.55, 1, -1.6, 0, 0, C.concrete, 10); },
   bollard: b => { b.cyl('vcol', 0.085, 0.08, 0.95, 0, 0, 0, C.poleDark, 10); b.cyl('vcol', 0.087, 0.087, 0.07, 0, 0.75, 0, C.white, 10); b.add('vcol', new THREE.SphereGeometry(0.08, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2), C.poleDark, M(0, 0.95, 0)); },
   bollardSign: b => { b.box('vcol', 0.32, 1.0, 0.32, 0, 0.5, 0, C.white); b.box('vcol', 0.33, 0.12, 0.33, 0, 0.9, 0, C.yellow); b.sign(SIGNS.keepRight, 0.28, 0.28, 0.17, 0.62, 0); },
+  // interchange nose hardware: low TTHL-style attenuator (tip toward -x, i.e. traffic hits the taper)
+  crashCushion: b => {
+    b.box('vcol', 3.2, 0.34, 1.9, 0.4, 0.17, 0, C.concrete);
+    b.box('vcol', 1.5, 0.6, 1.6, 1.6, 0.3, 0, C.concrete);
+    b.box('vcol', 0.7, 0.2, 1.3, -1.4, 0.1, 0, C.concrete);
+    b.box('vcol', 1.0, 0.66, 0.1, 1.35, 0.33, 0.83, C.yellow);   // reflective end panels
+    b.box('vcol', 1.0, 0.66, 0.1, 1.35, 0.33, -0.83, C.yellow);
+    b.cyl('vcol', 0.32, 0.34, 1.0, 2.1, 0, 0, C.white, 12);
+    b.cyl('vcol', 0.345, 0.345, 0.16, 2.1, 0.62, 0, C.orange, 12);
+  },
+  signKeepRight: b => { b.cyl('vcol', 0.04, 0.04, 1.1, 0, 0, 0, C.galv, 6); b.sign(SIGNS.keepRight, 0.52, 0.52, 0.04, 0.95, 0); },
   delineator: b => { b.cyl('vcol', 0.04, 0.035, 0.9, 0, 0, 0, C.white, 6); b.cyl('vcol', 0.042, 0.042, 0.08, 0, 0.7, 0, C.yellow, 6); b.cyl('vcol', 0.12, 0.12, 0.04, 0, 0, 0, C.black, 8); },
   hydrant: b => { b.cyl('vcol', 0.13, 0.13, 0.55, 0, 0, 0, C.red, 10); b.add('vcol', new THREE.SphereGeometry(0.14, 10, 6, 0, 6.29, 0, Math.PI / 2), C.red, M(0, 0.55, 0)); b.cyl('vcol', 0.05, 0.05, 0.4, 0, 0.38, 0, C.red, 6, Math.PI / 2); b.cyl('vcol', 0.17, 0.17, 0.06, 0, 0, 0, C.red, 10); },
   bin: b => { b.cyl('vcol', 0.27, 0.3, 0.95, 0, 0, 0, C.green, 12); b.cyl('vcol', 0.31, 0.31, 0.06, 0, 0.95, 0, C.black, 12); },
@@ -180,4 +191,4 @@ export function propLibrary() {
 }
 
 // Props that should cast shadows (others are too small to matter)
-export const SHADOW_PROPS = new Set(['lamp', 'lampHigh', 'lampDouble', 'lampPost', 'signalPole', 'signalArm', 'signalHead', 'treeA', 'treeB', 'busShelter', 'pierCol', 'pierColWide', 'pierCap', 'catenaryMast', 'subwayEntrance', 'crossbuck']);
+export const SHADOW_PROPS = new Set(['crashCushion', 'lamp', 'lampHigh', 'lampDouble', 'lampPost', 'signalPole', 'signalArm', 'signalHead', 'treeA', 'treeB', 'busShelter', 'pierCol', 'pierColWide', 'pierCap', 'catenaryMast', 'subwayEntrance', 'crossbuck']);

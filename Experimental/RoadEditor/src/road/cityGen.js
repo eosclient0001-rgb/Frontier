@@ -4,7 +4,8 @@
 import { RoadNetwork } from './network.js';
 import { rng, makeNoise, smooth, resample, polylineLength, pointPolylineDist } from './math.js';
 import { planarize } from './planarize.js';
-import { PROFILES, layout } from './profiles.js';
+import { PROFILES, layout, getProfile } from './profiles.js';
+import { ARCHETYPES, mergeEnd, hermitePts, arcPts, edgeOffset } from './interchange.js';
 
 const NAMES = ['Harbor', 'Union', 'Market', 'Grand', 'Lincoln', 'Mission', 'Sunset', 'Ocean', 'Pacific', 'Broadway', 'Central', 'Park', 'Maple', 'Oak', 'Cedar', 'Pine', 'Elm', 'Kingston', 'Riverside', 'Bayview', 'Hillcrest', 'Lakeshore', 'Westlake', 'Fairview', 'Highland', 'Summit', 'Victoria', 'Regent', 'Wellington', 'Madison', 'Jefferson', 'Franklin', 'Granite', 'Copper', 'Willow', 'Aspen', 'Juniper', 'Laurel', 'Magnolia', 'Spruce', 'Chestnut', 'Hawthorne', 'Beacon', 'Carlton', 'Dover', 'Easton', 'Foster', 'Garnet', 'Hudson', 'Irving', 'Jasper', 'Kensington', 'Lombard', 'Monroe', 'Newport', 'Orchard', 'Prospect', 'Quincy', 'Raleigh', 'Sterling', 'Tremont', 'Vernon', 'Whitney', 'York'];
 const ORD = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
@@ -305,7 +306,9 @@ export function generateCity(options = {}) {
   }
 
   // ---------------------------------------------------------------- freeway ring + interchanges
-  const ramps = [];
+  const sites = [];
+  let it_name = 1;
+  let fwLf = 0, fwLg = 0, icGap = 340, icRoom = true;
   const polysFreeway = [];
   let ring = null;
   const exclusions = [];     // {type:'band'|'rect', ...} in grid space
@@ -337,34 +340,52 @@ export function generateCity(options = {}) {
       { axis: 'u', at: uL, from: vB - rc, to: vT + rc, e: [0, -1] },
     ];
     for (const s of sides) exclusions.push({ type: 'band', axis: s.axis, at: s.at, half: 30 });
-    const fwHalf = layout(PROFILES.freeway6).total / 2, rampHalf = layout(PROFILES.ramp1).total / 2;
-    const lf = fwHalf + rampHalf, lg = lf + 10;
+    const fwHalf = layout(PROFILES.freeway6).total / 2;
+    fwLf = fwHalf + layout(PROFILES.rampLoop).total / 2; fwLg = fwLf + 10;
+    // ramp offsets are dimensioned for a ~340 m block; scale them to this grid so an interchange
+    // never reaches past the crossing it belongs to
+    const medGap = a => { const d = []; for (let i = 1; i < a.length; i++) d.push(a[i] - a[i - 1]); d.sort((x, y) => x - y); return d[d.length >> 1] || 340; };
+    icGap = Math.min(medGap(U), medGap(V));
+    // A grade-separated interchange needs roughly 250 m between cross streets: that is what it takes
+    // to drop from the deck to the grid at a legal grade. Below that a small map gets the freeway
+    // without ramps rather than a ramp that cannot be built to standard.
+    const icK = Math.max(0.62, Math.min(1.3, icGap / 340));
+    icRoom = icGap >= 240;
     for (const s of sides) {
       const crossLines = s.axis === 'v' ? U : V;
       const lo = Math.min(s.from, s.to), hi = Math.max(s.from, s.to);
       let count = 0;
+      // keep sites clear of the ring's corners and of the river / diagonal / railway, but scale those
+      // margins with the map, otherwise a small city simply gets no interchange at all
+      if (!icRoom) break;
+      const margin = Math.max(90, Math.min(430, (hi - lo) * 0.17));
+      const clr = Math.max(130, Math.min(520, (hi - lo) * 0.2));
       for (const x of crossLines) {
-        if (x < lo + 430 || x > hi - 430) continue;
+        if (x < lo + margin || x > hi - margin) continue;
         if (count >= 2) break;
         const P0 = s.axis === 'v' ? [x, s.at] : [s.at, x];
-        if (riverDist(P0[0], P0[1]) < 520) continue;
-        if (diagSeg && pointPolylineDist(P0[0], P0[1], diagSeg).d < 480) continue;
-        if (railU !== null && s.axis === 'v' && Math.abs(x - railU) < 470) continue;
+        if (riverDist(P0[0], P0[1]) < clr) continue;
+        if (diagSeg && pointPolylineDist(P0[0], P0[1], diagSeg).d < clr) continue;
+        if (railU !== null && s.axis === 'v' && Math.abs(x - railU) < clr) continue;
         if (railU !== null && s.axis === 'u' && Math.abs(s.at - railU) < 60) continue;
         if (count && R.chance(0.3)) continue;
         count++;
         const e = s.e, n = [-e[1], e[0]];   // right normal in grid space (x=u, z=v)
-        const at = (sig, lat) => [P0[0] + e[0] * sig + n[0] * lat, P0[1] + e[1] * sig + n[1] * lat];
-        const lat = sig => { const a = Math.abs(sig); if (a >= 350) return lf; if (a <= 260) return lg; return lf + (lg - lf) * smooth((350 - a) / 90); };
-        const mk = (sigs, sideSgn) => sigs.map(sg => at(sg, sideSgn * lat(sg)));
-        const sigOff = []; for (let sg = -420; sg <= 0; sg += 15) sigOff.push(sg);
-        const sigOn = []; for (let sg = 0; sg <= 420; sg += 15) sigOn.push(sg);
-        // +n side carries forward traffic: off before, on after; −n side mirrored
-        ramps.push({ pts: mk(sigOff, 1), kind: 'off', side: 1, P0, e, n, name: 'Exit ' + (ramps.length / 4 + 1 | 0) });
-        ramps.push({ pts: mk(sigOn, 1), kind: 'on', side: 1, P0, e, n, name: 'Entrance' });
-        ramps.push({ pts: mk(sigOn.slice().reverse(), -1), kind: 'off', side: -1, P0, e, n, name: 'Exit' });
-        ramps.push({ pts: mk(sigOff.slice().reverse(), -1), kind: 'on', side: -1, P0, e, n, name: 'Entrance' });
-        exclusions.push({ type: 'rect', P0, e, n, along: 250, lat: lg + 20 });
+        // Inner sites get a full archetype (loops need quadrant land); outer ones stay simple.
+        const rad = Math.hypot(P0[0], P0[1]);
+        const type = rad < half * 0.46
+          ? (R.chance(0.45) ? 'cloverleaf' : R.chance(0.55) ? 'parclo' : 'turbine')
+          : (R.chance(0.7) ? 'diamond' : 'cloverleaf');
+        const plan = ARCHETYPES[type];
+        sites.push({ P0, e, n, axis: s.axis, type, name: it_name++, k: icK });
+        // nothing else gets built inside the freeway's own corridor, or in the quadrants
+        exclusions.push({ type: 'rect', P0, e, n, along: 250 + 150 * icK, lat: fwLg + 20 + 55 * icK });
+        // a loop belongs in a clear quadrant, so the four corners of the crossing are reserved too
+        if (plan.R) for (const q of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const Rq = plan.R * icK, ac = 20 + Rq, lc = fwLg + Rq;
+          const Q = [P0[0] + e[0] * q[0] * ac + n[0] * q[1] * lc, P0[1] + e[1] * q[0] * ac + n[1] * q[1] * lc];
+          exclusions.push({ type: 'rect', P0: Q, e, n, along: Rq + 52, lat: Rq + 36 });
+        }
       }
     }
   }
@@ -494,57 +515,444 @@ export function generateCity(options = {}) {
   if (o.freeway && ring) {
     const fwNodes = [];
     const segs = polysFreeway;
-    const FW_Y = 9;
+    const FW_Y = 7;   // every ramp has to lose this height; at 9 m the grades stop being buildable inside a city block
     const endNode = (uv) => {
       for (const n of fwNodes) if (Math.hypot(n._uv[0] - uv[0], n._uv[1] - uv[1]) < 1) return n;
       const [x, z] = warp(uv[0], uv[1]);
       const n = net.addNode({ x, z, y: FW_Y }); n._uv = uv; fwNodes.push(n); return n;
     };
     const fwEdges = [];
+    const fwEdgeSet = new Set();
     for (const s of segs) {
       const a = endNode(s.pts[0]), b = endNode(s.pts[s.pts.length - 1]);
       const dense = resample(s.pts, 30).slice(1, -1).map(([u, v]) => { const [x, z] = warp(u, v); return { x, z }; });
-      fwEdges.push(net.addEdge({ a: a.id, b: b.id, profile: 'freeway6', pts: dense, name: 'Ring Freeway (I-9)' }));
+      const fe = net.addEdge({ a: a.id, b: b.id, profile: 'freeway6', pts: dense, name: 'Ring Freeway (I-9)' });
+      fwEdges.push(fe); fwEdgeSet.add(fe.id);
     }
-    // ramps
-    const index = { edges: fwEdges };
-    for (const r of ramps) {
-      const uvPts = r.pts;
-      const endUV = r.kind === 'off' ? uvPts[uvPts.length - 1] : uvPts[0];     // on the arterial
-      const flushUV = r.kind === 'off' ? uvPts[0] : uvPts[uvPts.length - 1];
-      // attach arterial end by splitting the arterial edge nearest to that point
-      const [ex, ez] = warp(endUV[0], endUV[1]);
-      const host = splitNearest(net, ex, ez, e => e._cls === 'arterial');
-      if (!host) continue;
-      const [fx, fz] = warp(flushUV[0], flushUV[1]);
-      const flushNode = net.addNode({ x: fx, z: fz, y: FW_Y, end: 'flush' });
-      const world = uvPts.map(([u, v]) => { const [x, z] = warp(u, v); return { x, z }; });
-      // vertical keys: flat at freeway level for |σ|>=330, ground for |σ|<=95
-      const sig = uvPts.map(([u, v]) => (u - r.P0[0]) * r.e[0] + (v - r.P0[1]) * r.e[1]);
-      const inner = world.slice(1, -1).map((p, k) => {
-        const a = Math.abs(sig[k + 1]);
-        const q = { x: p.x, z: p.z };
-        if (Math.abs(a - 330) < 7.6) q.y = FW_Y;
-        if (Math.abs(a - 95) < 7.6) q.y = 0;
-        return q;
-      });
-      const isOff = r.kind === 'off';
-      const edge = net.addEdge({ a: isOff ? flushNode.id : host.id, b: isOff ? host.id : flushNode.id, profile: 'ramp1', pts: inner, name: (isOff ? 'Exit ramp' : 'On-ramp') + ' · ' + (net.edges.get([...net.adj.get(host.id)][0])?.name || '') });
-      edge._cls = 'ramp';
-      const c = net.centerline(edge);
-      // ramp's freeway-side barrier is lane 0 (driver's left); gap it along the flush section
-      edge.features.push(isOff ? { type: 'barrierGap', lane: 0, s0: -1, s1: 92 } : { type: 'barrierGap', lane: 0, s0: c.length - 92, s1: c.length + 1 });
-      // matching gap in the freeway outer barrier
-      const fp = isOff ? c.frameAt(0) : c.frameAt(c.length), fq = isOff ? c.frameAt(95) : c.frameAt(c.length - 95);
-      let best = null;
-      for (const fe of fwEdges) { const fc = net.centerline(fe), q0 = fc.nearest(fp.x, fp.z), q1 = fc.nearest(fq.x, fq.z); if (!best || q0.d < best.d) best = { fe, d: q0.d, s0: q0.s, s1: q1.s, fc }; }
-      if (best) {
-        const fc = best.fc, f = fc.frameAt(best.s0);
-        const sideSign = Math.sign((fp.x - f.x) * f.nx + (fp.z - f.z) * f.nz);
-        const lanes = PROFILES.freeway6.lanes.length;
-        best.fe.features.push({ type: 'barrierGap', lane: sideSign > 0 ? lanes - 1 : 0, s0: Math.min(best.s0, best.s1) - 2, s1: Math.max(best.s0, best.s1) + 1 });
+    // ---- interchanges -------------------------------------------------------
+    // Ramps are sampled from the world centreline of the roadway they join, so the blend lands on
+    // a measurable nose: [tip | flush | flare] + body + [flare | flush | tip], the cross-section
+    // pinched onto its inboard line at each tip. geom/merge.js paves and marks every gore.
+    const halfOf = pr => layout(PROFILES[pr] || PROFILES.local).total / 2;
+    const nearestOn = (list, x, z) => {
+      let b = null;
+      for (const e of list) {
+        const c = net.centerline(e), q = c.nearest(x, z);
+        if (!b || q.d < b.d) b = { e, c, s: q.s, d: q.d, f: c.frameAt(q.s) };
+      }
+      return b;
+    };
+    const latOf = (f, x, z) => (x - f.x) * f.nx + (z - f.z) * f.nz;
+    const dirOf = (f, th) => (f.tx * Math.cos(th) + f.tz * Math.sin(th)) > 0 ? 1 : -1;
+    const edgeLat = (e, sg) => edgeOffset(layout(getProfile(e)), sg);
+    const clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
+    // A ramp's tail ties into a node on the street it lands on. Reuse a node that is already there
+    // rather than splitting again: two splits close together leave a stub too short for its
+    // junctions, and the split is what the "segment too short" warning is about.
+    const attachNode = (e, st, f) => {
+      for (const id of [e.a, e.b]) {
+        const n = net.nodes.get(id);
+        if (n && Math.hypot(n.x - f.x, n.z - f.z) < 95) return n;
+      }
+      const c = net.centerline(e), L = c.length;
+      if (L < 200) return null;
+      return splitEdgeAt(net, e, clampN(st, 80, L - 80));
+    };
+    const edgeBox = new Map();
+    const boxOf = e => {
+      let b = edgeBox.get(e);
+      if (b) return b;
+      const c = net.centerline(e);
+      b = { x0: 1e9, x1: -1e9, z0: 1e9, z1: -1e9 };
+      for (let k = 0; k < c.X.length; k++) {
+        if (c.X[k] < b.x0) b.x0 = c.X[k]; if (c.X[k] > b.x1) b.x1 = c.X[k];
+        if (c.Z[k] < b.z0) b.z0 = c.Z[k]; if (c.Z[k] > b.z1) b.z1 = c.Z[k];
+      }
+      edgeBox.set(e, b); return b;
+    };
+    // the lane whose hardware must stand down while a ramp merges: the barrier, else the walk
+    const gapLaneOf = (e, sg) => {
+      const lay = layout(getProfile(e));
+      const side = lay.lanes.filter(l => (sg > 0 ? l.o1 >= 0 : l.o0 <= 0));
+      if (!side.length) return -1;
+      const bar = side.filter(l => l.type === 'barrier');
+      return (bar.length ? bar[0] : side[side.length - 1]).i;
+    };
+    // the anchored road's outer barrier (or its kerb run) has to stand down for the width of the
+    // ramp's flare, otherwise a wall stands in the gore: same reason real drawings end it at the nose
+    const gapOn = (anchor, nose, dirSide, flare, mode) => {
+      const lane = gapLaneOf(anchor, dirSide);
+      if (lane < 0 || !anchor.features) return;
+      const open = mode === 'out' ? -1 : 1;                  // which side of the nose the flare is on
+      const a = nose + open * dirSide * flare * 0.85, b = nose - open * dirSide * 2;
+      anchor.features.push({ type: 'barrierGap', lane, s0: Math.min(a, b) - 1, s1: Math.max(a, b) + 1 });
+    };
+    {                                                    // ---- the deck dips at each interchange
+      const IC_Y = 5.6;
+      const lvl = (x, z) => {
+        let t = 0;
+        for (const q of sites) {
+          const [ax, az] = warp(q.P0[0], q.P0[1]);
+          const d = Math.hypot(x - ax, z - az);
+          t = Math.max(t, 1 - clampN((d - 150) / 250, 0, 1));
+        }
+        return FW_Y - (FW_Y - IC_Y) * t;
+      };
+      for (const e of fwEdges) {
+        for (const p of e.pts) p.y = lvl(p.x, p.z);
+        for (const id of [e.a, e.b]) { const nd = net.nodes.get(id); if (nd) nd.y = lvl(nd.x, nd.z); }
+      }
+      net.invalidate(fwEdges.map(e => e.id));
+    }
+    net.meta.icLog = ['sites: ' + sites.length + ' (' + sites.map(x => x.type).join(',') + ')' + (sites.length || !icRoom
+      ? (icRoom ? '' : ' - street spacing ' + icGap.toFixed(0) + 'm is too fine for ramp grades')
+      : ' - no crossing on a ring side clear of the river, diagonal and railway')];
+    for (const it of sites) {
+      const plan = ARCHETYPES[it.type] || ARCHETYPES.diamond;
+      const [sx, sz] = warp(it.P0[0], it.P0[1]);
+      // re-read from the live network each ramp: attaching a ramp splits the arterial it meets,
+      // and a stale list would aim the next ramp at an edge that no longer exists
+      const artsLive = () => [...net.edges.values()].filter(e => e._cls === 'arterial' && net.centerline(e).nearest(sx, sz).d < 470);
+      let arts = artsLive();
+      const why = m => net.meta.icLog.push(it.type + ': ' + m);
+      if (!arts.length) { why('no arterial in reach (0 edges)'); continue; }
+      net.meta.icLog.push(it.type + ': ' + arts.length + ' arterial edges, specs ' + plan.plan([{ sg: 1 }, { sg: -1 }]).length);
+      const siteArt = nearestOn(arts, sx, sz);
+      const artName = siteArt.e.name;
+      const artAt = (x, z) => nearestOn(artName ? arts.filter(e => e.name === artName) : arts, x, z);
+      const artPav = Math.max(7, Math.abs(edgeLat(siteArt.e, 1)));
+      it.ramps = [];
+      for (const rp of plan.plan([{ sg: 1 }, { sg: -1 }])) {
+        const kind = rp.kind;
+        const prof = kind === 'loop' ? 'rampLoop' : kind === 'diag' ? 'rampWide' : 'ramp2';
+        const K = it.k || 1;
+        const half = halfOf(prof), Rnom = (rp.R || 70) * K;
+        // only the plan-view REACH scales with the block; the taper runs are driven by the legal
+        // merge rate (>= 1:6 lateral) so compressing them would break the blend, not the fit
+        // The coplanar run has to be long enough for the pinch to read as one surface (~50 m) and
+        // short enough that the ramp still has room to lose the freeway's height at a legal grade.
+        const flush = Math.max(34, Math.min(80, (rp.flush || (kind === 'off' || kind === 'on' ? 150 : 120)) * K * 0.75));
+        const flare = Math.max(52, rp.flare || 62);
+        arts = artsLive();
+        const gp = [it.P0[0] + it.n[0] * rp.sg * fwLf, it.P0[1] + it.n[1] * rp.sg * fwLf];
+        const [gx, gz] = warp(gp[0], gp[1]);
+        const fw = nearestOn(fwEdges, gx, gz);
+        if (!fw) { why(kind + ': no carriageway'); continue; }
+        // a ramp always pulls off to the right of its own flow, so the side it sits on and the
+        // direction it runs in are the same sign in the anchor's frame (positive offset = right)
+        const dirFw = Math.sign(latOf(fw.f, gx, gz)) || 1;
+        const offTravel = K * (kind === 'on' ? (rp.along || 110) * 1.2 : kind === 'off' ? -(rp.along || 110) * 1.2
+          : kind === 'loop' ? (artPav + Rnom) * 0.5 : -(artPav + Rnom) * 1.15);
+        // the run has to fit inside the anchor: a flush section that would start before the edge
+        // begins gets pulled back rather than extrapolated off the end of the mainline
+        const fitAt = (c, at, mode, flush, flare) => {
+          const back = mode === 'in' ? flush : flare, fwd = mode === 'in' ? flare : flush;
+          return clampN(at, Math.min(28, c.length / 2) + back, c.length - Math.min(28, c.length / 2) - fwd);
+        };
+        const atFw = fitAt(fw.c, fw.s + offTravel * dirFw, kind === 'on' ? 'out' : 'in', flush, flare);
+        if (Math.abs(atFw - (fw.s + offTravel * dirFw)) > 60) { why(kind + ': no room on the mainline'); continue; }
+        const F = mergeEnd(net, fw.e, {
+          at: atFw, sg: dirFw, dir: dirFw, mode: kind === 'on' ? 'out' : 'in',
+          flush, flare, gap: rp.gap || 9, half, step: 3,
+        });
+        if (!F || F.pts.length < 4) { why(kind + ': no merge run'); continue; }
+        // mergeEnd always returns pts in the ramp's own travel order; for an on-ramp the nose is
+        // at pts[0] (mode 'out'), for everything else the nose is at the far end. freeP/freeTh are
+        // the END THAT IS NOT ON THE RING - that is where a loop or diagonal picks up.
+        const freeP = F.pts[0], freeTh = F.headIn;
+        let G = null, body = null, jct = null, Rloop = 0;
+        if (kind === 'loop') {
+          // A loop is a constant-radius 270 deg arc, sized so its end lands exactly on the
+          // arterial's edge line. Hand (which way it curls) and side (which carriageway it joins)
+          // are both tried; whatever fails to fit the quadrant is simply not built.
+          // the loop can be hung off either merge end - the crossing sits between them, so which
+          // one gives a radius that fits the quadrant depends on where the nose landed. Try both.
+          const ENDS = [{ P: F.pts[0], th: F.headIn }, { P: F.pts[F.pts.length - 1], th: F.headOut }];
+          const hand = (sgn, sgt, useEnd) => {
+            // the sweep's end has to come to rest on the arterial's outer lane edge, at the same
+            // level and travelling the same way. The landing equation has one root per arterial it
+            // crosses, so scan outward from the tightest radius and take the first that works.
+            const thE = ENDS[useEnd].th + sgn * 1.5 * Math.PI;
+            const t = { x: Math.cos(ENDS[useEnd].th), z: Math.sin(ENDS[useEnd].th) };
+            const n = { x: -t.z, z: t.x };
+            const P1 = ENDS[useEnd].P;
+            const half = halfOf(rp.body === 'arc' ? PROFILES.rampLoop : prof);
+            const errAt = R => {
+              const end = { x: P1.x + n.x * sgn * R - t.x * R, z: P1.z + n.z * sgn * R - t.z * R };
+              const q = nearestOn(arts, end.x, end.z);
+              if (!q) return null;
+              const req = edgeLat(q.e, sgt) + sgt * half;
+              if (Math.abs(req) < 3 || Math.abs(req) > 70) return null;
+              const f = dirOf(q.f, thE) === sgt ? q.f : { yaw: q.f.yaw + Math.PI, tx: -q.f.tx, tz: -q.f.tz };
+              return { q, end, R, lat: latOf(f, end.x, end.z) - req, turn: sgn * 1.5 * Math.PI, d: q.d };
+            };
+            const R0 = 30 * K, R1 = Math.min(120, (plan.R || 80) * 1.4 * K);
+            let pv = null, pr = null;
+            for (let i = 0; i <= 20; i++) {
+              const R = R0 + (R1 - R0) * i / 20, v = errAt(R);
+              if (!v) { pv = null; continue; }
+              if (pv && pv.lat * v.lat <= 0) {
+                let a = pr, b = R, ea = pv.lat;
+                for (let j = 0; j < 16; j++) {
+                  const m = (a + b) / 2, vm = errAt(m);
+                  if (!vm) break;
+                  if (ea * vm.lat <= 0) b = m; else { a = m; ea = vm.lat; }
+                }
+                const w = errAt((a + b) / 2);
+                if (!w || w.q.d > 240) continue;
+                if (w.R < 30 * K || w.R > R1) continue;
+                return w;
+              }
+              pv = v; pr = R;
+            }
+            return null;
+          };
+          const fits = [];
+          for (let ue = 0; ue < 2; ue++) for (const sgn of [1, -1]) for (const sgt of [dirFw, -dirFw]) {
+            const w = hand(sgn, sgt, ue);
+            if (w) fits.push({ R: w.R, q: w.q, end: w.end, sgn, sgt, turn: w.turn, ue });
+          }
+          if (!fits.length) { why('loop: no landing'); continue; }
+          // the tightest loop that works is the right one: it stays inside the quadrant it was
+          // designed for, while a wide one reaches into the next block and starts crossing traffic
+          const fit = fits.sort((a, b) => a.R - b.R)[0];
+          Rloop = fit.R;
+          body = arcPts(ENDS[fit.ue].P, ENDS[fit.ue].th, fit.R, fit.sgn * Math.PI * 1.5, 7);
+          if (!body || body.length < 8) { why('loop: arc degenerate'); continue; }
+          G = mergeEnd(net, fit.q.e, {
+            at: fitAt(fit.q.c, fit.q.s, 'out', rp.tip || 92, 1.5), sg: fit.sgt, dir: fit.sgt, mode: 'out',
+            flush: Math.max(60, rp.tip || 92), flare: 1.5, gap: 0, half, step: 3,
+          });
+          if (!G || G.pts.length < 3) { why('loop: no landing run'); continue; }
+        } else {
+          const look = (kind === 'diag' ? 150 : 25) * K;
+          const q = nearestOn(arts, freeP.x + Math.cos(freeTh) * look, freeP.z + Math.sin(freeTh) * look);
+          if (!q) { why(kind + ': no arterial alongside'); continue; }
+          // a left/right-turn ramp belongs to the crossing it was built for: it may not be handed
+          // to some other street further along, or the ramp ends up running a kilometre across town
+          // (the name test below is what pins the ramp to this crossing; this is only a runaway guard)
+          if (q.d > (kind === 'diag' || kind === 'loop' ? 460 : 340)) { why(kind + ': junction ' + q.d.toFixed(0) + 'm off the ramp end'); continue; }
+          if ((kind === 'on' || kind === 'off') && siteArt && q.e.name !== siteArt.e.name) { why(kind + ': reaches ' + (q.e.name || q.e.id) + ', not ' + siteArt.e.name); continue; }
+          if (kind === 'diag') {
+            // join whichever carriageway the ramp actually sweeps into, crossing the road if need be
+            const cands = [];
+            for (const d of [1, -1]) {
+              const th = d > 0 ? Math.atan2(q.f.tz, q.f.tx) : Math.atan2(-q.f.tz, -q.f.tx);
+              const lat = edgeLat(q.e, d) + d * half;
+              const px = q.f.x + q.f.nx * lat, pz = q.f.z + q.f.nz * lat;
+              let dn = th - freeTh;
+              while (dn > Math.PI) dn -= Math.PI * 2;
+              while (dn < -Math.PI) dn += Math.PI * 2;
+              if (Math.abs(dn) > 2.45) continue;                    // would have to arrive backwards
+              cands.push({ d, th, cost: Math.abs(dn) });
+            }
+            if (!cands.length) { why('diag: no flow to join'); continue; }
+            const c0 = cands.sort((a, b) => a.cost - b.cost)[0];
+            G = mergeEnd(net, q.e, {
+              at: fitAt(q.c, q.s, 'out', rp.tip || 100, rp.flareB || 48), sg: c0.d, dir: c0.d, mode: 'out',
+              flush: rp.tip || 100, flare: rp.flareB || 48, gap: rp.gapB || 9, half, step: 3,
+            });
+            if (!G || G.pts.length < 4) { why('diag: no landing run'); continue; }
+            body = hermitePts(freeP, freeTh, G.pts[0], G.headIn, 9);
+          } else {
+            // the tail ties into a node on the cross street. If the ramp paired with it already tied
+            // in nearby, share that node - sawing the street again would leave a stub too short to
+            // carry two junctions, which is what the "segment too short" warning is about.
+            const nd = attachNode(q.e, q.s, q.f);
+            if (!nd) { why(kind + ': no legal station on ' + (q.e.name || q.e.id)); continue; }
+            jct = { e: q.e, s: q.s, node: nd, p: { x: nd.x, z: nd.z, y: nd.y } };
+            const thTo = Math.atan2(jct.p.z - freeP.z, jct.p.x - freeP.x);
+            body = kind === 'on'
+              ? hermitePts(jct.p, thTo, freeP, freeTh, 9)
+              : hermitePts(freeP, freeTh, jct.p, thTo, 9);
+          }
+        }
+        // a node picked off an existing junction sits where that junction is, so the ramp is
+        // re-aimed at it before the polyline is stitched
+        if (jct && jct.node) {
+          const nd = jct.node, thFrom = Math.atan2(nd.z - freeP.z, nd.x - freeP.x);
+          body = kind === 'on'
+            ? hermitePts(nd, thFrom + Math.PI, freeP, freeTh, 9)
+            : hermitePts(freeP, freeTh, nd, thFrom, 9);
+        }
+        if (!body || body.length < 2) continue;
+        // ---- the polyline, in travel order, tip to tip. Pieces are stitched with a minimum
+        // spacing: a repeated or sub-metre point makes the interpolation ring at the joint, and a
+        // ringing spline is exactly what opens a gap where the pavement should meet flush.
+        const raw = kind === 'on' ? [jct.p, ...body, ...F.pts] : [...F.pts, ...body, ...(G ? G.pts : [jct.p])];
+        // ---- vertical alignment. Between the tip and the nose the ramp is coplanar with the deck it
+        // is attached to, so those points keep their own level; everything between the two noses falls
+        // (or climbs) straight between them, which is where an off-ramp actually loses its height.
+        // Where a point sits within `flush` of its own merge tip it is coplanar with the road it is
+        // attached to and its level is fixed there; outside that the profile is free to fall.
+        const levelTo = (arr, st, off, fl) => {
+          for (let k = 0; k < arr.length; k++) if (Math.abs((arr[k].s ?? st) - st) <= fl) keep[off + k] = 1;
+        };
+        const keep = new Uint8Array(raw.length);
+        levelTo(F.pts, atFw, 0, flush);
+        // hold the last 20 m level where the ramp meets the street it joins, so the joint has no step
+        for (let q = raw.length - 1, acc = 0; q >= 0 && acc < 20; q--) { keep[q] = 1; acc += q ? Math.hypot(raw[q].x - raw[q - 1].x, raw[q].z - raw[q - 1].z) : 0; }
+        if (G) levelTo(G.pts, G.at, (kind === 'on' ? 1 : 0) + (body ? body.length : 0) + (kind === 'on' ? 0 : F.pts.length - 1), Math.max(40, Math.min(86, rp.tip || 92)));
+        for (let k = 1; k < raw.length - 1; k++) if (!keep[k]) raw[k].y = undefined;
+        let len = 0; const cum = [0];
+        for (let k = 1; k < raw.length; k++) { len += Math.hypot(raw[k].x - raw[k - 1].x, raw[k].z - raw[k - 1].z); cum.push(len); }
+        {
+          let k = 0;
+          while (k < raw.length) {
+            if (raw[k].y !== undefined) { k++; continue; }
+            let m = k; while (m < raw.length && raw[m].y === undefined) m++;
+            // A run that reaches the end of the path keeps that end's own level: the tail of an
+            // off-ramp runs beside the deck it left so it stays at deck level, its head sits on the
+            // road it joins so it finishes at that road's level, and the middle is one even slope.
+            const yA = raw[k - 1] ? raw[k - 1].y : raw[0].y;
+            const yB = raw[m] ? raw[m].y : raw[raw.length - 1].y;
+            const sA = k - 1 >= 0 ? cum[Math.max(0, k - 1)] : 0, sB = m < raw.length ? cum[m] : cum[cum.length - 1];
+            const s0 = Math.max(1, sB - sA);
+          // eased rather than straight: a ramp has to arrive at the road it joins level with it, and
+          // the steepening this costs is checked against the design limit once the path is built
+          for (let q = k; q < m; q++) { const u = (cum[q] - sA) / s0; raw[q].y = yA + (yB - yA) * (u * u * (3 - 2 * u)); }
+            k = m;
+          }
+        }
+        const pts = [];
+        for (let k = 0; k < raw.length; k++) {
+          const p = raw[k], last = pts[pts.length - 1];
+          if (!last || Math.hypot(p.x - last.x, p.z - last.z) >= 2.6) { pts.push(p); continue; }
+          if (k === raw.length - 1 && pts.length > 1) {
+            const prev = pts[pts.length - 2];
+            if (Math.hypot(p.x - prev.x, p.z - prev.z) >= 2.6) pts[pts.length - 1] = p;
+          }
+        }
+        if (pts.length < 6) { why(kind + ': path degenerated'); continue; }
+        len = 0; cum.length = 1; cum[0] = 0;
+        for (let k = 1; k < pts.length; k++) { len += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].z - pts[k - 1].z); cum.push(len); }
+        // A ramp may not thread a roadway it does not join, and it may not dive under one either, so
+        // the only lawful way through is over it: rise 5.4 m, spread far enough to keep the grade sane.
+        let bx0 = 1e9, bx1 = -1e9, bz0 = 1e9, bz1 = -1e9;
+        for (const p of pts) { if (p.x < bx0) bx0 = p.x; if (p.x > bx1) bx1 = p.x; if (p.z < bz0) bz0 = p.z; if (p.z > bz1) bz1 = p.z; }
+        const mine = new Set(it.ramps.map(r => r.edge));
+        const avoid = [];
+        for (const e of net.edges.values()) {
+          // the ring is corridor, not an obstacle - but only the edges this ramp is attached to and
+          // the ones that run on from its ends; a loop that would clip the ring's far side is a clash
+          if (e.id === fw.e.id || e.a === fw.e.a || e.b === fw.e.a || e.a === fw.e.b || e.b === fw.e.b) continue;
+          if (e._cls === 'ramp') { if (mine.has(e.id)) continue; }
+          else if (e._cls !== 'freeway' && e._cls !== 'arterial' && e._cls !== 'rail' && !e.name) continue;
+          if (jct && e.id === jct.e.id) continue;          // the street the head is spliced into
+          const b = boxOf(e);
+          if (b.x1 < bx0 - 26 || b.x0 > bx1 + 26 || b.z1 < bz0 - 26 || b.z0 > bz1 + 26) continue;
+          avoid.push(e);
+        }
+        const tipA = pts[0], tipB = pts[pts.length - 1];
+        const jctNear = [];
+        if (jct) for (const e of net.edges.values()) {
+          if (e._cls === 'ramp' || e._cls === 'freeway') continue;
+          for (const id of [e.a, e.b]) {
+            const n = net.nodes.get(id);
+            if (n && Math.hypot(n.x - jct.p.x, n.z - jct.p.z) < 82) { jctNear.push(e.id); break; }
+          }
+        }
+        const inJunctionCluster = e => jctNear.indexOf(e.id) >= 0;
+        let hit = null;
+        for (let k = 0; k < pts.length && !hit; k++) {
+          const p = pts[k];
+          for (const e of avoid) {
+            const oc = net.centerline(e), q = oc.nearest(p.x, p.z);
+            const reach = half + Math.max(6, Math.abs(edgeLat(e, 1)));
+            if (q.d > reach + 1.5) continue;
+            // a street that ends in the junction the ramp lands in is joining the same node, not
+            // being run through; and near its own ends a ramp is allowed to sit inside the corridor of
+            // the road it is joining - that stretch is the connection, not a crossing
+            if (inJunctionCluster(e) && (cum[k] < 60 || cum[cum.length - 1] - cum[k] < 60)) continue;
+            const near = cum[k] < flush + 70 || cum[cum.length - 1] - cum[k] < Math.max(100, (rp.tip || 100) * K + 70);
+            if (near && e.name && (e.name === (G && G.name) || e.name === (jct && jct.e.name))) continue;
+            // anything a ramp crosses that it does not join has to be cleared outright: over it by
+            // more than the structure depth plus a giveaway, or buried under it by the same. Anything
+            // in between is a collision waiting to be rendered, so the ramp is not built.
+            const f = oc.frameAt(q.s), d = p.y - f.y;
+            if (d > 4.8 || d < -4.2) continue;
+            hit = `${e.id}:${e.name || e.profile} (${e._cls}) s=${cum[k].toFixed(0)} lvl ${d.toFixed(1)} | G=${G ? G.edgeId + ":" + G.name : "-"} jct=${jct ? jct.e.name : "-"}`;
+            break;
+          }
+        }
+        if (hit) { why(kind + ': would run through ' + hit); continue; }
+        // ---- nodes and the edge
+        const tipNode = p => { const n = net.addNode({ x: p.x, z: p.z, y: p.y, end: 'flush' }); return n; };
+        let nStart, nEnd;
+        if (kind === 'on') { nStart = jct.node; nEnd = tipNode(pts[pts.length - 1]); }
+        else if (kind === 'off') { nStart = tipNode(pts[0]); nEnd = jct.node; }
+        else { nStart = tipNode(pts[0]); nEnd = tipNode(pts[pts.length - 1]); }
+        const inner = pts.slice(1, -1).map(p => ({ x: p.x, z: p.z, y: p.y }));
+        const edge = net.addEdge({
+          a: nStart.id, b: nEnd.id, profile: prof, pts: inner,
+          name: (kind === 'off' ? 'Exit ramp' : kind === 'on' ? 'On-ramp' : kind === 'loop' ? 'Loop ramp' : 'Connector') + ' \u00b7 ' + (nStart._icName || it.name || ''),
+        });
+        edge._cls = 'ramp';
+        const cR = net.centerline(edge), LR = cR.length;
+        // The centerline is a spline through the control points and can pull a metre or so off them,
+        // which is the difference between clearing a street and running through it. Check the path
+        // that will actually be built, and drop the ramp rather than ship a clip.
+        let clip = null; const ss = [0];
+        for (let k = 1; k < cR.X.length; k++) ss.push(ss[k - 1] + Math.hypot(cR.X[k] - cR.X[k - 1], cR.Z[k] - cR.Z[k - 1]));
+        for (let k = 0; k < cR.X.length && !clip; k += 2) {
+          for (const e2 of avoid) {
+            const b2 = boxOf(e2);
+            if (cR.X[k] < b2.x0 - 6 || cR.X[k] > b2.x1 + 6 || cR.Z[k] < b2.z0 - 6 || cR.Z[k] > b2.z1 + 6) continue;
+            const o2 = net.centerline(e2), q2 = o2.nearest(cR.X[k], cR.Z[k]);
+            if (q2.d > half + Math.max(6, Math.abs(edgeLat(e2, 1))) + 1.5) continue;
+            const d2 = cR.Y[k] - o2.frameAt(q2.s).y;
+            if (d2 > 4.8 || d2 < -4.2) continue;
+            const nearB = ss[k] < flush + 70 || ss[ss.length - 1] - ss[k] < Math.max(100, (rp.tip || 100) * K + 70);
+            if (nearB && e2.name && (e2.name === (G && G.name) || e2.name === (jct && jct.e.name))) continue;
+            clip = `${e2.name || e2.profile} at s=${k}m, ${(d2 >= 0 ? d2.toFixed(1) + 'm above' : (-d2).toFixed(1) + 'm below')}`;
+            break;
+          }
+        }
+        let steep = 0;
+        for (let k = 0; k + 8 < cR.X.length; k++) {
+          let j = k + 8; while (j < cR.X.length - 1 && ss[j] - ss[k] < 9) j++;
+          steep = Math.max(steep, Math.abs(cR.Y[j] - cR.Y[k]) / Math.max(1, ss[j] - ss[k]));
+        }
+        if (clip) {
+          why('would clip ' + clip);
+          net.edges.delete(edge.id); net.invalidate([edge.id]);
+          for (const nd of [nStart, nEnd]) if (nd && !net.nodeEdges(nd.id).length) net.nodes.delete(nd.id);
+          continue;
+        }
+        if (steep > 0.084) {                       // the eased profile no longer fits the ramp
+          why('grade ' + (steep * 100).toFixed(1) + '% over ' + LR.toFixed(0) + 'm of ramp');
+          net.edges.delete(edge.id); net.invalidate([edge.id]);
+          for (const nd of [nStart, nEnd]) if (nd && !net.nodeEdges(nd.id).length) net.nodes.delete(nd.id);
+          continue;
+        }
+        const layR = layout(PROFILES[prof]);
+        const laneR = layR.lanes.findIndex(l => l.type === 'barrier');
+        const spec = [];
+        const tap = [];
+        if (kind !== 'on') {                            // the freeway end is at s=0
+          spec.push({ main: fw.e.id, end: 'a' });
+          tap.push({ end: 'a', len: Math.max(24, flush - 4), inb: 'l' });
+          if (laneR >= 0) edge.features.push({ type: 'barrierGap', lane: laneR, s0: -1, s1: flush + flare * 0.9 });
+          gapOn(fw.e, atFw, dirFw, flare, 'in');
+        } else {                                        // the freeway end is the merge, at s=LR
+          spec.push({ main: fw.e.id, end: 'b' });
+          tap.push({ end: 'b', len: Math.max(24, flush - 4), inb: 'l' });
+          if (laneR >= 0) edge.features.push({ type: 'barrierGap', lane: laneR, s0: LR - flush - flare * 0.9, s1: LR + 1 });
+          gapOn(fw.e, atFw, dirFw, flare, 'out');
+        }
+        if (G) {
+          if (G.flare > 3 && (rp.gapB || 0) > 0.5) spec.push({ main: G.edgeId, end: 'b' });
+          tap.push({ end: 'b', len: Math.max(22, (kind === 'loop' ? rp.tip || 92 : rp.tip || 100) * K - 4), inb: 'l' });
+          gapOn(net.edges.get(G.edgeId), G.at, G.dir, G.flare, 'out');
+        }
+        if (spec.length) edge.merge = spec;
+        if (tap.length === 1) edge.tipTaper = tap[0];
+        else if (tap.length) edge.tipTaper = tap;
+        it.ramps.push({ kind, edge: edge.id, R: Math.round(Rloop) });
       }
     }
+
+
   }
   // prune short dead-end stubs left by clipping / connectors overshooting loops
   for (let pass = 0; pass < 2; pass++) {

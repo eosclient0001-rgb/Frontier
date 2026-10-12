@@ -57,6 +57,21 @@ export const PROFILES = {
     desc: 'Two-lane collector/distributor ramp.',
     lanes: [L('barrier', 0.6), L('shoulder', 1.0), L('drive', 3.7, 1), L('drive', 3.7, 1), L('shoulder', 2.4), L('barrier', 0.6)],
   },
+  rampLoop: {
+    name: 'Ramp · loop', category: 'highway', speed: 40, surface: 'asphalt', lamps: 'right', lampHeight: 9, lampSpacing: 38, oneWay: true,
+    desc: 'Cloverleaf loop: one wide lane, generous shoulders, barriers both sides, tight constant radius.',
+    lanes: [L('barrier', 0.8), L('shoulder', 1.4), L('drive', 4.2, 1), L('shoulder', 2.0), L('barrier', 0.8)],
+  },
+  rampWide: {
+    name: 'Ramp · 2 lanes wide', category: 'highway', speed: 80, surface: 'asphalt', lamps: 'right', lampHeight: 10, lampSpacing: 40, oneWay: true,
+    desc: 'Direct connector: two full-width lanes with outside barrier, used for parclo and turbine diagonals.',
+    lanes: [L('barrier', 0.8), L('shoulder', 1.2), L('drive', 3.8, 1), L('drive', 3.8, 1), L('shoulder', 2.4), L('barrier', 0.8)],
+  },
+  freeway8: {
+    name: 'Freeway · 8 lanes + CD', category: 'highway', speed: 120, surface: 'asphalt', lamps: 'median', lampHeight: 12, lampSpacing: 42, elevatedDefault: 9,
+    desc: 'Through lanes separated from collector-distributor lanes by barriers - the layout that lets interchanges weave without conflict.',
+    lanes: sym([L('shoulder', 1.2), L('drive', 3.7, 1), L('drive', 3.7, 1), L('drive', 3.7, 1), L('drive', 3.7, 1), L('shoulder', 2.6), L('barrier', 0.6), L('drive', 3.5, 1), L('shoulder', 1.8), L('barrier', 0.6)]),
+  },
   expressway: {
     name: 'Expressway', category: 'highway', speed: 90, surface: 'asphalt', lamps: 'none',
     desc: 'At-grade divided highway, grass median and gravel verges.',
@@ -67,6 +82,16 @@ export const PROFILES = {
     name: 'Grand boulevard', category: 'arterial', speed: 60, surface: 'asphalt', lamps: 'both', lampSpacing: 32, trees: true, busStops: true,
     desc: '2+2 lanes, curbside bus lanes, tree-lined median and tree lawns.',
     lanes: sym([L('median', 2.6, undefined, { trees: true }), L('drive', 3.3, 1), L('drive', 3.3, 1), L('bus', 3.5, 1), L('planter', 1.8, undefined, { trees: true }), L('sidewalk', 4.2)]),
+  },
+  arterial6: {
+    name: 'Arterial · 6 lanes', category: 'arterial', speed: 60, surface: 'asphalt', lamps: 'both', lampSpacing: 34, trees: true, busStops: true,
+    desc: 'Curb-sided 3+3 arterial with parking, a cycle track and wide walks - the road an interchange ramp merges into.',
+    lanes: sym([L('median', 1.6), L('drive', 3.4, 1), L('drive', 3.4, 1), L('drive', 3.4, 1), L('parking', 2.3), L('bike', 1.8), L('sidewalk', 3.2)]),
+  },
+  parkway: {
+    name: 'Parkway', category: 'arterial', speed: 70, surface: 'asphalt', lamps: 'median', lampSpacing: 40, trees: true,
+    desc: 'Landscaped divided boulevard: no driveways, grass verge and a separated path beyond the shoulder.',
+    lanes: sym([L('median', 2.8, undefined, { trees: true }), L('drive', 3.6, 1), L('drive', 3.6, 1), L('shoulder', 1.6), L('verge', 1.6), L('path', 2.4), L('gravel', 1.0)]),
   },
   avenueBike: {
     name: 'Avenue · protected bike', category: 'arterial', speed: 50, surface: 'asphalt', lamps: 'both', lampSpacing: 30, trees: true,
@@ -241,5 +266,5 @@ export function cloneProfile(p) {
 }
 
 // Road hierarchy rank for junction priority / naming / LOD.
-export const RANK = { freeway6: 9, freeway4: 9, ramp1: 8, ramp2: 8, expressway: 8, boulevard: 7, avenueBike: 6, arterialBRT: 7, tramAvenue: 6, arterial4: 6, collector: 5, industrial: 5, oneway: 4, local: 3, residential: 3, cobblestone: 3, sharedStreet: 2, alley: 1, rural2: 5, countryLane: 2, gravelRoad: 2, dirtRoad: 1, footpath: 0, gravelPath: 0, cycleway: 0, promenade: 0 };
+export const RANK = { freeway8: 9, rampLoop: 8, rampWide: 8, arterial6: 6, parkway: 6,  freeway4: 9, ramp1: 8, ramp2: 8, expressway: 8, boulevard: 7, avenueBike: 6, arterialBRT: 7, tramAvenue: 6, arterial4: 6, collector: 5, industrial: 5, oneway: 4, local: 3, residential: 3, cobblestone: 3, sharedStreet: 2, alley: 1, rural2: 5, countryLane: 2, gravelRoad: 2, dirtRoad: 1, footpath: 0, gravelPath: 0, cycleway: 0, promenade: 0 };
 export const isPath = p => (p.category === 'active');
