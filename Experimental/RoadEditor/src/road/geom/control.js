@@ -10,7 +10,7 @@ export function nodeControl(J) {
   if (J.ends.length < 3) return 'none';
   if (ranks[0] >= 5 && ranks[1] >= 4) return 'signal';
   if (ranks[0] >= 5) return 'twoWayStop';
-  if (ranks[0] <= 2) return 'none';
+  if (ranks[0] <= 3) return 'none';
   return 'allWayStop';
 }
 
