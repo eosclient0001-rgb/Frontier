@@ -1,0 +1,9 @@
+# Dependencies and build output.
+node_modules/
+dist/
+
+# Agent scratch space.
+_ClaudeScratch/
+
+# Logs.
+*.log
