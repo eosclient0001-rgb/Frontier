@@ -26,8 +26,10 @@ import { yawFor } from './out.js';
 import { TAU } from '../math.js';
 
 // Find merge pairs in a junction. A merge pair is two incident ends whose:
-//   - profile widths differ by ≥ 1.5 m
-//   - they share an acute angle (the two tangent vectors are not antiparallel)
+//   - profile widths differ by ≥ 4 m (a real merge, not a tiny step)
+//   - the angle is roughly perpendicular (cosA in [-0.5, 0.5]) — true T-bone
+//     intersections. Acute (< 60°) or obtuse (> 120°) merges are rare in cities
+//     and the existing flare geometry already handles the width step.
 //
 // Returns an array { wide, narrow, angle } sorted by angle.
 export function detectMerges(J) {
@@ -36,13 +38,14 @@ export function detectMerges(J) {
   for (let i = 0; i < J.ends.length; i++) for (let j = i + 1; j < J.ends.length; j++) {
     const A = J.ends[i], B = J.ends[j];
     const WA = layout(getProfile(A.edge)).total, WB = layout(getProfile(B.edge)).total;
-    if (Math.abs(WA - WB) < 1.5) continue;
+    if (Math.abs(WA - WB) < 4) continue;
     const cosA = A.dx * B.dx + A.dz * B.dz;
-    // Merge pairs must come INTO the junction from roughly opposite sides. If the
-    // direction vectors are nearly antiparallel (cosA ≈ -1), they meet head-on and the
-    // existing continuation logic already handles it. The interesting case is
-    // acute-but-not-parallel: e.g. 30° angle.
+    // Skip head-on (antiparallel) — those are continuations, handled separately.
     if (cosA < -0.92) continue;
+    // Only paint merge markings for roughly perpendicular joins. Outside this range
+    // the existing junction arc already shows the merge, and adding chevrons on top
+    // creates visual clutter.
+    if (Math.abs(cosA) > 0.5) continue;
     // they must not be the same road
     if (A.edge.id === B.edge.id) continue;
     const angle = Math.acos(Math.max(-1, Math.min(1, cosA)));
@@ -102,15 +105,14 @@ export function paintMergeTaper(out, c, wide, narrow, sStart, lay) {
   if (outer.type === 'drive') decal(out, 'arrowSR', c, arrowS, arrowO, travelDir, 0, 0.8);
   else if (outer.type === 'bus' || outer.type === 'bike') decal(out, 'arrowS', c, arrowS, arrowO, travelDir, 0, 0.7);
   // fish-hook chevron: a series of small triangle teeth
-  const teethN = 6;
+  const teethN = 4;
   for (let k = 0; k < teethN; k++) {
     const sT = s0 + (sStart - s0) * (k + 0.5) / teethN;
     const t = (k + 0.5) / teethN;
     const oT = side > 0 ? oSide - (oSide - taperO) * t * 0.6 : oSide - (oSide - taperO) * t * 0.6;
     tooth(out, 'markWhite', c, sT, oT, travelDir, 0.4, 0.6, 0);
   }
-  // SLOW text
-  decal(out, 'slow', c, s0 - 14, taperO + side * 1.4, travelDir, 0);
+  // SLOW text — skip; redundant with the chevrons and the arrow.
   return { s0, s1: sStart, side, taperO, dropIdx };
 }
 

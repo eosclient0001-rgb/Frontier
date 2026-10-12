@@ -96,10 +96,10 @@ export function computeJunction(net, nodeId) {
     const widthA = A.lay.total, widthB = B.lay.total;
     const wDiff = widthA - widthB;
     let flare = null;
-    if (Math.abs(wDiff) > 1.5 && phi < Math.PI * 0.85) {
+    if (Math.abs(wDiff) > 6 && phi < Math.PI * 0.6) {
       const wide = wDiff > 0 ? A : B;
       const narrow = wDiff > 0 ? B : A;
-      // The flare pulls the wide end's outer curb back by min(|wDiff|, 4 m) over a
+      // The flare pulls the wide end's outer curb back by min(|wDiff|-1, 4 m) over a
       // length of 6 m. We do this by recording a flare point on the wide end.
       const flareDrop = Math.min(Math.abs(wDiff) - 1.0, 4.0);
       flare = { wide, narrow, drop: flareDrop, len: 6.0 };
