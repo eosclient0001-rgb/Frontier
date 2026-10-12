@@ -1,12 +1,51 @@
 // Planarize polylines in 2D: find all crossings, create shared nodes, split into edges.
 import { segIntersect } from './math.js';
 
-export function planarize(polys, { tol = 1.5, cell = 120 } = {}) {
+export function planarize(polys, { tol = 1.5, cell = 120, snap = 0 } = {}) {
   // segments
   const segs = [];
   polys.forEach((p, pi) => {
     for (let i = 0; i < p.pts.length - 1; i++) segs.push({ pi, i, a: p.pts[i], b: p.pts[i + 1] });
   });
+  // T-snapping: a polyline end that stops within `snap` metres of another polyline is pulled onto
+  // it (or onto its node), so the two roads meet at a junction instead of one lying on top of the
+  // other. Interior vertices are not moved: doing so creates near-parallel slivers.
+  const snapCuts = [];
+  if (snap > 0) {
+    const grid0 = new Map();
+    const gk = (x, z) => x * 92837111 ^ z * 689287499;
+    segs.forEach((s, si) => {
+      const x0 = Math.floor((Math.min(s.a[0], s.b[0]) - snap) / cell), x1 = Math.floor((Math.max(s.a[0], s.b[0]) + snap) / cell);
+      const z0 = Math.floor((Math.min(s.a[1], s.b[1]) - snap) / cell), z1 = Math.floor((Math.max(s.a[1], s.b[1]) + snap) / cell);
+      for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = gk(x, z); let b = grid0.get(k); if (!b) grid0.set(k, b = []); b.push(si); }
+    });
+    polys.forEach((p, pi) => {
+      const n = p.pts.length;
+      for (const end of [0, n - 1]) {
+        const q = p.pts[end];
+        const cx = Math.floor(q[0] / cell), cz = Math.floor(q[1] / cell);
+        let best = null;
+        for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+          const b = grid0.get(gk(cx + dx, cz + dz)); if (!b) continue;
+          for (const si of b) {
+            const S = segs[si];
+            if (S.pi === pi || polys[S.pi].layer !== p.layer) continue;
+            const vx = S.b[0] - S.a[0], vz = S.b[1] - S.a[1], L2 = vx * vx + vz * vz;
+            if (L2 < 1e-9) continue;
+            const t = Math.max(0, Math.min(1, ((q[0] - S.a[0]) * vx + (q[1] - S.a[1]) * vz) / L2));
+                const px = S.a[0] + vx * t, pz = S.a[1] + vz * t;
+            const d = Math.hypot(px - q[0], pz - q[1]);
+            if (d <= snap && (!best || d < best.d)) best = { d, si, t, px, pz };
+          }
+        }
+        if (!best) continue;
+        const S = segs[best.si];
+        snapCuts.push({ pi: S.pi, i: S.i, t: best.t });
+        p.pts[end] = [best.px, best.pz];
+      }
+    });
+  }
+
   const grid = new Map();
   const key = (x, z) => x * 92837111 ^ z * 689287499;
   segs.forEach((s, si) => {
@@ -15,6 +54,7 @@ export function planarize(polys, { tol = 1.5, cell = 120 } = {}) {
     for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = key(x, z); let b = grid.get(k); if (!b) grid.set(k, b = []); b.push(si); }
   });
   const cuts = polys.map(p => p.pts.map(() => []));
+  for (const c of snapCuts) cuts[c.pi][c.i].push(c.t);
   const tested = new Set();
   for (const bucket of grid.values()) {
     for (let x = 0; x < bucket.length; x++) for (let y = x + 1; y < bucket.length; y++) {

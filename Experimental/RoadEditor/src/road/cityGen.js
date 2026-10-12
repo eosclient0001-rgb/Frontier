@@ -4,7 +4,7 @@
 import { RoadNetwork } from './network.js';
 import { rng, makeNoise, smooth, resample, polylineLength, pointPolylineDist } from './math.js';
 import { planarize } from './planarize.js';
-import { PROFILES, layout } from './profiles.js';
+import { PROFILES, layout, RANK } from './profiles.js';
 
 const NAMES = ['Harbor', 'Union', 'Market', 'Grand', 'Lincoln', 'Mission', 'Sunset', 'Ocean', 'Pacific', 'Broadway', 'Central', 'Park', 'Maple', 'Oak', 'Cedar', 'Pine', 'Elm', 'Kingston', 'Riverside', 'Bayview', 'Hillcrest', 'Lakeshore', 'Westlake', 'Fairview', 'Highland', 'Summit', 'Victoria', 'Regent', 'Wellington', 'Madison', 'Jefferson', 'Franklin', 'Granite', 'Copper', 'Willow', 'Aspen', 'Juniper', 'Laurel', 'Magnolia', 'Spruce', 'Chestnut', 'Hawthorne', 'Beacon', 'Carlton', 'Dover', 'Easton', 'Foster', 'Garnet', 'Hudson', 'Irving', 'Jasper', 'Kensington', 'Lombard', 'Monroe', 'Newport', 'Orchard', 'Prospect', 'Quincy', 'Raleigh', 'Sterling', 'Tremont', 'Vernon', 'Whitney', 'York'];
 const ORD = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
@@ -429,7 +429,7 @@ export function generateCity(options = {}) {
   });
 
   // ---------------------------------------------------------------- planarize ground layer
-  const G = planarize(clipped, { tol: 2 });
+  const G = planarize(clipped, { tol: 2, snap: 7 });
   // edges inside the river band (between riverside drives) are only kept for arterials (bridges)
   let edges = G.edges.filter(e => {
     if (!riverUV) return true;
@@ -674,7 +674,32 @@ export function generateCity(options = {}) {
   // tidy temp fields
   for (const n of net.nodes.values()) delete n._uv;
   for (const e of net.edges.values()) { delete e._uvMid; delete e._len; }
+  dedupeEdges(net);
   return net;
+}
+
+// Two edges between the same pair of nodes with the same shape are one road drawn twice (it would
+// z-fight). Keep the higher-ranked one. Only near-identical geometry is merged, so genuinely
+// different parallel roads between the same junctions survive.
+function dedupeEdges(net) {
+  const byPair = new Map();
+  for (const e of [...net.edges.values()]) {
+    const k = Math.min(e.a, e.b) + ':' + Math.max(e.a, e.b);
+    if (!byPair.has(k)) byPair.set(k, []);
+    byPair.get(k).push(e);
+  }
+  const mid = e => { const c = net.centerline(e), m = Math.floor(c.X.length / 2); return [c.X[m], c.Z[m], c.length]; };
+  for (const list of byPair.values()) {
+    if (list.length < 2) continue;
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      const A = list[i], B = list[j];
+      if (!net.edges.has(A.id) || !net.edges.has(B.id)) continue;
+      const [ax, az, al] = mid(A), [bx, bz, bl] = mid(B);
+      if (Math.abs(al - bl) > 2 || Math.hypot(ax - bx, az - bz) > 2) continue;
+      const drop = (RANK[A.profile] ?? 3) >= (RANK[B.profile] ?? 3) ? B : A;
+      net.removeEdge(drop.id);
+    }
+  }
 }
 
 

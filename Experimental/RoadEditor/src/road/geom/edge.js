@@ -4,6 +4,7 @@ import { Out, ribbon, wall, sweep, box, polyWall, strip, yawFor } from './out.js
 import { line, dashed, decal, bar, tooth, hatch } from './markings.js';
 import { getProfile, layout, LEVEL, RANK } from '../profiles.js';
 import { endControl } from './control.js';
+import { quad } from './tri.js';
 
 export const CURB_W = 0.2;
 export const GROUND = -0.06;
@@ -64,6 +65,18 @@ export function buildEdge(net, edge, JA, JB, ctx) {
   const elevated = frames.map(f => elevAt(f));
   const anyElevated = elevated.some(Boolean);
 
+  // Contiguous raised lanes between the carriageways (e.g. a grass and a concrete median) form one
+  // island: a single rounded nose spans the whole group instead of one pill per lane.
+  const medGroup = new Map();
+  for (let i = 0; i < lanes.length; i++) {
+    if (!(lanes[i].level === 'raised' && i > lay.roadFrom && i < lay.roadTo) || medGroup.has(i)) continue;
+    let a = i, b = i;
+    while (a - 1 > lay.roadFrom && lanes[a - 1].level === 'raised') a--;
+    while (b + 1 < lay.roadTo && lanes[b + 1].level === 'raised') b++;
+    const span = lanes.slice(a, b + 1);
+    const g = { o0: Math.min(...span.map(l => l.o0)), o1: Math.max(...span.map(l => l.o1)), first: a, last: b };
+    for (let k = a; k <= b; k++) medGroup.set(k, g);
+  }
   // --- lane surfaces
   const surfaceMat = prof.surface || 'asphalt';
   lanes.forEach((ln, i) => {
@@ -75,7 +88,7 @@ export function buildEdge(net, edge, JA, JB, ctx) {
       const a = ln.o0 + (curbL ? CURB_W : 0), b = ln.o1 - (curbR ? CURB_W : 0);
       let fr = frames;
       if (isMedian && (pullA > 0 || pullB > 0)) {
-        const r = ln.width / 2;
+        const grp = medGroup.get(i), r = (grp.o1 - grp.o0) / 2;
         const m0 = s0 + pullA + (pullA > 0 ? r : 0), m1 = s1 - pullB - (pullB > 0 ? r : 0);
         if (m1 - m0 < 1) { ribbon(out, surfaceMat, frames, ln.o0, ln.o1, 0); return; }
         fr = frames.filter(f => f.s >= m0 - 1e-6 && f.s <= m1 + 1e-6);
@@ -86,8 +99,8 @@ export function buildEdge(net, edge, JA, JB, ctx) {
         const post = frames.filter(f => f.s >= m1 - 1e-6); if (post.length && post[0].s > m1) post.unshift(c.frameAt(m1));
         if (pullA > 0 && pre.length >= 2) ribbon(out, surfaceMat, pre, ln.o0, ln.o1, 0);
         if (pullB > 0 && post.length >= 2) ribbon(out, surfaceMat, post, ln.o0, ln.o1, 0);
-        if (pullA > 0) medianNose(out, c, m0, ln, -1, ln.mat);
-        if (pullB > 0) medianNose(out, c, m1, ln, +1, ln.mat);
+        if (pullA > 0) medianNose(out, c, m0, -1, grp, ln, i === grp.first);
+        if (pullB > 0) medianNose(out, c, m1, +1, grp, ln, i === grp.last);
       }
       ribbon(out, ln.mat, fr, a, b, ln.h);
       if (curbL) { ribbon(out, 'curb', fr, ln.o0 + 0.03, a, ln.h); sweep(out, 'curb', fr, curbShapeLeftRoad(ln.h, nbL).slice(1), ln.o0); }
@@ -137,29 +150,36 @@ export function buildEdge(net, edge, JA, JB, ctx) {
   return out;
 }
 
-function medianNose(out, c, s, ln, dir, mat) {
-  // Semicircular raised nose with curb ring; dir = -1 nose faces −s (start), +1 faces +s.
-  const r = ln.width / 2, oc = (ln.o0 + ln.o1) / 2;
-  const f = c.frameAt(s);
-  const n = 10;
-  const ring = [], inner = [];
+function medianNose(out, c, s, dir, grp, ln, ringOwner) {
+  // Rounded nose over a whole median group (grp spans its lanes laterally). Every lane fills its
+  // own slice of the same dome; the group's first/last lane draws the curb ring once.
+  const r = (grp.o1 - grp.o0) / 2, oc = (grp.o0 + grp.o1) / 2, ri = Math.max(0.05, r - CURB_W);
+  const f = c.frameAt(s), yy = f.y + RAISED;
+  const along = (lat, rad) => dir * Math.sqrt(Math.max(0, rad * rad - (lat - oc) * (lat - oc)));
+  const at = (lat, al) => [f.x + f.nx * lat + f.tx * al, yy, f.z + f.nz * lat + f.tz * al];
+  // fill: strips from the median's base line out to the inner curb line
+  const K = 8, lo = Math.max(ln.o0, oc - ri), hi = Math.min(ln.o1, oc + ri);
+  if (hi > lo) {
+    const base = [], top = [];
+    for (let k = 0; k <= K; k++) { const lat = lo + (hi - lo) * k / K; base.push(at(lat, 0)); top.push(at(lat, along(lat, ri))); }
+    for (let k = 0; k < K; k++) quad(out, ln.mat, base[k], base[k + 1], top[k + 1], top[k], [0, 1, 0]);
+  }
+  if (!ringOwner) return;
+  // curb ring over the full group radius
+  const n = 10, ring = [], inner = [];
   for (let k = 0; k <= n; k++) {
     const th = Math.PI * k / n;              // 0 → right side ... π → left side
-    const lat = Math.cos(th), along = Math.sin(th) * dir;
-    const px = (rr) => [f.x + f.nx * (oc + lat * rr) + f.tx * along * rr, f.y + RAISED, f.z + f.nz * (oc + lat * rr) + f.tz * along * rr];
-    ring.push(px(r)); inner.push(px(Math.max(0.05, r - CURB_W)));
+    const lat = Math.cos(th), al = Math.sin(th) * dir;
+    const px = rr => [f.x + f.nx * (oc + lat * rr) + f.tx * al * rr, yy, f.z + f.nz * (oc + lat * rr) + f.tz * al * rr];
+    ring.push(px(r)); inner.push(px(ri));
   }
   // order ring so the outward side is to the left of travel (CCW seen from above)
   const ccw = dir > 0 ? ring.slice().reverse() : ring;
   const ccwIn = dir > 0 ? inner.slice().reverse() : inner;
   strip(out, 'curb', ccwIn, ccw);
   polyWall(out, 'curb', ccw.map(p => [p[0], f.y, p[2]]), 0, RAISED, -1);
-  const pc = out.piece(mat), base = pc.p.length / 3;
-  out.vert(pc, f.x + f.nx * oc, f.y + RAISED, f.z + f.nz * oc, 0, 0);
-  for (const p of ccwIn) out.vert(pc, p[0], p[1], p[2], p[0], p[2]);
-  for (let k = 0; k < n; k++) pc.i.push(base, base + 2 + k, base + 1 + k);
   const tip = c.frameAt(s);
-  out.prop('bollardSign', tip.x + tip.nx * oc + tip.tx * dir * (r * 0.5), tip.y + RAISED, tip.z + tip.nz * oc + tip.tz * dir * (r * 0.5), yawFor(tip.tx * dir, tip.tz * dir));
+  out.prop('bollardSign', tip.x + tip.nx * oc + tip.tx * dir * (r * 0.5), yy, tip.z + tip.nz * oc + tip.tz * dir * (r * 0.5), yawFor(tip.tx * dir, tip.tz * dir));
 }
 
 function barrierRuns(out, frames, ln, edge, laneIndex) {
