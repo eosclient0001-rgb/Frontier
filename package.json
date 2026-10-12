@@ -1,0 +1,21 @@
+{
+  "name": "frontier-road-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Frontier Road Editor — experimental ProjectZero-style browser editor for building NFS-scale road networks: curbs, markings, bollards, speed bumps, rail crossings, bridges, subways. Roads only, clean topology.",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/build.mjs --watch",
+    "build": "node scripts/build.mjs",
+    "serve": "node server.js",
+    "start": "node server.js",
+    "test": "node scripts/smoke.mjs && node scripts/dom-check.mjs && node scripts/boot-check.mjs"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "jsdom": "^30.1.2"
+  }
+}

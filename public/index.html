@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frontier — Road Editor</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0c0d'/%3E%3Cpath d='M10 26V12l6-6 6 6v14' fill='none' stroke='%234fd8e0' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<div id="app">
+  <div id="viewport"></div>
+
+  <!-- ── top strip ─────────────────────────────────────────────────────── -->
+  <header id="topbar" class="strip">
+    <div class="brand" title="Frontier Road Editor">FR</div>
+    <span class="caps title">Frontier</span>
+    <span class="sub">Road Editor · Experimental</span>
+    <div class="sep"></div>
+    <div class="mode" id="toolMode">
+      <button class="btn on" data-tool="select" title="Select / move (1)">Select</button>
+      <button class="btn" data-tool="road"   title="Draw road spline (2)">Roads</button>
+      <button class="btn" data-tool="rail"   title="Draw railway line (3)">Rails</button>
+      <button class="btn" data-tool="prop"   title="Place street furniture (4)">Props</button>
+      <button class="btn" data-tool="erase"  title="Erase (5)">Erase</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="zone">
+      <button class="btn ghost icon" id="btnUndo" title="Undo (Ctrl+Z)">↩</button>
+      <div class="sep"></div>
+      <button class="btn ghost" id="btnGenerate" title="Open city generator">⚙ Generate city</button>
+      <button class="btn ghost" id="btnExportObj">Export OBJ</button>
+      <button class="btn ghost" id="btnExportGltf">Export GLB</button>
+      <div class="sep"></div>
+      <button class="btn ghost" id="btnHelp" title="Help & shortcuts">?</button>
+    </div>
+  </header>
+
+  <!-- ── left rail: library ────────────────────────────────────────────── -->
+  <aside id="left">
+    <section class="card" id="cardProfiles">
+      <h3 class="caps">Road library</h3>
+      <div class="hint">Cross-section presets. Pick one, then click on the ground to draw a spline. Double-click / Enter to finish.</div>
+      <div id="profileList" class="list"></div>
+    </section>
+    <section class="card" id="cardProps">
+      <h3 class="caps">Street furniture</h3>
+      <div id="propList" class="list small"></div>
+    </section>
+    <section class="card" id="cardCity">
+      <h3 class="caps">City generator</h3>
+      <div class="form" id="cityForm"></div>
+      <button class="btn primary wide" id="btnCityGen">Generate city</button>
+    </section>
+  </aside>
+
+  <!-- ── right rail: inspector ─────────────────────────────────────────── -->
+  <aside id="right">
+    <section class="card" id="cardInspector">
+      <h3 class="caps">Inspector</h3>
+      <div id="inspectorBody" class="form"></div>
+    </section>
+    <section class="card" id="cardView">
+      <h3 class="caps">Viewport</h3>
+      <div class="form" id="viewForm"></div>
+    </section>
+  </aside>
+
+  <!-- ── status bar ────────────────────────────────────────────────────── -->
+  <footer id="statusbar">
+    <span id="statusHint" class="dim">Right-drag to look · WASD fly · Q/E down/up · Shift boost · wheel = speed</span>
+    <div class="spacer"></div>
+    <span id="statsNet" class="dim"></span>
+    <div class="sep"></div>
+    <span id="statsGpu" class="dim"></span>
+    <div class="sep"></div>
+    <span id="statsFps" class="caps ok">60 FPS</span>
+  </footer>
+
+  <div id="toast"></div>
+  <div id="helpOverlay" class="hidden">
+    <div class="helpCard card">
+      <h3 class="caps">Frontier Road Editor</h3>
+      <p>ProjectZero-style experimental editor for building NFS-scale road networks — roads only, clean topology, full street detail.</p>
+      <h4>Navigation (Unreal-style)</h4>
+      <ul>
+        <li><b>Right-drag</b> look · <b>W A S D</b> fly · <b>Q / E</b> down / up</li>
+        <li><b>Shift</b> boost · <b>mouse wheel</b> base speed · <b>F</b> focus selection</li>
+        <li><b>T</b> top-down toggle</li>
+      </ul>
+      <h4>Editing</h4>
+      <ul>
+        <li><b>2</b> Roads tool — pick a preset in the Road library, click to lay spline points, <b>double-click / Enter</b> to finish, <b>Esc</b> cancels. Clicking an existing node snaps to it.</li>
+        <li><b>3</b> Rails tool — same, but lays a railway (sleepers, rails, automatic level crossings).</li>
+        <li><b>4</b> Props tool — pick furniture, click to place (bollards, bumps, lamps, signals, signs, portals…).</li>
+        <li><b>5</b> Erase — click roads, rails or props to delete.</li>
+        <li><b>1</b> Select — click a road to edit profile / bridge / details, click a node disc to edit elevation.</li>
+        <li><b>Delete</b> removes the selection · <b>Ctrl+Z</b> undo.</li>
+      </ul>
+      <h4>City generator</h4>
+      <p>Seeded procedural city: street grid, arterials with bus + cycle + parking lanes, diagonal boulevard, ring road, highway, railway with level crossings, metro portals, lamps, signals, bollards, speed bumps and zebra crossings.</p>
+      <h4>Export</h4>
+      <p><b>Export OBJ</b> / <b>Export GLB</b> bake the whole map (roads, curbs, markings, props) into one file you can drop into Unreal / Blender for your NFS-style map.</p>
+      <button class="btn primary wide" id="btnHelpClose">Close</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="assets/app.bundle.js"></script>
+</body>
+</html>
