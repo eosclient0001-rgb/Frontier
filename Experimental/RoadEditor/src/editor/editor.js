@@ -130,7 +130,7 @@ export class Editor {
   }
   refreshSelection() {
     const s = this.state.selection; if (!s) return;
-    const exists = s.type === 'edge' ? this.net.edges.has(s.id) : s.type === 'node' ? this.net.nodes.has(s.id) : s.type === 'street' ? s.ids.some(id => this.net.edges.has(id)) : s.type === 'rail' ? this.net.rails.has(s.id) : s.type === 'subway' ? this.net.subways.has(s.id) : true;
+    const exists = s.type === 'edge' ? this.net.edges.has(s.id) : s.type === 'node' ? this.net.nodes.has(s.id) : s.type === 'street' ? s.ids.some(id => this.net.edges.has(id)) : s.type === 'rail' ? this.net.rails.has(s.id) : s.type === 'subway' ? this.net.subways.has(s.id) : s.type === 'monorail' ? this.net.elevatedRails?.has(s.id) : true;
     if (!exists) this.select(null); else this.world.setSelection(s.type === 'street' ? { ...s, ids: s.ids.filter(id => this.net.edges.has(id)) } : s);
   }
   focusSelection() {
@@ -141,8 +141,10 @@ export class Editor {
       const ids = s.type === 'edge' ? [s.id] : s.ids; let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
       for (const id of ids) { const e = this.net.edges.get(id); if (!e) continue; const c = this.net.centerline(e); for (let i = 0; i < c.X.length; i += 4) { mnx = Math.min(mnx, c.X[i]); mxx = Math.max(mxx, c.X[i]); mnz = Math.min(mnz, c.Z[i]); mxz = Math.max(mxz, c.Z[i]); y = c.Y[i]; } }
       x = (mnx + mxx) / 2; z = (mnz + mxz) / 2; d = Math.max(60, Math.hypot(mxx - mnx, mxz - mnz) * 0.9);
-    } else if (s.type === 'rail' || s.type === 'subway') {
-      const L = (s.type === 'rail' ? this.net.rails : this.net.subways).get(s.id); const p = L.pts[Math.floor(L.pts.length / 2)]; x = p.x; z = p.z; d = 400; y = s.type === 'subway' ? -L.depth : 0;
+    } else if (s.type === 'rail' || s.type === 'subway' || s.type === 'monorail') {
+      const map = s.type === 'rail' ? this.net.rails : (s.type === 'monorail' ? this.net.elevatedRails : this.net.subways);
+      const L = map?.get(s.id); if (!L) return;
+      const p = L.pts[Math.floor(L.pts.length / 2)]; x = p.x; z = p.z; d = 400; y = s.type === 'subway' ? -L.depth : 0;
     } else return;
     this.world.focus(x, y, z, d);
   }
@@ -170,6 +172,11 @@ export class Editor {
     for (const r of net.rails.values()) {
       const rc = this.builder.railCl.get(r.id); if (!rc) continue;
       if (rc.nearest(p.x, p.z).d < 5) return { type: 'rail', id: r.id, p };
+    }
+    // monorail
+    for (const r of net.elevatedRails?.values() || []) {
+      const rc = this.builder.monoCl?.get(r.id); if (!rc) continue;
+      if (rc.nearest(p.x, p.z).d < 4) return { type: 'monorail', id: r.id, p };
     }
     if (w.settings.view === 'underground') for (const s of net.subways.values()) {
       const c = new Centerline(s.pts.map(q => ({ x: q.x, z: q.z }))); if (c.nearest(p.x, p.z).d < 8) return { type: 'subway', id: s.id, p };

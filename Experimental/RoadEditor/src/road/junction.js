@@ -87,6 +87,23 @@ export function computeJunction(net, nodeId) {
     if (n === 1) phi = TAU;
     const swA = A.sr, swB = B.sl;
     const hasCurb = A.curbRight || B.curbLeft;
+    // Lane-width mismatch detection. When the two approaches' total widths differ by
+    // more than 1.5 m, a normal arc creates a thin sliver of pavement between the wide
+    // outer curb and the narrow inner curb. We add a "merge flare" point — a chamfer
+    // along the wide's tangent — that pulls the wide end's outer curb in to the level
+    // of the narrow's outer curb. This is the standard "T-bone into a wider road"
+    // widening: the wide end gets a single chamfer, the narrow end is unchanged.
+    const widthA = A.lay.total, widthB = B.lay.total;
+    const wDiff = widthA - widthB;
+    let flare = null;
+    if (Math.abs(wDiff) > 1.5 && phi < Math.PI * 0.85) {
+      const wide = wDiff > 0 ? A : B;
+      const narrow = wDiff > 0 ? B : A;
+      // The flare pulls the wide end's outer curb back by min(|wDiff|, 4 m) over a
+      // length of 6 m. We do this by recording a flare point on the wide end.
+      const flareDrop = Math.min(Math.abs(wDiff) - 1.0, 4.0);
+      flare = { wide, narrow, drop: flareDrop, len: 6.0 };
+    }
     if (phi < Math.PI * 0.94) {
       const Reff = Math.max(R, (hasCurb ? Math.max(swA, swB) : 0) + 0.6);
       const sol = lineIntersect(N.x + A.rx * (A.wr + Reff), N.z + A.rz * (A.wr + Reff), A.dx, A.dz,
@@ -98,12 +115,12 @@ export function computeJunction(net, nodeId) {
         const TA = P(N, A, tA, A.wr), TB = P(N, B, sB, -B.wl);
         const a0 = Math.atan2(TA[1] - O[1], TA[0] - O[0]);
         const a1 = Math.atan2(TB[1] - O[1], TB[0] - O[0]);
-        gaps.push({ type: 'arc', A, B, O, R: Reff, tA, sB, a0, sweep: wrapPi(a1 - a0), swA, swB, hasCurb });
+        gaps.push({ type: 'arc', A, B, O, R: Reff, tA, sB, a0, sweep: wrapPi(a1 - a0), swA, swB, hasCurb, flare, phi });
         A.setback = Math.max(A.setback, tA); B.setback = Math.max(B.setback, sB);
         continue;
       }
     }
-    gaps.push({ type: 'straight', A, B, swA, swB, hasCurb, phi });
+    gaps.push({ type: 'straight', A, B, swA, swB, hasCurb, phi, flare });
   }
   // Straight / reflex gaps between near-opposite roads: keep a small transition so the two
   // end cross-sections never overlap.
@@ -130,7 +147,11 @@ function buildGap(N, g) {
   // A right side from its end inward
   push(P(N, A, A.setback, A.wr), P(N, A, A.setback, A.wr + g.swA), yA);
   if (g.type === 'arc') {
-    if (A.setback - g.tA > 0.02) push(P(N, A, g.tA, A.wr), P(N, A, g.tA, A.wr + g.swA), yAt(N, A, g.tA));
+    if (A.setback - g.tA > 0.02) {
+      const pc = P(N, A, g.tA, A.wr), po = P(N, A, g.tA, A.wr + g.swA);
+      curb.push([pc[0], yAt(N, A, g.tA), pc[1]]);
+      outer.push([po[0], yAt(N, A, g.tA), po[1]]);
+    }
     const pts = arcPts(g.O[0], g.O[1], g.R, g.a0, g.sweep);
     const n = pts.length - 1;
     for (let k = 1; k < n; k++) {
@@ -138,10 +159,43 @@ function buildGap(N, g) {
       const a = g.a0 + g.sweep * t, r = Math.max(0.05, g.R - sw);
       push(pts[k], [g.O[0] + Math.cos(a) * r, g.O[1] + Math.sin(a) * r], N.y);
     }
-    if (B.setback - g.sB > 0.02) push(P(N, B, g.sB, -B.wl), P(N, B, g.sB, -B.wl - g.swB), yAt(N, B, g.sB));
+    if (B.setback - g.sB > 0.02) {
+      const pc = P(N, B, g.sB, -B.wl), po = P(N, B, g.sB, -B.wl - g.swB);
+      curb.push([pc[0], yAt(N, B, g.sB), pc[1]]);
+      outer.push([po[0], yAt(N, B, g.sB), po[1]]);
+    }
   }
   push(P(N, B, B.setback, -B.wl), P(N, B, B.setback, -B.wl - g.swB), yB);
-  return { curb, outer, swA: g.swA, swB: g.swB, hasCurb: g.hasCurb, type: g.type, A: A.id, B: B.id };
+
+  // Flare: a chamfer on the wide end that pulls its outer curb in by flare.drop
+  // over flare.len metres. The chamfer is inserted as an extra (curb, outer) pair
+  // in the polygon, on the wide end's side. The result: the wide end's outer curb
+  // goes from full-width at the node to full-width - drop at flare.len distance, and
+  // the outer polyline follows that. The narrow end is unchanged.
+  if (g.flare) {
+    const wide = g.flare.wide, t = g.flare.len, drop = g.flare.drop;
+    const inO = wide.wr;                                 // curb stays at full width
+    const outO = wide.wr - drop;                         // outer pulled in
+    const pc = P(N, wide, t, inO);
+    const po = P(N, wide, t, outO);
+    // For the side facing the gap: insert at the wide end's side of the polygon
+    if (wide === A) {
+      // curb[0] is at A.setback,A.wr+g.swA (the wide's end at the node); insert the
+      // chamfer's curb+outer just after it.
+      curb.splice(1, 0, [pc[0], yAt(N, wide, t), pc[1]]);
+      // the outer at index 0 is the wide's end outer (A.wr + g.swA). We need to also
+      // record a chamfer outer at the same arc tangent point so the polygon doesn't
+      // skip the chamfer's outer. Then the natural outer is at index 1 (the g.tA
+      // tangent point, or the arc start). Insert the chamfer outer just after the
+      // wide's end outer.
+      outer.splice(1, 0, [po[0], yAt(N, wide, t), po[1]]);
+    } else {
+      // wide === B: insert the chamfer's curb+outer just before B's end (last index).
+      curb.splice(curb.length - 1, 0, [pc[0], yAt(N, wide, t), pc[1]]);
+      outer.splice(outer.length - 1, 0, [po[0], yAt(N, wide, t), po[1]]);
+    }
+  }
+  return { curb, outer, swA: g.swA, swB: g.swB, hasCurb: g.hasCurb, type: g.type, A: A.id, B: B.id, flare: g.flare };
 }
 
 // Roundabout / cul-de-sac: roads join an outer circle of radius Rc through fillets.

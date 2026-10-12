@@ -6,6 +6,7 @@ import { buildJunction } from './geom/junctionMesh.js';
 import { buildRail, findCrossings, railCenterline } from './geom/rail.js';
 import { buildSubway } from './geom/subway.js';
 import { buildRiver } from './geom/water.js';
+import { buildElevatedRail, monoCenterline, findUnderpasses } from './geom/elevatedRail.js';
 import { Out } from './geom/out.js';
 import { getProfile, layout } from './profiles.js';
 import { pointSegDist } from './math.js';
@@ -18,6 +19,7 @@ export class NetworkBuilder {
     this.junctions = new Map();
     this.outs = new Map();
     this.railCl = new Map();
+    this.monoCl = new Map();
     this.setupWater();
   }
 
@@ -63,12 +65,15 @@ export class NetworkBuilder {
           if (Math.hypot(J.node.x - x, J.node.z - z) < rad && J.node.y < deckY - 2) return true;
         }
         for (const [id, rc] of self.railCl) { const q = rc.nearest(x, z); if (q.d < 7 + r) return true; }
+        for (const [id, rc] of self.monoCl) { const q = rc.nearest(x, z); if (q.d < 5 + r) return true; }
         return false;
       },
       roadAt: (x, z, r) => {
         const hit = self.index.nearestEdge(x, z, r);
         return hit && hit.d < r;
       },
+      // Road edge builder uses this to check whether a column can be placed there.
+      _roadQuery: (x, z, r) => self.index.query(x, z, r),
     };
   }
 
@@ -78,9 +83,11 @@ export class NetworkBuilder {
     this.index.rebuild();
     this.junctions.clear(); this.outs.clear();
     for (const r of net.rails.values()) this.railCl.set(r.id, railCenterline(r));
+    for (const r of net.elevatedRails?.values() || []) this.monoCl.set(r.id, monoCenterline(r));
     const ctx = this.ctx();
     const nodes = [...net.nodes.keys()], edges = [...net.edges.values()];
-    const total = nodes.length * 2 + edges.length + net.rails.size + net.subways.size + 2;
+    const elevatedCount = net.elevatedRails?.size || 0;
+    const total = nodes.length * 2 + edges.length + net.rails.size + elevatedCount + net.subways.size + 2;
     let done = 0;
     const tick = async (label) => { if (done % 150 === 0) { onProgress(done / total, label); await new Promise(r => setTimeout(r, 0)); } };
     for (const id of nodes) { this.junctions.set(id, computeJunction(net, id)); done++; await tick('Solving junctions'); }
@@ -95,6 +102,7 @@ export class NetworkBuilder {
       done++; await tick('Building junctions');
     }
     for (const r of net.rails.values()) { this.buildRailEl(r, ctx); done++; await tick('Laying railways'); }
+    for (const r of net.elevatedRails?.values() || []) { this.buildElevatedRailEl(r, ctx); done++; await tick('Laying monorail'); }
     for (const s of net.subways.values()) { this.outs.set(s.id, buildSubway(net, s, this.index, ctx)); done++; await tick('Boring subway'); }
     if (net.river) this.outs.set('river', buildRiver(net.river, ctx));
     if (net.trees?.length) this.outs.set('veg', this.buildVegetation());
@@ -107,6 +115,14 @@ export class NetworkBuilder {
     this.railCl.set(r.id, rc);
     const crossings = findCrossings(this.net, r, rc, this.index);
     this.outs.set(r.id, buildRail(this.net, r, rc, crossings, ctx));
+  }
+
+  buildElevatedRailEl(r, ctx) {
+    const rc = this.monoCl.get(r.id) || monoCenterline(r);
+    this.monoCl.set(r.id, rc);
+    const underpasses = findUnderpasses(this.net, r, rc, this.index);
+    const c2 = { ...ctx, underpasses };
+    this.outs.set(r.id, buildElevatedRail(this.net, r, rc, c2));
   }
 
   buildVegetation() {

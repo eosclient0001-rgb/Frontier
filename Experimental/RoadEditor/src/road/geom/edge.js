@@ -4,6 +4,7 @@ import { Out, ribbon, wall, sweep, box, polyWall, strip, yawFor } from './out.js
 import { line, dashed, decal, bar, tooth, hatch } from './markings.js';
 import { getProfile, layout, LEVEL, RANK } from '../profiles.js';
 import { endControl } from './control.js';
+import { detectMerges, paintMergeTaper, paintAddLaneTaper } from './merge.js';
 
 export const CURB_W = 0.2;
 export const GROUND = -0.06;
@@ -101,6 +102,7 @@ export function buildEdge(net, edge, JA, JB, ctx) {
       if (!right && !anyElevated) wall(out, 'curb', frames, ln.o1, GROUND, ln.h, +1);
       if (ln.type === 'barrier') barrierRuns(out, frames, ln, edge, i);
       if (ln.type === 'tram') tramRails(out, frames, (ln.o0 + ln.o1) / 2, ln.h);
+      if (ln.type === 'lightrail') lightrailRails(out, frames, (ln.o0 + ln.o1) / 2, ln.h, ln, c, lay, s0, s1);
     }
   });
 
@@ -112,7 +114,7 @@ export function buildEdge(net, edge, JA, JB, ctx) {
   if (JB?.kind === 'flat') endCap(out, c, s1, +1, lay);
 
   // --- paint
-  if (ctx.markings !== false && !isPathProfile) paint(out, net, edge, c, lay, prof, s0, s1, ctlA, ctlB, JA, JB, ctx);
+  if (ctx.markings !== false && !isPathProfile) paint(out, net, edge, c, lay, prof, s0, s1, ctlA, ctlB, JA, JB, eA, eB, ctx);
   if (isPathProfile && prof.lanes.length > 1 && ctx.markings !== false) {
     for (let i = 0; i < lanes.length - 1; i++) if (lanes[i].type === 'bike' && lanes[i + 1].type === 'bike') dashed(out, 'markWhite', c, s0, s1, lanes[i].o1, 0.1, 1.5, 2.5, 0);
     for (let i = 0; i < lanes.length - 1; i++) if ((lanes[i].type === 'path') !== (lanes[i + 1].type === 'path')) line(out, 'markWhite', c, s0, s1, lanes[i].o1, 0.08, 0);
@@ -125,6 +127,7 @@ export function buildEdge(net, edge, JA, JB, ctx) {
     if (ft.type === 'busstop') busStop(out, c, ft, lay);
     if (ft.type === 'crosswalk') midblockCrossing(out, c, ft, lay);
   }
+  if (ctx.props !== false) lightrailFeatures(out, edge, c, lay);
 
   // --- traffic control at ends
   if (ctx.props !== false) {
@@ -187,6 +190,68 @@ function tramRails(out, frames, oc, h) {
   for (const side of [-0.7175, 0.7175]) {
     ribbon(out, 'steel', frames, oc + side - 0.04, oc + side + 0.04, h + 0.006);
     ribbon(out, 'railGroove', frames, oc + side + (side < 0 ? 0.04 : -0.08), oc + side + (side < 0 ? 0.08 : -0.04), h + 0.004);
+  }
+}
+
+// In-street light rail: a single bidirectional track (one rail each side). We carve a
+// dark "grooved" asphalt strip through the lane center (ribbon of darker 'asphaltOld'
+// on top of the lane), then drop the two steel rails recessed into the strip. For a
+// one-way pair (two parallel `lightrail` lanes), we draw a yellow center divider between
+// the two. A platform decal goes in the lane between the rails for the lightrailStop
+// feature, and a lightrailCar prop goes in the center for the lightrailTrain feature.
+function lightrailRails(out, frames, oc, h, ln, c, lay, s0, s1) {
+  const side = [-0.7175, 0.7175];
+  // dark asphalt strip in the lane center, slightly darker than the lane surface
+  ribbon(out, 'asphaltOld', frames, oc - 1.1, oc + 1.1, h + 0.002);
+  // steel rails on each side of the dark strip
+  for (const s of side) {
+    ribbon(out, 'steel', frames, oc + s - 0.04, oc + s + 0.04, h + 0.006);
+    // black groove (the actual rubber insert in a paved track)
+    ribbon(out, 'railGroove', frames, oc + s + (s < 0 ? 0.04 : -0.08), oc + s + (s < 0 ? 0.08 : -0.04), h + 0.004);
+  }
+  // recessed light dashed center: dashed yellow (only between rails) at h+0.005
+  line(out, 'markYellow', c, s0 + 2, s1 - 2, oc, 0.08, h + 0.005);
+}
+
+// Render the lightrailTrain and lightrailStop features for an edge. We place a car prop
+// at the train s and a small platform decal at the stop s.
+function lightrailFeatures(out, edge, c, lay) {
+  if (!edge.features) return;
+  for (const ft of edge.features) {
+    if (ft.type === 'lightrailTrain') {
+      const f = c.frameAt(ft.s);
+      // find the offset of the first lightrail lane (if any)
+      const ln = lay.lanes.find(x => x.type === 'lightrail');
+      if (!ln) continue;
+      const oc = (ln.o0 + ln.o1) / 2;
+      // car body length is 12 m, we want the wheels to sit on the rails: the prop is
+      // placed at world (px + 0, py + 0, pz) with the unit body oriented with +x = fwd.
+      const px = f.x + f.nx * oc;
+      const pz = f.z + f.nz * oc;
+      const py = f.y + ln.h + 1.4;          // wheels at the rail top, body above
+      const yaw = yawFor(f.tx, f.tz);
+      out.prop('lightrailCar', px, py, pz, yaw, 12, 2.6, 2.4);
+    } else if (ft.type === 'lightrailStop') {
+      const f = c.frameAt(ft.s);
+      const ln = lay.lanes.find(x => x.type === 'lightrail');
+      if (!ln) continue;
+      // platform: a small raised concrete pad on the curb side of the lane
+      const half = ln.width / 2;
+      const side = ln.o0 > 0 ? 1 : -1;
+      const oc = (ln.o0 + ln.o1) / 2;
+      // platform strip on the road-side curb (inboard of the rail lane)
+      const pa = oc - half - 0.05, pb = oc - half + 0.6;
+      // 12 m long platform
+      const f0 = c.frameAt(ft.s - 6), f1 = c.frameAt(ft.s + 6);
+      if (f0.s >= 0 && f1.s <= c.length) {
+        const sl = [f0, c.frameAt(ft.s - 3), c.frameAt(ft.s), c.frameAt(ft.s + 3), f1];
+        ribbon(out, 'sidewalk', sl, pa, pb, ln.h + 0.05);
+        // yellow caution strip on the rail side
+        ribbon(out, 'markYellow', sl, pa, pa + 0.12, ln.h + 0.052);
+        // bus-stop style "TRAM STOP" decal
+        decal(out, 'busStop', c, ft.s, (pa + pb) / 2, side, ln.h + 0.054, 1.2);
+      }
+    }
   }
 }
 
@@ -312,7 +377,7 @@ function incomingLanes(lay, atA) {
   return lay.lanes.filter(l => l.meta.traffic && (atA ? (l.dir === -1) : (l.dir === 1)) || (l.meta.traffic && (l.dir || 0) === 0));
 }
 
-function paint(out, net, edge, c, lay, prof, s0, s1, ctlA, ctlB, JA, JB, ctx) {
+function paint(out, net, edge, c, lay, prof, s0, s1, ctlA, ctlB, JA, JB, eA, eB, ctx) {
   const lanes = lay.lanes, style = net.meta.markingStyle || 'us';
   const CW = 3.2;
   const endInfo = (ctl, J, atA) => {
@@ -437,6 +502,20 @@ function paint(out, net, edge, c, lay, prof, s0, s1, ctlA, ctlB, JA, JB, ctx) {
   };
   endMarks(A, true, JA);
   endMarks(B, false, JB);
+  // --- merge tapers: when a wider cross-section meets a narrower one at an angle,
+  // paint a drop-lane taper on the wider side and an add-lane taper on the narrower.
+  if (JA && JA.kind !== 'continuation' && JA.kind !== 'flush') {
+    for (const m of detectMerges(JA)) {
+      if (m.wide.edge.id === edge.id && eA && s0 > 0) paintMergeTaper(out, c, m.wide, m.narrow, s0, lay);
+      else if (m.narrow.edge.id === edge.id && eA && s0 > 0) paintAddLaneTaper(out, c, m.narrow, s0, lay, (m.angle || Math.PI / 2) < Math.PI * 0.55 ? 1 : -1);
+    }
+  }
+  if (JB && JB.kind !== 'continuation' && JB.kind !== 'flush') {
+    for (const m of detectMerges(JB)) {
+      if (m.wide.edge.id === edge.id && eB && s1 < c.length) paintMergeTaper(out, c, m.wide, m.narrow, s1, lay);
+      else if (m.narrow.edge.id === edge.id && eB && s1 < c.length) paintAddLaneTaper(out, c, m.narrow, s1, lay, (m.angle || Math.PI / 2) < Math.PI * 0.55 ? -1 : 1);
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------------- features

@@ -24,6 +24,7 @@ export function CrossSection({ lanes, compact = false, highlight = -1, onLane })
         )}
         {l.type === 'barrier' && <path d={`M${x} ${top} L${x + w * 0.3} ${top - (compact ? 9 : 14)} L${x + w * 0.7} ${top - (compact ? 9 : 14)} L${x + w} ${top}z`} fill="#c8c3ba" />}
         {l.type === 'tram' && <g fill="#9ea3a8"><rect x={x + w * 0.3} y={top - 1} width="2" height="2" /><rect x={x + w * 0.65} y={top - 1} width="2" height="2" /></g>}
+        {l.type === 'lightrail' && <g fill="#9ea3a8"><rect x={x + w * 0.18} y={top + 2} width="2" height={H - top - 32} /><rect x={x + w * 0.82 - 2} y={top + 2} width="2" height={H - top - 32} /><rect x={x + w * 0.18} y={top + (H - top - 32) / 2} width={w * 0.64} height="0.7" fill="#e0ad1c" opacity=".6" /></g>}
         {l.type === 'bike' || l.type === 'cycletrack' ? w > 10 && <circle cx={x + w / 2} cy={top + 14} r="3" fill="none" stroke="#e8e8e2" strokeWidth="1" opacity=".8" /> : null}
         {l.type === 'parking' && w > 10 && <rect x={x + w * 0.2} y={top + 8} width={w * 0.6} height={compact ? 8 : 12} rx="3" fill="#6c7280" />}
         {!compact && w > 15 && <text x={x + w / 2} y={H - 9} textAnchor="middle" fontSize="8.5" fill="#7a7a7a">{l.width.toFixed(1)}</text>}

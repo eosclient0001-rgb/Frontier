@@ -135,6 +135,21 @@ export function buildRail(net, rail, rc, crossings, ctx) {
   }
   // level crossings
   for (const x of crossings) crossing(out, net, rail, rc, x, offs, half);
+  // trains: place a single railTrain car per track, evenly spaced along the line
+  const numCars = Math.max(1, Math.min(6, Math.round(rc.length / 200)));
+  const stride = rc.length / (numCars + 0.5);
+  for (let ti = 0; ti < tracks; ti++) {
+    const o = offs[ti];
+    for (let k = 0; k < numCars; k++) {
+      const sCar = stride * (0.5 + k);
+      if (sCar < 8 || sCar > rc.length - 8) continue;
+      const f = rc.frameAt(sCar);
+      const yaw = yawFor(f.tx, f.tz);
+      const px = f.x + f.nx * o, pz = f.z + f.nz * o;
+      const py = f.y + 0.42 - 0.62;                                  // body floor is just above the wheels
+      out.prop('railTrain', px, py, pz, yaw, 24, 3.4, 3.2);
+    }
+  }
   return out;
 }
 

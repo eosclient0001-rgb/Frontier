@@ -401,9 +401,10 @@ export class World {
       for (const e of this.net.nodeEdges(n.id)) g.add(...this.edgeBand(e, accent, 0.1));
       g.add(this.handle(n.x, n.y, n.z, 3.2, accent, true));
       g.add(this.handle(n.x, n.y, n.z, 1.2, 0xffffff));
-    } else if (sel.type === 'rail' || sel.type === 'subway') {
-      const L = (sel.type === 'rail' ? this.net.rails : this.net.subways).get(sel.id); if (!L) return;
-      const y = sel.type === 'rail' ? 1.5 : -L.depth + 1;
+    } else if (sel.type === 'rail' || sel.type === 'subway' || sel.type === 'monorail') {
+      const map = sel.type === 'rail' ? this.net.rails : (sel.type === 'monorail' ? this.net.elevatedRails : this.net.subways);
+      const L = map?.get(sel.id); if (!L) return;
+      const y = sel.type === 'rail' ? 1.5 : (sel.type === 'monorail' ? 2.4 : -L.depth + 1);
       const lp = []; for (const p of L.pts) lp.push(p.x, (p.y ?? 0) + y, p.z);
       const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
       const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: accent, depthTest: false })); line.renderOrder = 16; g.add(line);

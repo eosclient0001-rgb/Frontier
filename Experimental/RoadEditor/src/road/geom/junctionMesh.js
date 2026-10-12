@@ -98,6 +98,29 @@ export function buildJunction(net, J, ctx) {
       }
     }
   }
+  // --- light rail tracks straight through junction (parallel pair on lightrailAve, or
+  // single bidirectional track on lightrailSide). For each pair of lightrail-bearing
+  // approaches that are nearly antiparallel, draw steel rails across the junction
+  // matching the lane offset of each lightrail lane.
+  const lrs = J.ends.filter(e => {
+    const ls = layout(getProfile(e.edge)).lanes.filter(l => l.type === 'lightrail');
+    return ls.length > 0;
+  });
+  for (let i = 0; i < lrs.length; i++) for (let j = i + 1; j < lrs.length; j++) {
+    const A = lrs[i], B = lrs[j];
+    if (A.dx * B.dx + A.dz * B.dz > -0.85) continue;
+    for (const ln of layout(getProfile(A.edge)).lanes.filter(l => l.type === 'lightrail')) {
+      const oc = (ln.o0 + ln.o1) / 2 * (A.atA ? 1 : -1);
+      const N = J.node;
+      for (const g of [-0.7175, 0.7175]) {
+        const o = oc + g;
+        const pa = [N.x + A.dx * A.setback + A.rx * o, N.z + A.dz * A.setback + A.rz * o];
+        const pb = [N.x + B.dx * B.setback - B.rx * o, N.z + B.dz * B.setback - B.rz * o];
+        const fake = straightCl(pa, pb, N.y);
+        ribbon(out, 'steel', fake.frames, -0.04, 0.04, 0.006);
+      }
+    }
+  }
 
   // --- yellow box / centre markings: roundabout circulating line
   if (J.kind === 'roundabout' && ctx.markings !== false) {

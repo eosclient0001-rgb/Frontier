@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Layers, Search, Plus, ChevronRight, Route, Waypoints, TrainFront, TramFront, Waves, CircleDot, TrafficCone, Milestone, Footprints, Signpost, X, Map as MapIcon, Bike } from 'lucide-react';
+import { Layers, Search, Plus, ChevronRight, Route, Waypoints, TrainFront, TramFront, Waves, CircleDot, TrafficCone, Milestone, Footprints, Signpost, X, Map as MapIcon, Bike, Mountain } from 'lucide-react';
 import { useEditor, editor } from './useEditor.js';
 import { CATEGORIES, getProfile, RANK } from '../road/profiles.js';
 
@@ -118,11 +118,16 @@ export function Outliner() {
             })}
           </Group>
         )}
-        {net && (net.rails.size > 0 || net.subways.size > 0) && (
-          <Group k="transit" icon={TrainFront} label="Transit" count={net.rails.size + net.subways.size}>
+        {net && (net.rails.size > 0 || net.subways.size > 0 || (net.elevatedRails?.size || 0) > 0) && (
+          <Group k="transit" icon={TrainFront} label="Transit" count={net.rails.size + net.subways.size + (net.elevatedRails?.size || 0)}>
             {[...net.rails.values()].map(r => (
               <div key={r.id} className={'tree-row' + (isSel('rail', r.id) ? ' selected' : '')}>
                 <button className="object-button" onClick={() => editor.select({ type: 'rail', id: r.id }, { focus: true })}><TrainFront size={14} strokeWidth={1.6} /><span className="name">{r.name || 'Railway'}</span><small>{r.tracks} trk</small></button>
+              </div>
+            ))}
+            {[...(net.elevatedRails?.values() || [])].map(r => (
+              <div key={r.id} className={'tree-row' + (isSel('monorail', r.id) ? ' selected' : '')}>
+                <button className="object-button" onClick={() => editor.select({ type: 'monorail', id: r.id }, { focus: true })}><Mountain size={14} strokeWidth={1.6} style={{ color: r.color || '#e44d2f' }} /><span className="name">{r.name || 'Monorail'}</span><small>{r.tracks} trk</small></button>
               </div>
             ))}
             {[...net.subways.values()].map(s => (

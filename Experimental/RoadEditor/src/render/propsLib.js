@@ -156,6 +156,104 @@ const DEFS = {
     b.add('sign', g, null, M(0, 1.0, 0));
   },
   stationColumn: b => { b.cyl('vcol', 0.32, 0.32, 1, 0, 0, 0, 0xd8d2c6, 14); },
+  // Straddle-beam monorail car. Local axes: +x = forward (along travel), +z = sideways,
+  // +y = up. Body is 16 m long × 3 m wide × 3 m tall, with a rounded nose, a window strip
+  // down each side, a yellow/blue stripe livery, headlights at the front and tail lights at
+  // the back. The instance scales by (MONO_CAR_LEN, MONO_CAR_H, MONO_CAR_W) — so the unit
+  // geometry is half-length = 0.5 m (so sx = 32 stretches it to 16 m), half-height 0.5 m,
+  // half-width 0.5 m. We instead build it at 1 m × 1 m × 1 m and use sy/sz scale in the
+  // instance: instance is (16, 3, 3).
+  monoCar: b => {
+    const BODY = 0xe44d2f;       // red livery
+    const BELT = 0x2b6fd6;       // blue belt along the side
+    const WIN = 0x6c8aa0;        // tinted window
+    const HL = 0xfff1c2;         // headlight
+    // unit body: ±0.5 on x, ±0.5 on y, ±0.5 on z
+    b.box('vcol', 1, 1, 1, 0, 0, 0, BODY);
+    // windshield and headlights (front = +x)
+    b.add('vcol', new THREE.PlaneGeometry(0.7, 0.45), 0x202428, M(0.502, 0.05, 0, 0, -Math.PI / 2));
+    b.add('glow', new THREE.PlaneGeometry(0.18, 0.18), null, M(0.502, -0.15, 0.32, 0, -Math.PI / 2));
+    b.add('glow', new THREE.PlaneGeometry(0.18, 0.18), null, M(0.502, -0.15, -0.32, 0, -Math.PI / 2));
+    b.add('sigRed', new THREE.PlaneGeometry(0.15, 0.12), null, M(-0.502, -0.15, 0.32, 0, Math.PI / 2));
+    b.add('sigRed', new THREE.PlaneGeometry(0.15, 0.12), null, M(-0.502, -0.15, -0.32, 0, Math.PI / 2));
+    // window strip (both sides, long horizontal)
+    for (const z of [-0.501, 0.501]) {
+      b.add('vcol', new THREE.PlaneGeometry(0.7, 0.2), WIN, M(0, 0.1, z * Math.sign(z), 0, z > 0 ? Math.PI : 0));
+    }
+    // belt livery stripe along the sides (blue band)
+    for (const z of [-0.501, 0.501]) {
+      b.add('vcol', new THREE.PlaneGeometry(0.8, 0.06), BELT, M(0, -0.18, z * Math.sign(z), 0, z > 0 ? Math.PI : 0));
+    }
+    // small head/tail caps
+    b.box('vcol', 0.05, 0.5, 0.96, 0.46, 0, 0, 0x16191c);
+    b.box('vcol', 0.05, 0.5, 0.96, -0.46, 0, 0, 0x16191c);
+    // door panels at each end of both sides
+    for (const z of [-0.501, 0.501]) for (const x of [0.28, -0.28]) {
+      b.add('vcol', new THREE.PlaneGeometry(0.12, 0.32), 0x111418, M(x, -0.05, z * Math.sign(z), 0, z > 0 ? Math.PI : 0));
+    }
+  },
+  // In-street light rail / streetcar car (smaller, narrower, painted livery). Built as a
+  // unit body (1 × 1 × 1) with the instance scale set to (12, 2.6, 2.4) so the car is
+  // 12 m long, 2.6 m tall, 2.4 m wide. Pantograph on the roof.
+  lightrailCar: b => {
+    const BODY = 0xe7c84a;       // yellow livery
+    const BELT = 0x222428;       // dark belt
+    const WIN = 0x6c8aa0;
+    b.box('vcol', 1, 1, 1, 0, 0, 0, BODY);
+    // windshield at the front (+x), darker
+    b.add('vcol', new THREE.PlaneGeometry(0.7, 0.35), 0x202428, M(0.502, 0.12, 0, 0, -Math.PI / 2));
+    // long window strip on each side
+    for (const z of [-0.501, 0.501]) {
+      b.add('vcol', new THREE.PlaneGeometry(0.75, 0.18), WIN, M(0, 0.1, z * Math.sign(z), 0, z > 0 ? Math.PI : 0));
+    }
+    // dark belt below the window
+    for (const z of [-0.501, 0.501]) {
+      b.add('vcol', new THREE.PlaneGeometry(0.85, 0.06), BELT, M(0, -0.16, z * Math.sign(z), 0, z > 0 ? Math.PI : 0));
+    }
+    // headlight
+    b.add('glow', new THREE.PlaneGeometry(0.18, 0.12), null, M(0.502, -0.1, 0.3, 0, -Math.PI / 2));
+    b.add('glow', new THREE.PlaneGeometry(0.18, 0.12), null, M(0.502, -0.1, -0.3, 0, -Math.PI / 2));
+    b.add('sigRed', new THREE.PlaneGeometry(0.13, 0.09), null, M(-0.502, -0.1, 0.3, 0, Math.PI / 2));
+    b.add('sigRed', new THREE.PlaneGeometry(0.13, 0.09), null, M(-0.502, -0.1, -0.3, 0, Math.PI / 2));
+    // pantograph on the roof
+    b.box('vcol', 0.04, 0.4, 0.04, 0, 0.7, 0.25, 0x4a4a4a);
+    b.box('vcol', 0.04, 0.4, 0.04, 0, 0.7, -0.25, 0x4a4a4a);
+    b.box('vcol', 0.4, 0.02, 0.04, 0, 0.88, 0.25, 0x4a4a4a);
+    b.box('vcol', 0.4, 0.02, 0.04, 0, 0.88, -0.25, 0x4a4a4a);
+    b.box('vcol', 0.5, 0.02, 0.02, 0, 0.92, 0, 0x4a4a4a);
+  },
+  // Heavy rail train car (electric locomotive / passenger). Larger than the lightrail
+  // car. Built as a unit body (1 × 1 × 1) with the instance scale (24, 3.4, 3.2) so the
+  // car is 24 m long, 3.4 m tall, 3.2 m wide. Sits on bogies (just below the body). Used
+  // for the at-grade rail layer in cityGen.
+  railTrain: b => {
+    const BODY = 0xb2a98a;
+    const WIN = 0x5a6e80;
+    const BELT = 0x3a3a3a;
+    // main body (slightly tapered at the top — modelled as a single box for simplicity)
+    b.box('vcol', 1, 0.85, 1, 0, 0.1, 0, BODY);
+    // roof (darker)
+    b.box('vcol', 1.02, 0.05, 1.02, 0, 0.55, 0, 0x4a4a4a);
+    // skirt under the body
+    b.box('vcol', 1, 0.18, 0.98, 0, -0.42, 0, BELT);
+    // window strip on each side
+    for (const z of [-0.501, 0.501]) {
+      b.add('vcol', new THREE.PlaneGeometry(0.85, 0.18), WIN, M(0, 0.25, z * Math.sign(z), 0, z > 0 ? Math.PI : 0));
+    }
+    // front windshield at the head end
+    b.add('vcol', new THREE.PlaneGeometry(0.7, 0.32), 0x1c2530, M(0.502, 0.25, 0, 0, -Math.PI / 2));
+    // headlights (×2) at the front
+    b.add('glow', new THREE.PlaneGeometry(0.13, 0.13), null, M(0.502, -0.1, 0.32, 0, -Math.PI / 2));
+    b.add('glow', new THREE.PlaneGeometry(0.13, 0.13), null, M(0.502, -0.1, -0.32, 0, -Math.PI / 2));
+    // tail lights
+    b.add('sigRed', new THREE.PlaneGeometry(0.13, 0.13), null, M(-0.502, -0.1, 0.32, 0, Math.PI / 2));
+    b.add('sigRed', new THREE.PlaneGeometry(0.13, 0.13), null, M(-0.502, -0.1, -0.32, 0, Math.PI / 2));
+    // two bogies under the body (one at each end)
+    for (const x of [-0.32, 0.32]) {
+      b.box('vcol', 0.16, 0.18, 0.9, x, -0.5, 0, 0x1c1c1c);
+      for (const z of [-0.3, 0.3]) b.cyl('vcol', 0.085, 0.085, 0.06, x, -0.62, z, 0x1c1c1c, 10);
+    }
+  },
   subwayEntrance: b => {
     // opening ~ 2.4 wide (z) x 5 long (x); stairs descend toward +x
     b.box('vcol', 5.2, 1.05, 0.15, 0, 0.52, 1.35, C.shelter); b.box('vcol', 5.2, 1.05, 0.15, 0, 0.52, -1.35, C.shelter); b.box('vcol', 0.15, 1.05, 2.85, -2.6, 0.52, 0, C.shelter);
@@ -180,4 +278,4 @@ export function propLibrary() {
 }
 
 // Props that should cast shadows (others are too small to matter)
-export const SHADOW_PROPS = new Set(['lamp', 'lampHigh', 'lampDouble', 'lampPost', 'signalPole', 'signalArm', 'signalHead', 'treeA', 'treeB', 'busShelter', 'pierCol', 'pierColWide', 'pierCap', 'catenaryMast', 'subwayEntrance', 'crossbuck']);
+export const SHADOW_PROPS = new Set(['lamp', 'lampHigh', 'lampDouble', 'lampPost', 'signalPole', 'signalArm', 'signalHead', 'treeA', 'treeB', 'busShelter', 'pierCol', 'pierColWide', 'pierCap', 'catenaryMast', 'subwayEntrance', 'crossbuck', 'monoCar', 'lightrailCar', 'railTrain']);

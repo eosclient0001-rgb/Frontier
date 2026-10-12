@@ -8,9 +8,9 @@ import { PROFILES, layout } from './profiles.js';
 
 const NAMES = ['Harbor', 'Union', 'Market', 'Grand', 'Lincoln', 'Mission', 'Sunset', 'Ocean', 'Pacific', 'Broadway', 'Central', 'Park', 'Maple', 'Oak', 'Cedar', 'Pine', 'Elm', 'Kingston', 'Riverside', 'Bayview', 'Hillcrest', 'Lakeshore', 'Westlake', 'Fairview', 'Highland', 'Summit', 'Victoria', 'Regent', 'Wellington', 'Madison', 'Jefferson', 'Franklin', 'Granite', 'Copper', 'Willow', 'Aspen', 'Juniper', 'Laurel', 'Magnolia', 'Spruce', 'Chestnut', 'Hawthorne', 'Beacon', 'Carlton', 'Dover', 'Easton', 'Foster', 'Garnet', 'Hudson', 'Irving', 'Jasper', 'Kensington', 'Lombard', 'Monroe', 'Newport', 'Orchard', 'Prospect', 'Quincy', 'Raleigh', 'Sterling', 'Tremont', 'Vernon', 'Whitney', 'York'];
 const ORD = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
-const SUFFIX = { boulevard: 'Boulevard', avenueBike: 'Avenue', arterialBRT: 'Avenue', tramAvenue: 'Avenue', arterial4: 'Road', collector: 'Street', local: 'Street', oneway: 'Street', residential: 'Drive', cobblestone: 'Lane', sharedStreet: 'Mews', alley: 'Alley', industrial: 'Way', rural2: 'Road', countryLane: 'Lane', gravelRoad: 'Track', dirtRoad: 'Trail', expressway: 'Parkway', footpath: 'Walk', gravelPath: 'Trail', promenade: 'Promenade', cycleway: 'Cycleway' };
+const SUFFIX = { boulevard: 'Boulevard', avenueBike: 'Avenue', arterialBRT: 'Avenue', tramAvenue: 'Avenue', lightrailAve: 'Avenue', lightrailSide: 'Street', arterial4: 'Road', collector: 'Street', local: 'Street', oneway: 'Street', residential: 'Drive', cobblestone: 'Lane', sharedStreet: 'Mews', alley: 'Alley', industrial: 'Way', rural2: 'Road', countryLane: 'Lane', gravelRoad: 'Track', dirtRoad: 'Trail', expressway: 'Parkway', footpath: 'Walk', gravelPath: 'Trail', promenade: 'Promenade', cycleway: 'Cycleway' };
 
-export const DEFAULT_GEN = { seed: 1337, size: 4096, density: 1, river: true, freeway: true, rail: true, subway: true, tram: true, roundabouts: true, parks: true, oldTown: true, suburbs: true, markingStyle: 'us' };
+export const DEFAULT_GEN = { seed: 1337, size: 4096, density: 1, river: true, freeway: true, rail: true, subway: true, tram: true, monorail: true, lightrail: true, roundabouts: true, parks: true, oldTown: true, suburbs: true, markingStyle: 'us' };
 
 export function generateCity(options = {}) {
   const o = { ...DEFAULT_GEN, ...options };
@@ -107,6 +107,18 @@ export function generateCity(options = {}) {
   const urbanAt = (u, v) => Math.max(Math.abs(u), Math.abs(v)) / half < 0.8;
   const pickArterial = (k, n, axis, pos) => {
     if (axis === 'u' && o.tram && k === Math.floor(n / 2) - 1) return 'tramAvenue';
+    // Light rail: a few key arterials through the city, picks the next two on each
+    // axis through the central half of the city. Distinct from the tram avenue so both
+    // can coexist in the same city.
+    if (o.lightrail && (axis === 'u' || axis === 'v') && Math.abs(pos) < half * 0.45) {
+      if (k === Math.floor(n / 2) - 2) return 'lightrailAve';
+      if (axis === 'v' && k === Math.floor(n / 2) - 1) return 'lightrailAve';
+    }
+    // Side-running light rail: a couple of mid-distance arterials get a curbside
+    // streetcar track instead of parking.
+    if (o.lightrail && (axis === 'u' || axis === 'v') && Math.abs(pos) < half * 0.55 && Math.abs(pos) > half * 0.18) {
+      if (k === Math.floor(n / 2) + 2 || k === Math.floor(n / 2) - 3) return 'lightrailSide';
+    }
     if (Math.abs(pos) < 140) return 'boulevard';
     if (axis === 'v' && k === Math.floor(n / 2) + 1) return 'arterialBRT';
     if (Math.abs(pos) < half * 0.4) return 'avenueBike';
@@ -579,6 +591,15 @@ export function generateCity(options = {}) {
     if (e.profile === 'cobblestone' && L > 60 && R.chance(0.2)) e.features.push({ type: 'hump', s: L * 0.5, kind: 'table' });
     if ((e.profile === 'boulevard' || e.profile === 'tramAvenue') && L > 220) { e.features.push({ type: 'busstop', s: L * 0.38, side: 1 }); e.features.push({ type: 'busstop', s: L * 0.62, side: -1 }); }
     if (e.profile === 'collector' && L > 230 && R.chance(0.5)) e.features.push({ type: 'crosswalk', s: L * 0.5 });
+    // Light rail: place one streetcar every ~120 m on lightrail lanes, with stops near
+    // the middle of the segment.  The lightrailTrain feature is consumed by edge.js to
+    // place a lightrailCar prop and the platform decal.
+    if (o.lightrail && (e.profile === 'lightrailAve' || e.profile === 'lightrailSide') && L > 80) {
+      const stride = 130;
+      const car = L < stride ? L / 2 : stride * 0.5;
+      e.features.push({ type: 'lightrailTrain', s: car });
+      e.features.push({ type: 'lightrailStop', s: Math.min(L - 12, car + 28) });
+    }
   }
 
   // ---------------------------------------------------------------- pedestrian paths (separate layer)
@@ -623,6 +644,39 @@ export function generateCity(options = {}) {
     const l1 = lineAlong('u', ua, '#d8584a', 'Line 1 · Red', 15);
     const l2 = lineAlong('v', va, '#4a8fd8', 'Line 2 · Blue', 26);
     net.subways.set(l1.id, l1); net.subways.set(l2.id, l2);
+  }
+  // Monorail / elevated rail: a single elevated loop that hugs the perimeter just
+  // outside the freeway ring (or the perimeter parkway if no freeway). Rides on piers
+  // above the road grid; crosses streets at its own height and casts a shadow band on
+  // the road below.
+  if (o.monorail) {
+    // build a closed rectangle just outside the perimeter road if no ring is present
+    let monoUV;
+    if (ring) {
+      const ringUV = ring.loop;
+      const offDist = Math.min((ring.uR - ring.uL), (ring.vB - ring.vT)) * 0.20 + 60;
+      monoUV = ringUV.map((p, i) => {
+        const a = ringUV[(i - 1 + ringUV.length) % ringUV.length];
+        const b = ringUV[(i + 1) % ringUV.length];
+        const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
+        const nx = -dz / l, nz = dx / l;
+        return [p[0] - nx * offDist, p[1] - nz * offDist];
+      });
+    } else {
+      // a simple rounded rectangle just inside the map bounds
+      const rr = (P - 30) * 1.05, s = rr * 0.6;
+      monoUV = [];
+      for (let u = -rr; u <= rr; u += 50) monoUV.push([u, -rr]);
+      for (let v = -rr; v <= rr; v += 50) monoUV.push([rr, v]);
+      for (let u = rr; u >= -rr; u -= 50) monoUV.push([u, rr]);
+      for (let v = rr; v >= -rr; v -= 50) monoUV.push([-rr, v]);
+      // ignore s (used to silence unused warning)
+      void s;
+    }
+    monoUV.push(monoUV[0].slice());
+    const wpts = monoUV.map(([u, v]) => { const [x, z] = warp(u, v); return { x, z }; });
+    if (!net.elevatedRails) net.elevatedRails = new Map();
+    net.elevatedRails.set('mono1', { id: 'mono1', kind: 'elevatedRail', tracks: 1, pts: wpts, name: 'Frontier Monorail · Loop', color: '#e44d2f' });
   }
   // park + rural vegetation, district raster for ground shading
   net.trees = [];

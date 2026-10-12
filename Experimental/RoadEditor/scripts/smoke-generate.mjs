@@ -6,7 +6,7 @@ let t = performance.now();
 const net = generateCity({ seed, size });
 const tg = performance.now() - t;
 const st = net.stats();
-console.log(`generated in ${tg.toFixed(0)} ms: nodes ${st.nodes}, edges ${st.edges}, road ${st.km.toFixed(1)} km, lane-km ${st.lanesKm.toFixed(0)}, rail ${st.railKm.toFixed(1)} km, subway ${st.subKm.toFixed(1)} km`);
+console.log(`generated in ${tg.toFixed(0)} ms: nodes ${st.nodes}, edges ${st.edges}, road ${st.km.toFixed(1)} km, lane-km ${st.lanesKm.toFixed(0)}, rail ${st.railKm.toFixed(1)} km, subway ${st.subKm.toFixed(1)} km, monorail ${st.monoKm.toFixed(1)} km`);
 const b = new NetworkBuilder(net);
 t = performance.now();
 await b.buildAll();

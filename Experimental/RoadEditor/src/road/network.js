@@ -10,6 +10,7 @@ export class RoadNetwork {
     this.adj = new Map();       // nodeId -> Set(edgeId)
     this.rails = new Map();     // id -> {id, kind:'rail', pts:[{x,z}], tracks, name}
     this.subways = new Map();   // id -> {id, pts:[{x,z}], depth, stations:[{s,name}], name, color}
+    this.elevatedRails = new Map(); // id -> {id, kind:'elevatedRail', pts:[{x,z}], tracks, name, color}
     this.river = null;          // {pts:[[x,z]], width}
     this.parks = [];            // polygons [[x,z]...]
     this.districts = [];        // {poly, type, name}
@@ -106,7 +107,8 @@ export class RoadNetwork {
     }
     let railKm = 0; for (const r of this.rails.values()) railKm += polyLen(r.pts) / 1000;
     let subKm = 0; for (const r of this.subways.values()) subKm += polyLen(r.pts) / 1000;
-    return { nodes: this.nodes.size, edges: this.edges.size, km, lanesKm, railKm, subKm };
+    let monoKm = 0; for (const r of this.elevatedRails?.values() || []) monoKm += polyLen(r.pts) / 1000;
+    return { nodes: this.nodes.size, edges: this.edges.size, km, lanesKm, railKm, subKm, monoKm };
   }
 
   toJSON() {
@@ -114,6 +116,7 @@ export class RoadNetwork {
       format: 'frontier-roads', version: 1, meta: this.meta, seq: this.seq,
       nodes: [...this.nodes.values()], edges: [...this.edges.values()],
       rails: [...this.rails.values()], subways: [...this.subways.values()],
+      elevatedRails: [...(this.elevatedRails?.values() || [])],
       river: this.river, parks: this.parks, districts: this.districts, trees: this.trees || [],
       districtRaster: this.districtRaster ? { ...this.districtRaster, data: b64(this.districtRaster.data) } : null,
     };
@@ -125,6 +128,7 @@ export class RoadNetwork {
     for (const e of j.edges) if (n.nodes.has(e.a) && n.nodes.has(e.b)) n.addEdge(e);
     for (const r of j.rails || []) n.rails.set(r.id, r);
     for (const r of j.subways || []) n.subways.set(r.id, r);
+    n.elevatedRails = new Map((j.elevatedRails || []).map(r => [r.id, r]));
     n.river = j.river || null; n.parks = j.parks || []; n.districts = j.districts || [];
     n.trees = j.trees || [];
     if (j.districtRaster) n.districtRaster = { ...j.districtRaster, data: unb64(j.districtRaster.data) };

@@ -16,6 +16,11 @@ export const LANE_TYPES = {
   shoulder:   { label: 'Shoulder',        level: 'road',   mat: 'surface',   color: '#45474c', w: 2.5 },
   buffer:     { label: 'Buffer',          level: 'road',   mat: 'surface',   color: '#55575c', w: 0.9 },
   tram:       { label: 'Tram lane',       level: 'road',   mat: 'surface',   color: '#5d5148', w: 3.2, traffic: true, rails: true },
+  // In-street light rail / streetcar lane: has a visible steel rail groove on each side
+  // of a dark asphalt center strip; placed at-grade inside a normal road cross-section.
+  // Like 'tram' it is bidirectional in that a single lane carries trains in BOTH
+  // directions (one rail each side, single-track configuration).
+  lightrail:  { label: 'Light rail lane', level: 'road',   mat: 'surface',   color: '#4a4a48', w: 3.4, traffic: false, rails: 'lightrail' },
   barrier:    { label: 'Jersey barrier',  level: 'road',   mat: 'surface',   color: '#9c9890', w: 0.8 },
   gravel:     { label: 'Gravel shoulder', level: 'ground', mat: 'gravel',    color: '#7d7466', w: 1.5 },
   verge:      { label: 'Grass verge',     level: 'ground', mat: 'grass',     color: '#55703f', w: 1.5 },
@@ -82,6 +87,27 @@ export const PROFILES = {
     name: 'Tram avenue', category: 'arterial', speed: 50, surface: 'asphalt', lamps: 'both', lampSpacing: 30, trees: true,
     desc: 'Street-running tram in the center, traffic and parking either side.',
     lanes: sym([L('tram', 3.2, 1), L('drive', 3.4, 1), L('parking', 2.3), L('planter', 1.2, undefined, { trees: true }), L('sidewalk', 3.6)]),
+  },
+  // Center-running light rail avenue: two pairs of one-way rails, on a paved strip in
+  // the median. Drives either side, with parking and a tree lawn + sidewalk.
+  lightrailAve: {
+    name: 'Light rail avenue', category: 'arterial', speed: 50, surface: 'asphalt', lamps: 'both', lampSpacing: 30, trees: true,
+    desc: 'Center-running light rail in a dedicated paved strip, drives and parking either side.',
+    lanes: [
+      L('sidewalk', 3.6), L('planter', 1.2, undefined, { trees: true }), L('parking', 2.3), L('drive', 3.3, 1), L('drive', 3.3, 1),
+      L('buffer', 0.4), L('lightrail', 3.4, 1), L('lightrail', 3.4, -1), L('buffer', 0.4),
+      L('drive', 3.3, -1), L('drive', 3.3, -1), L('parking', 2.3), L('planter', 1.2, undefined, { trees: true }), L('sidewalk', 3.6),
+    ],
+  },
+  // Side-running light rail: a single track (bidirectional — one rail each side of the
+  // strip) curbed off on the parking strip just inside the sidewalk.
+  lightrailSide: {
+    name: 'Light rail side', category: 'arterial', speed: 50, surface: 'asphalt', lamps: 'both', lampSpacing: 30, trees: true,
+    desc: 'Curbed light rail track on the parking strip, traffic inboard.',
+    lanes: [
+      L('sidewalk', 3.6), L('planter', 1.2, undefined, { trees: true }), L('lightrail', 3.4, 0), L('planter', 0.5),
+      L('drive', 3.3, 1), L('drive', 3.3, 1), L('parking', 2.3), L('planter', 1.2, undefined, { trees: true }), L('sidewalk', 3.6),
+    ],
   },
   arterial4: {
     name: 'Arterial · 4 lanes', category: 'arterial', speed: 60, surface: 'asphalt', lamps: 'both', lampSpacing: 34,

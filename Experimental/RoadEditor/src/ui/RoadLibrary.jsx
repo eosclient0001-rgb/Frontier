@@ -13,6 +13,7 @@ function tags(p) {
     if (l.type === 'bike' || l.type === 'cycletrack') t.add('Cycling');
     if (l.type === 'parking') t.add('Parking');
     if (l.type === 'tram') t.add('Tram');
+    if (l.type === 'lightrail') t.add('Light rail');
     if (l.type === 'median' || l.type === 'barrier') t.add('Divided');
     if (l.type === 'planter' || p.trees) t.add('Trees');
   }
