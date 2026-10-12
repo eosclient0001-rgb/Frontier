@@ -27,9 +27,9 @@ import { TAU } from '../math.js';
 
 // Find merge pairs in a junction. A merge pair is two incident ends whose:
 //   - profile widths differ by ≥ 4 m (a real merge, not a tiny step)
-//   - the angle is roughly perpendicular (cosA in [-0.5, 0.5]) — true T-bone
-//     intersections. Acute (< 60°) or obtuse (> 120°) merges are rare in cities
-//     and the existing flare geometry already handles the width step.
+//   - the angle is between 30° and 150° — wide enough to be a real merge
+//     (not head-on continuation), but not so close to a continuation that the
+//     markings would be drawn on top of normal lane lines.
 //
 // Returns an array { wide, narrow, angle } sorted by angle.
 export function detectMerges(J) {
@@ -42,10 +42,10 @@ export function detectMerges(J) {
     const cosA = A.dx * B.dx + A.dz * B.dz;
     // Skip head-on (antiparallel) — those are continuations, handled separately.
     if (cosA < -0.92) continue;
-    // Only paint merge markings for roughly perpendicular joins. Outside this range
-    // the existing junction arc already shows the merge, and adding chevrons on top
-    // creates visual clutter.
-    if (Math.abs(cosA) > 0.5) continue;
+    // Allow a wide range of angles (30°–150°). The markings look right at any
+    // angle in this range; outside it, the merge doesn't visually look like a
+    // merge (it's either nearly parallel or nearly antiparallel).
+    if (Math.abs(cosA) > 0.87) continue;
     // they must not be the same road
     if (A.edge.id === B.edge.id) continue;
     const angle = Math.acos(Math.max(-1, Math.min(1, cosA)));
