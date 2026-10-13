@@ -16,7 +16,7 @@ export function makeCarMaterials(envMap) {
   };
 }
 
-/** The car you drive: origin at the road surface, centred, facing +Z. */
+/** The car you drive: origin at the road surface, centred, facing +Z. userData.frontWheels steer. */
 export function createPlayerCar(cm) {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new RoundedBoxGeometry(1.9, 0.62, 4.5, 4, 0.22), cm.paint);
@@ -44,17 +44,22 @@ export function createPlayerCar(cm) {
   wheelGeo.rotateZ(Math.PI / 2);
   const rimGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.32, 16);
   rimGeo.rotateZ(Math.PI / 2);
+  // front wheels sit in a pivot group so they visibly steer; rear wheels are fixed
+  const frontWheels = [];
   for (const sx of [-0.92, 0.92]) {
     for (const z of [-1.42, 1.42]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(sx, 0.36, z);
       const w = new THREE.Mesh(wheelGeo, cm.tyre);
-      w.position.set(sx, 0.36, z);
       w.castShadow = true;
-      g.add(w);
+      pivot.add(w);
       const r = new THREE.Mesh(rimGeo, cm.rim);
-      r.position.set(sx, 0.36, z);
-      g.add(r);
+      pivot.add(r);
+      g.add(pivot);
+      if (z > 0) frontWheels.push(pivot);
     }
   }
+  g.userData.frontWheels = frontWheels;
   for (const sx of [-0.62, 0.62]) {
     const hl = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.05), cm.headlight);
     hl.position.set(sx, 0.62, 2.27);

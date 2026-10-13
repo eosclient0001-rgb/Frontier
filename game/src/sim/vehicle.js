@@ -72,6 +72,7 @@ export class Vehicle {
     this.wallHit = 0; // accumulates impact magnitude this frame
     this.landed = 0; // landing impact this frame
     this.lost = false; // fell out of the world
+    this.delta = 0;
   }
 
   get speed() {
@@ -126,6 +127,7 @@ export class Vehicle {
     this.steer += clamp(inp.steer - this.steer, -steerRate * dt, steerRate * dt);
     const maxSteer = lerp(CAR.steerLo, CAR.steerHi, sp);
     const delta = this.steer * maxSteer;
+    this.delta = delta; // road-wheel angle (rad, + = turning right), used for the visible front wheels
 
     // --- drive / nitro ---
     const wantNitro = inp.nitro && this.nitroLeft > 0 && inp.throttle > 0.3;

@@ -156,8 +156,6 @@ function placeCamera(dt, v) {
   const sh = cam.shake * cam.shake * 0.35;
   camera.position.set(cam.pos.x + (Math.random() - 0.5) * sh, cam.pos.y + (Math.random() - 0.5) * sh, cam.pos.z + (Math.random() - 0.5) * sh);
   camera.lookAt(cam.look);
-  // lean into lateral load a touch
-  camera.rotateZ(clamp(v.latG, -1.5, 1.5) * -0.012);
 
   const targetFov = 62 + sp * 14 + (v.nitroOn ? 8 : 0) + (cam.mode === 1 ? -4 : 0);
   cam.fov = damp(cam.fov, targetFov, 4, dt);
@@ -178,7 +176,10 @@ function updateVisuals(dt) {
 
   // player car
   car.position.set(v.x, v.y - CAR.rideH, v.z);
-  car.rotation.set(-Math.atan(v.grade) * 0.9, Math.PI / 2 - v.yaw, clamp(v.latG, -1.2, 1.2) * 0.025);
+  // body leans outward (opposite the cornering force), nose pitches with the grade
+  car.rotation.set(-Math.atan(v.grade) * 0.9, Math.PI / 2 - v.yaw, clamp(v.latG, -1.2, 1.2) * -0.025);
+  // front wheels: model +Z is forward and model -X is the car's right, so a right turn (positive delta) is a negative yaw
+  for (const w of car.userData.frontWheels) w.rotation.y = -v.delta;
   car.visible = cam.mode !== 1;
 
   // sun and sky follow the car
