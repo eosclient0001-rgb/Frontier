@@ -107,7 +107,10 @@ export class Car {
     let yawRate = (fSpeed / 2.9) * Math.tan(steerAngle);
     const yawCap = lerp(1.55, .62, speedFac) * (input.handbrake ? 1.4 : 1);
     yawRate = clamp(yawRate, -yawCap, yawCap);
-    if (Math.abs(fSpeed) > .4) this.heading += yawRate * dt;
+    // NOTE: forward = (sin h, 0, cos h) and the chase camera looks along it,
+    // so screen-right is -X at h=0. A right turn (steer > 0) must DECREASE
+    // heading — increasing it swings the nose toward screen-left.
+    if (Math.abs(fSpeed) > .4) this.heading -= yawRate * dt;
 
     // recompute basis after yaw
     fwd.set(Math.sin(this.heading), 0, Math.cos(this.heading));
@@ -140,7 +143,7 @@ export class Car {
     const grip = this.offTrack ? 5.5 : (input.handbrake ? 2.4 : 9.5);
     latSpeed *= Math.exp(-grip * dt);
     if (this.drifting && Math.abs(latSpeed) < Math.abs(fSpeed) * .42)
-      latSpeed += -this.steer * Math.abs(fSpeed) * .16 * dt; // provoke a controlled slide
+      latSpeed += this.steer * Math.abs(fSpeed) * .16 * dt; // provoke a controlled slide (velocity lags toward the outside of the turn)
 
     this.vel.copy(fwd).multiplyScalar(fSpeed).addScaledVector(right, latSpeed);
     this.pos.addScaledVector(this.vel, dt);
@@ -208,7 +211,7 @@ export class Car {
     this.mesh.rotation.set(this.pitchVis, this.heading, this.rollVis);
     this.wheelSpin += fSpeed * dt / .4;
     this.wheelsAll.forEach(w => { w.rotation.x = this.wheelSpin; });
-    this.wheelsF.forEach(w => { w.rotation.y = this.steer * .42; });
+    this.wheelsF.forEach(w => { w.rotation.y = -this.steer * .42; }); // match screen direction of travel
     if (this.brakeLight) this.brakeLight.emissiveIntensity = input.brake > 0 ? 3.4 : (input.handbrake ? 2.4 : .7);
 
     return {
