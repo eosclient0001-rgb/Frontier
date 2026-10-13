@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { TrackSystem, makeGround, STEP, clamp } from './track.js';
-import { ParallelTrains } from './trains.js';
-import { Car } from './car.js';
+import { TrackSystem, makeGround, STEP, clamp } from './track.js?v=3';
+import { ParallelTrains } from './trains.js?v=3';
+import { Car } from './car.js?v=3';
 
 /* ============================================================
    FRONTIER GP — infinite procedural wide-track arcade racer
@@ -211,6 +211,7 @@ function animate() {
   $('barFill').style.width = clamp(info.speedKmh / 300 * 100, 0, 100) + '%';
   $('statDist').textContent = (distance / 1000).toFixed(2) + ' km';
   $('statPos').textContent = 'S ' + Math.round(playerS) + ' m';
+  $('steerTag').textContent = !driving ? '' : (input.steer < 0 ? '◀ STEER LEFT' : input.steer > 0 ? 'STEER RIGHT ▶' : '');
   $('driftTag').className = info.drifting ? 'on' : '';
   $('driftTag').id = 'driftTag';
   const s = info.sample;

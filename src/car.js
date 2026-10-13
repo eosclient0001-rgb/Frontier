@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp } from './track.js';
+import { clamp, lerp } from './track.js?v=3';
 
 /* ============================================================
    CAR.JS — Need-for-Speed-style ARCADE physics (not lane-based)

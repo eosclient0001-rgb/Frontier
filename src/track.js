@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildTrainModel } from './trains.js';
+import { buildTrainModel } from './trains.js?v=3';
 
 /* ============================================================
    TRACK.JS — Infinite procedural wide-track generator
