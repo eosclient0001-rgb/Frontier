@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>FRONTIER — Infinite City Circuit</title>
+<link rel="stylesheet" href="/src/style.css"/>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div class="brand">FRONTIER<span>INFINITE CITY CIRCUIT</span></div>
+      <div id="feature">OPEN HIGHWAY</div>
+      <div id="clock">DIST <b id="dist">0.00 km</b></div>
+    </div>
+
+    <div id="warn" class="hidden">⚠ TRAIN CROSSING AHEAD</div>
+    <div id="toast" class="hidden">Y-SPLIT — CHOOSE YOUR LINE</div>
+
+    <div id="dash">
+      <div id="speed"><span id="kmh">0</span><small>km/h</small></div>
+      <div id="bars">
+        <label>NITRO <i><em id="nitro"></em></i></label>
+        <label>DRIFT <i><em id="drift"></em></i></label>
+      </div>
+      <div id="mode">GRIP</div>
+    </div>
+
+    <div id="help">W A S D / ←↑↓→ drive &nbsp;•&nbsp; SPACE handbrake / drift &nbsp;•&nbsp; SHIFT nitro &nbsp;•&nbsp; C camera &nbsp;•&nbsp; R reset &nbsp;•&nbsp; P pause</div>
+
+    <div id="touch">
+      <div><button data-k="left">◀</button><button data-k="right">▶</button></div>
+      <div><button data-k="brake">BRK</button><button data-k="hand">DRIFT</button><button data-k="nitro">N₂O</button><button data-k="gas">GAS</button></div>
+    </div>
+  </div>
+
+  <div id="menu">
+    <div class="panel">
+      <div class="kicker">PROCEDURAL • INFINITE • MODERN CITY</div>
+      <h1>FRONTIER</h1>
+      <p class="sub">A wide, Wipeout-Omega-inspired anti-grav circuit dropped into a real modern city —
+      driven with proper <b>NFS-style arcade car physics</b>: free steering, throttle, braking,
+      weight transfer and handbrake drifts. No lanes. No auto-runner.</p>
+      <div class="grid">
+        <div>⇄ <b>Y-splits</b><span>flat forks that rejoin</span></div>
+        <div>⇅ <b>Up / down splits</b><span>one branch climbs, one dives</span></div>
+        <div>🌉 <b>Bridges &amp; gantries</b><span>elevated decks, sign trusses</span></div>
+        <div>🚆 <b>Live railways</b><span>parallel + oncoming, ground &amp; elevated monorail</span></div>
+        <div>✚ <b>Perpendicular trains</b><span>crossing through — and over — the track</span></div>
+        <div>♾️ <b>Infinite</b><span>new sectors generated ahead forever</span></div>
+      </div>
+      <button id="start">▶ &nbsp;START ENGINE</button>
+      <p class="keys">WASD / Arrows — drive &nbsp;•&nbsp; SPACE — handbrake drift &nbsp;•&nbsp; SHIFT — nitro &nbsp;•&nbsp; C — camera &nbsp;•&nbsp; R — reset to track</p>
+    </div>
+  </div>
+
+  <div id="paused" class="hidden">PAUSED<div>Press P to resume</div></div>
+  <div id="vignette"></div>
+  <div id="flash"></div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
