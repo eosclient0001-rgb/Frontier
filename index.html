@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>FRONTIER APEX — Infinite City GP</title>
+<link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div class="panel" id="brand">
+    <div class="brand-title">FRONTIER <span>APEX</span></div>
+    <div class="brand-sub">INFINITE CITY GP · MODERN CITY CIRCUIT</div>
+  </div>
+
+  <div id="warning" class="hidden">⚠ RAIL CROSSING AHEAD</div>
+  <div id="toast" class="hidden">GO!</div>
+
+  <div class="panel" id="stats">
+    <div><label>DISTANCE</label><b id="stat-dist">0.00 km</b></div>
+    <div><label>TIME</label><b id="stat-time">0:00.0</b></div>
+    <div><label>DRIFT SCORE</label><b id="stat-drift">0</b></div>
+    <div><label>TOP SPEED</label><b id="stat-top">0 km/h</b></div>
+  </div>
+
+  <div class="panel" id="legend">
+    <div class="legend-head">LIVE RAILWAYS</div>
+    <div><i class="dot ground"></i> Ground monorail — left · same direction</div>
+    <div><i class="dot air"></i> Air monorail — right · <b>oncoming</b></div>
+    <div><i class="dot perp"></i> Perpendicular lines — gates / over-bridge</div>
+    <div><i class="dot split"></i> Forks — Y splits &amp; up/down bridge splits</div>
+  </div>
+
+  <div class="panel" id="cluster">
+    <div id="speed">0</div>
+    <div class="unit">km/h</div>
+    <div class="bar-row"><span>NITRO</span><div class="bar"><div id="nitro-fill"></div></div></div>
+    <div class="bar-row"><span id="state-label">GRIP</span><div class="bar drift"><div id="drift-fill"></div></div></div>
+    <div id="gear">NFS ARCADE · CHASE CAM</div>
+  </div>
+
+  <canvas id="minimap" width="230" height="150"></canvas>
+
+  <div class="panel" id="help">
+    <b>W A S D / ←↑↓→</b> drive &nbsp;·&nbsp; <b>SPACE</b> handbrake drift &nbsp;·&nbsp; <b>SHIFT</b> nitro<br/>
+    <b>C</b> camera &nbsp;·&nbsp; <b>R</b> reset to track &nbsp;·&nbsp; <b>M</b> sound &nbsp;·&nbsp; <b>ESC</b> pause
+  </div>
+  <div id="offroad" class="hidden">OFF CIRCUIT — PRESS <b>R</b> TO REJOIN</div>
+  <div id="vignette"></div>
+</div>
+
+<!-- touch controls -->
+<div id="touch" class="hidden">
+  <div class="tbtn" id="t-left">◀</div><div class="tbtn" id="t-right">▶</div>
+  <div class="tbtn wide" id="t-brake">BRAKE</div><div class="tbtn wide" id="t-gas">GAS</div>
+  <div class="tbtn" id="t-drift">DRIFT</div>
+</div>
+
+<!-- Start overlay -->
+<div id="overlay">
+  <div class="card">
+    <div class="kicker">PROCEDURAL · INFINITE · NO TWO RUNS ALIKE</div>
+    <h1>FRONTIER <span>APEX</span></h1>
+    <p class="tag">A Wipeout-wide elevated circuit threaded through a modern daylight city — driven with proper NFS-style arcade car physics. Free steering, drift, nitro. <b>Not</b> a lane runner.</p>
+    <div class="features">
+      <div>🛣️ <b>26 m wide track</b>, banked sweepers, crests &amp; bridge decks</div>
+      <div>🔀 <b>Y-splits</b> and <b>up/down splits</b> — commit to a branch, rejoin at the merge</div>
+      <div>🚝 <b>Ground monorail</b> (left, your direction) + <b>air monorail</b> (right, oncoming)</div>
+      <div>🚦 <b>Perpendicular railways</b> cut across you: gated level crossings <i>and</i> trains flying over on rail bridges</div>
+      <div>🏙️ Modern city below — glass towers, streets, trees. Zero neon.</div>
+      <div>⚡ Boost pads, traffic cars, barrier sparks, drift score &amp; nitro</div>
+    </div>
+    <button id="start-btn">▶ &nbsp;START ENGINE</button>
+    <div class="controls-line">WASD / Arrows · SPACE drift · SHIFT nitro · C camera · R reset</div>
+  </div>
+</div>
+
+<div id="paused" class="hidden"><div>PAUSED<div class="small">ESC to resume</div></div></div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
