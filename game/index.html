@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frontier — Infinite Racetrack</title>
+    <style>
+      :root { color-scheme: dark; --ink: #eef4f8; --dim: #9fb0bf; --accent: #7fd0d6; --warn: #e8b86a; --bad: #e7787a; }
+      html, body { margin: 0; height: 100%; background: #0c1219; overflow: hidden; font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink); user-select: none; }
+      #scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+      .overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(10,16,24,0.25), rgba(10,16,24,0.7)); backdrop-filter: blur(2px); }
+      .overlay.show { display: flex; }
+      .panel { width: min(520px, 90vw); padding: 34px 38px; border-radius: 18px; background: rgba(14, 22, 32, 0.78); border: 1px solid rgba(160, 200, 220, 0.16); box-shadow: 0 30px 80px rgba(0,0,0,0.45); }
+      .panel h1 { margin: 0 0 4px; font-size: 40px; letter-spacing: 0.14em; font-weight: 300; }
+      .panel h2 { margin: 0 0 18px; font-size: 14px; font-weight: 400; color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; }
+      .panel p { margin: 10px 0; color: var(--dim); line-height: 1.5; font-size: 15px; }
+      .panel kbd { display: inline-block; min-width: 22px; padding: 2px 7px; margin: 0 2px; border-radius: 6px; border: 1px solid rgba(160,200,220,0.3); background: rgba(255,255,255,0.06); color: var(--ink); font: 12px ui-monospace, Menlo, monospace; text-align: center; }
+      .controls { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 16px 0 20px; font-size: 14px; color: var(--dim); }
+      .controls span:nth-child(odd) { color: var(--ink); }
+      .cta { margin-top: 10px; color: var(--accent); font-size: 15px; letter-spacing: 0.04em; }
+      .stats { display: grid; gap: 8px; margin: 14px 0 18px; }
+      .stats div { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(160,200,220,0.12); padding-bottom: 6px; font-size: 15px; color: var(--dim); }
+      .stats b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+      #hud { position: fixed; inset: 0; pointer-events: none; display: none; }
+      #hud.show { display: block; }
+      .speed-block { position: absolute; left: 34px; bottom: 30px; }
+      #speed { font-size: 76px; font-weight: 300; font-variant-numeric: tabular-nums; line-height: 0.9; letter-spacing: -0.02em; text-shadow: 0 2px 12px rgba(0,0,0,0.35); }
+      .unit { font-size: 13px; letter-spacing: 0.2em; color: var(--dim); margin-left: 6px; }
+      .nitro { margin-top: 14px; width: 240px; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.12); overflow: hidden; }
+      #nitro-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #7fd0d6, #d9f1f4); transform-origin: left center; transition: transform 0.08s linear; }
+      .top-center { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); text-align: center; }
+      #clock { font-size: 52px; font-weight: 300; font-variant-numeric: tabular-nums; text-shadow: 0 2px 12px rgba(0,0,0,0.35); }
+      #clock.low { color: var(--bad); }
+      .label { font-size: 11px; letter-spacing: 0.22em; color: var(--dim); text-transform: uppercase; }
+      .top-right { position: absolute; top: 26px; right: 30px; text-align: right; }
+      #score { font-size: 34px; font-weight: 400; font-variant-numeric: tabular-nums; }
+      #dist { font-size: 15px; color: var(--dim); margin-top: 2px; font-variant-numeric: tabular-nums; }
+      #drift { position: absolute; right: 34px; bottom: 120px; font-size: 22px; letter-spacing: 0.12em; color: var(--accent); opacity: 0; transition: opacity 0.2s; }
+      #drift.show { opacity: 1; }
+      #minimap { position: absolute; left: 30px; top: 24px; width: 190px; height: 190px; }
+      #toasts { position: absolute; left: 50%; top: 120px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+      .toast { padding: 8px 16px; border-radius: 999px; background: rgba(14,22,32,0.7); border: 1px solid rgba(160,200,220,0.2); font-size: 15px; letter-spacing: 0.06em; white-space: nowrap; transition: opacity 0.8s, transform 0.3s; animation: pop 0.25s ease-out; }
+      .toast.good { color: var(--accent); }
+      .toast.bad { color: var(--bad); }
+      .toast.fade { opacity: 0; transform: translateY(-6px); }
+      @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+      #cam-label { position: absolute; right: 30px; bottom: 26px; font-size: 12px; color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase; }
+      #mute-label { position: absolute; right: 30px; bottom: 46px; font-size: 12px; color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase; }
+      @media (max-width: 720px) { #speed { font-size: 52px; } #clock { font-size: 38px; } #minimap { width: 130px; height: 130px; } }
+    </style>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <div id="hud">
+      <div class="top-center">
+        <div class="label">Time</div>
+        <div id="clock">45</div>
+      </div>
+      <div class="top-right">
+        <div class="label">Score</div>
+        <div id="score">0</div>
+        <div id="dist">0.00 km</div>
+      </div>
+      <canvas id="minimap" width="380" height="380"></canvas>
+      <div class="speed-block">
+        <div><span id="speed">0</span><span class="unit">KM/H</span></div>
+        <div class="nitro"><div id="nitro-fill"></div></div>
+        <div class="label" style="margin-top:6px">Nitro</div>
+      </div>
+      <div id="drift">DRIFT</div>
+      <div id="toasts"></div>
+      <div id="cam-label">Chase</div>
+      <div id="mute-label">Sound on</div>
+    </div>
+
+    <div id="menu" class="overlay show">
+      <div class="panel">
+        <h1>FRONTIER</h1>
+        <h2>Infinite racetrack · city run</h2>
+        <p>Endless multi-lane city road with oncoming traffic, Y-splits, viaducts, monorails and level crossings. Every run is a new track.</p>
+        <div class="controls">
+          <span><kbd>W</kbd> <kbd>↑</kbd></span><span>Throttle</span>
+          <span><kbd>S</kbd> <kbd>↓</kbd></span><span>Brake</span>
+          <span><kbd>A</kbd> <kbd>D</kbd></span><span>Steer</span>
+          <span><kbd>Space</kbd></span><span>Handbrake, hold for drift</span>
+          <span><kbd>Shift</kbd> <kbd>E</kbd></span><span>Nitro</span>
+          <span><kbd>C</kbd></span><span>Camera</span>
+          <span><kbd>P</kbd></span><span>Pause</span>
+        </div>
+        <p>Checkpoints every km add time. Trains and barriers stop you. Near misses pay.</p>
+        <div class="cta">Press <kbd>Enter</kbd> to start, or gamepad <b>A</b></div>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay">
+      <div class="panel">
+        <h1>PAUSED</h1>
+        <h2>Frontier</h2>
+        <p>Press <kbd>P</kbd> or <kbd>Esc</kbd> to resume · <kbd>R</kbd> for a new track.</p>
+      </div>
+    </div>
+
+    <div id="over" class="overlay">
+      <div class="panel">
+        <h1>TIME UP</h1>
+        <h2>Run complete</h2>
+        <div id="over-stats" class="stats"></div>
+        <div class="cta">Press <kbd>Enter</kbd> to race a new track</div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
