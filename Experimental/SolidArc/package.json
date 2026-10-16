@@ -1,0 +1,29 @@
+{
+  "name": "solidarc-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "test": "python3 Native/GeometryMetrics.py",
+    "verify:browser": "node src/BrowserMetrics.mjs",
+    "verify:interaction": "node src/NavigationMetrics.mjs",
+    "test:reference": "node --test src/GeometryMetrics.mjs",
+    "verify:gpu": "node src/DeviceMetrics.mjs",
+    "build:native": "python3 Native/CompileSequence.py --native",
+    "dev:native": "python3 Native/ServeSequence.py",
+    "build:wasm": "python3 Native/CompileSequence.py",
+    "test:transport": "node --test src/CommandPacketMetrics.mjs",
+    "verify:transport": "node src/TransportMetrics.mjs",
+    "verify:performance": "node src/PerformanceMetrics.mjs",
+    "verify:workflow": "node src/WorkflowMetrics.mjs"
+  },
+  "devDependencies": {
+    "vite": "7.3.6",
+    "playwright": "1.63.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

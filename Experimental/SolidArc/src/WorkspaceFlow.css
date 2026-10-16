@@ -1,0 +1,84 @@
+/* Additive workflow chrome; approved WorkspacePanel.css remains unchanged. */
+#drawing-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+#drawing-labels span {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font: 400 11px "DM Sans", sans-serif;
+  line-height: 18px;
+  height: 18px;
+  color: #fff;
+  background: rgba(0,0,0,.72);
+  border: 0;
+  border-radius: 9px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+#drawing-labels span.angle { color: #ffd278; }
+.orientation { position:absolute!important;right:17px!important;bottom:17px!important;width:96px!important;height:96px!important;display:block!important;pointer-events:none; }
+.orientation button { position:absolute;inset:0;width:96px!important;height:96px!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;pointer-events:auto; }
+.orientation button:hover { background:rgba(255,255,255,.12)!important; }
+.orientation span {position:absolute;transform:translate(-50%,-50%);font:9px "DM Sans",sans-serif;color:#eee;pointer-events:none;}
+#draw-prompt {
+  position: absolute;
+  left: 16px;
+  bottom: 50px;
+  right: 135px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: #171b22ef;
+  border: 1px solid #ffffff22;
+  border-radius: 10px;
+  font-size: 12px;
+  z-index: 4;
+}
+#draw-prompt[hidden],
+#draw-prompt label[hidden],
+#draw-prompt button[hidden] {
+  display: none;
+}
+#draw-prompt strong {
+  color: #ffe5a1;
+}
+#draw-prompt label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+#draw-prompt input[type="number"] {
+  width: 70px;
+}
+#draw-step {
+  flex: 1;
+  min-width: 150px;
+}
+#workplane-dialog label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin: 16px 0;
+}
+#recovery-dialog,
+#workplane-dialog {
+  max-width: min(540px, 90vw);
+  padding: 26px;
+}
+#recovery-dialog p,
+#workplane-dialog p {
+  line-height: 1.6;
+  color: var(--text-muted, #a4adb9);
+}
+#recover-previous {
+  margin: 8px 12px;
+  font-size: 11px;
+}
+
+.orientation span.cube-face-label {left:0;top:0;width:44px;height:44px;display:flex;align-items:center;justify-content:center;transform-origin:0 0;line-height:1;font-size:12px;backface-visibility:hidden;}
