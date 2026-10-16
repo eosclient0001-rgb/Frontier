@@ -1,0 +1,13 @@
+{
+  "name": "illumination-host-tools",
+  "private": true,
+  "type": "module",
+  "description": "Headless validation and software rendering of the IlluminationHost exhibit through Dawn (webgpu).",
+  "scripts": {
+    "test:appearance": "node VehicleAppearance.mjs",
+    "validate": "node VehicleAppearance.mjs && node HeadlessHarness.mjs .. 12 \"?capture=1\""
+  },
+  "devDependencies": {
+    "webgpu": "0.6.2"
+  }
+}

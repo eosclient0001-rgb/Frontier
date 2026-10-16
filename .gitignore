@@ -1,0 +1,3 @@
+# Generated JavaScript dependencies and production bundles
+**/node_modules/
+**/dist/
