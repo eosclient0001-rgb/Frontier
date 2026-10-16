@@ -41,7 +41,7 @@ import { ConstructViewTransform, ConstructPerspectiveTransform, MultiplyTransfor
 import { TyreCarcassSolver, VehicleRecordBytes } from "./TyreCarcassSolver.js";
 import { ConstructHullPoints, HullPointRadius } from "./HullStructure.js";
 import { SparkSequence } from "./SparkSequence.js";
-import { CabinSequence } from "./CabinSequence.js";
+import { CabinProjection } from "./CabinProjection.js";
 import { CabinLayout, CameraRigs, CockpitDefaults, ResolveCockpitFrame, PlaceSeatedEye } from "./CabinStructure.js";
 import { VehicleGeometry } from "./VehicleSpecification.js";
 
@@ -57,7 +57,7 @@ const ShaderSources = [
     "DisplayExposure.wgsl", "DisplayPresent.wgsl", "FireIllumination.wgsl", "SmokeRecords.wgsl", "SmokeLattice.wgsl",
     "SmokeTransport.wgsl", "SmokePressure.wgsl", "SmokeAdvection.wgsl", "SmokeIllumination.wgsl", "SmokeMarch.wgsl", "SmokeComposite.wgsl",
     "FragmentDistance.wgsl", "EffectRecords.wgsl", "EffectRaster.wgsl", "TyreCarcass.wgsl", "SparkRaster.wgsl", "ForwardRaster.wgsl",
-    "CabinOverlay.wgsl", "CabinVolume.wgsl"
+    "CabinRaster.wgsl", "CabinVolume.wgsl"
 ];
 
 // 📝 Quality grades trade cascade resolution, card density and traversal length; selected with ?quality=low|medium|high.
@@ -114,7 +114,7 @@ class IlluminationHost
             //    ?cockpit=0.9 starts it scaled.
             ...CockpitDefaults,
             CockpitScale: Query.has("cockpit") ? Math.max(0.5, Math.min(1.5, Number(Query.get("cockpit")) || 1.0)) : CockpitDefaults.CockpitScale,
-            CameraMode: Query.get("camera") || "Chase", VehicleView: Number(Query.get("view") || 0), BodyFinish: Number(Query.get("finish") || 0)
+            CameraMode: Query.get("camera") || "Chase", HudScale: Math.max(0.6, Math.min(1.6, Number(Query.get("hud")) || 1.0)), VehicleView: Number(Query.get("view") || 0), BodyFinish: Number(Query.get("finish") || 0)
         };
         if (Query.has("preset"))
             this.PendingPreset = Query.get("preset");
@@ -292,11 +292,10 @@ class IlluminationHost
         this.ReportProgress("Compiling the cabin, mirrors and sparks", 0.89);
         this.Sparks = new SparkSequence(this.Exchange, this.Shaders);
         await this.Sparks.ConstructPrograms(this.FrameRecords);
-        this.Cabin = new CabinSequence(this.Exchange, this.Shaders);
+        this.Cabin = new CabinProjection(this.Exchange, this.Shaders);
         this.Cabin.AssignPressure(this.Settings.TyrePressureFront);
-        await this.Cabin.ConstructResources({ FrameRecords: this.FrameRecords, OccupantRecords: this.OccupantRecords, MaterialRecords: this.MaterialRecords,
-                                              EffectRecords: this.Effects.Records, VehicleRecords: this.VehicleRecords, Shadow: this.Shadow,
-                                              Atmosphere: this.Atmosphere, Scene: this.Scene });
+        this.Cabin.SetHudScale(this.Settings.HudScale);
+        await this.Cabin.ConstructPrograms(this.FrameRecords, this.Scene);
         this.ReportProgress("Compiling drift smoke programs", 0.91);
         this.Thermal = new TyreThermalSolver(4);
         this.BurstPuffs = [];
@@ -358,6 +357,24 @@ class IlluminationHost
         this.Exchange.Device.queue.writeBuffer(this.MaterialRecords, CourseMaterial.BodyCoat * 12 * 4, EncodeMaterialRecords([Coat]));
     }
 
+    // 📝 The Slate cabin's view of the vehicle: wheel angle, body pose, telemetry and tyre pumping, through the host's own state.
+    QueryCabinVehicle()
+    {
+        return {
+            SteerAngle: this.Vehicle.SteerAngle,
+            QueryBodyTransform: () => this.Vehicle.QueryBodyTransform(),
+            QueryTelemetry: () => this.QueryCabinTelemetry(),
+            InflateTyres: (FrontPa, RearPa) => this.InflateTyres(FrontPa / 1000.0, RearPa / 1000.0)
+        };
+    }
+
+    QueryCabinTelemetry()
+    {
+        const Live = this.QueryTyreLive();
+        return { Speed: this.Vehicle.QueryTelemetry().Speed, EngineRPM: Live.Revolutions, Gear: Live.Gear,
+                 Pressures: Live.Pressures.map((Kilopascal) => Kilopascal * 1.0), TyreTemperatures: Live.Temperatures };
+    }
+
     ApplySetting(Key)
     {
         if (Key === "HudVisible" || Key === "InsetEnabled")
@@ -387,6 +404,8 @@ class IlluminationHost
             this.InflateTyres(this.Settings.TyrePressureFront, this.Settings.TyrePressureRear);
         else if (Key === "BodyFinish" || Key === "BodyHue" || Key === "BodyGloss")
             this.ApplyBodyMaterial();
+        else if (Key === "HudScale" && this.Cabin)
+            this.Cabin.SetHudScale(this.Settings.HudScale);
         else if (Key === "SeeThroughGlass" && this.Cabin)
             this.Cabin.Settings.SeeThroughGlass = !!this.Settings.SeeThroughGlass;
         else if (Key === "ClearSmoke")
@@ -1002,12 +1021,7 @@ class IlluminationHost
         this.Sparks.Advance(Step, this.Bodies.Obstacles);
         this.Carcass.Advance(this.Vehicle.QueryCarcassContacts(), Step);
         Device.queue.writeBuffer(this.VehicleRecords, 0, this.Carcass.EncodeRecord(this.QueryCabinHeader()));
-        const Pumped = this.Cabin.Advance(Δτ, this.QueryTyreLive());
-        if (Pumped !== null)
-        {
-            this.InflateTyres(Pumped, Pumped);
-            this.Shell.Announce(`Tyres pumped to ${Pumped} kPa`);
-        }
+        this.Cabin.Advance(this.QueryCabinVehicle(), performance.now() * 0.001);
         const Emissions = this.Thermal.ResolveEmissions(Readings, Readings[0].Seconds);
         Emissions.push(...this.ResolveBurstPuffs(Step));
         if (this.Settings.TestPlume > 0)
@@ -1060,8 +1074,6 @@ class IlluminationHost
             this.Cards.RecordLighting(Encoder, this.Distance.TraversalGroup, this.SamplingGroup, this.Settings.CardRadiosity,
                                       this.Metrics.QueryWrites("Card lighting"));
         this.Surface.RecordSurface(Encoder, this.Scene, this.VertexRecords, this.Metrics.QueryWrites("Surface"));
-        if (Included("Cabin"))
-            this.Cabin.RecordViews(Encoder, this.Scene, this.VertexRecords, this.Vehicle.QueryBodyTransform(), this.QueryMirrorsVisible());
         if (Included("Direct"))
             this.Surface.RecordDirect(Encoder, this.Distance.TraversalGroup, this.Metrics.QueryWrites("Direct"));
         if (this.Settings.Indirect && Included("Resampling"))
@@ -1086,7 +1098,7 @@ class IlluminationHost
                            : null;
             // 📝 The cabin (glass, screens, mirrors) draws before the antialiasing; sparks after it.
             const Overlay = this.Settings.Inspection === 0 && Included("Cabin")
-                          ? (Target, View) => this.Cabin.RecordOverlay(Target, View, this.Surface.Views.Depth) : null;
+                          ? (OverlayEncoder, Target) => this.Cabin.Record(OverlayEncoder, Target, this.Surface.Views.Depth) : null;
             const PostOverlay = this.Sparks.Live > 0 && this.Settings.Inspection === 0 && Included("Sparks")
                               ? (Target, View) => this.Sparks.Record(Target, View, this.Surface.Views.Depth) : null;
             this.Display.RecordResolve(Encoder, Parity, this.Metrics.QueryWrites("Resolve"), Composer, Overlay, PostOverlay);

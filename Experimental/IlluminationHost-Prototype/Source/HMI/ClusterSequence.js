@@ -3,9 +3,6 @@
 //============================================================================================================================================
 // 📦 Driver cluster: irregular display outlines (hexagon, 70 % circle, trapezoid, pill) drawn into one flat texture clipped to the outline.
 
-// 📝 Copied from Experimental/TabletPanel (arena/215a6f39-frontier). Cabin: with Demonstration off the host drives
-//    Speed, Revolutions and Gear from the solver, and Tyres (four { Pressure [kPa], Warning }) adds a pressure row.
-
 export const ClusterWidth = 1000;
 export const ClusterHeight = 560;   // reference height; each outline rasters at its own physical aspect (see ResolveClusterHeight)
 
@@ -152,26 +149,14 @@ export class ClusterSequence
         Context.font = `300 ${Flat ? 66 : 84}px "DM Sans", sans-serif`; Context.textAlign = "center"; Context.fillStyle = "#f2f6ef";
         Context.fillText(this.Gear, ClusterWidth / 2, Row + (Flat ? 24 : 30));
         Context.font = '400 13px "DM Sans", sans-serif'; Context.fillStyle = "#8aa394";
-        Context.fillText(this.Demonstration ? "DEMONSTRATION DRIVE · NO LIVE VEHICLE" : this.Tyres ? "LIVE · CONTROLVEHICLE" : "DEMONSTRATION PAUSED · NO LIVE VEHICLE",
-                         ClusterWidth / 2, Narrow ? 760 : this.Height - 44);
-        // Cabin: tyre pressures, a warning tint on a soft or failed corner.
-        if (this.Tyres)
-        {
-            const Row = Narrow ? 700 : this.Height - 74;
-            for (const [Index, Tyre] of this.Tyres.entries())
-            {
-                const Across = ClusterWidth / 2 - 135 + Index * 90;
-                Context.font = '400 15px "DM Sans", sans-serif'; Context.fillStyle = Tyre.Warning ? "#f08a6a" : "#9fc4b0";
-                Context.fillText(`${["FL", "FR", "RL", "RR"][Index]} ${Math.round(Tyre.Pressure)}`, Across, Row);
-            }
-        }
+        Context.fillText(this.Status || (this.Demonstration ? "DEMONSTRATION DRIVE · NO LIVE VEHICLE" : "DEMONSTRATION PAUSED · NO LIVE VEHICLE"), ClusterWidth / 2, Narrow ? 760 : this.Height - 44);
         Context.fillText("CONTROLVEHICLE", ClusterWidth / 2, Row - (Flat ? 46 : 60));
         for (const [Index, Lamp] of [["#8fd1ac", "ABS"], ["#f0c27a", "TCS"], ["#c9563d", "OIL"], ["#94caff", "LOW BEAM"]].entries())
         {
             const Across = ClusterWidth / 2 - 90 + Index * 60;
             const Down = Narrow ? 215 : Flat ? 36 : 54;
             Context.beginPath(); Context.arc(Across, Down, 6, 0, Math.PI * 2);
-            Context.fillStyle = Index === 2 && this.Speed > 0 ? "#3a2b26" : Lamp; Context.fill();
+            Context.fillStyle = Index === 2 && this.Speed > 0 ? "#3a2b26" : Lamp[0]; Context.fill();
             Context.font = '400 9px "DM Sans", sans-serif'; Context.fillStyle = "#7f978a"; Context.fillText(Lamp[1], Across, Down + 20);
         }
         Context.restore();

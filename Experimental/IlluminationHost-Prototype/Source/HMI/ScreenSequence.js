@@ -3,11 +3,6 @@
 //============================================================================================================================================
 // 📦 Flat device artwork, retained hit regions, launcher variations and local demonstration applications.
 
-// 📝 Copied from Experimental/TabletPanel (arena/215a6f39-frontier) into the IlluminationHost cabin. Three changes, all
-//    marked "Cabin:": the Garage preview may be External (the host renders the car into a GPU texture and the cabin
-//    overlay composites it into the preview rectangle, so nothing is read back), and the Telemetry and Tyres
-//    applications read Live — the car's real speed, tread temperatures and pressures — when the host provides it.
-
 import { Applications, LauncherDesigns, ScreenWidth, ScreenHeight, ResolveApplication, ResolveDesign } from "./AppSpecification.js";
 
 const FontFamily = '"DM Sans", Arial, sans-serif';
@@ -44,7 +39,6 @@ export class ScreenSequence
         this.Notice = "";
         this.Clock = "";
         this.ActiveTextInput = null;
-        this.Live = null;   // Cabin: { Speed [km/h], Temperatures [°C ×4], Pressures [kPa ×4], Tread [0–1 ×4], States [string ×4] }
         this.Scale = 1.6;
         this.OffsetAcross = 0;
         this.OffsetDown = 0;
@@ -510,27 +504,11 @@ export class ScreenSequence
         {
             this.RasterIcon("tyres", 85, 281, 135);
             this.RasterText("FOUR CORNERS. ONE DRIVE.", 267, 276, 12, "#90a995");
-            this.RasterText("Cold pressure", 268, 324, 33, "#dbe7d6", "left", 300);
-            this.RasterSlider("pressure", "Selected pressure", " kPa", 269, 420, 752, 140, 240);
-            // Cabin: the four corners live — temperature, pressure, tread left and any failure.
-            const Live = this.Live;
-            if (Live)
-            {
-                for (const [Index, Name] of ["FL", "FR", "RL", "RR"].entries())
-                {
-                    const Left = 270 + Index * 196;
-                    const State = Live.States[Index];
-                    this.RasterText(`${Name} ${Math.round(Live.Temperatures[Index])}°C`, Left, 512, 19, State ? "#e2ada4" : "#94b9aa");
-                    this.RasterText(`${Math.round(Live.Pressures[Index])} kPa · ${Math.round(Live.Tread[Index] * 100)}%`, Left, 538, 15, "#88a285");
-                    if (State) this.RasterText(State.toUpperCase(), Left, 562, 12, "#e2ada4");
-                }
-                this.RasterText("Live tyre telemetry · the slider pumps every intact tyre.", 270, 600, 15, "#778f7c");
-            }
-            else
-            {
-                this.RasterText("FL 20°C       FR 20°C       RL 20°C       RR 20°C", 270, 523, 19, "#94b9aa");
-                this.RasterText("Demonstration values, not live tyre telemetry.", 270, 564, 15, "#778f7c");
-            }
+            this.RasterText("Tyre pressure · live", 268, 324, 33, "#dbe7d6", "left", 300);
+            this.RasterSlider("pressure", "Inflate all tyres to", " kPa", 269, 420, 752, 140, 240);
+            const Live = this.LiveReading;
+            this.RasterText(Live ? Live.Pressures.map((P, I) => `${["FL", "FR", "RL", "RR"][I]} ${Math.round(P)}kPa`).join("    ") : "Waiting for vehicle", 270, 523, 19, "#94b9aa");
+            this.RasterText("Live gas pressure. Slider pumps and seals intact tyres.", 270, 564, 15, "#778f7c");
         }
         else if (Identifier === "media")
         {
@@ -572,14 +550,8 @@ export class ScreenSequence
         }
         else if (Identifier === "telemetry")
         {
-            this.RasterText("DEMONSTRATION READINGS", 83, 264, 12, "#90a38b");
-            // Cabin: live readings when the host provides them.
-            const Live = this.Live;
-            const Readings = Live ? [["Speed", String(Math.round(Live.Speed)), "km/h"],
-                                     ["Hottest tread", String(Math.round(Math.max(...Live.Temperatures))), "°C"],
-                                     ["Lowest pressure", String(Math.round(Math.min(...Live.Pressures))), "kPa"]]
-                                  : [["Speed", "0", "km/h"], ["Tread", "20", "°C"], ["Pressure", String(this.Values.pressure), "kPa"]];
-            for (const [Index, Reading] of Readings.entries())
+            this.RasterText("LIVE VEHICLE READINGS", 83, 264, 12, "#90a38b");
+            for (const [Index, Reading] of [["Speed", String(Math.round((this.LiveReading?.Speed || 0) * 3.6)), "km/h"], ["Tread FL", String(Math.round(this.LiveReading?.TyreTemperatures[0] || 20)), "°C"], ["Pressure FL", String(Math.round(this.LiveReading?.Pressures[0] || 0)), "kPa"]].entries())
             {
                 const Left = 83 + Index * 340;
                 this.RasterRectangle(Left, 300, 316, 249, 21, "#c9d5b407");
@@ -587,19 +559,14 @@ export class ScreenSequence
                 this.RasterText(Reading[1], Left + 24, 446, 71, "#d4e4c4", "left", 300);
                 this.RasterText(Reading[2], Left + 25, 486, 19, "#88a285");
             }
-            this.RasterText(Live ? "Live from the ControlVehicle's solver." : "Native vehicle readings will connect in the C++ phase.", 87, 594, 17, "#8aa380");
+            this.RasterText("Live ControlVehicle telemetry · other apps are local UI demos.", 87, 594, 17, "#8aa380");
         }
         else if (Identifier === "garage")
         {
             const Preview = this.Preview;
             // 📝 The preview target is 640 × 400; draw it 1:1 so the car is never squashed into the page layout.
             this.RasterRectangle(78, 248, 640, 400, 22, "#0d1416");
-            if (Preview?.External)
-            {
-                // Cabin: the host renders the car into a texture the overlay composites here — leave the well dark.
-                this.RasterText(Preview.Facets.toLocaleString("en-GB") + " facets · ControlVehicle · rendered live by the exhibit", 96, 630, 13, "#8fa89c");
-            }
-            else if (Preview?.Loaded)
+            if (Preview?.Loaded)
             {
                 const Context = this.Context;
                 Context.save();

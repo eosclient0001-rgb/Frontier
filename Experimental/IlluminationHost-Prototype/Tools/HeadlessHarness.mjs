@@ -46,6 +46,19 @@ function EncodePng(Rgba, Width, Height)
     return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Chunk("IHDR", Header), Chunk("IDAT", zlib.deflateSync(Raw)), Chunk("IEND", Buffer.alloc(0))]);
 }
 globalThis.SaveCapture = (Name) => { const Last = Captures[Captures.length - 1]; if (Last) { fs.writeFileSync(Name, EncodePng(Last.data, Last.width, Last.height)); console.log("saved", Name, Last.width + "x" + Last.height); } };
+// 📝 Headless canvases are not copyable textures: the browser copies the HMI canvases, the headless shim skips the copy.
+const GpuRequestAdapter = Gpu.requestAdapter.bind(Gpu);
+Gpu.requestAdapter = async (...Arguments) => {
+    const Adapter = await GpuRequestAdapter(...Arguments);
+    const RequestDevice = Adapter.requestDevice.bind(Adapter);
+    Adapter.requestDevice = async (...Arguments) => {
+        const Device = await RequestDevice(...Arguments);
+        const Copy = Device.queue.copyExternalImageToTexture.bind(Device.queue);
+        Device.queue.copyExternalImageToTexture = (Source, Destination, Size) => { try { Copy(Source, Destination, Size); } catch { /* headless canvas */ } };
+        return Device;
+    };
+    return Adapter;
+};
 Object.defineProperty(globalThis, "navigator", { value: { gpu: Gpu, userAgent: "node" }, configurable: true, writable: true });
 
 const Errors = [];
@@ -93,13 +106,15 @@ class FakeElement
     blur() {}
     click() { this.dispatch("click"); }
     getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight, right: this.clientWidth, bottom: this.clientHeight }; }
-    getContext(Kind) { return Kind === "2d" ? { putImageData(Image) { Captures.push(Image); if (Captures.length > 4) Captures.shift(); }, drawImage() {} } : null; }
+    getContext(Kind) { return Kind === "2d" ? new Proxy({ putImageData(Image) { Captures.push(Image); if (Captures.length > 4) Captures.shift(); }, drawImage() {} }, { get: (T, K) => (K in T ? T[K] : NoOp), set: (T, K, V) => { T[K] = V; return true; } }) : null; }
 }
 globalThis.HTMLElement = FakeElement;
 globalThis.HTMLInputElement = class extends FakeElement {};
 globalThis.HTMLSelectElement = class extends FakeElement {};
 globalThis.HTMLButtonElement = class extends FakeElement {};
 const Elements = new Map();
+// 📝 Canvas 2D calls the headless shim does not rasterise: every one is a no-op that returns the same no-op.
+const NoOp = new Proxy(function () {}, { get: (T, K) => (K === Symbol.toPrimitive ? () => 0 : NoOp), apply: () => NoOp, set: () => true, construct: () => NoOp });
 globalThis.document = {
     getElementById(Id) { if (!Elements.has(Id)) Elements.set(Id, new FakeElement("div", Id)); return Elements.get(Id); },
     createElement(Tag)
@@ -126,6 +141,8 @@ globalThis.DispatchWindow = (Name, Event) => (WindowListeners[Name] || []).forEa
 globalThis.location = { search: Query, href: "http://localhost/" + Query };
 globalThis.localStorage = { Store: {}, getItem(Key) { return this.Store[Key] ?? null; }, setItem(Key, Value) { this.Store[Key] = String(Value); }, removeItem(Key) { delete this.Store[Key]; } };
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+// 📝 Icons decode through an Image in the browser; the fake DOM only needs it to report success.
+globalThis.Image = class { set src(Value) { this.Source = Value; queueMicrotask(() => this.onload && this.onload()); } };
 globalThis.ImageData = class { constructor(Data, Width, Height) { this.data = Data; this.width = Width; this.height = Height; } };
 let FramesRun = 0;
 let FrameCallbacks = [];

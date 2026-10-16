@@ -92,9 +92,7 @@ export function ConstructEntities(Host)
         { Id: "cabin", Group: "Vehicle", Name: "Cabin · HMI", Type: "Interior", Glyph: "Monitor", Colour: Accent.Vehicle, Parent: "vehicle",
           Description: "Tablet & cluster, mirrors, glass, interior cameras", Meta: () => S.CameraMode,
           State: () => (Host.Cabin && Host.Cabin.Screen ? "live" : "warm"), Build: (C, B) => BuildCabin(Host, C, B),
-          Switches: () => [{ Name: "See-through glass", Glyph: "Eye", Read: () => Host.Cabin.Settings.SeeThroughGlass,
-                             Write: (On) => { Host.Cabin.Settings.SeeThroughGlass = On; } },
-                           { Name: "Screens", Glyph: "Monitor", Read: () => Host.Cabin.Settings.Screens, Write: (On) => { Host.Cabin.Settings.Screens = On; } }] },
+          Switches: () => [{ Name: "See-through glass", Glyph: "Eye", Read: () => Host.Cabin.Settings.SeeThroughGlass, Write: (On) => { Host.Cabin.Settings.SeeThroughGlass = On; } }] },
         { Id: "marks", Group: "Vehicle", Name: "Tyre marks", Type: "Rubber deposit", Glyph: "CircleDot", Colour: Accent.Vehicle, Parent: "vehicle",
           Description: "Rubber laid by sliding work", Meta: () => `${Host.Marks.Metrics.LaidMetres.toFixed(0)} m`, State: () => (S.TyreMarks ? "live" : ""),
           Build: (C, B) => BuildMarks(Host, C, B),
@@ -359,37 +357,27 @@ function BuildVehicle(Host, C, Body)
 function BuildCabin(Host, C, Body)
 {
     const S = Host.Settings, Cabin = Host.Cabin, Settings = Cabin.Settings;
-    const Screens = C.Card(Body, "HMI", "Monitor", { Accent: Accent.Vehicle, Index: 1, Subtitle: "Experimental/TabletPanel, live in the cabin" });
-    C.Muted(Screens, "The accepted TabletPanel prototype — launcher, twelve applications, five launcher designs — and its hexagon cluster draw into their own canvases; "
-                   + "here they are textures on the centre-stack tablet and the column binnacle. The cluster and the Telemetry and Tyres applications read the solver; "
-                   + "the Tyres slider pumps the tyres; the Garage shows this car, rendered live by the exhibit's own studio pass. From the cockpit, click the tablet.");
-    C.Switch(Screens, Settings, "Screens", { Label: "Screens on" });
-    Slider(C, Screens, Settings, "Brightness", "Screen brightness", 0.1, 2, 0.05, "×", 2);
+    const Screens = C.Card(Body, "HMI", "Monitor", { Accent: Accent.Vehicle, Index: 1, Subtitle: "Steering wheel, cluster, dashboard and centre tablet" });
+    C.Muted(Screens, "The steering wheel, the hexagon cluster and the centre tablet are the Slate cockpit: the wheel turns with the steer, the cluster reads speed, rpm, gear "
+                   + "and a low-pressure warning, and the tablet's Tyres slider pumps the tyres. From the cockpit, click the tablet.");
     const Apps = C.ActionRow(Screens);
     for (const [Caption, Application] of [["Home", null], ["Garage", "garage"], ["Tyres", "tyres"], ["Telemetry", "telemetry"]])
         C.Button(Apps, Caption, null, () => { if (!Cabin.Screen) return; if (Application) Cabin.Screen.PresentApplication(Application); else Cabin.Screen.PresentHome(); });
     C.Readout(Screens, () => Cabin.QueryReadout());
 
-    const Size = C.Card(Body, "Cockpit size", "MoveSpace", { Accent: Accent.Vehicle, Index: 2, Subtitle: "Scale and place the interior" });
-    C.Muted(Size, "The dashboard, console, column and wheel, binnacle, tablet and seats scale together about a point on the cabin floor under the "
-                + "dashboard, then shift; the seated eyes go with them, so the cockpit camera stays in its seat. The shell, its glass, the three "
-                + "mirrors and the carpet are the car's and stay put. The facets never change — the vertex stage places them — so drag freely; "
-                + "only the cabin's share of the lighting's distance field keeps the authored size.");
-    Slider(C, Size, S, "CockpitScale", "Scale", 0.6, 1.4, 0.01, "×", 2, ["Smaller", "Larger"]);
-    Slider(C, Size, S, "CockpitForward", "Fore / aft", -0.3, 0.3, 0.005, "m", 3, ["Back", "Forward"]);
-    Slider(C, Size, S, "CockpitHeight", "Height", -0.2, 0.2, 0.005, "m", 3, ["Lower", "Higher"]);
-    Slider(C, Size, S, "CockpitLateral", "Across", -0.2, 0.2, 0.005, "m", 3, ["Right", "Left"]);
-    const SizeRow = C.ActionRow(Size);
-    C.Button(SizeRow, "Authored size", "RotateCcw", () => { Object.assign(S, CockpitDefaults); C.Synchronise(); });
-    C.Button(SizeRow, "Driver's view", "Camera", () => Host.AssignCameraMode("Cockpit"));
+    const Hud = C.Card(Body, "HUD size", "Monitor", { Accent: Accent.Vehicle, Index: 2, Subtitle: "Cluster and tablet, scaled in place" });
+    C.Muted(Hud, "Sizes the HUD only: the hexagon cluster in the wheel and the centre tablet, each scaled about its own centre. The dashboard, wheel, seats and "
+               + "the cockpit camera stay where they are; pointer hits follow the scaled tablet.");
+    Slider(C, Hud, S, "HudScale", "HUD size", 0.6, 1.6, 0.01, "×", 2, ["Smaller", "Larger"], () => Host.Cabin.SetHudScale(S.HudScale));
+    const HudRow = C.ActionRow(Hud);
+    C.Button(HudRow, "Driver's view", "Camera", () => Host.AssignCameraMode("Cockpit"));
 
     const Glass = C.Card(Body, "Glass & mirrors", "Eye", { Accent: Accent.Vehicle, Index: 3 });
     C.Muted(Glass, "See-through glazing leaves the opaque raster and is drawn over what is behind it — the sky's Fresnel reflection and a sun glint, 72 % transmission; "
-                 + "it casts no shadow, so the sun reaches the cabin. Each mirror renders the driver's eye reflected in its plane through an off-axis frustum fitted to "
-                 + "its glass (a small lit forward pass), one mirror per frame while they can be seen.");
+                 + "it casts no shadow, so the sun reaches the cabin. "
+                 + "");
     C.Switch(Glass, Settings, "SeeThroughGlass", { Label: "See-through glass" });
     Slider(C, Glass, Settings, "GlassTransmission", "Transmission", 0.2, 0.95, 0.01, "", 2, ["Limo tint", "Clear"]);
-    C.Segmented(Glass, Settings, "Mirrors", [["Off", 0], ["When visible", 1], ["Always", 2]], { Label: "Mirror views" });
 
     const Finish = C.Card(Body, "Body finish & ghost view", "Layers", { Accent: Accent.Vehicle, Index: 5 });
     C.Muted(Finish, "The finish rewrites the body's coat in the material table, so the real car takes it on the next frame; Custom mixes the hue and gloss below. "
