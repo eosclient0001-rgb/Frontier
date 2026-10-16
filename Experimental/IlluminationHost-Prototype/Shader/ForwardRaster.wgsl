@@ -21,7 +21,7 @@
 //! include "SurfaceReflectance.wgsl"
 //! include "SkyProjection.wgsl"
 //! include "EffectRecords.wgsl"
-//! include "TyreCarcass.wgsl"
+//! include "VehiclePose.wgsl"
 //! include "CabinVolume.wgsl"
 
 struct ForwardView
@@ -74,7 +74,7 @@ fn ForwardVertex(@location(0) Position: vec3f, @location(1) Family: u32, @locati
     Moved.Normal = Normal;
     if (Index >= 1u && Index < 5u)
     {
-        Moved = DeformTyre(Index - 1u, Position, Normal);
+        Moved = PlaceWheelVertex(Index - 1u, Position, Normal);
     }
     else if (Index == 0u)
     {

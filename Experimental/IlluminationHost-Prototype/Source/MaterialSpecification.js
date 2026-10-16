@@ -94,7 +94,8 @@ export const CourseMaterial = Object.freeze({
     MirrorGlass:     75,
     SeatFabric:      76,
     CabinCarpet:     77,
-    MirrorTrim:      78     // the rear-view mirror's housing and stem: CabinTrim's finish, fixed to the shell, not the cockpit
+    MirrorTrim:      78,    // rear-view mirror housing and stem: fixed to shell
+    RimScrape:       79     // narrow metallic mark from a shredded wheel
 });
 
 export const MarkedFamilyFirst = CourseMaterial.Asphalt;   // [-]
@@ -280,6 +281,7 @@ export function ConstructMaterialSpecification()
     Materials[CourseMaterial.SeatFabric]   = Dielectric(0.055, 0.060, 0.075, 0.85);
     Materials[CourseMaterial.CabinCarpet]  = Dielectric(0.028, 0.028, 0.030, 0.95);
     Materials[CourseMaterial.MirrorTrim]   = Materials[CourseMaterial.CabinTrim];
+    Materials[CourseMaterial.RimScrape] = Dielectric(0.18, 0.17, 0.16, 0.72);
     return Materials;
 }
 

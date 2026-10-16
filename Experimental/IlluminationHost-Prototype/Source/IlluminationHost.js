@@ -38,7 +38,7 @@ import { ChaseCameraSolver, FreeCameraSolver } from "./ChaseCameraSolver.js";
 import { ConstructViewTransform, ConstructPerspectiveTransform, MultiplyTransform, InvertTransform, NormalizeVector,
          SubtractVector, MultiplyAddVector, ProjectRadicalInverse, TransformPoint, TransformDirection, CrossVector, AddVector,
          ScaleVector, LengthVector } from "./TransformProjection.js";
-import { TyreCarcassSolver, VehicleRecordBytes } from "./TyreCarcassSolver.js";
+import { EncodeVehicleRecord, VehicleRecordBytes } from "./VehicleRecord.js";
 import { ConstructHullPoints, HullPointRadius } from "./HullStructure.js";
 import { SparkSequence } from "./SparkSequence.js";
 import { CabinSequence } from "./CabinSequence.js";
@@ -57,7 +57,7 @@ const ShaderSources = [
     "VarianceWavelet.wgsl", "VarianceUpsample.wgsl", "InspectionMarch.wgsl", "DisplayRecombination.wgsl", "DisplayAntialias.wgsl",
     "DisplayExposure.wgsl", "DisplayPresent.wgsl", "FireIllumination.wgsl", "SmokeRecords.wgsl", "SmokeLattice.wgsl",
     "SmokeTransport.wgsl", "SmokePressure.wgsl", "SmokeAdvection.wgsl", "SmokeIllumination.wgsl", "SmokeMarch.wgsl", "SmokeComposite.wgsl",
-    "FragmentDistance.wgsl", "EffectRecords.wgsl", "EffectRaster.wgsl", "TyreCarcass.wgsl", "SparkRaster.wgsl", "ForwardRaster.wgsl",
+    "FragmentDistance.wgsl", "EffectRecords.wgsl", "EffectRaster.wgsl", "VehiclePose.wgsl", "SparkRaster.wgsl", "ForwardRaster.wgsl",
     "CabinOverlay.wgsl", "CabinVolume.wgsl"
 ];
 
@@ -79,7 +79,7 @@ const TemporalRestartBit = 2048;   // [-] FeatureTemporalRestart in SceneRecords
 const PassNames = ["Distance union", "Card lighting", "Shadow", "Surface", "Direct", "ReSTIR GI", "Diffuse reconstruction",
                    "Reflection", "Glossy reconstruction", "Resolve", "Smoke transport", "Smoke render"];
 
-const FrameRecordExtent = 512;   // [B] FrameRecord in SceneRecords.wgsl
+const FrameRecordExtent = 640;   // [B] FrameRecord in SceneRecords.wgsl
 const FireLightReach    = 14.0;  // [m] influence radius of a tyre fire's light
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -109,7 +109,7 @@ class IlluminationHost
             Quality: ["low", "medium", "high"].indexOf(this.GradeName),
             RenderScale: this.Grade.RenderScale, LightingPreset: "Custom", TestPlume: 0,
             // 📝 Tyres: cold pressures per axle [kPa], the carcass deformation and its visual exaggeration, wear and failure.
-            TyrePressureFront: 220, TyrePressureRear: 220, TyreDeformation: true, DeformationScale: 1.0,
+            TyrePressureFront: 220, TyrePressureRear: 220, SteeringSelfCenter: true, CountersteerAssist: false,
             TyreWear: true, WearScale: 1.0, TyreFailure: true, Sparks: true,
             // 📝 Cockpit size (Cabin · HMI): the interior's scale about its anchor and its offset [m] (CabinStructure.js);
             //    ?cockpit=0.9 starts it scaled.
@@ -221,6 +221,7 @@ class IlluminationHost
             TyreMarkExtentY:       { Type: "f32", Value: TyreMarkLayout.Extent[1] },
             TyreMarkPatchWidth:    { Type: "f32", Value: TyreMarkLayout.PatchWidth },
             TyreMarkFamily:        { Type: "u32", Value: CourseMaterial.TyreRubber },
+            RimMarkFamily:         { Type: "u32", Value: CourseMaterial.RimScrape },
             MarkedFamilyFirst:     { Type: "u32", Value: MarkedFamilyFirst },
             MarkedFamilyLast:      { Type: "u32", Value: MarkedFamilyLast },
             MarkedFamilyExtraFirst: { Type: "u32", Value: MarkedFamilyExtraFirst },
@@ -268,10 +269,9 @@ class IlluminationHost
         this.SamplingGroup = this.Cards.ConstructSamplingGroup(this.OccupantRecords, this.Atmosphere.SkyView, this.Atmosphere.SkySampler);
         this.ReportProgress("Compiling surface and resampling programs", 0.84);
         this.Marks = new TyreMarkDepot(this.Exchange);
-        // 📝 The vehicle record: the tyres' carcass rings, the steering wheel's turn and the glazing (TyreCarcass.wgsl).
-        this.Carcass = new TyreCarcassSolver(VehicleGeometry.TyreRadius, VehicleGeometry.TyreRimRadius, 0.5 * VehicleGeometry.TyreWidth);
+        // Rigid tyre visuals, stripped rubber after shred, steering wheel and glazing.
         this.VehicleRecords = this.Exchange.ConstructRecords(VehicleRecordBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Vehicle record");
-        this.Exchange.Device.queue.writeBuffer(this.VehicleRecords, 0, this.Carcass.EncodeRecord(this.QueryCabinHeader(), false));
+        this.Exchange.Device.queue.writeBuffer(this.VehicleRecords, 0, EncodeVehicleRecord(this.QueryCabinHeader(), this.Vehicle.Wheels));
         this.Effects = new EffectSequence(this.Exchange, this.Shaders, this.Scene);
         this.Effects.ConstructVehicleCells(this.Vehicle);
         await this.Effects.ConstructPrograms(this.FrameRecords);
@@ -477,7 +477,7 @@ class IlluminationHost
     //--------------------------------------------------------------------------------------------------------------------
 
     // 📝 The VehicleRecord's cabin header: the steering wheel (the front wheels' angle × the steering ratio, turned about
-    //    the column), see-through glazing, the deformation exaggeration and the cockpit's size (its scale and offset,
+    //    the column), see-through glazing, the cockpit's size (its scale and offset,
     //    which the cabin sequence's mirror eye and tablet touch follow too).
     QueryCabinHeader()
     {
@@ -487,19 +487,18 @@ class IlluminationHost
         if (this.Cabin)
             this.Cabin.Cockpit = Cockpit;
         return { SteeringAngle: Angle, SeeThroughGlass: this.Cabin ? this.Cabin.Settings.SeeThroughGlass : true,
-                 Exaggeration: this.Settings.TyreDeformation ? this.Settings.DeformationScale : 1.0,
                  Column: Steering.Pivot, Axis: Steering.Axis, Cockpit };
     }
 
-    // 📝 Fresh rubber and air on every corner: the thermal model at its cold pressures, the rings round, no damage.
+    // 📝 Fresh rubber and air on every corner: the thermal model at its cold pressures, the meshes round, no damage.
     RestoreTyres()
     {
         this.Thermal.ColdPressures = [this.Settings.TyrePressureFront, this.Settings.TyrePressureFront, this.Settings.TyrePressureRear,
                                       this.Settings.TyrePressureRear].map((Kilopascals) => Kilopascals * 1000.0);
         this.Thermal.Reset();
         this.Vehicle.RestoreTyres();
+        this.Marks?.ResetTracking();
         this.Vehicle.AssignTyrePressures(this.Thermal.Wheels.map((Wheel) => Wheel.GaugePressure));
-        this.Carcass.Reset();
     }
 
     // 📝 The tyre bay: cold pressures per axle [kPa]; every intact tyre is pumped to them now.
@@ -954,7 +953,39 @@ class IlluminationHost
         Scalars[123] = this.Settings.SmokeEnabled ? Fire.Intensity : 0.0;
         Scalars.set(Fire.Colour, 124);
         Scalars[127] = FireLightReach;
+        (this.TransientLights || []).slice(0, 4).forEach((Source, Index) =>
+        {
+            Scalars.set([...Source.Position, Source.Intensity], 128 + Index * 4);
+            Scalars.set([...Source.Colour, Source.Reach], 144 + Index * 4);
+        });
         this.Exchange.Device.queue.writeBuffer(this.FrameRecords, 0, Bytes);
+    }
+
+    UpdateTransientLighting()
+    {
+        const Effects = this.Effects.QueryLight(this.Materials[CourseMaterial.BodyCoat].Albedo);
+        this.TransientLights = [...this.Sparks.QueryLights(3), ...(Effects ? [Effects] : [])].slice(0, 4);
+        const Active = this.TransientLights.length > 0;
+        // Static card texels near moving light sources must relight promptly; the car's
+        // own dynamic tiles are already scheduled every frame. Refresh past sites on exit.
+        if (Active || this.HadTransientLight)
+        {
+            if (this.FrameIndex % 8 === 0 || Active !== this.HadTransientLight)
+            {
+                const Locations = [...this.TransientLights.map((L) => L.Position), ...(this.PriorTransientPositions || [])];
+                const Nearby = this.Scene.Occupants.map((Occupant, Index) => ({ Index, Occupant, Centre: Occupant.Transform?.slice(12, 15) }))
+                    .filter((Item) => Item.Centre && !Item.Occupant.Inactive)
+                    .map((Item) => ({ ...Item, Distance: Math.min(...Locations.map((Position) =>
+                        Math.hypot(...Position.map((V, Axis) => V - Item.Centre[Axis])))) }))
+                    .filter((Item) => Item.Distance < 12 && this.Cards.OccupantTiles[Item.Index]?.length)
+                    .sort((A, B) => A.Distance - B.Distance)
+                    .slice(0, 24).map((Item) => Item.Index);
+                this.Cards.WarmOccupants(this.Scene, Nearby, 3);
+            }
+            if (!Active && this.HadTransientLight) this.Cards.InvalidateLighting();
+        }
+        this.PriorTransientPositions = this.TransientLights.map((Light) => Light.Position);
+        this.HadTransientLight = Active;
     }
 
     AdvanceFrame(Now)
@@ -979,7 +1010,14 @@ class IlluminationHost
 
         // ① drive: keyboard (or a scripted command) through the input ramps into the vehicle solver
         const Keys = this.FreeCamera ? new Set(["Space"]) : this.Keys;
-        let Command = this.ScriptedInput ? this.ScriptedInput : this.Driver.Advance(Keys, Δτ);
+        const Forward = this.Vehicle.QueryForward();
+        const Velocity = this.Vehicle.LinearVelocity;
+        const Along = Velocity[0] * Forward[0] + Velocity[1] * Forward[1];
+        const Side = -Velocity[0] * Forward[1] + Velocity[1] * Forward[0];
+        let Command = this.ScriptedInput ? this.ScriptedInput : this.Driver.Advance(Keys, Δτ, {
+            Speed: Along, SideSpeed: Side, Grip: 0.5 * (this.Vehicle.Wheels[0].Grip + this.Vehicle.Wheels[1].Grip),
+            SelfCenter: this.Settings.SteeringSelfCenter, Countersteer: this.Settings.CountersteerAssist
+        });
         // 📝 Derezzing with momentum: the car carries on under the solver with nobody at the controls.
         if (this.Vehicle.Coasting)
             Command = { Throttle: 0.0, Brake: 0.0, Steer: 0.0, Handbrake: false };
@@ -1014,10 +1052,14 @@ class IlluminationHost
         for (const Wheel of VehicleEvents.Shreds)
             this.OnTyreShred(Wheel);
         this.Sparks.Settings.Enabled = this.Settings.Sparks;
+        const Near = this.Vehicle.Position;
+        const Within = (Box) => [0, 1, 2].every((Axis) => Near[Axis] > Box.Minimum[Axis] - 22 && Near[Axis] < Box.Maximum[Axis] + 22);
+        const MovingBoxes = this.Bodies.Bodies.filter((Body) => Body.Radius > 0 && Math.hypot(...Body.Position.map((V, I) => V - Near[I])) < 20)
+            .map((Body) => ({ Minimum: Body.Position.map((V) => V - Body.Radius), Maximum: Body.Position.map((V) => V + Body.Radius) }));
+        this.Sparks.AssignCollisionWorld([...(this.Vehicle.Obstacles || []).filter(Within), ...MovingBoxes]);
         this.Sparks.Emit(VehicleEvents.Sparks, Step);
         this.Sparks.Advance(Step);
-        this.Carcass.Advance(this.Vehicle.QueryCarcassContacts(), Step);
-        Device.queue.writeBuffer(this.VehicleRecords, 0, this.Carcass.EncodeRecord(this.QueryCabinHeader(), this.Settings.TyreDeformation));
+        Device.queue.writeBuffer(this.VehicleRecords, 0, EncodeVehicleRecord(this.QueryCabinHeader(), this.Vehicle.Wheels));
         const Pumped = this.Cabin.Advance(Δτ, this.QueryTyreLive());
         if (Pumped !== null)
         {
@@ -1028,7 +1070,7 @@ class IlluminationHost
         Emissions.push(...this.ResolveBurstPuffs(Step));
         if (this.Settings.TestPlume > 0)
             Emissions.push(this.ResolveTestPlume(this.Settings.TestPlume === 2));
-        this.Marks.Advance(Readings, { Enabled: this.Settings.TyreMarks, Strength: this.Settings.TyreMarkStrength });
+        this.Marks.Advance(Readings, { Enabled: this.Settings.TyreMarks, Strength: this.Settings.TyreMarkStrength }, this.Vehicle.Wheels);
 
         // ② camera, light, cascade focus
         const Camera = this.ResolveCamera(Δτ);
@@ -1050,6 +1092,7 @@ class IlluminationHost
         this.Smoke.Advance(this.FixedStep ? this.FixedStep : Δτ, {
             Enabled: this.Settings.SmokeEnabled, Emissions, Vehicle: this.Vehicle, Light, SkyScale: this.Settings.SkyScale,
             Gas: this.Settings.Gas });
+        this.UpdateTransientLighting();
         this.EncodeFrameRecord(Camera, Light);
         Device.queue.writeBuffer(this.OccupantRecords, 0, this.Scene.EncodeOccupantRecords(this.Volumes, this.Scene.DynamicCount));
 

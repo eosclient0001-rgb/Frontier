@@ -49,3 +49,30 @@ fn ResolveFireArrival(Position: vec3f, Normal: vec3f) -> FireArrival
     Arrival.Illuminance = Frame.FireLightColour * Frame.FireLightIntensity * Window * Visibility / max(Squared, 0.25);
     return Arrival;
 }
+
+// A bounded number of transient emitter clusters share the fire's shadowed inverse-square model.
+fn ResolveTransientArrival(Position: vec3f, Normal: vec3f, Index: u32) -> FireArrival
+{
+    var Arrival: FireArrival;
+    Arrival.Direction = vec3f(0.0, 0.0, 1.0);
+    Arrival.Illuminance = vec3f(0.0);
+    let Source = Frame.TransientPosition[Index];
+    let Colour = Frame.TransientColour[Index];
+    if (Source.w <= 0.0 || Colour.w <= 0.0) { return Arrival; }
+    let Toward = Source.xyz - Position;
+    let Squared = dot(Toward, Toward);
+    if (Squared >= Colour.w * Colour.w) { return Arrival; }
+    let Range = sqrt(Squared);
+    Arrival.Direction = Toward / max(Range, 1.0e-4);
+    if (dot(Normal, Arrival.Direction) <= 0.0) { return Arrival; }
+    let Ratio = Squared / (Colour.w * Colour.w);
+    let Window = (1.0 - Ratio * Ratio) * (1.0 - Ratio * Ratio);
+    var Visibility = 1.0;
+    if (FeatureEnabled(Frame, FeatureDirectShadow))
+    {
+        let Bias = ResolveSurfaceBias(Position);
+        Visibility = TraverseSceneShadow(Position + Normal * Bias, Arrival.Direction, 0.5 * Bias, max(Range - 0.25, 0.0), 4.0);
+    }
+    Arrival.Illuminance = Colour.rgb * Source.w * Window * Visibility / max(Squared, 0.3);
+    return Arrival;
+}

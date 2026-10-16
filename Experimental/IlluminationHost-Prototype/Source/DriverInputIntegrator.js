@@ -11,8 +11,7 @@ const InputConfiguration = Object.freeze({
     ThrottleFallRate: 6.0,   // [1/s]
     BrakeRiseRate:    4.0,   // [1/s]
     BrakeFallRate:    8.0,   // [1/s]
-    SteerRate:        3.5,   // [1/s]
-    SteerReturnRate:  5.0    // [1/s]
+    SteerRate:        3.5    // [1/s]; hands-off return is speed/grip dependent below
 });
 
 function Ramp(Current, Target, Rise, Fall, Δτ)
@@ -20,6 +19,15 @@ function Ramp(Current, Target, Rise, Fall, Δτ)
     if (Target > Current)
         return Math.min(Target, Current + Rise * Δτ);
     return Math.max(Target, Current - Fall * Δτ);
+}
+
+// Steering return is a driver input assist, not a force on the vehicle. Grip loss weakens it;
+// at parking speed it stays gentle. A small optional slip correction is active only hands-off.
+export function ResolveSteeringReturnRate(Speed, Grip, Enabled = true)
+{
+    if (!Enabled) return 0.9;
+    const Pace = Math.min(1, Math.max(0, (Math.abs(Speed) - 1.5) / 18));
+    return (1.5 + 5.5 * Pace) * Math.max(0.35, Math.min(1, Grip));
 }
 
 export class DriverInputIntegrator
@@ -31,7 +39,7 @@ export class DriverInputIntegrator
         this.Steer    = 0.0;
     }
 
-    Advance(Keys, Δτ)
+    Advance(Keys, Δτ, Assist = {})
     {
         const Forward  = Keys.has("KeyW") || Keys.has("ArrowUp");
         const Backward = Keys.has("KeyS") || Keys.has("ArrowDown");
@@ -43,7 +51,16 @@ export class DriverInputIntegrator
         if (Left || Right)
             this.Steer += (SteerTarget - this.Steer) * Math.min(1.0, Δτ * InputConfiguration.SteerRate);
         else
-            this.Steer += (0.0 - this.Steer) * Math.min(1.0, Δτ * InputConfiguration.SteerReturnRate);
+        {
+            const Speed = Assist.Speed || 0.0;
+            const Grip = Assist.Grip ?? 1.0;
+            const Rate = ResolveSteeringReturnRate(Speed, Grip, Assist.SelfCenter !== false);
+            // Countersteer follows the velocity vector only above walking pace; the sign is
+            // relative to the car's forward vector, so reverse and parking remain manual.
+            const Slip = Assist.Countersteer && Speed > 4.0 && Grip > 0.25
+                       ? Math.max(-0.25, Math.min(0.25, (Assist.SideSpeed || 0) / Math.max(Speed, 1) * 0.8)) : 0;
+            this.Steer += (Slip - this.Steer) * Math.min(1.0, Δτ * Rate);
+        }
         return { Throttle: this.Throttle, Brake: this.Brake, Steer: this.Steer, Handbrake: Keys.has("Space") };
     }
 

@@ -105,5 +105,13 @@ fn IntegrateDirectRadiance(@builtin(global_invocation_id) Invocation: vec3u)
     {
         Radiance += Fire.Illuminance * ResolveDirectReflectance(Surface, Normal, View, Fire.Direction);
     }
+    for (var Index = 0u; Index < 4u; Index++)
+    {
+        let Transient = ResolveTransientArrival(Position, Normal, Index);
+        if (any(Transient.Illuminance > vec3f(0.0)))
+        {
+            Radiance += Transient.Illuminance * ResolveDirectReflectance(Surface, Normal, View, Transient.Direction);
+        }
+    }
     textureStore(DirectTarget, vec2i(Pixel), vec4f(Radiance, 1.0));
 }

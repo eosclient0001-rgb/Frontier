@@ -106,7 +106,7 @@ export class ShadowProjection
 
     // 📝 The derez-masked program for the car's runs (after EffectSequence exists): the same depth, plus a fragment
     //    stage that discards the cells the surface raster has dropped.
-    // 📝 VehicleRecords: the VehicleRecord (TyreCarcass.wgsl) — tyre carcasses, steering wheel, glazing.
+    // 📝 VehicleRecords: the VehicleRecord (VehiclePose.wgsl) — wheel failure state, steering wheel, glazing.
     async ConstructMaskedProgram(OccupantRecords, Effects, VehicleRecords)
     {
         this.Effects = Effects;

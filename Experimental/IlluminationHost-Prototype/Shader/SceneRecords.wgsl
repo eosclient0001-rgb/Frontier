@@ -43,6 +43,8 @@ struct FrameRecord
     FireLightIntensity               : f32,       // [-]    point intensity; 0 when nothing burns
     FireLightColour                  : vec3f,     // [-]    chromaticity of the flame light
     FireLightReach                   : f32,       // [m]    influence radius
+    TransientPosition                : array<vec4f, 4>, // xyz world, w intensity; three spark clusters and one derez
+    TransientColour                  : array<vec4f, 4>, // rgb chromaticity, w reach
 }
 
 // 📝 FeatureBit — the toggles the control panel exposes, read by the programs that honour them.

@@ -16,17 +16,17 @@ export class SurfaceProjection
 
     // 📝 TyreMarks: the TyreMarkDepot whose deposit the raster reads for the road families.
     // 📝 Effects (EffectSequence) shares this pass: its record masks the car here, and its cubes draw after the runs.
-    // 📝 VehicleRecords: the VehicleRecord the vertex stage deforms the tyres and turns the steering wheel by.
+    // 📝 VehicleRecords: the VehicleRecord for shredded rubber, steering wheel and glass.
     async ConstructPrograms(FrameRecords, OccupantRecords, MaterialRecords, DistanceLayout, TyreMarks, Effects, VehicleRecords)
     {
         this.FrameRecords    = FrameRecords;
         this.OccupantRecords = OccupantRecords;
         this.MaterialRecords = MaterialRecords;
         this.Effects         = Effects;
-        this.RasterLayout = this.Exchange.ConstructDescriptorLayout(["Uniform", "StorageRead", "Texture2D", "Sampler", "Uniform", "StorageRead"],
+        this.RasterLayout = this.Exchange.ConstructDescriptorLayout(["Uniform", "StorageRead", "Texture2D", "Sampler", "Uniform", "StorageRead", "Texture2D"],
                                                                     GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, "Surface raster");
         this.RasterGroup = this.Exchange.ConstructDescriptorGroup(this.RasterLayout, [FrameRecords, OccupantRecords, TyreMarks.View, TyreMarks.Sampler,
-                                                                                      Effects.Records, VehicleRecords]);
+                                                                                      Effects.Records, VehicleRecords, TyreMarks.RimView]);
         this.RasterProgram = await this.Shaders.ConstructRasterProgram("SurfaceRaster.wgsl", {
             VertexEntry: "SurfaceVertex", FragmentEntry: "SurfaceFragment",
             VertexLayouts: [{ arrayStride: VertexStride, attributes: [

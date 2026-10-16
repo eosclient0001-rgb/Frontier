@@ -6,13 +6,14 @@
 //! include "FrameDescriptor.wgsl"
 //! include "PackingCodec.wgsl"
 //! include "EffectRecords.wgsl"
-//! include "TyreCarcass.wgsl"
+//! include "VehiclePose.wgsl"
 
 @group(0) @binding(1) var<storage, read> Occupants : array<OccupantRecord>;
 @group(0) @binding(2) var TyreMarks                 : texture_2d<f32>;   // r deposit [0, 1], g lateral coordinate (0: untouched)
 @group(0) @binding(3) var TyreMarkSampler           : sampler;
 @group(0) @binding(4) var<uniform> Effect           : EffectRecord;
 @group(0) @binding(5) var<storage, read> VehicleState : VehicleRecord;
+@group(0) @binding(6) var RimMarks : texture_2d<f32>;
 
 const VehicleOccupantCount : u32 = 5u;   // the body and four wheels lead the occupant list
 
@@ -35,8 +36,8 @@ struct SurfaceTargets
     @location(1) Motion     : vec2f,   // [px] current minus previous screen position
 }
 
-// 📝 The vehicle's own motion in the vertex stage: the wheels' tyres take their carcass deformation, the cabin's
-//    steering wheel turns about its column and the cockpit takes its scale and offset (TyreCarcass.wgsl), before the
+// 📝 The vehicle's own motion in the vertex stage: only shredded rubber folds onto the rim; the cabin's
+//    steering wheel turns about its column and the cockpit takes its scale and offset (VehiclePose.wgsl), before the
 //    occupant transform.
 fn DeformVehicleVertex(Index: u32, Family: u32, Position: vec3f, Normal: vec3f) -> DeformedVertex
 {
@@ -45,7 +46,7 @@ fn DeformVehicleVertex(Index: u32, Family: u32, Position: vec3f, Normal: vec3f) 
     Moved.Normal = Normal;
     if (Index >= 1u && Index < VehicleOccupantCount)
     {
-        return DeformTyre(Index - 1u, Position, Normal);
+        return PlaceWheelVertex(Index - 1u, Position, Normal);
     }
     if (Index == 0u)
     {
@@ -176,13 +177,14 @@ fn SurfaceFragment(Varying: SurfaceVarying) -> SurfaceTargets
     let Marked = (Family >= MarkedFamilyFirst && Family <= MarkedFamilyLast) || (Family >= MarkedFamilyExtraFirst && Family <= MarkedFamilyExtraLast);
     if (Marked)
     {
+        let Coordinates = (Varying.WorldPosition.xy - vec2f(TyreMarkOriginX, TyreMarkOriginY)) / vec2f(TyreMarkExtentX, TyreMarkExtentY);
+        let Rim = select(0.0, textureSampleLevel(RimMarks, TyreMarkSampler, clamp(Coordinates, vec2f(0.0), vec2f(1.0)), 0.0).r,
+                         all(Coordinates > vec2f(0.0)) && all(Coordinates < vec2f(1.0)));
         let Deposit = SampleTyreRubber(Varying.WorldPosition.xy, Footprint);
         let Pixel = Varying.Position.xy + vec2f(5.588238 * f32(Frame.FrameIndex % 32u));
         let Threshold = fract(52.9829189 * fract(dot(Pixel, vec2f(0.06711056, 0.00583715))));
-        if (Deposit > Threshold)
-        {
-            Family = TyreMarkFamily;
-        }
+        if (Rim > Threshold) { Family = RimMarkFamily; }
+        else if (Deposit > Threshold) { Family = TyreMarkFamily; }
     }
     // 📝 The derez mask: a car pixel whose cell has been released is gone (its cubes have left, EffectRaster), and the
     //    cells about to go glow — white-hot at the edge, cyan behind it. Rez is the same clock run backwards.

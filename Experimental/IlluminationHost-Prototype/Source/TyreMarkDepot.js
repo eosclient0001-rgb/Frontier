@@ -23,7 +23,7 @@
 //    antialiasing resolves that into a smooth blend, so not one lighting program had to learn about tyre marks.
 //
 //    The CPU copy is sparse — 64² tiles allocated where rubber has been laid — and each frame uploads only the dirty
-//    rectangle. Wheels riding on debris lay nothing.
+//    rectangle. Wheels riding on debris lay nothing. A shredded wheel stamps a separate narrow grey rim scratch instead of rubber.
 
 export const TyreMarkLayout = Object.freeze({
     Origin:           Object.freeze([-64.0, -64.0]),   // [m]    world x, y of the deposit's first texel corner
@@ -49,28 +49,35 @@ export class TyreMarkDepot
         this.Texture  = Exchange.ConstructTexture({ label: "Tyre rubber deposit", size: [L.Texels[0], L.Texels[1]], format: "rg8unorm",
                                                     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
         this.View     = this.Texture.createView();
+        this.RimTexture = Exchange.ConstructTexture({ label: "Bare rim scrape deposit", size: [L.Texels[0], L.Texels[1]], format: "r8unorm",
+                                                     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+        this.RimView = this.RimTexture.createView();
         this.Sampler  = Exchange.ConstructSampler({ magFilter: "linear", minFilter: "linear",
                                                     addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
         this.Previous = [null, null, null, null];
+        this.PreviousMode = [null, null, null, null];
         this.Dirty    = null;
-        this.Metrics  = { LaidMetres: 0.0, Texels: 0 };
+        this.Metrics  = { LaidMetres: 0.0, RimMetres: 0.0, Texels: 0 };
     }
 
     // 📝 Readings: VehicleSolver.DrainWheelReadings() for this frame. Settings: { Enabled, Strength }.
-    Advance(Readings, Settings)
+    Advance(Readings, Settings, Wheels = [])
     {
         const L = TyreMarkLayout;
         Readings.forEach((Reading, Wheel) =>
         {
             const Contact = Reading.ContactFraction > 0.5 && !Reading.OnDebris;
+            const Rim = !!Wheels[Wheel]?.Shredded;
+            const Speed = Math.max(Math.hypot(...Reading.ContactVelocity), Math.hypot(...Reading.TreadVelocity));
             const Power = Reading.SlidingPower - L.PowerFloor;
-            if (!Settings.Enabled || !Contact || Power <= 0.0 || Reading.Seconds <= 0.0)
+            if (!Settings.Enabled || !Contact || (Rim ? Speed < 1.0 : Power <= 0.0) || Reading.Seconds <= 0.0)
             {
                 this.Previous[Wheel] = null;
                 return;
             }
             const Point = Reading.ContactPoint;
-            const From = this.Previous[Wheel] || Point;
+            const From = this.PreviousMode[Wheel] === Rim ? (this.Previous[Wheel] || Point) : Point;
+            this.PreviousMode[Wheel] = Rim;
             const Length = Math.hypot(Point[0] - From[0], Point[1] - From[1]);
             // 📝 The tread's axis: the patch's path when it travels, the wheel's own slip direction when it spins on
             //    the spot (a burnout) — so the grooves run along the mark either way.
@@ -79,11 +86,13 @@ export class TyreMarkDepot
             const AlongLength = Math.hypot(Along[0], Along[1]);
             const Direction = AlongLength > 1.0e-4 ? [Along[0] / AlongLength, Along[1] / AlongLength] : [1.0, 0.0];
             // 📐 Energy per unit area of this frame's sweep: P·Δt / (w · max(ℓ, patch length)).
-            const Swept = L.PatchWidth * Math.max(Length, L.PatchLength);
-            const Amount = Settings.Strength * Power * Reading.Seconds / Swept / L.SaturationEnergy;
+            const Swept = (Rim ? 0.035 : L.PatchWidth) * Math.max(Length, L.PatchLength);
+            const Amount = Rim ? Math.min(0.18, 0.08 * Speed * Reading.Seconds / Math.max(Length, L.PatchLength)) * Settings.Strength
+                               : Settings.Strength * Power * Reading.Seconds / Swept / L.SaturationEnergy;
             if (Length < 4.0)
-                this.StampSegment(From, Point, Direction, Amount);
-            this.Metrics.LaidMetres += Length;
+                this.StampSegment(From, Point, Direction, Amount, Rim);
+            if (Rim) this.Metrics.RimMetres += Length;
+            else this.Metrics.LaidMetres += Length;
             this.Previous[Wheel] = Point.slice();
         });
         this.Upload();
@@ -95,7 +104,8 @@ export class TyreMarkDepot
         let Tile = this.Tiles.get(Key);
         if (!Tile && Create)
         {
-            Tile = { Deposit: new Float32Array(TileEdge * TileEdge), Bytes: new Uint8Array(TileEdge * TileEdge * 2) };
+            Tile = { Deposit: new Float32Array(TileEdge * TileEdge), Bytes: new Uint8Array(TileEdge * TileEdge * 2),
+                     Rim: new Float32Array(TileEdge * TileEdge), RimBytes: new Uint8Array(TileEdge * TileEdge) };
             this.Tiles.set(Key, Tile);
         }
         return Tile;
@@ -103,13 +113,13 @@ export class TyreMarkDepot
 
     // 📝 The tread's rectangle from A to B (world x, y), its axis Direction: texels within the tread gain Amount (soft
     //    over the outer tenth), and every texel within a texel and a half of the tread records its lateral coordinate.
-    StampSegment(A, B, Direction, Amount)
+    StampSegment(A, B, Direction, Amount, Rim = false)
     {
         const L = TyreMarkLayout;
         const Scale = L.Texels[0] / L.Extent[0];
         const Ax = (A[0] - L.Origin[0]) * Scale, Ay = (A[1] - L.Origin[1]) * Scale;
         const Bx = (B[0] - L.Origin[0]) * Scale, By = (B[1] - L.Origin[1]) * Scale;
-        const Half = 0.5 * L.PatchWidth * Scale, Cap = 0.5 * L.PatchLength * Scale, Margin = 1.5;
+        const Half = 0.5 * (Rim ? 0.035 : L.PatchWidth) * Scale, Cap = 0.5 * L.PatchLength * Scale, Margin = 1.5;
         const [Ux, Uy] = Direction;
         const Vx = -Uy, Vy = Ux;
         // 📝 The rectangle spans the sweep along U (plus half a patch at each end) and the tread across V, centred on
@@ -135,25 +145,28 @@ export class TyreMarkDepot
                 const Offset = Math.max(0.0, (U + 0.5 * Sweep) / Math.max(Sweep, 1.0e-3));
                 const Centre = (Ax - Mx + (Bx - Ax) * Math.min(1.0, Offset)) * Vx + (Ay - My + (By - Ay) * Math.min(1.0, Offset)) * Vy;
                 const Across = (V - Centre) / (2.0 * Half) + 0.5;
-                if (Across < -0.25 || Across > 1.25 || Math.abs(U) > HalfAlong + Margin)
+                if ((Rim ? Math.abs(V - Centre) > Half + 0.6 : Across < -0.25 || Across > 1.25) || Math.abs(U) > HalfAlong + Margin)
                     continue;
                 const Tile = this.ResolveTile(X >> 6, Y >> 6, true);
                 const Local = ((Y & 63) << 6) | (X & 63);
-                const Inside = Across >= 0.0 && Across <= 1.0 && Math.abs(U) <= HalfAlong;
+                const Inside = (Rim ? Math.abs(V - Centre) <= Half + 0.6 : Across >= 0.0 && Across <= 1.0) && Math.abs(U) <= HalfAlong;
                 if (Inside)
                 {
-                    const Edge = Math.min(1.0, 10.0 * Math.min(Across, 1.0 - Across) + 0.35);
-                    const Next = Math.min(1.0, Tile.Deposit[Local] + Amount * Edge);
-                    if (Next !== Tile.Deposit[Local])
+                    const Edge = Rim ? Math.max(0.0, Math.min(1.0, (Half + 0.6 - Math.abs(V - Centre)) / 0.6))
+                                     : Math.min(1.0, 10.0 * Math.min(Across, 1.0 - Across) + 0.35);
+                    const Deposit = Rim ? Tile.Rim : Tile.Deposit;
+                    const Next = Math.min(1.0, Deposit[Local] + Amount * Edge);
+                    if (Next !== Deposit[Local])
                     {
-                        Tile.Deposit[Local] = Next;
-                        Tile.Bytes[Local * 2] = Math.round(Next * 255.0);
+                        Deposit[Local] = Next;
+                        if (Rim) Tile.RimBytes[Local] = Math.round(Next * 255.0);
+                        else Tile.Bytes[Local * 2] = Math.round(Next * 255.0);
                         this.Metrics.Texels++;
                     }
                 }
                 // 📝 The newest pass owns the lateral coordinate, except where an older, darker mark already lies
                 //    and this one only grazes it.
-                if (Inside || Tile.Bytes[Local * 2 + 1] === 0)
+                if (!Rim && (Inside || Tile.Bytes[Local * 2 + 1] === 0))
                     Tile.Bytes[Local * 2 + 1] = Math.max(1, Math.min(255, Math.round((Across + 0.25) / 1.5 * 254.0) + 1));
             }
         }
@@ -183,7 +196,30 @@ export class TyreMarkDepot
             }
         }
         this.Exchange.Device.queue.writeTexture({ texture: this.Texture, origin: [X0, Y0] }, Rows, { bytesPerRow: Stride }, [Width, Height]);
+        const RimStride = Math.ceil(Width / 256) * 256;
+        const RimRows = new Uint8Array(RimStride * Height);
+        for (let Row = 0; Row < Height; ++Row)
+        {
+            const Y = Y0 + Row;
+            for (let TileX = X0 >> 6; TileX <= X1 >> 6; ++TileX)
+            {
+                const Tile = this.ResolveTile(TileX, Y >> 6, false);
+                if (!Tile) continue;
+                const From = Math.max(X0, TileX << 6), To = Math.min(X1, (TileX << 6) + 63);
+                const Source = ((Y & 63) << 6) + (From & 63);
+                RimRows.set(Tile.RimBytes.subarray(Source, Source + To - From + 1), Row * RimStride + From - X0);
+            }
+        }
+        this.Exchange.Device.queue.writeTexture({ texture: this.RimTexture, origin: [X0, Y0] }, RimRows,
+                                                { bytesPerRow: RimStride }, [Width, Height]);
         this.Dirty = null;
+    }
+
+    // Respawn starts a fresh sweep without deleting any rubber or rim marks already on the road.
+    ResetTracking()
+    {
+        this.Previous = [null, null, null, null];
+        this.PreviousMode = [null, null, null, null];
     }
 
     Clear()
@@ -196,17 +232,20 @@ export class TyreMarkDepot
             const Height = Math.min(TileEdge, TyreMarkLayout.Texels[1] - TileY * TileEdge);
             this.Exchange.Device.queue.writeTexture({ texture: this.Texture, origin: [TileX * TileEdge, TileY * TileEdge] }, Zero,
                                                     { bytesPerRow: TileEdge * 2 }, [Width, Height]);
+            this.Exchange.Device.queue.writeTexture({ texture: this.RimTexture, origin: [TileX * TileEdge, TileY * TileEdge] },
+                                                    Zero.subarray(0, TileEdge * TileEdge), { bytesPerRow: TileEdge }, [Width, Height]);
         }
         this.Tiles.clear();
         this.Previous = [null, null, null, null];
+        this.PreviousMode = [null, null, null, null];
         this.Dirty = null;
-        this.Metrics = { LaidMetres: 0.0, Texels: 0 };
+        this.Metrics = { LaidMetres: 0.0, RimMetres: 0.0, Texels: 0 };
     }
 
     QueryReadout()
     {
         const L = TyreMarkLayout;
-        return [`rubber laid along ${this.Metrics.LaidMetres.toFixed(0)} m · ${this.Metrics.Texels} texel writes · ${this.Tiles.size} tiles`,
+        return [`rubber ${this.Metrics.LaidMetres.toFixed(0)} m · rim ${this.Metrics.RimMetres.toFixed(0)} m · ${this.Metrics.Texels} texel writes · ${this.Tiles.size} tiles`,
                 `deposit ${L.Texels[0]}×${L.Texels[1]} over ${L.Extent[0]}×${L.Extent[1]} m (${(100 * L.Extent[0] / L.Texels[0]).toFixed(1)} cm texels), edges and grooves from the lateral channel`];
     }
 }

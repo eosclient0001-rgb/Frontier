@@ -15,15 +15,14 @@
 //    |        | the patch, where the metal leaves the road    | (S = Spin·r) — up off the trailing edge, so the trail |
 //    |        |                                               | streams back from a rolling wheel                     |
 //
-//    In flight a spark falls, feels air drag, cools radiatively (its glow follows the blackbody temperature) and skips
-//    off the road, losing most of its speed, until it is too cool to see.
+//    In flight a spark falls, feels air drag, cools radiatively, and skips off the course and obstacle boxes.
 //
 //    A few hundred particles: they are integrated here on the CPU and drawn after the temporal antialiasing as thin
 //    additive streaks (2.2 mm across, at least a pixel) from where the camera saw them a frame ago to where it sees
 //    them now (SparkRaster.wgsl), depth-tested against the scene — thin, bright and fast-moving, they would otherwise
 //    be averaged away by the history.
 
-import { ResolveCourseHeight } from "./CourseStructure.js";
+import { ResolveCourseHeight, ResolveCourseNormal } from "./CourseStructure.js";
 
 const SparkCapacity   = 2048;
 const InstanceFloats  = 12;            // head xyz + width, tail xyz + 0, radiance rgb + 0
@@ -46,7 +45,8 @@ export class SparkSequence
         this.Particles = [];
         this.Instances = new Float32Array(SparkCapacity * InstanceFloats);
         this.InstanceRecords = Exchange.ConstructRecords(SparkCapacity * InstanceFloats * 4, GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST, "Spark instances");
-        this.Metrics = { Live: 0, Emitted: 0, Scrapes: 0 };
+        this.Metrics = { Live: 0, Emitted: 0, Scrapes: 0, Collisions: 0 };
+        this.CollisionBoxes = [];
         this.Seed = 0x5EED;
         this.Live = 0;
     }
@@ -138,7 +138,41 @@ export class SparkSequence
         }
     }
 
-    // 📝 Ballistic with linear drag, radiative cooling toward ambient, skips off the course.
+    // Static scene AABBs and the nearby active convex bodies' conservative AABBs.
+    AssignCollisionWorld(Boxes)
+    {
+        this.CollisionBoxes = Boxes;
+    }
+
+    // Capped clustered point lights; no per-particle light or expensive readback.
+    QueryLights(Maximum = 3)
+    {
+        if (!this.Settings.Enabled) return [];
+        const Clusters = new Map();
+        for (const Spark of this.Particles)
+        {
+            if (Spark.Kelvin < 1150) continue;
+            const Key = Spark.Position.map((V) => Math.floor(V / 2)).join(":");
+            const Weight = Math.min(2, ResolveSparkRadiance(Spark.Kelvin)[0] / 18);
+            const Group = Clusters.get(Key) || { Position: [0, 0, 0], Colour: [0, 0, 0], Weight: 0 };
+            const Colour = ResolveSparkRadiance(Spark.Kelvin);
+            for (let Axis = 0; Axis < 3; ++Axis)
+            {
+                Group.Position[Axis] += Spark.Position[Axis] * Weight;
+                Group.Colour[Axis] += Colour[Axis] / Math.max(Colour[0], 1) * Weight;
+            }
+            Group.Weight += Weight;
+            Clusters.set(Key, Group);
+        }
+        return [...Clusters.values()].sort((A, B) => B.Weight - A.Weight).slice(0, Maximum).map((Group) => ({
+            Position: Group.Position.map((Value) => Value / Group.Weight),
+            Colour: Group.Colour.map((Value) => Value / Group.Weight),
+            Intensity: Math.min(70, Group.Weight * 2.2) * this.Settings.Brightness,
+            Reach: 7
+        }));
+    }
+
+    // 📝 Ballistic with drag and swept collisions against course, walls, props and active body bounds.
     Advance(Seconds)
     {
         if (!(Seconds > 0.0))
@@ -157,14 +191,21 @@ export class SparkSequence
             Spark.Prior = Spark.Position.slice();
             const Damping = Math.exp(-AirDrag * Seconds);
             Spark.Velocity = [Spark.Velocity[0] * Damping, Spark.Velocity[1] * Damping, Spark.Velocity[2] * Damping - Gravity * Seconds];
-            Spark.Position = [Spark.Position[0] + Spark.Velocity[0] * Seconds, Spark.Position[1] + Spark.Velocity[1] * Seconds,
-                              Spark.Position[2] + Spark.Velocity[2] * Seconds];
-            const Ground = ResolveCourseHeight(Spark.Position[0], Spark.Position[1]);
-            if (Spark.Position[2] < Ground + 0.005)
+            // Substeps prevent a fast chip crossing a thin wall between render frames.
+            const Steps = Math.max(1, Math.min(8, Math.ceil(Math.hypot(...Spark.Velocity) * Seconds / 0.35)));
+            for (let Step = 0; Step < Steps; ++Step)
             {
-                Spark.Position[2] = Ground + 0.005;
-                if (Spark.Velocity[2] < 0.0)
-                    Spark.Velocity = [Spark.Velocity[0] * 0.55, Spark.Velocity[1] * 0.55, -Spark.Velocity[2] * 0.32];
+                const To = Spark.Position.map((Value, Axis) => Value + Spark.Velocity[Axis] * Seconds / Steps);
+                const Hit = ResolveSparkCollision(Spark.Position, To, this.CollisionBoxes);
+                if (Hit)
+                {
+                    const Dot = Spark.Velocity.reduce((Sum, Value, Axis) => Sum + Value * Hit.Normal[Axis], 0);
+                    Spark.Position = Hit.Point.map((Value, Axis) => Value + Hit.Normal[Axis] * 0.006);
+                    if (Dot < 0)
+                        Spark.Velocity = Spark.Velocity.map((Value, Axis) => 0.56 * (Value - Dot * Hit.Normal[Axis]) - 0.28 * Dot * Hit.Normal[Axis]);
+                    this.Metrics.Collisions++;
+                }
+                else Spark.Position = To;
             }
             Spark.Kelvin = 293.0 + (Spark.Kelvin - 293.0) * Math.exp(-Seconds / CoolingSeconds);
             if (Spark.Kelvin > VisibleKelvin && Spark.Age < 2.5)
@@ -210,22 +251,72 @@ export class SparkSequence
     {
         this.Particles = [];
         this.Live = 0;
+        this.Metrics.Live = 0;
     }
 
     QueryReadout()
     {
-        return [`sparks live: ${this.Metrics.Live} · emitted ${this.Metrics.Emitted} · scrapes this frame ${this.Metrics.Scrapes}`];
+        return [`sparks live: ${this.Metrics.Live} · emitted ${this.Metrics.Emitted} · world impacts ${this.Metrics.Collisions} · scrapes this frame ${this.Metrics.Scrapes}`];
     }
 }
 
-// 📐 Blackbody colour (Helland's fit, linear) × Stefan–Boltzmann brightness referred to 1500 K, in the scene's radiance
-//    units (sunlit white ≈ 5): a fresh spark is a few hundred times brighter than the road it flies over.
+// Approximate Planck spectral ratios at red/green/blue wavelengths, with a bounded luminous
+// intensity. Hot cores have some yellow-white; cooling shifts continuously to dim deep orange/red.
 export function ResolveSparkRadiance(Kelvin)
 {
-    const Hecto = Math.max(1000.0, Math.min(6600.0, Kelvin)) / 100.0;
-    const Green = Math.min(1.0, Math.max(0.0, (99.4708025861 * Math.log(Hecto) - 161.1195681661) / 255.0));
-    const Blue = Hecto <= 19.0 ? 0.0 : Math.min(1.0, Math.max(0.0, (138.5177312231 * Math.log(Math.max(Hecto - 10.0, 1.0)) - 305.0447927307) / 255.0));
-    const Ratio = Kelvin / 1500.0;
-    const Brightness = 120.0 * Ratio * Ratio * Ratio * Ratio;
-    return [1.0, Math.pow(Green, 2.2), Math.pow(Blue, 2.2)].map((Channel) => Channel * Brightness);
+    const T = Math.max(700, Math.min(3500, Kelvin));
+    const Planck = (Wavelength) => 1 / (Wavelength ** 5 * Math.expm1(14387769 / (Wavelength * T)));
+    const Red = Planck(620);
+    const Green = Math.min(0.65, Planck(540) / Red * 0.9);
+    const Blue = Math.min(0.25, Planck(460) / Red * 0.45);
+    const Energy = Math.min(27, 9 * (T / 1800) ** 7);
+    return [Energy, Energy * Green, Energy * Blue];
+}
+
+// Earliest swept hit: analytic relief (including ramps/kerbs) and obstacle AABBs. AABBs
+// conservatively approximate moving rigid bodies; this is particle collision, not solver contact.
+export function ResolveSparkCollision(From, To, Boxes = [])
+{
+    let Best = null;
+    const Start = From[2] - ResolveCourseHeight(From[0], From[1]) - 0.005;
+    const End = To[2] - ResolveCourseHeight(To[0], To[1]) - 0.005;
+    if (Start >= 0 && End < 0)
+    {
+        let Lo = 0, Hi = 1;
+        for (let I = 0; I < 8; ++I)
+        {
+            const Mid = (Lo + Hi) / 2;
+            const P = From.map((V, Axis) => V + (To[Axis] - V) * Mid);
+            if (P[2] - ResolveCourseHeight(P[0], P[1]) > 0.005) Lo = Mid;
+            else Hi = Mid;
+        }
+        const Point = From.map((V, Axis) => V + (To[Axis] - V) * Hi);
+        Best = { Time: Hi, Point, Normal: ResolveCourseNormal(Point[0], Point[1]) };
+    }
+    for (const Box of Boxes)
+    {
+        let Enter = 0, Leave = 1, Normal = null;
+        for (let Axis = 0; Axis < 3; ++Axis)
+        {
+            const Delta = To[Axis] - From[Axis];
+            if (Math.abs(Delta) < 1e-9)
+            {
+                if (From[Axis] < Box.Minimum[Axis] || From[Axis] > Box.Maximum[Axis]) { Enter = 2; break; }
+                continue;
+            }
+            const A = (Box.Minimum[Axis] - From[Axis]) / Delta;
+            const B = (Box.Maximum[Axis] - From[Axis]) / Delta;
+            const Near = Math.min(A, B), Far = Math.max(A, B);
+            if (Near > Enter)
+            {
+                Enter = Near;
+                Normal = [0, 0, 0];
+                Normal[Axis] = A < B ? -1 : 1;
+            }
+            Leave = Math.min(Leave, Far);
+        }
+        if (Normal && Enter <= Leave && Enter < (Best?.Time ?? 1))
+            Best = { Time: Enter, Point: From.map((V, Axis) => V + (To[Axis] - V) * Enter), Normal };
+    }
+    return Best;
 }

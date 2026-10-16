@@ -35,9 +35,12 @@ Validation:
 npm ci --prefix Tools
 npm --prefix Tools run validate
 HOOKS=Tools/AppearanceValidation.mjs node Tools/HeadlessHarness.mjs . 12 '?capture=1&quality=low'
+HOOKS=Tools/TransientValidation.mjs node Tools/HeadlessHarness.mjs . 12 '?capture=1&quality=low'
+node --test Tools/*.test.mjs
+node Tools/VehicleStability.mjs .
 ```
 
-See [NEXT_STEPS.md](NEXT_STEPS.md) for the deferred vehicle/VFX work and the physics answer.
+See [NEXT_STEPS.md](NEXT_STEPS.md) for the implemented vehicle/VFX checklist, current limitations and the physics answer.
 
 ## The editor
 
@@ -51,7 +54,7 @@ groups the scene; selecting an entry rebuilds the inspector (`Source/InspectorPa
 | **Render settings** | resolution & quality grade, trace resolution, render scale; ReSTIR temporal/spatial reuse, visibility validation, M limit, indirect intensity; exposure, shadows, reflections, SVGF, TAA; debug views; frame timing and GPU pass timings |
 | Global distance field · Surface cache | cascade state and freezing, slice inset; card radiosity and relighting budget |
 | Sun & sky | presets (Noon · Golden · Dusk · Night), sun direction, solar / sky / emitter intensity |
-| ControlVehicle · Tyre marks | telemetry, **burnout / line lock**, **tyres** (pressures per axle, soft carcass and its **Deformation ×** exaggeration, wear, failure, puncture / blowout / shred buttons, deflection · patch · tread readouts), ignition, thermal grip, **camera rigs**; rubber deposit |
+| ControlVehicle · Tyre marks | telemetry, **burnout / line lock**, **tyres** (pressures per axle, physical tyre compliance, wear, failure, puncture / blowout / shred buttons, deflection · tread readouts), ignition, thermal grip, **camera rigs**; rubber deposit |
 | **Cabin · HMI** | the TabletPanel HMI live in the car (screens, brightness, open an app), **cockpit size** (scale, fore/aft, height, across), see-through glass and its transmission, mirror views, interior cameras |
 | **Smoke & fire** | the Smoke + Fire editor: Domain, Source, Simulation, Appearance, Fire, Presets — every gas quantity as a slider, plus a test emitter |
 | **Derez · VFX** | the Particle Editor's Derez cube · Reverse derez · Glitch dissolve presets, cube timing and motion, **the car's own colours or the palette**, face glow, **momentum**, recovery triggers, test buttons |
@@ -181,36 +184,15 @@ path, as real marks are. The CPU copy is sparse (64² tiles where rubber has bee
 rubber family with probability equal to the deposit and TAA resolves that into a smooth blend — no lighting program
 needed to change. Wheels riding on debris lay nothing.
 
-## Soft tyres, pressure and failure
+## Tyres, pressure and failure
 
-`Source/TyreCarcassSolver.js`, `Shader/TyreCarcass.wgsl`, `Source/VehicleSolver.js`, `Source/TyreThermalSolver.js`
-— carried on from the GI-Updated-Html-Version branch, where the previous session left it. No XPBD: a cheap physical
-model in the dynamics and a deformation in the vertex stage.
+`Source/VehicleSolver.js`, `Source/VehicleRecord.js`, `Shader/VehiclePose.wgsl`, `Source/TyreThermalSolver.js`.
+The **dynamics** still use a compliant tyre in series with each strut, pressure-dependent grip, punctures,
+wear and rim contact. The 96-node visual carcass deformation and its editor exaggeration control have been removed;
+intact tyre meshes are rigid in the viewport, shadows, mirrors and Garage. A shredded tyre's rubber collapses to a
+thin remnant at the rim while the dynamics run on the bare rim. `Tools/VehicleStability.mjs` checks the dynamic
+model at rest, on flats and during blowouts, shreds and a slalom.
 
-* **In the dynamics** each tyre is a spring in series with its strut, K = 25 kN/m (sidewalls) + 0.9 N/m per Pa (the
-  air column) — 223 kN/m at 220 kPa, a 14 mm static deflection; 25 kN/m with no air (a single flat sits ~64 mm down,
-  the car 14 mm lower on that corner). Each axle's two strut–tyre stacks are solved together with the anti-roll bar
-  between them (bisection, three Gauss–Seidel passes): the bar pushes back on each side by k·(own − partner)
-  compression — on the right exactly as on the left — so a corner's tyre deflection carries exactly the load it
-  bears and a flat corner sinks onto its tyre. A wheel with nothing pushing on it (spring off its seat, tyre not yet
-  touching) hangs down to the road or to full droop rather than hovering. Past the pinch the rim flange stiffens the
-  stack; a topped-out corner rests on the tyre's own damping. Grip falls with pressure (0.62 + 0.38·(p / 0.75 p₀)^0.7,
-  × 0.7 pinched), rolling resistance rises (up to ×4 flat), the rolling radius shrinks with the deflection.
-  `node Tools/VehicleStability.mjs` holds the solvers to it without a GPU in a few seconds: rest at 220 and 60 kPa
-  and on one, two and four flats (the body still), blowouts on each corner (left and right mirror each other), blowouts
-  and shreds at 20–30 m/s and a weave on soft and flat tyres (upright, never airborne), donuts both ways (each
-  corner's sliding work mirrors its partner's) and coasting backwards on a bare rim (the AMT's clutch opens when the
-  wheels turn against the gear, so engine braking no longer spins them up).
-* **What you see** is a 96-node flexible ring on an elastic foundation per wheel (tension and support from the
-  pressure, the steel belt's bending), integrated at 3.6 kHz against the road: it flattens into a contact patch,
-  shifts sideways under cornering and trails a standing wave past ~210 km/h (~55 km/h flat). The tyre vertices take
-  the ring's deflection by their share of the sidewall height — the bead stays on the rim — and the sidewalls bow out
-  where the belt is squashed, as an inextensible wall does (√(3·h·w/8), at most the 0.36·h such an arc reaches; a
-  quarter of that while the air carries the load). The normal is the deformed surface's own (finite differences
-  along the tangent plane), so the patch, the bulge and the squashed sidewall light as they bend. **Deformation ×**
-  (Vehicle → Tyres) exaggerates what the road does not fix — roll-in and roll-out, the standing wave, the bulge, the
-  sideways shift — and keeps every patch on the road (the dynamics never see it); the **Tyre FL / Tyre RL** camera
-  rigs look at the patch. The rim is hard-shaded: each of its facets takes its own flat normal.
 * **Pressure** is the gas law of the thermal model — air mass, gas temperature, leaks: set cold pressures per axle,
   or from the HMI's Tyres app. **Failure**: sliding work abrades the 1.1 kg tread (faster when hot); a tyre bursts
   when its tread is worn through, its carcass cooks past 220 °C or hot gas drives it past 650 kPa — a blowout empties
@@ -228,9 +210,15 @@ than 2 m/s scrapes, and so does a rim on the road (pinched through a flat, or ba
 1500–2100 K: a hull point's leave along the slide, fanned and kicked off the surface; a rim's leave its edge a little
 behind the patch, where the metal has just left the road, at that point's own velocity (slip + S(1 − cos α)·F +
 |S| sin α·N, S = Spin·r) — up off the trailing edge, streaming back from a rolling wheel, forward along the slide
-from a locked one, back off a spinning one. They fall, cool radiatively and skip off the road, drawn after the
-antialiasing as thin additive blackbody streaks (2.2 mm, at least a pixel) from where the camera saw them a frame ago
-to where it sees them now, depth-tested against the scene.
+from a locked one, back off a spinning one. Sparks cool continuously from bright hot cores to dim red/orange,
+bounce off the analytic course and swept static/world-body AABBs, and contribute up to three clustered,
+shadowed point lights to direct lighting and the surface-card cache. A fourth bounded transient light follows
+vehicle derez/rez, then fades completely. The AABB collision of moving convex debris is deliberately conservative.
+
+Shredded rims do **not** deposit rubber: the mark depot instead stamps a separate narrow metallic scrape texture
+with no tread grooves. Respawning resets mark tracking but preserves marks already on the course. The Driver
+inspector offers speed/grip-dependent self-centering and optional hands-off countersteer assistance; manual
+steering always overrides both. This prototype still uses its own JS vehicle/rigid-body solver, **not Jolt**.
 
 ## The cabin and the HMI
 
@@ -360,9 +348,9 @@ Frame timing card shows the average frame rate, the **1 % low** over the last 24
 `webgpu` package): on the null backend it validates every WGSL module, pipeline layout and command; with a
 SwiftShader Vulkan ICD it renders real frames and writes PNG captures. A `HOOKS` module can script input (the
 burnout, a run down the smash alley) and report from the host. See the file header for usage.
-`Tools/VehicleStability.mjs` needs nothing installed: it steps the vehicle, thermal and carcass solvers in the frame
+`Tools/VehicleStability.mjs` needs nothing installed: it steps the vehicle and thermal solvers in the frame
 loop's order on the open pad and fails on a bouncing body, a left–right asymmetry, a car leaving the ground or a
-runaway wheel (see *Soft tyres, pressure and failure*).
+runaway wheel (see *Tyres, pressure and failure*).
 
 ## Licences of bundled assets
 

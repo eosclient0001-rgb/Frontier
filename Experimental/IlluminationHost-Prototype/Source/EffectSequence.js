@@ -328,6 +328,23 @@ export class EffectSequence
             this.ApplyPalette(MaterialRecords);
     }
 
+    // One bounded, temporary point light for the vehicle's release/assembly cells.
+    QueryLight(BodyColour = null)
+    {
+        const Emitter = this.Emitters.find((Item) => Item && (Item.Kind === EffectKind.VehicleDerez || Item.Kind === EffectKind.VehicleRez)
+                                                       && this.Clock >= Item.Start && this.Clock < Item.End);
+        if (!Emitter) return null;
+        const Fraction = (this.Clock - Emitter.Start) / (Emitter.End - Emitter.Start);
+        const Envelope = Math.sin(Math.PI * Fraction) ** 0.7;
+        const ColourHex = this.Settings.Style === 1 ? this.Settings.Glitch : this.Settings.Glow;
+        const Palette = [1, 3, 5].map((Index) => parseInt(ColourHex.slice(Index, Index + 2), 16) / 255);
+        const Peak = Math.max(...(BodyColour || [1]));
+        const Colour = this.Settings.Faces && BodyColour ? BodyColour.map((Channel) => 0.12 + 0.88 * Channel / Math.max(Peak, 0.05)) : Palette;
+        const Transform = this.Recording?.Vehicle?.QueryBodyTransform() || Emitter.Transform;
+        return { Position: [Transform[12], Transform[13], Transform[14] + 0.8], Colour,
+                 Intensity: Math.min(75, 38 * this.Settings.Intensity * Envelope), Reach: 10 };
+    }
+
     //--------------------------------------------------------------------------------------------------------------------
     //                                                   FRAME
     //--------------------------------------------------------------------------------------------------------------------

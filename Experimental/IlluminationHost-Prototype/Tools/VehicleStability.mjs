@@ -5,8 +5,8 @@
 
 // 📝 node Tools/VehicleStability.mjs [path to the exhibit]   — runs in a few seconds, exits non-zero on a failure.
 //
-//    The vehicle, thermal and carcass solvers are stepped exactly as IlluminationHost.AdvanceFrame steps them (vehicle,
-//    wear, events, thermal, pinch punctures, pressures, carcass) at 120 Hz on the open pad, and each scenario is held
+//    The vehicle and thermal solvers are stepped in IlluminationHost.AdvanceFrame order (vehicle,
+//    wear, events, thermal, pinch punctures, pressures) at 120 Hz on the open pad, and each scenario is held
 //    to a bound:
 //
 //    | Scenario                                   | Bound                                                          |
@@ -24,7 +24,6 @@ const Exhibit = resolve(process.argv[2] || new URL("..", import.meta.url).pathna
 const Source = (Name) => pathToFileURL(resolve(Exhibit, "Source", Name)).href;
 const { VehicleSolver } = await import(Source("VehicleSolver.js"));
 const { TyreThermalSolver, IgnitionModes } = await import(Source("TyreThermalSolver.js"));
-const { TyreCarcassSolver } = await import(Source("TyreCarcassSolver.js"));
 const { VehicleGeometry } = await import(Source("VehicleSpecification.js"));
 
 const Idle = { Throttle: 0.0, Brake: 0.0, Steer: 0.0, Handbrake: false };
@@ -35,7 +34,6 @@ function ConstructRig(Pressures = null)
 {
     const Vehicle = new VehicleSolver([]);
     const Thermal = new TyreThermalSolver(4);
-    const Carcass = new TyreCarcassSolver(VehicleGeometry.TyreRadius, VehicleGeometry.TyreRimRadius, 0.5 * VehicleGeometry.TyreWidth);
     if (Pressures)
     {
         Thermal.ColdPressures = Pressures.map((Kilopascal) => Kilopascal * 1000.0);
@@ -43,7 +41,7 @@ function ConstructRig(Pressures = null)
     }
     Vehicle.AssignTyrePressures(Thermal.Wheels.map((Wheel) => Wheel.GaugePressure));
     Vehicle.Respawn(Pad.Position, Pad.Yaw);
-    const Rig = { Vehicle, Thermal, Carcass, Energy: [0, 0, 0, 0] };
+    const Rig = { Vehicle, Thermal, Energy: [0, 0, 0, 0] };
     Rig.Frame = (Command, Step = 1.0 / 120.0) =>
     {
         Vehicle.Advance(Command, Step);
@@ -56,7 +54,6 @@ function ConstructRig(Pressures = null)
             Thermal.Puncture(Pinch.Wheel, false, "pinch cut");
         Thermal.DrainEvents();
         Vehicle.AssignTyrePressures(Thermal.Wheels.map((Wheel) => Wheel.GaugePressure));
-        Carcass.Advance(Vehicle.QueryCarcassContacts(), Step);
     };
     return Rig;
 }

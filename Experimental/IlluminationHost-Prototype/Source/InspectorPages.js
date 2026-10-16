@@ -87,8 +87,7 @@ export function ConstructEntities(Host)
           Description: "Telemetry, burnout, tyres & camera", Meta: () => `${Math.abs(Host.Vehicle.QueryTelemetry().Speed * 3.6).toFixed(0)} km/h`,
           State: () => (Host.Vehicle.Burnout ? "warm" : "live"), Build: (C, B) => BuildVehicle(Host, C, B),
           Switches: () => [Feature("Line lock", "Flame", S, "LineLock"), Feature("Thermal grip", "Thermometer", S, "ThermalGrip"),
-                           Feature("Tyre marks", "CircleDot", S, "TyreMarks"), Feature("Soft tyres", "Orbit", S, "TyreDeformation"),
-                           Feature("Sparks", "Zap", S, "Sparks")] },
+                           Feature("Tyre marks", "CircleDot", S, "TyreMarks"), Feature("Sparks", "Zap", S, "Sparks")] },
         { Id: "cabin", Group: "Vehicle", Name: "Cabin · HMI", Type: "Interior", Glyph: "Monitor", Colour: Accent.Vehicle, Parent: "vehicle",
           Description: "Tablet & cluster, mirrors, glass, interior cameras", Meta: () => S.CameraMode,
           State: () => (Host.Cabin && Host.Cabin.Screen ? "live" : "warm"), Build: (C, B) => BuildCabin(Host, C, B),
@@ -312,6 +311,10 @@ function BuildVehicle(Host, C, Body)
     C.Stats(Drive, [["Engine", () => Telemetry().EngineRPM, "rpm"], ["Boost", () => Telemetry().Boost, "bar", 2],
                     ["Contact", () => `${Telemetry().Contacts}/4`]]);
 
+    const Steering = C.Card(Body, "Steering assistance", "Orbit", { Accent: Accent.Vehicle, Index: 2 });
+    C.Switch(Steering, S, "SteeringSelfCenter", { Label: "Self-aligning return", Detail: "Speed and front-grip dependent; gentle at parking speed" });
+    C.Switch(Steering, S, "CountersteerAssist", { Label: "Hands-off drift correction", Detail: "Small bounded correction above 4 m/s; manual A/D always wins" });
+
     const Burnout = C.Card(Body, "Burnout · line lock", "Flame", { Accent: Accent.Effects, Index: 2 });
     C.Metric(Burnout, () => Math.abs(Telemetry().RearSpin * 3.6), "km/h wheelspin", 0,
              () => (Host.Vehicle.Burnout ? ["LINE LOCK ON", "warm"] : [S.LineLock ? "ready" : "off", S.LineLock ? "live" : ""]));
@@ -327,18 +330,10 @@ function BuildVehicle(Host, C, Body)
     C.Stats(Tyres, [0, 1, 2, 3].map((Wheel) => [Names[Wheel] + " mm", () => Host.Vehicle.Wheels[Wheel].TyreDeflection * 1000.0, "", 0]), 4);
     C.Stats(Tyres, [0, 1, 2, 3].map((Wheel) => [Names[Wheel] + " tread", () => Host.Thermal.QueryTreadFractions()[Wheel] * 100.0, "%"]), 4);
     C.Readout(Tyres, () => [Host.QueryTyreLive().States.map((State, Wheel) => `${Names[Wheel]} ${State || "ok"}`).join(" · "),
-                            Host.Carcass.QueryReadings().map((Reading, Wheel) => `${Names[Wheel]} patch ${(Reading.Patch * 100).toFixed(0)} cm`
-                                + (Reading.Wave > 0.004 ? ` wave ${(Reading.Wave * 1000).toFixed(0)} mm` : "") + (Reading.Pinched ? " PINCHED" : "")).join(" · ")]);
-    C.Muted(Tyres, "Each tyre is a carcass spring in series with its strut, K = 25 kN/m + 0.9 N/m per Pa (223 kN/m at 220 kPa, 14 mm under the static corner load; "
-                 + "a flat sits about 64 mm down, the car lower on that corner); "
-                 + "the visible tyre is a 96-node flexible ring on an elastic foundation (tension and support from the pressure, the steel belt's bending) "
-                 + "that flattens into a patch, bulges, shifts under cornering, throws a standing wave past ~210 km/h and creases its sidewalls when empty.");
+                            "Tyre compliance remains physical; visible tyres stay round until shredded."]);
+    C.Muted(Tyres, "Tyre compliance and pressure still affect handling; the visual tyre is rigid until a shred reveals the rim.");
     Slider(C, Tyres, S, "TyrePressureFront", "Front cold pressure", 0, 400, 5, "kPa", 0, ["Flat", "Over"], () => Host.ApplySetting("TyrePressure"));
     Slider(C, Tyres, S, "TyrePressureRear", "Rear cold pressure", 0, 400, 5, "kPa", 0, ["Flat", "Over"], () => Host.ApplySetting("TyrePressure"));
-    C.Switch(Tyres, S, "TyreDeformation", { Label: "Soft tyres (carcass deformation)", Detail: "Off draws them round; the dynamics stay soft" });
-    Slider(C, Tyres, S, "DeformationScale", "Deformation ×", 1, 12, 0.5, "×", 1, ["True", "Exaggerated"]);
-    C.Muted(Tyres, "The exaggeration keeps every patch on the road: it grows what the road does not fix — the roll-in and roll-out, the standing wave, "
-                 + "the sidewall bulge, the belt's sideways shift. To see a tyre squash for real, let air out with the pressure sliders.");
     C.Switch(Tyres, S, "TyreWear", { Label: "Tread wear", Detail: "Sliding work abrades the tread, hotter faster" });
     Slider(C, Tyres, S, "WearScale", "Wear rate", 0.5, 40, 0.5, "×", 1, ["Real", "Demo"]);
     C.Switch(Tyres, S, "TyreFailure", { Label: "Failure", Detail: "Worn through, cooked or over-pressured tyres burst" });

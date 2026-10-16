@@ -5,7 +5,7 @@
 
 //! include "SceneRecords.wgsl"
 //! include "EffectRecords.wgsl"
-//! include "TyreCarcass.wgsl"
+//! include "VehiclePose.wgsl"
 
 struct CascadeRecord
 {
@@ -26,7 +26,7 @@ fn ShadowVertex(@location(0) Position: vec3f, @location(1) OccupantOffset: u32,
     return Cascade.LightViewProjection * World;
 }
 
-// 📝 The vehicle program, for the car's runs only: the tyres' carcass deformation and the steering wheel's turn as in
+// 📝 The vehicle program, for the car's runs only: shredded rubber and the steering wheel's turn as in
 //    the surface raster; see-through glazing casts no shadow (the sun reaches the cabin through it); and while the
 //    car derezzes or rezzes its shadow comes apart with it — the fragment stage drops exactly the cells the surface
 //    raster drops.
@@ -45,7 +45,7 @@ fn MaskedShadowVertex(@location(0) Position: vec3f, @location(1) OccupantOffset:
     var Local = Position;
     if (Index >= 1u && Index < 5u)
     {
-        Local = DeformTyrePosition(Index - 1u, Position);
+        Local = PlaceWheelVertex(Index - 1u, Position, vec3f(0.0, 0.0, 1.0)).Position;
     }
     else if (Index == 0u)
     {

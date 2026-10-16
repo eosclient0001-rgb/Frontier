@@ -22,7 +22,7 @@
 //! include "FrameDescriptor.wgsl"
 //! include "SkyProjection.wgsl"
 //! include "EffectRecords.wgsl"
-//! include "TyreCarcass.wgsl"
+//! include "VehiclePose.wgsl"
 
 struct OverlayRecord
 {

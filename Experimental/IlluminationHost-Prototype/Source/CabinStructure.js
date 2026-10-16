@@ -20,7 +20,7 @@
 //    Everything is emitted in the car-body (centre-of-mass) frame — the model frame less the 0.11285 m rebase — and
 //    appended to the body's facet set, so the cabin moves, casts shadows, derezzes and enters the distance field and
 //    cards with the car. Only the steering wheel moves on its own: its facets carry the SteeringWheel family and the
-//    vertex stage turns them about the column (TyreCarcass.wgsl TurnSteeringWheel).
+//    vertex stage turns them about the column (VehiclePose.wgsl TurnSteeringWheel).
 
 import { CourseMaterial } from "./MaterialSpecification.js";
 import { ResolveCoMAuthoredZ } from "./VehicleSpecification.js";
@@ -260,7 +260,7 @@ export const CameraRigs = Object.freeze({
 //    Offset. The occupants stay human-sized: each eye moves with its seat's hip point but is not scaled, so from the
 //    driver's camera a smaller cockpit really looks smaller (scaling the eye too would leave that view unchanged).
 //    The shell, its glazing, the three mirrors and the carpet are the car's and stay put. The facets themselves never
-//    change: the vertex stage places them (TyreCarcass.wgsl PlaceCockpit), so the size can be dragged live.
+//    change: the vertex stage places them (VehiclePose.wgsl PlaceCockpit), so the size can be dragged live.
 export const CockpitAnchor = Body(0.30, 0.0, 0.14);
 
 export const CockpitDefaults = Object.freeze({ CockpitScale: 1.0, CockpitForward: 0.0, CockpitLateral: 0.0, CockpitHeight: 0.0 });
