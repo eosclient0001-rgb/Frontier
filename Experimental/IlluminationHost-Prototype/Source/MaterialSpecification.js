@@ -295,3 +295,34 @@ export function EncodeMaterialRecords(Materials)
     });
     return Scalars;
 }
+
+// 📐 Body finishes the HMI applies to the car's coat (BodyCoat, family 6). 0 is the authored coat; 1–4 are presets; 5 is
+//    the custom colour from the hue slider with the gloss slider's roughness and clear coat.
+export const BodyFinishNames = Object.freeze(["Authored", "Pearl", "Graphite", "Signal red", "Ice flake", "Custom"]);
+
+function HueToLinear(Hue, Saturation, Value)
+{
+    const Channel = (Offset) => Value * ((1.0 - Saturation) + Saturation * Math.min(1.0, Math.max(0.0, Math.abs(((Hue + Offset) % 1.0) * 6.0 - 3.0) - 1.0)));
+    return [Channel(0.0), Channel(2.0 / 3.0), Channel(1.0 / 3.0)].map((Sample) => Math.pow(Sample, 2.2));
+}
+
+export function ConstructBodyCoat(Finish, Hue = 0.6, Gloss = 0.7)
+{
+    const Presets = {
+        1: [[0.72, 0.71, 0.66], 0.16, 0.6, 0.04],
+        2: [[0.05, 0.05, 0.055], 0.8, 0.0, 0.1],
+        3: [[0.55, 0.03, 0.025], 0.22, 0.7, 0.03],
+        4: [[0.42, 0.56, 0.66], 0.3, 0.5, 0.06],
+    };
+    if (Finish === 5)
+    {
+        const Clamped = Math.min(1.0, Math.max(0.0, Gloss));
+        const Material = Dielectric(...HueToLinear(Hue, 0.75, 0.6), 1.0 - 0.85 * Clamped);
+        return { ...Material, CoatWeight: 0.6 * Clamped, CoatRoughness: 0.04 + 0.2 * (1.0 - Clamped) };
+    }
+    const Preset = Presets[Finish];
+    if (!Preset)
+        return null;
+    const [Albedo, Roughness, CoatWeight, CoatRoughness] = Preset;
+    return { ...Dielectric(...Albedo, Roughness), CoatWeight, CoatRoughness };
+}

@@ -6,7 +6,7 @@
 import { DeviceExchange } from "./DeviceExchange.js";
 import { ShaderInterchange } from "./ShaderInterchange.js";
 import { SceneStructure, OccupantStride, GroundLayout, OccupantRole } from "./FacetStructure.js";
-import { ConstructMaterialSpecification, EncodeMaterialRecords, CourseMaterial, MarkedFamilyFirst, MarkedFamilyLast,
+import { ConstructMaterialSpecification, EncodeMaterialRecords, ConstructBodyCoat, CourseMaterial, MarkedFamilyFirst, MarkedFamilyLast,
          MarkedFamilyExtraFirst, MarkedFamilyExtraLast } from "./MaterialSpecification.js";
 import { TyreMarkDepot, TyreMarkLayout } from "./TyreMarkDepot.js";
 import { OccupantDistanceSpace } from "./OccupantDistanceSpace.js";
@@ -51,7 +51,7 @@ const ShaderSources = [
     "SceneRecords.wgsl", "FrameDescriptor.wgsl", "PackingCodec.wgsl", "DiscrepancySequence.wgsl", "SkyProjection.wgsl",
     "DistanceRecords.wgsl", "DistanceTraversal.wgsl", "DistanceTransfer.wgsl", "DistanceUnion.wgsl", "CardProjection.wgsl",
     "CardSampling.wgsl", "CardCapture.wgsl", "CardIrradiance.wgsl", "CardDirect.wgsl", "CardRadiosity.wgsl", "CardFinal.wgsl",
-    "AtmosphereScattering.wgsl", "SurfaceReflectance.wgsl", "ShadowRaster.wgsl", "SurfaceRaster.wgsl", "DirectRadiance.wgsl",
+    "AtmosphereScattering.wgsl", "SurfaceReflectance.wgsl", "ShadowRaster.wgsl", "GhostView.wgsl", "SurfaceRaster.wgsl", "DirectRadiance.wgsl",
     "ReservoirRecords.wgsl", "ReservoirTemporal.wgsl", "ReservoirSpatial.wgsl", "ReflectionTraversal.wgsl", "VarianceTemporal.wgsl",
     "VarianceWavelet.wgsl", "VarianceUpsample.wgsl", "InspectionMarch.wgsl", "DisplayRecombination.wgsl", "DisplayAntialias.wgsl",
     "DisplayExposure.wgsl", "DisplayPresent.wgsl", "FireIllumination.wgsl", "SmokeRecords.wgsl", "SmokeLattice.wgsl",
@@ -108,13 +108,13 @@ class IlluminationHost
             Quality: ["low", "medium", "high"].indexOf(this.GradeName),
             RenderScale: this.Grade.RenderScale, LightingPreset: "Custom", TestPlume: 0,
             // 📝 Tyres: cold pressures per axle [kPa], the carcass deformation and its visual exaggeration, wear and failure.
-            TyrePressureFront: 220, TyrePressureRear: 220, TyreDeformation: true, DeformationScale: 1.0,
+            TyrePressureFront: 220, TyrePressureRear: 220, VehicleView: 0, GhostOpacity: 0.35, BodyFinish: 0, BodyHue: 0.6, BodyGloss: 0.7,
             TyreWear: true, WearScale: 1.0, TyreFailure: true, Sparks: true,
             // 📝 Cockpit size (Cabin · HMI): the interior's scale about its anchor and its offset [m] (CabinStructure.js);
             //    ?cockpit=0.9 starts it scaled.
             ...CockpitDefaults,
             CockpitScale: Query.has("cockpit") ? Math.max(0.5, Math.min(1.5, Number(Query.get("cockpit")) || 1.0)) : CockpitDefaults.CockpitScale,
-            CameraMode: Query.get("camera") || "Chase"
+            CameraMode: Query.get("camera") || "Chase", VehicleView: Number(Query.get("view") || 0), BodyFinish: Number(Query.get("finish") || 0)
         };
         if (Query.has("preset"))
             this.PendingPreset = Query.get("preset");
@@ -187,6 +187,8 @@ class IlluminationHost
         this.Materials = Materials;
         // 📝 COPY_DST: the derez palette (VFX editor) rewrites its three glow records in place.
         this.MaterialRecords = this.Exchange.ConstructRecordsFrom(EncodeMaterialRecords(Materials), GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Materials");
+        this.AuthoredCoat   = Materials[CourseMaterial.BodyCoat];
+        this.ApplyBodyMaterial();   // a finish chosen before the start (?finish=) takes effect on the first frame
         this.FrameRecords    = this.Exchange.ConstructRecords(FrameRecordExtent, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, "Frame record");
         this.OccupantRecords = this.Exchange.ConstructRecords(this.Scene.Occupants.length * OccupantStride,
                                                               GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Occupant records");
@@ -268,7 +270,7 @@ class IlluminationHost
         // 📝 The vehicle record: the tyres' carcass rings, the steering wheel's turn and the glazing (TyreCarcass.wgsl).
         this.Carcass = new TyreCarcassSolver(VehicleGeometry.TyreRadius, VehicleGeometry.TyreRimRadius, 0.5 * VehicleGeometry.TyreWidth);
         this.VehicleRecords = this.Exchange.ConstructRecords(VehicleRecordBytes, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, "Vehicle record");
-        this.Exchange.Device.queue.writeBuffer(this.VehicleRecords, 0, this.Carcass.EncodeRecord(this.QueryCabinHeader(), false));
+        this.Exchange.Device.queue.writeBuffer(this.VehicleRecords, 0, this.Carcass.EncodeRecord(this.QueryCabinHeader()));
         this.Effects = new EffectSequence(this.Exchange, this.Shaders, this.Scene);
         this.Effects.ConstructVehicleCells(this.Vehicle);
         await this.Effects.ConstructPrograms(this.FrameRecords);
@@ -345,6 +347,17 @@ class IlluminationHost
 
     // 📝 Every editor edit lands here once its value is written: most settings are read each frame and need nothing;
     //    these rebuild something or act.
+    // 📝 The HMI's body finish: the coat's record in the material table is rewritten in place (the same path the derez
+    //    palette takes), so the real car — the scene raster and the cabin's preview — takes the new paint on the next frame.
+    ApplyBodyMaterial()
+    {
+        const Coat = this.Settings.BodyFinish === 0 ? this.AuthoredCoat : ConstructBodyCoat(this.Settings.BodyFinish, this.Settings.BodyHue, this.Settings.BodyGloss);
+        if (!Coat)
+            return;
+        this.Materials[CourseMaterial.BodyCoat] = Coat;
+        this.Exchange.Device.queue.writeBuffer(this.MaterialRecords, CourseMaterial.BodyCoat * 12 * 4, EncodeMaterialRecords([Coat]));
+    }
+
     ApplySetting(Key)
     {
         if (Key === "HudVisible" || Key === "InsetEnabled")
@@ -372,6 +385,8 @@ class IlluminationHost
             this.RestoreTyres();
         else if (Key === "TyrePressure")
             this.InflateTyres(this.Settings.TyrePressureFront, this.Settings.TyrePressureRear);
+        else if (Key === "BodyFinish" || Key === "BodyHue" || Key === "BodyGloss")
+            this.ApplyBodyMaterial();
         else if (Key === "SeeThroughGlass" && this.Cabin)
             this.Cabin.Settings.SeeThroughGlass = !!this.Settings.SeeThroughGlass;
         else if (Key === "ClearSmoke")
@@ -456,7 +471,7 @@ class IlluminationHost
         if (this.Cabin)
             this.Cabin.Cockpit = Cockpit;
         return { SteeringAngle: Angle, SeeThroughGlass: this.Cabin ? this.Cabin.Settings.SeeThroughGlass : true,
-                 Exaggeration: this.Settings.TyreDeformation ? this.Settings.DeformationScale : 1.0,
+                 GhostView: this.Settings.VehicleView, GhostOpacity: this.Settings.GhostOpacity,
                  Column: Steering.Pivot, Axis: Steering.Axis, Cockpit };
     }
 
@@ -984,9 +999,9 @@ class IlluminationHost
             this.OnTyreShred(Wheel);
         this.Sparks.Settings.Enabled = this.Settings.Sparks;
         this.Sparks.Emit(VehicleEvents.Sparks, Step);
-        this.Sparks.Advance(Step);
+        this.Sparks.Advance(Step, this.Bodies.Obstacles);
         this.Carcass.Advance(this.Vehicle.QueryCarcassContacts(), Step);
-        Device.queue.writeBuffer(this.VehicleRecords, 0, this.Carcass.EncodeRecord(this.QueryCabinHeader(), this.Settings.TyreDeformation));
+        Device.queue.writeBuffer(this.VehicleRecords, 0, this.Carcass.EncodeRecord(this.QueryCabinHeader()));
         const Pumped = this.Cabin.Advance(Δτ, this.QueryTyreLive());
         if (Pumped !== null)
         {

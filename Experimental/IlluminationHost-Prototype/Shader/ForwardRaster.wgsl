@@ -18,6 +18,7 @@
 //    glass; its near plane is the mirror itself, so nothing behind the glass leaks into it.
 
 //! include "FrameDescriptor.wgsl"
+//! include "GhostView.wgsl"
 //! include "SurfaceReflectance.wgsl"
 //! include "SkyProjection.wgsl"
 //! include "EffectRecords.wgsl"
@@ -59,11 +60,12 @@ struct ForwardVarying
     @location(2) WorldPosition              : vec3f,
     @location(3) @interpolate(flat) Vehicle : u32,
     @location(4) BodyLocal                  : vec3f,
+    @location(5) Bary                       : vec3f,
 }
 
 @vertex
 fn ForwardVertex(@location(0) Position: vec3f, @location(1) Family: u32, @location(2) Normal: vec3f,
-                 @location(3) OccupantOffset: u32, @builtin(instance_index) OccupantIndex: u32) -> ForwardVarying
+                 @location(3) OccupantOffset: u32, @builtin(instance_index) OccupantIndex: u32, @builtin(vertex_index) VertexIndex: u32) -> ForwardVarying
 {
     let Index = OccupantIndex + OccupantOffset;
     let Occupant = Occupants[Index];
@@ -86,6 +88,7 @@ fn ForwardVertex(@location(0) Position: vec3f, @location(1) Family: u32, @locati
     Varying.WorldPosition = World.xyz;
     Varying.Vehicle = select(0u, 1u, Index < 5u);
     Varying.BodyLocal = (Occupants[0].WorldToLocal * World).xyz;
+    Varying.Bary = CornerBarycentric(VertexIndex);
     return Varying;
 }
 
@@ -137,10 +140,15 @@ fn ClassifyMasked(BodyLocal: vec3f) -> bool
 @fragment
 fn ForwardFragment(Varying: ForwardVarying) -> @location(0) vec4f
 {
+    let Derivative = fwidth(Varying.Bary);   // before any discard: derivatives need uniform control flow
     if (Varying.Vehicle == 1u)
     {
         // 📝 A mirror never sees mirror glass (each mirror's own lies on its near plane); see-through glazing is gone.
         if ((Varying.Family == VehicleGlassFamily && VehicleState.Cabin.y > 0.5) || Varying.Family == MirrorGlassFamily)
+        {
+            discard;
+        }
+        if (ShouldDiscardForGhost(Varying.Position.xy, Varying.Bary, Derivative))
         {
             discard;
         }

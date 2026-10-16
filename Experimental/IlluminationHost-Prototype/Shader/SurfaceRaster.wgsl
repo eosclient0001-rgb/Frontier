@@ -4,6 +4,7 @@
 // 🧩 Primary visibility: every rastered occupant projected into depth, shading normal, material family and screen motion.
 
 //! include "FrameDescriptor.wgsl"
+//! include "GhostView.wgsl"
 //! include "PackingCodec.wgsl"
 //! include "EffectRecords.wgsl"
 //! include "TyreCarcass.wgsl"
@@ -26,6 +27,7 @@ struct SurfaceVarying
     @location(4) WorldPosition              : vec3f,
     @location(5) @interpolate(flat) Vehicle : u32,
     @location(6) BodyLocal                  : vec3f,   // car-body frame, for the derez mask
+    @location(7) Bary                       : vec3f,   // triangle corner weight, for the ghost wireframe
 }
 
 struct SurfaceTargets
@@ -57,7 +59,7 @@ fn DeformVehicleVertex(Index: u32, Family: u32, Position: vec3f, Normal: vec3f) 
 //    and one draw, each vertex naming its own fragment occupant relative to the draw's first instance.
 @vertex
 fn SurfaceVertex(@location(0) Position: vec3f, @location(1) Family: u32, @location(2) Normal: vec3f,
-                 @location(3) OccupantOffset: u32, @builtin(instance_index) OccupantIndex: u32) -> SurfaceVarying
+                 @location(3) OccupantOffset: u32, @builtin(instance_index) OccupantIndex: u32, @builtin(vertex_index) VertexIndex: u32) -> SurfaceVarying
 {
     let Index    = OccupantIndex + OccupantOffset;
     let Occupant = Occupants[Index];
@@ -73,6 +75,7 @@ fn SurfaceVertex(@location(0) Position: vec3f, @location(1) Family: u32, @locati
     Varying.WorldPosition = World.xyz;
     Varying.Vehicle       = select(0u, 1u, Index < VehicleOccupantCount);
     Varying.BodyLocal     = (Occupants[0].WorldToLocal * World).xyz;
+    Varying.Bary          = CornerBarycentric(VertexIndex);
     return Varying;
 }
 
@@ -134,6 +137,7 @@ fn ProjectScreenPixel(Clip: vec4f) -> vec2f
 @fragment
 fn SurfaceFragment(Varying: SurfaceVarying) -> SurfaceTargets
 {
+    let Derivative = fwidth(Varying.Bary);   // before any discard: derivatives need uniform control flow
     // 📝 Derivatives first, in uniform control flow: the pixel's footprint on the ground for the tyre-mark edges, and
     //    the facet's own orientation for the soft tyre's guard below.
     let Footprint = length(fwidth(Varying.WorldPosition.xy));
@@ -163,6 +167,11 @@ fn SurfaceFragment(Varying: SurfaceVarying) -> SurfaceTargets
     // 📝 See-through glazing: the car's glass leaves the opaque raster (the cabin overlay draws it over what lies
     //    behind, tinted and reflecting the sky).
     if (Varying.Vehicle == 1u && Family == VehicleGlassFamily && VehicleState.Cabin.y > 0.5)
+    {
+        discard;
+    }
+    // 📝 Ghost and wireframe views of the car (GhostView.wgsl): the body is see-through or reduced to its triangle edges.
+    if (Varying.Vehicle == 1u && ShouldDiscardForGhost(Varying.Position.xy, Varying.Bary, Derivative))
     {
         discard;
     }

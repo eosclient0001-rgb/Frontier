@@ -39,11 +39,11 @@ struct TyreCarcass
 
 struct VehicleRecord
 {
-    Cabin      : vec4f,               // x steering-wheel angle [rad], y glazing see-through (1), z deformation exaggeration [×], w lamp
+    Cabin      : vec4f,               // x steering-wheel angle [rad], y glazing see-through (1), z ghost view (0 solid, 1 ghost, 2 wireframe), w lamp
     Column     : vec4f,               // xyz steering-column pivot, car-body frame [m]
     Axis       : vec4f,               // xyz steering-column axis, car-body frame, toward the driver
     CabinFrame : vec4f,               // xyz the cockpit's scaling anchor, car-body frame [m]; w its scale [×]
-    CabinShift : vec4f,               // xyz the cockpit's offset after scaling, car-body frame [m]; w unused
+    CabinShift : vec4f,               // xyz the cockpit's offset after scaling, car-body frame [m]; w ghost opacity
     Carcasses  : array<TyreCarcass, 4>,
 }
 
@@ -54,63 +54,6 @@ struct DeformedVertex
 }
 
 const CarcassNodeCount : i32 = 96;
-
-fn ReadCarcassNode(Wheel: u32, Node: i32) -> f32
-{
-    let Wrapped = u32(((Node % CarcassNodeCount) + CarcassNodeCount) % CarcassNodeCount);
-    return VehicleState.Carcasses[Wheel].Deflection[Wrapped / 4u][Wrapped % 4u];
-}
-
-// 📐 Catmull–Rom through the four nodes about φ: the belt's deflection there.
-fn SampleCarcass(Wheel: u32, φ: f32) -> f32
-{
-    let U = fract(φ / 6.28318530718) * f32(CarcassNodeCount);
-    let Base = i32(floor(U));
-    let T = U - floor(U);
-    let P0 = ReadCarcassNode(Wheel, Base - 1);
-    let P1 = ReadCarcassNode(Wheel, Base);
-    let P2 = ReadCarcassNode(Wheel, Base + 1);
-    let P3 = ReadCarcassNode(Wheel, Base + 2);
-    let A = -P0 + 3.0 * P1 - 3.0 * P2 + P3;
-    let B = 2.0 * P0 - 5.0 * P1 + 4.0 * P2 - P3;
-    let C = -P0 + P2;
-    return 0.5 * (2.0 * P1 + C * T + B * T * T + A * T * T * T);
-}
-
-// 📐 Where the carcass puts one hub-local point of an intact tyre (axle along +Y).
-fn DisplaceTyre(Wheel: u32, Position: vec3f) -> vec3f
-{
-    let Shape = VehicleState.Carcasses[Wheel].Shape;
-    let Radial = length(Position.xz);
-    let Height = max(Shape.x - Shape.y, 1.0e-4);
-    let Share = clamp((Radial - Shape.y) / Height, 0.0, 1.0);
-    if (Share <= 0.0)
-    {
-        return Position;
-    }
-    let Pose = VehicleState.Carcasses[Wheel].Pose;
-    let Contact = VehicleState.Carcasses[Wheel].Contact;
-    let Exaggeration = max(VehicleState.Cabin.z, 1.0);
-    let φ = atan2(Position.z, Position.x);
-    let FromRoad = atan2(sin(φ - Pose.x), cos(φ - Pose.x));
-    // 📝 The road's floor at this angle: the belt is pushed in at least this far, so the exaggerated belt is held to it
-    //    — the patch keeps its contact — and only the deflection beyond it is scaled.
-    var Floor = 0.0;
-    if (Contact.x > 0.0 && abs(FromRoad) < 1.2)
-    {
-        Floor = max(Shape.x - Contact.x / cos(FromRoad), 0.0);
-    }
-    let Solved = SampleCarcass(Wheel, φ);
-    let Belt = select(Solved * Exaggeration, Floor + max(Solved - Floor, 0.0) * Exaggeration, Floor > 0.0);
-    // 📐 The sidewall of height h shortened by w bows out by about √(3·h·w/8) (an inextensible arc's sagitta) — the
-    //    arc's own reach saturates near 0.36·h however far it is squashed — times the share the air does not carry.
-    let Depth = Pose.w * min(sqrt(0.375 * Height * max(Belt, 0.0)), 0.36 * Height);
-    let Profile = sin(3.14159265359 * Share);
-    let Side = clamp(Position.y / max(Shape.z, 1.0e-3), -1.0, 1.0);
-    let Shift = Pose.y * Exaggeration * exp(-(FromRoad * FromRoad) / max(Pose.z * Pose.z, 1.0e-4)) * Share;
-    let Reach = max(Radial - Belt * Share, Shape.y);
-    return vec3f(cos(φ) * Reach, Position.y + Depth * Profile * Side + Shift, sin(φ) * Reach);
-}
 
 // 📝 Shredded: what is left of the rubber is a ragged strip hugging the rim barrel.
 fn ShredTyre(Wheel: u32, Position: vec3f, Normal: vec3f) -> DeformedVertex
@@ -126,19 +69,16 @@ fn ShredTyre(Wheel: u32, Position: vec3f, Normal: vec3f) -> DeformedVertex
     return Deformed;
 }
 
-// 📝 Position only, for the shadow pass.
+// 📝 Position only, for the shadow pass. Tyres are round: the carcass deformation is gone (the dynamics still run the
+//    soft tyre in VehicleSolver). Only a shredded tyre changes shape.
 fn DeformTyrePosition(Wheel: u32, Position: vec3f) -> vec3f
 {
     let Shape = VehicleState.Carcasses[Wheel].Shape;
-    if (length(Position.xz) <= Shape.y)
-    {
-        return Position;
-    }
-    if (Shape.w > 0.5)
+    if (Shape.w > 0.5 && length(Position.xz) > Shape.y)
     {
         return ShredTyre(Wheel, Position, vec3f(1.0, 0.0, 0.0)).Position;
     }
-    return DisplaceTyre(Wheel, Position);
+    return Position;
 }
 
 fn DeformTyre(Wheel: u32, Position: vec3f, Normal: vec3f) -> DeformedVertex
@@ -147,26 +87,10 @@ fn DeformTyre(Wheel: u32, Position: vec3f, Normal: vec3f) -> DeformedVertex
     Deformed.Position = Position;
     Deformed.Normal = Normal;
     let Shape = VehicleState.Carcasses[Wheel].Shape;
-    if (length(Position.xz) <= Shape.y)
+    if (Shape.w > 0.5 && length(Position.xz) > Shape.y)
     {
-        return Deformed;   // the rim, the hub and the bead seat are rigid
+        return ShredTyre(Wheel, Position, Normal);   // the rim, the hub and the bead seat stay rigid
     }
-    if (Shape.w > 0.5)
-    {
-        return ShredTyre(Wheel, Position, Normal);
-    }
-    // 📐 Finite differences along the tangent plane: T1 × T2 = N, so the crossed displaced tangents keep the
-    //    surface's orientation, and undeformed they return N itself.
-    let Helper = select(vec3f(0.0, 1.0, 0.0), vec3f(1.0, 0.0, 0.0), abs(Normal.y) > 0.9);
-    let T1 = normalize(cross(Helper, Normal));
-    let T2 = cross(Normal, T1);
-    let Step = 0.008;
-    let P0 = DisplaceTyre(Wheel, Position);
-    let P1 = DisplaceTyre(Wheel, Position + T1 * Step);
-    let P2 = DisplaceTyre(Wheel, Position + T2 * Step);
-    let Turned = cross(P1 - P0, P2 - P0);
-    Deformed.Position = P0;
-    Deformed.Normal = select(Normal, normalize(Turned), dot(Turned, Turned) > 1.0e-16);
     return Deformed;
 }
 

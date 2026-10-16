@@ -174,26 +174,26 @@ export class TyreCarcassSolver
     }
 
     // 📝 The VehicleRecord TyreCarcass.wgsl reads: the cabin header (Header: { SteeringAngle, SeeThroughGlass,
-    //    Exaggeration, Lamp, Column [xyz], Axis [xyz], Cockpit { Anchor, Scale, Offset } }) then four carcass records —
-    //    shape, pose, contact (hub height over the road, pressure ratio), 96 deflections. Deformation off sends
-    //    the rings flat and drops the road floor (the tyres draw round) while the dynamics keep their soft tyre.
-    EncodeRecord(Header, Deform = true)
+    //    GhostView, Lamp, Column [xyz], Axis [xyz], Cockpit { Anchor, Scale, Offset }, GhostOpacity }) then four carcass
+    //    records — shape, pose, contact, bulge. The carcass is no longer drawn deformed: the deflections are sent as zeros
+    //    and the tyres draw round (a shredded one still shows its ragged rim strip); the dynamics keep the soft tyre.
+    EncodeRecord(Header)
     {
         const Scalars = new Float32Array(this.Bytes);
         const Cockpit = Header.Cockpit || { Anchor: [0.0, 0.0, 0.0], Scale: 1.0, Offset: [0.0, 0.0, 0.0] };
-        Scalars.set([Header.SteeringAngle || 0.0, Header.SeeThroughGlass ? 1.0 : 0.0, Header.Exaggeration ?? 1.0, Header.Lamp ?? 0.0], 0);
+        Scalars.set([Header.SteeringAngle || 0.0, Header.SeeThroughGlass ? 1.0 : 0.0, Header.GhostView ?? 0.0, Header.Lamp ?? 0.0], 0);
         Scalars.set([...(Header.Column || [0.0, 0.0, 0.0]), 0.0], 4);
         Scalars.set([...(Header.Axis || [1.0, 0.0, 0.0]), 0.0], 8);
         Scalars.set([...Cockpit.Anchor, Cockpit.Scale], 12);
-        Scalars.set([...Cockpit.Offset, 0.0], 16);
+        Scalars.set([...Cockpit.Offset, Header.GhostOpacity ?? 0.6], 16);
         this.Wheels.forEach((Wheel, Index) =>
         {
             const Offset = (VehicleHeaderBytes + Index * CarcassRecordBytes) / 4;
             Scalars.set([this.Radius, this.RimRadius, this.HalfWidth, Wheel.Shredded ? 1.0 : 0.0], Offset);
-            Scalars.set([Wheel.DownAngle, Deform ? Wheel.LateralShift : 0.0, CarcassSpecification.LateralSpread, Wheel.Bulge], Offset + 4);
-            Scalars.set([Deform ? Wheel.HubDistance : 0.0, 0.0, 0.0, Wheel.PressureRatio], Offset + 8);
+            Scalars.set([Wheel.DownAngle, 0.0, CarcassSpecification.LateralSpread, Wheel.Bulge], Offset + 4);
+            Scalars.set([0.0, 0.0, 0.0, Wheel.PressureRatio], Offset + 8);
             for (let Node = 0; Node < CarcassNodes; ++Node)
-                Scalars[Offset + 12 + Node] = Deform ? Wheel.Deflection[Node] : 0.0;
+                Scalars[Offset + 12 + Node] = 0.0;
         });
         return this.Bytes;
     }

@@ -15,8 +15,10 @@
 //    |        | the patch, where the metal leaves the road    | (S = Spin·r) — up off the trailing edge, so the trail |
 //    |        |                                               | streams back from a rolling wheel                     |
 //
-//    In flight a spark falls, feels air drag, cools radiatively (its glow follows the blackbody temperature) and skips
-//    off the road, losing most of its speed, until it is too cool to see.
+//    In flight a spark falls, feels air drag, cools radiatively (its glow follows the blackbody temperature) and strikes
+//    the world: the road, and every box in the rigid-body world (walls, barriers, props, containers). Each strike reflects the normal velocity and keeps most of the tangential one. Its colour walks
+//    down the blackbody from white-yellow through orange to red, and below 1350 K it derezzes into cells that drop out
+//    one by one until it is gone (SparkRaster.wgsl).
 //
 //    A few hundred particles: they are integrated here on the CPU and drawn after the temporal antialiasing as thin
 //    additive streaks (2.2 mm across, at least a pixel) from where the camera saw them a frame ago to where it sees
@@ -30,9 +32,15 @@ const InstanceFloats  = 12;            // head xyz + width, tail xyz + 0, radian
 const Gravity         = 9.81;          // [m/s²]
 const AirDrag         = 1.6;           // [1/s]
 const CoolingSeconds  = 0.42;          // [s]  e-folding of a spark's excess temperature
-const VisibleKelvin   = 950.0;         // [K]  below this a spark is gone
+const VisibleKelvin   = 950.0;         // [K]  below this a spark is gone (it has derezzed by then)
+const DerezKelvin     = 1350.0;        // [K]  below this a spark breaks up into derez cells, fully gone at VisibleKelvin
+const BirthKelvinMinimum = 2600.0;     // [K]  white-yellow when it leaves the metal …
+const BirthKelvinRange   = 500.0;      // [K]  … 2600–3100 K
 const SparksPerStrength = 700.0;       // [1/s] per unit scrape strength
 const SparkWidth      = 0.0022;        // [m]  streak width at Size 1 — a glowing chip a fraction of a millimetre across, blurred
+const SparkRestitution = 0.35;         // [-]  normal speed kept after striking the world's geometry (a chip of hot steel, not a ball)
+const SparkFriction    = 0.8;          // [-]  tangential speed kept after a strike
+const SkinMetres       = 0.003;        // [m]  a spark is pushed this far out of the box it struck
 
 export const SparkSettingsDefaults = Object.freeze({ Enabled: true, Rate: 1.0, Brightness: 1.0, Size: 1.0 });
 
@@ -128,7 +136,9 @@ export class SparkSequence
                     Position,
                     Prior: Origin,
                     Velocity,
-                    Kelvin: 1500.0 + 600.0 * this.Random(),
+                    Kelvin: BirthKelvinMinimum + BirthKelvinRange * this.Random(),
+                    Seed: this.Random(),
+                    Strikes: 0,
                     Age: 0.0,
                     Fresh: true,
                     Size: (0.6 + 0.8 * this.Random()) * this.Settings.Size
@@ -138,8 +148,9 @@ export class SparkSequence
         }
     }
 
-    // 📝 Ballistic with linear drag, radiative cooling toward ambient, skips off the course.
-    Advance(Seconds)
+    // 📝 Ballistic with linear drag, radiative cooling toward ambient, struck by the course and the world's boxes.
+    // 📝 Obstacles: the rigid-body world's boxes ({ Minimum, Maximum }), the same ones debris and cones collide with.
+    Advance(Seconds, Obstacles = [])
     {
         if (!(Seconds > 0.0))
             return;
@@ -166,6 +177,7 @@ export class SparkSequence
                 if (Spark.Velocity[2] < 0.0)
                     Spark.Velocity = [Spark.Velocity[0] * 0.55, Spark.Velocity[1] * 0.55, -Spark.Velocity[2] * 0.32];
             }
+            this.CollideWithWorld(Spark, Obstacles);
             Spark.Kelvin = 293.0 + (Spark.Kelvin - 293.0) * Math.exp(-Seconds / CoolingSeconds);
             if (Spark.Kelvin > VisibleKelvin && Spark.Age < 2.5)
                 Survivors.push(Spark);
@@ -184,9 +196,47 @@ export class SparkSequence
             const Offset = Index * InstanceFloats;
             const Tail = Spark.Prior || Spark.Position;
             const Radiance = ResolveSparkRadiance(Spark.Kelvin).map((Channel) => Channel * Brightness);
-            this.Instances.set([...Spark.Position, SparkWidth * Spark.Size, ...Tail, 0.0, ...Radiance, 0.0], Offset);
+            // 📝 The tail's w carries the derez progress (0 whole … 1 gone); the radiance's w, the spark's own seed.
+            const Derez = Math.min(1.0, Math.max(0.0, (DerezKelvin - Spark.Kelvin) / (DerezKelvin - VisibleKelvin)));
+            this.Instances.set([...Spark.Position, SparkWidth * Spark.Size, ...Tail, Derez, ...Radiance, Spark.Seed], Offset);
         }
         this.Exchange.Device.queue.writeBuffer(this.InstanceRecords, 0, this.Instances, 0, this.Live * InstanceFloats);
+    }
+
+    // 📝 Reflect the spark off the first box it is inside: out through the nearest face, the normal speed reversed and
+    //    scaled by the restitution, the tangential speed by the friction. A spark that reaches the box's face is pushed
+    //    out by a skin so it does not sink in on the next step.
+    CollideWithWorld(Spark, Obstacles)
+    {
+        for (const Box of Obstacles)
+        {
+            const P = Spark.Position;
+            if (P[0] <= Box.Minimum[0] || P[0] >= Box.Maximum[0] || P[1] <= Box.Minimum[1] || P[1] >= Box.Maximum[1] ||
+                P[2] <= Box.Minimum[2] || P[2] >= Box.Maximum[2])
+                continue;
+            const Exits = [P[0] - Box.Minimum[0], Box.Maximum[0] - P[0], P[1] - Box.Minimum[1], Box.Maximum[1] - P[1],
+                           P[2] - Box.Minimum[2], Box.Maximum[2] - P[2]];
+            let Face = 0;
+            for (let Candidate = 1; Candidate < 6; ++Candidate)
+                if (Exits[Candidate] < Exits[Face])
+                    Face = Candidate;
+            const Axis = Face >> 1;
+            const Sign = (Face & 1) ? 1.0 : -1.0;
+            P[Axis] = (Sign > 0.0 ? Box.Maximum[Axis] : Box.Minimum[Axis]) + Sign * SkinMetres;
+            const Velocity = Spark.Velocity.slice();
+            if (Velocity[Axis] * Sign < 0.0)
+            {
+                Velocity[Axis] = -Velocity[Axis] * SparkRestitution;
+                for (let Other = 0; Other < 3; ++Other)
+                    if (Other !== Axis)
+                        Velocity[Other] *= SparkFriction;
+            }
+            Spark.Velocity = Velocity;
+            Spark.Strikes++;
+            // 📝 A strike cools the spark a little: the metal gives up heat to the surface it hits.
+            Spark.Kelvin = 293.0 + (Spark.Kelvin - 293.0) * 0.9;
+            return;
+        }
     }
 
     // 📝 Additively over the post radiance, depth-tested against the opaque surface (read only).
@@ -218,14 +268,16 @@ export class SparkSequence
     }
 }
 
-// 📐 Blackbody colour (Helland's fit, linear) × Stefan–Boltzmann brightness referred to 1500 K, in the scene's radiance
-//    units (sunlit white ≈ 5): a fresh spark is a few hundred times brighter than the road it flies over.
+// 📐 Blackbody colour (Helland's fit, linear) times an emitted intensity that follows the temperature, so a spark cools
+//    down the blackbody — white-yellow, then orange, then red — and dims with it. The intensity is kept near one to a
+//    few units: the post tonemapper (ACES, per channel) would flatten brighter sparks to white, which is what made them
+//    read as yellow before they turned orange. Brightness rises as T² above the derez point and is 2.2 at birth.
 export function ResolveSparkRadiance(Kelvin)
 {
     const Hecto = Math.max(1000.0, Math.min(6600.0, Kelvin)) / 100.0;
     const Green = Math.min(1.0, Math.max(0.0, (99.4708025861 * Math.log(Hecto) - 161.1195681661) / 255.0));
     const Blue = Hecto <= 19.0 ? 0.0 : Math.min(1.0, Math.max(0.0, (138.5177312231 * Math.log(Math.max(Hecto - 10.0, 1.0)) - 305.0447927307) / 255.0));
-    const Ratio = Kelvin / 1500.0;
-    const Brightness = 120.0 * Ratio * Ratio * Ratio * Ratio;
-    return [1.0, Math.pow(Green, 2.2), Math.pow(Blue, 2.2)].map((Channel) => Channel * Brightness);
+    const Span = Math.max(0.0, Math.min(1.0, (Kelvin - VisibleKelvin) / (3100.0 - VisibleKelvin)));
+    const Intensity = 2.2 * Span * Span;
+    return [1.0, Math.pow(Green, 2.2), Math.pow(Blue, 2.2)].map((Channel) => Channel * Intensity);
 }

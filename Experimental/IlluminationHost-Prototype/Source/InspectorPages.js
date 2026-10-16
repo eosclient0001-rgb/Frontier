@@ -87,7 +87,7 @@ export function ConstructEntities(Host)
           Description: "Telemetry, burnout, tyres & camera", Meta: () => `${Math.abs(Host.Vehicle.QueryTelemetry().Speed * 3.6).toFixed(0)} km/h`,
           State: () => (Host.Vehicle.Burnout ? "warm" : "live"), Build: (C, B) => BuildVehicle(Host, C, B),
           Switches: () => [Feature("Line lock", "Flame", S, "LineLock"), Feature("Thermal grip", "Thermometer", S, "ThermalGrip"),
-                           Feature("Tyre marks", "CircleDot", S, "TyreMarks"), Feature("Soft tyres", "Orbit", S, "TyreDeformation"),
+                           Feature("Tyre marks", "CircleDot", S, "TyreMarks"),
                            Feature("Sparks", "Zap", S, "Sparks")] },
         { Id: "cabin", Group: "Vehicle", Name: "Cabin · HMI", Type: "Interior", Glyph: "Monitor", Colour: Accent.Vehicle, Parent: "vehicle",
           Description: "Tablet & cluster, mirrors, glass, interior cameras", Meta: () => S.CameraMode,
@@ -331,14 +331,9 @@ function BuildVehicle(Host, C, Body)
                                 + (Reading.Wave > 0.004 ? ` wave ${(Reading.Wave * 1000).toFixed(0)} mm` : "") + (Reading.Pinched ? " PINCHED" : "")).join(" · ")]);
     C.Muted(Tyres, "Each tyre is a carcass spring in series with its strut, K = 25 kN/m + 0.9 N/m per Pa (223 kN/m at 220 kPa, 14 mm under the static corner load; "
                  + "a flat sits about 64 mm down, the car lower on that corner); "
-                 + "the visible tyre is a 96-node flexible ring on an elastic foundation (tension and support from the pressure, the steel belt's bending) "
-                 + "that flattens into a patch, bulges, shifts under cornering, throws a standing wave past ~210 km/h and creases its sidewalls when empty.");
+                 + "the visible tyre is round: its carcass is not drawn deformed, and a shredded tyre sheds its rubber to a ragged strip on the rim. The dynamics still run the 96-node flexible ring on an elastic foundation, and the patch, bulge, cornering shift, standing wave and empty-sidewall crease all set the forces.");
     Slider(C, Tyres, S, "TyrePressureFront", "Front cold pressure", 0, 400, 5, "kPa", 0, ["Flat", "Over"], () => Host.ApplySetting("TyrePressure"));
     Slider(C, Tyres, S, "TyrePressureRear", "Rear cold pressure", 0, 400, 5, "kPa", 0, ["Flat", "Over"], () => Host.ApplySetting("TyrePressure"));
-    C.Switch(Tyres, S, "TyreDeformation", { Label: "Soft tyres (carcass deformation)", Detail: "Off draws them round; the dynamics stay soft" });
-    Slider(C, Tyres, S, "DeformationScale", "Deformation ×", 1, 12, 0.5, "×", 1, ["True", "Exaggerated"]);
-    C.Muted(Tyres, "The exaggeration keeps every patch on the road: it grows what the road does not fix — the roll-in and roll-out, the standing wave, "
-                 + "the sidewall bulge, the belt's sideways shift. To see a tyre squash for real, let air out with the pressure sliders.");
     C.Switch(Tyres, S, "TyreWear", { Label: "Tread wear", Detail: "Sliding work abrades the tread, hotter faster" });
     Slider(C, Tyres, S, "WearScale", "Wear rate", 0.5, 40, 0.5, "×", 1, ["Real", "Demo"]);
     C.Switch(Tyres, S, "TyreFailure", { Label: "Failure", Detail: "Worn through, cooked or over-pressured tyres burst" });
@@ -395,6 +390,16 @@ function BuildCabin(Host, C, Body)
     C.Switch(Glass, Settings, "SeeThroughGlass", { Label: "See-through glass" });
     Slider(C, Glass, Settings, "GlassTransmission", "Transmission", 0.2, 0.95, 0.01, "", 2, ["Limo tint", "Clear"]);
     C.Segmented(Glass, Settings, "Mirrors", [["Off", 0], ["When visible", 1], ["Always", 2]], { Label: "Mirror views" });
+
+    const Finish = C.Card(Body, "Body finish & ghost view", "Layers", { Accent: Accent.Vehicle, Index: 5 });
+    C.Muted(Finish, "The finish rewrites the body's coat in the material table, so the real car takes it on the next frame; Custom mixes the hue and gloss below. "
+                  + "Ghost fades the body by screen-door transparency (a fixed dither that TAA averages; Ghost opacity is the fraction drawn). Wireframe keeps only the "
+                  + "triangle edges of every facet. Both change how the body is drawn — the physics, the shadows and the cockpit are unchanged.");
+    C.Segmented(Finish, Settings, "BodyFinish", [["Authored", 0], ["Pearl", 1], ["Graphite", 2], ["Signal red", 3], ["Ice flake", 4], ["Custom", 5]], { Label: "Finish" });
+    Slider(C, Finish, Settings, "BodyHue", "Custom hue", 0, 1, 0.01, "", 2, null, () => Host.ApplySetting("BodyFinish"));
+    Slider(C, Finish, Settings, "BodyGloss", "Custom gloss", 0, 1, 0.01, "", 2, ["Matte", "Gloss"], () => Host.ApplySetting("BodyFinish"));
+    C.Segmented(Finish, Settings, "VehicleView", [["Solid", 0], ["Ghost", 1], ["Wireframe", 2]], { Label: "View" });
+    Slider(C, Finish, Settings, "GhostOpacity", "Ghost opacity", 0.05, 1, 0.01, "", 2, ["Faint", "Solid"]);
 
     const Views = C.Card(Body, "Interior cameras", "Camera", { Accent: Accent.Vehicle, Index: 4 });
     C.Select(Views, S, "CameraMode", Object.keys(CameraRigs).map((Name) => [Name, Name]), { Label: "Rig (C cycles)", OnChange: (Mode) => Host.AssignCameraMode(Mode) });
