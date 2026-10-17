@@ -1,0 +1,1648 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Slate Tyre Generator — procedural 3D tyres &amp; tread editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c0d0f;--card:#17181b;--card2:#1e2024;--card3:#25272c;--line:rgba(255,255,255,.06);--txt:#e6e7ea;--mut:#8a8d94;--dim:#5c5f66;
+    --green:#38c46d;--yellow:#d6c93a;--red:#e5423f;--orange:#f0a04b;--acc:#ffffff;
+    font-family:"Outfit",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;font-weight:300;letter-spacing:.01em;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);overflow:hidden}
+  #app{display:grid;grid-template-columns:320px 1fr 340px;grid-template-rows:60px 1fr;height:100vh;gap:10px;padding:10px;background:radial-gradient(1200px 600px at 60% -10%,#1a1c20 0%,var(--bg) 60%)}
+  header{grid-column:1/4;display:flex;align-items:center;gap:8px;padding:0 6px}
+  .logo{width:34px;height:34px;border-radius:50%;background:conic-gradient(from 210deg,var(--txt) 0 12%,transparent 12% 25%,var(--txt) 25% 37%,transparent 37% 50%,var(--txt) 50% 62%,transparent 62% 75%,var(--txt) 75% 87%,transparent 87%);-webkit-mask:radial-gradient(circle,transparent 30%,#000 32%);mask:radial-gradient(circle,transparent 30%,#000 32%);margin-right:10px;opacity:.9}
+  .tabs{display:flex;gap:4px}
+  .tab{padding:10px 20px;border-radius:999px;color:var(--mut);cursor:pointer;font-weight:400;transition:.2s}
+  .tab:hover{color:var(--txt)}
+  .tab.on{background:var(--card2);color:var(--txt)}
+  .chips{display:flex;gap:6px;margin-left:auto;flex-wrap:nowrap;overflow:hidden}
+  .chip{padding:9px 16px;border-radius:999px;background:var(--card);color:var(--mut);cursor:pointer;white-space:nowrap;border:1px solid transparent}
+  .chip b{font-weight:400;color:var(--txt);margin-right:6px}
+  .chip.on{background:var(--card2);border-color:var(--line);color:var(--txt)}
+  aside,#bottom,#view{min-height:0}
+  aside{display:flex;flex-direction:column;gap:10px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#2a2c31 transparent}
+  .card{background:var(--card);border-radius:22px;padding:18px 18px 14px;flex:0 0 auto;position:relative}
+  .card h2{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:400;margin:0 0 12px;color:var(--txt);letter-spacing:.01em}
+  .card h2::before{content:"";width:3px;height:16px;border-radius:2px;background:var(--bar,var(--green))}
+  .card h2 .r{margin-left:auto;color:var(--mut);font-size:12px;font-weight:300}
+  .big{font-size:42px;font-weight:200;letter-spacing:-.02em;line-height:1;color:#fff;margin:2px 0 10px}
+  .big small{font-size:16px;color:var(--dim);margin-left:4px;font-weight:300}
+  .big .frac{color:var(--dim)}
+  .sub{display:flex;gap:6px;margin:0 0 6px;flex-wrap:wrap}
+  .pill{padding:5px 11px;border-radius:999px;font-size:12px;background:rgba(214,201,58,.12);color:var(--yellow)}
+  .pill.g{background:rgba(56,196,109,.12);color:var(--green)} .pill.r{background:rgba(229,66,63,.14);color:var(--red)} .pill.n{background:var(--card2);color:var(--mut)}
+  .sec{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:14px 0 6px;font-weight:400}
+  .row{display:flex;align-items:center;gap:8px;margin:7px 0}
+  .row label{flex:0 0 118px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
+  .row .val{flex:0 0 54px;text-align:right;font-variant-numeric:tabular-nums;color:var(--txt);font-weight:400}
+  .row input[type=range]{flex:1;min-width:0;-webkit-appearance:none;appearance:none;height:18px;background:transparent;cursor:pointer}
+  .row input[type=range]::-webkit-slider-runnable-track{height:2px;background:#2d3036;border-radius:2px}
+  .row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#fff;margin-top:-5px;box-shadow:0 0 0 3px var(--card)}
+  .row input[type=range]::-moz-range-track{height:2px;background:#2d3036;border-radius:2px}
+  .row input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:#fff}
+  .row select,.row input[type=text],.row input[type=file]{flex:1;min-width:0;background:var(--card2);color:var(--txt);border:1px solid transparent;border-radius:999px;padding:7px 12px;font:inherit;font-size:12.5px;outline:0}
+  .row select:focus,.row input[type=text]:focus{border-color:#3a3d44}
+  .row input[type=color]{flex:0 0 28px;width:28px;height:28px;border:0;background:transparent;padding:0;border-radius:50%;overflow:hidden;cursor:pointer}
+  .row input[type=color]::-webkit-color-swatch-wrapper{padding:0}.row input[type=color]::-webkit-color-swatch{border:2px solid #2d3036;border-radius:50%}
+  .row input[type=checkbox]{appearance:none;width:34px;height:20px;border-radius:999px;background:#2d3036;position:relative;cursor:pointer;transition:.2s}
+  .row input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#9a9da4;transition:.2s}
+  .row input[type=checkbox]:checked{background:var(--green)} .row input[type=checkbox]:checked::after{left:17px;background:#fff}
+  button{background:var(--card2);color:var(--txt);border:1px solid transparent;border-radius:999px;padding:8px 14px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer;transition:.15s}
+  button:hover{background:var(--card3)}
+  button.primary{background:#fff;color:#111}
+  button.primary:hover{background:#e8e8e8}
+  button.small{padding:5px 11px;font-size:12px}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
+  #view{position:relative;border-radius:22px;overflow:hidden;background:#0b0c0e}
+  #view canvas{display:block}
+  .float{position:absolute;background:rgba(23,24,27,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:20px;padding:14px 18px}
+  #badge{left:16px;top:16px;min-width:230px}
+  #badge .t{display:flex;align-items:center;gap:8px;color:var(--mut);font-size:13px}
+  #badge .t::before{content:"";width:3px;height:14px;border-radius:2px;background:var(--green)}
+  #badge .name{font-size:34px;font-weight:300;letter-spacing:-.01em;color:#fff;margin:6px 0 2px}
+  #badge .size{font-size:15px;color:var(--mut)}
+  #tiles{right:16px;top:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px;background:transparent;backdrop-filter:none}
+  .tile{background:rgba(23,24,27,.82);backdrop-filter:blur(14px);border-radius:18px;padding:12px 14px;min-width:120px}
+  .tile .l{color:var(--mut);font-size:11.5px;display:flex;align-items:center;gap:6px}
+  .tile .l i{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block}
+  .tile .v{font-size:26px;font-weight:200;color:#fff;margin-top:4px;letter-spacing:-.02em;line-height:1.1}
+  .tile .v small{font-size:12px;color:var(--dim);margin-left:3px}
+  #viewbtns{left:16px;bottom:16px;display:flex;gap:4px;padding:6px}
+  #viewbtns button{background:transparent;color:var(--mut)} #viewbtns button:hover,#viewbtns button.primary{background:var(--card2);color:#fff}
+  #wearbar{right:16px;bottom:16px;width:280px;padding:12px 18px 10px}
+  #wearbar .l{display:flex;justify-content:space-between;color:var(--mut);font-size:12px;margin-bottom:2px}
+  #wearbar .l b{font-weight:300;color:#fff;font-size:20px}
+  #wearbar input{width:100%}
+  #presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .preset{background:var(--card2);border-radius:16px;padding:8px;cursor:pointer;border:1px solid transparent;transition:.15s}
+  .preset:hover{background:var(--card3)}
+  .preset.active{border-color:#fff}
+  .preset canvas{width:100%;height:38px;display:block;border-radius:10px;background:#222}
+  .preset .n{font-weight:400;margin-top:7px;font-size:13px;color:#fff}
+  .preset .t{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;margin-top:1px}
+  #layers{display:flex;flex-direction:column;gap:4px}
+  .layer{display:flex;align-items:center;gap:6px;background:var(--card2);border-radius:12px;padding:7px 8px 7px 12px;cursor:pointer;border:1px solid transparent}
+  .layer.sel{border-color:#fff}
+  .layer .nm{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:400}
+  .layer .nm small{color:var(--mut);font-weight:300;margin-left:4px}
+  .layer .ic{width:3px;height:14px;border-radius:2px;flex:0 0 3px}
+  .layer button{padding:0 6px;line-height:20px;background:transparent;color:var(--mut)} .layer button:hover{color:#fff;background:var(--card3)}
+  #treadView{width:100%;height:150px;display:block;border-radius:14px;background:#111}
+  #treadStrip{width:100%;height:26px;display:block;border-radius:8px;background:#111;margin-top:6px}
+  #profile{cursor:crosshair;touch-action:none}
+  .mode.sm span{padding:4px 9px;font-size:11px}
+  .hint{color:var(--mut);font-size:12px;line-height:1.5;margin:4px 0}
+  code{background:var(--card2);padding:1px 6px;border-radius:6px;font-size:11px;font-family:ui-monospace,Menlo,monospace}
+  #toast{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);background:#fff;color:#111;padding:8px 16px;border-radius:999px;opacity:0;transition:opacity .3s;pointer-events:none;font-weight:400}
+  .mode{display:flex;gap:2px;background:var(--card2);border-radius:999px;padding:3px;margin-left:auto}
+  .mode span{padding:5px 12px;border-radius:999px;color:var(--mut);cursor:pointer;font-size:12px}
+  .mode span.on{background:var(--card3);color:#fff}
+  .panel{display:none}.panel.on{display:block}
+  #designer{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;flex-direction:column;padding:10px;gap:10px}
+  #designer.on{display:flex}
+  #dbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 12px;background:var(--card);border-radius:18px}
+  #dbar .grp{display:flex;align-items:center;gap:4px;padding:0 8px;border-right:1px solid var(--line)}
+  #dbar .grp:last-child{border-right:0;margin-left:auto}
+  #dbar label{color:var(--mut);font-size:12px;margin-left:4px}
+  #dbar input[type=number]{width:62px;background:var(--card2);color:var(--txt);border:0;border-radius:999px;padding:6px 10px;font:inherit;font-size:12px}
+  #dbar button.tool{padding:7px 12px}
+  #dbar button.tool.on{background:#fff;color:#111}
+  #dcanvasWrap{flex:1;min-height:0;position:relative;border-radius:18px;overflow:hidden;background:#0b0c0e}
+  #dcanvas{width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+  #dstatus{position:absolute;left:14px;bottom:10px;color:var(--mut);font-size:12px;pointer-events:none;background:rgba(23,24,27,.7);padding:5px 10px;border-radius:999px}
+  #dhelp{position:absolute;right:14px;top:10px;color:var(--mut);font-size:11.5px;line-height:1.6;background:rgba(23,24,27,.75);padding:10px 14px;border-radius:14px;pointer-events:none;max-width:280px}
+  #dhelp b{color:var(--txt);font-weight:400}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo"></div>
+    <div class="tabs" id="tabs">
+      <div class="tab on" data-tab="size">Tyre</div><div class="tab" data-tab="look">Look</div><div class="tab" data-tab="export">Export</div><div class="tab" id="openDesigner" style="color:var(--yellow)">✎ Tread designer</div>
+    </div>
+  </header>
+
+  <aside id="left">
+    <div class="panel on" data-panel="size">
+      <div class="card" style="--bar:var(--green)">
+        <h2>Tyre size <span class="r" id="sizeR"></span></h2>
+        <div class="big" id="bigSize"></div>
+        <div class="sub" id="sizePills"></div>
+        <div id="tyreParams"></div>
+      </div>
+      <div class="card" style="--bar:var(--yellow);margin-top:10px">
+        <h2>Cross-section <span class="r">drag the handles</span></h2>
+        <canvas id="profile" width="280" height="210" style="width:100%;height:210px;background:#111;border-radius:14px"></canvas>
+        <div id="profileParams"></div>
+      </div>
+      <div class="card" style="--bar:var(--red);margin-top:10px">
+        <h2>Tread materials <div class="mode sm" id="treadMode"><span class="on" data-m="color">Colour</span><span data-m="height">Depth</span><span data-m="normal">Normal</span><span data-m="rough">Rough</span></div></h2>
+        <canvas id="treadView"></canvas>
+        <canvas id="treadStrip"></canvas>
+        <div class="hint" id="treadDims" style="margin-top:6px"></div>
+      </div>
+    </div>
+    <div class="panel" data-panel="look">
+      <div class="card" style="--bar:var(--yellow)"><h2>Compound &amp; look</h2><div id="lookParams"></div></div>
+    </div>
+    <div class="panel" data-panel="export">
+      <div class="card" style="--bar:var(--red)"><h2>Export</h2>
+        <div class="hint">The mesh is built <b style="color:#fff">directly from the vector tread pattern</b> — no heightmap, no triangles, no ngons. <b style="color:#fff">OBJ is the pure-quad deliverable</b> (metres). GLB is only a preview: glTF cannot store quads, so it triangulates.</div>
+        <div class="btns"><button id="exportObj" class="primary">OBJ (pure quads)</button><button id="exportReport">Quad report JSON</button><button id="exportJson">Pattern JSON</button><button id="exportGlb">GLB (triangulated preview)</button></div>
+        <div class="hint" id="quadReport">Building mesh…</div>
+        <div class="row" style="margin-top:12px"><label>Import JSON</label><input type="file" id="importJson" accept=".json"></div>
+      </div>
+    </div>
+  </aside>
+
+  <main id="view">
+    <div class="float" id="badge"><div class="t" id="badgeType">Slick</div><div class="name" id="badgeName">GZero</div><div class="size" id="badgeSize">245/40 R18</div></div>
+    <div class="float" id="tiles"></div>
+    <div class="float" id="viewbtns">
+      <button class="small" data-view="iso">Iso</button><button class="small" data-view="side">Side</button><button class="small" data-view="tread">Tread</button><button class="small" data-view="front">Front</button><button class="small" id="spinBtn">Spin</button><button class="small" id="threadsBtn">X-ray cords</button>
+    </div>
+    <div id="toast"></div>
+  </main>
+
+  <aside id="right">
+    <div class="card" style="--bar:var(--green)">
+      <h2>Tread presets <select id="typeFilter" class="r" style="background:var(--card2);color:var(--mut);border:0;border-radius:999px;padding:4px 10px;font:inherit;font-size:12px"></select></h2>
+      <div id="presets"></div>
+      <div class="btns"><button id="randomBtn" class="primary">Random tyre</button><button id="randomName">New name</button></div>
+    </div>
+    <div class="card" style="--bar:var(--yellow)">
+      <h2>Tread editor</h2>
+      <div class="row"><label>Name</label><input type="text" id="pName"></div>
+      <div class="row"><label>Type</label><select id="pType"></select></div>
+      <div class="row"><label>Add layer</label><select id="addLayer"></select><button id="addLayerBtn" class="small">Add</button></div>
+      <div id="layers"></div>
+    </div>
+    <div class="card" style="--bar:var(--red)">
+      <h2>Layer properties</h2>
+      <div id="layerProps" class="hint">Select a layer to edit it. Layers are drawn in order; deeper cuts win.<br>Across-position <code>-1…1</code> = tread edges, <code>±1.3</code> reaches the shoulder.</div>
+    </div>
+  </aside>
+
+</div>
+
+<div id="designer">
+  <div id="dbar">
+    <div class="grp"><button class="tool on" data-tool="select" title="V">Select</button><button class="tool" data-tool="path" title="P">Groove</button><button class="tool" data-tool="poly" title="G">Polygon</button><button class="tool" data-tool="rect" title="R">Rect</button><button class="tool" data-tool="circle" title="C">Circle</button><button class="tool" data-tool="hex" title="H">Hex</button></div>
+    <div class="grp"><label>Width</label><input type="number" id="dWidth" value="6" min="0.5" max="40" step="0.5"><label>Depth</label><input type="number" id="dDepth" value="1" min="0.05" max="1" step="0.05"><label>Repeat ×</label><input type="number" id="dRepeat" value="24" min="1" max="200" step="1"><label>Mirror</label><input type="checkbox" id="dMirror" style="accent-color:#fff"></div>
+    <div class="grp"><label>Snap</label><input type="checkbox" id="dSnap" checked style="accent-color:#fff"><input type="number" id="dStep" value="1" min="0.1" max="20" step="0.1" title="snap step (mm)"><button class="small" id="dFit">Fit</button><button class="small" id="dTile">Tile view</button></div>
+    <div class="grp"><button class="small" id="dUndo">Undo</button><button class="small" id="dRedo">Redo</button><button class="small" id="dDelete">Delete</button><button class="small" id="dClear">Clear shapes</button></div>
+    <div class="grp"><label>Layer</label><select id="dLayerSel" style="background:var(--card2);color:var(--txt);border:0;border-radius:999px;padding:6px 10px;font:inherit;font-size:12px;max-width:190px"></select><button class="small" id="dHide">Hide</button><button class="small" id="dDup" title="Ctrl-D">Duplicate</button><button class="small" id="dMirrorLayer">Mirror Y</button></div>
+    <div class="grp"><label>View</label><select id="dView" style="background:var(--card2);color:var(--txt);border:0;border-radius:999px;padding:6px 10px;font:inherit;font-size:12px"><option value="full">Full circumference</option><option value="tile">One tile</option><option value="tiles3">Tile ×3 (wrap check)</option></select><label>Tile repeat</label><input type="number" id="dTileRep" value="24" min="1" max="300" step="1"><button class="small" id="dRotL" title="rotate selected shape -15°">↺15°</button><button class="small" id="dRotR" title="rotate selected shape +15°">↻15°</button><button class="small" id="dCentreY" title="centre selected shape across the tread">Centre Y</button></div>
+    <div class="grp"><label>Point X</label><input type="number" id="dPtX" step="0.5" placeholder="—"><label>Y</label><input type="number" id="dPtY" step="0.5" placeholder="—"></div>
+    <div class="grp"><button class="small" id="dApply">Update 3D</button><button class="primary" id="dClose">Done</button></div>
+  </div>
+  <div id="dcanvasWrap"><canvas id="dcanvas"></canvas><div id="dstatus"></div>
+    <div id="dhelp"><b>Design one tile, check it wraps:</b> View → One tile / Tile ×3. The mesh repeats it seamlessly around the tyre.<br><b>Groove / Polygon:</b> click points, Enter or double-click to finish, Esc cancels, Shift = 45°<br><b>Rect / Circle / Hex:</b> drag<br><b>Select:</b> drag shapes/vertices · <b>double-click a segment</b> inserts a point · <b>arrows</b> nudge (Shift ×10) · <b>Ctrl-D</b> duplicate<br><b>Wheel</b> zoom · <b>Space / middle-drag</b> pan · <b>Del</b> delete point/layer · <b>Ctrl-Z/Y</b> undo/redo</div>
+  </div>
+</div>
+<script src="https://unpkg.com/clipper-lib@6.4.2/clipper.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script id="quad-core">
+'use strict';
+/* =====================================================================================================================
+   QUAD CORE — pure vector -> pure-quad tyre mesh. No DOM, no THREE, no canvas, no raster/heightmap anywhere below.
+   The tread is a known structured domain: U = around the circumference (periodic), V = across the cross-section
+   profile. Grooves are discrete depth LEVELS on that domain, so the mesh is built as a cell complex:
+   one top quad per grid cell at its level + vertical wall quads wherever neighbouring cells differ in level +
+   lathe sidewalls + inner liner closing the shell. Topology is therefore quad-only and manifold BY CONSTRUCTION,
+   then proven by validateQuadMesh() (edge incidence, orientation, degeneracy, quad quality) on every build.
+   ===================================================================================================================== */
+const QuadCore = (() => {
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const mod = (v, n) => ((v % n) + n) % n;
+
+  function dims(t) {
+    const Rrim = t.rim * 25.4 / 2, H = t.width * t.aspect / 100, Rout = Rrim + H;
+    const halfW = t.width / 2, treadHalf = halfW * t.treadFrac, sr = Math.min(t.shoulder, H * 0.6);
+    const shoulderExt = sr * Math.sin(80 * Math.PI / 180);
+    const acrossHalf = treadHalf + shoulderExt;
+    return { Rrim, H, Rout, halfW, treadHalf, sr, shoulderExt, acrossHalf, circ: 2 * Math.PI * Rout, bw: halfW * t.rimWidthFrac };
+  }
+
+  // across-position (mm, signed, 0 = centre) -> axial position, radius and outward normal on crown/shoulder
+  function treadProfileAt(y, d, t) {
+    const ay = Math.abs(y), sgn = Math.sign(y) || 1;
+    if (ay <= d.treadHalf) return { x: y, r: d.Rout - t.crown * (y / d.treadHalf) ** 2, nx: 0, nr: 1, w: 1 };
+    const phi = Math.min(80 * Math.PI / 180, Math.asin(Math.min(1, (ay - d.treadHalf) / d.sr))); const c80 = Math.cos(80 * Math.PI / 180);
+    return { x: sgn * (d.treadHalf + d.sr * Math.sin(phi)), r: d.Rout - t.crown - d.sr + d.sr * Math.cos(phi), nx: sgn * Math.sin(phi), nr: Math.cos(phi), w: 0.25 + 0.75 * Math.max(0, (Math.cos(phi) - c80) / (1 - c80)) };
+  }
+
+  function buildProfile(d, t) {
+    const { Rrim, H, Rout, halfW, treadHalf, sr, bw } = d; const crown = t.crown;
+    const right = [];
+    const treadN = Math.round(t.across / 2), shN = 12, sideN = 26;
+    for (let i = 0; i <= treadN; i++) { const x = i / treadN * treadHalf; right.push({ x, r: Rout - crown * (x / treadHalf) ** 2, zone: 'tread', w: 1 }); }
+    const cx = treadHalf, cr = Rout - crown - sr; let last;
+    for (let i = 1; i <= shN; i++) { const phi = i / shN * 80 * Math.PI / 180; last = { x: cx + sr * Math.sin(phi), r: cr + sr * Math.cos(phi), zone: 'tread', w: Math.max(0, (Math.cos(phi) - Math.cos(80 * Math.PI / 180)) / (1 - Math.cos(80 * Math.PI / 180))), edge: i === shN, s: 1 }; right.push(last); }
+    const P0 = last, P3 = { x: bw, r: Rrim + 2 }, bul = t.bulge;
+    const P1 = { x: P0.x + (halfW - P0.x) * 1.35 * bul + 4, r: P0.r - H * 0.22 }, P2 = { x: bw + (halfW - bw) * 0.55 * bul, r: Rrim + H * 0.2 };
+    for (let i = 1; i <= sideN; i++) {
+      const u = i / sideN, mt = 1 - u; const x = mt ** 3 * P0.x + 3 * mt * mt * u * P1.x + 3 * mt * u * u * P2.x + u ** 3 * P3.x, r = mt ** 3 * P0.r + 3 * mt * mt * u * P1.r + 3 * mt * u * u * P2.r + u ** 3 * P3.r;
+      right.push({ x, r, zone: 'side', w: 0, s: 1 - u });
+    }
+    right.push({ x: bw - 3, r: Rrim - 1, zone: 'side', w: 0, s: -0.05 });   // tuck under the rim flange
+    const left = right.slice(1).reverse().map(p => Object.assign({}, p, { x: -p.x }));
+    const pts = left.concat(right);
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)]; let tx = b.x - a.x, tr = b.r - a.r; const l = Math.hypot(tx, tr) || 1; tx /= l; tr /= l;
+      pts[i].nx = tr; pts[i].nr = -tx; if (pts[i].nr < 0 && pts[i].zone === 'tread') { pts[i].nx = -tr; pts[i].nr = tx; }
+    }
+    for (const p of pts) if (p.zone === 'side') { const s = Math.sign(p.x) || 1; if (Math.sign(p.nx) !== s && Math.abs(p.nx) > 0.3) { p.nx = -p.nx; p.nr = -p.nr; } else if (p.nr < -0.2 && Math.abs(p.nx) <= 0.3) { p.nx = -p.nx; p.nr = -p.nr; } }
+    return pts;
+  }
+
+  // ---------- exact vector pattern field ----------
+  const segDist = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay; const l2 = dx * dx + dy * dy; const u = l2 ? clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1) : 0; return Math.hypot(px - ax - u * dx, py - ay - u * dy); };
+  const segDist2 = (px, py, ax, ay, bx, by) => { const dx = bx - ax, dy = by - ay; const l2 = dx * dx + dy * dy; const u = l2 ? clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1) : 0; const ex = px - ax - u * dx, ey = py - ay - u * dy; return ex * ex + ey * ey; };
+  const pointInRing = (x, y, ring) => { let inside = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside; } return inside; };
+  function circleRing(cx, cy, r, n) { const ring = []; for (let i = 0; i < n; i++) ring.push([cx + r * Math.cos(i / n * TAU), cy + r * Math.sin(i / n * TAU)]); return ring; }
+  function shapeOutline(ly) {
+    const P = ly.pts; if (!P || !P.length) return null;
+    if (ly.kind === 'rect') { if (P.length < 2) return null; const [a, b] = P; return { pts: [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]] }; }
+    if (ly.kind === 'circle' || ly.kind === 'hex') { if (P.length < 2) return null; const r = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]); if (ly.kind === 'circle') return { pts: circleRing(P[0][0], P[0][1], r, Math.max(16, Math.min(64, Math.round(r * 6)))), c: P[0], r };
+      const pts = []; for (let v = 0; v < 6; v++) pts.push([P[0][0] + r * Math.cos(v * Math.PI / 3), P[0][1] + r * Math.sin(v * Math.PI / 3)]); return { pts, c: P[0], r }; }
+    return { pts: P.map(p => [p[0], p[1]]) };
+  }
+  function layerGeomWidth(ly) {
+    if (ly.type === 'dimple') return (ly.radius || 1) * 2;
+    if (ly.type === 'shape') return ly.kind === 'path' ? (ly.width || 6) : Infinity;
+    if (ly.type === 'hex') return ly.width || 3;
+    return ly.width !== undefined ? ly.width : Infinity;
+  }
+
+  /* Compile a pattern into an exact level field. levelAt(x,y) returns the discrete groove depth fraction
+     (0 = land) at an unwrapped tread point, from vector geometry only: distance-to-segment / point-in-polygon
+     tests against each layer's primitives, folded periodically around the circumference. */
+  function compilePattern(pattern, d, t, opts = {}) {
+    const pitch = opts.pitch || t.quadPitch || 6;
+    const minFeature = pitch * (opts.minFeatureFactor !== undefined ? opts.minFeatureFactor : 0.75);
+    const th = d.treadHalf, circ = d.circ, A = d.acrossHalf;
+    const levels = new Set([0]); const evaluators = []; const included = [], dropped = [], featureRows = [], wearBars = [];
+    (pattern.layers || []).forEach((ly, index) => {
+      const depth = clamp(Math.round((ly.depth || 0) * 100) / 100, 0, 1);
+      if (ly.type === 'noise' || ly.hidden) { dropped.push({ index, type: ly.type, reason: ly.hidden ? 'hidden in editor' : 'micro texture — not mesh geometry' }); return; }
+      const gw = layerGeomWidth(ly);
+      if (isFinite(gw) && gw < minFeature && ly.type !== 'circ') { dropped.push({ index, type: ly.type, width: gw, reason: `${gw.toFixed(1)} mm feature < ${(minFeature).toFixed(1)} mm resolvable at ${pitch} mm pitch — lower the pitch to mesh it` }); return; }
+      if (!(depth > 0)) { dropped.push({ index, type: ly.type, reason: 'depth 0' }); return; }
+      included.push(index); levels.add(depth);
+      if (ly.type === 'circ') {
+        const y0 = ly.pos * th, w = ly.width || 6;
+        if (ly.zig > 0) {
+          const n = Math.max(2, Math.round(ly.zigCount || 60)) * 2, seg = circ / n;
+          evaluators.push((x, y) => { const i = Math.floor(x / seg); for (let k = i - 1; k <= i + 1; k++) { const ax = k * seg, ay = y0 + (Math.abs(k) % 2 ? ly.zig : -ly.zig), bx = (k + 1) * seg, by = y0 + (Math.abs(k + 1) % 2 ? ly.zig : -ly.zig); if (segDist(x, y, ax, ay, bx, by) <= w / 2) return depth; } return 0; });
+        } else {
+          evaluators.push((x, y) => Math.abs(y - y0) <= w / 2 ? depth : 0);
+          featureRows.push(y0 - w / 2, y0 + w / 2);
+          if (w >= 4 && depth >= 0.9) wearBars.push({ y0, w });
+        }
+      } else if (ly.type === 'lateral' || ly.type === 'chevron' || ly.type === 'sipe') {
+        // centreline as a graph X(cc): distance to the tangent at the point's own across-position (exact for
+        // straight grooves, tangent-accurate for curved ones) — O(1) instead of polyline segment tests.
+        const tan = Math.tan((ly.angle || 0) * Math.PI / 180), n = Math.max(1, Math.round(ly.count || 1)), period = circ / n, w = ly.width || 4, hw = w / 2;
+        const phaseX = (ly.phase || 0) * period, curve = ly.curve || 0, steps = (curve || ly.zig) ? 12 : 1;
+        const ccLo = Math.min(ly.from, ly.to), ccHi = Math.max(ly.from, ly.to);
+        const signs = ly.mirror ? [1, -1] : [1];
+        evaluators.push((x, y) => {
+          for (const sg of signs) {
+            const cc = ly.mirror ? sg * y / th : y / th;
+            const ccc = clamp(cc, ccLo, ccHi), ac = ly.mirror ? Math.abs(ccc) : ccc;
+            let xo = ac * th * tan + curve * ac * ac * th * 0.5;
+            if (ly.zig) xo += ((Math.floor((ccc - ccLo) / Math.max(1e-9, ccHi - ccLo) * steps) % 2) ? ly.zig : -ly.zig) * 0.5;
+            let dx = mod(x - phaseX - xo + period / 2, period) - period / 2;
+            let dist;
+            if (cc >= ccLo && cc <= ccHi) { const slope = tan + curve * ac; dist = Math.abs(dx) / Math.sqrt(1 + slope * slope); }
+            else { const ey = (ly.mirror ? sg * ccc : ccc) * th; dist = Math.hypot(dx, y - ey); }   // round end cap
+            if (dist <= hw) return depth;
+          }
+          return 0; });
+      } else if (ly.type === 'dimple') {
+        const rowsN = Math.max(1, Math.round(ly.rows || 1)), n = Math.max(1, Math.round(ly.count || 1)), period = circ / n, r = ly.radius || 3;
+        const ringW = Math.max(0.6, r * 0.4), rowY = [];
+        for (let rr = 0; rr < rowsN; rr++) rowY.push((rowsN === 1 ? (ly.from + ly.to) / 2 : ly.from + (ly.to - ly.from) * rr / (rowsN - 1)) * th);
+        evaluators.push((x, y) => { for (let rr = 0; rr < rowsN; rr++) { const dy = y - rowY[rr]; if (Math.abs(dy) > r + ringW) continue; const lx = mod(x - (ly.stagger && rr % 2 ? period / 2 : 0), period); const dx = Math.min(lx, period - lx); const dist = Math.hypot(dx, dy); if (ly.ring ? Math.abs(dist - r) <= ringW / 2 : dist <= r) return depth; } return 0; });
+      } else if (ly.type === 'hex') {
+        const s = Math.max(2, ly.size || 12), nx = Math.max(2, 2 * Math.round(circ / (3 * s))), sx = circ / nx, sy = Math.sqrt(3) * s, rot = (ly.rotate || 0) * Math.PI / 180, w = ly.width || 3;
+        const yA = ly.from * th, yB = ly.to * th, hexPts = [];
+        for (let v = 0; v < 6; v++) { const a = rot + v * Math.PI / 3; hexPts.push([s * Math.cos(a), s * Math.sin(a)]); }
+        const hw2 = (w / 2) * (w / 2), reach = s + w;
+        evaluators.push((x, y) => { if (y < yA - w || y > yB + w) return 0; const i0 = Math.round(x / sx), j0 = Math.round(y / sy);
+          for (let i = i0 - 1; i <= i0 + 1; i++) for (let j = j0 - 1; j <= j0 + 1; j++) { const cx = i * sx, cy = j * sy + (Math.abs(i) % 2 ? sy / 2 : 0); const ddx = x - cx, ddy = y - cy; if (ddx * ddx + ddy * ddy > reach * reach) continue; for (let v = 0; v < 6; v++) { const a = hexPts[v], b = hexPts[(v + 1) % 6]; if (segDist2(x, y, cx + a[0], cy + a[1], cx + b[0], cy + b[1]) <= hw2) return depth; } }
+          return 0; });
+      } else if (ly.type === 'shape') {
+        const base = shapeOutline(ly); if (!base || base.pts.length < 2) { dropped.push({ index, type: ly.type, reason: 'empty drawn shape' }); return; }
+        const rep = Math.max(1, Math.round(ly.repeat || 1)), period = circ / rep, w = ly.width || 6;
+        const variants = [base.pts]; if (ly.mirror) variants.push(base.pts.map(p => [p[0], -p[1]]));
+        const hw2s = (w / 2) * (w / 2);
+        const variantBoxes = variants.map(pts0 => { let x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18; for (const q of pts0) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); } return { x0, x1, y0, y1 }; });
+        evaluators.push((x, y) => { const k0 = Math.round((x - base.pts[0][0]) / period);
+          for (let vi = 0; vi < variants.length; vi++) { const pts0 = variants[vi], bb = variantBoxes[vi]; for (let k = k0 - 1; k <= k0 + 1; k++) { const sh = k * period; if (x < bb.x0 + sh - w || x > bb.x1 + sh + w || y < bb.y0 - w || y > bb.y1 + w) continue; const pts = pts0.map(q => [q[0] + sh, q[1]]);
+            if (ly.kind === 'path') { for (let i = 0; i + 1 < pts.length; i++) if (segDist2(x, y, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) <= hw2s) return depth; }
+            else if (pts.length > 2 && pointInRing(x, y, pts)) return depth; } }
+          return 0; });
+      }
+    });
+    const barDepth = Math.round((1 - 1.6 / Math.max(1, t.treadDepth)) * 100) / 100;
+    if (wearBars.length && [...levels].some(v => v > barDepth)) levels.add(barDepth); else wearBars.length = 0;
+    const sortedLevels = [...levels].sort((a, b) => a - b);
+    const rawAt = (x, y) => {
+      if (Math.abs(y) > A + 1e-9) return 0;
+      const xx = mod(x, circ); let best = 0;
+      for (const ev of evaluators) { const v = ev(xx, y); if (v > best) best = v; }
+      if (best > barDepth) for (const b of wearBars) { const local = mod(xx, circ / 6); if (Math.abs(local - circ / 12) <= 3 && Math.abs(y - b.y0) <= b.w / 2 + 0.2) { best = barDepth; break; } }
+      return best;
+    };
+    const levelAt = (x, y) => { const raw = rawAt(x, y); if (raw <= 0.02) return 0; let best = sortedLevels[0], bd = Infinity; for (const l of sortedLevels) { const dd = Math.abs(l - raw); if (dd < bd) { bd = dd; best = l; } } return best; };
+    return { levels: sortedLevels, included, dropped, featureRows, levelAt, rawAt, pitch, minFeature };
+  }
+
+  // ---------- topology cleanup + validation ----------
+  const quadArea = (V, q) => { const a = V[q[0]], b = V[q[1]], c = V[q[2]], dd = V[q[3]];
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const wx = dd[0] - a[0], wy = dd[1] - a[1], wz = dd[2] - a[2];
+    const c1x = uy * vz - uz * vy, c1y = uz * vx - ux * vz, c1z = ux * vy - uy * vx;
+    const c2x = vy * wz - vz * wy, c2y = vz * wx - vx * wz, c2z = vx * wy - vy * wx;
+    return 0.5 * (Math.sqrt(c1x * c1x + c1y * c1y + c1z * c1z) + Math.sqrt(c2x * c2x + c2y * c2y + c2z * c2z)); };
+  function cleanupQuadMesh(mesh) {
+    const { V } = mesh; let F = mesh.F; let degenerate = 0, duplicates = 0;
+    const seen = new Set();
+    F = F.filter(f => { if (!f.q || f.q.length !== 4 || new Set(f.q).size !== 4 || quadArea(V, f.q) < 1e-7) { degenerate++; return false; } const key = [...f.q].sort((a, b) => a - b).join(','); if (seen.has(key)) { duplicates++; return false; } seen.add(key); return true; });
+    // orient consistently: BFS over shared edges, then flip each closed component outward by signed volume
+    const NV = V.length, ekey = (a, b) => a < b ? a * NV + b : b * NV + a;
+    const edgeFaces = new Map();
+    F.forEach((f, fi) => { for (let k = 0; k < 4; k++) { const a = f.q[k], b = f.q[(k + 1) % 4]; const key = ekey(a, b); let lst = edgeFaces.get(key); if (!lst) edgeFaces.set(key, lst = []); lst.push(fi, a < b ? 1 : -1); } });
+    const neighbours = F.map(() => []);
+    for (const lst of edgeFaces.values()) { if (lst.length !== 4) continue; const [f0, d0, f1, d1] = lst; const same = d0 === d1; neighbours[f0].push([f1, same]); neighbours[f1].push([f0, same]); }
+    const flip = new Array(F.length).fill(null); let conflicts = 0;
+    for (let st = 0; st < F.length; st++) { if (flip[st] !== null) continue; flip[st] = false; const comp = [st], queue = [st];
+      while (queue.length) { const fi = queue.pop();
+        for (const [other, same] of neighbours[fi]) { const want = flip[fi] ^ same; // same traversal direction -> neighbour must flip relative to me
+          if (flip[other] === null) { flip[other] = want; comp.push(other); queue.push(other); } else if (flip[other] !== want) conflicts++; } }
+      let vol = 0; for (const fi of comp) { const q = flip[fi] ? [...F[fi].q].reverse() : F[fi].q; const [a, b, c, dd] = q.map(i => V[i]); const tri = (p, q2, r) => (p[0] * (q2[1] * r[2] - q2[2] * r[1]) - p[1] * (q2[0] * r[2] - q2[2] * r[0]) + p[2] * (q2[0] * r[1] - q2[1] * r[0])) / 6; vol += tri(a, b, c) + tri(a, c, dd); }
+      if (vol < 0) for (const fi of comp) flip[fi] = !flip[fi];
+    }
+    F.forEach((f, i) => { if (flip[i]) f.q.reverse(); });
+    mesh.F = F;
+    return { degenerateRemoved: degenerate, duplicatesRemoved: duplicates, orientationConflicts: conflicts };
+  }
+
+  function validateQuadMesh(mesh) {
+    const { V, F } = mesh; const NV = V.length; const edges = new Map(); let degenerate = 0, nonQuad = 0, badIndex = 0;
+    let maxCosAngle = -1, maxRatio = 1, minCosWarp = 1, badQuads = 0, vol = 0;
+    const COS25 = Math.cos(25 * Math.PI / 180), COS15 = Math.cos(15 * Math.PI / 180);
+    for (const f of F) { const q = f.q;
+      if (!q || q.length !== 4) { nonQuad++; continue; }
+      if (q.some(i => i < 0 || i >= NV) || q[0] === q[1] || q[0] === q[2] || q[0] === q[3] || q[1] === q[2] || q[1] === q[3] || q[2] === q[3]) badIndex++;
+      if (quadArea(V, q) < 1e-7) degenerate++;
+      const P = q.map(i => V[i]);
+      const tri = (p, q2, r) => (p[0] * (q2[1] * r[2] - q2[2] * r[1]) - p[1] * (q2[0] * r[2] - q2[2] * r[0]) + p[2] * (q2[0] * r[1] - q2[1] * r[0])) / 6; vol += tri(P[0], P[1], P[2]) + tri(P[0], P[2], P[3]);
+      const el = []; let qMaxCos = -1;
+      for (let k = 0; k < 4; k++) { const a = P[k], b = P[(k + 1) % 4]; const ex = b[0] - a[0], ey = b[1] - a[1], ez = b[2] - a[2]; el.push(Math.sqrt(ex * ex + ey * ey + ez * ez));
+        const key = q[k] < q[(k + 1) % 4] ? q[k] * NV + q[(k + 1) % 4] : q[(k + 1) % 4] * NV + q[k]; let rec = edges.get(key); if (!rec) edges.set(key, rec = { n: 0, d0: 0, d1: 0 }); rec.n++; if (rec.n === 1) rec.d0 = q[k] < q[(k + 1) % 4] ? 1 : -1; else if (rec.n === 2) rec.d1 = q[k] < q[(k + 1) % 4] ? 1 : -1;
+        const pa = P[(k + 3) % 4]; const ux = pa[0] - a[0], uy = pa[1] - a[1], uz = pa[2] - a[2]; const vx = b[0] - a[0], vy = b[1] - a[1], vz = b[2] - a[2];
+        const cos = (ux * vx + uy * vy + uz * vz) / Math.sqrt(Math.max(1e-18, (ux * ux + uy * uy + uz * uz) * (vx * vx + vy * vy + vz * vz))); if (cos > qMaxCos) qMaxCos = cos; }
+      if (qMaxCos > maxCosAngle) maxCosAngle = qMaxCos;
+      const ratio = Math.max(...el) / Math.max(1e-9, Math.min(...el)); if (ratio > maxRatio) maxRatio = ratio;
+      const cr = (a, b, c) => { const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2]; return [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx]; };
+      const n1 = cr(P[0], P[1], P[2]), n2 = cr(P[0], P[2], P[3]);
+      const cosW = (n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) / Math.sqrt(Math.max(1e-18, (n1[0] ** 2 + n1[1] ** 2 + n1[2] ** 2) * (n2[0] ** 2 + n2[1] ** 2 + n2[2] ** 2))); if (cosW < minCosWarp) minCosWarp = cosW;
+      // walls are terraced level steps (height fixed by the depth difference) and side/liner are lathe strips:
+      // aspect ratio is only a defect for tread tops, whose two directions should stay comparable for deformation
+      if (qMaxCos > COS25 || cosW < COS15 || (f.kind === 'top' && ratio > 4) || ((f.kind === 'side' || f.kind === 'liner') && ratio > 6)) badQuads++;
+    }
+    let boundary = 0, nonManifold = 0, inconsistent = 0;
+    for (const rec of edges.values()) { if (rec.n === 1) boundary++; else if (rec.n > 2) nonManifold++; else if (rec.d0 === rec.d1) inconsistent++; }
+    const usedFlag = new Uint8Array(NV); for (const f of F) for (const i of f.q) usedFlag[i] = 1; let usedCount = 0; for (let i = 0; i < NV; i++) usedCount += usedFlag[i];
+    return { vertices: NV, unusedVertices: NV - usedCount, quads: F.length, nonQuadFaces: nonQuad, badIndexFaces: badIndex, edges: edges.size, boundaryEdges: boundary, nonManifoldEdges: nonManifold, inconsistentEdges: inconsistent, degenerateFaces: degenerate, euler: NV - edges.size + F.length, signedVolumeMm3: Math.round(vol), minCornerAngleDeg: +(Math.acos(clamp(maxCosAngle, -1, 1)) * 180 / Math.PI).toFixed(1), maxEdgeRatio: +maxRatio.toFixed(2), maxWarpDeg: +(Math.acos(clamp(minCosWarp, -1, 1)) * 180 / Math.PI).toFixed(1), badQuads, watertight: boundary === 0 && nonManifold === 0 && inconsistent === 0 && degenerate === 0 && nonQuad === 0 && badIndex === 0 };
+  }
+
+  // ---------- structured quad builder ----------
+  function buildQuadMeshData(pattern, d, prof, t, opts = {}) {
+    const pitch = opts.pitch || t.quadPitch || 6;
+    const compiled = compilePattern(pattern, d, t, { pitch });
+    const D = t.treadDepth, A = d.acrossHalf, circ = d.circ;
+    const wear = clamp(t.wear || 0, 0, 1);
+    const canon = raw => Math.max(raw, wear);
+    const canonLevels = [...new Set(compiled.levels.map(canon))].sort((a, b) => a - b);
+    const N = Math.max(48, Math.round(circ / pitch)), px = circ / N;
+    // across rows: uniform crown + shoulder arc, with exact rows inserted at circumferential groove edges
+    let rows = []; const nFlat = Math.max(2, Math.round(d.treadHalf / pitch));
+    for (let i = -nFlat; i <= nFlat; i++) rows.push(i / nFlat * d.treadHalf);
+    const shoulder = []; for (let ph = 10; ph <= 80; ph += 10) shoulder.push(d.treadHalf + d.sr * Math.sin(ph * Math.PI / 180)); shoulder[shoulder.length - 1] = A;
+    rows = [...shoulder.map(y => -y).reverse(), ...rows, ...shoulder].sort((a, b) => a - b);
+    rows = rows.filter((y, i) => i === 0 || y - rows[i - 1] > 1e-6);
+    const addFeatureRow = y => { if (y <= -A || y >= A) return; let bi = 0, bd = Infinity; rows.forEach((r, i) => { const dd = Math.abs(r - y); if (dd < bd) { bd = dd; bi = i; } }); if (bd < pitch * 0.32) rows[bi] = y; else { rows.push(y); rows.sort((a, b) => a - b); } };
+    for (const y of compiled.featureRows) addFeatureRow(clamp(y, -A, A));
+    rows[0] = -A; rows[rows.length - 1] = A;
+    const M = rows.length - 1;
+    // cell levels from exact vector field at cell centres (Float64: level values are vertex-weld keys, precision matters)
+    const lvl = new Float64Array(N * M);
+    for (let j = 0; j < M; j++) { const yc = (rows[j] + rows[j + 1]) / 2; for (let i = 0; i < N; i++) lvl[j * N + i] = canon(compiled.levelAt((i + 0.5) * px, yc)); }
+    const cell = (i, j) => lvl[j * N + mod(i, N)];
+    // topology cleanup 1: resolve diagonal pinches (checkerboard 2x2 blocks) using the exact saddle level
+    let pinchesFixed = 0;
+    for (let pass = 0, changed = true; pass < 40 && changed; pass++) { changed = false;
+      for (let j = 1; j < M; j++) for (let i = 0; i < N; i++) { const ia = (j - 1) * N + mod(i - 1, N), ib = (j - 1) * N + i, ic = j * N + mod(i - 1, N), ie = j * N + i;
+        for (let k = 0; k + 1 < canonLevels.length; k++) { const lo = canonLevels[k] + 1e-9; const sa = lvl[ia] <= lo, sb = lvl[ib] <= lo, sc = lvl[ic] <= lo, se = lvl[ie] <= lo;
+          if (sa === se && sb === sc && sa !== sb) { const saddle = canon(compiled.levelAt(i * px, rows[j])) <= lo; if (saddle === sa) lvl[ib] = lvl[ia]; else lvl[ie] = lvl[ib]; pinchesFixed++; changed = true; break; } } } }
+    // grid nodes, optionally snapped onto the exact groove boundary (bounded + quality-guarded, UV space)
+    const nx = new Float32Array((M + 1) * N), ny = new Float32Array((M + 1) * N);
+    for (let j = 0; j <= M; j++) for (let i = 0; i < N; i++) { const k = j * N + i; nx[k] = i * px; ny[k] = rows[j]; }
+    let nodesSnapped = 0; const snappedFlag = new Uint8Array((M + 1) * N);
+    if (opts.snap !== false) {
+      for (let j = 1; j < M; j++) for (let i = 0; i < N; i++) {
+        const cs = [cell(i - 1, j - 1), cell(i, j - 1), cell(i - 1, j), cell(i, j)]; if (cs.every(v => v === cs[0])) continue;
+        const x = i * px, y = rows[j];
+        // boundary crossings on the four segments between neighbouring cell centres (marching squares):
+        // their average lies on the boundary segment(s) touching this node.
+        const cand = [];
+        if (cs[0] !== cs[1]) cand.push([x, (rows[j - 1] + rows[j]) / 2]);
+        if (cs[2] !== cs[3]) cand.push([x, (rows[j] + rows[j + 1]) / 2]);
+        if (cs[0] !== cs[2]) cand.push([(i - 0.5) * px, y]);
+        if (cs[1] !== cs[3]) cand.push([(i + 0.5) * px, y]);
+        if (!cand.length) continue;
+        const tx0 = cand.reduce((a, c) => a + c[0], 0) / cand.length, ty0 = cand.reduce((a, c) => a + c[1], 0) / cand.length;
+        if (Math.hypot(tx0 - x, ty0 - y) < 0.01) continue;
+        const ry = Math.min(rows[j] - rows[j - 1], rows[j + 1] - rows[j]) * 0.48, rx = px * 0.48;
+        const k = j * N + i; const COS28 = 0.8829;
+        for (const scale of [1, 0.6, 0.3]) {
+          const tx = x + clamp((tx0 - x) * scale, -rx * 0.8, rx * 0.8), ty = y + clamp((ty0 - y) * scale, -ry * 0.8, ry * 0.8);
+          let ok = true, maxCos = -1;
+          for (const [ci, cj] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) { if (cj < 0 || cj >= M) continue;
+            const corner = (ii, jj) => { const kk = jj * N + mod(ii, N); return (mod(ii, N) === i && jj === j) ? [tx, ty] : [nx[kk], ny[kk]]; };
+            const quad = [corner(ci, cj), corner(ci + 1, cj), corner(ci + 1, cj + 1), corner(ci, cj + 1)];
+            for (let c = 0; c < 4; c++) { const p = quad[c], a = quad[(c + 3) % 4], b = quad[(c + 1) % 4]; const ux = a[0] - p[0], uy = a[1] - p[1], vx = b[0] - p[0], vy = b[1] - p[1]; const u2 = ux * ux + uy * uy, v2 = vx * vx + vy * vy; const cos = (ux * vx + uy * vy) / Math.sqrt(Math.max(1e-18, u2 * v2)); if (cos > maxCos) maxCos = cos; if (u2 < 0.16 || v2 < 0.16) ok = false; }
+          }
+          if (ok && maxCos <= COS28) { nx[k] = tx; ny[k] = ty; snappedFlag[k] = 1; nodesSnapped++; break; }
+        }
+      }
+      // topology cleanup 2: foldover repair — a node snapped early can be crossed by a neighbour snapped later.
+      // Any top quad whose UV corners lose a consistent turning direction (bow-tie), a usable corner angle, or a
+      // usable fan triangle has its snapped corners reverted to the regular grid, which is proper by construction.
+      // Re-checks are local: only quads incident to a reverted node can change, so later passes are tiny.
+      let nodesReverted = 0; const COS20 = 0.9135 /* 24 deg */, COS9 = 0.9781 /* 12 deg */;
+      const cellBad = (i, j) => { const idx = [j * N + i, j * N + mod(i + 1, N), (j + 1) * N + mod(i + 1, N), (j + 1) * N + i]; const quad = idx.map(k => [nx[k], ny[k]]);
+        for (let c = 0; c < 4; c++) { const p = quad[c], a = quad[(c + 3) % 4], b = quad[(c + 1) % 4]; const e1x = quad[(c + 1) % 4][0] - p[0], e1y = quad[(c + 1) % 4][1] - p[1], e2x = quad[(c + 2) % 4][0] - quad[(c + 1) % 4][0], e2y = quad[(c + 2) % 4][1] - quad[(c + 1) % 4][1]; if (e1x * e2y - e1y * e2x <= 1e-9) return idx;
+          const ux = a[0] - p[0], uy = a[1] - p[1], vx = b[0] - p[0], vy = b[1] - p[1]; if ((ux * vx + uy * vy) / Math.sqrt(Math.max(1e-18, (ux * ux + uy * uy) * (vx * vx + vy * vy))) > COS20) return idx; }
+        for (const tri of [[0, 1, 2], [0, 2, 3]]) for (let c = 0; c < 3; c++) { const p = quad[tri[c]], a = quad[tri[(c + 1) % 3]], b = quad[tri[(c + 2) % 3]]; const ux = a[0] - p[0], uy = a[1] - p[1], vx = b[0] - p[0], vy = b[1] - p[1]; if ((ux * vx + uy * vy) / Math.sqrt(Math.max(1e-18, (ux * ux + uy * uy) * (vx * vx + vy * vy))) > COS9) return idx; }
+        return null; };
+      let checkCells = null; // null = all cells (first pass)
+      for (let pass = 0; pass < 24; pass++) {
+        const bad = new Set();
+        if (checkCells === null) { for (let j = 0; j < M; j++) for (let i = 0; i < N; i++) { const idx = cellBad(i, j); if (idx) for (const k of idx) if (snappedFlag[k]) bad.add(k); } }
+        else for (const ci of checkCells) { const idx = cellBad(ci % N, Math.floor(ci / N)); if (idx) for (const k of idx) if (snappedFlag[k]) bad.add(k); }
+        if (!bad.size) break;
+        checkCells = new Set();
+        for (const k of bad) { const j = Math.floor(k / N), i = k % N; nx[k] = i * px; ny[k] = rows[j]; snappedFlag[k] = 0; nodesReverted++; nodesSnapped--;
+          for (const [ci, cj] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) if (cj >= 0 && cj < M) checkCells.add(cj * N + mod(ci, N)); }
+      }
+      var snapReverted = nodesReverted;
+    }
+    // vertices: one per (column, row, level) — tops and walls share indices, so the shell is welded by construction
+    const V = [], VU = [], VK = []; const vmap = new Map();
+    const place3 = (x, y, hFrac) => { const pr = treadProfileAt(y, d, t); let off = D * hFrac * pr.w; if (Math.abs(y) > d.treadHalf) off = Math.min(off, d.sr * 0.85);   // shoulder: never offset past the shoulder's centre of curvature (would fold the wall)
+      const ax = pr.x - pr.nx * off, r = pr.r - pr.nr * off; const th = x / circ * TAU; return [ax, r * Math.cos(th), r * Math.sin(th)]; };
+    const node = (i, j, Lraw) => { const ii = mod(i, N), L = canon(Lraw), key = ii + ',' + j + ',' + L; let id = vmap.get(key); if (id !== undefined) return id; const k = j * N + ii, x = nx[k], y = ny[k]; id = V.length; V.push(place3(x, y, L)); VU.push([x / circ + (i >= N ? 1 : i < 0 ? -1 : 0), (y + A) / (2 * A)]); VK.push('tread'); vmap.set(key, id); return id; };
+    const F = [];
+    const wall = (nA, nB, La, Lb) => { const lo = Math.min(canon(La), canon(Lb)), hi = Math.max(canon(La), canon(Lb)); const ls = canonLevels.filter(v => v >= lo - 1e-9 && v <= hi + 1e-9); for (let k = 0; k + 1 < ls.length; k++) F.push({ q: [node(...nA, ls[k]), node(...nB, ls[k]), node(...nB, ls[k + 1]), node(...nA, ls[k + 1])], kind: 'wall' }); };
+    for (let j = 0; j < M; j++) for (let i = 0; i < N; i++) {
+      const L = cell(i, j); F.push({ q: [node(i, j, L), node(i + 1, j, L), node(i + 1, j + 1, L), node(i, j + 1, L)], kind: 'top' });
+      const Lr = cell(i + 1, j); if (canon(Lr) !== canon(L)) wall([i + 1, j], [i + 1, j + 1], L, Lr);
+      if (j < M - 1) { const Lu = cell(i, j + 1); if (canon(Lu) !== canon(L)) wall([i, j + 1], [i + 1, j + 1], L, Lu); }
+      if (j === 0 && canon(L) !== canon(0)) wall([i, 0], [i + 1, 0], L, 0);
+      if (j === M - 1 && canon(L) !== canon(0)) wall([i, M], [i + 1, M], L, 0);
+    }
+    // sidewalls + liner: same N around (continuous loops for deformation), profile resampled at pitch scale
+    const VN = []; const ring = (x, r, s, kind, uvFlip, pn) => { const base = V.length; for (let i = 0; i < N; i++) { const th = i / N * TAU; V.push([x, r * Math.cos(th), r * Math.sin(th)]); VU.push([uvFlip ? 1 - i / N : i / N, s]); VK.push(kind); VN[base + i] = pn; } return base; };
+    const connect = (ringA, ringB, kind) => { for (let i = 0; i < N; i++) { const a0 = ringA(i), a1 = ringA((i + 1) % N), b0 = ringB(i), b1 = ringB((i + 1) % N); F.push({ q: [a0, a1, b1, b0], kind }); } };
+    const resample = (pts, step) => { if (pts.length <= 2) return pts.slice(); const out = [pts[0]]; let last = pts[0]; for (let i = 1; i < pts.length - 1; i++) if (Math.hypot(pts[i].x - last.x, pts[i].r - last.r) >= step) { out.push(pts[i]); last = pts[i]; } out.push(pts[pts.length - 1]); return out; };
+    const liners = {};
+    for (const sgn of [1, -1]) {
+      const edgeJ = sgn > 0 ? M : 0; let prev = i => node(i, edgeJ, 0);
+      const srows = resample(prof.filter(p => p.zone === 'side' && Math.sign(p.x) === sgn).sort((a, b) => b.r - a.r), Math.max(2.5, pitch * 0.75));
+      for (const p of srows) { const base = ring(p.x, p.r, Math.max(-0.05, p.s ?? 0), 'side', sgn < 0, [p.nx, p.nr]); const cur = i => base + i; connect(prev, cur, 'side'); prev = cur; }
+      liners[sgn] = { bead: prev };
+    }
+    if (t.liner) {
+      const thick = 5, innerRaw = prof.slice(1, -1).map(p => ({ x: p.x - p.nx * (p.zone === 'tread' ? D + thick : thick), r: p.r - p.nr * (p.zone === 'tread' ? D + thick : thick), pn: [-p.nx, -p.nr] }));
+      let total = 0; for (let i = 1; i < innerRaw.length; i++) total += Math.hypot(innerRaw[i].x - innerRaw[i - 1].x, innerRaw[i].r - innerRaw[i - 1].r);
+      const innerPts = resample(innerRaw, Math.max(pitch * 1.25, total / 40));
+      let prev = liners[-1].bead;
+      for (const p of innerPts) { const base = ring(p.x, p.r, 0, 'liner', false, p.pn); const cur = i => base + i; connect(prev, cur, 'liner'); prev = cur; }
+      connect(prev, liners[1].bead, 'liner');
+    }
+    const mesh = { V, VU, VK, VN, F };
+    const cleanup = cleanupQuadMesh(mesh);
+    const report = validateQuadMesh(mesh);
+    return { V, VU, VK, VN, F: mesh.F, report, cleanup, levels: canonLevels, dropped: compiled.dropped, included: compiled.included, pinchesFixed, nodesSnapped, nodesReverted: typeof snapReverted !== 'undefined' ? snapReverted : 0, N, rows, pitch, px };
+  }
+
+  function exportOBJ(qm, name, report) {
+    const order = { top: 0, wall: 1, side: 2, liner: 3 };
+    const faces = [...qm.F].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
+    const L = [`# ${name} — Slate Tyre Generator, PURE QUAD mesh (no triangles, no ngons), metres`,
+      `# vertices ${qm.V.length} · quads ${faces.length}` + (report ? ` · watertight ${report.watertight} · boundary edges ${report.boundaryEdges} · non-manifold edges ${report.nonManifoldEdges} · min corner angle ${report.minCornerAngleDeg} deg` : ''),
+      `o ${name.replace(/\s+/g, '_')}`];
+    for (const v of qm.V) L.push(`v ${(v[0] / 1000).toFixed(6)} ${(v[1] / 1000).toFixed(6)} ${(v[2] / 1000).toFixed(6)}`);
+    for (const u of qm.VU) L.push(`vt ${u[0].toFixed(5)} ${u[1].toFixed(5)}`);
+    let last = ''; for (const f of faces) { if (f.kind !== last) { L.push(`g ${f.kind}`); last = f.kind; } L.push('f ' + f.q.map(i => `${i + 1}/${i + 1}`).join(' ')); }
+    return L.join('\n');
+  }
+
+  return { TAU, clamp, mod, dims, treadProfileAt, buildProfile, compilePattern, buildQuadMeshData, validateQuadMesh, cleanupQuadMesh, exportOBJ, shapeOutline };
+})();
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+// Pure-quad core (see <script id="quad-core"> above): vector pattern -> structured all-quad mesh, no raster.
+const dims = (t = T) => QuadCore.dims(t);
+const treadProfileAt = (y, d) => QuadCore.treadProfileAt(y, d, T);
+const buildProfile = d => QuadCore.buildProfile(d, T);
+const exportOBJ = (qm, name, report) => QuadCore.exportOBJ(qm, name, report);
+
+// =====================================================================================================================
+//  STATE
+// =====================================================================================================================
+const T = {                       // tyre carcass parameters (mm / inch / fractions)
+  width: 245, aspect: 40, rim: 18, treadDepth: 8, wear: 0, wearBias: 0,
+  treadFrac: 0.88, crown: 2.0, shoulder: 18, bulge: 1.0, rimWidthFrac: 0.78,
+  radial: 720, across: 96, meshMode: 'quad', polyDetail: 6, quadPitch: 6, snapNodes: true, liner: true,
+  rubber: '#151515', letter: 'white', lettering: true, brand: 'SLATE', spokes: 5, rimColor: '#c9ccd2', rimStyle: 'spoke'
+};
+const P = { name: 'GZero', type: 'Slick', layers: [] };   // tread pattern
+const UI = { sel: -1, threads: false, spin: false, treadMode: 'color' };
+
+const TYPES = ['Slick', 'Semi-slick', 'Drift', 'Street', 'Grip / UHP', 'Wet', 'Winter', 'Rally', 'Off-road', 'Drag'];
+
+const LAYER_DEFS = {
+  circ:    { label: 'Circumferential groove', color: '#38c46d', pos: 0, width: 8, depth: 1, zig: 0, zigCount: 60 },
+  lateral: { label: 'Lateral groove',          color: '#d6c93a', count: 48, angle: 20, width: 6, depth: 1, from: -1, to: 1, phase: 0, mirror: false, curve: 0, zig: 0 },
+  chevron: { label: 'Chevron / V groove',      color: '#f0a04b', count: 40, angle: 55, width: 7, depth: 1, from: 0.08, to: 1.3, phase: 0, mirror: true, curve: 0.3, zig: 0 },
+  sipe:    { label: 'Sipes',                   color: '#9aa4ff', count: 140, angle: 0, width: 1.2, depth: 0.55, from: -1, to: 1, phase: 0.5, mirror: false, curve: 0, zig: 1.5 },
+  dimple:  { label: 'Circular pattern',        color: '#4fc3f7', rows: 3, count: 60, radius: 3, depth: 0.5, from: -0.7, to: 0.7, stagger: true, ring: false },
+  hex:     { label: 'Hexagon cells',           color: '#e5423f', size: 14, width: 3, depth: 0.8, from: -1, to: 1, rotate: 0 },
+  noise:   { label: 'Micro texture',           color: '#8a8d94', amount: 0.06, scale: 3 },
+  shape:   { label: 'Drawn shape',             color: '#ffffff', kind: 'path', pts: [], width: 6, depth: 1, repeat: 24, mirror: false }
+};
+const RANGES = {
+  pos: [-1.3, 1.3, 0.01], width: [0.5, 30, 0.1], depth: [0.05, 1, 0.01], zig: [0, 12, 0.1], zigCount: [4, 240, 1],
+  count: [2, 300, 1], angle: [-80, 80, 1], from: [-1.3, 1.3, 0.01], to: [-1.3, 1.3, 0.01], phase: [0, 1, 0.01], curve: [-1.5, 1.5, 0.01],
+  rows: [1, 14, 1], radius: [0.5, 15, 0.1], repeat: [1, 200, 1], size: [4, 40, 0.5], rotate: [0, 60, 1], amount: [0, 0.5, 0.01], scale: [1, 12, 0.5]
+};
+const LABELS = { repeat: 'Repeat around', pos: 'Across position', width: 'Width (mm)', depth: 'Depth (×tread)', zig: 'Zig-zag (mm)', zigCount: 'Zig-zag count', count: 'Count around', angle: 'Angle (°)', from: 'From (across)', to: 'To (across)', phase: 'Phase', curve: 'Curvature', rows: 'Rows', radius: 'Radius (mm)', size: 'Cell size (mm)', rotate: 'Cell rotation (°)', amount: 'Amount', scale: 'Scale', mirror: 'Mirror (V)', stagger: 'Stagger rows', ring: 'Rings instead of dots' };
+
+// =====================================================================================================================
+//  PRESETS — each one is a named tread design with its own default tyre size
+// =====================================================================================================================
+const L = (type, o = {}) => Object.assign({ type }, strip(LAYER_DEFS[type]), o);
+function strip(d) { const r = {}; for (const k in d) if (k !== 'label' && k !== 'color') r[k] = d[k]; return r; }
+
+const PRESETS = [
+  { name: 'GZero', type: 'Slick', tyre: { width: 305, aspect: 30, rim: 19, treadDepth: 4, treadFrac: 0.93, crown: 1.2, shoulder: 26, letter: 'yellow' },
+    layers: [L('dimple', { rows: 2, count: 4, radius: 2.5, depth: 0.7, from: -0.55, to: 0.55, stagger: false }), L('noise', { amount: 0.04, scale: 2 })] },
+  { name: 'Grizzly Magnum', type: 'Off-road', tyre: { width: 285, aspect: 70, rim: 17, treadDepth: 15, treadFrac: 0.92, crown: 3, shoulder: 14, letter: 'white' },
+    layers: [L('circ', { pos: 0, width: 12, zig: 6, zigCount: 28 }), L('circ', { pos: 0.55, width: 11, zig: 5, zigCount: 28 }), L('circ', { pos: -0.55, width: 11, zig: 5, zigCount: 28 }),
+             L('lateral', { count: 28, angle: 18, width: 12, from: 0.3, to: 1.3, phase: 0 }), L('lateral', { count: 28, angle: -18, width: 12, from: -1.3, to: -0.3, phase: 0.5 }),
+             L('lateral', { count: 28, angle: 0, width: 9, from: -0.3, to: 0.3, phase: 0.25 }), L('sipe', { count: 56, angle: 12, width: 1.5, depth: 0.4, from: -1.3, to: 1.3, zig: 2 })] },
+  { name: 'Vortex R1', type: 'Grip / UHP', tyre: { width: 255, aspect: 35, rim: 19, treadDepth: 7, crown: 1.8, shoulder: 16 },
+    layers: [L('circ', { pos: 0.22, width: 7 }), L('circ', { pos: -0.22, width: 7 }), L('chevron', { count: 44, angle: 58, width: 6, from: 0.3, to: 1.3, curve: 0.35 }),
+             L('sipe', { count: 88, angle: 60, width: 1.2, depth: 0.5, from: 0.45, to: 1.25, mirror: true, phase: 0.5 })] },
+  { name: 'Smokestack D', type: 'Drift', tyre: { width: 235, aspect: 40, rim: 18, treadDepth: 6, crown: 1.5, shoulder: 20, letter: 'red' },
+    layers: [L('circ', { pos: 0.35, width: 6 }), L('circ', { pos: -0.35, width: 6 }), L('lateral', { count: 24, angle: 35, width: 5, from: 0.5, to: 1.3, phase: 0 }),
+             L('lateral', { count: 24, angle: -35, width: 5, from: -1.3, to: -0.5, phase: 0.5 })] },
+  { name: 'Urban Pulse', type: 'Street', tyre: { width: 205, aspect: 55, rim: 16, treadDepth: 8, crown: 2.2, shoulder: 15, letter: 'black' },
+    layers: [L('circ', { pos: 0.6, width: 8 }), L('circ', { pos: 0.2, width: 7 }), L('circ', { pos: -0.2, width: 7 }), L('circ', { pos: -0.6, width: 8 }),
+             L('lateral', { count: 64, angle: 10, width: 4, from: -1.3, to: 1.3, phase: 0 }), L('sipe', { count: 128, angle: 10, width: 1, depth: 0.6, from: -1.3, to: 1.3, zig: 1.2, phase: 0.5 })] },
+  { name: 'Monsoon Cut', type: 'Wet', tyre: { width: 245, aspect: 45, rim: 18, treadDepth: 10, crown: 2.5, shoulder: 15, letter: 'white' },
+    layers: [L('circ', { pos: 0, width: 12 }), L('circ', { pos: 0.5, width: 8 }), L('circ', { pos: -0.5, width: 8 }),
+             L('chevron', { count: 36, angle: 50, width: 9, from: 0.05, to: 1.3, curve: 0.5 }), L('chevron', { count: 36, angle: 50, width: 3, depth: 0.6, from: 0.05, to: 1.3, curve: 0.5, phase: 0.5 })] },
+  { name: 'Apex Shadow', type: 'Grip / UHP', tyre: { width: 265, aspect: 35, rim: 20, treadDepth: 7, crown: 1.6, shoulder: 17, letter: 'black' },
+    layers: [L('circ', { pos: -0.15, width: 9 }), L('circ', { pos: -0.55, width: 8 }), L('circ', { pos: 0.4, width: 6 }),
+             L('lateral', { count: 56, angle: 22, width: 4, from: -1.3, to: -0.15, phase: 0 }), L('lateral', { count: 22, angle: -25, width: 6, from: 0.4, to: 1.3, phase: 0.3, curve: 0.3 }),
+             L('sipe', { count: 112, angle: 22, width: 1, depth: 0.5, from: -1.3, to: -0.15, phase: 0.5 })] },
+  { name: 'HexaGrip Nova', type: 'Street', tyre: { width: 225, aspect: 45, rim: 17, treadDepth: 8, crown: 2, shoulder: 16, letter: 'white' },
+    layers: [L('hex', { size: 13, width: 3.5, depth: 0.9, from: -1.3, to: 1.3 }), L('circ', { pos: 0, width: 7 })] },
+  { name: 'Dimple Rave', type: 'Semi-slick', tyre: { width: 245, aspect: 40, rim: 18, treadDepth: 5, crown: 1.5, shoulder: 20, letter: 'yellow' },
+    layers: [L('dimple', { rows: 7, count: 90, radius: 3.2, depth: 0.7, from: -1.1, to: 1.1, stagger: true }), L('circ', { pos: 0, width: 5, depth: 0.9 })] },
+  { name: 'Frostbite Sipe', type: 'Winter', tyre: { width: 215, aspect: 60, rim: 16, treadDepth: 10, crown: 2.5, shoulder: 14, letter: 'black' },
+    layers: [L('circ', { pos: 0.45, width: 7, zig: 2, zigCount: 80 }), L('circ', { pos: -0.45, width: 7, zig: 2, zigCount: 80 }),
+             L('chevron', { count: 40, angle: 35, width: 6, from: 0.05, to: 1.3, curve: 0.1 }), L('sipe', { count: 200, angle: 35, width: 1.1, depth: 0.7, from: 0.05, to: 1.3, mirror: true, zig: 1.6, phase: 0.33 }),
+             L('sipe', { count: 200, angle: 35, width: 1.1, depth: 0.7, from: 0.05, to: 1.3, mirror: true, zig: 1.6, phase: 0.66 })] },
+  { name: 'Kestrel TC', type: 'Semi-slick', tyre: { width: 275, aspect: 35, rim: 18, treadDepth: 5, crown: 1.2, shoulder: 22, letter: 'white' },
+    layers: [L('circ', { pos: 0.3, width: 9 }), L('circ', { pos: -0.3, width: 9 }), L('lateral', { count: 18, angle: 40, width: 5, from: 0.65, to: 1.3, phase: 0 }),
+             L('lateral', { count: 18, angle: -40, width: 5, from: -1.3, to: -0.65, phase: 0.5 }), L('noise', { amount: 0.03, scale: 3 })] },
+  { name: 'Ravager Mud', type: 'Rally', tyre: { width: 235, aspect: 75, rim: 15, treadDepth: 14, treadFrac: 0.9, crown: 4, shoulder: 12, letter: 'white' },
+    layers: [L('lateral', { count: 22, angle: 30, width: 14, from: 0.1, to: 1.3, phase: 0 }), L('lateral', { count: 22, angle: -30, width: 14, from: -1.3, to: -0.1, phase: 0.5 }),
+             L('circ', { pos: 0, width: 9, zig: 8, zigCount: 22 }), L('lateral', { count: 22, angle: 0, width: 10, from: -0.1, to: 0.1, phase: 0.25 })] },
+  { name: 'Comet Drag', type: 'Drag', tyre: { width: 375, aspect: 50, rim: 15, treadDepth: 4, treadFrac: 0.95, crown: 1, shoulder: 30, rimWidthFrac: 0.85, letter: 'white' },
+    layers: [L('dimple', { rows: 2, count: 3, radius: 3, depth: 0.8, from: -0.7, to: 0.7, stagger: true }), L('noise', { amount: 0.05, scale: 2 })] },
+  { name: 'Talon Trail', type: 'Off-road', tyre: { width: 265, aspect: 65, rim: 17, treadDepth: 13, crown: 3, shoulder: 13, letter: 'white' },
+    layers: [L('hex', { size: 22, width: 8, depth: 1, from: -1.3, to: 1.3 }), L('circ', { pos: 0, width: 9, zig: 4, zigCount: 30 })] },
+];
+
+// =====================================================================================================================
+//  NAME GENERATOR
+// =====================================================================================================================
+const PRE = ['Grizzly', 'Vortex', 'Apex', 'Phantom', 'Raptor', 'Kestrel', 'Titan', 'Nomad', 'Viper', 'Comet', 'Ghost', 'Ember', 'Frost', 'Monsoon', 'Talon', 'Rogue', 'Sabre', 'Nitro', 'Onyx', 'Havoc', 'Quasar', 'Slate', 'Cobra', 'Tempest', 'Falcon'];
+const SUF = ['Magnum', 'R1', 'GT', 'Zero', 'Cut', 'Sport', 'Pro', 'X', 'Ultra', 'Drift', 'Evo', 'Nova', 'S3', 'Max', 'Grip', 'Blade', 'Trail', 'Prime', 'RS', 'TC', 'Rain', 'Ice'];
+const rnd = (a, b) => a + Math.random() * (b - a);
+const ri = (a, b) => Math.floor(rnd(a, b + 1));
+const pick = a => a[ri(0, a.length - 1)];
+function randomName() {
+  const r = Math.random();
+  if (r < 0.2) return pick('GZKVTXRQ'.split('')) + pick(['Zero', 'One', 'Force', 'Max', 'Prime']);
+  if (r < 0.35) return pick(PRE) + ' ' + pick(SUF) + ' ' + ri(2, 9);
+  return pick(PRE) + ' ' + pick(SUF);
+}
+function randomTyre() {
+  const type = pick(TYPES); const layers = [];
+  const size = { Slick: [305, 30, 19, 4], 'Semi-slick': [265, 35, 18, 5], Drift: [235, 40, 18, 6], Street: [205, 55, 16, 8], 'Grip / UHP': [255, 35, 19, 7], Wet: [245, 45, 18, 10], Winter: [215, 60, 16, 10], Rally: [235, 70, 15, 14], 'Off-road': [285, 70, 17, 15], Drag: [375, 50, 15, 4] }[type];
+  Object.assign(T, { width: size[0] + ri(-2, 2) * 10, aspect: size[1] + ri(-1, 1) * 5, rim: size[2], treadDepth: size[3], letter: pick(['white', 'yellow', 'red', 'black', 'blue']), crown: rnd(1, 3), shoulder: rnd(12, 26) });
+  const grooves = type === 'Slick' || type === 'Drag' ? 0 : type === 'Semi-slick' || type === 'Drift' ? ri(1, 2) : ri(2, 4);
+  const positions = grooves === 1 ? [0] : grooves === 2 ? [-0.3, 0.3] : grooves === 3 ? [-0.5, 0, 0.5] : [-0.6, -0.2, 0.2, 0.6];
+  const zig = type === 'Off-road' || type === 'Rally' ? rnd(3, 7) : (type === 'Winter' ? rnd(0, 2) : 0);
+  positions.forEach(p => layers.push(L('circ', { pos: p, width: rnd(5, 11), zig, zigCount: ri(22, 80) })));
+  const style = pick(['sym', 'dir', 'asym', 'hex', 'dot']);
+  if (type === 'Slick' || type === 'Drag') { layers.push(L('dimple', { rows: 2, count: ri(3, 6), radius: 2.5, depth: 0.7, from: -0.6, to: 0.6, stagger: false })); layers.push(L('noise', { amount: 0.04, scale: 2 })); }
+  else if (style === 'dir') layers.push(L('chevron', { count: ri(30, 50), angle: ri(35, 65), width: rnd(4, 9), from: rnd(0.05, 0.3), to: 1.3, curve: rnd(0, 0.6) }));
+  else if (style === 'asym') { layers.push(L('lateral', { count: ri(40, 64), angle: ri(10, 30), width: rnd(3, 5), from: -1.3, to: rnd(-0.3, -0.1) })); layers.push(L('lateral', { count: ri(16, 26), angle: -ri(15, 40), width: rnd(4, 7), from: rnd(0.2, 0.5), to: 1.3, curve: 0.3 })); }
+  else if (style === 'hex') layers.push(L('hex', { size: rnd(10, 24), width: rnd(3, 7), depth: rnd(0.7, 1), from: -1.3, to: 1.3 }));
+  else if (style === 'dot') layers.push(L('dimple', { rows: ri(3, 8), count: ri(40, 100), radius: rnd(2, 5), depth: rnd(0.4, 0.9), from: -1.1, to: 1.1, stagger: true, ring: Math.random() < 0.3 }));
+  else { const a = ri(-30, 30), c = ri(20, 64); layers.push(L('lateral', { count: c, angle: a, width: rnd(4, 10), from: 0.2, to: 1.3 })); layers.push(L('lateral', { count: c, angle: -a, width: rnd(4, 10), from: -1.3, to: -0.2, phase: 0.5 })); }
+  if (type === 'Winter' || (type === 'Street' && Math.random() < 0.7)) layers.push(L('sipe', { count: ri(100, 220), angle: ri(-30, 30), width: 1.1, depth: rnd(0.4, 0.7), from: -1.3, to: 1.3, zig: rnd(0, 2), phase: 0.5 }));
+  P.name = randomName(); P.type = type; P.layers = layers; UI.sel = -1;
+}
+
+// =====================================================================================================================
+//  GEOMETRY DERIVED VALUES
+// =====================================================================================================================
+
+// =====================================================================================================================
+//  TREAD PATTERN RENDERER  (mm space → depth map). White = full rubber, black = full tread depth cut.
+// =====================================================================================================================
+function renderPattern(pattern, d, H, wear = 0, wearBias = 0, treadDepth = 8, skipNoise = false, keep = null) {
+  const k = H / (2 * d.acrossHalf);                   // px per mm (uniform)
+  const W = Math.max(64, Math.min(4096, Math.round(d.circ * k)));
+  const kx = W / d.circ, ky = k;                       // tiny anisotropy fix so it wraps exactly
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+  const th = d.treadHalf, circ = d.circ;
+  const g = v => { const q = Math.round(255 * (1 - Math.min(1, Math.max(0, v)))); return `rgb(${q},${q},${q})`; };
+  ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+  for (const off of [-circ, 0, circ]) {
+    ctx.setTransform(kx, 0, 0, ky, off * kx, H / 2);
+    ctx.globalCompositeOperation = 'darken';
+    for (const ly of pattern.layers) {
+      if (ly.hidden || ly.type === 'noise' || (keep && !keep(ly))) continue;
+      ctx.strokeStyle = ctx.fillStyle = g(ly.depth);
+      if (ly.type === 'circ') {
+        const y = ly.pos * th;
+        if (ly.zig > 0) {
+          ctx.lineWidth = ly.width; ctx.beginPath(); const n = Math.max(2, Math.round(ly.zigCount)) * 2;
+          for (let i = 0; i <= n; i++) { const x = i / n * circ, yy = y + (i % 2 ? ly.zig : -ly.zig); i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); }
+          ctx.stroke();
+        } else ctx.fillRect(-5, y - ly.width / 2, circ + 10, ly.width);
+      } else if (ly.type === 'lateral' || ly.type === 'chevron' || ly.type === 'sipe') {
+        ctx.lineWidth = ly.width; const tan = Math.tan(ly.angle * Math.PI / 180); const n = Math.max(1, Math.round(ly.count));
+        const steps = 14; ctx.beginPath();
+        for (let i = 0; i < n; i++) {
+          const x0 = (i + ly.phase) / n * circ;
+          for (const s of ly.mirror ? [1, -1] : [1]) {
+            for (let j = 0; j <= steps; j++) {
+              const cc = ly.from + (ly.to - ly.from) * j / steps;
+              const yy = (ly.mirror ? s * cc : cc) * th;
+              const ac = ly.mirror ? Math.abs(cc) : cc;
+              let xx = x0 + ac * th * tan + (ly.curve || 0) * ac * ac * th * 0.5;
+              if (ly.zig) xx += (j % 2 ? ly.zig : -ly.zig) * 0.5;
+              j ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+            }
+          }
+        }
+        ctx.stroke();
+      } else if (ly.type === 'dimple') {
+        const rows = Math.max(1, Math.round(ly.rows)), n = Math.max(1, Math.round(ly.count));
+        for (let r = 0; r < rows; r++) {
+          const cc = rows === 1 ? (ly.from + ly.to) / 2 : ly.from + (ly.to - ly.from) * r / (rows - 1); const y = cc * th;
+          const sh = ly.stagger && r % 2 ? 0.5 : 0;
+          for (let i = 0; i < n; i++) {
+            const x = (i + sh) / n * circ; ctx.beginPath(); ctx.arc(x, y, ly.radius, 0, Math.PI * 2);
+            if (ly.ring) { ctx.lineWidth = Math.max(0.6, ly.radius * 0.4); ctx.stroke(); } else ctx.fill();
+          }
+        }
+      } else if (ly.type === 'shape') {
+        for (const inst of shapeInstances(ly, circ)) { ctx.beginPath(); inst.pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+          if (inst.kind === 'path') { ctx.lineWidth = ly.width; ctx.stroke(); } else { ctx.closePath(); ctx.fill(); } }
+      } else if (ly.type === 'hex') {
+        const s = Math.max(2, ly.size); const nx = Math.max(2, 2 * Math.round(circ / (3 * s))); const sx = circ / nx; const sy = Math.sqrt(3) * s;
+        const y0 = ly.from * th, y1 = ly.to * th; ctx.save(); ctx.beginPath(); ctx.rect(-5, y0, circ + 10, y1 - y0); ctx.clip();
+        ctx.lineWidth = ly.width; ctx.beginPath(); const rot = ly.rotate * Math.PI / 180;
+        const j0 = Math.floor((y0 - sy) / sy), j1 = Math.ceil((y1 + sy) / sy);
+        for (let i = -1; i <= nx; i++) for (let j = j0; j <= j1; j++) {
+          const cx = i * sx, cy = j * sy + (Math.abs(i) % 2 ? sy / 2 : 0);
+          for (let v = 0; v < 6; v++) { const a = rot + v * Math.PI / 3; const px = cx + s * Math.cos(a), py = cy + s * Math.sin(a); v ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+          ctx.closePath();
+        }
+        ctx.stroke(); ctx.restore();
+      }
+    }
+    // tread-wear indicator bars (1.6 mm legal limit) inside deep circumferential grooves
+    ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = g(1 - 1.6 / treadDepth);
+    for (const ly of pattern.layers) if (ly.type === 'circ' && ly.width >= 4 && ly.depth >= 0.9 && !ly.zig)
+      for (let i = 0; i < 6; i++) ctx.fillRect((i + 0.5) / 6 * circ - 3, ly.pos * th - ly.width / 2 - 0.2, 6, ly.width + 0.4);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
+  // ---- post: depth array, wear, micro texture ----
+  const img = ctx.getImageData(0, 0, W, H).data; const depth = new Float32Array(W * H);
+  const noiseLayers = skipNoise ? [] : pattern.layers.filter(l => l.type === 'noise');
+  for (let y = 0; y < H; y++) {
+    const cc = (y / H * 2 - 1) * d.acrossHalf / th;                                 // across coordinate in tread units
+    const wLocal = Math.min(1, Math.max(0, wear * (1 + 0.6 * wearBias * (1 - 2 * Math.min(1, cc * cc)))));
+    for (let x = 0; x < W; x++) {
+      let dv = 1 - img[(y * W + x) * 4] / 255;
+      for (const nl of noiseLayers) dv += nl.amount * (vnoise(x / (nl.scale * k), y / (nl.scale * k)) - 0.5) + nl.amount * 0.4 * (vnoise(x / (nl.scale * k) * 4, y / (nl.scale * k) * 4) - 0.5);
+      depth[y * W + x] = Math.max(0, dv - wLocal);
+    }
+  }
+  return { W, H, k, depth, wearRow: y => { const cc = (y / H * 2 - 1) * d.acrossHalf / th; return Math.min(1, Math.max(0, wear * (1 + 0.6 * wearBias * (1 - 2 * Math.min(1, cc * cc))))); } };
+}
+function hash2(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
+function vnoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), dd = hash2(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + dd) * u * v;
+}
+
+// Build colour / roughness / normal canvases from the depth field
+function buildTreadMaps(pm, treadDepth, rubberHex, wear) {
+  const { W, H, depth, k } = pm;
+  const base = new THREE.Color(rubberHex), worn = new THREE.Color('#4a4846'), grooveC = new THREE.Color('#0a0a0a');
+  const col = new ImageData(W, H), rou = new ImageData(W, H), nor = new ImageData(W, H);
+  const mmPerPx = 1 / k; const tmp = new THREE.Color();
+  for (let y = 0; y < H; y++) {
+    const wl = pm.wearRow(y);
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x, o = i * 4; const dv = depth[i];
+      const grain = vnoise(x / 6, y / 6) * 0.5 + vnoise(x / 1.7, y / 1.7) * 0.5;
+      // colour: contact surface polishes/greys as it wears; groove floors are dark
+      tmp.copy(base).lerp(worn, wl * 0.75 * (0.7 + 0.6 * grain));
+      tmp.lerp(grooveC, Math.min(1, dv * 1.2));
+      tmp.offsetHSL(0, 0, (grain - 0.5) * 0.06);
+      col.data[o] = tmp.r * 255; col.data[o + 1] = tmp.g * 255; col.data[o + 2] = tmp.b * 255; col.data[o + 3] = 255;
+      const r = dv > 0.02 ? 0.92 : 0.9 - wl * 0.42 + (grain - 0.5) * 0.15; const rq = Math.max(0, Math.min(1, r)) * 255;
+      rou.data[o] = rq; rou.data[o + 1] = rq; rou.data[o + 2] = rq; rou.data[o + 3] = 255;
+      const xl = depth[y * W + (x + W - 1) % W], xr = depth[y * W + (x + 1) % W];
+      const yu = depth[Math.max(0, y - 1) * W + x], yd = depth[Math.min(H - 1, y + 1) * W + x];
+      const dzdx = (xr - xl) * treadDepth / (2 * mmPerPx), dzdy = (yd - yu) * treadDepth / (2 * mmPerPx);
+      let nx = dzdx, ny = dzdy, nz = 1; const len = Math.hypot(nx, ny, nz); nx /= len; ny /= len; nz /= len;
+      nor.data[o] = (nx * 0.5 + 0.5) * 255; nor.data[o + 1] = (ny * 0.5 + 0.5) * 255; nor.data[o + 2] = (nz * 0.5 + 0.5) * 255; nor.data[o + 3] = 255;
+    }
+  }
+  const mk = id => { const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').putImageData(id, 0, 0); return c; };
+  const hc = document.createElement('canvas'); hc.width = W; hc.height = H; const hid = new ImageData(W, H);
+  for (let i = 0; i < W * H; i++) { const q = (1 - depth[i]) * 255; hid.data[i * 4] = hid.data[i * 4 + 1] = hid.data[i * 4 + 2] = q; hid.data[i * 4 + 3] = 255; }
+  hc.getContext('2d').putImageData(hid, 0, 0);
+  return { color: mk(col), rough: mk(rou), normal: mk(nor), height: hc };
+}
+
+// Sidewall canvas: lettering ("thread" of text + rim protector rib + sidewall micro texture)
+function buildSidewall(outer) {
+  const W = 4096, H = 256; const c = document.createElement('canvas'); c.width = W; c.height = H; const ctx = c.getContext('2d');
+  const hc = document.createElement('canvas'); hc.width = W; hc.height = H; const hx = hc.getContext('2d'); hx.fillStyle = '#808080'; hx.fillRect(0, 0, W, H);
+  drawSidewallThreads(hx, W, H);
+  ctx.fillStyle = T.rubber; ctx.fillRect(0, 0, W, H);
+  // subtle radial texture streaks
+  ctx.globalAlpha = 0.08; for (let i = 0; i < 1200; i++) { ctx.fillStyle = Math.random() < 0.5 ? '#000' : '#fff'; ctx.fillRect(Math.random() * W, Math.random() * H, 1, rnd(4, 40)); } ctx.globalAlpha = 1;
+  // bead / rim protector rib and shoulder rib  (s: 0 = bead at bottom, 1 = shoulder at top)
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0, H * 0.14, W, 4); ctx.fillRect(0, H * 0.86, W, 3);
+  ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(0, H * 0.18, W, 2); ctx.fillRect(0, H * 0.83, W, 3);
+  if (T.lettering) {
+    const colors = { white: '#e8e8e8', yellow: '#f5c518', red: '#e53935', blue: '#42a5f5', black: '#2a2a2a' }; const lc = colors[T.letter] || '#e8e8e8';
+    const size = sizeString(); const dir = P.layers.some(l => l.type === 'chevron') ? '   ◄ ROTATION' : '';
+    const asym = P.layers.some(l => l.type === 'lateral' && ((l.from > -0.9 && l.to > 0.9) || (l.from < -0.9 && l.to < 0.9))) ? (outer ? '   OUTSIDE' : '   INSIDE') : '';
+    ctx.save(); ctx.translate(0, H * 0.5); if (!outer) { ctx.scale(-1, 1); ctx.translate(-W, 0); }
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    for (const x0 of [0, W / 2]) {
+      ctx.fillStyle = lc; ctx.font = '900 96px Impact, "Arial Black", system-ui, sans-serif'; ctx.fillText(T.brand.toUpperCase(), x0 + 60, 0);
+      emboss(hx, ctx.font, T.brand.toUpperCase(), x0 + 60, H * 0.5, outer, W);
+      const bw = ctx.measureText(T.brand.toUpperCase()).width;
+      ctx.font = 'italic 800 78px system-ui, sans-serif'; ctx.fillText(P.name.toUpperCase(), x0 + 60 + bw + 60, 0);
+      emboss(hx, ctx.font, P.name.toUpperCase(), x0 + 60 + bw + 60, H * 0.5, outer, W);
+      const nw = ctx.measureText(P.name.toUpperCase()).width;
+      ctx.fillStyle = T.letter === 'black' ? '#333' : '#bfbfbf'; ctx.font = '600 44px ui-monospace, Menlo, Consolas, monospace';
+      ctx.fillText(size + '   ' + P.type.toUpperCase() + '  ' + Math.round(T.treadDepth) + 'mm' + dir + asym, x0 + 60 + bw + 60 + nw + 90, 0);
+      // embossed DOT block
+      ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.font = '600 26px ui-monospace, monospace'; ctx.fillText('DOT SL8T ' + Math.abs(hashStr(P.name)) % 9000 + '  TUBELESS RADIAL  MAX 51 PSI', x0 + 60, H * 0.28);
+    }
+    ctx.restore();
+  }
+  return { color: c, normal: heightToNormal(hc, 2.2) };
+}
+function emboss(hx, font, text, x, y, outer, W) { hx.save(); if (!outer) { hx.scale(-1, 1); hx.translate(-W, 0); } hx.font = font; hx.textBaseline = 'middle'; hx.fillStyle = '#b0b0b0'; hx.fillText(text, x, y); hx.restore(); }
+// the 'threads': radial body-cord ridges, woven chafer fabric at the bead, mould parting line, vent spews
+function drawSidewallThreads(hx, W, H) {
+  const rand = mulberry(hashStr(P.name + T.width));
+  hx.lineWidth = 1; for (let x = 0; x < W; x += 2.6) { const a = 0.05 + rand() * 0.16; hx.strokeStyle = `rgba(255,255,255,${a})`; hx.beginPath(); hx.moveTo(x, H * 0.16); hx.lineTo(x + 1.5, H * 0.92); hx.stroke(); }   // radial cords
+  hx.strokeStyle = 'rgba(255,255,255,.22)'; for (let x = -H; x < W + H; x += 3) { hx.beginPath(); hx.moveTo(x, 0); hx.lineTo(x + H * 0.16, H * 0.16); hx.stroke(); hx.beginPath(); hx.moveTo(x + H * 0.16, 0); hx.lineTo(x, H * 0.16); hx.stroke(); }   // woven chafer
+  hx.fillStyle = 'rgba(0,0,0,.35)'; hx.fillRect(0, H * 0.16 - 1, W, 2); hx.fillStyle = 'rgba(255,255,255,.45)'; hx.fillRect(0, H * 0.5 + 44, W, 1.5);   // parting line above the lettering
+  hx.fillStyle = 'rgba(255,255,255,.35)'; for (let x = 0; x < W; x += 3) { const a = 0.25 + rand() * 0.2; hx.fillStyle = `rgba(255,255,255,${a})`; hx.fillRect(x, H * 0.90 + (x % 6 ? 0 : 1.5), 1.8, 1.8); }   // stitch row along the shoulder
+  for (let i = 0; i < 40; i++) { const x = rand() * W, y = H * (0.2 + rand() * 0.65); const g = hx.createRadialGradient(x, y, 0, x, y, 3.5); g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)'); hx.fillStyle = g; hx.fillRect(x - 4, y - 4, 8, 8); }   // vent spews
+}
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function heightToNormal(src, strength) {
+  const W = src.width, H = src.height; const d = src.getContext('2d').getImageData(0, 0, W, H).data; const out = new ImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const o = (y * W + x) * 4; const l = d[(y * W + (x + W - 1) % W) * 4], r = d[(y * W + (x + 1) % W) * 4], u = d[(Math.max(0, y - 1) * W + x) * 4], b = d[(Math.min(H - 1, y + 1) * W + x) * 4];
+    let nx = -(r - l) / 255 * strength, ny = -(b - u) / 255 * strength, nz = 1; const ln = Math.hypot(nx, ny, nz); out.data[o] = (nx / ln * 0.5 + 0.5) * 255; out.data[o + 1] = (ny / ln * 0.5 + 0.5) * 255; out.data[o + 2] = (nz / ln * 0.5 + 0.5) * 255; out.data[o + 3] = 255; }
+  const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').putImageData(out, 0, 0); return c;
+}
+function hashStr(s) { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) | 0; return h; }
+function sizeString() { return `${T.width}/${T.aspect} R${T.rim}`; }
+
+
+// =====================================================================================================================
+//  POLYGON TREAD — groove shapes as 2D polygons (mm), boolean-combined, extruded as flat faces + vertical walls
+// =====================================================================================================================
+const TAU = Math.PI * 2;
+const CS = 100;                                            // Clipper works in integers: 0.01 mm units
+const CL = () => window.ClipperLib;
+const toPath = ring => ring.map(p => ({ X: Math.round(p[0] * CS), Y: Math.round(p[1] * CS) }));
+const orient = path => { if (!CL().Clipper.Orientation(path)) path.reverse(); return path; };
+function circleRing(cx, cy, r, n = 24) { const ring = []; for (let i = 0; i < n; i++) ring.push([cx + r * Math.cos(i / n * TAU), cy + r * Math.sin(i / n * TAU)]); return ring; }
+function rectPath(x0, y0, x1, y1) { return orient(toPath([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])); }
+// polylines (open or closed outlines) → filled groove areas via ClipperOffset
+function strokePaths(polylines, w, closed = false) {
+  const L = CL(); const co = new L.ClipperOffset(2, 0.25 * CS);
+  for (const pl of polylines) co.AddPath(toPath(pl), L.JoinType.jtRound, closed ? L.EndType.etClosedLine : L.EndType.etOpenButt);
+  const out = new L.Paths(); co.Execute(out, w / 2 * CS); return out;
+}
+function boolOp(type, subj, clip) {
+  const L = CL(); const c = new L.Clipper(); c.AddPaths(subj, L.PolyType.ptSubject, true); if (clip && clip.length) c.AddPaths(clip, L.PolyType.ptClip, true);
+  const out = new L.Paths(); c.Execute(type, out, L.PolyFillType.pftNonZero, L.PolyFillType.pftNonZero); return out;
+}
+const union = (a, b) => boolOp(CL().ClipType.ctUnion, a, b || []);
+const diff = (a, b) => boolOp(CL().ClipType.ctDifference, a, b);
+const inter = (a, b) => boolOp(CL().ClipType.ctIntersection, a, b);
+function exPolygons(paths) {                               // → [{outer:[[x,y]..], holes:[[[x,y]..]]}] in mm
+  const L = CL(); const c = new L.Clipper(); c.AddPaths(paths, L.PolyType.ptSubject, true); const tree = new L.PolyTree(); c.Execute(L.ClipType.ctUnion, tree, L.PolyFillType.pftNonZero, L.PolyFillType.pftNonZero);
+  return L.JS.PolyTreeToExPolygons(tree).map(ex => ({ outer: ex.outer.map(p => [p.X / CS, p.Y / CS]), holes: ex.holes.map(h => h.map(p => [p.X / CS, p.Y / CS])) }));
+}
+
+// drawn shapes → concrete instances in tread mm space
+function shapeInstances(ly, circ) {
+  const out = []; const rep = Math.max(1, Math.round(ly.repeat || 1)); const base = shapeOutline(ly);
+  if (!base) return out;
+  for (let k = 0; k < rep; k++) { const dx = k * circ / rep; out.push({ kind: ly.kind, pts: base.pts.map(p => [p[0] + dx, p[1]]), r: base.r, c: base.c && [base.c[0] + dx, base.c[1]] });
+    if (ly.mirror) out.push({ kind: ly.kind, pts: base.pts.map(p => [p[0] + dx, -p[1]]), r: base.r, c: base.c && [base.c[0] + dx, -base.c[1]] }); }
+  return out;
+}
+function shapeOutline(ly) {   // {pts (polygon/polyline), c, r}
+  const P = ly.pts; if (!P || !P.length) return null;
+  if (ly.kind === 'rect') { if (P.length < 2) return null; const [a, b] = P; return { pts: [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]] }; }
+  if (ly.kind === 'circle' || ly.kind === 'hex') { if (P.length < 2) return null; const r = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]); if (ly.kind === 'circle') return { pts: circleRing(P[0][0], P[0][1], r, Math.max(16, Math.min(64, Math.round(r * 6)))), c: P[0], r };
+    const pts = []; for (let v = 0; v < 6; v++) pts.push([P[0][0] + r * Math.cos(v * Math.PI / 3), P[0][1] + r * Math.sin(v * Math.PI / 3)]); return { pts, c: P[0], r }; }
+  return { pts: P.map(p => [p[0], p[1]]) };
+}
+// Every groove layer as Clipper paths with its depth
+function patternPolygons(pattern, d, treadDepth) {
+  const th = d.treadHalf, circ = d.circ, A = d.acrossHalf; const out = []; const bars = [];
+  const shift = (paths, dx) => paths.map(p => p.map(q => ({ X: q.X + Math.round(dx * CS), Y: q.Y })));
+  for (const ly of pattern.layers) {
+    if (ly.type === 'noise') continue; let paths = []; let wrap = true;
+    if (ly.type === 'circ') {
+      const y = ly.pos * th;
+      if (ly.zig > 0) { const n = Math.max(2, Math.round(ly.zigCount)) * 2; const pts = []; for (let i = -2; i <= n + 2; i++) pts.push([i / n * circ, y + (Math.abs(i) % 2 ? ly.zig : -ly.zig)]); paths = strokePaths([pts], ly.width); wrap = false; }
+      else { paths = [rectPath(-circ, y - ly.width / 2, 2 * circ, y + ly.width / 2)]; wrap = false; }
+      if (ly.width >= 4 && ly.depth >= 0.9 && !ly.zig) for (let i = 0; i < 6; i++) { const x = (i + 0.5) / 6 * circ; bars.push(rectPath(x - 3, y - ly.width / 2 - 0.2, x + 3, y + ly.width / 2 + 0.2)); }
+    } else if (ly.type === 'lateral' || ly.type === 'chevron' || ly.type === 'sipe') {
+      const tan = Math.tan(ly.angle * Math.PI / 180), n = Math.max(1, Math.round(ly.count)); const steps = (ly.curve || ly.zig) ? 8 : 1; const lines = [];
+      for (let i = 0; i < n; i++) { const x0 = (i + ly.phase) / n * circ;
+        for (const sg of ly.mirror ? [1, -1] : [1]) { const pts = [];
+          for (let j = 0; j <= steps; j++) { const cc = ly.from + (ly.to - ly.from) * j / steps; const yy = (ly.mirror ? sg * cc : cc) * th; const ac = ly.mirror ? Math.abs(cc) : cc;
+            let xx = x0 + ac * th * tan + (ly.curve || 0) * ac * ac * th * 0.5; if (ly.zig) xx += (j % 2 ? ly.zig : -ly.zig) * 0.5; pts.push([xx, yy]); }
+          lines.push(pts); } }
+      paths = strokePaths(lines, ly.width);
+    } else if (ly.type === 'dimple') {
+      const rows = Math.max(1, Math.round(ly.rows)), n = Math.max(1, Math.round(ly.count)); const rings = [];
+      for (let r = 0; r < rows; r++) { const cc = rows === 1 ? (ly.from + ly.to) / 2 : ly.from + (ly.to - ly.from) * r / (rows - 1); const y = cc * th; const sh = ly.stagger && r % 2 ? 0.5 : 0;
+        for (let i = 0; i < n; i++) { const x = (i + sh) / n * circ; const seg = Math.max(12, Math.min(48, Math.round(ly.radius * 6))); rings.push(circleRing(x, y, ly.radius, seg)); } }
+      paths = ly.ring ? strokePaths(rings, Math.max(0.6, ly.radius * 0.4), true) : rings.map(r => orient(toPath(r)));
+    } else if (ly.type === 'shape') {
+      const inst = shapeInstances(ly, circ); const lines = inst.filter(i => i.kind === 'path' && i.pts.length > 1).map(i => i.pts); const polys = inst.filter(i => i.kind !== 'path' && i.pts.length > 2).map(i => orient(toPath(i.pts)));
+      paths = (lines.length ? strokePaths(lines, ly.width) : []).concat(polys);
+    } else if (ly.type === 'hex') {
+      const sz = Math.max(2, ly.size); const nx = Math.max(2, 2 * Math.round(circ / (3 * sz))); const sx = circ / nx; const sy = Math.sqrt(3) * sz; const y0 = ly.from * th, y1 = ly.to * th; const rot = ly.rotate * Math.PI / 180;
+      const j0 = Math.floor((y0 - sy) / sy), j1 = Math.ceil((y1 + sy) / sy); const hexes = [];
+      for (let i = -1; i <= nx; i++) for (let j = j0; j <= j1; j++) { const cx = i * sx, cy = j * sy + (Math.abs(i) % 2 ? sy / 2 : 0); const pts = []; for (let v = 0; v < 6; v++) { const a = rot + v * Math.PI / 3; pts.push([cx + sz * Math.cos(a), cy + sz * Math.sin(a)]); } hexes.push(pts); }
+      paths = inter(strokePaths(hexes, ly.width, true), [rectPath(-circ, y0, 2 * circ, y1)]); wrap = false;
+    }
+    if (!paths.length) continue;
+    if (wrap) paths = paths.concat(shift(paths, circ), shift(paths, -circ));      // seam continuity
+    out.push({ paths, depth: Math.round(ly.depth * 100) / 100 });
+  }
+  return { grooves: out, bars, barDepth: Math.round((1 - 1.6 / treadDepth) * 100) / 100 };
+}
+// nested regions R_i (everything cut to depth >= d_i) → floor pieces S_i = R_i − R_{i+1}
+function treadRegions(pattern, d, treadDepth, wear) {
+  const { grooves, bars, barDepth } = patternPolygons(pattern, d, treadDepth);
+  const A = d.acrossHalf, circ = d.circ; const rect = [rectPath(0, -A, circ, A)];
+  const depths = [...new Set(grooves.map(g => g.depth).filter(v => v > wear + 0.005))].sort((a, b) => b - a);
+  const wantBars = bars.length && barDepth > wear + 0.005 && depths.some(v => v > barDepth);
+  if (wantBars && !depths.includes(barDepth)) { depths.push(barDepth); depths.sort((a, b) => b - a); }
+  let R = []; const regions = [];
+  for (const dep of depths) { const paths = grooves.filter(g => g.depth === dep).flatMap(g => g.paths); R = union(R.concat(paths)); regions.unshift({ depth: dep, R }); }
+  if (wantBars) for (const rg of regions) if (rg.depth > barDepth) rg.R = diff(rg.R, bars);
+  for (const rg of regions) rg.R = inter(rg.R, rect);
+  const pieces = [{ depth: 0, paths: regions.length ? diff(rect, regions[0].R) : rect }];
+  for (let i = 0; i < regions.length; i++) pieces.push({ depth: regions[i].depth, paths: i + 1 < regions.length ? diff(regions[i].R, regions[i + 1].R) : regions[i].R });
+  return { pieces, levels: [0, ...regions.map(r => r.depth)] };
+}
+function pointInRing(x, y, ring) { let inside = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]; if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside; } return inside; }
+function subdivideRing(ring, lx, ly, th = 1e9, lyShoulder = ly) { const out = []; for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length]; const lyy = Math.max(Math.abs(a[1]), Math.abs(b[1])) > th - 0.5 ? lyShoulder : ly; const n = Math.max(1, Math.ceil(Math.max(Math.abs(b[0] - a[0]) / lx, Math.abs(b[1] - a[1]) / lyy))); for (let k = 0; k < n; k++) out.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); } return out; }
+// across-position (mm) → axial position, radius and outward normal on the crowned/shouldered profile
+function buildPolyTread(d, pmGeo) {
+  const { pieces, levels } = treadRegions(P, d, T.treadDepth, T.wear);
+  const D = T.treadDepth, A = d.acrossHalf, circ = d.circ, LX = T.polyDetail, LY = T.polyDetail * 2;
+  const pos = [], nrm = [], uv = [], tan = []; let tris = 0;
+  const wl = y => pmGeo.wearRow((y + A) / (2 * A) * pmGeo.H);
+  const place = (x, y, hFrac) => { const pr = treadProfileAt(y, d); const off = D * Math.max(hFrac, wl(y)) * pr.w; const ax = pr.x - pr.nx * off, r = pr.r - pr.nr * off; const th = x / circ * TAU; return [ax, r * Math.cos(th), r * Math.sin(th), pr.nx, pr.nr * Math.cos(th), pr.nr * Math.sin(th)]; };
+  const push = (p, n, u, v, t) => { pos.push(p[0], p[1], p[2]); nrm.push(n[0], n[1], n[2]); uv.push(u, v); tan.push(t[0], t[1], t[2], 1); };
+  const tangentAt = u => { const th = u * TAU; return [0, -Math.sin(th), Math.cos(th)]; };   // +u direction (circumferential)
+  const snapLevel = h => levels.reduce((b, l) => Math.abs(l - h) < Math.abs(b - h) ? l : b, 0);
+  const LYS = Math.max(1.5, d.sr * 0.17);                         // finer across-steps on the shoulder arc (~10°)
+  const rowsY = []; for (let y = 0; y <= d.treadHalf - LY * 0.5; y += LY) rowsY.push(y); for (let ph = 10; ph < 80; ph += 10) rowsY.push(d.treadHalf + d.sr * Math.sin(ph * Math.PI / 180)); const ROWS = [...rowsY.map(y => -y).reverse(), ...rowsY.slice(1)];
+  const SW = LX * 2;                                              // strip width for wide polygons (keeps earcut inputs small)
+  const bbox = ring => { let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const p of ring) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; } return [x0, y0, x1, y1]; };
+  const splitWide = ex => {
+    const [x0, y0, x1, y1] = bbox(ex.outer); if (x1 - x0 <= SW * 2.5) return [ex];
+    const outerP = toPath(ex.outer); const holes = ex.holes.map(h => ({ p: toPath(h), b: bbox(h) })); const out = [];
+    for (let xs = Math.floor(x0 / SW) * SW; xs < x1; xs += SW) {
+      const xe = xs + SW; const hp = holes.filter(h => h.b[2] >= xs && h.b[0] <= xe).map(h => h.p);
+      const part = inter([outerP, ...hp], [rectPath(xs, y0 - 1, xe, y1 + 1)]); if (part.length) out.push(...exPolygons(part));
+    }
+    return out;
+  };
+  for (const pc of pieces) for (const ex0 of exPolygons(pc.paths)) for (const poly of splitWide(ex0)) {
+    const rings = [poly.outer, ...poly.holes].map(r => subdivideRing(r, LX, LY, d.treadHalf, LYS)); if (rings[0].length < 3) continue;
+    // Steiner grid inside the polygon for curvature-following interiors
+    const xs = rings[0].map(p => p[0]), ys = rings[0].map(p => p[1]); const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const steiner = [];
+    if (x1 - x0 > LX * 1.5 || y1 - y0 > LY * 1.5) for (const gy of ROWS) { if (gy <= y0 || gy >= y1) continue; for (let gx = Math.ceil(x0 / LX) * LX; gx < x1; gx += LX) {
+      if (!pointInRing(gx, gy, rings[0])) continue; let inHole = false; for (let h = 1; h < rings.length; h++) if (pointInRing(gx, gy, rings[h])) { inHole = true; break; } if (inHole) continue;
+      // keep clear of edges (avoid slivers)
+      const tol = Math.abs(gy) > d.treadHalf ? LYS * 0.35 : LY * 0.35; let near = false; for (const r of rings) { for (let i = 0; i < r.length && !near; i++) if (Math.abs(r[i][0] - gx) < LX * 0.35 && Math.abs(r[i][1] - gy) < tol) near = true; if (near) break; } if (near) continue;
+      steiner.push([gx, gy]);
+    } }
+    const contour = rings[0].map(p => new THREE.Vector2(p[0], p[1])); const holes = rings.slice(1).map(r => r.map(p => new THREE.Vector2(p[0], p[1])));
+    for (const sp of steiner) holes.push([new THREE.Vector2(sp[0], sp[1])]);
+    let faces; try { faces = THREE.ShapeUtils.triangulateShape(contour, holes); } catch (e) { continue; }
+    const all = contour.concat(...holes); const hz = pc.depth;
+    for (const f of faces) { const a = all[f[0]], b = all[f[1]], c = all[f[2]]; const area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y); if (Math.abs(area) < 1e-6) continue;
+      const ord = area > 0 ? [a, b, c] : [a, c, b];
+      for (const q of ord) { const P3 = place(q.x, q.y, hz); push(P3, [P3[3], P3[4], P3[5]], q.x / circ, (q.y + A) / (2 * A), tangentAt(q.x / circ)); } tris++; }
+    // walls: generated from the lower side of every boundary edge
+    for (const r of rings) for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length]; const dx = b[0] - a[0], dy = b[1] - a[1]; const l = Math.hypot(dx, dy); if (l < 1e-6) continue;
+      const ox = dy / l, oy = -dx / l; const mx = (a[0] + b[0]) / 2 + ox * 0.9, my = (a[1] + b[1]) / 2 + oy * 0.9;
+      const smp = sampleDepth(pmGeo, mx / circ, (my + A) / (2 * A)); const hOut = smp > 0.02 ? snapLevel(smp + wl(my)) : 0;
+      const hIn = pc.depth; if (hOut >= hIn - 0.005) continue;
+      const u = mx / circ, v = (my + A) / (2 * A);
+      const a0 = place(a[0], a[1], hOut), b0 = place(b[0], b[1], hOut), a1 = place(a[0], a[1], hIn), b1 = place(b[0], b[1], hIn);
+      if (Math.hypot(a0[0] - a1[0], a0[1] - a1[1], a0[2] - a1[2]) < 0.02 && Math.hypot(b0[0] - b1[0], b0[1] - b1[1], b0[2] - b1[2]) < 0.02) continue;
+      const n = [0, 0, 0]; { const e1 = [b0[0] - a0[0], b0[1] - a0[1], b0[2] - a0[2]], e2 = [a1[0] - a0[0], a1[1] - a0[1], a1[2] - a0[2]]; n[0] = e1[1] * e2[2] - e1[2] * e2[1]; n[1] = e1[2] * e2[0] - e1[0] * e2[2]; n[2] = e1[0] * e2[1] - e1[1] * e2[0]; const ln = Math.hypot(...n) || 1; n[0] /= ln; n[1] /= ln; n[2] /= ln; }
+      // wall must face into the groove (toward −outward): flip if needed
+      const th = u * TAU; const want = [-oy, ox * Math.sin(th), -ox * Math.cos(th)]; /* −outward: x→circumferential tangent, y→axle */ const flip = n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0; if (flip) { n[0] = -n[0]; n[1] = -n[1]; n[2] = -n[2]; }
+      // wall UVs sit just inside the groove floor (flat in the depth map) so the normal map does not tilt them
+      const inU = -ox * 1.2 / circ, inV = -oy * 1.2 / (2 * A); const uvA0 = [a[0] / circ + inU, (a[1] + A) / (2 * A) + inV], uvB0 = [b[0] / circ + inU, (b[1] + A) / (2 * A) + inV];
+      const uvA1 = [uvA0[0] + inU * 0.6, uvA0[1] + inV * 0.6], uvB1 = [uvB0[0] + inU * 0.6, uvB0[1] + inV * 0.6];
+      const et = [b0[0] - a0[0], b0[1] - a0[1], b0[2] - a0[2]]; const el = Math.hypot(...et) || 1; const wt = [et[0] / el, et[1] / el, et[2] / el];
+      const quad = flip ? [[a0, uvA0], [a1, uvA1], [b0, uvB0], [b0, uvB0], [a1, uvA1], [b1, uvB1]] : [[a0, uvA0], [b0, uvB0], [a1, uvA1], [a1, uvA1], [b0, uvB0], [b1, uvB1]];
+      for (const [q, t] of quad) push(q, n, t[0], t[1], wt); tris += 2;
+    }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('tangent', new THREE.Float32BufferAttribute(tan, 4)); g.computeBoundingSphere();
+  g.userData.tris = tris; return g;
+}
+// sidewall-only lathe (used together with the polygon tread)
+function buildSidewallGeometry(d, prof) {
+  const side = prof.filter(p => p.zone === 'side' || p.edge); const M = Math.max(90, Math.round(T.radial / 2));
+  const left = side.filter(p => p.x < 0), right = side.filter(p => p.x > 0);
+  const pos = [], uv = [], idx = []; let base = 0;
+  for (const run of [left, right]) { const N = run.length;
+    for (let i = 0; i < N; i++) { const p = run[i]; for (let j = 0; j <= M; j++) { const u = j / M, th = u * TAU; pos.push(p.x, p.r * Math.cos(th), p.r * Math.sin(th)); uv.push(p.x < 0 ? 1 - u : u, Math.max(-0.05, p.s ?? 1)); } }
+    for (let i = 0; i < N - 1; i++) for (let j = 0; j < M; j++) { const a = base + i * (M + 1) + j, b = a + 1, c = a + M + 1, e = c + 1; idx.push(a, b, c, b, e, c); }
+    base += N * (M + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+
+
+// =====================================================================================================================
+//  QUAD TREAD — structured (around × across) grid whose nodes snap onto groove boundaries; every face is a quad.
+//  Tops + floors + walls + sidewalls + inner liner form one closed, watertight all-quad shell.
+// =====================================================================================================================
+// THREE adapter: pure quad data (QuadCore) -> render geometry. The render geometry is split per face corner
+// only for shading (sharp groove walls); the exported quad mesh (userData.quadMesh) stays welded/shared.
+function buildQuadTyre(d, prof) {
+  const data = QuadCore.buildQuadMeshData(P, d, prof, T, { snap: T.snapNodes !== false });
+  const { V, VU, VN, F } = data; const pos = V; const A = d.acrossHalf;
+  const fn = f => { const [a, b, c, dd] = f.q.map(i => pos[i]); const e1 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]], e2 = [dd[0] - b[0], dd[1] - b[1], dd[2] - b[2]]; const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]; const l = Math.hypot(...n) || 1; return [n[0] / l, n[1] / l, n[2] / l]; };
+  for (const f of F) f.n = fn(f);
+  const acc = new Float32Array(V.length * 3);
+  for (const f of F) if (f.kind === 'side' || f.kind === 'liner') for (const i of f.q) { acc[i * 3] += f.n[0]; acc[i * 3 + 1] += f.n[1]; acc[i * 3 + 2] += f.n[2]; }
+  const radial = pt => { const r = Math.hypot(pt[1], pt[2]) || 1; return [0, pt[1] / r, pt[2] / r]; };
+  const tanAt = p => { const r = Math.hypot(p[1], p[2]) || 1; return [0, -p[2] / r, p[1] / r]; };
+  const order = F.map((f, i) => i).sort((x, y) => ((F[x].kind === 'top' || F[x].kind === 'wall') ? 0 : 1) - ((F[y].kind === 'top' || F[y].kind === 'wall') ? 0 : 1));
+  const P3 = [], N3 = [], U2 = [], T4 = []; let treadFaces = 0;
+  for (const fi of order) { const f = F[fi]; if (f.kind === 'top' || f.kind === 'wall') treadFaces++;
+    const nrmOf = i => { if (f.kind === 'top') { const pr = treadProfileAt(THREE.MathUtils.clamp(pos[i][0], -A, A), d); const r = radial(pos[i]); return [pr.nx, pr.nr * r[1], pr.nr * r[2]]; } if (f.kind === 'wall') return f.n; const l = Math.hypot(acc[i * 3], acc[i * 3 + 1], acc[i * 3 + 2]) || 1; return [acc[i * 3] / l, acc[i * 3 + 1] / l, acc[i * 3 + 2] / l]; };
+    const tanOf = i => { if (f.kind === 'wall') { const a = pos[f.q[0]], b = pos[f.q[1]]; const e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]; const l = Math.hypot(...e) || 1; return [e[0] / l, e[1] / l, e[2] / l]; } return tanAt(pos[i]); };
+    const [a, b, c, dd] = f.q; for (const i of [a, b, c, a, c, dd]) { const p = pos[i], n = nrmOf(i), tn = tanOf(i); P3.push(p[0], p[1], p[2]); N3.push(n[0], n[1], n[2]); U2.push(VU[i][0], VU[i][1]); T4.push(tn[0], tn[1], tn[2], 1); } }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P3, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N3, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(U2, 2)); g.setAttribute('tangent', new THREE.Float32BufferAttribute(T4, 4));
+  g.addGroup(0, treadFaces * 6, 0); g.addGroup(treadFaces * 6, (F.length - treadFaces) * 6, 1);
+  g.computeBoundingSphere();
+  g.userData.tris = F.length * 2; g.userData.quads = F.length; g.userData.quadMesh = { V, VU, F: F.map(f => ({ q: f.q, kind: f.kind })) }; g.userData.quadReport = data.report; g.userData.quadData = data;
+  return g;
+}
+
+// =====================================================================================================================
+//  3D TYRE MESH (procedural profile revolved, displaced by tread depth map along profile normals)
+// =====================================================================================================================
+
+function sampleDepth(pm, u, v) {
+  const { W, H, depth } = pm; let fx = ((u % 1) + 1) % 1 * W, fy = Math.min(H - 1.001, Math.max(0, v * H));
+  const x0 = Math.floor(fx) % W, y0 = Math.floor(fy), x1 = (x0 + 1) % W, y1 = Math.min(H - 1, y0 + 1), tx = fx - Math.floor(fx), ty = fy - y0;
+  return (depth[y0 * W + x0] * (1 - tx) + depth[y0 * W + x1] * tx) * (1 - ty) + (depth[y1 * W + x0] * (1 - tx) + depth[y1 * W + x1] * tx) * ty;
+}
+
+function buildTyreGeometry(d, pm) {
+  const prof = buildProfile(d); const N = prof.length, M = T.radial;
+  const pos = new Float32Array(N * (M + 1) * 3), uv = new Float32Array(N * (M + 1) * 2);
+  const D = T.treadDepth; const A = d.acrossHalf;
+  for (let i = 0; i < N; i++) {
+    const p = prof[i]; const v = (p.x + A) / (2 * A);
+    for (let j = 0; j <= M; j++) {
+      const u = j / M, th = u * Math.PI * 2; let x = p.x, r = p.r;
+      if (p.w > 0) {
+        const h = sampleDepth(pm, u, v); const worn = pm.wearRow(v * pm.H) * D;
+        const off = (h * D + worn) * p.w; x -= p.nx * off; r -= p.nr * off;
+      }
+      const k = (i * (M + 1) + j); pos[k * 3] = x; pos[k * 3 + 1] = r * Math.cos(th); pos[k * 3 + 2] = r * Math.sin(th);
+      if (p.zone === 'tread') { uv[k * 2] = u; uv[k * 2 + 1] = v; } else { uv[k * 2] = p.x < 0 ? 1 - u : u; uv[k * 2 + 1] = p.s; }
+    }
+  }
+  const treadIdx = [], sideIdx = [];
+  for (let i = 0; i < N - 1; i++) {
+    const arr = (prof[i].zone === 'tread' && prof[i + 1].zone === 'tread') ? treadIdx : sideIdx;
+    for (let j = 0; j < M; j++) { const a = i * (M + 1) + j, b = a + 1, c = a + (M + 1), dd = c + 1; arr.push(a, b, c, b, dd, c); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(treadIdx.concat(sideIdx)); g.addGroup(0, treadIdx.length, 0); g.addGroup(treadIdx.length, sideIdx.length, 1);
+  g.computeVertexNormals(); g.computeBoundingSphere();
+  return { geometry: g, profile: prof };
+}
+
+function buildRim(d) {
+  const grp = new THREE.Group(); const mat = new THREE.MeshStandardMaterial({ color: T.rimColor, metalness: 0.9, roughness: 0.28 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#2a2b2e', metalness: 0.6, roughness: 0.5 });
+  const Rf = d.Rrim + 2, bw = d.bw;
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(d.Rrim - 2, d.Rrim - 2, bw * 2 - 8, 96, 1, true), dark); barrel.rotation.z = Math.PI / 2; grp.add(barrel);
+  for (const s of [-1, 1]) { const f = new THREE.Mesh(new THREE.TorusGeometry(d.Rrim - 1.5, 3.5, 12, 96), mat); f.rotation.y = Math.PI / 2; f.position.x = s * (bw - 2); grp.add(f); }
+  if (T.rimStyle === 'spoke') {
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(d.Rrim * 0.3, d.Rrim * 0.3, 40, 48), mat); hub.rotation.z = Math.PI / 2; hub.position.x = bw * 0.55; grp.add(hub);
+    const n = T.spokes; for (let i = 0; i < n; i++) {
+      const sp = new THREE.Mesh(new THREE.BoxGeometry(22, d.Rrim - 8, 34), mat); const a = i / n * Math.PI * 2;
+      sp.position.set(bw * 0.55, Math.cos(a) * d.Rrim * 0.55, Math.sin(a) * d.Rrim * 0.55); sp.rotation.x = -a; grp.add(sp);
+    }
+    for (let i = 0; i < 5; i++) { const b = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 8, 6), dark); const a = i / 5 * Math.PI * 2; b.rotation.z = Math.PI / 2; b.position.set(bw * 0.55 + 22, Math.cos(a) * d.Rrim * 0.14, Math.sin(a) * d.Rrim * 0.14); grp.add(b); }
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(d.Rrim * 0.8, d.Rrim * 0.8, 24, 64), new THREE.MeshStandardMaterial({ color: '#5a5550', metalness: 0.7, roughness: 0.6 })); disc.rotation.z = Math.PI / 2; disc.position.x = bw * 0.1; grp.add(disc);
+  } else {
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(d.Rrim - 3, d.Rrim * 0.35, 6, 96), mat); dish.rotation.z = Math.PI / 2; dish.position.x = bw * 0.6; grp.add(dish);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(d.Rrim * 0.35, d.Rrim * 0.35, 30, 48), dark); cap.rotation.z = Math.PI / 2; cap.position.x = bw * 0.6; grp.add(cap);
+  }
+  return grp;
+}
+
+// carcass "threads": radial body cords + steel belt cords under the tread
+function buildThreads(profile, d) {
+  const verts = []; const cords = 160; const M = 240;
+  for (let i = 0; i < cords; i++) {
+    const th = i / cords * Math.PI * 2, c = Math.cos(th), s = Math.sin(th);
+    for (let j = 0; j < profile.length - 1; j++) {
+      const a = profile[j], b = profile[j + 1]; const off = 1.2;
+      const ax = a.x + a.nx * off, ar = a.r + a.nr * off - (a.zone === 'tread' ? T.treadDepth * (1 - T.wear) + 1 : 0), bx = b.x + b.nx * off, br = b.r + b.nr * off - (b.zone === 'tread' ? T.treadDepth * (1 - T.wear) + 1 : 0);
+      verts.push(ax, ar * c, ar * s, bx, br * c, br * s);
+    }
+  }
+  const beltR = d.Rout - T.crown * 0.5 - T.treadDepth * (1 - T.wear) - 0.4;
+  for (const sgn of [1, -1]) for (let i = 0; i < 90; i++) {
+    const th0 = i / 90 * Math.PI * 2; const span = d.treadHalf * 2 * Math.tan(20 * Math.PI / 180) / beltR;
+    for (let j = 0; j < 6; j++) {
+      const x0 = -d.treadHalf + j / 6 * d.treadHalf * 2, x1 = -d.treadHalf + (j + 1) / 6 * d.treadHalf * 2;
+      const t0 = th0 + sgn * span * j / 6, t1 = th0 + sgn * span * (j + 1) / 6;
+      verts.push(x0, beltR * Math.cos(t0), beltR * Math.sin(t0), x1, beltR * Math.cos(t1), beltR * Math.sin(t1));
+    }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#d6c93a', transparent: true, opacity: 0.55 }));
+}
+
+// =====================================================================================================================
+//  THREE.JS SCENE
+// =====================================================================================================================
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05; view.prepend(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#0b0c0e');
+const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+const camera = new THREE.PerspectiveCamera(38, 1, 1, 20000); camera.position.set(700, 380, 720);
+const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, 0, 0);
+controls.zoomSpeed = 0.8; controls.maxPolarAngle = Math.PI / 2 - 0.03; controls.zoomToCursor = false;
+function fitZoom(d) { const R = d.Rout; controls.minDistance = R * 0.75; controls.maxDistance = R * 7; camera.near = R * 0.02; camera.far = R * 60; camera.updateProjectionMatrix();
+  const dist = camera.position.distanceTo(controls.target); if (dist > controls.maxDistance || dist < controls.minDistance) { const dir = camera.position.clone().sub(controls.target).normalize(); camera.position.copy(controls.target).addScaledVector(dir, THREE.MathUtils.clamp(dist, controls.minDistance, controls.maxDistance)); } }
+const key = new THREE.DirectionalLight('#fff4e0', 2.2); key.position.set(600, 900, 500); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = key.shadow.camera.bottom = -600; key.shadow.camera.right = key.shadow.camera.top = 600; key.shadow.camera.far = 3000; key.shadow.bias = -0.0002; key.shadow.normalBias = 2.5; scene.add(key);
+scene.add(new THREE.DirectionalLight('#9fc5ff', 0.6).translateX(-800).translateY(200).translateZ(-400));
+scene.add(new THREE.HemisphereLight('#3a4050', '#0b0b0d', 0.6));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.MeshStandardMaterial({ color: '#121316', roughness: 0.95 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const grid = new THREE.GridHelper(4000, 80, '#232529', '#1a1c1f'); grid.position.y = 0.5; scene.add(grid);
+const tyreGroup = new THREE.Group(); scene.add(tyreGroup);
+
+let tyreMesh, rimGroup, threadLines, maps, patternMap, profileCache, treadMat, quadMeshData, quadReport = null, quadData = null;
+function disposeGroup() { tyreGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); tyreGroup.clear(); }
+
+function rebuild(full = true) {
+  const d = dims();
+  patternMap = renderPattern(P, d, 384, T.wear, T.wearBias, T.treadDepth);
+  maps = buildTreadMaps(patternMap, T.treadDepth, T.rubber, T.wear);
+  disposeGroup();
+  const tex = c => { const t = new THREE.CanvasTexture(c); t.flipY = false; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; t.colorSpace = THREE.NoColorSpace; return t; };
+  const colTex = tex(maps.color); colTex.colorSpace = THREE.SRGBColorSpace;
+  const usePoly = false; const useQuad = true; T.meshMode = 'quad';   // pure quads only — no heightmap/poly mesh modes
+  treadMat = new THREE.MeshStandardMaterial({ map: colTex, normalMap: tex(maps.normal), normalScale: new THREE.Vector2(usePoly ? 0.35 : 0.7, usePoly ? 0.35 : 0.7), roughnessMap: tex(maps.rough), roughness: 1, metalness: 0.0 });
+  const sw = buildSidewall(true); const sideTex = tex(sw.color); sideTex.colorSpace = THREE.SRGBColorSpace;
+  const sideMat = new THREE.MeshStandardMaterial({ map: sideTex, normalMap: tex(sw.normal), normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.8, metalness: 0 });
+  tyreMesh = new THREE.Group(); let triCount = 0; quadMeshData = null;
+  if (useQuad) {
+    const prof = buildProfile(d); profileCache = prof;
+    const geo = buildQuadTyre(d, prof); quadMeshData = geo.userData.quadMesh; quadReport = geo.userData.quadReport; quadData = geo.userData.quadData;
+    tyreMesh.add(new THREE.Mesh(geo, [treadMat, sideMat])); triCount = geo.userData.tris; renderQuadReport();
+  } else if (usePoly) {
+    const pmGeo = renderPattern(P, d, 384, T.wear, T.wearBias, T.treadDepth, true);
+    let treadGeo; try { treadGeo = buildPolyTread(d, pmGeo); } catch (e) { console.warn('polygon tread failed, falling back', e); }
+    if (treadGeo) { const prof = buildProfile(d); profileCache = prof; tyreMesh.add(new THREE.Mesh(treadGeo, treadMat)); tyreMesh.add(new THREE.Mesh(buildSidewallGeometry(d, prof), sideMat)); triCount = treadGeo.userData.tris; }
+    else { const { geometry, profile } = buildTyreGeometry(d, patternMap); profileCache = profile; tyreMesh.add(new THREE.Mesh(geometry, [treadMat, sideMat])); triCount = geometry.index.count / 3; }
+  } else { const { geometry, profile } = buildTyreGeometry(d, patternMap); profileCache = profile; tyreMesh.add(new THREE.Mesh(geometry, [treadMat, sideMat])); triCount = geometry.index.count / 3; }
+  tyreMesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (UI.threads) [].concat(o.material).forEach(m => { m.transparent = true; m.opacity = 0.35; }); } });
+  tyreMesh.userData.tris = triCount; tyreGroup.add(tyreMesh);
+  rimGroup = buildRim(d); rimGroup.traverse(o => { o.castShadow = true; }); tyreGroup.add(rimGroup);
+  threadLines = buildThreads(profileCache, d); threadLines.visible = UI.threads; tyreGroup.add(threadLines);
+  const groundR = d.Rout - T.wear * T.treadDepth; tyreGroup.position.y = groundR; tyreGroup.rotation.z = 0;
+  if (!controls.userData?.init) { controls.userData = { init: true }; controls.target.set(0, groundR, 0); camera.position.set(d.Rout * 2.6, groundR + d.Rout * 0.6, d.Rout * 2.7); }
+  fitZoom(d);
+  updateHud(d); drawProfile(d, profileCache); drawTreadView();
+}
+
+function updateHud(d) {
+  const worn = T.wear * T.treadDepth, remaining = T.treadDepth - worn;
+  document.getElementById('badgeName').textContent = P.name; document.getElementById('badgeType').textContent = P.type; document.getElementById('badgeSize').textContent = sizeString();
+  const od = (d.Rout - worn) * 2; const circ = Math.PI * od;
+  const col = remaining < 1.6 ? 'var(--red)' : remaining < 3 ? 'var(--yellow)' : 'var(--green)';
+  const tile = (l, v, u, dot) => `<div class="tile"><div class="l"><i style="background:${dot || 'var(--green)'}"></i>${l}</div><div class="v">${v}<small>${u}</small></div></div>`;
+  document.getElementById('tiles').innerHTML =
+    tile('Overall Ø', od.toFixed(0), 'mm', 'var(--yellow)') + tile('Tread left', remaining.toFixed(1), '/ ' + T.treadDepth + ' mm', col) +
+    tile('Circumference', (circ / 1000).toFixed(2), 'm', 'var(--yellow)') + tile('Mesh', ((quadMeshData?.F.length || 0) / 1000).toFixed(1), 'k pure quads · ' + (quadReport?.watertight ? 'watertight ✓' : 'see Export report'), quadReport?.watertight ? 'var(--green)' : 'var(--red)');
+  const bigNum = v => { const [a, b] = String(v).split('.'); return a + (b ? '<span class="frac">.' + b + '</span>' : ''); };
+  document.getElementById('bigSize').innerHTML = `${T.width}<span class="frac">/${T.aspect}</span><small>R${T.rim}</small>`;
+  document.getElementById('sizeR').textContent = `${(d.Rrim * 2).toFixed(0)} mm rim`;
+  document.getElementById('sizePills').innerHTML = `<span class="pill n">sidewall ${d.H.toFixed(0)} mm</span><span class="pill n">tread ${(d.treadHalf * 2).toFixed(0)} mm</span><span class="pill ${remaining < 1.6 ? 'r' : 'g'}">${T.wear ? '-' + worn.toFixed(1) + ' mm worn' : 'new'}</span>`;
+}
+
+const profView = { X: null, Y: null, sc: 1, handles: [] };
+function profileHandles(d) {
+  const sr = d.sr, s45 = Math.sin(Math.PI / 4), c45 = Math.cos(Math.PI / 4);
+  const list = [
+    { id: 'tread', x: d.treadHalf, r: d.Rout - T.crown, label: 'tread edge / crown', color: '#38c46d' },
+    { id: 'shoulder', x: d.treadHalf + sr * s45, r: d.Rout - T.crown - sr + sr * c45, label: 'shoulder radius', color: '#d6c93a' },
+    { id: 'bulge', x: d.halfW * (0.6 + 0.4 * T.bulge), r: d.Rrim + d.H * 0.52, label: 'sidewall bulge', color: '#f0a04b' },
+    { id: 'bead', x: d.bw, r: d.Rrim + 2, label: 'rim width', color: '#9aa4ff' },
+    { id: 'depth', x: 0, r: d.Rout - T.treadDepth, label: 'tread depth', color: '#e5423f' },
+  ];
+  return list.flatMap(h => h.x === 0 ? [h] : [h, Object.assign({}, h, { x: -h.x, mirror: true })]);
+}
+function drawProfile(d, prof) {
+  const c = document.getElementById('profile'), ctx = c.getContext('2d'); const W = c.width, H = c.height; ctx.clearRect(0, 0, W, H);
+  const worn = T.wear * T.treadDepth;
+  const sc = Math.min((W - 44) / (T.width * 1.15), (H - 40) / (d.Rout - d.Rrim + 40)); const ox = W / 2, oy = H - 16;
+  const X = x => ox + x * sc, Y = r => oy - (r - d.Rrim + 20) * sc; Object.assign(profView, { X, Y, sc, ox, oy, d });
+  ctx.strokeStyle = '#2b2f38'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(X(-d.bw - 10), Y(d.Rrim)); ctx.lineTo(X(d.bw + 10), Y(d.Rrim)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = '#9aa0ab'; ctx.fillRect(X(-d.bw), Y(d.Rrim) - 3, (2 * d.bw) * sc, 6);
+  ctx.beginPath(); prof.forEach((p, i) => { const rr = p.r - (p.zone === 'tread' ? worn * p.w : 0); i ? ctx.lineTo(X(p.x), Y(rr)) : ctx.moveTo(X(p.x), Y(rr)); }); ctx.closePath();
+  ctx.fillStyle = '#1e2024'; ctx.fill(); ctx.strokeStyle = '#e6e7ea'; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.strokeStyle = '#d6c93a'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.beginPath(); prof.filter(p => p.zone === 'tread').forEach((p, i) => { const rr = p.r - (T.treadDepth + worn) * p.w; i ? ctx.lineTo(X(p.x), Y(rr)) : ctx.moveTo(X(p.x), Y(rr)); }); ctx.stroke(); ctx.setLineDash([]);
+  // handles
+  profView.handles = profileHandles(d);
+  for (const h of profView.handles) {
+    const hx = X(h.x), hy = Y(h.r); const active = profView.drag && profView.drag.id === h.id;
+    ctx.beginPath(); ctx.arc(hx, hy, active ? 7 : 5, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = h.color; ctx.stroke();
+    if (!h.mirror) { ctx.fillStyle = h.color; ctx.font = '300 10px Outfit, system-ui'; ctx.textAlign = h.id === 'depth' ? 'center' : 'left'; ctx.fillText(h.label, hx + (h.id === 'depth' ? 0 : 9), hy + (h.id === 'depth' ? 14 : -8)); }
+  }
+  ctx.fillStyle = '#8a8d94'; ctx.font = '300 11px Outfit, system-ui'; ctx.textAlign = 'center';
+  ctx.fillText(`${T.width} mm`, ox, Y(d.Rout) - 10); ctx.fillText(`rim ${T.rim}" · ${(d.bw * 2).toFixed(0)} mm`, ox, oy - 4);
+  ctx.textAlign = 'left'; ctx.fillText(`${d.H.toFixed(0)} mm`, X(d.halfW) + 10, (Y(d.Rout) + Y(d.Rrim)) / 2);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#5c5f66'; ctx.fillText(`crown ${T.crown.toFixed(1)} · R${d.sr.toFixed(0)} · depth ${T.treadDepth}`, W - 8, 14);
+}
+(function initProfileEditor() {
+  const c = document.getElementById('profile'); const clamp = THREE.MathUtils.clamp;
+  const toCanvas = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
+  const pick = (px, py) => { let best = null, bd = 12; for (const h of profView.handles) { const dd = Math.hypot(profView.X(h.x) - px, profView.Y(h.r) - py); if (dd < bd) { bd = dd; best = h; } } return best; };
+  c.addEventListener('pointermove', e => { if (!profView.drag) { c.style.cursor = pick(...toCanvas(e)) ? 'grab' : 'crosshair'; return; }
+    const [px, py] = toCanvas(e); const d = profView.d; const sgn = profView.drag.mirror ? -1 : 1;
+    const xmm = sgn * (px - profView.ox) / profView.sc, rmm = d.Rrim - 20 + (profView.oy - py) / profView.sc;
+    switch (profView.drag.id) {
+      case 'tread': T.treadFrac = clamp(xmm / d.halfW, 0.7, 0.98); T.crown = clamp(d.Rout - rmm, 0, 8); break;
+      case 'shoulder': T.shoulder = clamp((xmm - d.treadHalf) / Math.sin(Math.PI / 4), 4, 40); break;
+      case 'bulge': T.bulge = clamp((xmm / d.halfW - 0.6) / 0.4, 0.4, 1.6); break;
+      case 'bead': T.rimWidthFrac = clamp(xmm / d.halfW, 0.6, 0.92); break;
+      case 'depth': T.treadDepth = clamp(Math.round((d.Rout - rmm) * 2) / 2, 2, 20); break;
+    }
+    const nd = dims(); drawProfile(nd, buildProfile(nd)); schedule(); });
+  c.addEventListener('pointerdown', e => { const h = pick(...toCanvas(e)); if (!h) return; profView.drag = h; c.setPointerCapture(e.pointerId); c.style.cursor = 'grabbing'; });
+  const end = () => { if (!profView.drag) return; profView.drag = null; c.style.cursor = 'crosshair'; buildTyreUI(); const nd = dims(); drawProfile(nd, buildProfile(nd)); };
+  c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+})();
+function drawTreadView() {
+  const src = maps[UI.treadMode]; const bright = UI.treadMode === 'color' ? 'brightness(2.6) contrast(1.05)' : 'none';
+  const c = document.getElementById('treadView'); const r = c.getBoundingClientRect(); if (!r.width) return; c.width = Math.round(r.width * devicePixelRatio); c.height = Math.round(r.height * devicePixelRatio);
+  const ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high'; ctx.filter = bright;
+  const cropW = Math.min(src.width, Math.round(src.height * c.width / c.height));     // a window of the circumference at true aspect
+  ctx.drawImage(src, 0, 0, cropW, src.height, 0, 0, c.width, c.height); ctx.filter = 'none';
+  const st = document.getElementById('treadStrip'); const rs = st.getBoundingClientRect(); st.width = Math.round(rs.width * devicePixelRatio); st.height = Math.round(rs.height * devicePixelRatio);
+  const sx = st.getContext('2d'); sx.filter = bright; sx.drawImage(src, 0, 0, st.width, st.height); sx.filter = 'none';
+  sx.strokeStyle = '#fff'; sx.lineWidth = 2; sx.strokeRect(1, 1, st.width * cropW / src.width - 2, st.height - 2);
+  const d = dims(); document.getElementById('treadDims').textContent = `Showing ${(cropW / patternMap.k).toFixed(0)} mm of ${(d.circ).toFixed(0)} mm circumference · map ${patternMap.W}×${patternMap.H} @ ${patternMap.k.toFixed(2)} px/mm`;
+}
+function resize() { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); if (maps) drawTreadView(); }
+new ResizeObserver(resize).observe(view); resize();
+let last = performance.now();
+renderer.setAnimationLoop(now => { const dt = (now - last) / 1000; last = now; if (UI.spin && tyreGroup) tyreGroup.rotation.x -= dt * 0.8; controls.update(); renderer.render(scene, camera); });
+
+// =====================================================================================================================
+//  UI
+// =====================================================================================================================
+let timer; const schedule = () => { if (DZ.on) return; clearTimeout(timer); timer = setTimeout(() => rebuild(), T.meshMode === 'quad' ? 220 : 40); };
+function slider(parent, label, obj, key, min, max, step, fmt = v => v, after = schedule) {
+  const row = document.createElement('div'); row.className = 'row'; row.innerHTML = `<label title="${label}">${label}</label><input type="range" min="${min}" max="${max}" step="${step}" value="${obj[key]}"><span class="val">${fmt(obj[key])}</span>`;
+  const inp = row.querySelector('input'), val = row.querySelector('.val');
+  inp.oninput = () => { obj[key] = parseFloat(inp.value); val.textContent = fmt(obj[key]); after(); }; parent.appendChild(row); return row;
+}
+function select(parent, label, obj, key, opts, after = schedule) {
+  const row = document.createElement('div'); row.className = 'row'; row.innerHTML = `<label>${label}</label><select>${opts.map(o => `<option ${o == obj[key] ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  row.querySelector('select').onchange = e => { obj[key] = isNaN(+e.target.value) ? e.target.value : +e.target.value; after(); }; parent.appendChild(row); return row;
+}
+function check(parent, label, obj, key, after = schedule) {
+  const row = document.createElement('div'); row.className = 'row'; row.innerHTML = `<label>${label}</label><input type="checkbox" ${obj[key] ? 'checked' : ''}>`;
+  row.querySelector('input').onchange = e => { obj[key] = e.target.checked; after(); }; parent.appendChild(row); return row;
+}
+function color(parent, label, obj, key, after = schedule) {
+  const row = document.createElement('div'); row.className = 'row'; row.innerHTML = `<label>${label}</label><input type="color" value="${obj[key]}">`;
+  row.querySelector('input').oninput = e => { obj[key] = e.target.value; after(); }; parent.appendChild(row); return row;
+}
+function buildTyreUI() {
+  const p = document.getElementById('tyreParams'); p.innerHTML = '';
+  const h = t => { const e = document.createElement('div'); e.className = 'sec'; e.textContent = t; p.appendChild(e); };
+  h('Size');
+  slider(p, 'Section width (mm)', T, 'width', 135, 405, 5); slider(p, 'Aspect ratio (%)', T, 'aspect', 20, 85, 5); slider(p, 'Rim diameter (in)', T, 'rim', 12, 24, 1);
+  h('Wear');
+  slider(p, 'Wear (new → bald)', T, 'wear', 0, 1, 0.01, v => v === 0 ? 'New' : v >= 1 ? 'Bald' : Math.round(v * 100) + '%');
+  slider(p, 'Wear bias (edge↔centre)', T, 'wearBias', -1, 1, 0.01, v => v.toFixed(2));
+  h('Tread mesh');
+  const meshInfo = document.createElement('div'); meshInfo.className = 'hint'; meshInfo.innerHTML = '<b style="color:#fff">Pure quads only</b> — structured grid from the vector pattern (see Export for the live topology report). Lower pitch = finer grooves + more quads.'; p.appendChild(meshInfo);
+  const qp = document.createElement('div'); qp.className = 'btns'; qp.innerHTML = '<button class="small" data-qp="8">Deform proxy · 8mm</button><button class="small" data-qp="6">Standard · 6mm</button><button class="small" data-qp="4">Fine · 4mm</button>';
+  qp.querySelectorAll('button').forEach(b => b.onclick = () => { T.quadPitch = +b.dataset.qp; buildTyreUI(); schedule(); }); p.appendChild(qp);
+  slider(p, 'Quad pitch (mm)', T, 'quadPitch', 2, 12, 0.5, v => v.toFixed(1)); check(p, 'Snap nodes to groove edges', T, 'snapNodes'); check(p, 'Inner liner (closed shell)', T, 'liner');
+  slider(p, 'Profile points (tread)', T, 'across', 32, 192, 8);
+  const pp = document.getElementById('profileParams'); pp.innerHTML = '';
+  slider(pp, 'Tread depth (mm)', T, 'treadDepth', 2, 20, 0.5); slider(pp, 'Tread width fraction', T, 'treadFrac', 0.7, 0.98, 0.01, v => v.toFixed(2));
+  slider(pp, 'Crown drop (mm)', T, 'crown', 0, 8, 0.1, v => v.toFixed(1)); slider(pp, 'Shoulder radius (mm)', T, 'shoulder', 4, 40, 1);
+  slider(pp, 'Sidewall bulge', T, 'bulge', 0.4, 1.6, 0.01, v => v.toFixed(2)); slider(pp, 'Rim width fraction', T, 'rimWidthFrac', 0.6, 0.92, 0.01, v => v.toFixed(2));
+  const l = document.getElementById('lookParams'); l.innerHTML = '';
+  color(l, 'Rubber colour', T, 'rubber'); select(l, 'Lettering colour', T, 'letter', ['white', 'yellow', 'red', 'blue', 'black']); check(l, 'Sidewall lettering', T, 'lettering');
+  const b = document.createElement('div'); b.className = 'row'; b.innerHTML = '<label>Brand</label><input type="text" value="' + T.brand + '">'; b.querySelector('input').oninput = e => { T.brand = e.target.value; schedule(); }; l.appendChild(b);
+  select(l, 'Rim style', T, 'rimStyle', ['spoke', 'dish']); slider(l, 'Spokes', T, 'spokes', 3, 12, 1); color(l, 'Rim colour', T, 'rimColor');
+}
+function buildPresetUI() {
+  const box = document.getElementById('presets'); box.innerHTML = '';
+  PRESETS.forEach((pr, i) => {
+    if (UI.typeFilter && pr.type !== UI.typeFilter) return;
+    const el = document.createElement('div'); el.className = 'preset' + (pr.name === P.name ? ' active' : ''); el.innerHTML = `<canvas width="240" height="60"></canvas><div class="n">${pr.name}</div><div class="t">${pr.type}</div>`;
+    const t = Object.assign({}, T, pr.tyre); const d = dims(t); const pm = renderPattern({ layers: pr.layers }, d, 60, 0, 0, t.treadDepth);
+    const ctx = el.querySelector('canvas').getContext('2d'); const id = ctx.createImageData(240, 60);
+    for (let y = 0; y < 60; y++) for (let x = 0; x < 240; x++) { const sx = Math.floor(x / 240 * Math.min(pm.W, pm.H * 4)); const v = 40 + (1 - pm.depth[y * pm.W + sx]) * 60; const o = (y * 240 + x) * 4; id.data[o] = id.data[o + 1] = id.data[o + 2] = v; id.data[o + 3] = 255; }
+    ctx.putImageData(id, 0, 0);
+    el.onclick = () => applyPreset(i); box.appendChild(el);
+  });
+}
+function applyPreset(i) {
+  const pr = PRESETS[i]; Object.assign(T, pr.tyre); P.name = pr.name; P.type = pr.type; P.layers = pr.layers.map(l => Object.assign({}, l)); UI.sel = -1; T.wear = 0;
+  refreshAll();
+}
+function refreshAll() { buildTyreUI(); buildPresetUI(); buildLayerUI(); document.getElementById('pName').value = P.name; document.getElementById('pType').value = P.type; rebuild(); }
+
+function buildLayerUI() {
+  const box = document.getElementById('layers'); box.innerHTML = '';
+  P.layers.forEach((ly, i) => {
+    const def = LAYER_DEFS[ly.type]; const el = document.createElement('div'); el.className = 'layer' + (i === UI.sel ? ' sel' : '');
+    const desc = ly.type === 'shape' ? `${ly.kind} · ×${ly.repeat}${ly.mirror ? ' · mirrored' : ''}` : ly.type === 'circ' ? `@${ly.pos} · ${ly.width}mm` : ly.type === 'hex' ? `${ly.size}mm cells` : ly.type === 'dimple' ? `${ly.rows}×${ly.count}` : ly.type === 'noise' ? `${ly.amount}` : `×${ly.count} · ${ly.angle}°`;
+    el.innerHTML = `<span class="ic" style="background:${def.color}"></span><span class="nm">${def.label} <small>${desc}</small></span><button title="duplicate">⧉</button><button title="up">↑</button><button title="down">↓</button><button title="delete">✕</button>`;
+    const [dup, up, dn, del] = el.querySelectorAll('button');
+    el.onclick = () => { UI.sel = i; buildLayerUI(); };
+    dup.onclick = e => { e.stopPropagation(); P.layers.splice(i + 1, 0, Object.assign({}, ly)); UI.sel = i + 1; buildLayerUI(); schedule(); };
+    up.onclick = e => { e.stopPropagation(); if (i > 0) { [P.layers[i - 1], P.layers[i]] = [P.layers[i], P.layers[i - 1]]; UI.sel = i - 1; buildLayerUI(); schedule(); } };
+    dn.onclick = e => { e.stopPropagation(); if (i < P.layers.length - 1) { [P.layers[i + 1], P.layers[i]] = [P.layers[i], P.layers[i + 1]]; UI.sel = i + 1; buildLayerUI(); schedule(); } };
+    del.onclick = e => { e.stopPropagation(); P.layers.splice(i, 1); UI.sel = -1; buildLayerUI(); schedule(); };
+    box.appendChild(el);
+  });
+  const props = document.getElementById('layerProps'); props.innerHTML = '';
+  const ly = P.layers[UI.sel];
+  if (!ly) { props.className = 'hint'; props.innerHTML = 'Select a layer to edit it. Layers are drawn in order; deeper cuts win.<br>Across-position <code>-1…1</code> = tread edges, <code>±1.3</code> reaches the shoulder.'; return; }
+  props.className = '';
+  const t = document.createElement('div'); t.className = 'hint'; t.innerHTML = `<b style="color:${LAYER_DEFS[ly.type].color}">${LAYER_DEFS[ly.type].label}</b>`; props.appendChild(t);
+  for (const k in ly) {
+    if (k === 'type' || k === 'kind' || Array.isArray(ly[k])) continue;
+    if (typeof ly[k] === 'boolean') check(props, LABELS[k] || k, ly, k, () => { buildLayerUI(); schedule(); });
+    else if (RANGES[k]) slider(props, LABELS[k] || k, ly, k, ...RANGES[k], v => (+v).toFixed(RANGES[k][2] < 1 ? 2 : 0), () => { refreshLayerLabel(); schedule(); });
+  }
+  const mir = document.createElement('div'); mir.className = 'btns';
+  mir.innerHTML = '<button class="small">Mirror layer across centre</button>'; mir.querySelector('button').onclick = () => {
+    const c = Object.assign({}, ly); if ('pos' in c) c.pos = -c.pos; if ('from' in c) { const f = -c.to, tt = -c.from; c.from = f; c.to = tt; } if ('angle' in c && !c.mirror) c.angle = -c.angle; if ('phase' in c) c.phase = (c.phase + 0.5) % 1;
+    P.layers.splice(UI.sel + 1, 0, c); UI.sel++; buildLayerUI(); schedule();
+  }; props.appendChild(mir);
+}
+function refreshLayerLabel() { const els = document.querySelectorAll('#layers .layer'); const ly = P.layers[UI.sel]; if (!ly || !els[UI.sel]) return; const desc = ly.type === 'circ' ? `@${ly.pos} · ${ly.width}mm` : ly.type === 'hex' ? `${ly.size}mm cells` : ly.type === 'dimple' ? `${ly.rows}×${ly.count}` : ly.type === 'noise' ? `${ly.amount}` : `×${ly.count} · ${ly.angle}°`; els[UI.sel].querySelector('small').textContent = desc; }
+
+// static controls
+document.getElementById('pType').innerHTML = TYPES.map(t => `<option>${t}</option>`).join('');
+document.getElementById('pType').onchange = e => { P.type = e.target.value; schedule(); };
+document.getElementById('pName').oninput = e => { P.name = e.target.value; schedule(); };
+document.getElementById('addLayer').innerHTML = Object.keys(LAYER_DEFS).filter(k => k !== 'shape').map(k => `<option value="${k}">${LAYER_DEFS[k].label}</option>`).join('');
+document.getElementById('addLayerBtn').onclick = () => { P.layers.push(L(document.getElementById('addLayer').value)); UI.sel = P.layers.length - 1; buildLayerUI(); schedule(); };
+document.getElementById('randomBtn').onclick = () => { randomTyre(); refreshAll(); };
+document.getElementById('randomName').onclick = () => { P.name = randomName(); document.getElementById('pName').value = P.name; schedule(); };
+document.querySelectorAll('#treadMode span').forEach(el => el.onclick = () => { document.querySelectorAll('#treadMode span').forEach(x => x.classList.remove('on')); el.classList.add('on'); UI.treadMode = el.dataset.m; drawTreadView(); });
+document.querySelectorAll('.tab').forEach(el => el.onclick = () => { document.querySelectorAll('.tab').forEach(x => x.classList.remove('on')); el.classList.add('on'); document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.dataset.panel === el.dataset.tab)); });
+UI.typeFilter = null;
+function buildChips() { const sel = document.getElementById('typeFilter'); const counts = {}; PRESETS.forEach(p => counts[p.type] = (counts[p.type] || 0) + 1);
+  sel.innerHTML = `<option value="">All types (${PRESETS.length})</option>` + Object.keys(counts).map(t => `<option value="${t}" ${UI.typeFilter === t ? 'selected' : ''}>${t} (${counts[t]})</option>`).join('');
+  sel.onchange = () => { UI.typeFilter = sel.value || null; buildPresetUI(); }; }
+buildChips();
+buildChips();
+document.getElementById('spinBtn').onclick = e => { UI.spin = !UI.spin; e.target.classList.toggle('primary', UI.spin); };
+document.getElementById('threadsBtn').onclick = e => { UI.threads = !UI.threads; e.target.classList.toggle('primary', UI.threads); if (threadLines) threadLines.visible = UI.threads; if (tyreMesh) tyreMesh.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => { m.transparent = UI.threads; m.opacity = UI.threads ? 0.35 : 1; m.needsUpdate = true; }); }); };
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
+  const d = dims(); const R = d.Rout; const v = b.dataset.view;
+  const pos = { iso: [R * 2.6, R * 1.4, R * 2.7], side: [R * 4.2, R * 0.9, 0.01], front: [0.01, R * 0.9, R * 4.2], tread: [R * 0.9, R * 2.9, R * 0.7] }[v];
+  controls.target.set(0, v === 'tread' ? R * 1.6 : R * 0.95, 0); camera.position.set(pos[0], pos[1] + (v === 'tread' ? R * 0.7 : 0), pos[2]); fitZoom(d); tyreGroup.rotation.x = 0;
+});
+// exports
+const dl = (name, url) => { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); };
+const toast = m => { const t = document.getElementById('toast'); t.textContent = m; t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 1800); };
+document.getElementById('exportJson').onclick = () => { dl(P.name.replace(/\s+/g, '_') + '.tyre.json', URL.createObjectURL(new Blob([JSON.stringify({ tyre: T, pattern: P }, null, 2)], { type: 'application/json' }))); toast('Pattern JSON exported'); };
+function renderQuadReport() {
+  const el = document.getElementById('quadReport'); if (!el || !quadReport) return;
+  const r = quadReport, ok = r.watertight;
+  const dropped = (quadData?.dropped || []).map(x => `${x.type} layer ${x.index + 1}: ${x.reason}`).join('<br>');
+  el.innerHTML = `<b style="color:${ok ? 'var(--green)' : 'var(--red)'}">${ok ? '✓ Pure-quad watertight shell' : '✗ Topology problems — see below'}</b><br>` +
+    `${r.quads.toLocaleString()} quads · ${r.vertices.toLocaleString()} verts · boundary edges <b style="color:${r.boundaryEdges ? 'var(--red)' : '#fff'}">${r.boundaryEdges}</b> · non-manifold <b style="color:${r.nonManifoldEdges ? 'var(--red)' : '#fff'}">${r.nonManifoldEdges}</b> · degenerate ${r.degenerateFaces} · min corner ${r.minCornerAngleDeg}° · max warp ${r.maxWarpDeg}° · poor quads ${r.badQuads}<br>` +
+    `pitch ${quadData?.pitch} mm · ${quadData?.N} around · pinches resolved ${quadData?.pinchesFixed} · nodes snapped ${quadData?.nodesSnapped} (reverted ${quadData?.nodesReverted})` +
+    (dropped ? `<br><span style="color:var(--yellow)">Not in mesh:</span><br>${dropped}` : '');
+}
+document.getElementById('exportReport').onclick = () => { if (!quadReport) return toast('No quad mesh yet'); dl(P.name.replace(/\s+/g, '_') + '_quad-report.json', URL.createObjectURL(new Blob([JSON.stringify({ name: P.name, pattern: P, quadPitch: T.quadPitch, snapNodes: T.snapNodes, liner: T.liner, report: quadReport, cleanup: quadData?.cleanup, levels: quadData?.levels, dropped: quadData?.dropped, pinchesFixed: quadData?.pinchesFixed, nodesSnapped: quadData?.nodesSnapped, nodesReverted: quadData?.nodesReverted }, null, 2)], { type: 'application/json' }))); toast('Quad report exported'); };
+document.getElementById('exportGlb').onclick = () => {
+  const ex = new GLTFExporter(); const g = tyreGroup.clone(); g.remove(...g.children.filter(c => c.isLineSegments)); g.position.set(0, 0, 0); g.scale.setScalar(0.001);
+  ex.parse(g, r => { dl(P.name.replace(/\s+/g, '_') + '.glb', URL.createObjectURL(new Blob([r], { type: 'model/gltf-binary' }))); toast('GLB exported — triangulated preview (use OBJ for quads)'); }, e => toast('Export failed: ' + e), { binary: true });
+};
+document.getElementById('exportObj').onclick = () => { if (!quadMeshData) return toast('No quad mesh yet'); dl(P.name.replace(/\s+/g, '_') + '.obj', URL.createObjectURL(new Blob([exportOBJ(quadMeshData, P.name, quadReport)], { type: 'text/plain' }))); toast(quadMeshData.F.length + ' pure quads exported' + (quadReport?.watertight ? ' · watertight ✓' : ' · CHECK REPORT')); };
+document.getElementById('importJson').onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(txt => { const j = JSON.parse(txt); if (j.tyre) Object.assign(T, j.tyre); if (j.pattern) { P.name = j.pattern.name; P.type = j.pattern.type; P.layers = j.pattern.layers; } UI.sel = -1; refreshAll(); toast('Imported ' + P.name); }); };
+window.addEventListener('keydown', e => { if (e.key === 'r' && !e.target.matches('input,select')) { randomTyre(); refreshAll(); } });
+
+
+// =====================================================================================================================
+//  2D TREAD DESIGNER
+// =====================================================================================================================
+const DZ = { on: false, tool: 'select', z: 1, ox: 0, oy: 0, draft: null, sel: -1, selPt: -1, hover: null, drag: null, undo: [], redo: [], bg: null, bgTimer: null, tile: false, view: 'full', space: false };
+const dEl = id => document.getElementById(id);
+const dcan = dEl('dcanvas'), dctx = dcan.getContext('2d');
+const W2S = (x, y) => [x * DZ.z + DZ.ox, y * DZ.z + DZ.oy], S2W = (px, py) => [(px - DZ.ox) / DZ.z, (py - DZ.oy) / DZ.z];
+function dOpen() { DZ.on = true; dEl('designer').classList.add('on'); dResize(); dSyncLayerSel(); dSyncPtInputs(); dFit(); dRefreshBg(); dDraw(); }
+function dClose() { DZ.on = false; dEl('designer').classList.remove('on'); buildLayerUI(); rebuild(); }
+function dResize() { const r = dcan.getBoundingClientRect(); dcan.width = Math.round(r.width * devicePixelRatio); dcan.height = Math.round(r.height * devicePixelRatio); }
+function dTilePitch() { const d = dims(); const ly = P.layers[DZ.sel]; const repN = ly ? (ly.type === 'shape' ? ly.repeat : (ly.count || ly.repeat)) : null; const n = Math.max(1, Math.round(repN || +dEl('dTileRep').value || 24)); if (ly && repN) dEl('dTileRep').value = n; return d.circ / n; }
+function dFit() { const d = dims(); const mode = DZ.view || 'full'; let span = d.circ, centre = d.circ / 2;
+  if (mode === 'tile') { span = dTilePitch() * 1.15; centre = dTilePitch() / 2; } else if (mode === 'tiles3') { span = dTilePitch() * 3.3; centre = dTilePitch(); }
+  DZ.z = Math.min(dcan.width / span, dcan.height / (d.acrossHalf * 2.3)); DZ.ox = dcan.width / 2 - centre * DZ.z; DZ.oy = dcan.height / 2; dDraw(); }
+function dSyncLayerSel() { const sel = dEl('dLayerSel'); if (!sel) return; sel.innerHTML = P.layers.map((ly, i) => `<option value="${i}" ${i === DZ.sel ? 'selected' : ''}>${i + 1}. ${LAYER_DEFS[ly.type].label}${ly.hidden ? ' (hidden)' : ''}</option>`).join('') || '<option value="-1">No layers</option>'; sel.value = String(DZ.sel); dEl('dHide').textContent = P.layers[DZ.sel]?.hidden ? 'Show' : 'Hide'; }
+function dSyncPtInputs() { const ly = P.layers[DZ.sel]; const pt = ly?.type === 'shape' && DZ.selPt >= 0 ? ly.pts[DZ.selPt] : null; dEl('dPtX').value = pt ? (+pt[0].toFixed(1)) : ''; dEl('dPtY').value = pt ? (+pt[1].toFixed(1)) : ''; }
+function dPushUndo() { DZ.undo.push(JSON.stringify(P.layers)); if (DZ.undo.length > 60) DZ.undo.shift(); DZ.redo.length = 0; }
+function dRestore(json) { P.layers = JSON.parse(json); DZ.sel = -1; DZ.selPt = -1; dChanged(); }
+function dChanged() { dSyncLayerSel(); dSyncPtInputs(); dRefreshBg(); dDraw(); }
+function dRefreshBg() { clearTimeout(DZ.bgTimer); DZ.bgTimer = setTimeout(() => { const d = dims(); const A = d.acrossHalf, th = d.treadHalf, circ = d.circ;
+  const k = Math.min(2, 4096 / circ); const c = document.createElement('canvas'); c.width = Math.round(circ * k); c.height = Math.round(2 * A * k); const ctx = c.getContext('2d');
+  ctx.setTransform(k, 0, 0, k, 0, A * k); ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+  const hexA = (col, a) => { const n = parseInt(col.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+  for (const ly of P.layers) { if (ly.hidden || ly.type === 'shape' || ly.type === 'noise') continue; const col = LAYER_DEFS[ly.type].color, a = 0.10 + 0.30 * (ly.depth || 0);
+    ctx.strokeStyle = ctx.fillStyle = hexA(col, a);
+    if (ly.type === 'circ') { const y = ly.pos * th;
+      if (ly.zig > 0) { ctx.lineWidth = ly.width; ctx.beginPath(); const n = Math.max(2, Math.round(ly.zigCount)) * 2; for (let i = 0; i <= n; i++) { const x = i / n * circ, yy = y + (i % 2 ? ly.zig : -ly.zig); i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); } ctx.stroke(); }
+      else ctx.fillRect(0, y - ly.width / 2, circ, ly.width);
+    } else if (ly.type === 'lateral' || ly.type === 'chevron' || ly.type === 'sipe') { ctx.lineWidth = ly.width; const tan = Math.tan(ly.angle * Math.PI / 180), n = Math.max(1, Math.round(ly.count)); ctx.beginPath();
+      for (let i = 0; i < n; i++) { const x0 = (i + ly.phase) / n * circ; for (const sg of ly.mirror ? [1, -1] : [1]) for (let j = 0; j <= 12; j++) { const cc = ly.from + (ly.to - ly.from) * j / 12; const yy = (ly.mirror ? sg * cc : cc) * th; const ac = ly.mirror ? Math.abs(cc) : cc; let xx = x0 + ac * th * tan + (ly.curve || 0) * ac * ac * th * 0.5; if (ly.zig) xx += (j % 2 ? ly.zig : -ly.zig) * 0.5; j ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); } }
+      ctx.stroke();
+    } else if (ly.type === 'dimple') { const rows = Math.max(1, Math.round(ly.rows)), n = Math.max(1, Math.round(ly.count));
+      for (let r = 0; r < rows; r++) { const cc = rows === 1 ? (ly.from + ly.to) / 2 : ly.from + (ly.to - ly.from) * r / (rows - 1); const y = cc * th; const sh = ly.stagger && r % 2 ? 0.5 : 0;
+        for (let i = 0; i < n; i++) { const x = (i + sh) / n * circ; ctx.beginPath(); ctx.arc(x, y, ly.radius, 0, Math.PI * 2); if (ly.ring) { ctx.lineWidth = Math.max(0.6, ly.radius * 0.4); ctx.stroke(); } else ctx.fill(); } }
+    } else if (ly.type === 'hex') { const sz = Math.max(2, ly.size); const nx = Math.max(2, 2 * Math.round(circ / (3 * sz))); const sx = circ / nx; const sy = Math.sqrt(3) * sz; const rot = ly.rotate * Math.PI / 180; ctx.lineWidth = ly.width; ctx.beginPath();
+      const j0 = Math.floor((ly.from * th - sy) / sy), j1 = Math.ceil((ly.to * th + sy) / sy);
+      for (let i = -1; i <= nx; i++) for (let j = j0; j <= j1; j++) { const cx = i * sx, cy = j * sy + (Math.abs(i) % 2 ? sy / 2 : 0); for (let v = 0; v < 6; v++) { const ang = rot + v * Math.PI / 3; const px = cx + sz * Math.cos(ang), py = cy + sz * Math.sin(ang); v ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.closePath(); }
+      ctx.stroke(); }
+  }
+  DZ.bg = c; dDraw(); }, 40); }
+function dSnap(x, y, anchor, shift) {
+  if (dEl('dSnap').checked) { const st = Math.max(0.1, +dEl('dStep').value || 1); x = Math.round(x / st) * st; y = Math.round(y / st) * st; }
+  if (shift && anchor) { const dx = x - anchor[0], dy = y - anchor[1]; const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI / 4; const l = Math.hypot(dx, dy); x = anchor[0] + Math.cos(a) * l; y = anchor[1] + Math.sin(a) * l; }
+  return [x, y];
+}
+// ----- parametric layer handles (first instance) -----
+function paramHandles(d) {
+  const th = d.treadHalf, circ = d.circ; const H = []; const vx = S2W(dcan.width / 2, 0)[0];   // visible centre x for circumferential handles
+  P.layers.forEach((ly, li) => {
+    if (ly.type === 'circ') { H.push({ li, id: 'pos', x: vx, y: ly.pos * th, color: '#38c46d' }); H.push({ li, id: 'w+', x: vx + 20 / DZ.z, y: ly.pos * th + ly.width / 2, color: '#38c46d', small: true }); H.push({ li, id: 'w-', x: vx + 20 / DZ.z, y: ly.pos * th - ly.width / 2, color: '#38c46d', small: true }); }
+    else if (ly.type === 'lateral' || ly.type === 'chevron' || ly.type === 'sipe') {
+      const tan = Math.tan(ly.angle * Math.PI / 180), n = Math.max(1, Math.round(ly.count)); const x0 = ly.phase / n * circ; const at = cc => { const ac = ly.mirror ? Math.abs(cc) : cc; return [x0 + ac * th * tan + (ly.curve || 0) * ac * ac * th * 0.5, cc * th]; };
+      const a = at(ly.from), b = at(ly.to); H.push({ li, id: 'from', x: a[0], y: a[1], color: LAYER_DEFS[ly.type].color }); H.push({ li, id: 'to', x: b[0], y: b[1], color: LAYER_DEFS[ly.type].color }); const m = at((ly.from + ly.to) / 2); H.push({ li, id: 'phase', x: m[0], y: m[1], color: LAYER_DEFS[ly.type].color, body: true }); }
+    else if (ly.type === 'dimple') { const n = Math.max(1, Math.round(ly.count)); H.push({ li, id: 'from', x: 0, y: ly.from * th, color: '#4fc3f7' }); H.push({ li, id: 'to', x: (ly.stagger && (ly.rows - 1) % 2 ? 0.5 / n : 0) * circ, y: ly.to * th, color: '#4fc3f7' }); }
+  });
+  return H;
+}
+function applyParamDrag(h, x, y, d) {
+  const ly = P.layers[h.li]; const th = d.treadHalf, circ = d.circ; const cl = THREE.MathUtils.clamp;
+  if (ly.type === 'circ') { if (h.id === 'pos') ly.pos = +cl(y / th, -1.3, 1.3).toFixed(2); else ly.width = +cl(2 * Math.abs(y - ly.pos * th), 0.5, 30).toFixed(1); }
+  else if (ly.type === 'dimple') { ly[h.id] = +cl(y / th, -1.3, 1.3).toFixed(2); }
+  else { const n = Math.max(1, Math.round(ly.count));
+    if (h.id === 'phase') { ly.phase = +(((DZ.drag.phase0 + (x - DZ.drag.x0) / (circ / n)) % 1 + 1) % 1).toFixed(2); }
+    else { const cc = +cl(y / th, -1.3, 1.3).toFixed(2); ly[h.id] = cc; const ac = ly.mirror ? Math.abs(cc) : cc; const x0 = ly.phase / n * circ; if (Math.abs(ac) > 0.05) { const tan = (x - x0 - (ly.curve || 0) * ac * ac * th * 0.5) / (ac * th); ly.angle = Math.round(cl(Math.atan(tan) * 180 / Math.PI, -80, 80)); } } }
+}
+// ----- hit testing -----
+function distSeg(p, a, b) { const dx = b[0] - a[0], dy = b[1] - a[1]; const l2 = dx * dx + dy * dy || 1e-9; const t = THREE.MathUtils.clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2, 0, 1); return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); }
+function dHit(wx, wy) {
+  const tol = 8 / DZ.z; const d = dims();
+  if (DZ.sel >= 0 && P.layers[DZ.sel]?.type === 'shape') { const ly = P.layers[DZ.sel]; for (let i = 0; i < ly.pts.length; i++) if (Math.hypot(ly.pts[i][0] - wx, ly.pts[i][1] - wy) < tol) return { kind: 'pt', li: DZ.sel, pi: i }; }
+  for (const h of paramHandles(d)) if (Math.hypot(h.x - wx, h.y - wy) < tol * (h.small ? 0.8 : 1.2)) return { kind: 'param', h };
+  for (let li = P.layers.length - 1; li >= 0; li--) { const ly = P.layers[li]; if (ly.type !== 'shape') continue;
+    for (const inst of shapeInstances(ly, d.circ)) { const pts = inst.pts; let hit = false;
+      if (inst.kind === 'path') { for (let i = 0; i + 1 < pts.length; i++) if (distSeg([wx, wy], pts[i], pts[i + 1]) < Math.max(tol, ly.width / 2)) hit = true; }
+      else hit = pointInRing(wx, wy, pts) || pts.some((p, i) => distSeg([wx, wy], p, pts[(i + 1) % pts.length]) < tol);
+      if (hit) return { kind: 'shape', li, dx: inst.pts[0][0] - shapeOutline(ly).pts[0][0] }; } }
+  return null;
+}
+// ----- drawing -----
+function dDraw() {
+  if (!DZ.on) return; const d = dims(); const W = dcan.width, H = dcan.height; const ctx = dctx; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#0b0c0e'; ctx.fillRect(0, 0, W, H);
+  const A = d.acrossHalf, th = d.treadHalf, circ = d.circ;
+  // background: vector pattern render (editor preview only — never used to build the mesh), tiled ×3 for wrap
+  if (DZ.bg) { ctx.imageSmoothingEnabled = DZ.z < 2; for (const k of [-1, 0, 1]) { const [sx, sy] = W2S(k * circ, -A); ctx.globalAlpha = k ? 0.45 : 1; ctx.drawImage(DZ.bg, sx, sy, circ * DZ.z, 2 * A * DZ.z); } ctx.globalAlpha = 1; }
+  // grid
+  const step = DZ.z > 12 ? 1 : DZ.z > 4 ? 5 : DZ.z > 1.2 ? 10 : 50; ctx.lineWidth = 1;
+  const [wx0, wy0] = S2W(0, 0), [wx1, wy1] = S2W(W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.beginPath(); for (let x = Math.floor(wx0 / step) * step; x < wx1; x += step) { const [sx] = W2S(x, 0); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); } for (let y = Math.floor(wy0 / step) * step; y < wy1; y += step) { const [, sy] = W2S(0, y); ctx.moveTo(0, sy); ctx.lineTo(W, sy); } ctx.stroke();
+  // tread edges, centre, seam
+  const line = (x0, y0, x1, y1, col, dash) => { ctx.strokeStyle = col; ctx.setLineDash(dash || []); ctx.beginPath(); const a = W2S(x0, y0), b = W2S(x1, y1); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]); };
+  line(wx0, th, wx1, th, 'rgba(214,201,58,.55)', [6, 4]); line(wx0, -th, wx1, -th, 'rgba(214,201,58,.55)', [6, 4]); line(wx0, A, wx1, A, 'rgba(255,255,255,.25)'); line(wx0, -A, wx1, -A, 'rgba(255,255,255,.25)'); line(wx0, 0, wx1, 0, 'rgba(255,255,255,.08)', [2, 6]);
+  for (const k of [0, 1]) line(k * circ, -A - 100, k * circ, A + 100, 'rgba(79,195,247,.5)', [3, 3]);
+  { const pitch = dTilePitch(); ctx.lineWidth = 1; for (let x = Math.floor(wx0 / pitch) * pitch; x <= wx1; x += pitch) { const strong = Math.abs(x / pitch - Math.round(x / pitch)) < 1e-6 && Math.round(x / pitch) % Math.max(1, Math.round(circ / pitch)) === 0; line(x, -A, x, A, 'rgba(79,195,247,.13)', [2, 5]); } }
+  // shapes
+  P.layers.forEach((ly, li) => { if (ly.type !== 'shape') return; const selected = li === DZ.sel; if (ly.hidden) ctx.globalAlpha = 0.15; const insts = shapeInstances(ly, circ);
+    insts.forEach((inst, k) => { ctx.beginPath(); inst.pts.forEach((p, i) => { const s = W2S(p[0], p[1]); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); }); if (inst.kind !== 'path') ctx.closePath();
+      if (inst.kind === 'path') { ctx.lineCap = 'butt'; ctx.lineJoin = 'round'; ctx.strokeStyle = selected ? 'rgba(255,255,255,.55)' : 'rgba(255,255,255,.22)'; ctx.lineWidth = Math.max(1, ly.width * DZ.z); ctx.stroke(); }
+      else { ctx.fillStyle = selected ? 'rgba(255,255,255,.3)' : 'rgba(255,255,255,.14)'; ctx.fill(); }
+      ctx.lineWidth = k === 0 ? 1.5 : 1; ctx.strokeStyle = k === 0 ? (selected ? '#fff' : 'rgba(255,255,255,.7)') : 'rgba(255,255,255,.25)'; ctx.stroke(); });
+    if (selected) { ctx.fillStyle = '#fff'; ly.pts.forEach((p, i) => { const s = W2S(p[0], p[1]); ctx.beginPath(); ctx.arc(s[0], s[1], i === DZ.selPt ? 6 : 4, 0, Math.PI * 2); ctx.fill(); if (i === DZ.selPt) { ctx.strokeStyle = '#38c46d'; ctx.lineWidth = 2; ctx.stroke(); } }); } ctx.globalAlpha = 1; });
+  // draft
+  if (DZ.draft) { const dr = DZ.draft; ctx.strokeStyle = '#38c46d'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); const o = shapeOutline(Object.assign({}, dr, { pts: dr.pts.concat(dr.cursor ? [dr.cursor] : []) }));
+    if (o) { ctx.beginPath(); o.pts.forEach((p, i) => { const s = W2S(p[0], p[1]); i ? ctx.lineTo(s[0], s[1]) : ctx.moveTo(s[0], s[1]); }); if (dr.kind !== 'path') ctx.closePath(); ctx.stroke(); if (dr.kind === 'path') { ctx.setLineDash([]); ctx.globalAlpha = 0.25; ctx.lineWidth = dr.width * DZ.z; ctx.stroke(); ctx.globalAlpha = 1; } }
+    ctx.setLineDash([]); ctx.fillStyle = '#38c46d'; dr.pts.forEach(p => { const s = W2S(p[0], p[1]); ctx.beginPath(); ctx.arc(s[0], s[1], 4, 0, Math.PI * 2); ctx.fill(); }); }
+  ctx.globalAlpha = 1;
+  // parametric handles
+  for (const h of paramHandles(d)) { const s = W2S(h.x, h.y); ctx.beginPath(); ctx.arc(s[0], s[1], h.small ? 4 : 6, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = h.color; ctx.stroke();
+    if (h.id === 'pos') { ctx.fillStyle = h.color; ctx.font = `300 ${11 * devicePixelRatio}px Outfit, system-ui`; ctx.fillText(LAYER_DEFS[P.layers[h.li].type].label, s[0] + 10, s[1] - 8); } }
+  // status
+  dEl('dstatus').textContent = `${DZ.tool} · ${(DZ.z / devicePixelRatio).toFixed(2)} px/mm · grid ${step} mm · ${P.layers.filter(l => l.type === 'shape').length} drawn shape(s)` + (DZ.hover ? ` · ${DZ.hover[0].toFixed(1)}, ${DZ.hover[1].toFixed(1)} mm` : '');
+}
+// ----- interaction -----
+function dSetTool(t) { DZ.tool = t; DZ.draft = null; document.querySelectorAll('#dbar .tool').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); dDraw(); }
+function dSyncInputs() { const ly = P.layers[DZ.sel]; if (!ly || ly.type !== 'shape') return; dEl('dWidth').value = ly.width; dEl('dDepth').value = ly.depth; dEl('dRepeat').value = ly.repeat; dEl('dMirror').checked = !!ly.mirror; }
+function dNewShape(kind, pts) { dPushUndo(); const ly = L('shape', { kind, pts, width: +dEl('dWidth').value || 6, depth: +dEl('dDepth').value || 1, repeat: +dEl('dRepeat').value || 1, mirror: dEl('dMirror').checked }); P.layers.push(ly); DZ.sel = P.layers.length - 1; DZ.selPt = -1; UI.sel = DZ.sel; dChanged(); }
+function dFinishDraft() { const dr = DZ.draft; if (!dr) return; const need = dr.kind === 'path' ? 2 : 3; if (dr.pts.length >= need) dNewShape(dr.kind, dr.pts); DZ.draft = null; dDraw(); }
+dcan.addEventListener('contextmenu', e => e.preventDefault());
+dcan.addEventListener('wheel', e => { e.preventDefault(); const r = dcan.getBoundingClientRect(); const px = (e.clientX - r.left) * devicePixelRatio, py = (e.clientY - r.top) * devicePixelRatio; const [wx, wy] = S2W(px, py); const f = Math.exp(-e.deltaY * 0.0015); DZ.z = THREE.MathUtils.clamp(DZ.z * f, 0.05, 80); DZ.ox = px - wx * DZ.z; DZ.oy = py - wy * DZ.z; dDraw(); }, { passive: false });
+dcan.addEventListener('pointerdown', e => {
+  const r = dcan.getBoundingClientRect(); const px = (e.clientX - r.left) * devicePixelRatio, py = (e.clientY - r.top) * devicePixelRatio; const [wx, wy] = S2W(px, py); dcan.setPointerCapture(e.pointerId);
+  if (e.button === 1 || e.button === 2 || DZ.space) { DZ.drag = { kind: 'pan', px, py, ox: DZ.ox, oy: DZ.oy }; return; }
+  const sp = dSnap(wx, wy, DZ.draft?.pts.at(-1), e.shiftKey);
+  if (DZ.tool === 'path' || DZ.tool === 'poly') { if (!DZ.draft) DZ.draft = { kind: DZ.tool, pts: [], width: +dEl('dWidth').value || 6 }; const last = DZ.draft.pts.at(-1); if (last && Math.hypot(last[0] - sp[0], last[1] - sp[1]) < 0.01) { dFinishDraft(); return; } DZ.draft.pts.push(sp); dDraw(); return; }
+  if (DZ.tool === 'rect' || DZ.tool === 'circle' || DZ.tool === 'hex') { DZ.draft = { kind: DZ.tool, pts: [sp], width: 0 }; DZ.drag = { kind: 'draft' }; return; }
+  // select tool
+  const hit = dHit(wx, wy); const d = dims();
+  if (!hit) { DZ.sel = -1; DZ.selPt = -1; DZ.drag = { kind: 'pan', px, py, ox: DZ.ox, oy: DZ.oy }; dDraw(); return; }
+  if (hit.kind === 'pt') { dPushUndo(); DZ.selPt = hit.pi; DZ.drag = { kind: 'pt', li: hit.li, pi: hit.pi }; dSyncLayerSel(); dSyncPtInputs(); }
+  else if (hit.kind === 'shape') { dPushUndo(); DZ.sel = hit.li; UI.sel = hit.li; DZ.selPt = -1; DZ.drag = { kind: 'shape', li: hit.li, x0: wx, y0: wy, pts0: P.layers[hit.li].pts.map(p => p.slice()) }; dSyncInputs(); dSyncLayerSel(); dSyncPtInputs(); }
+  else if (hit.kind === 'param') { dPushUndo(); DZ.sel = hit.h.li; UI.sel = hit.h.li; DZ.drag = { kind: 'param', h: hit.h, x0: wx, phase0: P.layers[hit.h.li].phase || 0 }; dSyncLayerSel(); }
+  dDraw();
+});
+dcan.addEventListener('pointermove', e => {
+  const r = dcan.getBoundingClientRect(); const px = (e.clientX - r.left) * devicePixelRatio, py = (e.clientY - r.top) * devicePixelRatio; const [wx, wy] = S2W(px, py); DZ.hover = [wx, wy];
+  if (DZ.draft && !DZ.drag) { DZ.draft.cursor = dSnap(wx, wy, DZ.draft.pts.at(-1), e.shiftKey); dDraw(); return; }
+  if (!DZ.drag) { dcan.style.cursor = DZ.tool === 'select' ? (dHit(wx, wy) ? 'grab' : 'default') : 'crosshair'; dDraw(); return; }
+  const dr = DZ.drag; const d = dims();
+  if (dr.kind === 'pan') { DZ.ox = dr.ox + px - dr.px; DZ.oy = dr.oy + py - dr.py; dDraw(); return; }
+  if (dr.kind === 'draft') { DZ.draft.pts[1] = dSnap(wx, wy, DZ.draft.pts[0], e.shiftKey); dDraw(); return; }
+  if (dr.kind === 'pt') { const ly = P.layers[dr.li]; ly.pts[dr.pi] = dSnap(wx, wy, null, false); dEl('dPtX').value = (+ly.pts[dr.pi][0].toFixed(1)); dEl('dPtY').value = (+ly.pts[dr.pi][1].toFixed(1)); dChanged(); return; }
+  if (dr.kind === 'shape') { const ly = P.layers[dr.li]; let dx = wx - dr.x0, dy = wy - dr.y0; if (dEl('dSnap').checked) { const st = Math.max(0.1, +dEl('dStep').value || 1); dx = Math.round(dx / st) * st; dy = Math.round(dy / st) * st; } ly.pts = dr.pts0.map(p => [p[0] + dx, p[1] + dy]); dChanged(); return; }
+  if (dr.kind === 'param') { applyParamDrag(dr.h, wx, wy, d); dChanged(); }
+});
+const dUp = e => { if (DZ.drag?.kind === 'draft') { const dr = DZ.draft; DZ.draft = null; if (dr.pts.length === 2 && Math.hypot(dr.pts[1][0] - dr.pts[0][0], dr.pts[1][1] - dr.pts[0][1]) > 0.5) dNewShape(dr.kind, dr.pts); } DZ.drag = null; dDraw(); };
+dcan.addEventListener('pointerup', dUp); dcan.addEventListener('pointercancel', dUp);
+dcan.addEventListener('dblclick', e => { e.preventDefault(); if (DZ.draft && (DZ.draft.kind === 'path' || DZ.draft.kind === 'poly')) { DZ.draft.pts.pop(); dFinishDraft(); return; }
+  if (DZ.tool !== 'select') return; const ly = P.layers[DZ.sel]; if (!ly || ly.type !== 'shape' || (ly.kind !== 'path' && ly.kind !== 'poly')) return;
+  const r = dcan.getBoundingClientRect(); const [wx, wy] = S2W((e.clientX - r.left) * devicePixelRatio, (e.clientY - r.top) * devicePixelRatio);
+  const pts = ly.pts, closed = ly.kind === 'poly', segs = closed ? pts.length : pts.length - 1; let bi = -1, bd = 10 / DZ.z;
+  for (let i = 0; i < segs; i++) { const dd = distSeg([wx, wy], pts[i], pts[(i + 1) % pts.length]); if (dd < bd) { bd = dd; bi = i; } }
+  if (bi >= 0) { dPushUndo(); ly.pts.splice(bi + 1, 0, dSnap(wx, wy, null, false)); DZ.selPt = bi + 1; dSyncPtInputs(); dChanged(); toast('Point inserted'); } });
+window.addEventListener('keydown', e => {
+  if (!DZ.on) return; if (e.target.matches('input')) return;
+  if (e.code === 'Space') { DZ.space = true; dcan.style.cursor = 'grab'; e.preventDefault(); return; }
+  if (e.key === 'Escape') { if (DZ.draft) { DZ.draft = null; dDraw(); } else dClose(); return; }
+  if (e.key === 'Enter') { dFinishDraft(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) dRedoFn(); else dUndoFn(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); dRedoFn(); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { dDeleteFn(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); dDupFn(); return; }
+  if (e.key.startsWith('Arrow')) { const ly = P.layers[DZ.sel]; if (!ly) return; e.preventDefault(); const st = (dEl('dSnap').checked ? Math.max(0.1, +dEl('dStep').value || 1) : 1) * (e.shiftKey ? 10 : 1);
+    const dx = e.key === 'ArrowRight' ? st : e.key === 'ArrowLeft' ? -st : 0, dy = e.key === 'ArrowUp' ? st : e.key === 'ArrowDown' ? -st : 0;
+    if (!e.repeat) dPushUndo();
+    if (ly.type === 'shape' && DZ.selPt >= 0) { ly.pts[DZ.selPt] = [ly.pts[DZ.selPt][0] + dx, ly.pts[DZ.selPt][1] + dy]; dSyncPtInputs(); }
+    else if (ly.type === 'shape') ly.pts = ly.pts.map(pt => [pt[0] + dx, pt[1] + dy]);
+    else if (ly.type === 'circ') ly.pos = +THREE.MathUtils.clamp(ly.pos + dy / dims().treadHalf, -1.3, 1.3).toFixed(2);
+    else return;
+    dChanged(); return; }
+  const map = { v: 'select', p: 'path', g: 'poly', r: 'rect', c: 'circle', h: 'hex' }; if (map[e.key.toLowerCase()]) dSetTool(map[e.key.toLowerCase()]);
+  if (e.key.toLowerCase() === 's') { dEl('dSnap').checked = !dEl('dSnap').checked; } if (e.key.toLowerCase() === 'm') { dEl('dMirror').checked = !dEl('dMirror').checked; dEl('dMirror').dispatchEvent(new Event('change')); }
+});
+window.addEventListener('keyup', e => { if (e.code === 'Space') { DZ.space = false; dcan.style.cursor = 'default'; } });
+function dUndoFn() { if (!DZ.undo.length) return; DZ.redo.push(JSON.stringify(P.layers)); dRestore(DZ.undo.pop()); }
+function dRedoFn() { if (!DZ.redo.length) return; DZ.undo.push(JSON.stringify(P.layers)); dRestore(DZ.redo.pop()); }
+function dDeleteFn() { const ly = P.layers[DZ.sel]; if (!ly) return; dPushUndo(); if (ly.type === 'shape' && DZ.selPt >= 0 && ly.pts.length > (ly.kind === 'path' ? 2 : 3) && (ly.kind === 'path' || ly.kind === 'poly')) { ly.pts.splice(DZ.selPt, 1); DZ.selPt = -1; } else { P.layers.splice(DZ.sel, 1); DZ.sel = -1; DZ.selPt = -1; UI.sel = -1; } dChanged(); }
+function dDupFn() { const ly = P.layers[DZ.sel]; if (!ly) return; dPushUndo(); const copy = JSON.parse(JSON.stringify(ly)); P.layers.splice(DZ.sel + 1, 0, copy); DZ.sel++; UI.sel = DZ.sel; DZ.selPt = -1; dChanged(); }
+function dRotateFn(deg) { const ly = P.layers[DZ.sel]; if (!ly || ly.type !== 'shape' || !ly.pts.length) return; dPushUndo(); const cx = ly.pts.reduce((a, p) => a + p[0], 0) / ly.pts.length, cy = ly.pts.reduce((a, p) => a + p[1], 0) / ly.pts.length; const a = deg * Math.PI / 180, co = Math.cos(a), si = Math.sin(a); ly.pts = ly.pts.map(p => [cx + (p[0] - cx) * co - (p[1] - cy) * si, cy + (p[0] - cx) * si + (p[1] - cy) * co]); dChanged(); }
+function dCentreYFn() { const ly = P.layers[DZ.sel]; if (!ly) return; dPushUndo(); if (ly.type === 'shape' && ly.pts.length) { const cy = ly.pts.reduce((a, p) => a + p[1], 0) / ly.pts.length; ly.pts = ly.pts.map(p => [p[0], p[1] - cy]); } else if (ly.type === 'circ') ly.pos = 0; else if ('from' in ly && 'to' in ly) { const mid = (ly.from + ly.to) / 2; ly.from -= mid; ly.to -= mid; } dChanged(); }
+function dMirrorLayerFn() { const ly = P.layers[DZ.sel]; if (!ly) return; dPushUndo(); if (ly.type === 'shape') ly.pts = ly.pts.map(p => [p[0], -p[1]]); else if (ly.type === 'circ') ly.pos = -ly.pos; else { if ('from' in ly) { const f = -ly.to, tt = -ly.from; ly.from = f; ly.to = tt; } if ('angle' in ly && !ly.mirror) ly.angle = -ly.angle; if (ly.type === 'shape') ly.mirror = !ly.mirror; } dChanged(); }
+dEl('dLayerSel').onchange = e => { DZ.sel = +e.target.value; UI.sel = DZ.sel; DZ.selPt = -1; dSyncInputs(); dSyncPtInputs(); dDraw(); };
+dEl('dHide').onclick = () => { const ly = P.layers[DZ.sel]; if (!ly) return; dPushUndo(); ly.hidden = !ly.hidden; dChanged(); };
+dEl('dDup').onclick = dDupFn; dEl('dMirrorLayer').onclick = dMirrorLayerFn; dEl('dRotL').onclick = () => dRotateFn(-15); dEl('dRotR').onclick = () => dRotateFn(15); dEl('dCentreY').onclick = dCentreYFn;
+dEl('dView').onchange = e => { DZ.view = e.target.value; DZ.tile = DZ.view !== 'full'; dFit(); };
+dEl('dTileRep').onchange = () => { const ly = P.layers[DZ.sel]; if (ly?.type === 'shape') { dPushUndo(); ly.repeat = Math.max(1, Math.round(+dEl('dTileRep').value || 1)); dChanged(); } if (DZ.view !== 'full') dFit(); else dDraw(); };
+for (const id of ['dPtX', 'dPtY']) dEl(id).addEventListener('change', () => { const ly = P.layers[DZ.sel]; if (!ly || ly.type !== 'shape' || DZ.selPt < 0) return; const x = parseFloat(dEl('dPtX').value), y = parseFloat(dEl('dPtY').value); if (!isFinite(x) || !isFinite(y)) return; dPushUndo(); ly.pts[DZ.selPt] = [x, y]; dChanged(); });
+document.querySelectorAll('#dbar .tool').forEach(b => b.onclick = () => dSetTool(b.dataset.tool));
+for (const [id, key] of [['dWidth', 'width'], ['dDepth', 'depth'], ['dRepeat', 'repeat'], ['dMirror', 'mirror']]) dEl(id).addEventListener('change', () => { const ly = P.layers[DZ.sel]; if (ly && ly.type === 'shape') { dPushUndo(); ly[key] = key === 'mirror' ? dEl(id).checked : +dEl(id).value; dChanged(); } else dDraw(); });
+dEl('dFit').onclick = () => { DZ.view = 'full'; DZ.tile = false; dEl('dView').value = 'full'; dFit(); }; dEl('dTile').onclick = () => { DZ.view = DZ.view === 'tile' ? 'full' : 'tile'; DZ.tile = DZ.view !== 'full'; dEl('dView').value = DZ.view; dFit(); };
+dEl('dUndo').onclick = dUndoFn; dEl('dRedo').onclick = dRedoFn; dEl('dDelete').onclick = dDeleteFn;
+dEl('dClear').onclick = () => { dPushUndo(); P.layers = P.layers.filter(l => l.type !== 'shape'); DZ.sel = -1; dChanged(); };
+dEl('dApply').onclick = () => { buildLayerUI(); rebuild(); toast('3D tyre updated'); };
+dEl('dClose').onclick = dClose; dEl('openDesigner').onclick = dOpen;
+new ResizeObserver(() => { if (DZ.on) { dResize(); dDraw(); } }).observe(dEl('dcanvasWrap'));
+
+applyPreset(0);
+</script>
+</body>
+</html>
