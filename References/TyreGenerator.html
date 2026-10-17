@@ -293,7 +293,7 @@ const QuadCore = (() => {
      tests against each layer's primitives, folded periodically around the circumference. */
   function compilePattern(pattern, d, t, opts = {}) {
     const pitch = opts.pitch || t.quadPitch || 6;
-    const minFeature = pitch * (opts.minFeatureFactor !== undefined ? opts.minFeatureFactor : 0.75);
+    const minFeature = pitch * (opts.minFeatureFactor !== undefined ? opts.minFeatureFactor : 0.4);
     const th = d.treadHalf, circ = d.circ, A = d.acrossHalf;
     const levels = new Set([0]); const evaluators = []; const included = [], dropped = [], featureRows = [], wearBars = [];
     (pattern.layers || []).forEach((ly, index) => {
@@ -301,6 +301,10 @@ const QuadCore = (() => {
       if (ly.type === 'noise' || ly.hidden) { dropped.push({ index, type: ly.type, reason: ly.hidden ? 'hidden in editor' : 'micro texture — not mesh geometry' }); return; }
       const gw = layerGeomWidth(ly);
       if (isFinite(gw) && gw < minFeature && ly.type !== 'circ') { dropped.push({ index, type: ly.type, width: gw, reason: `${gw.toFixed(1)} mm feature < ${(minFeature).toFixed(1)} mm resolvable at ${pitch} mm pitch — lower the pitch to mesh it` }); return; }
+      // A groove narrower than a cell still becomes geometry: its capture width is raised to ~0.9 cell so it
+      // forms a clean one-cell-wide groove strip following the centreline instead of vanishing from the pattern.
+      // (Circumferential grooves don't need this — exact grid rows are inserted at their edges.)
+      const expand = ly.type === 'circ' ? 0 : Math.max(0, (pitch * 0.9 - (isFinite(gw) ? gw : pitch)) / 2);
       if (!(depth > 0)) { dropped.push({ index, type: ly.type, reason: 'depth 0' }); return; }
       included.push(index); levels.add(depth);
       if (ly.type === 'circ') {
@@ -316,7 +320,7 @@ const QuadCore = (() => {
       } else if (ly.type === 'lateral' || ly.type === 'chevron' || ly.type === 'sipe') {
         // centreline as a graph X(cc): distance to the tangent at the point's own across-position (exact for
         // straight grooves, tangent-accurate for curved ones) — O(1) instead of polyline segment tests.
-        const tan = Math.tan((ly.angle || 0) * Math.PI / 180), n = Math.max(1, Math.round(ly.count || 1)), period = circ / n, w = ly.width || 4, hw = w / 2;
+        const tan = Math.tan((ly.angle || 0) * Math.PI / 180), n = Math.max(1, Math.round(ly.count || 1)), period = circ / n, w = ly.width || 4, hw = w / 2 + expand;
         const phaseX = (ly.phase || 0) * period, curve = ly.curve || 0, steps = (curve || ly.zig) ? 12 : 1;
         const ccLo = Math.min(ly.from, ly.to), ccHi = Math.max(ly.from, ly.to);
         const signs = ly.mirror ? [1, -1] : [1];
@@ -334,7 +338,7 @@ const QuadCore = (() => {
           }
           return 0; });
       } else if (ly.type === 'dimple') {
-        const rowsN = Math.max(1, Math.round(ly.rows || 1)), n = Math.max(1, Math.round(ly.count || 1)), period = circ / n, r = ly.radius || 3;
+        const rowsN = Math.max(1, Math.round(ly.rows || 1)), n = Math.max(1, Math.round(ly.count || 1)), period = circ / n, r = (ly.radius || 3) + expand;
         const ringW = Math.max(0.6, r * 0.4), rowY = [];
         for (let rr = 0; rr < rowsN; rr++) rowY.push((rowsN === 1 ? (ly.from + ly.to) / 2 : ly.from + (ly.to - ly.from) * rr / (rowsN - 1)) * th);
         evaluators.push((x, y) => { for (let rr = 0; rr < rowsN; rr++) { const dy = y - rowY[rr]; if (Math.abs(dy) > r + ringW) continue; const lx = mod(x - (ly.stagger && rr % 2 ? period / 2 : 0), period); const dx = Math.min(lx, period - lx); const dist = Math.hypot(dx, dy); if (ly.ring ? Math.abs(dist - r) <= ringW / 2 : dist <= r) return depth; } return 0; });
@@ -342,7 +346,7 @@ const QuadCore = (() => {
         const s = Math.max(2, ly.size || 12), nx = Math.max(2, 2 * Math.round(circ / (3 * s))), sx = circ / nx, sy = Math.sqrt(3) * s, rot = (ly.rotate || 0) * Math.PI / 180, w = ly.width || 3;
         const yA = ly.from * th, yB = ly.to * th, hexPts = [];
         for (let v = 0; v < 6; v++) { const a = rot + v * Math.PI / 3; hexPts.push([s * Math.cos(a), s * Math.sin(a)]); }
-        const hw2 = (w / 2) * (w / 2), reach = s + w;
+        const hw2 = (w / 2 + expand) * (w / 2 + expand), reach = s + w + expand;
         evaluators.push((x, y) => { if (y < yA - w || y > yB + w) return 0; const i0 = Math.round(x / sx), j0 = Math.round(y / sy);
           for (let i = i0 - 1; i <= i0 + 1; i++) for (let j = j0 - 1; j <= j0 + 1; j++) { const cx = i * sx, cy = j * sy + (Math.abs(i) % 2 ? sy / 2 : 0); const ddx = x - cx, ddy = y - cy; if (ddx * ddx + ddy * ddy > reach * reach) continue; for (let v = 0; v < 6; v++) { const a = hexPts[v], b = hexPts[(v + 1) % 6]; if (segDist2(x, y, cx + a[0], cy + a[1], cx + b[0], cy + b[1]) <= hw2) return depth; } }
           return 0; });
@@ -350,7 +354,7 @@ const QuadCore = (() => {
         const base = shapeOutline(ly); if (!base || base.pts.length < 2) { dropped.push({ index, type: ly.type, reason: 'empty drawn shape' }); return; }
         const rep = Math.max(1, Math.round(ly.repeat || 1)), period = circ / rep, w = ly.width || 6;
         const variants = [base.pts]; if (ly.mirror) variants.push(base.pts.map(p => [p[0], -p[1]]));
-        const hw2s = (w / 2) * (w / 2);
+        const hw2s = (w / 2 + expand) * (w / 2 + expand);
         const variantBoxes = variants.map(pts0 => { let x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18; for (const q of pts0) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); } return { x0, x1, y0, y1 }; });
         evaluators.push((x, y) => { const k0 = Math.round((x - base.pts[0][0]) / period);
           for (let vi = 0; vi < variants.length; vi++) { const pts0 = variants[vi], bb = variantBoxes[vi]; for (let k = k0 - 1; k <= k0 + 1; k++) { const sh = k * period; if (x < bb.x0 + sh - w || x > bb.x1 + sh + w || y < bb.y0 - w || y > bb.y1 + w) continue; const pts = pts0.map(q => [q[0] + sh, q[1]]);
@@ -465,54 +469,122 @@ const QuadCore = (() => {
     // grid nodes, optionally snapped onto the exact groove boundary (bounded + quality-guarded, UV space)
     const nx = new Float32Array((M + 1) * N), ny = new Float32Array((M + 1) * N);
     for (let j = 0; j <= M; j++) for (let i = 0; i < N; i++) { const k = j * N + i; nx[k] = i * px; ny[k] = rows[j]; }
-    let nodesSnapped = 0; const snappedFlag = new Uint8Array((M + 1) * N);
+    let nodesSnapped = 0, nodesRelaxedTotal = 0; const snappedFlag = new Uint8Array((M + 1) * N);
     if (opts.snap !== false) {
-      for (let j = 1; j < M; j++) for (let i = 0; i < N; i++) {
+      const fieldLevel = (x, y) => canon(compiled.levelAt(x, y));
+      const crossing = (ax, ay, bx, by, la) => { // exact groove-boundary point on segment a->b (a has level la)
+        let lo = [ax, ay], hi = [bx, by];
+        for (let it = 0; it < 7; it++) { const m = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2]; if (fieldLevel(m[0], m[1]) === la) lo = m; else hi = m; }
+        return [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2]; };
+      const movableFlag = new Uint8Array((M + 1) * N); // moved off-grid and not yet reverted: the repair's eligibility set (snapPass/relaxPass set it, repair clears it)
+      const targetCache = new Map();
+      const snapPass = () => { for (let j = 1; j < M; j++) for (let i = 0; i < N; i++) {
+        if (Math.abs(rows[j]) > d.treadHalf - pitch * 0.75) continue; // shoulder kink: moving nodes across the profile's tight shoulder arc folds the 3D quad even when UV is clean — grooves still mesh there, grid-aligned
+        if (snappedFlag[j * N + i]) continue;
         const cs = [cell(i - 1, j - 1), cell(i, j - 1), cell(i - 1, j), cell(i, j)]; if (cs.every(v => v === cs[0])) continue;
         const x = i * px, y = rows[j];
-        // boundary crossings on the four segments between neighbouring cell centres (marching squares):
-        // their average lies on the boundary segment(s) touching this node.
-        const cand = [];
-        if (cs[0] !== cs[1]) cand.push([x, (rows[j - 1] + rows[j]) / 2]);
-        if (cs[2] !== cs[3]) cand.push([x, (rows[j] + rows[j + 1]) / 2]);
-        if (cs[0] !== cs[2]) cand.push([(i - 0.5) * px, y]);
-        if (cs[1] !== cs[3]) cand.push([(i + 0.5) * px, y]);
-        if (!cand.length) continue;
-        const tx0 = cand.reduce((a, c) => a + c[0], 0) / cand.length, ty0 = cand.reduce((a, c) => a + c[1], 0) / cand.length;
-        if (Math.hypot(tx0 - x, ty0 - y) < 0.01) continue;
-        const ry = Math.min(rows[j] - rows[j - 1], rows[j + 1] - rows[j]) * 0.48, rx = px * 0.48;
-        const k = j * N + i; const COS28 = 0.8829;
-        for (const scale of [1, 0.6, 0.3]) {
-          const tx = x + clamp((tx0 - x) * scale, -rx * 0.8, rx * 0.8), ty = y + clamp((ty0 - y) * scale, -ry * 0.8, ry * 0.8);
-          let ok = true, maxCos = -1;
-          for (const [ci, cj] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) { if (cj < 0 || cj >= M) continue;
-            const corner = (ii, jj) => { const kk = jj * N + mod(ii, N); return (mod(ii, N) === i && jj === j) ? [tx, ty] : [nx[kk], ny[kk]]; };
-            const quad = [corner(ci, cj), corner(ci + 1, cj), corner(ci + 1, cj + 1), corner(ci, cj + 1)];
-            for (let c = 0; c < 4; c++) { const p = quad[c], a = quad[(c + 3) % 4], b = quad[(c + 1) % 4]; const ux = a[0] - p[0], uy = a[1] - p[1], vx = b[0] - p[0], vy = b[1] - p[1]; const u2 = ux * ux + uy * uy, v2 = vx * vx + vy * vy; const cos = (ux * vx + uy * vy) / Math.sqrt(Math.max(1e-18, u2 * v2)); if (cos > maxCos) maxCos = cos; if (u2 < 0.16 || v2 < 0.16) ok = false; }
-          }
-          if (ok && maxCos <= COS28) { nx[k] = tx; ny[k] = ty; snappedFlag[k] = 1; nodesSnapped++; break; }
+        // Exact boundary crossings on the four segments between neighbouring cell centres. Their average
+        // lies on the true vector groove boundary where it passes this node — this is what makes the quad
+        // edges follow the pattern instead of stair-stepping between cell midpoints.
+        const cyB = (rows[j - 1] + rows[j]) / 2, cyA = (rows[j] + rows[j + 1]) / 2, cxL = (i - 0.5) * px, cxR = (i + 0.5) * px;
+        let tgt = targetCache.get(j * N + i);
+        if (!tgt) {
+          const cand = [];
+          if (cs[0] !== cs[1]) cand.push(crossing(cxL, cyB, cxR, cyB, cs[0]));
+          if (cs[2] !== cs[3]) cand.push(crossing(cxL, cyA, cxR, cyA, cs[2]));
+          if (cs[0] !== cs[2]) cand.push(crossing(cxL, cyB, cxL, cyA, cs[0]));
+          if (cs[1] !== cs[3]) cand.push(crossing(cxR, cyB, cxR, cyA, cs[1]));
+          if (!cand.length) continue;
+          const tx0 = cand.reduce((a, c) => a + c[0], 0) / cand.length, ty0 = cand.reduce((a, c) => a + c[1], 0) / cand.length;
+          const near = cand.reduce((a, c) => (Math.hypot(c[0] - x, c[1] - y) < Math.hypot(a[0] - x, a[1] - y) ? c : a));
+          tgt = [tx0, ty0, near[0], near[1]]; targetCache.set(j * N + i, tgt);
         }
-      }
+        const [tx0, ty0] = tgt, near = [tgt[2], tgt[3]];
+        const ry = Math.min(rows[j] - rows[j - 1], rows[j + 1] - rows[j]) * 0.55, rx = px * 0.55;
+        const k = j * N + i; const COS28 = 0.8829;
+        // Targets in order: average of the exact crossings (straight boundary), then the single nearest
+        // crossing (groove corners, where the average sits between two arms and fits neither).
+        outer: for (const [gx, gy] of [[tx0, ty0], near]) {
+          if (Math.hypot(gx - x, gy - y) < 0.01) continue;
+          for (const scale of [1, 0.6, 0.3]) {
+            const tx = x + clamp((gx - x) * scale, -rx, rx), ty = y + clamp((gy - y) * scale, -ry, ry);
+            let ok = true, maxCos = -1;
+            for (const [ci, cj] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) { if (cj < 0 || cj >= M) continue;
+              const corner = (ii, jj) => (mod(ii, N) === i && jj === j) ? [tx, ty] : [mod(ii, N) * px, rows[jj]]; // guard vs the regular grid (Jacobi): a neighbour's snap state must not change this node's acceptance
+              const quad = [corner(ci, cj), corner(ci + 1, cj), corner(ci + 1, cj + 1), corner(ci, cj + 1)];
+              for (let c = 0; c < 4; c++) { const p = quad[c], a = quad[(c + 3) % 4], b = quad[(c + 1) % 4]; const ux = a[0] - p[0], uy = a[1] - p[1], vx = b[0] - p[0], vy = b[1] - p[1]; const u2 = ux * ux + uy * uy, v2 = vx * vx + vy * vy; const cos = (ux * vx + uy * vy) / Math.sqrt(Math.max(1e-18, u2 * v2)); if (cos > maxCos) maxCos = cos; if (u2 < 0.16 || v2 < 0.16) ok = false; }
+            }
+            if (ok && maxCos <= COS28) { nx[k] = tx; ny[k] = ty; snappedFlag[k] = 1; movableFlag[k] = 1; nodesSnapped++; break outer; }
+          }
+        }
+      } };
+      snapPass();
+      // Edge-flow relaxation: nodes one ring INSIDE the land/groove (not on the boundary) are pulled toward
+      // their neighbours' average, so the quads next to a groove shear along the groove direction (proper
+      // edge flow) instead of staying axis-aligned bricks. Boundary nodes stay locked on the vector edge.
+      const relaxPass = () => {
+        let relaxed = 0;
+        for (let iter = 0; iter < 2; iter++) {
+          const ox = Float32Array.from(nx), oy = Float32Array.from(ny);
+          for (let j = 1; j < M; j++) for (let i = 0; i < N; i++) {
+            const k = j * N + i; if (snappedFlag[k] || Math.abs(rows[j]) > d.treadHalf - pitch * 0.75) continue;
+            const cs = [cell(i - 1, j - 1), cell(i, j - 1), cell(i - 1, j), cell(i, j)];
+            const nearBoundary = cs.every(v => v === cs[0]) && (snappedFlag[j * N + mod(i - 1, N)] || snappedFlag[j * N + mod(i + 1, N)] || snappedFlag[(j - 1) * N + i] || snappedFlag[(j + 1) * N + i]);
+            if (!nearBoundary) continue;
+            const ax = (ox[j * N + mod(i - 1, N)] + ox[j * N + mod(i + 1, N)] + ox[(j - 1) * N + i] + ox[(j + 1) * N + i]) / 4;
+            const ay = (oy[j * N + mod(i - 1, N)] + oy[j * N + mod(i + 1, N)] + oy[(j - 1) * N + i] + oy[(j + 1) * N + i]) / 4;
+            const gx = i * px, gy = rows[j];
+            const mx = gx + clamp((ox[k] + (ax - ox[k]) * 0.25) - gx, -px * 0.28, px * 0.28);
+            const my = gy + clamp((oy[k] + (ay - oy[k]) * 0.25) - gy, -Math.min(rows[j] - rows[j - 1], rows[j + 1] - rows[j]) * 0.28, Math.min(rows[j] - rows[j - 1], rows[j + 1] - rows[j]) * 0.28);
+            if (Math.hypot(mx - ox[k], my - oy[k]) > 0.01) { nx[k] = mx; ny[k] = my; movableFlag[k] = 1; relaxed++; }
+          }
+        }
+        nodesRelaxedTotal += relaxed;
+      };
+      relaxPass();
       // topology cleanup 2: foldover repair — a node snapped early can be crossed by a neighbour snapped later.
       // Any top quad whose UV corners lose a consistent turning direction (bow-tie), a usable corner angle, or a
       // usable fan triangle has its snapped corners reverted to the regular grid, which is proper by construction.
       // Re-checks are local: only quads incident to a reverted node can change, so later passes are tiny.
-      let nodesReverted = 0; const COS20 = 0.9135 /* 24 deg */, COS9 = 0.9781 /* 12 deg */;
+      let nodesReverted = 0; const COS20 = 0.9397 /* 20 deg */, COS9 = 0.9903 /* 8 deg: fan slivers below this are unusable */;
+      const repairAll = () => {
       const cellBad = (i, j) => { const idx = [j * N + i, j * N + mod(i + 1, N), (j + 1) * N + mod(i + 1, N), (j + 1) * N + i]; const quad = idx.map(k => [nx[k], ny[k]]);
         for (let c = 0; c < 4; c++) { const p = quad[c], a = quad[(c + 3) % 4], b = quad[(c + 1) % 4]; const e1x = quad[(c + 1) % 4][0] - p[0], e1y = quad[(c + 1) % 4][1] - p[1], e2x = quad[(c + 2) % 4][0] - quad[(c + 1) % 4][0], e2y = quad[(c + 2) % 4][1] - quad[(c + 1) % 4][1]; if (e1x * e2y - e1y * e2x <= 1e-9) return idx;
           const ux = a[0] - p[0], uy = a[1] - p[1], vx = b[0] - p[0], vy = b[1] - p[1]; if ((ux * vx + uy * vy) / Math.sqrt(Math.max(1e-18, (ux * ux + uy * uy) * (vx * vx + vy * vy))) > COS20) return idx; }
         for (const tri of [[0, 1, 2], [0, 2, 3]]) for (let c = 0; c < 3; c++) { const p = quad[tri[c]], a = quad[tri[(c + 1) % 3]], b = quad[tri[(c + 2) % 3]]; const ux = a[0] - p[0], uy = a[1] - p[1], vx = b[0] - p[0], vy = b[1] - p[1]; if ((ux * vx + uy * vy) / Math.sqrt(Math.max(1e-18, (ux * ux + uy * uy) * (vx * vx + vy * vy))) > COS9) return idx; }
         return null; };
-      let checkCells = null; // null = all cells (first pass)
-      for (let pass = 0; pass < 24; pass++) {
-        const bad = new Set();
-        if (checkCells === null) { for (let j = 0; j < M; j++) for (let i = 0; i < N; i++) { const idx = cellBad(i, j); if (idx) for (const k of idx) if (snappedFlag[k]) bad.add(k); } }
-        else for (const ci of checkCells) { const idx = cellBad(ci % N, Math.floor(ci / N)); if (idx) for (const k of idx) if (snappedFlag[k]) bad.add(k); }
-        if (!bad.size) break;
-        checkCells = new Set();
-        for (const k of bad) { const j = Math.floor(k / N), i = k % N; nx[k] = i * px; ny[k] = rows[j]; snappedFlag[k] = 0; nodesReverted++; nodesSnapped--;
-          for (const [ci, cj] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) if (cj >= 0 && cj < M) checkCells.add(cj * N + mod(ci, N)); }
+      // Two stages, each with its own FULL first scan: stage 0 may only revert relaxed (unlocked) nodes, so a
+      // bad quad held up by a boundary node is never skipped; stage 1 then reverts boundary-snapped nodes,
+      // but only for quads still bad after every relaxed node is back on the grid. Reverts are surgical: each
+      // bad quad nominates ONE prime suspect (a relaxed corner if it has one, else its most-displaced corner),
+      // so fixing one quad never wrecks its neighbours in a cascade.
+      const disp = k => { const j = Math.floor(k / N), i = k % N; return Math.hypot(nx[k] - i * px, ny[k] - rows[j]); };
+      for (let stage = 0; stage < 2; stage++) {
+        let checkCells = null; // null = all cells (first pass of the stage)
+        for (let pass = 0; pass < 80; pass++) {
+          const culprits = new Set();
+          const nominate = idx => { if (!idx) return; const elig = idx.filter(k => movableFlag[k] && (stage === 1 || !snappedFlag[k])); if (!elig.length) return;
+            const relaxed = elig.filter(k => !snappedFlag[k]); const pool = relaxed.length ? relaxed : elig;
+            culprits.add(pool.reduce((a, b) => disp(b) > disp(a) ? b : a)); };
+          if (checkCells === null) { for (let j = 0; j < M; j++) for (let i = 0; i < N; i++) nominate(cellBad(i, j)); }
+          else for (const ci of checkCells) nominate(cellBad(ci % N, Math.floor(ci / N)));
+          if (!culprits.size) break;
+          checkCells = new Set();
+          // Damped revert: the culprit moves HALFWAY back to the grid, not all the way. A fitted boundary
+          // quad usually fails only because the line passes close to a grid row (sliver); halving doubles
+          // the sliver height, heals the angle, and still leaves the node halfway to the true edge — the
+          // flow survives. Only a node already within 0.08 mm of the grid is fully reverted (and locked).
+          for (const k of culprits) { const j = Math.floor(k / N), i = k % N; const gx = i * px, gy = rows[j];
+            nx[k] = (nx[k] + gx) / 2; ny[k] = (ny[k] + gy) / 2;
+            if (Math.hypot(nx[k] - gx, ny[k] - gy) < 0.08) { nx[k] = gx; ny[k] = gy; if (snappedFlag[k]) { snappedFlag[k] = 0; nodesSnapped--; } movableFlag[k] = 0; nodesReverted++; }
+            for (const [ci, cj] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) if (cj >= 0 && cj < M) checkCells.add(cj * N + mod(ci, N)); }
+        }
       }
+      };
+      repairAll();
+      // Second round: snap/revert decisions poisoned by unsettled neighbours are retried now that the grid
+      // around them is final; the closing repair guarantees the delivered nodes are clean.
+      snapPass(); relaxPass(); repairAll();
       var snapReverted = nodesReverted;
     }
     // vertices: one per (column, row, level) — tops and walls share indices, so the shell is welded by construction
@@ -551,7 +623,7 @@ const QuadCore = (() => {
     const mesh = { V, VU, VK, VN, F };
     const cleanup = cleanupQuadMesh(mesh);
     const report = validateQuadMesh(mesh);
-    return { V, VU, VK, VN, F: mesh.F, report, cleanup, levels: canonLevels, dropped: compiled.dropped, included: compiled.included, pinchesFixed, nodesSnapped, nodesReverted: typeof snapReverted !== 'undefined' ? snapReverted : 0, N, rows, pitch, px };
+    return { V, VU, VK, VN, F: mesh.F, report, cleanup, levels: canonLevels, dropped: compiled.dropped, included: compiled.included, pinchesFixed, nodesSnapped, nodesRelaxed: typeof nodesRelaxedTotal !== 'undefined' ? nodesRelaxedTotal : 0, nodesReverted: typeof snapReverted !== 'undefined' ? snapReverted : 0, N, rows, pitch, px };
   }
 
   function exportOBJ(qm, name, report) {
@@ -1177,10 +1249,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixel
 const scene = new THREE.Scene(); scene.background = new THREE.Color('#0b0c0e');
 const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(38, 1, 1, 20000); camera.position.set(700, 380, 720);
-const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, 0, 0);
-controls.zoomSpeed = 0.8; controls.maxPolarAngle = Math.PI / 2 - 0.03; controls.zoomToCursor = false;
-function fitZoom(d) { const R = d.Rout; controls.minDistance = R * 0.75; controls.maxDistance = R * 7; camera.near = R * 0.02; camera.far = R * 60; camera.updateProjectionMatrix();
-  const dist = camera.position.distanceTo(controls.target); if (dist > controls.maxDistance || dist < controls.minDistance) { const dir = camera.position.clone().sub(controls.target).normalize(); camera.position.copy(controls.target).addScaledVector(dir, THREE.MathUtils.clamp(dist, controls.minDistance, controls.maxDistance)); } }
+const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = 0.08; controls.target.set(0, 0, 0);
+controls.zoomSpeed = 0.65; controls.rotateSpeed = 0.75; controls.maxPolarAngle = Math.PI / 2 - 0.03; controls.zoomToCursor = true;   // zoom glides toward the point under the cursor (groove inspection)
+function fitZoom(d) { const R = d.Rout; controls.minDistance = R * 0.1; controls.maxDistance = R * 14; camera.near = Math.max(0.5, R * 0.01); camera.far = R * 80; camera.updateProjectionMatrix(); }
+  // limits only: the camera is never force-moved, so zooming is smooth and a rebuild can't snap your view
 const key = new THREE.DirectionalLight('#fff4e0', 2.2); key.position.set(600, 900, 500); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = key.shadow.camera.bottom = -600; key.shadow.camera.right = key.shadow.camera.top = 600; key.shadow.camera.far = 3000; key.shadow.bias = -0.0002; key.shadow.normalBias = 2.5; scene.add(key);
 scene.add(new THREE.DirectionalLight('#9fc5ff', 0.6).translateX(-800).translateY(200).translateZ(-400));
 scene.add(new THREE.HemisphereLight('#3a4050', '#0b0b0d', 0.6));
@@ -1335,7 +1407,10 @@ function drawTreadView() {
 function resize() { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); if (maps) drawTreadView(); }
 new ResizeObserver(resize).observe(view); resize();
 let last = performance.now();
-renderer.setAnimationLoop(now => { const dt = (now - last) / 1000; last = now; if (UI.spin && tyreGroup) tyreGroup.rotation.x -= dt * 0.8; controls.update(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(now => { const dt = (now - last) / 1000; last = now; if (UI.spin && tyreGroup) tyreGroup.rotation.x -= dt * 0.8; controls.update();
+  const dist = camera.position.distanceTo(controls.target); const near = THREE.MathUtils.clamp(dist * 0.03, 0.5, 80);
+  if (Math.abs(near - camera.near) / camera.near > 0.15) { camera.near = near; camera.far = THREE.MathUtils.clamp(dist * 40, 3000, 80000); camera.updateProjectionMatrix(); }
+  renderer.render(scene, camera); });
 
 // =====================================================================================================================
 //  UI

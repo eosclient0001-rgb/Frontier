@@ -40,6 +40,8 @@ const check = (label, mesh, opts = {}) => {
   if (!opts.expectBoundary && !r.watertight) problems.push(`not watertight (boundary=${r.boundaryEdges})`);
   if (opts.expectBoundary && r.boundaryEdges === 0) problems.push('expected bead boundary loops with liner off, got none');
   if (opts.maxQuads && r.quads > opts.maxQuads) problems.push(`quads=${r.quads} > budget ${opts.maxQuads}`);
+  if (opts.maxWarp && r.maxWarpDeg > opts.maxWarp) problems.push(`maxWarp=${r.maxWarpDeg}deg > ${opts.maxWarp}deg (folded quad)`);
+  if (opts.minSnapped && mesh.nodesSnapped < opts.minSnapped) problems.push(`nodesSnapped=${mesh.nodesSnapped} < ${opts.minSnapped} (edge flow lost)`);
   const status = problems.length ? 'FAIL' : 'PASS';
   if (problems.length) failures++;
   console.log(`${status}  ${label}\n      quads=${r.quads} verts=${r.vertices} boundary=${r.boundaryEdges} nonManifold=${r.nonManifoldEdges} inconsistent=${r.inconsistentEdges} degenerate=${r.degenerateFaces} euler=${r.euler} vol=${(r.signedVolumeMm3 / 1e9).toFixed(3)} m^3 minAngle=${r.minCornerAngleDeg}deg maxWarp=${r.maxWarpDeg}deg badQuads=${r.badQuads} pinchesFixed=${mesh.pinchesFixed} snapped=${mesh.nodesSnapped} dropped=[${mesh.dropped.map(d => d.type + ': ' + d.reason).join('; ')}]${problems.length ? '\n      -> ' + problems.join('; ') : ''}`);
@@ -50,7 +52,11 @@ for (const [label, layers] of CASES) {
   const T = { ...baseT };
   const d = Q.dims(T);
   const mesh = Q.buildQuadMeshData({ name: label, layers }, d, Q.buildProfile(d, T), T, {});
-  check(label, mesh, { maxQuads: 60000 });
+  // Budget 62k: raised from 60k when sub-cell groove capture landed — before that, the hex layer in
+  // 'dimples + hex cells' silently produced ZERO groove cells (the pattern vanished), so the old
+  // budget was calibrated on an incomplete mesh. maxWarp guards the foldover repair; minSnapped
+  // guards edge flow (diagonal grooves must pull nodes onto the vector boundary, not stair-step).
+  check(label, mesh, { maxQuads: 62000, maxWarp: 45, minSnapped: label.includes('diagonal') || label.includes('crossing') || label.includes('shapes') ? 800 : 0 });
 }
 
 // variants
@@ -68,6 +74,15 @@ for (const pitch of [3, 10]) {
   const T = { ...baseT, quadPitch: pitch };
   const d = Q.dims(T);
   check(`pitch=${pitch}mm`, Q.buildQuadMeshData({ layers: [L('circ', { pos: 0.3, width: 8, depth: 1 }), L('chevron', { count: 36, angle: 50, width: 7, depth: 1, from: 0.05, to: 1.3, phase: 0, mirror: true, curve: 0.4, zig: 0 })] }, d, Q.buildProfile(d, T), T, {}));
+}
+{ // thin (sub-cell) grooves must be CAPTURED as one-cell strips at default pitch, not silently dropped
+  const layers = [L('lateral', { count: 40, angle: 35, width: 3, depth: 1, from: -1, to: 1, phase: 0, mirror: false, curve: 0, zig: 0 })];
+  const T = { ...baseT };
+  const d = Q.dims(T);
+  const m = Q.buildQuadMeshData({ layers }, d, Q.buildProfile(d, T), T, {});
+  if (m.dropped.some(x => x.type === 'lateral')) { console.log('FAIL  3mm lateral dropped at 6mm pitch (thin groove vanished)'); failures++; }
+  else if (!m.report.watertight) { console.log('FAIL  3mm lateral mesh not watertight'); failures++; }
+  else console.log(`PASS  3mm lateral captured at 6mm pitch (quads=${m.report.quads}, snapped=${m.nodesSnapped})`);
 }
 { // thin sipes must be REPORTED as dropped at coarse pitch, and meshed at fine pitch — never silently faked
   const layers = [L('sipe', { count: 120, angle: 10, width: 1.2, depth: 0.55, from: -1, to: 1, phase: 0.5, mirror: false, curve: 0, zig: 1 })];

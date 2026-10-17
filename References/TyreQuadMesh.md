@@ -31,10 +31,25 @@ is needed at all.
    grooves are centreline-graph distances, dimples and hex cells are distance tests, drawn shapes are
    point-in-polygon / distance-to-polyline tests — all folded periodically around the circumference.
    The returned level is the discrete groove depth (0 = land) at any unwrapped point.
-2. **Structured grid.** Columns wrap the circumference (`N = circumference / pitch`, so the seam is
-   exact), rows run across the crown and around the shoulder arc, with extra rows snapped exactly
-   onto circumferential groove edges. Grid nodes may snap onto groove boundaries (bounded,
-   quality-guarded); any node that would fold a quad is reverted to the regular grid.
+2. **Structured grid with fitted boundaries (edge flow).** Columns wrap the circumference
+   (`N = circumference / pitch`, so the seam is exact), rows run across the crown and around the
+   shoulder arc, with extra rows snapped exactly onto circumferential groove edges. Grid nodes on a
+   groove boundary are moved onto the **exact vector edge**: for each boundary node, the precise
+   crossing points of the level boundary on the segments between neighbouring cell centres are found
+   by bisection on the exact field, and the node is placed at their average (or the nearest single
+   crossing at groove corners) — so quad edges *follow the drawn pattern* instead of stair-stepping
+   between cell centres. Nodes one ring inside the boundary are then relaxed tangentially so the
+   neighbouring quads shear along the groove. A two-stage repair (relaxed nodes are sacrificed
+   before locked boundary nodes, one prime suspect per bad quad, moved *halfway* back rather than
+   fully reverted) guarantees no folded or sliver quads survive; nodes within ~¾ pitch of the tread
+   edge stay on the grid, because sliding nodes across the shoulder arc would fold quads in 3D.
+   Measured on the Monsoon preset at 6 mm pitch: mean distance from quad boundary edges to the true
+   vector groove edge drops from 1.06 mm (plain grid) to 0.86 mm, p90 from 2.31 mm to 1.42 mm, with
+   85% of boundary edges having both endpoints on the fitted boundary.
+   **Thin grooves cannot vanish:** a groove narrower than a cell (but at least 0.4× pitch) has its
+   capture width raised to ~0.9 cell, so it meshes as a clean one-cell-wide groove strip following
+   its centreline. (Before this, e.g. the hex-cell layer produced *zero* groove cells — the pattern
+   simply wasn't in the mesh.)
 3. **Cell complex.** Every grid cell gets one top quad at its level. Wherever neighbouring cells
    differ in level, vertical **wall quads** connect them (terraced through intermediate levels, so
    multi-depth crossings stay manifold). Sidewalls are lathe rings with the same `N`, and an inner
@@ -49,17 +64,20 @@ is needed at all.
    volume, corner angles, warp and poor quads. The Export card in the page shows the live report;
    the OBJ header carries its summary.
 
-Grooves thinner than the grid can resolve (e.g. 1.2 mm sipes at a 6 mm pitch) **cannot** become
-geometry without exploding the poly count. They are never silently faked into the mesh — they are
-listed in the Export report with the pitch you would need to mesh them. Lower the pitch and they
-become real geometry.
+Grooves far thinner than the grid can resolve (below 0.4× pitch, e.g. 1.2 mm sipes at a 6 mm pitch)
+**cannot** become geometry without exploding the poly count. They are never silently faked into the
+mesh — they are listed in the Export report with the pitch you would need to mesh them. Lower the
+pitch and they become real geometry. Grooves between 0.4× pitch and one cell wide are widened to a
+one-cell strip (above), so the pattern you draw is the pattern you get.
 
 ## Controls that matter
 
 | Control | Effect |
 |---|---|
 | Quad pitch (2–12 mm) | The one resolution knob. `8 mm` ≈ deform proxy (~20–35k quads), `6 mm` standard, `4 mm` fine. Around-count and across-rows both derive from it. |
-| Snap nodes to groove edges | Pulls grid nodes onto exact vector boundaries (guarded; bad snaps revert). Off = perfectly regular grid, stair-stepped groove edges. |
+| Snap nodes to groove edges | Fits grid nodes onto the exact vector boundaries (edge flow) + tangential relaxation; the repair pass guarantees no folds. Off = perfectly regular grid, stair-stepped groove edges. |
+| Wireframe (W) | Cycles shaded → wireframe overlay → wireframe only. The lines are the actual quad edges of the welded mesh (one segment per unique mesh edge) — no triangle diagonals, so what you see is the deformation topology. |
+| Camera zoom | Smooth damped zoom toward the cursor; rebuilds never move the camera (zoom limits are wide and only clamp at the extremes). |
 | Inner liner | Closes the shell bead-to-bead (watertight). Off leaves exactly the two bead loops open. |
 
 ## Exports
