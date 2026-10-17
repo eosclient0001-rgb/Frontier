@@ -77,7 +77,7 @@ one-cell strip (above), so the pattern you draw is the pattern you get.
 | Quad pitch (2–12 mm) | The one resolution knob. `8 mm` ≈ deform proxy (~20–35k quads), `6 mm` standard, `4 mm` fine. Around-count and across-rows both derive from it. |
 | Snap nodes to groove edges | Fits grid nodes onto the exact vector boundaries (edge flow) + tangential relaxation; the repair pass guarantees no folds. Off = perfectly regular grid, stair-stepped groove edges. |
 | Wireframe (W) | Cycles shaded → wireframe overlay → wireframe only. The lines are the actual quad edges of the welded mesh (one segment per unique mesh edge) — no triangle diagonals, so what you see is the deformation topology. |
-| Camera zoom | Smooth damped zoom toward the cursor; rebuilds never move the camera (zoom limits are wide and only clamp at the extremes). |
+| Camera zoom | Custom goal-eased wheel zoom: each scroll gesture moves a cursor-anchored goal (the point under the cursor stays put) and the camera glides to it exponentially, settling asymptotically at wide distance limits — no per-notch steps, no snap into min/max. (OrbitControls' built-in wheel dolly is undamped and hard-stops at its limits, so wheel events are intercepted before it can see them; touch pinch still uses OrbitControls.) Rebuilds never move the camera. |
 | Inner liner | Closes the shell bead-to-bead (watertight). Off leaves exactly the two bead loops open. |
 
 ## Exports

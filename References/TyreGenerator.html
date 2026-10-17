@@ -1250,9 +1250,38 @@ const scene = new THREE.Scene(); scene.background = new THREE.Color('#0b0c0e');
 const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(38, 1, 1, 20000); camera.position.set(700, 380, 720);
 const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = 0.08; controls.target.set(0, 0, 0);
-controls.zoomSpeed = 0.65; controls.rotateSpeed = 0.75; controls.maxPolarAngle = Math.PI / 2 - 0.03; controls.zoomToCursor = true;   // zoom glides toward the point under the cursor (groove inspection)
-function fitZoom(d) { const R = d.Rout; controls.minDistance = R * 0.1; controls.maxDistance = R * 14; camera.near = Math.max(0.5, R * 0.01); camera.far = R * 80; camera.updateProjectionMatrix(); }
-  // limits only: the camera is never force-moved, so zooming is smooth and a rebuild can't snap your view
+controls.zoomSpeed = 0.7; controls.rotateSpeed = 0.75; controls.maxPolarAngle = Math.PI / 2 - 0.03; controls.zoomToCursor = false;
+// SMOOTH ZOOM. OrbitControls' wheel dolly is NOT damped: every wheel event applies one instant,
+// fixed-size step, so a trackpad / smooth-scroll gesture (dozens of events per second) slams the
+// camera into minDistance/maxDistance and hard-stops there — the "snaps to min/max, no smooth zoom"
+// bug. Instead, wheel events over the 3D canvas are intercepted in the capture phase (before
+// OrbitControls can see them) and only move a zoom GOAL — desired camera position + target, both
+// scaled about the point under the cursor so that point stays put. The render loop then eases the
+// real camera to the goal each frame, so zoom glides continuously and settles asymptotically at
+// the distance limits instead of hitting them. Touch pinch still uses OrbitControls (continuous
+// by nature) and is still clamped by controls.min/maxDistance.
+let camMinDist = 40, camMaxDist = 4500;
+const zoomGoal = { active: false, pos: new THREE.Vector3(), tgt: new THREE.Vector3() };
+controls.addEventListener('start', () => { zoomGoal.active = false; });   // grabbing the model cancels a glide
+window.addEventListener('wheel', ev => {
+  if (ev.target !== renderer.domElement) return;                          // UI panels / designer canvas keep their own wheel behaviour
+  ev.preventDefault(); ev.stopPropagation();                              // OrbitControls must never dolly from the wheel
+  const basePos = zoomGoal.active ? zoomGoal.pos : camera.position, baseTgt = zoomGoal.active ? zoomGoal.tgt : controls.target;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1), camera);
+  const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir);
+  const anchor = new THREE.Vector3();                                     // point under the cursor, on the plane through the target facing the camera
+  if (!ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, baseTgt), anchor)) anchor.copy(baseTgt);
+  let dy = ev.deltaY; if (ev.deltaMode === 1) dy *= 33; else if (ev.deltaMode === 2) dy *= 400;
+  const dist = basePos.distanceTo(baseTgt); if (dist < 1e-6) return;
+  const f = THREE.MathUtils.clamp(dist * Math.exp(THREE.MathUtils.clamp(dy, -300, 300) * 0.0016), camMinDist, camMaxDist) / dist;
+  const offPos = new THREE.Vector3().subVectors(basePos, anchor), offTgt = new THREE.Vector3().subVectors(baseTgt, anchor);   // compute BEFORE copy(): basePos/baseTgt may alias zoomGoal's own vectors
+  zoomGoal.pos.copy(anchor).addScaledVector(offPos, f);
+  zoomGoal.tgt.copy(anchor).addScaledVector(offTgt, f);
+  zoomGoal.active = true;
+}, { capture: true, passive: false });
+function fitZoom(d) { const R = d.Rout; camMinDist = R * 0.12; camMaxDist = R * 14; controls.minDistance = camMinDist; controls.maxDistance = camMaxDist; camera.near = Math.max(0.5, R * 0.01); camera.far = R * 80; camera.updateProjectionMatrix(); }
+  // limits only: the camera is never force-moved, so a rebuild can't snap your view
 const key = new THREE.DirectionalLight('#fff4e0', 2.2); key.position.set(600, 900, 500); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = key.shadow.camera.bottom = -600; key.shadow.camera.right = key.shadow.camera.top = 600; key.shadow.camera.far = 3000; key.shadow.bias = -0.0002; key.shadow.normalBias = 2.5; scene.add(key);
 scene.add(new THREE.DirectionalLight('#9fc5ff', 0.6).translateX(-800).translateY(200).translateZ(-400));
 scene.add(new THREE.HemisphereLight('#3a4050', '#0b0b0d', 0.6));
@@ -1407,7 +1436,9 @@ function drawTreadView() {
 function resize() { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); if (maps) drawTreadView(); }
 new ResizeObserver(resize).observe(view); resize();
 let last = performance.now();
-renderer.setAnimationLoop(now => { const dt = (now - last) / 1000; last = now; if (UI.spin && tyreGroup) tyreGroup.rotation.x -= dt * 0.8; controls.update();
+renderer.setAnimationLoop(now => { const dt = (now - last) / 1000; last = now; if (UI.spin && tyreGroup) tyreGroup.rotation.x -= dt * 0.8;
+  if (zoomGoal.active) { const a = 1 - Math.exp(-9 * Math.min(dt, 0.05)); camera.position.lerp(zoomGoal.pos, a); controls.target.lerp(zoomGoal.tgt, a); if (camera.position.distanceTo(zoomGoal.pos) < 0.05 && controls.target.distanceTo(zoomGoal.tgt) < 0.05) zoomGoal.active = false; }
+  controls.update();
   const dist = camera.position.distanceTo(controls.target); const near = THREE.MathUtils.clamp(dist * 0.03, 0.5, 80);
   if (Math.abs(near - camera.near) / camera.near > 0.15) { camera.near = near; camera.far = THREE.MathUtils.clamp(dist * 40, 3000, 80000); camera.updateProjectionMatrix(); }
   renderer.render(scene, camera); });
@@ -1528,7 +1559,7 @@ document.getElementById('threadsBtn').onclick = e => { UI.threads = !UI.threads;
 document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
   const d = dims(); const R = d.Rout; const v = b.dataset.view;
   const pos = { iso: [R * 2.6, R * 1.4, R * 2.7], side: [R * 4.2, R * 0.9, 0.01], front: [0.01, R * 0.9, R * 4.2], tread: [R * 0.9, R * 2.9, R * 0.7] }[v];
-  controls.target.set(0, v === 'tread' ? R * 1.6 : R * 0.95, 0); camera.position.set(pos[0], pos[1] + (v === 'tread' ? R * 0.7 : 0), pos[2]); fitZoom(d); tyreGroup.rotation.x = 0;
+  zoomGoal.active = false; controls.target.set(0, v === 'tread' ? R * 1.6 : R * 0.95, 0); camera.position.set(pos[0], pos[1] + (v === 'tread' ? R * 0.7 : 0), pos[2]); fitZoom(d); tyreGroup.rotation.x = 0;
 });
 // exports
 const dl = (name, url) => { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); };
