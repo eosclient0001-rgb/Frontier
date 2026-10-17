@@ -166,7 +166,7 @@
     <div class="float" id="badge"><div class="t" id="badgeType">Slick</div><div class="name" id="badgeName">GZero</div><div class="size" id="badgeSize">245/40 R18</div></div>
     <div class="float" id="tiles"></div>
     <div class="float" id="viewbtns">
-      <button class="small" data-view="iso">Iso</button><button class="small" data-view="side">Side</button><button class="small" data-view="tread">Tread</button><button class="small" data-view="front">Front</button><button class="small" id="spinBtn">Spin</button><button class="small" id="threadsBtn">X-ray cords</button>
+      <button class="small" data-view="iso">Iso</button><button class="small" data-view="side">Side</button><button class="small" data-view="tread">Tread</button><button class="small" data-view="front">Front</button><button class="small" id="spinBtn">Spin</button><button class="small" id="wireBtn" title="Cycle: off -> wireframe overlay -> wireframe only (W)">Wireframe</button><button class="small" id="threadsBtn">X-ray cords</button>
     </div>
     <div id="toast"></div>
   </main>
@@ -592,7 +592,7 @@ const T = {                       // tyre carcass parameters (mm / inch / fracti
   rubber: '#151515', letter: 'white', lettering: true, brand: 'SLATE', spokes: 5, rimColor: '#c9ccd2', rimStyle: 'spoke'
 };
 const P = { name: 'GZero', type: 'Slick', layers: [] };   // tread pattern
-const UI = { sel: -1, threads: false, spin: false, treadMode: 'color' };
+const UI = { sel: -1, threads: false, spin: false, wireMode: 0, treadMode: 'color' };   // wireMode: 0 off, 1 overlay, 2 wireframe only
 
 const TYPES = ['Slick', 'Semi-slick', 'Drift', 'Street', 'Grip / UHP', 'Wet', 'Winter', 'Rally', 'Off-road', 'Drag'];
 
@@ -1189,7 +1189,33 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), new THREE.Mes
 const grid = new THREE.GridHelper(4000, 80, '#232529', '#1a1c1f'); grid.position.y = 0.5; scene.add(grid);
 const tyreGroup = new THREE.Group(); scene.add(tyreGroup);
 
-let tyreMesh, rimGroup, threadLines, maps, patternMap, profileCache, treadMat, quadMeshData, quadReport = null, quadData = null;
+let tyreMesh, rimGroup, threadLines, wireLines, maps, patternMap, profileCache, treadMat, quadMeshData, quadReport = null, quadData = null;
+// Wireframe of the ACTUAL quad mesh: one segment per unique quad edge (shared edges deduplicated),
+// built from the welded {V,F} data — never from the triangulated render geometry, so no diagonals appear.
+function buildWireframe(qm) {
+  const NV = qm.V.length, seen = new Set(), pos = [];
+  for (const f of qm.F) for (let k = 0; k < 4; k++) {
+    const a = f.q[k], b = f.q[(k + 1) % 4], key = a < b ? a * NV + b : b * NV + a;
+    if (seen.has(key)) continue; seen.add(key);
+    pos.push(...qm.V[a], ...qm.V[b]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#6ee7ff', transparent: true, opacity: 0.85 }));
+  lines.userData.edgeCount = seen.size;
+  return lines;
+}
+function applyWireMode() {
+  if (wireLines) wireLines.visible = UI.wireMode > 0;
+  if (tyreMesh) tyreMesh.visible = UI.wireMode < 2;
+  const b = document.getElementById('wireBtn');
+  if (b) { b.classList.toggle('primary', UI.wireMode > 0); b.textContent = UI.wireMode === 2 ? 'Wire only' : 'Wireframe'; }
+}
+function cycleWireMode() {
+  UI.wireMode = (UI.wireMode + 1) % 3;
+  applyWireMode();
+  toast(UI.wireMode === 0 ? 'Wireframe off' : UI.wireMode === 1 ? `Wireframe overlay · ${wireLines?.userData.edgeCount.toLocaleString() || ''} quad edges` : 'Wireframe only (pure quads)');
+}
 function disposeGroup() { tyreGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); tyreGroup.clear(); }
 
 function rebuild(full = true) {
@@ -1216,6 +1242,9 @@ function rebuild(full = true) {
   } else { const { geometry, profile } = buildTyreGeometry(d, patternMap); profileCache = profile; tyreMesh.add(new THREE.Mesh(geometry, [treadMat, sideMat])); triCount = geometry.index.count / 3; }
   tyreMesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (UI.threads) [].concat(o.material).forEach(m => { m.transparent = true; m.opacity = 0.35; }); } });
   tyreMesh.userData.tris = triCount; tyreGroup.add(tyreMesh);
+  wireLines = quadMeshData ? buildWireframe(quadMeshData) : null;
+  if (wireLines) tyreGroup.add(wireLines);
+  applyWireMode();
   rimGroup = buildRim(d); rimGroup.traverse(o => { o.castShadow = true; }); tyreGroup.add(rimGroup);
   threadLines = buildThreads(profileCache, d); threadLines.visible = UI.threads; tyreGroup.add(threadLines);
   const groundR = d.Rout - T.wear * T.treadDepth; tyreGroup.position.y = groundR; tyreGroup.rotation.z = 0;
@@ -1419,6 +1448,7 @@ function buildChips() { const sel = document.getElementById('typeFilter'); const
 buildChips();
 buildChips();
 document.getElementById('spinBtn').onclick = e => { UI.spin = !UI.spin; e.target.classList.toggle('primary', UI.spin); };
+document.getElementById('wireBtn').onclick = () => cycleWireMode();
 document.getElementById('threadsBtn').onclick = e => { UI.threads = !UI.threads; e.target.classList.toggle('primary', UI.threads); if (threadLines) threadLines.visible = UI.threads; if (tyreMesh) tyreMesh.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => { m.transparent = UI.threads; m.opacity = UI.threads ? 0.35 : 1; m.needsUpdate = true; }); }); };
 document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
   const d = dims(); const R = d.Rout; const v = b.dataset.view;
@@ -1446,6 +1476,7 @@ document.getElementById('exportGlb').onclick = () => {
 document.getElementById('exportObj').onclick = () => { if (!quadMeshData) return toast('No quad mesh yet'); dl(P.name.replace(/\s+/g, '_') + '.obj', URL.createObjectURL(new Blob([exportOBJ(quadMeshData, P.name, quadReport)], { type: 'text/plain' }))); toast(quadMeshData.F.length + ' pure quads exported' + (quadReport?.watertight ? ' · watertight ✓' : ' · CHECK REPORT')); };
 document.getElementById('importJson').onchange = e => { const f = e.target.files[0]; if (!f) return; f.text().then(txt => { const j = JSON.parse(txt); if (j.tyre) Object.assign(T, j.tyre); if (j.pattern) { P.name = j.pattern.name; P.type = j.pattern.type; P.layers = j.pattern.layers; } UI.sel = -1; refreshAll(); toast('Imported ' + P.name); }); };
 window.addEventListener('keydown', e => { if (e.key === 'r' && !e.target.matches('input,select')) { randomTyre(); refreshAll(); } });
+window.addEventListener('keydown', e => { if ((e.key === 'w' || e.key === 'W') && !DZ.on && !e.target.matches('input,select,textarea')) cycleWireMode(); });
 
 
 // =====================================================================================================================
