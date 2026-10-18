@@ -362,7 +362,15 @@ function computeComps(){
     if(x0<=2||y0<=2||x1>=w-3||y1>=h-3)continue;   // partial blocks / border bars
     comps.push({px:Int32Array.from(px),x0,y0,x1,y1,area:px.length});
   }
-  for(const c of comps) c.contour=contourTrace(bin,w,h,c);
+  /* contour on the component's OWN crop mask: a global trace would leak
+     into diagonally-touching neighbours and corrupt the outline */
+  for(const c of comps){
+    const bw=c.x1-c.x0+3, bh=c.y1-c.y0+3;
+    const cm=new Uint8Array(bw*bh);
+    for(const p of c.px) cm[(p%w-c.x0+1)+(((p/w)|0)-c.y0+1)*bw]=1;
+    c.contour=contourTrace(cm,bw,bh,{x0:0,y0:0,x1:bw-1,y1:bh-1})
+      .map(q=>V2(q.x+c.x0-1,q.y+c.y0-1));
+  }
   TRACE.comps=comps; TRACE.cache={};
 }
 
@@ -714,6 +722,94 @@ function getTracedUnit(){
   return unit;
 }
 
+/* ---------- stage 2 convert: loft the traced loop into quads ----------
+   The closed outline loop is split at its two diameter poles into two
+   opposite chains; both chains are resampled by arc length and rung quads
+   are lofted between them -> the quad grid's outer edges ARE the traced
+   outline (shape retained exactly), rungs flow across like the sketch. */
+function resampleChain(pts,count){
+  const L=[0];
+  for(let i=1;i<pts.length;i++)L.push(L[i-1]+len2(sub2(pts[i],pts[i-1])));
+  const total=L[L.length-1]||1, out=[]; let k=0;
+  for(let i=0;i<count;i++){
+    const s=total*i/(count-1);
+    while(k<L.length-2&&L[k+1]<s)k++;
+    const t=(s-L[k])/Math.max(1e-9,L[k+1]-L[k]);
+    out.push(lerp2(pts[k],pts[k+1],Math.max(0,Math.min(1,t))));
+  }
+  return out;
+}
+function trimChain(ch,bev){
+  const L=[0];
+  for(let i=1;i<ch.length;i++)L.push(L[i-1]+len2(sub2(ch[i],ch[i-1])));
+  const T=L[L.length-1], t0=bev, t1=T-bev;
+  if(t1<=t0)return [ch[0],ch[ch.length-1]];
+  const at=s=>{let k=0;while(k<L.length-2&&L[k+1]<s)k++;
+    const t=(s-L[k])/Math.max(1e-9,L[k+1]-L[k]);
+    return lerp2(ch[k],ch[k+1],Math.max(0,Math.min(1,t)));};
+  const pts=[at(t0)];
+  for(let i=0;i<ch.length;i++)if(L[i]>t0&&L[i]<t1)pts.push(ch[i]);
+  pts.push(at(t1));
+  return pts;
+}
+function loftPiece(outline,M,W,path,bevT){
+  const n=outline.length;
+  let a=0,b=1,bd=-1;                            // poles = diameter pair
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+    const d=(outline[i].x-outline[j].x)**2+(outline[i].y-outline[j].y)**2;
+    if(d>bd){bd=d;a=i;b=j;}
+  }
+  let chA=outline.slice(a,b+1);                 // side A: pole a -> pole b
+  let chB=outline.slice(b).concat(outline.slice(0,a+1)).reverse();  // side B: a -> b
+  /* parameter both chains by arc length ALONG THE SKELETON (projection),
+     so rungs stay perpendicular to the flow around bends - no crossings */
+  const pc=[0];
+  for(let i=1;i<path.length;i++)pc.push(pc[i-1]+len2(sub2(path[i],path[i-1])));
+  const pL=pc[pc.length-1]||1;
+  let flip=false;
+  if(path.length){
+    const d0=(path[0].x-outline[a].x)**2+(path[0].y-outline[a].y)**2;
+    const d1=(path[0].x-outline[b].x)**2+(path[0].y-outline[b].y)**2;
+    flip=d1<d0;
+  }
+  const tOf=p=>{
+    let bi=0,bd2=1e18;
+    for(let i=0;i<path.length;i+=1){
+      const d=(path[i].x-p.x)**2+(path[i].y-p.y)**2;
+      if(d<bd2){bd2=d;bi=i;}
+    }
+    let t=pc[bi]/pL;
+    if(flip)t=1-t;
+    return Math.max(0,Math.min(1,t));
+  };
+  const sample=(ch,s0,s1,count)=>{
+    const L=[0];
+    for(let i=1;i<ch.length;i++)L.push(L[i-1]+len2(sub2(ch[i],ch[i-1])));
+    const LT=L[L.length-1]||1;
+    /* blend skeleton projection (bend alignment) with own arc fraction
+       (strict monotonicity) -> no plateaus, no collapsed rings */
+    let ts=ch.map((p,i)=>.5*tOf(p)+.5*L[i]/LT);
+    for(let i=1;i<ts.length;i++)ts[i]=Math.max(ts[i],ts[i-1]);   // monotone
+    const out=[];
+    for(let k=0;k<count;k++){
+      const s=s0+(s1-s0)*k/(count-1);
+      let i=0;
+      while(i<ts.length-2&&ts[i+1]<s)i++;
+      const t=(s-ts[i])/Math.max(1e-9,ts[i+1]-ts[i]);
+      out.push(lerp2(ch[i],ch[i+1],Math.max(0,Math.min(1,t))));
+    }
+    return out;
+  };
+  const rA=sample(chA,bevT,1-bevT,M+1), rB=sample(chB,bevT,1-bevT,M+1);
+  const rings=[];
+  for(let i=0;i<=M;i++){
+    const row=[];
+    for(let j=0;j<=W;j++)row.push(lerp2(rA[i],rB[i],j/W));
+    rings.push(row);
+  }
+  return {rings,n:M+1,cl:rings.map(r=>lerp2(r[0],r[W],.5))};
+}
+
 /* ---------- state ---------- */
 const S={stage:1,pattern:'traced',orient:90,P:4,A:1.15,Wd:1.5,W:3,D:4,G:.55,R:10,T:.9,
          wire:true,topo:true,shade:true};
@@ -739,10 +835,16 @@ function rebuild(){
     const unit=getTracedUnit();
     const scale=pitch/unit.period;             // master period -> refit pitch
     const w2=p=>V2((p.x-unit.x0)*scale,-(p.y-unit.yc)*scale);
-    shapes=unit.shapes.map(t=>({
-      piece:buildPiece(t.keys.map(w2),S.D,0,S.W,t.widths.map(x=>x*scale)),
-      outline:t.outline.map(w2),
-      path:t.path.map(w2)}));
+    shapes=unit.shapes.map(t=>{
+      const outline=t.outline.map(w2);
+      const hw=t.widths.reduce((x,y)=>x+y,0)/Math.max(1,t.widths.length);
+      let pl=0;
+      for(let i=1;i<t.path.length;i++)pl+=len2(sub2(t.path[i],t.path[i-1]));
+      const M=Math.max(3,Math.min(48,Math.round(pl/(1.2*hw)*(S.D/4))));
+      const pathW=t.path.map(w2);
+      const bevT=Math.min(.5*hw/Math.max(1,pl),.06);
+      return {piece:loftPiece(outline,M,S.W,pathW,bevT),outline,path:pathW};
+    });
   }else{
     const keys=PATTERNS[S.pattern==='traced'?'chevron':S.pattern](Pg,S.A);
     const piece=buildPiece(keys,S.D,S.Wd/2,S.W);
