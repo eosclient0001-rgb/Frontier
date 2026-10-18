@@ -30,6 +30,9 @@
     padding:5px 12px; border-radius:6px; cursor:pointer; font-size:12px;
   }
   header button:hover{border-color:var(--acc); color:var(--acc);}
+  .mini{background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+    border-radius:5px; padding:2px 9px; cursor:pointer; font-size:12px;}
+  .mini:hover{border-color:var(--acc); color:var(--acc);}
   #main{flex:1; display:flex; min-height:0;}
   #side{
     width:318px; flex:0 0 318px; background:var(--panel);
@@ -106,12 +109,21 @@
       <h2>Stage 1 — pattern primitive</h2>
       <div class="row"><label>primitive</label>
         <select id="pattern">
-          <option value="chevron" selected>chevron / zig-zag lug</option>
+          <option value="traced" selected>traced from reference tyre image</option>
+          <option value="chevron">chevron / zig-zag lug</option>
           <option value="steplug">step (S) lug</option>
           <option value="wave">wave lug</option>
           <option value="rib">straight rib</option>
         </select>
       </div>
+      <canvas id="thumb" width="290" height="230" style="width:100%;border:1px solid var(--line);border-radius:7px;background:#0e1114;margin-bottom:8px"></canvas>
+      <div class="row"><label>traced block</label>
+        <button class="mini" id="bPrev">◀</button>
+        <span class="v" id="BL" style="flex:1;text-align:center">—</span>
+        <button class="mini" id="bNext">▶</button>
+      </div>
+      <div class="row"><label>threshold</label><input id="TH" type="range" min="60" max="200" step="2" value="128"><span class="v" id="THv"></span></div>
+      <div class="row"><label>orient °</label><input id="OR" type="range" min="0" max="345" step="15" value="90"><span class="v" id="ORv"></span></div>
       <div class="row"><label>period P</label><input id="P" type="range" min="2" max="8" step="0.1" value="4"><span class="v" id="Pv"></span></div>
       <div class="row"><label>amplitude A</label><input id="A" type="range" min="0.2" max="2.5" step="0.05" value="1.15"><span class="v" id="Av"></span></div>
       <div class="row"><label>band width w</label><input id="Wd" type="range" min="0.4" max="3.5" step="0.05" value="1.5"><span class="v" id="Wdv"></span></div>
@@ -215,41 +227,48 @@ const PATTERNS={
   wave:(P,A)=>{const o=[];for(let i=0;i<=8;i++){const t=i/8;o.push(V2(t*P,A*Math.sin(2*Math.PI*t)));}return o;},
   rib:(P,A)=>[V2(0,0),V2(P,0)],
 };
-function sampleSkeleton(keys,divs,halfW){
+function sampleSkeleton(keys,divs,widths){
   /* bevelled corners: each interior key corner is replaced by two tangent
      points T1/T2 -> the corner becomes one blunt quad column (the "rung"
-     at the apex in a hand-drawn tread sketch), no miter spikes, no folds */
-  const n=keys.length, wp=[keys[0]];
+     at the apex in a hand-drawn tread sketch), no miter spikes, no folds.
+     `widths` = half-thickness per key (constant for procedural primitives,
+     distance-transform derived for traced ones) */
+  const n=keys.length, wp=[keys[0]], ww=[widths?widths[0]:0];
   for(let i=1;i<n-1;i++){
     const A=keys[i-1],B=keys[i],C=keys[i+1];
     const d1=norm2(sub2(B,A)),d2=norm2(sub2(C,B));
     const cr=d1.x*d2.y-d1.y*d2.x;
-    let t=Math.min(.6*halfW,.35*len2(sub2(B,A)),.35*len2(sub2(C,B)));
+    let t=Math.min(.6*(widths?widths[i]:0),.35*len2(sub2(B,A)),.35*len2(sub2(C,B)));
     if(Math.abs(cr)<1e-4)t=0;
     wp.push(sub2(B,mul2(d1,t)),add2(B,mul2(d2,t)));
+    ww.push(widths?widths[i]:0,widths?widths[i]:0);
   }
-  wp.push(keys[n-1]);
-  const cl=[wp[0]];
+  wp.push(keys[n-1]); ww.push(widths?widths[n-1]:0);
+  const cl=[wp[0]], cw=[ww[0]];
   for(let k=0;k<wp.length-1;k++){
     const steps=(k%2===1)?1:divs;          // bevel column = 1 quad column
     for(let i=1;i<=steps;i++){
       const p=lerp2(wp[k],wp[k+1],i/steps);
-      if(len2(sub2(p,cl[cl.length-1]))>1e-9) cl.push(p);
+      if(len2(sub2(p,cl[cl.length-1]))>1e-9){
+        cl.push(p); cw.push(lerp(ww[k],ww[k+1],i/steps));
+      }
     }
   }
-  return cl;
+  return {cl,cw};
 }
 
 /* ---------- stage 2: mitred offset -> rings -> one closed outline loop ---------- */
-function buildPiece(keys,divs,halfW,W){
-  const cl=sampleSkeleton(keys,divs,halfW), n=cl.length, rings=[];
+function buildPiece(keys,divs,halfW,W,widths){
+  const sk=sampleSkeleton(keys,divs,widths?widths.map(w=>w):null);
+  const cl=sk.cl, cw=widths?sk.cw:new Array(cl.length).fill(halfW);
+  const n=cl.length, rings=[];
   for(let i=0;i<n;i++){
     const p=cl[i];
     const d1=i>0?norm2(sub2(p,cl[i-1])):norm2(sub2(cl[1],cl[0]));
     const d2=i<n-1?norm2(sub2(cl[i+1],p)):norm2(sub2(cl[n-1],cl[n-2]));
     const n1=perp2(d1),n2=perp2(d2);
     let m=add2(n1,n2); m=len2(m)<1e-6?n1:norm2(m);
-    const s=halfW/Math.max(.35,dot2(m,n1));        // mitre, clamped
+    const s=cw[i]/Math.max(.35,dot2(m,n1));        // mitred, clamped
     const L=add2(p,mul2(m,s)),R=sub2(p,mul2(m,s));
     const ring=[];
     for(let j=0;j<=W;j++) ring.push(lerp2(L,R,j/W));
@@ -261,8 +280,305 @@ function buildPiece(keys,divs,halfW,W){
   return {cl,rings,loop,n,W};
 }
 
+/* ================================================================
+   TRACED SOURCE — real tyre-tread reference image (ref/tread-reference.jpg)
+     threshold -> connected components (tread blocks) -> pick one block ->
+     trace its edge into ONE closed loop of verts (Moore contour + RDP) ->
+     medial skeleton (Zhang-Suen) + distance transform -> stroke path with
+     local half-widths -> quad fill exactly like the procedural primitives
+   ================================================================ */
+const TRACE={img:null,gray:null,w:0,h:0,comps:[],sel:0,thresh:128,ready:false,cache:{}};
+
+function loadRefImage(){
+  const img=new Image();
+  img.onload=()=>{
+    TRACE.img=img;
+    const sw=360, sh=Math.round(img.height*sw/img.width);
+    const c=document.createElement('canvas'); c.width=sw; c.height=sh;
+    const g=c.getContext('2d'); g.drawImage(img,0,0,sw,sh);
+    const d=g.getImageData(0,0,sw,sh).data;
+    const gray=new Uint8Array(sw*sh);
+    for(let i=0;i<sw*sh;i++) gray[i]=(d[i*4]*299+d[i*4+1]*587+d[i*4+2]*114)/1000;
+    injectMask(gray,sw,sh);
+  };
+  img.src='ref/tread-reference.jpg';
+}
+function injectMask(gray,w,h){
+  TRACE.gray=gray; TRACE.w=w; TRACE.h=h; TRACE.ready=true; TRACE.cache={};
+  computeComps();
+  let best=0;
+  TRACE.comps.forEach((c,i)=>{if(c.area>TRACE.comps[best].area)best=i;});
+  TRACE.sel=best;
+  rebuild(); updateThumb(); updateBlockLabel();
+}
+function computeComps(){
+  const {gray,w,h}=TRACE, th=TRACE.thresh;
+  let bsum=0,bn=0;                               // border-ring average = background
+  for(let x=0;x<w;x++){bsum+=gray[x]+gray[(h-1)*w+x];bn+=2;}
+  for(let y=0;y<h;y++){bsum+=gray[y*w]+gray[y*w+w-1];bn+=2;}
+  const treadIsDark=(bsum/bn)>=128;              // light bg => dark tread
+  const bin=new Uint8Array(w*h);
+  for(let i=0;i<bin.length;i++) bin[i]=treadIsDark?(gray[i]<th?1:0):(gray[i]>th?1:0);
+  const seen=new Uint8Array(w*h), comps=[];
+  for(let s=0;s<bin.length;s++){
+    if(!bin[s]||seen[s])continue;
+    const stack=[s]; seen[s]=1; const px=[];
+    let x0=w,y0=h,x1=0,y1=0, touchesBorder=false;
+    while(stack.length){
+      const p=stack.pop(); px.push(p);
+      const x=p%w, y=(p/w)|0;
+      if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+      if(x===0||y===0||x===w-1||y===h-1)touchesBorder=true;
+      const nb=[p-1,p+1,p-w,p+w];
+      for(const q of nb){
+        if(q<0||q>=bin.length||seen[q]||!bin[q])continue;
+        if(q===p-1&&x===0)continue; if(q===p+1&&x===w-1)continue;
+        seen[q]=1; stack.push(q);
+      }
+    }
+    if(touchesBorder||px.length<120)continue;    // partial blocks / noise
+    comps.push({px:Int32Array.from(px),x0,y0,x1,y1,area:px.length});
+  }
+  for(const c of comps) c.contour=contourTrace(bin,w,h,c);
+  TRACE.comps=comps; TRACE.cache={};
+}
+
+/* Moore boundary trace -> one closed loop of verts, simplified (RDP) */
+function contourTrace(bin,w,h,c){
+  const N8=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const at=(x,y)=>(x<0||y<0||x>=w||y>=h)?0:bin[y*w+x];
+  let sx=c.x0, sy=c.y0;
+  outer: for(let y=c.y0;y<=c.y1;y++)for(let x=c.x0;x<=c.x1;x++){if(at(x,y)){sx=x;sy=y;break outer;}}
+  const loop=[[sx,sy]];
+  let b=[sx,sy-1];                                 // backtrack from outside
+  let cur=[sx,sy];
+  for(let guard=0;guard<40000;guard++){
+    let dir=0;
+    for(let k=0;k<8;k++){                         // find dir of backtrack px
+      if(N8[k][0]===b[0]-cur[0]&&N8[k][1]===b[1]-cur[1]){dir=k;break;}
+    }
+    let found=false;
+    for(let k=0;k<8;k++){
+      const d=(dir+1+k)%8;                        // clockwise from backtrack+1
+      const nx=cur[0]+N8[d][0], ny=cur[1]+N8[d][1];
+      if(at(nx,ny)){
+        b=[cur[0]+N8[(d+7)%8][0], cur[1]+N8[(d+7)%8][1]];  // last empty nb
+        cur=[nx,ny]; found=true; break;
+      }
+    }
+    if(!found)break;
+    loop.push([cur[0],cur[1]]);
+    if(cur[0]===sx&&cur[1]===sy)break;
+  }
+  const pts=loop.map(p=>V2(p[0],p[1]));
+  return rdpClosed(pts,1.1);
+}
+/* RDP for a CLOSED loop: split at the vert farthest from pts[0], simplify
+   the two open chains (a plain RDP on a closed loop degenerates: first==last) */
+function rdpClosed(pts,eps){
+  const n=pts.length;
+  if(n<6)return pts;
+  let fi=1,fd=-1;
+  for(let i=1;i<n-1;i++){
+    const d=(pts[i].x-pts[0].x)**2+(pts[i].y-pts[0].y)**2;
+    if(d>fd){fd=d;fi=i;}
+  }
+  const a=rdp(pts.slice(0,fi+1),eps);
+  const b=rdp(pts.slice(fi),eps);
+  return a.concat(b.slice(1,b.length-1));
+}
+function rdp(pts,eps){
+  if(pts.length<3)return pts;
+  const keep=new Uint8Array(pts.length); keep[0]=keep[pts.length-1]=1;
+  const stack=[[0,pts.length-1]];
+  while(stack.length){
+    const [a,b]=stack.pop();
+    if(b<=a+1)continue;
+    let mx=-1,mi=-1;
+    const A=pts[a],B=pts[b], ab=sub2(B,A), L=len2(ab)||1e-9, n=perp2(ab);
+    for(let i=a+1;i<b;i++){
+      const d=Math.abs(dot2(sub2(pts[i],A),n))/L;
+      if(d>mx){mx=d;mi=i;}
+    }
+    if(mx>eps){keep[mi]=1;stack.push([a,mi],[mi,b]);}
+  }
+  return pts.filter((p,i)=>keep[i]);
+}
+
+/* chamfer 3-4 distance transform (distance to background), in px */
+function chamfer(mask,w,h){
+  const INF=1e7, d=new Int32Array(w*h);
+  for(let i=0;i<d.length;i++)d[i]=mask[i]?INF:0;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=y*w+x; if(!mask[i])continue;
+    if(x>0)d[i]=Math.min(d[i],d[i-1]+3);
+    if(y>0)d[i]=Math.min(d[i],d[i-w]+3,d[i-w+(x>0?-1:0)]+4,d[i-w+(x<w-1?1:0)]+4);
+  }
+  for(let y=h-1;y>=0;y--)for(let x=w-1;x>=0;x--){
+    const i=y*w+x; if(!mask[i])continue;
+    if(x<w-1)d[i]=Math.min(d[i],d[i+1]+3);
+    if(y<h-1)d[i]=Math.min(d[i],d[i+w]+3,d[i+w+(x>0?-1:0)]+4,d[i+w+(x<w-1?1:0)]+4);
+  }
+  for(let i=0;i<d.length;i++)d[i]=d[i]/3;
+  return d;
+}
+/* Zhang-Suen thinning */
+function thin(mask,w,h){
+  const p=Uint8Array.from(mask);
+  const idx=(x,y)=>y*w+x;
+  for(let it=0;it<80;it++){
+    let removed=0;
+    for(let pass=0;pass<2;pass++){
+      const del=[];
+      for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+        const i=idx(x,y); if(!p[i])continue;
+        const n=[p[idx(x-1,y)],p[idx(x-1,y-1)],p[idx(x,y-1)],p[idx(x+1,y-1)],
+                 p[idx(x+1,y)],p[idx(x+1,y+1)],p[idx(x,y+1)],p[idx(x-1,y+1)]];
+        let B=0,A=0;
+        for(let k=0;k<8;k++){B+=n[k]; if(n[k]===0&&n[(k+1)%8]===1)A++;}
+        if(B<2||B>6||A!==1)continue;
+        const p2=n[0],p4=n[2],p6=n[4],p8=n[6];
+        if(pass===0?(p2*p4*p6===0&&p4*p6*p8===0):(p2*p4*p8===0&&p2*p6*p8===0)){
+          del.push(i);
+        }
+      }
+      for(const i of del){p[i]=0;removed++;}
+    }
+    if(!removed)break;
+  }
+  return p;
+}
+/* skeleton -> ordered stroke path (prune spurs, walk endpoints) */
+function skeletonPath(skel,w,h,dist){
+  const at=(x,y)=>(x<0||y<0||x>=w||y>=h)?0:skel[y*w+x];
+  const nb8=(x,y)=>{const o=[];for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    if(!dx&&!dy)continue; if(at(x+dx,y+dy))o.push([x+dx,y+dy]);}return o;};
+  const remove=(x,y)=>{skel[y*w+x]=0;};
+  for(let prune=0;prune<4;prune++){                 // spur pruning
+    const ends=[];
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++)
+      if(at(x,y)&&nb8(x,y).length===1)ends.push([x,y]);
+    let cut=false;
+    for(const [ex,ey] of ends){
+      if(!at(ex,ey))continue;
+      const path=[[ex,ey]]; let cur=[ex,ey],prev=null;
+      while(path.length<10){
+        const opts=nb8(cur[0],cur[1]).filter(q=>!prev||q[0]!==prev[0]||q[1]!==prev[1]);
+        if(opts.length!==1)break;
+        prev=cur; cur=opts[0]; path.push(cur);
+        const deg=nb8(cur[0],cur[1]).length;
+        if(deg!==2)break;
+      }
+      const deg=nb8(cur[0],cur[1]).length;
+      if(path.length<9&&deg>=3){for(const q of path)remove(q[0],q[1]);cut=true;}
+    }
+    if(!cut)break;
+  }
+  const ends=[];
+  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++)
+    if(at(x,y)&&nb8(x,y).length===1)ends.push([x,y]);
+  let start=null;
+  if(ends.length===0){
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++)if(at(x,y)){start=[x,y];break;}
+  }else if(ends.length===1)start=ends[0];
+  else{
+    let bd=-1;
+    for(let i=0;i<ends.length;i++)for(let j=i+1;j<ends.length;j++){
+      const d=(ends[i][0]-ends[j][0])**2+(ends[i][1]-ends[j][1])**2;
+      if(d>bd){bd=d;start=ends[i];}
+    }
+  }
+  if(!start)return[];
+  const path=[start]; const visited=new Set([start[0]+','+start[1]]);
+  const runLen=(q0,dv0)=>{                      // how far a straight-ish run goes
+    let q=q0,dv=dv0,cnt=0;
+    const vis=new Set([q[0]+','+q[1]]);
+    for(let i=0;i<14;i++){
+      const op=nb8(q[0],q[1]).filter(o=>!visited.has(o[0]+','+o[1])&&!vis.has(o[0]+','+o[1]));
+      if(!op.length)break;
+      let bo=op[0],bs=-2;
+      for(const o of op){
+        const dd=[o[0]-q[0],o[1]-q[1]];
+        const s=(dd[0]*dv[0]+dd[1]*dv[1])/(Math.hypot(dd[0],dd[1])||1);
+        if(s>bs){bs=s;bo=o;}
+      }
+      dv=[bo[0]-q[0],bo[1]-q[1]]; q=bo;
+      vis.add(q[0]+','+q[1]); cnt++;
+    }
+    return cnt;
+  };
+  let cur=start, dirv=[1,0];
+  for(let guard=0;guard<20000;guard++){
+    const opts=nb8(cur[0],cur[1]).filter(q=>!visited.has(q[0]+','+q[1]));
+    if(!opts.length)break;
+    let best=opts[0],bs=-1e9;
+    for(const o of opts){
+      const d=[o[0]-cur[0],o[1]-cur[1]];
+      const dot=(d[0]*dirv[0]+d[1]*dirv[1])/(Math.hypot(d[0],d[1])||1);
+      const score=runLen(o,d)+dot*.5;           // prefer the long branch, not spurs
+      if(score>bs){bs=score;best=o;}
+    }
+    dirv=[best[0]-cur[0],best[1]-cur[1]];
+    cur=best; visited.add(cur[0]+','+cur[1]); path.push(cur);
+  }
+  const sm=path.map(q=>[q[0],q[1]]);
+  for(let it=0;it<3;it++)
+    for(let i=1;i<sm.length-1;i++){
+      sm[i][0]=(sm[i-1][0]+2*sm[i][0]+sm[i+1][0])/4;
+      sm[i][1]=(sm[i-1][1]+2*sm[i][1]+sm[i+1][1])/4;
+    }
+  return {sm,distAt:q=>dist[Math.round(q[1])*w+Math.round(q[0])]||2};
+}
+/* corner keys along the smoothed path (turning angle peaks) */
+function pathKeys(sm){
+  const keys=[0], W=6;
+  const turn=i=>{
+    const a=Math.max(0,i-W), b=Math.min(sm.length-1,i+W);
+    const v1=norm2(sub2(V2(...sm[i]),V2(...sm[a]))), v2=norm2(sub2(V2(...sm[b]),V2(...sm[i])));
+    return Math.acos(Math.max(-1,Math.min(1,dot2(v1,v2))));
+  };
+  for(let i=W;i<sm.length-W;i++){
+    const t=turn(i);
+    if(t>0.55&&t>=turn(i-1)&&t>=turn(i+1)&&i-keys[keys.length-1]>=8)keys.push(i);
+  }
+  keys.push(sm.length-1);
+  return keys;
+}
+/* cached traced piece in PIXEL space, rotated by S.orient */
+function getTraced(){
+  const key=TRACE.sel+'|'+TRACE.thresh+'|'+S.orient;
+  if(TRACE.cache[key])return TRACE.cache[key];
+  const c=TRACE.comps[TRACE.sel];
+  const bw=c.x1-c.x0+3, bh=c.y1-c.y0+3;
+  const mask=new Uint8Array(bw*bh);
+  for(const p of c.px) mask[(p%TRACE.w-c.x0+1)+((p/TRACE.w|0)-c.y0+1)*bw]=1;
+  const dist=chamfer(mask,bw,bh);
+  const skel=thin(mask.slice(),bw,bh);
+  const sp=skeletonPath(skel,bw,bh,dist);
+  let keysI,path=sp.sm||[], widths=[];
+  if(path.length>6){
+    keysI=pathKeys(path);
+    widths=keysI.map(i=>Math.max(1.4,sp.distAt(path[i])));
+  }else{                                            // degenerate: fall back to bbox stroke
+    path=[[1,bh/2],[bw-1,bh/2]]; keysI=[0,1]; widths=[bh/4,bh/4];
+  }
+  const ang=S.orient*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang);
+  let cx=0,cy=0; for(const q of c.px){cx+=q%TRACE.w;cy+=q/TRACE.w|0;}
+  cx/=c.px.length; cy/=c.px.length;
+  const rot=q=>{const dx=q[0]-cx,dy=q[1]-cy;return V2(dx*ca-dy*sa+cx, dx*sa+dy*ca+cy);};
+  const keys=keysI.map(i=>rot(path[i]));
+  const outline=c.contour.map(q=>rot([q.x,q.y]));
+  const pathW=path.map(q=>rot(q));
+  let x0=1e9,x1=-1e9;
+  for(const p of keys){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);}
+  for(const p of outline){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);}
+  const tc={keys,widths,outline,path:pathW,cx,cy,bboxW:Math.max(1,x1-x0)};
+  TRACE.cache[key]=tc;
+  return tc;
+}
+
 /* ---------- state ---------- */
-const S={stage:1,pattern:'chevron',P:4,A:1.15,Wd:1.5,W:3,D:4,G:.55,R:10,T:.9,
+const S={stage:1,pattern:'traced',orient:90,P:4,A:1.15,Wd:1.5,W:3,D:4,G:.55,R:10,T:.9,
          wire:true,topo:true,shade:true};
 let mesh=null;
 let bendT=0,bendTarget=0;
@@ -279,8 +595,20 @@ function rebuild(){
   const pitch=C/N;                       // refit pitch -> array closes on seam
   const Pg=Math.max(.5,pitch-S.G);       // refit period of the primitive
   const gapEff=pitch-Pg;                 // effective gap actually drawn
-  const keys=PATTERNS[S.pattern](Pg,S.A);
-  const piece=buildPiece(keys,S.D,S.Wd/2,S.W);
+  const traced=S.pattern==='traced'&&TRACE.ready&&TRACE.comps.length>0;
+  let piece,rawOutline=null,skelPath=null;
+  if(traced){
+    const tc=getTraced();
+    const scale=Pg/tc.bboxW;
+    const w2=p=>V2((p.x-tc.cx)*scale,-(p.y-tc.cy)*scale);
+    piece=buildPiece(tc.keys.map(w2),S.D,0,S.W,tc.widths.map(x=>x*scale));
+    rawOutline=tc.outline.map(w2);
+    skelPath=tc.path.map(w2);
+  }else{
+    const keys=PATTERNS[S.pattern==='traced'?'chevron':S.pattern](Pg,S.A);
+    piece=buildPiece(keys,S.D,S.Wd/2,S.W);
+    skelPath=piece.cl.slice();
+  }
   const W=S.W,n=piece.n;
   const copies=S.stage>=3?N:1;
   const totalLen=copies*pitch;
@@ -366,17 +694,16 @@ function rebuild(){
     }
   }
 
-  /* --- stage 1/2 extras: outline n-gon + traced loop idx --- */
-  let outlineFace=null,loopIdx=null;
+  /* --- stage 1/2 extras: traced/derived closed loop idx --- */
+  let loopIdx=null;
   if(S.stage<=2){
     loopIdx=[];
     for(let i=0;i<n;i++)loopIdx.push(grid[0][i][0]);
     for(let i=n-1;i>=0;i--)loopIdx.push(grid[0][i][W]);
-    if(S.stage===1) outlineFace={q:loopIdx,kind:'outline'};
+    if(!rawOutline)rawOutline=loopIdx.map(i=>V2(verts[i].x,verts[i].y));
   }
-  if(outlineFace) faces.push(outlineFace);
 
-  mesh={verts,faces,ticks,skeleton:piece.cl,loopIdx,seamFaces,
+  mesh={verts,faces,ticks,skelPath,rawOutline,loopIdx,seamFaces,
     info:{C,N,pitch,rawPitch,Pg,gapEff,copies,totalLen,
           loopVerts:2*n,pieceQuads:(n-1)*W,verts:verts.length,quads:faces.length}};
   document.getElementById('report').textContent=
@@ -427,7 +754,7 @@ function updateStats(){
 
 /* ---------- stage UI ---------- */
 const STAGES=[
- {t:'1 · pattern as primitive',d:'One tread element as a skeleton stroke + width (the primitive). Magenta = skeleton, white dots = the outline it will be traced into.'},
+ {t:'1 · pattern as primitive',d:'Tread block traced from the reference tyre image: threshold → connected components → one block. Its edge is ONE closed loop of verts (white dots); magenta = medial skeleton with local widths = the primitive.'},
  {t:'2 · outline loop → quad fill',d:'Edge traced into ONE closed loop of verts, then filled with quads that FLOW along the shape (no square grid). green = interior flow verts, orange/yellow = patch end loops = bridge ports.'},
  {t:'3 · array on a straight line',d:'Piece repeated at pitch P+g. The || marks are open gaps between identical end loops — bridgeable because both loops share vert counts.'},
  {t:'4 · bridge the array',d:'Each gap closed with ONE column of quads (cleanest correspondence auto-picked, lowest polycount). Green quads = bridges.'},
@@ -457,6 +784,50 @@ function hud(){
   const s=STAGES[S.stage-1];
   document.querySelector('#hud .t').textContent=s.t;
   document.querySelector('#hud .d').textContent=s.d;
+}
+
+/* ---------- reference thumbnail: image + traced contours + skeleton ---------- */
+function updateThumb(){
+  const c=document.getElementById('thumb'); if(!c)return;
+  const g=c.getContext('2d');
+  g.clearRect(0,0,c.width,c.height);
+  g.fillStyle='#0e1114'; g.fillRect(0,0,c.width,c.height);
+  if(!TRACE.ready||!TRACE.img){
+    g.fillStyle='#8b95a0'; g.font='11px sans-serif';
+    g.fillText('loading reference image…',10,20); return;
+  }
+  const s=Math.min(c.width/TRACE.w,c.height/TRACE.h);
+  const ox=(c.width-TRACE.w*s)/2, oy=(c.height-TRACE.h*s)/2;
+  g.drawImage(TRACE.img,ox,oy,TRACE.w*s,TRACE.h*s);
+  TRACE.comps.forEach((cp,i)=>{
+    g.beginPath();
+    cp.contour.forEach((p,k)=>{
+      const x=ox+p.x*s, y=oy+p.y*s;
+      k?g.lineTo(x,y):g.moveTo(x,y);});
+    g.closePath();
+    if(i===TRACE.sel){
+      g.fillStyle='rgba(79,209,197,.20)'; g.fill();
+      g.strokeStyle='#4fd1c5'; g.lineWidth=2; g.stroke();
+    }else{
+      g.strokeStyle='rgba(255,255,255,.30)'; g.lineWidth=1; g.stroke();
+    }
+  });
+  if(TRACE.comps.length){
+    const tc=getTraced();
+    g.setLineDash([4,3]); g.strokeStyle='#e05fd5'; g.lineWidth=1.6;
+    g.beginPath();
+    tc.path.forEach((p,k)=>{
+      const x=ox+p.x*s, y=oy+p.y*s;
+      k?g.lineTo(x,y):g.moveTo(x,y);});
+    g.stroke(); g.setLineDash([]);
+  }
+}
+function updateBlockLabel(){
+  const el=document.getElementById('BL');
+  if(!el)return;
+  el.textContent=TRACE.ready&&TRACE.comps.length
+    ? ('block '+(TRACE.sel+1)+' / '+TRACE.comps.length)
+    : 'no blocks found';
 }
 
 /* ---------- renderer: canvas2d painter's algorithm ---------- */
@@ -512,14 +883,12 @@ function render(){
   const seamOk=bt>.55;
   const vis=[];
   for(const fa of mesh.faces){
-    if(fa.kind==='outline'&&S.stage!==1)continue;
     if(fa.kind==='fill'&&S.stage<2)continue;
     if((fa.kind==='bottom'||fa.kind==='wall')&&(S.stage<5||bt<.02))continue;
     if(fa.kind==='bridge'&&S.stage<4)continue;
     if(fa.seam&&!seamOk)continue;
     if(fa.q.some(i=>!proj[i]))continue;
     let dz=0;for(const i of fa.q)dz+=dep[i];dz/=fa.q.length;
-    if(fa.kind==='outline')dz+=50;       // draw the n-gon first (behind quads)
     vis.push({fa,dz});
   }
   vis.sort((a,b)=>b.dz-a.dz);
@@ -535,13 +904,12 @@ function render(){
     let nrm=norm3(cross3(sub3(b,a),sub3(c,a)));
     if(dot3(nrm,sub3(a,eye))>0)nrm=mul3(nrm,-1);
     let lum=S.shade?(.42+.58*Math.max(0,dot3(nrm,L3))):.85;
-    if(fa.kind==='outline')lum=.95;
     const col=BASECOL[fa.kind]||BASECOL.fill;
     ctx.fillStyle='rgb('+col.map(x=>Math.round(x*lum)).join(',')+')';
     ctx.fill();
-    if(S.wire||fa.kind==='outline'){
-      ctx.strokeStyle=fa.kind==='outline'?'rgba(20,24,28,.95)':'rgba(16,20,24,.8)';
-      ctx.lineWidth=fa.kind==='outline'?2:1;
+    if(S.wire){
+      ctx.strokeStyle='rgba(16,20,24,.8)';
+      ctx.lineWidth=1;
       ctx.stroke();
     }
     /* topology dots ride on their own face → correct occlusion for free */
@@ -564,18 +932,32 @@ function render(){
     ctx.closePath();
     ctx.strokeStyle='rgba(15,18,22,.95)';ctx.lineWidth=2.2;ctx.stroke();
   }
-  /* stage 1: skeleton of the primitive + traced loop verts */
-  if(S.stage===1){
-    ctx.setLineDash([6,4]);ctx.strokeStyle='#e05fd5';ctx.lineWidth=2;
+  /* stage 1: the traced/derived ONE closed outline loop (filled shape)
+     + its medial skeleton (the primitive the quads will flow along) */
+  if(S.stage===1&&mesh.rawOutline){
     ctx.beginPath();
-    mesh.skeleton.forEach((p,i)=>{
-      const s=wp([p.x,p.y,.02]); if(!s)return;
+    mesh.rawOutline.forEach((p,i)=>{
+      const s=wp([p.x,p.y,.01]); if(!s)return;
       i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});
-    ctx.stroke();ctx.setLineDash([]);
-    if(S.topo)for(const i of mesh.loopIdx){
-      if(!proj[i])continue;
-      ctx.beginPath();ctx.arc(proj[i][0],proj[i][1],1.8,0,7);
-      ctx.fillStyle='#f2f5f7';ctx.fill();
+    ctx.closePath();
+    ctx.fillStyle='rgba(201,206,210,.96)';ctx.fill();
+    ctx.strokeStyle='rgba(15,18,22,.95)';ctx.lineWidth=2;ctx.stroke();
+    if(S.topo){
+      const step=Math.max(1,Math.floor(mesh.rawOutline.length/90));
+      for(let i=0;i<mesh.rawOutline.length;i+=step){
+        const s=wp([mesh.rawOutline[i].x,mesh.rawOutline[i].y,.02]);
+        if(!s)continue;
+        ctx.beginPath();ctx.arc(s[0],s[1],1.8,0,7);
+        ctx.fillStyle='#f2f5f7';ctx.fill();
+      }
+    }
+    if(mesh.skelPath&&mesh.skelPath.length>1){
+      ctx.setLineDash([6,4]);ctx.strokeStyle='#e05fd5';ctx.lineWidth=2;
+      ctx.beginPath();
+      mesh.skelPath.forEach((p,i)=>{
+        const s=wp([p.x,p.y,.03]); if(!s)return;
+        i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});
+      ctx.stroke();ctx.setLineDash([]);
     }
   }
   /* stage 3: || gap markers */
@@ -621,7 +1003,35 @@ window.addEventListener('keydown',e=>{
   if(e.key==='ArrowLeft')setStage(S.stage-1);
 });
 
-resize(); buildStageUI(); setStage(1); render();
+document.getElementById('TH').addEventListener('input',e=>{
+  TRACE.thresh=+e.target.value;
+  document.getElementById('THv').textContent=TRACE.thresh;
+  if(TRACE.ready){
+    computeComps();
+    if(TRACE.sel>=TRACE.comps.length)TRACE.sel=0;
+    rebuild(); updateThumb(); updateBlockLabel();
+  }
+});
+document.getElementById('OR').addEventListener('input',e=>{
+  S.orient=+e.target.value;
+  document.getElementById('ORv').textContent=S.orient;
+  rebuild(); updateThumb();
+});
+document.getElementById('bPrev').onclick=()=>{
+  if(TRACE.comps.length){
+    TRACE.sel=(TRACE.sel-1+TRACE.comps.length)%TRACE.comps.length;
+    rebuild(); updateThumb(); updateBlockLabel();
+  }};
+document.getElementById('bNext').onclick=()=>{
+  if(TRACE.comps.length){
+    TRACE.sel=(TRACE.sel+1)%TRACE.comps.length;
+    rebuild(); updateThumb(); updateBlockLabel();
+  }};
+
+document.getElementById('THv').textContent=TRACE.thresh;
+document.getElementById('ORv').textContent=S.orient;
+resize(); buildStageUI(); setStage(1); render(); updateThumb();
+loadRefImage();
 </script>
 </body>
 </html>
