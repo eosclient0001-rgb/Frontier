@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Tread Topology Lab — single tread, 5-stage pipeline</title>
+<style>
+  :root{
+    --bg:#15181d; --panel:#1c2026; --panel2:#232830; --line:#313842;
+    --txt:#dfe5ea; --dim:#8b95a0; --acc:#4fd1c5;
+    --green:#17c93f; --orange:#ff8c1a; --yellow:#ffd400;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:13px/1.45 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    display:flex; align-items:center; gap:14px;
+    padding:8px 14px; background:var(--panel); border-bottom:1px solid var(--line);
+    flex:0 0 auto;
+  }
+  header h1{font-size:14px; font-weight:600; letter-spacing:.3px;}
+  header .sub{color:var(--dim); font-size:12px;}
+  header .spacer{flex:1;}
+  header button{
+    background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+    padding:5px 12px; border-radius:6px; cursor:pointer; font-size:12px;
+  }
+  header button:hover{border-color:var(--acc); color:var(--acc);}
+  #main{flex:1; display:flex; min-height:0;}
+  #side{
+    width:318px; flex:0 0 318px; background:var(--panel);
+    border-right:1px solid var(--line); overflow-y:auto; padding:12px;
+  }
+  #viewwrap{flex:1; position:relative; min-width:0;}
+  canvas{display:block; width:100%; height:100%;}
+  #hud{
+    position:absolute; left:12px; top:10px; pointer-events:none;
+    background:rgba(21,24,29,.78); border:1px solid var(--line); border-radius:8px;
+    padding:8px 12px; max-width:460px;
+  }
+  #hud .t{font-size:13px; font-weight:600; color:var(--acc);}
+  #hud .d{font-size:11.5px; color:var(--dim); margin-top:2px;}
+  #hint{
+    position:absolute; right:12px; bottom:10px; pointer-events:none;
+    color:var(--dim); font-size:11px; background:rgba(21,24,29,.6);
+    padding:4px 8px; border-radius:6px;
+  }
+  .sec{margin-bottom:14px;}
+  .sec h2{
+    font-size:11px; text-transform:uppercase; letter-spacing:.8px;
+    color:var(--dim); margin-bottom:6px; font-weight:600;
+  }
+  .stage{
+    display:flex; gap:8px; padding:7px 8px; border-radius:7px; cursor:pointer;
+    border:1px solid transparent; margin-bottom:3px; align-items:flex-start;
+  }
+  .stage:hover{background:var(--panel2);}
+  .stage.on{background:var(--panel2); border-color:var(--acc);}
+  .stage .n{
+    flex:0 0 20px; height:20px; border-radius:50%; background:var(--panel2);
+    border:1px solid var(--line); color:var(--dim);
+    display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;
+  }
+  .stage.on .n{background:var(--acc); color:#0c1014; border-color:var(--acc);}
+  .stage .b{font-size:12px;}
+  .stage .b small{display:block; color:var(--dim); font-size:11px; margin-top:1px;}
+  .row{display:flex; align-items:center; gap:8px; margin-bottom:7px;}
+  .row label{flex:0 0 108px; color:var(--dim); font-size:12px;}
+  .row input[type=range]{flex:1; accent-color:var(--acc);}
+  .row .v{flex:0 0 46px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px;}
+  .row select{flex:1; background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:3px 5px;}
+  .checks{display:flex; flex-wrap:wrap; gap:6px 12px;}
+  .checks label{display:flex; gap:5px; align-items:center; color:var(--txt); font-size:12px; cursor:pointer;}
+  .checks input{accent-color:var(--acc);}
+  #stats{font-size:11.5px; font-variant-numeric:tabular-nums;}
+  #stats .kv{display:flex; justify-content:space-between; padding:1.5px 0;}
+  #stats .kv span:first-child{color:var(--dim);}
+  #report{font-size:11px; background:var(--panel2); border:1px solid var(--line); border-radius:7px; padding:7px 9px; white-space:pre-wrap; font-family:ui-monospace, Consolas, monospace;}
+  .legend{display:grid; grid-template-columns:16px 1fr; gap:4px 8px; align-items:center; font-size:11.5px;}
+  .sw{width:14px; height:14px; border-radius:4px; border:1px solid rgba(255,255,255,.18); margin:0 1px;}
+  .dot{width:10px; height:10px; border-radius:50%; margin:2px 3px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tread Topology Lab</h1>
+  <span class="sub">one tread · primitive → outline loop → quad fill → array → bridge → bend + extrude</span>
+  <div class="spacer"></div>
+  <button id="prev">◀ prev</button>
+  <button id="next">next ▶</button>
+  <button id="replay">↻ replay bend</button>
+</header>
+
+<div id="main">
+  <div id="side">
+    <div class="sec">
+      <h2>Pipeline stages</h2>
+      <div id="stages"></div>
+    </div>
+
+    <div class="sec">
+      <h2>Stage 1 — pattern primitive</h2>
+      <div class="row"><label>primitive</label>
+        <select id="pattern">
+          <option value="chevron" selected>chevron / zig-zag lug</option>
+          <option value="steplug">step (S) lug</option>
+          <option value="wave">wave lug</option>
+          <option value="rib">straight rib</option>
+        </select>
+      </div>
+      <div class="row"><label>period P</label><input id="P" type="range" min="2" max="8" step="0.1" value="4"><span class="v" id="Pv"></span></div>
+      <div class="row"><label>amplitude A</label><input id="A" type="range" min="0.2" max="2.5" step="0.05" value="1.15"><span class="v" id="Av"></span></div>
+      <div class="row"><label>band width w</label><input id="Wd" type="range" min="0.4" max="3.5" step="0.05" value="1.5"><span class="v" id="Wdv"></span></div>
+    </div>
+
+    <div class="sec">
+      <h2>Stage 2 — quad fill density</h2>
+      <div class="row"><label>quads across (W)</label><input id="W" type="range" min="1" max="6" step="1" value="3"><span class="v" id="Wv"></span></div>
+      <div class="row"><label>segs per edge</label><input id="D" type="range" min="2" max="8" step="1" value="4"><span class="v" id="Dv"></span></div>
+    </div>
+
+    <div class="sec">
+      <h2>Stage 3/4 — array &amp; bridge</h2>
+      <div class="row"><label>gap g ( || )</label><input id="G" type="range" min="0" max="2" step="0.05" value="0.55"><span class="v" id="Gv"></span></div>
+    </div>
+
+    <div class="sec">
+      <h2>Stage 5 — tyre fit + extrude</h2>
+      <div class="row"><label>tyre radius R</label><input id="R" type="range" min="5" max="20" step="0.5" value="10"><span class="v" id="Rv"></span></div>
+      <div class="row"><label>tread depth</label><input id="T" type="range" min="0.1" max="2.5" step="0.05" value="0.9"><span class="v" id="Tv"></span></div>
+    </div>
+
+    <div class="sec">
+      <h2>Display</h2>
+      <div class="checks">
+        <label><input id="cWire" type="checkbox" checked> quad wireframe</label>
+        <label><input id="cTopo" type="checkbox" checked> topology verts</label>
+        <label><input id="cShade" type="checkbox" checked> shading</label>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>Legend</h2>
+      <div class="legend">
+        <div class="dot" style="background:var(--orange)"></div><div>end loop A of a patch (start ring) — bridge port</div>
+        <div class="dot" style="background:var(--yellow)"></div><div>end loop B of a patch (end ring) — bridge port</div>
+        <div class="dot" style="background:var(--green)"></div><div>interior verts: topology flow follows the shape</div>
+        <div class="dot" style="background:#5a646e"></div><div>side boundary verts of the band</div>
+        <div class="sw" style="background:#c9ced2"></div><div>fill quads (flow along the stroke, not a square grid)</div>
+        <div class="sw" style="background:#a8dfae"></div><div>bridge quads: gap || closed with 1 column = min poly</div>
+        <div class="sw" style="background:#8a9298"></div><div>extruded flank wall / bottom cap</div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>Fit computation</h2>
+      <div id="stats"></div>
+    </div>
+
+    <div class="sec">
+      <h2>Bridge report</h2>
+      <div id="report"></div>
+    </div>
+  </div>
+
+  <div id="viewwrap">
+    <canvas id="cv"></canvas>
+    <div id="hud"><div class="t"></div><div class="d"></div></div>
+    <div id="hint">drag = orbit · wheel = zoom · ←/→ or buttons = stages · 1–4 top view, 5 wraps the tyre</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ================================================================
+   TREAD TOPOLOGY LAB — ONE tread, built exactly the requested way:
+     1) pattern as a PRIMITIVE  (skeleton stroke + width)
+     2) primitive -> trace ONE closed outline loop of verts
+        -> FILL IT WITH QUADS that flow along the shape
+           (green interior verts = flow, orange/yellow = end loops)
+     3) ARRAY the piece on a straight line (pitch = P + gap)
+     4) BRIDGE the array: neighbour end loops have identical vert
+        counts -> cleanest correspondence auto-picked (identity vs
+        mirrored) -> closed with ONE quad column (lowest polycount)
+     5) BEND the array onto the tyre circumference
+        (N = round(C/raw pitch), pitch refit => seam closes exactly,
+        seam bridged too) then EXTRUDE tread depth + flank walls + cap
+   ================================================================ */
+
+/* ---------- vec helpers ---------- */
+const V2=(x,y)=>({x,y});
+const add2=(a,b)=>V2(a.x+b.x,a.y+b.y), sub2=(a,b)=>V2(a.x-b.x,a.y-b.y);
+const mul2=(a,s)=>V2(a.x*s,a.y*s), dot2=(a,b)=>a.x*b.x+a.y*b.y;
+const len2=a=>Math.hypot(a.x,a.y);
+const norm2=a=>{const l=len2(a)||1;return V2(a.x/l,a.y/l);};
+const perp2=a=>V2(-a.y,a.x);
+const lerp2=(a,b,t)=>V2(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t);
+const lerp=(a,b,t)=>a+(b-a)*t;
+const ease=t=>t*t*(3-2*t);
+const sub3=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const cross3=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const dot3=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const mul3=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
+const len3=a=>Math.hypot(a[0],a[1],a[2]);
+const norm3=a=>{const l=len3(a)||1;return [a[0]/l,a[1]/l,a[2]/l];};
+
+/* ---------- stage 1: primitives (skeleton key points over one period P) ---------- */
+const PATTERNS={
+  chevron:(P,A)=>[V2(0,0),V2(.25*P,A),V2(.75*P,-A),V2(P,0)],
+  steplug:(P,A)=>[V2(0,-A/2),V2(.3*P,-A/2),V2(.3*P,A/2),V2(.7*P,A/2),V2(.7*P,-A/2),V2(P,-A/2)],
+  wave:(P,A)=>{const o=[];for(let i=0;i<=8;i++){const t=i/8;o.push(V2(t*P,A*Math.sin(2*Math.PI*t)));}return o;},
+  rib:(P,A)=>[V2(0,0),V2(P,0)],
+};
+function sampleSkeleton(keys,divs,halfW){
+  /* bevelled corners: each interior key corner is replaced by two tangent
+     points T1/T2 -> the corner becomes one blunt quad column (the "rung"
+     at the apex in a hand-drawn tread sketch), no miter spikes, no folds */
+  const n=keys.length, wp=[keys[0]];
+  for(let i=1;i<n-1;i++){
+    const A=keys[i-1],B=keys[i],C=keys[i+1];
+    const d1=norm2(sub2(B,A)),d2=norm2(sub2(C,B));
+    const cr=d1.x*d2.y-d1.y*d2.x;
+    let t=Math.min(.6*halfW,.35*len2(sub2(B,A)),.35*len2(sub2(C,B)));
+    if(Math.abs(cr)<1e-4)t=0;
+    wp.push(sub2(B,mul2(d1,t)),add2(B,mul2(d2,t)));
+  }
+  wp.push(keys[n-1]);
+  const cl=[wp[0]];
+  for(let k=0;k<wp.length-1;k++){
+    const steps=(k%2===1)?1:divs;          // bevel column = 1 quad column
+    for(let i=1;i<=steps;i++){
+      const p=lerp2(wp[k],wp[k+1],i/steps);
+      if(len2(sub2(p,cl[cl.length-1]))>1e-9) cl.push(p);
+    }
+  }
+  return cl;
+}
+
+/* ---------- stage 2: mitred offset -> rings -> one closed outline loop ---------- */
+function buildPiece(keys,divs,halfW,W){
+  const cl=sampleSkeleton(keys,divs,halfW), n=cl.length, rings=[];
+  for(let i=0;i<n;i++){
+    const p=cl[i];
+    const d1=i>0?norm2(sub2(p,cl[i-1])):norm2(sub2(cl[1],cl[0]));
+    const d2=i<n-1?norm2(sub2(cl[i+1],p)):norm2(sub2(cl[n-1],cl[n-2]));
+    const n1=perp2(d1),n2=perp2(d2);
+    let m=add2(n1,n2); m=len2(m)<1e-6?n1:norm2(m);
+    const s=halfW/Math.max(.35,dot2(m,n1));        // mitre, clamped
+    const L=add2(p,mul2(m,s)),R=sub2(p,mul2(m,s));
+    const ring=[];
+    for(let j=0;j<=W;j++) ring.push(lerp2(L,R,j/W));
+    rings.push(ring);
+  }
+  const loop=[];                                    // ONE closed loop of verts
+  for(let i=0;i<n;i++) loop.push(rings[i][0]);
+  for(let i=n-1;i>=0;i--) loop.push(rings[i][W]);
+  return {cl,rings,loop,n,W};
+}
+
+/* ---------- state ---------- */
+const S={stage:1,pattern:'chevron',P:4,A:1.15,Wd:1.5,W:3,D:4,G:.55,R:10,T:.9,
+         wire:true,topo:true,shade:true};
+let mesh=null;
+let bendT=0,bendTarget=0;
+let cam={yaw:0,pitch:0,dist:60},camT={yaw:0,pitch:0,dist:60};
+
+/* ---------- rebuild everything for current stage/params ---------- */
+function rebuild(){
+  /* --- stage 5 fit maths FIRST: circumference decides how many pieces
+         fit, and the period is refit (P -> P') so the array length equals
+         the circumference exactly while the designed gap g is kept --- */
+  const C=2*Math.PI*S.R;
+  const rawPitch=S.P+S.G;
+  const N=Math.max(3,Math.round(C/rawPitch));
+  const pitch=C/N;                       // refit pitch -> array closes on seam
+  const Pg=Math.max(.5,pitch-S.G);       // refit period of the primitive
+  const gapEff=pitch-Pg;                 // effective gap actually drawn
+  const keys=PATTERNS[S.pattern](Pg,S.A);
+  const piece=buildPiece(keys,S.D,S.Wd/2,S.W);
+  const W=S.W,n=piece.n;
+  const copies=S.stage>=3?N:1;
+  const totalLen=copies*pitch;
+  const minX=-totalLen/2;
+
+  const verts=[],faces=[];
+  const grid=[];
+  for(let k=0;k<copies;k++){
+    const ox=minX+k*pitch,g=[];
+    for(let i=0;i<n;i++){
+      const row=[];
+      for(let j=0;j<=W;j++){
+        const p2=piece.rings[i][j];
+        let cls='interior';
+        if(i===0)cls='endA'; else if(i===n-1)cls='endB';
+        else if(j===0||j===W)cls='bound';
+        row.push(verts.length);
+        verts.push({x:p2.x+ox,y:p2.y,z:0,cls,copy:k});
+      }
+      g.push(row);
+    }
+    grid.push(g);
+    for(let i=0;i<n-1;i++)for(let j=0;j<W;j++)
+      faces.push({q:[g[i][j],g[i+1][j],g[i+1][j+1],g[i][j+1]],kind:'fill'});
+  }
+
+  /* --- bent positions (pure function of flat x,y + radial offset) --- */
+  const uOff=-minX;
+  const bent=(x,y,dOff)=>{const th=(x+uOff)/S.R,r=S.R-dOff;
+    return [Math.sin(th)*r,y,Math.cos(th)*r];};
+
+  /* --- stage 4: bridge neighbour loops (identical vert counts) --- */
+  const report=[],seamFaces=[];
+  if(S.stage>=4){
+    for(let k=0;k<copies-1;k++){
+      const b=bridgeLoops(grid[k][n-1],grid[k+1][0],verts,false,String(k+1)+'→'+String(k+2));
+      faces.push(...b.faces); report.push(b.line);
+    }
+    if(S.stage>=5){
+      const b=bridgeLoops(grid[copies-1][n-1],grid[0][0],verts,true,'seam N→1');
+      faces.push(...b.faces); seamFaces.push(...b.faces); report.push(b.line);
+    }
+    report.unshift('loop A verts = loop B verts = '+(W+1)+'  →  bridgeable');
+    report.unshift('correspondences tested per gap: identity, mirrored');
+    report.push('bridge cost = W = '+W+' quads/gap (single column → lowest polycount)');
+  }
+
+  /* --- stage 3 gap markers || --- */
+  const ticks=[];
+  if(S.stage===3)
+    for(let k=0;k<copies-1;k++) ticks.push(minX+k*pitch+Pg+gapEff/2);
+
+  /* --- stage 5: extrude = bottom layer + cap + flank walls --- */
+  const topCount=verts.length,botOf=new Array(topCount).fill(-1);
+  if(S.stage>=5){
+    const topFaces=faces.slice();
+    for(let i=0;i<topCount;i++){
+      botOf[i]=verts.length;
+      const v=verts[i],b=bent(v.x,v.y,S.T);
+      verts.push({x:v.x,y:v.y,z:-S.T,bx:b[0],by:b[1],bz:b[2],cls:'hide',copy:v.copy});
+    }
+    for(const f of topFaces)
+      if(f.kind==='fill'||f.kind==='bridge')
+        faces.push({q:f.q.slice().reverse().map(i=>botOf[i]),kind:'bottom'});
+    const cnt=new Map();
+    for(const f of topFaces){
+      if(f.kind!=='fill'&&f.kind!=='bridge')continue;
+      for(let e=0;e<4;e++){
+        const a=f.q[e],b=f.q[(e+1)%4],key=a<b?a+'_'+b:b+'_'+a;
+        cnt.set(key,(cnt.get(key)||0)+1);
+      }
+    }
+    for(const f of topFaces){
+      if(f.kind!=='fill'&&f.kind!=='bridge')continue;
+      for(let e=0;e<4;e++){
+        const a=f.q[e],b=f.q[(e+1)%4],key=a<b?a+'_'+b:b+'_'+a;
+        if(cnt.get(key)===1) faces.push({q:[a,b,botOf[b],botOf[a]],kind:'wall'});
+      }
+    }
+    for(let i=0;i<topCount;i++){
+      const v=verts[i],t=bent(v.x,v.y,0);
+      v.bx=t[0];v.by=t[1];v.bz=t[2];
+    }
+  }
+
+  /* --- stage 1/2 extras: outline n-gon + traced loop idx --- */
+  let outlineFace=null,loopIdx=null;
+  if(S.stage<=2){
+    loopIdx=[];
+    for(let i=0;i<n;i++)loopIdx.push(grid[0][i][0]);
+    for(let i=n-1;i>=0;i--)loopIdx.push(grid[0][i][W]);
+    if(S.stage===1) outlineFace={q:loopIdx,kind:'outline'};
+  }
+  if(outlineFace) faces.push(outlineFace);
+
+  mesh={verts,faces,ticks,skeleton:piece.cl,loopIdx,seamFaces,
+    info:{C,N,pitch,rawPitch,Pg,gapEff,copies,totalLen,
+          loopVerts:2*n,pieceQuads:(n-1)*W,verts:verts.length,quads:faces.length}};
+  document.getElementById('report').textContent=
+    report.length?report.join('\n'):'— bridges appear at stage 4 —';
+  updateStats();
+}
+
+/* bridge two open loops with equal vert counts; pick cleanest correspondence */
+function bridgeLoops(A,B,verts,seam,label){
+  const pos=seam
+    ? i=>{const v=verts[i];return {x:v.bx??v.x,y:v.by??v.y,z:v.bz??v.z};}
+    : i=>verts[i];
+  const L=A.length; let cId=0,cRv=0;
+  for(let j=0;j<L;j++){
+    const a=pos(A[j]),b1=pos(B[j]),b2=pos(B[L-1-j]);
+    cId+=(a.x-b1.x)**2+(a.y-b1.y)**2+(a.z-b1.z)**2;
+    cRv+=(a.x-b2.x)**2+(a.y-b2.y)**2+(a.z-b2.z)**2;
+  }
+  const mirrored=cRv<cId, m=j=>mirrored?L-1-j:j;
+  const faces=[];
+  for(let j=0;j<L-1;j++){
+    const f={q:[A[j],A[j+1],B[m(j+1)],B[m(j)]],kind:'bridge'};
+    if(seam)f.seam=true;
+    faces.push(f);
+  }
+  return {faces,line:'gap '+label+': '+(mirrored?'mirrored':'identity')+
+    ' corr (cost '+Math.min(cId,cRv).toFixed(2)+') → '+(L-1)+' quads'};
+}
+
+function updateStats(){
+  const i=mesh.info;
+  const rows=[
+    ['circumference C = 2πR',i.C.toFixed(2)],
+    ['raw pitch P + g',i.rawPitch.toFixed(2)],
+    ['pieces that fit  N = round(C / raw)',i.N],
+    ['refit pitch = C / N',i.pitch.toFixed(3)],
+    ['refit period P′ = pitch − g',i.Pg.toFixed(3)],
+    ['gap drawn g′ = pitch − P′',i.gapEff.toFixed(3)],
+    ['array length vs C (seam error)',i.totalLen.toFixed(2)+' / '+i.C.toFixed(2)],
+    ['outline loop verts (one closed loop)',i.loopVerts],
+    ['quads per piece',i.pieceQuads],
+    ['copies in array',i.copies],
+    ['total verts / quads',i.verts+' / '+i.quads],
+  ];
+  document.getElementById('stats').innerHTML=
+    rows.map(r=>'<div class="kv"><span>'+r[0]+'</span><span>'+r[1]+'</span></div>').join('');
+}
+
+/* ---------- stage UI ---------- */
+const STAGES=[
+ {t:'1 · pattern as primitive',d:'One tread element as a skeleton stroke + width (the primitive). Magenta = skeleton, white dots = the outline it will be traced into.'},
+ {t:'2 · outline loop → quad fill',d:'Edge traced into ONE closed loop of verts, then filled with quads that FLOW along the shape (no square grid). green = interior flow verts, orange/yellow = patch end loops = bridge ports.'},
+ {t:'3 · array on a straight line',d:'Piece repeated at pitch P+g. The || marks are open gaps between identical end loops — bridgeable because both loops share vert counts.'},
+ {t:'4 · bridge the array',d:'Each gap closed with ONE column of quads (cleanest correspondence auto-picked, lowest polycount). Green quads = bridges.'},
+ {t:'5 · bend onto tyre + extrude',d:'Array wrapped onto the circumference — N refit so the seam closes exactly and the seam is bridged too — then extruded to tread depth with flank walls + cap.'},
+];
+function buildStageUI(){
+  const el=document.getElementById('stages'); el.innerHTML='';
+  STAGES.forEach((s,i)=>{
+    const d=document.createElement('div');
+    d.className='stage'+(S.stage===i+1?' on':'');
+    const title=s.t.split('· ')[1];
+    d.innerHTML='<div class="n">'+(i+1)+'</div><div class="b">'+title+
+      '<small>'+s.d.split('.')[0]+'.</small></div>';
+    d.onclick=()=>setStage(i+1);
+    el.appendChild(d);
+  });
+}
+function frameDist(){ return (mesh?mesh.info.totalLen:20)*1.35+8; }
+function setStage(k){
+  S.stage=Math.max(1,Math.min(5,k));
+  bendTarget=S.stage===5?1:0;
+  if(S.stage===5){camT.yaw=.75;camT.pitch=.42;camT.dist=S.R*4.6;}
+  else{camT.yaw=0;camT.pitch=0;camT.dist=frameDist();}
+  buildStageUI(); rebuild(); hud();
+}
+function hud(){
+  const s=STAGES[S.stage-1];
+  document.querySelector('#hud .t').textContent=s.t;
+  document.querySelector('#hud .d').textContent=s.d;
+}
+
+/* ---------- renderer: canvas2d painter's algorithm ---------- */
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+function resize(){
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  const r=cv.parentElement.getBoundingClientRect();
+  cv.width=Math.max(2,r.width*dpr); cv.height=Math.max(2,r.height*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize',resize);
+
+const BASECOL={fill:[201,206,210],bridge:[168,223,174],wall:[138,146,152],bottom:[107,115,120],outline:[201,206,210]};
+const DOTCOL={endA:'#ff8c1a',endB:'#ffd400',interior:'#17c93f',bound:'#5a646e'};
+
+function render(){
+  requestAnimationFrame(render);
+  const w=cv.clientWidth,h=cv.clientHeight;
+  if(w<10||h<10||!mesh)return;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle='#20242a';ctx.fillRect(0,0,w,h);
+
+  cam.yaw=lerp(cam.yaw,camT.yaw,.14);
+  cam.pitch=lerp(cam.pitch,camT.pitch,.14);
+  cam.dist=lerp(cam.dist,camT.dist,.14);
+  bendT=lerp(bendT,bendTarget,.055);
+  const bt=ease(Math.max(0,Math.min(1,bendT)));
+
+  const P3=new Array(mesh.verts.length);
+  for(let i=0;i<mesh.verts.length;i++){
+    const v=mesh.verts[i];
+    P3[i]=[lerp(v.x,v.bx??v.x,bt),lerp(v.y,v.by??v.y,bt),lerp(v.z,v.bz??v.z,bt)];
+  }
+  const eye=[cam.dist*Math.cos(cam.pitch)*Math.sin(cam.yaw),
+             cam.dist*Math.sin(cam.pitch),
+             cam.dist*Math.cos(cam.pitch)*Math.cos(cam.yaw)];
+  const F=norm3(mul3(eye,-1));           // target = origin
+  let R3=norm3(cross3(F,[0,1,0]));
+  if(len3(R3)<1e-6)R3=[1,0,0];
+  const U3=cross3(R3,F);
+  const f=1.25,Sc=Math.min(w,h),cx=w/2,cy=h/2;
+  const proj=new Array(mesh.verts.length),dep=new Array(mesh.verts.length);
+  for(let i=0;i<mesh.verts.length;i++){
+    const d=sub3(P3[i],eye),vz=dot3(d,F);
+    dep[i]=vz;
+    if(vz<.05){proj[i]=null;continue;}
+    proj[i]=[cx+dot3(d,R3)*(f/vz)*Sc, cy-dot3(d,U3)*(f/vz)*Sc];
+  }
+  const wp=p=>{const d=sub3(p,eye),vz=dot3(d,F);
+    if(vz<.05)return null;
+    return [cx+dot3(d,R3)*(f/vz)*Sc, cy-dot3(d,U3)*(f/vz)*Sc];};
+
+  const seamOk=bt>.55;
+  const vis=[];
+  for(const fa of mesh.faces){
+    if(fa.kind==='outline'&&S.stage!==1)continue;
+    if(fa.kind==='fill'&&S.stage<2)continue;
+    if((fa.kind==='bottom'||fa.kind==='wall')&&(S.stage<5||bt<.02))continue;
+    if(fa.kind==='bridge'&&S.stage<4)continue;
+    if(fa.seam&&!seamOk)continue;
+    if(fa.q.some(i=>!proj[i]))continue;
+    let dz=0;for(const i of fa.q)dz+=dep[i];dz/=fa.q.length;
+    if(fa.kind==='outline')dz+=50;       // draw the n-gon first (behind quads)
+    vis.push({fa,dz});
+  }
+  vis.sort((a,b)=>b.dz-a.dz);
+
+  const L3=norm3([.45,.75,.5]);
+  for(const {fa} of vis){
+    const pts=fa.q.map(i=>proj[i]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0],pts[0][1]);
+    for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);
+    ctx.closePath();
+    const a=P3[fa.q[0]],b=P3[fa.q[1]],c=P3[fa.q[2]];
+    let nrm=norm3(cross3(sub3(b,a),sub3(c,a)));
+    if(dot3(nrm,sub3(a,eye))>0)nrm=mul3(nrm,-1);
+    let lum=S.shade?(.42+.58*Math.max(0,dot3(nrm,L3))):.85;
+    if(fa.kind==='outline')lum=.95;
+    const col=BASECOL[fa.kind]||BASECOL.fill;
+    ctx.fillStyle='rgb('+col.map(x=>Math.round(x*lum)).join(',')+')';
+    ctx.fill();
+    if(S.wire||fa.kind==='outline'){
+      ctx.strokeStyle=fa.kind==='outline'?'rgba(20,24,28,.95)':'rgba(16,20,24,.8)';
+      ctx.lineWidth=fa.kind==='outline'?2:1;
+      ctx.stroke();
+    }
+    /* topology dots ride on their own face → correct occlusion for free */
+    if(S.topo&&fa.kind!=='bottom'&&fa.kind!=='wall'){
+      for(const i of fa.q){
+        const cls=mesh.verts[i].cls;
+        if(cls==='hide')continue;
+        const r=(cls==='endA'||cls==='endB')?3.1:cls==='interior'?2.3:1.5;
+        ctx.beginPath();ctx.arc(proj[i][0],proj[i][1],r,0,7);
+        ctx.fillStyle=DOTCOL[cls];ctx.fill();
+      }
+    }
+  }
+
+  /* stage 2: stroke the traced closed loop on top so the loop reads clearly */
+  if(S.stage===2&&mesh.loopIdx){
+    ctx.beginPath();
+    mesh.loopIdx.forEach((i,k)=>{const p=proj[i];
+      if(!p)return; k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);});
+    ctx.closePath();
+    ctx.strokeStyle='rgba(15,18,22,.95)';ctx.lineWidth=2.2;ctx.stroke();
+  }
+  /* stage 1: skeleton of the primitive + traced loop verts */
+  if(S.stage===1){
+    ctx.setLineDash([6,4]);ctx.strokeStyle='#e05fd5';ctx.lineWidth=2;
+    ctx.beginPath();
+    mesh.skeleton.forEach((p,i)=>{
+      const s=wp([p.x,p.y,.02]); if(!s)return;
+      i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});
+    ctx.stroke();ctx.setLineDash([]);
+    if(S.topo)for(const i of mesh.loopIdx){
+      if(!proj[i])continue;
+      ctx.beginPath();ctx.arc(proj[i][0],proj[i][1],1.8,0,7);
+      ctx.fillStyle='#f2f5f7';ctx.fill();
+    }
+  }
+  /* stage 3: || gap markers */
+  if(S.stage===3){
+    ctx.strokeStyle='#f2f5f7';ctx.lineWidth=2.4;
+    for(const xm of mesh.ticks)for(const dx of[-.14,.14]){
+      const p0=wp([xm+dx,-S.Wd*.85,.03]),p1=wp([xm+dx,S.Wd*.85,.03]);
+      if(p0&&p1){ctx.beginPath();ctx.moveTo(p0[0],p0[1]);ctx.lineTo(p1[0],p1[1]);ctx.stroke();}
+    }
+  }
+}
+
+/* ---------- orbit / zoom ---------- */
+let drag=null;
+cv.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  camT.yaw+=(e.clientX-drag.x)*.006;
+  camT.pitch=Math.max(-1.45,Math.min(1.45,camT.pitch+(e.clientY-drag.y)*.006));
+  drag={x:e.clientX,y:e.clientY};
+});
+cv.addEventListener('pointerup',()=>drag=null);
+cv.addEventListener('pointercancel',()=>drag=null);
+cv.addEventListener('wheel',e=>{e.preventDefault();
+  camT.dist=Math.max(6,camT.dist*Math.exp(e.deltaY*.001));},{passive:false});
+
+/* ---------- controls ---------- */
+function bindRange(id,key){
+  const el=document.getElementById(id),vv=document.getElementById(id+'v');
+  const upd=()=>{S[key]=parseFloat(el.value);vv.textContent=S[key];rebuild();
+    if(S.stage<5)camT.dist=frameDist();};
+  el.addEventListener('input',upd);upd();
+}
+['P','A','Wd','W','D','G','R','T'].forEach(id=>bindRange(id,id));
+document.getElementById('pattern').addEventListener('change',e=>{S.pattern=e.target.value;rebuild();});
+for(const [id,key] of [['cWire','wire'],['cTopo','topo'],['cShade','shade']])
+  document.getElementById(id).addEventListener('change',e=>S[key]=e.target.checked);
+document.getElementById('prev').onclick=()=>setStage(S.stage-1);
+document.getElementById('next').onclick=()=>setStage(S.stage+1);
+document.getElementById('replay').onclick=()=>{if(S.stage===5)bendT=0;else setStage(5);};
+window.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight')setStage(S.stage+1);
+  if(e.key==='ArrowLeft')setStage(S.stage-1);
+});
+
+resize(); buildStageUI(); setStage(1); render();
+</script>
+</body>
+</html>
