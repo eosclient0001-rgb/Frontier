@@ -772,7 +772,7 @@ const QuadCore = (() => {
     // wall-clock budget: the dispatcher falls back to the grid builder when the
     // conforming attempt cannot finish; a hard deadline keeps pathological
     // patterns from stalling the app for minutes before that fallback engages
-    const tStartC = Date.now(), budgetC = opts.timeBudgetMs || 30000;
+    const tStartC = Date.now(), budgetC = opts.timeBudgetMs || 20000;
     const checkDeadline = () => { if (Date.now() - tStartC > budgetC) throw new Error('conforming: time budget exceeded'); };
 
     // ---- welded vertex pool on the flat sheet (x around, y across), ~0.005 mm weld ----
@@ -2668,6 +2668,7 @@ const QuadCore = (() => {
           restore(); return false; }
         return true; };
       let drains = 0, splitTotal = 0;
+      const singlesHist = []; // per-phase interior single-owner edge count (speed bail below)
       for (let phase = 0; phase < 80; phase++) { drains = 0;
 
       for (;;) {
@@ -2703,7 +2704,18 @@ const QuadCore = (() => {
         if (drains++ > 200) throw new Error('conforming: conformity queue did not converge');
         if (!candFill()) break;
       }
-      if (!holePass()) break; }
+      if (!holePass()) break;
+        // speed: sample the defect count each phase; ten phases with zero net
+        // progress means the endgame is stuck on knots it cannot close -- bail
+        // to the fallback now instead of burning the remaining phases
+        { let sn = 0;
+          for (const [, s] of edgeFaces) { let n = 0, f0 = null; for (const g of s) if (!g.dead) { n++; f0 = g; }
+            if (n !== 1 || !f0) continue;
+            for (let k = 0; k < 4; k++) { const x = f0.v[k], y = f0.v[(k + 1) % 4];
+              if (edgeFaces.get(ekeyF(x, y)) === s && !isBorderEdgeQ(x, y)) { sn++; break; } } }
+          singlesHist.push(sn);
+          if (phase >= 14 && sn > 12 && singlesHist[phase - 10] !== undefined && sn >= singlesHist[phase - 10])
+            throw new Error('conforming: conformity endgame not converging (' + sn + ' defects left)'); } }
       // final audit on the criterion that actually matters: every interior edge of the
       // sheet must have exactly two live owners (sheet-border edges have one and are
       // closed by the loft). Fail loudly so the caller can fall back instead of silently

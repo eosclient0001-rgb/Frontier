@@ -107,7 +107,7 @@ directly — it never touches the grid:
    `place3` bends the flat sheet onto the tyre profile.
 
 **Status / dispatch.** The dispatcher tries the conforming builder first
-(`Snap nodes to groove edges` on) under a 30 s wall-clock budget
+(`Snap nodes to groove edges` on) under a 20 s wall-clock budget
 (`opts.timeBudgetMs`). It wins outright on smooth patterns (slick-type:
 ~37k quads, max warp 1.7°, watertight, zero snapped nodes — the pattern *is*
 the mesh). On dense multi-groove patterns the conformity endgame does not
