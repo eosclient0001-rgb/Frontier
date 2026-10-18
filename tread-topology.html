@@ -311,14 +311,36 @@ function injectMask(gray,w,h){
   TRACE.sel=best;
   rebuild(); updateThumb(); updateBlockLabel();
 }
+/* morphological opening: kills thin sipe-tabs / stray sticks, keeps block bodies */
+function openMask(bin,w,h,r){
+  const ero=b=>{const o=new Uint8Array(w*h);
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+      let m=1;
+      for(let dy=-1;dy<=1&&m;dy++)for(let dx=-1;dx<=1;dx++)
+        if(!b[(y+dy)*w+x+dx]){m=0;break;}
+      o[y*w+x]=m;
+    } return o;};
+  const dil=b=>{const o=new Uint8Array(w*h);
+    for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+      let m=0;
+      for(let dy=-1;dy<=1&&!m;dy++)for(let dx=-1;dx<=1;dx++)
+        if(b[(y+dy)*w+x+dx]){m=1;break;}
+      o[y*w+x]=m;
+    } return o;};
+  let a=bin;
+  for(let i=0;i<r;i++)a=ero(a);
+  for(let i=0;i<r;i++)a=dil(a);
+  return a;
+}
 function computeComps(){
   const {gray,w,h}=TRACE, th=TRACE.thresh;
   let bsum=0,bn=0;                               // border-ring average = background
   for(let x=0;x<w;x++){bsum+=gray[x]+gray[(h-1)*w+x];bn+=2;}
   for(let y=0;y<h;y++){bsum+=gray[y*w]+gray[y*w+w-1];bn+=2;}
   const treadIsDark=(bsum/bn)>=128;              // light bg => dark tread
-  const bin=new Uint8Array(w*h);
-  for(let i=0;i<bin.length;i++) bin[i]=treadIsDark?(gray[i]<th?1:0):(gray[i]>th?1:0);
+  const bin0=new Uint8Array(w*h);
+  for(let i=0;i<bin0.length;i++) bin0[i]=treadIsDark?(gray[i]<th?1:0):(gray[i]>th?1:0);
+  const bin=openMask(bin0,w,h,2);                // drop thin tabs/sticks
   const seen=new Uint8Array(w*h), comps=[];
   for(let s=0;s<bin.length;s++){
     if(!bin[s]||seen[s])continue;
@@ -336,7 +358,8 @@ function computeComps(){
         seen[q]=1; stack.push(q);
       }
     }
-    if(touchesBorder||px.length<120)continue;    // partial blocks / noise
+    if(px.length<150)continue;                   // noise
+    if(x0<=2||y0<=2||x1>=w-3||y1>=h-3)continue;   // partial blocks / border bars
     comps.push({px:Int32Array.from(px),x0,y0,x1,y1,area:px.length});
   }
   for(const c of comps) c.contour=contourTrace(bin,w,h,c);
@@ -545,10 +568,11 @@ function pathKeys(sm){
   return keys;
 }
 /* cached traced piece in PIXEL space, rotated by S.orient */
-function getTraced(){
-  const key=TRACE.sel+'|'+TRACE.thresh+'|'+S.orient;
+/* per-component trace, in ONE common rotated pixel frame (rot about image centre) */
+function traceComp(ci){
+  const key='c'+ci+'|'+TRACE.thresh+'|'+S.orient;
   if(TRACE.cache[key])return TRACE.cache[key];
-  const c=TRACE.comps[TRACE.sel];
+  const c=TRACE.comps[ci];
   const bw=c.x1-c.x0+3, bh=c.y1-c.y0+3;
   const mask=new Uint8Array(bw*bh);
   for(const p of c.px) mask[(p%TRACE.w-c.x0+1)+((p/TRACE.w|0)-c.y0+1)*bw]=1;
@@ -559,22 +583,135 @@ function getTraced(){
   if(path.length>6){
     keysI=pathKeys(path);
     widths=keysI.map(i=>Math.max(1.4,sp.distAt(path[i])));
-  }else{                                            // degenerate: fall back to bbox stroke
+  }else{                                            // degenerate: bbox stroke fallback
     path=[[1,bh/2],[bw-1,bh/2]]; keysI=[0,1]; widths=[bh/4,bh/4];
   }
+  path=path.map(q=>[q[0]+c.x0-1,q[1]+c.y0-1]);   // crop space -> image space
   const ang=S.orient*Math.PI/180, ca=Math.cos(ang), sa=Math.sin(ang);
-  let cx=0,cy=0; for(const q of c.px){cx+=q%TRACE.w;cy+=q/TRACE.w|0;}
+  const cx0=TRACE.w/2, cy0=TRACE.h/2;
+  const rot=q=>{const dx=q[0]-cx0,dy=q[1]-cy0;return V2(dx*ca-dy*sa+cx0, dx*sa+dy*ca+cy0);};
+  let cx=0,cy=0; for(const q of c.px){cx+=q%TRACE.w;cy+=(q/TRACE.w)|0;}
   cx/=c.px.length; cy/=c.px.length;
-  const rot=q=>{const dx=q[0]-cx,dy=q[1]-cy;return V2(dx*ca-dy*sa+cx, dx*sa+dy*ca+cy);};
-  const keys=keysI.map(i=>rot(path[i]));
-  const outline=c.contour.map(q=>rot([q.x,q.y]));
-  const pathW=path.map(q=>rot(q));
-  let x0=1e9,x1=-1e9;
-  for(const p of keys){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);}
-  for(const p of outline){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);}
-  const tc={keys,widths,outline,path:pathW,cx,cy,bboxW:Math.max(1,x1-x0)};
+  const rc=rot([cx,cy]);
+  let hy0=1e9,hy1=-1e9;
+  const outline=c.contour.map(q=>{const p=rot([q.x,q.y]);hy0=Math.min(hy0,p.y);hy1=Math.max(hy1,p.y);return p;});
+  const tc={keys:keysI.map(i=>rot(path[i])),widths,path:path.map(rot),outline,
+            cx:rc.x,cy:rc.y,hh:Math.max(2,(hy1-hy0)/2)};
   TRACE.cache[key]=tc;
   return tc;
+}
+/* ONE repeating unit of the tread row = ALL shape columns that share the
+   selected block's repeat period and sit axially next to it (one strip).
+   Returns every shape of the period, so the whole row gets arrayed/bridged. */
+function getTracedUnit(){
+  const ukey='u'+TRACE.thresh+'|'+S.orient+'|'+TRACE.sel;
+  if(TRACE.cache[ukey])return TRACE.cache[ukey];
+  const tcs=TRACE.comps.map((c,i)=>traceComp(i));
+  /* cluster by axial position (y after orient) = shape columns */
+  const order=tcs.map((t,i)=>i).sort((a,b)=>tcs[a].cy-tcs[b].cy);
+  const clusters=[];
+  for(const i of order){
+    const t=tcs[i], last=clusters[clusters.length-1];
+    if(last&&Math.abs(t.cy-last.cy)<0.5*Math.min(t.hh,last.hh)){
+      last.ids.push(i);
+      last.cy=(last.cy*(last.ids.length-1)+t.cy)/last.ids.length;
+      last.hh=Math.max(last.hh,t.hh);
+    }else clusters.push({ids:[i],cy:t.cy,hh:t.hh});
+  }
+  /* split each axial cluster into area classes (a column can alternate two
+     shape types, e.g. full chevron + half part) then per-class repeat period */
+  for(const cl of clusters){
+    const ids=cl.ids.slice().sort((a,b)=>TRACE.comps[b].area-TRACE.comps[a].area);
+    cl.subs=[];
+    for(const i of ids){
+      const last=cl.subs[cl.subs.length-1];
+      if(last&&TRACE.comps[i].area>=.7*last.max)last.ids.push(i);
+      else cl.subs.push({ids:[i],max:TRACE.comps[i].area});
+    }
+    const per=[];
+    for(const sub of cl.subs){
+      const xs=sub.ids.map(i=>tcs[i].cx).sort((a,b)=>a-b);
+      const d=[]; for(let k=1;k<xs.length;k++)d.push(xs[k]-xs[k-1]);
+      d.sort((a,b)=>a-b);
+      sub.period=d.length?d[d.length>>1]:0;
+      if(sub.period>0)per.push(sub.period);
+    }
+    per.sort((a,b)=>a-b);
+    cl.period=per.length?per[per.length>>1]:0;
+  }
+  let selCl=0;
+  clusters.forEach((cl,i)=>{if(cl.ids.includes(TRACE.sel))selCl=i;});
+  let P0=clusters[selCl].period;
+  if(!P0||P0<3){                                 // sel column aperiodic: use the
+    let bp=0;                                    // strongest periodic column
+    clusters.forEach((cl,i)=>{if(cl.ids.length>=3&&cl.period>bp){bp=cl.period;selCl=i;}});
+    P0=bp;
+  }
+  if(!P0||P0<3){                                 // last resort: single block
+    const t=traceComp(TRACE.sel);
+    let a=1e9,b=-1e9;
+    for(const p of t.outline){a=Math.min(a,p.x);b=Math.max(b,p.x);}
+    return {shapes:[t],groupIds:[TRACE.sel],period:Math.max(1,b-a),x0:t.cx,yc:t.cy};
+  }
+  /* group: same period (±25%) and axially contiguous with the sel column */
+  const byCy=clusters.map((c,i)=>i).sort((a,b)=>clusters[a].cy-clusters[b].cy);
+  const inGroup=new Set([selCl]);
+  const ok=c=>{                                  // commensurate with P0 (a·p ≈ b·P0)
+    if(!c.period)return false;
+    for(let a=1;a<=6;a++)for(let b=1;b<=6;b++)
+      if(Math.abs(a*c.period-b*P0)<0.04*b*P0)return true;
+    return false;
+  };
+  const si=byCy.indexOf(selCl);
+  for(let k=si-1;k>=0;k--){
+    const c=clusters[byCy[k]], p=clusters[byCy[k+1]];
+    if(ok(c)&&Math.abs(c.cy-p.cy)<1.35*(c.hh+p.hh))inGroup.add(byCy[k]); else break;
+  }
+  for(let k=si+1;k<byCy.length;k++){
+    const c=clusters[byCy[k]], p=clusters[byCy[k-1]];
+    if(ok(c)&&Math.abs(c.cy-p.cy)<1.35*(c.hh+p.hh))inGroup.add(byCy[k]); else break;
+  }
+  /* master period: columns may repeat at integer-fraction frequencies
+     (lugs 5× per 2 chevrons here) -> double P0 until every sub divides it */
+  const subsAll=[];
+  for(const i of inGroup)for(const sub of clusters[i].subs)
+    if(sub.period>0)subsAll.push(sub);
+  for(let dbl=0;dbl<3;dbl++){
+    const intOk=subsAll.every(sub=>{
+      const r=P0/sub.period; return Math.abs(r-Math.round(r))<0.08;});
+    if(intOk)break;
+    P0*=2;
+  }
+  /* one master-period window [x0, x0+P0): m instances per shape class */
+  let x0=1e9;
+  for(const i of inGroup)for(const cid of clusters[i].ids)x0=Math.min(x0,tcs[cid].cx);
+  const shapes=[],groupIds=[];
+  for(const sub of subsAll){
+    const p=sub.period, m=Math.max(1,Math.round(P0/p));
+    const xs=sub.ids.map(cid=>tcs[cid]).sort((a,b)=>a.cx-b.cx);
+    const phase=((((xs[0].cx-x0)%p)+p)%p);       // tile [x0, x0+P0) exactly
+    let s0=0,bd=1e9;
+    xs.forEach((t,i)=>{const d=Math.abs(t.cx-(x0+phase));if(d<bd){bd=d;s0=i;}});
+    for(let k=0;k<m;k++){
+      const src=xs[(s0+k)%xs.length];
+      const cxt=x0+phase+k*sub.period;
+      const dx=cxt-src.cx;
+      let pick=src;
+      if(Math.abs(dx)>1e-6){                   // wrapped instance: shift by periods
+        pick={...src,
+          keys:src.keys.map(p=>V2(p.x+dx,p.y)),
+          path:src.path.map(p=>V2(p.x+dx,p.y)),
+          outline:src.outline.map(p=>V2(p.x+dx,p.y)),
+          cx:src.cx+dx};
+      }
+      shapes.push(pick); groupIds.push(tcs.indexOf(src));
+    }
+  }
+  let y0=1e9,y1=-1e9;
+  for(const t of shapes){y0=Math.min(y0,t.cy-t.hh);y1=Math.max(y1,t.cy+t.hh);}
+  const unit={shapes,groupIds,period:Math.max(1,P0),x0,yc:(y0+y1)/2};
+  TRACE.cache[ukey]=unit;
+  return unit;
 }
 
 /* ---------- state ---------- */
@@ -596,43 +733,51 @@ function rebuild(){
   const Pg=Math.max(.5,pitch-S.G);       // refit period of the primitive
   const gapEff=pitch-Pg;                 // effective gap actually drawn
   const traced=S.pattern==='traced'&&TRACE.ready&&TRACE.comps.length>0;
-  let piece,rawOutline=null,skelPath=null;
+  /* ONE unit = all shapes of the repeating period (traced) or 1 procedural piece */
+  let shapes=[];
   if(traced){
-    const tc=getTraced();
-    const scale=Pg/tc.bboxW;
-    const w2=p=>V2((p.x-tc.cx)*scale,-(p.y-tc.cy)*scale);
-    piece=buildPiece(tc.keys.map(w2),S.D,0,S.W,tc.widths.map(x=>x*scale));
-    rawOutline=tc.outline.map(w2);
-    skelPath=tc.path.map(w2);
+    const unit=getTracedUnit();
+    const scale=pitch/unit.period;             // master period -> refit pitch
+    const w2=p=>V2((p.x-unit.x0)*scale,-(p.y-unit.yc)*scale);
+    shapes=unit.shapes.map(t=>({
+      piece:buildPiece(t.keys.map(w2),S.D,0,S.W,t.widths.map(x=>x*scale)),
+      outline:t.outline.map(w2),
+      path:t.path.map(w2)}));
   }else{
     const keys=PATTERNS[S.pattern==='traced'?'chevron':S.pattern](Pg,S.A);
-    piece=buildPiece(keys,S.D,S.Wd/2,S.W);
-    skelPath=piece.cl.slice();
+    const piece=buildPiece(keys,S.D,S.Wd/2,S.W);
+    shapes=[{piece,outline:null,path:piece.cl.slice()}];
   }
-  const W=S.W,n=piece.n;
+  const W=S.W;
   const copies=S.stage>=3?N:1;
   const totalLen=copies*pitch;
   const minX=-totalLen/2;
 
   const verts=[],faces=[];
-  const grid=[];
+  const grid=[];                                  // grid[copy][shape] = ring idx grid
   for(let k=0;k<copies;k++){
-    const ox=minX+k*pitch,g=[];
-    for(let i=0;i<n;i++){
-      const row=[];
-      for(let j=0;j<=W;j++){
-        const p2=piece.rings[i][j];
-        let cls='interior';
-        if(i===0)cls='endA'; else if(i===n-1)cls='endB';
-        else if(j===0||j===W)cls='bound';
-        row.push(verts.length);
-        verts.push({x:p2.x+ox,y:p2.y,z:0,cls,copy:k});
+    const ox=minX+k*pitch;
+    const gk=[];
+    for(let s=0;s<shapes.length;s++){
+      const rings=shapes[s].piece.rings, n=shapes[s].piece.n;
+      const g=[];
+      for(let i=0;i<n;i++){
+        const row=[];
+        for(let j=0;j<=W;j++){
+          const p2=rings[i][j];
+          let cls='interior';
+          if(i===0)cls='endA'; else if(i===n-1)cls='endB';
+          else if(j===0||j===W)cls='bound';
+          row.push(verts.length);
+          verts.push({x:p2.x+ox,y:p2.y,z:0,cls,copy:k});
+        }
+        g.push(row);
       }
-      g.push(row);
+      gk.push(g);
+      for(let i=0;i<n-1;i++)for(let j=0;j<W;j++)
+        faces.push({q:[g[i][j],g[i+1][j],g[i+1][j+1],g[i][j+1]],kind:'fill'});
     }
-    grid.push(g);
-    for(let i=0;i<n-1;i++)for(let j=0;j<W;j++)
-      faces.push({q:[g[i][j],g[i+1][j],g[i+1][j+1],g[i][j+1]],kind:'fill'});
+    grid.push(gk);
   }
 
   /* --- bent positions (pure function of flat x,y + radial offset) --- */
@@ -640,26 +785,40 @@ function rebuild(){
   const bent=(x,y,dOff)=>{const th=(x+uOff)/S.R,r=S.R-dOff;
     return [Math.sin(th)*r,y,Math.cos(th)*r];};
 
-  /* --- stage 4: bridge neighbour loops (identical vert counts) --- */
+  /* --- stage 4: bridge neighbour loops (identical vert counts), per shape --- */
   const report=[],seamFaces=[];
   if(S.stage>=4){
-    for(let k=0;k<copies-1;k++){
-      const b=bridgeLoops(grid[k][n-1],grid[k+1][0],verts,false,String(k+1)+'→'+String(k+2));
-      faces.push(...b.faces); report.push(b.line);
+    for(let s=0;s<shapes.length;s++){
+      const n=shapes[s].piece.n;
+      let cost=0,quads=0,mir=0,gaps=0;
+      for(let k=0;k<copies-1;k++){
+        const b=bridgeLoops(grid[k][s][n-1],grid[k+1][s][0],verts,false,'');
+        faces.push(...b.faces); cost+=b.cost; quads+=b.faces.length; gaps++;
+        if(b.mirrored)mir++;
+      }
+      if(S.stage>=5&&copies>1){
+        const b=bridgeLoops(grid[copies-1][s][n-1],grid[0][s][0],verts,true,'');
+        faces.push(...b.faces); seamFaces.push(...b.faces);
+        cost+=b.cost; quads+=b.faces.length; gaps++;
+        if(b.mirrored)mir++;
+      }
+      report.push('shape '+(s+1)+'/'+shapes.length+': '+gaps+' gaps × '+W+
+        ' quads, corr '+(mir?'mixed':'identity')+' (Σcost '+cost.toFixed(2)+')');
     }
-    if(S.stage>=5){
-      const b=bridgeLoops(grid[copies-1][n-1],grid[0][0],verts,true,'seam N→1');
-      faces.push(...b.faces); seamFaces.push(...b.faces); report.push(b.line);
-    }
-    report.unshift('loop A verts = loop B verts = '+(W+1)+'  →  bridgeable');
+    report.unshift('every end loop has W+1 = '+(W+1)+' verts → all gaps bridgeable');
     report.unshift('correspondences tested per gap: identity, mirrored');
     report.push('bridge cost = W = '+W+' quads/gap (single column → lowest polycount)');
   }
 
-  /* --- stage 3 gap markers || --- */
+  /* --- stage 3 gap markers || (per shape column) --- */
   const ticks=[];
-  if(S.stage===3)
-    for(let k=0;k<copies-1;k++) ticks.push(minX+k*pitch+Pg+gapEff/2);
+  if(S.stage===3){
+    for(let s=0;s<shapes.length;s++){
+      let a=1e9,b=-1e9;
+      for(const r of shapes[s].piece.rings)for(const p of r){a=Math.min(a,p.x);b=Math.max(b,p.x);}
+      for(let k=0;k<copies-1;k++) ticks.push(minX+k*pitch+b+(pitch-(b-a))/2);
+    }
+  }
 
   /* --- stage 5: extrude = bottom layer + cap + flank walls --- */
   const topCount=verts.length,botOf=new Array(topCount).fill(-1);
@@ -694,18 +853,25 @@ function rebuild(){
     }
   }
 
-  /* --- stage 1/2 extras: traced/derived closed loop idx --- */
-  let loopIdx=null;
-  if(S.stage<=2){
-    loopIdx=[];
-    for(let i=0;i<n;i++)loopIdx.push(grid[0][i][0]);
-    for(let i=n-1;i>=0;i--)loopIdx.push(grid[0][i][W]);
-    if(!rawOutline)rawOutline=loopIdx.map(i=>V2(verts[i].x,verts[i].y));
+  /* --- stage 1/2 extras: traced/derived closed loops, one per shape --- */
+  const loopIdxs=[],rawOutlines=[],skelPaths=[];
+  for(let s=0;s<shapes.length;s++){
+    const n=shapes[s].piece.n;
+    skelPaths.push(shapes[s].path);
+    if(S.stage<=2){
+      const g=grid[0][s], li=[];
+      for(let i=0;i<n;i++)li.push(g[i][0]);
+      for(let i=n-1;i>=0;i--)li.push(g[i][W]);
+      loopIdxs.push(li);
+      rawOutlines.push(shapes[s].outline||li.map(i=>V2(verts[i].x,verts[i].y)));
+    }
   }
 
-  mesh={verts,faces,ticks,skelPath,rawOutline,loopIdx,seamFaces,
-    info:{C,N,pitch,rawPitch,Pg,gapEff,copies,totalLen,
-          loopVerts:2*n,pieceQuads:(n-1)*W,verts:verts.length,quads:faces.length}};
+  mesh={verts,faces,ticks,skelPaths,rawOutlines,loopIdxs,seamFaces,
+    info:{C,N,pitch,rawPitch,Pg,gapEff,copies,totalLen,shapes:shapes.length,
+          loopVerts:2*shapes[0].piece.n,
+          pieceQuads:shapes.reduce((a,s)=>a+(s.piece.n-1)*W,0),
+          verts:verts.length,quads:faces.length}};
   document.getElementById('report').textContent=
     report.length?report.join('\n'):'— bridges appear at stage 4 —';
   updateStats();
@@ -729,7 +895,8 @@ function bridgeLoops(A,B,verts,seam,label){
     if(seam)f.seam=true;
     faces.push(f);
   }
-  return {faces,line:'gap '+label+': '+(mirrored?'mirrored':'identity')+
+  return {faces,cost:Math.min(cId,cRv),mirrored,
+    line:'gap '+label+': '+(mirrored?'mirrored':'identity')+
     ' corr (cost '+Math.min(cId,cRv).toFixed(2)+') → '+(L-1)+' quads'};
 }
 
@@ -745,6 +912,7 @@ function updateStats(){
     ['array length vs C (seam error)',i.totalLen.toFixed(2)+' / '+i.C.toFixed(2)],
     ['outline loop verts (one closed loop)',i.loopVerts],
     ['quads per piece',i.pieceQuads],
+    ['shapes in repeating unit',i.shapes],
     ['copies in array',i.copies],
     ['total verts / quads',i.verts+' / '+i.quads],
   ];
@@ -756,8 +924,8 @@ function updateStats(){
 const STAGES=[
  {t:'1 · pattern as primitive',d:'Tread block traced from the reference tyre image: threshold → connected components → one block. Its edge is ONE closed loop of verts (white dots); magenta = medial skeleton with local widths = the primitive.'},
  {t:'2 · outline loop → quad fill',d:'Edge traced into ONE closed loop of verts, then filled with quads that FLOW along the shape (no square grid). green = interior flow verts, orange/yellow = patch end loops = bridge ports.'},
- {t:'3 · array on a straight line',d:'Piece repeated at pitch P+g. The || marks are open gaps between identical end loops — bridgeable because both loops share vert counts.'},
- {t:'4 · bridge the array',d:'Each gap closed with ONE column of quads (cleanest correspondence auto-picked, lowest polycount). Green quads = bridges.'},
+ {t:'3 · array on a straight line',d:'The WHOLE repeating unit — every traced shape of the row — repeated at pitch P+g. The || marks are open gaps between identical end loops in every shape column.'},
+ {t:'4 · bridge the array',d:'Every gap in every shape column closed with ONE column of quads (cleanest correspondence auto-picked, lowest polycount). Green quads = bridges.'},
  {t:'5 · bend onto tyre + extrude',d:'Array wrapped onto the circumference — N refit so the seam closes exactly and the seam is bridged too — then extruded to tread depth with flank walls + cap.'},
 ];
 function buildStageUI(){
@@ -799,35 +967,42 @@ function updateThumb(){
   const s=Math.min(c.width/TRACE.w,c.height/TRACE.h);
   const ox=(c.width-TRACE.w*s)/2, oy=(c.height-TRACE.h*s)/2;
   g.drawImage(TRACE.img,ox,oy,TRACE.w*s,TRACE.h*s);
+  let group=new Set();
+  if(TRACE.comps.length){
+    try{group=new Set(getTracedUnit().groupIds);}catch(e){}
+  }
   TRACE.comps.forEach((cp,i)=>{
     g.beginPath();
     cp.contour.forEach((p,k)=>{
       const x=ox+p.x*s, y=oy+p.y*s;
       k?g.lineTo(x,y):g.moveTo(x,y);});
     g.closePath();
-    if(i===TRACE.sel){
-      g.fillStyle='rgba(79,209,197,.20)'; g.fill();
-      g.strokeStyle='#4fd1c5'; g.lineWidth=2; g.stroke();
+    if(group.has(i)){
+      g.fillStyle='rgba(79,209,197,.18)'; g.fill();
+      g.strokeStyle='#4fd1c5'; g.lineWidth=i===TRACE.sel?2.6:1.6; g.stroke();
     }else{
-      g.strokeStyle='rgba(255,255,255,.30)'; g.lineWidth=1; g.stroke();
+      g.strokeStyle='rgba(255,255,255,.22)'; g.lineWidth=1; g.stroke();
     }
   });
   if(TRACE.comps.length){
-    const tc=getTraced();
     g.setLineDash([4,3]); g.strokeStyle='#e05fd5'; g.lineWidth=1.6;
-    g.beginPath();
-    tc.path.forEach((p,k)=>{
-      const x=ox+p.x*s, y=oy+p.y*s;
-      k?g.lineTo(x,y):g.moveTo(x,y);});
-    g.stroke(); g.setLineDash([]);
+    for(const sh of getTracedUnit().shapes){
+      g.beginPath();
+      sh.path.forEach((p,k)=>{
+        const x=ox+p.x*s, y=oy+p.y*s;
+        k?g.lineTo(x,y):g.moveTo(x,y);});
+      g.stroke();
+    }
+    g.setLineDash([]);
   }
 }
 function updateBlockLabel(){
   const el=document.getElementById('BL');
   if(!el)return;
-  el.textContent=TRACE.ready&&TRACE.comps.length
-    ? ('block '+(TRACE.sel+1)+' / '+TRACE.comps.length)
-    : 'no blocks found';
+  if(!(TRACE.ready&&TRACE.comps.length)){el.textContent='no blocks found';return;}
+  let m=1;
+  try{m=getTracedUnit().shapes.length;}catch(e){}
+  el.textContent='block '+(TRACE.sel+1)+' / '+TRACE.comps.length+' · row '+m+' shapes';
 }
 
 /* ---------- renderer: canvas2d painter's algorithm ---------- */
@@ -924,37 +1099,42 @@ function render(){
     }
   }
 
-  /* stage 2: stroke the traced closed loop on top so the loop reads clearly */
-  if(S.stage===2&&mesh.loopIdx){
-    ctx.beginPath();
-    mesh.loopIdx.forEach((i,k)=>{const p=proj[i];
-      if(!p)return; k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);});
-    ctx.closePath();
-    ctx.strokeStyle='rgba(15,18,22,.95)';ctx.lineWidth=2.2;ctx.stroke();
+  /* stage 2: stroke each traced/derived closed loop on top */
+  if(S.stage===2&&mesh.loopIdxs){
+    for(const li of mesh.loopIdxs){
+      ctx.beginPath();
+      li.forEach((i,k)=>{const p=proj[i];
+        if(!p)return; k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);});
+      ctx.closePath();
+      ctx.strokeStyle='rgba(15,18,22,.95)';ctx.lineWidth=2.2;ctx.stroke();
+    }
   }
-  /* stage 1: the traced/derived ONE closed outline loop (filled shape)
-     + its medial skeleton (the primitive the quads will flow along) */
-  if(S.stage===1&&mesh.rawOutline){
-    ctx.beginPath();
-    mesh.rawOutline.forEach((p,i)=>{
-      const s=wp([p.x,p.y,.01]); if(!s)return;
-      i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});
-    ctx.closePath();
-    ctx.fillStyle='rgba(201,206,210,.96)';ctx.fill();
-    ctx.strokeStyle='rgba(15,18,22,.95)';ctx.lineWidth=2;ctx.stroke();
-    if(S.topo){
-      const step=Math.max(1,Math.floor(mesh.rawOutline.length/90));
-      for(let i=0;i<mesh.rawOutline.length;i+=step){
-        const s=wp([mesh.rawOutline[i].x,mesh.rawOutline[i].y,.02]);
-        if(!s)continue;
-        ctx.beginPath();ctx.arc(s[0],s[1],1.8,0,7);
-        ctx.fillStyle='#f2f5f7';ctx.fill();
+  /* stage 1: the traced/derived ONE closed outline loop per shape (filled)
+     + medial skeletons (the primitives the quads will flow along) */
+  if(S.stage===1&&mesh.rawOutlines){
+    for(const poly of mesh.rawOutlines){
+      ctx.beginPath();
+      poly.forEach((p,i)=>{
+        const s=wp([p.x,p.y,.01]); if(!s)return;
+        i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});
+      ctx.closePath();
+      ctx.fillStyle='rgba(201,206,210,.96)';ctx.fill();
+      ctx.strokeStyle='rgba(15,18,22,.95)';ctx.lineWidth=2;ctx.stroke();
+      if(S.topo){
+        const step=Math.max(1,Math.floor(poly.length/90));
+        for(let i=0;i<poly.length;i+=step){
+          const s=wp([poly[i].x,poly[i].y,.02]);
+          if(!s)continue;
+          ctx.beginPath();ctx.arc(s[0],s[1],1.8,0,7);
+          ctx.fillStyle='#f2f5f7';ctx.fill();
+        }
       }
     }
-    if(mesh.skelPath&&mesh.skelPath.length>1){
+    if(mesh.skelPaths)for(const sp of mesh.skelPaths){
+      if(!sp||sp.length<2)continue;
       ctx.setLineDash([6,4]);ctx.strokeStyle='#e05fd5';ctx.lineWidth=2;
       ctx.beginPath();
-      mesh.skelPath.forEach((p,i)=>{
+      sp.forEach((p,i)=>{
         const s=wp([p.x,p.y,.03]); if(!s)return;
         i?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});
       ctx.stroke();ctx.setLineDash([]);
