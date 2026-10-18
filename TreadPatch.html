@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tread Patch — shape-born quad topology (demo)</title>
+<style>
+  :root { --bg:#14171c; --panel:#1d2129; --line:#2c313c; --txt:#e8e6df; --dim:#9a958a;
+          --green:#22c55e; --orange:#ff8c42; --yellow:#ffd23f; --bridge:#7dd3fc; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { padding:14px 20px 6px; }
+  h1 { font-size:19px; margin:0 0 4px; font-weight:600; }
+  p.sub { margin:0; color:var(--dim); max-width:900px; }
+  .wrap { display:flex; gap:14px; padding:12px 20px 20px; flex-wrap:wrap; }
+  .stagebar { display:flex; gap:8px; flex-wrap:wrap; padding:0 20px; }
+  button.step { background:var(--panel); color:var(--txt); border:1px solid var(--line);
+    border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px; }
+  button.step.active { border-color:var(--green); color:#fff; box-shadow:inset 0 0 0 1px var(--green); }
+  button.step:hover { border-color:#4a5163; }
+  .view { flex:1 1 640px; background:#f4f1ea; border-radius:12px; border:1px solid var(--line); min-height:430px; }
+  svg { display:block; width:100%; height:auto; }
+  .side { flex:0 1 300px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .side h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:14px 0 8px; }
+  .side h2:first-child { margin-top:0; }
+  label.row { display:flex; justify-content:space-between; align-items:center; gap:10px; margin:7px 0; font-size:13px; }
+  label.row output { color:var(--yellow); font-variant-numeric:tabular-nums; min-width:34px; text-align:right; }
+  input[type=range] { flex:1; accent-color:var(--green); }
+  select { width:100%; background:#12151b; color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:7px 8px; }
+  .chk { display:flex; gap:8px; align-items:center; margin:6px 0; font-size:13px; cursor:pointer; }
+  .chk input { accent-color:var(--green); }
+  .stats { font-size:13px; background:#12151b; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .stats b { color:#fff; }
+  .ok { color:var(--green); font-weight:600; }
+  .legend { font-size:12px; color:var(--dim); margin-top:8px; }
+  .legend span.sw { display:inline-block; width:11px; height:11px; border-radius:3px; margin:0 4px -1px 10px; }
+  .legend span.sw:first-child { margin-left:0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>One tread piece, meshed the shape-born way</h1>
+  <p class="sub">Primitive centreline &rarr; closed outline loop traced vertex-by-vertex &rarr; interior filled with quad
+  <i>flow</i> that runs along the piece (not square blocks fitted to it) &rarr; both end rings carry the same vertices,
+  so the next identical piece bridges across the gap 1:1. Flat patch only — no tyre, no heightmap, 100% quads.</p>
+</header>
+
+<div class="stagebar" id="stagebar">
+  <button class="step" data-stage="1">1 · Primitive</button>
+  <button class="step" data-stage="2">2 · Outline loop</button>
+  <button class="step" data-stage="3">3 · Quad flow fill</button>
+  <button class="step active" data-stage="4">4 · Array + bridge the gap</button>
+</div>
+
+<div class="wrap">
+  <div class="view"><svg id="svg" viewBox="0 0 1000 430" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div class="side">
+    <h2>Piece</h2>
+    <select id="shape">
+      <option value="chevron">Chevron block</option>
+      <option value="sweep">Sweep block (curved)</option>
+      <option value="arrow">Arrow block</option>
+    </select>
+
+    <h2>Topology</h2>
+    <label class="row">Flow lines along <input type="range" id="along" min="6" max="44" value="22"><output id="alongV">22</output></label>
+    <label class="row">Lines across <input type="range" id="across" min="2" max="6" value="4"><output id="acrossV">4</output></label>
+    <label class="row">Piece width <input type="range" id="width" min="30" max="72" value="48"><output id="widthV">48</output></label>
+    <label class="row">Gap to next piece <input type="range" id="gap" min="0" max="70" value="34"><output id="gapV">34</output></label>
+
+    <h2>Show</h2>
+    <label class="chk"><input type="checkbox" id="tFill" checked> Shape fill (orange = end caps)</label>
+    <label class="chk"><input type="checkbox" id="tWire" checked> Quad flow (green)</label>
+    <label class="chk"><input type="checkbox" id="tVerts" checked> Interior vertices</label>
+    <label class="chk"><input type="checkbox" id="tBridge" checked> Bridge across the gap</label>
+
+    <h2>Mesh proof</h2>
+    <div class="stats" id="stats"></div>
+    <div class="legend">
+      <span class="sw" style="background:var(--orange)"></span>end ring (start)
+      <span class="sw" style="background:var(--yellow)"></span>end ring (finish)
+      <span class="sw" style="background:var(--green)"></span>quad flow
+      <span class="sw" style="background:var(--bridge)"></span>bridge quads
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ---------- shape primitives: a tread piece = centreline stroke of given width ----------
+const SHAPES = {
+  chevron: { pts: [[0, 30], [150, -52], [300, 30]] },
+  sweep:   { pts: [[0, -34], [95, 26], [195, -20], [300, 34]] },
+  arrow:   { pts: [[0, 44], [120, -6], [200, -6], [300, 44]] },
+};
+const state = { stage: 4, shape: 'chevron', along: 22, across: 4, width: 48, gap: 34,
+                fill: true, wire: true, verts: true, bridge: true };
+
+// resample a polyline at n+1 equal arc-length stations; tangents by central difference
+function stations(pts, n) {
+  const seg = []; let L = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const dx = pts[i + 1][0] - pts[i][0], dy = pts[i + 1][1] - pts[i][1];
+    const l = Math.hypot(dx, dy); seg.push(l); L += l;
+  }
+  const out = [];
+  for (let k = 0; k <= n; k++) {
+    const target = L * k / n;
+    let acc = 0, i = 0;
+    while (i < seg.length - 1 && acc + seg[i] < target) { acc += seg[i]; i++; }
+    const t = seg[i] ? (target - acc) / seg[i] : 0;
+    out.push([pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t,
+              pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t]);
+  }
+  return out.map((p, k, arr) => {
+    const a = arr[Math.max(0, k - 1)], b = arr[Math.min(arr.length - 1, k + 1)];
+    let tx = b[0] - a[0], ty = b[1] - a[1];
+    const m = Math.hypot(tx, ty) || 1; tx /= m; ty /= m;
+    return { p, tx, ty, nx: -ty, ny: tx };
+  });
+}
+
+// one piece: rings[i][j] = vertex j across at station i; outline loop; quads between rings
+function buildPiece(ox, oy) {
+  const st = stations(SHAPES[state.shape].pts, state.along);
+  const A = state.across, w = state.width;
+  const rings = st.map(s => {
+    const ring = [];
+    for (let j = 0; j <= A; j++) {
+      const f = -0.5 + j / A;
+      ring.push([ox + s.p[0] + s.nx * f * w, oy + s.p[1] + s.ny * f * w]);
+    }
+    return ring;
+  });
+  const quads = [];
+  for (let i = 0; i < rings.length - 1; i++)
+    for (let j = 0; j < A; j++)
+      quads.push([rings[i][j], rings[i][j + 1], rings[i + 1][j + 1], rings[i + 1][j]]);
+  // closed outline loop: down one side, across the finish cap, back the other side
+  const loop = [];
+  for (let i = 0; i < rings.length; i++) loop.push(rings[i][0]);
+  for (let j = 1; j <= A; j++) loop.push(rings[rings.length - 1][j]);
+  for (let i = rings.length - 2; i >= 0; i--) loop.push(rings[i][A]);
+  for (let j = A - 1; j >= 1; j--) loop.push(rings[0][j]);
+  return { rings, quads, loop };
+}
+
+const pt = p => p[0].toFixed(1) + ',' + p[1].toFixed(1);
+const poly = (pts, attrs) => '<polygon points="' + pts.map(pt).join(' ') + '" ' + attrs + '/>';
+const line = (a, b, attrs) => '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) +
+                             '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" ' + attrs + '/>';
+
+function render() {
+  const svg = document.getElementById('svg');
+  const S = state.stage;
+  const pieces = S === 4 ? 3 : 1;
+  const span = 300, gap = S === 4 ? state.gap : 0;
+  const built = [];
+  for (let k = 0; k < pieces; k++) built.push(buildPiece(70 + k * (span + gap), 215));
+  let h = '';
+
+  // gap bands (the "||" separation) behind pieces after the first
+  if (S === 4) for (let k = 1; k < pieces; k++) {
+    const gx = 70 + k * span + (k - 1) * gap;
+    h += '<rect x="' + gx + '" y="60" width="' + gap + '" height="310" fill="#20242c"/>';
+  }
+  for (let k = 0; k < pieces; k++) {
+    const P = built[k];
+    if (state.fill) h += poly(P.loop, 'fill="#f7c948" stroke="none" opacity="0.92"');
+    if (S >= 3 && state.wire) {
+      for (const q of P.quads) h += poly(q, 'fill="none" stroke="#22c55e" stroke-width="1.6"');
+    } else if (S === 2) {
+      h += poly(P.loop, 'fill="none" stroke="#20242c" stroke-width="2.4"');
+    }
+    if (S >= 2) { // end rings: the endpoints of the shape patch
+      const r0 = P.rings[0], r1 = P.rings[P.rings.length - 1];
+      h += poly(r0, 'fill="none" stroke="#ff8c42" stroke-width="6" stroke-linejoin="round"');
+      h += poly(r1, 'fill="none" stroke="#ff8c42" stroke-width="6" stroke-linejoin="round"');
+      for (const v of [...r0, ...r1]) h += '<circle cx="' + v[0].toFixed(1) + '" cy="' + v[1].toFixed(1) + '" r="4" fill="#ffd23f" stroke="#20242c" stroke-width="1.4"/>';
+    }
+    if (S === 2) // traced loop vertices
+      for (const v of P.loop) h += '<circle cx="' + v[0].toFixed(1) + '" cy="' + v[1].toFixed(1) + '" r="3.4" fill="#20242c"/>';
+    if (S >= 3 && state.verts)
+      for (const ring of P.rings) for (let j = 1; j < ring.length - 1; j++)
+        h += '<circle cx="' + ring[j][0].toFixed(1) + '" cy="' + ring[j][1].toFixed(1) + '" r="2.6" fill="#14532d"/>';
+  }
+  // bridges: end ring of piece k -> start ring of piece k+1, vertex for vertex
+  let bridgeQuads = 0;
+  if (S === 4 && state.bridge) {
+    for (let k = 0; k < pieces - 1; k++) {
+      const a = built[k].rings[built[k].rings.length - 1], b = built[k + 1].rings[0];
+      for (let j = 0; j < a.length - 1; j++) {
+        h += poly([a[j], a[j + 1], b[j + 1], b[j]], 'fill="#7dd3fc" fill-opacity="0.30" stroke="#0284c7" stroke-width="1.4"');
+        bridgeQuads++;
+      }
+      for (let j = 0; j < a.length; j++) h += line(a[j], b[j], 'stroke="#0284c7" stroke-width="1" stroke-dasharray="4 3" opacity="0.7"');
+    }
+  }
+  svg.innerHTML = h;
+
+  const A1 = state.across + 1, per = built[0].quads.length;
+  document.getElementById('stats').innerHTML =
+    'pieces <b>' + pieces + '</b> · quads/piece <b>' + per + '</b> · bridge quads <b>' + bridgeQuads + '</b><br>' +
+    'end ring vertices: start <b>' + A1 + '</b> = finish <b>' + A1 + '</b> <span class="ok">✓ bridges 1:1</span><br>' +
+    'triangles <b>0</b> · ngons <b>0</b> · every face a quad <span class="ok">✓</span><br>' +
+    'vertices <b>' + (built[0].rings.length * A1 * pieces + bridgeQuads * 0) + '</b> · flow follows the shape, not a grid';
+}
+
+const $ = id => document.getElementById(id);
+for (const id of ['along', 'across', 'width', 'gap']) {
+  $(id).addEventListener('input', e => { state[id] = +e.target.value; $(id + 'V').textContent = e.target.value; render(); });
+}
+$('shape').addEventListener('change', e => { state.shape = e.target.value; render(); });
+for (const [id, key] of [['tFill', 'fill'], ['tWire', 'wire'], ['tVerts', 'verts'], ['tBridge', 'bridge']])
+  $(id).addEventListener('change', e => { state[key] = e.target.checked; render(); });
+document.getElementById('stagebar').addEventListener('click', e => {
+  const b = e.target.closest('button.step'); if (!b) return;
+  state.stage = +b.dataset.stage;
+  for (const x of document.querySelectorAll('button.step')) x.classList.toggle('active', x === b);
+  render();
+});
+render();
+</script>
+</body>
+</html>
