@@ -295,7 +295,7 @@ const QuadCore = (() => {
     const pitch = opts.pitch || t.quadPitch || 6;
     const minFeature = pitch * (opts.minFeatureFactor !== undefined ? opts.minFeatureFactor : 0.4);
     const th = d.treadHalf, circ = d.circ, A = d.acrossHalf;
-    const levels = new Set([0]); const evaluators = []; const included = [], dropped = [], featureRows = [], wearBars = [];
+    const levels = new Set([0]); const evaluators = []; const included = [], dropped = [], featureRows = [], wearBars = [], perLayer = {};
     (pattern.layers || []).forEach((ly, index) => {
       const depth = clamp(Math.round((ly.depth || 0) * 100) / 100, 0, 1);
       if (ly.type === 'noise' || ly.hidden) { dropped.push({ index, type: ly.type, reason: ly.hidden ? 'hidden in editor' : 'micro texture — not mesh geometry' }); return; }
@@ -306,7 +306,7 @@ const QuadCore = (() => {
       // (Circumferential grooves don't need this — exact grid rows are inserted at their edges.)
       const expand = ly.type === 'circ' ? 0 : Math.max(0, (pitch * 0.9 - (isFinite(gw) ? gw : pitch)) / 2);
       if (!(depth > 0)) { dropped.push({ index, type: ly.type, reason: 'depth 0' }); return; }
-      included.push(index); levels.add(depth);
+      included.push(index); levels.add(depth); perLayer[index] = { depth, expand };
       if (ly.type === 'circ') {
         const y0 = ly.pos * th, w = ly.width || 6;
         if (ly.zig > 0) {
@@ -374,7 +374,7 @@ const QuadCore = (() => {
       return best;
     };
     const levelAt = (x, y) => { const raw = rawAt(x, y); if (raw <= 0.02) return 0; let best = sortedLevels[0], bd = Infinity; for (const l of sortedLevels) { const dd = Math.abs(l - raw); if (dd < bd) { bd = dd; best = l; } } return best; };
-    return { levels: sortedLevels, included, dropped, featureRows, levelAt, rawAt, pitch, minFeature };
+    return { levels: sortedLevels, included, dropped, featureRows, levelAt, rawAt, pitch, minFeature, perLayer, barDepth };
   }
 
   // ---------- topology cleanup + validation ----------
@@ -437,8 +437,8 @@ const QuadCore = (() => {
     return { vertices: NV, unusedVertices: NV - usedCount, quads: F.length, nonQuadFaces: nonQuad, badIndexFaces: badIndex, edges: edges.size, boundaryEdges: boundary, nonManifoldEdges: nonManifold, inconsistentEdges: inconsistent, degenerateFaces: degenerate, euler: NV - edges.size + F.length, signedVolumeMm3: Math.round(vol), minCornerAngleDeg: +(Math.acos(clamp(maxCosAngle, -1, 1)) * 180 / Math.PI).toFixed(1), maxEdgeRatio: +maxRatio.toFixed(2), maxWarpDeg: +(Math.acos(clamp(minCosWarp, -1, 1)) * 180 / Math.PI).toFixed(1), badQuads, watertight: boundary === 0 && nonManifold === 0 && inconsistent === 0 && degenerate === 0 && nonQuad === 0 && badIndex === 0 };
   }
 
-  // ---------- structured quad builder ----------
-  function buildQuadMeshData(pattern, d, prof, t, opts = {}) {
+  // ---------- legacy structured quad builder (fallback; retained as Snap-off path) ----------
+  function buildGridMeshData(pattern, d, prof, t, opts = {}) {
     const pitch = opts.pitch || t.quadPitch || 6;
     const compiled = compilePattern(pattern, d, t, { pitch });
     const D = t.treadDepth, A = d.acrossHalf, circ = d.circ;
@@ -626,6 +626,2184 @@ const QuadCore = (() => {
     return { V, VU, VK, VN, F: mesh.F, report, cleanup, levels: canonLevels, dropped: compiled.dropped, included: compiled.included, pinchesFixed, nodesSnapped, nodesRelaxed: typeof nodesRelaxedTotal !== 'undefined' ? nodesRelaxedTotal : 0, nodesReverted: typeof snapReverted !== 'undefined' ? snapReverted : 0, N, rows, pitch, px };
   }
 
+  // =====================================================================================================================
+  //  CONFORMING QUAD BUILDER — the user's pipeline: primitives -> polygons -> array on a straight (unwrapped) sheet ->
+  //  bridge identical neighbours -> bend to the tyre. Polygons are overlaid in one exact segment arrangement; each
+  //  constant-depth region is traced to ONE closed vertex loop, filled with a constrained-Delaunay triangulation
+  //  whose edges conform to the loop, paired into pure quads (triangles that cannot pair are converted and then
+  //  edge-split until every neighbour shares vertices exactly), terraced with walls, lofted to sidewalls + liner and
+  //  bent onto the tyre profile. No heightmap, no raster sampling: groove edges in the mesh ARE the vector edges.
+  // =====================================================================================================================
+
+  // Sutherland–Hodgman clip of a polygon loop to an axis-aligned rectangle.
+  const clipLoopRect = (pts, x0, y0, x1, y1) => {
+    let out = pts.slice();
+    const clip = (inside, inter) => { const inp = out; out = []; if (!inp.length) return; let s = inp[inp.length - 1], si = inside(s); for (const e of inp) { const ei = inside(e); if (ei) { if (!si) out.push(inter(e, s)); out.push(e); } else if (si) out.push(inter(e, s)); s = e; si = ei; } };
+    clip(p => p[0] >= x0, (e, s) => { const u = (x0 - s[0]) / ((e[0] - s[0]) || 1e-30); return [x0, s[1] + u * (e[1] - s[1])]; });
+    clip(p => p[0] <= x1, (e, s) => { const u = (x1 - s[0]) / ((e[0] - s[0]) || 1e-30); return [x1, s[1] + u * (e[1] - s[1])]; });
+    clip(p => p[1] >= y0, (e, s) => { const u = (y0 - s[1]) / ((e[1] - s[1]) || 1e-30); return [s[0] + u * (e[0] - s[0]), y0]; });
+    clip(p => p[1] <= y1, (e, s) => { const u = (y1 - s[1]) / ((e[1] - s[1]) || 1e-30); return [s[0] + u * (e[0] - s[0]), y1]; });
+    return out;
+  };
+  const polyArea2 = pts => { let s = 0; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) s += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1]; return s / 2; };
+  const segX = (a, b, c, e) => { const d1x = b[0] - a[0], d1y = b[1] - a[1], d2x = e[0] - c[0], d2y = e[1] - c[1]; const den = d1x * d2y - d1y * d2x; if (Math.abs(den) < 1e-14) return null; const t = ((c[0] - a[0]) * d2y - (c[1] - a[1]) * d2x) / den, u = ((c[0] - a[0]) * d1y - (c[1] - a[1]) * d1x) / den; return { t, u }; };
+
+  // Stroked outline of an open polyline: two mitered offset chains joined by round caps. One closed vertex loop.
+  function strokePolygon(pts, hw) {
+    const n = pts.length; if (n < 2 || !(hw > 0)) return null;
+    const nrm = [];
+    for (let i = 0; i + 1 < n; i++) { const dx = pts[i + 1][0] - pts[i][0], dy = pts[i + 1][1] - pts[i][1], len = Math.hypot(dx, dy) || 1; nrm.push([-dy / len, dx / len]); }
+    const side = sgn => {
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        let nx, ny;
+        if (i === 0) { nx = nrm[0][0]; ny = nrm[0][1]; }
+        else if (i === n - 1) { nx = nrm[n - 2][0]; ny = nrm[n - 2][1]; }
+        else {
+          nx = nrm[i - 1][0] + nrm[i][0]; ny = nrm[i - 1][1] + nrm[i][1];
+          const len = Math.hypot(nx, ny);
+          if (len < 1e-9) { nx = nrm[i][0]; ny = nrm[i][1]; }
+          else { nx /= len; ny /= len; const dot = nx * nrm[i][0] + ny * nrm[i][1], sc = 1 / Math.max(0.34, dot); nx *= sc; ny *= sc; }
+        }
+        out.push([pts[i][0] + sgn * hw * nx, pts[i][1] + sgn * hw * ny]);
+      }
+      return out;
+    };
+    const cap = (c, from, to, outAng) => {
+      let a0 = Math.atan2(from[1] - c[1], from[0] - c[0]), a1 = Math.atan2(to[1] - c[1], to[0] - c[0]);
+      let dAng = a1 - a0; while (dAng > Math.PI) dAng -= TAU; while (dAng < -Math.PI) dAng += TAU;
+      const mid = a0 + dAng / 2; if (Math.cos(mid - outAng) < 0) dAng += (dAng > 0 ? -TAU : TAU);
+      const out = [], steps = 3;
+      for (let s = 1; s < steps; s++) { const a = a0 + dAng * s / steps; out.push([c[0] + hw * Math.cos(a), c[1] + hw * Math.sin(a)]); }
+      return out;
+    };
+    const left = side(1), right = side(-1), out = [...left];
+    const dEnd = Math.atan2(pts[n - 1][1] - pts[n - 2][1], pts[n - 1][0] - pts[n - 2][0]);
+    out.push(...cap(pts[n - 1], left[n - 1], right[n - 1], dEnd));
+    for (let i = n - 1; i >= 0; i--) out.push(right[i]);
+    const dStart = Math.atan2(pts[0][1] - pts[1][1], pts[0][0] - pts[1][0]);
+    out.push(...cap(pts[0], right[0], left[0], dStart));
+    return out.filter((p, i) => i === 0 || Math.hypot(p[0] - out[i - 1][0], p[1] - out[i - 1][1]) > 1e-9);
+  }
+
+  /* Stage 1+2: every included layer -> its exact polygon(s) on the unwrapped sheet (periodic copies included,
+     so the array is bridged before bending, exactly as prescribed). Uses compilePattern's per-layer
+     { depth, expand } so the polygons coincide with the vector field used for drop decisions. */
+  function layerPolygons(pattern, d, t, pitch, meta) {
+    const th = d.treadHalf, circ = d.circ, items = [], wearRects = [];
+    const push = (depth, polys) => { const ok = (polys || []).filter(p => p && p.outer && p.outer.length >= 3); if (ok.length) items.push({ depth, polys: ok }); };
+    (pattern.layers || []).forEach((ly, index) => {
+      const info = meta.perLayer[index]; if (!info) return;
+      const { depth, expand } = info;
+      if (ly.type === 'circ') {
+        const y0 = ly.pos * th, w = ly.width || 6;
+        if (ly.zig > 0) {
+          const nz = Math.max(2, Math.round(ly.zigCount || 60)) * 2, seg = circ / nz, pts = [];
+          for (let k = -1; k <= nz + 1; k++) pts.push([k * seg, y0 + (Math.abs(k) % 2 ? ly.zig : -ly.zig)]);
+          const sp = strokePolygon(pts, w / 2); if (sp) push(depth, [{ outer: sp, holes: [] }]);
+        } else {
+          push(depth, [{ outer: [[-1, y0 - w / 2], [circ + 1, y0 - w / 2], [circ + 1, y0 + w / 2], [-1, y0 + w / 2]], holes: [] }]);
+          if (w >= 4 && depth >= 0.9) for (let k = 0; k < 6; k++) wearRects.push({ x: circ / 12 + k * circ / 6, hw: 3, y0, hh: w / 2 + 0.2 });
+        }
+      } else if (ly.type === 'lateral' || ly.type === 'chevron' || ly.type === 'sipe') {
+        const tan = Math.tan((ly.angle || 0) * Math.PI / 180), n = Math.max(1, Math.round(ly.count || 1)), period = circ / n, hw = (ly.width || 4) / 2 + expand;
+        const phaseX = (ly.phase || 0) * period, curve = ly.curve || 0;
+        const ccLo = Math.min(ly.from, ly.to), ccHi = Math.max(ly.from, ly.to), steps = (curve || ly.zig) ? 12 : 1;
+        const signs = ly.mirror ? [1, -1] : [1], SAMPLES = 72;
+        for (const sg of signs) for (let k = -1; k <= n; k++) {
+          const centre = [];
+          for (let s2 = 0; s2 <= SAMPLES; s2++) {
+            const c = ccLo + (ccHi - ccLo) * s2 / SAMPLES, ac = ly.mirror ? Math.abs(c) : c;
+            let xo = ac * th * tan + curve * ac * ac * th * 0.5;
+            if (ly.zig) xo += ((Math.floor((c - ccLo) / Math.max(1e-9, ccHi - ccLo) * steps) % 2) ? ly.zig : -ly.zig) * 0.5;
+            centre.push([phaseX + k * period + xo, (ly.mirror ? sg * c : c) * th]);
+          }
+          const sp = strokePolygon(centre, hw); if (sp) push(depth, [{ outer: sp, holes: [] }]);
+        }
+      } else if (ly.type === 'dimple') {
+        const rowsN = Math.max(1, Math.round(ly.rows || 1)), n = Math.max(1, Math.round(ly.count || 1)), period = circ / n, r = (ly.radius || 3) + expand;
+        const ringW = Math.max(0.6, r * 0.4), polys = [];
+        for (let rr = 0; rr < rowsN; rr++) {
+          const cy = (rowsN === 1 ? (ly.from + ly.to) / 2 : ly.from + (ly.to - ly.from) * rr / (rowsN - 1)) * th;
+          const off = ly.stagger && rr % 2 ? period / 2 : 0, segN = Math.max(14, Math.min(36, Math.round(r * 3)));
+          for (let k = -1; k <= n; k++) { const cx = off + k * period;
+            if (ly.ring) polys.push({ outer: circleRing(cx, cy, r + ringW / 2, segN), holes: [circleRing(cx, cy, Math.max(0.3, r - ringW / 2), segN)] });
+            else polys.push({ outer: circleRing(cx, cy, r, segN), holes: [] }); }
+        }
+        push(depth, polys);
+      } else if (ly.type === 'hex') {
+        const s = Math.max(2, ly.size || 12), nx = Math.max(2, 2 * Math.round(circ / (3 * s))), sx = circ / nx, sy = Math.sqrt(3) * s, rot = (ly.rotate || 0) * Math.PI / 180;
+        const hw = (ly.width || 3) / 2 + expand, yA = ly.from * th, yB = ly.to * th, Ro = s + hw / Math.cos(Math.PI / 6), Ri = Math.max(0.5, s - hw / Math.cos(Math.PI / 6));
+        const hexAt = (cx, cy, R) => { const P0 = []; for (let v = 0; v < 6; v++) { const a = rot + v * Math.PI / 3; P0.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]); } return P0; };
+        const polys = [], reach = s + (ly.width || 3) + expand;
+        for (let i = -1; i <= nx; i++) for (let j = Math.floor((yA - reach) / sy) - 1; j <= Math.ceil((yB + reach) / sy) + 1; j++) {
+          const cx = i * sx, cy = j * sy + (Math.abs(i) % 2 ? sy / 2 : 0);
+          if (cy < yA - reach || cy > yB + reach) continue;
+          const outer = clipLoopRect(hexAt(cx, cy, Ro), cx - Ro - 2, yA - (ly.width || 3), cx + Ro + 2, yB + (ly.width || 3));
+          const hole = clipLoopRect(hexAt(cx, cy, Ri), cx - Ro - 2, yA - (ly.width || 3), cx + Ro + 2, yB + (ly.width || 3));
+          if (outer.length >= 3) polys.push({ outer, holes: hole.length >= 3 ? [hole] : [] });
+        }
+        push(depth, polys);
+      } else if (ly.type === 'shape') {
+        const base = shapeOutline(ly); if (!base || base.pts.length < 2) return;
+        const rep = Math.max(1, Math.round(ly.repeat || 1)), period = circ / rep, hw = (ly.width || 6) / 2 + expand;
+        const variants = [base.pts]; if (ly.mirror) variants.push(base.pts.map(p => [p[0], -p[1]]));
+        for (const v of variants) for (let k = -1; k <= rep; k++) {
+          const pts = v.map(q => [q[0] + k * period, q[1]]);
+          if (ly.kind === 'path') { const sp = strokePolygon(pts, hw); if (sp) push(depth, [{ outer: sp, holes: [] }]); }
+          else if (pts.length > 2) push(depth, [{ outer: pts.map(q => [q[0], q[1]]), holes: [] }]);
+        }
+      }
+    });
+    return { items, wearRects };
+  }
+
+  function buildConformingMeshData(pattern, d, prof, t, opts = {}) {
+    const pitch = opts.pitch || t.quadPitch || 6;
+    const meta = compilePattern(pattern, d, t, { pitch });
+    const D = t.treadDepth, A = d.acrossHalf, circ = d.circ;
+    const wear = clamp(t.wear || 0, 0, 1), canon = raw => Math.max(raw, wear);
+    const canonLevels = [...new Set(meta.levels.map(canon))].sort((a, b) => a - b);
+    const barDepth = meta.barDepth;
+    const gen = layerPolygons(pattern, d, t, pitch, meta);
+    const useWearBars = gen.wearRects.length > 0 && meta.levels.some(v => v > barDepth);
+    const effPitch = Math.max(pitch, circ / 420);
+    const N = Math.max(48, Math.round(circ / pitch)), px = circ / N;
+    // wall-clock budget: the dispatcher falls back to the grid builder when the
+    // conforming attempt cannot finish; a hard deadline keeps pathological
+    // patterns from stalling the app for minutes before that fallback engages
+    const tStartC = Date.now(), budgetC = opts.timeBudgetMs || 30000;
+    const checkDeadline = () => { if (Date.now() - tStartC > budgetC) throw new Error('conforming: time budget exceeded'); };
+
+    // ---- welded vertex pool on the flat sheet (x around, y across), ~0.005 mm weld ----
+    const verts = [], vBuckets = new Map(), BW = 0.01;
+    const poolAdd = (x, y) => {
+      const bx = Math.round(x / BW), by = Math.round(y / BW);
+      for (let i = bx - 1; i <= bx + 1; i++) for (let j = by - 1; j <= by + 1; j++) { const lst = vBuckets.get(i + ',' + j); if (!lst) continue; for (const id of lst) { const dx = verts[id][0] - x, dy = verts[id][1] - y; if (dx * dx + dy * dy < BW * BW * 0.25) return id; } }
+      const id = verts.length; verts.push([x, y]); const key = bx + ',' + by; let lst = vBuckets.get(key); if (!lst) vBuckets.set(key, lst = []); lst.push(id); return id;
+    };
+    const P = id => verts[id];
+    const findPoolPt = (x, y, tol) => { const bx = Math.round(x / BW), by = Math.round(y / BW); let best = -1, bd = tol * tol;
+      for (let i = bx - 1; i <= bx + 1; i++) for (let j = by - 1; j <= by + 1; j++) { const lst = vBuckets.get(i + ',' + j); if (!lst) continue; for (const id of lst) { const dx = verts[id][0] - x, dy = verts[id][1] - y, d2 = dx * dx + dy * dy; if (d2 < bd) { bd = d2; best = id; } } }
+      return best; };
+
+    // ---- exact level lookup (periodic in x; -1 outside the sheet) ----
+    const labelPolys = new Map();
+    for (const it of gen.items) { let L = labelPolys.get(it.depth); if (!labelPolys.has(it.depth)) labelPolys.set(it.depth, L = []); for (const p of it.polys) L.push(p); }
+    const labBuckets = new Map(), LABW = Math.max(8, effPitch * 4);
+    const labKey = (x, y) => Math.floor(x / LABW) + ',' + Math.floor(y / LABW);
+    for (const [depth, polys] of labelPolys) for (const p of polys) {
+      let x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18;
+      for (const q of p.outer) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); }
+      for (let i = Math.floor(x0 / LABW); i <= Math.floor(x1 / LABW); i++) for (let j = Math.floor(y0 / LABW); j <= Math.floor(y1 / LABW); j++) { const key = i + ',' + j; let lst = labBuckets.get(key); if (!lst) labBuckets.set(key, lst = []); lst.push({ depth, p }); }
+    }
+    const insidePoly = (x, y, p) => pointInRing(x, y, p.outer) && !(p.holes || []).some(h => pointInRing(x, y, h));
+    function canonLabel(x, y) {
+      // outside the unwrapped sheet is label -1 on ALL four sides: border chains then act as ordinary
+      // boundary segments, and loops close along them (the seam weld happens later, in 3D, via vAt).
+      if (x < -1e-9 || x > circ + 1e-9 || y < -A - 1e-9 || y > A + 1e-9) return -1;
+      const lst = labBuckets.get(labKey(x, y)); let raw = 0;
+      if (lst) for (const e of lst) if (e.depth > raw && insidePoly(x, y, e.p)) raw = e.depth;
+      if (useWearBars && raw > barDepth) { const xm = mod(x, circ); for (const wr of gen.wearRects) if (Math.abs(xm - wr.x) <= wr.hw && Math.abs(y - wr.y0) <= wr.hh) { raw = barDepth; break; } }
+      return canon(raw);
+    }
+
+    // ---- clipped polygon loops + border chain breakpoints ----
+    const borderX = new Set(), borderY = new Set();
+    for (let i = 0; i <= N; i++) borderX.add(+(i * px).toFixed(4));
+    const MYr = Math.max(4, Math.round(2 * A / effPitch));
+    for (let j = 0; j <= MYr; j++) borderY.add(+(-A + j * (2 * A / MYr)).toFixed(4));
+    const loopSegCross = pts => { for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length];
+      for (const Y of [-A, A]) if ((a[1] - Y) * (b[1] - Y) < 0) borderX.add(+(a[0] + (Y - a[1]) / (b[1] - a[1]) * (b[0] - a[0])).toFixed(4));
+      for (const X of [0, circ]) if ((a[0] - X) * (b[0] - X) < 0) borderY.add(+(a[1] + (X - a[0]) / (b[0] - a[0]) * (b[1] - a[1])).toFixed(4)); } };
+    const allLoops = [];
+    for (const it of gen.items) for (const p of it.polys) for (const ring of [p.outer, ...(p.holes || [])]) {
+      const q = clipLoopRect(ring, 0, -A, circ, A);
+      if (q.length >= 3 && Math.abs(polyArea2(q)) > 1e-9) { allLoops.push(q); loopSegCross(q); }
+    }
+
+    // ---- segment arrangement: split every segment at crossings / touches / collinear overlaps ----
+    let segs = [];
+    const addLoopSegs = pts => { for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; if (Math.hypot(b[0] - a[0], b[1] - a[1]) > 1e-9) segs.push({ a, b }); } };
+    for (const q of allLoops) addLoopSegs(q);
+    const bxList = [...borderX].filter(x => x >= -1e-9 && x <= circ + 1e-9).sort((a, b) => a - b);
+    const byList = [...borderY].filter(y => y >= -A - 1e-9 && y <= A + 1e-9).sort((a, b) => a - b);
+    for (let i = 0; i + 1 < bxList.length; i++) { segs.push({ a: [bxList[i], -A], b: [bxList[i + 1], -A] }); segs.push({ a: [bxList[i], A], b: [bxList[i + 1], A] }); }
+    for (let j = 0; j + 1 < byList.length; j++) { segs.push({ a: [0, byList[j]], b: [0, byList[j + 1]] }); segs.push({ a: [circ, byList[j]], b: [circ, byList[j + 1]] }); }
+    {
+      const splitAt = (i, px2, py2) => { const s = segs[i]; const id = poolAdd(px2, py2); segs.push({ a: id, b: s.b }); s.b = id; };
+      let changed = true, rounds = 0;
+      while (changed && rounds++ < 24) {
+        changed = false;
+        const SW = Math.max(4, pitch), sBuck = new Map();
+        const sKey = (x, y) => Math.floor(x / SW) + ',' + Math.floor(y / SW);
+        const pa = i => typeof segs[i].a === 'number' ? P(segs[i].a) : segs[i].a, pb = i => typeof segs[i].b === 'number' ? P(segs[i].b) : segs[i].b;
+        segs.forEach((s, i) => { const A0 = pa(i), B0 = pb(i);
+          for (let cx = Math.floor(Math.min(A0[0], B0[0]) / SW); cx <= Math.floor(Math.max(A0[0], B0[0]) / SW); cx++)
+            for (let cy = Math.floor(Math.min(A0[1], B0[1]) / SW); cy <= Math.floor(Math.max(A0[1], B0[1]) / SW); cy++) { const key = cx + ',' + cy; let lst = sBuck.get(key); if (!lst) sBuck.set(key, lst = []); lst.push(i); } });
+        for (let i = 0; i < segs.length; i++) {
+          const cand = new Set();
+          { const A0 = pa(i), B0 = pb(i);
+            for (let cx = Math.floor(Math.min(A0[0], B0[0]) / SW); cx <= Math.floor(Math.max(A0[0], B0[0]) / SW); cx++)
+              for (let cy = Math.floor(Math.min(A0[1], B0[1]) / SW); cy <= Math.floor(Math.max(A0[1], B0[1]) / SW); cy++) { const lst = sBuck.get(cx + ',' + cy); if (lst) for (const j of lst) if (j > i) cand.add(j); } }
+          for (const j of cand) {
+            if (j >= segs.length) continue;
+            const A0 = pa(i), B0 = pb(i), C0 = pa(j), D0 = pb(j);
+            const hit = segX(A0, B0, C0, D0);
+            if (hit) {
+              const { t, u } = hit;
+              if (t > 1e-9 && t < 1 - 1e-9 && u > 1e-9 && u < 1 - 1e-9) {
+                const px2 = A0[0] + t * (B0[0] - A0[0]), py2 = A0[1] + t * (B0[1] - A0[1]);
+                splitAt(i, px2, py2); splitAt(j, px2, py2); changed = true;
+              } else {
+                if (t > 1e-6 && t < 1 - 1e-6 && u >= -1e-6 && u <= 1 + 1e-6) { splitAt(i, A0[0] + t * (B0[0] - A0[0]), A0[1] + t * (B0[1] - A0[1])); changed = true; }
+                if (u > 1e-6 && u < 1 - 1e-6 && t >= -1e-6 && t <= 1 + 1e-6) { splitAt(j, C0[0] + u * (D0[0] - C0[0]), C0[1] + u * (D0[1] - C0[1])); changed = true; }
+              }
+            } else {
+              // parallel: collinear overlap?
+              const d1x = B0[0] - A0[0], d1y = B0[1] - A0[1], limb = Math.hypot(d1x, d1y); if (limb < 1e-12) continue;
+              const cr0 = (C0[0] - A0[0]) * d1y - (C0[1] - A0[1]) * d1x;
+              if (Math.abs(cr0) > 1e-9 * limb) continue;
+              const uOf = p => ((p[0] - A0[0]) * d1x + (p[1] - A0[1]) * d1y) / (limb * limb);
+              for (const u of [uOf(C0), uOf(D0)]) if (u > 1e-6 && u < 1 - 1e-6) { splitAt(i, A0[0] + u * d1x, A0[1] + u * d1y); changed = true; break; }
+              const d2x = D0[0] - C0[0], d2y = D0[1] - C0[1], limb2 = Math.hypot(d2x, d2y); if (limb2 < 1e-12) continue;
+              const vOf = p => ((p[0] - C0[0]) * d2x + (p[1] - C0[1]) * d2y) / (limb2 * limb2);
+              for (const v of [vOf(A0), vOf(B0)]) if (v > 1e-6 && v < 1 - 1e-6) { splitAt(j, C0[0] + v * d2x, C0[1] + v * d2y); changed = true; break; }
+            }
+          }
+        }
+      }
+      // weld endpoints into the pool, dedupe
+      const seenSeg = new Map(), atomic = [];
+      for (const s of segs) {
+        const a = typeof s.a === 'number' ? s.a : poolAdd(s.a[0], s.a[1]);
+        const b = typeof s.b === 'number' ? s.b : poolAdd(s.b[0], s.b[1]);
+        if (a === b) continue;
+        const dx = P(a)[0] - P(b)[0], dy = P(a)[1] - P(b)[1]; if (dx * dx + dy * dy < 1e-14) continue;
+        const key = a < b ? a + ',' + b : b + ',' + a;
+        if (!seenSeg.has(key)) { seenSeg.set(key, 1); atomic.push({ a, b }); }
+      }
+      segs = atomic;
+    }
+
+    // ---- side labels: keep only true boundary segments (label changes across them) ----
+    const bEdges = [];
+    for (const s of segs) {
+      const a = P(s.a), b = P(s.b), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      let nx = -(b[1] - a[1]), ny = b[0] - a[0]; const len = Math.hypot(nx, ny) || 1; nx /= len; ny /= len;
+      const left = canonLabel(mx + nx * 0.03, my + ny * 0.03), right = canonLabel(mx - nx * 0.03, my - ny * 0.03);
+      if (left !== right) bEdges.push({ a: s.a, b: s.b, left, right });
+    }
+
+    // ---- trace each region boundary to ONE closed vertex loop (strict predecessor rule + closure proof) ----
+    const loops = [];
+    {
+      const NVK = verts.length + 5, keyH = h => h.a * NVK + h.b;
+      const allH = [], outMap = new Map();
+      for (const e of bEdges) for (const h of [{ a: e.a, b: e.b, left: e.left }, { a: e.b, b: e.a, left: e.right }]) {
+        const A0 = P(h.a), B0 = P(h.b); h.ang = Math.atan2(B0[1] - A0[1], B0[0] - A0[0]); allH.push(h);
+        let lst = outMap.get(h.a); if (!lst) outMap.set(h.a, lst = []); lst.push(h);
+      }
+      for (const lst of outMap.values()) lst.sort((p, q) => p.ang - q.ang);
+      const visited = new Set();
+      for (const h0 of allH) {
+        if (visited.has(h0)) continue;
+        visited.add(h0);
+        const seq = [h0.a]; let cur = h0, closed = false;
+        for (let guard = 0; guard < 100000; guard++) {
+          const v = cur.b, pv = P(v), pa = P(cur.a), rev = Math.atan2(pa[1] - pv[1], pa[0] - pv[0]);
+          const cands = (outMap.get(v) || []).filter(c => c.left === cur.left);
+          let nxt = null, bestAng = -Infinity;
+          for (const c of cands) if (c.ang < rev - 1e-12 && c.ang > bestAng) { bestAng = c.ang; nxt = c; }
+          if (!nxt) { let mx = -Infinity; for (const c of cands) if (c.ang > mx) { mx = c.ang; nxt = c; } }
+          if (!nxt || (nxt !== h0 && visited.has(nxt))) break;
+          if (nxt === h0) { closed = true; break; }
+          visited.add(nxt); seq.push(v); cur = nxt;
+        }
+        if (!closed || seq.length < 3) continue;
+        const pts = seq.map(P), area = polyArea2(pts);
+        if (Math.abs(area) < 1e-9) continue;
+        loops.push({ verts: seq, label: h0.left, area, pts });
+      }
+    }
+
+    // ---- classify loops as outers / holes by a local side test, group into components ----
+    let components = [];
+    {
+      const outers = [], holes = [];
+      for (const lp of loops) {
+        if (lp.label < 0) continue;
+        const pts = lp.pts, p0 = pts[0], p1 = pts[1];
+        let ex = p1[0] - p0[0], ey = p1[1] - p0[1]; const el = Math.hypot(ex, ey) || 1; ex /= el; ey /= el;
+        let kind = 'outer';
+        for (const sgn of [1, -1]) { const sx = (p0[0] + p1[0]) / 2 - ey * sgn * 0.05, sy = (p0[1] + p1[1]) / 2 + ex * sgn * 0.05;
+          if (canonLabel(sx, sy) === lp.label) { kind = pointInRing(sx, sy, pts) ? 'outer' : 'hole'; break; } }
+        (kind === 'outer' ? outers : holes).push(lp);
+      }
+      components = outers.map(o => ({ level: o.label, outer: o, holes: [] }));
+      for (const h of holes) {
+        let best = null, ba = Infinity;
+        for (const c of components) if (c.level === h.label && pointInRing(h.pts[0][0], h.pts[0][1], c.outer.pts) && Math.abs(c.outer.area) < ba) { best = c; ba = Math.abs(c.outer.area); }
+        if (!best) { // nearest outer of same level (seam-split holes can sit outside their outer's ring test)
+          let bd = Infinity;
+          for (const c of components) { if (c.level !== h.label) continue; for (let i = 0; i < c.outer.pts.length; i++) { const a = c.outer.pts[i], b = c.outer.pts[(i + 1) % c.outer.pts.length]; const dd = segDist2(h.pts[0][0], h.pts[0][1], a[0], a[1], b[0], b[1]); if (dd < bd) { bd = dd; best = c; } } }
+        }
+        if (best) best.holes.push(h);
+        else components.push({ level: h.label, outer: h, holes: [] });
+      }
+    }
+    if (!components.length) {
+      if (bEdges.length) throw new Error('conforming: no region loops traced');
+      // slick tyre: one land component over the whole sheet
+      const c0 = poolAdd(0, -A), c1 = poolAdd(circ, -A), c2 = poolAdd(circ, A), c3 = poolAdd(0, A);
+      components = [{ level: 0, outer: { verts: [c0, c1, c2, c3], pts: [[0, -A], [circ, -A], [circ, A], [0, A]], area: circ * 2 * A }, holes: [] }];
+    }
+
+    // ---- jittered Steiner grid labelled by the exact field ----
+    const NXg = Math.max(8, Math.round(circ / effPitch)), pxg = circ / NXg;
+    const MYg = Math.max(4, Math.round(2 * A / effPitch)), pyg = 2 * A / MYg;
+    const gridLabel = new Float64Array((NXg + 1) * (MYg + 1)), gridXY = new Float64Array((NXg + 1) * (MYg + 1) * 2);
+    const hashNoise = (i, j) => { const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return s - Math.floor(s); };
+    for (let j = 0; j <= MYg; j++) for (let i = 0; i <= NXg; i++) {
+      // boundary frame stays exactly on the sheet edges: a jittered seam/border column lands a
+      // fraction of a millimetre inside and breeds sliver triangles against the boundary walk
+      const gx = i === 0 ? 0 : i === NXg ? circ : i * pxg + (hashNoise(i, j) - 0.5) * pxg * 0.06,
+        gy = j === 0 ? -A : j === MYg ? A : -A + j * pyg + (hashNoise(j, i + 57) - 0.5) * pyg * 0.06, k = j * (NXg + 1) + i;
+      gridXY[k * 2] = gx; gridXY[k * 2 + 1] = gy; gridLabel[k] = canonLabel(gx, gy);
+    }
+
+    // ---- constrained Delaunay fill of one boundary walk (ends as pure triangles, paired later) ----
+    function delaunayFill(walkIds, interiorIds, compLevel, holeLoops = []) {
+      const loc = new Map(), ids = [];
+      const addPt = id => { if (!loc.has(id)) { loc.set(id, ids.length); ids.push(id); } };
+      const poolOf = new Map(); // local index -> pool vertex id (Steiner points join below)
+      walkIds.forEach(addPt); for (const h of holeLoops) h.forEach(addPt); interiorIds.forEach(addPt);
+      const pts = ids.map(id => P(id));
+      let x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18;
+      for (const p of pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R = 4 * Math.max(x1 - x0, y1 - y0, 1);
+      const S0 = pts.length;
+      pts.push([cx - 2 * R, cy - R], [cx + 2 * R, cy - R], [cx, cy + 2 * R]);
+      for (let i = 0; i < S0; i++) poolOf.set(i, ids[i]);
+      const NMUL = pts.length + 5, ekeyL = (a, b) => a < b ? a * NMUL + b : b * NMUL + a;
+      const T = [], em = new Map(), cellT = effPitch * 2, tb = new Map(), bigTris = [];
+      const link = tr => { for (let k = 0; k < 3; k++) { const key = ekeyL(tr.v[k], tr.v[(k + 1) % 3]); let s = em.get(key); if (!s) em.set(key, s = new Set()); s.add(tr); }
+        let bx0 = 1e18, bx1 = -1e18, by0 = 1e18, by1 = -1e18; for (const vi of tr.v) { const p = pts[vi]; bx0 = Math.min(bx0, p[0]); bx1 = Math.max(bx1, p[0]); by0 = Math.min(by0, p[1]); by1 = Math.max(by1, p[1]); }
+        const i0 = Math.floor(bx0 / cellT), i1 = Math.floor(bx1 / cellT), j0 = Math.floor(by0 / cellT), j1 = Math.floor(by1 / cellT);
+        if ((i1 - i0 + 1) * (j1 - j0 + 1) > 1024) { bigTris.push(tr); return; }
+        for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const key = i + ',' + j; let lst = tb.get(key); if (!lst) tb.set(key, lst = []); lst.push(tr); } };
+      const kill = tr => { tr.dead = true; for (let k = 0; k < 3; k++) { const s = em.get(ekeyL(tr.v[k], tr.v[(k + 1) % 3])); if (s) s.delete(tr); } };
+      const newTri = (a, b, c) => { const tr = { v: [a, b, c], dead: false }; T.push(tr); link(tr); return tr; };
+      const inCirc = (a, b, c, dd) => { const ax = pts[a][0] - pts[dd][0], ay = pts[a][1] - pts[dd][1], bx = pts[b][0] - pts[dd][0], by = pts[b][1] - pts[dd][1], cx2 = pts[c][0] - pts[dd][0], cy2 = pts[c][1] - pts[dd][1];
+        return (ax * ax + ay * ay) * (bx * cy2 - cx2 * by) - (bx * bx + by * by) * (ax * cy2 - cx2 * ay) + (cx2 * cx2 + cy2 * cy2) * (ax * by - bx * ay); };
+      const contains = (tr, x, y) => { const [a, b, c] = tr.v.map(i => pts[i]); const d0 = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]), d1 = (c[0] - b[0]) * (y - b[1]) - (c[1] - b[1]) * (x - b[0]), d2 = (a[0] - c[0]) * (y - c[1]) - (a[1] - c[1]) * (x - c[0]); return (d0 >= -1e-7 && d1 >= -1e-7 && d2 >= -1e-7) ? [d0, d1, d2] : null; };
+      const findTri = (x, y) => { const lst = tb.get(Math.floor(x / cellT) + ',' + Math.floor(y / cellT)); if (lst) for (const tr of lst) { if (tr.dead) continue; const dd = contains(tr, x, y); if (dd) return [tr, dd]; }
+        for (const tr of bigTris) { if (tr.dead) continue; const dd = contains(tr, x, y); if (dd) return [tr, dd]; }
+        for (const tr of T) { if (tr.dead) continue; const dd = contains(tr, x, y); if (dd) return [tr, dd]; } return null; };
+      const liveTrisOn = (a, b) => { const s = em.get(ekeyL(a, b)); const out = []; if (s) for (const tr of s) if (!tr.dead) out.push(tr); return out; };
+      const hasLiveEdge = (a, b) => liveTrisOn(a, b).length > 0;
+      const flipEdge = (tA, tB, a, b) => {
+        const iA = tA.v.findIndex((v, k) => v === a && tA.v[(k + 1) % 3] === b);
+        if (iA < 0) { const tmp = tA; tA = tB; tB = tmp; }
+        const jA = tA.v.findIndex((v, k) => v === a && tA.v[(k + 1) % 3] === b); if (jA < 0) return null;
+        const c = tA.v[(jA + 2) % 3], dd = tB.v.find(v => v !== a && v !== b);
+        const cr = (p, q, r) => (pts[q][0] - pts[p][0]) * (pts[r][1] - pts[p][1]) - (pts[q][1] - pts[p][1]) * (pts[r][0] - pts[p][0]);
+        if (cr(a, dd, c) <= 1e-9 || cr(dd, b, c) <= 1e-9) return null;
+        kill(tA); kill(tB);
+        return [newTri(a, dd, c), newTri(dd, b, c)];
+      };
+      const apexOf = (tr, a, b) => tr.v.find(v => v !== a && v !== b);
+      function insertPt(pi) {
+        const [px2, py2] = pts[pi], f = findTri(px2, py2);
+        if (!f) throw new Error('conforming: point location failed');
+        const [tr, dd] = f;
+        for (const vi of tr.v) { const dx = pts[vi][0] - px2, dy = pts[vi][1] - py2; if (dx * dx + dy * dy < 1e-18) return; }
+        let ei = -1, emin = 1e-7; dd.forEach((dv, k) => { if (Math.abs(dv) <= emin) { emin = Math.abs(dv); ei = k; } });
+        const stack = [];
+        if (ei >= 0) {
+          const ea = tr.v[ei], eb = tr.v[(ei + 1) % 3], oc = tr.v[(ei + 2) % 3];
+          const others = liveTrisOn(ea, eb).filter(o => o !== tr);
+          kill(tr); newTri(ea, pi, oc); newTri(pi, eb, oc); stack.push([eb, oc], [oc, ea]);
+          if (others.length) { const od = apexOf(others[0], ea, eb); kill(others[0]); newTri(eb, pi, od); newTri(pi, ea, od); stack.push([ea, od], [od, eb]); }
+        } else {
+          const [a, b, c] = tr.v; kill(tr); newTri(a, b, pi); newTri(b, c, pi); newTri(c, a, pi); stack.push([a, b], [b, c], [c, a]);
+        }
+        let guard = 0;
+        while (stack.length && guard++ < 20000) {
+          const [ea, eb] = stack.pop(), lt = liveTrisOn(ea, eb);
+          if (lt.length !== 2) continue;
+          const tP = lt.find(tr2 => tr2.v.includes(pi)), tO = lt.find(tr2 => tr2 !== tP);
+          if (!tP || !tO) continue;
+          const opp = apexOf(tO, ea, eb);
+          if (inCirc(tO.v[0], tO.v[1], tO.v[2], pi) > 0) { const nt = flipEdge(tP, tO, ea, eb); if (nt) for (const ntr of nt) if (ntr.v.includes(pi)) stack.push(ntr.v.filter(v => v !== pi)); }
+        }
+      }
+      const compact = () => { tb.clear(); bigTris.length = 0; for (const tr of T) if (!tr.dead) link(tr); };
+      newTri(S0, S0 + 1, S0 + 2);
+      for (let i = 0; i < ids.length; i++) { insertPt(i); if ((i & 1023) === 1023) compact(); }
+      compact();
+      // insert loop edges as constraints (flip towards the segment in crossing order;
+      // split at grazed vertices). Holes are constrained directly -- no bridge segments
+      // stitching them into the walk (bridges can cross the boundary and make the walk
+      // self-intersect, which no amount of flipping can insert)
+      const walkEdges = new Set();
+      const allLoops = [walkIds, ...holeLoops];
+      for (const lp of allLoops) for (let i = 0; i < lp.length; i++) walkEdges.add(ekeyL(loc.get(lp[i]), loc.get(lp[(i + 1) % lp.length])));
+      const segCrossQ = (A0, B0, C0, E0) => { const hit = segX(A0, B0, C0, E0); if (!hit) return null; const { t, u } = hit; return (t > 1e-9 && t < 1 - 1e-9 && u > 1e-9 && u < 1 - 1e-9) ? t : null; };
+      function insertConstraintImpl(ia, ib, depth) {
+        if (hasLiveEdge(ia, ib)) return;
+        const A0 = pts[ia], B0 = pts[ib];
+        for (let round = 0; round < 300; round++) {
+          if (hasLiveEdge(ia, ib)) return;
+          const crossed = [], seenT = new Set();
+          const i0 = Math.floor(Math.min(A0[0], B0[0]) / cellT), i1 = Math.floor(Math.max(A0[0], B0[0]) / cellT), j0 = Math.floor(Math.min(A0[1], B0[1]) / cellT), j1 = Math.floor(Math.max(A0[1], B0[1]) / cellT);
+          const consider = tr => { if (tr.dead || seenT.has(tr)) return; seenT.add(tr);
+            for (let k = 0; k < 3; k++) { const ea = tr.v[k], eb = tr.v[(k + 1) % 3]; if (ea === ia || ea === ib || eb === ia || eb === ib) continue; if (walkEdges.has(ekeyL(ea, eb))) continue;
+              const tc = segCrossQ(A0, B0, pts[ea], pts[eb]); if (tc !== null) crossed.push([tc, ea, eb]); } };
+          for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const lst = tb.get(i + ',' + j); if (lst) for (const tr of lst) consider(tr); }
+          for (const tr of bigTris) consider(tr);
+          if (!crossed.length) {
+            // segment may graze existing vertices: split at ALL of them in order
+            // (long hole-bridge edges can thread a whole chain of collinear vertices;
+            // one-at-a-time recursion exhausts its depth long before the chain ends)
+            const graz = [];
+            for (let vi = 0; vi < pts.length; vi++) { if (vi === ia || vi === ib || !poolOf.has(vi)) continue; const p = pts[vi];
+              const ddx = B0[0] - A0[0], ddy = B0[1] - A0[1], len2 = ddx * ddx + ddy * ddy || 1, u = ((p[0] - A0[0]) * ddx + (p[1] - A0[1]) * ddy) / len2;
+              if (u <= 1e-6 || u >= 1 - 1e-6) continue;
+              const ex = p[0] - A0[0] - u * ddx, ey = p[1] - A0[1] - u * ddy;
+              if (ex * ex + ey * ey < 1e-8) graz.push([u, vi]); }
+            if (graz.length && depth < 60) { graz.sort((p, q) => p[0] - q[0]);
+              let prev = ia;
+              for (const [, gv] of graz) { insertConstraint(prev, gv, depth + 1); prev = gv; }
+              insertConstraint(prev, ib, depth + 1);
+              if (hasLiveEdge(ia, ib)) return; }
+            break;
+          }
+          crossed.sort((p, q) => p[0] - q[0]);
+          let flipped = false;
+          for (const [, ea, eb] of crossed) { const lt = liveTrisOn(ea, eb); if (lt.length === 2) { if (flipEdge(lt[0], lt[1], ea, eb)) { flipped = true; break; } } }
+          if (!flipped) { // every crossed edge is unflippable (needle quad): split the
+            // constraint at its midpoint with a Steiner point and recurse -- guaranteed
+            // progress where pure flipping deadlocks (mega-components, sliver fields)
+            if (depth >= 12) break;
+            const mx = (A0[0] + B0[0]) / 2, my = (A0[1] + B0[1]) / 2, pid = poolAdd(mx, my);
+            let li = -1;
+            for (const [k2, v2] of poolOf) if (v2 === pid) { li = k2; break; }
+            if (li < 0) { li = pts.length; pts.push([mx, my]); poolOf.set(li, pid); insertPt(li); }
+            if (li === ia || li === ib) break;
+            insertConstraint(ia, li, depth + 1); insertConstraint(li, ib, depth + 1);
+            if (hasLiveEdge(ia, ib)) return;
+            break; }
+        }
+        if (!hasLiveEdge(ia, ib) && depth < 12) { // flips stalled: Steiner-split once and retry the halves
+          const mx = (A0[0] + B0[0]) / 2, my = (A0[1] + B0[1]) / 2, pid = poolAdd(mx, my);
+          let li = -1;
+          for (const [k2, v2] of poolOf) if (v2 === pid) { li = k2; break; }
+          if (li < 0) { li = pts.length; pts.push([mx, my]); poolOf.set(li, pid); insertPt(li); }
+          if (li !== ia && li !== ib) { insertConstraint(ia, li, depth + 1); insertConstraint(li, ib, depth + 1); } }
+        if (!hasLiveEdge(ia, ib)) throw new Error('conforming: constraint insertion failed');
+      }
+      // every successfully inserted (sub-)edge joins the barrier set: a constraint
+      // that was Steiner/graze-split exists only as sub-edges, and without them in
+      // walkEdges the outside flood below leaks through the split point and eats
+      // part of the region (long rim edges from killed dart faces triggered this)
+      const insertConstraint = (ia, ib, depth) => { insertConstraintImpl(ia, ib, depth);
+        if (hasLiveEdge(ia, ib)) walkEdges.add(ekeyL(ia, ib)); };
+      for (const lp of allLoops) for (let i = 0; i < lp.length; i++) insertConstraint(loc.get(lp[i]), loc.get(lp[(i + 1) % lp.length]), 0);
+      // restore Delaunay away from the constraints
+      for (let pass = 0; pass < 40; pass++) {
+        let flips = 0; const seenE = new Set();
+        for (const tr of T) { if (tr.dead) continue;
+          for (let k = 0; k < 3; k++) { const ea = tr.v[k], eb = tr.v[(k + 1) % 3], key = ekeyL(ea, eb);
+            if (seenE.has(key) || walkEdges.has(key)) continue; seenE.add(key);
+            const lt = liveTrisOn(ea, eb); if (lt.length !== 2) continue;
+            const [tP, tO] = lt, oP = apexOf(tP, ea, eb), oO = apexOf(tO, ea, eb);
+            if (inCirc(tP.v[0], tP.v[1], tP.v[2], oO) > 0 || inCirc(tO.v[0], tO.v[1], tO.v[2], oP) > 0) { if (flipEdge(tP, tO, ea, eb)) flips++; } } }
+        if (!flips) break;
+      }
+      // delete everything outside the walk (flood from the supertriangle across non-constraint edges)
+      const outside = new Set(), seeds = [];
+      for (const tr of T) if (!tr.dead && tr.v.some(v => !poolOf.has(v))) { outside.add(tr); seeds.push(tr); }
+      while (seeds.length) { const tr = seeds.pop();
+        for (let k = 0; k < 3; k++) { const ea = tr.v[k], eb = tr.v[(k + 1) % 3]; if (walkEdges.has(ekeyL(ea, eb))) continue;
+          for (const o of liveTrisOn(ea, eb)) if (o !== tr && !outside.has(o)) { outside.add(o); seeds.push(o); } } }
+      const out = [];
+      for (const tr of T) if (!tr.dead && !outside.has(tr) && tr.v.every(v => poolOf.has(v))) out.push(tr.v.map(vi => poolOf.get(vi)));
+      return out;
+    }
+
+    // ---- mesh one component: bridge holes into the walk, fill, keep only true-region triangles ----
+    const densify = ids => { const out = [ids[0]];
+      for (let i = 0; i < ids.length; i++) { const a = P(ids[i]), b = P(ids[(i + 1) % ids.length]), len = Math.hypot(b[0] - a[0], b[1] - a[1]), kk = Math.max(1, Math.ceil(len / (1.02 * effPitch)));
+        for (let s2 = 1; s2 < kk; s2++) out.push(poolAdd(a[0] + (b[0] - a[0]) * s2 / kk, a[1] + (b[1] - a[1]) * s2 / kk));
+        if (i + 1 < ids.length) out.push(ids[i + 1]); }
+      return out; };
+    function meshComponent(comp) {
+      let walk = densify(comp.outer.verts);
+      const cellS = effPitch, segBucket = new Map(), compSegs = [];
+      const addSegsOf = ids => { const dd = densify(ids);
+        for (let i = 0; i < dd.length; i++) { const a = P(dd[i]), b = P(dd[(i + 1) % dd.length]), idx = compSegs.length / 4; compSegs.push(a[0], a[1], b[0], b[1]);
+          for (let cx = Math.floor(Math.min(a[0], b[0]) / cellS); cx <= Math.floor(Math.max(a[0], b[0]) / cellS); cx++)
+            for (let cy = Math.floor(Math.min(a[1], b[1]) / cellS); cy <= Math.floor(Math.max(a[1], b[1]) / cellS); cy++) { const key = cx + ',' + cy; let lst = segBucket.get(key); if (!lst) segBucket.set(key, lst = []); lst.push(idx); } }
+        return dd; };
+      addSegsOf(comp.outer.verts);
+      const holeIds = comp.holes.map(h => { const hd = densify(h.verts); addSegsOf(h.verts); return hd; });
+      const outerPts = comp.outer.pts, holePts = comp.holes.map(h => h.pts), minD2 = (0.26 * effPitch) * (0.26 * effPitch), inside = [], insideIJ = [];
+      let ox0 = 1e18, ox1 = -1e18, oy0 = 1e18, oy1 = -1e18;
+      for (const p of outerPts) { ox0 = Math.min(ox0, p[0]); ox1 = Math.max(ox1, p[0]); oy0 = Math.min(oy0, p[1]); oy1 = Math.max(oy1, p[1]); }
+      for (let j = 0; j <= MYg; j++) for (let i = 0; i <= NXg; i++) {
+        const kk = j * (NXg + 1) + i; if (gridLabel[kk] !== comp.level) continue;
+        const gx = gridXY[kk * 2], gy = gridXY[kk * 2 + 1];
+        if (gx < ox0 - effPitch || gx > ox1 + effPitch || gy < oy0 - effPitch || gy > oy1 + effPitch) continue;
+        if (!pointInRing(gx, gy, outerPts) || holePts.some(h => pointInRing(gx, gy, h))) continue;
+        const lst = segBucket.get(Math.floor(gx / cellS) + ',' + Math.floor(gy / cellS)); let clear = true;
+        if (lst) for (const si of lst) if (segDist2(gx, gy, compSegs[si * 4], compSegs[si * 4 + 1], compSegs[si * 4 + 2], compSegs[si * 4 + 3]) < minD2) { clear = false; break; }
+        if (clear) { const id = poolAdd(gx, gy); inside.push(id); insideIJ.push([i, j, id]); }
+      }
+      let tris = delaunayFill(walk, inside, comp.level, holeIds);
+      // hole pockets enclosed by constraints are unreachable by the outside flood: filter by centroid
+      tris = tris.filter(tri => { const cx = (P(tri[0])[0] + P(tri[1])[0] + P(tri[2])[0]) / 3, cy = (P(tri[0])[1] + P(tri[1])[1] + P(tri[2])[1]) / 3;
+        return pointInRing(cx, cy, outerPts) && !holePts.some(h => pointInRing(cx, cy, h)); });
+      if (!tris.length && Math.abs(polyArea2(comp.outer.pts)) > 1) throw new Error('conforming: component fill is empty');
+      // intact interior grid cells pair by construction: where the fill split a cell cleanly
+      // by one diagonal, protect that pair so the matcher only works the boundary strips
+      const pairs = [];
+      { const idOf = new Map(insideIJ.map(([i, j, id]) => [i + ',' + j, id]));
+        const cornerTris = new Map();
+        tris.forEach((t, ti) => { for (const v of t) { let s = cornerTris.get(v); if (!s) cornerTris.set(v, s = []); s.push(ti); } });
+        for (let j = 0; j < MYg; j++) for (let i = 0; i < NXg; i++) {
+          const c00 = idOf.get(i + ',' + j), c10 = idOf.get((i + 1) + ',' + j), c11 = idOf.get((i + 1) + ',' + (j + 1)), c01 = idOf.get(i + ',' + (j + 1));
+          if (c00 === undefined || c10 === undefined || c11 === undefined || c01 === undefined) continue;
+          const cell = new Set([c00, c10, c11, c01]), cand = new Set();
+          for (const v of cell) for (const ti of (cornerTris.get(v) || [])) { const t = tris[ti]; if (t.every(x => cell.has(x))) cand.add(ti); }
+          if (cand.size !== 2) continue;
+          const [t1, t2] = [...cand].map(ti => tris[ti]);
+          const sh = t1.filter(v => t2.includes(v));
+          if (sh.length === 2 && new Set([...t1, ...t2]).size === 4) pairs.push([tris.indexOf(t1), tris.indexOf(t2)]); } }
+      return { tris, pairs };
+    }
+
+    // ---- quality pairing of triangles into quads (hungarian-style augmenting matching on top of greedy) ----
+    function qualities(v0, v1, v2, v3) {
+      const q = [P(v0), P(v1), P(v2), P(v3)];
+      let mc = -1;
+      for (let i = 0; i < 4; i++) { const a = q[i], b = q[(i + 1) % 4], c = q[(i + 3) % 4];
+        if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) <= 1e-9) return null;
+        const ux = c[0] - a[0], uy = c[1] - a[1], wx = b[0] - a[0], wy = b[1] - a[1];
+        const cos = (ux * wx + uy * wy) / Math.sqrt(Math.max(1e-18, (ux * ux + uy * uy) * (wx * wx + wy * wy))); if (cos > mc) mc = cos;
+        if (cos < -0.995) return null; // near-straight corner: a 180 deg fold-back warps horribly once bent
+      }
+      const el = q.map((a, i) => { const b = q[(i + 1) % 4]; return Math.hypot(b[0] - a[0], b[1] - a[1]); });
+      const asp = Math.max(...el) / Math.max(1e-9, Math.min(...el));
+      const ang = Math.acos(clamp(mc, -1, 1)) * 180 / Math.PI;
+      return { ang, score: ang - 14 * Math.log2(asp) };
+    }
+    const simpleQuad = quad => { const q = quad.map(P); if (Math.abs(polyArea2(q)) < 1e-9) return false;
+      const cross = (p1, p2, p3, p4) => { const h = segX(p1, p2, p3, p4); return h && h.t > 1e-9 && h.t < 1 - 1e-9 && h.u > 1e-9 && h.u < 1 - 1e-9; };
+      return !cross(q[0], q[1], q[2], q[3]) && !cross(q[1], q[2], q[3], q[0]); };
+    const isDart = quad => { for (let i = 0; i < 4; i++) { const a = P(quad[i]), b = P(quad[(i + 1) % 4]), c = P(quad[(i + 3) % 4]);
+      if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) < -1e-9) return true; } return false; };
+    function pairComponent(tris, level, prePaired = [], relaxed = false) {
+      const Tn = tris.length;
+      // relaxed (leftover pools): dart unions are admitted -- a dart only ever broke the sheet
+      // when the conformity queue had to split it, and pool quads are conforming by construction
+      const okUnion = q => simpleQuad(q) && (relaxed || !isDart(q));
+      const protectedSet = new Set(); for (const [i, j] of prePaired) { protectedSet.add(i); protectedSet.add(j); }
+      const quadVerts = (i, j) => { const a = tris[i], b = tris[j]; const s0 = a.find(v => b.includes(v)), s1 = a.find(v => v !== s0 && b.includes(v)); if (s0 === undefined || s1 === undefined) return null;
+        const oi = a.find(v => !b.includes(v)), oj = b.find(v => !a.includes(v));
+        if (oi === undefined || oj === undefined) return null; // repeated-vertex tri
+        // folded pair: both unique vertices on the SAME side of the shared edge --
+        // the corner order [oi,s0,oj,s1] then traces a different region than the
+        // two triangles cover, double-covering a wedge and voiding the next one
+        { const p0 = P(s0), p1 = P(s1), po = P(oi), pj = P(oj);
+          const cr1 = (p1[0] - p0[0]) * (po[1] - p0[1]) - (p1[1] - p0[1]) * (po[0] - p0[0]);
+          const cr2 = (p1[0] - p0[0]) * (pj[1] - p0[1]) - (p1[1] - p0[1]) * (pj[0] - p0[0]);
+          if (cr1 * cr2 > 0) return null; }
+        const quad = [oi, s0, oj, s1]; if (polyArea2(quad.map(P)) < 0) quad.reverse(); return quad; };
+      let edgeMap = new Map(), nbrs = [];
+      const NMULc = verts.length + 1000005, ekeyC = (a, b) => a < b ? a * NMULc + b : b * NMULc + a;
+      const rebuildAdj = () => { edgeMap = new Map(); nbrs = tris.map(() => []);
+        tris.forEach((tri, i) => { for (let k = 0; k < 3; k++) { const key = ekeyC(tri[k], tri[(k + 1) % 3]); let lst = edgeMap.get(key); if (!lst) edgeMap.set(key, lst = []); lst.push(i); } });
+        const done = new Set();
+        for (const [key, lst] of edgeMap) { if (lst.length !== 2) continue; const [i, j] = lst; const pk = i < j ? i * 1000003 + j : j * 1000003 + i; if (done.has(pk)) continue; done.add(pk);
+          const quad = quadVerts(i, j); if (!quad) continue; const qq = qualities(quad[0], quad[1], quad[2], quad[3]);
+          if (!qq) { // relaxed mode (leftover pools): a simple non-dart union with a flat corner
+            // still beats a solo conversion -- mop-up will only take it if nothing better pairs
+            if (relaxed && okUnion(quad)) { nbrs[i].push({ j, ang: 0, score: -50 }); nbrs[j].push({ j: i, ang: 0, score: -50 }); }
+            continue; }
+          nbrs[i].push({ j, ang: qq.ang, score: qq.score }); nbrs[j].push({ j: i, ang: qq.ang, score: qq.score }); }
+        for (const nb of nbrs) nb.sort((p, q) => q.score - p.score); };
+      rebuildAdj();
+      const pairOf = new Int32Array(Tn).fill(-1);
+      for (const [i, j] of prePaired) { pairOf[i] = j; pairOf[j] = i; }
+      const cands = [];
+      nbrs.forEach((nb, i) => { for (const c of nb) if (i < c.j && c.score > 0) cands.push([c.score, i, c.j]); });
+      cands.sort((p, q) => q[0] - p[0]);
+      for (const [, i, j] of cands) if (pairOf[i] < 0 && pairOf[j] < 0) { pairOf[i] = j; pairOf[j] = i; }
+      const seenK = new Int32Array(Tn); let kuhnStamp = 1;
+      // iterative Kuhn DFS (explicit stack): augmenting paths on big components run thousands of
+      // triangles deep, which overflows the JS call stack in recursive form.
+      function kuhnRoot(i, gate) {
+        kuhnStamp++;
+        const from = new Map(), stack = [[i, 0]];
+        seenK[i] = kuhnStamp;
+        while (stack.length) {
+          const frame = stack[stack.length - 1], u = frame[0];
+          if (frame[1] >= nbrs[u].length) { stack.pop(); continue; }
+          const c = nbrs[u][frame[1]++];
+          if (c.ang < gate) continue;
+          const j = c.j;
+          if (protectedSet.has(j)) continue;
+          if (seenK[j] === kuhnStamp) continue;
+          seenK[j] = kuhnStamp;
+          if (pairOf[j] < 0) {
+            pairOf[u] = j; pairOf[j] = u;
+            let cur = u;
+            while (from.has(cur)) { const [prevU, prevVia] = from.get(cur); pairOf[prevU] = prevVia; pairOf[prevVia] = prevU; cur = prevU; }
+            return true;
+          }
+          const w = pairOf[j];
+          if (seenK[w] === kuhnStamp) continue;
+          seenK[w] = kuhnStamp;
+          from.set(w, [u, j]);
+          stack.push([w, 0]);
+        }
+        return false;
+      }
+      const kuhnAll = gate => { let go = true, rounds = 0; while (go && rounds++ < 3) { go = false;
+        for (let i = 0; i < Tn; i++) if (pairOf[i] < 0) { if (kuhnRoot(i, gate)) go = true; } } };
+      kuhnAll(16); kuhnAll(8);
+      { // shuffled retries at the loose gate break symmetric deadlocks
+        const order = tris.map((_, i) => i).filter(i => pairOf[i] < 0);
+        for (let i = order.length - 1; i > 0; i--) { const r = Math.floor(hashNoise(i, Tn) * (i + 1)), tmp = order[i]; order[i] = order[r]; order[r] = tmp; }
+        for (const i of order) if (pairOf[i] < 0) kuhnRoot(i, 8);
+      }
+      // pairing repair: move an unpaired triangle into a neighbouring pair, then re-match the freed partner
+      const leftoverCount = () => { let n2 = 0; for (let i = 0; i < Tn; i++) if (pairOf[i] < 0) n2++; return n2; };
+      function attemptFlip(u) {
+        for (let k = 0; k < 3; k++) {
+          const a = tris[u][k], b = tris[u][(k + 1) % 3], lst = edgeMap.get(ekeyC(a, b)) || [];
+          for (const t of lst) { if (t === u) continue; const w = pairOf[t]; if (w < 0) continue;
+            if (protectedSet.has(t) || protectedSet.has(w)) continue;
+            const cu = tris[u][(k + 2) % 3], ct = tris[t].find(v => v !== a && v !== b);
+            const nq = [a, ct, b, cu]; if (polyArea2(nq.map(P)) < 0) nq.reverse();
+            // simple + non-dart is enough here (the collection pass re-validates every pair): a
+            // strict quality gate leaves boundary slivers unpaired forever, and each one costs a
+            // solo conversion plus a long split cascade in the conformity queue
+            if (!okUnion(nq)) continue;
+            const before = leftoverCount(), snap = pairOf.slice();
+            pairOf[t] = -1; pairOf[w] = -1; pairOf[u] = t; pairOf[t] = u;
+            kuhnRoot(w, 8);
+            if (leftoverCount() < before || pairOf[w] >= 0) return true;
+            pairOf.set(snap); return false; }
+        }
+        return false;
+      }
+      for (let pass = 0; pass < 80; pass++) {
+        let any = false;
+        for (let i = 0; i < Tn; i++) if (pairOf[i] < 0) { if (attemptFlip(i)) any = true; }
+        if (!any) break;
+        kuhnAll(8);
+      }
+      // mop-up: accept any convex pairing (worst first by score) so only true parity/geometry
+      // orphans remain — a sliver absorbed into a neighbour beats a centroid fan of the same sliver
+      {
+        const rest = [];
+        nbrs.forEach((nb, i) => { for (const c of nb) if (i < c.j) rest.push([c.score, i, c.j]); });
+        rest.sort((p, q) => q[0] - p[0]);
+        for (const [, i, j] of rest) if (pairOf[i] < 0 && pairOf[j] < 0) { pairOf[i] = j; pairOf[j] = i; }
+        kuhnAll(0);
+      }
+      // ---- diagonal-flip pass: a leftover whose every union is a dart can still pair after its
+      // shared diagonal with a neighbour is flipped — the flipped triangles border different
+      // partners. Flips mutate the triangle arrays in place (callers hold the same references),
+      // then matching re-runs so freed partners re-match ----
+      {
+        const nbOfF = i => { const out = new Set(); for (let k = 0; k < 3; k++) for (const j of (edgeMap.get(ekeyC(tris[i][k], tris[i][(k + 1) % 3])) || [])) if (j !== i) out.add(j); return [...out]; };
+        const unionOk = (ta, tb) => { const sh = ta.filter(v => tb.includes(v)); if (sh.length !== 2) return false;
+          const oi = ta.find(v => !tb.includes(v)), oj = tb.find(v => !ta.includes(v));
+          const quad = [oi, sh[0], oj, sh[1]]; if (polyArea2(quad.map(P)) < 0) quad.reverse();
+          return okUnion(quad); };
+        const unionOptions = (tri, excl) => { let n = 0;
+          for (let k = 0; k < 3; k++) { const lst = edgeMap.get(ekeyC(tri[k], tri[(k + 1) % 3])) || [];
+            for (const t of lst) { if (t === excl || protectedSet.has(t)) continue; if (unionOk(tri, tris[t])) n++; } } return n; };
+        for (let flipRound = 0; flipRound < 8; flipRound++) {
+          let anyFlip = false;
+          const usedFlip = new Set();
+          for (let i = 0; i < Tn; i++) {
+            if (pairOf[i] !== -1 || usedFlip.has(i)) continue;
+            for (const j of nbOfF(i)) {
+              if (usedFlip.has(j) || protectedSet.has(j)) continue;
+              const a = tris[i], b = tris[j], sh = a.filter(v => b.includes(v)); if (sh.length !== 2) continue;
+              const oi = a.find(v => !b.includes(v)), oj = b.find(v => !a.includes(v)), [s0, s1] = sh;
+              const qa = polyArea2([oi, s0, oj, s1].map(P)); if (Math.abs(qa) < 1e-9) continue;
+              const A = [oi, oj, s0], B = [oj, oi, s1], aA = polyArea2(A.map(P)), aB = polyArea2(B.map(P));
+              if (Math.sign(aA) !== Math.sign(qa) || Math.sign(aB) !== Math.sign(qa)) continue;
+              if (Math.abs(Math.abs(aA) + Math.abs(aB) - Math.abs(qa)) > 1e-6) continue;
+              if (!unionOptions(A, j) || !unionOptions(B, i)) continue;
+              if (pairOf[j] >= 0) { pairOf[pairOf[j]] = -1; pairOf[j] = -1; }
+              a[0] = A[0]; a[1] = A[1]; a[2] = A[2];
+              b[0] = B[0]; b[1] = B[1]; b[2] = B[2];
+              usedFlip.add(i); usedFlip.add(j);
+              anyFlip = true; break;
+            }
+          }
+          if (!anyFlip) break;
+          rebuildAdj(); kuhnAll(0);
+          { const rest = []; nbrs.forEach((nb, i) => { for (const c of nb) if (i < c.j) rest.push([c.score, i, c.j]); });
+            rest.sort((p, q) => q[0] - p[0]);
+            for (const [, i, j] of rest) if (pairOf[i] < 0 && pairOf[j] < 0) { pairOf[i] = j; pairOf[j] = i; }
+            kuhnAll(0); }
+        }
+      }
+      // ---- leftover elimination: two leftover triangles that share an edge convert jointly — their union
+      // is one quad (emitted as-is, or as a centroid fan of two quads when it is a dart) with NO midpoint
+      // on any shared edge, so nothing hangs and no split cascade follows. Lone leftovers are walked
+      // through the dual graph (each step re-pairs the token with a neighbour, freeing its old partner)
+      // until they meet another leftover. Only a parity survivor per component converts solo. ----
+      const convQuads = [], convertedTris = new Set();
+      {
+        const nbOf = i => { const out = new Set(); for (let k = 0; k < 3; k++) for (const j of (edgeMap.get(ekeyC(tris[i][k], tris[i][(k + 1) % 3])) || [])) if (j !== i) out.add(j); return [...out]; };
+        const jointConvert = (i, j) => {
+          const a = tris[i], b = tris[j], sh = a.filter(v => b.includes(v)); if (sh.length !== 2) return false;
+          const oi = a.find(v => !b.includes(v)), oj = b.find(v => !a.includes(v)), [s0, s1] = sh;
+          const uni = [oi, s0, oj, s1]; if (polyArea2(uni.map(P)) < 0) uni.reverse();
+          let reflex = -1;
+          for (let i = 0; i < 4; i++) { const a = P(uni[i]), b = P(uni[(i + 1) % 4]), c = P(uni[(i + 3) % 4]);
+            if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) < -1e-9) reflex = i; }
+          // conversions accept any SIMPLE non-dart quad (even with a 180 deg sliver corner): it tiles
+          // exactly, which is what matters here — strict convexity is a pairing-quality concern, not a
+          // conversion one. Dart unions are REFUSED: an emitted dart (or a fan of one) resists every
+          // later conformity split — the reflex vertex blocks all mid->opposite-edge segments — and
+          // leaks the sheet. Refused pairs stay leftover and take the solo centroid conversion,
+          // whose midpoint structure the queue handles cleanly.
+          if (reflex < 0 && simpleQuad(uni)) { convQuads.push(uni); return true; }
+          return false;
+        };
+        let again = true;
+        while (again) { again = false;
+          for (let i = 0; i < Tn; i++) { if (pairOf[i] !== -1 || convertedTris.has(i)) continue;
+            for (const j of nbOf(i)) if (pairOf[j] === -1 && !convertedTris.has(j) && jointConvert(i, j)) { convertedTris.add(i); convertedTris.add(j); pairOf[i] = -2; pairOf[j] = -2; again = true; break; } } }
+        const blockedStart = new Set();
+        for (;;) {
+          const lefts = []; for (let i = 0; i < Tn; i++) if (pairOf[i] === -1 && !convertedTris.has(i)) lefts.push(i);
+          if (lefts.length < 2) break;
+          const start = lefts.find(i => !blockedStart.has(i));
+          if (start === undefined) break;
+          const prev = new Map([[start, null]]), queueB = [start];
+          let meet = -1, meetPartner = -1;
+          while (queueB.length) { const u = queueB.shift();
+            const adj = nbOf(u).find(j => pairOf[j] === -1 && j !== start && !convertedTris.has(j));
+            if (adj !== undefined) { meet = u; meetPartner = adj; break; }
+            for (const t of nbOf(u)) { const w = pairOf[t]; if (w >= 0 && !protectedSet.has(w) && !prev.has(w)) { prev.set(w, u); queueB.push(w); } } }
+          if (meet < 0) { blockedStart.add(start); continue; }
+          const path = []; let cur = meet; while (cur !== null && cur !== undefined) { path.push(cur); cur = prev.get(cur); }
+          path.reverse();
+          for (let s = 0; s + 1 < path.length; s++) { const u = path[s], w = path[s + 1];
+            const t = nbOf(u).find(j => pairOf[j] === w); if (t === undefined) { meet = -1; break; }
+            pairOf[u] = t; pairOf[t] = u; pairOf[w] = -1; }
+          if (meet < 0) { blockedStart.add(start); continue; }
+          if (jointConvert(meet, meetPartner)) { convertedTris.add(meet); convertedTris.add(meetPartner); pairOf[meet] = -2; pairOf[meetPartner] = -2; }
+          else { blockedStart.add(start); blockedStart.add(meet); blockedStart.add(meetPartner); }
+        }
+      }
+      // collect quads; guard against asymmetric pairs ever producing duplicate triangles.
+      // Pairs formed by the leftover walk were never quality-checked: a non-simple or dart union is
+      // un-paired here and falls back to the solo conversion rather than leaking the sheet later.
+      const emitted = new Set(), quads = [...convQuads];
+      for (let i = 0; i < Tn; i++) { const j = pairOf[i];
+        if (j > i && pairOf[j] === i && !emitted.has(i) && !emitted.has(j)) { const quad = quadVerts(i, j);
+          if (quad && okUnion(quad)) { quads.push(quad); emitted.add(i); emitted.add(j); }
+          else if (quad) { pairOf[i] = -1; pairOf[j] = -1; } } }
+      const leftovers = [];
+      for (let i = 0; i < Tn; i++) if (pairOf[i] === -1 && !emitted.has(i)) leftovers.push(i);
+      return { quads, leftovers: leftovers.map(i => tris[i]) };
+    }
+
+    // ---- shared edge/vertex registries for the conformity passes ----
+    const NVB = 4194304, ekeyF = (a, b) => a < b ? a * NVB + b : b * NVB + a;
+    const candBucket = new Map(), cellC = Math.max(2, effPitch * 0.5);
+    const candAdd = id => { const p = P(id), key = Math.floor(p[0] / cellC) + ',' + Math.floor(p[1] / cellC); let s = candBucket.get(key); if (!s) candBucket.set(key, s = new Set()); s.add(id); };
+    const vertsOnSeg = (a, b) => { const pa = P(a), pb = P(b), len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]); if (len < 1e-9) return [];
+      const steps = Math.max(1, Math.ceil(len / (cellC * 0.5))), ids = new Set(), out = [];
+      for (let s2 = 0; s2 <= steps; s2++) { const sx = Math.floor((pa[0] + (pb[0] - pa[0]) * s2 / steps) / cellC), sy = Math.floor((pa[1] + (pb[1] - pa[1]) * s2 / steps) / cellC);
+        for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const lst = candBucket.get((sx + di) + ',' + (sy + dj)); if (lst) for (const id of lst) ids.add(id); } }
+      for (const id of ids) { if (id === a || id === b) continue; const p = P(id);
+        const u = ((p[0] - pa[0]) * (pb[0] - pa[0]) + (p[1] - pa[1]) * (pb[1] - pa[1])) / (len * len);
+        if (u <= 1e-6 || u >= 1 - 1e-6) continue;
+        if (segDist2(p[0], p[1], pa[0], pa[1], pb[0], pb[1]) < 1e-10) out.push([u, id]); }
+      out.sort((p, q) => p[0] - q[0]); return out; };
+    const hangingOn = (a, b) => { const lst = vertsOnSeg(a, b); return lst.length ? lst[0][1] : undefined; };
+    const candQuery = (a, b) => { const lst = vertsOnSeg(a, b); if (!lst.length) return undefined; let best = lst[0]; for (const e of lst) if (Math.abs(e[0] - 0.5) < Math.abs(best[0] - 0.5)) best = e; return best[1]; };
+
+    // ---- fill every component with triangles (Delaunay, constrained to the traced walk) ----
+    const allTris = [];
+    components.forEach((comp, ci) => { checkDeadline(); const mc = meshComponent(comp), objs = [];
+      mc.tris.forEach((tri, ti) => { if (Math.abs(polyArea2(tri.map(P))) <= 1e-9) return;
+        const o = { v: tri, level: comp.level, comp: ci, dead: false, src: ti }; objs.push(o); allTris.push(o); });
+      const bySrc = new Map(objs.map(o => [o.src, o]));
+      for (const [s1, s2] of mc.pairs) { const o1 = bySrc.get(s1), o2 = bySrc.get(s2); if (o1 && o2) { o1.protect = o2; o2.protect = o1; } } });
+
+    // ---- triangle-level conformity: a triangle whose edge carries a foreign vertex splits into two
+    // triangles through that vertex. Exact, local, and cascade-free (unlike quad splits), so components
+    // filled independently end up sharing every boundary vertex before pairing starts. Reused after
+    // leftover refinement below for the same reason: points introduced at triangle level can never
+    // hang on a quad edge later, because every quad edge is a triangle edge shared by two triangles ----
+    const triConform = () => {
+      const edgeTris = new Map(), triQueue = [], triInQ = new Set();
+      const enqueueTriEdge = (a, b) => { const key = ekeyF(a, b); if (!triInQ.has(key)) { triInQ.add(key); triQueue.push([a, b]); } };
+      const linkTri = t => { for (let k = 0; k < 3; k++) { const key = ekeyF(t.v[k], t.v[(k + 1) % 3]); let s = edgeTris.get(key); if (!s) edgeTris.set(key, s = new Set()); s.add(t); enqueueTriEdge(t.v[k], t.v[(k + 1) % 3]); } for (const v of t.v) candAdd(v); };
+      const killTri = t => { for (let k = 0; k < 3; k++) { const s = edgeTris.get(ekeyF(t.v[k], t.v[(k + 1) % 3])); if (s) s.delete(t); } };
+      for (const t of allTris) linkTri(t);
+      let triOps = 0;
+      for (let qi = 0; qi < triQueue.length; qi++) {
+        if (++triOps > 2000000) throw new Error('conforming: triangle conformity did not converge');
+        const [a, b] = triQueue[qi]; triInQ.delete(ekeyF(a, b));
+        const lst = []; { const s = edgeTris.get(ekeyF(a, b)); if (s) for (const t of s) if (!t.dead) lst.push(t); }
+        if (!lst.length) continue;
+        const w = hangingOn(a, b);
+        if (w === undefined) continue;
+        for (const t of lst) { if (t.dead) continue; const c = t.v.find(v => v !== a && v !== b); if (c === undefined || c === w) continue;
+          t.dead = true; killTri(t);
+          for (const nv of [[a, w, c], [w, b, c]]) { const nt = { v: nv, level: t.level, comp: t.comp, dead: false }; allTris.push(nt); linkTri(nt); } }
+      }
+    };
+    triConform();
+
+    // ---- pair triangles into quads per component; unpaired triangles become 3 quads each ----
+      const ekey2 = (a, b) => a < b ? a + '_' + b : b + '_' + a;
+      const key3 = v => { const s = [v[0], v[1], v[2]].sort((x, y) => x - y); return s[0] + '_' + s[1] + '_' + s[2]; };
+      // a quad's two constituent triangles (live only, on one diagonal): dead triangles from
+      // earlier subdivisions share vertex triples with live quads and must not count, or valid
+      // quads get dropped and their triangles flood the pool as phantom leftovers
+      const livePair = (tripleOf, q) => {
+        const g = t => { const o = tripleOf.get(key3(t)); return o && !o.dead ? o : null; };
+        const d1a = g([q[0], q[1], q[2]]), d1b = g([q[0], q[2], q[3]]);
+        if (d1a && d1b) return [d1a, d1b];
+        const d2a = g([q[0], q[1], q[3]]), d2b = g([q[1], q[2], q[3]]);
+        if (d2a && d2b) return [d2a, d2b];
+        return null; };
+      // boundary loop of a triangle set (single closed walk), or null if not a clean disk
+      const boundaryLoop = trisArr => {
+        const cnt = new Map(), adj = new Map();
+        for (const t of trisArr) for (let k = 0; k < 3; k++) { const key = ekey2(t[k], t[(k + 1) % 3]); cnt.set(key, (cnt.get(key) || 0) + 1); }
+        const addAdj = (a, b) => { let s = adj.get(a); if (!s) adj.set(a, s = []); s.push(b); };
+        for (const t of trisArr) for (let k = 0; k < 3; k++) { const a = t[k], b = t[(k + 1) % 3];
+          if (cnt.get(ekey2(a, b)) === 1) { addAdj(a, b); addAdj(b, a); } }
+        for (const [, s] of adj) if (s.length !== 2) return null;
+        if (!adj.size) return null;
+        const start = adj.keys().next().value, loop = [start];
+        let prev = -1, cur = start;
+        for (let guard = 0; guard < 10000; guard++) { const ns = adj.get(cur); if (!ns) return null;
+          const nxt = ns[0] === prev ? ns[1] : ns[0];
+          if (nxt === start) return loop.length >= 3 ? loop : null;
+          loop.push(nxt); prev = cur; cur = nxt; }
+        return null;
+      };
+      // exact perfect matching of a small triangle set into simple quads (darts admitted):
+      // Kuhn-style augmenting paths are not exact on non-bipartite dual graphs, and the
+      // stubborn leftover clusters are exactly where that bites -- backtracking is
+      const exactMatch = (trisArrIn, budget, strict) => { // strict: reject flat/dart unions outright
+        // matchers assume a proper triangle set: drop repeated-vertex tris and
+        // duplicates (Steiner weld collisions can produce both upstream)
+        const trisArr = [...new Map(trisArrIn.filter(t => new Set(t).size === 3).map(t => [key3(t), t])).values()];
+        const n = trisArr.length; if (!n || n % 2 || n > 240) return null;
+        const edgeTris = new Map();
+        trisArr.forEach((t, i) => { for (let k = 0; k < 3; k++) { const key = ekey2(t[k], t[(k + 1) % 3]); let s = edgeTris.get(key); if (!s) edgeTris.set(key, s = []); s.push(i); } });
+        const adj = trisArr.map((t, i) => { const out = [];
+          for (let k = 0; k < 3; k++) for (const j of (edgeTris.get(ekey2(t[k], t[(k + 1) % 3])) || [])) { if (j === i) continue;
+            const u = trisArr[j], sh = t.filter(v => u.includes(v)); if (sh.length !== 2) continue;
+            const oi = t.find(v => !u.includes(v)), oj = u.find(v => !t.includes(v));
+            { const p0 = P(sh[0]), p1 = P(sh[1]), po = P(oi), pj = P(oj); // folded pair (see quadVerts)
+              const cr1 = (p1[0] - p0[0]) * (po[1] - p0[1]) - (p1[1] - p0[1]) * (po[0] - p0[0]);
+              const cr2 = (p1[0] - p0[0]) * (pj[1] - p0[1]) - (p1[1] - p0[1]) * (pj[0] - p0[0]);
+              if (cr1 * cr2 > 0) continue; }
+            const quad = [oi, sh[0], oj, sh[1]]; if (polyArea2(quad.map(P)) < 0) quad.reverse();
+            if (simpleQuad(quad)) { const qq = qualities(quad[0], quad[1], quad[2], quad[3]); if (qq || !strict) out.push({ j, quad, score: qq ? qq.score : -50 }); } }
+          return out.sort((x, y) => y.score - x.score); });
+        const used = new Array(n).fill(false), pairs = [];
+        let btNodes = 0;
+        const bt = () => { if (++btNodes > (budget || 400000)) return false; // budget: heuristic pairing takes over
+          // fail-first: branch on the unpaired triangle with fewest free partners
+          let bi = -1, bOpts = null;
+          for (let i = 0; i < n; i++) { if (used[i]) continue;
+            const opts = adj[i].filter(e => !used[e.j]);
+            if (!opts.length) return false;
+            if (!bOpts || opts.length < bOpts.length) { bi = i; bOpts = opts; if (opts.length === 1) break; } }
+          if (bi < 0) return true;
+          used[bi] = true;
+          for (const e of bOpts) { used[e.j] = true; pairs.push(e.quad);
+            if (bt()) return true; pairs.pop(); used[e.j] = false; }
+          used[bi] = false; return false; };
+        return bt() ? pairs : null;
+      };
+      // seam / shoulder twins of new border vertices: seed the triangles whose border edge
+      // contains the mirrored point so both sheet edges subdivide identically
+      const seedTwins = (mids, seedSet) => {
+        const borderTris = [];
+        for (const t of allTris) { if (t.dead) continue;
+          for (let k = 0; k < 3; k++) { const pa = P(t.v[k]), pb = P(t.v[(k + 1) % 3]);
+            if ((Math.abs(pa[0] - pb[0]) < 1e-9 && (pa[0] < 1e-6 || pa[0] > circ - 1e-6)) ||
+                (Math.abs(pa[1] - pb[1]) < 1e-9 && Math.abs(Math.abs(pa[1]) - A) < 1e-6)) { borderTris.push(t); break; } } }
+        for (const mid of mids) { const pm = P(mid);
+          const twins = [];
+          if (pm[0] < 1e-9 || pm[0] > circ - 1e-9) twins.push(poolAdd(pm[0] < circ / 2 ? circ : 0, pm[1]));
+          if (Math.abs(Math.abs(pm[1]) - A) < 1e-9) twins.push(poolAdd(pm[0], -pm[1]));
+          for (const tw of twins) { candAdd(tw); const pw = P(tw);
+            for (const t of borderTris) { if (t.dead || seedSet.has(t)) continue;
+              for (let k = 0; k < 3; k++) { const pa = P(t.v[k]), pb = P(t.v[(k + 1) % 3]);
+                const onLine = (Math.abs(pa[0] - pb[0]) < 1e-9 && Math.abs(pa[0] - pw[0]) < 1e-9) ||
+                               (Math.abs(pa[1] - pb[1]) < 1e-9 && Math.abs(pa[1] - pw[1]) < 1e-9);
+                if (onLine && segDist2(pw[0], pw[1], pa[0], pa[1], pb[0], pb[1]) < 1e-10) { seedSet.add(t); break; } } } } }
+      };
+    const allFaces = [];
+    {
+      // ---- leftover elimination at TRIANGLE level -------------------------------------------
+      // A leftover triangle is midpoint-subdivided; triangle conformity (splits through existing
+      // vertices only, never creates one) absorbs the new vertices into every neighbouring
+      // triangle; the affected triangles -- subdivided leftover, split neighbours, partners of
+      // broken quads -- are then re-paired locally. Because no vertex is created after pairing,
+      // no quad edge can carry a hanging vertex: the quad conformity queue below stays a
+      // backstop instead of grinding through midpoint cascades. Seam/border twins of new
+      // border vertices are seeded the same way so the two sheet edges stay conforming.
+      const subdivideTri = o => {
+        const [a, b, c] = o.v, pa = P(a), pb = P(b), pc = P(c);
+        const mAB = poolAdd((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2);
+        const mBC = poolAdd((pb[0] + pc[0]) / 2, (pb[1] + pc[1]) / 2);
+        const mCA = poolAdd((pc[0] + pa[0]) / 2, (pc[1] + pa[1]) / 2);
+        const kids = [];
+        for (const v of [[a, mAB, mCA], [mAB, b, mBC], [mCA, mBC, c], [mAB, mBC, mCA]]) {
+          if (Math.abs(polyArea2(v.map(P))) < 1e-12) continue;
+          const no = { v, level: o.level, comp: o.comp, dead: false };
+          allTris.push(no); kids.push(no);
+        }
+        o.dead = true;
+        return { kids, mids: [mAB, mBC, mCA] };
+      };
+      // centroid-fan subdivision: 6 triangles that pair among themselves (flat corners at the
+      // edge midpoints, admitted by relaxed pool pairing) -- the escape hatch for staircase
+      // slivers whose midpoint subdivision is self-similar and never pairs
+      const fanSubdivide = o => {
+        const [a, b, c] = o.v, pa = P(a), pb = P(b), pc = P(c);
+        const g = poolAdd((pa[0] + pb[0] + pc[0]) / 3, (pa[1] + pb[1] + pc[1]) / 3);
+        const mAB = poolAdd((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2);
+        const mBC = poolAdd((pb[0] + pc[0]) / 2, (pb[1] + pc[1]) / 2);
+        const mCA = poolAdd((pc[0] + pa[0]) / 2, (pc[1] + pa[1]) / 2);
+        const kids = [];
+        for (const v of [[a, mAB, g], [mAB, b, g], [b, mBC, g], [mBC, c, g], [c, mCA, g], [mCA, a, g]]) {
+          if (Math.abs(polyArea2(v.map(P))) < 1e-12) continue;
+          const no = { v, level: o.level, comp: o.comp, dead: false };
+          allTris.push(no); kids.push(no);
+        }
+        o.dead = true;
+        return { kids, mids: [mAB, mBC, mCA] };
+      };
+      const conformSeeded = seedTris => {
+        const edgeTris = new Map(), queue = [], inQ = new Set();
+        const enq = (a, b) => { const key = ekey2(a, b); if (!inQ.has(key)) { inQ.add(key); queue.push([a, b]); } };
+        const link = t => { for (let k = 0; k < 3; k++) { const key = ekey2(t.v[k], t.v[(k + 1) % 3]); let s = edgeTris.get(key); if (!s) edgeTris.set(key, s = new Set()); s.add(t); enq(t.v[k], t.v[(k + 1) % 3]); } for (const v of t.v) candAdd(v); };
+        const kill = t => { for (let k = 0; k < 3; k++) { const s = edgeTris.get(ekey2(t.v[k], t.v[(k + 1) % 3])); if (s) s.delete(t); } };
+        for (const t of seedTris) if (!t.dead) link(t);
+        let ops = 0;
+        for (let qi = 0; qi < queue.length; qi++) {
+          if (++ops > 3000000) throw new Error('conforming: leftover conformity did not converge');
+          const [a, b] = queue[qi]; inQ.delete(ekey2(a, b));
+          const s = edgeTris.get(ekey2(a, b)); if (!s) continue;
+          const lst = []; for (const t of s) if (!t.dead) lst.push(t);
+          if (!lst.length) continue;
+          const w = hangingOn(a, b); if (w === undefined) continue;
+          for (const t of lst) { if (t.dead) continue; const c = t.v.find(v => v !== a && v !== b); if (c === undefined || c === w) continue;
+            t.dead = true; kill(t);
+            for (const nv of [[a, w, c], [w, b, c]]) { if (Math.abs(polyArea2(nv.map(P))) < 1e-12) continue;
+              const nt = { v: nv, level: t.level, comp: t.comp, dead: false }; allTris.push(nt); link(nt); } }
+        }
+      };
+      // ---- endgame for stubborn leftovers: excise the connected unaccounted region around
+      // one leftover (fan-converted + conformed first), trace its boundary loop, and re-fill
+      // it coarsely through the Delaunay fill using the component's ORIGINAL vertices only
+      // (subdivision debris is what made the knot unmatchable), then exactly re-pair. On
+      // failure the region grows by one quad ring; nothing is killed before a commit, so a
+      // failed absorb leaves the state exactly as it was.
+      const absorbLeftover = (ci, st, L) => {
+        const sharesEdge = (o1, o2) => { let n = 0; for (const v of o1.v) if (o2.v.includes(v)) n++; return n === 2; };
+        // state helpers rebuilt on each call (cheap relative to a whole build)
+        const compObjs = () => allTris.filter(o => o.comp === ci && !o.dead);
+        const unaccounted = () => { const objs = compObjs();
+          const tripleOf = new Map(objs.map(o => [key3(o.v), o])), inQuad = new Set();
+          for (const q of st.quads) { const qt = livePair(tripleOf, q);
+            // first-come ownership: livePair accepts either diagonal, so after
+            // flips two stored quads can both "match" one live triangle while
+            // their real partners go unaccounted (the overlap/void knot)
+            if (qt && !inQuad.has(qt[0]) && !inQuad.has(qt[1])) for (const o of qt) inQuad.add(o); }
+          return objs.filter(o => !inQuad.has(o)); };
+        const regionOf = coreArr => { // connected unaccounted region containing the core tris
+          const unc = unaccounted(), uset = new Set(unc), seen = new Set(), region = [];
+          const queue = coreArr.filter(o => uset.has(o));
+          for (const o of queue) seen.add(o);
+          while (queue.length) { const t = queue.pop(); region.push(t);
+            for (const o of unc) if (!seen.has(o) && sharesEdge(o, t)) { seen.add(o); queue.push(o); } }
+          return region; };
+        const repairPool = () => { // re-pair whatever a failed fan/conform left unaccounted
+          const unc = unaccounted(), seen = new Set();
+          for (const o of unc) { if (seen.has(o)) continue; const compP = [], q2 = [o]; seen.add(o);
+            while (q2.length) { const t = q2.pop(); compP.push(t);
+              for (const u of unc) if (!seen.has(u) && sharesEdge(u, t)) { seen.add(u); q2.push(u); } }
+            if (compP.length % 2 || compP.length < 4) continue;
+            const em = compP.length <= 240 ? exactMatch(compP.map(o => o.v), 8000000) : null;
+            if (em) { st.quads.push(...em); continue; }
+            const rp = pairComponent(compP.map(o => o.v), st.level, [], true);
+            st.quads.push(...rp.quads); }
+          st.leftoverObjs = unaccounted(); };
+        const ringOf = seedArr => { const seedSet = new Set(seedArr), ring = new Set();
+          for (const o of allTris) { if (o.dead || seedSet.has(o)) continue;
+            if (o.v.some(v => seedArr.some(s => s.v.includes(v)))) ring.add(o); }
+          return ring; };
+        // 1) fan-convert the leftover and conform the neighbourhood
+        const r = fanSubdivide(L);
+        let core = r.kids.slice();
+        { const seedSet = ringOf([L, ...r.kids]); for (const k of r.kids) seedSet.add(k);
+          seedTwins(r.mids, seedSet);
+          conformSeeded([...seedSet]); }
+        // 2) region + parity (fan changed the count by kids-1; subdivide once more if odd)
+        let region = regionOf(core);
+        for (let par = 0; par < 3 && region.length % 2 === 1; par++) {
+          const inner = region.find(o => !core.includes(o)) || region[0]; if (!inner) break;
+          const rr = subdivideTri(inner);
+          const s2 = ringOf([inner, ...rr.kids]); for (const k of rr.kids) s2.add(k);
+          seedTwins(rr.mids, s2);
+          conformSeeded([...s2]);
+          core = core.concat(rr.kids);
+          region = regionOf(core); }
+        if (region.length % 2 === 1 || region.length < 4) { repairPool(); return false; }
+        region = [...new Map(region.map(o => [key3(o.v), o])).values()];
+        if (region.length % 2 === 1) { repairPool(); return false; }
+        // 3) re-fill inside the traced loop, exactly re-pair; grow one quad ring on failure
+        const origVerts = st.origVerts || null;
+        for (let grow = 0; grow < 4; grow++) {
+          if (grow) { const tripleOf = new Map(compObjs().map(o => [key3(o.v), o]));
+            const drop = [];
+            st.quads.forEach(q => { const qt = livePair(tripleOf, q);
+              if (qt && qt.some(t => region.includes(t))) drop.push(q); });
+            if (!drop.length) break;
+            const rset = new Set(region);
+            for (const q of drop) { const qt = livePair(tripleOf, q); if (qt) for (const o of qt) rset.add(o); }
+            region = [...rset]; }
+          if (region.length % 2 === 1 || region.length > 400) break;
+          const loop = boundaryLoop(region.map(o => o.v));
+          if (!loop || loop.length > 90) continue;
+          const loopSet = new Set(loop), innerSet = new Set();
+          for (const o of region) for (const v of o.v) if (!loopSet.has(v) && (!origVerts || origVerts.has(v))) innerSet.add(v);
+          const cen = poolAdd(loop.reduce((s, v) => s + P(v)[0], 0) / loop.length, loop.reduce((s, v) => s + P(v)[1], 0) / loop.length);
+          let regionArea = 0; for (const o of region) regionArea += Math.abs(polyArea2(o.v.map(P)));
+          let committed = false;
+          for (const innerArr of [[...innerSet], [...innerSet, cen], [cen], []]) {
+            let fill = null;
+            try { fill = delaunayFill(loop, innerArr, st.level); } catch (e) { continue; }
+            if (!fill || fill.length % 2 || fill.length > 400) continue;
+            let fa = 0; for (const t of fill) fa += Math.abs(polyArea2(t.map(P)));
+            if (Math.abs(fa - regionArea) > regionArea * 0.02 + 1e-6) continue;
+            const em = exactMatch(fill); if (!em) continue;
+            const tripleOf = new Map(compObjs().map(o => [key3(o.v), o]));
+            const rset = new Set(region);
+            st.quads = st.quads.filter(q => { const qt = livePair(tripleOf, q); return !(qt && (rset.has(qt[0]) || rset.has(qt[1]))); });
+            for (const o of region) o.dead = true;
+            for (const t of fill) allTris.push({ v: t, level: st.level, comp: ci, dead: false }); // register fill tris: accounting stays exact
+            st.quads.push(...em);
+            st.leftoverObjs = unaccounted();
+            committed = true; break; }
+          if (committed) return true; }
+        // 4) last resort: heuristic pairing of the region as-is
+        const rp = pairComponent(region.map(o => o.v), st.level, [], true);
+        if (!rp.leftovers.length && rp.quads.length) { st.quads.push(...rp.quads); st.leftoverObjs = unaccounted(); return true; }
+        repairPool();
+        return false;
+      };
+      const pairAll = () => {
+        const byComp = new Map();
+        for (const t of allTris) { if (t.dead) continue; let L2 = byComp.get(t.comp); if (!byComp.has(t.comp)) byComp.set(t.comp, L2 = []); L2.push(t); }
+        const states = [];
+        for (const [ci, objs] of byComp) {
+          const level = objs[0].level, idxOf = new Map(objs.map((o, i) => [o, i]));
+          const prePaired = [];
+          for (const o of objs) if (o.protect && idxOf.has(o.protect)) prePaired.push([idxOf.get(o), idxOf.get(o.protect)]);
+          const res = pairComponent(objs.map(o => o.v), level, prePaired);
+          const objByV = new Map(objs.map(o => [key3(o.v), o])); // key3, not identity: flips re-make arrays
+          states[ci] = { level, quads: res.quads.slice(), leftoverObjs: res.leftovers.map(v => objByV.get(key3(v))).filter(Boolean),
+            origVerts: new Set(objs.flatMap(o => o.v)) }; // vertices of the initial triangulation
+        }
+        for (let round = 0; round < 12; round++) { checkDeadline();
+          const seedSet = new Set(), newMids = [], parentEdges = [];
+          let any = false;
+          // subdivide each leftover AND the triangles around it: a micro-sliver's kids only pair
+          // if their neighbours are subdivided too (otherwise every union is a locked dart)
+          const edgeMapPre = new Map();
+          for (const t of allTris) { if (t.dead) continue;
+            for (let k = 0; k < 3; k++) { const key = ekey2(t.v[k], t.v[(k + 1) % 3]); let s = edgeMapPre.get(key); if (!s) edgeMapPre.set(key, s = []); s.push(t); } }
+          const fanMode = round >= 5;
+          const subSet = new Set();
+          for (const st of states) { if (!st) continue;
+            for (const o of st.leftoverObjs) { if (o.dead) continue; any = true; subSet.add(o);
+              for (let k = 0; k < 3; k++) { const s = edgeMapPre.get(ekey2(o.v[k], o.v[(k + 1) % 3])); if (s) for (const u of s) subSet.add(u); } } }
+          if (fanMode) { // late rounds: subdivide a second ring too -- parity of the local
+            // island flips somewhere in a fat neighbourhood, which a single ring cannot do
+            for (const o of [...subSet]) for (let k = 0; k < 3; k++) { const s = edgeMapPre.get(ekey2(o.v[k], o.v[(k + 1) % 3])); if (s) for (const u of s) subSet.add(u); } }
+          if (!any) break;
+          for (const o of subSet) { if (o.dead) continue;
+            parentEdges.push([o.v[0], o.v[1]], [o.v[1], o.v[2]], [o.v[2], o.v[0]]);
+            const { kids, mids } = fanMode ? fanSubdivide(o) : subdivideTri(o);
+            for (const k of kids) seedSet.add(k);
+            newMids.push(...mids); }
+          // one-ring neighbours of every seeded triangle join the conformity set
+          const edgeMapAll = new Map();
+          for (const t of allTris) { if (t.dead) continue;
+            for (let k = 0; k < 3; k++) { const key = ekey2(t.v[k], t.v[(k + 1) % 3]); let s = edgeMapAll.get(key); if (!s) edgeMapAll.set(key, s = []); s.push(t); } }
+          for (const t of [...seedSet]) for (let k = 0; k < 3; k++) {
+            const s = edgeMapAll.get(ekey2(t.v[k], t.v[(k + 1) % 3])); if (s) for (const u of s) seedSet.add(u); }
+          // neighbours share the subdivided parents' edges, not the kids' half-edges
+          for (const [a, b] of parentEdges) { const s = edgeMapAll.get(ekey2(a, b)); if (s) for (const u of s) seedSet.add(u); }
+          seedTwins(newMids, seedSet);
+          conformSeeded([...seedSet]);
+          // the sweep's refills introduce fresh vertices that can sit on older triangle
+          // edges; conform globally NOW so this round's strong re-pair machinery (not a
+          // late weak mop-up) absorbs the triangles that conformity frees
+          triConform();
+          // drop quads whose triangles died, re-pair every unaccounted triangle per component
+          for (let ci = 0; ci < states.length; ci++) { const st = states[ci]; if (!st) continue;
+            const compObjs = allTris.filter(o => o.comp === ci);
+            const tripleOf = new Map(compObjs.map(o => [key3(o.v), o]));
+            const surviving = [], inQuad = new Set();
+            for (const q of st.quads) {
+              const qt = livePair(tripleOf, q);
+              if (qt && !inQuad.has(qt[0]) && !inQuad.has(qt[1])) { surviving.push(q); for (const o of qt) inQuad.add(o); } }
+            const pool = compObjs.filter(o => !o.dead && !inQuad.has(o));
+            // grow the pool by one ring: unpair intact quads touching pool triangles, so a
+            // sliver whose only partners are locked inside paired quads can still be absorbed
+            for (let grow = 0; grow < 2 && pool.length; grow++) {
+              const poolSet = new Set(pool), edgeQuadS = new Map();
+              surviving.forEach((q, qi) => { for (let k = 0; k < 4; k++) edgeQuadS.set(ekey2(q[k], q[(k + 1) % 4]), qi); });
+              const dropQ = new Set();
+              for (const o of pool) for (let k = 0; k < 3; k++) { const qi = edgeQuadS.get(ekey2(o.v[k], o.v[(k + 1) % 3])); if (qi !== undefined) dropQ.add(qi); }
+              if (dropQ.size) { const keep = [];
+                surviving.forEach((q, qi) => { if (dropQ.has(qi)) {
+                    for (const t of [[q[0], q[1], q[2]], [q[0], q[2], q[3]], [q[0], q[1], q[3]], [q[1], q[2], q[3]]]) { const o = tripleOf.get(key3(t));
+                      if (o && !o.dead && !poolSet.has(o)) { pool.push(o); poolSet.add(o); } } }
+                  else keep.push(q); });
+                surviving.length = 0; surviving.push(...keep); } }
+            const survTris = [], triQuad = new Map(), deadQuads = new Set();
+            surviving.forEach((q, qi) => { const qt = livePair(tripleOf, q);
+              survTris.push(qt); if (qt) for (const o of qt) triQuad.set(o, qi); });
+            const compEdgeTri = new Map();
+            for (const o of compObjs) { if (o.dead) continue;
+              for (let k = 0; k < 3; k++) { const key = ekey2(o.v[k], o.v[(k + 1) % 3]); let s = compEdgeTri.get(key); if (!s) compEdgeTri.set(key, s = []); s.push(o); } }
+            if (pool.length) {
+              const finalQuads = [], finalLeftObjs = [];
+              const edgeP = new Map();
+              pool.forEach((o, i) => { for (let k = 0; k < 3; k++) { const key = ekey2(o.v[k], o.v[(k + 1) % 3]); let s = edgeP.get(key); if (!s) edgeP.set(key, s = []); s.push(i); } });
+              const compOf = new Array(pool.length).fill(-1); let nc = 0;
+              for (let i = 0; i < pool.length; i++) { if (compOf[i] >= 0) continue;
+                const stack = [i]; compOf[i] = nc;
+                while (stack.length) { const u = stack.pop();
+                  for (let k = 0; k < 3; k++) for (const j of (edgeP.get(ekey2(pool[u].v[k], pool[u].v[(k + 1) % 3])) || [])) if (compOf[j] < 0) { compOf[j] = nc; stack.push(j); } }
+                nc++; }
+              const compsP = new Map();
+              pool.forEach((o, i) => { let s = compsP.get(compOf[i]); if (!s) compsP.set(compOf[i], s = []); s.push(i); });
+              for (const idxs of compsP.values()) {
+                let cObjs = idxs.map(i => pool[i]);
+                if (cObjs.length % 2 === 1) { // parity: an odd triangle set can never pair. Split
+                  // one boundary edge (midpoint shared by both sides, so conformity holds) and
+                  // pull the outside quad's triangles into the set: odd + 3 = even
+                  const cSet = new Set(cObjs);
+                  outer: for (const o of cObjs) {
+                    for (let k = 0; k < 3; k++) { const a = o.v[k], b = o.v[(k + 1) % 3];
+                      const cand = compEdgeTri.get(ekey2(a, b)); if (!cand) continue;
+                      const other = cand.find(t => t !== o && !t.dead && !cSet.has(t));
+                      if (!other) continue;
+                      const qi = triQuad.get(other); if (qi === undefined || deadQuads.has(qi)) continue;
+                      const qt = survTris[qi]; if (!qt) continue;
+                      const partner = qt[0] === other ? qt[1] : qt[0];
+                      const mid = poolAdd((P(a)[0] + P(b)[0]) / 2, (P(a)[1] + P(b)[1]) / 2); candAdd(mid);
+                      const mk = (t, x, y, cc) => { const nv = [x, y, cc]; if (Math.abs(polyArea2(nv.map(P))) < 1e-12) return null; const no = { v: nv, level: t.level, comp: t.comp, dead: false }; allTris.push(no); return no; };
+                      const co = o.v.find(v => v !== a && v !== b);
+                      const o1 = mk(o, a, mid, co), o2 = mk(o, mid, b, co);
+                      if (!o1 || !o2) continue;
+                      // split ONLY the pool side: -1 +2 kids +2 (the quad absorbed whole)
+                      // = +3, odd -> even. Splitting the quad's triangle too (as before)
+                      // makes the delta +4 and the set stays odd forever -- the parity
+                      // fix never actually flipped parity. The midpoint pokes the
+                      // absorbed triangle's edge, which the per-round global conformity
+                      // pass repairs before the next accounting.
+                      o.dead = true; deadQuads.add(qi);
+                      cSet.delete(o); cSet.add(o1); cSet.add(o2); cSet.add(other); cSet.add(partner);
+                      break outer; } }
+                  cObjs = [...cSet]; }
+                let em = cObjs.length % 2 === 0 ? exactMatch(cObjs.map(o => o.v), 8000000) : null;
+                if (em) finalQuads.push(...em);
+                else {
+                  const res2 = pairComponent(cObjs.map(o => o.v), st.level, [], true);
+                  let best = { quads: res2.quads, leftovers: res2.leftovers, fillObjs: null };
+                  if (cObjs.length % 2 === 0) { // no matching in this triangulation: re-fill the
+                    // region over its own vertices (fresh Delaunay interior, same boundary, so
+                    // conformity is preserved) and keep whichever pairing leaves fewer orphans
+                    const loop = boundaryLoop(cObjs.map(o => o.v));
+                    let bndEdges = 0; // a holed or multi-loop region must not re-fill: the walk
+                    // returns one loop and the fill would double-cover the island inside
+                    if (loop) { const cnt = new Map();
+                      for (const o of cObjs) for (let k = 0; k < 3; k++) { const key = ekey2(o.v[k], o.v[(k + 1) % 3]); cnt.set(key, (cnt.get(key) || 0) + 1); }
+                      for (const [, c] of cnt) if (c === 1) bndEdges++; }
+                    if (loop && loop.length >= 4 && loop.length === bndEdges) {
+                      const loopSet = new Set(loop), inner = new Set();
+                      for (const o of cObjs) for (const v of o.v) if (!loopSet.has(v)) inner.add(v);
+                      // coarse variant first: original triangulation vertices only -- the
+                      // subdivision debris inside a knot is what defeats the exact matcher
+                      const innerF = st.origVerts ? [...inner].filter(v => st.origVerts.has(v)) : [...inner];
+                      let cx = 0, cy = 0; for (const v of loop) { const p = P(v); cx += p[0]; cy += p[1]; }
+                      const cenId = poolAdd(cx / loop.length, cy / loop.length);
+                      let ra = 0; for (const o of cObjs) ra += Math.abs(polyArea2(o.v.map(P)));
+                      for (const innerV of [[...innerF, cenId], [...inner, cenId], [...innerF]]) {
+                        let fill = null;
+                        try { fill = delaunayFill(loop, innerV, st.level); } catch (e) { fill = null; }
+                        if (!fill || fill.length % 2) continue;
+                        let fa = 0; for (const t of fill) fa += Math.abs(polyArea2(t.map(P)));
+                        if (Math.abs(fa - ra) > ra * 0.02 + 1e-6) continue;
+                        const em2 = exactMatch(fill);
+                        if (em2) { best = { quads: em2, leftovers: [], fillObjs: fill }; break; }
+                        const res3 = pairComponent(fill, st.level, [], true);
+                        if (res3.leftovers.length < best.leftovers.length) best = { quads: res3.quads, leftovers: res3.leftovers, fillObjs: fill };
+                        if (!best.leftovers.length) break; }
+                      if (best.leftovers.length && loop.length % 2 === 0 && !loop.includes(cenId)) {
+                        // raw centroid fan: no constraint insertion, so it succeeds in
+                        // sliver knots where the Delaunay fill refuses the boundary
+                        const fan = loop.map((v, i) => [cenId, v, loop[(i + 1) % loop.length]]);
+                        if (fan.every(t => Math.abs(polyArea2(t.map(P))) > 1e-9)) {
+                          let fa = 0; for (const t of fan) fa += Math.abs(polyArea2(t.map(P)));
+                          if (Math.abs(fa - ra) <= ra * 0.02 + 1e-6) {
+                            const em2 = exactMatch(fan);
+                            if (em2) best = { quads: em2, leftovers: [], fillObjs: fan };
+                            else { const res3 = pairComponent(fan, st.level, [], true);
+                              if (res3.leftovers.length < best.leftovers.length) best = { quads: res3.quads, leftovers: res3.leftovers, fillObjs: fan }; } } } } } }
+                  if (best.fillObjs) { for (const o of cObjs) o.dead = true;
+                    const fObjs = best.fillObjs.map(t => { const no = { v: t, level: st.level, comp: ci, dead: false }; allTris.push(no); return no; });
+                    finalQuads.push(...best.quads);
+                    const byV2 = new Map(fObjs.map(o => [key3(o.v), o]));
+                    for (const v of best.leftovers) { const o = byV2.get(key3(v)); if (o) finalLeftObjs.push(o); } }
+                  else { finalQuads.push(...best.quads);
+                    const byV = new Map(cObjs.map(o => [key3(o.v), o]));
+                    for (const v of best.leftovers) { const o = byV.get(key3(v)); if (o) finalLeftObjs.push(o); } } }
+              }
+              st.quads = surviving.filter((q, qi) => !deadQuads.has(qi)).concat(finalQuads);
+              { const objs2 = allTris.filter(o => o.comp === ci && !o.dead);
+                const triple2 = new Map(objs2.map(o => [key3(o.v), o])), inQ2 = new Set();
+                for (const q of st.quads) { const qt = livePair(triple2, q);
+                  if (qt && !inQ2.has(qt[0]) && !inQ2.has(qt[1])) for (const o of qt) inQ2.add(o); }
+                st.leftoverObjs = objs2.filter(o => !inQ2.has(o)); }
+            } else { st.quads = surviving; st.leftoverObjs = []; } }
+        }
+        // ---- final triangle conformity + accounting repair: the sweep's parity splits and
+        // re-fills can leave a foreign vertex on a quad edge after the last conform pass, and
+        // local excisions can leave quads with no constituent triangles. Re-conform globally,
+        // drop unbacked quads, and re-pair the pooled triangles so the emitted faces are
+        // conforming and exactly accounted by construction ----
+        const repairStates = () => {
+        triConform();
+        for (let ci = 0; ci < states.length; ci++) { const st = states[ci]; if (!st) continue;
+          const sharesE = (o1, o2) => { let n = 0; for (const v of o1.v) if (o2.v.includes(v)) n++; return n === 2; };
+          const objs = allTris.filter(o => o.comp === ci && !o.dead);
+          const tripleOf = new Map(objs.map(o => [key3(o.v), o]));
+          const inQuad = new Set();
+          st.quads = st.quads.filter(q => { const qt = livePair(tripleOf, q);
+            if (qt && !inQuad.has(qt[0]) && !inQuad.has(qt[1])) { for (const o of qt) inQuad.add(o); return true; } return false; });
+          const pool = objs.filter(o => !inQuad.has(o)), seenP = new Set(), finalLeft = [];
+          for (const o of pool) { if (seenP.has(o)) continue; const compP = [], qq = [o]; seenP.add(o);
+            while (qq.length) { const t = qq.pop(); compP.push(t);
+              for (const u of pool) if (!seenP.has(u) && sharesE(u, t)) { seenP.add(u); qq.push(u); } }
+            if (compP.length % 2 === 1) { // parity: split one pool triangle on a boundary
+              // edge and absorb the whole neighbouring quad (+3 = even); without this,
+              // every odd freed pool went straight to leftover and detonated the emit
+              const cSet = new Set(compP), edgeTriC = new Map(), triQuadC = new Map();
+              for (const o2 of objs) for (let k = 0; k < 3; k++) { const key = ekey2(o2.v[k], o2.v[(k + 1) % 3]); if (!edgeTriC.has(key)) edgeTriC.set(key, []); edgeTriC.get(key).push(o2); }
+              st.quads.forEach((q, qi) => { const qt = livePair(tripleOf, q); if (qt) { triQuadC.set(qt[0], qi); triQuadC.set(qt[1], qi); } });
+              const deadQuadC = new Set();
+              outer: for (const o of compP) {
+                for (let k = 0; k < 3; k++) { const a = o.v[k], b = o.v[(k + 1) % 3];
+                  const cand = edgeTriC.get(ekey2(a, b)); if (!cand) continue;
+                  const other = cand.find(t => t !== o && !t.dead && !cSet.has(t)); if (!other) continue;
+                  const qi = triQuadC.get(other); if (qi === undefined || deadQuadC.has(qi)) continue;
+                  const qt = livePair(tripleOf, st.quads[qi]); if (!qt) continue;
+                  const partner = qt[0] === other ? qt[1] : qt[0];
+                  const mid = poolAdd((P(a)[0] + P(b)[0]) / 2, (P(a)[1] + P(b)[1]) / 2);
+                  const co = o.v.find(v => v !== a && v !== b);
+                  const o1 = { v: [a, mid, co], level: st.level, comp: ci, dead: false }, o2 = { v: [mid, b, co], level: st.level, comp: ci, dead: false };
+                  if (Math.abs(polyArea2(o1.v.map(P))) < 1e-12 || Math.abs(polyArea2(o2.v.map(P))) < 1e-12) continue;
+                  allTris.push(o1, o2); o.dead = true; deadQuadC.add(qi);
+                  cSet.delete(o); cSet.add(o1); cSet.add(o2); cSet.add(other); cSet.add(partner);
+                  break outer; } }
+              if (deadQuadC.size) { st.quads = st.quads.filter((q, qi) => !deadQuadC.has(qi));
+                for (const o of cSet) if (!objs.includes(o)) objs.push(o);
+                // note: matchers below run on compP, replaced by the enlarged set
+                compP.length = 0; compP.push(...cSet); } }
+            if (compP.length % 2 === 0 && compP.length >= 2) {
+              const em = compP.length <= 240 ? exactMatch(compP.map(o => o.v), 8000000) : null;
+              if (em) { st.quads.push(...em); continue; }
+              let best = null; // coarse region re-fill (original vertices first), as in the sweep
+              const loop = boundaryLoop(compP.map(o => o.v));
+              let bndEdges = 0;
+              if (loop) { const cnt = new Map();
+                for (const oo of compP) for (let k = 0; k < 3; k++) { const key = ekey2(oo.v[k], oo.v[(k + 1) % 3]); cnt.set(key, (cnt.get(key) || 0) + 1); }
+                for (const [, c] of cnt) if (c === 1) bndEdges++; }
+              if (loop && loop.length >= 4 && loop.length === bndEdges) {
+                const loopSet = new Set(loop), inner = new Set();
+                for (const oo of compP) for (const v of oo.v) if (!loopSet.has(v)) inner.add(v);
+                const innerF = st.origVerts ? [...inner].filter(v => st.origVerts.has(v)) : [...inner];
+                let cx = 0, cy = 0; for (const v of loop) { const p = P(v); cx += p[0]; cy += p[1]; }
+                const cenId = poolAdd(cx / loop.length, cy / loop.length);
+                let ra = 0; for (const oo of compP) ra += Math.abs(polyArea2(oo.v.map(P)));
+                for (const innerV of [[...innerF, cenId], [...inner, cenId], [...innerF]]) {
+                  let fill = null;
+                  try { fill = delaunayFill(loop, innerV, st.level); } catch (e) { fill = null; }
+                  if (!fill || fill.length % 2) continue;
+                  let fa = 0; for (const t of fill) fa += Math.abs(polyArea2(t.map(P)));
+                  if (Math.abs(fa - ra) > ra * 0.02 + 1e-6) continue;
+                  const em2 = exactMatch(fill);
+                  if (em2) { best = { quads: em2, leftovers: [], fillObjs: fill }; break; }
+                  const res3 = pairComponent(fill, st.level, [], true);
+                  if (!best || res3.leftovers.length < best.leftovers.length) best = { quads: res3.quads, leftovers: res3.leftovers, fillObjs: fill };
+                  if (best && !best.leftovers.length) break; }
+                if ((!best || best.leftovers.length) && loop && loop.length % 2 === 0 && !loop.includes(cenId)) {
+                  const fan = loop.map((v, i) => [cenId, v, loop[(i + 1) % loop.length]]);
+                  if (fan.every(t => Math.abs(polyArea2(t.map(P))) > 1e-9)) {
+                    let fa = 0; for (const t of fan) fa += Math.abs(polyArea2(t.map(P)));
+                    if (Math.abs(fa - ra) <= ra * 0.02 + 1e-6) {
+                      const em2 = exactMatch(fan);
+                      if (em2) best = { quads: em2, leftovers: [], fillObjs: fan };
+                      else { const res3 = pairComponent(fan, st.level, [], true);
+                        if (!best || res3.leftovers.length < best.leftovers.length) best = { quads: res3.quads, leftovers: res3.leftovers, fillObjs: fan }; } } } } }
+              if (best) { if (best.fillObjs) { for (const oo of compP) oo.dead = true;
+                  const fObjs = best.fillObjs.map(t => { const no = { v: t, level: st.level, comp: ci, dead: false }; allTris.push(no); return no; });
+                  st.quads.push(...best.quads);
+                  const byV2 = new Map(fObjs.map(o => [key3(o.v), o]));
+                  for (const v of best.leftovers) { const oo = byV2.get(key3(v)); if (oo) finalLeft.push(oo); } }
+                else { st.quads.push(...best.quads);
+                  const byV = new Map(compP.map(o => [key3(o.v), o]));
+                  for (const v of best.leftovers) { const oo = byV.get(key3(v)); if (oo) finalLeft.push(oo); } }
+                continue; }
+              const rp = pairComponent(compP.map(o => o.v), st.level, [], true);
+              st.quads.push(...rp.quads);
+              const byV = new Map(compP.map(o => [key3(o.v), o]));
+              for (const v of rp.leftovers) { const oo = byV.get(key3(v)); if (oo) finalLeft.push(oo); } }
+            else for (const oo of compP) finalLeft.push(oo); }
+          // recompute leftovers from accounting: flipped triangles change vertex triples,
+          // so identity/key tracking of matcher leftovers silently loses triangles (holes)
+          { const objs2 = allTris.filter(o => o.comp === ci && !o.dead);
+            const triple2 = new Map(objs2.map(o => [key3(o.v), o])), inQ2 = new Set();
+            for (const q of st.quads) { const qt = livePair(triple2, q);
+              if (qt && !inQ2.has(qt[0]) && !inQ2.has(qt[1])) for (const o of qt) inQ2.add(o); }
+            st.leftoverObjs = objs2.filter(o => !inQ2.has(o)); } }
+        };
+        // one global conformity + accounting repair: re-conform the triangulation, drop
+        // quads whose triangles were split or never had any, and re-pair the pooled
+        // triangles. Remaining odd-parity orphans convert solo below; the face queue's
+        // region re-pair resolves the handful of hangs those conversions seed.
+        repairStates();
+        const faces = [], leftovers = [];
+        for (const st of states) { if (!st) continue;
+          for (const q of st.quads) faces.push({ v: q, level: st.level, dead: false });
+          for (const o of st.leftoverObjs) if (!o.dead) leftovers.push(o); }
+        return { faces, leftovers };
+      };
+      // density bail: beyond ~200k triangles the pairing/refill machinery's
+      // memory blows up long before its time budget can save it (fine pitches
+      // on dense patterns) -- the grid builder handles those routinely
+      { let nLive = 0; for (const t of allTris) if (!t.dead) nLive++;
+        if (nLive > 200000) throw new Error('conforming: pattern too dense (' + nLive + ' tris)'); }
+      let result = pairAll();
+      for (const f of result.faces) allFaces.push(f);
+      for (const obj of result.leftovers) {
+        const [a, b, c] = obj.v, pa = P(a), pb = P(b), pc = P(c);
+        const g = poolAdd((pa[0] + pb[0] + pc[0]) / 3, (pa[1] + pb[1] + pc[1]) / 3);
+        const mAB = poolAdd((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), mBC = poolAdd((pb[0] + pc[0]) / 2, (pb[1] + pc[1]) / 2), mCA = poolAdd((pc[0] + pa[0]) / 2, (pc[1] + pa[1]) / 2);
+        for (const quad of [[a, mAB, g, mCA], [b, mBC, g, mAB], [c, mCA, g, mBC]]) {
+          if (polyArea2(quad.map(P)) < 0) quad.reverse();
+          if (Math.abs(polyArea2(quad.map(P))) > 1e-9) allFaces.push({ v: quad, level: obj.level, dead: false });
+        }
+      }
+    }
+
+    // weld twin vertices: refill Steiner points can land ~0.005-0.03mm from an
+    // existing vertex (outside poolAdd's 0.004 weld radius), leaving coincident
+    // vertex pairs that make traced rim cycles degenerate (zero-length edges)
+    // and defeat every downstream edge test. Merge them before the queue runs.
+    { const usedW = new Set(); for (const f of allFaces) for (const v of f.v) usedW.add(v);
+      const cellW = 0.05, bucketsW = new Map(), parentW = new Map();
+      const findW = x => { let r = x; while (parentW.get(r) !== r) { parentW.set(r, parentW.get(parentW.get(r))); r = parentW.get(r); } return r; };
+      for (const id of usedW) { parentW.set(id, id); const p = P(id), key = Math.floor(p[0] / cellW) + ',' + Math.floor(p[1] / cellW);
+        if (!bucketsW.has(key)) bucketsW.set(key, []); bucketsW.get(key).push(id); }
+      for (const id of usedW) { const p = P(id), cx = Math.floor(p[0] / cellW), cy = Math.floor(p[1] / cellW);
+        for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const o of (bucketsW.get((cx + di) + ',' + (cy + dj)) || [])) {
+          if (o >= id) continue; const q = P(o);
+          if ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 < 0.0009) { const ra = findW(id), rb = findW(o); if (ra !== rb) parentW.set(Math.max(ra, rb), Math.min(ra, rb)); } } }
+      for (const f of allFaces) for (let k = 0; k < 4; k++) f.v[k] = findW(f.v[k]);
+      for (let i = allFaces.length - 1; i >= 0; i--) if (new Set(allFaces[i].v).size < 4) allFaces.splice(i, 1); }
+
+    // ---- conformity: split quads until every edge-interior vertex belongs to both neighbours ----
+    const edgeFaces = new Map();
+    const edgeQueue = [], inQueue = new Set();
+    const enqueueEdge = (a, b) => { const key = ekeyF(a, b); if (!inQueue.has(key)) { inQueue.add(key); edgeQueue.push([a, b]); } };
+    // a vertex lying on an edge is only a real T-junction if some live face actually uses
+    // a sub-edge (a,mid) or (mid,b) without also using the whole edge -- a flat-dart face
+    // whose own reflex corner lies on its opposite edge is topologically consistent
+    // (both neighbours still share the whole edge) and must not be split or re-paired.
+    const faceHasEdge = (g, x, y) => g.v.some((v, k) => (v === x && g.v[(k + 1) % 4] === y) || (v === y && g.v[(k + 1) % 4] === x));
+    const hangReal = (a, b, mid) => {
+      // actionable only when the edge has a single live owner while the other side is
+      // subdivided at mid -- with two whole-edge owners the sheet is already consistent
+      const owners = edgeFaces.get(ekeyF(a, b)); let nOwn = 0;
+      if (owners) for (const g of owners) if (!g.dead) nOwn++;
+      if (nOwn !== 1) return false;
+      for (const [x, y] of [[a, mid], [mid, b]]) { const s = edgeFaces.get(ekeyF(x, y));
+        if (s) for (const g of s) { if (g.dead) continue; if (!faceHasEdge(g, a, b)) return true; } }
+      return false; };
+    const faceUsed = new Set(); // vertices that are corners of live faces: only they can hang a face edge
+    const vertexFaces = new Map(); // vertex -> live faces using it as a corner
+    const dirtyFaces = new Set(); // faces whose edges need a hang recheck (changed neighbourhood)
+    const markDirtyAround = f => { for (const v of f.v) { const s = vertexFaces.get(v); if (s) for (const g of s) dirtyFaces.add(g); } dirtyFaces.add(f); };
+    const linkFace = f => { for (let k = 0; k < 4; k++) { const key = ekeyF(f.v[k], f.v[(k + 1) % 4]); let s = edgeFaces.get(key); if (!s) edgeFaces.set(key, s = new Set()); s.add(f); enqueueEdge(f.v[k], f.v[(k + 1) % 4]); } for (const v of f.v) { candAdd(v); faceUsed.add(v); let s2 = vertexFaces.get(v); if (!s2) vertexFaces.set(v, s2 = new Set()); s2.add(f); } markDirtyAround(f); };
+    const killFace = f => { markDirtyAround(f); for (let k = 0; k < 4; k++) { const s = edgeFaces.get(ekeyF(f.v[k], f.v[(k + 1) % 4])); if (s) s.delete(f); } for (const v of f.v) { const s2 = vertexFaces.get(v); if (s2) s2.delete(f); } };
+    for (const f of allFaces) linkFace(f);
+    const isSeamEdge = (a, b) => { const pa = P(a), pb = P(b); return Math.abs(pa[0] - pb[0]) < 1e-9 && (Math.min(pa[0], pb[0]) < 1e-6 || Math.max(pa[0], pb[0]) > circ - 1e-6); };
+    const isBorderEdge = (a, b) => { const pa = P(a), pb = P(b); return Math.abs(pa[1] - pb[1]) < 1e-9 && Math.abs(Math.abs(pa[1]) - A) < 1e-6; };
+    const enqueueTwin = (a, b, mid) => {
+      const pa = P(a), pb = P(b);
+      if (isSeamEdge(a, b)) { const tx = pa[0] < circ / 2 ? circ : 0;
+        const t1 = poolAdd(tx, pa[1]), t2 = poolAdd(tx, pb[1]); candAdd(t1); candAdd(t2);
+        if (mid !== undefined) candAdd(poolAdd(tx, P(mid)[1]));
+        enqueueEdge(t1, t2); }
+      else if (isBorderEdge(a, b)) { const ty = -pa[1];
+        const t1 = poolAdd(pa[0], ty), t2 = poolAdd(pb[0], ty); candAdd(t1); candAdd(t2);
+        if (mid !== undefined) candAdd(poolAdd(P(mid)[0], ty));
+        enqueueEdge(t1, t2); }
+    };
+    const orientQuad = quad => { const area = polyArea2(quad.map(P)); if (Math.abs(area) < 1e-7) return null;
+      const q = area < 0 ? [...quad].reverse() : quad;
+      for (let i = 0; i < 4; i++) { const a = P(q[i]), b = P(q[(i + 1) % 4]), c = P(q[(i + 3) % 4]);
+        if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) <= 1e-7) return null; }
+      return q; };
+    // split children only need to be SIMPLE (positive area, no bow-tie): quads carrying a 180°
+    // collinear corner (common along densified straight boundaries) must still split, or the edge
+    // stays hanging and the sheet leaks. A dart child is topologically sound; a bow-tie is not.
+    const orientSimple = quad => { const area = polyArea2(quad.map(P)); if (Math.abs(area) < 1e-9) return null;
+      const q = area < 0 ? [...quad].reverse() : quad, w = q.map(P);
+      const x1 = segX(w[0], w[1], w[2], w[3]), x2 = segX(w[1], w[2], w[3], w[0]);
+      if (x1 && x1.t > 1e-12 && x1.t < 1 - 1e-12 && x1.u > 1e-12 && x1.u < 1 - 1e-12) return null;
+      if (x2 && x2.t > 1e-12 && x2.t < 1 - 1e-12 && x2.u > 1e-12 && x2.u < 1 - 1e-12) return null;
+      return q; };
+    function splitQuadAt(f, k, mid) {
+      if (f.dead) return false;
+      const q = f.v, a = q[k], b = q[(k + 1) % 4], c = q[(k + 2) % 4], dd = q[(k + 3) % 4];
+      if (mid === a || mid === b) return false;
+      // opposite-edge split (the only 2-quad split that tiles the parent): children
+      // (a, mid, m2, dd) and (mid, b, c, m2). For convex parents the opposite midpoint works; for
+      // darts the mid->m2 segment can leave the quad (bow-tie child), so try every existing vertex
+      // on (c, dd) first, then fresh points at several fractions, and keep the first split whose
+      // children are both simple.
+      let m2 = -1, q1 = null, q2 = null;
+      const pc = P(c), pd = P(dd), candM2 = vertsOnSeg(c, dd).map(e => e[1]);
+      // fresh midpoint LAST and lazily: creating it eagerly leaves an orphan pool vertex on
+      // (c, dd) whenever an existing vertex serves, and that orphan hangs on a child edge
+      candM2.push(-1);
+      for (const cand0 of candM2) { const cand = cand0 === -1 ? poolAdd((pc[0] + pd[0]) / 2, (pc[1] + pd[1]) / 2) : cand0;
+        if (cand === c || cand === dd || cand === a || cand === b || cand === mid || cand === m2) continue;
+        const t1 = orientSimple([a, mid, cand, dd]), t2 = orientSimple([mid, b, c, cand]);
+        if (t1 && t2) { m2 = cand; q1 = t1; q2 = t2; break; } }
+      if (m2 < 0) return false;
+      f.dead = true; killFace(f);
+      for (const quad of [q1, q2]) { const nf = { v: quad, level: f.level, dead: false }; allFaces.push(nf); linkFace(nf); }
+      // the killed face changed the incidence of ALL its edges: every neighbour across them must be
+      // re-examined (it may now hold a whole edge opposite two half edges, with mid hanging on it)
+      enqueueEdge(a, b); enqueueEdge(b, c); enqueueEdge(c, dd); enqueueEdge(dd, a);
+      enqueueTwin(a, b, mid);
+      enqueueTwin(c, dd, m2);
+      return true;
+    }
+    // re-pair a small set of faces as one region: triangulate each face directly (faces
+    // owning the stuck edge fan through the hanging vertex, so it becomes a corner), then
+    // exactly match the triangles into quads. The region's outer boundary only loses the
+    // faces absorbed into it, so nothing outside is disturbed. If the triangle count is
+    // odd or no matching exists, the region grows by one neighbouring face at a time.
+    // boundary loop of a face region from the faces' own edges (triangle diagonals
+    // are not boundary edges); null when the single-owner edges do not form one loop
+    const faceLoopOf = regionFaces => { const cnt = new Map();
+      for (const f of regionFaces) for (let k = 0; k < 4; k++) { const key = ekey2(f.v[k], f.v[(k + 1) % 4]); cnt.set(key, (cnt.get(key) || 0) + 1); }
+      const adj = new Map();
+      for (const f of regionFaces) for (let k = 0; k < 4; k++) { const x = f.v[k], y = f.v[(k + 1) % 4];
+        if (cnt.get(ekey2(x, y)) !== 1) continue;
+        if (!adj.has(x)) adj.set(x, []); adj.get(x).push(y);
+        if (!adj.has(y)) adj.set(y, []); adj.get(y).push(x); }
+      if (!adj.size) return null;
+      for (const [, ns] of adj) if (ns.length !== 2) return null;
+      const start = adj.keys().next().value, loop = [start]; let prev = -1, cur = start;
+      while (true) { const ns = adj.get(cur); const nxt = ns[0] === prev ? ns[1] : ns[0];
+        if (nxt === start) break;
+        loop.push(nxt); prev = cur; cur = nxt;
+        if (loop.length > adj.size) return null; }
+      return loop.length === adj.size ? loop : null; };
+    const refillFaces = (regionFaces, a, b, mid) => {
+      // a candidate pairing is only committed if its quads exactly tile the region
+      // triangles (two per quad, each used once) -- the heuristic matcher can otherwise
+      // return quads whose geometry overlaps one strip and leaves the next bare
+      const quadsTile = (quads, tris) => { if (quads.length * 2 !== tris.length) return false;
+        const cnt = new Map(); for (const t of tris) cnt.set(key3(t), (cnt.get(key3(t)) || 0) + 1);
+        for (const q of quads) { const d1 = [key3([q[0], q[1], q[2]]), key3([q[0], q[2], q[3]])], d2 = [key3([q[0], q[1], q[3]]), key3([q[1], q[2], q[3]])];
+          const use = (cnt.get(d1[0]) && cnt.get(d1[1])) ? d1 : (cnt.get(d2[0]) && cnt.get(d2[1])) ? d2 : null;
+          if (!use) return false;
+          for (const k of use) cnt.set(k, cnt.get(k) - 1); }
+        return true; };
+      const ownsStuck = f => f.v.some((v, k) => (v === a && f.v[(k + 1) % 4] === b) || (v === b && f.v[(k + 1) % 4] === a));
+      const fanTris = (f, apexMid) => { // quad rotated so the stuck edge is (q0,q1)
+        const i = f.v.findIndex((v, k) => (v === a && f.v[(k + 1) % 4] === b) || (v === b && f.v[(k + 1) % 4] === a));
+        const q = [0, 1, 2, 3].map(k => f.v[(i + k) % 4]);
+        return apexMid ? [[q[0], mid, q[3]], [mid, q[1], q[2]], [mid, q[2], q[3]]]
+                       : [[q[3], q[0], mid], [q[3], mid, q[1]], [q[3], q[1], q[2]]]; };
+      const diagTris = (f, alt) => alt ? [[f.v[0], f.v[1], f.v[3]], [f.v[1], f.v[2], f.v[3]]]
+                                       : [[f.v[0], f.v[1], f.v[2]], [f.v[0], f.v[2], f.v[3]]];
+      const region = regionFaces.slice();
+      // absorb faces whose vertex pokes onto the region boundary (partial neighbours
+      // across a subdivided edge): refilling without them tiles over their territory
+      // and double-covers a strip beside the hang, which no later local move can undo
+      for (let abs = 0; abs < 4; abs++) {
+        const loop0 = faceLoopOf(region); if (!loop0) break;
+        const inReg = new Set(region); let addedAbs = false;
+        for (let li = 0; li < loop0.length; li++) { const x = loop0[li], y = loop0[(li + 1) % loop0.length];
+          for (const [, w] of vertsOnSeg(x, y)) { if (!faceUsed.has(w)) continue;
+            for (const g of (vertexFaces.get(w) || [])) if (!g.dead && !inReg.has(g)) { region.push(g); inReg.add(g); addedAbs = true; } } }
+        if (!addedAbs) break; }
+      for (let grow = 0; grow < 6; grow++) {
+        if (grow) { // absorb one neighbouring face
+          let added = null;
+          outer: for (const f of region) for (let k = 0; k < 4; k++) {
+            const nb = edgeFaces.get(ekeyF(f.v[k], f.v[(k + 1) % 4])); if (!nb) continue;
+            for (const g of nb) { if (!g.dead && !region.includes(g)) { added = g; break outer; } } }
+          if (!added) return false;
+          region.push(added); }
+        const stuckFaces = region.filter(ownsStuck), plainFaces = region.filter(f => !ownsStuck(f));
+        if (!stuckFaces.length) return false;
+        let ra = 0; for (const f of region) ra += Math.abs(polyArea2(f.v.map(P)));
+        { // whole-region Delaunay re-fill first: far more matching freedom than hand fans.
+          // The fill must keep the region's outer boundary EXACT: subdividing it for
+          // parity exports the hang to the boundary and the queue treadmills. An odd
+          // boundary loop instead pulls the outside neighbour into the region and puts
+          // the parity point INSIDE, on the shared edge (nothing is exported).
+          const regionD = region.slice();
+          let loop = null, okD = false;
+          for (let fixTries = 0; fixTries < 3 && !okD; fixTries++) {
+            loop = faceLoopOf(regionD); if (!loop || loop.length < 4) break;
+            // a hanging vertex on a loop edge belongs in the loop, not the interior
+            for (let li = 0; li < loop.length; li++) { const x = loop[li], y = loop[(li + 1) % loop.length];
+              if ((x === a && y === b) || (x === b && y === a)) { loop = [...loop.slice(0, li + 1), mid, ...loop.slice(li + 1)]; break; } }
+            let extraInner = [];
+            if (loop.length % 2 === 1) { // odd loop: find a fix that keeps the boundary exact
+              let bi = 0, bl = -1;
+              for (let li = 0; li < loop.length; li++) { const p = P(loop[li]), q = P(loop[(li + 1) % loop.length]), l = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2; if (l > bl) { bl = l; bi = li; } }
+              const x = loop[bi], y = loop[(bi + 1) % loop.length], pp = P(x), qq = P(y);
+              const isBorder = (pp[0] < 0.01 && qq[0] < 0.01) || (pp[0] > circ - 0.01 && qq[0] > circ - 0.01) ||
+                (Math.abs(Math.abs(pp[1]) - A) < 0.01 && Math.abs(Math.abs(qq[1]) - A) < 0.01 && Math.sign(pp[1]) === Math.sign(qq[1]));
+              const mId = poolAdd((pp[0] + qq[0]) / 2, (pp[1] + qq[1]) / 2);
+              if (isBorder) { loop = [...loop.slice(0, bi + 1), mId, ...loop.slice(bi + 1)]; }
+              else { const nb = edgeFaces.get(ekeyF(x, y));
+                let outside = null; if (nb) for (const g of nb) if (!g.dead && !regionD.includes(g)) { outside = g; break; }
+                if (!outside) break;
+                regionD.push(outside); extraInner = [mId]; }
+              if (loop.length % 2 === 1 && !extraInner.length) continue; }
+            const loopSet = new Set(loop), inner = new Set([mid]);
+            for (const f of regionD) for (const v of f.v) if (!loopSet.has(v)) inner.add(v);
+            for (const v of extraInner) inner.add(v);
+            inner.delete(undefined); if (loopSet.has(mid)) inner.delete(mid);
+            // region area = the boundary loop's shoelace area, NOT the sum of face
+            // areas: an overlapped knot double-counts the shared strip in the sum,
+            // and the (correct) re-tile would then fail the area audit forever
+            let raD = 0; for (let li = 0; li < loop.length; li++) { const p = P(loop[li]), q = P(loop[(li + 1) % loop.length]); raD += p[0] * q[1] - q[0] * p[1]; }
+            raD = Math.abs(raD) / 2;
+            const cen = poolAdd(loop.reduce((s, v) => s + P(v)[0], 0) / loop.length, loop.reduce((s, v) => s + P(v)[1], 0) / loop.length);
+            for (const innerArr of [[...inner], [...inner, cen]]) {
+              let fill = null;
+              try { fill = delaunayFill(loop, innerArr.filter(v => v !== undefined), regionD[0].level); } catch (e) { continue; }
+              if (!fill || fill.length % 2) continue;
+              if (fill.some(t => new Set(t).size < 3 || Math.abs(polyArea2(t.map(P))) < 1e-9)) continue;
+              // a fill edge jumping over a loop vertex re-births the hang as a slit
+              { const lpSet = new Set(loop);
+                const skips = fill.some(t => { for (let k = 0; k < 3; k++) { const a2 = t[k], b2 = t[(k + 1) % 3], pa = P(a2), pb = P(b2);
+                  const dx = pb[0] - pa[0], dy = pb[1] - pa[1], L2 = dx * dx + dy * dy; if (L2 < 1e-12) continue;
+                  for (const v of lpSet) { if (v === a2 || v === b2) continue; const pv = P(v);
+                    const s = ((pv[0] - pa[0]) * dx + (pv[1] - pa[1]) * dy) / L2; if (s <= 0.001 || s >= 0.999) continue;
+                    if (segDist2(pv[0], pv[1], pa[0], pa[1], pb[0], pb[1]) < 0.0025) return true; } } return false; });
+                if (skips) continue; }
+              let fa = 0; for (const t of fill) fa += Math.abs(polyArea2(t.map(P)));
+              if (Math.abs(fa - raD) > raD * 0.02 + 1e-6) continue;
+              let em = exactMatch(fill, fill.length > 24 ? 300000 : 5000, true);
+              if (!em || !quadsTile(em, fill)) { const rp = pairComponent(fill, regionD[0].level, [], true);
+                if (!rp.leftovers.length && quadsTile(rp.quads, fill)) em = rp.quads; else em = null; }
+              if (!em) continue;
+              for (const f of regionD) { f.dead = true; killFace(f); }
+              for (const quad of em) { const nf = { v: quad, level: regionD[0].level, dead: false }; allFaces.push(nf); linkFace(nf); }
+              okD = true; break; } }
+          if (okD) return true; }
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const groups = stuckFaces.map(f => fanTris(f, attempt % 2 === 0));
+          plainFaces.forEach((f, fi) => groups.push(diagTris(f, ((attempt >> 1) + fi) % 2 === 1)));
+          let tris = groups.flat();
+          if (tris.length % 2) { // parity: fan one plain face through a fresh edge midpoint,
+            // searching every plain face and edge for a non-degenerate fan (a sliver face's
+            // midpoint welds onto a corner and every fan triangle collapses)
+            let fixed = false;
+            for (let gi = groups.length - 1; gi >= stuckFaces.length && !fixed; gi--) {
+              const g = plainFaces[gi - stuckFaces.length];
+              for (let e = 0; e < 4 && !fixed; e++) {
+                const r = [0, 1, 2, 3].map(k => g.v[(e + k) % 4]);
+                const m2 = poolAdd((P(r[1])[0] + P(r[2])[0]) / 2, (P(r[1])[1] + P(r[2])[1]) / 2);
+                if (g.v.includes(m2)) continue;
+                const ft = [[r[0], r[1], m2], [m2, r[2], r[3]], [r[0], m2, r[3]]];
+                if (ft.some(t => new Set(t).size < 3 || Math.abs(polyArea2(t.map(P))) < 1e-9)) continue;
+                groups[gi] = ft; fixed = true; } }
+            if (!fixed) continue;
+            tris = groups.flat(); }
+          if (tris.some(t => new Set(t).size < 3 || Math.abs(polyArea2(t.map(P))) < 1e-9)) continue; // welded/degenerate piece
+          { const seen = new Set(); let dup = false; // duplicate triangles crash the matcher's flip pass
+            for (const t of tris) { const k = key3(t); if (seen.has(k)) { dup = true; break; } seen.add(k); }
+            if (dup) continue; }
+          let fa = 0; for (const t of tris) fa += Math.abs(polyArea2(t.map(P)));
+          if (Math.abs(fa - ra) > ra * 0.02 + 1e-6) continue;
+          let em = exactMatch(tris, tris.length > 24 ? 300000 : 3000, true); // cheap exact first: easy regions match in <100 nodes
+          if (!em || !quadsTile(em, tris)) { const rp = pairComponent(tris, region[0].level, [], true);
+            if (!rp.leftovers.length && quadsTile(rp.quads, tris)) em = rp.quads; else em = null; }
+          if (!em) continue;
+          for (const f of region) { f.dead = true; killFace(f); }
+          for (const quad of em) { const nf = { v: quad, level: region[0].level, dead: false }; allFaces.push(nf); linkFace(nf); }
+          return true;
+        }
+      }
+      return false;
+    };
+    // last resort for a face no re-pair can serve: view it as a pentagon (the hanging
+    // vertex included), fan the pentagon from its centroid plus one edge midpoint, and
+    // exactly match the six fan triangles into three quads. Seeds one fresh hanging
+    // vertex on the opposite edge, in undisturbed territory the re-pair handles easily.
+    const fanSplitFace = (f, a, b, mid) => {
+      const k = f.v.findIndex((v, kk) => (v === a && f.v[(kk + 1) % 4] === b) || (v === b && f.v[(kk + 1) % 4] === a));
+      if (k < 0) return false;
+      const q = [0, 1, 2, 3].map(i => f.v[(k + i) % 4]); // stuck edge is (q0,q1)
+      const m = poolAdd((P(q[3])[0] + P(q[0])[0]) / 2, (P(q[3])[1] + P(q[0])[1]) / 2);
+      const penta = [q[0], mid, q[1], q[2], q[3]];
+      const g = poolAdd(penta.reduce((s, v) => s + P(v)[0], 0) / 5, penta.reduce((s, v) => s + P(v)[1], 0) / 5);
+      const tris = [[q[0], mid, g], [mid, q[1], g], [q[1], q[2], g], [q[2], q[3], g], [q[3], m, g], [m, q[0], g]];
+      if (tris.some(t => new Set(t).size < 3 || Math.abs(polyArea2(t.map(P))) < 1e-9)) return false;
+      let ra = Math.abs(polyArea2(f.v.map(P))), fa = 0; for (const t of tris) fa += Math.abs(polyArea2(t.map(P)));
+      if (Math.abs(fa - ra) > ra * 0.02 + 1e-6) return false;
+      const em = exactMatch(tris, 80000, true); if (!em) return false;
+      f.dead = true; killFace(f);
+      for (const quad of em) { const nf = { v: quad, level: f.level, dead: false }; allFaces.push(nf); linkFace(nf); }
+      return true;
+    };
+    {
+      let ops = 0;
+      const stuck = new Set();
+      const candFill = () => { let found = 0;
+        // harmonise seam/border twins: every used border vertex gets a live twin candidate.
+        // Only dirty faces (changed neighbourhoods) are rescanned -- a full rescan per drain
+        // made the queue quadratic in the face count.
+        for (const f of dirtyFaces) { if (f.dead) continue;
+          for (const v of f.v) { const p = P(v);
+            if (p[0] < 0.01) candAdd(poolAdd(circ, p[1])); else if (p[0] > circ - 0.01) candAdd(poolAdd(0, p[1]));
+            if (Math.abs(Math.abs(p[1]) - A) < 0.01) candAdd(poolAdd(p[0], -p[1])); } }
+        for (const f of dirtyFaces) { if (f.dead) continue;
+          for (let k = 0; k < 4; k++) { const a = f.v[k], b = f.v[(k + 1) % 4]; const m = hangingOn(a, b);
+            if (m !== undefined && faceUsed.has(m) && hangReal(a, b, m) && (!stuck.has(ekeyF(a, b)) || dirtyFaces.has(f))) { stuck.delete(ekeyF(a, b)); enqueueEdge(a, b); found++; } } }
+        dirtyFaces.clear();
+        return found; };
+      const isBorderEdgeQ = (x, y) => { const p = P(x), q = P(y);
+        return (p[0] < 0.01 && q[0] < 0.01) || (p[0] > circ - 0.01 && q[0] > circ - 0.01) ||
+          (Math.abs(Math.abs(p[1]) - A) < 0.01 && Math.abs(Math.abs(q[1]) - A) < 0.01 && Math.sign(p[1]) === Math.sign(q[1])); };
+      // endgame primitive: delete the whole bad cluster around a single edge and
+      // re-fill the resulting holes from their traced rim cycles. Any knot --
+      // hole, dart overlap, triple-owned edge -- becomes clean rim cycles this
+      // way; local patch refills could never untangle them. Transactional: on
+      // any failure the cluster is restored and the caller falls back.
+      const holeTaboo = new Set();
+      let holeCap = 64;
+      const holePass = () => { for (let attempt = 0; attempt < 10; attempt++) { checkDeadline();
+        let seedF = null;
+        for (const [, s] of edgeFaces) { let n = 0, f0 = null;
+          for (const g of s) if (!g.dead) { n++; f0 = g; }
+          if (n > 2 && f0 && !holeTaboo.has(f0)) { seedF = f0; break; } } // triple-owned
+        // edges first: cluster growth swallows every owner, so the knot is removed whole
+        if (!seedF) for (const [, s] of edgeFaces) { let n = 0, f0 = null;
+          for (const g of s) if (!g.dead) { n++; f0 = g; }
+          if (n !== 1 || !f0 || holeTaboo.has(f0)) continue;
+          for (let k = 0; k < 4; k++) { const x = f0.v[k], y = f0.v[(k + 1) % 4];
+            if (edgeFaces.get(ekeyF(x, y)) === s && !isBorderEdgeQ(x, y)) { seedF = f0; break; } }
+          if (seedF) break; }
+        if (!seedF) return false;
+        if (holeOnce(seedF)) return true;
+        holeTaboo.add(seedF); }
+        return false; };
+      const holeOnce = seedF => {
+        const cluster = new Set([seedF]);
+        for (let grow = 0; grow < 8; grow++) { let added = false;
+          for (const f of [...cluster]) {
+            for (let k = 0; k < 4; k++) { const s = edgeFaces.get(ekeyF(f.v[k], f.v[(k + 1) % 4])); if (!s) continue;
+              let n = 0; for (const g of s) if (!g.dead) n++;
+              if (n !== 2) for (const g of s) if (!g.dead && !cluster.has(g)) { cluster.add(g); added = true; } }
+            for (const v of f.v) for (const g of (vertexFaces.get(v) || []))
+              if (!g.dead && !cluster.has(g) && g.v.filter(w => f.v.includes(w)).length >= 2) { cluster.add(g); added = true; }
+            // a void strip between interleaved border chains: the faces across
+            // share only ONE vertex with the seed, so vertex rules miss them;
+            // pull in any face at a bad edge's endpoint whose centroid lies
+            // across that edge (the strip's other side joins the region)
+            for (let k = 0; k < 4; k++) { const x = f.v[k], y = f.v[(k + 1) % 4];
+              const s = edgeFaces.get(ekeyF(x, y)); if (!s) continue;
+              let n = 0; for (const g of s) if (!g.dead) n++;
+              if (n === 2) continue;
+              const px = P(x), py = P(y), fc = [0, 1, 2, 3].reduce((sm, i) => [sm[0] + P(f.v[i])[0] / 4, sm[1] + P(f.v[i])[1] / 4], [0, 0]);
+              const sideF = (py[0] - px[0]) * (fc[1] - px[1]) - (py[1] - px[1]) * (fc[0] - px[0]);
+              for (const v of [x, y]) for (const g of (vertexFaces.get(v) || [])) {
+                if (g.dead || cluster.has(g)) continue;
+                const gc = [0, 1, 2, 3].reduce((sm, i) => [sm[0] + P(g.v[i])[0] / 4, sm[1] + P(g.v[i])[1] / 4], [0, 0]);
+                const sideG = (py[0] - px[0]) * (gc[1] - px[1]) - (py[1] - px[1]) * (gc[0] - px[0]);
+                if (sideF * sideG < 0) { cluster.add(g); added = true; } } } }
+          if (!added || cluster.size > holeCap) break; }
+        // coarse repair: refilling a tiny knot births micro-debris (sub-mm
+        // faces no drain can conform); grow the patch to mesh scale first so
+        // the refill produces pitch-sized quads like the surrounding sheet
+        for (let ring = 0; ring < 6 && cluster.size < 30; ring++)
+          for (const f of [...cluster]) for (let k = 0; k < 4; k++) {
+            const s = edgeFaces.get(ekeyF(f.v[k], f.v[(k + 1) % 4]));
+            if (s) for (const g of s) if (!g.dead && !cluster.has(g)) cluster.add(g); }
+        let minx = 1e9, maxx = -1e9;
+        for (const f of cluster) for (const v of f.v) { const x = P(v)[0]; if (x < minx) minx = x; if (x > maxx) maxx = x; }
+        if (minx < 0.01 && maxx > circ - 0.01) return false; // seam cluster: flat
+        // coords cannot refill across the weld; leave it for the audit/fallback
+        const killed = [];
+        const killNew = () => { for (const f of cluster) if (!f.dead) { f.dead = true; killFace(f); killed.push(f); } };
+        const restore = () => { for (const f of killed) { f.dead = false; linkFace(f); } };
+        killNew();
+        let cycles = [], rimVerts = new Set();
+        const traceCycles = () => {
+          const kCnt = new Map();
+          for (const f of killed) for (let k = 0; k < 4; k++) { const key = ekeyF(f.v[k], f.v[(k + 1) % 4]); kCnt.set(key, (kCnt.get(key) || 0) + 1); }
+          const rimAdj = new Map(); rimVerts = new Set();
+          const addRim = (x, y) => { if (x === y) return; // degenerate faces carry
+            // self-loop edges; they must not enter the rim graph at all
+            if (!rimAdj.has(x)) rimAdj.set(x, []); rimAdj.get(x).push(y);
+            if (!rimAdj.has(y)) rimAdj.set(y, []); rimAdj.get(y).push(x); rimVerts.add(x); rimVerts.add(y); };
+          for (const f of killed) for (let k = 0; k < 4; k++) { const x = f.v[k], y = f.v[(k + 1) % 4], key = ekeyF(x, y);
+            if (kCnt.get(key) !== 1) continue;
+            const s = edgeFaces.get(key); let live = 0; if (s) for (const g of s) if (!g.dead) live++;
+            if (live <= 1) addRim(x, y); else return null; }
+          const ekeyU = (x, y) => x < y ? x + '_' + y : y + '_' + x, usedE = new Set(), cycs = [];
+          for (const sv of rimAdj.keys()) for (const nv0 of rimAdj.get(sv)) {
+            if (usedE.has(ekeyU(sv, nv0))) continue;
+            const cyc = [sv]; let prev = sv, cur = nv0; usedE.add(ekeyU(sv, nv0));
+            while (cur !== sv && cyc.length <= rimVerts.size + 2) { cyc.push(cur);
+              const ns = (rimAdj.get(cur) || []).filter(w => !usedE.has(ekeyU(cur, w)));
+              if (!ns.length) break;
+              let nxt = ns[0];
+              if (ns.length > 1) { const pp = P(prev), pc = P(cur); let best = 1e9;
+                for (const w of ns) { const pw = P(w);
+                  const ang = Math.abs(Math.atan2(pw[1] - pc[1], pw[0] - pc[0]) - Math.atan2(pc[1] - pp[1], pc[0] - pp[0]));
+                  const turn = Math.min(ang, Math.PI * 2 - ang); if (turn < best) { best = turn; nxt = w; } } }
+              usedE.add(ekeyU(cur, nxt)); prev = cur; cur = nxt; }
+            if (cur === sv && cyc.length >= 3) cycs.push(cyc); }
+          return cycs; };
+        // a traced cycle can carry a razor spike (the walk slips out along a slit
+        // and back -- a 0.5-degree corner no quad fill can inhabit). The faces
+        // across the slit at the spike tip must join the cluster; re-trace after.
+        for (let spikeRound = 0; spikeRound < 4; spikeRound++) {
+          cycles = traceCycles();
+          if (!cycles) { restore(); return false; }
+          let spikeV = null;
+          outer: for (const cyc of cycles) { if (cyc.length < 5) continue;
+            for (let i = 0; i < cyc.length; i++) { const pa = P(cyc[(i + cyc.length - 1) % cyc.length]), pb = P(cyc[i]), pc = P(cyc[(i + 1) % cyc.length]);
+              const v1 = [pa[0] - pb[0], pa[1] - pb[1]], v2 = [pc[0] - pb[0], pc[1] - pb[1]];
+              const l1 = Math.hypot(v1[0], v1[1]), l2 = Math.hypot(v2[0], v2[1]);
+              if (l1 < 0.8 || l2 < 0.8) continue;
+              const cosA = (v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2);
+              if (cosA > 0.995) { spikeV = cyc[i]; break outer; } } }
+          if (spikeV === null) break;
+          for (const g of (vertexFaces.get(spikeV) || [])) if (!g.dead) cluster.add(g);
+          if (cluster.size > 250) { restore(); return false; }
+          killNew(); }
+        cycles = traceCycles();
+        if (!cycles) { restore(); return false; }
+        // a traced cycle can revisit a vertex (figure-eight through a pinch, or a
+        // consecutive repeat from a self-loop edge): delaunayFill cannot take a
+        // self-touching walk, so split the cycle at its repeated vertices first
+        cycles = cycles.flatMap(c0 => { const out = [], stack = [], pos = new Map();
+          for (const v of c0) { if (pos.has(v)) { const i = pos.get(v);
+              if (stack.length - i >= 3) out.push(stack.slice(i));
+              stack.length = i + 1; pos.clear(); stack.forEach((u, j) => pos.set(u, j)); }
+            else { pos.set(v, stack.length); stack.push(v); } }
+          if (stack.length >= 3) out.push(stack);
+          return out; });
+        // cycle surgery: what growth cannot absorb is a razor fold in the traced
+        // cycle itself (out along a slit and straight back, ~0-degree corner).
+        // Strip those vertices: the fill then owns the chord, the slit's live
+        // neighbour keeps its subdivided edges, and any hang is the drain phase's
+        // business. The tongue area is ~zero by construction (angle < 6 degrees).
+        cycles = cycles.map(cyc => { let c = cyc.slice();
+          for (let guard = 0; guard < 60 && c.length > 4; guard++) { let removed = false;
+            for (let i = 0; i < c.length; i++) { const pa = P(c[(i + c.length - 1) % c.length]), pb = P(c[i]), pc = P(c[(i + 1) % c.length]);
+              const v1x = pa[0] - pb[0], v1y = pa[1] - pb[1], v2x = pc[0] - pb[0], v2y = pc[1] - pb[1];
+              const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+              if (l1 < 0.5 || l2 < 0.5) continue;
+              if ((v1x * v2x + v1y * v2y) / (l1 * l2) > 0.995) { c.splice(i, 1); removed = true; break; } }
+            if (!removed) break; }
+          return c; }).filter(c => c.length >= 3);
+        if (!cycles.length) { restore(); return false; }
+        const innerKilled = new Set();
+        for (const f of killed) for (const v of f.v) if (!rimVerts.has(v)) innerKilled.add(v);
+        const newFaces = []; let committed = true;
+        for (const cyc of cycles) {
+          const cycSet = new Set(cyc);
+          const inCyc = v => { const p = P(v); let inside = false;
+            for (let i = 0, j = cyc.length - 1; i < cyc.length; j = i++) { const u = P(cyc[i]), w = P(cyc[j]);
+              if ((u[1] > p[1]) !== (w[1] > p[1]) && p[0] < (w[0] - u[0]) * (p[1] - u[1]) / (w[1] - u[1]) + u[0]) inside = !inside; } return inside; };
+          const inners = [...innerKilled].filter(v => !cycSet.has(v) && inCyc(v));
+          // a fill over the knot's own sliver vertices inherits their matching
+          // obstructions; a clean grid interior (as in meshComponent's fills)
+          // triangulates into trivially pairable cells instead
+          const inCycXY = (x, y) => { let inside = false;
+            for (let i = 0, j = cyc.length - 1; i < cyc.length; j = i++) { const u = P(cyc[i]), w = P(cyc[j]);
+              if ((u[1] > y) !== (w[1] > y) && x < (w[0] - u[0]) * (y - u[1]) / (w[1] - u[1]) + u[0]) inside = !inside; } return inside; };
+          const gridIn = [];
+          { let gx0 = 1e9, gx1 = -1e9, gy0 = 1e9, gy1 = -1e9;
+            for (const v of cyc) { const p = P(v); gx0 = Math.min(gx0, p[0]); gx1 = Math.max(gx1, p[0]); gy0 = Math.min(gy0, p[1]); gy1 = Math.max(gy1, p[1]); }
+            const minD2g = (0.26 * effPitch) * (0.26 * effPitch);
+            const rimSegsG = cyc.map((v, i) => [P(v), P(cyc[(i + 1) % cyc.length])]);
+            const gridAt = step => { const out = [];
+              for (let gx = Math.ceil(gx0 / step) * step; gx <= gx1; gx += step)
+                for (let gy = Math.ceil(gy0 / step) * step; gy <= gy1; gy += step) {
+                  if (!inCycXY(gx, gy)) continue;
+                  let clear = true;
+                  for (const [u, w] of rimSegsG) if (segDist2(gx, gy, u[0], u[1], w[0], w[1]) < minD2g) { clear = false; break; }
+                  if (clear) out.push(poolAdd(gx, gy)); } return out; };
+            gridIn.push(...gridAt(Math.max(2, effPitch * 0.8)));
+            var gridFine = gridAt(Math.max(1.5, effPitch * 0.5)); }
+          let ra = 0; for (let li = 0; li < cyc.length; li++) { const p = P(cyc[li]), q = P(cyc[(li + 1) % cyc.length]); ra += p[0] * q[1] - q[0] * p[1]; }
+          ra = Math.abs(ra) / 2;
+          const cen = poolAdd(cyc.reduce((s, v) => s + P(v)[0], 0) / cyc.length, cyc.reduce((s, v) => s + P(v)[1], 0) / cyc.length);
+          const p0 = P(cyc[0]), p1 = P(cyc[1]);
+          const rimMid = poolAdd((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2);
+          let done = false;
+          { // hairline slit: every vertex within 0.25mm of the chord between the
+            // cycle's two farthest vertices -- a zero-width crack between vertex
+            // chains, not a region. There is nothing to fill; the surrounding
+            // faces already cover the ground (drains/audit arbitrate the rest).
+            let bi = 0, bj = 1, bd = -1;
+            for (let i = 0; i < cyc.length; i++) for (let j = i + 1; j < cyc.length; j++) {
+              const dd = (P(cyc[i])[0] - P(cyc[j])[0]) ** 2 + (P(cyc[i])[1] - P(cyc[j])[1]) ** 2;
+              if (dd > bd) { bd = dd; bi = i; bj = j; } }
+            if (bd > 1e-9) { const A2 = P(cyc[bi]), B2 = P(cyc[bj]);
+              if (cyc.every(v => segDist2(P(v)[0], P(v)[1], A2[0], A2[1], B2[0], B2[1]) < 0.0625)) done = true; } }
+          if (cyc.length === 3) { // a traced 3-cycle can be a zero-area spur (one
+            // vertex on the segment of the other two): the rim walk dipped out along
+            // a subdivided edge and back. There is no hole to fill -- the live faces
+            // around it already cover the ground, and the drain phase owns the hang.
+            for (let i = 0; i < 3 && !done; i++) { const pa = P(cyc[i]), pb = P(cyc[(i + 1) % 3]), pc = P(cyc[(i + 2) % 3]);
+              const cr = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
+              const dt = (pc[0] - pa[0]) * (pc[0] - pb[0]) + (pc[1] - pa[1]) * (pc[1] - pb[1]);
+              if (Math.abs(cr) < 1e-9 && dt <= 0) done = true; } }
+          if (cyc.length === 3 && !done) { // delaunayFill cannot insert a triangle's constraints
+            // around a centroid; fan it by hand over a 4-gon (longest edge split)
+            let bi = 0, bl = -1;
+            for (let li = 0; li < 3; li++) { const p = P(cyc[li]), q = P(cyc[(li + 1) % 3]), l = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2; if (l > bl) { bl = l; bi = li; } }
+            const lp = [cyc[bi], rimMid === null ? null : poolAdd((P(cyc[bi])[0] + P(cyc[(bi + 1) % 3])[0]) / 2, (P(cyc[bi])[1] + P(cyc[(bi + 1) % 3])[1]) / 2), cyc[(bi + 1) % 3], cyc[(bi + 2) % 3]];
+            const fan = [0, 1, 2, 3].map(i => [cen, lp[i], lp[(i + 1) % 4]]);
+            let em = exactMatch(fan, 5000, true) || exactMatch(fan, 5000);
+            if (!em) { const rp = pairComponent(fan, killed[0].level, [], true); if (!rp.leftovers.length) em = rp.quads; }
+            if (em) { for (const quad of em) { const nf = { v: quad, level: killed[0].level, dead: false }; allFaces.push(nf); linkFace(nf); newFaces.push(nf); } done = true; } }
+          if (cyc.length === 4 && !done) { // a quadrilateral hole is one quad;
+            // delaunayFill's constraint insertion can still deadlock on it (needle
+            // corners), so emit it directly when simple, else centroid-fan it
+            const pts4 = cyc.map(v => P(v)), a2 = Math.abs(polyArea2(pts4));
+            const properX = (p1, p2, p3, p4) => { const h = segX(p1, p2, p3, p4);
+              return h && h.t > 1e-9 && h.t < 1 - 1e-9 && h.u > 1e-9 && h.u < 1 - 1e-9; };
+            const bowtie = properX(pts4[0], pts4[1], pts4[2], pts4[3]) || properX(pts4[1], pts4[2], pts4[3], pts4[0]);
+            if (!bowtie && a2 > 1e-9) { const nf = { v: cyc.slice(), level: killed[0].level, dead: false }; allFaces.push(nf); linkFace(nf); newFaces.push(nf); done = true; }
+            else { const fan = [0, 1, 2, 3].map(i => [cen, cyc[i], cyc[(i + 1) % 4]]);
+              let em = exactMatch(fan, 5000, true) || exactMatch(fan, 5000);
+              if (!em) { const rp = pairComponent(fan, killed[0].level, [], true); if (!rp.leftovers.length) em = rp.quads; }
+              if (em) { let qa = 0; for (const q of em) qa += Math.abs(polyArea2(q.map(P)));
+                if (Math.abs(qa - ra) <= ra * 0.02 + 1e-6) { for (const quad of em) { const nf = { v: quad, level: killed[0].level, dead: false }; allFaces.push(nf); linkFace(nf); newFaces.push(nf); } done = true; } } } }
+          // ear clipping: the triangulation that cannot throw. Delaunay constraint
+          // insertion deadlocks on some spiked cycles; a simple polygon always has
+          // two ears, so this always produces a (possibly needle-rich) fill, which
+          // the match/subdivide pipeline below then has to make pairable
+          const earClip = cycIn => {
+            let c = cycIn.slice();
+            for (let g = 0; g < 40 && c.length > 3; g++) { let rem = false;
+              for (let i = 0; i < c.length; i++) { const pa = P(c[(i + c.length - 1) % c.length]), pb = P(c[i]), pc = P(c[(i + 1) % c.length]);
+                const cr = (pb[0] - pa[0]) * (pc[1] - pa[1]) - (pb[1] - pa[1]) * (pc[0] - pa[0]);
+                const dt = (pb[0] - pa[0]) * (pb[0] - pc[0]) + (pb[1] - pa[1]) * (pb[1] - pc[1]);
+                if (Math.abs(cr) < 1e-9 && dt <= 0) { c.splice(i, 1); rem = true; break; } }
+              if (!rem) break; }
+            if (c.length < 3) return null;
+            if (c.length % 2 === 1) { let bi = 0, bl = -1;
+              for (let li = 0; li < c.length; li++) { const p = P(c[li]), q = P(c[(li + 1) % c.length]), l = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2; if (l > bl) { bl = l; bi = li; } }
+              const pm = poolAdd((P(c[bi])[0] + P(c[(bi + 1) % c.length])[0]) / 2, (P(c[bi])[1] + P(c[(bi + 1) % c.length])[1]) / 2);
+              c = [...c.slice(0, bi + 1), pm, ...c.slice(bi + 1)]; }
+            const pts = c.map(v => P(v));
+            let sa = 0; for (let i = 0; i < c.length; i++) { const p = pts[i], q = pts[(i + 1) % c.length]; sa += p[0] * q[1] - q[0] * p[1]; }
+            if (Math.abs(sa) < 1e-9) return null;
+            const sgn = sa > 0 ? 1 : -1, lst = c.map((_, i) => i), tris = [];
+            const cross3 = (a2, b2, c2) => (pts[b2][0] - pts[a2][0]) * (pts[c2][1] - pts[a2][1]) - (pts[b2][1] - pts[a2][1]) * (pts[c2][0] - pts[a2][0]);
+            let guard = 0;
+            while (lst.length > 3) { if (++guard > c.length * c.length + 10) return null;
+              let earFound = false;
+              for (let i = 0; i < lst.length; i++) { const i0 = lst[(i + lst.length - 1) % lst.length], i1 = lst[i], i2 = lst[(i + 1) % lst.length];
+                if (cross3(i0, i1, i2) * sgn <= 1e-12) continue;
+                let blocked = false;
+                for (const j of lst) { if (j === i0 || j === i1 || j === i2) continue;
+                  if (cross3(i0, i1, j) * sgn >= -1e-12 && cross3(i1, i2, j) * sgn >= -1e-12 && cross3(i2, i0, j) * sgn >= -1e-12) { blocked = true; break; } }
+                if (blocked) continue;
+                tris.push([c[i0], c[i1], c[i2]]); lst.splice(i, 1); earFound = true; break; }
+              if (!earFound) return null; }
+            tris.push([c[lst[0]], c[lst[1]], c[lst[2]]]);
+            return tris; };
+          // a disk triangulation has the loop's own parity (T = L + 2I - 2), so an
+          // odd loop can only be filled evenly by splitting a rim edge IN the loop;
+          // the midpoint then hangs on the live neighbour and the drain phase
+          // (which alternates with this pass) conforms it
+          const cycM = [cyc[0], rimMid, ...cyc.slice(1)];
+          // densified rim, meshComponent-style: long dart edges and sliver chains
+          // on the raw rim make ear triangles no pairing can legally take; a rim
+          // resampled to ~pitch segments plus grid interior is the fill that the
+          // component mesher proves pairable every day
+          let cycD = [];
+          for (let li = 0; li < cyc.length; li++) { const va = cyc[li], vb = cyc[(li + 1) % cyc.length];
+            cycD.push(va);
+            const pa = P(va), pb = P(vb), len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]), kk = Math.max(1, Math.ceil(len / (1.02 * effPitch)));
+            for (let s2 = 1; s2 < kk; s2++) cycD.push(poolAdd(pa[0] + (pb[0] - pa[0]) * s2 / kk, pa[1] + (pb[1] - pa[1]) * s2 / kk)); }
+          if (cycD.length % 2 === 1) { let bi = 0, bl = -1;
+            for (let li = 0; li < cycD.length; li++) { const p = P(cycD[li]), q = P(cycD[(li + 1) % cycD.length]), l = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2; if (l > bl) { bl = l; bi = li; } }
+            const pm = poolAdd((P(cycD[bi])[0] + P(cycD[(bi + 1) % cycD.length])[0]) / 2, (P(cycD[bi])[1] + P(cycD[(bi + 1) % cycD.length])[1]) / 2);
+            cycD = [...cycD.slice(0, bi + 1), pm, ...cycD.slice(bi + 1)]; }
+          // NOTE: the killed faces' own interior vertices are never reused --
+          // they sit at sliver offsets (~0.5mm) from rim edges and poison every
+          // triangulation with unpairable needle ears. Fresh grid interiors only.
+          const gens = done ? [] : [[cyc, gridIn], [cyc, [...gridIn, ...inners]], [cyc, []], [cycM, gridIn], [cycD, gridIn], [cyc, gridFine]].map(([lp2, inn2]) => [lp2, () => delaunayFill(lp2, inn2, killed[0].level)]).concat([[cyc, () => earClip(cyc)]]);
+          for (const [lpF, genFill] of gens) {
+            let fill = null; try { fill = genFill(); } catch (e) { continue; }
+            // delaunayFill can emit duplicate triangles when a Steiner midpoint
+            // welds onto an existing vertex; matchers assume a proper tri set
+            if (fill) fill = [...new Map(fill.map(t => [key3(t), t])).values()];
+            if (!fill || fill.length % 2) continue;
+            // a fill triangle whose edge jumps OVER a loop vertex leaves that
+            // vertex dangling on the new quad's edge: the slit is reborn verbatim
+            { const lpSet = new Set(lpF);
+              const skips = fill.some(t => { for (let k = 0; k < 3; k++) { const a = t[k], b = t[(k + 1) % 3], pa = P(a), pb = P(b);
+                const dx = pb[0] - pa[0], dy = pb[1] - pa[1], L2 = dx * dx + dy * dy; if (L2 < 1e-12) continue;
+                for (const v of lpSet) { if (v === a || v === b) continue; const pv = P(v);
+                  const s = ((pv[0] - pa[0]) * dx + (pv[1] - pa[1]) * dy) / L2; if (s <= 0.001 || s >= 0.999) continue;
+                  if (segDist2(pv[0], pv[1], pa[0], pa[1], pb[0], pb[1]) < 0.0025) return true; } } return false; });
+              if (skips) continue; }
+            if (fill.some(t => new Set(t).size < 3 || Math.abs(polyArea2(t.map(P))) < 1e-9)) continue;
+            let fa = 0; for (const t of fill) fa += Math.abs(polyArea2(t.map(P)));
+            if (Math.abs(fa - ra) > ra * 0.02 + 1e-6) continue;
+            let em = exactMatch(fill, 300000, true);
+            if (!em) em = exactMatch(fill, 300000, false); // rescue path: proper quads
+            // with mediocre angles beat no fill at all (dispatcher gates the result)
+            if (!em) { const rp = pairComponent(fill, killed[0].level, [], true);
+              if (!rp.leftovers.length) em = rp.quads; }
+            if (!em) { // a rim ear can have no legal partner in ANY pairing of this
+              // triangulation (forced chains anchored at 1-partner needles).
+              // Re-mesh the obstruction away: split each leftover triangle's
+              // longest interior edge at its midpoint -- both sides, so the set
+              // stays conforming and its parity stays even -- then re-match.
+              // (Centroid fans were tried first: fans of a needle are needles,
+              // and the chain re-formed at the same spot every round.)
+              let work = fill.filter(t => new Set(t).size === 3);
+              for (let sa = 0; sa < 6 && !em; sa++) {
+                const rp2 = pairComponent(work, killed[0].level, [], true);
+                if (!rp2.leftovers.length) { em = rp2.quads; break; }
+                const eMap = new Map();
+                for (const t of work) for (let k = 0; k < 3; k++) { const ek = ekeyF(t[k], t[(k + 1) % 3]); if (!eMap.has(ek)) eMap.set(ek, []); eMap.get(ek).push(t); }
+                const loKeys = new Set(rp2.leftovers.map(t => key3(t)));
+                const gone = new Set(), next = [];
+                const splitPair = (t, a, b, m) => { const c = t.find(v => v !== a && v !== b);
+                  if (c === undefined || c === m) return false;
+                  next.push([a, m, c], [m, b, c]); return true; };
+                let acted = false;
+                for (const t of work) { const kk = key3(t);
+                  if (gone.has(kk) || !loKeys.has(kk)) continue;
+                  // longest interior edge first
+                  let bE = null, bL = -1;
+                  for (let k = 0; k < 3; k++) { const a = t[k], b = t[(k + 1) % 3];
+                    const nbs = (eMap.get(ekeyF(a, b)) || []).filter(u => u !== t);
+                    if (!nbs.length) continue;
+                    const l = (P(a)[0] - P(b)[0]) ** 2 + (P(a)[1] - P(b)[1]) ** 2;
+                    if (l > bL) { bL = l; bE = [a, b, nbs[0]]; } }
+                  if (bE) { const [a, b, nb] = bE;
+                    if (!gone.has(key3(nb))) { const m = poolAdd((P(a)[0] + P(b)[0]) / 2, (P(a)[1] + P(b)[1]) / 2);
+                      // a midpoint that welds onto an endpoint (short edge) would
+                      // birth repeated-vertex triangles; fall through to the fan
+                      if (m !== a && m !== b && splitPair(t, a, b, m) && splitPair(nb, a, b, m)) { gone.add(kk); gone.add(key3(nb)); acted = true; } } }
+                  if (!gone.has(kk)) { const g = poolAdd((P(t[0])[0] + P(t[1])[0] + P(t[2])[0]) / 3, (P(t[0])[1] + P(t[1])[1] + P(t[2])[1]) / 3);
+                    if (g !== t[0] && g !== t[1] && g !== t[2]) { next.push([g, t[0], t[1]], [g, t[1], t[2]], [g, t[2], t[0]]); acted = true; }
+                    gone.add(kk); } }
+                { const seenT2 = new Set(next.map(t => key3(t)));
+                  for (const t of work) { const kk = key3(t); if (!gone.has(kk) && !seenT2.has(kk)) { seenT2.add(kk); next.push(t); } } }
+                if (!acted) break;
+                work = next;
+                em = exactMatch(work, 300000, true) || exactMatch(work, 300000, false);
+                if (!em) { const rp3 = pairComponent(work, killed[0].level, [], true); if (!rp3.leftovers.length) em = rp3.quads; } } }
+            if (!em) continue;
+            let qa = 0, qok = true;
+            for (const q of em) { const a2 = Math.abs(polyArea2(q.map(P)));
+              const d1 = Math.abs(polyArea2([q[0], q[1], q[2]].map(P))) + Math.abs(polyArea2([q[0], q[2], q[3]].map(P)));
+              const d2 = Math.abs(polyArea2([q[0], q[1], q[3]].map(P))) + Math.abs(polyArea2([q[1], q[2], q[3]].map(P)));
+              if (Math.min(d1, d2) < a2 * 0.9) { qok = false; break; } qa += a2; }
+            if (!qok || Math.abs(qa - fa) > fa * 0.02 + 1e-6) continue;
+            for (const quad of em) { const nf = { v: quad, level: killed[0].level, dead: false }; allFaces.push(nf); linkFace(nf); newFaces.push(nf); }
+            done = true; break; }
+          if (!done) { committed = false; break; } }
+        if (!committed) { for (const f of newFaces) { f.dead = true; killFace(f); }
+          restore(); return false; }
+        return true; };
+      let drains = 0, splitTotal = 0;
+      for (let phase = 0; phase < 80; phase++) { drains = 0;
+
+      for (;;) {
+        for (let qi = 0; qi < edgeQueue.length; qi++) {
+          if (++ops > 6000000) throw new Error('conforming: conformity queue did not converge');
+          if ((ops & 8191) === 0) checkDeadline();
+          const [a, b] = edgeQueue[qi]; inQueue.delete(ekeyF(a, b));
+          const lst = []; { const s = edgeFaces.get(ekeyF(a, b)); if (s) for (const f of s) if (!f.dead) lst.push(f); }
+          if (!lst.length) continue;
+          const mid = hangingOn(a, b);
+          if (mid === undefined || !faceUsed.has(mid) || !hangReal(a, b, mid)) continue; // orphan points and self-hangs split nothing
+          // a vertex hanging on a shared edge must split EVERY live owner face through it --
+          // requiring exactly one owner deadlocked the queue whenever both neighbours held
+          // the whole edge (the common case for conversion midpoints)
+          let did = false;
+          { // re-pair the owner faces as one region first: it resolves the hang locally
+            // (boundary unchanged, no new hanging vertex), where a split would seed the
+            // opposite edge and cascade through the sheet
+            const region = lst.filter(f => !f.dead);
+            if (region.length && refillFaces(region, a, b, mid)) { splitTotal++; did = true; }
+            else if (region.length && refillFaces(region.concat([...(vertexFaces.get(mid) || [])].filter(g => !g.dead && !region.includes(g))), a, b, mid)) { splitTotal++; did = true; }
+            else if (region.length === 1) { const f0 = region[0];
+              const nb = (edgeFaces.get(ekeyF(f0.v[1], f0.v[2])) || new Set());
+              for (const g of nb) { if (!g.dead && g !== f0) { region.push(g); break; } }
+              if (region.length === 2 && refillFaces(region, a, b, mid)) { splitTotal++; did = true; } } }
+          // no edge-to-edge split fallback: a split always seeds its opposite edge and
+          // cascades through dart terrain faster than re-pairs can drain it. The region
+          // re-pair and the pentagon fan below create at most one fresh hang between them.
+          if (!did) { const f0 = lst.find(f => !f.dead); if (f0 && fanSplitFace(f0, a, b, mid)) { splitTotal++; did = true; } }
+          if (!did) stuck.add(ekeyF(a, b));
+        }
+        edgeQueue.length = 0;
+        if (drains++ > 200) throw new Error('conforming: conformity queue did not converge');
+        if (!candFill()) break;
+      }
+      if (!holePass()) break; }
+      // final audit on the criterion that actually matters: every interior edge of the
+      // sheet must have exactly two live owners (sheet-border edges have one and are
+      // closed by the loft). Fail loudly so the caller can fall back instead of silently
+      // emitting a leaking sheet.
+      for (const [, s] of edgeFaces) { let n = 0, f0 = null;
+        for (const g of s) if (!g.dead) { n++; f0 = g; }
+        if (n !== 1) { if (n > 2) throw new Error('conforming: non-manifold top sheet'); continue; }
+        let ea = -1, eb = -1;
+        for (let k = 0; k < 4; k++) { const x = f0.v[k], y = f0.v[(k + 1) % 4];
+          const ss = edgeFaces.get(ekeyF(x, y)); if (ss === s) { ea = x; eb = y; break; } }
+        const p = P(ea), q = P(eb);
+        const border = (p[0] < 0.01 && q[0] < 0.01) || (p[0] > circ - 0.01 && q[0] > circ - 0.01) ||
+          (Math.abs(Math.abs(p[1]) - A) < 0.01 && Math.abs(Math.abs(q[1]) - A) < 0.01 && Math.sign(p[1]) === Math.sign(q[1]));
+        if (!border) throw new Error('conforming: conformity queue did not converge'); }
+    }
+
+    // ---- audit: top faces must tile the sheet exactly ----
+    const liveFaces = allFaces.filter(f => !f.dead);
+    let topArea = 0; for (const f of liveFaces) topArea += Math.abs(polyArea2(f.v.map(P)));
+    if (Math.abs(topArea - circ * 2 * A) > circ * 2 * A * 0.005) throw new Error('conforming: top coverage audit failed');
+
+    // ---- bend to the tyre + walls + sidewall/liner loft ----
+    const V = [], VU = [], VK = [], VN = [];
+    const place3 = (x, y, hFrac) => { const pr = treadProfileAt(y, d, t); let off = D * hFrac * pr.w; if (Math.abs(y) > d.treadHalf) off = Math.min(off, d.sr * 0.85);
+      const ax = pr.x - pr.nx * off, r = pr.r - pr.nr * off, th2 = x / circ * TAU; return [ax, r * Math.cos(th2), r * Math.sin(th2)]; };
+    const vmap = new Map();
+    const vAt = (pid, level) => { const p = P(pid); let xm = mod(p[0], circ); if (xm < 0.005) xm = 0; else if (circ - xm < 0.005) xm = 0;
+      const key = Math.round(xm * 100) + ',' + Math.round(p[1] * 100) + ',' + Math.round(level * 1000);
+      let id = vmap.get(key); if (id !== undefined) return id;
+      id = V.length; V.push(place3(p[0], p[1], level)); VU.push([xm / circ, (p[1] + A) / (2 * A)]); VK.push('tread'); vmap.set(key, id); return id; };
+    const F = [], fittedVerts = new Set();
+    for (const f of liveFaces) F.push({ q: f.v.map(pid => vAt(pid, f.level)), kind: 'top' });
+    const efTop = new Map();
+    for (const f of liveFaces) for (let k = 0; k < 4; k++) { const key = ekeyF(f.v[k], f.v[(k + 1) % 4]); let lst = efTop.get(key); if (!lst) efTop.set(key, lst = []); lst.push([f, f.v[k], f.v[(k + 1) % 4]]); }
+    const wallBetween = (a, b, la, lb) => { fittedVerts.add(a); fittedVerts.add(b);
+      const lo = Math.min(la, lb), hi = Math.max(la, lb), ls = canonLevels.filter(v => v >= lo - 1e-9 && v <= hi + 1e-9);
+      for (let k = 0; k + 1 < ls.length; k++) F.push({ q: [vAt(a, ls[k]), vAt(b, ls[k]), vAt(b, ls[k + 1]), vAt(a, ls[k + 1])], kind: 'wall' }); };
+    const borderEdges = { yp: [], ym: [] };
+    for (const [key, lst] of efTop) {
+      if (lst.length === 2) { const [f1, a, b] = lst[0], f2 = lst[1][0]; if (Math.abs(f1.level - f2.level) > 1e-9) wallBetween(a, b, f1.level, f2.level); }
+      else if (lst.length === 1) { const [f, a, b] = lst[0], pa = P(a), pb = P(b);
+        if (Math.abs(pa[1] - A) < 1e-6 && Math.abs(pb[1] - A) < 1e-6) borderEdges.yp.push([a, b]);
+        else if (Math.abs(pa[1] + A) < 1e-6 && Math.abs(pb[1] + A) < 1e-6) borderEdges.ym.push([a, b]);
+        else if (isSeamEdge(a, b)) { /* seam: welds in vAt, no wall */ }
+        else if (Math.abs(f.level) > 1e-9) wallBetween(a, b, f.level, 0); }
+    }
+    // loft: one theta set for both borders, sidewall rings follow it exactly
+    const thetaSet = new Set();
+    for (const lst of [borderEdges.yp, borderEdges.ym]) for (const [a, b] of lst) for (const pid of [a, b]) { let th = P(pid)[0] / circ * TAU; if (th < 0.0001 || TAU - th < 0.0001) th = 0; thetaSet.add(+th.toFixed(6)); }
+    const Thetas = [...thetaSet].sort((a, b) => a - b);
+    const borderPts = { '1': new Map(), '-1': new Map() };
+    for (const [edges, sgn] of [[borderEdges.yp, 1], [borderEdges.ym, -1]]) for (const [a, b] of edges) for (const pid of [a, b]) borderPts[sgn].set(Math.round(P(pid)[0] * 100), pid);
+    const borderIdAt = (x, sgn) => { const m = borderPts[sgn], direct = m.get(Math.round(x * 100)); if (direct !== undefined) return direct;
+      let best, bd = Infinity; for (const [kx, pid] of m) { const dd = Math.abs(kx / 100 - x); if (dd < bd) { bd = dd; best = pid; } } return best; };
+    const resample = (pts, step) => { if (pts.length <= 2) return pts.slice(); const out = [pts[0]]; let last = pts[0]; for (let i = 1; i < pts.length - 1; i++) if (Math.hypot(pts[i].x - last.x, pts[i].r - last.r) >= step) { out.push(pts[i]); last = pts[i]; } out.push(pts[pts.length - 1]); return out; };
+    const ringV = (p, th, kind, uvFlip, pn) => { const id = V.length; V.push([p.x, p.r * Math.cos(th), p.r * Math.sin(th)]); VU.push([uvFlip ? 1 - th / TAU : th / TAU, Math.max(-0.05, p.s ?? 0)]); VK.push(kind); VN[id] = pn; return id; };
+    const liners = {};
+    for (const sgn of [1, -1]) {
+      let prev = Thetas.map(th => vAt(borderIdAt(th / TAU * circ, sgn), 0));
+      const srows = resample(prof.filter(p => p.zone === 'side' && Math.sign(p.x) === sgn).sort((a, b) => b.r - a.r), Math.max(2.5, pitch * 0.75));
+      for (const p of srows) { const cur = Thetas.map(th => ringV(p, th, 'side', sgn < 0, [p.nx, p.nr]));
+        for (let i = 0; i < Thetas.length; i++) { const i2 = (i + 1) % Thetas.length; F.push({ q: [prev[i], prev[i2], cur[i2], cur[i]], kind: 'side' }); }
+        prev = cur; }
+      liners[sgn] = { bead: prev };
+    }
+    if (t.liner) {
+      const thick = 5, innerRaw = prof.slice(1, -1).map(p => ({ x: p.x - p.nx * (p.zone === 'tread' ? D + thick : thick), r: p.r - p.nr * (p.zone === 'tread' ? D + thick : thick), pn: [-p.nx, -p.nr] }));
+      let total = 0; for (let i = 1; i < innerRaw.length; i++) total += Math.hypot(innerRaw[i].x - innerRaw[i - 1].x, innerRaw[i].r - innerRaw[i - 1].r);
+      const innerPts = resample(innerRaw, Math.max(pitch * 1.25, total / 40));
+      let prev = liners[-1].bead;
+      for (const p of innerPts) { const cur = Thetas.map(th => ringV(p, th, 'liner', false, p.pn));
+        for (let i = 0; i < Thetas.length; i++) { const i2 = (i + 1) % Thetas.length; F.push({ q: [prev[i], prev[i2], cur[i2], cur[i]], kind: 'liner' }); }
+        prev = cur; }
+      for (let i = 0; i < Thetas.length; i++) { const i2 = (i + 1) % Thetas.length; F.push({ q: [prev[i], prev[i2], liners[1].bead[i2], liners[1].bead[i]], kind: 'liner' }); }
+    }
+    const mesh = { V, VU, VK, VN, F };
+    const cleanup = cleanupQuadMesh(mesh);
+    const report = validateQuadMesh(mesh);
+    return { V, VU, VK, VN, F: mesh.F, report, cleanup, levels: canonLevels, dropped: meta.dropped, included: meta.included, pinchesFixed: 0, nodesSnapped: fittedVerts.size, nodesRelaxed: 0, nodesReverted: 0, N: Thetas.length, rows: Array.from({ length: MYg + 1 }, (_, j) => -A + j * pyg), pitch, px: pxg };
+  }
+
+  /* Builder dispatch: the conforming pipeline is the default (edge-snapped) path. If it cannot prove a
+     watertight pure-quad shell for some pattern, fall back to the legacy structured grid and SAY so. */
+  function buildQuadMeshData(pattern, d, prof, t, opts = {}) {
+    let fallbackError = null;
+    if (opts.snap !== false) {
+      try {
+        const m = buildConformingMeshData(pattern, d, prof, t, opts);
+        const r = m.report;
+        const structural = r.nonManifoldEdges === 0 && r.inconsistentEdges === 0 && r.degenerateFaces === 0 && r.nonQuadFaces === 0 && r.badIndexFaces === 0;
+        if (structural && (t.liner ? r.watertight : true) && r.signedVolumeMm3 > 0) { m.builder = 'conforming'; return m; }
+        fallbackError = 'conforming mesh failed validation gate (' + JSON.stringify({ b: r.boundaryEdges, nm: r.nonManifoldEdges, inc: r.inconsistentEdges, dg: r.degenerateFaces, vol: r.signedVolumeMm3 }) + ')';
+      } catch (e) { fallbackError = e.message; }
+    }
+    const g = buildGridMeshData(pattern, d, prof, t, opts);
+    g.builder = 'grid';
+    if (fallbackError) { g.fellBack = true; g.fallbackError = fallbackError; }
+    return g;
+  }
+
   function exportOBJ(qm, name, report) {
     const order = { top: 0, wall: 1, side: 2, liner: 3 };
     const faces = [...qm.F].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9));
@@ -638,7 +2816,7 @@ const QuadCore = (() => {
     return L.join('\n');
   }
 
-  return { TAU, clamp, mod, dims, treadProfileAt, buildProfile, compilePattern, buildQuadMeshData, validateQuadMesh, cleanupQuadMesh, exportOBJ, shapeOutline };
+  return { TAU, clamp, mod, dims, treadProfileAt, buildProfile, compilePattern, buildQuadMeshData, buildConformingMeshData, buildGridMeshData, validateQuadMesh, cleanupQuadMesh, exportOBJ, shapeOutline };
 })();
 </script>
 

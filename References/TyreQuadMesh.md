@@ -70,6 +70,52 @@ mesh — they are listed in the Export report with the pitch you would need to m
 pitch and they become real geometry. Grooves between 0.4× pitch and one cell wide are widened to a
 one-cell strip (above), so the pattern you draw is the pattern you get.
 
+## The conforming builder (pattern-first pipeline)
+
+A second builder, `buildConformingMeshData`, implements the design-first pipeline
+directly — it never touches the grid:
+
+1. **Primitives → polygons.** The pattern layers are compiled to exact polygon
+   loops per depth level (`layerPolygons`): circumferential bands, laterals,
+   chevrons, sipes, dimples, hexes and drawn shapes all become closed outlines,
+   clipped to the unwrapped sheet `[0, circumference] × [-A, A]`.
+2. **Polygon shapes → one closed vertex loop each.** Segment intersections are
+   welded into a planar arrangement; a half-edge tracer walks every level
+   region into an outer loop plus hole loops (any shape, including booleans
+   between overlapping layers, works — it is just arrangement faces).
+3. **Straight-line array + bridging.** Each region is meshed on the flat sheet
+   with a commensurate grid whose spacing is fitted to the region, a
+   constrained Delaunay triangulation through the *exact* loop vertices
+   (outer loop and holes as constraints), and the grid cells' triangle pairs
+   marked protected — identical pieces therefore bridge to their neighbours
+   through the same cell structure. Triangle pairs are then matched globally
+   (`pairAll`): an odd leftover pool absorbs a neighbouring quad by splitting
+   only its own triangle on the shared edge (Δ+3, which flips pool parity;
+   splitting both sides never flips it), and accounting is first-come — after
+   edge flips, two stored quads may both "match" one live triangle, and only
+   the first claimant keeps it.
+4. **Conformity.** Paired quads are audited edge by edge; hanging vertices are
+   absorbed by exact-boundary region re-fills, and stubborn knots by a
+   transactional cluster re-fill (kill a patch, re-triangulate its traced rim
+   cycles, re-pair, roll back on any failed check). Rim vertices may never be
+   skipped by a fill diagonal (that re-births the defect as a zero-area slit),
+   and folded triangle pairs (both unique vertices on the same side of the
+   shared edge) are never paired.
+5. **Array fitted to the tyre + bend.** The grid's around-count is
+   `round(circumference / pitch)`, so the array fits the circumference
+   exactly with no seam stretch; terraced walls connect depth levels, and
+   `place3` bends the flat sheet onto the tyre profile.
+
+**Status / dispatch.** The dispatcher tries the conforming builder first
+(`Snap nodes to groove edges` on) under a 30 s wall-clock budget
+(`opts.timeBudgetMs`). It wins outright on smooth patterns (slick-type:
+~37k quads, max warp 1.7°, watertight, zero snapped nodes — the pattern *is*
+the mesh). On dense multi-groove patterns the conformity endgame does not
+always converge in budget yet; the builder then throws and the dispatcher
+falls back to the grid builder above, so every pattern still produces a
+valid, watertight, all-quad mesh that passes the full acceptance suite
+(`builder` / `fellBack` / `fallbackError` on the result say which path ran).
+
 ## Controls that matter
 
 | Control | Effect |
