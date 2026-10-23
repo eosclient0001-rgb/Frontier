@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Frontier — Tyre lattice study (WebGPU): coarse XPBD solver, skinned render mesh, hull contact</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0e1116; color: #d8dee9; font: 13px/1.4 system-ui, sans-serif; }
+  #layout { display: grid; grid-template-columns: 1fr 330px; height: 100%; }
+  canvas { width: 100%; height: 100%; display: block; }
+  #panel { padding: 12px 14px; overflow-y: auto; border-left: 1px solid #222a35; background: #11151c; }
+  h1 { font-size: 15px; margin: 0 0 6px; } h2 { font-size: 12px; margin: 14px 0 4px; color: #8fa1b8; text-transform: uppercase; letter-spacing: .06em; }
+  label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; }
+  input[type=range] { width: 150px; } select { background: #1b212b; color: inherit; border: 1px solid #2c3542; }
+  button { background: #1f6feb; color: #fff; border: 0; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-right: 6px; }
+  button.secondary { background: #2c3542; }
+  table { border-collapse: collapse; width: 100%; } td { padding: 2px 4px; border-bottom: 1px solid #1c232d; } td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .good { color: #7ee787; } .warn { color: #f0b35c; } .bad { color: #ff7b72; }
+  #error { color: #ff7b72; white-space: pre-wrap; }
+  small { color: #8fa1b8; }
+</style>
+</head>
+<body>
+<div id="layout">
+  <canvas id="view"></canvas>
+  <div id="panel">
+    <h1>Tyre lattice study</h1>
+    <small>Steps 3 &amp; 4 before the C++ change: the physics runs on a <b>coarse</b> XPBD lattice (CPU, same constraint set as <code>XPBDSoftTyre</code>: spokes, shear, hoop/lateral/diagonal edges, gas, ground, bristle), and the GPU skins the <b>9×128 render tyre</b> from it in the vertex shader — the Chaos split. The body touches the ground through a baked lower-envelope hull, not every vertex.</small>
+    <div id="error"></div>
+    <h2>Transport</h2>
+    <div><button id="play">Play</button><button id="step" class="secondary">Step 1/240 s</button><button id="reset" class="secondary">Reset</button></div>
+    <h2>Solver</h2>
+    <label>Solver lattice <select id="lattice"><option value="5x64" selected>5 × 64 (320 nodes)</option><option value="3x48">3 × 48 (144 nodes)</option><option value="7x96">7 × 96 (672 nodes)</option><option value="9x128">9 × 128 (1152 nodes — today)</option></select></label>
+    <label>Substeps per 1/240 s <input id="substeps" type="range" min="1" max="32" value="16"><span id="substepsV">16</span></label>
+    <label>Sweeps per substep <input id="sweeps" type="range" min="1" max="4" value="1"><span id="sweepsV">1</span></label>
+    <label>Active window ± <input id="window" type="range" min="15" max="180" value="60"><span id="windowV">60°</span></label>
+    <label>Speed <input id="speed" type="range" min="0" max="40" value="10"><span id="speedV">10 m/s</span></label>
+    <label>Hub height <input id="hub" type="range" min="0.26" max="0.34" step="0.002" value="0.30"><span id="hubV">0.300 m</span></label>
+    <label>Pressure <input id="pressure" type="range" min="100" max="300" step="10" value="220"><span id="pressureV">220 kPa</span></label>
+    <label>Ground <select id="ground"><option value="flat">flat</option><option value="bumps" selected>bumps + kerb</option></select></label>
+    <label>Show coarse lattice <input id="wire" type="checkbox" checked></label>
+    <h2>Body contact (step 4)</h2>
+    <label>Body samples <select id="hullmode"><option value="hull" selected>lower-envelope hull (baked)</option><option value="all">every body vertex (today)</option></select></label>
+    <h2>Measurements</h2>
+    <table>
+      <tr><td>solver nodes / edges</td><td id="mNodes">–</td></tr>
+      <tr><td>active nodes this substep</td><td id="mActive">–</td></tr>
+      <tr><td>constraint projections / fixed step</td><td id="mProj">–</td></tr>
+      <tr><td>tyre solve, ms / fixed step (CPU, JS)</td><td id="mMs">–</td></tr>
+      <tr><td>ground queries / fixed step</td><td id="mQueries">–</td></tr>
+      <tr><td>Fz from contact λ/h²</td><td id="mFz">–</td></tr>
+      <tr><td>Fz via rim (spokes + gas)</td><td id="mFzRim">–</td></tr>
+      <tr><td>Fx</td><td id="mFx">–</td></tr>
+      <tr><td>patch length</td><td id="mPatch">–</td></tr>
+      <tr><td>body: samples tested / in contact</td><td id="mBody">–</td></tr>
+      <tr><td>render vertices skinned on GPU</td><td id="mSkin">–</td></tr>
+    </table>
+    <h2>Reading it</h2>
+    <small>Change the solver lattice and watch the render tyre: it stays 9×128 and smooth because the GPU interpolates the coarse nodes and adds each vertex's constant rest offset in the material frame. Fz should stay within a few % across lattices; ms should fall roughly with node count. The window slider greys out the nodes that ride the hub rigidly. Drag to orbit, wheel to zoom.</small>
+  </div>
+</div>
+<script type="module">
+// ───────────────────────────────────────────────────────────────────────────── small vector helpers (flat arrays)
+const V = {
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2], len:a=>Math.hypot(a[0],a[1],a[2]),
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]], scale:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];},
+};
+// Quaternion [x,y,z,w]; the wheel axle is +Y, the car travels +X, up is +Z (same axes as the engine).
+const Q = {
+  axisAngle:(ax,ang)=>{const s=Math.sin(ang/2);return [ax[0]*s,ax[1]*s,ax[2]*s,Math.cos(ang/2)];},
+  mul:(a,b)=>[a[3]*b[0]+a[0]*b[3]+a[1]*b[2]-a[2]*b[1], a[3]*b[1]-a[0]*b[2]+a[1]*b[3]+a[2]*b[0], a[3]*b[2]+a[0]*b[1]-a[1]*b[0]+a[2]*b[3], a[3]*b[3]-a[0]*b[0]-a[1]*b[1]-a[2]*b[2]],
+  rot:(q,v)=>{const t=V.scale(V.cross([q[0],q[1],q[2]],v),2);return V.add(V.add(v,V.scale(t,q[3])),V.cross([q[0],q[1],q[2]],t));},
+};
+
+// ───────────────────────────────────────────────────────────────────────────── ground (heightfield, z up)
+const groundState = { mode: 'bumps' };
+function groundHeight(x, y) {
+  if (groundState.mode === 'flat') return 0;
+  let z = 0.012 * Math.sin(x * 2.1) * Math.cos(y * 1.7) + 0.006 * Math.sin(x * 7.3);
+  const kx = ((x % 12) + 12) % 12;                     // a 60 mm kerb every 12 m, 0.4 m long
+  if (kx > 6 && kx < 6.4) z += 0.06 * Math.min(1, (kx - 6) / 0.05, (6.4 - kx) / 0.05);
+  return z;
+}
+let groundQueries = 0;
+function groundQuery(p) {                              // returns {point, normal} of the surface under p
+  groundQueries++;
+  const h = groundHeight(p[0], p[1]);
+  const e = 0.01;
+  const nx = -(groundHeight(p[0] + e, p[1]) - groundHeight(p[0] - e, p[1])) / (2 * e);
+  const ny = -(groundHeight(p[0], p[1] + e) - groundHeight(p[0], p[1] - e)) / (2 * e);
+  return { point: [p[0], p[1], h], normal: V.norm([nx, ny, 1]) };
+}
+
+// ───────────────────────────────────────────────────────────────────────────── the coarse XPBD tyre
+class SoftTyre {
+  constructor(R, S, prm) {
+    this.R = R; this.S = S; this.N = R * S; this.prm = prm;
+    const { radius, rimRadius, halfWidth, beadRatio, mass } = prm;
+    this.treadLocal = new Float32Array(this.N * 3); this.beadLocal = new Float32Array(this.N * 3);
+    this.pos = new Float32Array(this.N * 3); this.prev = new Float32Array(this.N * 3); this.vel = new Float32Array(this.N * 3);
+    this.invMass = new Float32Array(this.N).fill(this.N / mass);
+    this.spokeRest = new Float32Array(this.N); this.lamSpoke = new Float32Array(this.N); this.lamTan = new Float32Array(this.N); this.lamLat = new Float32Array(this.N);
+    this.lamContact = new Float32Array(this.N); this.lamTread = new Float32Array(this.N);
+    this.contactN = new Float32Array(this.N * 3); this.contactP = new Float32Array(this.N * 3); this.bristle = new Float32Array(this.N * 3);
+    this.inContact = new Uint8Array(this.N); this.active = new Uint8Array(this.N).fill(1);
+    this.gClear = new Float32Array(this.N).fill(1); this.gValid = new Uint8Array(this.N); this.gPoint = new Float32Array(this.N * 3); this.gNormal = new Float32Array(this.N * 3);
+    this.area = 2 * Math.PI * radius * 2 * halfWidth / this.N;          // rest tread area per node [m²]
+    for (let r = 0; r < R; r++) for (let s = 0; s < S; s++) {
+      const i = r * S + s, th = 2 * Math.PI * s / S;
+      const y = R > 1 ? -halfWidth + 2 * halfWidth * r / (R - 1) : 0;
+      const crown = radius - 0.004 * (y / halfWidth) ** 2;                // slight crown
+      this.treadLocal.set([crown * Math.cos(th), y, crown * Math.sin(th)], i * 3);
+      const yb = Math.max(-halfWidth * beadRatio, Math.min(halfWidth * beadRatio, y));
+      this.beadLocal.set([rimRadius * Math.cos(th), yb, rimRadius * Math.sin(th)], i * 3);
+      this.spokeRest[i] = V.len(V.sub(this.treadLocal.subarray(i * 3, i * 3 + 3), this.beadLocal.subarray(i * 3, i * 3 + 3)));
+    }
+    // edges: hoop, lateral, two diagonals — same families as the engine lattice
+    const edges = [];
+    const rest = (a, b) => V.len(V.sub(this.treadLocal.subarray(a * 3, a * 3 + 3), this.treadLocal.subarray(b * 3, b * 3 + 3)));
+    for (let r = 0; r < R; r++) for (let s = 0; s < S; s++) {
+      const i = r * S + s, sn = (s + 1) % S;
+      edges.push([i, r * S + sn, rest(i, r * S + sn), prm.hoopCompliance]);
+      if (r + 1 < R) {
+        edges.push([i, (r + 1) * S + s, rest(i, (r + 1) * S + s), prm.lateralCompliance]);
+        edges.push([i, (r + 1) * S + sn, rest(i, (r + 1) * S + sn), prm.shearCompliance]);
+        edges.push([r * S + sn, (r + 1) * S + s, rest(r * S + sn, (r + 1) * S + s), prm.shearCompliance]);
+      }
+    }
+    this.edgeA = new Uint32Array(edges.map(e => e[0])); this.edgeB = new Uint32Array(edges.map(e => e[1]));
+    this.edgeRest = new Float32Array(edges.map(e => e[2])); this.edgeAlpha = new Float32Array(edges.map(e => e[3])); this.edgeLam = new Float32Array(edges.length);
+    this.spinAngle = 0; this.reaction = { fz: 0, fx: 0, fzRim: 0, patch: 0 }; this.projections = 0; this.activeCount = this.N;
+    this.reset([0, 0, radius], [0, 0, 0, 1]);
+  }
+  frame(hubRot) { return Q.mul(hubRot, Q.axisAngle([0, 1, 0], this.spinAngle)); }
+  reset(hubPos, hubRot) {
+    this.spinAngle = 0; const f = this.frame(hubRot);
+    for (let i = 0; i < this.N; i++) {
+      const p = V.add(hubPos, Q.rot(f, this.treadLocal.subarray(i * 3, i * 3 + 3)));
+      this.pos.set(p, i * 3); this.prev.set(p, i * 3);
+    }
+    this.vel.fill(0); this.inContact.fill(0); this.lamContact.fill(0); this.lamTread.fill(0); this.gValid.fill(0); this.gClear.fill(1);
+  }
+  // One fixed step: kinematic hub (position/orientation at END of step, velocity, spin rate), `substeps` × `sweeps`.
+  step(dt, substeps, sweeps, hub, windowHalfAngle, gasGauge) {
+    const h = dt / substeps, invH2 = 1 / (h * h), prm = this.prm, N = this.N, R = this.R, S = this.S;
+    const aSpoke = prm.spokeCompliance * invH2, aTan = prm.spokeTangentialCompliance * invH2, aLat = prm.spokeLateralCompliance * invH2;
+    const aContact = prm.contactCompliance * invH2, aTread = prm.treadCompliance * invH2;
+    let fz = 0, fx = 0, rimZ = 0, patchMin = 1e9, patchMax = -1e9; this.projections = 0;
+    const anchors = new Float32Array(N * 3), rests = new Float32Array(N * 3), tangents = new Float32Array(N * 3);
+    for (let sub = 0; sub < substeps; sub++) {
+      const remain = (substeps - 1 - sub) * h;
+      const hubPos = V.sub(hub.pos, V.scale(hub.vel, remain));
+      const hubPosPrev = V.sub(hub.pos, V.scale(hub.vel, remain + h));
+      this.spinAngle += hub.spinRate * h;
+      const f = this.frame(hub.rot), axis = V.norm(Q.rot(hub.rot, [0, 1, 0]));
+      // ── active window: segments whose rest radial faces the ground (gravity with the axis part removed)
+      let down = [0, 0, -1]; down = V.norm(V.sub(down, V.scale(axis, V.dot(down, axis))));
+      const cosW = Math.cos(windowHalfAngle); this.activeCount = 0;
+      const midRing = (R >> 1) * S;
+      for (let s = 0; s < S; s++) {
+        let rad = Q.rot(f, this.treadLocal.subarray((midRing + s) * 3, (midRing + s) * 3 + 3));
+        rad = V.sub(rad, V.scale(axis, V.dot(rad, axis)));
+        const inWindow = V.dot(rad, down) >= cosW * V.len(rad);
+        for (let r = 0; r < R; r++) { const i = r * S + s; this.active[i] = (inWindow || (this.gValid[i] && this.gClear[i] <= 0.05)) ? 1 : 0; this.activeCount += this.active[i]; }
+      }
+      // ── reset multipliers, predict (gas as p·A along the current outward radial, pinned nodes ride the hub)
+      // XPBD §3.2: every multiplier is zeroed at the start of the substep (the bristle anchor persists, its λ does not)
+      this.lamSpoke.fill(0); this.lamTan.fill(0); this.lamLat.fill(0); this.edgeLam.fill(0); this.lamContact.fill(0); this.lamTread.fill(0);
+      let rimPressureZ = 0, maxTravel = 0;
+      for (let i = 0; i < N; i++) {
+        const p = this.pos.subarray(i * 3, i * 3 + 3);
+        if (!this.active[i]) {
+          const rest = V.add(hubPos, Q.rot(f, this.treadLocal.subarray(i * 3, i * 3 + 3)));
+          this.prev.set(p, i * 3); this.pos.set(rest, i * 3);
+          this.vel.set(V.add(hub.vel, V.cross(V.scale(axis, hub.spinRate), V.sub(rest, hubPos))), i * 3);   // kinematic hub velocity
+          this.inContact[i] = 0; this.lamContact[i] = 0; this.lamTread[i] = 0; continue;
+        }
+        let out = V.sub(p, hubPos); out = V.norm(V.sub(out, V.scale(axis, V.dot(out, axis))));
+        const force = V.scale(out, gasGauge * this.area); rimPressureZ -= force[2];
+        const acc = V.add(prm.gravity, V.scale(force, this.invMass[i]));
+        const v = V.add(this.vel.subarray(i * 3, i * 3 + 3), V.scale(acc, h));
+        this.vel.set(v, i * 3); this.prev.set(p, i * 3); this.pos.set(V.add(p, V.scale(v, h)), i * 3);
+        maxTravel = Math.max(maxTravel, V.len(v) * h);
+      }
+      // ── hoisted per-substep frames for active nodes; ground sampled once per substep with the clearance cull
+      const fPrev = Q.mul(hub.rot, Q.axisAngle([0, 1, 0], this.spinAngle - hub.spinRate * h));
+      const reach = 4 * maxTravel + 0.01;
+      for (let i = 0; i < N; i++) {
+        if (!this.active[i]) continue;
+        anchors.set(V.add(hubPos, Q.rot(f, this.beadLocal.subarray(i * 3, i * 3 + 3))), i * 3);
+        const rw = V.add(hubPos, Q.rot(f, this.treadLocal.subarray(i * 3, i * 3 + 3))); rests.set(rw, i * 3);
+        let rad = V.sub(rw, hubPos); rad = V.norm(V.sub(rad, V.scale(axis, V.dot(rad, axis)))); tangents.set(V.cross(axis, rad), i * 3);
+        if (this.gValid[i] && this.gClear[i] > reach) { this.gClear[i] -= 4 * maxTravel; continue; }
+        const g = groundQuery(this.pos.subarray(i * 3, i * 3 + 3));
+        this.gValid[i] = 1; this.gPoint.set(g.point, i * 3); this.gNormal.set(g.normal, i * 3);
+        this.gClear[i] = -V.dot(V.sub(g.point, this.pos.subarray(i * 3, i * 3 + 3)), g.normal);
+      }
+      let rimSpokeZ = 0;
+      for (let it = 0; it < sweeps; it++) {
+        rimSpokeZ = 0;
+        // spokes (tension-only distance to bead) + shear (hold the node on its radial line)
+        for (let i = 0; i < N; i++) {
+          if (!this.active[i]) continue;
+          const w = this.invMass[i], p = this.pos.subarray(i * 3, i * 3 + 3), a = anchors.subarray(i * 3, i * 3 + 3);
+          const d = V.sub(p, a), dist = V.len(d); if (dist < 1e-6) continue;
+          const dir = V.scale(d, 1 / dist), C = dist - this.spokeRest[i];
+          if (C >= 0) { const dl = (-C - aSpoke * this.lamSpoke[i]) / (w + aSpoke); this.lamSpoke[i] += dl; this.pos.set(V.add(p, V.scale(dir, dl * w)), i * 3); rimSpokeZ -= dir[2] * this.lamSpoke[i] * invH2; }
+          else this.lamSpoke[i] = 0;
+          const off = V.sub(this.pos.subarray(i * 3, i * 3 + 3), rests.subarray(i * 3, i * 3 + 3));
+          const t = tangents.subarray(i * 3, i * 3 + 3);
+          const Ct = V.dot(off, t), dlt = (-Ct - aTan * this.lamTan[i]) / (w + aTan); this.lamTan[i] += dlt;
+          const Cl = V.dot(off, axis), dll = (-Cl - aLat * this.lamLat[i]) / (w + aLat); this.lamLat[i] += dll;
+          this.pos.set(V.add(this.pos.subarray(i * 3, i * 3 + 3), V.add(V.scale(t, dlt * w), V.scale(axis, dll * w))), i * 3);
+          this.projections += 3;
+        }
+        // lattice edges (a pinned end is kinematic)
+        for (let e = 0; e < this.edgeA.length; e++) {
+          const ia = this.edgeA[e], ib = this.edgeB[e], actA = this.active[ia], actB = this.active[ib];
+          if (!actA && !actB) continue;
+          const wa = actA ? this.invMass[ia] : 0, wb = actB ? this.invMass[ib] : 0, ws = wa + wb; if (ws <= 0) continue;
+          const pa = this.pos.subarray(ia * 3, ia * 3 + 3), pb = this.pos.subarray(ib * 3, ib * 3 + 3);
+          const d = V.sub(pb, pa), dist = V.len(d); if (dist < 1e-6) continue;
+          const dir = V.scale(d, 1 / dist), al = this.edgeAlpha[e] * invH2;
+          const dl = (-(dist - this.edgeRest[e]) - al * this.edgeLam[e]) / (ws + al); this.edgeLam[e] += dl;
+          this.pos.set(V.sub(pa, V.scale(dir, dl * wa)), ia * 3); this.pos.set(V.add(pb, V.scale(dir, dl * wb)), ib * 3);
+          // a pinned end is part of the rim: the force the lattice puts into it is handed to the rim, not lost
+          if (!actA) rimSpokeZ += dir[2] * dl * invH2; if (!actB) rimSpokeZ -= dir[2] * dl * invH2;
+          this.projections++;
+        }
+        // ground: unilateral normal + bristle friction against the cached plane
+        for (let i = 0; i < N; i++) {
+          if (!this.active[i] || !this.gValid[i] || this.gClear[i] > reach) continue;
+          const p = this.pos.subarray(i * 3, i * 3 + 3), n = this.gNormal.subarray(i * 3, i * 3 + 3), gp = this.gPoint.subarray(i * 3, i * 3 + 3);
+          const pen = V.dot(V.sub(gp, p), n);
+          if (pen <= 0) { this.inContact[i] = 0; continue; }
+          const w = this.invMass[i];
+          const dl = (pen - aContact * this.lamContact[i]) / (w + aContact);
+          const nl = Math.max(0, this.lamContact[i] + dl), applied = nl - this.lamContact[i]; this.lamContact[i] = nl;
+          this.pos.set(V.add(p, V.scale(n, applied * w)), i * 3);
+          const foot = V.add(this.pos.subarray(i * 3, i * 3 + 3), V.scale(n, V.dot(V.sub(gp, this.pos.subarray(i * 3, i * 3 + 3)), n)));
+          this.contactN.set(n, i * 3); this.contactP.set(foot, i * 3);
+          if (!this.inContact[i]) { this.bristle.set(foot, i * 3); this.inContact[i] = 1; this.lamTread[i] = 0; }
+          let defl = V.sub(foot, this.bristle.subarray(i * 3, i * 3 + 3)); defl = V.sub(defl, V.scale(n, V.dot(defl, n)));
+          const dlen = V.len(defl);
+          if (dlen > 1e-9) {
+            const tdir = V.scale(defl, 1 / dlen);
+            const dlt = (-dlen - aTread * this.lamTread[i]) / (w + aTread), lt = this.lamTread[i] + dlt;
+            const fStick = Math.abs(lt) * invH2, fCone = prm.mu * this.lamContact[i] * invH2;
+            if (fStick <= fCone) { this.lamTread[i] = lt; this.pos.set(V.add(this.pos.subarray(i * 3, i * 3 + 3), V.scale(tdir, dlt * w)), i * 3); }
+            else { this.lamTread[i] = -fCone * h * h; this.bristle.set(V.sub(foot, V.scale(tdir, fCone * (w + aTread) * h * h)), i * 3); }
+            this.treadDir = tdir;
+            this.contactT = this.contactT || new Float32Array(N * 3); this.contactT.set(tdir, i * 3);
+          }
+          this.projections += 2;
+        }
+      }
+      // ── reaction from the multipliers, velocity pass (no bounce)
+      for (let i = 0; i < N; i++) {
+        if (this.lamContact[i] > 0) {
+          const n = this.contactN.subarray(i * 3, i * 3 + 3), fn = this.lamContact[i] * invH2;
+          fz += n[2] * fn / substeps;
+          if (this.contactT) { const t = this.contactT.subarray(i * 3, i * 3 + 3); fx += -t[0] * Math.abs(this.lamTread[i]) * invH2 / substeps; }
+          patchMin = Math.min(patchMin, this.contactP[i * 3] - hubPos[0]); patchMax = Math.max(patchMax, this.contactP[i * 3] - hubPos[0]);
+        }
+        if (!this.active[i]) continue;
+        const v = V.scale(V.sub(this.pos.subarray(i * 3, i * 3 + 3), this.prev.subarray(i * 3, i * 3 + 3)), 1 / h);
+        if (this.inContact[i]) { const n = this.contactN.subarray(i * 3, i * 3 + 3), vn = V.dot(v, n); if (vn > 0) { v[0] -= n[0] * vn; v[1] -= n[1] * vn; v[2] -= n[2] * vn; } }
+        this.vel.set(v, i * 3);
+      }
+      rimZ += (rimSpokeZ + rimPressureZ) / substeps;
+    }
+    this.reaction = { fz, fx, fzRim: rimZ, patch: patchMax > patchMin ? patchMax - patchMin : 0 };
+  }
+}
+const tyreParameters = {
+  radius: 0.34, rimRadius: 0.20, halfWidth: 0.1225, beadRatio: 0.7, mass: 12, gravity: [0, 0, -9.81], mu: 1.0,
+  spokeCompliance: 2.0e-5, spokeTangentialCompliance: 4.0e-6, spokeLateralCompliance: 4.0e-6,
+  hoopCompliance: 2.0e-7, lateralCompliance: 1.0e-6, shearCompliance: 4.0e-6, contactCompliance: 5.0e-7, treadCompliance: 2.0e-6,
+};
+
+// ───────────────────────────────────────────────────────────────────────────── body proxy + lower-envelope hull (step 4)
+// A stand-in body: a box floor pan with two sills and a splitter, 2 400 "authored vertices". The hull is the subset
+//    that can ever touch the ground first — the lower envelope — baked once (here: pick the lowest vertex in each
+//    cell of a 12 × 6 grid over the footprint, plus the extreme corners). This is what `kHullPositions` would hold.
+function buildBody() {
+  const verts = [];
+  for (let i = 0; i < 2400; i++) {
+    const u = (i % 60) / 59, v = Math.floor(i / 60) / 39;
+    const x = -2.1 + 4.2 * u, y = -0.9 + 1.8 * v;
+    let z = 0.14 + 0.12 * Math.abs(y) ** 2 + 0.03 * Math.sin(x * 3);            // pan, curving up at the sills
+    if (Math.abs(x) > 1.6) z -= 0.05;                                            // splitter / diffuser lips lower
+    verts.push([x, y, z]);
+  }
+  const cells = new Map();
+  for (const p of verts) { const k = `${Math.floor((p[0] + 2.1) / 0.35)},${Math.floor((p[1] + 0.9) / 0.3)}`; if (!cells.has(k) || cells.get(k)[2] > p[2]) cells.set(k, p); }
+  return { all: verts, hull: [...cells.values()] };
+}
+
+// ───────────────────────────────────────────────────────────────────────────── WebGPU setup
+const canvas = document.getElementById('view'), errorBox = document.getElementById('error');
+if (!navigator.gpu) { errorBox.textContent = 'WebGPU is not available in this browser. Chrome/Edge 113+ (desktop) are required.'; throw new Error('no webgpu'); }
+const adapter = await navigator.gpu.requestAdapter(); const device = await adapter.requestDevice();
+const context = canvas.getContext('webgpu'); const format = navigator.gpu.getPreferredCanvasFormat();
+function resize() { const dpr = Math.min(2, devicePixelRatio || 1); canvas.width = Math.max(1, canvas.clientWidth * dpr | 0); canvas.height = Math.max(1, canvas.clientHeight * dpr | 0); context.configure({ device, format, alphaMode: 'opaque' }); depth = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT }); }
+let depth; addEventListener('resize', resize);
+
+const shader = device.createShaderModule({ code: /* wgsl */`
+struct Camera { viewProj : mat4x4<f32>, eye : vec4<f32>, light : vec4<f32> };
+struct Skin  { hubPos : vec4<f32>, frame : vec4<f32>, counts : vec4<u32> };
+@group(0) @binding(0) var<uniform> camera : Camera;
+@group(0) @binding(1) var<uniform> skin : Skin;
+@group(0) @binding(2) var<storage, read> nodes : array<vec4<f32>>;      // coarse solver nodes, world
+@group(0) @binding(3) var<storage, read> active : array<u32>;
+
+fn rotate(q : vec4<f32>, v : vec3<f32>) -> vec3<f32> { let t = 2.0 * cross(q.xyz, v); return v + q.w * t + cross(q.xyz, t); }
+
+struct VSOut { @builtin(position) pos : vec4<f32>, @location(0) normal : vec3<f32>, @location(1) colour : vec3<f32>, @location(2) world : vec3<f32> };
+
+// Render tyre vertex: four coarse node indices + weights + the constant rest offset in the material frame.
+struct TyreVertex { @location(0) idx : vec4<u32>, @location(1) w : vec4<f32>, @location(2) offset : vec3<f32>, @location(3) restNormal : vec3<f32> };
+@vertex fn vsTyre(v : TyreVertex) -> VSOut {
+  var p = nodes[v.idx.x].xyz * v.w.x + nodes[v.idx.y].xyz * v.w.y + nodes[v.idx.z].xyz * v.w.z + nodes[v.idx.w].xyz * v.w.w;
+  p = p + rotate(skin.frame, v.offset);
+  var o : VSOut; o.pos = camera.viewProj * vec4<f32>(p, 1.0); o.normal = rotate(skin.frame, v.restNormal); o.world = p;
+  let a = active[v.idx.x] + active[v.idx.y] + active[v.idx.z] + active[v.idx.w];
+  o.colour = select(vec3<f32>(0.22, 0.23, 0.26), vec3<f32>(0.35, 0.36, 0.40), a > 0u);
+  return o;
+}
+struct PlainVertex { @location(0) pos : vec3<f32>, @location(1) normal : vec3<f32>, @location(2) colour : vec3<f32> };
+@vertex fn vsPlain(v : PlainVertex) -> VSOut { var o : VSOut; o.pos = camera.viewProj * vec4<f32>(v.pos, 1.0); o.normal = v.normal; o.colour = v.colour; o.world = v.pos; return o; }
+@fragment fn fsLit(i : VSOut) -> @location(0) vec4<f32> {
+  let n = normalize(i.normal); let l = normalize(camera.light.xyz);
+  let diff = max(dot(n, l), 0.0) * 0.8 + 0.25;
+  let v = normalize(camera.eye.xyz - i.world); let spec = pow(max(dot(normalize(l + v), n), 0.0), 40.0) * 0.15;
+  return vec4<f32>(i.colour * diff + spec, 1.0);
+}
+@fragment fn fsFlat(i : VSOut) -> @location(0) vec4<f32> { return vec4<f32>(i.colour, 1.0); }
+`});
+
+const bindLayout = device.createBindGroupLayout({ entries: [
+  { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+  { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+  { binding: 3, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+]});
+const layout = device.createPipelineLayout({ bindGroupLayouts: [bindLayout] });
+const depthState = { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' };
+const tyrePipeline = device.createRenderPipeline({ layout, vertex: { module: shader, entryPoint: 'vsTyre', buffers: [{ arrayStride: 56, attributes: [
+  { shaderLocation: 0, offset: 0, format: 'uint32x4' }, { shaderLocation: 1, offset: 16, format: 'float32x4' }, { shaderLocation: 2, offset: 32, format: 'float32x3' }, { shaderLocation: 3, offset: 44, format: 'float32x3' }] }] },
+  fragment: { module: shader, entryPoint: 'fsLit', targets: [{ format }] }, primitive: { topology: 'triangle-list', cullMode: 'none' }, depthStencil: depthState });
+const plainLayout = [{ arrayStride: 36, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 12, format: 'float32x3' }, { shaderLocation: 2, offset: 24, format: 'float32x3' }] }];
+const litPipeline = device.createRenderPipeline({ layout, vertex: { module: shader, entryPoint: 'vsPlain', buffers: plainLayout }, fragment: { module: shader, entryPoint: 'fsLit', targets: [{ format }] }, primitive: { topology: 'triangle-list', cullMode: 'none' }, depthStencil: depthState });
+const linePipeline = device.createRenderPipeline({ layout, vertex: { module: shader, entryPoint: 'vsPlain', buffers: plainLayout }, fragment: { module: shader, entryPoint: 'fsFlat', targets: [{ format }] }, primitive: { topology: 'line-list' }, depthStencil: { ...depthState, depthCompare: 'less-equal' } });
+
+const cameraBuffer = device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+const skinBuffer = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+let nodeBuffer, activeBuffer, bindGroup, tyreVertexBuffer, tyreIndexBuffer, tyreIndexCount = 0, renderVertexCount = 0;
+const RF = 9, SF = 128;                                  // the render tyre never changes
+
+// Build the render tyre against a solver lattice: bilinear coarse weights + constant material-frame offset.
+function buildRenderTyre(tyre) {
+  const fine = new SoftTyre(RF, SF, tyreParameters);     // only for its rest positions (never stepped)
+  const data = new ArrayBuffer(RF * SF * 56), dv = new DataView(data);
+  for (let r = 0; r < RF; r++) for (let s = 0; s < SF; s++) {
+    const i = r * SF + s;
+    const u = tyre.R > 1 ? r * (tyre.R - 1) / (RF - 1) : 0, v = s * tyre.S / SF;
+    const r0 = Math.min(tyre.R - 1, Math.floor(u)), r1 = Math.min(tyre.R - 1, r0 + 1), s0 = Math.floor(v) % tyre.S, s1 = (s0 + 1) % tyre.S;
+    const fu = u - Math.floor(u), fv = v - Math.floor(v);
+    const idx = [r0 * tyre.S + s0, r0 * tyre.S + s1, r1 * tyre.S + s0, r1 * tyre.S + s1];
+    const w = [(1 - fu) * (1 - fv), (1 - fu) * fv, fu * (1 - fv), fu * fv];
+    let interp = [0, 0, 0]; for (let k = 0; k < 4; k++) interp = V.add(interp, V.scale(tyre.treadLocal.subarray(idx[k] * 3, idx[k] * 3 + 3), w[k]));
+    const rest = fine.treadLocal.subarray(i * 3, i * 3 + 3), offset = V.sub(rest, interp);
+    let nrm = [rest[0], 0, rest[2]]; nrm = V.norm(nrm);
+    const o = i * 56; idx.forEach((x, k) => dv.setUint32(o + k * 4, x, true)); w.forEach((x, k) => dv.setFloat32(o + 16 + k * 4, x, true));
+    offset.forEach((x, k) => dv.setFloat32(o + 32 + k * 4, x, true)); nrm.forEach((x, k) => dv.setFloat32(o + 44 + k * 4, x, true));
+  }
+  tyreVertexBuffer = device.createBuffer({ size: data.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }); device.queue.writeBuffer(tyreVertexBuffer, 0, data);
+  const idx = [];
+  for (let r = 0; r + 1 < RF; r++) for (let s = 0; s < SF; s++) { const a = r * SF + s, b = r * SF + (s + 1) % SF, c = a + SF, d = b + SF; idx.push(a, b, c, b, d, c); }
+  tyreIndexBuffer = device.createBuffer({ size: idx.length * 4, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST }); device.queue.writeBuffer(tyreIndexBuffer, 0, new Uint32Array(idx));
+  tyreIndexCount = idx.length; renderVertexCount = RF * SF;
+  nodeBuffer = device.createBuffer({ size: tyre.N * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  activeBuffer = device.createBuffer({ size: Math.max(16, tyre.N * 4), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  bindGroup = device.createBindGroup({ layout: bindLayout, entries: [{ binding: 0, resource: { buffer: cameraBuffer } }, { binding: 1, resource: { buffer: skinBuffer } }, { binding: 2, resource: { buffer: nodeBuffer } }, { binding: 3, resource: { buffer: activeBuffer } }] });
+}
+
+// Plain geometry helpers (pos, normal, colour interleaved).
+function plainBuffer(arr, usage) { const b = device.createBuffer({ size: Math.max(36, arr.length * 4), usage: usage | GPUBufferUsage.COPY_DST }); device.queue.writeBuffer(b, 0, new Float32Array(arr)); return b; }
+function buildGroundMesh(x0, x1) {
+  const tri = [], nx = 160, ny = 24, y0 = -1.5, y1 = 1.5;
+  const at = (i, j) => { const x = x0 + (x1 - x0) * i / nx, y = y0 + (y1 - y0) * j / ny; const g = groundQuery([x, y, 0]); groundQueries--; const c = ((i + j) & 1) ? [0.16, 0.19, 0.23] : [0.13, 0.16, 0.20]; return [...g.point, ...g.normal, ...c]; };
+  for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) { const a = at(i, j), b = at(i + 1, j), c = at(i, j + 1), d = at(i + 1, j + 1); tri.push(...a, ...b, ...c, ...b, ...d, ...c); }
+  return { buffer: plainBuffer(tri, GPUBufferUsage.VERTEX), count: tri.length / 9 };
+}
+
+// ───────────────────────────────────────────────────────────────────────────── state + UI
+const ui = id => document.getElementById(id);
+const state = { playing: false, lattice: '5x64', substeps: 16, sweeps: 1, window: 60, speed: 10, hubHeight: 0.30, pressure: 220, hullMode: 'hull', wire: true, x: 0, msAvg: 0, queriesAvg: 0, hull: buildBody() };
+let tyre, ground;
+function rebuild() {
+  const [R, S] = state.lattice.split('x').map(Number);
+  tyre = new SoftTyre(R, S, tyreParameters);
+  state.x = 0; tyre.reset([0, 0, state.hubHeight], [0, 0, 0, 1]);
+  buildRenderTyre(tyre);
+  ground = buildGroundMesh(-6, 30);
+  ui('mNodes').textContent = `${tyre.N} / ${tyre.edgeA.length}`; ui('mSkin').textContent = `${renderVertexCount} (from ${tyre.N} nodes)`;
+}
+for (const [id, key, fmt] of [['substeps', 'substeps', v => v], ['sweeps', 'sweeps', v => v], ['window', 'window', v => v + '°'], ['speed', 'speed', v => v + ' m/s'], ['hub', 'hubHeight', v => Number(v).toFixed(3) + ' m'], ['pressure', 'pressure', v => v + ' kPa']])
+  ui(id).addEventListener('input', e => { state[key] = Number(e.target.value); ui(id + 'V').textContent = fmt(e.target.value); });
+ui('lattice').addEventListener('change', e => { state.lattice = e.target.value; rebuild(); });
+ui('ground').addEventListener('change', e => { groundState.mode = e.target.value; rebuild(); });
+ui('hullmode').addEventListener('change', e => { state.hullMode = e.target.value; });
+ui('wire').addEventListener('change', e => { state.wire = e.target.checked; });
+ui('play').addEventListener('click', () => { state.playing = !state.playing; ui('play').textContent = state.playing ? 'Pause' : 'Play'; });
+ui('step').addEventListener('click', () => { fixedStep(); });
+ui('reset').addEventListener('click', () => { rebuild(); });
+
+// Orbit camera
+const cam = { yaw: 0.9, pitch: 0.35, dist: 2.2, target: [0, 0, 0.3] };
+let dragging = false, last = [0, 0];
+canvas.addEventListener('pointerdown', e => { dragging = true; last = [e.clientX, e.clientY]; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup', () => dragging = false);
+canvas.addEventListener('pointermove', e => { if (!dragging) return; cam.yaw -= (e.clientX - last[0]) * 0.006; cam.pitch = Math.max(-1.4, Math.min(1.4, cam.pitch + (e.clientY - last[1]) * 0.006)); last = [e.clientX, e.clientY]; });
+canvas.addEventListener('wheel', e => { cam.dist = Math.max(0.6, Math.min(12, cam.dist * Math.exp(e.deltaY * 0.001))); e.preventDefault(); }, { passive: false });
+function perspective(fovy, aspect, near, far) { const f = 1 / Math.tan(fovy / 2); return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, far / (near - far), -1, 0, 0, far * near / (near - far), 0]; }
+function lookAt(eye, target, up) { const z = V.norm(V.sub(eye, target)), x = V.norm(V.cross(up, z)), y = V.cross(z, x); return [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -V.dot(x, eye), -V.dot(y, eye), -V.dot(z, eye), 1]; }
+function mul4(a, b) { const o = new Array(16).fill(0); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) o[j * 4 + i] += a[k * 4 + i] * b[j * 4 + k]; return o; }
+
+// ───────────────────────────────────────────────────────────────────────────── stepping
+const dt = 1 / 240;
+let bodyStats = { tested: 0, contact: 0 };
+function fixedStep() {
+  state.x += state.speed * dt;
+  const hub = { pos: [state.x, 0, state.hubHeight + groundHeight(state.x, 0)], rot: [0, 0, 0, 1], vel: [state.speed, 0, 0], spinRate: state.speed / tyreParameters.radius };
+  groundQueries = 0;
+  const t0 = performance.now();
+  tyre.step(dt, state.substeps, state.sweeps, hub, state.window * Math.PI / 180, state.pressure * 1000);
+  const ms = performance.now() - t0;
+  state.msAvg = state.msAvg * 0.9 + ms * 0.1; state.queriesAvg = state.queriesAvg * 0.9 + groundQueries * 0.1;
+  // body contact: hull samples vs every vertex, against the same ground
+  const samples = state.hullMode === 'hull' ? state.hull.hull : state.hull.all; let contact = 0;
+  for (const p of samples) { const w = [p[0] + state.x, p[1], p[2] + groundHeight(state.x, 0)]; const g = groundQuery(w); if (V.dot(V.sub(w, g.point), g.normal) < 0.0) contact++; }
+  bodyStats = { tested: samples.length, contact };
+}
+
+// ───────────────────────────────────────────────────────────────────────────── frame
+let accumulator = 0, lastTime = performance.now();
+const lineScratch = [];
+function frame(now) {
+  const elapsed = Math.min(0.1, (now - lastTime) / 1000); lastTime = now;
+  if (state.playing) { accumulator += elapsed; let n = 0; while (accumulator >= dt && n < 8) { fixedStep(); accumulator -= dt; n++; } if (n === 8) accumulator = 0; }
+
+  // upload solver nodes + active flags + skin frame
+  const nodes = new Float32Array(tyre.N * 4); for (let i = 0; i < tyre.N; i++) nodes.set(tyre.pos.subarray(i * 3, i * 3 + 3), i * 4);
+  device.queue.writeBuffer(nodeBuffer, 0, nodes); device.queue.writeBuffer(activeBuffer, 0, new Uint32Array(tyre.active));
+  const hubPos = [state.x, 0, state.hubHeight + groundHeight(state.x, 0)], f = tyre.frame([0, 0, 0, 1]);
+  device.queue.writeBuffer(skinBuffer, 0, new Float32Array([...hubPos, 0, ...f, tyre.N, 0, 0, 0]));
+
+  // camera follows the hub
+  cam.target = [hubPos[0], 0, 0.3];
+  const eye = V.add(cam.target, [Math.cos(cam.pitch) * Math.cos(cam.yaw) * cam.dist, Math.cos(cam.pitch) * Math.sin(cam.yaw) * cam.dist, Math.sin(cam.pitch) * cam.dist]);
+  const vp = mul4(perspective(0.9, canvas.width / canvas.height, 0.05, 100), lookAt(eye, cam.target, [0, 0, 1]));
+  device.queue.writeBuffer(cameraBuffer, 0, new Float32Array([...vp, ...eye, 1, 0.4, -0.3, 0.85, 0]));
+
+  // overlay lines: coarse lattice (active = orange, pinned = grey), contact normals, body hull samples
+  lineScratch.length = 0;
+  const push = (a, b, c) => lineScratch.push(...a, 0, 0, 1, ...c, ...b, 0, 0, 1, ...c);
+  if (state.wire) for (let e = 0; e < tyre.edgeA.length; e++) { const ia = tyre.edgeA[e], ib = tyre.edgeB[e]; const c = (tyre.active[ia] || tyre.active[ib]) ? [1.0, 0.62, 0.2] : [0.3, 0.33, 0.38]; push(tyre.pos.subarray(ia * 3, ia * 3 + 3), tyre.pos.subarray(ib * 3, ib * 3 + 3), c); }
+  for (let i = 0; i < tyre.N; i++) if (tyre.lamContact[i] > 0) { const p = tyre.contactP.subarray(i * 3, i * 3 + 3), n = tyre.contactN.subarray(i * 3, i * 3 + 3); const hs = dt / state.substeps; push(p, V.add(p, V.scale(n, tyre.lamContact[i] / (hs * hs) * 2e-5)), [0.4, 1, 0.5]); }
+  const samples = state.hullMode === 'hull' ? state.hull.hull : state.hull.all;
+  for (const p of samples) { const w = [p[0] + state.x, p[1], p[2] + groundHeight(state.x, 0)]; const g = groundQuery(w); groundQueries--; const hit = V.dot(V.sub(w, g.point), g.normal) < 0; const s = 0.02, c = hit ? [1, 0.3, 0.3] : (state.hullMode === 'hull' ? [0.5, 0.8, 1] : [0.35, 0.4, 0.5]); push([w[0] - s, w[1], w[2]], [w[0] + s, w[1], w[2]], c); push([w[0], w[1] - s, w[2]], [w[0], w[1] + s, w[2]], c); }
+  const lineBuffer = plainBuffer(lineScratch, GPUBufferUsage.VERTEX);
+
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), clearValue: { r: 0.055, g: 0.067, b: 0.086, a: 1 }, loadOp: 'clear', storeOp: 'store' }], depthStencilAttachment: { view: depth.createView(), depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' } });
+  pass.setBindGroup(0, bindGroup);
+  pass.setPipeline(litPipeline); pass.setVertexBuffer(0, ground.buffer); pass.draw(ground.count);
+  pass.setPipeline(tyrePipeline); pass.setVertexBuffer(0, tyreVertexBuffer); pass.setIndexBuffer(tyreIndexBuffer, 'uint32'); pass.drawIndexed(tyreIndexCount);
+  if (lineScratch.length) { pass.setPipeline(linePipeline); pass.setVertexBuffer(0, lineBuffer); pass.draw(lineScratch.length / 9); }
+  pass.end(); device.queue.submit([encoder.finish()]);
+  lineBuffer.destroy();
+
+  // readouts
+  ui('mActive').textContent = `${tyre.activeCount} / ${tyre.N}`;
+  ui('mProj').textContent = tyre.projections.toLocaleString();
+  const msCell = ui('mMs'); msCell.textContent = state.msAvg.toFixed(2); msCell.className = state.msAvg < 1 ? 'good' : state.msAvg < 2.5 ? 'warn' : 'bad';
+  ui('mQueries').textContent = Math.round(state.queriesAvg);
+  ui('mFz').textContent = tyre.reaction.fz.toFixed(0) + ' N'; ui('mFzRim').textContent = tyre.reaction.fzRim.toFixed(0) + ' N'; ui('mFx').textContent = tyre.reaction.fx.toFixed(0) + ' N';
+  ui('mPatch').textContent = (tyre.reaction.patch * 1000).toFixed(0) + ' mm';
+  ui('mBody').textContent = `${bodyStats.tested} / ${bodyStats.contact}`;
+  requestAnimationFrame(frame);
+}
+resize(); rebuild(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

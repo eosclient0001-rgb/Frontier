@@ -1,0 +1,16 @@
+# Disposable local work — never committed.
+_ClaudeScratch/
+build/
+out/
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.log
+
+# Restored third-party sources (pinned, fetched by Automation/PrepareJolt.py).
+ExternalPackages/
+
+# Recovery working clones (see Docs/VehiclePort/RecoveryMap.md for the upstream URLs).
+_recovery/
