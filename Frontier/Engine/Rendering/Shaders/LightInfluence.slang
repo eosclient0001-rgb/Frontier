@@ -736,6 +736,63 @@ uint NearestFacet(float3 Origin, float3 Direction, float Minimum, float Maximum,
     }
     return Selected;
 }
+float3 EnvironmentTexel(uint Face, int2 Pixel, uint Size, uint Offset)
+{
+    uint2 P = uint2(clamp(Pixel, int2(0), int2(Size - 1)));
+    uint Index = Offset + ((Face * Size + P.y) * Size + P.x) * 3;
+    return float3(Angles[Index], Angles[Index + 1], Angles[Index + 2]);
+}
+float3 EnvironmentRadiance(float3 Direction)
+{
+    if (Extent.Primary.w == 0)
+        return 0;
+    float4 Map = CameraProjection(10);
+    uint Size = uint(Map.y), Offset = uint(Map.x);
+    if (Size == 0)
+        return 0;
+    float3 A = abs(Direction);
+    uint Face;
+    float2 Uv;
+    if (A.x >= A.y && A.x >= A.z)
+    {
+        Face = Direction.x >= 0 ? 0 : 1;
+        Uv = Direction.yz / A.x;
+    }
+    else if (A.y >= A.z)
+    {
+        Face = Direction.y >= 0 ? 2 : 3;
+        Uv = Direction.xz / A.y;
+    }
+    else
+    {
+        Face = Direction.z >= 0 ? 4 : 5;
+        Uv = Direction.xy / A.z;
+    }
+    float2 P = (Uv * .5 + .5) * Size - .5;
+    int2 Low = int2(floor(P));
+    float2 Fraction = frac(P);
+    return lerp(lerp(EnvironmentTexel(Face, Low, Size, Offset),
+                     EnvironmentTexel(Face, Low + int2(1, 0), Size, Offset), Fraction.x),
+                lerp(EnvironmentTexel(Face, Low + int2(0, 1), Size, Offset),
+                     EnvironmentTexel(Face, Low + int2(1, 1), Size, Offset), Fraction.x),
+                Fraction.y) *
+           Map.w;
+}
+SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 Strike)
+{
+    FacetCorners F = Facets[Index];
+    SurfacePoint R = (SurfacePoint)0;
+    float3 Normal =
+        Unit(F.NormalA.xyz * (1 - Strike.y - Strike.z) + F.NormalB.xyz * Strike.y + F.NormalC.xyz * Strike.z);
+    if (dot(Normal, Direction) > 0)
+        Normal = -Normal;
+    R.PositionHit = float4(Origin + Direction * Strike.x, 1);
+    R.NormalRoughness = float4(Normal, F.AlbedoRoughness.w);
+    R.ViewMetallic = float4(-Direction, F.OpticalToken.x);
+    R.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
+    R.ResidualSpecular = float4(F.Emissive.xyz, F.OpticalToken.z);
+    return R;
+}
 [shader("compute")][numthreads(64, 1, 1)] void TracePrimarySurfaces(uint3 Dispatch
                                                                     : SV_DispatchThreadID)
 {
@@ -755,7 +812,8 @@ uint NearestFacet(float3 Origin, float3 Direction, float Minimum, float Maximum,
     R.ExpectedDirect = asfloat(uint4(0x7fc00000));
     if (Index == 0xffffffffu)
     {
-        R.ResidualSpecular = float4(CameraProjection(10).xyz, 0);
+        R.ResidualSpecular =
+            float4(Extent.Primary.w != 0 ? EnvironmentRadiance(Direction) : CameraProjection(10).xyz, 0);
         Receivers[Pixel] = R;
         StoreHistory(15, Pixel, float4(-1, -1, 0, 0));
         InterlockedAdd(Counters[11], 1);
@@ -801,4 +859,64 @@ uint NearestFacet(float3 Origin, float3 Direction, float Minimum, float Maximum,
     }
     Receivers[Pixel] = R;
     StoreHistory(15, Pixel, float4(Strike.x, float(Index), Strike.yz));
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                  ONE-BOUNCE DIFFUSE TRANSPORT
+//------------------------------------------------------------------------------------------------------------------------
+float3 DiffuseTransportResponse(SurfacePoint R, float3 Direction)
+{
+    float Ior = max(R.AlbedoIor.w, 1), Ratio = (Ior - 1) / (Ior + 1), Metallic = saturate(R.ViewMetallic.w);
+    float3 F0 = lerp(float3(Ratio * Ratio * saturate(R.ResidualSpecular.w) * 2), R.AlbedoIor.xyz, Metallic);
+    float Cosine = saturate(dot(Unit(R.ViewMetallic.xyz), Unit(Unit(R.ViewMetallic.xyz) + Direction)));
+    float3 Fresnel = F0 + (1 - F0) * pow(1 - Cosine, 5);
+    return (1 - Fresnel) * R.AlbedoIor.xyz * ((1 - Metallic) / 3.141592653589793);
+}
+[shader("compute")][numthreads(64, 1, 1)] void TraceSurfaceTransport(uint3 Dispatch
+                                                                     : SV_DispatchThreadID)
+{
+    uint Pixel = Dispatch.x;
+    if (Pixel >= Extent.Dimensions.x)
+        return;
+    SurfacePoint R = Receivers[Pixel];
+    if (R.PositionHit.w == 0)
+        return;
+    float3 N = R.NormalRoughness.xyz;
+    float3 Tangent = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)),
+           Bitangent = cross(N, Tangent);
+    uint Offset = uint(CameraProjection(8).w);
+    float3 Sum = 0;
+    for (uint Sample = 0; Sample < Extent.Primary.z; ++Sample)
+    {
+        uint Base = Offset + Sample * 3;
+        float3 Local = float3(Angles[Base], Angles[Base + 1], Angles[Base + 2]);
+        float3 Direction = Unit(Tangent * Local.x + Bitangent * Local.y + N * Local.z);
+        float3 Origin = R.PositionHit.xyz + N * .002, Strike;
+        uint Index = NearestFacet(Origin, Direction, 0, 1e30, Strike);
+        float3 Incoming = 0;
+        InterlockedAdd(Counters[13], 1);
+        if (Index == 0xffffffffu)
+        {
+            Incoming = EnvironmentRadiance(Direction);
+            InterlockedAdd(Counters[15], 1);
+        }
+        else
+        {
+            InterlockedAdd(Counters[14], 1);
+            SurfacePoint Bounce = FacetSurface(Index, Origin, Direction, Strike);
+            Incoming = Bounce.ResidualSpecular.xyz;
+            for (uint I = 0; I < Extent.Dimensions.y; ++I)
+            {
+                float3 ToLight;
+                float Distance;
+                float3 C = Contribution(Bounce, I, ToLight, Distance);
+                if (any(C != 0) && !Occluded(Bounce.PositionHit.xyz + Bounce.NormalRoughness.xyz * .002,
+                                             ToLight, Distance - .004))
+                    Incoming += C;
+            }
+        }
+        Sum += DiffuseTransportResponse(R, Direction) * Incoming * 3.141592653589793;
+    }
+    R.ResidualSpecular.xyz += Sum / Extent.Primary.z;
+    Receivers[Pixel] = R;
 }

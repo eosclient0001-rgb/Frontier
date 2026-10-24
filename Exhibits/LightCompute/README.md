@@ -5,6 +5,78 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## One-bounce diffuse transport and atmosphere cube — executed
+
+![Direct plus sky left; one diffuse bounce added right](Images/TransportComparison.png)
+
+![Six actual moving Vulkan-primary transport readbacks](Images/TransportMotion.png)
+
+`TraceSurfaceTransport` now follows the camera-surface pass, before direct lighting and reconstruction. It traces
+16 cosine-weighted hemisphere directions through the **full-scene triangle BVH**, including offscreen geometry.
+A secondary hit contributes its authored material emission plus exact analytic point/IES/spot/directional light
+arrival, native-equivalent GGX BRDF and shadow visibility. A miss samples the atmospheric radiance cube.
+The primary vertex applies a Fresnel-weighted **diffuse** response; glossy indirect reflection is not included.
+Direct GGX lighting is unchanged. Neither analytic lights nor emissive geometry was removed.
+
+The environment cube has six 48×48 RGB float faces, baked by native `SingleScattering` and its transmittance LUT
+at the fixture's 4 m observer altitude. Sun direction and irradiance come from the existing directional light.
+Vulkan performs bilinear cube lookup for camera misses and unoccluded secondary rays. This is **CPU atmospheric
+precomputation consumed by GPU transport**, not per-pixel CPU radiance or a GPU atmosphere/cloud implementation.
+Existing Sun/flare/star rendering code remains untouched; the cube itself does not add those presentation effects.
+
+| Verified check | Observed result |
+|---|---|
+| Secondary rays, 640×400 | 3,603,424: 263,475 triangle hits; 3,339,949 environment misses |
+| Independent native transport probes | 901 distributed surface receivers × 16 directions |
+| Probe mean / maximum RGB error | 2.08237e-8 / 4.6271e-6 |
+| Analytic-only indirect RGB sum | 2053.27 |
+| Emissive-only indirect RGB sum | 19571.8, excluding primary visible emission |
+| Environment-only diffuse RGB sum | 612.624 |
+| Sum of isolated routes versus combined transport | Maximum RGB discrepancy 8.44442e-6 |
+| All light families and environment disabled | Exactly black |
+| Six moving poses | Current indirect/emission equals fresh evaluation bitwise at every pixel |
+| Light revision, moving pose 3 | Zero accepted direct-light histories |
+| ASan/UBSan transport execution | Passed; external-driver leak detection disabled |
+
+The probe oracle uses a rebuilt double BVH, independently computed hit barycentrics, native light arrival,
+public IES profile import, native secondary BRDF/shadows and an independently evaluated diffuse primary response.
+It checks the same finite quadrature, **not convergence to a high-sample path-traced reference**. The source-isolation
+sum detects accidental duplicate accumulation in this integrator; it does not resolve whether an authored
+analytic proxy duplicates the physical energy of an emissive fixture. Proxy/source accounting remains open.
+
+Only direct-light reservoirs/colour history are reconstructed. Indirect and visible emission are freshly
+computed each frame and added afterward, so old screen-space radiance cannot survive a source or pose change.
+The moving checks use one history update per pose, without the earlier 16-update warmup. Their errors versus
+exact direct lighting with the **same finite indirect quadrature** are retained in `Results/TransportMotion.txt`;
+those are not measurements of total indirect-lighting accuracy.
+
+**Visible limitation:** 16 fixed hemisphere directions produce coarse displaced illumination footprints around
+bright emitters. They are quadrature artifacts, not validated glossy reflections. The new indirect contribution
+is not temporally accumulated or spatially denoised. Multi-bounce transport, emissive importance sampling,
+glossy transport, seamless/high-resolution atmosphere evaluation and sky/cloud appearance are still open.
+This capture establishes the executed transport path, not final renderer quality or a performance win.
+
+The shared shader now has **eight compute entries**, eight SSBOs and the unchanged 128-byte push ABI. The native
+cube adds 165,888 bytes and hemisphere directions add 192 bytes to the profile/sample buffer; no per-pixel CPU
+residual is uploaded. Private camera metadata stores their offsets. `TransportScene.bin` is retained only in
+ignored scratch storage and hashed in the evidence manifest; it is not a new public scene format.
+
+Reproduce all regressions and transport/motion checks with `bash Exhibits/LightCompute/Run.sh`.
+The focused command after build/export is:
+
+```bash
+VK_ICD_FILENAMES="$PWD/ExternalPackages/VulkanCompute/SwiftShader/vk_swiftshader_icd.json" \
+_ClaudeScratch/build/light-compute/LightComputeValidation \
+  "$PWD/ExternalPackages/VulkanCompute/SwiftShader/libvulkan.so.1" \
+  "$PWD/_ClaudeScratch/build/light-compute" \
+  _ClaudeScratch/vehicle-primary/VehiclePrimary.bin _ClaudeScratch/light-compute --transport-only
+```
+
+Sanitizer reproduction uses the same command with `ASAN_OPTIONS=detect_leaks=0` and the executable configured
+by CMake under `_ClaudeScratch/build/transport-sanitizers` with `-fsanitize=address,undefined` in compile/link
+flags. `Results/TransportSanitizers.txt` preserves the executed checks. No physical GPU, RTX query, Windows
+runtime or production viewport acceptance is claimed. Moon remains in `Documentation/EnvironmentTodo.md`.
+
 ## Moving Vulkan-primary reconstruction — executed
 
 ![Six actual moving Vulkan-primary readbacks](Images/PrimaryMotion.png)
@@ -120,7 +192,7 @@ Original ControlVehicle + authored materials
     → shader/host dependency + fence → actual readback → native display encoding → PNG/APNG
 ```
 
-All seven computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
+All eight computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
 retains pipelines/descriptors and uses eight storage buffers with a 128-byte push constant. Inter-dispatch,
 inter-submission and host/readback dependencies are explicit. Prior metadata is never overwritten until all
 reprojection and reconstruction reads have completed. Sixteen float4 surfaces occupy 65.536 MB at 640×400,

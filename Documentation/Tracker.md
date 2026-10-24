@@ -4,6 +4,26 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 
 
+
+## Vulkan one-bounce diffuse transport checkpoint — 2026-10-24
+
+- `TraceSurfaceTransport` traces full-BVH secondary rays from Vulkan-generated camera surfaces. Secondary hits
+  evaluate material emission and shadowed analytic point/IES/spot/directional lighting; misses sample a shared
+  native-atmosphere cube. The primary response is diffuse; direct GGX lighting remains intact.
+- 3,603,424 secondary rays; 901 independent double-reference receiver probes give mean RGB error 2.08237e-8,
+  maximum 4.6271e-6. Analytic-only, emission-only and environment-only routes all contribute; isolated sum agrees
+  within 8.44442e-6. All sources off is exactly black. Proxy-versus-emissive physical accounting remains open.
+- Six moving frames retain current indirect/emission bitwise versus fresh evaluation, including the light-change
+  reset. Actual readbacks: `Exhibits/LightCompute/Images/TransportMotion.png` and `TransportComparison.png`.
+- Complete static/moving direct/primary regression and focused ASan/UBSan transport execution passed. Device is
+  SwiftShader CPU type 4. Eight compute entries, eight SSBOs, 128-byte push constants; no GPU/Windows speed claim.
+- Atmosphere is CPU-precomputed into six 48×48 float RGB cube faces, not CPU per-pixel lighting and not a GPU
+  atmosphere/cloud port. Native Sun, flare and stars remain unchanged; Moon remains planned.
+- Fixed 16-direction diffuse quadrature visibly creates coarse illumination footprints. Indirect denoising,
+  emissive importance sampling, glossy/multi-bounce transport, environment appearance and physical RTX/GTX/Windows
+  integration remain open. Numeric agreement with the finite quadrature is not a convergence/quality proof.
+- Detailed reproduction, checks and source/device limits: `Exhibits/LightCompute/README.md` and transport reports.
+
 ## Moving Vulkan-primary history checkpoint — 2026-10-24
 
 - Six authentic vehicle/camera poses now generate surfaces and rigid-motion metadata on Vulkan with CPU raster

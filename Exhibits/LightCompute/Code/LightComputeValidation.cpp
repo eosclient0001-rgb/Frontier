@@ -45,17 +45,18 @@ void Confirm(VkResult Result)
     F(DestroyDevice)                                                                                         \
     F(GetDeviceQueue)                                                                                        \
     F(DeviceWaitIdle)                                                                                        \
-    F(CreateBuffer) F(DestroyBuffer) F(GetBufferMemoryRequirements) F(AllocateMemory) F(FreeMemory)          \
-        F(BindBufferMemory) F(MapMemory) F(UnmapMemory) F(CreateDescriptorSetLayout)                         \
-            F(DestroyDescriptorSetLayout) F(CreateDescriptorPool) F(DestroyDescriptorPool)                   \
-                F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreatePipelineLayout)                    \
-                    F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule)                    \
-                        F(CreateComputePipelines) F(DestroyPipeline) F(CreateCommandPool)                    \
-                            F(DestroyCommandPool) F(AllocateCommandBuffers) F(BeginCommandBuffer)            \
-                                F(EndCommandBuffer) F(ResetCommandPool) F(CmdBindPipeline)                   \
-                                    F(CmdBindDescriptorSets) F(CmdPushConstants) F(CmdDispatch)              \
-                                        F(CmdPipelineBarrier) F(QueueSubmit) F(CreateFence) F(DestroyFence)  \
-                                            F(WaitForFences) F(ResetFences)
+    F(CreateBuffer)                                                                                          \
+    F(DestroyBuffer)                                                                                         \
+    F(GetBufferMemoryRequirements) F(AllocateMemory) F(FreeMemory) F(BindBufferMemory) F(MapMemory)          \
+        F(UnmapMemory) F(CreateDescriptorSetLayout) F(DestroyDescriptorSetLayout) F(CreateDescriptorPool)    \
+            F(DestroyDescriptorPool) F(AllocateDescriptorSets) F(UpdateDescriptorSets)                       \
+                F(CreatePipelineLayout) F(DestroyPipelineLayout) F(CreateShaderModule)                       \
+                    F(DestroyShaderModule) F(CreateComputePipelines) F(DestroyPipeline) F(CreateCommandPool) \
+                        F(DestroyCommandPool) F(AllocateCommandBuffers) F(BeginCommandBuffer)                \
+                            F(EndCommandBuffer) F(ResetCommandPool) F(CmdBindPipeline)                       \
+                                F(CmdBindDescriptorSets) F(CmdPushConstants) F(CmdDispatch)                  \
+                                    F(CmdPipelineBarrier) F(QueueSubmit) F(CreateFence) F(DestroyFence)      \
+                                        F(WaitForFences) F(ResetFences)
 struct BufferSpan
 {
     VkBuffer Buffer = VK_NULL_HANDLE;
@@ -96,7 +97,7 @@ struct LightComputeSubmission
     VkDescriptorSet DescriptorSet = VK_NULL_HANDLE;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     VkPipeline CellPipeline = VK_NULL_HANDLE, ReceiverPipeline = VK_NULL_HANDLE,
-               PrimaryPipeline = VK_NULL_HANDLE;
+               PrimaryPipeline = VK_NULL_HANDLE, TransportPipeline = VK_NULL_HANDLE;
     std::array<BufferSpan, 8> Buffers{};
     std::array<VkPipeline, 4> HistoryPipelines{};
     std::vector<LightComputeShape> PreviousLights;
@@ -225,6 +226,8 @@ struct LightComputeSubmission
             for (auto Pipeline : HistoryPipelines)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
+            if (TransportPipeline)
+                DestroyPipeline(Device, TransportPipeline, nullptr);
             if (PrimaryPipeline)
                 DestroyPipeline(Device, PrimaryPipeline, nullptr);
             if (CellPipeline)
@@ -400,6 +403,7 @@ struct LightComputeSubmission
             Writes[I].pBufferInfo = &Spans[I];
         }
         UpdateDescriptorSets(Device, 8, Writes.data(), 0, nullptr);
+        TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
         PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
         CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
         ReceiverPipeline = ConstructPipeline(Shaders + "/Receivers.spv");
@@ -475,7 +479,8 @@ struct LightComputeSubmission
     std::vector<std::array<float, 4>> Execute(const LightComputeArchive& Scene, uint32_t Mode,
                                               uint32_t Capacity = 16, uint32_t Seed = 1,
                                               uint32_t StackCapacity = 64, uint32_t Reconstruction = 7,
-                                              bool ResetHistory = false, bool PrimaryVisibility = false)
+                                              bool ResetHistory = false, bool PrimaryVisibility = false,
+                                              uint32_t TransportSamples = 0, bool Environment = false)
     {
         Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
@@ -492,7 +497,8 @@ struct LightComputeSubmission
         Extent.History = {Scene.Width, Scene.Height, Reset ? 0 : HistorySequence, Reset ? 1u : 0u};
         Extent.Reconstruction = {Reconstruction & 1 ? 1u : 0u, Reconstruction & 2 ? 1u : 0u,
                                  Reconstruction & 4 ? 1u : 0u, 0};
-        Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), 0, 0};
+        Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), TransportSamples,
+                          Environment ? 1u : 0u};
         if (PrimaryVisibility)
         {
             // 📝 No uploaded CPU surface channel may supply primary geometry or
@@ -534,6 +540,15 @@ struct LightComputeSubmission
             CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
             Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
             Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
+        }
+        if (PrimaryVisibility && TransportSamples)
+        {
+            Require(TransportSamples <= uint32_t(Scene.Camera[9][3]),
+                    "Transport sample budget exceeds uploaded directions");
+            CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, TransportPipeline);
+            CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
             CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
         }
@@ -791,6 +806,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "LightHistoryValidation.h"
 #include "LightPrimaryValidation.h"
 #include "LightPrimaryMotion.h"
+#include "LightSurfaceTransport.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -821,6 +837,16 @@ int main(int Count, char** Arguments)
         if (Count == 7 && std::string(Arguments[5]) == "--primary-motion")
         {
             ValidatePrimaryMotion(Arguments[1], Arguments[2], Arguments[6], Arguments[4]);
+            return 0;
+        }
+        if (Count == 6 && std::string(Arguments[5]) == "--transport-only")
+        {
+            ValidateSurfaceTransport(Arguments[1], Arguments[2], Scene, Arguments[4]);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[5]) == "--transport-motion")
+        {
+            ValidateTransportMotion(Arguments[1], Arguments[2], Arguments[6], Arguments[4]);
             return 0;
         }
         auto All = Compute.Execute(Scene, 0);
