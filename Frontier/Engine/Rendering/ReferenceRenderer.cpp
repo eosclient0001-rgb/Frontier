@@ -421,6 +421,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
     std::vector<ReferenceMaterial> MaterialBuffer(PixelCount);
     std::vector<SpectrumRgb>   EmissiveBuffer(PixelCount);
     std::vector<uint8_t>       HitMask(PixelCount, 0);
+    std::vector<uint32_t> SurfaceIdentity(Settings.StoreSurfaceSamples ? PixelCount : 0);
 
     const auto ToView = [&](SpatialVector World) {
         const SpatialVector Rel = Sub(World, Camera.Position);
@@ -524,6 +525,8 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                     MaterialBuffer[Index] = MeshMaterial;
                     EmissiveBuffer[Index] = MeshEmissive;
                     HitMask[Index]       = 1;
+                    if (Settings.StoreSurfaceSamples)
+                        SurfaceIdentity[Index] = Tri.Mesh + 1;
                 }
             }
         }
@@ -731,7 +734,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
             }
 
             if (Settings.StoreSurfaceSamples)
-                Image.SurfaceSamples[P] = {Point, Normal, View, Material, Direct, true};
+                Image.SurfaceSamples[P] = {Point, Normal, View, Material, Direct, true, SurfaceIdentity[P]};
             DirectColour[P]   = Direct;
             ResidualColour[P] = AddRgb(Indirect, EmissiveBuffer[P]);
             FrameColour[P]    = AddRgb(Direct, ResidualColour[P]);

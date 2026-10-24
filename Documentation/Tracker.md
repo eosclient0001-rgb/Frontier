@@ -434,3 +434,14 @@ The new appearance files use Allman braces, flat namespace indentation, and desc
     unattended full-library pass (risk of silently regressing 100+ shipped pattern designs without
     per-pattern visual verification).
 
+
+## Vulkan illumination history — 2026-10-24
+
+- Shared Slang temporal/spatial reservoirs, rigid reprojection rejection, temporal moments and edge-aware
+  reconstruction now execute in native Vulkan validation on SwiftShader CPU. Six moving ControlVehicle poses,
+  exact-light references, rejection diagnostics and light/residual invalidation checks are retained together in
+  `Exhibits/LightCompute/README.md` and `Results/History.json`.
+- Local quality checks: 69.08% lower static RMSE after sixteen updates; 56.04% lower mean per-image moving RMSE.
+  These are fixture measurements, not equal-cost timings or general unbiasedness claims.
+- Still open: physical GTX/RTX and hardware ray queries, Windows execution, production viewport, deforming motion,
+  wider history/bias regressions and GPU primary/indirect transport. Filtering remains visibly imperfect.

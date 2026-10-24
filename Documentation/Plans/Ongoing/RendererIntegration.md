@@ -309,3 +309,21 @@ Compiled Slang, explicit device identity, pinned dependencies, actual readbacks 
 No physical GPU, hardware RT, GPU temporal/spatial reuse, moving history, GPU filtering or Windows execution is
 claimed. Next integrate GPU reservoirs/reprojection/filtering with independent exact references; preserve the
 hardware ray-query and shader triangle-BVH routes as explicit later device acceptance requirements.
+
+## Executed Vulkan history and moving reconstruction — 2026-10-24
+
+Shared Slang now executes temporal/spatial reservoir reuse, previous-surface reprojection checks, current
+visibility reevaluation, temporal moments and two edge-aware à-trous iterations. Native export supplies stable
+surface tokens and rigid previous-position/normal/projection inputs. Exact byte comparison of light/profile
+updates resets history; current residual sky/indirect/emissive radiance bypasses old direct-light colour history.
+
+`Exhibits/LightCompute` retains a lossless six-pose Vulkan animation, fresh/reconstructed comparison and GPU
+history rejection map. After sixteen static updates RMSE falls 69.08%; over five moving updates mean per-image
+RMSE falls 56.04% against exact current lighting. A colour change at pose 3 resets all history. Material, normal,
+position and camera-cut tests reject stale inputs; light-off and residual-refresh results exactly match current
+references. Unfiltered reused reservoirs independently match exact energy within fixture sampling error.
+
+Device remains SwiftShader CPU Vulkan, not physical GTX/RTX or Windows. The reconstruction is deliberately
+biased, sampled visibility rejection is not an all-light change detector, and remaining shadow/specular noise
+prevents final quality sign-off. Primary raster and sky/indirect remain CPU; production viewport, deforming
+motion, hardware RT and physical-device/Windows acceptance remain separate integration work.

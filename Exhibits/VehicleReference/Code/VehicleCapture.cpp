@@ -90,9 +90,10 @@ int main(int Count, char** Arguments)
     try
     {
         if (Count != 2 && !(Count == 3 && (std::string(Arguments[2]) == "--clustered-lights" ||
-                                           std::string(Arguments[2]) == "--vulkan-input")))
+                                           std::string(Arguments[2]) == "--vulkan-input" ||
+                                           std::string(Arguments[2]) == "--motion-input")))
             throw std::runtime_error(
-                "Usage: VehicleCapture output-directory [--clustered-lights|--vulkan-input]");
+                "Usage: VehicleCapture output-directory [--clustered-lights|--vulkan-input|--motion-input]");
         std::filesystem::path Output = Arguments[1];
         std::filesystem::create_directories(Output);
         std::ifstream                  Table("_ClaudeScratch/vehicle-reference/Materials.txt");
@@ -109,15 +110,21 @@ int main(int Count, char** Arguments)
         if (Materials.size() != 86)
             throw std::runtime_error("Expected 86 authored material records");
         const bool Analytic = Count == 3;
-        const bool ComputeInput = Count == 3 && std::string(Arguments[2]) == "--vulkan-input";
-        for (uint32_t Capture = 0; Capture < (ComputeInput ? 1u : (Analytic ? 2u : 6u)); ++Capture)
+        const bool MotionInput = Count == 3 && std::string(Arguments[2]) == "--motion-input";
+        const bool ComputeInput =
+            Count == 3 && (std::string(Arguments[2]) == "--vulkan-input" || MotionInput);
+        CullCamera PreviousCamera;
+        double PreviousAngle = 0;
+        for (uint32_t Capture = 0; Capture < (MotionInput ? 6u : (ComputeInput ? 1u : (Analytic ? 2u : 6u)));
+             ++Capture)
         {
-            const uint32_t               Pose         = Analytic ? 0 : Capture % 3;
+            const uint32_t Pose = MotionInput ? Capture : Analytic ? 0 : Capture % 3;
             const bool                   WithDistance = !Analytic && Capture >= 3;
-            const std::string Stem = ComputeInput ? "VulkanInput"
-                                     : Analytic   ? (Capture == 0 ? "AnalyticAll" : "AnalyticCluster")
-                                                  : (WithDistance ? "Distance" : "Vehicle");
-            const double                 θ    = Pose * .45;
+            const std::string Stem = MotionInput    ? "MotionInput"
+                                     : ComputeInput ? "VulkanInput"
+                                     : Analytic     ? (Capture == 0 ? "AnalyticAll" : "AnalyticCluster")
+                                                    : (WithDistance ? "Distance" : "Vehicle");
+            const double θ = Pose * (MotionInput ? .08 : .45);
             ReferenceScene               Scene;
             std::array<ReferenceMesh, 2> Ground;
             Ground[0].Material.Albedo = {.6, .62, .65};
@@ -176,6 +183,8 @@ int main(int Count, char** Arguments)
                 Point.Vector   = {1, -3, 3};
                 Point.Radiance = {35, 80, 120};
                 Point.Reach    = 12;
+                if (MotionInput && Capture >= 3)
+                    Point.Radiance = {100, 25, 15};
                 Scene.Lights.push_back(Point);
                 ReferenceLight Spot;
                 Spot.Kind        = ReferenceLight::Kind::Spot;
@@ -295,10 +304,21 @@ int main(int Count, char** Arguments)
             {
                 Settings.Denoise = false;
                 Settings.StoreSurfaceSamples = true;
+                Settings.ClusteredLights = false;
             }
             const auto Image = Renderer.Render(Camera, Settings);
             if (ComputeInput)
-                PackLightCompute(ComputeScene, Image).Save((Output / "VehicleLightInput.bin").string());
+            {
+                auto Packed = PackLightCompute(ComputeScene, Image);
+                if (MotionInput)
+                    ProjectLightComputeMotion(Packed, Capture ? PreviousCamera : Camera, θ,
+                                              Capture ? PreviousAngle : θ, uint32_t(VehicleFirst));
+                Packed.Save((Output / (MotionInput ? ("VehicleMotion" + std::to_string(Capture) + ".bin")
+                                                   : "VehicleLightInput.bin"))
+                                .string());
+                PreviousCamera = Camera;
+                PreviousAngle = θ;
+            }
             if (!Image.Stats.SurfacePixels || !std::isfinite(Image.Stats.MeanLuminance))
                 throw std::runtime_error("Vehicle capture is empty or nonfinite");
             for (auto Pixel : Image.Pixels)

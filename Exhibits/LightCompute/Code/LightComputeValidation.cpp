@@ -39,18 +39,20 @@ void Confirm(VkResult Result)
     F(GetPhysicalDeviceMemoryProperties)                                                                     \
     F(GetPhysicalDeviceQueueFamilyProperties)                                                                \
     F(EnumeratePhysicalDevices)                                                                              \
-    F(EnumerateDeviceExtensionProperties) F(CreateDevice) F(DestroyDevice) F(GetDeviceQueue)                 \
-        F(DeviceWaitIdle) F(CreateBuffer) F(DestroyBuffer) F(GetBufferMemoryRequirements) F(AllocateMemory)  \
-            F(FreeMemory) F(BindBufferMemory) F(MapMemory) F(UnmapMemory) F(CreateDescriptorSetLayout)       \
-                F(DestroyDescriptorSetLayout) F(CreateDescriptorPool) F(DestroyDescriptorPool)               \
-                    F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreatePipelineLayout)                \
-                        F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule)                \
-                            F(CreateComputePipelines) F(DestroyPipeline) F(CreateCommandPool)                \
-                                F(DestroyCommandPool) F(AllocateCommandBuffers) F(BeginCommandBuffer)        \
-                                    F(EndCommandBuffer) F(ResetCommandPool) F(CmdBindPipeline)               \
-                                        F(CmdBindDescriptorSets) F(CmdPushConstants) F(CmdDispatch)          \
-                                            F(CmdPipelineBarrier) F(QueueSubmit) F(CreateFence)              \
-                                                F(DestroyFence) F(WaitForFences) F(ResetFences)
+    F(EnumerateDeviceExtensionProperties)                                                                    \
+    F(CreateDevice)                                                                                          \
+    F(DestroyDevice) F(GetDeviceQueue) F(DeviceWaitIdle) F(CreateBuffer) F(DestroyBuffer)                    \
+        F(GetBufferMemoryRequirements) F(AllocateMemory) F(FreeMemory) F(BindBufferMemory) F(MapMemory)      \
+            F(UnmapMemory) F(CreateDescriptorSetLayout) F(DestroyDescriptorSetLayout)                        \
+                F(CreateDescriptorPool) F(DestroyDescriptorPool) F(AllocateDescriptorSets)                   \
+                    F(UpdateDescriptorSets) F(CreatePipelineLayout) F(DestroyPipelineLayout)                 \
+                        F(CreateShaderModule) F(DestroyShaderModule) F(CreateComputePipelines)               \
+                            F(DestroyPipeline) F(CreateCommandPool) F(DestroyCommandPool)                    \
+                                F(AllocateCommandBuffers) F(BeginCommandBuffer) F(EndCommandBuffer)          \
+                                    F(ResetCommandPool) F(CmdBindPipeline) F(CmdBindDescriptorSets)          \
+                                        F(CmdPushConstants) F(CmdDispatch) F(CmdPipelineBarrier)             \
+                                            F(QueueSubmit) F(CreateFence) F(DestroyFence) F(WaitForFences)   \
+                                                F(ResetFences)
 struct BufferSpan
 {
     VkBuffer Buffer = VK_NULL_HANDLE;
@@ -63,8 +65,9 @@ struct alignas(16) ComputeExtent
     std::array<uint32_t, 4> Dimensions{};
     std::array<float, 4> Minimum{-16, -16, -2, 0}, Maximum{16, 16, 10, 0};
     std::array<uint32_t, 4> Grid{8, 8, 4, 0}, Sampling{1, 8, 0, 0};
+    std::array<uint32_t, 4> History{}, Reconstruction{};
 };
-static_assert(sizeof(ComputeExtent) == 80, "Push constant stride mismatch");
+static_assert(sizeof(ComputeExtent) == 112, "Push constant stride mismatch");
 struct LightComputeSubmission
 {
 #ifdef _WIN32
@@ -91,6 +94,11 @@ struct LightComputeSubmission
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     VkPipeline CellPipeline = VK_NULL_HANDLE, ReceiverPipeline = VK_NULL_HANDLE;
     std::array<BufferSpan, 8> Buffers{};
+    std::array<VkPipeline, 4> HistoryPipelines{};
+    std::vector<LightComputeShape> PreviousLights;
+    std::vector<float> PreviousAngles;
+    uint32_t HistorySequence = 0, ReceiverCount = 0;
+    bool HistoryDirty = true;
     uint32_t Family = 0;
     bool RayQueryExtensions = false;
     template <class T> T Lookup(const char* Name)
@@ -210,6 +218,9 @@ struct LightComputeSubmission
         if (Device)
         {
             DeviceWaitIdle(Device);
+            for (auto Pipeline : HistoryPipelines)
+                if (Pipeline)
+                    DestroyPipeline(Device, Pipeline, nullptr);
             if (CellPipeline)
                 DestroyPipeline(Device, CellPipeline, nullptr);
             if (ReceiverPipeline)
@@ -333,8 +344,8 @@ struct LightComputeSubmission
         ConstructBuffer(3, Scene.Visibility.Corners);
         ConstructBuffer(4, Scene.Angles);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
-        ConstructBuffer(6, nullptr, Scene.Receivers.size() * 16);
-        ConstructBuffer(7, nullptr, 16);
+        ConstructBuffer(6, nullptr, Scene.Receivers.size() * 16 * 15);
+        ConstructBuffer(7, nullptr, 64);
         std::array<VkDescriptorSetLayoutBinding, 8> Slots{};
         for (uint32_t I = 0; I < 8; ++I)
         {
@@ -384,22 +395,72 @@ struct LightComputeSubmission
         UpdateDescriptorSets(Device, 8, Writes.data(), 0, nullptr);
         CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
         ReceiverPipeline = ConstructPipeline(Shaders + "/Receivers.spv");
+        const char* Names[] = {"Reuse", "Reconstruct", "Filter", "Finalize"};
+        for (uint32_t I = 0; I < 4; ++I)
+            HistoryPipelines[I] = ConstructPipeline(Shaders + "/" + Names[I] + ".spv");
+        ReceiverCount = uint32_t(Scene.Receivers.size());
+        Upload(Scene);
+    }
+    void Upload(const LightComputeArchive& Scene)
+    {
+        Require(Scene.Receivers.size() == ReceiverCount,
+                "History receiver extent changed; recreate submission");
+        auto Copy = [&](uint32_t Index, const void* Bytes, size_t Size) {
+            Require(Size <= Buffers[Index].Size, "Scene exceeds prepared buffer span");
+            if (Size)
+                std::memcpy(Buffers[Index].Address, Bytes, Size);
+        };
+        Copy(0, Scene.Lights.data(), Scene.Lights.size() * sizeof(LightComputeShape));
+        Copy(1, Scene.Receivers.data(), Scene.Receivers.size() * sizeof(LightComputeReceiver));
+        Copy(2, Scene.Visibility.Enclosures.data(),
+             Scene.Visibility.Enclosures.size() * sizeof(TriangleVisibilitySpace::FloatEnclosure));
+        Copy(3, Scene.Visibility.Corners.data(),
+             Scene.Visibility.Corners.size() * sizeof(TriangleVisibilitySpace::FloatFacet));
+        Copy(4, Scene.Angles.data(), Scene.Angles.size() * 4);
+        std::array<float, 4> Poison;
+        Poison.fill(std::numeric_limits<float>::quiet_NaN());
+        for (size_t I = 0; I < Scene.Receivers.size(); ++I)
+            std::memcpy(static_cast<char*>(Buffers[1].Address) + I * sizeof(LightComputeReceiver) +
+                            offsetof(LightComputeReceiver, ExpectedDirect),
+                        Poison.data(), 16);
+        bool Changed =
+            PreviousLights.size() != Scene.Lights.size() || PreviousAngles.size() != Scene.Angles.size();
+        if (!Changed)
+        {
+            Changed = (!Scene.Lights.empty() &&
+                       std::memcmp(PreviousLights.data(), Scene.Lights.data(),
+                                   Scene.Lights.size() * sizeof(LightComputeShape)) != 0) ||
+                      (!Scene.Angles.empty() &&
+                       std::memcmp(PreviousAngles.data(), Scene.Angles.data(), Scene.Angles.size() * 4) != 0);
+        }
+        if (Changed)
+        {
+            HistoryDirty = true;
+            PreviousLights = Scene.Lights;
+            PreviousAngles = Scene.Angles;
+        }
     }
     std::vector<std::array<float, 4>> Execute(const LightComputeArchive& Scene, uint32_t Mode,
                                               uint32_t Capacity = 16, uint32_t Seed = 1,
-                                              uint32_t StackCapacity = 64)
+                                              uint32_t StackCapacity = 64, uint32_t Reconstruction = 7,
+                                              bool ResetHistory = false)
     {
-        Require(Capacity >= 1 && Capacity <= 16 && Mode <= 2 && StackCapacity >= 1 && StackCapacity <= 64,
+        Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
         Require((Scene.Receivers.size() + 63) / 64 <= Properties.limits.maxComputeWorkGroupCount[0],
                 "Receiver dispatch exceeds device group limit");
         Require(uint64_t(Scene.Receivers.size()) * Scene.Lights.size() < UINT32_MAX,
                 "Compute counter extent exceeds uint32");
+        Upload(Scene);
         ComputeExtent Extent;
         Extent.Dimensions = {uint32_t(Scene.Receivers.size()), uint32_t(Scene.Lights.size()), Capacity, Mode};
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
         Extent.Sampling = {Seed, 8, uint32_t(Scene.Visibility.Corners.size()), StackCapacity};
-        std::memset(Buffers[7].Address, 0, 16);
+        bool Reset = HistoryDirty || ResetHistory;
+        Extent.History = {Scene.Width, Scene.Height, Reset ? 0 : HistorySequence, Reset ? 1u : 0u};
+        Extent.Reconstruction = {Reconstruction & 1 ? 1u : 0u, Reconstruction & 2 ? 1u : 0u,
+                                 Reconstruction & 4 ? 1u : 0u, 0};
+        std::memset(Buffers[7].Address, 0, 64);
         Confirm(ResetCommandPool(Device, Pool, 0));
         Confirm(ResetFences(Device, 1, &Completion));
         VkCommandBufferBeginInfo Begin{};
@@ -408,10 +469,10 @@ struct LightComputeSubmission
         Confirm(BeginCommandBuffer(Commands, &Begin));
         VkMemoryBarrier Barrier{};
         Barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        Barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+        Barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT;
         Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-        CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-                           &Barrier, 0, nullptr, 0, nullptr);
+        CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
         CmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, PipelineLayout, 0, 1, &DescriptorSet,
                               0, nullptr);
         CmdPushConstants(Commands, PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Extent), &Extent);
@@ -423,6 +484,30 @@ struct LightComputeSubmission
                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
         CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, ReceiverPipeline);
         CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+        if (Mode == 3)
+        {
+            auto Dispatch = [&](VkPipeline Pipeline) {
+                VkMemoryBarrier Dependency{};
+                Dependency.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                Dependency.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                Dependency.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Dependency, 0, nullptr, 0,
+                                   nullptr);
+                CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline);
+                CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+            };
+            Dispatch(HistoryPipelines[0]);
+            Dispatch(HistoryPipelines[1]);
+            for (uint32_t I = 0; I < 2; ++I)
+            {
+                Extent.Reconstruction[3] = I;
+                CmdPushConstants(Commands, PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Extent),
+                                 &Extent);
+                Dispatch(HistoryPipelines[2]);
+            }
+            Dispatch(HistoryPipelines[3]);
+        }
         Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         Barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
         CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1,
@@ -436,7 +521,26 @@ struct LightComputeSubmission
         Confirm(WaitForFences(Device, 1, &Completion, VK_TRUE, 120000000000ull));
         std::vector<std::array<float, 4>> Result(Scene.Receivers.size());
         std::memcpy(Result.data(), Buffers[6].Address, Result.size() * 16);
+        if (Mode == 3)
+        {
+            HistorySequence = Reset ? 1 : HistorySequence + 1;
+            HistoryDirty = false;
+        }
         return Result;
+    }
+    std::array<uint32_t, 16> HistoryStatistics() const
+    {
+        std::array<uint32_t, 16> Counts{};
+        std::memcpy(Counts.data(), Buffers[7].Address, 64);
+        return Counts;
+    }
+    std::vector<std::array<float, 4>> HistoryLinks() const
+    {
+        std::vector<std::array<float, 4>> Links(ReceiverCount);
+        std::memcpy(Links.data(),
+                    static_cast<const char*>(Buffers[6].Address) + size_t(ReceiverCount) * 16 * 13,
+                    ReceiverCount * 16);
+        return Links;
     }
     std::array<uint32_t, 4> Statistics() const
     {
@@ -497,6 +601,8 @@ void ValidateFreshSampling(const char* Driver, const std::string& Shaders)
         Expected += .2126 * R.Direct.R + .7152 * R.Direct.G + .0722 * R.Direct.B;
     }
     auto Archive = PackLightCompute(Scene, Image);
+    for (auto& R : Archive.Receivers)
+        R.MotionPixel[2] = .25f;
     LightComputeSubmission Compute(Driver);
     Compute.Prepare(Archive, Shaders);
     auto All = Compute.Execute(Archive, 0);
@@ -525,6 +631,51 @@ void ValidateFreshSampling(const char* Driver, const std::string& Shaders)
     std::cout << "SAMPLING lights=97 receivers=512 seeds=" << Repetitions << " mean=" << Mean
               << " native_exact=" << Expected << " standard_error=" << Error << " native_max_abs=" << Maximum
               << "\n";
+    double ReuseSum = 0, ReuseSquares = 0;
+    const uint32_t Chains = 64;
+    for (uint32_t Chain = 1; Chain <= Chains; ++Chain)
+    {
+        std::vector<std::array<float, 4>> Samples;
+        for (uint32_t Step = 0; Step < 4; ++Step)
+            Samples = Compute.Execute(Archive, 3, 16, Chain * 101 + Step, 64, 3, Step == 0);
+        double Energy = 0;
+        for (auto P : Samples)
+            Energy += P[3];
+        ReuseSum += Energy;
+        ReuseSquares += Energy * Energy;
+    }
+    double ReuseMean = ReuseSum / Chains,
+           ReuseError = std::sqrt(std::max(0., ReuseSquares / Chains - ReuseMean * ReuseMean) / Chains);
+    Require(std::abs(ReuseMean - Expected) < 6 * ReuseError + 1e-4,
+            "Reused unfiltered reservoirs differ from exact energy");
+    std::cout << "REUSE_ENERGY chains=" << Chains << " steps=4 mean=" << ReuseMean
+              << " native_exact=" << Expected << " standard_error=" << ReuseError << "\n";
+    auto ChangedMaterial = Archive;
+    for (size_t I = 0; I < ChangedMaterial.Receivers.size() / 2; ++I)
+        ChangedMaterial.Receivers[I].AlbedoIor[0] += .2f;
+    (void)Compute.Execute(ChangedMaterial, 3, 16, 901);
+    auto Rejections = Compute.HistoryStatistics();
+    Require(Rejections[4] == 256 && Rejections[5] == 256,
+            "Material change did not reject exactly affected pixels");
+    auto BadNormal = ChangedMaterial;
+    for (auto& R : BadNormal.Receivers)
+        R.MotionNormal = {0, 0, -1, 0};
+    (void)Compute.Execute(BadNormal, 3, 16, 902);
+    Require(Compute.HistoryStatistics()[4] == 0, "Normal mismatch retained history");
+    auto InvalidMotion = ChangedMaterial;
+    for (auto& R : InvalidMotion.Receivers)
+        R.MotionPixel[3] = 0;
+    auto Cut = Compute.Execute(InvalidMotion, 3, 16, 903, 64, 0);
+    Require(Compute.HistoryStatistics()[4] == 0, "Camera cut retained history");
+    auto Cold = Compute.Execute(InvalidMotion, 3, 16, 903, 64, 0, true);
+    Require(Cut == Cold, "Rejected camera history differs from a cold restart");
+    auto BadPosition = ChangedMaterial;
+    for (auto& R : BadPosition.Receivers)
+        R.MotionPositionToken[2] += 10;
+    (void)Compute.Execute(BadPosition, 3, 16, 904);
+    Require(Compute.HistoryStatistics()[4] == 0, "Disoccluded world position retained history");
+    std::cout << "REJECTION material_accepted=256 material_rejected=256 normal_rejected=512 "
+                 "camera_cut_rejected=512 position_rejected=512 cold_restart_exact_match=1\n";
     std::vector<std::array<SpatialVector, 3>> Caster;
     for (uint32_t I = 0; I < 5; ++I)
     {
@@ -565,13 +716,19 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
     EncodeDisplayRgb8(Image, .45, Rgb);
     Output.write(reinterpret_cast<const char*>(Rgb.data()), std::streamsize(Rgb.size()));
 }
+#include "LightHistoryValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--sampling-only")
+        {
+            ValidateFreshSampling(Arguments[1], Arguments[2]);
+            return 0;
+        }
         Require(
-            Count == 5,
+            Count == 5 || Count == 6,
             "Usage: LightComputeValidation driver-library shader-directory input-archive output-directory");
         auto Scene = LightComputeArchive::Load(Arguments[3]);
         std::filesystem::create_directories(Arguments[4]);
@@ -614,14 +771,16 @@ int main(int Count, char** Arguments)
         WriteImage(std::string(Arguments[4]) + "/All.ppm", All, Scene.Width, Scene.Height);
         WriteImage(std::string(Arguments[4]) + "/Clustered.ppm", Local, Scene.Width, Scene.Height);
         ValidateFreshSampling(Arguments[1], Arguments[2]);
+        ValidateHistory(Arguments[1], Arguments[2], Scene, Arguments[4], Count == 6 ? Arguments[5] : "");
         auto Ris = Compute.Execute(Scene, 2);
         WriteImage(std::string(Arguments[4]) + "/FreshRis.ppm", Ris, Scene.Width, Scene.Height);
         double Sum = 0;
         for (auto P : Ris)
             Sum += P[3];
-        std::cout << "RIS first_seed_luminance_sum=" << Sum << " native_exact_luminance_sum=" << Energy
-                  << " temporal_reuse_executed=0\nPASS Vulkan all-light/cluster/overflow equality and native "
-                     "image comparison\n";
+        std::cout
+            << "RIS first_seed_luminance_sum=" << Sum << " native_exact_luminance_sum=" << Energy
+            << " fresh_ris_temporal_reuse=0\nPASS Vulkan all-light/cluster/overflow equality and native "
+               "image comparison\n";
     }
     catch (const std::exception& Error)
     {

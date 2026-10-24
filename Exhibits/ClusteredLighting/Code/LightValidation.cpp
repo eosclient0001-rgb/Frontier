@@ -241,7 +241,10 @@ int main()
         Require(Samples.SurfaceSamples.size() == Samples.Pixels.size(), "Surface export extent mismatch");
         uint32_t SampleHits = 0;
         for (const auto& S : Samples.SurfaceSamples)
+        {
             SampleHits += S.Hit;
+            Require(S.Hit ? S.SurfaceToken != 0 : S.SurfaceToken == 0, "Surface export identity mismatch");
+        }
         Require(SampleHits == Samples.Stats.SurfacePixels, "Surface export lost hits");
         SamplesSettings.Denoise = true;
         Reject([&] { (void)Renderer.Render(Camera, SamplesSettings); });

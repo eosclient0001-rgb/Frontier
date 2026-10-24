@@ -5,7 +5,7 @@ $Build = Join-Path (Get-Location) '_ClaudeScratch/build/light-compute-windows'
 $Slang = if ($env:SLANGC) { $env:SLANGC } else { 'slangc' }
 $Driver = if ($env:VULKAN_LIBRARY) { $env:VULKAN_LIBRARY } else { 'vulkan-1.dll' }
 New-Item -ItemType Directory -Force $Build, '_ClaudeScratch/light-compute' | Out-Null
-foreach ($Pair in @(@('AssignLightCells', 'Cells'), @('EvaluateLightReceivers', 'Receivers'))) {
+foreach ($Pair in @(@('AssignLightCells', 'Cells'), @('EvaluateLightReceivers', 'Receivers'), @('ReuseLightNeighbours', 'Reuse'), @('ReconstructLightHistory', 'Reconstruct'), @('FilterLightNeighbours', 'Filter'), @('FinalizeLightHistory', 'Finalize'))) {
     & $Slang 'Frontier/Engine/Rendering/Shaders/LightInfluence.slang' -entry $Pair[0] -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$Build/$($Pair[1]).spv"
     Confirm-Exit
 }
@@ -13,7 +13,8 @@ node Exhibits/VehicleReference/Code/Materials.mjs; Confirm-Exit
 cmake -S Exhibits/VehicleReference -B _ClaudeScratch/build/vehicle-reference-windows; Confirm-Exit
 cmake --build _ClaudeScratch/build/vehicle-reference-windows --config Release --target VehicleCapture; Confirm-Exit
 & '_ClaudeScratch/build/vehicle-reference-windows/Release/VehicleCapture.exe' "$PWD/_ClaudeScratch/vehicle-reference" --vulkan-input; Confirm-Exit
+& '_ClaudeScratch/build/vehicle-reference-windows/Release/VehicleCapture.exe' "$PWD/_ClaudeScratch/vehicle-reference" --motion-input; Confirm-Exit
 cmake -S Exhibits/LightCompute -B $Build; Confirm-Exit
 cmake --build $Build --config Release; Confirm-Exit
-& "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/vehicle-reference/VehicleLightInput.bin' '_ClaudeScratch/light-compute'; Confirm-Exit
+& "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/vehicle-reference/VehicleLightInput.bin' '_ClaudeScratch/light-compute' '_ClaudeScratch/vehicle-reference'; Confirm-Exit
 # Linux evidence JSON deliberately is not regenerated: it records the actually tested software device.

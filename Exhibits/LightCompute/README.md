@@ -1,108 +1,133 @@
-# Vulkan analytic-light computation
+# Vulkan light history and reconstruction
 
-**Actual Vulkan execution, not a CPU mock of a compute dispatch.** Shared Slang builds light cells, evaluates
-point/spot/LM-63 profiles and GGX, traces triangle-BVH shadow rays, and performs fresh RIS on the ControlVehicle.
-The tested Vulkan device is **SwiftShader Device (Subzero), CPU device type 4**, API 1.3.0, Slang 2026.14.1.
-No physical GPU or RTX execution is claimed.
+**Actual Vulkan execution:** shared Slang now performs clustered analytic lighting, temporal/spatial reservoir
+reuse, reprojection rejection, temporal moments and edge-aware reconstruction on the original ControlVehicle.
+The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
+No physical GPU, hardware ray-query or Windows execution is claimed.
 
-![Native reference on left, Vulkan clustered lighting on right](Images/Comparison.png)
+![Moving pose: fresh sampling left, reconstructed lighting right](Images/HistoryComparison.png)
 
-**Left:** native double-precision exact lighting. **Right:** Vulkan float32 clustered exact lighting.
-Both use the same CPU-rasterized primary surfaces and CPU sky/indirect background. Vulkan recomputes direct
-illumination and shadow visibility; it does not copy the native direct-light answer. Only the native surface
-inputs and residual sky/indirect/emissive contribution are supplied. The uploaded `ExpectedDirect` channel is deliberately poisoned with NaNs; it must not influence shader
-output. Unpoisoned native answers remain solely in host memory for independent comparison.
+Left is fresh eight-candidate RIS; right uses reservoir history and reconstruction at the **same moving pose**.
+The sequence begins with 16 static updates. The vehicle then rotates/translates through five further poses while
+the camera pans. A point-light colour change at index 3 deliberately resets all old light histories.
+
+![Six captured Vulkan poses, losslessly animated](Images/Motion.png)
+
+Animation timing is illustrative, **not measured rendering time or a dynamics simulation**. The six images are
+actual Vulkan readbacks; no generated illustration or browser renderer is involved.
 
 ## Executed sequence
 
 ```text
 Original ControlVehicle + authored materials
-    → native primary visibility + surface inputs + residual sky/indirect/emissive RGB
-    → upload float32 lights, receivers, LM-63 tables, full-scene triangle enclosures
-    → Slang AssignLightCells                       [Vulkan compute]
-    → shader-write / shader-read memory dependency
-    → Slang EvaluateLightReceivers                 [Vulkan compute]
-         exact sum OR fresh RIS → triangle-BVH shadows → linear RGB
-    → shader-write / host-read memory dependency + fence
-    → actual mapped-buffer readback → native display encoding → PNG
+    → native primary visibility, stable surface tokens, rigid motion projection
+    → current float32 surfaces + current full-scene BVH + current sky/indirect/emissive residual
+    → AssignLightCells
+    → EvaluateLightReceivers       fresh RIS + reprojected temporal reservoir + current visibility
+    → ReuseLightNeighbours         compatible surface neighbours, target and visibility reevaluation
+    → ReconstructLightHistory      temporal colour/moments, variance-based neighbourhood clipping
+    → FilterLightNeighbours × 2    edge-aware à-trous filtering, steps 1 and 2
+    → FinalizeLightHistory         current residual, persistent reservoirs/surface metadata
+    → shader/host dependency + fence → actual readback → native display encoding → PNG/APNG
 ```
 
-The dispatch has eight storage buffers, an 80-byte push constant, persistent pipelines/descriptors, explicit
-host-coherent allocations and a completed fence before readback. There is no optional device-feature dependency.
-Headers, compiler, software driver and compiled shader hashes are recorded; downloads/binaries remain ignored.
-Compilation uses direct SPIR-V at `-O0` because the pinned wheel does not include downstream SPIR-V optimizers.
-This is an execution/correctness configuration, not a tuned performance result.
+All six computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
+retains pipelines/descriptors and uses eight storage buffers with a 112-byte push constant. Inter-dispatch,
+inter-submission and host/readback dependencies are explicit. Prior metadata is never overwritten until all
+reprojection and reconstruction reads have completed. Fifteen float4 surfaces occupy 61.44 MB at 640×400,
+excluding receiver inputs and geometry; this is an unoptimized reference allocation, not measured GPU VRAM.
 
-## Results
+The uploaded native direct-answer channel is deliberately poisoned with NaNs. Unpoisoned native answers remain
+only in host memory for numerical checks. The shader recomputes direct illumination and BVH shadow visibility;
+primary raster, sky and indirect transport remain CPU inputs.
+
+## Verified results
 
 | Check | Observed result |
 |---|---|
-| Real vehicle | 25,068 original vehicle facets; 28,276 full-scene facets; 640×400 receivers |
-| Uploaded native-answer channel | Poisoned with NaNs; finite matching shader output retained |
-| Vulkan all-light versus clustered | Float32 readback buffers **exactly identical** |
-| Forced one-light cell capacity | Identical output through all-light fallback |
-| Candidate-list visits | 8,107,704 → 2,682,703, **66.91% fewer**; no timing/speedup claim |
-| Outside-grid/overflow queries | 56,643 fallback queries in the vehicle clustered run |
-| Shader triangle visibility | 513,697 BVH shadow queries; no normal-stack overflow |
-| Vulkan versus native linear RGB | Mean absolute error 2.02268e-6; max 6.44028e-5; no channel above 1e-3 |
-| Display comparison | 183 of 256,000 pixels differ, by at most **one 8-bit code step** |
-| Dense synthetic cells | 97 simultaneous lights retained; all 512 receivers use exhaustive fallback |
-| Synthetic profiles/GGX versus native | Maximum absolute RGB error 8.58307e-6 |
-| Fresh GPU RIS, 256 seeds | Mean luminance sum 1482.31; native exact 1480.88; standard error 0.694124 |
-| Forced enclosure-stack limit of one | 49,664 exhaustive triangle fallbacks; matches ordinary BVH output |
-| Offscreen caster | Ten caster facets fully shadow synthetic receivers; no primary-frustum dependency |
-| Native regression | CTest 4/4, recovered checks 188/188, focused ASan/UBSan clean |
-| Prior vehicle/distance images | All six rerendered, byte-identical to the preceding checkpoint |
+| Original vehicle | 25,068 vehicle facets; 28,276 full-scene facets; 640×400 receivers |
+| Exact Vulkan all-light/clustered/forced-capacity routes | Identical float32 output buffers |
+| Exact Vulkan versus native RGB | Mean absolute error 2.02268e-6; maximum 6.44028e-5 |
+| Native/Vulkan display comparison | 183 pixels differ; maximum one 8-bit code step |
+| Candidate-list visits in exact comparison | 8,107,704 → 2,682,703; 66.91% fewer, **not a speedup measurement** |
+| Fresh RIS, 97 lights, 256 seeds | Mean luminance 1480.95; exact 1480.88; standard error 0.0842466 |
+| Reuse: 64 independent chains × 4 updates | Mean 1480.78; exact 1480.88; standard error 0.123867 |
+| Sixteen static updates | RGB RMSE 0.133629 → 0.0413195; **69.08% lower** |
+| Five moving updates | Mean per-image RMSE 0.1303814 → 0.057318; **56.04% lower** |
+| Moving index 1 | 152,328 accepted; 72,952 rejected; 1,212 sampled-visibility colour rejections |
+| Moving light change, index 3 | Zero accepted histories; current light table used immediately |
+| Changed material | Exactly 256 affected receivers rejected; 256 unchanged receivers accepted |
+| Normal, invalid motion/camera cut, position mismatch | All 512 receivers rejected in each case |
+| Camera-cut fallback | Exactly matches a cold restart with identical random seed |
+| All lights off | History output exactly matches current exact image; no stale direct contribution |
+| Residual refresh | Current exact image matched; no old residual accumulation |
+| Triangle stack capacity forced to one | 49,664 exhaustive fallbacks; matches ordinary BVH visibility |
+| Offscreen caster | Ten caster facets shadow synthetic receivers, independent of primary-frustum culling |
 
-The sampling comparison is statistically consistent for this fixture, not a general proof of unbiased reuse.
-The first vehicle RIS seed has luminance sum 60714.5 versus exact 60723.4. This is **fresh, unfiltered sampling**;
-individual pixels remain noisy. The diagnostic image is `Images/FreshRis.png`, not finished image-quality sign-off.
+Errors compare the same current surfaces/lights/geometry. Static reconstruction has sixteen updates versus one
+fresh image; the moving comparison uses the stated warmup and lighting reset. These are fixture-specific image
+quality measurements, **not equal-cost performance comparisons**. Filtering/clipping is deliberately biased;
+the unfiltered energy check is separate and does not certify arbitrary ReSTIR reuse as unbiased.
 
-## Correctness and limits
+`Results/Vulkan.txt` has each moving pose's rejection counts, errors and native RGB comparison. `Results/History.json`
+has the quality summary. `Images/MotionReject1.png` shows green accepted colour history, orange sampled-visibility
+rejection, red rejected history and black uncovered pixels. The PNG animation is lossless and its frame payloads,
+chunk sequence and checksums are independently checked by `Code/HistoryImages.py`.
 
-- Shader cell storage has a configurable capacity. Above capacity, or outside the grid, evaluation enumerates
-  all global light IDs. No excess assignment is silently discarded. Float32 sphere/box tests include roundoff padding.
-- The shader grid/evaluation is reusable; the validation host fixes an 8×8×4 grid and supports capacity 1–16.
-- `TriangleVisibilitySpace::PackFloat32` retains all scene facets, orders leaf ranges and expands converted bounds
-  outward by one float32 step. No primary-frustum culling is applied. A bounded shader stack falls back to a
-  whole-scene triangle scan if exhausted; the forced-limit test exercises that path.
-- LM-63 angles and relative-peak candela tables are uploaded explicitly, with the native angular symmetry rules.
-  Profiles remain the supported Type-C/TILT=NONE subset. The committed file is synthetic, not manufacturer data;
-  absolute lumen calibration is not supplied. Relative normalization avoids candela magnitude overflow on upload.
-- Native surface export is opt-in and rejects filtering, fog, multiple accumulation frames and non-exhaustive
-  direct lighting. Its sample layout is exercised by `LightValidation`; export leaves rendered pixels unchanged.
-- The private versioned `.bin` under ignored scratch storage is a diagnostic GPU-buffer interchange, not an
-  engine-authored content/configuration format. Runtime authoring remains TOML. No new persistent scene format
-  is introduced and no large binary capture or dependency is committed.
-- Host library loading is explicit. Missing features/limits, Vulkan errors, shader files, archives and numerical
-  mismatches fail the executable rather than producing a success image. Khronos validation layers were not run.
+## Mechanisms and limits
 
-## Reproduce on Linux x86-64
+- Fresh proposals use receiver-dependent incoming irradiance power: range, angular profile and surface cosine,
+  with a positive support floor. A permuted 32-bit congruential stream replaces plain LCG output. Native exact
+  comparison, independent seeds and the separate unfiltered-reuse energy test validate this configuration.
+- Overflow or outside-grid queries enumerate all global light IDs. No assignment is silently lost. The host
+  uses an 8×8×4 grid and cell capacity 1–16; the shader preserves conservative float32 sphere/box padding.
+- Reprojection checks stable surface token, previous world position and normal, roughness, albedo, metallic,
+  index of refraction and specular level. Four projected neighbours are considered. The validation computes
+  rigid motion and camera projection on CPU; deforming surfaces need appropriate motion inputs from their caller.
+- Temporal/spatial reservoirs retain global light IDs. Targets and selected-light visibility are reevaluated
+  against current geometry. A sampled visibility change rejects colour history. This is **not** a complete
+  all-light visibility-change detector; difficult shadow/specular regions remain noisy and can exhibit filtering bias.
+- Light/profile input bytes are compared exactly, not merely hashed. Changes reset history before sampling.
+  Arbitrary topology/surface-token reassignment requires an explicit caller reset or submission recreation.
+- Current sky/indirect/emissive residual is added after direct-light reconstruction every update. The refresh
+  check demonstrates this path, **not** a GPU exitance-cache or multibounce transport implementation.
+- Temporal moments use up to sixteen updates and neighbourhood variance clipping; two à-trous iterations reject
+  incompatible material, normal and geometric neighbours. This is a reference reconstruction, not quality sign-off.
+- `TriangleVisibilitySpace::PackFloat32` retains every facet and expands converted bounds outward. Bounded shader
+  stacks fall back to exhaustive triangle scanning rather than dropping occluders.
+- LM-63 remains the supported Type-C/TILT=NONE relative-peak subset. The fixture is synthetic, not manufacturer
+  measurement or absolute lumen calibration. Existing emissive geometry remains present.
+- Native surface export is opt-in and rejects filtering, fog, multiple accumulation updates and non-exact direct
+  lighting. The private scratch `.bin` ABI is version 2 with 144-byte receivers. It is diagnostic buffer exchange,
+  not a new persistent engine-authored content/configuration format; runtime authoring remains TOML.
 
-Requires C++17, CMake 3.20+, Node and Python 3.9+. The dependency script verifies fixed SHA-256 digests and writes
-only under ignored `ExternalPackages/VulkanCompute`. It does not install system packages or dispatch Actions.
+## Reproduce
+
+Requires C++17, CMake 3.20+, Node and Python 3.9+. On Linux x86-64:
 
 ```bash
 PREPARE=1 bash Exhibits/LightCompute/Run.sh
-# Once dependencies are restored:
+# Subsequent runs:
 bash Exhibits/LightCompute/Run.sh
 ```
 
-For another Vulkan implementation, supply `VULKAN_LIBRARY=/absolute/path/to/libvulkan.so.1` and configure its ICD.
-`SLANGC` may name an existing compatible compiler. CPU versus hardware device identity is printed at runtime;
-supplying a hardware driver does not by itself establish a tested GTX/RTX result. The host currently selects
-its first compute-capable device, reports ray-query extension presence, and executes only shader triangle-BVH
-visibility. It does not enable acceleration structures or hardware ray queries.
+The script builds all six Slang entries, renders one exact input plus six moving native inputs, then executes
+numerical, sampling, rejection, history, motion and refresh tests. It may take several minutes on the software
+device. Pinned downloads, executables, SPIR-V and large surface snapshots stay in ignored storage. Source,
+compiled-shader, snapshot and product hashes are recorded in `Results/Manifest.json`.
 
-Windows entry: `Run.ps1`, using a Vulkan SDK/header installation, compatible `slangc`, Node, Python, CMake and
-MSVC. `SLANGC`/`VULKAN_LIBRARY` override the compiler/loader. **This entry point is supplied, not executed here**;
-no Windows binary or device result is claimed. The Linux dependency restore is intentionally platform-specific.
+Direct SPIR-V at `-O0` avoids downstream optimizers absent from the pinned wheel; no tuned performance is claimed.
+For another driver use `VULKAN_LIBRARY` and its ICD configuration; `SLANGC` can name a compatible compiler.
+Device identity is printed at runtime. The host selects its first compute-capable device, reports ray-query
+extension presence, but does not enable hardware acceleration structures/ray queries. Missing limits or numerical
+mismatches fail the run. Khronos validation layers were not executed.
+
+`Run.ps1` supplies the Windows entry using MSVC, Vulkan SDK headers, compatible Slang, Node, Python and CMake.
+It is supplied **but not executed here**; no Windows binary or GTX/RTX hardware result is claimed.
 
 ## Integration boundary
 
-This is shared Slang lighting executed through a native Vulkan validation submission, not the production editor
-viewport or a complete GPU renderer. Primary raster, sky/indirect transport, temporal reprojection, spatial reuse
-and filtering have not moved to GPU here. RTX acceleration-structure/ray-query execution and physical GTX/RTX,
-Windows and moving-history acceptance remain separate work. The next phase should connect GPU reservoirs,
-reprojection/disocclusion rejection and variance filtering against these exact references; avoid replacing
-numerical comparison with visual resemblance alone.
+This executes shared shader lighting/history through a native Vulkan validation submission, not the production
+editor viewport or a complete GPU renderer. Primary raster and sky/indirect transport remain CPU. Native rigid
+motion is tested; deforming scenes, broader history/bias regressions, physical GTX/RTX, hardware ray queries,
+Windows and interactive viewport acceptance remain open. Environment/Moon appearance requirements stay deferred.

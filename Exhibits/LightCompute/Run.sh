@@ -13,7 +13,7 @@ Driver="${VULKAN_LIBRARY:-$Tools/SwiftShader/libvulkan.so.1}"
 if [[ -z "${VULKAN_LIBRARY:-}" ]]; then export VK_ICD_FILENAMES="$Tools/SwiftShader/vk_swiftshader_icd.json"; fi
 mkdir -p "$Build" _ClaudeScratch/light-compute
 "$Slang" -version > Exhibits/LightCompute/Results/Compiler.txt 2>&1
-for Pair in 'AssignLightCells Cells' 'EvaluateLightReceivers Receivers'; do
+for Pair in 'AssignLightCells Cells' 'EvaluateLightReceivers Receivers' 'ReuseLightNeighbours Reuse' 'ReconstructLightHistory Reconstruct' 'FilterLightNeighbours Filter' 'FinalizeLightHistory Finalize'; do
  read -r Entry Stem <<< "$Pair"
  "$Slang" Frontier/Engine/Rendering/Shaders/LightInfluence.slang -entry "$Entry" -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$Build/$Stem.spv"
 done
@@ -21,8 +21,10 @@ node Exhibits/VehicleReference/Code/Materials.mjs
 "$Cmake" -S Exhibits/VehicleReference -B _ClaudeScratch/build/vehicle-reference-cmake -DCMAKE_BUILD_TYPE=Release
 "$Cmake" --build _ClaudeScratch/build/vehicle-reference-cmake --parallel 2 --target VehicleCapture
 _ClaudeScratch/build/vehicle-reference-cmake/VehicleCapture "$PWD/_ClaudeScratch/vehicle-reference" --vulkan-input | tee Exhibits/LightCompute/Results/NativeCapture.txt
+_ClaudeScratch/build/vehicle-reference-cmake/VehicleCapture "$PWD/_ClaudeScratch/vehicle-reference" --motion-input | tee Exhibits/LightCompute/Results/MotionCapture.txt
 "$Cmake" -S Exhibits/LightCompute -B "$Build" -DCMAKE_BUILD_TYPE=Release
 "$Cmake" --build "$Build" --parallel 2
-"$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/vehicle-reference/VehicleLightInput.bin _ClaudeScratch/light-compute | tee Exhibits/LightCompute/Results/Vulkan.txt
+"$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/vehicle-reference/VehicleLightInput.bin _ClaudeScratch/light-compute _ClaudeScratch/vehicle-reference | tee Exhibits/LightCompute/Results/Vulkan.txt
 python3 Exhibits/LightCompute/Code/Images.py
+python3 Exhibits/LightCompute/Code/HistoryImages.py
 python3 Exhibits/LightCompute/Code/Evidence.py

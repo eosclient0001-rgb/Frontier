@@ -18,7 +18,7 @@ Sources += list((Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGr
 Sources += [Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Source' / P
             for P in ('MaterialSpecification.js', 'VehicleSpecification.js')]
 Products = list((Output / 'Images').glob('*.png')) + list((Output / 'Results').glob('*.txt'))
-Products += [Output / 'Results/Images.json']
+Products += [Output / 'Results/Images.json', Output / 'Results/History.json']
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()
@@ -30,11 +30,13 @@ Report = {'execution': 'actual Vulkan compute with shared Slang', 'device': Devi
           'ray_query_executed': False, 'triangle_bvh_shader_executed': True,
           'native_direct_upload_poisoned': True,
           'primary_visibility': 'native CPU raster', 'sky_and_indirect': 'native CPU reference',
-          'gpu_fresh_ris_executed': True, 'gpu_temporal_reuse_executed': False,
+          'gpu_fresh_ris_executed': True, 'gpu_temporal_reuse_executed': True,
+          'gpu_spatial_reuse_executed': True, 'gpu_filtering_executed': True,
+          'rigid_motion_reprojection_executed': 'MOTION index=' in Log,
           'windows_executed': False, 'vulkan_validation_layer_executed': False,
           'sources_sha256': Hashes(Sources), 'products_sha256': Hashes(Products),
-          'scratch_sha256': Hashes([Root / '_ClaudeScratch/build/light-compute/Cells.spv',
-                                   Root / '_ClaudeScratch/build/light-compute/Receivers.spv',
-                                   Root / '_ClaudeScratch/vehicle-reference/VehicleLightInput.bin'])}
+          'scratch_sha256': Hashes(list((Root / '_ClaudeScratch/build/light-compute').glob('*.spv')) +
+                                   [Root / '_ClaudeScratch/vehicle-reference/VehicleLightInput.bin'] +
+                                   list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*.bin')))}
 (Output / 'Results/Manifest.json').write_text(json.dumps(Report, indent=2) + '\n')
 print('Evidence:', len(Report['sources_sha256']), 'sources;', len(Report['products_sha256']), 'products; device type', DeviceType)

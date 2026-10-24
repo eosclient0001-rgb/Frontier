@@ -154,6 +154,7 @@ struct ReferenceSurfaceSample
     ReferenceMaterial Material{};
     SpectrumRgb Direct{};
     bool Hit = false;
+    uint32_t SurfaceToken = 0;
 };
 
 struct ReferenceImage
