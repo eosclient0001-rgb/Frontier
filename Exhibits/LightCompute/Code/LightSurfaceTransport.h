@@ -5,22 +5,10 @@
 
 namespace TransportReference
 {
-SpatialVector Add(SpatialVector A, SpatialVector B)
-{
-    return {A.X + B.X, A.Y + B.Y, A.Z + B.Z};
-}
-SpatialVector Mul(SpatialVector A, double B)
-{
-    return {A.X * B, A.Y * B, A.Z * B};
-}
-SpatialVector Sub(SpatialVector A, SpatialVector B)
-{
-    return Add(A, Mul(B, -1));
-}
-double Dot(SpatialVector A, SpatialVector B)
-{
-    return A.X * B.X + A.Y * B.Y + A.Z * B.Z;
-}
+SpatialVector Add(SpatialVector A, SpatialVector B) { return {A.X + B.X, A.Y + B.Y, A.Z + B.Z}; }
+SpatialVector Mul(SpatialVector A, double B) { return {A.X * B, A.Y * B, A.Z * B}; }
+SpatialVector Sub(SpatialVector A, SpatialVector B) { return Add(A, Mul(B, -1)); }
+double Dot(SpatialVector A, SpatialVector B) { return A.X * B.X + A.Y * B.Y + A.Z * B.Z; }
 SpatialVector Cross(SpatialVector A, SpatialVector B)
 {
     return {A.Y * B.Z - A.Z * B.Y, A.Z * B.X - A.X * B.Z, A.X * B.Y - A.Y * B.X};
@@ -30,14 +18,8 @@ SpatialVector Unit(SpatialVector A)
     double L = std::sqrt(Dot(A, A));
     return L > 0 ? Mul(A, 1 / L) : SpatialVector{0, 0, 1};
 }
-template <class T> SpatialVector Vector(const T& A)
-{
-    return {A[0], A[1], A[2]};
-}
-SpectrumRgb Colour(const std::array<float, 4>& A)
-{
-    return {A[0], A[1], A[2]};
-}
+template <class T> SpatialVector Vector(const T& A) { return {A[0], A[1], A[2]}; }
+SpectrumRgb Colour(const std::array<float, 4>& A) { return {A[0], A[1], A[2]}; }
 ReferenceMaterial Material(const LightComputeReceiver& R)
 {
     ReferenceMaterial M;
@@ -354,10 +336,13 @@ void ValidateSurfaceTransport(const char* Driver, const std::string& Shaders, Li
 }
 
 void ValidateTransportMotion(const char* Driver, const std::string& Shaders, const std::string& Directory,
-                             const std::string& Output)
+                             const std::string& Output,
+                             void (*AppendEmissive)(LightComputeArchive&) = nullptr)
 {
     auto First = LightComputeArchive::Load(Directory + "/VehicleMotion0.bin");
     TransportReference::Prepare(First, 16, 48, true);
+    if (AppendEmissive)
+        AppendEmissive(First);
     LightComputeSubmission History(Driver);
     History.Prepare(First, Shaders);
     LightComputeSubmission Exact(Driver);
@@ -366,9 +351,13 @@ void ValidateTransportMotion(const char* Driver, const std::string& Shaders, con
     {
         auto Scene = LightComputeArchive::Load(Directory + "/VehicleMotion" + std::to_string(Pose) + ".bin");
         TransportReference::Prepare(Scene, 16, 48, true);
-        auto Gold = Exact.Execute(Scene, 0, 16, 101 + Pose, 64, 0, true, true, 16, true);
+        if (AppendEmissive)
+            AppendEmissive(Scene);
+        auto Gold =
+            Exact.Execute(Scene, 0, 16, 101 + Pose, 64, 0, true, true, 16, true, AppendEmissive != nullptr);
         auto Current = Exact.PrimaryReceivers();
-        auto Image = History.Execute(Scene, 3, 16, 101 + Pose, 64, 7, false, true, 16, true);
+        auto Image = History.Execute(Scene, 3, 16, 101 + Pose, 64, 7, false, true, 16, true,
+                                     AppendEmissive != nullptr);
         auto Reused = History.PrimaryReceivers();
         for (size_t I = 0; I < Current.size(); ++I)
             Require(Current[I].ResidualSpecular == Reused[I].ResidualSpecular,
@@ -379,10 +368,11 @@ void ValidateTransportMotion(const char* Driver, const std::string& Shaders, con
         else
             Require(Counts[4] > 0 && Counts[5] > 0 && Counts[9] > 0,
                     "Moving transport reprojection not exercised");
-        std::cout << "TRANSPORT_MOTION pose=" << Pose << " accepted=" << Counts[4]
-                  << " rejected=" << Counts[5]
+        std::cout << (AppendEmissive ? "EMISSIVE_MOTION pose=" : "TRANSPORT_MOTION pose=") << Pose
+                  << " accepted=" << Counts[4] << " rejected=" << Counts[5]
                   << " current_indirect_equal=1 exact_rmse=" << ImageError(Image, Gold) << "\n";
-        WriteImage(Output + "/TransportMotion" + std::to_string(Pose) + ".ppm", Image, Scene.Width,
-                   Scene.Height);
+        WriteImage(Output + (AppendEmissive ? "/EmissiveMotion" : "/TransportMotion") + std::to_string(Pose) +
+                       ".ppm",
+                   Image, Scene.Width, Scene.Height);
     }
 }

@@ -5,6 +5,26 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 
 
+
+## Vulkan emissive-area sampling checkpoint — 2026-10-24
+
+- GitHub preservation verified before work: local/remote `3dfbc2d3` matched and the working tree was clean.
+- Explicit area/luminance sampling over 1,130 emissive triangles replaces hemisphere-hit emission only. Analytic
+  point/IES/spot/directional secondary shading and sky misses remain on the hemisphere route; visible emission
+  is unchanged. Both lighting paths remain; no emissive clustering or authored proxy-energy accounting claimed.
+- 225 native probes, 16 area draws: mean RGB error 7.2128e-9, max 1.36771e-6. Against independent 8,192-draw
+  native reference probes, emissive RMSE 0.206886 → 0.00906289 (**95.62% lower**). This is not equal-cost speedup,
+  a full-image quality statistic, or universal unbiasedness evidence.
+- Six moving poses preserve current indirect bitwise versus fresh evaluation. Geometry-CDF rebuilds do not
+  invalidate direct-light history; the changed analytic light at pose 3 still does. Probability ticks preserve
+  dim emitter support; invalid CDF entries are rejected; empty-emitter and disabled-environment cases pass.
+- Actual readbacks: `Exhibits/LightCompute/Images/EmissiveComparison.png` and `EmissiveMotion.png`. Coarse displaced
+  bright footprints are substantially removed; residual grain remains. Indirect filtering is not implemented.
+- Legacy exact/cluster/reservoir/history, native primary/cosine transport and new ASan/UBSan checks passed.
+  Device remains SwiftShader CPU type 4. RTX/GTX/Windows acceptance, glossy transport and GPU environment are open;
+  native Sun/stars/flare remain unchanged and Moon remains planned.
+- Detailed source/device/sampling scope and reproduction: `Exhibits/LightCompute/README.md`, `RunEmissive.sh`.
+
 ## Vulkan one-bounce diffuse transport checkpoint — 2026-10-24
 
 - `TraceSurfaceTransport` traces full-BVH secondary rays from Vulkan-generated camera surfaces. Secondary hits

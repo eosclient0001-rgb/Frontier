@@ -18,7 +18,7 @@ Sources += list((Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGr
 Sources += [Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Source' / P
             for P in ('MaterialSpecification.js', 'VehicleSpecification.js')]
 Products = list((Output / 'Images').glob('*.png')) + list((Output / 'Results').glob('*.txt'))
-Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json']
+Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json']
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()
@@ -42,12 +42,16 @@ Report = {'execution': 'actual Vulkan compute with shared Slang', 'device': Devi
           'atmosphere_cube_bake': 'native CPU SingleScattering, consumed by shader',
           'gpu_atmosphere_executed': False,
           'transport_native_probes': 901,
+          'gpu_emissive_area_sampling_executed': True,
+          'emissive_native_probes': 225,
+          'emissive_high_reference_samples': 8192,
           'windows_executed': False, 'vulkan_validation_layer_executed': False,
           'sources_sha256': Hashes(Sources), 'products_sha256': Hashes(Products),
           'scratch_sha256': Hashes(list((Root / '_ClaudeScratch/build/light-compute').glob('*.spv')) +
                                    [Root / '_ClaudeScratch/vehicle-reference/VehicleLightInput.bin',
                                     Root / '_ClaudeScratch/vehicle-primary/VehiclePrimary.bin',
-                                    Root / '_ClaudeScratch/light-compute/TransportScene.bin'] +
+                                    Root / '_ClaudeScratch/light-compute/TransportScene.bin',
+                                    Root / '_ClaudeScratch/light-compute/EmissiveScene.bin'] +
                                    list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*.bin')) +
                                    list((Root / '_ClaudeScratch/primary-motion').glob('VehicleMotion*.bin')))}
 (Output / 'Results/Manifest.json').write_text(json.dumps(Report, indent=2) + '\n')

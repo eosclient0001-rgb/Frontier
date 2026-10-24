@@ -48,10 +48,7 @@ float3 Unit(float3 P)
     float Squared = dot(P, P);
     return Squared > 0 ? P * rsqrt(Squared) : float3(0, 0, 1);
 }
-float Power(float3 C)
-{
-    return dot(C, float3(.2126, .7152, .0722));
-}
+float Power(float3 C) { return dot(C, float3(.2126, .7152, .0722)); }
 
 [shader("compute")][numthreads(64, 1, 1)] void AssignLightCells(uint3 Dispatch
                                                                 : SV_DispatchThreadID)
@@ -275,10 +272,7 @@ uint NextRandom(inout uint Bits)
     uint Word = ((Bits >> ((Bits >> 28u) + 4u)) ^ Bits) * 277803737u;
     return (Word >> 22u) ^ Word;
 }
-float RandomUnit(inout uint Bits)
-{
-    return float(NextRandom(Bits) >> 8) * (1.0 / 16777216.0);
-}
+float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 / 16777216.0); }
 
 [shader("compute")][numthreads(64, 1, 1)] void EvaluateLightReceivers(uint3 Dispatch
                                                                       : SV_DispatchThreadID)
@@ -744,7 +738,7 @@ float3 EnvironmentTexel(uint Face, int2 Pixel, uint Size, uint Offset)
 }
 float3 EnvironmentRadiance(float3 Direction)
 {
-    if (Extent.Primary.w == 0)
+    if ((Extent.Primary.w & 1u) == 0)
         return 0;
     float4 Map = CameraProjection(10);
     uint Size = uint(Map.y), Offset = uint(Map.x);
@@ -812,8 +806,7 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
     R.ExpectedDirect = asfloat(uint4(0x7fc00000));
     if (Index == 0xffffffffu)
     {
-        R.ResidualSpecular =
-            float4(Extent.Primary.w != 0 ? EnvironmentRadiance(Direction) : CameraProjection(10).xyz, 0);
+        R.ResidualSpecular = float4(EnvironmentRadiance(Direction), 0);
         Receivers[Pixel] = R;
         StoreHistory(15, Pixel, float4(-1, -1, 0, 0));
         InterlockedAdd(Counters[11], 1);
@@ -872,6 +865,40 @@ float3 DiffuseTransportResponse(SurfacePoint R, float3 Direction)
     float3 Fresnel = F0 + (1 - F0) * pow(1 - Cosine, 5);
     return (1 - Fresnel) * R.AlbedoIor.xyz * ((1 - Metallic) / 3.141592653589793);
 }
+float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
+{
+    uint Offset = uint(CameraProjection(10).z), Count = uint(Angles[Offset]);
+    if (Count == 0)
+        return 0;
+    float Draw = RandomUnit(Bits);
+    uint Low = 0, High = Count - 1;
+    while (Low < High)
+    {
+        uint Mid = (Low + High) / 2;
+        if (Draw < Angles[Offset + 1 + Mid * 4 + 3])
+            High = Mid;
+        else
+            Low = Mid + 1;
+    }
+    uint Entry = Offset + 1 + Low * 4;
+    FacetCorners F = Facets[uint(Angles[Entry])];
+    float Root = sqrt(RandomUnit(Bits)), V = RandomUnit(Bits);
+    float3 Position = F.A.xyz * (1 - Root) + F.B.xyz * (Root * (1 - V)) + F.C.xyz * (Root * V);
+    float3 Delta = Position - R.PositionHit.xyz;
+    float Squared = dot(Delta, Delta);
+    if (Squared < 1e-8)
+        return 0;
+    float3 Direction = Delta * rsqrt(Squared), Geometric = Unit(cross(F.B.xyz - F.A.xyz, F.C.xyz - F.A.xyz));
+    float Geometry = max(dot(R.NormalRoughness.xyz, Direction), 0) * abs(dot(Geometric, Direction));
+    if (Geometry == 0)
+        return 0;
+    float3 ShadowOrigin = R.PositionHit.xyz + R.NormalRoughness.xyz * .002, Segment = Position - ShadowOrigin;
+    float Length = length(Segment);
+    if (Length <= .004 || Occluded(ShadowOrigin, Segment / Length, Length - .002))
+        return 0;
+    return DiffuseTransportResponse(R, Direction) * F.Emissive.xyz *
+           (Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
+}
 [shader("compute")][numthreads(64, 1, 1)] void TraceSurfaceTransport(uint3 Dispatch
                                                                      : SV_DispatchThreadID)
 {
@@ -886,6 +913,7 @@ float3 DiffuseTransportResponse(SurfacePoint R, float3 Direction)
            Bitangent = cross(N, Tangent);
     uint Offset = uint(CameraProjection(8).w);
     float3 Sum = 0;
+    uint EmissiveBits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
     for (uint Sample = 0; Sample < Extent.Primary.z; ++Sample)
     {
         uint Base = Offset + Sample * 3;
@@ -904,7 +932,7 @@ float3 DiffuseTransportResponse(SurfacePoint R, float3 Direction)
         {
             InterlockedAdd(Counters[14], 1);
             SurfacePoint Bounce = FacetSurface(Index, Origin, Direction, Strike);
-            Incoming = Bounce.ResidualSpecular.xyz;
+            Incoming = (Extent.Primary.w & 2u) != 0 ? float3(0) : Bounce.ResidualSpecular.xyz;
             for (uint I = 0; I < Extent.Dimensions.y; ++I)
             {
                 float3 ToLight;
@@ -916,6 +944,8 @@ float3 DiffuseTransportResponse(SurfacePoint R, float3 Direction)
             }
         }
         Sum += DiffuseTransportResponse(R, Direction) * Incoming * 3.141592653589793;
+        if ((Extent.Primary.w & 2u) != 0)
+            Sum += SampleEmissiveFacet(R, EmissiveBits);
     }
     R.ResidualSpecular.xyz += Sum / Extent.Primary.z;
     Receivers[Pixel] = R;

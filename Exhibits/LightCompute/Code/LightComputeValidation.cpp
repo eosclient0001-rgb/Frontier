@@ -47,16 +47,18 @@ void Confirm(VkResult Result)
     F(DeviceWaitIdle)                                                                                        \
     F(CreateBuffer)                                                                                          \
     F(DestroyBuffer)                                                                                         \
-    F(GetBufferMemoryRequirements) F(AllocateMemory) F(FreeMemory) F(BindBufferMemory) F(MapMemory)          \
-        F(UnmapMemory) F(CreateDescriptorSetLayout) F(DestroyDescriptorSetLayout) F(CreateDescriptorPool)    \
-            F(DestroyDescriptorPool) F(AllocateDescriptorSets) F(UpdateDescriptorSets)                       \
-                F(CreatePipelineLayout) F(DestroyPipelineLayout) F(CreateShaderModule)                       \
-                    F(DestroyShaderModule) F(CreateComputePipelines) F(DestroyPipeline) F(CreateCommandPool) \
-                        F(DestroyCommandPool) F(AllocateCommandBuffers) F(BeginCommandBuffer)                \
-                            F(EndCommandBuffer) F(ResetCommandPool) F(CmdBindPipeline)                       \
-                                F(CmdBindDescriptorSets) F(CmdPushConstants) F(CmdDispatch)                  \
-                                    F(CmdPipelineBarrier) F(QueueSubmit) F(CreateFence) F(DestroyFence)      \
-                                        F(WaitForFences) F(ResetFences)
+    F(GetBufferMemoryRequirements)                                                                           \
+    F(AllocateMemory)                                                                                        \
+    F(FreeMemory)                                                                                            \
+    F(BindBufferMemory) F(MapMemory) F(UnmapMemory) F(CreateDescriptorSetLayout)                             \
+        F(DestroyDescriptorSetLayout) F(CreateDescriptorPool) F(DestroyDescriptorPool)                       \
+            F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreatePipelineLayout)                        \
+                F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule)                        \
+                    F(CreateComputePipelines) F(DestroyPipeline) F(CreateCommandPool) F(DestroyCommandPool)  \
+                        F(AllocateCommandBuffers) F(BeginCommandBuffer) F(EndCommandBuffer)                  \
+                            F(ResetCommandPool) F(CmdBindPipeline) F(CmdBindDescriptorSets)                  \
+                                F(CmdPushConstants) F(CmdDispatch) F(CmdPipelineBarrier) F(QueueSubmit)      \
+                                    F(CreateFence) F(DestroyFence) F(WaitForFences) F(ResetFences)
 struct BufferSpan
 {
     VkBuffer Buffer = VK_NULL_HANDLE;
@@ -212,10 +214,7 @@ struct LightComputeSubmission
             throw;
         }
     }
-    ~LightComputeSubmission()
-    {
-        Release();
-    }
+    ~LightComputeSubmission() { Release(); }
     LightComputeSubmission(const LightComputeSubmission&) = delete;
     LightComputeSubmission& operator=(const LightComputeSubmission&) = delete;
     void Release()
@@ -352,7 +351,10 @@ struct LightComputeSubmission
                         Poison.data(), sizeof(Poison));
         ConstructBuffer(2, Scene.Visibility.Enclosures);
         ConstructBuffer(3, PackedSurfaces(Scene));
-        ConstructBuffer(4, ProjectedAngles(Scene));
+        auto ProfileSamples = ProjectedAngles(Scene);
+        if (Scene.Camera[10][2] > 0)
+            ProfileSamples.resize(ProfileSamples.size() + Scene.Surfaces.size() * 4);
+        ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
         ConstructBuffer(6, nullptr, Scene.Receivers.size() * 16 * 16);
         ConstructBuffer(7, nullptr, 64);
@@ -459,28 +461,56 @@ struct LightComputeSubmission
             std::memcpy(static_cast<char*>(Buffers[1].Address) + I * sizeof(LightComputeReceiver) +
                             offsetof(LightComputeReceiver, ExpectedDirect),
                         Poison.data(), 16);
+        size_t RevisionAngles = Scene.Angles.size();
+        if (Scene.Camera[10][2] > 0)
+        {
+            double Offset = Scene.Camera[10][2];
+            Require(std::isfinite(Offset) && Offset < Scene.Angles.size() && std::floor(Offset) == Offset,
+                    "Invalid emissive CDF offset");
+            RevisionAngles = size_t(Offset);
+            double Count = Scene.Angles[RevisionAngles];
+            Require(std::isfinite(Count) && Count >= 0 && Count <= Scene.Surfaces.size() &&
+                        std::floor(Count) == Count &&
+                        RevisionAngles + 1 + size_t(Count) * 4 <= Scene.Angles.size(),
+                    "Invalid emissive CDF extent");
+            float Previous = 0;
+            for (size_t I = 0; I < size_t(Count); ++I)
+            {
+                const float* Entry = Scene.Angles.data() + RevisionAngles + 1 + I * 4;
+                Require(std::isfinite(Entry[0]) && Entry[0] >= 0 && Entry[0] < Scene.Surfaces.size() &&
+                            std::floor(Entry[0]) == Entry[0] && std::isfinite(Entry[1]) && Entry[1] > 0 &&
+                            std::isfinite(Entry[2]) && Entry[2] > 0 && std::isfinite(Entry[3]) &&
+                            Entry[3] > Previous && Entry[3] <= 1 &&
+                            std::abs((Entry[3] - Previous) - Entry[1]) < 1e-7,
+                        "Invalid emissive CDF entry");
+                Previous = Entry[3];
+            }
+            Require(Count == 0 || Previous == 1, "Emissive CDF is not normalized");
+        }
+        // 📝 Moving emissive geometry changes its CDF, not the analytic reservoirs' light/profile revision.
         bool Changed =
-            PreviousLights.size() != Scene.Lights.size() || PreviousAngles.size() != Scene.Angles.size();
+            PreviousLights.size() != Scene.Lights.size() || PreviousAngles.size() != RevisionAngles;
         if (!Changed)
         {
             Changed = (!Scene.Lights.empty() &&
                        std::memcmp(PreviousLights.data(), Scene.Lights.data(),
                                    Scene.Lights.size() * sizeof(LightComputeShape)) != 0) ||
-                      (!Scene.Angles.empty() &&
-                       std::memcmp(PreviousAngles.data(), Scene.Angles.data(), Scene.Angles.size() * 4) != 0);
+                      (RevisionAngles != 0 &&
+                       std::memcmp(PreviousAngles.data(), Scene.Angles.data(), RevisionAngles * 4) != 0);
         }
         if (Changed)
         {
             HistoryDirty = true;
             PreviousLights = Scene.Lights;
-            PreviousAngles = Scene.Angles;
+            PreviousAngles.assign(Scene.Angles.begin(), Scene.Angles.begin() + RevisionAngles);
         }
     }
     std::vector<std::array<float, 4>> Execute(const LightComputeArchive& Scene, uint32_t Mode,
                                               uint32_t Capacity = 16, uint32_t Seed = 1,
                                               uint32_t StackCapacity = 64, uint32_t Reconstruction = 7,
                                               bool ResetHistory = false, bool PrimaryVisibility = false,
-                                              uint32_t TransportSamples = 0, bool Environment = false)
+                                              uint32_t TransportSamples = 0, bool Environment = false,
+                                              bool EmissiveSampling = false)
     {
         Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
@@ -488,6 +518,9 @@ struct LightComputeSubmission
                 "Receiver dispatch exceeds device group limit");
         Require(uint64_t(Scene.Receivers.size()) * Scene.Lights.size() < UINT32_MAX,
                 "Compute counter extent exceeds uint32");
+        Require(!EmissiveSampling || (PrimaryVisibility && TransportSamples > 0 &&
+                                      std::isfinite(Scene.Camera[10][2]) && Scene.Camera[10][2] > 0),
+                "Area emission requires primary transport and a valid distribution");
         Upload(Scene);
         ComputeExtent Extent;
         Extent.Dimensions = {uint32_t(Scene.Receivers.size()), uint32_t(Scene.Lights.size()), Capacity, Mode};
@@ -498,7 +531,7 @@ struct LightComputeSubmission
         Extent.Reconstruction = {Reconstruction & 1 ? 1u : 0u, Reconstruction & 2 ? 1u : 0u,
                                  Reconstruction & 4 ? 1u : 0u, 0};
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), TransportSamples,
-                          Environment ? 1u : 0u};
+                          (Environment ? 1u : 0u) | (EmissiveSampling ? 2u : 0u)};
         if (PrimaryVisibility)
         {
             // 📝 No uploaded CPU surface channel may supply primary geometry or
@@ -807,6 +840,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "LightPrimaryValidation.h"
 #include "LightPrimaryMotion.h"
 #include "LightSurfaceTransport.h"
+#include "EmissiveFacetQuadrature.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -847,6 +881,17 @@ int main(int Count, char** Arguments)
         if (Count == 7 && std::string(Arguments[5]) == "--transport-motion")
         {
             ValidateTransportMotion(Arguments[1], Arguments[2], Arguments[6], Arguments[4]);
+            return 0;
+        }
+        if (Count == 6 && std::string(Arguments[5]) == "--emissive-only")
+        {
+            ValidateEmissiveQuadrature(Arguments[1], Arguments[2], Scene, Arguments[4]);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[5]) == "--emissive-motion")
+        {
+            ValidateTransportMotion(Arguments[1], Arguments[2], Arguments[6], Arguments[4],
+                                    &EmissiveQuadrature::AppendDistribution);
             return 0;
         }
         auto All = Compute.Execute(Scene, 0);

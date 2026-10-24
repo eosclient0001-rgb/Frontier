@@ -36,4 +36,4 @@ python3 Exhibits/LightCompute/Code/PrimaryMotionImages.py
 "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/vehicle-primary/VehiclePrimary.bin _ClaudeScratch/light-compute --transport-only | tee Exhibits/LightCompute/Results/Transport.txt
 "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --transport-motion _ClaudeScratch/primary-motion | tee Exhibits/LightCompute/Results/TransportMotion.txt
 python3 Exhibits/LightCompute/Code/TransportImages.py
-python3 Exhibits/LightCompute/Code/Evidence.py
+bash Exhibits/LightCompute/RunEmissive.sh

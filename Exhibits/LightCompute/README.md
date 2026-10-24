@@ -5,6 +5,71 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Emissive triangle importance sampling — executed
+
+![Same ControlVehicle: hemisphere emission left, explicit emissive-area sampling right](Images/EmissiveComparison.png)
+
+![Six moving Vulkan readbacks with current emissive-area lighting](Images/EmissiveMotion.png)
+
+The secondary-emission part of the diffuse integral now has a dedicated estimator. A CPU geometry pass builds
+a cumulative distribution over **1,130 positive-area emissive triangles**, weighted by world-space area times
+RGB luminance. Vulkan selects a triangle, samples its area uniformly, traces a full-BVH visibility segment,
+and evaluates the diffuse response with the triangle probability, area, inverse-square distance and receiver/
+emitter cosine factors. Emission is two-sided to match the existing face-forward surface interpretation.
+Primary visible emission remains separate and unchanged.
+
+The hemisphere route still evaluates analytic point/IES/spot/directional lighting at secondary hits and the
+atmosphere cube on misses. When explicit emitter sampling is enabled, secondary emission is omitted from the
+hemisphere route, so it is not accumulated twice. This is a **partition of lighting contributions**, not MIS,
+not a removal of analytic lights, and not resolution of authored analytic-proxy/emissive energy accounting.
+A cumulative table is sufficient for this fixture; no new emissive spatial clustering is required or claimed.
+
+| Verified check | Observed result |
+|---|---|
+| Samples | 16 hemisphere directions plus 16 area-emission draws per receiver |
+| Independent native same-draw probes | 225 distributed surface receivers; mean RGB error 7.2128e-9; max 1.36771e-6 |
+| Higher-sample native reference | Independent seed 8171, 8,192 area draws per probe |
+| Old hemisphere emission RMSE versus that reference | 0.206886 |
+| New area-emission RMSE versus that reference | 0.00906289: **95.62% lower** |
+| Six moving poses | Current indirect/emission equals fresh evaluation bitwise at every pixel |
+| Moving direct history | Valid acceptance survives CDF rebuilds; light change at pose 3 resets it |
+| Empty emitter set | Bitwise equal to the hemisphere route with emission absent |
+| Disabled environment | Exactly matches zero-environment evaluation; no cube metadata leaks into misses |
+| Invalid zero probability | Rejected on CPU before Vulkan dispatch |
+| ASan/UBSan | New estimator, native reference and safety checks passed; external-driver leak detection off |
+
+This error reduction is **probe-only, one fixture and seed 71**, not a full-image quality statistic, universal
+unbiasedness proof or equal-cost speedup. The higher-sample reference is itself a finite Monte Carlo estimate.
+Explicit area samples add visibility work on top of the retained hemisphere routes. The comparison deliberately
+isolates transported emission from analytic and environment lighting, and excludes primary visible emission.
+Native area integration independently evaluates geometry, barycentric points, diffuse response and shadow BVH;
+it shares the uploaded probability table and random integer sequence to check matching GPU draws.
+
+The float CDF reserves one of 2²⁴ probability ticks for every positive-area emitter, then distributes the
+remaining ticks by emitted power. Thus dim triangles retain nonzero probability rather than silently vanishing
+through float rounding. Every entry's facet bounds, positive area/PDF, CDF monotonicity and normalization are
+checked before dispatch. The profile buffer reserves enough span for moving CDFs. Direct-light revision checks
+compare the exact light/profile/environment prefix, excluding the appended geometry-dependent emissive CDF;
+per-pixel direct surface compatibility and current indirect evaluation remain active.
+
+**Visual result:** the displaced bright illumination footprints are substantially removed; residual sampling
+grain remains. This phase does **not** add indirect temporal accumulation or denoising, glossy transport,
+GPU atmosphere/clouds or Moon rendering. Native Sun/flare/stars remain untouched. The executed device is still
+**SwiftShader CPU type 4**, not physical RTX/GTX or Windows acceptance.
+
+Focused reproduction (about a long software-rendering test run, not interactive frame timing):
+
+```bash
+# Set PREPARE=1 on a machine needing the pinned ignored Vulkan tools.
+bash Exhibits/LightCompute/RunEmissive.sh
+```
+
+The full `Run.sh` now includes these checks after prior regressions. `Run.ps1` includes corresponding commands
+but was not executed on Windows. `Results/EmissiveArea.txt` preserves the final sanitizer-executed numeric and
+safety checks; `EmissiveRegression.txt` retains the rerun exact/cluster/reservoir/history regression, and
+`EmissiveSanitizers.txt` identifies the sanitizer configuration. Original cosine transport and primary native
+checks were also rerun. The ignored `EmissiveScene.bin`, including its CDF, is hashed in the manifest.
+
 ## One-bounce diffuse transport and atmosphere cube — executed
 
 ![Direct plus sky left; one diffuse bounce added right](Images/TransportComparison.png)
