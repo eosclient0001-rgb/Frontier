@@ -47,48 +47,6 @@ struct PreparedTri
     uint32_t      Mesh = 0;
 };
 
-// Möller–Trumbore; returns ray parameter or -1.
-double RayTriangle(SpatialVector Origin, SpatialVector Direction, const PreparedTri& Tri) noexcept
-{
-    const SpatialVector E1 = Sub(Tri.V[1], Tri.V[0]);
-    const SpatialVector E2 = Sub(Tri.V[2], Tri.V[0]);
-    const SpatialVector P  = Cross(Direction, E2);
-    const double        Determinant = Dot(E1, P);
-    if (std::abs(Determinant) < 1e-14)
-    {
-        return -1.0;
-    }
-    const double        Inv = 1.0 / Determinant;
-    const SpatialVector T   = Sub(Origin, Tri.V[0]);
-    const double        U   = Dot(T, P) * Inv;
-    if (U < 0.0 || U > 1.0)
-    {
-        return -1.0;
-    }
-    const SpatialVector Q = Cross(T, E1);
-    const double        V = Dot(Direction, Q) * Inv;
-    if (V < 0.0 || U + V > 1.0)
-    {
-        return -1.0;
-    }
-    const double Distance = Dot(E2, Q) * Inv;
-    return Distance > 0.0 ? Distance : -1.0;
-}
-
-bool Occluded(const std::vector<PreparedTri>& Triangles, SpatialVector Origin, SpatialVector Direction,
-              double MaxDistance) noexcept
-{
-    for (const PreparedTri& Tri : Triangles)
-    {
-        const double T = RayTriangle(Origin, Direction, Tri);
-        if (T > 0.0 && T < MaxDistance)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 // Unshadowed direct contribution of one light at a surface point (Lambert).
 SpectrumRgb LightContribution(const ReferenceLight& Light, SpatialVector Point, SpatialVector Normal,
                               SpatialVector View, const ReferenceMaterial& Material,
@@ -251,6 +209,7 @@ void ReferenceRenderer::SetScene(ReferenceScene Scene)
 {
     Scene_ = std::move(Scene);
     Prepared_.clear();
+    std::vector<std::array<SpatialVector, 3>> VisibilityFacets;
     for (const ReferenceMesh& Mesh : Scene_.Meshes)
     {
         PreparedMesh Prepared;
@@ -270,6 +229,7 @@ void ReferenceRenderer::SetScene(ReferenceScene Scene)
             const SpatialVector A = Prepared.WorldGeometry.Vertices[Indices[T]];
             const SpatialVector B = Prepared.WorldGeometry.Vertices[Indices[T + 1]];
             const SpatialVector C = Prepared.WorldGeometry.Vertices[Indices[T + 2]];
+            VisibilityFacets.push_back({A, B, C});
             const SpatialVector Face = Cross(Sub(B, A), Sub(C, A));
             for (uint32_t K = 0; K < 3; ++K)
             {
@@ -283,6 +243,7 @@ void ReferenceRenderer::SetScene(ReferenceScene Scene)
         (void)Prepared.Nesting.Build(Prepared.WorldGeometry, 64);
         Prepared_.push_back(std::move(Prepared));
     }
+    Visibility_.Build(std::move(VisibilityFacets));
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -588,7 +549,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                 SpatialVector Dir; double Dist;
                 SpectrumRgb F = LightContribution(Scene_.Lights[Light], Point, Normal, View, Material, Dir, Dist);
                 const SpatialVector Origin = Add(Point, Mul(Normal, 2e-3));
-                if (Occluded(Visible, Origin, Dir, Dist - 4e-3))
+                if (Visibility_.Occluded(Origin, Dir, 0.0, Dist - 4e-3))
                 {
                     F = {};
                 }
@@ -660,7 +621,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                         SpectrumRgb F = LightContribution(Scene_.Lights[R.Sample().Candidate], WorldPos[P],
                                                           WorldNormal[P], Normalised(Sub(Camera.Position, WorldPos[P])), MaterialBuffer[P], Dir, Dist);
                         const SpatialVector Origin = Add(WorldPos[P], Mul(WorldNormal[P], 2e-3));
-                        if (Occluded(Visible, Origin, Dir, Dist - 4e-3))
+                        if (Visibility_.Occluded(Origin, Dir, 0.0, Dist - 4e-3))
                         {
                             F = {};
                         }

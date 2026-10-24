@@ -89,6 +89,9 @@ The concrete lower-bound finding is five missing recent exhibit directories plus
 
 ## Checkpoint status
 
-Source was restored and staged locally. No new commit or push was made without permission, and no Actions run was
-started. The recovered source remains backed up at the upstream revision above. A recovery checkpoint containing
-this audit should be committed and pushed with approval; a push can trigger the networking workflow.
+Restored source and this audit were committed and pushed after explicit user approval in `12344d0b`,
+to `eosclient0001-rgb/Frontier`, branch `arena/bd3633ff-frontier`. The `[skip ci]` marker avoids an unrequested
+Actions run. The original source also remains available at the upstream revision above.
+
+The later `Exhibits/VehicleReference` rerender and shadow repair are new work, not recovered bytes from the
+missing Vulkan implementation. The missing-file findings above describe the recovery inspection before that work.

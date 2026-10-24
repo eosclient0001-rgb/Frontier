@@ -242,3 +242,21 @@ Surface-card/distance-field approximations remain deliberate quality choices, no
 - Reproducible light-bin comparison: `Exhibits/RendererPlanning/Code/CompareReferences.mjs` and its JSON result.
 - No new native renderer, shader, GUI renderer controls or format migration was implemented in this planning turn.
 - No hardware timing, Windows/Vulkan execution, Dawn rerun, native scene capture, commit, push or Actions is claimed.
+
+
+## Native ControlVehicle rerender after recovery — 2026-10-24
+
+The recovered project and audit are saved in GitHub checkpoint `12344d0b` on the session branch.
+`Exhibits/VehicleReference` newly renders the original 25,068-facet ControlVehicle in native C++, with the
+original material table, Sun, atmospheric sky, clouds and three rigid poses. This is a CPU reference run,
+not recovery of the missing Vulkan/Slang implementation or a physical GPU result.
+
+Continued renderer work fixes off-camera shadow casters: scene-wide `TriangleVisibilitySpace` replaces
+primary-frustum-only shadow geometry. The old renderer fails the targeted off-camera regression; the repair
+passes it, 8,192 exhaustive long-double interval comparisons and the existing 18 renderer checks.
+The recovered illumination/indirect/environment suites also pass 188/188 checks.
+
+Next integration remains the native Vulkan/Slang execution route, with scene-wide geometry visibility and
+independent references retained. The new CPU capture does not re-establish the former approximately 60%
+integrated-renderer completion claim. GPU execution, moving history across poses, indirect vehicle baking and
+Windows runtime still require their own evidence. Moon requirements remain in `Documentation/EnvironmentTodo.md`.

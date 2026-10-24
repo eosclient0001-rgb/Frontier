@@ -35,6 +35,8 @@
   "native_vulkan_port_recovered": false,
   "loss_percentage": null,
   "scope": "Current heads in both named repositories; selected paths also checked in restored and earlier pinned upstream histories. Not an exhaustive search of every historical or deleted GitHub commit.",
-  "local_checkpoint_commit_created": false,
-  "remote_operations": "Read/fetch only; no push, dispatch, rerun or PR mutation."
+  "local_checkpoint_commit_created": true,
+  "remote_operations": "Source fetched; checkpoint committed and pushed after user approval with [skip ci]. No dispatch, rerun or PR mutation.",
+  "checkpoint_commit": "12344d0b",
+  "checkpoint_remote": "eosclient0001-rgb/Frontier:arena/bd3633ff-frontier"
 }

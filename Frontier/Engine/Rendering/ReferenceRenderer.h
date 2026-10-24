@@ -25,6 +25,7 @@
 #include "FogMedium.h"
 #include "SurfaceCards.h"
 #include "VisibilityCull.h"
+#include "TriangleVisibilitySpace.h"
 
 #include <cstdint>
 #include <vector>
@@ -148,6 +149,7 @@ class ReferenceRenderer
         ReferenceMaterial         Material{};
         SpectrumRgb                Emissive{};
     };
+    TriangleVisibilitySpace     Visibility_;
     ReferenceScene              Scene_;
     std::vector<PreparedMesh>   Prepared_;
     TransmittanceLut            AtmosphereLut_;
