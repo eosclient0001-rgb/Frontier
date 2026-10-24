@@ -234,6 +234,20 @@ int main()
             Near(All.Pixels[I].G, Cluster.Pixels[I].G);
             Near(All.Pixels[I].B, Cluster.Pixels[I].B);
         }
+        auto SamplesSettings = Settings;
+        SamplesSettings.StoreSurfaceSamples = true;
+        auto Samples = Renderer.Render(Camera, SamplesSettings);
+        Require(ReferenceImageHash(Samples) == ReferenceImageHash(All), "Surface export changed pixels");
+        Require(Samples.SurfaceSamples.size() == Samples.Pixels.size(), "Surface export extent mismatch");
+        uint32_t SampleHits = 0;
+        for (const auto& S : Samples.SurfaceSamples)
+            SampleHits += S.Hit;
+        Require(SampleHits == Samples.Stats.SurfacePixels, "Surface export lost hits");
+        SamplesSettings.Denoise = true;
+        Reject([&] { (void)Renderer.Render(Camera, SamplesSettings); });
+        SamplesSettings.Denoise = false;
+        SamplesSettings.AccumulationFrames = 2;
+        Reject([&] { (void)Renderer.Render(Camera, SamplesSettings); });
         Settings.LightCellCapacity = 1;
         auto OverflowImage = Renderer.Render(Camera, Settings);
         Require(OverflowImage.Stats.LightFallbackQueries > 0, "No rendered overflow fallback");

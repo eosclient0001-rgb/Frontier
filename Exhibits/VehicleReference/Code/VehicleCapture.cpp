@@ -3,6 +3,7 @@
 ==========================================================================================================================================*/
 // 🧩 Authored ControlVehicle archives and material records rendered through the native CPU reference path.
 
+#include "../../LightCompute/Code/LightComputeFormat.h"
 #include "Engine/Rendering/ReferenceRenderer.h"
 #include <array>
 #include <cmath>
@@ -88,8 +89,10 @@ int main(int Count, char** Arguments)
 {
     try
     {
-        if (Count != 2 && !(Count == 3 && std::string(Arguments[2]) == "--clustered-lights"))
-            throw std::runtime_error("Usage: VehicleCapture output-directory [--clustered-lights]");
+        if (Count != 2 && !(Count == 3 && (std::string(Arguments[2]) == "--clustered-lights" ||
+                                           std::string(Arguments[2]) == "--vulkan-input")))
+            throw std::runtime_error(
+                "Usage: VehicleCapture output-directory [--clustered-lights|--vulkan-input]");
         std::filesystem::path Output = Arguments[1];
         std::filesystem::create_directories(Output);
         std::ifstream                  Table("_ClaudeScratch/vehicle-reference/Materials.txt");
@@ -106,12 +109,14 @@ int main(int Count, char** Arguments)
         if (Materials.size() != 86)
             throw std::runtime_error("Expected 86 authored material records");
         const bool Analytic = Count == 3;
-        for (uint32_t Capture = 0; Capture < (Analytic ? 2u : 6u); ++Capture)
+        const bool ComputeInput = Count == 3 && std::string(Arguments[2]) == "--vulkan-input";
+        for (uint32_t Capture = 0; Capture < (ComputeInput ? 1u : (Analytic ? 2u : 6u)); ++Capture)
         {
             const uint32_t               Pose         = Analytic ? 0 : Capture % 3;
             const bool                   WithDistance = !Analytic && Capture >= 3;
-            const std::string            Stem = Analytic ? (Capture == 0 ? "AnalyticAll" : "AnalyticCluster")
-                                                         : (WithDistance ? "Distance" : "Vehicle");
+            const std::string Stem = ComputeInput ? "VulkanInput"
+                                     : Analytic   ? (Capture == 0 ? "AnalyticAll" : "AnalyticCluster")
+                                                  : (WithDistance ? "Distance" : "Vehicle");
             const double                 θ    = Pose * .45;
             ReferenceScene               Scene;
             std::array<ReferenceMesh, 2> Ground;
@@ -251,6 +256,7 @@ int main(int Count, char** Arguments)
                           << std::endl;
             }
             ReferenceRenderer Renderer;
+            const auto ComputeScene = ComputeInput ? Scene : ReferenceScene{};
             Renderer.SetScene(std::move(Scene));
             CullCamera Camera;
             Camera.Position = {8, -9, 4};
@@ -285,7 +291,14 @@ int main(int Count, char** Arguments)
                 Settings.AccumulationFrames = 1;
                 Settings.SunIrradiance      = {.2, .22, .3};
             }
+            if (ComputeInput)
+            {
+                Settings.Denoise = false;
+                Settings.StoreSurfaceSamples = true;
+            }
             const auto Image = Renderer.Render(Camera, Settings);
+            if (ComputeInput)
+                PackLightCompute(ComputeScene, Image).Save((Output / "VehicleLightInput.bin").string());
             if (!Image.Stats.SurfacePixels || !std::isfinite(Image.Stats.MeanLuminance))
                 throw std::runtime_error("Vehicle capture is empty or nonfinite");
             for (auto Pixel : Image.Pixels)

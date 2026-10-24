@@ -32,6 +32,22 @@ class CandelaDistribution
     }
 
   public:
+    const std::vector<double>& VerticalAngles() const
+    {
+        return Vertical;
+    }
+    const std::vector<double>& HorizontalAngles() const
+    {
+        return Horizontal;
+    }
+    const std::vector<double>& CandelaSamples() const
+    {
+        return Candela;
+    }
+    double PeakCandela() const
+    {
+        return Peak;
+    }
     bool Loaded() const
     {
         return Peak > 0;

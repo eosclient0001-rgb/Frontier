@@ -344,6 +344,14 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
         return Image;
     }
 
+    if (Settings.StoreSurfaceSamples)
+    {
+        if (!Settings.ExhaustiveLights || Settings.AccumulationFrames != 1 || Settings.Denoise ||
+            Settings.FogEnabled)
+            throw std::runtime_error(
+                "Surface samples require one exact unfiltered, unfogged lighting evaluation");
+        Image.SurfaceSamples.resize(PixelCount);
+    }
     const double AltitudeKm = std::max(Camera.Position.Z, 0.0) / 1000.0;
     const SpatialVector PlanetObserver{0.0, 0.0, Settings.Atmosphere.GroundRadiusKm + AltitudeKm};
     if (Settings.AtmosphereEnabled && !AtmosphereLutBaked_)
@@ -722,6 +730,8 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                                      Material.Albedo.B * (1.0 - Material.Metallic) * BestB / Pi});
             }
 
+            if (Settings.StoreSurfaceSamples)
+                Image.SurfaceSamples[P] = {Point, Normal, View, Material, Direct, true};
             DirectColour[P]   = Direct;
             ResidualColour[P] = AddRgb(Indirect, EmissiveBuffer[P]);
             FrameColour[P]    = AddRgb(Direct, ResidualColour[P]);

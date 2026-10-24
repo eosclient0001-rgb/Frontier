@@ -80,6 +80,53 @@ class TriangleVisibilitySpace
     }
 
   public:
+    struct FloatEnclosure
+    {
+        std::array<float, 4> Minimum{}, Maximum{};
+        std::array<uint32_t, 4> Links{};
+    };
+    struct FloatFacet
+    {
+        std::array<float, 4> A{}, B{}, C{};
+    };
+    struct FloatAtlas
+    {
+        std::vector<FloatEnclosure> Enclosures;
+        std::vector<FloatFacet> Corners;
+    };
+    FloatAtlas PackFloat32() const
+    {
+        FloatAtlas Atlas;
+        for (const auto& Region : Bounds)
+        {
+            FloatEnclosure Packed;
+            for (uint32_t Axis = 0; Axis < 3; ++Axis)
+            {
+                Packed.Minimum[Axis] =
+                    std::nextafter(float(Region.Minimum[Axis]), -std::numeric_limits<float>::infinity());
+                Packed.Maximum[Axis] =
+                    std::nextafter(float(Region.Maximum[Axis]), std::numeric_limits<float>::infinity());
+                if (!std::isfinite(Packed.Minimum[Axis]) || !std::isfinite(Packed.Maximum[Axis]))
+                    throw std::runtime_error("Facet bounds exceed float32 range");
+            }
+            Packed.Links = {Region.Count ? Region.First : Region.Lower,
+                            Region.Count ? Region.Count : Region.Upper, Region.Count ? 1u : 0u, 0u};
+            Atlas.Enclosures.push_back(Packed);
+        }
+        for (auto Index : Order)
+        {
+            FloatFacet Packed;
+            for (uint32_t Corner = 0; Corner < 3; ++Corner)
+            {
+                const auto P = Facets[Index][Corner];
+                auto& Destination = Corner == 0 ? Packed.A : Corner == 1 ? Packed.B : Packed.C;
+                Destination = {float(P.X), float(P.Y), float(P.Z), 0};
+            }
+            Atlas.Corners.push_back(Packed);
+        }
+        return Atlas;
+    }
+
     struct TriangleStrike
     {
         bool Hit = false;

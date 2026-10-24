@@ -294,3 +294,18 @@ Independent membership probes, fresh-RIS statistical comparison, IES/spot checks
 4/4 CTest targets, 188 recovered core checks and focused sanitizers pass. Six prior vehicle/distance captures
 were rerun with unchanged controls. Four-frame static reuse is finite, not a motion-history correctness proof.
 The native Slang/Vulkan, RTX/BVH, moving-history/filtering and Windows/device acceptance phase remains outstanding.
+
+## Executed Vulkan analytic lighting — 2026-10-24
+
+`Exhibits/LightCompute` now executes the shared `LightInfluence.slang` through real Vulkan compute on SwiftShader
+CPU device type 4. It builds conservative light cells and evaluates point/spot/Type-C profile lighting, GGX,
+full-scene triangle-BVH shadow visibility and fresh RIS. Native primary raster and residual sky/indirect/emissive
+lighting remain CPU inputs. This is not the production editor viewport or a complete GPU renderer.
+
+The original ControlVehicle matches the double-precision native reference to maximum linear RGB error 6.44028e-5;
+183 display pixels differ by one code step. Vulkan global/clustered/forced-capacity output buffers are identical.
+The 97-light/256-seed sampling reference, forced triangle-stack fallback and offscreen caster checks pass.
+Compiled Slang, explicit device identity, pinned dependencies, actual readbacks and source hashes are retained.
+No physical GPU, hardware RT, GPU temporal/spatial reuse, moving history, GPU filtering or Windows execution is
+claimed. Next integrate GPU reservoirs/reprojection/filtering with independent exact references; preserve the
+hardware ray-query and shader triangle-BVH routes as explicit later device acceptance requirements.

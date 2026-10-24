@@ -11,6 +11,7 @@ Sources += [Pathname for Pathname in Exhibit.rglob('*') if Pathname.is_file() an
 Archive = Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds'
 Sources += list((Archive / 'Archive').glob('ControlVehicle*.facet'))
 Sources += [Archive / 'Source/MaterialSpecification.js', Archive / 'Source/VehicleSpecification.js']
+Sources += [Root / 'Exhibits/LightCompute/Code/LightComputeFormat.h']
 Products = list((Exhibit / 'Capture').glob('*.png')) + list(Exhibit.glob('*Results.txt'))
 Products += [Exhibit / 'RegressionBefore.txt', Exhibit / 'DistanceImageResults.json']
 def Hashes(Paths):

@@ -119,6 +119,7 @@ struct ReferenceRenderSettings
     uint32_t EnvironmentSamples = 8;    // deterministic cosine/GGX MIS samples per proposal component
     uint32_t AccumulationFrames = 4;    // noisy frames fed to the SVGF temporal history
     bool     Denoise            = true;
+    bool StoreSurfaceSamples = false;
     double   CutErrorPx         = 1.0;  // [px] cluster cut budget
     uint64_t Seed               = 1;
 
@@ -146,12 +147,22 @@ struct ReferenceRenderStats
     double   MeanEnvironmentIbl   = 0.0;   // surface pixels only; mean linear luminance before SVGF
 };
 
+// Optional exact-reference surface inputs for independently executed lighting comparisons.
+struct ReferenceSurfaceSample
+{
+    SpatialVector Position{}, Normal{}, View{};
+    ReferenceMaterial Material{};
+    SpectrumRgb Direct{};
+    bool Hit = false;
+};
+
 struct ReferenceImage
 {
     uint32_t                 Width  = 0;
     uint32_t                 Height = 0;
     std::vector<SpectrumRgb> Pixels;   // linear HDR, row-major
     ReferenceRenderStats     Stats;
+    std::vector<ReferenceSurfaceSample> SurfaceSamples;
 };
 
 //------------------------------------------------------------------------------------------------------------------------

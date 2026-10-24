@@ -18,6 +18,7 @@ Sources += [Root / 'Exhibits/RendererPlanning/Code/CompareReferences.mjs']
 Archive = Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds'
 Sources += list((Archive / 'Archive').glob('ControlVehicle*.facet'))
 Sources += [Archive / 'Source/MaterialSpecification.js', Archive / 'Source/VehicleSpecification.js']
+Sources += [Root / 'Exhibits/LightCompute/Code/LightComputeFormat.h']
 Products = list(Output.glob('*Results.txt')) + list((Output / 'Capture').glob('*.png'))
 Products += [Output / 'ImageResults.json']
 def Hashes(Paths):
