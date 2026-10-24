@@ -275,3 +275,22 @@ Bright reflections remain visibly noisy at the current sampling rate; estimator 
 and geometry-light proposal sampling need validation before quality sign-off. Vulkan/Slang integration,
 physical GPU execution, motion history across poses and Windows runtime are still separate acceptance work.
 All source, tests and native proof must be committed and pushed to the session branch with `[skip ci]`.
+
+## Conservative native analytic clustering — 2026-10-24
+
+Both pinned prototypes cluster analytic lights; no distinct native emissive-mesh clustering implementation was
+found. A drops excess cell assignments, while B retains its bounded 32-light set. Both use synthetic angular
+profiles rather than importing measured IES. Keep the pinned references and existing emissive transport.
+
+`LightInfluenceSpace` now supplies conservative native RIS candidates with global reservoir IDs, normalized local
+proposal mass and exhaustive overflow/outside-grid fallback. Point, oriented spot and an explicit Type-C LM-63
+subset execute in the CPU reference. Profiles are relative-peak intensity shapes, not automatic lumen calibration;
+the test fixture is synthetic. Separate mesh-emitter clustering is optional future area-emitter sampling, and a
+shared-fixture double-counting policy is not supplied by simply retaining both emission and analytic proxies.
+
+`Exhibits/ClusteredLighting` contains the audit, native tests and matched 36-light ControlVehicle captures:
+identical display RGB, 8,107,704 versus 2,682,703 candidate-list visits. This is no GPU timing or speedup claim.
+Independent membership probes, fresh-RIS statistical comparison, IES/spot checks, inactive-proxy emission,
+4/4 CTest targets, 188 recovered core checks and focused sanitizers pass. Six prior vehicle/distance captures
+were rerun with unchanged controls. Four-frame static reuse is finite, not a motion-history correctness proof.
+The native Slang/Vulkan, RTX/BVH, moving-history/filtering and Windows/device acceptance phase remains outstanding.

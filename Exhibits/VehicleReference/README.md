@@ -102,3 +102,10 @@ bounds establish GPU precision or Vulkan execution.
 **Quality limit:** bright, small emissive surfaces produce noisy low-sample reflections. This phase demonstrates
 actual secondary geometry/radiance transport, not completed reflection filtering or emitter-importance sampling.
 Sky/cloud appearance and the deferred Moon plan are unchanged.
+
+## Analytic-light selection proof
+
+`../ClusteredLighting` reuses this native vehicle importer for matched all-light/clustered captures with point,
+spot and an explicit LM-63 profile. `VehicleCapture output-directory --clustered-lights` selects that two-image
+fixture without changing the six default vehicle/distance controls. See its README for exact-image, fresh-RIS,
+overflow and profile checks; neither exhibit claims GPU execution.

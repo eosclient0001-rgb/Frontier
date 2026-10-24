@@ -53,27 +53,67 @@ SpectrumRgb LightContribution(const ReferenceLight& Light, SpatialVector Point, 
                               SpatialVector View, const ReferenceMaterial& Material,
                               SpatialVector& OutDirection, double& OutDistance) noexcept
 {
-    double Attenuation = 1.0;
+    const auto        Arrival     = ReferenceLightArrival(Light, Point, OutDirection, OutDistance);
+    const double NdotL = std::max(Dot(Normal, OutDirection), 0.0);
+    const SpectrumRgb Brdf = EvaluateReferenceBrdf(Material, Normal, View, OutDirection);
+    const double      Attenuation = Light.Kind == ReferenceLight::Kind::Directional
+                                        ? 1.0
+                                        : 1.0 / std::max(OutDistance * OutDistance, 1e-6);
+    if (Light.Active && Light.Reach == 0 && Light.Kind != ReferenceLight::Kind::Spot && !Light.Photometry)
+    {
+        const double Scale = NdotL * Attenuation;
+        return {Brdf.R * Light.Radiance.R * Scale, Brdf.G * Light.Radiance.G * Scale,
+                Brdf.B * Light.Radiance.B * Scale};
+    }
+    return {Brdf.R * Arrival.R * NdotL, Brdf.G * Arrival.G * NdotL, Brdf.B * Arrival.B * NdotL};
+}
+
+} // namespace
+
+SpectrumRgb ReferenceLightArrival(const ReferenceLight& Light, SpatialVector Point,
+                                  SpatialVector& OutDirection, double& OutDistance) noexcept
+{
     if (Light.Kind == ReferenceLight::Kind::Directional)
     {
         OutDirection = Light.Vector;
         OutDistance  = 1e30;
+        return Light.Active ? Light.Radiance : SpectrumRgb{};
     }
-    else
+    const SpatialVector Delta{Light.Vector.X - Point.X, Light.Vector.Y - Point.Y, Light.Vector.Z - Point.Z};
+    OutDistance  = Length(Delta);
+    OutDirection = OutDistance > 0 ? Mul(Delta, 1 / OutDistance) : SpatialVector{0, 0, 1};
+    if (!Light.Active || (Light.Reach > 0 && OutDistance >= Light.Reach))
+        return {};
+    double Angular = 1;
+    if (Light.Kind == ReferenceLight::Kind::Spot || Light.Photometry)
     {
-        const SpatialVector Delta = Sub(Light.Vector, Point);
-        OutDistance               = Length(Delta);
-        OutDirection              = OutDistance > 0.0 ? Mul(Delta, 1.0 / OutDistance) : SpatialVector{0, 0, 1};
-        Attenuation               = 1.0 / std::max(OutDistance * OutDistance, 1e-6);
+        const auto   Forward = Normalised(Light.Direction);
+        const auto   Toward  = Mul(OutDirection, -1);
+        const double Cosine  = std::clamp(Dot(Forward, Toward), -1.0, 1.0);
+        if (Light.Kind == ReferenceLight::Kind::Spot)
+        {
+            double T =
+                std::clamp((Cosine - Light.OuterCosine) / (Light.InnerCosine - Light.OuterCosine), 0.0, 1.0);
+            Angular = T * T * (3 - 2 * T);
+        }
+        if (Light.Photometry)
+        {
+            const auto   Right = Normalised(Cross(Light.Up, Forward));
+            const auto   Up    = Cross(Forward, Right);
+            const double θ     = std::acos(Cosine) * 180 / Pi;
+            const double φ     = std::atan2(Dot(Toward, Right), Dot(Toward, Up)) * 180 / Pi;
+            Angular *= Light.Photometry->Relative(θ, φ);
+        }
     }
-    const double NdotL = std::max(Dot(Normal, OutDirection), 0.0);
-    const SpectrumRgb Brdf = EvaluateReferenceBrdf(Material, Normal, View, OutDirection);
-    const double Scale = NdotL * Attenuation;
-    return {Brdf.R * Light.Radiance.R * Scale, Brdf.G * Light.Radiance.G * Scale,
-            Brdf.B * Light.Radiance.B * Scale};
+    double Window = 1;
+    if (Light.Reach > 0)
+    {
+        double Q = OutDistance / Light.Reach;
+        Window   = std::pow(1 - Q * Q * Q * Q, 2);
+    }
+    const double Scale = Angular * Window / std::max(OutDistance * OutDistance, 1e-6);
+    return {Light.Radiance.R * Scale, Light.Radiance.G * Scale, Light.Radiance.B * Scale};
 }
-
-} // namespace
 
 SpectrumRgb EvaluateReferenceBrdf(const ReferenceMaterial& Material, SpatialVector Normal, SpatialVector View,
                                   SpatialVector Light) noexcept
@@ -220,6 +260,34 @@ void ReferenceRenderer::SetScene(ReferenceScene Scene)
         if (!std::isfinite(Radiance.R) || !std::isfinite(Radiance.G) || !std::isfinite(Radiance.B) ||
             Radiance.R<0 || Radiance.G<0 || Radiance.B<0)
             throw std::runtime_error("Invalid triangle surface radiance");
+    for (const auto& Light : Scene.Lights)
+    {
+        auto Finite = [](SpatialVector V) {
+            return std::isfinite(V.X) && std::isfinite(V.Y) && std::isfinite(V.Z);
+        };
+        if ((Light.Kind != ReferenceLight::Kind::Directional && Light.Kind != ReferenceLight::Kind::Point &&
+             Light.Kind != ReferenceLight::Kind::Spot) ||
+            !Finite(Light.Vector) || !Finite(Light.Direction) || !Finite(Light.Up) ||
+            !std::isfinite(Light.Reach) || Light.Reach < 0 || !std::isfinite(Light.Radiance.R) ||
+            !std::isfinite(Light.Radiance.G) || !std::isfinite(Light.Radiance.B) || Light.Radiance.R < 0 ||
+            Light.Radiance.G < 0 || Light.Radiance.B < 0)
+            throw std::runtime_error("Invalid analytic light");
+        if (Light.Kind == ReferenceLight::Kind::Spot || Light.Photometry)
+        {
+            if (!std::isfinite(Length(Light.Direction)) || Length(Light.Direction) < 1e-12 ||
+                (Light.Photometry &&
+                 (!std::isfinite(Length(Cross(Light.Up, Light.Direction))) ||
+                  Length(Cross(Light.Up, Light.Direction)) < 1e-12 || !Light.Photometry->Loaded())))
+                throw std::runtime_error("Invalid light orientation or empty IES distribution");
+        }
+        if (Light.Kind == ReferenceLight::Kind::Spot &&
+            (!std::isfinite(Light.InnerCosine) || !std::isfinite(Light.OuterCosine) ||
+             Light.InnerCosine > 1 || Light.OuterCosine < -1 || Light.InnerCosine <= Light.OuterCosine))
+            throw std::runtime_error("Spot cone ordering rejected");
+        if (Light.Kind == ReferenceLight::Kind::Directional &&
+            (Length(Light.Vector) < 1e-12 || Light.Photometry))
+            throw std::runtime_error("Invalid directional light");
+    }
     Scene_ = std::move(Scene);
     Prepared_.clear();
     std::vector<std::array<SpatialVector, 3>> VisibilityFacets;
@@ -478,6 +546,18 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
         Image.Stats.MeanEnvironmentIbl /= std::max<uint32_t>(Image.Stats.SurfacePixels, 1u);
     }
 
+    LightInfluenceSpace   LightGrid;
+    std::vector<uint32_t> AllLights(Scene_.Lights.size());
+    std::iota(AllLights.begin(), AllLights.end(), 0u);
+    if (Settings.ClusteredLights)
+    {
+        std::vector<LightInfluence> Influences;
+        for (const auto& Light : Scene_.Lights)
+            Influences.push_back(
+                {Light.Vector, Light.Kind == ReferenceLight::Kind::Directional ? 0 : Light.Reach});
+        LightGrid.Build(Influences, Settings.LightGridMinimum, Settings.LightGridMaximum,
+                        Settings.LightGridResolution, Settings.LightCellCapacity);
+    }
     // Light proposal pdf (power proxy; correctness holds for any positive proposal).
     std::vector<double> LightPdf(Scene_.Lights.size(), 0.0);
     {
@@ -489,7 +569,18 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
         }
         if (Total > 0.0)
         {
-            for (double& P : LightPdf) P /= Total;
+            if (!std::isfinite(Total))
+            {
+                const double Peak = *std::max_element(LightPdf.begin(), LightPdf.end());
+                Total             = 0;
+                for (auto& Power : LightPdf)
+                {
+                    Power /= Peak;
+                    Total += Power;
+                }
+            }
+            for (double& P : LightPdf)
+                P /= Total;
         }
     }
     const auto PickLight = [&](double U) {
@@ -530,17 +621,41 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
             const ReferenceMaterial& Material = MaterialBuffer[P];
             const SpatialVector View = Normalised(Sub(Camera.Position, Point));
 
+            bool        LightFallback = false;
+            const auto& LocalLights =
+                Settings.ClusteredLights ? LightGrid.Candidates(Point, &LightFallback) : AllLights;
+            Image.Stats.LightListVisits += LocalLights.size();
+            Image.Stats.LightFallbackQueries += LightFallback ? 1 : 0;
+            double LocalMass = 0;
+            if (Settings.ClusteredLights && !Settings.ExhaustiveLights)
+                for (auto Index : LocalLights)
+                    LocalMass += LightPdf[Index];
+            auto PickLocal = [&](double U) {
+                double Sum = 0;
+                for (auto Index : LocalLights)
+                {
+                    Sum += LightPdf[Index];
+                    if (U * LocalMass < Sum)
+                        return Index;
+                }
+                return LocalLights.empty() ? 0u : LocalLights.back();
+            };
             // Initial candidates (RIS), temporal combine, finalise.
             Reservoir& R = Reservoirs[P];
-            for (uint32_t C = 0; C < Settings.RisCandidates && !Scene_.Lights.empty(); ++C)
+            for (uint32_t C = 0;
+                 C < Settings.RisCandidates && !Scene_.Lights.empty() && !Settings.ExhaustiveLights; ++C)
             {
-                const uint32_t Light = PickLight(Random.NextUnit());
+                const double   Draw  = Random.NextUnit();
+                const uint32_t Light = Settings.ClusteredLights ? PickLocal(Draw) : PickLight(Draw);
                 SpatialVector Dir; double Dist;
                 const SpectrumRgb Unshadowed = LightContribution(Scene_.Lights[Light], Point, Normal, View, Material, Dir, Dist);
                 const double Target = Luminance(Unshadowed);
-                R.Update({Light, 0.0, 0.0}, LightPdf[Light] > 0.0 ? Target / LightPdf[Light] : 0.0, Random.NextUnit());
+                const double Proposal = Settings.ClusteredLights
+                                            ? (LocalMass > 0 ? LightPdf[Light] / LocalMass : 0)
+                                            : LightPdf[Light];
+                R.Update({Light, 0.0, 0.0}, Proposal > 0.0 ? Target / Proposal : 0.0, Random.NextUnit());
             }
-            if (Frame > 0 && !Scene_.Lights.empty())
+            if (Frame > 0 && !Settings.ExhaustiveLights && !Scene_.Lights.empty())
             {
                 Reservoir Previous = PreviousReservoirs[P];
                 Previous.ClampSampleCount(20u * std::max(Settings.RisCandidates, 1u));
@@ -569,6 +684,20 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                 Direct = {F.R * R.Weight(), F.G * R.Weight(), F.B * R.Weight()};
             }
 
+            if (Settings.ExhaustiveLights)
+            {
+                Direct = {};
+                for (auto Index : LocalLights)
+                {
+                    SpatialVector Dir;
+                    double        Dist;
+                    auto          F =
+                        LightContribution(Scene_.Lights[Index], Point, Normal, View, Material, Dir, Dist);
+                    if ((F.R != 0 || F.G != 0 || F.B != 0) &&
+                        !Visibility_.Occluded(Add(Point, Mul(Normal, .002)), Dir, 0, Dist - .004))
+                        Direct = AddRgb(Direct, F);
+                }
+            }
             // Indirect: distance-field gather + optional card texel.
             SpectrumRgb Indirect = EnvironmentBuffer[P];
             if (Settings.IndirectSamples > 0 && !Scene_.Distance.Primitives().empty())
@@ -599,7 +728,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
         }
 
         // Spatial reuse pass (borrow right/below neighbours; target re-evaluated here).
-        if (Settings.SpatialReuse && !Scene_.Lights.empty())
+        if (Settings.SpatialReuse && !Settings.ExhaustiveLights && !Scene_.Lights.empty())
         {
             const std::vector<Reservoir> Source = Reservoirs;
             for (uint32_t Y = 0; Y < H; ++Y)

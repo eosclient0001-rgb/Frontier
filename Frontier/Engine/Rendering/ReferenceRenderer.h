@@ -19,14 +19,16 @@
 #pragma once
 
 #include "AtmosphereModel.h"
+#include "CandelaDistribution.h"
 #include "CloudField.h"
 #include "ClusterNesting.h"
 #include "DistanceField.h"
 #include "FogMedium.h"
+#include "LightInfluenceSpace.h"
 #include "SurfaceCards.h"
-#include "VisibilityCull.h"
-#include "TriangleVisibilitySpace.h"
 #include "TriangleDistanceVolume.h"
+#include "TriangleVisibilitySpace.h"
+#include "VisibilityCull.h"
 #include <memory>
 
 #include <cstdint>
@@ -41,11 +43,26 @@ namespace Frontier
 
 struct ReferenceLight
 {
-    enum class Kind : uint8_t { Directional, Point };
+    enum class Kind : uint8_t
+    {
+        Directional,
+        Point,
+        Spot
+    };
     Kind          Kind = Kind::Point;
     SpatialVector Vector{};              // Directional: unit direction TOWARD the light. Point: position [m].
     SpectrumRgb   Radiance{1.0, 1.0, 1.0};   // Directional: radiance. Point: intensity (radiance * m^2).
+    // Local +Z is Direction; phi=0 is orthogonalized Up, phi=90 is Up cross Direction.
+    SpatialVector Direction{0, 0, -1}, Up{0, 1, 0};
+    double Reach = 0, InnerCosine = .95, OuterCosine = .8; // Reach [m]: zero is unbounded; cones use cosines.
+    // Emissive geometry is independent: disable this proxy if its direct contribution is already sampled.
+    bool Active = true;
+    // Relative-to-peak angular shape; Radiance sets peak RGB intensity, not imported lumen calibration.
+    std::shared_ptr<const CandelaDistribution> Photometry = nullptr;
 };
+
+SpectrumRgb ReferenceLightArrival(const ReferenceLight& Light, SpatialVector Point, SpatialVector& Direction,
+                                  double& Distance) noexcept;
 
 struct ReferenceMaterial
 {
@@ -94,6 +111,10 @@ struct ReferenceRenderSettings
     // Direct/indirect sampling
     uint32_t RisCandidates      = 4;
     bool     SpatialReuse       = true;
+    bool     ClusteredLights = false, ExhaustiveLights = false; // Exact sum bypasses all reservoir reuse.
+    SpatialVector           LightGridMinimum{-16, -16, -2}, LightGridMaximum{16, 16, 10};
+    std::array<uint32_t, 3> LightGridResolution{8, 8, 4};
+    uint32_t                LightCellCapacity  = 16;
     uint32_t IndirectSamples    = 8;    // distance-field hemisphere samples per pixel (0 = off)
     uint32_t EnvironmentSamples = 8;    // deterministic cosine/GGX MIS samples per proposal component
     uint32_t AccumulationFrames = 4;    // noisy frames fed to the SVGF temporal history
@@ -120,6 +141,7 @@ struct ReferenceRenderStats
     uint32_t TrianglesVisible     = 0;   // after frustum cull
     uint32_t CutNodes             = 0;
     uint32_t SurfacePixels        = 0;
+    uint64_t LightListVisits = 0, LightFallbackQueries = 0;
     double   MeanLuminance        = 0.0;
     double   MeanEnvironmentIbl   = 0.0;   // surface pixels only; mean linear luminance before SVGF
 };
