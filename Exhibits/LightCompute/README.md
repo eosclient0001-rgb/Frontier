@@ -1,9 +1,49 @@
-# Vulkan light history and reconstruction
+# Vulkan primary visibility, light history and reconstruction
 
 **Actual Vulkan execution:** shared Slang now performs clustered analytic lighting, temporal/spatial reservoir
 reuse, reprojection rejection, temporal moments and edge-aware reconstruction on the original ControlVehicle.
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
+
+## Primary camera rays — executed
+
+![ControlVehicle: Vulkan camera rays, direct illumination and material emission](Images/Primary.png)
+
+`VehicleCapture --primary-input` skips both native renderer scene setup and rasterization. CPU work exports
+mesh geometry, per-vertex normals, material records, lights and camera parameters only. Before dispatch, **all
+36 floats of every receiver are poisoned with NaNs**. `TracePrimarySurfaces` generates pixel-centre camera rays,
+traverses the full triangle BVH for the nearest clipped hit, interpolates normals/materials, and writes receivers.
+Existing exact or clustered lighting then supplies direct illumination and BVH shadows. Material emission stays
+independent of analytic point/IES/spot lights: neither lighting family was removed.
+
+This controlled capture uses **a black environment, direct illumination and visible material emission**.
+It does not upload a CPU per-pixel residual. It does not yet evaluate indirect transport or the native
+sun/sky/cloud environment on Vulkan. The history images below retain their original CPU-primary environment path.
+
+| Independent native ray check | Observed result |
+|---|---|
+| Camera coverage | 225,214 hits; 30,786 misses; zero hit/miss disagreement |
+| First triangle | Zero identity disagreements on the vehicle scene |
+| Maximum relative depth error | 5.00174e-6 |
+| Maximum normal error, `abs(1-dot)` | 1.43991e-7, independently calculated barycentrics |
+| Mean / maximum absolute RGB error | 2.03235e-6 / 6.93947e-5 |
+| All-light versus clustered | Identical float32 output |
+| Clipping fixture | Near/far rejection, nearest overlapping plane and all-miss case passed |
+| Forced stack capacity one | 256 exhaustive fallbacks; same nearest depths and shaded output |
+
+The oracle rebuilds a double-precision BVH from exported float vertices, independently computes camera rays and
+barycentric weights, reconstructs Type-C profiles through the public IES importer, and evaluates the native BRDF,
+light arrival and shadow queries. Forced traversal changes which triangle owns 16 exact shared-edge ties in the
+16×16 fixture; these are individually classified as edge cases, not silently counted as identical facet IDs.
+`Images/PrimaryNative.png` is the corresponding native ray result; `Results/Primary.txt` records all checks.
+
+The private exhibit archive is now FLC3, with 144-byte shaded facets and camera metadata. Old scratch archives
+must be regenerated. The shader still uses eight storage buffers; push constants are now **128 bytes** and
+16 float4 output/history slabs occupy **65.536 MB** at 640×400, excluding receivers and scene geometry.
+Primary generation also writes rigid-motion metadata, but moving GPU-primary history is not validated by this
+static capture. The existing six-pose history regression below was rerun unchanged and passed.
+
+## Retained history regression
 
 ![Moving pose: fresh sampling left, reconstructed lighting right](Images/HistoryComparison.png)
 
@@ -31,15 +71,15 @@ Original ControlVehicle + authored materials
     → shader/host dependency + fence → actual readback → native display encoding → PNG/APNG
 ```
 
-All six computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
-retains pipelines/descriptors and uses eight storage buffers with a 112-byte push constant. Inter-dispatch,
+All seven computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
+retains pipelines/descriptors and uses eight storage buffers with a 128-byte push constant. Inter-dispatch,
 inter-submission and host/readback dependencies are explicit. Prior metadata is never overwritten until all
-reprojection and reconstruction reads have completed. Fifteen float4 surfaces occupy 61.44 MB at 640×400,
+reprojection and reconstruction reads have completed. Sixteen float4 surfaces occupy 65.536 MB at 640×400,
 excluding receiver inputs and geometry; this is an unoptimized reference allocation, not measured GPU VRAM.
 
 The uploaded native direct-answer channel is deliberately poisoned with NaNs. Unpoisoned native answers remain
 only in host memory for numerical checks. The shader recomputes direct illumination and BVH shadow visibility;
-primary raster, sky and indirect transport remain CPU inputs.
+primary raster, sky and indirect transport remain CPU inputs in this retained history regression only.
 
 ## Verified results
 

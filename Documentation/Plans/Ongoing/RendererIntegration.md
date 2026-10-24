@@ -1,5 +1,24 @@
 # Vulkan preview, materials and illumination integration
 
+
+## Vulkan camera-ray visibility checkpoint — 2026-10-24
+
+- Executed `TracePrimarySurfaces` on the authentic ControlVehicle, with native raster scene setup/render skipped
+  and all 36 receiver floats poisoned before dispatch. Geometry, camera, material and light export remains CPU work.
+- Independent double-precision rays: 225,214 hits / 30,786 misses, zero hit/miss or first-triangle disagreement;
+  maximum relative depth error 5.00174e-6. Native barycentrics, BRDF, imported IES profiles and full-BVH shadows
+  give mean RGB error 2.03235e-6, maximum 6.93947e-5. All-light and clustered output is identical.
+- Near/far, nearest overlapping surfaces, all-miss and 256 forced-stack fallback checks passed. Exact shared-edge
+  ties in the synthetic fixture are classified individually; nearest depths and shaded values remain unchanged.
+- `Exhibits/LightCompute/Images/Primary.png` is the actual Vulkan readback, not an illustration. Device remains
+  SwiftShader CPU type 4; no physical GPU, RTX query, Windows or production viewport proof is claimed.
+- Seven shader entries / eight SSBOs / 128-byte push constants; private exhibit archive FLC3. Complete existing
+  static/moving history regression and native sanitizer/CTest suite rerun successfully after the shared ABI change.
+- This checkpoint is direct plus material emission against a black environment. Both analytic point/IES/spot and
+  emissive lighting remain. GPU indirect transport, environment integration and moving GPU-primary history remain
+  next integration gates. Preserve existing sun/lens flare/stars; Moon remains in `Documentation/EnvironmentTodo.md`.
+- Reproduction, scope and measured results: `Exhibits/LightCompute/README.md`, `Results/Primary.txt` and manifest.
+
 ## Recommendation
 
 **Implement 1 CAD → 2 MatCap → 3 preview PBR → 4 full materials/shaders, sequentially on shared Vulkan/Slang.**

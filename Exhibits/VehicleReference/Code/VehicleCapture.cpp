@@ -1,7 +1,8 @@
 /*==========================================================================================================================================
                                                               VEHICLECAPTURE.CPP
 ==========================================================================================================================================*/
-// 🧩 Authored ControlVehicle archives and material records rendered through the native CPU reference path.
+// 🧩 Authored ControlVehicle archives and material records rendered through the
+// native CPU reference path.
 
 #include "../../LightCompute/Code/LightComputeFormat.h"
 #include "Engine/Rendering/ReferenceRenderer.h"
@@ -44,8 +45,8 @@ void AppendArchive(ReferenceScene& Scene, const std::string& Path, SpatialVector
     std::vector<SpatialVector> Positions(Vertices);
     for (auto& Point : Positions)
     {
-        Point          = {Read<float>(Stream), Side * Read<float>(Stream), Read<float>(Stream)};
-        Point          = {Point.X + Translation.X, Point.Y + Translation.Y, Point.Z + Translation.Z};
+        Point = {Read<float>(Stream), Side * Read<float>(Stream), Read<float>(Stream)};
+        Point = {Point.X + Translation.X, Point.Y + Translation.Y, Point.Z + Translation.Z};
         const double X = Point.X, Y = Point.Y;
         Point.X = std::cos(θ) * X - std::sin(θ) * Y + .8 * θ;
         Point.Y = std::sin(θ) * X + std::cos(θ) * Y;
@@ -59,12 +60,13 @@ void AppendArchive(ReferenceScene& Scene, const std::string& Path, SpatialVector
     for (uint32_t Facet = 0; Facet < Facets; ++Facet)
     {
         uint32_t MaterialIndex = MaterialIds[Facet];
-        // The authored rim archive retains the legacy identity 16; the material table assigns the rim to 81.
+        // The authored rim archive retains the legacy identity 16; the material
+        // table assigns the rim to 81.
         if (Path.find("Rim.facet") != std::string::npos && MaterialIndex == 16)
             MaterialIndex = 81;
         if (MaterialIndex >= Materials.size())
             throw std::runtime_error("Vehicle material outside authored table");
-        auto& Surface    = Surfaces[MaterialIndex];
+        auto& Surface = Surfaces[MaterialIndex];
         Surface.Material = Materials[MaterialIndex];
         Surface.Emissive = Glow[MaterialIndex];
         for (uint32_t Corner = 0; Corner < 3; ++Corner)
@@ -91,16 +93,17 @@ int main(int Count, char** Arguments)
     {
         if (Count != 2 && !(Count == 3 && (std::string(Arguments[2]) == "--clustered-lights" ||
                                            std::string(Arguments[2]) == "--vulkan-input" ||
-                                           std::string(Arguments[2]) == "--motion-input")))
-            throw std::runtime_error(
-                "Usage: VehicleCapture output-directory [--clustered-lights|--vulkan-input|--motion-input]");
+                                           std::string(Arguments[2]) == "--motion-input" ||
+                                           std::string(Arguments[2]) == "--primary-input")))
+            throw std::runtime_error("Usage: VehicleCapture output-directory "
+                                     "[--clustered-lights|--vulkan-input|--motion-input|--primary-input]");
         std::filesystem::path Output = Arguments[1];
         std::filesystem::create_directories(Output);
-        std::ifstream                  Table("_ClaudeScratch/vehicle-reference/Materials.txt");
+        std::ifstream Table("_ClaudeScratch/vehicle-reference/Materials.txt");
         std::vector<ReferenceMaterial> Materials;
-        std::vector<SpectrumRgb>       Glow;
-        ReferenceMaterial              Material;
-        SpectrumRgb                    Radiance;
+        std::vector<SpectrumRgb> Glow;
+        ReferenceMaterial Material;
+        SpectrumRgb Radiance;
         while (Table >> Material.Albedo.R >> Material.Albedo.G >> Material.Albedo.B >> Material.Roughness >>
                Material.Metallic >> Radiance.R >> Radiance.G >> Radiance.B)
         {
@@ -110,30 +113,31 @@ int main(int Count, char** Arguments)
         if (Materials.size() != 86)
             throw std::runtime_error("Expected 86 authored material records");
         const bool Analytic = Count == 3;
+        const bool PrimaryInput = Count == 3 && std::string(Arguments[2]) == "--primary-input";
         const bool MotionInput = Count == 3 && std::string(Arguments[2]) == "--motion-input";
         const bool ComputeInput =
-            Count == 3 && (std::string(Arguments[2]) == "--vulkan-input" || MotionInput);
+            Count == 3 && (std::string(Arguments[2]) == "--vulkan-input" || MotionInput || PrimaryInput);
         CullCamera PreviousCamera;
         double PreviousAngle = 0;
         for (uint32_t Capture = 0; Capture < (MotionInput ? 6u : (ComputeInput ? 1u : (Analytic ? 2u : 6u)));
              ++Capture)
         {
             const uint32_t Pose = MotionInput ? Capture : Analytic ? 0 : Capture % 3;
-            const bool                   WithDistance = !Analytic && Capture >= 3;
+            const bool WithDistance = !Analytic && Capture >= 3;
             const std::string Stem = MotionInput    ? "MotionInput"
                                      : ComputeInput ? "VulkanInput"
                                      : Analytic     ? (Capture == 0 ? "AnalyticAll" : "AnalyticCluster")
                                                     : (WithDistance ? "Distance" : "Vehicle");
             const double θ = Pose * (MotionInput ? .08 : .45);
-            ReferenceScene               Scene;
+            ReferenceScene Scene;
             std::array<ReferenceMesh, 2> Ground;
             Ground[0].Material.Albedo = {.6, .62, .65};
             Ground[1].Material.Albedo = {.045, .055, .07};
             for (int Y = -20; Y < 20; ++Y)
                 for (int X = -20; X < 20; ++X)
                 {
-                    auto&    Geometry = Ground[uint32_t((X + Y + 40) % 2)].Geometry;
-                    uint32_t First    = uint32_t(Geometry.Vertices.size());
+                    auto& Geometry = Ground[uint32_t((X + Y + 40) % 2)].Geometry;
+                    uint32_t First = uint32_t(Geometry.Vertices.size());
                     Geometry.Vertices.insert(Geometry.Vertices.end(), {{2. * X, 2. * Y, 0},
                                                                        {2. * X + 2, 2. * Y, 0},
                                                                        {2. * X + 2, 2. * Y + 2, 0},
@@ -150,8 +154,8 @@ int main(int Count, char** Arguments)
                   std::array<double, 4>{40, -2000, 2000, 2000}, std::array<double, 4>{-40, -2000, 40, -40},
                   std::array<double, 4>{-40, 40, 40, 2000}})
             {
-                auto&          Geometry = ExteriorGround.Geometry;
-                const uint32_t First    = uint32_t(Geometry.Vertices.size());
+                auto& Geometry = ExteriorGround.Geometry;
+                const uint32_t First = uint32_t(Geometry.Vertices.size());
                 Geometry.Vertices.insert(Geometry.Vertices.end(), {{Rectangle[0], Rectangle[1], 0},
                                                                    {Rectangle[2], Rectangle[1], 0},
                                                                    {Rectangle[2], Rectangle[3], 0},
@@ -160,10 +164,10 @@ int main(int Count, char** Arguments)
                                         {First, First + 1, First + 2, First, First + 2, First + 3});
             }
             Scene.Meshes.push_back(std::move(ExteriorGround));
-            const std::string Archive =
-                "Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicle";
+            const std::string Archive = "Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/"
+                                        "Archive/ControlVehicle";
             const size_t VehicleFirst = Scene.Meshes.size();
-            uint32_t     Facets       = 0;
+            uint32_t Facets = 0;
             AppendArchive(Scene, Archive + "Body.facet", {0, 0, .41715}, 1, θ, Materials, Glow, Facets);
             for (auto Mount :
                  {SpatialVector{1.7274, 1.0475, .50855}, SpatialVector{1.7274, -1.0475, .50855},
@@ -179,44 +183,44 @@ int main(int Count, char** Arguments)
             {
                 Scene.Lights[0].Radiance = {.2, .2, .2};
                 ReferenceLight Point;
-                Point.Kind     = ReferenceLight::Kind::Point;
-                Point.Vector   = {1, -3, 3};
+                Point.Kind = ReferenceLight::Kind::Point;
+                Point.Vector = {1, -3, 3};
                 Point.Radiance = {35, 80, 120};
-                Point.Reach    = 12;
+                Point.Reach = 12;
                 if (MotionInput && Capture >= 3)
                     Point.Radiance = {100, 25, 15};
                 Scene.Lights.push_back(Point);
                 ReferenceLight Spot;
-                Spot.Kind        = ReferenceLight::Kind::Spot;
-                Spot.Vector      = {-3, -1, 4};
-                Spot.Radiance    = {150, 75, 20};
-                Spot.Reach       = 10;
-                Spot.Direction   = {0, 0, -1};
+                Spot.Kind = ReferenceLight::Kind::Spot;
+                Spot.Vector = {-3, -1, 4};
+                Spot.Radiance = {150, 75, 20};
+                Spot.Reach = 10;
+                Spot.Direction = {0, 0, -1};
                 Spot.InnerCosine = std::cos(.25);
                 Spot.OuterCosine = std::cos(.55);
                 Scene.Lights.push_back(Spot);
                 ReferenceLight Profile;
-                Profile.Kind      = ReferenceLight::Kind::Point;
-                Profile.Vector    = {3, 3, 4};
+                Profile.Kind = ReferenceLight::Kind::Point;
+                Profile.Vector = {3, 3, 4};
                 Profile.Direction = {-.5, -.5, -1};
-                Profile.Radiance  = {140, 140, 130};
-                Profile.Reach     = 12;
+                Profile.Radiance = {140, 140, 130};
+                Profile.Reach = 12;
                 std::ifstream Ies("Exhibits/ClusteredLighting/Fixtures/Synthetic.ies");
                 Profile.Photometry = std::make_shared<CandelaDistribution>(CandelaDistribution::Read(Ies));
                 Scene.Lights.push_back(Profile);
                 for (uint32_t Index = 0; Index < 32; ++Index)
                 {
                     ReferenceLight Remote;
-                    Remote.Vector   = {40 + 2. * Index, 0, 3};
+                    Remote.Vector = {40 + 2. * Index, 0, 3};
                     Remote.Radiance = {1, 1, 1};
-                    Remote.Reach    = 1;
+                    Remote.Reach = 1;
                     Scene.Lights.push_back(Remote);
                 }
             }
             if (WithDistance)
             {
                 std::vector<std::array<SpatialVector, 3>> SurfaceFacets;
-                std::vector<const ReferenceMesh*>         FacetSurfaces;
+                std::vector<const ReferenceMesh*> FacetSurfaces;
                 for (size_t Surface = VehicleFirst; Surface < Scene.Meshes.size(); ++Surface)
                 {
                     const auto& Geometry = Scene.Meshes[Surface].Geometry;
@@ -234,22 +238,22 @@ int main(int Count, char** Arguments)
                 Visibility.Build(SurfaceFacets);
                 for (size_t Facet = 0; Facet < SurfaceFacets.size(); ++Facet)
                 {
-                    const auto&         F       = SurfaceFacets[Facet];
-                    const auto&         Surface = *FacetSurfaces[Facet];
+                    const auto& F = SurfaceFacets[Facet];
+                    const auto& Surface = *FacetSurfaces[Facet];
                     const SpatialVector E{F[1].X - F[0].X, F[1].Y - F[0].Y, F[1].Z - F[0].Z};
                     const SpatialVector G{F[2].X - F[0].X, F[2].Y - F[0].Y, F[2].Z - F[0].Z};
                     SpatialVector N{E.Y * G.Z - E.Z * G.Y, E.Z * G.X - E.X * G.Z, E.X * G.Y - E.Y * G.X};
-                    const double  Length = std::hypot(N.X, N.Y, N.Z);
+                    const double Length = std::hypot(N.X, N.Y, N.Z);
                     if (Length > 0)
                         N = {N.X / Length, N.Y / Length, N.Z / Length};
                     const SpatialVector Centre{(F[0].X + F[1].X + F[2].X) / 3, (F[0].Y + F[1].Y + F[2].Y) / 3,
                                                (F[0].Z + F[1].Z + F[2].Z) / 3};
                     const SpatialVector Origin{Centre.X + .002 * N.X, Centre.Y + .002 * N.Y,
                                                Centre.Z + .002 * N.Z};
-                    const double        Cosine = Visibility.Occluded(Origin, Sun, 0, 200)
-                                                     ? 0
-                                                     : std::max(0.0, N.X * Sun.X + N.Y * Sun.Y + N.Z * Sun.Z);
-                    const double Diffuse       = (1 - Surface.Material.Metallic) * Cosine / 3.141592653589793;
+                    const double Cosine = Visibility.Occluded(Origin, Sun, 0, 200)
+                                              ? 0
+                                              : std::max(0.0, N.X * Sun.X + N.Y * Sun.Y + N.Z * Sun.Z);
+                    const double Diffuse = (1 - Surface.Material.Metallic) * Cosine / 3.141592653589793;
                     Scene.TriangleRadiance.push_back(
                         {Surface.Emissive.R + Surface.Material.Albedo.R * 5.5 * Diffuse,
                          Surface.Emissive.G + Surface.Material.Albedo.G * 5.2 * Diffuse,
@@ -266,39 +270,40 @@ int main(int Count, char** Arguments)
             }
             ReferenceRenderer Renderer;
             const auto ComputeScene = ComputeInput ? Scene : ReferenceScene{};
-            Renderer.SetScene(std::move(Scene));
+            if (!PrimaryInput)
+                Renderer.SetScene(std::move(Scene));
             CullCamera Camera;
             Camera.Position = {8, -9, 4};
             const SpatialVector Target{.8 * θ, 0, .9};
-            auto   Forward = SpatialVector{Target.X - Camera.Position.X, Target.Y - Camera.Position.Y,
+            auto Forward = SpatialVector{Target.X - Camera.Position.X, Target.Y - Camera.Position.Y,
                                          Target.Z - Camera.Position.Z};
-            double Length  = std::sqrt(Forward.X * Forward.X + Forward.Y * Forward.Y + Forward.Z * Forward.Z);
+            double Length = std::sqrt(Forward.X * Forward.X + Forward.Y * Forward.Y + Forward.Z * Forward.Z);
             Camera.Forward = {Forward.X / Length, Forward.Y / Length, Forward.Z / Length};
-            Length         = std::hypot(Camera.Forward.X, Camera.Forward.Y);
-            Camera.Right   = {Camera.Forward.Y / Length, -Camera.Forward.X / Length, 0};
-            Camera.Up      = {Camera.Right.Y * Camera.Forward.Z, -Camera.Right.X * Camera.Forward.Z,
-                              Camera.Right.X * Camera.Forward.Y - Camera.Right.Y * Camera.Forward.X};
+            Length = std::hypot(Camera.Forward.X, Camera.Forward.Y);
+            Camera.Right = {Camera.Forward.Y / Length, -Camera.Forward.X / Length, 0};
+            Camera.Up = {Camera.Right.Y * Camera.Forward.Z, -Camera.Right.X * Camera.Forward.Z,
+                         Camera.Right.X * Camera.Forward.Y - Camera.Right.Y * Camera.Forward.X};
             Camera.FovYRadians = .65;
-            Camera.Aspect      = 1.6;
-            Camera.NearPlane   = .1;
-            Camera.FarPlane    = 4000;
+            Camera.Aspect = 1.6;
+            Camera.NearPlane = .1;
+            Camera.FarPlane = 4000;
             ReferenceRenderSettings Settings;
-            Settings.Width              = 640;
-            Settings.Height             = 400;
+            Settings.Width = 640;
+            Settings.Height = 400;
             Settings.AccumulationFrames = 8;
-            Settings.RisCandidates      = 4;
-            Settings.IndirectSamples    = 0;
+            Settings.RisCandidates = 4;
+            Settings.IndirectSamples = 0;
             Settings.EnvironmentSamples = 8;
-            Settings.SunDirection       = Sun;
-            Settings.CloudsEnabled      = true;
-            Settings.Clouds.WindTimeS   = 5 * Pose;
+            Settings.SunDirection = Sun;
+            Settings.CloudsEnabled = true;
+            Settings.Clouds.WindTimeS = 5 * Pose;
             if (Analytic)
             {
-                Settings.ExhaustiveLights   = true;
-                Settings.ClusteredLights    = Capture == 1;
-                Settings.SpatialReuse       = false;
+                Settings.ExhaustiveLights = true;
+                Settings.ClusteredLights = Capture == 1;
+                Settings.SpatialReuse = false;
                 Settings.AccumulationFrames = 1;
-                Settings.SunIrradiance      = {.2, .22, .3};
+                Settings.SunIrradiance = {.2, .22, .3};
             }
             if (ComputeInput)
             {
@@ -306,20 +311,30 @@ int main(int Count, char** Arguments)
                 Settings.StoreSurfaceSamples = true;
                 Settings.ClusteredLights = false;
             }
-            const auto Image = Renderer.Render(Camera, Settings);
+            ReferenceImage Image;
+            if (PrimaryInput)
+            {
+                Image.Width = Settings.Width;
+                Image.Height = Settings.Height;
+                Image.Pixels.resize(size_t(Image.Width) * Image.Height);
+                Image.SurfaceSamples.resize(Image.Pixels.size());
+            }
+            else
+                Image = Renderer.Render(Camera, Settings);
             if (ComputeInput)
             {
-                auto Packed = PackLightCompute(ComputeScene, Image);
+                auto Packed = PackLightCompute(ComputeScene, Image, &Camera);
                 if (MotionInput)
                     ProjectLightComputeMotion(Packed, Capture ? PreviousCamera : Camera, θ,
                                               Capture ? PreviousAngle : θ, uint32_t(VehicleFirst));
-                Packed.Save((Output / (MotionInput ? ("VehicleMotion" + std::to_string(Capture) + ".bin")
-                                                   : "VehicleLightInput.bin"))
+                Packed.Save((Output / (MotionInput    ? ("VehicleMotion" + std::to_string(Capture) + ".bin")
+                                       : PrimaryInput ? "VehiclePrimary.bin"
+                                                      : "VehicleLightInput.bin"))
                                 .string());
                 PreviousCamera = Camera;
                 PreviousAngle = θ;
             }
-            if (!Image.Stats.SurfacePixels || !std::isfinite(Image.Stats.MeanLuminance))
+            if (!PrimaryInput && (!Image.Stats.SurfacePixels || !std::isfinite(Image.Stats.MeanLuminance)))
                 throw std::runtime_error("Vehicle capture is empty or nonfinite");
             for (auto Pixel : Image.Pixels)
                 if (!std::isfinite(Pixel.R) || !std::isfinite(Pixel.G) || !std::isfinite(Pixel.B))
@@ -330,8 +345,9 @@ int main(int Count, char** Arguments)
             Stream.exceptions(std::ios::failbit | std::ios::badbit);
             Stream << "P6\n640 400\n255\n";
             Stream.write(reinterpret_cast<const char*>(Rgb.data()), std::streamsize(Rgb.size()));
-            std::cout << "CPU reference distance=" << WithDistance << " pose=" << Pose
-                      << " original_vehicle_facets=" << Facets
+            std::cout << (PrimaryInput ? "Geometry export cpu_primary_raster=0 distance="
+                                       : "CPU reference distance=")
+                      << WithDistance << " pose=" << Pose << " original_vehicle_facets=" << Facets
                       << " total_facets=" << Image.Stats.TrianglesTotal
                       << " visible=" << Image.Stats.TrianglesVisible
                       << " light_list_visits=" << Image.Stats.LightListVisits

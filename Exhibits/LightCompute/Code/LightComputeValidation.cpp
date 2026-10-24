@@ -1,7 +1,8 @@
 /*==========================================================================================================================================
                                                      LIGHTCOMPUTEVALIDATION.CPP
 ==========================================================================================================================================*/
-// 🧩 Execute shared Slang light selection and visibility in Vulkan, then compare actual readbacks to native references.
+// 🧩 Execute shared Slang light selection and visibility in Vulkan, then
+// compare actual readbacks to native references.
 
 #define VK_NO_PROTOTYPES
 #include "LightComputeFormat.h"
@@ -41,18 +42,19 @@ void Confirm(VkResult Result)
     F(EnumeratePhysicalDevices)                                                                              \
     F(EnumerateDeviceExtensionProperties)                                                                    \
     F(CreateDevice)                                                                                          \
-    F(DestroyDevice) F(GetDeviceQueue) F(DeviceWaitIdle) F(CreateBuffer) F(DestroyBuffer)                    \
-        F(GetBufferMemoryRequirements) F(AllocateMemory) F(FreeMemory) F(BindBufferMemory) F(MapMemory)      \
-            F(UnmapMemory) F(CreateDescriptorSetLayout) F(DestroyDescriptorSetLayout)                        \
-                F(CreateDescriptorPool) F(DestroyDescriptorPool) F(AllocateDescriptorSets)                   \
-                    F(UpdateDescriptorSets) F(CreatePipelineLayout) F(DestroyPipelineLayout)                 \
-                        F(CreateShaderModule) F(DestroyShaderModule) F(CreateComputePipelines)               \
-                            F(DestroyPipeline) F(CreateCommandPool) F(DestroyCommandPool)                    \
-                                F(AllocateCommandBuffers) F(BeginCommandBuffer) F(EndCommandBuffer)          \
-                                    F(ResetCommandPool) F(CmdBindPipeline) F(CmdBindDescriptorSets)          \
-                                        F(CmdPushConstants) F(CmdDispatch) F(CmdPipelineBarrier)             \
-                                            F(QueueSubmit) F(CreateFence) F(DestroyFence) F(WaitForFences)   \
-                                                F(ResetFences)
+    F(DestroyDevice)                                                                                         \
+    F(GetDeviceQueue)                                                                                        \
+    F(DeviceWaitIdle) F(CreateBuffer) F(DestroyBuffer) F(GetBufferMemoryRequirements) F(AllocateMemory)      \
+        F(FreeMemory) F(BindBufferMemory) F(MapMemory) F(UnmapMemory) F(CreateDescriptorSetLayout)           \
+            F(DestroyDescriptorSetLayout) F(CreateDescriptorPool) F(DestroyDescriptorPool)                   \
+                F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreatePipelineLayout)                    \
+                    F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule)                    \
+                        F(CreateComputePipelines) F(DestroyPipeline) F(CreateCommandPool)                    \
+                            F(DestroyCommandPool) F(AllocateCommandBuffers) F(BeginCommandBuffer)            \
+                                F(EndCommandBuffer) F(ResetCommandPool) F(CmdBindPipeline)                   \
+                                    F(CmdBindDescriptorSets) F(CmdPushConstants) F(CmdDispatch)              \
+                                        F(CmdPipelineBarrier) F(QueueSubmit) F(CreateFence) F(DestroyFence)  \
+                                            F(WaitForFences) F(ResetFences)
 struct BufferSpan
 {
     VkBuffer Buffer = VK_NULL_HANDLE;
@@ -65,9 +67,9 @@ struct alignas(16) ComputeExtent
     std::array<uint32_t, 4> Dimensions{};
     std::array<float, 4> Minimum{-16, -16, -2, 0}, Maximum{16, 16, 10, 0};
     std::array<uint32_t, 4> Grid{8, 8, 4, 0}, Sampling{1, 8, 0, 0};
-    std::array<uint32_t, 4> History{}, Reconstruction{};
+    std::array<uint32_t, 4> History{}, Reconstruction{}, Primary{};
 };
-static_assert(sizeof(ComputeExtent) == 112, "Push constant stride mismatch");
+static_assert(sizeof(ComputeExtent) == 128, "Push constant stride mismatch");
 struct LightComputeSubmission
 {
 #ifdef _WIN32
@@ -92,7 +94,8 @@ struct LightComputeSubmission
     VkDescriptorPool Descriptors = VK_NULL_HANDLE;
     VkDescriptorSet DescriptorSet = VK_NULL_HANDLE;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    VkPipeline CellPipeline = VK_NULL_HANDLE, ReceiverPipeline = VK_NULL_HANDLE;
+    VkPipeline CellPipeline = VK_NULL_HANDLE, ReceiverPipeline = VK_NULL_HANDLE,
+               PrimaryPipeline = VK_NULL_HANDLE;
     std::array<BufferSpan, 8> Buffers{};
     std::array<VkPipeline, 4> HistoryPipelines{};
     std::vector<LightComputeShape> PreviousLights;
@@ -207,10 +210,7 @@ struct LightComputeSubmission
             throw;
         }
     }
-    ~LightComputeSubmission()
-    {
-        Release();
-    }
+    ~LightComputeSubmission() { Release(); }
     LightComputeSubmission(const LightComputeSubmission&) = delete;
     LightComputeSubmission& operator=(const LightComputeSubmission&) = delete;
     void Release()
@@ -221,6 +221,8 @@ struct LightComputeSubmission
             for (auto Pipeline : HistoryPipelines)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
+            if (PrimaryPipeline)
+                DestroyPipeline(Device, PrimaryPipeline, nullptr);
             if (CellPipeline)
                 DestroyPipeline(Device, CellPipeline, nullptr);
             if (ReceiverPipeline)
@@ -333,7 +335,8 @@ struct LightComputeSubmission
             Require(B.Buffer == VK_NULL_HANDLE, "Compute buffers are already prepared");
         ConstructBuffer(0, Scene.Lights);
         ConstructBuffer(1, Scene.Receivers);
-        // 📝 Poison the uploaded oracle channel: shader output must not depend on native direct-light answers.
+        // 📝 Poison the uploaded oracle channel: shader output must not depend on
+        // native direct-light answers.
         std::array<float, 4> Poison;
         Poison.fill(std::numeric_limits<float>::quiet_NaN());
         for (size_t I = 0; I < Scene.Receivers.size(); ++I)
@@ -341,10 +344,10 @@ struct LightComputeSubmission
                             offsetof(LightComputeReceiver, ExpectedDirect),
                         Poison.data(), sizeof(Poison));
         ConstructBuffer(2, Scene.Visibility.Enclosures);
-        ConstructBuffer(3, Scene.Visibility.Corners);
-        ConstructBuffer(4, Scene.Angles);
+        ConstructBuffer(3, PackedSurfaces(Scene));
+        ConstructBuffer(4, ProjectedAngles(Scene));
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
-        ConstructBuffer(6, nullptr, Scene.Receivers.size() * 16 * 15);
+        ConstructBuffer(6, nullptr, Scene.Receivers.size() * 16 * 16);
         ConstructBuffer(7, nullptr, 64);
         std::array<VkDescriptorSetLayoutBinding, 8> Slots{};
         for (uint32_t I = 0; I < 8; ++I)
@@ -393,6 +396,7 @@ struct LightComputeSubmission
             Writes[I].pBufferInfo = &Spans[I];
         }
         UpdateDescriptorSets(Device, 8, Writes.data(), 0, nullptr);
+        PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
         CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
         ReceiverPipeline = ConstructPipeline(Shaders + "/Receivers.spv");
         const char* Names[] = {"Reuse", "Reconstruct", "Filter", "Finalize"};
@@ -401,11 +405,34 @@ struct LightComputeSubmission
         ReceiverCount = uint32_t(Scene.Receivers.size());
         Upload(Scene);
     }
+    std::vector<LightComputeFacet> PackedSurfaces(const LightComputeArchive& Scene) const
+    {
+        if (Scene.Surfaces.size() == Scene.Visibility.Corners.size())
+            return Scene.Surfaces;
+        std::vector<LightComputeFacet> Packed;
+        for (auto C : Scene.Visibility.Corners)
+        {
+            LightComputeFacet F;
+            F.A = C.A;
+            F.B = C.B;
+            F.C = C.C;
+            Packed.push_back(F);
+        }
+        return Packed;
+    }
+    std::vector<float> ProjectedAngles(const LightComputeArchive& Scene) const
+    {
+        auto Samples = Scene.Angles;
+        for (const auto& V : Scene.Camera)
+            Samples.insert(Samples.end(), V.begin(), V.end());
+        return Samples;
+    }
     void Upload(const LightComputeArchive& Scene)
     {
         Require(Scene.Receivers.size() == ReceiverCount,
                 "History receiver extent changed; recreate submission");
-        auto Copy = [&](uint32_t Index, const void* Bytes, size_t Size) {
+        auto Copy = [&](uint32_t Index, const void* Bytes, size_t Size)
+        {
             Require(Size <= Buffers[Index].Size, "Scene exceeds prepared buffer span");
             if (Size)
                 std::memcpy(Buffers[Index].Address, Bytes, Size);
@@ -414,9 +441,10 @@ struct LightComputeSubmission
         Copy(1, Scene.Receivers.data(), Scene.Receivers.size() * sizeof(LightComputeReceiver));
         Copy(2, Scene.Visibility.Enclosures.data(),
              Scene.Visibility.Enclosures.size() * sizeof(TriangleVisibilitySpace::FloatEnclosure));
-        Copy(3, Scene.Visibility.Corners.data(),
-             Scene.Visibility.Corners.size() * sizeof(TriangleVisibilitySpace::FloatFacet));
-        Copy(4, Scene.Angles.data(), Scene.Angles.size() * 4);
+        auto Surfaces = PackedSurfaces(Scene);
+        Copy(3, Surfaces.data(), Surfaces.size() * sizeof(LightComputeFacet));
+        auto Samples = ProjectedAngles(Scene);
+        Copy(4, Samples.data(), Samples.size() * 4);
         std::array<float, 4> Poison;
         Poison.fill(std::numeric_limits<float>::quiet_NaN());
         for (size_t I = 0; I < Scene.Receivers.size(); ++I)
@@ -443,7 +471,7 @@ struct LightComputeSubmission
     std::vector<std::array<float, 4>> Execute(const LightComputeArchive& Scene, uint32_t Mode,
                                               uint32_t Capacity = 16, uint32_t Seed = 1,
                                               uint32_t StackCapacity = 64, uint32_t Reconstruction = 7,
-                                              bool ResetHistory = false)
+                                              bool ResetHistory = false, bool PrimaryVisibility = false)
     {
         Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
@@ -460,6 +488,20 @@ struct LightComputeSubmission
         Extent.History = {Scene.Width, Scene.Height, Reset ? 0 : HistorySequence, Reset ? 1u : 0u};
         Extent.Reconstruction = {Reconstruction & 1 ? 1u : 0u, Reconstruction & 2 ? 1u : 0u,
                                  Reconstruction & 4 ? 1u : 0u, 0};
+        Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), 0, 0};
+        if (PrimaryVisibility)
+        {
+            // 📝 No uploaded CPU surface channel may supply primary geometry or
+            // material information.
+            std::vector<LightComputeReceiver> Poisoned(Scene.Receivers.size());
+            for (auto& R : Poisoned)
+            {
+                std::array<float, 36> Poison;
+                Poison.fill(std::numeric_limits<float>::quiet_NaN());
+                std::memcpy(static_cast<void*>(&R), Poison.data(), sizeof(R));
+            }
+            std::memcpy(Buffers[1].Address, Poisoned.data(), Poisoned.size() * sizeof(LightComputeReceiver));
+        }
         std::memset(Buffers[7].Address, 0, 64);
         Confirm(ResetCommandPool(Device, Pool, 0));
         Confirm(ResetFences(Device, 1, &Completion));
@@ -482,11 +524,21 @@ struct LightComputeSubmission
         Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
+        if (PrimaryVisibility)
+        {
+            CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, PrimaryPipeline);
+            CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+            Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
+        }
         CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, ReceiverPipeline);
         CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
         if (Mode == 3)
         {
-            auto Dispatch = [&](VkPipeline Pipeline) {
+            auto Dispatch = [&](VkPipeline Pipeline)
+            {
                 VkMemoryBarrier Dependency{};
                 Dependency.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
                 Dependency.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -542,6 +594,19 @@ struct LightComputeSubmission
                     ReceiverCount * 16);
         return Links;
     }
+    std::vector<LightComputeReceiver> PrimaryReceivers() const
+    {
+        std::vector<LightComputeReceiver> R(ReceiverCount);
+        std::memcpy(R.data(), Buffers[1].Address, R.size() * sizeof(LightComputeReceiver));
+        return R;
+    }
+    std::vector<std::array<float, 4>> PrimaryStrikes() const
+    {
+        std::vector<std::array<float, 4>> R(ReceiverCount);
+        std::memcpy(R.data(), static_cast<const char*>(Buffers[6].Address) + size_t(ReceiverCount) * 16 * 15,
+                    R.size() * 16);
+        return R;
+    }
     std::array<uint32_t, 4> Statistics() const
     {
         std::array<uint32_t, 4> Counts{};
@@ -566,7 +631,8 @@ void ValidateFreshSampling(const char* Driver, const std::string& Shaders)
         }
         if (I % 3 == 2)
         {
-            std::istringstream Text("IESNA:LM-63-2002\nTILT=NONE\n1 -1 1 3 3 1 2 0 0 0\n1 1 10\n0 45 90\n0 "
+            std::istringstream Text("IESNA:LM-63-2002\nTILT=NONE\n1 -1 1 3 3 1 2 0 0 "
+                                    "0\n1 1 10\n0 45 90\n0 "
                                     "180 360\n100 80 0 100 20 0 100 80 0");
             L.Photometry = std::make_shared<CandelaDistribution>(CandelaDistribution::Read(Text));
         }
@@ -674,8 +740,10 @@ void ValidateFreshSampling(const char* Driver, const std::string& Shaders)
         R.MotionPositionToken[2] += 10;
     (void)Compute.Execute(BadPosition, 3, 16, 904);
     Require(Compute.HistoryStatistics()[4] == 0, "Disoccluded world position retained history");
-    std::cout << "REJECTION material_accepted=256 material_rejected=256 normal_rejected=512 "
-                 "camera_cut_rejected=512 position_rejected=512 cold_restart_exact_match=1\n";
+    std::cout << "REJECTION material_accepted=256 material_rejected=256 "
+                 "normal_rejected=512 "
+                 "camera_cut_rejected=512 position_rejected=512 "
+                 "cold_restart_exact_match=1\n";
     std::vector<std::array<SpatialVector, 3>> Caster;
     for (uint32_t I = 0; I < 5; ++I)
     {
@@ -717,6 +785,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
     Output.write(reinterpret_cast<const char*>(Rgb.data()), std::streamsize(Rgb.size()));
 }
 #include "LightHistoryValidation.h"
+#include "LightPrimaryValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -727,9 +796,8 @@ int main(int Count, char** Arguments)
             ValidateFreshSampling(Arguments[1], Arguments[2]);
             return 0;
         }
-        Require(
-            Count == 5 || Count == 6,
-            "Usage: LightComputeValidation driver-library shader-directory input-archive output-directory");
+        Require(Count == 5 || Count == 6, "Usage: LightComputeValidation driver-library shader-directory "
+                                          "input-archive output-directory");
         auto Scene = LightComputeArchive::Load(Arguments[3]);
         std::filesystem::create_directories(Arguments[4]);
         LightComputeSubmission Compute(Arguments[1]);
@@ -738,6 +806,12 @@ int main(int Count, char** Arguments)
                   << " ray_query_extensions=" << Compute.RayQueryExtensions
                   << " ray_query_executed=0 triangle_bvh_executed=1\n";
         Compute.Prepare(Scene, Arguments[2]);
+        if (Count == 6 && std::string(Arguments[5]) == "--primary-only")
+        {
+            ValidatePrimaryClipping(Arguments[1], Arguments[2], Arguments[4]);
+            ValidatePrimary(Compute, Scene, Arguments[4]);
+            return 0;
+        }
         auto All = Compute.Execute(Scene, 0);
         auto GlobalCounts = Compute.Statistics();
         auto Local = Compute.Execute(Scene, 1);
@@ -777,10 +851,10 @@ int main(int Count, char** Arguments)
         double Sum = 0;
         for (auto P : Ris)
             Sum += P[3];
-        std::cout
-            << "RIS first_seed_luminance_sum=" << Sum << " native_exact_luminance_sum=" << Energy
-            << " fresh_ris_temporal_reuse=0\nPASS Vulkan all-light/cluster/overflow equality and native "
-               "image comparison\n";
+        std::cout << "RIS first_seed_luminance_sum=" << Sum << " native_exact_luminance_sum=" << Energy
+                  << " fresh_ris_temporal_reuse=0\nPASS Vulkan "
+                     "all-light/cluster/overflow equality and native "
+                     "image comparison\n";
     }
     catch (const std::exception& Error)
     {

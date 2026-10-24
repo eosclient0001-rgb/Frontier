@@ -1,7 +1,8 @@
 /*==========================================================================================================================================
                                                         LIGHTCOMPUTEFORMAT.H
 ==========================================================================================================================================*/
-// 🧩 Explicit float32 scene buffers shared by native reference export and Vulkan compute validation.
+// 🧩 Explicit float32 scene buffers shared by native reference export and
+// Vulkan compute validation.
 #pragma once
 #include "Engine/Rendering/ReferenceRenderer.h"
 #include <array>
@@ -19,6 +20,12 @@ struct alignas(16) LightComputeReceiver
     std::array<float, 4> PositionHit{}, NormalRoughness{}, ViewMetallic{}, AlbedoIor{}, ResidualSpecular{},
         ExpectedDirect{}, MotionPositionToken{}, MotionNormal{}, MotionPixel{};
 };
+struct LightComputeFacet
+{
+    std::array<float, 4> A{}, B{}, C{}, NormalA{}, NormalB{}, NormalC{}, AlbedoRoughness{}, OpticalToken{},
+        Emissive{};
+};
+static_assert(sizeof(LightComputeFacet) == 144, "Facet storage stride mismatch");
 struct LightComputeArchive
 {
     uint32_t Width = 0, Height = 0;
@@ -26,6 +33,8 @@ struct LightComputeArchive
     std::vector<LightComputeReceiver> Receivers;
     TriangleVisibilitySpace::FloatAtlas Visibility;
     std::vector<float> Angles;
+    std::vector<LightComputeFacet> Surfaces;
+    std::array<std::array<float, 4>, 12> Camera{};
     template <class T> static void Write(std::ostream& Stream, const std::vector<T>& Sequence)
     {
         uint32_t Count = uint32_t(Sequence.size());
@@ -46,7 +55,7 @@ struct LightComputeArchive
     {
         std::ofstream Stream(Path, std::ios::binary);
         Stream.exceptions(std::ios::failbit | std::ios::badbit);
-        const uint32_t Magic = 0x32434c46;
+        const uint32_t Magic = 0x33434c46;
         Stream.write(reinterpret_cast<const char*>(&Magic), 4);
         Stream.write(reinterpret_cast<const char*>(&Width), 4);
         Stream.write(reinterpret_cast<const char*>(&Height), 4);
@@ -55,6 +64,8 @@ struct LightComputeArchive
         Write(Stream, Visibility.Enclosures);
         Write(Stream, Visibility.Corners);
         Write(Stream, Angles);
+        Write(Stream, Surfaces);
+        Stream.write(reinterpret_cast<const char*>(Camera.data()), sizeof(Camera));
     }
     static LightComputeArchive Load(const std::string& Path)
     {
@@ -63,7 +74,7 @@ struct LightComputeArchive
         LightComputeArchive Archive;
         uint32_t Magic = 0;
         Stream.read(reinterpret_cast<char*>(&Magic), 4);
-        if (Magic != 0x32434c46)
+        if (Magic != 0x33434c46)
             throw std::runtime_error("Compute archive signature rejected");
         Stream.read(reinterpret_cast<char*>(&Archive.Width), 4);
         Stream.read(reinterpret_cast<char*>(&Archive.Height), 4);
@@ -72,22 +83,23 @@ struct LightComputeArchive
         Read(Stream, Archive.Visibility.Enclosures, 2097152);
         Read(Stream, Archive.Visibility.Corners, 1048576);
         Read(Stream, Archive.Angles, 2097152);
+        Read(Stream, Archive.Surfaces, 1048576);
+        Stream.read(reinterpret_cast<char*>(Archive.Camera.data()), sizeof(Archive.Camera));
         if (uint64_t(Archive.Width) * Archive.Height != Archive.Receivers.size())
             throw std::runtime_error("Compute receiver extent mismatch");
         return Archive;
     }
 };
-inline LightComputeArchive PackLightCompute(const ReferenceScene& Scene, const ReferenceImage& Image)
+inline LightComputeArchive PackLightCompute(const ReferenceScene& Scene, const ReferenceImage& Image,
+                                            const CullCamera* Camera = nullptr)
 {
     LightComputeArchive Archive;
     Archive.Width = Image.Width;
     Archive.Height = Image.Height;
-    auto Vector = [](SpatialVector P, double W) {
-        return std::array<float, 4>{float(P.X), float(P.Y), float(P.Z), float(W)};
-    };
-    auto Color = [](SpectrumRgb C, double W) {
-        return std::array<float, 4>{float(C.R), float(C.G), float(C.B), float(W)};
-    };
+    auto Vector = [](SpatialVector P, double W)
+    { return std::array<float, 4>{float(P.X), float(P.Y), float(P.Z), float(W)}; };
+    auto Color = [](SpectrumRgb C, double W)
+    { return std::array<float, 4>{float(C.R), float(C.G), float(C.B), float(W)}; };
     for (const auto& Light : Scene.Lights)
     {
         LightComputeShape Packed;
@@ -116,22 +128,70 @@ inline LightComputeArchive PackLightCompute(const ReferenceScene& Scene, const R
         Archive.Lights.push_back(Packed);
     }
     std::vector<std::array<SpatialVector, 3>> Facets;
-    for (const auto& Surface : Scene.Meshes)
-        for (size_t I = 0; I < Surface.Geometry.Indices.size(); I += 3)
+    std::vector<LightComputeFacet> Surfaces;
+    auto Sub = [](SpatialVector A, SpatialVector B)
+    { return SpatialVector{A.X - B.X, A.Y - B.Y, A.Z - B.Z}; };
+    auto Cross = [](SpatialVector A, SpatialVector B)
+    { return SpatialVector{A.Y * B.Z - A.Z * B.Y, A.Z * B.X - A.X * B.Z, A.X * B.Y - A.Y * B.X}; };
+    auto Unit = [](SpatialVector P)
+    {
+        double Length = std::sqrt(P.X * P.X + P.Y * P.Y + P.Z * P.Z);
+        return Length > 0 ? SpatialVector{P.X / Length, P.Y / Length, P.Z / Length} : SpatialVector{0, 0, 1};
+    };
+    for (uint32_t Index = 0; Index < Scene.Meshes.size(); ++Index)
+    {
+        const auto& Surface = Scene.Meshes[Index];
+        std::vector<SpatialVector> Vertices, Normals(Surface.Geometry.Vertices.size());
+        for (auto P : Surface.Geometry.Vertices)
+            Vertices.push_back({P.X * Surface.Scale + Surface.Translation.X,
+                                P.Y * Surface.Scale + Surface.Translation.Y,
+                                P.Z * Surface.Scale + Surface.Translation.Z});
+        const auto& Indices = Surface.Geometry.Indices;
+        for (size_t I = 0; I < Indices.size(); I += 3)
         {
-            std::array<SpatialVector, 3> Corners;
+            auto N = Cross(Sub(Vertices[Indices[I + 1]], Vertices[Indices[I]]),
+                           Sub(Vertices[Indices[I + 2]], Vertices[Indices[I]]));
             for (uint32_t J = 0; J < 3; ++J)
             {
-                auto P = Surface.Geometry.Vertices[Surface.Geometry.Indices[I + J]];
-                Corners[J] = {P.X * Surface.Scale + Surface.Translation.X,
-                              P.Y * Surface.Scale + Surface.Translation.Y,
-                              P.Z * Surface.Scale + Surface.Translation.Z};
+                auto& P = Normals[Indices[I + J]];
+                P = {P.X + N.X, P.Y + N.Y, P.Z + N.Z};
             }
-            Facets.push_back(Corners);
         }
+        for (auto& N : Normals)
+            N = Unit(N);
+        for (size_t I = 0; I < Indices.size(); I += 3)
+        {
+            uint32_t A = Indices[I], B = Indices[I + 1], C = Indices[I + 2];
+            Facets.push_back({Vertices[A], Vertices[B], Vertices[C]});
+            LightComputeFacet F;
+            F.A = Vector(Vertices[A], 0);
+            F.B = Vector(Vertices[B], 0);
+            F.C = Vector(Vertices[C], 0);
+            F.NormalA = Vector(Normals[A], 0);
+            F.NormalB = Vector(Normals[B], 0);
+            F.NormalC = Vector(Normals[C], 0);
+            F.AlbedoRoughness = Color(Surface.Material.Albedo, Surface.Material.Roughness);
+            F.OpticalToken = {float(Surface.Material.Metallic), float(Surface.Material.Ior),
+                              float(Surface.Material.SpecularLevel), float(Index + 1)};
+            F.Emissive = Color(Surface.Emissive, 0);
+            Surfaces.push_back(F);
+        }
+    }
     TriangleVisibilitySpace Space;
     Space.Build(std::move(Facets));
     Archive.Visibility = Space.PackFloat32();
+    for (auto Index : Archive.Visibility.OriginalFacets)
+        Archive.Surfaces.push_back(Surfaces[Index]);
+    if (Camera)
+    {
+        Archive.Camera[0] = Vector(Camera->Position, Camera->NearPlane);
+        Archive.Camera[1] = Vector(Camera->Forward, Camera->FarPlane);
+        Archive.Camera[2] = Vector(Camera->Right, std::tan(Camera->FovYRadians * .5) * Camera->Aspect);
+        Archive.Camera[3] = Vector(Camera->Up, std::tan(Camera->FovYRadians * .5));
+        for (uint32_t I = 0; I < 4; ++I)
+            Archive.Camera[4 + I] = Archive.Camera[I];
+        Archive.Camera[8][2] = 3;
+    }
     if (Image.SurfaceSamples.size() != Image.Pixels.size())
         throw std::runtime_error("Missing exact reference surface samples");
     for (size_t I = 0; I < Image.Pixels.size(); ++I)
@@ -156,6 +216,17 @@ inline LightComputeArchive PackLightCompute(const ReferenceScene& Scene, const R
 inline void ProjectLightComputeMotion(LightComputeArchive& Archive, const CullCamera& PreviousCamera,
                                       double CurrentAngle, double PreviousAngle, uint32_t VehicleFirst)
 {
+    Archive.Camera[4] = {float(PreviousCamera.Position.X), float(PreviousCamera.Position.Y),
+                         float(PreviousCamera.Position.Z), float(PreviousCamera.NearPlane)};
+    Archive.Camera[5] = {float(PreviousCamera.Forward.X), float(PreviousCamera.Forward.Y),
+                         float(PreviousCamera.Forward.Z), float(PreviousCamera.FarPlane)};
+    Archive.Camera[6] = {float(PreviousCamera.Right.X), float(PreviousCamera.Right.Y),
+                         float(PreviousCamera.Right.Z),
+                         float(std::tan(PreviousCamera.FovYRadians * .5) * PreviousCamera.Aspect)};
+    Archive.Camera[7] = {float(PreviousCamera.Up.X), float(PreviousCamera.Up.Y), float(PreviousCamera.Up.Z),
+                         float(std::tan(PreviousCamera.FovYRadians * .5))};
+    Archive.Camera[8] = {float(CurrentAngle), float(.8 * CurrentAngle), float(VehicleFirst), 0};
+    Archive.Camera[9] = {float(PreviousAngle), float(.8 * PreviousAngle), float(VehicleFirst), 0};
     auto Dot = [](SpatialVector A, SpatialVector B) { return A.X * B.X + A.Y * B.Y + A.Z * B.Z; };
     const double TanY = std::tan(PreviousCamera.FovYRadians * .5), TanX = TanY * PreviousCamera.Aspect;
     for (auto& R : Archive.Receivers)

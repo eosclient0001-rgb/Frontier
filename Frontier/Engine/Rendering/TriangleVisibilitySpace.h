@@ -1,7 +1,8 @@
 /*==========================================================================================================================================
                                                         TRIANGLEVISIBILITYSPACE.H
 ==========================================================================================================================================*/
-// 🧩 Bounded double-precision triangle visibility over all scene facets, independent of primary-view culling.
+// 🧩 Bounded double-precision triangle visibility over all scene facets,
+// independent of primary-view culling.
 
 #pragma once
 #include "ClusterNesting.h"
@@ -63,8 +64,9 @@ class TriangleVisibilitySpace
                     Region.Maximum[Axis] - Region.Minimum[Axis])
                     Axis = Other;
             const uint32_t Middle = First + Count / 2;
-            auto Centre = [&](uint32_t Facet) {
-                const auto &Triangle = Facets[Facet];
+            auto Centre = [&](uint32_t Facet)
+            {
+                const auto& Triangle = Facets[Facet];
                 return Coordinate(Triangle[0], Axis) / 3 + Coordinate(Triangle[1], Axis) / 3 +
                        Coordinate(Triangle[2], Axis) / 3;
             };
@@ -93,10 +95,12 @@ class TriangleVisibilitySpace
     {
         std::vector<FloatEnclosure> Enclosures;
         std::vector<FloatFacet> Corners;
+        std::vector<uint32_t> OriginalFacets;
     };
     FloatAtlas PackFloat32() const
     {
         FloatAtlas Atlas;
+        Atlas.OriginalFacets = Order;
         for (const auto& Region : Bounds)
         {
             FloatEnclosure Packed;
@@ -138,10 +142,7 @@ class TriangleVisibilitySpace
         double Distance = std::numeric_limits<double>::infinity();
         uint32_t Facet = UINT32_MAX;
     };
-    uint32_t FacetCount() const
-    {
-        return uint32_t(Facets.size());
-    }
+    uint32_t FacetCount() const { return uint32_t(Facets.size()); }
 
     TriangleProximity Nearest(SpatialVector Point) const noexcept
     {
@@ -151,13 +152,12 @@ class TriangleVisibilitySpace
         double BestSquared = std::numeric_limits<double>::infinity();
         std::array<uint32_t, 64> Pending{};
         uint32_t Count = 1;
-        auto Subtract = [](SpatialVector A, SpatialVector B) {
-            return SpatialVector{A.X - B.X, A.Y - B.Y, A.Z - B.Z};
-        };
+        auto Subtract = [](SpatialVector A, SpatialVector B)
+        { return SpatialVector{A.X - B.X, A.Y - B.Y, A.Z - B.Z}; };
         auto Dot = [](SpatialVector A, SpatialVector B) { return A.X * B.X + A.Y * B.Y + A.Z * B.Z; };
         while (Count)
         {
-            const auto &Region = Bounds[Pending[--Count]];
+            const auto& Region = Bounds[Pending[--Count]];
             double Lower = 0;
             for (uint32_t Axis = 0; Axis < 3; ++Axis)
             {
@@ -175,7 +175,7 @@ class TriangleVisibilitySpace
             }
             for (uint32_t Slot = Region.First; Slot < Region.First + Region.Count; ++Slot)
             {
-                const auto &Triangle = Facets[Order[Slot]];
+                const auto& Triangle = Facets[Order[Slot]];
                 double Squared = std::numeric_limits<double>::infinity();
                 for (uint32_t Edge = 0; Edge < 3; ++Edge)
                 {
@@ -217,7 +217,7 @@ class TriangleVisibilitySpace
     {
         if (Geometry.size() > std::numeric_limits<uint32_t>::max() / 2)
             throw std::runtime_error("Triangle visibility capacity exceeded");
-        for (const auto &Triangle : Geometry)
+        for (const auto& Triangle : Geometry)
             for (auto Corner : Triangle)
                 if (!Finite(Corner))
                     throw std::runtime_error("Nonfinite triangle visibility coordinate");
@@ -240,7 +240,7 @@ class TriangleVisibilitySpace
         uint32_t Count = 1;
         while (Count)
         {
-            const auto &Region = Bounds[Pending[--Count]];
+            const auto& Region = Bounds[Pending[--Count]];
             double Near = Minimum, Far = Maximum;
             bool Intersects = true;
             for (uint32_t Axis = 0; Axis < 3; ++Axis)
@@ -264,17 +264,17 @@ class TriangleVisibilitySpace
                 continue;
             if (!Region.Count)
             {
-                // Balanced median splits and the uint32 capacity bound keep pending depth below 32.
+                // Balanced median splits and the uint32 capacity bound keep pending
+                // depth below 32.
                 Pending[Count++] = Region.Lower;
                 Pending[Count++] = Region.Upper;
                 continue;
             }
             for (uint32_t Slot = Region.First; Slot < Region.First + Region.Count; ++Slot)
             {
-                const auto &Triangle = Facets[Order[Slot]];
-                auto Subtract = [](SpatialVector A, SpatialVector B) {
-                    return SpatialVector{A.X - B.X, A.Y - B.Y, A.Z - B.Z};
-                };
+                const auto& Triangle = Facets[Order[Slot]];
+                auto Subtract = [](SpatialVector A, SpatialVector B)
+                { return SpatialVector{A.X - B.X, A.Y - B.Y, A.Z - B.Z}; };
                 auto Cross = [](SpatialVector A, SpatialVector B) {
                     return SpatialVector{A.Y * B.Z - A.Z * B.Y, A.Z * B.X - A.X * B.Z, A.X * B.Y - A.Y * B.X};
                 };

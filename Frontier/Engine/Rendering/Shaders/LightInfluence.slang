@@ -21,7 +21,7 @@ struct FacetEnclosure
 };
 struct FacetCorners
 {
-    float4 A, B, C;
+    float4 A, B, C, NormalA, NormalB, NormalC, AlbedoRoughness, OpticalToken, Emissive;
 };
 struct ComputeExtent
 {
@@ -31,9 +31,10 @@ struct ComputeExtent
     uint4 Sampling;       // seed, RIS candidate count, facet count, enclosure-stack capacity
     uint4 History;        // width, height, sequence index, reset
     uint4 Reconstruction; // temporal reuse, spatial reuse, filtering, filter iteration
+    uint4 Primary;        // enabled, camera offset in float samples, reserved
 };
 [[vk::binding(0, 0)]] StructuredBuffer<LightShape> Lights;
-[[vk::binding(1, 0)]] StructuredBuffer<SurfacePoint> Receivers;
+[[vk::binding(1, 0)]] RWStructuredBuffer<SurfacePoint> Receivers;
 [[vk::binding(2, 0)]] StructuredBuffer<FacetEnclosure> Enclosures;
 [[vk::binding(3, 0)]] StructuredBuffer<FacetCorners> Facets;
 [[vk::binding(4, 0)]] StructuredBuffer<float> Angles;
@@ -47,13 +48,11 @@ float3 Unit(float3 P)
     float Squared = dot(P, P);
     return Squared > 0 ? P * rsqrt(Squared) : float3(0, 0, 1);
 }
-float Power(float3 C)
-{
-    return dot(C, float3(.2126, .7152, .0722));
-}
+float Power(float3 C) { return dot(C, float3(.2126, .7152, .0722)); }
 
 [shader("compute")][numthreads(64, 1, 1)] void AssignLightCells(uint3 Dispatch
-                                                                : SV_DispatchThreadID) {
+                                                                : SV_DispatchThreadID)
+{
     uint Count = Extent.Grid.x * Extent.Grid.y * Extent.Grid.z;
     if (Dispatch.x >= Count)
         return;
@@ -273,13 +272,11 @@ uint NextRandom(inout uint Bits)
     uint Word = ((Bits >> ((Bits >> 28u) + 4u)) ^ Bits) * 277803737u;
     return (Word >> 22u) ^ Word;
 }
-float RandomUnit(inout uint Bits)
-{
-    return float(NextRandom(Bits) >> 8) * (1.0 / 16777216.0);
-}
+float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 / 16777216.0); }
 
 [shader("compute")][numthreads(64, 1, 1)] void EvaluateLightReceivers(uint3 Dispatch
-                                                                      : SV_DispatchThreadID) {
+                                                                      : SV_DispatchThreadID)
+{
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
         return;
@@ -484,7 +481,8 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
            abs(A.ResidualSpecular.w - B.ResidualSpecular.w) < 1e-4;
 }
 [shader("compute")][numthreads(64, 1, 1)] void ReuseLightNeighbours(uint3 Dispatch
-                                                                    : SV_DispatchThreadID) {
+                                                                    : SV_DispatchThreadID)
+{
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
         return;
@@ -598,7 +596,8 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
     StoreHistory(14, Pixel, float4(Mean, Second, Length, 0));
 }
 [shader("compute")][numthreads(64, 1, 1)] void FilterLightNeighbours(uint3 Dispatch
-                                                                     : SV_DispatchThreadID) {
+                                                                     : SV_DispatchThreadID)
+{
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
         return;
@@ -650,4 +649,151 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
     StoreHistory(9, Pixel, R.NormalRoughness);
     StoreHistory(10, Pixel, float4(R.AlbedoIor.xyz, R.ViewMetallic.w));
     StoreHistory(11, Pixel, float4(R.AlbedoIor.w, R.ResidualSpecular.w, Moments.xy));
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                   PRIMARY RAY VISIBILITY
+//------------------------------------------------------------------------------------------------------------------------
+
+float4 CameraProjection(uint Slot)
+{
+    uint Offset = Extent.Primary.y + Slot * 4;
+    return float4(Angles[Offset], Angles[Offset + 1], Angles[Offset + 2], Angles[Offset + 3]);
+}
+bool FacetStrike(FacetCorners Triangle, float3 Origin, float3 Direction, float Minimum, float Maximum,
+                 out float3 Strike)
+{
+    Strike = 0;
+    float3 E1 = Triangle.B.xyz - Triangle.A.xyz, E2 = Triangle.C.xyz - Triangle.A.xyz;
+    float3 P = cross(Direction, E2);
+    float Determinant = dot(E1, P);
+    if (abs(Determinant) < 1e-12)
+        return false;
+    float3 Offset = Origin - Triangle.A.xyz;
+    float U = dot(Offset, P) / Determinant;
+    if (U < 0 || U > 1)
+        return false;
+    float3 Q = cross(Offset, E1);
+    float V = dot(Direction, Q) / Determinant;
+    if (V < 0 || U + V > 1)
+        return false;
+    float Distance = dot(E2, Q) / Determinant;
+    Strike = float3(Distance, U, V);
+    return Distance > Minimum && Distance < Maximum;
+}
+uint NearestFacet(float3 Origin, float3 Direction, float Minimum, float Maximum, out float3 Strike)
+{
+    uint Selected = 0xffffffffu;
+    Strike = float3(Maximum, 0, 0);
+    if (Extent.Grid.w == 0)
+        return Selected;
+    uint Stack[64];
+    uint Count = 1;
+    Stack[0] = 0;
+    while (Count > 0)
+    {
+        FacetEnclosure Box = Enclosures[Stack[--Count]];
+        if (!IntersectsBox(Box, Origin, Direction, Strike.x))
+            continue;
+        if (Box.Links.z != 0)
+        {
+            for (uint I = 0; I < Box.Links.y; ++I)
+            {
+                uint Index = Box.Links.x + I;
+                float3 Candidate;
+                if (FacetStrike(Facets[Index], Origin, Direction, Minimum, Strike.x, Candidate))
+                {
+                    Strike = Candidate;
+                    Selected = Index;
+                }
+            }
+        }
+        else
+        {
+            if (Count + 2 > min(64u, max(1u, Extent.Sampling.w)))
+            {
+                InterlockedAdd(Counters[12], 1);
+                for (uint I = 0; I < Extent.Sampling.z; ++I)
+                {
+                    float3 Candidate;
+                    if (FacetStrike(Facets[I], Origin, Direction, Minimum, Strike.x, Candidate))
+                    {
+                        Strike = Candidate;
+                        Selected = I;
+                    }
+                }
+                return Selected;
+            }
+            Stack[Count++] = Box.Links.x;
+            Stack[Count++] = Box.Links.y;
+        }
+    }
+    return Selected;
+}
+[shader("compute")][numthreads(64, 1, 1)] void TracePrimarySurfaces(uint3 Dispatch
+                                                                    : SV_DispatchThreadID)
+{
+    uint Pixel = Dispatch.x;
+    if (Pixel >= Extent.Dimensions.x)
+        return;
+    uint2 Coordinate = uint2(Pixel % Extent.History.x, Pixel / Extent.History.x);
+    float2 Ndc = (float2(Coordinate) + .5) / float2(Extent.History.xy) * 2 - 1;
+    Ndc.y = -Ndc.y;
+    float4 Eye = CameraProjection(0), Forward = CameraProjection(1), Right = CameraProjection(2),
+           Up = CameraProjection(3);
+    float3 Direction = Unit(Forward.xyz + Right.xyz * (Ndc.x * Right.w) + Up.xyz * (Ndc.y * Up.w));
+    float Projection = dot(Direction, Forward.xyz);
+    float3 Strike;
+    uint Index = NearestFacet(Eye.xyz, Direction, Eye.w / Projection, Forward.w / Projection, Strike);
+    SurfacePoint R = (SurfacePoint)0;
+    R.ExpectedDirect = asfloat(uint4(0x7fc00000));
+    if (Index == 0xffffffffu)
+    {
+        R.ResidualSpecular = float4(CameraProjection(10).xyz, 0);
+        Receivers[Pixel] = R;
+        StoreHistory(15, Pixel, float4(-1, -1, 0, 0));
+        InterlockedAdd(Counters[11], 1);
+        return;
+    }
+    InterlockedAdd(Counters[10], 1);
+    FacetCorners F = Facets[Index];
+    float3 Position = Eye.xyz + Direction * Strike.x;
+    float3 Normal =
+        Unit(F.NormalA.xyz * (1 - Strike.y - Strike.z) + F.NormalB.xyz * Strike.y + F.NormalC.xyz * Strike.z);
+    if (dot(Normal, Direction) > 0)
+        Normal = -Normal;
+    R.PositionHit = float4(Position, 1);
+    R.NormalRoughness = float4(Normal, F.AlbedoRoughness.w);
+    R.ViewMetallic = float4(-Direction, F.OpticalToken.x);
+    R.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
+    R.ResidualSpecular = float4(F.Emissive.xyz, F.OpticalToken.z);
+    float4 CurrentRigid = CameraProjection(8), PreviousRigid = CameraProjection(9);
+    float3 PreviousPosition = Position, PreviousNormal = Normal;
+    if (F.OpticalToken.w > CurrentRigid.z)
+    {
+        float X = Position.x - CurrentRigid.y, Y = Position.y;
+        float2 Local = float2(cos(CurrentRigid.x) * X + sin(CurrentRigid.x) * Y,
+                              -sin(CurrentRigid.x) * X + cos(CurrentRigid.x) * Y);
+        PreviousPosition.xy =
+            float2(cos(PreviousRigid.x) * Local.x - sin(PreviousRigid.x) * Local.y + PreviousRigid.y,
+                   sin(PreviousRigid.x) * Local.x + cos(PreviousRigid.x) * Local.y);
+        float Angle = PreviousRigid.x - CurrentRigid.x;
+        PreviousNormal.xy = float2(cos(Angle) * Normal.x - sin(Angle) * Normal.y,
+                                   sin(Angle) * Normal.x + cos(Angle) * Normal.y);
+    }
+    R.MotionPositionToken = float4(PreviousPosition, F.OpticalToken.w);
+    R.MotionNormal = float4(PreviousNormal, 0);
+    float4 PreviousEye = CameraProjection(4), PreviousForward = CameraProjection(5),
+           PreviousRight = CameraProjection(6), PreviousUp = CameraProjection(7);
+    float3 Relative = PreviousPosition - PreviousEye.xyz;
+    float Depth = dot(Relative, PreviousForward.xyz);
+    if (Depth > PreviousEye.w)
+    {
+        R.MotionPixel = float4(
+            (dot(Relative, PreviousRight.xyz) / (Depth * PreviousRight.w) * .5 + .5) * Extent.History.x - .5,
+            (.5 - dot(Relative, PreviousUp.xyz) / (Depth * PreviousUp.w) * .5) * Extent.History.y - .5,
+            max(.03, Depth * PreviousUp.w * 4 / Extent.History.y), 1);
+    }
+    Receivers[Pixel] = R;
+    StoreHistory(15, Pixel, float4(Strike.x, float(Index), Strike.yz));
 }

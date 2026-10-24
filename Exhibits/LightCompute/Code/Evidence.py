@@ -29,14 +29,18 @@ Report = {'execution': 'actual Vulkan compute with shared Slang', 'device': Devi
           'platform': platform.platform(), 'vulkan_executed': True, 'physical_gpu_executed': DeviceType in (1, 2),
           'ray_query_executed': False, 'triangle_bvh_shader_executed': True,
           'native_direct_upload_poisoned': True,
-          'primary_visibility': 'native CPU raster', 'sky_and_indirect': 'native CPU reference',
+          'primary_visibility': 'Vulkan camera rays for Primary.png; native CPU raster for history regression',
+          'gpu_primary_visibility_executed': True, 'primary_receiver_channels_poisoned': 36,
+          'primary_sky_and_indirect': 'black environment; no indirect transport',
+          'sky_and_indirect': 'native CPU reference in retained history regression',
           'gpu_fresh_ris_executed': True, 'gpu_temporal_reuse_executed': True,
           'gpu_spatial_reuse_executed': True, 'gpu_filtering_executed': True,
           'rigid_motion_reprojection_executed': 'MOTION index=' in Log,
           'windows_executed': False, 'vulkan_validation_layer_executed': False,
           'sources_sha256': Hashes(Sources), 'products_sha256': Hashes(Products),
           'scratch_sha256': Hashes(list((Root / '_ClaudeScratch/build/light-compute').glob('*.spv')) +
-                                   [Root / '_ClaudeScratch/vehicle-reference/VehicleLightInput.bin'] +
+                                   [Root / '_ClaudeScratch/vehicle-reference/VehicleLightInput.bin',
+                                    Root / '_ClaudeScratch/vehicle-primary/VehiclePrimary.bin'] +
                                    list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*.bin')))}
 (Output / 'Results/Manifest.json').write_text(json.dumps(Report, indent=2) + '\n')
 print('Evidence:', len(Report['sources_sha256']), 'sources;', len(Report['products_sha256']), 'products; device type', DeviceType)
