@@ -9,9 +9,12 @@ fi
 Build="$PWD/_ClaudeScratch/build/vehicle-reference-cmake"
 node Exhibits/VehicleReference/Code/Materials.mjs
 "$Cmake" -S Exhibits/VehicleReference -B "$Build" -DCMAKE_BUILD_TYPE=Release
-"$Cmake" --build "$Build" --parallel 2 --target VehicleCapture TriangleVisibilityValidation CompleteRendererValidation
+"$Cmake" --build "$Build" --parallel 2 --target VehicleCapture TriangleVisibilityValidation TriangleDistanceValidation CompleteRendererValidation
 "$Build/TriangleVisibilityValidation" | tee Exhibits/VehicleReference/VisibilityResults.txt
 "$Build/complete/CompleteRendererValidation" | tee Exhibits/VehicleReference/RendererResults.txt
-"$Build/VehicleCapture" "$PWD/_ClaudeScratch/vehicle-reference" | tee Exhibits/VehicleReference/CaptureResults.txt
+"$Build/TriangleDistanceValidation" | tee Exhibits/VehicleReference/DistanceResults.txt
+"$Build/VehicleCapture" "$PWD/_ClaudeScratch/vehicle-reference" | tee Exhibits/VehicleReference/DistanceCaptureResults.txt
+"$Build/TriangleDistanceValidation" --vehicle | tee Exhibits/VehicleReference/DistanceVehicleResults.txt
 python3 Exhibits/VehicleReference/Code/Images.py
+python3 Exhibits/VehicleReference/Code/DistanceImages.py > Exhibits/VehicleReference/DistanceImageResults.txt
 python3 Exhibits/VehicleReference/Code/Evidence.py

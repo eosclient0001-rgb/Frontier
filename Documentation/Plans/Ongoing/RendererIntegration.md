@@ -260,3 +260,18 @@ Next integration remains the native Vulkan/Slang execution route, with scene-wid
 independent references retained. The new CPU capture does not re-establish the former approximately 60%
 integrated-renderer completion claim. GPU execution, moving history across poses, indirect vehicle baking and
 Windows runtime still require their own evidence. Moon requirements remain in `Documentation/EnvironmentTodo.md`.
+
+
+## Unsigned triangle-distance lighting — 2026-10-24
+
+The actual 25,068-facet ControlVehicle now bakes a 64×32×24 unsigned distance volume per pose, with conservative
+Lipschitz interpolation strides and exact triangle hit refinement. Native CPU environment MIS proposals now
+replace occluded sky with shadowed direct-lit/emissive facet radiance: a one-bounce RGB reference, not multibounce
+radiosity. Three matched field-off/on pairs are retained in `Exhibits/VehicleReference`.
+
+Independent long-double proximity/ray tests, actual saved-vehicle bake probes and RGB transport checks pass.
+The disabled controls remain identical to the preceding committed captures on this Linux configuration.
+Bright reflections remain visibly noisy at the current sampling rate; estimator convergence/variance filtering
+and geometry-light proposal sampling need validation before quality sign-off. Vulkan/Slang integration,
+physical GPU execution, motion history across poses and Windows runtime are still separate acceptance work.
+All source, tests and native proof must be committed and pushed to the session branch with `[skip ci]`.

@@ -3,6 +3,7 @@
 ==========================================================================================================================================*/
 
 #include "ReferenceRenderer.h"
+#include <stdexcept>
 
 #include "DiscrepancySequence.h"
 #include "ReservoirSampling.h"
@@ -125,9 +126,10 @@ namespace
 SpectrumRgb IntegrateReferenceEnvironment(const ReferenceMaterial& Material, SpatialVector Normal,
                                           SpatialVector View, const ReferenceRenderSettings& Settings,
                                           const TransmittanceLut& Lut, SpatialVector PlanetObserver,
-                                          DeterministicRandom& Random)
+                                          DeterministicRandom& Random, const ReferenceScene& Scene,
+                                          SpatialVector SurfacePosition)
 {
-    if (!Settings.AtmosphereEnabled || Settings.EnvironmentSamples == 0)
+    if ((!Settings.AtmosphereEnabled && !Scene.TriangleDistance) || Settings.EnvironmentSamples == 0)
     {
         return {};
     }
@@ -187,8 +189,13 @@ SpectrumRgb IntegrateReferenceEnvironment(const ReferenceMaterial& Material, Spa
                 continue;
             }
 
-            SpectrumRgb Environment = SingleScattering(Settings.Atmosphere, PlanetObserver, Light,
-                                                        Settings.SunDirection, Settings.SunIrradiance, &Lut, 12);
+            SpectrumRgb Environment = Settings.AtmosphereEnabled ? SingleScattering(Settings.Atmosphere, PlanetObserver, Light,
+                                                        Settings.SunDirection, Settings.SunIrradiance, &Lut, 12) : SpectrumRgb{};
+            if (Scene.TriangleDistance)
+            {
+                const auto Hit = Scene.TriangleDistance->Trace(Add(SurfacePosition, Mul(Normal, .002)), Light, 0.0, 200.0);
+                if (Hit.Hit) Environment = Scene.TriangleRadiance[Hit.Facet];
+            }
             const SpectrumRgb Brdf = EvaluateReferenceBrdf(Material, Normal, View, Light);
             const double Weight = NdotL / Density / (Components * Samples);
             Accumulated = AddRgb(Accumulated, {Brdf.R * Environment.R * Weight,
@@ -207,6 +214,12 @@ SpectrumRgb IntegrateReferenceEnvironment(const ReferenceMaterial& Material, Spa
 
 void ReferenceRenderer::SetScene(ReferenceScene Scene)
 {
+    if (Scene.TriangleDistance && Scene.TriangleRadiance.size() != Scene.TriangleDistance->FacetCount())
+        throw std::runtime_error("Triangle distance and surface radiance count mismatch");
+    for (const auto &Radiance : Scene.TriangleRadiance)
+        if (!std::isfinite(Radiance.R) || !std::isfinite(Radiance.G) || !std::isfinite(Radiance.B) ||
+            Radiance.R<0 || Radiance.G<0 || Radiance.B<0)
+            throw std::runtime_error("Invalid triangle surface radiance");
     Scene_ = std::move(Scene);
     Prepared_.clear();
     std::vector<std::array<SpatialVector, 3>> VisibilityFacets;
@@ -451,7 +464,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
 
     // Environment MIS is evaluated once per surface pixel and reused across direct-light frames.
     std::vector<SpectrumRgb> EnvironmentBuffer(PixelCount, SpectrumRgb{});
-    if (Settings.AtmosphereEnabled && Settings.EnvironmentSamples > 0)
+    if ((Settings.AtmosphereEnabled || Scene_.TriangleDistance) && Settings.EnvironmentSamples > 0)
     {
         for (size_t P = 0; P < PixelCount; ++P)
         {
@@ -459,7 +472,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
             DeterministicRandom Random(Settings.Seed ^ (0xD1B54A32D192ED03ull * (P + 1)), 0xE17B1B3ull);
             const SpatialVector View = Normalised(Sub(Camera.Position, WorldPos[P]));
             EnvironmentBuffer[P] = IntegrateReferenceEnvironment(MaterialBuffer[P], WorldNormal[P], View,
-                Settings, AtmosphereLut_, PlanetObserver, Random);
+                Settings, AtmosphereLut_, PlanetObserver, Random, Scene_, WorldPos[P]);
             Image.Stats.MeanEnvironmentIbl += Luminance(EnvironmentBuffer[P]);
         }
         Image.Stats.MeanEnvironmentIbl /= std::max<uint32_t>(Image.Stats.SurfacePixels, 1u);

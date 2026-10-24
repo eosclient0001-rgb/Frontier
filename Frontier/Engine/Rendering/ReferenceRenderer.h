@@ -26,6 +26,8 @@
 #include "SurfaceCards.h"
 #include "VisibilityCull.h"
 #include "TriangleVisibilitySpace.h"
+#include "TriangleDistanceVolume.h"
+#include <memory>
 
 #include <cstdint>
 #include <vector>
@@ -75,6 +77,8 @@ struct ReferenceScene
     std::vector<ReferenceMesh>  Meshes;
     std::vector<ReferenceLight> Lights;
     DistanceFieldScene          Distance;          // indirect/AO approximation of the same scene (may be empty)
+    std::shared_ptr<const TriangleDistanceVolume> TriangleDistance;
+    std::vector<SpectrumRgb> TriangleRadiance;
     const CardRadiosity*        Cards = nullptr;   // optional solved cards (borrowed)
 };
 
