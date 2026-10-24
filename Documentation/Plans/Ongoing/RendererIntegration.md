@@ -1,6 +1,24 @@
 # Vulkan preview, materials and illumination integration
 
 
+
+## Moving Vulkan-primary history checkpoint — 2026-10-24
+
+- Six authentic vehicle/camera poses now generate surfaces and rigid-motion metadata on Vulkan with CPU raster
+  disabled and all receiver channels poisoned. Persistent temporal/spatial reservoirs and reconstruction execute
+  over those generated receivers. Actual animation: `Exhibits/LightCompute/Images/PrimaryMotion.png`.
+- Moving RMSE sum 0.651907 → 0.286237, **56.09% lower**; fixture quality, not equal-cost speed or GPU performance.
+  Native motion projection agrees within 0.00012207 px. Uploaded per-pose rotation coefficients fix a measured
+  shader trigonometry discrepancy; no CPU per-pixel visibility or motion buffer is supplied.
+- Native ray/shading checks at all six poses; zero hit/miss disagreement. Eleven triangle identities differ at
+  edges or within float-depth tolerance. Worst all-pixel RGB outlier is 0.960438; this remains a recorded
+  robustness limitation. Matched-facet and all-pixel errors are separately reported, not conflated.
+- Camera-cut versus cold restart, light-off invalidation and current facet-emission refresh pass bitwise checks.
+  Full retained history, clustered lighting and primary clipping/fallback regressions pass.
+- Device is still SwiftShader CPU type 4. This is direct plus visible material emission against black, not GPU
+  indirect/emissive-source transport, sun/sky/cloud/Moon integration, physical RTX or Windows acceptance.
+- Detailed evidence and reproduction: `Exhibits/LightCompute/README.md`, `Results/PrimaryMotion.txt` and JSON.
+
 ## Vulkan camera-ray visibility checkpoint — 2026-10-24
 
 - Executed `TracePrimarySurfaces` on the authentic ControlVehicle, with native raster scene setup/render skipped

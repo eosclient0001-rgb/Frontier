@@ -48,7 +48,10 @@ float3 Unit(float3 P)
     float Squared = dot(P, P);
     return Squared > 0 ? P * rsqrt(Squared) : float3(0, 0, 1);
 }
-float Power(float3 C) { return dot(C, float3(.2126, .7152, .0722)); }
+float Power(float3 C)
+{
+    return dot(C, float3(.2126, .7152, .0722));
+}
 
 [shader("compute")][numthreads(64, 1, 1)] void AssignLightCells(uint3 Dispatch
                                                                 : SV_DispatchThreadID)
@@ -272,7 +275,10 @@ uint NextRandom(inout uint Bits)
     uint Word = ((Bits >> ((Bits >> 28u) + 4u)) ^ Bits) * 277803737u;
     return (Word >> 22u) ^ Word;
 }
-float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 / 16777216.0); }
+float RandomUnit(inout uint Bits)
+{
+    return float(NextRandom(Bits) >> 8) * (1.0 / 16777216.0);
+}
 
 [shader("compute")][numthreads(64, 1, 1)] void EvaluateLightReceivers(uint3 Dispatch
                                                                       : SV_DispatchThreadID)
@@ -771,15 +777,14 @@ uint NearestFacet(float3 Origin, float3 Direction, float Minimum, float Maximum,
     float3 PreviousPosition = Position, PreviousNormal = Normal;
     if (F.OpticalToken.w > CurrentRigid.z)
     {
+        float4 Rotation = CameraProjection(11);
         float X = Position.x - CurrentRigid.y, Y = Position.y;
-        float2 Local = float2(cos(CurrentRigid.x) * X + sin(CurrentRigid.x) * Y,
-                              -sin(CurrentRigid.x) * X + cos(CurrentRigid.x) * Y);
-        PreviousPosition.xy =
-            float2(cos(PreviousRigid.x) * Local.x - sin(PreviousRigid.x) * Local.y + PreviousRigid.y,
-                   sin(PreviousRigid.x) * Local.x + cos(PreviousRigid.x) * Local.y);
-        float Angle = PreviousRigid.x - CurrentRigid.x;
-        PreviousNormal.xy = float2(cos(Angle) * Normal.x - sin(Angle) * Normal.y,
-                                   sin(Angle) * Normal.x + cos(Angle) * Normal.y);
+        float2 Local = float2(Rotation.x * X + Rotation.y * Y, -Rotation.y * X + Rotation.x * Y);
+        PreviousPosition.xy = float2(Rotation.z * Local.x - Rotation.w * Local.y + PreviousRigid.y,
+                                     Rotation.w * Local.x + Rotation.z * Local.y);
+        float Cosine = Rotation.z * Rotation.x + Rotation.w * Rotation.y;
+        float Sine = Rotation.w * Rotation.x - Rotation.z * Rotation.y;
+        PreviousNormal.xy = float2(Cosine * Normal.x - Sine * Normal.y, Sine * Normal.x + Cosine * Normal.y);
     }
     R.MotionPositionToken = float4(PreviousPosition, F.OpticalToken.w);
     R.MotionNormal = float4(PreviousNormal, 0);

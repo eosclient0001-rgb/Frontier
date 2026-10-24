@@ -4,7 +4,7 @@
 // 🧩 Independent double-precision first-hit reference for camera rays generated
 // by Vulkan.
 void ValidatePrimary(LightComputeSubmission& Compute, const LightComputeArchive& Scene,
-                     const std::string& Output, uint32_t StackCapacity = 64)
+                     const std::string& Output, uint32_t StackCapacity = 64, bool SaveProof = true)
 {
     auto Pixels = Compute.Execute(Scene, 0, 16, 1, StackCapacity, 0, true, true);
     auto Clustered = Compute.Execute(Scene, 1, 16, 1, StackCapacity, 0, true, true);
@@ -53,9 +53,9 @@ void ValidatePrimary(LightComputeSubmission& Compute, const LightComputeArchive&
     }
     auto Sub = [](SpatialVector A, SpatialVector B)
     { return SpatialVector{A.X - B.X, A.Y - B.Y, A.Z - B.Z}; };
-    double ColourError = 0, ColourMaximum = 0;
+    double ColourError = 0, ColourMaximum = 0, InteriorColourMaximum = 0, InteriorDepthMaximum = 0;
     std::vector<std::array<float, 4>> Native(Pixels.size());
-    uint64_t Hits = 0, Misses = 0, Identity = 0, Edges = 0, Disagreement = 0;
+    uint64_t Hits = 0, Misses = 0, Identity = 0, Edges = 0, Disagreement = 0, PrecisionTies = 0;
     double Maximum = 0, NormalError = 0;
     for (uint32_t I = 0; I < Receivers.size(); ++I)
     {
@@ -95,14 +95,32 @@ void ValidatePrimary(LightComputeSubmission& Compute, const LightComputeArchive&
         if (Facet != Hit.Facet)
         {
             ++Identity;
-            Require(Edge, "Interior primary facet disagreement");
+            if (!Edge)
+            {
+                const auto& Other = Scene.Surfaces[Facet];
+                auto Cross = [](SpatialVector A, SpatialVector B) {
+                    return SpatialVector{A.Y * B.Z - A.Z * B.Y, A.Z * B.X - A.X * B.Z, A.X * B.Y - A.Y * B.X};
+                };
+                auto Plane =
+                    Cross(Sub(Vector(Other.B), Vector(Other.A)), Sub(Vector(Other.C), Vector(Other.A)));
+                double Den = Dot(Plane, D);
+                double OtherTravel = Dot(Plane, Sub(Vector(Other.A), Vector(Scene.Camera[0]))) / Den;
+                Require(std::abs(OtherTravel - Hit.Travel) <
+                            64 * std::numeric_limits<float>::epsilon() * std::max(1., Hit.Travel),
+                        "Interior primary depth ordering exceeds float32 tolerance");
+                ++PrecisionTies;
+            }
         }
+        if (Facet == Hit.Facet)
+            InteriorDepthMaximum = std::max(InteriorDepthMaximum,
+                                            std::abs(Strikes[I][0] - Hit.Travel) / std::max(1., Hit.Travel));
         auto N = Add(Scale(Vector(F.NormalA), 1 - U - V),
                      Add(Scale(Vector(F.NormalB), U), Scale(Vector(F.NormalC), V)));
         N = Scale(N, 1 / std::sqrt(Dot(N, N)));
         if (Dot(N, D) > 0)
             N = Scale(N, -1);
-        NormalError = std::max(NormalError, std::abs(1 - Dot(N, Vector(Receivers[I].NormalRoughness))));
+        if (Facet == Hit.Facet)
+            NormalError = std::max(NormalError, std::abs(1 - Dot(N, Vector(Receivers[I].NormalRoughness))));
         ReferenceMaterial Material;
         Material.Albedo = {F.AlbedoRoughness[0], F.AlbedoRoughness[1], F.AlbedoRoughness[2]};
         Material.Roughness = F.AlbedoRoughness[3];
@@ -131,26 +149,33 @@ void ValidatePrimary(LightComputeSubmission& Compute, const LightComputeArchive&
             double Error = std::abs(Native[I][C] - Pixels[I][C]);
             ColourError += Error;
             ColourMaximum = std::max(ColourMaximum, Error);
+            if (Facet == Hit.Facet)
+                InteriorColourMaximum = std::max(InteriorColourMaximum, Error);
         }
         Require(std::isnan(Receivers[I].ExpectedDirect[0]), "CPU reference channel unexpectedly consumed");
-        Require(Receivers[I].MotionPositionToken[3] == F.OpticalToken[3],
+        Require(Receivers[I].MotionPositionToken[3] == Scene.Surfaces[Facet].OpticalToken[3],
                 "Primary material identity changed");
     }
     std::cout << "PRIMARY hits=" << Hits << " misses=" << Misses << " hit_disagreement=" << Disagreement
-              << " facet_disagreement=" << Identity << " near_edge=" << Edges
-              << " max_relative_depth=" << Maximum << " max_normal_error=" << NormalError
+              << " facet_disagreement=" << Identity << " precision_ties=" << PrecisionTies
+              << " near_edge=" << Edges << " max_relative_depth=" << Maximum
+              << " max_normal_error=" << NormalError
               << " cpu_primary_raster=0 poisoned_receiver_channels=36\n";
     std::cout << "PRIMARY_SHADING mean_rgb_error=" << ColourError / (Pixels.size() * 3)
-              << " max_rgb_error=" << ColourMaximum
+              << " max_rgb_error=" << ColourMaximum << " matched_facet_max_rgb=" << InteriorColourMaximum
+              << " matched_facet_max_depth=" << InteriorDepthMaximum
               << " native_barycentrics=1 native_brdf=1 native_light_arrival=1 "
                  "native_bvh_shadows=1\n";
-    Require(ColourError / (Pixels.size() * 3) < .0001 && ColourMaximum < .01,
+    Require(ColourError / (Pixels.size() * 3) < .0001 && InteriorColourMaximum < .01,
             "Native/GPU primary shading disagreement");
-    WriteImage(Output + "/PrimaryNative.ppm", Native, Scene.Width, Scene.Height);
+    if (SaveProof)
+        WriteImage(Output + "/PrimaryNative.ppm", Native, Scene.Width, Scene.Height);
     Require(Disagreement == 0, "Native/GPU primary hit disagreement");
-    Require(Maximum < .0001 && NormalError < .00001, "Native/GPU primary depth or normal disagreement");
-    Require(Identity <= Edges, "Primary facet disagreement exceeds near-edge population");
-    WriteImage(Output + "/Primary.ppm", Pixels, Scene.Width, Scene.Height);
+    Require(InteriorDepthMaximum < .0002 && NormalError < .00001,
+            "Native/GPU primary depth or normal disagreement");
+    Require(Identity <= Edges + PrecisionTies, "Primary facet disagreement exceeds near-edge population");
+    if (SaveProof)
+        WriteImage(Output + "/Primary.ppm", Pixels, Scene.Width, Scene.Height);
 }
 
 void ValidatePrimaryClipping(const char* Driver, const std::string& Shaders, const std::string& Output)

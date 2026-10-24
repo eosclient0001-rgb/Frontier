@@ -44,8 +44,9 @@ void Confirm(VkResult Result)
     F(CreateDevice)                                                                                          \
     F(DestroyDevice)                                                                                         \
     F(GetDeviceQueue)                                                                                        \
-    F(DeviceWaitIdle) F(CreateBuffer) F(DestroyBuffer) F(GetBufferMemoryRequirements) F(AllocateMemory)      \
-        F(FreeMemory) F(BindBufferMemory) F(MapMemory) F(UnmapMemory) F(CreateDescriptorSetLayout)           \
+    F(DeviceWaitIdle)                                                                                        \
+    F(CreateBuffer) F(DestroyBuffer) F(GetBufferMemoryRequirements) F(AllocateMemory) F(FreeMemory)          \
+        F(BindBufferMemory) F(MapMemory) F(UnmapMemory) F(CreateDescriptorSetLayout)                         \
             F(DestroyDescriptorSetLayout) F(CreateDescriptorPool) F(DestroyDescriptorPool)                   \
                 F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreatePipelineLayout)                    \
                     F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule)                    \
@@ -210,7 +211,10 @@ struct LightComputeSubmission
             throw;
         }
     }
-    ~LightComputeSubmission() { Release(); }
+    ~LightComputeSubmission()
+    {
+        Release();
+    }
     LightComputeSubmission(const LightComputeSubmission&) = delete;
     LightComputeSubmission& operator=(const LightComputeSubmission&) = delete;
     void Release()
@@ -786,6 +790,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 }
 #include "LightHistoryValidation.h"
 #include "LightPrimaryValidation.h"
+#include "LightPrimaryMotion.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -796,8 +801,9 @@ int main(int Count, char** Arguments)
             ValidateFreshSampling(Arguments[1], Arguments[2]);
             return 0;
         }
-        Require(Count == 5 || Count == 6, "Usage: LightComputeValidation driver-library shader-directory "
-                                          "input-archive output-directory");
+        Require(Count == 5 || Count == 6 || Count == 7,
+                "Usage: LightComputeValidation driver-library shader-directory "
+                "input-archive output-directory");
         auto Scene = LightComputeArchive::Load(Arguments[3]);
         std::filesystem::create_directories(Arguments[4]);
         LightComputeSubmission Compute(Arguments[1]);
@@ -810,6 +816,11 @@ int main(int Count, char** Arguments)
         {
             ValidatePrimaryClipping(Arguments[1], Arguments[2], Arguments[4]);
             ValidatePrimary(Compute, Scene, Arguments[4]);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[5]) == "--primary-motion")
+        {
+            ValidatePrimaryMotion(Arguments[1], Arguments[2], Arguments[6], Arguments[4]);
             return 0;
         }
         auto All = Compute.Execute(Scene, 0);

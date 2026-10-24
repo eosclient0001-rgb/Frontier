@@ -191,6 +191,7 @@ inline LightComputeArchive PackLightCompute(const ReferenceScene& Scene, const R
         for (uint32_t I = 0; I < 4; ++I)
             Archive.Camera[4 + I] = Archive.Camera[I];
         Archive.Camera[8][2] = 3;
+        Archive.Camera[11] = {1, 0, 1, 0};
     }
     if (Image.SurfaceSamples.size() != Image.Pixels.size())
         throw std::runtime_error("Missing exact reference surface samples");
@@ -227,6 +228,8 @@ inline void ProjectLightComputeMotion(LightComputeArchive& Archive, const CullCa
                          float(std::tan(PreviousCamera.FovYRadians * .5))};
     Archive.Camera[8] = {float(CurrentAngle), float(.8 * CurrentAngle), float(VehicleFirst), 0};
     Archive.Camera[9] = {float(PreviousAngle), float(.8 * PreviousAngle), float(VehicleFirst), 0};
+    Archive.Camera[11] = {float(std::cos(CurrentAngle)), float(std::sin(CurrentAngle)),
+                          float(std::cos(PreviousAngle)), float(std::sin(PreviousAngle))};
     auto Dot = [](SpatialVector A, SpatialVector B) { return A.X * B.X + A.Y * B.Y + A.Z * B.Z; };
     const double TanY = std::tan(PreviousCamera.FovYRadians * .5), TanX = TanY * PreviousCamera.Aspect;
     for (auto& R : Archive.Receivers)

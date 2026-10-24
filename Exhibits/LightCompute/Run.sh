@@ -30,4 +30,7 @@ _ClaudeScratch/build/vehicle-reference-cmake/VehicleCapture "$PWD/_ClaudeScratch
 python3 Exhibits/LightCompute/Code/PrimaryImages.py
 python3 Exhibits/LightCompute/Code/Images.py
 python3 Exhibits/LightCompute/Code/HistoryImages.py
+_ClaudeScratch/build/vehicle-reference-cmake/VehicleCapture "$PWD/_ClaudeScratch/primary-motion" --primary-motion | tee Exhibits/LightCompute/Results/PrimaryMotionCapture.txt
+"$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --primary-motion _ClaudeScratch/primary-motion | tee Exhibits/LightCompute/Results/PrimaryMotion.txt
+python3 Exhibits/LightCompute/Code/PrimaryMotionImages.py
 python3 Exhibits/LightCompute/Code/Evidence.py

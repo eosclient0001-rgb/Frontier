@@ -5,6 +5,55 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Moving Vulkan-primary reconstruction — executed
+
+![Six actual moving Vulkan-primary readbacks](Images/PrimaryMotion.png)
+
+![Fresh sampling left; reconstructed lighting right, same moving pose](Images/PrimaryMotionComparison.png)
+
+`VehicleCapture --primary-motion` exports six rigid/camera poses **without native rasterization**. Every exact,
+fresh and history dispatch regenerates camera hits, surfaces, material emission and motion metadata on Vulkan,
+after poisoning all receiver channels. The persistent history receives 16 static updates and then five moving
+updates. Analytic light colour changes at pose 3 force a complete history reset. These captures use a black
+environment and visible material emission—not indirect transport or emissive-source sampling.
+
+| Pose | Fresh RGB RMSE | Reconstructed RGB RMSE | Accepted / rejected receivers |
+|---|---|---|---|
+| 0, after 16 updates | 0.134862 | 0.041186 | 225214 / 0 |
+| 1 | 0.133991 | 0.0513191 | 152325 / 72955 |
+| 2 | 0.131754 | 0.057873 | 152590 / 73330 |
+| 3, light revision | 0.130677 | 0.0920956 | 0 / 225973 |
+| 4 | 0.129381 | 0.0425442 | 153020 / 73540 |
+| 5 | 0.126105 | 0.042405 | 153177 / 73558 |
+
+Use `Results/PrimaryMotion.txt` for authoritative rounded measurements. Across moving poses, RMSE sums are
+0.651907 fresh versus 0.286237 reconstructed: **56.09% lower**, a fixture-quality result, not an equal-cost speedup.
+The lossless six-frame APNG has illustrative timing, not measured frame times. `PrimaryMotionReject1.png`
+shows accepted colour in green, sampled visibility rejection in orange, rejected history in red, misses black.
+
+Independent native first-hit/shading checks execute at every pose, on a separate Vulkan submission so they cannot
+consume the history context's light-revision reset. A native rigid-transform/projector also checks every generated
+surface's previous world position, normal, pixel and projection validity. Maximum observed reprojection error is
+0.00012207 pixels, world error 4.76837e-7 m, normal-component error 1.19209e-7. The checks exposed inaccurate
+shader sine/cosine evaluation on the software device; current/previous rotation coefficients are now computed
+once per pose and uploaded, rather than recomputed approximately per pixel. Visibility remains shader-generated.
+
+Camera-cut output matches a cold restart bitwise; disabling lights leaves no stale direct lighting; updating
+facet emission matches exact current emission bitwise. All six poses have zero native/GPU hit/miss disagreement.
+There are **11 triangle-identity differences** across the moving poses: six near triangle edges and five depth
+orderings within `64 * float_epsilon * travel`. They remain counted, not described as identical geometry.
+For matching facets, maximum relative depth error reaches 1.11028e-4 (bound 2e-4), and maximum RGB error is
+6.93947e-5. Across **all** pixels, including edge/precision ambiguities, worst RGB error is 0.960438 and worst
+relative depth error is 0.177935 at pose 2; per-frame mean RGB error remains at most 3.77025e-6.
+These isolated visibility outliers are a robustness limitation, not hidden by the matched-facet statistics.
+The oracle requires every interior identity mismatch to fit the stated float-depth tolerance; matched-facet
+normals, full-image mean colour and all-pixel hit/miss checks remain independently gated.
+
+Reproduce both retained regressions and moving-primary checks with `bash Exhibits/LightCompute/Run.sh`.
+Windows command parity is in `Run.ps1`; Windows execution is **not** claimed. GPU indirect/environment transport,
+RTX queries, physical-GPU performance and production viewport integration remain open. Existing environment
+work and the planned Moon are retained, not replaced by this black-environment fixture.
+
 ## Primary camera rays — executed
 
 ![ControlVehicle: Vulkan camera rays, direct illumination and material emission](Images/Primary.png)
@@ -40,8 +89,8 @@ light arrival and shadow queries. Forced traversal changes which triangle owns 1
 The private exhibit archive is now FLC3, with 144-byte shaded facets and camera metadata. Old scratch archives
 must be regenerated. The shader still uses eight storage buffers; push constants are now **128 bytes** and
 16 float4 output/history slabs occupy **65.536 MB** at 640×400, excluding receivers and scene geometry.
-Primary generation also writes rigid-motion metadata, but moving GPU-primary history is not validated by this
-static capture. The existing six-pose history regression below was rerun unchanged and passed.
+Primary generation writes rigid-motion metadata; its moving validation is documented above. The existing
+six-pose CPU-primary history regression below was also rerun and passed.
 
 ## Retained history regression
 

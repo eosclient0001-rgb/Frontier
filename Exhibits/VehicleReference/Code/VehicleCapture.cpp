@@ -94,9 +94,11 @@ int main(int Count, char** Arguments)
         if (Count != 2 && !(Count == 3 && (std::string(Arguments[2]) == "--clustered-lights" ||
                                            std::string(Arguments[2]) == "--vulkan-input" ||
                                            std::string(Arguments[2]) == "--motion-input" ||
-                                           std::string(Arguments[2]) == "--primary-input")))
-            throw std::runtime_error("Usage: VehicleCapture output-directory "
-                                     "[--clustered-lights|--vulkan-input|--motion-input|--primary-input]");
+                                           std::string(Arguments[2]) == "--primary-input" ||
+                                           std::string(Arguments[2]) == "--primary-motion")))
+            throw std::runtime_error(
+                "Usage: VehicleCapture output-directory "
+                "[--clustered-lights|--vulkan-input|--motion-input|--primary-input|--primary-motion]");
         std::filesystem::path Output = Arguments[1];
         std::filesystem::create_directories(Output);
         std::ifstream Table("_ClaudeScratch/vehicle-reference/Materials.txt");
@@ -113,8 +115,11 @@ int main(int Count, char** Arguments)
         if (Materials.size() != 86)
             throw std::runtime_error("Expected 86 authored material records");
         const bool Analytic = Count == 3;
-        const bool PrimaryInput = Count == 3 && std::string(Arguments[2]) == "--primary-input";
-        const bool MotionInput = Count == 3 && std::string(Arguments[2]) == "--motion-input";
+        const bool PrimaryMotion = Count == 3 && std::string(Arguments[2]) == "--primary-motion";
+        const bool PrimaryInput =
+            PrimaryMotion || (Count == 3 && std::string(Arguments[2]) == "--primary-input");
+        const bool MotionInput =
+            PrimaryMotion || (Count == 3 && std::string(Arguments[2]) == "--motion-input");
         const bool ComputeInput =
             Count == 3 && (std::string(Arguments[2]) == "--vulkan-input" || MotionInput || PrimaryInput);
         CullCamera PreviousCamera;

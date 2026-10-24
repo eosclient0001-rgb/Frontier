@@ -21,7 +21,7 @@
   "exact_surface_refinement": true,
   "transport": "one-bounce RGB source radiance replacing occluded sky proposals",
   "sources_sha256": {
-    "Exhibits/LightCompute/Code/LightComputeFormat.h": "018a25a9276b50cfc34c489eb92a8ce503a4c6bf56f2ed9631cb28b7f322892a",
+    "Exhibits/LightCompute/Code/LightComputeFormat.h": "dfd5308a1a7b3d59f0a93e3179d51fa7794d51a0e396a5e5b3e3fde90f077446",
     "Exhibits/VehicleReference/CMakeLists.txt": "cc659d4a7380526250190de736f267fdafeed8359e43fb913b5563efc30d0d00",
     "Exhibits/VehicleReference/Code/DistanceImages.py": "8e84791dc71ed7a35b32ffaa557d6653726ed9f25438152f97f616d55473ba65",
     "Exhibits/VehicleReference/Code/Evidence.py": "32cb98e868a8fd7aca836b8ad2b841736524b4caf92e4b74fd933ebe4187449d",
@@ -29,7 +29,7 @@
     "Exhibits/VehicleReference/Code/Materials.mjs": "6af4b407ec754d630dfc8c0756b241687e0c514e8f8645e4d4a24f700491fd53",
     "Exhibits/VehicleReference/Code/TriangleDistanceValidation.cpp": "1ba6eb5400a9ee869b7c0b6d4fa7802cfcd816842f34b36f4198b0b95901d217",
     "Exhibits/VehicleReference/Code/TriangleVisibilityValidation.cpp": "a26fa0aa8cb04378befac485f019a70ce9d1547752afea169eb7cf96796c0c72",
-    "Exhibits/VehicleReference/Code/VehicleCapture.cpp": "1aa5c487fbda2d86850151204def39ae2a7c3914966070f48e0a645b2bc453b8",
+    "Exhibits/VehicleReference/Code/VehicleCapture.cpp": "ac2e126f648650c0cc93a48c5dd6302a8e26d35a23bc4ee49679b0304f2ecea8",
     "Exhibits/VehicleReference/README.md": "69ab008434d1b4ee4fbdfcb0b6542405f7575447702182827343c8108970c806",
     "Exhibits/VehicleReference/Run.ps1": "e9baa34836ed17950ac01e2848423c01d2c6a69e9e48969ca1a1dde96ffe0692",
     "Exhibits/VehicleReference/Run.sh": "c1403b0d84a17a3498e21d32c9b8bf25329c1b7f80c3081701042dd0bea51848",

@@ -21,3 +21,6 @@ cmake --build $Build --config Release; Confirm-Exit
 
 & '_ClaudeScratch/build/vehicle-reference-windows/Release/VehicleCapture.exe' "$PWD/_ClaudeScratch/vehicle-primary" --primary-input; Confirm-Exit
 & "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/vehicle-primary/VehiclePrimary.bin' '_ClaudeScratch/light-compute' '--primary-only'; Confirm-Exit
+
+& '_ClaudeScratch/build/vehicle-reference-windows/Release/VehicleCapture.exe' "$PWD/_ClaudeScratch/primary-motion" --primary-motion; Confirm-Exit
+& "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--primary-motion' '_ClaudeScratch/primary-motion'; Confirm-Exit
