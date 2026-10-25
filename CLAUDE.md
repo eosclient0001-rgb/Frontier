@@ -201,3 +201,20 @@ multiple scattering, emissive-volume scattering or fully coupled inter-bounce/cl
 Thirteen compute entries, eight SSBOs, 128-byte pushes; unchanged allocation and no shaderInt64 feature. Still
 SwiftShader CPU type 4, no physical-GPU/Windows/real-time acceptance. Existing Sun/flare/stars unchanged; Moon
 remains planned. Run `Exhibits/LightCompute/RunFog.sh` serially; detailed checks live in `Results/Fog.json`.
+
+## Fog shadow quadrature refinement — 2026-10-25
+
+Two fixed-camera ControlVehicle/wind fixtures compare 16/32/64/128 shadow samples at 32 view midpoints.
+Actual 160×100 readbacks and 936 independent native probes are retained in `Exhibits/LightCompute`.
+64-step full-image RGB RMSE against finite 128-step quadrature decreased 96.57% / 96.39% versus 16;
+the exhibit preset is now 64. This is 4× shadow samples, not a speed or full-convergence claim.
+`Results/FogSampling.json`, `Images/FogSamplingComparison.png` and `RunFogSampling.sh` retain/reproduce it.
+Earlier 320×200 evidence remains unchanged at 16 steps. Historical medium prose was incorrect: source and
+captures actually used 0.0015/m and 450 m, not 0.0007/m and 650 m. Metadata corrected, images unchanged.
+View marching/aliasing, temporal fog, coupled/multiple scattering, final cloud appearance, Moon and physical
+GPU/Windows acceptance remain open; preserve both lighting paths and existing Sun/flare/star code.
+
+Fresh ASan/UBSan checks passed: 654 preset camera probes + 270 surface probes and 1,040 budget-study probes;
+external-driver leak detection disabled. Four native CTests passed. Exact new logs are `FogSamplingPresetChecks`,
+`FogSamplingSanitizers` and `FogSamplingRegression` under exhibit `Results/`. Diagnostic refinement now uses
+shadow128 as the finer budget; the former shadow64 check would be a vacuous self-comparison with the new preset.

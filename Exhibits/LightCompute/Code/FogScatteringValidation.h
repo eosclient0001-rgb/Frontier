@@ -6,7 +6,7 @@
 uint32_t AppendFogParameters(LightComputeArchive &Scene)
 {
     uint32_t Offset = uint32_t(Scene.Angles.size());
-    const std::array<float, 16> Fog{.0015f, 0,     450,   .9f, .65f, 2500, 32,    16,
+    const std::array<float, 16> Fog{.0015f, 0,     450,   .9f, .65f, 2500, 32,    64,
                                     .01f,   .012f, .015f, 1,   1,    1,    40000, 0};
     Scene.Angles.insert(Scene.Angles.end(), Fog.begin(), Fog.end());
     return Offset;
@@ -117,9 +117,11 @@ struct FogRayReference
                                     F[3], Incident);
     }
 };
+#include "FogSamplingValidation.h"
+
 void ValidateFogScattering(const char *Driver, const std::string &Shaders,
                            const LightComputeArchive &Original, const std::string &Output, bool Capture,
-                           bool SkyOnly = false)
+                           bool SkyOnly = false, bool Sampling = false)
 {
     using namespace TransportReference;
     constexpr double π = 3.141592653589793;
@@ -138,7 +140,7 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
     Require(std::abs(Horizontal - NearHorizontal) < 1e-9, "Near-horizontal fog column is unstable");
     std::cout << "FOG_ANALYTIC uniform_integral=1 beer=1 near_horizontal=1\n";
     auto Scene = Original;
-    SetFogCamera(Scene, Capture ? 320 : 80, Capture ? 200 : 50);
+    SetFogCamera(Scene, Capture ? (Sampling ? 160 : 320) : 80, Capture ? (Sampling ? 100 : 200) : 50);
     auto Forward = Unit(SpatialVector{Scene.Camera[1][0], Scene.Camera[1][1], 0});
     auto Right = Vector(Scene.Camera[2]);
     auto HorizontalSun = Unit(Add(Mul(Forward, .9), Mul(Right, .45)));
@@ -172,6 +174,11 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
         return Compute.Execute(Input, 0, 16, 71, 64, 0, true, true, Capture ? 4u : 0u, true, Capture, false,
                                CloudOffset, Fog ? FogOffset : UINT32_MAX, Resolve);
     };
+    if (Sampling)
+    {
+        ValidateFogSampling(Compute, Scene, Cloud, Sun, CloudOffset, FogOffset, Output, Capture);
+        return;
+    }
     if (SkyOnly)
     {
         auto Sky = Scene;
@@ -294,7 +301,7 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
             {
                 auto Finer = Oracle.Integrate(Origin, Ray, Distance, 128);
                 Convergence = std::max(Convergence, std::abs(Finer.Radiance.R - Expected.Radiance.R));
-                auto ShadowFiner = Oracle.Integrate(Origin, Ray, Distance, 0, 64);
+                auto ShadowFiner = Oracle.Integrate(Origin, Ray, Distance, 0, 128);
                 ShadowConvergence =
                     std::max(ShadowConvergence, std::abs(ShadowFiner.Radiance.R - Expected.Radiance.R));
             }
@@ -305,7 +312,7 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
                   << " max_rgb_error=" << Maximum << " mean_rgb_error=" << Mean / (Probes * 3)
                   << " source_rgb_sum=" << SourceEnergy << " view_128step_max_red_delta=" << Convergence
                   << " surface_probes=" << SurfaceProbes << " surface_max_rgb_error=" << SurfaceError
-                  << " shadow_64step_max_red_delta=" << ShadowConvergence << "\n";
+                  << " shadow_128step_max_red_delta=" << ShadowConvergence << "\n";
         if (Capture)
             WriteImage(Output + "/FogShafts" + std::to_string(Case) + ".ppm", Fog, Scene.Width, Scene.Height);
     }

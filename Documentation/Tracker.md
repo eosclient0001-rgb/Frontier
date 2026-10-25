@@ -10,6 +10,22 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 
 
+## Fog shadow quadrature refinement — 2026-10-25
+
+- Controlled 16/32/64/128 cloud-shadow budgets at fixed 32 view midpoints, two wind positions and original
+  ControlVehicle; eight actual 160×100 Vulkan captures, 936 matching-budget native probes.
+- 64 samples reduced full-image linear RGB RMSE versus finite 128-step quadrature by 96.57% / 96.39%.
+  Changed the exhibit preset from 16 to 64; this costs 4× shadow samples, with no speed or convergence claim.
+- `Exhibits/LightCompute/Images/FogSamplingComparison.png`: columns16/64/128, rows wind0/120.
+  Full measurements, independent comparisons and serial reproduction: exhibit README and `Results/FogSampling.json`.
+- Fresh ASan/UBSan: promoted preset 654 camera + 270 surface probes, additional budget study 1,040 probes;
+  zero-density, occlusion, history, toggles and bounds passed. Four native CTests passed; external-driver leaks
+  excluded. Subset sensitivity now uses shadow64→128, not a self-comparison.
+- Corrected historical day-medium prose to the actual source: 0.0015/m, 450 m, not 0.0007/m, 650 m.
+  Old 320×200 captures and numeric logs remain unchanged and clearly archived at 16 shadow steps.
+- Regular view marching, temporal fog, multiple scattering, final cloud appearance, Moon and physical-device /
+  Windows / production viewport acceptance are not completed by this refinement.
+
 ## Cloud-shadowed fog and light shafts — 2026-10-25
 
 - Clarified provenance: inherited four-octave cloud density was ported and its rendering integration improved;

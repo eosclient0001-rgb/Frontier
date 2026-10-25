@@ -22,6 +22,7 @@ node Exhibits/VehicleReference/Code/Materials.mjs
 _ClaudeScratch/build/vehicle-reference-cmake/VehicleCapture "$PWD/_ClaudeScratch/primary-motion" --primary-motion
 "$Cmake" -S Exhibits/LightCompute -B "$Build" -DCMAKE_BUILD_TYPE=Release
 "$Cmake" --build "$Build" --parallel 2
+if [[ "${BUILD_ONLY:-0}" == 1 ]]; then exit 0; fi
 "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --fog-checks | tee Exhibits/LightCompute/Results/FogChecks.txt
 "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --fog-rays | tee Exhibits/LightCompute/Results/FogRays.txt
 "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --fog-sky | tee Exhibits/LightCompute/Results/FogSky.txt

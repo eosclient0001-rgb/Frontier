@@ -43,3 +43,15 @@ That does not establish that a Moon disc, surface texture or moonlight is connec
   the original ControlVehicle and local-light cones. Preserve both lighting paths and existing celestial code.
 - Remaining: sampling bands/aliasing, temporal fog reconstruction, full inter-bounce/coupled media transport,
   emissive-volume scattering, multiple scattering, physical GPU/Windows acceptance and final sky appearance.
+
+## Fog shadow quadrature refinement — 2026-10-25
+
+Two fixed-camera ControlVehicle/wind fixtures compare 16/32/64/128 shadow samples at 32 view midpoints.
+Actual 160×100 readbacks and 936 independent native probes are retained in `Exhibits/LightCompute`.
+64-step full-image RGB RMSE against finite 128-step quadrature decreased 96.57% / 96.39% versus 16;
+the exhibit preset is now 64. This is 4× shadow samples, not a speed or full-convergence claim.
+`Results/FogSampling.json`, `Images/FogSamplingComparison.png` and `RunFogSampling.sh` retain/reproduce it.
+Earlier 320×200 evidence remains unchanged at 16 steps. Historical medium prose was incorrect: source and
+captures actually used 0.0015/m and 450 m, not 0.0007/m and 650 m. Metadata corrected, images unchanged.
+View marching/aliasing, temporal fog, coupled/multiple scattering, final cloud appearance, Moon and physical
+GPU/Windows acceptance remain open; preserve both lighting paths and existing Sun/flare/star code.

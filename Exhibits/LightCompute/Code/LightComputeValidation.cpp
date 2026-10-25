@@ -1050,6 +1050,13 @@ int main(int Count, char** Arguments)
             ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4], false);
             return 0;
         }
+        if (Count == 6 && (std::string(Arguments[5]) == "--fog-sampling" ||
+                           std::string(Arguments[5]) == "--fog-sampling-checks"))
+        {
+            ValidateFogScattering(Arguments[1], Arguments[2], Scene, Arguments[4],
+                                  std::string(Arguments[5]) == "--fog-sampling", false, true);
+            return 0;
+        }
         if (Count == 6 && (std::string(Arguments[5]) == "--fog-rays" ||
                            std::string(Arguments[5]) == "--fog-checks" || std::string(Arguments[5]) == "--fog-sky"))
         {

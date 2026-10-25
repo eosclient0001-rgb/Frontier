@@ -178,7 +178,7 @@
   "wind_capture": "FogShafts2, same field at 120 seconds; fixed Sun and stationary vehicle/camera",
   "fog_model": "new shadowed single-scattering integration of inherited exponential height density; not a colour blend",
   "integration": "analytic camera/light-segment optical depth; 32 view midpoints, 16 cloud-shadow samples; local-light view uses 64 midpoints",
-  "day_medium": "base extinction 0.0007/m, scale height 650m, scattering albedo 0.9, HG g 0.65",
+  "day_medium": "base extinction 0.0015/m, scale height 450m, scattering albedo 0.9, HG g 0.65",
   "local_medium": "base extinction 0.07/m, scale height 10m, HG g 0.35; original point/IES/spot sources",
   "vehicle": "same authored ControlVehicle; analytic lights, visible emission and four-sample emissive/diffuse transport retained",
   "emissive_fog": "sampled emitter-to-surface extinction included; emissive-volume in-scattering not implemented",
@@ -201,5 +201,6 @@
     "FogSky0": "d2f7f984bc810049f0f614bb7ff17e715ed0a170ed353584cd061fa439ff5907",
     "FogSky1": "f35e62c5b66c729f93ef346f8ab12b6a548f17d8921ccb4d05ce400232b4a3d2"
   },
-  "exact_source_and_product_hashes": "Results/Manifest.json"
+  "exact_source_and_product_hashes": "Results/Manifest.json",
+  "metadata_correction": "2026-10-25 source audit: day medium corrected to actual AppendFogParameters values; historical images and numeric results unchanged"
 }

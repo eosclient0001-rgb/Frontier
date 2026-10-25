@@ -5,6 +5,67 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Fog shadow-sampling refinement — executed
+
+![Actual Vulkan readbacks: columns 16 / 64 / 128 shadow samples, rows wind 0 / 120 seconds](Images/FogSamplingComparison.png)
+
+Only the cloud-shadow integration budget changes within each row. The original ControlVehicle, geometry,
+Sun, procedural density, analytic lights and four-sample emissive/diffuse transport remain fixed.
+These are **160×100 actual Vulkan renders**, not upscaled 320×200 images or a redesigned cloud field.
+
+| Wind (s) | 16-step RGB RMSE | 32-step RGB RMSE | 64-step RGB RMSE | Reduction, 16→64 |
+|----------|-----------------|-----------------|-----------------|-----------------|
+| 0        | 0.00400171      | 0.000836603     | 0.000137084     | 96.57%          |
+| 120      | 0.000453626     | 0.0000789365    | 0.000016385     | 96.39%          |
+
+Errors use all 16,000 linear RGB pixels against **finite 128-step quadrature**, not converged ground truth.
+64-step maximum absolute channel errors are 0.00275564 / 0.000350177, versus 0.0468006 / 0.00636348 at 16.
+All eight budgets/wind combinations passed 117 independent native composite-ray probes each (936 total);
+maximum native/Vulkan discrepancy was 1.0159e-5. The native reference uses double-precision integration and
+native procedural cloud density, with the matching finite budget. This checks implementation agreement,
+not physical correctness or convergence of 128 samples.
+
+The current **exhibit preset** now uses 64 shadow samples and still 32 camera midpoints. This is four times
+as many shadow samples, not a measured speed improvement. The earlier 320×200 images below are retained
+unchanged at their original 16-step budget. `Results/Fog.json` describes those historical captures;
+`Results/FogSampling.json` describes this new study. Regular view stepping, temporal fog and final cloud
+shape/sky appearance remain open. SwiftShader CPU only; no physical-GPU, Windows or real-time acceptance.
+
+**Fresh verification:** the promoted preset passed 654 camera-ray and 270 surface-arrival probes,
+analytic/zero-density checks, geometry occlusion, history isolation, enable/disable cold equality and bounds.
+An additional 80×50 budget study passed 1,040 native comparisons under ASan/UBSan. Both sanitizer commands
+exited 0; external-driver leak detection was disabled, not a global leak-free claim. The four native CTests
+also passed. Logs: `FogSamplingPresetChecks.txt`, `FogSamplingSanitizers.txt`, `FogSamplingRegression.txt`.
+The existing subset diagnostic now compares shadow64→128, not the vacuous shadow64→64: its largest red
+change is 0.000818986 on the first twelve rays; view32→128 still changes red by up to 0.00202864.
+These subset values are not full-image convergence bounds.
+
+Sanitizer reproduction: configure a separate CMake build with `-DCMAKE_BUILD_TYPE=RelWithDebInfo`,
+`-DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"` and
+`-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"`. Run that executable with the same driver/shaders/input,
+`ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1`, and `--fog-checks` then `--fog-sampling-checks`.
+
+**Metadata correction:** a source audit found the original captures actually used base extinction
+**0.0015/m and 450 m** scale height. Previous prose and `Fog.json` incorrectly said 0.0007/m and 650 m.
+Only that description is corrected; no old image or numerical result was changed.
+
+Reproduce serially with the existing pinned tool preparation:
+
+```bash
+PREPARE=1 bash Exhibits/LightCompute/RunFogSampling.sh
+# Faster numerical-only study after building (80×50, no image overwrite):
+export VK_ICD_FILENAMES="$PWD/ExternalPackages/VulkanCompute/SwiftShader/vk_swiftshader_icd.json"
+_ClaudeScratch/build/light-compute/LightComputeValidation \
+  "$PWD/ExternalPackages/VulkanCompute/SwiftShader/libvulkan.so.1" \
+  _ClaudeScratch/build/light-compute _ClaudeScratch/primary-motion/VehicleMotion0.bin \
+  _ClaudeScratch/light-compute --fog-sampling-checks
+```
+
+`BUILD_ONLY=1 bash Exhibits/LightCompute/RunFog.sh` restores the original native input, compiles all thirteen
+Slang entries and builds the validation executable without overwriting the old fog evidence. The new packager
+verifies PNG CRCs and exact decoded RGB identity for eight images and the six-panel comparison. Original
+Sun/flare/star implementations are unchanged; Moon remains planned.
+
 ## Shadowed fog and light shafts — executed
 
 ![Same broken-cloud sky: cloud shadow disabled for fog scattering on the left, enabled on the right](Images/FogSkyComparison.png)
@@ -56,8 +117,8 @@ histories; switching fog on/off matches a cold reconstruction.
 | Invalid march extent | Rejected before dispatch |
 | Regressions | Cloud shadows/toggles, legacy Vulkan, indirect reconstruction and native CTest 4/4 passed |
 
-The default fixture uses 32 camera midpoints, 16 cloud-shadow samples, scattering albedo 0.9, HG g=0.65,
-base extinction 0.0007/m and height scale 650 m. Camera integration is bounded at 2.5 km; light columns at 40 km.
+The archived initial captures use 32 camera midpoints, 16 cloud-shadow samples, scattering albedo 0.9, HG g=0.65,
+base extinction 0.0015/m and height scale 450 m. Camera integration is bounded at 2.5 km; light columns at 40 km.
 Local-light captures use 64 camera steps, 0.07/m, a 10-m scale height and g=0.35. The IES profile is the retained
 **synthetic relative-to-peak fixture**, not a newly calibrated measured lamp.
 
