@@ -22,6 +22,10 @@ node Exhibits/VehicleReference/Code/Materials.mjs
 _ClaudeScratch/build/vehicle-reference-cmake/VehicleCapture "$PWD/_ClaudeScratch/primary-motion" --primary-motion
 "$Cmake" -S Exhibits/LightCompute -B "$Build" -DCMAKE_BUILD_TYPE=Release
 "$Cmake" --build "$Build" --parallel 2
-"$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --clouds-only | tee Exhibits/LightCompute/Results/Clouds.txt
-python3 Exhibits/LightCompute/Code/CloudImages.py
+if [[ "${CLOUD_SHADOWS_ONLY:-0}" != 1 ]]; then
+ "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --clouds-only | tee Exhibits/LightCompute/Results/Clouds.txt
+ python3 Exhibits/LightCompute/Code/CloudImages.py
+fi
+"$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --cloud-shadows | tee Exhibits/LightCompute/Results/CloudShadows.txt
+python3 Exhibits/LightCompute/Code/CloudShadowImages.py
 python3 Exhibits/LightCompute/Code/Evidence.py

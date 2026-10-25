@@ -192,7 +192,7 @@ float ProfileIntensity(LightShape L, float θ, float φ)
     return lerp(lerp(Angles[A], Angles[A + 1], V.y), lerp(Angles[B], Angles[B + 1], V.y), H.y) /
            L.PeakActive.x;
 }
-float3 Arrival(LightShape L, float3 Point, out float3 Direction, out float Distance)
+float3 Arrival(LightShape L, float3 Point, out float3 Direction, out float Distance, float SunTransmittance = 1)
 {
     Direction = L.PositionReach.xyz;
     Distance = 1e30;
@@ -200,13 +200,9 @@ float3 Arrival(LightShape L, float3 Point, out float3 Direction, out float Dista
         return 0;
     if (L.RadianceCategory.w == 0)
     {
-        float Cloud = 1;
-        if ((Extent.Primary.w & 16u) != 0 && dot(L.PositionReach.xyz, CloudParameter(3).xyz) > .9999)
-        {
-            uint Size = uint(CameraProjection(10).y);
-            Cloud = OutputColour[Extent.Dimensions.x * 21 + 6 * Size * Size].x;
-        }
-        return L.RadianceCategory.xyz * Cloud;
+        bool Solar = (Extent.Primary.w & 16u) != 0 &&
+                     dot(L.PositionReach.xyz, CloudParameter(3).xyz) > .9999;
+        return L.RadianceCategory.xyz * (Solar ? SunTransmittance : 1);
     }
     float3 Delta = L.PositionReach.xyz - Point;
     Distance = length(Delta);
@@ -266,9 +262,9 @@ float3 Brdf(SurfacePoint R, float3 Direction)
     return Distribution * Visibility * Fresnel +
            (1 - Fresnel) * R.AlbedoIor.xyz * ((1 - Metallic) / 3.141592653589793);
 }
-float3 Contribution(SurfacePoint R, uint Index, out float3 Direction, out float Distance)
+float3 Contribution(SurfacePoint R, uint Index, out float3 Direction, out float Distance, float SunTransmittance)
 {
-    float3 Incoming = Arrival(Lights[Index], R.PositionHit.xyz, Direction, Distance);
+    float3 Incoming = Arrival(Lights[Index], R.PositionHit.xyz, Direction, Distance, SunTransmittance);
     if (all(Incoming == 0))
         return 0;
     return Brdf(R, Direction) * Incoming * max(dot(R.NormalRoughness.xyz, Direction), 0);
@@ -298,6 +294,7 @@ float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 /
         }
         return;
     }
+    float SunTransmittance = CloudSunTransmittance(R.PositionHit.xyz);
     uint First = 0, Count = Extent.Dimensions.y;
     bool Whole = Extent.Dimensions.w == 0;
     if (!Whole)
@@ -349,7 +346,7 @@ float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 /
             }
             float3 Dir;
             float Dist;
-            float Target = Power(Contribution(R, Index, Dir, Dist));
+            float Target = Power(Contribution(R, Index, Dir, Dist, SunTransmittance));
             float Proposal = ProposalPower(R, Index) / Mass, Weight = Target / Proposal;
             WeightSum += Weight;
             if (RandomUnit(Bits) * WeightSum < Weight)
@@ -374,7 +371,7 @@ float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 /
                 {
                     float3 PreviousDirection;
                     float PreviousDistance;
-                    float3 F = Contribution(R, uint(Source.x), PreviousDirection, PreviousDistance);
+                    float3 F = Contribution(R, uint(Source.x), PreviousDirection, PreviousDistance, SunTransmittance);
                     float Target = Power(F), SourceCount = min(Source.z, 64);
                     float Weight = Target * Source.y * SourceCount;
                     Multiplicity += SourceCount;
@@ -406,7 +403,7 @@ float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 /
         {
             float3 Dir;
             float Dist;
-            float3 F = Contribution(R, Selected, Dir, Dist);
+            float3 F = Contribution(R, Selected, Dir, Dist, SunTransmittance);
             Visibility = Occluded(R.PositionHit.xyz + R.NormalRoughness.xyz * .002, Dir, Dist - .004) ? 0 : 1;
             FinalWeight = WeightSum / (max(Multiplicity, 1) * SelectedTarget);
             Direct = F * (FinalWeight * Visibility);
@@ -424,7 +421,7 @@ float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 /
             uint Index = Whole ? I : Cells[First + 1 + I];
             float3 Dir;
             float Dist;
-            float3 F = Contribution(R, Index, Dir, Dist);
+            float3 F = Contribution(R, Index, Dir, Dist, SunTransmittance);
             if (any(F != 0) && !Occluded(R.PositionHit.xyz + R.NormalRoughness.xyz * .002, Dir, Dist - .004))
                 Direct += F;
         }
@@ -497,6 +494,7 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
         StoreHistory(3, Pixel, 0);
         return;
     }
+    float SunTransmittance = CloudSunTransmittance(R.PositionHit.xyz);
     float4 Initial = LoadHistory(2, Pixel);
     float Sum = 0, Count = 0, SelectedTarget = 0;
     uint Selected = 0;
@@ -522,7 +520,7 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
             continue;
         float3 Direction;
         float Distance;
-        float Target = Power(Contribution(R, uint(Source.x), Direction, Distance));
+        float Target = Power(Contribution(R, uint(Source.x), Direction, Distance, SunTransmittance));
         float Multiplicity = min(Source.z, I == 0 ? 72 : 32), Weight = Target * Source.y * Multiplicity;
         Count += Multiplicity;
         Sum += Weight;
@@ -540,7 +538,7 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
     {
         float3 Direction;
         float Distance;
-        float3 F = Contribution(R, Selected, Direction, Distance);
+        float3 F = Contribution(R, Selected, Direction, Distance, SunTransmittance);
         Visible =
             Occluded(R.PositionHit.xyz + R.NormalRoughness.xyz * .002, Direction, Distance - .004) ? 0 : 1;
         Weight = Sum / (max(Count, 1) * SelectedTarget);
@@ -945,11 +943,12 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
             InterlockedAdd(Counters[14], 1);
             SurfacePoint Bounce = FacetSurface(Index, Origin, Direction, Strike);
             Incoming = (Extent.Primary.w & 2u) != 0 ? float3(0) : Bounce.ResidualSpecular.xyz;
+            float SunTransmittance = CloudSunTransmittance(Bounce.PositionHit.xyz);
             for (uint I = 0; I < Extent.Dimensions.y; ++I)
             {
                 float3 ToLight;
                 float Distance;
-                float3 C = Contribution(Bounce, I, ToLight, Distance);
+                float3 C = Contribution(Bounce, I, ToLight, Distance, SunTransmittance);
                 if (any(C != 0) && !Occluded(Bounce.PositionHit.xyz + Bounce.NormalRoughness.xyz * .002,
                                              ToLight, Distance - .004))
                     Incoming += C;
@@ -1129,6 +1128,38 @@ float CloudMedium(float3 P)
     return clamp((Sum / Total - (1 - saturate(Layer.z))) / max(saturate(Layer.z), .001), 0, 1.5) * Profile *
            Layer.w;
 }
+// 📝 Transmittance-only surface shadow ray: no phase or nested scattering march.
+float CloudSunTransmittance(float3 Origin)
+{
+    if ((Extent.Primary.w & 16u) == 0)
+        return 1;
+    float4 Layer = CloudParameter(0), Medium = CloudParameter(1), Wind = CloudParameter(2);
+    float3 Direction = CloudParameter(3).xyz;
+    float Enter = 0, Exit = Wind.z;
+    if (abs(Direction.z) < 1e-9)
+    {
+        if (Origin.z < Layer.x || Origin.z > Layer.y)
+            return 1;
+    }
+    else
+    {
+        float A = (Layer.x - Origin.z) / Direction.z, B = (Layer.y - Origin.z) / Direction.z;
+        Enter = max(min(A, B), 0);
+        Exit = min(max(A, B), Exit);
+        if (Exit <= Enter)
+            return 1;
+    }
+    uint Steps = uint(Wind.w);
+    if (Steps == 0 || Layer.w == 0 || Medium.x == 0)
+        return 1;
+    float Dt = (Exit - Enter) / Steps, T = 1;
+    for (uint I = 0; I < Steps; ++I)
+    {
+        float Density = CloudMedium(Origin + Direction * (Enter + Dt * (I + .5)));
+        T *= exp(-Medium.x * Density * Dt);
+    }
+    return T;
+}
 float4 CloudRay(float3 Origin, float3 Direction)
 {
     float4 Layer = CloudParameter(0), Medium = CloudParameter(1), Wind = CloudParameter(2),
@@ -1195,7 +1226,7 @@ float4 CloudRay(float3 Origin, float3 Direction)
     float4 Cloud = CloudRay(CameraProjection(0).xyz, D);
     if (Index == 0)
     {
-        float T = CloudRay(CameraProjection(0).xyz, CloudParameter(3).xyz).w;
+        float T = CloudSunTransmittance(CameraProjection(0).xyz);
         OutputColour[Extent.Dimensions.x * 21 + 6 * Size * Size] = float4(T);
     }
 

@@ -163,7 +163,11 @@ struct RaySpace
     const LightComputeArchive& Scene;
     TriangleVisibilitySpace Space;
     std::vector<ReferenceLight> Sources;
-    explicit RaySpace(const LightComputeArchive& Input) : Scene(Input), Sources(Lights(Input))
+    const CloudParameters* Clouds = nullptr;
+    SpatialVector CloudSun{};
+    explicit RaySpace(const LightComputeArchive& Input, const CloudParameters* Density = nullptr,
+                      SpatialVector Sun = {})
+        : Scene(Input), Sources(Lights(Input)), Clouds(Density), CloudSun(Sun)
     {
         std::vector<std::array<SpatialVector, 3>> Geometry;
         for (const auto& F : Scene.Visibility.Corners)
@@ -213,6 +217,11 @@ struct RaySpace
                     SpatialVector Light;
                     double Distance;
                     auto C = ReferenceLightArrival(L, Position, Light, Distance);
+                    if (Clouds && L.Kind == ReferenceLight::Kind::Directional && Dot(L.Vector, CloudSun) > .9999)
+                    {
+                        double T = MarchClouds(*Clouds, Position, CloudSun, CloudSun, {}, 40000, 64, 0).Transmittance;
+                        C = {C.R * T, C.G * T, C.B * T};
+                    }
                     double Cosine = std::max(0., Dot(Normal, Light));
                     if (Cosine == 0 || (C.R == 0 && C.G == 0 && C.B == 0))
                         continue;

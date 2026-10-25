@@ -946,6 +946,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "EmissiveFacetQuadrature.h"
 #include "TransportReconstruction.h"
 #include "CloudCubeValidation.h"
+#include "CloudShadowValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -966,9 +967,9 @@ int main(int Count, char** Arguments)
                   << " type=" << Compute.Properties.deviceType << " api=" << Compute.Properties.apiVersion
                   << " ray_query_extensions=" << Compute.RayQueryExtensions
                   << " ray_query_executed=0 triangle_bvh_executed=1\n";
-        Compute.Prepare(Scene, Arguments[2]);
         if (Count == 6 && std::string(Arguments[5]) == "--primary-only")
         {
+            Compute.Prepare(Scene, Arguments[2]);
             ValidatePrimaryClipping(Arguments[1], Arguments[2], Arguments[4]);
             ValidatePrimary(Compute, Scene, Arguments[4]);
             return 0;
@@ -1009,11 +1010,19 @@ int main(int Count, char** Arguments)
             ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4], false);
             return 0;
         }
+        if (Count == 6 && (std::string(Arguments[5]) == "--cloud-shadows" ||
+                           std::string(Arguments[5]) == "--cloud-shadow-checks"))
+        {
+            ValidateCloudShadows(Arguments[1], Arguments[2], Scene, Arguments[4],
+                                 std::string(Arguments[5]) == "--cloud-shadows");
+            return 0;
+        }
         if (Count == 6 && std::string(Arguments[5]) == "--clouds-only")
         {
             ValidateCloudCube(Arguments[1], Arguments[2], Scene, Arguments[4]);
             return 0;
         }
+        Compute.Prepare(Scene, Arguments[2]);
         auto All = Compute.Execute(Scene, 0);
         auto GlobalCounts = Compute.Statistics();
         auto Local = Compute.Execute(Scene, 1);

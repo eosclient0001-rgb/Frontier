@@ -34,6 +34,10 @@ uint32_t AppendCloudParameters(LightComputeArchive& Scene, const CloudParameters
                             Low,
                             High,
                             0,
+                            0,
+                            float(P.AmbientRadiance.R),
+                            float(P.AmbientRadiance.G),
+                            float(P.AmbientRadiance.B),
                             0};
     Scene.Angles.insert(Scene.Angles.end(), F.begin(), F.end());
     return Offset;
@@ -169,6 +173,8 @@ void ValidateCloudCube(const char* Driver, const std::string& Shaders, const Lig
         }
         if (Case == 1)
         {
+            Require(P.AmbientRadiance.R > 0 && P.AmbientRadiance.G > 0 && P.AmbientRadiance.B > 0,
+                    "Ambient input was not uploaded");
             CloudParameters Uniform = P;
             auto Ambient = MarchClouds(Uniform, Vector(Scene.Camera[0]), {0, 0, 1}, Sun, {}, 40000, 64, 0);
             double T = std::exp(-Uniform.ExtinctionPerM * Uniform.UniformDensityOverride *

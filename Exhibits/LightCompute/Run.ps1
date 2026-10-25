@@ -34,3 +34,5 @@ cmake --build $Build --config Release; Confirm-Exit
 & "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--transport-reconstruction' '_ClaudeScratch/primary-motion'; Confirm-Exit
 
 & "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--clouds-only'; Confirm-Exit
+
+& "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--cloud-shadows'; Confirm-Exit
