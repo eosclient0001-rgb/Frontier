@@ -586,8 +586,32 @@ struct LightComputeSubmission
                     P[7] >= 1 && P[7] <= 128 && std::floor(P[7]) == P[7] &&
                     P[8] >= 0 && P[9] >= 0 && P[10] >= 0 &&
                     (P[11] == 0 || P[11] == 1) && (P[12] == 0 || P[12] == 1) &&
-                    (P[13] == 0 || P[13] == 1) && P[14] > 0 && P[14] <= 100000,
+                    (P[13] == 0 || P[13] == 1) && P[14] > 0 && P[14] <= 100000 &&
+                    P[15] >= 0 && P[15] <= 64 && std::floor(P[15]) == P[15],
                     "Fog parameters exceed bounded integration domain");
+            if (P[15] > 0)
+            {
+                float Address = Scene.Camera[10][2];
+                Require(std::isfinite(Address) && Address > 0 && Address < Scene.Angles.size() &&
+                            std::floor(Address) == Address, "Fog emitter CDF address is invalid");
+                size_t Offset = size_t(Address);
+                float Count = Scene.Angles[Offset];
+                Require(std::isfinite(Count) && Count >= 0 && Count <= Scene.Surfaces.size() &&
+                            std::floor(Count) == Count && Offset + 1 + size_t(Count) * 4 <= Scene.Angles.size(),
+                        "Fog emitter CDF span is invalid");
+                float Previous = 0;
+                for (size_t I = 0; I < size_t(Count); ++I)
+                {
+                    const float* E = Scene.Angles.data() + Offset + 1 + I * 4;
+                    Require(std::isfinite(E[0]) && E[0] >= 0 && E[0] < Scene.Surfaces.size() &&
+                                std::floor(E[0]) == E[0] && std::isfinite(E[1]) && E[1] > 0 &&
+                                std::isfinite(E[2]) && E[2] > 0 && std::isfinite(E[3]) && E[3] > Previous &&
+                                E[3] <= 1 && std::abs(E[1] - (E[3] - Previous)) < 1e-7,
+                            "Fog emitter CDF entry is invalid");
+                    Previous = E[3];
+                }
+                Require(Count == 0 || Previous == 1, "Fog emitter CDF is not normalized");
+            }
         }
         Upload(Scene);
         // 📝 Feature selection is outside the angle prefix; changing it must invalidate both histories too.
@@ -987,6 +1011,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "CloudCubeValidation.h"
 #include "CloudShadowValidation.h"
 #include "FogScatteringValidation.h"
+#include "FogFacetValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -1048,6 +1073,13 @@ int main(int Count, char** Arguments)
         if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction-checks")
         {
             ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4], false);
+            return 0;
+        }
+        if (Count == 6 && (std::string(Arguments[5]) == "--fog-facets" ||
+                           std::string(Arguments[5]) == "--fog-facet-checks"))
+        {
+            ValidateFogFacets(Arguments[1], Arguments[2], Scene, Arguments[4],
+                              std::string(Arguments[5]) == "--fog-facets");
             return 0;
         }
         if (Count == 6 && (std::string(Arguments[5]) == "--fog-sampling" ||

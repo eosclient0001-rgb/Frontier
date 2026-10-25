@@ -218,3 +218,25 @@ Fresh ASan/UBSan checks passed: 654 preset camera probes + 270 surface probes an
 external-driver leak detection disabled. Four native CTests passed. Exact new logs are `FogSamplingPresetChecks`,
 `FogSamplingSanitizers` and `FogSamplingRegression` under exhibit `Results/`. Diagnostic refinement now uses
 shadow128 as the finer budget; the former shadow64 check would be a vacuous self-comparison with the new preset.
+
+## Emissive-volume single scattering — 2026-10-25
+
+Shared Slang fog now optionally gathers emissive triangle radiance, not just emitter-to-surface attenuation.
+Area/luminance CDF samples use solid-angle conversion, HG phase, triangle visibility and analytic source-to-volume
+extinction. Both lighting types remain. Fog[15] selects 0–64 samples; default 0 preserves older presets.
+Actual 160×100 original-ControlVehicle/ground captures add an explicit 2×2 m calibration panel (not a new model
+or hidden source boost). Isolated emissive-only and combined analytic/emissive volume lighting are retained in
+`Exhibits/LightCompute/Images/FogFacetComparison.png` and `FogFacetCombined.png`. 468 capture and 448 sanitizer
+native camera probes passed; capture maximum RGB error 1.59192e-5. A 131,072-sample native rectangle integral
+matches independent analytic solid angle within 0.0446%. Cold/zero-density/empty-CDF equality, surface isolation,
+geometry occlusion and invalid inputs checked; external-driver leak checks disabled.
+Reproduce serially with `RunFogFacets.sh`; see exhibit README and `Results/FogFacets.json` for exact scope.
+Emissive-volume single scattering is no longer wholly absent, but remains opt-in and finitely sampled. Multiple
+scattering, coupled inter-bounce transport, temporal fog, final clouds, Moon and physical GPU/Windows/viewport
+acceptance remain open. Sun/flare/stars are unchanged. No speed or real-time claim.
+
+Emissive-volume regression checkpoint: legacy fog ASan/UBSan checks, Vulkan exact/cluster/overflow,
+static/moving history, light-off/residual refresh and all four native CTests passed. The first legacy history
+attempt used the primary-motion archive (no uploaded raster receivers), correctly failed its coverage assertion,
+and was rerun successfully using native `--vulkan-input` and `--motion-input` archives. Chronology is retained
+in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-selection error, not a renderer fix.

@@ -1272,6 +1272,42 @@ float FogTransmission(float3 Origin, float3 Direction, float Distance)
     }
     return exp(-max(Medium.x * Integral, 0));
 }
+
+// 📝 The existing two-sided area/luminance CDF supplies solid-angle radiance, not a surface BRDF.
+float3 SampleFogFacet(float3 At, float3 ViewDirection, inout uint Bits)
+{
+    uint Offset = uint(CameraProjection(10).z), Count = uint(Angles[Offset]);
+    if (Count == 0)
+        return 0;
+    float Draw = RandomUnit(Bits);
+    uint Low = 0, High = Count - 1;
+    while (Low < High)
+    {
+        uint Mid = (Low + High) / 2;
+        if (Draw < Angles[Offset + 1 + Mid * 4 + 3])
+            High = Mid;
+        else
+            Low = Mid + 1;
+    }
+    uint Entry = Offset + 1 + Low * 4;
+    FacetCorners F = Facets[uint(Angles[Entry])];
+    float Root = sqrt(RandomUnit(Bits)), V = RandomUnit(Bits);
+    float3 Position = F.A.xyz * (1 - Root) + F.B.xyz * (Root * (1 - V)) + F.C.xyz * (Root * V);
+    float3 Delta = Position - At;
+    float Squared = dot(Delta, Delta), Distance = sqrt(Squared);
+    if (Distance <= .004)
+        return 0;
+    float3 Toward = Delta / Distance, Normal = Unit(cross(F.B.xyz - F.A.xyz, F.C.xyz - F.A.xyz));
+    float Geometry = abs(dot(Normal, Toward));
+    if (Geometry == 0 || (FogParameter(2).w != 0 &&
+        Occluded(At + Toward * .002, Toward, Distance - .004)))
+        return 0;
+    float G = FogParameter(1).x, Den = 1 + G * G - 2 * G * dot(ViewDirection, Toward);
+    float Phase = (1 - G * G) / (4 * 3.141592653589793 * Den * sqrt(max(Den, 1e-12)));
+    float T = FogTransmission(At, Toward, min(Distance, FogParameter(3).z));
+    return F.Emissive.xyz * (T * Phase * Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
+}
+
 [shader("compute")][numthreads(64, 1, 1)] void IntegrateFogScattering(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
@@ -1291,6 +1327,7 @@ float FogTransmission(float3 Origin, float3 Direction, float Distance)
     uint Steps = uint(March.z);
     float StepM = Distance / Steps, T = 1;
     float3 Radiance = 0;
+    uint EmitterBits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
     for (uint I = 0; I < Steps; ++I)
     {
         float3 At = Origin + Direction * (StepM * (I + .5));
@@ -1312,6 +1349,8 @@ float FogTransmission(float3 Origin, float3 Direction, float Distance)
                 float Phase = (1 - March.x * March.x) / (4 * 3.141592653589793 * Den * sqrt(max(Den, 1e-12)));
                 Incident += Light * Phase;
             }
+        for (uint J = 0; J < uint(Lighting.w); ++J)
+            Incident += SampleFogFacet(At, Direction, EmitterBits) / Lighting.w;
         Radiance += (T - NextT) * Medium.w * Incident;
         T = NextT;
     }

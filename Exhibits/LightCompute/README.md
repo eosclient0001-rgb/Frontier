@@ -5,6 +5,63 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Emissive surfaces illuminating fog — executed
+
+![Left: emissive-only volume illumination. Right: original analytic lights plus emissive surface/volume illumination](Images/FogFacetCombined.png)
+
+![Same emissive scene: area in-scattering disabled left, enabled right; fog extinction remains enabled in both](Images/FogFacetComparison.png)
+
+The shared Slang fog integrator now samples **emissive triangles inside the volume**, rather than only
+attenuating their surface-lighting paths. It reuses the area/luminance CDF and uniform triangle samples,
+converts area to solid angle, applies HG phase, triangle-BVH visibility and analytic emitter-to-volume fog
+extinction, then integrates with the existing exact camera-segment weights. No surface BRDF or receiver
+cosine is applied to a volume sample. Emission is two-sided, matching the existing surface convention.
+
+| Verification | Result |
+|--------------|--------|
+| Actual Vulkan capture | Four 160×100 frames, 117 native probes each |
+| ASan/UBSan numeric fixture | Four 64×40 cases, 112 native probes each |
+| Maximum captured native/Vulkan RGB discrepancy | 1.59192e-5 |
+| Independent rectangle solid-angle normalization | 131,072 native samples; 0.0446% relative error |
+| Isolated volume contribution | Adds light; removing geometry occlusion increases radiance |
+| Safety / isolation | Cold repeat, surface-radiance isolation, zero density, empty CDF and invalid inputs checked |
+
+The calibration scene retains the **original 25,068-facet ControlVehicle** and ground (28,276 input facets),
+plus an explicitly added two-triangle 2×2 m panel at z=6 m, radiance RGB=(35,9,2). Existing emissive facets
+are retained. Original analytic lights are disabled only in the isolation cases and restored in the combined
+capture. Ambient/sky and cloud scattering are disabled in this fixture to expose the area-light contribution.
+Fog is extinction 0.07/m, scale height 12 m, albedo 0.9, HG g=0.25, maximum camera distance 70 m,
+128 view midpoints and 16 emitter samples per midpoint. This is a disclosed calibration fixture, not the
+previous daylight scene, a new vehicle model, an emissive-material boost or postprocessed beam imagery.
+
+**Compatibility:** reserved fog scalar `Fog[15]` now selects 0–64 area samples per view midpoint.
+The default remains **0**: existing analytic/surface-light presets and archived comparisons are unchanged.
+The new path is explicitly enabled in this fixture, including with the original analytic lights. Analytic
+source evaluation and emissive surface sampling are not removed or replaced. Emissive selection uses the
+existing global importance CDF; spatial clustering is not necessary for correctness and is not claimed here.
+
+`FogFacet0/1/2/3.png` correspond to in-scattering off / on / volume geometry occlusion off / both lighting types.
+`Results/FogFacets.json` retains exact parameters, native comparisons and raw RGB hashes. The packager verifies
+PNG CRCs and decoded RGB identity. Linux GCC 12.2 Release captures and RelWithDebInfo ASan/UBSan checks;
+external-driver leak detection is disabled, not a global leak-free claim. Device: **SwiftShader CPU type 4**.
+Thirteen compute entries, eight SSBOs and 128-byte pushes remain unchanged; no 64-bit shader feature added.
+
+```bash
+PREPARE=1 bash Exhibits/LightCompute/RunFogFacets.sh
+```
+
+Run serially. This compiles all entries, restores native inputs, builds the sanitizer executable, checks the
+64×40 fixture and captures the 160×100 fixture. The focused CLI modes are `--fog-facet-checks` / `--fog-facets`.
+Legacy fog sanitizer checks, exact/cluster/overflow, static/moving history, light-off/current-residual refresh
+and all four native CTests passed; details are retained in `Results/FogFacetRegression.txt`. An initial legacy
+history run used the primary-motion input (without uploaded raster receivers), correctly failed its coverage
+assertion, and was rerun successfully using native raster/motion fixtures; the retained note explains this.
+
+Finite area samples can be noisy; 128 regular view midpoints do not establish view convergence. Source
+segments within 4 mm are omitted for numerical safety. Multiple scattering, fully coupled inter-bounce
+transport, temporal fog, final cloud appearance, production viewport and physical GPU/Windows/real-time
+acceptance remain open. Existing Sun/flare/stars are untouched; Moon remains planned.
+
 ## Fog shadow-sampling refinement — executed
 
 ![Actual Vulkan readbacks: columns 16 / 64 / 128 shadow samples, rows wind 0 / 120 seconds](Images/FogSamplingComparison.png)
@@ -141,7 +198,8 @@ retained but Windows and physical RTX/GTX execution are not verified.
   from 32 to 128 changed red radiance by up to 0.00311955; increasing cloud-shadow steps from 16 to 64
   changed it by up to 0.0293056. These are subset sensitivities, not full-image convergence guarantees.
 - Fog has no temporal reconstruction. The cloud slab and indirect cube retain their earlier appearance limits.
-- Diffuse inter-bounce fog extinction/in-scattering is not fully coupled; emissive-volume in-scattering is absent.
+- Diffuse inter-bounce fog extinction/in-scattering is not fully coupled. Emissive-volume scattering is disabled
+  in these archived captures; the opt-in implementation is documented above.
 - Cloud/atmosphere/fog overlap is composited approximately, not solved as one coupled planetary medium.
 - These are soft physical single-scattering shafts, not a claim of cinematic/final cloud appearance.
 - Existing native Sun, flare and stars are preserved, not newly connected here. Moon remains planned.

@@ -61,7 +61,7 @@ Report = {'device': Log.splitlines()[0], 'physical_gpu_executed': DeviceType in 
           'day_medium': 'base extinction 0.0015/m, scale height 450m, scattering albedo 0.9, HG g 0.65',
           'local_medium': 'base extinction 0.07/m, scale height 10m, HG g 0.35; original point/IES/spot sources',
           'vehicle': 'same authored ControlVehicle; analytic lights, visible emission and four-sample emissive/diffuse transport retained',
-          'emissive_fog': 'sampled emitter-to-surface extinction included; emissive-volume in-scattering not implemented',
+          'emissive_fog': 'sampled emitter-to-surface extinction included; emissive-volume in-scattering disabled in these captures, opt-in implementation documented in FogFacets.json',
           'history': 'fog resolved after surface reconstruction; resolved scattering never feeds surface history',
           'limitations': ['single scattering, not multiple scattering', 'regular view/shadow sampling can alias',
                           'no temporal fog reconstruction', 'diffuse inter-bounce fog scattering/extinction not fully coupled',

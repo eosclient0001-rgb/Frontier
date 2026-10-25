@@ -504,3 +504,19 @@ Earlier 320×200 evidence remains unchanged at 16 steps. Historical medium prose
 captures actually used 0.0015/m and 450 m, not 0.0007/m and 650 m. Metadata corrected, images unchanged.
 View marching/aliasing, temporal fog, coupled/multiple scattering, final cloud appearance, Moon and physical
 GPU/Windows acceptance remain open; preserve both lighting paths and existing Sun/flare/star code.
+
+## Emissive-volume single scattering — 2026-10-25
+
+Shared Slang fog now optionally gathers emissive triangle radiance, not just emitter-to-surface attenuation.
+Area/luminance CDF samples use solid-angle conversion, HG phase, triangle visibility and analytic source-to-volume
+extinction. Both lighting types remain. Fog[15] selects 0–64 samples; default 0 preserves older presets.
+Actual 160×100 original-ControlVehicle/ground captures add an explicit 2×2 m calibration panel (not a new model
+or hidden source boost). Isolated emissive-only and combined analytic/emissive volume lighting are retained in
+`Exhibits/LightCompute/Images/FogFacetComparison.png` and `FogFacetCombined.png`. 468 capture and 448 sanitizer
+native camera probes passed; capture maximum RGB error 1.59192e-5. A 131,072-sample native rectangle integral
+matches independent analytic solid angle within 0.0446%. Cold/zero-density/empty-CDF equality, surface isolation,
+geometry occlusion and invalid inputs checked; external-driver leak checks disabled.
+Reproduce serially with `RunFogFacets.sh`; see exhibit README and `Results/FogFacets.json` for exact scope.
+Emissive-volume single scattering is no longer wholly absent, but remains opt-in and finitely sampled. Multiple
+scattering, coupled inter-bounce transport, temporal fog, final clouds, Moon and physical GPU/Windows/viewport
+acceptance remain open. Sun/flare/stars are unchanged. No speed or real-time claim.

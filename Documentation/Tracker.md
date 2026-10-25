@@ -10,6 +10,21 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 
 
+## Emissive-volume single scattering — 2026-10-25
+
+- Shared Slang fog now gathers emissive triangle radiance with area/luminance CDF sampling, solid-angle
+  conversion, HG phase, triangle visibility and analytic source-to-volume extinction. Both analytic lighting
+  and emissive surface lighting remain. Optional `Fog[15]` budget 0–64; default 0 preserves prior presets.
+- Original ControlVehicle/ground plus a disclosed 2×2 m calibration panel: four actual 160×100 Vulkan frames,
+  468 native camera probes, maximum RGB discrepancy 1.59192e-5. Combined capture restores original analytic
+  sources. `Exhibits/LightCompute/Images/FogFacetCombined.png` and `FogFacetComparison.png` show actual readbacks.
+- ASan/UBSan checks add 448 native camera probes; independent 131,072-sample native rectangle integration
+  matches analytic solid angle within 0.0446%. Cold repeat, surface isolation, zero density, empty CDF,
+  occlusion and invalid budgets/CDF checked. External-driver leaks excluded; no global leak-free claim.
+- Reproduction: `RunFogFacets.sh`; measured parameters and scope: exhibit README and `Results/FogFacets.json`.
+  Still single scattering and finite/noisy sampling, not temporal fog, multiple scattering, final sky/cloud
+  appearance or physical-GPU/Windows/real-time acceptance. Sun/flare/stars preserved; Moon planned.
+
 ## Fog shadow quadrature refinement — 2026-10-25
 
 - Controlled 16/32/64/128 cloud-shadow budgets at fixed 32 view midpoints, two wind positions and original
@@ -626,3 +641,9 @@ The new appearance files use Allman braces, flat namespace indentation, and desc
   These are fixture measurements, not equal-cost timings or general unbiasedness claims.
 - Still open: physical GTX/RTX and hardware ray queries, Windows execution, production viewport, deforming motion,
   wider history/bias regressions and GPU primary/indirect transport. Filtering remains visibly imperfect.
+
+Emissive-volume regression checkpoint: legacy fog ASan/UBSan checks, Vulkan exact/cluster/overflow,
+static/moving history, light-off/residual refresh and all four native CTests passed. The first legacy history
+attempt used the primary-motion archive (no uploaded raster receivers), correctly failed its coverage assertion,
+and was rerun successfully using native `--vulkan-input` and `--motion-input` archives. Chronology is retained
+in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-selection error, not a renderer fix.

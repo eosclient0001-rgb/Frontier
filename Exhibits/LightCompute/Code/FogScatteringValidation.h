@@ -31,6 +31,8 @@ void SetFogCamera(LightComputeArchive &Scene, uint32_t Width, uint32_t Height)
     for (uint32_t I = 0; I < 4; ++I)
         Scene.Camera[4 + I] = Scene.Camera[I];
 }
+#include "FogFacetScattering.h"
+
 struct FogRayReference
 {
     TransportReference::RaySpace Geometry;
@@ -75,7 +77,8 @@ struct FogRayReference
         return Sum;
     }
     FogRadianceIntegral Integrate(SpatialVector Origin, SpatialVector Ray, double Distance,
-                                  uint32_t OverrideSteps = 0, uint32_t OverrideShadowSteps = 0) const
+                                  uint32_t OverrideSteps = 0, uint32_t OverrideShadowSteps = 0,
+                                  uint32_t Pixel = 0, uint32_t Seed = 71) const
     {
         using namespace TransportReference;
         const float *F = Scene.Angles.data() + Offset;
@@ -83,33 +86,43 @@ struct FogRayReference
         P.DensityAtBase = F[0];
         P.BaseHeightM = F[1];
         P.FalloffHeightM = F[2];
+        uint32_t Bits = Seed ^ (Pixel * 747796405u + 2891336453u);
         auto Incident = [&](SpatialVector At) {
             SpectrumRgb Sum{F[8], F[9], F[10]};
-            if (F[13] == 0)
-                return Sum;
             double CloudT = F[12] != 0
                                 ? MarchClouds(Cloud, At, Sun, Sun, {}, 40000,
                                               OverrideShadowSteps ? OverrideShadowSteps : uint32_t(F[7]), 0)
                                       .Transmittance
                                 : 1;
-            for (const auto &L : Geometry.Sources)
+            if (F[13] != 0)
             {
-                SpatialVector Toward;
-                double Far;
-                auto Light = ReferenceLightArrival(L, At, Toward, Far);
-                if (Light.R == 0 && Light.G == 0 && Light.B == 0)
-                    continue;
-                Far = std::min(Far, double(F[14]));
-                if (F[11] != 0 &&
-                    Geometry.Space.Occluded(Add(At, Mul(Toward, .002)), Toward, 0, std::max(Far - .004, 0.)))
-                    continue;
-                double Shade =
-                    L.Kind == ReferenceLight::Kind::Directional && Dot(L.Vector, Sun) > .9999 ? CloudT : 1;
-                double Scale = Shade * HenyeyGreensteinPhase(Dot(Ray, Toward), F[4]) *
-                               FogTransmittance(P, At, Toward, Far);
-                Sum.R += Light.R * Scale;
-                Sum.G += Light.G * Scale;
-                Sum.B += Light.B * Scale;
+                for (const auto &L : Geometry.Sources)
+                {
+                    SpatialVector Toward;
+                    double Far;
+                    auto Light = ReferenceLightArrival(L, At, Toward, Far);
+                    if (Light.R == 0 && Light.G == 0 && Light.B == 0)
+                        continue;
+                    Far = std::min(Far, double(F[14]));
+                    if (F[11] != 0 &&
+                        Geometry.Space.Occluded(Add(At, Mul(Toward, .002)), Toward, 0, std::max(Far - .004, 0.)))
+                        continue;
+                    double Shade =
+                        L.Kind == ReferenceLight::Kind::Directional && Dot(L.Vector, Sun) > .9999 ? CloudT : 1;
+                    double Scale = Shade * HenyeyGreensteinPhase(Dot(Ray, Toward), F[4]) *
+                                   FogTransmittance(P, At, Toward, Far);
+                    Sum.R += Light.R * Scale;
+                    Sum.G += Light.G * Scale;
+                    Sum.B += Light.B * Scale;
+                }
+            }
+            if (F[15] > 0)
+            {
+                auto Area = IntegrateFogFacets(Scene, Geometry.Space, P, At, Ray, F[4], F[14],
+                                               F[11] != 0, Bits, uint32_t(F[15]));
+                Sum.R += Area.R;
+                Sum.G += Area.G;
+                Sum.B += Area.B;
             }
             return Sum;
         };
