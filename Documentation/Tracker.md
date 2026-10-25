@@ -7,6 +7,26 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 
 
+
+## Vulkan cloud environment checkpoint — 2026-10-25
+
+- Added GPU cloud density, 64-step per-camera-ray integration, six-step Sun self-shadowing and a cloud radiance
+  cube for indirect rays. Native 64-bit noise hash is emulated with paired 32-bit arithmetic; cloud/primary/
+  transport SPIR-V requires only Shader capability, not Int64. CPU atmosphere precomputation remains.
+- Added optional native/GPU uniform ambient cloud radiance (default zero preserves the earlier model). Sun at
+  ground/cloud altitude uses atmospheric transmittance; one observer-to-Sun cloud factor shades local receivers,
+  not a spatial cloud-shadow map. Cloud parameters and loop extents are checked before dispatch.
+- 2,230 native cube probes: maximum T error 1.186e-5, RGB error 1.06147e-5. 396 direct camera-ray probes: maximum
+  RGB error 9.02517e-6. Uniform Beer-Lambert, ambient closed form, clear-path bitwise equality, wind and bounded
+  march checks pass. Full cloud cases passed ASan/UBSan; native CTest 4/4, recovered/native sanitizer checks,
+  clustered ControlVehicle, legacy Vulkan and indirect-reconstruction regressions also pass.
+- Actual clear/cloud/wind/3° low-Sun readbacks: `Exhibits/LightCompute/Images/CloudWeather.png`, `CloudSkyWeather.png`
+  and `CloudComparison.png`. Fixture Sun angles/irradiance and camera are explicit, not observer/time ephemeris.
+- Twelve compute entries, eight SSBOs, push ABI 128 B; cloud cache adds 221,200 B. Device remains SwiftShader CPU
+  type 4; no physical-GPU/real-time/Windows claim. Existing native Sun/flare/stars and both light paths remain.
+- Remaining cloud appearance: flat-slab/regular-step horizon structure, approximate ambient, indirect cube seams
+  and spatial shadowing. Moon, GPU atmosphere and night/catalogue work remain in `Documentation/EnvironmentTodo.md`.
+
 ## Vulkan indirect reconstruction checkpoint — 2026-10-25
 
 - Recovered saved branch from GitHub checkpoint `0a4560c2` after sandbox reset; restored pinned ignored tools.

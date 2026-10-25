@@ -199,7 +199,15 @@ float3 Arrival(LightShape L, float3 Point, out float3 Direction, out float Dista
     if (L.PeakActive.y == 0)
         return 0;
     if (L.RadianceCategory.w == 0)
-        return L.RadianceCategory.xyz;
+    {
+        float Cloud = 1;
+        if ((Extent.Primary.w & 16u) != 0 && dot(L.PositionReach.xyz, CloudParameter(3).xyz) > .9999)
+        {
+            uint Size = uint(CameraProjection(10).y);
+            Cloud = OutputColour[Extent.Dimensions.x * 21 + 6 * Size * Size].x;
+        }
+        return L.RadianceCategory.xyz * Cloud;
+    }
     float3 Delta = L.PositionReach.xyz - Point;
     Distance = length(Delta);
     Direction = Distance > 0 ? Delta / Distance : float3(0, 0, 1);
@@ -725,13 +733,15 @@ uint NearestFacet(float3 Origin, float3 Direction, float Minimum, float Maximum,
     }
     return Selected;
 }
-float3 EnvironmentTexel(uint Face, int2 Pixel, uint Size, uint Offset)
+float3 EnvironmentTexel(uint Face, int2 Pixel, uint Size, uint Offset, bool AtmosphereOnly = false)
 {
     uint2 P = uint2(clamp(Pixel, int2(0), int2(Size - 1)));
     uint Index = Offset + ((Face * Size + P.y) * Size + P.x) * 3;
+    if ((Extent.Primary.w & 16u) != 0 && !AtmosphereOnly)
+        return OutputColour[Extent.Dimensions.x * 21 + (Face * Size + P.y) * Size + P.x].xyz;
     return float3(Angles[Index], Angles[Index + 1], Angles[Index + 2]);
 }
-float3 EnvironmentRadiance(float3 Direction)
+float3 EnvironmentRadiance(float3 Direction, bool AtmosphereOnly = false)
 {
     if ((Extent.Primary.w & 1u) == 0)
         return 0;
@@ -760,10 +770,10 @@ float3 EnvironmentRadiance(float3 Direction)
     float2 P = (Uv * .5 + .5) * Size - .5;
     int2 Low = int2(floor(P));
     float2 Fraction = frac(P);
-    return lerp(lerp(EnvironmentTexel(Face, Low, Size, Offset),
-                     EnvironmentTexel(Face, Low + int2(1, 0), Size, Offset), Fraction.x),
-                lerp(EnvironmentTexel(Face, Low + int2(0, 1), Size, Offset),
-                     EnvironmentTexel(Face, Low + int2(1, 1), Size, Offset), Fraction.x),
+    return lerp(lerp(EnvironmentTexel(Face, Low, Size, Offset, AtmosphereOnly),
+                     EnvironmentTexel(Face, Low + int2(1, 0), Size, Offset, AtmosphereOnly), Fraction.x),
+                lerp(EnvironmentTexel(Face, Low + int2(0, 1), Size, Offset, AtmosphereOnly),
+                     EnvironmentTexel(Face, Low + int2(1, 1), Size, Offset, AtmosphereOnly), Fraction.x),
                 Fraction.y) *
            Map.w;
 }
@@ -800,7 +810,13 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
     R.ExpectedDirect = asfloat(uint4(0x7fc00000));
     if (Index == 0xffffffffu)
     {
-        R.ResidualSpecular = float4(EnvironmentRadiance(Direction), 0);
+        float3 Sky = EnvironmentRadiance(Direction);
+        if ((Extent.Primary.w & 16u) != 0)
+        {
+            float4 Cloud = CloudRay(Eye.xyz, Direction);
+            Sky = Cloud.xyz * CameraProjection(10).w + Cloud.w * EnvironmentRadiance(Direction, true);
+        }
+        R.ResidualSpecular = float4(Sky, 0);
         Receivers[Pixel] = R;
         StoreHistory(15, Pixel, float4(-1, -1, 0, 0));
         InterlockedAdd(Counters[11], 1);
@@ -1042,4 +1058,148 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         R.ResidualSpecular.xyz += Filtered.xyz - LoadHistory(16, Pixel).xyz;
         Receivers[Pixel] = R;
     }
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                  VOLUMETRIC CLOUD RADIANCE CUBE
+//------------------------------------------------------------------------------------------------------------------------
+uint2 CloudAdd64(uint2 A, uint2 B)
+{
+    uint Low = A.x + B.x;
+    return uint2(Low, A.y + B.y + (Low < A.x ? 1u : 0u));
+}
+uint2 CloudProduct32(uint A, uint B)
+{
+    uint A0 = A & 65535u, A1 = A >> 16, B0 = B & 65535u, B1 = B >> 16;
+    uint W0 = A0 * B0, T = A1 * B0 + (W0 >> 16), W1 = (T & 65535u) + A0 * B1;
+    return uint2((W1 << 16) | (W0 & 65535u), A1 * B1 + (T >> 16) + (W1 >> 16));
+}
+uint2 CloudMultiply64(uint2 A, uint2 B)
+{
+    uint2 P = CloudProduct32(A.x, B.x);
+    P.y += A.y * B.x + A.x * B.y;
+    return P;
+}
+float CloudLattice(int3 Cell, uint2 Seed)
+{
+    uint2 H =
+        CloudAdd64(Seed, CloudProduct32(uint(Cell.x), 0x7f4a7c15u) + uint2(0, uint(Cell.x) * 0x9e3779b9u));
+    H ^= CloudProduct32(uint(Cell.y), 0x27d4eb4fu) + uint2(0, uint(Cell.y) * 0xc2b2ae3du);
+    H ^= CloudProduct32(uint(Cell.z), 0x9e3779f9u) + uint2(0, uint(Cell.z) * 0x165667b1u);
+    H ^= uint2((H.x >> 29) | (H.y << 3), H.y >> 29);
+    H = CloudMultiply64(H, uint2(0x1ce4e5b9u, 0xbf58476du));
+    H.x ^= H.y;
+    return float(H.y) * (1.0 / 4294967296.0);
+}
+float CloudNoise(float3 P, uint2 Seed)
+{
+    int3 C = int3(floor(P));
+    float3 F = frac(P);
+    F = F * F * (3 - 2 * F);
+    float A = lerp(CloudLattice(C, Seed), CloudLattice(C + int3(1, 0, 0), Seed), F.x);
+    float B = lerp(CloudLattice(C + int3(0, 1, 0), Seed), CloudLattice(C + int3(1, 1, 0), Seed), F.x);
+    float D = lerp(CloudLattice(C + int3(0, 0, 1), Seed), CloudLattice(C + int3(1, 0, 1), Seed), F.x);
+    float E = lerp(CloudLattice(C + int3(0, 1, 1), Seed), CloudLattice(C + int3(1, 1, 1), Seed), F.x);
+    return lerp(lerp(A, B, F.y), lerp(D, E, F.y), F.z);
+}
+float4 CloudParameter(uint Slot)
+{
+    uint Offset = Extent.Primary.x - 1 + Slot * 4;
+    return float4(Angles[Offset], Angles[Offset + 1], Angles[Offset + 2], Angles[Offset + 3]);
+}
+float CloudMedium(float3 P)
+{
+    float4 Layer = CloudParameter(0), Medium = CloudParameter(1), Wind = CloudParameter(2);
+    if (P.z < Layer.x || P.z > Layer.y || Layer.y <= Layer.x)
+        return 0;
+    if (Medium.w >= 0)
+        return Medium.w * Layer.w;
+    float H = (P.z - Layer.x) / (Layer.y - Layer.x);
+    float Profile = saturate(min(H * 4, 1) * (1 - max(H - .65, 0) / .35 * .85));
+    float3 Q = float3((P.xy + Wind.xy * Medium.z) / 1400, P.z / 700);
+    uint2 Seed = asuint(CloudParameter(5).xy);
+    float Sum = 0, Amplitude = .5, Total = 0;
+    for (uint I = 0; I < 4; ++I)
+    {
+        Sum += Amplitude * CloudNoise(Q, CloudAdd64(Seed, uint2(I * 131u, 0)));
+        Total += Amplitude;
+        Q = Q * 2.03 + float3(11.3, 7.7, 5.1);
+        Amplitude *= .5;
+    }
+    return clamp((Sum / Total - (1 - saturate(Layer.z))) / max(saturate(Layer.z), .001), 0, 1.5) * Profile *
+           Layer.w;
+}
+float4 CloudRay(float3 Origin, float3 Direction)
+{
+    float4 Layer = CloudParameter(0), Medium = CloudParameter(1), Wind = CloudParameter(2),
+           Sun = CloudParameter(3), Solar = CloudParameter(4);
+    float Enter = 0, Exit = Wind.z;
+    if (abs(Direction.z) < 1e-9)
+    {
+        if (Origin.z < Layer.x || Origin.z > Layer.y)
+            return float4(0, 0, 0, 1);
+    }
+    else
+    {
+        float A = (Layer.x - Origin.z) / Direction.z, B = (Layer.y - Origin.z) / Direction.z;
+        Enter = max(min(A, B), 0);
+        Exit = min(max(A, B), Exit);
+        if (Exit <= Enter)
+            return float4(0, 0, 0, 1);
+    }
+    uint Steps = uint(Wind.w);
+    if (Steps == 0)
+        return float4(0, 0, 0, 1);
+    float Dt = (Exit - Enter) / Steps, G = Medium.y, Den = 1 + G * G - 2 * G * dot(Direction, Sun.xyz);
+    float Phase = (1 - G * G) / (4 * 3.141592653589793 * Den * sqrt(max(Den, 1e-12))), T = 1;
+    float3 L = 0;
+    for (uint I = 0; I < Steps; ++I)
+    {
+        float3 P = Origin + Direction * (Enter + Dt * (I + .5));
+        float Density = CloudMedium(P);
+        if (Density <= 0)
+            continue;
+        float Step = exp(-Medium.x * Density * Dt);
+        if (T < 1e-4)
+        {
+            T *= Step;
+            continue;
+        }
+        float Optical = 0;
+        for (uint J = 0; J < uint(Sun.w); ++J)
+        {
+            float3 S = P + Sun.xyz * (220 * (J + .5));
+            Optical += Medium.x * CloudMedium(S) * 220;
+            if (S.z > Layer.y && Sun.z > 0)
+                break;
+        }
+        L += T * (1 - Step) * (Phase * exp(-Optical) * Solar.xyz + CloudParameter(6).xyz);
+        T *= Step;
+    }
+    return float4(L, T);
+}
+[shader("compute")][numthreads(64, 1, 1)] void BakeCloudRadiance(uint3 Dispatch : SV_DispatchThreadID)
+{
+    uint Size = uint(CameraProjection(10).y), Index = Dispatch.x;
+    if (Index >= 6 * Size * Size)
+        return;
+    uint Face = Index / (Size * Size), X = Index % Size, Y = (Index / Size) % Size;
+    float U = 2 * (X + .5) / Size - 1, V = 2 * (Y + .5) / Size - 1;
+    float3 D = Face == 0   ? float3(1, U, V)
+               : Face == 1 ? float3(-1, U, V)
+               : Face == 2 ? float3(U, 1, V)
+               : Face == 3 ? float3(U, -1, V)
+               : Face == 4 ? float3(U, V, 1)
+                           : float3(U, V, -1);
+    D = Unit(D);
+    float4 Cloud = CloudRay(CameraProjection(0).xyz, D);
+    if (Index == 0)
+    {
+        float T = CloudRay(CameraProjection(0).xyz, CloudParameter(3).xyz).w;
+        OutputColour[Extent.Dimensions.x * 21 + 6 * Size * Size] = float4(T);
+    }
+
+    uint Offset = uint(CameraProjection(10).x) + Index * 3;
+    float3 Sky = float3(Angles[Offset], Angles[Offset + 1], Angles[Offset + 2]);
+    OutputColour[Extent.Dimensions.x * 21 + Index] = float4(Cloud.xyz + Cloud.w * Sky, Cloud.w);
 }

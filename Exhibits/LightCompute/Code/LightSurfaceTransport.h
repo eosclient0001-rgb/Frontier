@@ -30,7 +30,8 @@ ReferenceMaterial Material(const LightComputeReceiver& R)
     M.SpecularLevel = R.ResidualSpecular[3];
     return M;
 }
-void Prepare(LightComputeArchive& Scene, uint32_t Samples, uint32_t Size, bool Sky)
+void Prepare(LightComputeArchive& Scene, uint32_t Samples, uint32_t Size, bool Sky,
+             const SpectrumRgb* TopSun = nullptr)
 {
     constexpr double π = 3.141592653589793;
     Scene.Camera[8][3] = float(Scene.Angles.size());
@@ -55,6 +56,8 @@ void Prepare(LightComputeArchive& Scene, uint32_t Samples, uint32_t Size, bool S
             Sunlight = Colour(L.RadianceCategory);
             break;
         }
+    if (TopSun)
+        Sunlight = *TopSun;
     for (uint32_t Face = 0; Face < 6; ++Face)
         for (uint32_t Y = 0; Y < Size; ++Y)
             for (uint32_t X = 0; X < Size; ++X)

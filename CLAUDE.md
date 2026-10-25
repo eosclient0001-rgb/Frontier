@@ -152,3 +152,15 @@ to the native Pattern panel, persists vector TOML, and submits GPU coverage/sele
 the recorded evidence explicitly does not represent a Windows desktop session. Pattern Float32 outputs remain
 unconnected to the PBR material renderer; native 3D application, physical height calibration, user-document export and
 Pattern 1:1 parity remain open. GIF previews are 8-bit evidence, not precision checks. Scope remains approximately 68%.
+
+### Cloud environment checkpoint — 2026-10-25
+
+Vulkan cloud integration and actual ControlVehicle clear/cloud/wind/low-Sun captures are recorded in
+`Exhibits/LightCompute/README.md`, `Results/Clouds.json` and `Results/Clouds.txt`. Camera misses march clouds
+per pixel; indirect rays use a GPU cloud cube. Native checks cover 2,230 cube and 396 camera probes, uniform
+Beer/ambient integrals, bitwise clear-path equivalence and invalid march bounds. Full clouds passed ASan/UBSan;
+native, clustered, legacy Vulkan and indirect reconstruction regressions passed. Twelve compute entries;
+no shaderInt64 feature needed. Optional native cloud ambient defaults to zero. Both analytic and emissive paths
+remain. Existing native Sun, flare and stars are unchanged. Verification is SwiftShader CPU type 4, not physical
+GPU or Windows acceptance. CPU atmosphere, approximate ambient, horizon march artifacts, spatial cloud shadows,
+Moon and night/catalogue work remain open; see `Documentation/EnvironmentTodo.md`.

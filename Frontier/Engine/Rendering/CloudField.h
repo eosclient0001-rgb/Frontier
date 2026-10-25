@@ -34,6 +34,7 @@ struct CloudParameters
     double   WindTimeS       = 0.0;      // [s] field advection clock (offsets the noise lattice)
     double   WindXMps        = 6.0;      // [m/s]
     double   WindYMps        = 2.0;      // [m/s]
+    SpectrumRgb AmbientRadiance{}; // [-] optional uniform isotropic incident radiance; zero preserves sun-only model
     double   UniformDensityOverride = -1.0;   // [-] >= 0: ignore noise/coverage (validation + debug views)
 };
 

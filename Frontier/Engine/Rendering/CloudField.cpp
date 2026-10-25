@@ -154,9 +154,10 @@ CloudMarchResult MarchClouds(const CloudParameters& P, SpatialVector Origin, Spa
         }
         const double SunTransmittance = std::exp(-SunOpticalDepth);
         const double ScatterAmount = Transmittance * (1.0 - StepTransmittance) * Phase * SunTransmittance;
-        Radiance.R += ScatterAmount * SunRadiance.R;
-        Radiance.G += ScatterAmount * SunRadiance.G;
-        Radiance.B += ScatterAmount * SunRadiance.B;
+        const double AmbientAmount = Transmittance * (1.0 - StepTransmittance);
+        Radiance.R += ScatterAmount * SunRadiance.R + AmbientAmount * P.AmbientRadiance.R;
+        Radiance.G += ScatterAmount * SunRadiance.G + AmbientAmount * P.AmbientRadiance.G;
+        Radiance.B += ScatterAmount * SunRadiance.B + AmbientAmount * P.AmbientRadiance.B;
         Transmittance *= StepTransmittance;
     }
     Result.Radiance      = Radiance;

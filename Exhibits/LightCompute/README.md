@@ -5,6 +5,76 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Vulkan clouds, local Sun attenuation and low-Sun lighting — executed
+
+![Clear atmosphere left; procedural volumetric clouds right](Images/CloudComparison.png)
+
+![Actual clear/cloud/wind/low-Sun ControlVehicle readbacks](Images/CloudWeather.png)
+
+![Separate sky-camera readbacks expose the cloud volume](Images/CloudSkyWeather.png)
+
+The shared Slang shader now evaluates the native cloud model on Vulkan: bounded slab intersections,
+four-octave smooth value noise, wind advection, Beer-Lambert extinction, Henyey-Greenstein phase and six-step
+sun self-shadowing. A **64-step per-pixel march** shades camera misses, rather than upscaling a coarse cloud
+cube into the visible sky. A separate 48×48×6 GPU radiance cube supplies clouds to indirect rays. The underlying
+Rayleigh/Mie/ozone atmosphere is still CPU-precomputed; this is not a GPU atmosphere port.
+
+The native 64-bit lattice hash is reproduced with paired 32-bit multiply/add/shift operations. Inspected SPIR-V
+for cloud, primary and transport entries has only `Shader` capability and no Int64 type/capability; optional
+shaderInt64 support is not required. The ambient sky input is a solid-angle-weighted upper-hemisphere average.
+An optional constant isotropic incident-radiance term was added to native `CloudParameters` and `MarchClouds`,
+with a matching GPU term. **Its default is zero**, retaining the earlier sun-only result. The term integrates
+uniform ambient illumination analytically per step; it is an approximation, not multiple scattering.
+
+Sun irradiance in the scene is attenuated by native atmospheric transmittance to ground. The cloud Sun source
+uses atmospheric transmittance at 1.3 km. Vulkan also computes cloud transmittance along the observer-to-Sun
+ray and applies it to the matching directional Sun for local surface lighting. This is **one observer-local
+factor**, not a spatial world cloud-shadow map. Camera, sky and indirect rays use the current cloud parameters.
+
+| Verified check | Observed result |
+|---|---|
+| Cube-native comparisons | 446 directions × 5 cases = 2,230 double-reference probes |
+| Maximum transmittance discrepancy | 1.186e-5; procedural cases at most 3.36908e-6 |
+| Maximum composite cube RGB discrepancy | 1.06147e-5 |
+| Full-resolution camera-native comparisons | 99 rays × 4 cases = 396; maximum RGB discrepancy 9.02517e-6 |
+| Uniform-density Beer-Lambert comparison | Maximum absolute transmittance discrepancy 1.186e-5 |
+| Uniform ambient integral | Native result matches the closed form within 1e-12 |
+| Zero cloud density | Entire vehicle output bitwise equal to clear-atmosphere path |
+| Wind, same Sun and field seed | 120-second advection changes the GPU cloud cube |
+| Invalid march budget | Rejected before dispatch |
+| ASan/UBSan | All five cases and camera/native checks passed; external-driver leak detection disabled |
+
+The cases are clear 35° Sun, uniform-density numeric fixture, procedural clouds, the same field at wind time
+120 s, and procedural clouds with a 3° Sun. The animation omits the uniform test, so it is an illustrative
+weather/lighting sequence—not a continuous ephemeris, dynamics simulation or performance measurement. Sun
+positions are explicit fixture angles. The same authored ControlVehicle and both analytic/emissive lighting
+paths remain. The exhibit uses stronger daylight irradiance and a wider camera view to expose the sky; it does
+not alter the native renderer's existing Sun, flare or stars, nor newly connect those presentation effects.
+
+**Remaining appearance limits:** the flat cloud slab and regular 64-step march can show compressed/rippled
+horizon structure; indirect cloud lighting still uses a low-resolution non-seamless cube. Cloud ambient is
+isotropic and approximate, and the local Sun factor does not produce spatial moving cloud shadows. This is a
+verified environment path with smoother visible clouds, **not final cloud appearance**. Moon, night exposure,
+licensed Milky Way/catalogue work, GPU atmosphere, physical RTX/GTX and Windows acceptance remain open.
+
+There are now **12 compute entries**, eight SSBOs and unchanged 128-byte push constants. The cloud cube plus
+one Sun record adds 221,200 bytes after the 21 output/history slabs (86,237,200 total bytes at 640×400, excluding
+receivers and scene/profile buffers). Camera cloud marching uses no CPU cloud pixels. Cloud parameters precede
+the emissive CDF, so changing weather invalidates the existing exact environment/profile revision prefix.
+All cloud parameters and march extents are bounded and checked before dispatch.
+
+Focused reproduction:
+
+```bash
+bash Exhibits/LightCompute/RunClouds.sh
+```
+
+`Run.sh` includes this phase through the focused scripts; `Run.ps1` has command parity but was not executed on
+Windows. `Results/Clouds.txt` contains the final sanitizer-executed checks; JSON and `CloudSanitizers.txt` retain
+scope/device details. Native CTest 4/4, recovered checks, ASan/UBSan, original ControlVehicle clustered captures,
+legacy Vulkan exact/cluster/reservoir/static-history and indirect reconstruction checks were rerun successfully.
+The device remains **SwiftShader CPU type 4**, with no physical-GPU or real-time claim.
+
 ## Indirect temporal and spatial reconstruction — executed
 
 ![Same moving pose: raw indirect left, reconstructed indirect right](Images/TransportReconstructionComparison.png)
@@ -21,7 +91,7 @@ kernel then averages only compatible surfaces within the current world-space foo
 Read and write slabs are distinct, and dispatch barriers separate all three stages. Previous indirect is not
 overwritten until all temporal reads finish. Visible material emission and sky misses are not blurred. The
 filtered indirect is added to current visible emission; the existing direct-light reconstruction runs unchanged.
-The implementation now uses **11 compute entries**, eight SSBOs, the same 128-byte push ABI, and 21 float4
+The indirect checkpoint used **11 compute entries**, eight SSBOs, the same 128-byte push ABI, and 21 float4
 output/history slabs: **86.016 MB at 640×400**, excluding receivers, geometry and profile buffers. This is a
 reference allocation, not a measured VRAM budget or production performance claim.
 
@@ -189,7 +259,7 @@ is not temporally accumulated or spatially denoised. Multi-bounce transport, emi
 glossy transport, seamless/high-resolution atmosphere evaluation and sky/cloud appearance are still open.
 This capture establishes the executed transport path, not final renderer quality or a performance win.
 
-This earlier transport checkpoint used eight entries; the current shader has **11 compute entries**, eight
+This earlier transport checkpoint used eight entries; the current shader has **12 compute entries**, eight
 SSBOs and the unchanged 128-byte push ABI. The native
 cube adds 165,888 bytes and hemisphere directions add 192 bytes to the profile/sample buffer; no per-pixel CPU
 residual is uploaded. Private camera metadata stores their offsets. `TransportScene.bin` is retained only in
@@ -327,7 +397,7 @@ Original ControlVehicle + authored materials
     → shader/host dependency + fence → actual readback → native display encoding → PNG/APNG
 ```
 
-All 11 computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
+All 12 computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
 retains pipelines/descriptors and uses eight storage buffers with a 128-byte push constant. Inter-dispatch,
 inter-submission and host/readback dependencies are explicit. Prior metadata is never overwritten until all
 reprojection and reconstruction reads have completed. Twenty-one float4 slabs occupy 86.016 MB at 640×400,

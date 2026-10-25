@@ -18,7 +18,7 @@ Sources += list((Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGr
 Sources += [Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Source' / P
             for P in ('MaterialSpecification.js', 'VehicleSpecification.js')]
 Products = list((Output / 'Images').glob('*.png')) + list((Output / 'Results').glob('*.txt'))
-Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json']
+Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json', Output / 'Results/Clouds.json']
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()
@@ -41,6 +41,10 @@ Report = {'execution': 'actual Vulkan compute with shared Slang', 'device': Devi
           'gpu_one_bounce_diffuse_transport_executed': True,
           'atmosphere_cube_bake': 'native CPU SingleScattering, consumed by shader',
           'gpu_atmosphere_executed': False,
+          'gpu_cloud_raymarch_executed': True,
+          'gpu_cloud_cube_executed': True,
+          'cloud_cube_native_probes': 2230,
+          'cloud_camera_native_probes': 396,
           'transport_native_probes': 901,
           'gpu_emissive_area_sampling_executed': True,
           'emissive_native_probes': 225,
@@ -59,7 +63,8 @@ Scratch = list((Root / '_ClaudeScratch/build/light-compute').glob('*.spv'))
 Scratch += [Root / P for P in ('_ClaudeScratch/vehicle-reference/VehicleLightInput.bin',
                               '_ClaudeScratch/vehicle-primary/VehiclePrimary.bin',
                               '_ClaudeScratch/light-compute/TransportScene.bin',
-                              '_ClaudeScratch/light-compute/EmissiveScene.bin')]
+                              '_ClaudeScratch/light-compute/EmissiveScene.bin',
+                              '_ClaudeScratch/light-compute/CloudScene.bin')]
 Scratch += list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*.bin'))
 Scratch += list((Root / '_ClaudeScratch/primary-motion').glob('VehicleMotion*.bin'))
 Present = Hashes([P for P in Scratch if P.exists()])

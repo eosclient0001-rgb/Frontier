@@ -52,13 +52,16 @@ void Confirm(VkResult Result)
     F(FreeMemory)                                                                                            \
     F(BindBufferMemory)                                                                                      \
     F(MapMemory)                                                                                             \
-    F(UnmapMemory) F(CreateDescriptorSetLayout) F(DestroyDescriptorSetLayout) F(CreateDescriptorPool)        \
-        F(DestroyDescriptorPool) F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreatePipelineLayout)   \
-            F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule) F(CreateComputePipelines)  \
-                F(DestroyPipeline) F(CreateCommandPool) F(DestroyCommandPool) F(AllocateCommandBuffers)      \
-                    F(BeginCommandBuffer) F(EndCommandBuffer) F(ResetCommandPool) F(CmdBindPipeline)         \
-                        F(CmdBindDescriptorSets) F(CmdPushConstants) F(CmdDispatch) F(CmdPipelineBarrier)    \
-                            F(QueueSubmit) F(CreateFence) F(DestroyFence) F(WaitForFences) F(ResetFences)
+    F(UnmapMemory)                                                                                           \
+    F(CreateDescriptorSetLayout)                                                                             \
+    F(DestroyDescriptorSetLayout)                                                                            \
+    F(CreateDescriptorPool) F(DestroyDescriptorPool) F(AllocateDescriptorSets) F(UpdateDescriptorSets)       \
+        F(CreatePipelineLayout) F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule)        \
+            F(CreateComputePipelines) F(DestroyPipeline) F(CreateCommandPool) F(DestroyCommandPool)          \
+                F(AllocateCommandBuffers) F(BeginCommandBuffer) F(EndCommandBuffer) F(ResetCommandPool)      \
+                    F(CmdBindPipeline) F(CmdBindDescriptorSets) F(CmdPushConstants) F(CmdDispatch)           \
+                        F(CmdPipelineBarrier) F(QueueSubmit) F(CreateFence) F(DestroyFence) F(WaitForFences) \
+                            F(ResetFences)
 struct BufferSpan
 {
     VkBuffer Buffer = VK_NULL_HANDLE;
@@ -103,6 +106,7 @@ struct LightComputeSubmission
     std::array<BufferSpan, 8> Buffers{};
     std::array<VkPipeline, 4> HistoryPipelines{};
     std::array<VkPipeline, 3> TransportReconstruction{};
+    VkPipeline CloudPipeline = VK_NULL_HANDLE;
     bool TransportHistoryValid = false, TransportDirty = true;
     std::vector<std::array<float, 4>> EmissionPalette;
     std::vector<LightComputeShape> PreviousLights;
@@ -228,6 +232,8 @@ struct LightComputeSubmission
             for (auto Pipeline : HistoryPipelines)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
+            if (CloudPipeline)
+                DestroyPipeline(Device, CloudPipeline, nullptr);
             for (auto Pipeline : TransportReconstruction)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
@@ -362,7 +368,7 @@ struct LightComputeSubmission
             ProfileSamples.resize(ProfileSamples.size() + Scene.Surfaces.size() * 4);
         ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
-        ConstructBuffer(6, nullptr, Scene.Receivers.size() * 16 * 21);
+        ConstructBuffer(6, nullptr, (Scene.Receivers.size() * 21 + 6 * 48 * 48 + 1) * 16);
         ConstructBuffer(7, nullptr, 64);
         std::array<VkDescriptorSetLayoutBinding, 8> Slots{};
         for (uint32_t I = 0; I < 8; ++I)
@@ -414,6 +420,7 @@ struct LightComputeSubmission
         const char* TransportNames[] = {"TransportTemporal", "TransportSpatial", "TransportResolve"};
         for (uint32_t I = 0; I < 3; ++I)
             TransportReconstruction[I] = ConstructPipeline(Shaders + "/" + TransportNames[I] + ".spv");
+        CloudPipeline = ConstructPipeline(Shaders + "/Clouds.spv");
         TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
         PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
         CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
@@ -528,7 +535,8 @@ struct LightComputeSubmission
     Execute(const LightComputeArchive& Scene, uint32_t Mode, uint32_t Capacity = 16, uint32_t Seed = 1,
             uint32_t StackCapacity = 64, uint32_t Reconstruction = 7, bool ResetHistory = false,
             bool PrimaryVisibility = false, uint32_t TransportSamples = 0, bool Environment = false,
-            bool EmissiveSampling = false, bool ReconstructTransport = false)
+            bool EmissiveSampling = false, bool ReconstructTransport = false,
+            uint32_t CloudOffset = UINT32_MAX)
     {
         Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
@@ -541,6 +549,26 @@ struct LightComputeSubmission
                 "Area emission requires primary transport and a valid distribution");
         Require(!ReconstructTransport || (Mode == 3 && PrimaryVisibility && TransportSamples > 0),
                 "Transport reconstruction requires primary history mode");
+        if (CloudOffset != UINT32_MAX)
+        {
+            Require(PrimaryVisibility && Environment && Scene.Camera[10][1] >= 1 &&
+                        Scene.Camera[10][1] <= 48 && size_t(CloudOffset) + 28 <= Scene.Angles.size(),
+                    "Invalid cloud cube extent or parameters");
+            const float* P = Scene.Angles.data() + CloudOffset;
+            for (uint32_t I = 0; I < 28; ++I)
+                if (I != 20 && I != 21)
+                    Require(std::isfinite(P[I]), "Nonfinite cloud parameter");
+            Require(P[1] > P[0] && P[2] >= 0 && P[2] <= 1 && P[3] >= 0 && P[3] <= 16 && P[4] >= 0 &&
+                        P[4] <= .1 && std::abs(P[5]) < .99 && std::abs(P[6]) <= 1000000 && P[7] >= -1 &&
+                        P[7] <= 16 && std::abs(P[8]) <= 100 && std::abs(P[9]) <= 100 && P[10] >= 0 &&
+                        P[10] <= 100000 && P[11] >= 0 && P[11] <= 128 && std::floor(P[11]) == P[11] &&
+                        P[15] >= 0 && P[15] <= 8 && std::floor(P[15]) == P[15],
+                    "Cloud parameters exceed bounded march domain");
+            double SunLength = P[12] * P[12] + P[13] * P[13] + P[14] * P[14];
+            Require(std::abs(SunLength - 1) < .001, "Cloud sun direction is not unit length");
+            for (uint32_t I : {16u, 17u, 18u, 24u, 25u, 26u})
+                Require(P[I] >= 0, "Negative cloud incident radiance");
+        }
         Upload(Scene);
         ComputeExtent Extent;
         Extent.Dimensions = {uint32_t(Scene.Receivers.size()), uint32_t(Scene.Lights.size()), Capacity, Mode};
@@ -550,10 +578,14 @@ struct LightComputeSubmission
         Extent.History = {Scene.Width, Scene.Height, Reset ? 0 : HistorySequence, Reset ? 1u : 0u};
         Extent.Reconstruction = {Reconstruction & 1 ? 1u : 0u, Reconstruction & 2 ? 1u : 0u,
                                  Reconstruction & 4 ? 1u : 0u, 0};
-        Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), TransportSamples,
+        Extent.Primary = {CloudOffset != UINT32_MAX ? CloudOffset + 1
+                          : PrimaryVisibility       ? 1u
+                                                    : 0u,
+                          uint32_t(Scene.Angles.size()), TransportSamples,
                           (Environment ? 1u : 0u) | (EmissiveSampling ? 2u : 0u) |
                               (ReconstructTransport ? 4u : 0u) |
-                              ((!TransportHistoryValid || TransportDirty) ? 8u : 0u)};
+                              ((!TransportHistoryValid || TransportDirty) ? 8u : 0u) |
+                              (CloudOffset != UINT32_MAX ? 16u : 0u)};
         if (PrimaryVisibility)
         {
             // 📝 No uploaded CPU surface channel may supply primary geometry or
@@ -583,6 +615,16 @@ struct LightComputeSubmission
         CmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, PipelineLayout, 0, 1, &DescriptorSet,
                               0, nullptr);
         CmdPushConstants(Commands, PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Extent), &Extent);
+        if (CloudOffset != UINT32_MAX)
+        {
+            CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, CloudPipeline);
+            uint32_t Texels = 6 * uint32_t(Scene.Camera[10][1]) * uint32_t(Scene.Camera[10][1]);
+            CmdDispatch(Commands, (Texels + 63) / 64, 1, 1);
+            Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
+        }
         CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, CellPipeline);
         CmdDispatch(Commands, 4, 1, 1);
         Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -676,6 +718,22 @@ struct LightComputeSubmission
                     static_cast<const char*>(Buffers[6].Address) + size_t(ReceiverCount) * 16 * Slot,
                     R.size() * 16);
         return R;
+    }
+    std::vector<std::array<float, 4>> CloudCube(uint32_t Size) const
+    {
+        std::vector<std::array<float, 4>> R(6 * Size * Size);
+        std::memcpy(R.data(), static_cast<const char*>(Buffers[6].Address) + size_t(ReceiverCount) * 16 * 21,
+                    R.size() * 16);
+        return R;
+    }
+    float CloudSun(uint32_t Size) const
+    {
+        float T = 0;
+        std::memcpy(&T,
+                    static_cast<const char*>(Buffers[6].Address) +
+                        (size_t(ReceiverCount) * 21 + 6 * Size * Size) * 16,
+                    4);
+        return T;
     }
     std::array<uint32_t, 16> HistoryStatistics() const
     {
@@ -887,6 +945,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "LightSurfaceTransport.h"
 #include "EmissiveFacetQuadrature.h"
 #include "TransportReconstruction.h"
+#include "CloudCubeValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -948,6 +1007,11 @@ int main(int Count, char** Arguments)
         if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction-checks")
         {
             ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4], false);
+            return 0;
+        }
+        if (Count == 6 && std::string(Arguments[5]) == "--clouds-only")
+        {
+            ValidateCloudCube(Arguments[1], Arguments[2], Scene, Arguments[4]);
             return 0;
         }
         auto All = Compute.Execute(Scene, 0);
