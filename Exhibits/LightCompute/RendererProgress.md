@@ -1,11 +1,11 @@
 # Renderer progress — 2026-10-25
 
-**Latest verified addition: smooth closed-volume glass seen through a primary planar mirror.** All current
+**Latest verified addition: sampled rough-reflector rays through smooth closed glass.** All current
 execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RTX/GTX or the Windows editor.
 
 **Legend:** 🟢 verified within the stated scope · 🚧 partial / still needs work · 🔴 blocked or not done.
 
-![Actual planar-mirror views of index-matched, clear and absorbing closed glass](Images/MirrorDielectric.png)
+![Actual rough-reflector views of index-matched, clear and absorbing smooth glass](Images/RoughDielectric.png)
 
 ## Done and remaining
 
@@ -18,7 +18,7 @@ execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RT
 | 🟢 | Current pole-shadow fixture | 72 combinations, 3,538,944 silhouette comparisons, zero mismatches | Does not reproduce the user's old project defect |
 | 🟢 | Rough reflection history fixture | Angular-aware reconstruction, 88 native filter probes; stale authored geometry history rejection; compact-only diffuse policy retained | Broader motion/noise/convergence coverage |
 | 🟢 | Sun/flare/stars and selected cellular flakes | Existing implementations retained, not replaced by unrelated rewrites | Deferred sky/cloud appearance improvements below |
-| 🚧 | Secondary solid refraction | Primary planar mirror route now works without the observed driver crash | Rough sampled material rays and primary thin-sheet-window paths still terminate solid hits black |
+| 🟢 | Sampled rough reflection → smooth glass | Flat shared trace site; cosine/GGX proposals; absorption monotonicity, seeded repeat, screen/BVH equality and source-off checks | Primary thin-sheet-window-to-solid and legacy compact-only diffuse paths remain unsupported |
 | 🚧 | Full glass/material system | Runtime coefficient override, bounded 32-interaction / 128-sample volume tracer | Saved TOML/preset/editor integration, rough glass, nested media, inside cameras, caustics and transmitted direct shadows |
 | 🚧 | Reflection reconstruction / denoising | Limited authored rough-surface reconstruction and tested invalidation | Roughness-mip prior-screen colour/exitance, full denoiser and complete sampling/PDF/material acceptance |
 | 🚧 | Clouds, fog and shafts | Earlier actual cloud/fog/geometry-shadow fixtures; lower-cost working cloud budget | Improve blocky clouds, horizon/sky, Milky Way/catalogues/extrasolar stars and dawn/sunset; moving full-scene acceptance |
@@ -35,21 +35,22 @@ execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RT
 | Boundary arithmetic | 199/199 native/GPU cases; 149 reciprocal native identities |
 | Primary slab cases | 4/4 |
 | Mirror slab cases | 4/4 |
+| Rough reflector / smooth glass | 3 optical screen/BVH comparisons, Beer monotonicity, exact repeat and source-off checks |
 | Native renderer CTests | 4/4 |
 | Physical-GPU / Windows checks in this batch | Not run |
 
 Those passing fractions describe fixtures, **not overall renderer completion**. A global percentage would
-be misleading while hardware/editor, material authoring, rough secondary glass and unified moving-scene
+be misleading while hardware/editor, material authoring, remaining window/volume paths and unified moving-scene
 acceptance are outstanding. No real-time performance or completed renderer claim.
 
 ## Suggested execution order
 
-1. Driver-safe rough secondary transport, with numeric checks and actual rough-reflection glass captures.
+1. Primary thin-sheet-to-solid transport and legacy compact-only diffuse integration, with numeric checks and actual captures.
 2. Authored closed-glass bindings on ControlVehicle; moving captures, lighting refresh and reconstruction.
 3. Complete sampling/material acceptance and roughness-mip prior-screen lighting plus denoising.
 4. Physical RTX/GTX and Windows editor integration; measured device budgets.
 5. Deferred sky/cloud appearance, Moon and separately scoped native vehicle-dynamics work.
 
-Evidence: [mirror phase](MirrorDielectric.md), [primary glass](SolidDielectric.md),
+Evidence: [rough-reflection glass phase](RoughDielectric.md), [mirror phase](MirrorDielectric.md), [primary glass](SolidDielectric.md),
 [shadow/history investigation](ShadowHistory.md), [rough reflections](RoughReflections.md),
 [vehicle/material scene](MaterialScene.md). Foliage remains isolated and inactive.

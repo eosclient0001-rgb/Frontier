@@ -5,13 +5,13 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
-## Smooth glass: primary camera and planar mirror — 2026-10-25
+## Smooth glass: camera, mirror and sampled rough reflection — 2026-10-25
 
-[Primary glass acceptance](SolidDielectric.md) and [mirror extension](MirrorDielectric.md) contain actual
-captures and analytic checks. A shared integration site avoids the reproduced software-driver crash for
-primary mirror-to-volume paths. **Rough sampled secondary solid refraction remains unsupported**, as do
-saved closed-glass material-authoring and editor integration. Existing thin-sheet windows remain separate.
-[Emoji done/remaining table](RendererProgress.md) distinguishes verified exhibits from unfinished renderer work.
+[Primary glass](SolidDielectric.md), [mirror extension](MirrorDielectric.md) and [rough-reflection extension](RoughDielectric.md)
+contain actual captures and focused acceptance. One flat proposal sequence and volume-trace site avoid the
+previous observed software-driver crash. This is rough **reflector** transport through **smooth glass**, not
+rough/frosted glass boundaries. Saved closed-glass authoring, primary thin-sheet-to-solid paths and physical
+GPU/editor integration remain incomplete. [Emoji done/remaining table](RendererProgress.md).
 
 ## Lower-cost working cloud preset — 2026-10-25
 

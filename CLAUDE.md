@@ -327,3 +327,22 @@ source-off6144 pixels exactly black, actual96x64 captures with32 mirror paths. S
 Rough sampled category4 encounters and primary thin-sheet-to-solid paths remain unsupported black; no
 recursive mirror chain, nested/rough glass, inside-camera, caustic, full authoring, physical GPU or Windows claim.
 `Exhibits/LightCompute/RendererProgress.md` is the emoji done/remaining report; no invented global percentage.
+
+
+## Sampled rough reflection through smooth glass — 2026-10-25
+
+One flat proposal sequence and one `TraceSolidDielectric` call site now serve authored cosine/GGX material
+rays, primary glass and mirrors. `IntegrateBoundaryRays` moved into MaterialRayTransport after the PDF/screen
+helpers. Fresnel branching has a separate RNG state so absorption cannot perturb subsequent BRDF directions.
+Generic non-screen receiver marker6 exports capped/unsupported counts; screen/mirror/primary metadata retained.
+`Exhibits/LightCompute/RoughDielectric.md`: actual96x64,32samples x2proposals, reflectors roughness .06/.30/.65;
+index-matched absorption changes11118 channels; ratios .924979/.813363/.710670; exact repeat, source-off6144
+pixels black. Pinned213f050 transport shaders reproduce zero changed channels (absorption ignored).
+This is rough-reflector transport through smooth closed glass, NOT rough/frosted glass boundaries. Primary
+thin-sheet-to-solid and legacy compact-only diffuse paths remain unsupported; no full material/PDF or hardware
+acceptance claim. Updated RendererProgress.md distinguishes completed fixtures from remaining renderer work.
+
+The final ROUGH_DIELECTRIC_BUILD=0 wrapper passed: three new optical screen/BVH exact comparisons,
+primary/mirror slab and rejection checks,199 boundary cases,4/4native CTests,opaque history88probes, and the
+previous192x120 rough-reflection suite (14941screen/204392fallback rays, RGBerror0, sourceoff/movedfresh pass).
+Thirteen compute entry points compiled at Slang-O0. No physical GPU/Windows/editor or speedup claim.

@@ -1,7 +1,8 @@
 # Closed-volume dielectric transport — 2026-10-25
 
 **This checkpoint covers primary-camera smooth closed volumes.** Subsequent [mirror transport](MirrorDielectric.md)
-adds a verified primary-mirror-to-volume route. Actual C++/Slang Vulkan captures and analytic checks;
+adds a verified primary-mirror-to-volume route. A later [rough-reflection phase](RoughDielectric.md) adds
+sampled rough reflector paths through smooth glass. Historical secondary-blocker notes below refer to this original checkpoint. Actual C++/Slang Vulkan captures and analytic checks;
 not completed general glass, material authoring, editor integration or physical-GPU acceptance.
 
 ![Index-matched baseline, clear refracting volume, absorbing refracting volume](Images/SolidDielectric.png)

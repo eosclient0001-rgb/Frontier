@@ -79,25 +79,3 @@ float3 TraceSolidDielectric(float3 Origin, float3 Direction, inout uint Bits, ou
     Capped = 1;
     return 0;
 }
-float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
-{
-    uint Bits = Pixel * 747796405u + Extent.Sampling.x, Internal = 0, Capped = 0, Unsupported = 0;
-    // One volume integration call site serves camera and mirror rays; nested call sites crash the tested software driver.
-    bool Mirror = MaterialTransport(R) == 1;
-    float3 Origin = Mirror ? R.PositionHit.xyz + R.NormalRoughness.xyz * .003 : CameraProjection(0).xyz;
-    float3 Direction = Mirror ? reflect(-R.ViewMetallic.xyz, R.NormalRoughness.xyz) : -R.ViewMetallic.xyz;
-    uint Hits = 0;
-    float3 Sum = 0;
-    uint Samples = min(128u, max(1u, Extent.Primary.z));
-    for (uint Sample = 0; Sample < Samples; ++Sample)
-    {
-        uint T, C, U;
-        bool Hit;
-        Sum += TraceSolidDielectric(Origin, Direction, Bits, T, C, U, Hit);
-        Hits += Hit;
-        Internal += T; Capped += C; Unsupported += U;
-    }
-    // [count] Marker 5 is distinct from plastic fallback marker 4; packed y remains exact below 2^24.
-    R.ExpectedDirect.xyz = Mirror ? float3(1, Hits > 0 ? 1 : 0, Capped * 256u + Unsupported) : float3(5, Capped * 65536u + Internal, Unsupported);
-    return Sum / Samples * (Mirror ? .94 : 1);
-}

@@ -1037,11 +1037,17 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "DielectricBoundaryValidation.h"
 #include "SolidDielectricValidation.h"
 #include "MirrorDielectricValidation.h"
+#include "RoughDielectricValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && (std::string(Arguments[3]) == "--rough-dielectric" || std::string(Arguments[3]) == "--rough-dielectric-original"))
+        {
+            ValidateRoughDielectric(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--rough-dielectric-original");
+            return 0;
+        }
         if (Count == 5 && (std::string(Arguments[3]) == "--mirror-dielectric" || std::string(Arguments[3]) == "--mirror-dielectric-original"))
         {
             ValidateMirrorDielectric(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--mirror-dielectric-original");

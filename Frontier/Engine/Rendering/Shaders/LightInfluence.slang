@@ -943,7 +943,7 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
         float3 Direction = reflect(-V, N), Origin = R.PositionHit.xyz + N * .003;
         float3 Radiance = 0;
-        if (Category == 4 || Category == 1)
+        if (Category != 2)
         {
             Radiance = IntegrateBoundaryRays(R, Pixel);
             StoreHistory(16, Pixel, float4(Radiance, 1));
@@ -970,14 +970,7 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
             Receivers[Pixel] = R;
             return;
         }
-        else
-        {
-            Radiance = IntegrateMaterialRays(R, Pixel);
-            StoreHistory(16, Pixel, float4(Radiance, 1));
-            R.ResidualSpecular.xyz += Radiance;
-            Receivers[Pixel] = R;
-            return;
-        }
+
     }
     float3 N = R.NormalRoughness.xyz;
     float3 Tangent = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)),

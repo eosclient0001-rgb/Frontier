@@ -10,15 +10,21 @@ camera view. The glass box and emissive checker are **behind the camera**, so no
 primary camera. The middle image shows refractive displacement; the right image adds RGB distance absorption
 0.2/0.6/1.2 per scene-length unit. Visible finite-sample noise and triangle-edge artifacts are not concealed.
 
+A subsequent [rough-reflection extension](RoughDielectric.md) now supports sampled reflector rays through
+smooth glass; statements below about the rough-path blocker describe this mirror checkpoint.
+
+The table below reflects the current regression readback; finite averaging order changed last-bit values
+when the integrator was flattened in the rough-reflection phase.
+
 ## Verification
 
 | Check | Actual result |
 |-------|---------------|
 | Device | SwiftShader Device (Subzero), CPU type 4; software Vulkan only |
-| Mirror slab, index 1.0, no absorption | Maximum central RGB mean error **2.38418e-9** |
-| Mirror slab, index 1.0, absorption | **1.31959e-7** |
-| Mirror slab, index 1.5, no absorption | **0.00307599** |
-| Mirror slab, index 1.5, absorption | **0.00230349** |
+| Mirror slab, index 1.0, no absorption | Maximum central RGB mean error **1.16825e-7** |
+| Mirror slab, index 1.0, absorption | **9.1864e-8** |
+| Mirror slab, index 1.5, no absorption | **0.00307568** |
+| Mirror slab, index 1.5, absorption | **0.00230352** |
 | Analytic coverage | 196 central pixels per case; every primary pixel asserts mirror classification |
 | Bounds/medium state | Every mirror pixel asserts zero capped and unsupported paths in the four slab cases |
 | Negative control: disable the new mirror routing | 196 central pixels reproduce blocked-black solid reflection |

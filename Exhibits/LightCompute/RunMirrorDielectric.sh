@@ -18,8 +18,8 @@ cp "$Build/"*.spv "$Build/MaterialSceneMaps.bin" "$Original/"
 python3 - <<'PYTHON'
 from pathlib import Path
 Source = Path('Frontier/Engine/Rendering/Shaders/LightInfluence.slang').read_text()
-assert Source.count('if (Category == 4 || Category == 1)') == 1
-Path('_ClaudeScratch/tmp/MirrorDielectricOriginal.slang').write_text(Source.replace('if (Category == 4 || Category == 1)', 'if (Category == 4)'))
+assert Source.count('if (Category != 2)') == 1
+Path('_ClaudeScratch/tmp/MirrorDielectricOriginal.slang').write_text(Source.replace('if (Category != 2)', 'if (Category != 2 && Category != 1)'))
 PYTHON
 "${SLANGC:-$Tools/Slang/slangtorch/bin/slangc}" _ClaudeScratch/tmp/MirrorDielectricOriginal.slang \
  -I Frontier/Engine/Rendering/Shaders -entry TraceSurfaceTransport -target spirv -profile spirv_1_3 \

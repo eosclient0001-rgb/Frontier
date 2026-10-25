@@ -1,7 +1,7 @@
 /*==========================================================================================================================================
                                                         MATERIALRAYTRANSPORT.SLANG
 ==========================================================================================================================================*/
-// 🧩 Scene-reflecting mirrors, thin glass, depth-screen plastic reflections and stratified diffuse/GGX ray integration.
+// 🧩 Thin-sheet transport and a shared cosine/GGX, mirror and closed-dielectric ray integration sequence.
 
 float3 MaterialShadowTransmission(float3 Origin, float3 Direction, float Far)
 {
@@ -49,7 +49,7 @@ float3 TraceMaterialRadiance(float3 Origin, float3 Direction, out bool Hit)
         if (Index == 0xffffffffu) return Transmission * EnvironmentRadiance(Direction);
         Hit = true;
         SurfacePoint R = FacetSurface(Index, Origin, Direction, Strike);
-        // Secondary smooth-volume paths are not supported by this primary-volume stage.
+        // The legacy primary thin-sheet route does not yet cross closed volumes.
         if (MaterialTransport(R) == 4) return 0;
         if (MaterialTransport(R) != 2) return Transmission * ShadeRayStrike(R);
         float Cosine = max(.05, dot(R.NormalRoughness.xyz, -Direction));
@@ -109,20 +109,33 @@ float MaterialMixtureDensity(PreviewScattering S, float3 N, float3 V, float3 L)
                saturate(dot(N, H)) / max(1e-6, 4 * abs(dot(V, H)));
     return Sum;
 }
-float3 IntegrateMaterialRays(inout SurfacePoint R, uint Pixel)
+//------------------------------------------------------------------------------------------------------------------------
+//                                                   FLAT BOUNDARY RAY SEQUENCE
+//------------------------------------------------------------------------------------------------------------------------
+
+float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
 {
-    PreviewScattering S = ReadMaterialScattering(R);
+    uint Category = MaterialTransport(R);
+    bool Delta = Category == 1 || Category == 4, Mirror = Category == 1;
+    PreviewScattering S = (PreviewScattering)0;
+    if (!Delta) S = ReadMaterialScattering(R);
     float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
     float3 T = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)), B = cross(N, T);
     uint Bits = Pixel * 747796405u + Extent.Sampling.x;
+    uint Samples = Delta ? min(128u, max(1u, Extent.Primary.z)) : max(1u, Extent.Primary.z);
+    uint Proposals = Delta ? 1 : S.Configuration.x + 1;
+    uint ScreenHits = 0, FallbackRays = 0, Hits = 0, Internal = 0, Capped = 0, Unsupported = 0;
     float3 Sum = 0;
-    bool ScreenEnabled = MaterialTransport(R) == 3;
-    uint ScreenHits = 0, FallbackRays = 0;
-    for (uint Sample = 0; Sample < Extent.Primary.z; ++Sample)
-        for (uint Proposal = 0; Proposal <= S.Configuration.x; ++Proposal)
+    // A flat proposal sequence and one solid-trace site avoid nested material/volume call sites in the tested driver.
+    for (uint Path = 0; Path < Samples * Proposals; ++Path)
+    {
+        uint Proposal = Path % Proposals;
+        float3 L = Mirror ? reflect(-V, N) : -V;
+        float3 Origin = Category == 4 ? CameraProjection(0).xyz : R.PositionHit.xyz + N * .003;
+        float3 Weight = Mirror ? float3(.94) : float3(1);
+        if (!Delta)
         {
             float U = min(.999999, RandomUnit(Bits)), Angle = 2 * π * RandomUnit(Bits);
-            float3 L;
             if (Proposal == 0)
                 L = Unit(T * (sqrt(U) * cos(Angle)) + B * (sqrt(U) * sin(Angle)) + N * sqrt(1 - U));
             else
@@ -135,20 +148,29 @@ float3 IntegrateMaterialRays(inout SurfacePoint R, uint Pixel)
             }
             float NL = dot(N, L);
             if (NL <= 0) continue;
-            bool Hit;
-            SurfacePoint ScreenStrike;
-            float3 Origin = R.PositionHit.xyz + N * .003;
-            bool Screen = ScreenEnabled && TraceDepthScreen(Origin, L, ScreenStrike);
-            float3 Incoming = Screen ? ShadeRayStrike(ScreenStrike) : TraceMaterialRadiance(Origin, L, Hit);
-            ScreenHits += Screen;
-            FallbackRays += !Screen;
-            Sum += Brdf(R, L) * Incoming * NL / max(1e-8, MaterialMixtureDensity(S, N, V, L));
+            Weight = Brdf(R, L) * NL / max(1e-8, MaterialMixtureDensity(S, N, V, L));
         }
-    if (ScreenEnabled)
-    {
-        R.ExpectedDirect.x = ScreenHits > 0 ? 3 : 4;
-        R.ExpectedDirect.y = FallbackRays;
-        R.ExpectedDirect.z = ScreenHits;
+        SurfacePoint ScreenStrike;
+        bool Screen = !Delta && Category == 3 && TraceDepthScreen(Origin, L, ScreenStrike);
+        float3 Incoming;
+        if (Screen) Incoming = ShadeRayStrike(ScreenStrike);
+        else
+        {
+            uint Tirs, Cap, Invalid;
+            bool Hit;
+            // Boundary branching must not perturb the subsequent BRDF proposal sequence.
+            uint BoundaryBits = Delta ? Bits : Bits ^ (Path * 2246822519u + 3266489917u);
+            Incoming = TraceSolidDielectric(Origin, L, BoundaryBits, Tirs, Cap, Invalid, Hit);
+            if (Delta) Bits = BoundaryBits;
+            Internal += Tirs; Capped += Cap; Unsupported += Invalid; Hits += Hit;
+        }
+        ScreenHits += Screen;
+        FallbackRays += !Screen;
+        Sum += Weight * Incoming;
     }
-    return Sum / Extent.Primary.z;
+    if (Category == 4) R.ExpectedDirect.xyz = float3(5, Capped * 65536u + Internal, Unsupported);
+    else if (Mirror) R.ExpectedDirect.xyz = float3(1, Hits > 0 ? 1 : 0, Capped * 256u + Unsupported);
+    else if (Category == 3) R.ExpectedDirect.xyz = float3(ScreenHits > 0 ? 3 : 4, FallbackRays, ScreenHits);
+    else R.ExpectedDirect.xyz = float3(6, Capped, Unsupported);
+    return Sum / Samples;
 }
