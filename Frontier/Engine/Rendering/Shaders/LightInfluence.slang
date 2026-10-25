@@ -50,8 +50,7 @@ float3 Unit(float3 P)
 }
 float Power(float3 C) { return dot(C, float3(.2126, .7152, .0722)); }
 
-[shader("compute")][numthreads(64, 1, 1)] void AssignLightCells(uint3 Dispatch
-                                                                : SV_DispatchThreadID)
+[shader("compute")][numthreads(64, 1, 1)] void AssignLightCells(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Count = Extent.Grid.x * Extent.Grid.y * Extent.Grid.z;
     if (Dispatch.x >= Count)
@@ -274,8 +273,7 @@ uint NextRandom(inout uint Bits)
 }
 float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 / 16777216.0); }
 
-[shader("compute")][numthreads(64, 1, 1)] void EvaluateLightReceivers(uint3 Dispatch
-                                                                      : SV_DispatchThreadID)
+[shader("compute")][numthreads(64, 1, 1)] void EvaluateLightReceivers(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
@@ -480,8 +478,7 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
            abs(A.NormalRoughness.w - B.NormalRoughness.w) < 1e-4 &&
            abs(A.ResidualSpecular.w - B.ResidualSpecular.w) < 1e-4;
 }
-[shader("compute")][numthreads(64, 1, 1)] void ReuseLightNeighbours(uint3 Dispatch
-                                                                    : SV_DispatchThreadID)
+[shader("compute")][numthreads(64, 1, 1)] void ReuseLightNeighbours(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
@@ -549,8 +546,8 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
     //                                              TEMPORAL MOMENTS AND EDGE FILTERING
     //------------------------------------------------------------------------------------------------------------------------
 
-    [shader("compute")][numthreads(64, 1, 1)] void ReconstructLightHistory(uint3 Dispatch
-                                                                           : SV_DispatchThreadID)
+    [shader("compute")][numthreads(64, 1, 1)] void ReconstructLightHistory(
+        uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
@@ -595,8 +592,7 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
     StoreHistory(6, Pixel, float4(Colour, max(0, Second - Mean * Mean) / Length));
     StoreHistory(14, Pixel, float4(Mean, Second, Length, 0));
 }
-[shader("compute")][numthreads(64, 1, 1)] void FilterLightNeighbours(uint3 Dispatch
-                                                                     : SV_DispatchThreadID)
+[shader("compute")][numthreads(64, 1, 1)] void FilterLightNeighbours(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
@@ -634,8 +630,7 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
         }
     StoreHistory(Destination, Pixel,
                  float4(Sum / max(WeightSum, 1e-12), Variance / max(WeightSum * WeightSum, 1e-12)));
-}[shader("compute")][numthreads(64, 1, 1)] void FinalizeLightHistory(uint3 Dispatch
-                                                                     : SV_DispatchThreadID)
+}[shader("compute")][numthreads(64, 1, 1)] void FinalizeLightHistory(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
@@ -787,8 +782,7 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
     R.ResidualSpecular = float4(F.Emissive.xyz, F.OpticalToken.z);
     return R;
 }
-[shader("compute")][numthreads(64, 1, 1)] void TracePrimarySurfaces(uint3 Dispatch
-                                                                    : SV_DispatchThreadID)
+[shader("compute")][numthreads(64, 1, 1)] void TracePrimarySurfaces(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
@@ -899,15 +893,17 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
     return DiffuseTransportResponse(R, Direction) * F.Emissive.xyz *
            (Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
 }
-[shader("compute")][numthreads(64, 1, 1)] void TraceSurfaceTransport(uint3 Dispatch
-                                                                     : SV_DispatchThreadID)
+[shader("compute")][numthreads(64, 1, 1)] void TraceSurfaceTransport(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
     if (Pixel >= Extent.Dimensions.x)
         return;
     SurfacePoint R = Receivers[Pixel];
     if (R.PositionHit.w == 0)
+    {
+        StoreHistory(16, Pixel, 0);
         return;
+    }
     float3 N = R.NormalRoughness.xyz;
     float3 Tangent = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)),
            Bitangent = cross(N, Tangent);
@@ -947,6 +943,103 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         if ((Extent.Primary.w & 2u) != 0)
             Sum += SampleEmissiveFacet(R, EmissiveBits);
     }
+    StoreHistory(16, Pixel, float4(Sum / Extent.Primary.z, 1));
     R.ResidualSpecular.xyz += Sum / Extent.Primary.z;
     Receivers[Pixel] = R;
+}
+
+    //------------------------------------------------------------------------------------------------------------------------
+    //                                             TRANSPORT REPROJECTION AND SPATIAL RECONSTRUCTION
+    //------------------------------------------------------------------------------------------------------------------------
+    [shader("compute")][numthreads(64, 1, 1)] void ReprojectSurfaceTransport(
+        uint3 Dispatch : SV_DispatchThreadID)
+{
+    uint Pixel = Dispatch.x;
+    if (Pixel >= Extent.Dimensions.x)
+        return;
+    SurfacePoint R = Receivers[Pixel];
+    float4 Current = LoadHistory(16, Pixel);
+    if (R.PositionHit.w == 0)
+    {
+        StoreHistory(17, Pixel, 0);
+        StoreHistory(20, Pixel, 0);
+        return;
+    }
+    float3 Low = Current.xyz, High = Current.xyz;
+    int2 P = int2(Pixel % Extent.History.x, Pixel / Extent.History.x);
+    for (int Y = -1; Y <= 1; ++Y)
+        for (int X = -1; X <= 1; ++X)
+        {
+            int2 Q = P + int2(X, Y);
+            if (any(Q < 0) || Q.x >= int(Extent.History.x) || Q.y >= int(Extent.History.y))
+                continue;
+            uint I = uint(Q.y) * Extent.History.x + uint(Q.x);
+            if (!NearbyReceiver(R, Receivers[I], R.MotionPixel.z * 2))
+                continue;
+            float3 C = LoadHistory(16, I).xyz;
+            Low = min(Low, C);
+            High = max(High, C);
+        }
+    int Previous = (Extent.Primary.w & 8u) != 0 ? -1 : ReprojectReceiver(R);
+    float Length = 1;
+    if (Previous >= 0)
+    {
+        float4 Old = LoadHistory(18, uint(Previous));
+        if (Old.w > 0)
+        {
+            Length = min(Old.w + 1, 16);
+            Current.xyz = lerp(clamp(Old.xyz, Low, High), Current.xyz, 1 / Length);
+        }
+        else
+            Previous = -1;
+    }
+    StoreHistory(17, Pixel, float4(Current.xyz, Length));
+    StoreHistory(20, Pixel, float4(Previous >= 0 ? 1 : 0, 0, Length, 0));
+}
+[shader("compute")][numthreads(64, 1, 1)] void FilterSurfaceTransport(uint3 Dispatch : SV_DispatchThreadID)
+{
+    uint Pixel = Dispatch.x;
+    if (Pixel >= Extent.Dimensions.x)
+        return;
+    SurfacePoint R = Receivers[Pixel];
+    if (R.PositionHit.w == 0)
+    {
+        StoreHistory(19, Pixel, 0);
+        return;
+    }
+    int2 P = int2(Pixel % Extent.History.x, Pixel / Extent.History.x);
+    float3 Sum = 0;
+    float Weight = 0;
+    uint Count = 0;
+    for (int Y = -2; Y <= 2; ++Y)
+        for (int X = -2; X <= 2; ++X)
+        {
+            int2 Q = P + int2(X, Y);
+            if (any(Q < 0) || Q.x >= int(Extent.History.x) || Q.y >= int(Extent.History.y))
+                continue;
+            uint I = uint(Q.y) * Extent.History.x + uint(Q.x);
+            if (!NearbyReceiver(R, Receivers[I], max(.03, R.MotionPixel.z * 2)))
+                continue;
+            float W = (X == 0 ? 6 : abs(X) == 1 ? 4 : 1) * (Y == 0 ? 6 : abs(Y) == 1 ? 4 : 1);
+            Sum += LoadHistory(17, I).xyz * W;
+            Weight += W;
+            ++Count;
+        }
+    StoreHistory(19, Pixel, float4(Sum / max(Weight, 1), LoadHistory(17, Pixel).w));
+    float4 Diagnostic = LoadHistory(20, Pixel);
+    Diagnostic.y = float(Count);
+    StoreHistory(20, Pixel, Diagnostic);
+}[shader("compute")][numthreads(64, 1, 1)] void ResolveSurfaceTransport(uint3 Dispatch : SV_DispatchThreadID)
+{
+    uint Pixel = Dispatch.x;
+    if (Pixel >= Extent.Dimensions.x)
+        return;
+    SurfacePoint R = Receivers[Pixel];
+    float4 Filtered = LoadHistory(19, Pixel);
+    StoreHistory(18, Pixel, Filtered);
+    if (R.PositionHit.w != 0)
+    {
+        R.ResidualSpecular.xyz += Filtered.xyz - LoadHistory(16, Pixel).xyz;
+        Receivers[Pixel] = R;
+    }
 }

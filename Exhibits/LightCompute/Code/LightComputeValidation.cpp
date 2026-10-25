@@ -50,15 +50,15 @@ void Confirm(VkResult Result)
     F(GetBufferMemoryRequirements)                                                                           \
     F(AllocateMemory)                                                                                        \
     F(FreeMemory)                                                                                            \
-    F(BindBufferMemory) F(MapMemory) F(UnmapMemory) F(CreateDescriptorSetLayout)                             \
-        F(DestroyDescriptorSetLayout) F(CreateDescriptorPool) F(DestroyDescriptorPool)                       \
-            F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreatePipelineLayout)                        \
-                F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule)                        \
-                    F(CreateComputePipelines) F(DestroyPipeline) F(CreateCommandPool) F(DestroyCommandPool)  \
-                        F(AllocateCommandBuffers) F(BeginCommandBuffer) F(EndCommandBuffer)                  \
-                            F(ResetCommandPool) F(CmdBindPipeline) F(CmdBindDescriptorSets)                  \
-                                F(CmdPushConstants) F(CmdDispatch) F(CmdPipelineBarrier) F(QueueSubmit)      \
-                                    F(CreateFence) F(DestroyFence) F(WaitForFences) F(ResetFences)
+    F(BindBufferMemory)                                                                                      \
+    F(MapMemory)                                                                                             \
+    F(UnmapMemory) F(CreateDescriptorSetLayout) F(DestroyDescriptorSetLayout) F(CreateDescriptorPool)        \
+        F(DestroyDescriptorPool) F(AllocateDescriptorSets) F(UpdateDescriptorSets) F(CreatePipelineLayout)   \
+            F(DestroyPipelineLayout) F(CreateShaderModule) F(DestroyShaderModule) F(CreateComputePipelines)  \
+                F(DestroyPipeline) F(CreateCommandPool) F(DestroyCommandPool) F(AllocateCommandBuffers)      \
+                    F(BeginCommandBuffer) F(EndCommandBuffer) F(ResetCommandPool) F(CmdBindPipeline)         \
+                        F(CmdBindDescriptorSets) F(CmdPushConstants) F(CmdDispatch) F(CmdPipelineBarrier)    \
+                            F(QueueSubmit) F(CreateFence) F(DestroyFence) F(WaitForFences) F(ResetFences)
 struct BufferSpan
 {
     VkBuffer Buffer = VK_NULL_HANDLE;
@@ -102,6 +102,9 @@ struct LightComputeSubmission
                PrimaryPipeline = VK_NULL_HANDLE, TransportPipeline = VK_NULL_HANDLE;
     std::array<BufferSpan, 8> Buffers{};
     std::array<VkPipeline, 4> HistoryPipelines{};
+    std::array<VkPipeline, 3> TransportReconstruction{};
+    bool TransportHistoryValid = false, TransportDirty = true;
+    std::vector<std::array<float, 4>> EmissionPalette;
     std::vector<LightComputeShape> PreviousLights;
     std::vector<float> PreviousAngles;
     uint32_t HistorySequence = 0, ReceiverCount = 0;
@@ -223,6 +226,9 @@ struct LightComputeSubmission
         {
             DeviceWaitIdle(Device);
             for (auto Pipeline : HistoryPipelines)
+                if (Pipeline)
+                    DestroyPipeline(Device, Pipeline, nullptr);
+            for (auto Pipeline : TransportReconstruction)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
             if (TransportPipeline)
@@ -356,7 +362,7 @@ struct LightComputeSubmission
             ProfileSamples.resize(ProfileSamples.size() + Scene.Surfaces.size() * 4);
         ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
-        ConstructBuffer(6, nullptr, Scene.Receivers.size() * 16 * 16);
+        ConstructBuffer(6, nullptr, Scene.Receivers.size() * 16 * 21);
         ConstructBuffer(7, nullptr, 64);
         std::array<VkDescriptorSetLayoutBinding, 8> Slots{};
         for (uint32_t I = 0; I < 8; ++I)
@@ -405,6 +411,9 @@ struct LightComputeSubmission
             Writes[I].pBufferInfo = &Spans[I];
         }
         UpdateDescriptorSets(Device, 8, Writes.data(), 0, nullptr);
+        const char* TransportNames[] = {"TransportTemporal", "TransportSpatial", "TransportResolve"};
+        for (uint32_t I = 0; I < 3; ++I)
+            TransportReconstruction[I] = ConstructPipeline(Shaders + "/" + TransportNames[I] + ".spv");
         TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
         PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
         CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
@@ -461,6 +470,16 @@ struct LightComputeSubmission
             std::memcpy(static_cast<char*>(Buffers[1].Address) + I * sizeof(LightComputeReceiver) +
                             offsetof(LightComputeReceiver, ExpectedDirect),
                         Poison.data(), 16);
+        std::vector<std::array<float, 4>> Palette;
+        for (const auto& F : Scene.Surfaces)
+            Palette.push_back({F.OpticalToken[3], F.Emissive[0], F.Emissive[1], F.Emissive[2]});
+        std::sort(Palette.begin(), Palette.end());
+        Palette.erase(std::unique(Palette.begin(), Palette.end()), Palette.end());
+        if (Palette != EmissionPalette)
+        {
+            TransportDirty = true;
+            EmissionPalette = std::move(Palette);
+        }
         size_t RevisionAngles = Scene.Angles.size();
         if (Scene.Camera[10][2] > 0)
         {
@@ -505,12 +524,11 @@ struct LightComputeSubmission
             PreviousAngles.assign(Scene.Angles.begin(), Scene.Angles.begin() + RevisionAngles);
         }
     }
-    std::vector<std::array<float, 4>> Execute(const LightComputeArchive& Scene, uint32_t Mode,
-                                              uint32_t Capacity = 16, uint32_t Seed = 1,
-                                              uint32_t StackCapacity = 64, uint32_t Reconstruction = 7,
-                                              bool ResetHistory = false, bool PrimaryVisibility = false,
-                                              uint32_t TransportSamples = 0, bool Environment = false,
-                                              bool EmissiveSampling = false)
+    std::vector<std::array<float, 4>>
+    Execute(const LightComputeArchive& Scene, uint32_t Mode, uint32_t Capacity = 16, uint32_t Seed = 1,
+            uint32_t StackCapacity = 64, uint32_t Reconstruction = 7, bool ResetHistory = false,
+            bool PrimaryVisibility = false, uint32_t TransportSamples = 0, bool Environment = false,
+            bool EmissiveSampling = false, bool ReconstructTransport = false)
     {
         Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
@@ -521,6 +539,8 @@ struct LightComputeSubmission
         Require(!EmissiveSampling || (PrimaryVisibility && TransportSamples > 0 &&
                                       std::isfinite(Scene.Camera[10][2]) && Scene.Camera[10][2] > 0),
                 "Area emission requires primary transport and a valid distribution");
+        Require(!ReconstructTransport || (Mode == 3 && PrimaryVisibility && TransportSamples > 0),
+                "Transport reconstruction requires primary history mode");
         Upload(Scene);
         ComputeExtent Extent;
         Extent.Dimensions = {uint32_t(Scene.Receivers.size()), uint32_t(Scene.Lights.size()), Capacity, Mode};
@@ -531,7 +551,9 @@ struct LightComputeSubmission
         Extent.Reconstruction = {Reconstruction & 1 ? 1u : 0u, Reconstruction & 2 ? 1u : 0u,
                                  Reconstruction & 4 ? 1u : 0u, 0};
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), TransportSamples,
-                          (Environment ? 1u : 0u) | (EmissiveSampling ? 2u : 0u)};
+                          (Environment ? 1u : 0u) | (EmissiveSampling ? 2u : 0u) |
+                              (ReconstructTransport ? 4u : 0u) |
+                              ((!TransportHistoryValid || TransportDirty) ? 8u : 0u)};
         if (PrimaryVisibility)
         {
             // 📝 No uploaded CPU surface channel may supply primary geometry or
@@ -585,6 +607,15 @@ struct LightComputeSubmission
             CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
         }
+        if (ReconstructTransport)
+            for (auto Pipeline : TransportReconstruction)
+            {
+                CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline);
+                CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+                CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0,
+                                   nullptr);
+            }
         CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, ReceiverPipeline);
         CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
         if (Mode == 3)
@@ -630,7 +661,21 @@ struct LightComputeSubmission
             HistorySequence = Reset ? 1 : HistorySequence + 1;
             HistoryDirty = false;
         }
+        if (Mode == 3)
+        {
+            TransportHistoryValid = ReconstructTransport;
+            TransportDirty = false;
+        }
         return Result;
+    }
+    std::vector<std::array<float, 4>> TransportSlab(uint32_t Slot) const
+    {
+        Require(Slot >= 16 && Slot <= 20, "Invalid transport slab");
+        std::vector<std::array<float, 4>> R(ReceiverCount);
+        std::memcpy(R.data(),
+                    static_cast<const char*>(Buffers[6].Address) + size_t(ReceiverCount) * 16 * Slot,
+                    R.size() * 16);
+        return R;
     }
     std::array<uint32_t, 16> HistoryStatistics() const
     {
@@ -841,6 +886,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "LightPrimaryMotion.h"
 #include "LightSurfaceTransport.h"
 #include "EmissiveFacetQuadrature.h"
+#include "TransportReconstruction.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -892,6 +938,16 @@ int main(int Count, char** Arguments)
         {
             ValidateTransportMotion(Arguments[1], Arguments[2], Arguments[6], Arguments[4],
                                     &EmissiveQuadrature::AppendDistribution);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction")
+        {
+            ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4]);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction-checks")
+        {
+            ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4], false);
             return 0;
         }
         auto All = Compute.Execute(Scene, 0);

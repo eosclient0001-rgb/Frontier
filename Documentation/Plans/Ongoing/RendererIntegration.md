@@ -4,6 +4,27 @@
 
 
 
+
+## Vulkan indirect reconstruction checkpoint — 2026-10-25
+
+- Recovered saved branch from GitHub checkpoint `0a4560c2` after sandbox reset; restored pinned ignored tools.
+- Added reprojection, current-neighborhood RGB clamp, capped temporal mean and surface-compatible 5×5 spatial
+  filtering of indirect only. Current visible emission and sky misses stay separate; direct histories are unchanged.
+- Isolated emission at 160×100: independent 16-seed reference, eight updates; RGB RMSE 0.0103498 → 0.0058573,
+  **43.41% lower**. This is not a full-resolution moving-quality or equal-cost speed result. Independent native
+  spatial kernel: 210 probes, maximum RGB discrepancy 4.8961e-8.
+- Six full-resolution moving vehicle/camera poses exercise reuse and the pose-3 light reset. Emission revision and
+  camera cut match cold reconstruction bitwise; all sources off is black. Visible emission is preserved; extracted
+  direct output differs by at most 3.8147e-6 from final float arithmetic.
+- Actual readbacks: `Exhibits/LightCompute/Images/TransportFiltered.png` and
+  `TransportReconstructionComparison.png`. Legacy exact/cluster/reservoir/static-history, native primary and
+  emissive-estimator checks passed; focused ASan/UBSan numeric/spatial/reset checks passed.
+- Eleven compute entries, eight SSBOs, push constants 128 B; 21 float4 history/output slabs (86.016 MB at 640×400).
+  SwiftShader CPU type 4 only. Clamping/smoothing are biased; moving emitter/shadow changes are not exhaustively
+  revalidated. Physical RTX/GTX/Windows, glossy transport, GPU sky/clouds and Moon rendering remain open.
+- Evidence/reproduction: `Exhibits/LightCompute/README.md` and `RunTransportReconstruction.sh`. Historical missing
+  private scratch digests are explicitly labelled after recovery, not presented as current-byte verification.
+
 ## Vulkan emissive-area sampling checkpoint — 2026-10-24
 
 - GitHub preservation verified before work: local/remote `3dfbc2d3` matched and the working tree was clean.

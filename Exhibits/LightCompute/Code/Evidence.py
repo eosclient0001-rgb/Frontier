@@ -18,7 +18,7 @@ Sources += list((Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGr
 Sources += [Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Source' / P
             for P in ('MaterialSpecification.js', 'VehicleSpecification.js')]
 Products = list((Output / 'Images').glob('*.png')) + list((Output / 'Results').glob('*.txt'))
-Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json']
+Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json']
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()
@@ -45,14 +45,28 @@ Report = {'execution': 'actual Vulkan compute with shared Slang', 'device': Devi
           'gpu_emissive_area_sampling_executed': True,
           'emissive_native_probes': 225,
           'emissive_high_reference_samples': 8192,
+          'gpu_indirect_temporal_reconstruction_executed': True,
+          'gpu_indirect_spatial_filter_executed': True,
+          'indirect_reconstruction_native_spatial_probes': 210,
           'windows_executed': False, 'vulkan_validation_layer_executed': False,
           'sources_sha256': Hashes(Sources), 'products_sha256': Hashes(Products),
-          'scratch_sha256': Hashes(list((Root / '_ClaudeScratch/build/light-compute').glob('*.spv')) +
-                                   [Root / '_ClaudeScratch/vehicle-reference/VehicleLightInput.bin',
-                                    Root / '_ClaudeScratch/vehicle-primary/VehiclePrimary.bin',
-                                    Root / '_ClaudeScratch/light-compute/TransportScene.bin',
-                                    Root / '_ClaudeScratch/light-compute/EmissiveScene.bin'] +
-                                   list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*.bin')) +
-                                   list((Root / '_ClaudeScratch/primary-motion').glob('VehicleMotion*.bin')))}
+          'scratch_sha256': {}}
+# Ignored binary captures can disappear in a sandbox reset. Preserve their historical digests,
+# but explicitly distinguish them from bytes verified in this execution.
+Manifest = Output / 'Results/Manifest.json'
+Previous = json.loads(Manifest.read_text()) if Manifest.exists() else {}
+Scratch = list((Root / '_ClaudeScratch/build/light-compute').glob('*.spv'))
+Scratch += [Root / P for P in ('_ClaudeScratch/vehicle-reference/VehicleLightInput.bin',
+                              '_ClaudeScratch/vehicle-primary/VehiclePrimary.bin',
+                              '_ClaudeScratch/light-compute/TransportScene.bin',
+                              '_ClaudeScratch/light-compute/EmissiveScene.bin')]
+Scratch += list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*.bin'))
+Scratch += list((Root / '_ClaudeScratch/primary-motion').glob('VehicleMotion*.bin'))
+Present = Hashes([P for P in Scratch if P.exists()])
+Retained = {P: H for P, H in Previous.get('scratch_sha256', {}).items() if not (Root / P).exists()}
+Report['scratch_sha256'] = {**Retained, **Present}
+Report['scratch_availability'] = {P: 'verified_current_bytes' if P in Present else 'historical_digest_only_after_sandbox_reset'
+                                  for P in Report['scratch_sha256']}
+Report['sandbox_recovery_checkpoint'] = '0a4560c243b08da82679e065d19f434a77bc7c2b'
 (Output / 'Results/Manifest.json').write_text(json.dumps(Report, indent=2) + '\n')
 print('Evidence:', len(Report['sources_sha256']), 'sources;', len(Report['products_sha256']), 'products; device type', DeviceType)

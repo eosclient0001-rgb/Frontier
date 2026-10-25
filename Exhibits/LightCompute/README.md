@@ -5,6 +5,74 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Indirect temporal and spatial reconstruction — executed
+
+![Same moving pose: raw indirect left, reconstructed indirect right](Images/TransportReconstructionComparison.png)
+
+![Six actual Vulkan indirect-reconstruction frames](Images/TransportFiltered.png)
+
+Three new shared shader entries run after secondary-ray transport and before direct-light evaluation:
+`ReprojectSurfaceTransport`, `FilterSurfaceTransport`, `ResolveSurfaceTransport`. Raw indirect is kept separate
+from visible material emission. Previous filtered indirect is accepted only through the existing four-pixel
+world-position, stable-token, normal, material and optics reprojection checks. It is clamped to the current
+compatible 3×3 raw RGB range and blended with a history length capped at 16. A 5×5 separable-binomial-weight
+kernel then averages only compatible surfaces within the current world-space footprint.
+
+Read and write slabs are distinct, and dispatch barriers separate all three stages. Previous indirect is not
+overwritten until all temporal reads finish. Visible material emission and sky misses are not blurred. The
+filtered indirect is added to current visible emission; the existing direct-light reconstruction runs unchanged.
+The implementation now uses **11 compute entries**, eight SSBOs, the same 128-byte push ABI, and 21 float4
+output/history slabs: **86.016 MB at 640×400**, excluding receivers, geometry and profile buffers. This is a
+reference allocation, not a measured VRAM budget or production performance claim.
+
+| Verified check | Observed result |
+|---|---|
+| Isolated indirect-emission quality fixture | 160×100 original vehicle scene; analytic lights and environment disabled |
+| Independent reference | 16 distinct seeds × 16 emitter-area draws per receiver; unchanged finite hemisphere quadrature |
+| Eight reconstruction updates, disjoint seeds | Fresh RMSE 0.0103498 → filtered 0.0058573: **43.41% lower** |
+| Static temporal / spatial routes | 14,080 accepted histories; 13,981 surface pixels with multiple spatial contributors |
+| Independent native spatial-kernel probes | 210; maximum RGB discrepancy 4.8961e-8 |
+| Emission-source revision | Rejected old indirect; bitwise equal to cold reconstruction |
+| Camera cut | Rejected old indirect; bitwise equal to cold reconstruction |
+| All sources disabled | Exactly black; no lingering indirect light |
+| Six 640×400 moving poses | Temporal reuse exercised; analytic light change at pose 3 resets acceptance |
+| Visible material emission | Preserved separately at every full-resolution surface pixel |
+| Identical direct-light histories | Maximum extracted-direct discrepancy 3.8147e-6, from final float addition/subtraction |
+| ASan/UBSan | Numeric, native spatial and reset checks passed; external-driver leak detection disabled |
+
+The 43.41% result is **isolated-emission quality at 160×100**, not full-image moving quality at 640×400 or an
+equal-cost speedup. Its independent-seed reference is finite, not a converged path-traced truth. Full-resolution
+images use the same direct-light histories and seeds on both sides, one update per pose; only indirect
+reconstruction differs. Remaining direct-light noise therefore appears on both sides of the comparison.
+
+Emission revisions compare sorted distinct `(stable surface token, emitted RGB)` tuples, so triangle reordering
+does not cause gratuitous resets. Analytic light/profile/environment revisions use the existing exact prefix
+comparison. Disabling reconstruction invalidates its history, and re-enabling starts cold. Visible emission is
+always current rather than accumulated with indirect lighting.
+
+**Scope and limitations:** neighborhood clamping and spatial smoothing are biased and can soften illumination
+boundaries. Surface reprojection prevents ordinary disocclusion reuse, but moving emitters and every possible
+shadow/visibility change are not exhaustively revalidated. There is no claim of universally ghost-free motion,
+statistical unbiasedness, glossy transport, GPU atmosphere/clouds, hardware ray queries or Windows acceptance.
+The tested device remains **SwiftShader CPU type 4**. Existing Sun/flare/stars and the planned Moon are retained.
+
+Focused reproduction, after restoring pinned tools (`PREPARE=1` if needed):
+
+```bash
+bash Exhibits/LightCompute/RunTransportReconstruction.sh
+```
+
+The full `Run.sh` and `RunEmissive.sh` include this phase. The quick numeric/reset path uses
+`--transport-reconstruction-checks` with the same argument layout as the full `--transport-reconstruction`
+command, skipping full-resolution captures; it is the path used for the sanitizer run.
+`Results/TransportReconstruction.txt`, JSON, `TransportReconstructionRegression.txt` and
+`TransportReconstructionSanitizers.txt` preserve the actual checks.
+
+This sandbox was restored by fast-forwarding the session branch to saved GitHub checkpoint `0a4560c2`, then
+restoring checksum-pinned ignored tools. Earlier public images/reports remain in Git. Missing private scratch
+archives are not falsely described as freshly verified: the manifest labels their retained historical digests
+separately from current bytes. Current shader binaries and regenerated inputs have fresh checksums.
+
 ## Emissive triangle importance sampling — executed
 
 ![Same ControlVehicle: hemisphere emission left, explicit emissive-area sampling right](Images/EmissiveComparison.png)
@@ -121,7 +189,8 @@ is not temporally accumulated or spatially denoised. Multi-bounce transport, emi
 glossy transport, seamless/high-resolution atmosphere evaluation and sky/cloud appearance are still open.
 This capture establishes the executed transport path, not final renderer quality or a performance win.
 
-The shared shader now has **eight compute entries**, eight SSBOs and the unchanged 128-byte push ABI. The native
+This earlier transport checkpoint used eight entries; the current shader has **11 compute entries**, eight
+SSBOs and the unchanged 128-byte push ABI. The native
 cube adds 165,888 bytes and hemisphere directions add 192 bytes to the profile/sample buffer; no per-pixel CPU
 residual is uploaded. Private camera metadata stores their offsets. `TransportScene.bin` is retained only in
 ignored scratch storage and hashed in the evidence manifest; it is not a new public scene format.
@@ -225,7 +294,8 @@ light arrival and shadow queries. Forced traversal changes which triangle owns 1
 
 The private exhibit archive is now FLC3, with 144-byte shaded facets and camera metadata. Old scratch archives
 must be regenerated. The shader still uses eight storage buffers; push constants are now **128 bytes** and
-16 float4 output/history slabs occupy **65.536 MB** at 640×400, excluding receivers and scene geometry.
+the original 16 float4 output/history slabs occupied **65.536 MB** at 640×400. Current indirect reconstruction
+uses 21 slabs, **86.016 MB**, excluding receivers and scene geometry.
 Primary generation writes rigid-motion metadata; its moving validation is documented above. The existing
 six-pose CPU-primary history regression below was also rerun and passed.
 
@@ -257,10 +327,10 @@ Original ControlVehicle + authored materials
     → shader/host dependency + fence → actual readback → native display encoding → PNG/APNG
 ```
 
-All eight computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
+All 11 computation entries are shared in `Frontier/Engine/Rendering/Shaders/LightInfluence.slang`. The host
 retains pipelines/descriptors and uses eight storage buffers with a 128-byte push constant. Inter-dispatch,
 inter-submission and host/readback dependencies are explicit. Prior metadata is never overwritten until all
-reprojection and reconstruction reads have completed. Sixteen float4 surfaces occupy 65.536 MB at 640×400,
+reprojection and reconstruction reads have completed. Twenty-one float4 slabs occupy 86.016 MB at 640×400,
 excluding receiver inputs and geometry; this is an unoptimized reference allocation, not measured GPU VRAM.
 
 The uploaded native direct-answer channel is deliberately poisoned with NaNs. Unpoisoned native answers remain

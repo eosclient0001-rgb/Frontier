@@ -12,7 +12,7 @@ Slang="${SLANGC:-$Tools/Slang/slangtorch/bin/slangc}"
 Driver="${VULKAN_LIBRARY:-$Tools/SwiftShader/libvulkan.so.1}"
 if [[ -z "${VULKAN_LIBRARY:-}" ]]; then export VK_ICD_FILENAMES="$Tools/SwiftShader/vk_swiftshader_icd.json"; fi
 mkdir -p "$Build" _ClaudeScratch/light-compute
-for Pair in 'AssignLightCells Cells' 'EvaluateLightReceivers Receivers' 'ReuseLightNeighbours Reuse' 'ReconstructLightHistory Reconstruct' 'FilterLightNeighbours Filter' 'FinalizeLightHistory Finalize' 'TracePrimarySurfaces Primary' 'TraceSurfaceTransport Transport'; do
+for Pair in 'AssignLightCells Cells' 'EvaluateLightReceivers Receivers' 'ReuseLightNeighbours Reuse' 'ReconstructLightHistory Reconstruct' 'FilterLightNeighbours Filter' 'FinalizeLightHistory Finalize' 'TracePrimarySurfaces Primary' 'TraceSurfaceTransport Transport' 'ReprojectSurfaceTransport TransportTemporal' 'FilterSurfaceTransport TransportSpatial' 'ResolveSurfaceTransport TransportResolve'; do
  read -r Entry Stem <<< "$Pair"
  "$Slang" Frontier/Engine/Rendering/Shaders/LightInfluence.slang -entry "$Entry" -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$Build/$Stem.spv"
 done
@@ -26,4 +26,4 @@ _ClaudeScratch/build/vehicle-reference-cmake/VehicleCapture "$PWD/_ClaudeScratch
 "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/vehicle-primary/VehiclePrimary.bin _ClaudeScratch/light-compute --emissive-only | tee Exhibits/LightCompute/Results/EmissiveArea.txt
 "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --emissive-motion _ClaudeScratch/primary-motion | tee Exhibits/LightCompute/Results/EmissiveMotion.txt
 python3 Exhibits/LightCompute/Code/EmissiveImages.py
-python3 Exhibits/LightCompute/Code/Evidence.py
+bash Exhibits/LightCompute/RunTransportReconstruction.sh
