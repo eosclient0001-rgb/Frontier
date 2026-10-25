@@ -69,3 +69,10 @@ ENERGY_BUILD=0 bash Exhibits/LightCompute/RunMaterialEnergy.sh
 - No full motion/disocclusion/filtering acceptance, multi-bounce specular transport, solid-volume refraction, or finished noise reduction.
 - The BVH-only comparison validates routing against the same integrator, not an independent path tracer. The four uniform means do not establish complete sampling/PDF acceptance.
 - No physical GPU, hardware-speed, Windows, editor viewport or fresh full-application sanitizer claim. Existing legacy transport results remain historical unless explicitly rerun.
+
+## Subsequent history work
+
+The results above describe the `65939de` rough-lobe checkpoint. The later
+[shadow diagnosis and limited rough-reflection history](ShadowHistory.md) adds angular-aware reconstruction,
+smooth-lobe bypass, a geometry-history invalidation repair, camera/disocclusion probes and new actual captures.
+It does not complete roughness-mip colour history or general-purpose specular denoising.

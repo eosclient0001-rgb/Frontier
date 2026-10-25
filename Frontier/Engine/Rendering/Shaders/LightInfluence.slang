@@ -1018,7 +1018,20 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
     //------------------------------------------------------------------------------------------------------------------------
     //                                             TRANSPORT REPROJECTION AND SPATIAL RECONSTRUCTION
     //------------------------------------------------------------------------------------------------------------------------
-    [shader("compute")][numthreads(64, 1, 1)] void ReprojectSurfaceTransport(
+    // 📝 Authored delta/very smooth surfaces are not diffuse signals: do not blur them with this reconstruction.
+bool PreserveTransportDirection(SurfacePoint R)
+{
+    return MaterialAddress(R) > 0 && (MaterialTransport(R) == 1 || MaterialTransport(R) == 2 || R.NormalRoughness.w < .12);
+}
+float TransportDirectionWeight(SurfacePoint A, float3 OtherView, float3 OtherNormal)
+{
+    if (MaterialAddress(A) == 0) return 1;
+    float3 Direction = reflect(-A.ViewMetallic.xyz, A.NormalRoughness.xyz);
+    float3 Other = reflect(-OtherView, OtherNormal);
+    float Spread = A.NormalRoughness.w * A.NormalRoughness.w;
+    return exp(-max(0, 1 - dot(Direction, Other)) / max(1e-6, 2 * Spread * Spread));
+}
+[shader("compute")][numthreads(64, 1, 1)] void ReprojectSurfaceTransport(
         uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
@@ -1030,6 +1043,12 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
     {
         StoreHistory(17, Pixel, 0);
         StoreHistory(20, Pixel, 0);
+        return;
+    }
+    if (PreserveTransportDirection(R))
+    {
+        StoreHistory(17, Pixel, float4(Current.xyz, 1));
+        StoreHistory(20, Pixel, float4(0, 0, 1, 0));
         return;
     }
     float3 Low = Current.xyz, High = Current.xyz;
@@ -1055,7 +1074,14 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         if (Old.w > 0)
         {
             Length = min(Old.w + 1, 16);
-            Current.xyz = lerp(clamp(Old.xyz, Low, High), Current.xyz, 1 / Length);
+            if (MaterialAddress(R) > 0)
+            {
+                float3 PreviousView = Unit(CameraProjection(4).xyz - R.MotionPositionToken.xyz);
+                float Angular = TransportDirectionWeight(R, PreviousView, Unit(R.MotionNormal.xyz));
+                Current.xyz = lerp(Current.xyz, clamp(Old.xyz, Low, High), Angular * (1 - 1 / Length));
+                Length = 1 + Angular * (Length - 1);
+            }
+            else Current.xyz = lerp(clamp(Old.xyz, Low, High), Current.xyz, 1 / Length);
         }
         else
             Previous = -1;
@@ -1074,6 +1100,11 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         StoreHistory(19, Pixel, 0);
         return;
     }
+    if (PreserveTransportDirection(R))
+    {
+        StoreHistory(19, Pixel, LoadHistory(17, Pixel));
+        return;
+    }
     int2 P = int2(Pixel % Extent.History.x, Pixel / Extent.History.x);
     float3 Sum = 0;
     float Weight = 0;
@@ -1088,6 +1119,7 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
             if (!NearbyReceiver(R, Receivers[I], max(.03, R.MotionPixel.z * 2)))
                 continue;
             float W = (X == 0 ? 6 : abs(X) == 1 ? 4 : 1) * (Y == 0 ? 6 : abs(Y) == 1 ? 4 : 1);
+            W *= TransportDirectionWeight(R, Receivers[I].ViewMetallic.xyz, Receivers[I].NormalRoughness.xyz);
             Sum += LoadHistory(17, I).xyz * W;
             Weight += W;
             ++Count;

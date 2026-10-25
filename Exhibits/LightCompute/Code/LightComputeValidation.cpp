@@ -110,9 +110,11 @@ struct LightComputeSubmission
     std::array<VkPipeline, 3> TransportReconstruction{};
     VkPipeline CloudPipeline = VK_NULL_HANDLE, FogPipeline = VK_NULL_HANDLE;
     bool TransportHistoryValid = false, TransportDirty = true;
+    bool TransportGeometryRevision = true;
     std::vector<std::array<float, 4>> EmissionPalette;
     std::vector<LightComputeShape> PreviousLights;
     std::vector<float> PreviousAngles;
+    std::vector<LightComputeFacet> TransportFacets;
     uint32_t HistorySequence = 0, ReceiverCount = 0;
     uint32_t PreviousCloudOffset = UINT32_MAX, PreviousFogOffset = UINT32_MAX;
     bool HistoryDirty = true;
@@ -476,6 +478,16 @@ struct LightComputeSubmission
              Scene.Visibility.Enclosures.size() * sizeof(TriangleVisibilitySpace::FloatEnclosure));
         auto Surfaces = PackedSurfaces(Scene);
         Copy(3, Surfaces.data(), Surfaces.size() * sizeof(LightComputeFacet));
+        // 📝 Authored-scene indirect history must notice moved reflectors, occluders and emitters with unchanged radiance/tokens.
+        if (TransportGeometryRevision && (TransportFacets.size() != Surfaces.size() ||
+            (!Surfaces.empty() && std::memcmp(TransportFacets.data(), Surfaces.data(), Surfaces.size() * sizeof(LightComputeFacet)) != 0)))
+        {
+            // 📝 Preserve the retained compact diffuse path's moving-history policy; this revision guards authored transport.
+            auto Authored = [](const LightComputeFacet& F) { return F.Emissive[3] > 0; };
+            if (std::any_of(Surfaces.begin(), Surfaces.end(), Authored) ||
+                std::any_of(TransportFacets.begin(), TransportFacets.end(), Authored)) TransportDirty = true;
+            TransportFacets = Surfaces;
+        }
         auto Samples = ProjectedAngles(Scene);
         Copy(4, Samples.data(), Samples.size() * 4);
         std::array<float, 4> Poison;
@@ -1019,11 +1031,23 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "MaterialSceneValidation.h"
 #include "MaterialEnergyGpu.h"
 #include "RoughReflectionValidation.h"
+#include "PoleShadowValidation.h"
+#include "SpecularHistoryValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && (std::string(Arguments[3]) == "--specular-history" || std::string(Arguments[3]) == "--specular-history-original"))
+        {
+            ValidateSpecularHistory(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--specular-history-original");
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--pole-shadows")
+        {
+            ValidatePoleShadows(Arguments[1],Arguments[2],Arguments[4]);
+            return 0;
+        }
         if (Count == 5 && (std::string(Arguments[3]) == "--rough-reflections" ||
                            std::string(Arguments[3]) == "--rough-reflections-sharp"))
         {

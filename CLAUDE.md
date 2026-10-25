@@ -277,3 +277,20 @@ and limitations: `Exhibits/LightCompute/RoughReflections.md`. Source-off/motion 
 not screen-colour history. Sixteen samples per proposal retain visible noise; no speed claim. Roughness-mip
 colour history, temporal specular reconstruction, solid-volume refraction, full sampling/PDF acceptance and
 physical RTX/GTX/Windows/viewport verification remain incomplete. Sun/flare/stars and both lighting types stay.
+
+## Pole-shadow report and reflection history — 2026-10-25
+
+User observed a previous-project pole shadow cut off halfway, independent of light/camera. Current native
+compute test does not reproduce it: 72 combinations, 3,538,944 analytic closed-box silhouette comparisons,
+zero mismatches and 111,408 verified far-half shadow points. Need the old project/file/commit or screenshot
+to identify that defect; do not claim the reported shadow bug fixed. Ground-grid readbacks are not a
+primary-camera beauty render. See `Exhibits/LightCompute/ShadowHistory.md`.
+
+Continued reflection work now has limited angular-aware temporal/spatial reconstruction for authored rough
+surfaces; very smooth/mirror/glass routes bypass it. Independent finite-reference RMSE 0.246571 → 0.0927787;
+88 native filter probes pass, 520 smooth pixels preserved, camera acceptance/rejection and source-off black
+verified. An independent bug in the native exhibit submission's geometry revision was reproduced: moving
+emitter geometry without changing its colour/token retained indirect history. Packed-facet snapshots now
+invalidate authored-scene history (compact-only diffuse moving-history policy is retained); moved output matches a fresh submission exactly (negative-control RMSE 0.156373). This is
+not the pole-shadow defect. Snapshot memory/comparison cost is not optimized or a speed claim. No screen-
+colour mip history, complete specular-denoising acceptance, physical GPU/Windows/editor or sanitizer claim.

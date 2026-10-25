@@ -75,7 +75,7 @@ The fixture compiler reads the existing TOML presets; its ignored float atlas is
 
 - [Scoped energy correction](../TextureStudio/MaterialEnergyAcceptance.md) passes 384 native and 34 actual Vulkan cases. The original three excess fixtures are corrected; this is **not** acceptance of all anisotropic/exact-Fresnel options, the analytic environment approximation, legacy BRDF or all 399 assets.
 - General live-editor material assignment, authored vehicle UV recovery, moving-object paint coordinates, all authoring maps, independent per-stratum normals, anisotropy/dispersion and full texture-filtering parity.
-- Solid-volume glass/refraction, nested specular bounces, roughness-aware SSR, temporal/specular reconstruction and challenging disocclusions.
+- Solid-volume glass/refraction, nested specular bounces, roughness-mip screen-colour history and complete temporal/disocclusion acceptance. [Limited angular-aware reflection history](ShadowHistory.md) is now separately verified; these vehicle captures remain the `65939de` checkpoint.
 - Physical RTX/GTX/Windows/viewport and validation-layer execution. No hardware performance claim or overall-renderer completion percentage follows from these samples.
 
 ## Linked branch

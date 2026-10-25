@@ -2,6 +2,14 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Pole shadows and authored-reflection history — 2026-10-25
+
+- Reported previous-project half-shadow not reproduced: 72 directional/point/spot, receiver-view, caster-route and light-selection combinations; 3,538,944 analytic comparisons, zero mismatches, including 111,408 far-half shadow checks. Previous project/screenshot still needed; no speculative shadow fix.
+- Angular-aware authored rough-reflection reconstruction; very smooth/mirror/glass routes preserve fresh directional detail. Independent finite-reference RMSE 0.246571 → 0.0927787 (62.4% lower); 88 native filter probes, max RGB error 1.19058e-6.
+- Separately reproduced geometry-history invalidation defect: unchanged emitter colour/token after movement retained 1,521 pixels (RMSE 0.156373); packed-facet revision tracking rejects history and matches fresh scene exactly. Camera accepts 1,339 / rejects 17 rough pixels; 427 smooth pixels remain exact; source-off is black.
+- SwiftShader/Linux, 13 compute entries, strict Release C++ and four native CTests passed. [Actual captures, repro and scope](../Exhibits/LightCompute/ShadowHistory.md). No physical GPU/Windows/full-editor, full specular denoiser or old shadow-bug fix claim.
+
+
 ## Sampled rough-lobe reflections — 2026-10-25
 
 - Plastic now integrates the shared BRDF with cosine/GGX rays; accepted screen proposals verify the actual reflected-ray/facet intersection and clear segment, otherwise use BVH. No separate sharp-reflection budget.
