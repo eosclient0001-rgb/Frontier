@@ -387,3 +387,10 @@ Current verification and approximation boundaries: [NativePatternWorkspace.md](N
 [Watch the native C++ GIF](Images/NativePatternMultipoint.gif): Shift-selected anchors, group movement,
 automatic tangents, batch nudge/delete and Undo/Redo. New Pen paths also support live automatic curves.
 Current checks and deliberate limits: [NativePatternWorkspace.md](NativePatternWorkspace.md).
+
+## Matched glint renders and reused material evaluation
+
+[Glinty 2025-derived versus legacy cellular](GlintPair.md): two actual sand/metallic-paint/snow renders,
+software-Vulkan timings and scoped allocation/host-memory evidence. Not a production-default switch or
+physical-GPU result. [Native reused-material diagnostics](MaterialEnergy.md) report three white-furnace
+energy excesses; source reuse does not imply optical acceptance.

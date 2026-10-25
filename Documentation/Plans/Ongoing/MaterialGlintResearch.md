@@ -192,3 +192,17 @@ including all material archive files and optical material/paint shaders). The th
 vector-gradient authoring/ABI changes, not a glint replacement. Do not import them piecemeal.
 Proceed with a licensing-safe reference and layered-material integration/validation; no production-default
 switch is justified until the new evaluation, PDFs, energy and temporal behaviour have been checked.
+
+## Requested two-render comparison — 2026-10-25
+
+[GlintPair](../../../Exhibits/TextureStudio/GlintPair.md) now supersedes the historical adapter as the
+requested visual comparison: exactly two sand/metallic-paint/snow PNGs, primary/repeat software Vulkan
+elapsed queries and isolated host-memory snapshots. It uses an author-demo-derived Glinty mirror;
+full-file identity and commercial permission remain unverified. Both captures repeat byte-identically.
+Cellular is unchanged and remains legacy. No production default, full native integration, temporal/PDF
+acceptance or physical-GPU speed claim follows from this isolated exhibit.
+
+[Native material evaluation](../../../Exhibits/TextureStudio/MaterialEnergy.md) has resumed using the
+existing scattering sequence: 24 finite/nonnegative/reciprocal fixtures, three white-furnace excesses
+(maximum 1.36977433). Keep the existing material library; investigate those energy findings before
+claiming physically correct layered scene integration. Both analytic and emissive lighting remain required.

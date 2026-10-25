@@ -73,3 +73,11 @@ python3 Exhibits/TextureStudio/Code/MaterialReuseAudit.py
 
 Requires the existing GitHub connection and local checkout. The script reads the pinned complete GitHub tree
 and compares local Git blob hashes, without checking out another branch or importing remote source files.
+
+## Native evaluation resumed — 2026-10-25
+
+[MaterialEnergy.md](MaterialEnergy.md) directly exercises the retained native scattering sequence:
+24 fixtures are finite/nonnegative/reciprocal, but three exceed white-furnace reflectance 1.02
+(maximum 1.36977433). No production shader/preset was altered. This is an existing-model finding,
+not full material acceptance. [GlintPair.md](GlintPair.md) separately supplies the requested two matched
+Glinty-derived/cellular renders, software timings and resource scope; cellular remains legacy.
