@@ -312,3 +312,18 @@ segfault, including after moving terminal shade evaluation outside the solid int
 candidate; secondary category-4 encounters explicitly return black. Do not claim working reflected/rough
 secondary solid refraction, physical GPU/Windows/editor, caustics, rough glass, nested media or saved authoring.
 No speed claim. Existing analytic/emissive lighting, cellular flakes, sun/flare/stars preserved.
+
+
+## Mirror-to-volume extension and remaining work — 2026-10-25
+
+Primary planar mirrors now share one `IntegrateBoundaryRays` volume integration call site with primary closed
+glass. This arrangement passes SwiftShader pipeline creation and actual mirror captures without raising the
+normal stack limit. Multiple/nested solid call sites still crash the tested driver, including moved-out-of-thin-
+loop, no-inline, forced-early-inline and 64 MiB stack experiments; no underlying driver diagnosis/fix claimed.
+Category-1 mirror throughput .94 retained; now uses configured bounded sample count (up to128) rather than
+one ray. Mirror marker1.y remains any scene hit; .z packs capped*256+unsupported. Primary marker5 unchanged.
+`Exhibits/LightCompute/MirrorDielectric.md`: four mirror slab means on196 central pixels; maximum .00307599;
+source-off6144 pixels exactly black, actual96x64 captures with32 mirror paths. See final logs for regressions.
+Rough sampled category4 encounters and primary thin-sheet-to-solid paths remain unsupported black; no
+recursive mirror chain, nested/rough glass, inside-camera, caustic, full authoring, physical GPU or Windows claim.
+`Exhibits/LightCompute/RendererProgress.md` is the emoji done/remaining report; no invented global percentage.

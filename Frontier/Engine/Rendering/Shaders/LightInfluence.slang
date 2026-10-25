@@ -943,9 +943,9 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
         float3 Direction = reflect(-V, N), Origin = R.PositionHit.xyz + N * .003;
         float3 Radiance = 0;
-        if (Category == 4)
+        if (Category == 4 || Category == 1)
         {
-            Radiance = IntegrateSolidDielectric(R, Pixel);
+            Radiance = IntegrateBoundaryRays(R, Pixel);
             StoreHistory(16, Pixel, float4(Radiance, 1));
             R.ResidualSpecular.xyz += Radiance;
             Receivers[Pixel] = R;

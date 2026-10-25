@@ -1036,11 +1036,17 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "SpecularHistoryValidation.h"
 #include "DielectricBoundaryValidation.h"
 #include "SolidDielectricValidation.h"
+#include "MirrorDielectricValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && (std::string(Arguments[3]) == "--mirror-dielectric" || std::string(Arguments[3]) == "--mirror-dielectric-original"))
+        {
+            ValidateMirrorDielectric(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--mirror-dielectric-original");
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--solid-dielectric")
         {
             ValidateSolidDielectric(Arguments[1],Arguments[2],Arguments[4]);

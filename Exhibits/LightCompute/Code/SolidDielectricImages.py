@@ -32,6 +32,6 @@ Report = {'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capt
           'paths_per_pixel': 128, 'interaction_cap': 32, 'capture_sha256': Hashes,
           'boundary_log': (Results/'DielectricBoundary.txt').read_text(),
           'volume_log': (Results/'SolidDielectric.txt').read_text(),
-          'scope': 'Primary smooth closed volumes only; no secondary solid refraction, nesting, rough glass, caustics or saved material-authoring integration.'}
+          'scope': 'Primary smooth closed-volume acceptance; mirror secondary extension separately tested. Rough sampled solid refraction, nesting, rough glass, caustics and saved material authoring remain unsupported.'}
 (Results/'SolidDielectric.json').write_text(json.dumps(Report,indent=2)+'\n')
 print('SOLID_IMAGES captures=3 source_dimensions=96x64 software_vulkan=1')

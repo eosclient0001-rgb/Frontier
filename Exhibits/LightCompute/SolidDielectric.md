@@ -1,6 +1,7 @@
 # Closed-volume dielectric transport — 2026-10-25
 
-**Working scope: primary-camera smooth closed volumes.** Actual C++/Slang Vulkan captures and analytic checks;
+**This checkpoint covers primary-camera smooth closed volumes.** Subsequent [mirror transport](MirrorDielectric.md)
+adds a verified primary-mirror-to-volume route. Actual C++/Slang Vulkan captures and analytic checks;
 not completed general glass, material authoring, editor integration or physical-GPU acceptance.
 
 ![Index-matched baseline, clear refracting volume, absorbing refracting volume](Images/SolidDielectric.png)
@@ -53,17 +54,18 @@ origin tolerances are scene-scale-dependent; meshes thinner than that scale are 
 The inherited triangle-edge checker-background specks are visible; watertight arbitrary-mesh intersection
 acceptance is not claimed. General open/nested/overlapping geometry is unsupported, not prevalidated.
 
-**Secondary solid refraction is blocked.** Integrating the 32-step solid path inside the existing sampled
+**Historical blocker at checkpoint 8a1f38f:** secondary solid refraction was blocked. Integrating the 32-step solid path inside the existing sampled
 material-ray loop compiled to SPIR-V but reproducibly segfaulted SwiftShader during pipeline construction.
 Moving terminal opaque shading outside the solid loop did not resolve it. That candidate was removed; the
-verified implementation explicitly terminates secondary category-4 hits black rather than presenting opaque
-surface shading as refraction. This affects reflection/rough-material rays encountering these opt-in volumes.
-The primary path is runtime-tested. No speed, frame-time or physical-device conclusion follows from this crash.
+checkpoint implementation explicitly terminated secondary category-4 hits black rather than presenting opaque
+surface shading as refraction. This affected reflection/rough-material rays encountering these opt-in volumes; the mirror route is now extended separately.
+The primary path was runtime-tested. A subsequent [single-site mirror extension](MirrorDielectric.md) now works;
+rough sampled secondary paths remain blocked. No speed, frame-time or physical-device conclusion follows from this crash.
 The isolated command was `LightComputeValidation <SwiftShader-library> <DielectricCandidateGpu-folder>
 --dielectric-boundaries`: exit **139**, segmentation fault before boundary output, during construction of the
 production transport pipeline. The identical numerical suite passes when that pipeline contains only the
-primary solid route. The next missing check is a driver-safe secondary implementation followed by actual
-reflected-volume captures; neither a driver repair nor a hardware-device alternative has been verified.
+primary solid route. That mirror implementation and reflected-volume captures are now verified separately; the rough sampled path,
+a driver repair and a hardware-device alternative have not been verified.
 
 Not included: inside-camera transport, nested media, rough glass, transmitted direct-light shadow/caustic
 solving, completed denoising, editor controls or Windows/RTX/GTX execution. Direct shadows remain conservative

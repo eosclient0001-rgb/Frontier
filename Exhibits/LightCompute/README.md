@@ -5,13 +5,13 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
-## Primary closed-volume refraction — 2026-10-25
+## Smooth glass: primary camera and planar mirror — 2026-10-25
 
-[Actual captures and analytic acceptance](SolidDielectric.md): Snell bending, exact Fresnel, total internal
-reflection and distance absorption now run for opt-in primary smooth volumes. 199 boundary cases and four
-slab cases pass on SwiftShader. Existing thin-sheet windows remain unchanged. **Secondary solid transport
-is blocked by a reproduced software-driver pipeline crash**; nested/rough glass and saved material-authoring
-integration are not implemented. This does not mark the broader renderer complete.
+[Primary glass acceptance](SolidDielectric.md) and [mirror extension](MirrorDielectric.md) contain actual
+captures and analytic checks. A shared integration site avoids the reproduced software-driver crash for
+primary mirror-to-volume paths. **Rough sampled secondary solid refraction remains unsupported**, as do
+saved closed-glass material-authoring and editor integration. Existing thin-sheet windows remain separate.
+[Emoji done/remaining table](RendererProgress.md) distinguishes verified exhibits from unfinished renderer work.
 
 ## Lower-cost working cloud preset — 2026-10-25
 
