@@ -240,3 +240,20 @@ static/moving history, light-off/residual refresh and all four native CTests pas
 attempt used the primary-motion archive (no uploaded raster receivers), correctly failed its coverage assertion,
 and was rerun successfully using native `--vulkan-input` and `--motion-input` archives. Chronology is retained
 in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-selection error, not a renderer fix.
+
+## Working cloud budget and material source decision — 2026-10-25
+
+User requested lower cloud sampling for iteration. Current working fog scenes use cloud32 and fog-shadow32,
+self-shadow6 and view32. This supersedes the former 64-shadow working preset. High-budget fixtures remain
+explicit reference tools; `RunCloudPreview.sh` defaults to low-only, `COMPARE=1` requests reference renders.
+Actual two-wind 160×100 comparison RMSE to finite64: 0.00207406 / 0.00187121; appearance inspected and accepted
+for iteration, not final quality. Fresh Release/native tests passed, no fresh sanitizer or hardware-speed claim.
+See `Exhibits/LightCompute/README.md` and `Results/CloudBudget.json` / `CloudPreview.json`.
+
+Reuse materials from SultanAladin/Frontier arena/5e581235-frontier, **except rewrite glints/flakes/glitter**.
+Pinned source audit at be1d0a8e45d39738f37ccf711522a745e326e149: 452/455 selected files already identical,
+including all 399 material archive files and the material/paint shaders. Three newer upstream vector-gradient
+files use a different ABI; no partial import. Full layered material evaluation still needs scene integration.
+Existing glint research and executed adapter comparison are retained; no physical-GPU winner or completed
+rewrite is implied. Licensing-safe implementation, sampling/PDF consistency and temporal/energy checks remain.
+Audit/reproduction: `Exhibits/TextureStudio/MaterialReuse.md` and `Code/MaterialReuseAudit.py`.

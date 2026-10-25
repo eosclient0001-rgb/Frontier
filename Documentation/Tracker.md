@@ -10,6 +10,23 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 
 
+## Lower cloud budgets and material reuse audit — 2026-10-25
+
+- User requested faster iteration: working fog scenes now use cloud32/fog-shadow32, self-shadow6 and view32.
+  Actual 160×100 comparison against cloud64/shadow64 at two winds retained in `CloudBudgetComparison.png`.
+  RMSE 0.00207406 / 0.00187121; suitable for iteration by visual inspection, not final cloud appearance.
+- Comparison and low-only execution passed 702 native fog and 354 sky-cloud probes; changed-default fog
+  regression passed 654 camera + 270 surface probes, history/toggle/bounds checks; native CTests 4/4.
+  Release only this turn. Half the outer sampling budget, not a measured frame-time or hardware speed-up.
+- `RunCloudPreview.sh` renders low-only by default; `COMPARE=1` opts into reference renders. Older high-budget
+  fixtures remain explicit verification tools. See `Exhibits/LightCompute/README.md` for reproduction/scope.
+- Audited user material source at upstream be1d0a8e45d39738f37ccf711522a745e326e149: 399/399 material archive
+  files, 6/6 material ContentInterchange files and 47/50 Render files identical. Three vector-gradient files
+  differ (176-byte upstream versus 112-byte local instruction layout); no partial import performed.
+- Reuse existing material library; glints/flakes/glitter are the requested rewrite exception. Existing research
+  and isolated software comparison found and reviewed; not a production winner or physical-GPU speed claim.
+  Details: `Exhibits/TextureStudio/MaterialReuse.md`, `Results/MaterialReuse.json`. No glint rewrite implemented yet.
+
 ## Emissive-volume single scattering — 2026-10-25
 
 - Shared Slang fog now gathers emissive triangle radiance with area/luminance CDF sampling, solid-angle

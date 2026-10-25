@@ -18,7 +18,7 @@ Sources += list((Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGr
 Sources += [Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Source' / P
             for P in ('MaterialSpecification.js', 'VehicleSpecification.js')]
 Products = list((Output / 'Images').glob('*.png')) + list((Output / 'Results').glob('*.txt'))
-Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json', Output / 'Results/Clouds.json', Output / 'Results/CloudShadows.json', Output / 'Results/Fog.json', Output / 'Results/FogSampling.json', Output / 'Results/FogFacets.json']
+Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json', Output / 'Results/Clouds.json', Output / 'Results/CloudShadows.json', Output / 'Results/Fog.json', Output / 'Results/FogSampling.json', Output / 'Results/FogFacets.json', Output / 'Results/CloudBudget.json', Output / 'Results/CloudPreview.json']
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()

@@ -181,3 +181,14 @@ was started. Pattern's existing approved backlog continues separately; this docu
   <https://aaltodoc.aalto.fi/items/10f84cdd-c742-4167-a358-129b96b3fa06>.
 
 Sources accessed 2026-10-19. No paper/video/shader assets were copied into the repository.
+
+## User direction and source audit — 2026-10-25
+
+The user explicitly wants to reuse the linked material code/library **except glints/flakes/glitter, which
+need rewriting**. This is the implementation direction, not an instruction to redesign all material presets.
+The existing research and adapter benchmark above were found and reviewed; they are not a completed rewrite.
+`Exhibits/TextureStudio/MaterialReuse.md` records pinned upstream identity (452/455 compared files identical,
+including all material archive files and optical material/paint shaders). The three differences are newer
+vector-gradient authoring/ABI changes, not a glint replacement. Do not import them piecemeal.
+Proceed with a licensing-safe reference and layered-material integration/validation; no production-default
+switch is justified until the new evaluation, PDFs, energy and temporal behaviour have been checked.

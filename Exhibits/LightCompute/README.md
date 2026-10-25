@@ -5,6 +5,45 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Lower-cost working cloud preset — 2026-10-25
+
+![32 samples left, finite 64-sample reference right; wind 0 / 120 seconds](Images/CloudBudgetComparison.png)
+
+At the user's request, the working fog-scene preset now uses **32 cloud view/cube/surface-shadow steps and
+32 cloud-shadow steps per fog sample**, rather than 64. Cloud self-shadowing stays at 6 samples and fog view
+integration at 32. Geometry, cloud density, original ControlVehicle and both lighting types are unchanged.
+This supersedes the earlier 64-shadow working preset; the historical quality-study results below remain valid.
+Dedicated high-budget reference fixtures are intentionally retained, not silently weakened.
+
+| Same-scene 32 vs finite 64 | Wind 0 s | Wind 120 s |
+|--------------------------|----------|------------|
+| Full-image linear RGB RMSE | 0.00207406 | 0.00187121 |
+| Maximum channel difference | 0.0479916 | 0.0713069 |
+
+These are actual 160×100 readbacks. Visual inspection found the lower budget suitable for iteration, not final
+cloud quality. Local differences remain around cloud/horizon structure; 64 samples are not ground truth.
+The outer cloud/shadow sample counts are halved, **not a measured 2× frame-time improvement**. No GPU timing,
+FPS, physical-device or real-time claim. Device remains SwiftShader CPU Vulkan.
+
+The comparison passed 468 native fog-ray and 236 native sky-cloud probes. A separate low-only execution
+passed another 234 fog-ray and 118 sky-cloud probes. Maximum sky-cloud discrepancy was 1.78318e-5; fog
+composite discrepancy 9.67208e-6. The changed default also passed the 654-camera/270-surface fog regression,
+zero density, geometry occlusion, history isolation, toggles and bounds; native CTests passed 4/4.
+These are fresh Release checks; no new sanitizer run is claimed for this preset-only continuation.
+
+```bash
+# Normal iteration: only lower-budget renders, two wind positions.
+PREPARE=1 bash Exhibits/LightCompute/RunCloudPreview.sh
+# Explicitly opt into the more expensive side-by-side reference study.
+COMPARE=1 bash Exhibits/LightCompute/RunCloudPreview.sh
+```
+
+The CLI modes are `--cloud-preview` and `--cloud-budget`. Ordinary `--fog-rays`, `--fog-sky` and `--fog-checks`
+now use 32 cloud and fog-shadow steps; `--fog-sampling` retains the original cloud64 fixture and explicitly
+varies shadow budgets. Old images/manifests are historical, not relabelled as lower-budget captures.
+Exact parameters, raw RGB hashes and logs: `Results/CloudBudget.json`, `CloudPreview.json`,
+`CloudBudgetRegression.txt` and `CloudPreviewNative.txt`. Packagers verify CRCs and decoded RGB identity.
+
 ## Emissive surfaces illuminating fog — executed
 
 ![Left: emissive-only volume illumination. Right: original analytic lights plus emissive surface/volume illumination](Images/FogFacetCombined.png)
@@ -82,7 +121,8 @@ maximum native/Vulkan discrepancy was 1.0159e-5. The native reference uses doubl
 native procedural cloud density, with the matching finite budget. This checks implementation agreement,
 not physical correctness or convergence of 128 samples.
 
-The current **exhibit preset** now uses 64 shadow samples and still 32 camera midpoints. This is four times
+At this archived checkpoint the **exhibit preset** used 64 shadow samples and 32 camera midpoints;
+the user-requested lower-cost working preset above now supersedes it. This is four times
 as many shadow samples, not a measured speed improvement. The earlier 320×200 images below are retained
 unchanged at their original 16-step budget. `Results/Fog.json` describes those historical captures;
 `Results/FogSampling.json` describes this new study. Regular view stepping, temporal fog and final cloud

@@ -6,7 +6,7 @@
 uint32_t AppendFogParameters(LightComputeArchive &Scene)
 {
     uint32_t Offset = uint32_t(Scene.Angles.size());
-    const std::array<float, 16> Fog{.0015f, 0,     450,   .9f, .65f, 2500, 32,    64,
+    const std::array<float, 16> Fog{.0015f, 0,     450,   .9f, .65f, 2500, 32,    32,
                                     .01f,   .012f, .015f, 1,   1,    1,    40000, 0};
     Scene.Angles.insert(Scene.Angles.end(), Fog.begin(), Fog.end());
     return Offset;
@@ -40,9 +40,11 @@ struct FogRayReference
     uint32_t Offset;
     CloudParameters Cloud;
     SpatialVector Sun;
+    uint32_t CloudSteps;
     FogRayReference(const LightComputeArchive &Input, uint32_t FogOffset, CloudParameters Density,
-                    SpatialVector SolarDirection)
-        : Geometry(Input), Scene(Input), Offset(FogOffset), Cloud(Density), Sun(SolarDirection)
+                    SpatialVector SolarDirection, uint32_t CloudSamples = 64)
+        : Geometry(Input), Scene(Input), Offset(FogOffset), Cloud(Density), Sun(SolarDirection),
+          CloudSteps(CloudSamples)
     {
     }
     SpectrumRgb Surface(const LightComputeReceiver &R) const
@@ -55,7 +57,7 @@ struct FogRayReference
         P.FalloffHeightM = F[2];
         auto At = Vector(R.PositionHit), Normal = Vector(R.NormalRoughness);
         SpectrumRgb Sum = Colour(R.ResidualSpecular);
-        double CloudT = MarchClouds(Cloud, At, Sun, Sun, {}, 40000, 64, 0).Transmittance;
+        double CloudT = MarchClouds(Cloud, At, Sun, Sun, {}, 40000, CloudSteps, 0).Transmittance;
         for (const auto &L : Geometry.Sources)
         {
             SpatialVector Toward;
@@ -131,10 +133,12 @@ struct FogRayReference
     }
 };
 #include "FogSamplingValidation.h"
+#include "CloudBudgetValidation.h"
 
 void ValidateFogScattering(const char *Driver, const std::string &Shaders,
                            const LightComputeArchive &Original, const std::string &Output, bool Capture,
-                           bool SkyOnly = false, bool Sampling = false)
+                           bool SkyOnly = false, bool Sampling = false, bool Budget = false,
+                           bool CompareBudget = true)
 {
     using namespace TransportReference;
     constexpr double π = 3.141592653589793;
@@ -153,7 +157,8 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
     Require(std::abs(Horizontal - NearHorizontal) < 1e-9, "Near-horizontal fog column is unstable");
     std::cout << "FOG_ANALYTIC uniform_integral=1 beer=1 near_horizontal=1\n";
     auto Scene = Original;
-    SetFogCamera(Scene, Capture ? (Sampling ? 160 : 320) : 80, Capture ? (Sampling ? 100 : 200) : 50);
+    SetFogCamera(Scene, Capture ? ((Sampling || Budget) ? 160 : 320) : 80,
+                 Capture ? ((Sampling || Budget) ? 100 : 200) : 50);
     auto Forward = Unit(SpatialVector{Scene.Camera[1][0], Scene.Camera[1][1], 0});
     auto Right = Vector(Scene.Camera[2]);
     auto HorizontalSun = Unit(Add(Mul(Forward, .9), Mul(Right, .45)));
@@ -175,8 +180,9 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
     Cloud.Coverage = .5;
     Cloud.DensityScale = 1.5;
     Cloud.AmbientRadiance = {.08, .10, .14};
+    uint32_t CloudSteps = (Sampling || Budget) ? 64 : 32;
     uint32_t CloudOffset =
-        AppendCloudParameters(Scene, Cloud, Sun, {20 * Altitude.R, 20 * Altitude.G, 20 * Altitude.B}, 64);
+        AppendCloudParameters(Scene, Cloud, Sun, {20 * Altitude.R, 20 * Altitude.G, 20 * Altitude.B}, CloudSteps);
     Cloud.Coverage = Scene.Angles[CloudOffset + 2];
     Cloud.ExtinctionPerM = Scene.Angles[CloudOffset + 4];
     uint32_t FogOffset = AppendFogParameters(Scene);
@@ -187,6 +193,11 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
         return Compute.Execute(Input, 0, 16, 71, 64, 0, true, true, Capture ? 4u : 0u, true, Capture, false,
                                CloudOffset, Fog ? FogOffset : UINT32_MAX, Resolve);
     };
+    if (Budget)
+    {
+        ValidateCloudBudget(Compute, Scene, Cloud, Sun, CloudOffset, FogOffset, Output, CompareBudget);
+        return;
+    }
     if (Sampling)
     {
         ValidateFogSampling(Compute, Scene, Cloud, Sun, CloudOffset, FogOffset, Output, Capture);
@@ -212,7 +223,7 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
             auto Background = Execute(Sky, true, false);
             auto Pixels = Execute(Sky, true);
             auto Surfaces = Compute.PrimaryReceivers();
-            FogRayReference Oracle(Sky, FogOffset, Cloud, Sun);
+            FogRayReference Oracle(Sky, FogOffset, Cloud, Sun, CloudSteps);
             double Maximum = 0;
             uint32_t Probes = 0;
             for (uint32_t Pixel = 0; Pixel < Pixels.size(); Pixel += 997)
@@ -277,7 +288,7 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
         auto Fog = Execute(Shot, true);
         if (!Capture && Case == 0)
             Require(Fog == Dry, "Zero-density fog changed image bits");
-        FogRayReference Oracle(Shot, FogOffset, Cloud, Sun);
+        FogRayReference Oracle(Shot, FogOffset, Cloud, Sun, CloudSteps);
         double Maximum = 0, Mean = 0, SourceEnergy = 0, Convergence = 0, SurfaceError = 0,
                ShadowConvergence = 0;
         uint32_t SurfaceProbes = 0;
@@ -347,7 +358,7 @@ void ValidateFogScattering(const char *Driver, const std::string &Shaders,
     auto NightDry = Execute(Night, false);
     auto NightBackground = Execute(Night, true, false), NightFog = Execute(Night, true);
     auto NightReceivers = Compute.PrimaryReceivers();
-    FogRayReference NightOracle(Night, FogOffset, Cloud, Sun);
+    FogRayReference NightOracle(Night, FogOffset, Cloud, Sun, CloudSteps);
     double NightError = 0, NightEnergy = 0;
     uint32_t NightProbes = 0;
     for (uint32_t Pixel = 0; Pixel < NightFog.size(); Pixel += Capture ? 997 : 37)

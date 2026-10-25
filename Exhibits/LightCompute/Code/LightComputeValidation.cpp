@@ -1075,6 +1075,13 @@ int main(int Count, char** Arguments)
             ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4], false);
             return 0;
         }
+        if (Count == 6 && (std::string(Arguments[5]) == "--cloud-budget" ||
+                           std::string(Arguments[5]) == "--cloud-preview"))
+        {
+            ValidateFogScattering(Arguments[1], Arguments[2], Scene, Arguments[4], true, false, false, true,
+                                  std::string(Arguments[5]) == "--cloud-budget");
+            return 0;
+        }
         if (Count == 6 && (std::string(Arguments[5]) == "--fog-facets" ||
                            std::string(Arguments[5]) == "--fog-facet-checks"))
         {
