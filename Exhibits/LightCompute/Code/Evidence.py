@@ -11,8 +11,8 @@ Sources += list((Root / 'Frontier/Engine/Rendering').glob('*.cpp'))
 Sources += list((Root / 'Frontier/Engine/Diagnostics').glob('*.h'))
 Sources += list((Root / 'Frontier/Engine/Diagnostics').glob('*.cpp'))
 Sources += list((Root / 'Frontier/Engine/Rendering/Shaders').glob('*.slang'))
-Sources += [Root / 'Engine/Render' / P for P in ('ScatteringSequence.h', 'MaterialPreviewGeometry.h', 'DrapedClothPositions.h', 'Shader/ScatteringEvaluation.slang', 'Shader/AutomotivePaint.slang')]
-Sources += [P for P in Output.rglob('*') if P.suffix in ('.h', '.cpp', '.py', '.sh', '.ps1', '.md') or P.name == 'CMakeLists.txt']
+Sources += [Root / 'Engine/Render' / P for P in ('ScatteringSequence.h', 'MaterialPreviewGeometry.h', 'DrapedClothPositions.h', 'Shader/ScatteringEvaluation.slang', 'Shader/AutomotivePaint.slang', 'Shader/MaterialSurface.slang')]
+Sources += [P for P in Output.rglob('*') if P.suffix in ('.h', '.cpp', '.py', '.sh', '.ps1', '.md', '.slang') or P.name == 'CMakeLists.txt']
 Sources += [Root / 'Exhibits/VehicleReference' / P for P in ('Code/VehicleCapture.cpp', 'Code/Materials.mjs', 'CMakeLists.txt')]
 Sources += [Root / 'Exhibits/ClusteredLighting/Fixtures/Synthetic.ies']
 Sources += list((Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive').glob('ControlVehicle*.facet'))
@@ -20,6 +20,13 @@ Sources += [Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds
             for P in ('MaterialSpecification.js', 'VehicleSpecification.js')]
 Products = list((Output / 'Images').glob('*.png')) + list((Output / 'Results').glob('*.txt'))
 Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json', Output / 'Results/Clouds.json', Output / 'Results/CloudShadows.json', Output / 'Results/Fog.json', Output / 'Results/FogSampling.json', Output / 'Results/FogFacets.json', Output / 'Results/CloudBudget.json', Output / 'Results/CloudPreview.json', Output / 'Results/MaterialScene.json', Output / 'Results/MaterialVerification.json']
+Sources += [Root / 'Exhibits/TextureStudio' / P for P in (
+    'Code/MaterialEnergyValidation.cpp', 'Code/MaterialEnergyBaseline.cpp', 'Code/MaterialReuseAudit.py',
+    'MaterialEnergyAcceptance.md', 'MaterialEnergy.md', 'MaterialReuse.md', 'GlintPair.md')]
+EnergyProducts = [Root / 'Exhibits/TextureStudio/Results' / P for P in (
+    'MaterialEnergyAcceptance.txt', 'MaterialEnergyCurrent.txt', 'MaterialEnergyGpuCurrent.txt',
+    'MaterialEnergyGpuOriginal.txt', 'MaterialEnergySanitizer.txt', 'MaterialEnergy.json', 'MaterialReuse.json')]
+Products += [P for P in EnergyProducts if P.exists()]
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()
@@ -29,6 +36,8 @@ Report = {'execution': 'actual Vulkan compute with shared Slang', 'device': Devi
           'device_type': DeviceType, 'software_vulkan_executed': DeviceType == 4,
           'platform': platform.platform(), 'vulkan_executed': True, 'physical_gpu_executed': DeviceType in (1, 2),
           'ray_query_executed': False, 'triangle_bvh_shader_executed': True,
+          'material_energy_evidence_missing': [str(P.relative_to(Root)) for P in EnergyProducts if not P.exists()],
+          'material_energy_report': 'Exhibits/TextureStudio/Results/MaterialEnergy.json',
           'native_direct_upload_poisoned': True,
           'primary_visibility': 'Vulkan camera rays for Primary.png; native CPU raster for history regression',
           'gpu_primary_visibility_executed': True, 'primary_receiver_channels_poisoned': 36,

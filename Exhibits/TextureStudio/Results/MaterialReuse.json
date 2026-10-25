@@ -4,12 +4,14 @@
   "revision": "a76dbd34d12d5e0dbfafe24dd5aa9d4d5b414c73",
   "tree_complete": true,
   "files_compared": 455,
-  "identical": 451,
-  "different_or_absent": 4,
+  "identical": 448,
+  "different_or_absent": 7,
   "scope": "all Engine/Render files, EngineContent/MaterialArchives and Material-prefixed ContentInterchange sources",
-  "difference_notes": "The three vector-coverage files differ: upstream adds multi-stop gradients and explicit gradient axes, with a 176-byte instruction versus local 112 bytes. No partial ABI import performed.",
+  "difference_notes": "Three retained vector-coverage ABI differences; explicit compute-footprint AutomotivePaint extension; intentional energy allocation changes in ScatteringSequence.h and ScatteringEvaluation.slang; reciprocal coating factor grouping in MaterialSurface.slang. No material archive or partial vector ABI import.",
+  "archive_identical": 399,
+  "archive_compared": 399,
   "meaning": "Git blob identity only; not new material physics, scene integration or hardware validation",
-  "glints": "current cellular implementation retained for compatibility; rewrite not implemented by this audit",
+  "glints": "existing cellular selected for automotive paint; Glinty remains separate research",
   "research": "Documentation/Plans/Ongoing/MaterialGlintResearch.md",
   "executed_comparison": "Exhibits/TextureStudio/GlintComparison.md",
   "files": [
@@ -148,8 +150,8 @@
     {
       "path": "Engine/Render/ScatteringSequence.h",
       "upstream_git_blob": "c2dc4140af77ae9ea1a448e50bb255af4b183c00",
-      "local_git_blob": "c2dc4140af77ae9ea1a448e50bb255af4b183c00",
-      "identical": true
+      "local_git_blob": "c8ac0c0313ab4bafd48d75db2a43c4e49286b437",
+      "identical": false
     },
     {
       "path": "Engine/Render/Shader/AutomotivePaint.slang",
@@ -196,8 +198,8 @@
     {
       "path": "Engine/Render/Shader/MaterialSurface.slang",
       "upstream_git_blob": "06efdfb8e9c0b0cf3d86990764fc24c6f5fa9611",
-      "local_git_blob": "06efdfb8e9c0b0cf3d86990764fc24c6f5fa9611",
-      "identical": true
+      "local_git_blob": "e02333440fdf517af22b055789832b3923d340db",
+      "identical": false
     },
     {
       "path": "Engine/Render/Shader/PreviewPbrSurface.slang",
@@ -208,8 +210,8 @@
     {
       "path": "Engine/Render/Shader/ScatteringEvaluation.slang",
       "upstream_git_blob": "1893ebfc109c75816772dd8c7d94cbdb05caf5f6",
-      "local_git_blob": "1893ebfc109c75816772dd8c7d94cbdb05caf5f6",
-      "identical": true
+      "local_git_blob": "29ff359c578348f06760b57de7a04e7ac9a8ade4",
+      "identical": false
     },
     {
       "path": "Engine/Render/Shader/SurfaceProjection.slang",

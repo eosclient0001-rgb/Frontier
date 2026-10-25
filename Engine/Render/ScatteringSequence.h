@@ -126,6 +126,21 @@ inline double EvaluateAshikhminVisibility(double NormalView, double NormalLight)
 {
     return 1 / std::max(1e-4,4*(NormalLight+NormalView-NormalLight*NormalView));
 }
+// 📝 For n=1/alpha, Charlie D <= (n+2)/(2*pi)/(1+n*NL^2/8) and V*NL <= 1/4.
+// Integrating that bound gives a view-independent upper bound on hemispherical sheen reflectance.
+inline double EvaluateSheenEnergyScale(double Roughness)
+{
+    const double InverseAlpha = 1 / std::max(Roughness*Roughness, 1e-3);
+    const double Radius = std::sqrt(InverseAlpha / 8);
+    const double Bound = (InverseAlpha + 2) * std::atan(Radius) / (4 * Radius);
+    return 1 / std::max(1.0, Bound);
+}
+inline double EvaluateDiffuseTransmission(double FresnelOrigin, double NormalView, double NormalLight)
+{
+    const double Entrance = FresnelOrigin + (1-FresnelOrigin)*std::pow(1-NormalLight, 5);
+    const double Exit = FresnelOrigin + (1-FresnelOrigin)*std::pow(1-NormalView, 5);
+    return (1-Entrance)*(1-Exit);
+}
 inline ScatteringSpectrum EvaluateScatteringSequence(
     const PreviewScattering &Scattering,
     double                    NormalView,
@@ -154,10 +169,16 @@ inline ScatteringSpectrum EvaluateScatteringSequence(
             double Evaluation = Distribution*Visibility*Fresnel;
             if (Stratum.Classification[0] == 0)
             {
-                Evaluation += (1-Fresnel)*(1-Metal)*Albedo/std::numbers::pi;
-                Evaluation += Stratum.Sheen[Channel]*Stratum.Sheen[3]*
-                    EvaluateCharlieDistribution(Stratum.SheenFinish[0],NormalHalf)*
-                    EvaluateAshikhminVisibility(NormalView,NormalLight);
+                Evaluation += EvaluateDiffuseTransmission(FresnelOrigin,NormalView,NormalLight)*
+                    (1-Metal)*Albedo/std::numbers::pi;
+                const double FuzzCoverage = std::clamp(double(Stratum.Sheen[Channel]),0.0,1.0)*Stratum.Sheen[3];
+                if (FuzzCoverage > 0)
+                {
+                    const double Sheen = EvaluateSheenEnergyScale(Stratum.SheenFinish[0])*
+                        EvaluateCharlieDistribution(Stratum.SheenFinish[0],NormalHalf)*
+                        EvaluateAshikhminVisibility(NormalView,NormalLight);
+                    Evaluation = Evaluation*(1-FuzzCoverage)+Sheen*FuzzCoverage;
+                }
             }
             else
             {
@@ -165,7 +186,7 @@ inline ScatteringSpectrum EvaluateScatteringSequence(
                 const double Exit = Reflectance+(1-Reflectance)*std::pow(1-NormalView,5);
                 const double Absorption = std::exp(-Stratum.AbsorptionThickness[Channel]*Stratum.AbsorptionThickness[3]*
                                                    (1/std::max(.001,NormalView)+1/std::max(.001,NormalLight)));
-                Evaluation += Accumulated[Channel]*(1-Entrance)*(1-Exit)*Absorption;
+                Evaluation += Accumulated[Channel]*((1-Entrance)*(1-Exit))*Absorption;
             }
             Accumulated[Channel] = Accumulated[Channel]*(1-Coverage)+Evaluation*Coverage;
         }

@@ -1,6 +1,6 @@
 # Material reuse and glint rewrite audit
 
-**Current direction:** cellular selected for automotive paint. Latest upstream audit: **451/455 identical** at
+**Current direction:** cellular selected for automotive paint. Latest upstream audit after energy correction: **448/455 identical** at
 `a76dbd34d12d5e0dbfafe24dd5aa9d4d5b414c73`; all material archives match. Earlier counts/proposals below are historical.
 [Executed native material scene](../LightCompute/MaterialScene.md).
 
@@ -100,3 +100,15 @@ The fourth difference is our `AutomotivePaint.slang` explicit compute-footprint 
 fragment compiles to byte-identical SPIR-V against the original source; the other three differences remain
 the unrelated vector ABI changes above. No blind merge/import was required for the optical materials.
 The newer AO/curvature Baking Studio work was inspected by change inventory, not imported or fully validated here.
+
+## Scoped energy correction — 2026-10-25
+
+The latest rerun is **448/455 identical**, with **399/399 material archive files unchanged**.
+In addition to the three vector ABI differences and compute paint extension above,
+`ScatteringSequence.h` / `ScatteringEvaluation.slang` intentionally change diffuse/sheen allocation.
+`MaterialSurface.slang` groups reciprocal coat entrance/exit factors before multiplying incoming scattering.
+Production material SPIR-V therefore intentionally differs from the pre-energy checkpoint; the earlier
+byte-identity statement applies only to the paint-only comparison at `b6bc49e`.
+
+[Native/Vulkan energy acceptance and actual before/after renders](MaterialEnergyAcceptance.md).
+No replacement material library, archival asset edits, vector ABI import or Baking Studio merge.

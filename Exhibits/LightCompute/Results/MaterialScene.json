@@ -70,7 +70,7 @@
       "side_mirror_hits": 59.0,
       "native_mirror_probes": 64.0,
       "native_brdf_probes": 128.0,
-      "native_brdf_scaled_error": 6.85122e-07
+      "native_brdf_scaled_error": 6.17512e-07
     },
     {
       "name": "MaterialVehicleRepeat",
@@ -91,7 +91,7 @@
       "side_mirror_hits": 59.0,
       "native_mirror_probes": 64.0,
       "native_brdf_probes": 128.0,
-      "native_brdf_scaled_error": 6.85122e-07
+      "native_brdf_scaled_error": 6.17512e-07
     },
     {
       "name": "MaterialVehicleDetail",
@@ -112,7 +112,7 @@
       "side_mirror_hits": 930.0,
       "native_mirror_probes": 64.0,
       "native_brdf_probes": 128.0,
-      "native_brdf_scaled_error": 3.78257e-07
+      "native_brdf_scaled_error": 3.33271e-07
     },
     {
       "name": "MaterialSpecimens",
@@ -133,14 +133,14 @@
       "side_mirror_hits": 0.0,
       "native_mirror_probes": 0.0,
       "native_brdf_probes": 128.0,
-      "native_brdf_scaled_error": 3.76481e-05
+      "native_brdf_scaled_error": 3.77582e-05
     }
   ],
   "readback_rgb_sha256": {
-    "MaterialVehicle": "80ecead33b56929ecade88cce76762deb206bfd8c9fbe307d398828b5b5ef274",
-    "MaterialVehicleRepeat": "80ecead33b56929ecade88cce76762deb206bfd8c9fbe307d398828b5b5ef274",
-    "MaterialVehicleDetail": "b164c17bc32e1f8d7387c8a61c2477d10f58cc6d4cc026be5aed2395991a7ee0",
-    "MaterialSpecimens": "eea1a406b7904c485546ed7f08d20b15123ef3b5fb738591ad9f3c4c61ed501c"
+    "MaterialVehicle": "f88b48d36e4a63c10ea36664fdda7af4b082fde154c3a0aeb93d3b319fa76c66",
+    "MaterialVehicleRepeat": "f88b48d36e4a63c10ea36664fdda7af4b082fde154c3a0aeb93d3b319fa76c66",
+    "MaterialVehicleDetail": "9e68794535029e3d15613f425902c8597113f3f5f9e7fc73ae9a66da93ec5984",
+    "MaterialSpecimens": "7d3f10921f13d6c4852277d3fab42f0257c73fc4edfcbacbe76271e99c92aa35"
   },
   "source_sha256": {
     "Exhibits/LightCompute/CMakeLists.txt": "a5a5ae3edf6350caddce1db4934927cae3142dfd0b90ab732ff4a1b9d8f8ae2f",
@@ -148,13 +148,13 @@
     "Exhibits/LightCompute/Code/MaterialSceneValidation.h": "b2c6fa6c9b839ec059133fe6a89e6f5f176433c8682a019d36ab549ac9fda0d9",
     "Exhibits/LightCompute/Code/PrepareMaterialScene.py": "1ec29c258bcd9b1703fbe55fb9412fc724b5b4b878860ade286fe65dfff62d01",
     "Exhibits/LightCompute/Code/MaterialSceneImages.py": "af7a6fd9aa48db88d525a602522f50bb601112337d12c9d321575845affc5dd6",
-    "Exhibits/LightCompute/Code/LightComputeValidation.cpp": "4174fc27ca436951df80a6950e1a361b269d32fa68f506ce2c8590be907fc8cc",
+    "Exhibits/LightCompute/Code/LightComputeValidation.cpp": "9588b76ebc2a1293a4a3f529a10b5f469b6af25d13fe0f73ab5e7bbf067829ce",
     "Frontier/Engine/Rendering/Shaders/LightInfluence.slang": "0a8fb16a8c22c40eaa0f2d16a737b848a5f85fd395e059f5609d5a91a7b254bd",
     "Frontier/Engine/Rendering/Shaders/MaterialRayScattering.slang": "d17f079fcbdeb9a56d7aa378e0f105ee13b46f59fa45e683867225ebde5e8279",
     "Frontier/Engine/Rendering/Shaders/MaterialRayTransport.slang": "348489155964a83e16d916527d53ae5df835ba9c3067e5d5c68e1e2ecd0cf433",
     "Engine/Render/Shader/AutomotivePaint.slang": "eec91c6476cc7d9787cc81a4510c7866439629ab4a4e1566399e526a9c19c4b8",
-    "Engine/Render/Shader/ScatteringEvaluation.slang": "7117ab42ba44a50820447b20c926a71e4e524fff8e9ded5c32285cb2e1b71a30",
-    "Engine/Render/ScatteringSequence.h": "6240f7dc2790038ad3f86ad5e7c39c9237bc5bab951326f68ab6546fe5c1ff5b",
+    "Engine/Render/Shader/ScatteringEvaluation.slang": "13432d2ade4bfe87c7108f3866e80f8121dd82161f971f80954f4bdb810eefd9",
+    "Engine/Render/ScatteringSequence.h": "a67e76b275dcfc936a0e5aa02aa6383e0a2a0d641307313c71bcd5e82634ad2f",
     "Engine/Render/MaterialPreviewGeometry.h": "5a0223f5a5fcf07a4e1df5287e982a5c085df5001a621a3aed5f22d85f6839d0",
     "Engine/Render/DrapedClothPositions.h": "b3a5680683396364fb629c23b015aade462968311b3dd1913c42943493ffa4a8"
   },
@@ -164,13 +164,13 @@
     "Filter.spv": "9be426be7a854f1adbd68be5e231f23a297c939b82e4fd888461ac02dd88409f",
     "Finalize.spv": "3257f4b95c0b32ebbff8b65cd9f40503570b5441d45c2e6ae1df9ef29a02d3d6",
     "Fog.spv": "2af2f60c9b66155cf9f2b9cd0ab41fe2a0676e7d986b15538881cd5493e2d995",
-    "MaterialFragment.spv": "97aa187e8876dad4a4aecfb304cb60cd9468b393b13415c228ef3991deb019a3",
+    "MaterialFragment.spv": "40701409dd9332ed1194395646273bb08ee91547db8abee62b6a14e42c687024",
     "MaterialVertex.spv": "d8ebe87c45fb11d71fb5df29c1aba6772495a45ab02a5c2ff9599296f59b3851",
     "Primary.spv": "8f715363037b88317fb54ba7b762f49fedf79768e21f9e584e78c08c4db53bac",
-    "Receivers.spv": "fe63536200517defe2a3cc27162db8e1f2bcfe83a9c9f7504173b8408dc0b31a",
+    "Receivers.spv": "9d9e3392984eabcade024a9878213d368350845b9aa59666997aadda1963d90c",
     "Reconstruct.spv": "c7204706d63063fd774b78b305b902cbfc08148608ecbf15b2f340dc8ce383eb",
-    "Reuse.spv": "2f6a20bec473179bfeb15a7ea164263f84f07fc4200ba4742960636393774472",
-    "Transport.spv": "44c3cb95b36eac9cac30fa74233f332428c5a4fe8794d9a520f2d25055239b12",
+    "Reuse.spv": "9dd0c623d99743cacf522721f5cd74d48dc6939378a836d2110bd1fbc1c425a3",
+    "Transport.spv": "65168ee447ec03e1db8730f1892b884567d1d51c6c396ce0c63c82c7d21ed904",
     "TransportResolve.spv": "2c8f1aa4e0ddc6a01c589eb0308134090cff5b58654bdcbc379c844465641f7c",
     "TransportSpatial.spv": "01ac9feef986e7e553a46df33c27faf22f5709789efa05129b71c966fd375909",
     "TransportTemporal.spv": "a7d8c8a602e87fb7ac05a9402da1c526fd6f010e622da911ad4114cdcd85b523"

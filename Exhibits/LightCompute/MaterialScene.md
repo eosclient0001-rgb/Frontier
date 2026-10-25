@@ -43,7 +43,7 @@ Device: **SwiftShader Device (Subzero), Vulkan CPU software device, Linux**. Pri
 
 Exact errors, device, source hashes, capture hashes and coverage: [report](Results/MaterialScene.json), [raw log](Results/MaterialScene.txt). Counters count visible samples, not reflection quality or performance. The large mirror/pane are calibration geometry, separate from the small vehicle panes.
 
-The ordinary authored-material path reuses `ScatteringEvaluation.slang` and integrates cosine/GGX proposals with deterministic-mixture weights. Mirrors use a delta direction through the existing BVH. Glass transmits through up to eight parallel thin sheets with Fresnel and tinted Beer attenuation, including direct-light shadows. Plastic SSR marches the primary depth field, shades the hit for the reflected viewing direction, and falls back to the BVH when unavailable; it is not a roughness-filtered colour-buffer SSR implementation.
+The ordinary authored-material path reuses the [energy-corrected](../TextureStudio/MaterialEnergyAcceptance.md) `ScatteringEvaluation.slang` and integrates cosine/GGX proposals with deterministic-mixture weights. Mirrors use a delta direction through the existing BVH. Glass transmits through up to eight parallel thin sheets with Fresnel and tinted Beer attenuation, including direct-light shadows. Plastic SSR marches the primary depth field, shades the hit for the reflected viewing direction, and falls back to the BVH when unavailable; it is not a roughness-filtered colour-buffer SSR implementation.
 
 ## Procedural versus baked
 
@@ -72,13 +72,13 @@ The fixture compiler reads the existing TOML presets; its ignored float atlas is
 
 ## What remains incomplete
 
-- Existing [white-furnace diagnostic](../TextureStudio/MaterialEnergy.md): **three energy excesses remain**, maximum reflectance 1.36977433. Native/shader agreement does not make the shared model energy-conserving.
+- [Scoped energy correction](../TextureStudio/MaterialEnergyAcceptance.md) passes 384 native and 34 actual Vulkan cases. The original three excess fixtures are corrected; this is **not** acceptance of all anisotropic/exact-Fresnel options, the analytic environment approximation, legacy BRDF or all 399 assets.
 - General live-editor material assignment, authored vehicle UV recovery, moving-object paint coordinates, all authoring maps, independent per-stratum normals, anisotropy/dispersion and full texture-filtering parity.
 - Solid-volume glass/refraction, nested specular bounces, roughness-aware SSR, temporal/specular reconstruction and challenging disocclusions.
 - Physical RTX/GTX/Windows/viewport and validation-layer execution. No hardware performance claim or overall-renderer completion percentage follows from these samples.
 
 ## Linked branch
 
-Rechecked `SultanAladin/Frontier` branch `arena/5e581235-frontier` at **a76dbd34d12d5e0dbfafe24dd5aa9d4d5b414c73**. All 399 material archive files already match. Latest scoped comparison is **451/455 identical**: three existing vector-gradient ABI differences plus this compute-footprint extension to the cellular shader. The production fragment SPIR-V remains byte-identical with/without that extension.
+Rechecked `SultanAladin/Frontier` branch `arena/5e581235-frontier` at **a76dbd34d12d5e0dbfafe24dd5aa9d4d5b414c73**. All 399 material archive files already match. Latest scoped comparison is **448/455 identical**: three existing vector-gradient ABI differences, the cellular compute-footprint extension, two energy-allocation evaluators and reciprocal coat factor grouping in the production surface shader. Production SPIR-V intentionally changes after the energy correction; byte identity was only the earlier paint-extension comparison at `b6bc49e`.
 
 The newer upstream commit adds Baking Studio AO/curvature geometry baking and its UI; it does not replace these optical material definitions. No blind branch merge or unrelated vector/UI import was performed. [Reuse audit](../TextureStudio/MaterialReuse.md).

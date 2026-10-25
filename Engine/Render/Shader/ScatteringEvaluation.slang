@@ -84,6 +84,20 @@ float EvaluateExactDielectricReflectance(float Cosine,float IncidentIor,float Tr
                      (TransmittedIor*Cosine+IncidentIor*TransmittedCosine);
     return .5*(Perpendicular*Perpendicular+Parallel*Parallel);
 }
+// 📝 Analytic hemisphere bound, identical to the retained scalar evaluator; no texture or LUT allocation.
+float EvaluateSheenEnergyScale(float Roughness)
+{
+    float InverseAlpha = 1/max(Roughness*Roughness,1e-3);
+    float Radius = sqrt(InverseAlpha/8);
+    float Bound = (InverseAlpha+2)*atan(Radius)/(4*Radius);
+    return 1/max(1,Bound);
+}
+float3 EvaluateDiffuseTransmission(float3 FresnelOrigin,float NormalView,float NormalLight)
+{
+    float3 Entrance = FresnelOrigin+(1-FresnelOrigin)*pow(1-NormalLight,5);
+    float3 Exit = FresnelOrigin+(1-FresnelOrigin)*pow(1-NormalView,5);
+    return (1-Entrance)*(1-Exit);
+}
 float3 EvaluateScatteringReflection(ScatteringStratum Stratum,float3 Albedo,float ViewHalf,
                                    float Distribution,float Visibility,bool ExactDielectricEnabled,float SpecularLevel,
                                    float NormalView,float NormalLight,float NormalHalf)
@@ -98,10 +112,15 @@ float3 EvaluateScatteringReflection(ScatteringStratum Stratum,float3 Albedo,floa
     float3 Evaluation = Distribution*Visibility*Fresnel;
     if (Stratum.Classification.x == 0)
     {
-        Evaluation += (1-Fresnel)*(1-Stratum.Optics.x)*Albedo/π;
-        // 📝 Fabric fuzz rim: zero for every material without an authored sheen tint.
-        Evaluation += Stratum.Sheen.rgb*Stratum.Sheen.a*
-            EvaluateCharlieDistribution(Stratum.SheenFinish.x,NormalHalf)*EvaluateAshikhminVisibility(NormalView,NormalLight);
+        Evaluation += EvaluateDiffuseTransmission(FresnelOrigin,NormalView,NormalLight)*(1-Stratum.Optics.x)*Albedo/π;
+        // 📝 Fuzz coverage replaces base scattering rather than adding a second unrestricted energy budget.
+        if (Stratum.Sheen.a > 0 && any(Stratum.Sheen.rgb > 0))
+        {
+            float3 FuzzCoverage = saturate(Stratum.Sheen.rgb)*Stratum.Sheen.a;
+            float Sheen = EvaluateSheenEnergyScale(Stratum.SheenFinish.x)*
+                EvaluateCharlieDistribution(Stratum.SheenFinish.x,NormalHalf)*EvaluateAshikhminVisibility(NormalView,NormalLight);
+            Evaluation = lerp(Evaluation,float3(Sheen),FuzzCoverage);
+        }
     }
     return Evaluation;
 }
@@ -133,7 +152,7 @@ float3 EvaluateScatteringSequence(PreviewScattering Scattering,float3 Normal,flo
             float Exit = Reflectance+(1-Reflectance)*pow(1-NormalView,5);
             float3 Absorption = exp(-Stratum.AbsorptionThickness.rgb*Stratum.AbsorptionThickness.w*
                                     (1/max(.001,NormalView)+1/max(.001,NormalLight)));
-            Evaluation += Accumulated*(1-Entrance)*(1-Exit)*Absorption;
+            Evaluation += Accumulated*((1-Entrance)*(1-Exit))*Absorption;
         }
         Accumulated = lerp(Accumulated,Evaluation,Stratum.Optics.z);
     }
@@ -189,7 +208,7 @@ float3 IntegrateEnvironment(PreviewScattering Scattering,float3 Normal,float3 Vi
             float Exit = IorReflectance+(1-IorReflectance)*pow(1-NormalLight,5);
             float3 Absorption = exp(-Stratum.AbsorptionThickness.rgb*Stratum.AbsorptionThickness.w*
                 (1/max(.001,NormalView)+1/max(.001,NormalLight)));
-            Evaluation += Accumulated*(1-Entrance)*(1-Exit)*Absorption;
+            Evaluation += Accumulated*((1-Entrance)*(1-Exit))*Absorption;
         }
         Accumulated = lerp(Accumulated,Evaluation,Stratum.Optics.z);
     }

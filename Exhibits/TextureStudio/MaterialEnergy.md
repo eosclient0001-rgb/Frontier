@@ -1,6 +1,8 @@
-# Reused material energy diagnostic
+# Reused material energy diagnostic — historical baseline
 
-**Existing evaluation reused, not rewritten.** Native C++ calls `Frontier::EvaluateScatteringSequence` from `Engine/Render/ScatteringSequence.h`. All 24 fixtures remain finite, nonnegative and reciprocal; **three exceed the white-furnace threshold**. This diagnostic is not full-library acceptance.
+**Historical pre-correction results at `b6bc49e`; see [current correction and acceptance](MaterialEnergyAcceptance.md).** The original numeric report below is retained unchanged. Recompiling the diagnostic now uses the corrected evaluator.
+
+**Existing evaluation reused, not rewritten at that checkpoint.** Native C++ calls `Frontier::EvaluateScatteringSequence` from `Engine/Render/ScatteringSequence.h`. All 24 fixtures remain finite, nonnegative and reciprocal; **three exceed the white-furnace threshold**. This diagnostic is not full-library acceptance.
 
 | Check | Result |
 |---|---|
@@ -30,11 +32,11 @@ c++ -std=c++20 -O2 -Wall -Wextra -Werror -I. \
   Exhibits/TextureStudio/Code/MaterialEnergyBaseline.cpp \
   -o _ClaudeScratch/build/MaterialEnergyBaseline
 _ClaudeScratch/build/MaterialEnergyBaseline \
-  > Exhibits/TextureStudio/Results/MaterialEnergyBaseline.txt
+  > Exhibits/TextureStudio/Results/MaterialEnergyCurrent.txt
 ```
 
 [Full numeric output](Results/MaterialEnergyBaseline.txt). The executable returns nonzero for invalid/negative/nonreciprocal evaluation. Energy excess is deliberately reported diagnostically, **not** a passing energy assertion; exit zero must not be used as an energy-conservation acceptance gate.
 
 Not covered: every archived preset, anisotropic/spectral/dispersion modes, all authored strata, full native Slang scene lighting, or sampling/PDF consistency. The [upstream identity audit](MaterialReuse.md) remains separate from these optical checks. The [two-render glint comparison](GlintPair.md) uses an isolated GLSL fixture; it does not validate this full native material evaluation inside the vehicle renderer.
 
-Next: trace the diffuse/specular/sheen energy allocation, validate any correction against both native and Slang evaluation, then continue layered scene integration with **both analytic and emissive lighting** retained. The user has selected cellular for automotive paint; Glinty remains optional research. Physical RTX/GTX/Windows measurements remain pending.
+The subsequent [energy-allocation correction](MaterialEnergyAcceptance.md) now exercises both native and actual shared Slang evaluation, with **both analytic and emissive lighting** retained in the renderer. The user has selected cellular for automotive paint; Glinty remains optional research. Physical RTX/GTX/Windows measurements remain pending.

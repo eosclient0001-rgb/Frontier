@@ -138,7 +138,7 @@ float3 EvaluateMaterialSequence(PreviewScattering Scattering,MaterialAngularStra
             Exit = LocalView.z <= 0 ? 1 : Exit;
             float3 Absorption = exp(-Stratum.AbsorptionThickness.rgb*Stratum.AbsorptionThickness.w*
                                     (1/max(.001,LocalView.z)+1/max(.001,LocalLight.z)));
-            Evaluation += Accumulated*(1-Entrance)*(1-Exit)*Absorption;
+            Evaluation += Accumulated*((1-Entrance)*(1-Exit))*Absorption;
         }
         Accumulated = lerp(Accumulated,Evaluation,Stratum.Optics.z);
     }

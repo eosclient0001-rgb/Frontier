@@ -1017,11 +1017,18 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "FogScatteringValidation.h"
 #include "FogFacetValidation.h"
 #include "MaterialSceneValidation.h"
+#include "MaterialEnergyGpu.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && (std::string(Arguments[3]) == "--material-energy" ||
+                           std::string(Arguments[3]) == "--material-energy-original"))
+        {
+            ValidateMaterialEnergyGpu(Arguments[1],Arguments[2],std::string(Arguments[3]) == "--material-energy-original");
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--sampling-only")
         {
             ValidateFreshSampling(Arguments[1], Arguments[2]);
