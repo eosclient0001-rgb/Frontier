@@ -29,7 +29,7 @@ Absorption = [0.2, 0.6, 1.2]
   compiled material structures, not a new shader-buffer field. Native host structures require recompilation.
 
 Source: [authored specimen](Materials/ClosedGlass.material). Four disk round trips are retained under
-`Materials/Saved/`; their compiled float32 IOR/absorption values are consumed by the existing exhibit adapter.
+`Materials/RoundTrips/`; their compiled float32 IOR/absorption values are consumed by the existing exhibit adapter.
 The 64-byte scratch coefficient capture is validation interchange, not a new runtime material file format.
 
 ## Verification

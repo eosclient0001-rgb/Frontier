@@ -28,7 +28,7 @@ for I, Title in enumerate(Titles):
     Hashes[Source.name] = hashlib.sha256(Source.read_bytes()).hexdigest()
 Draw.text((12,310), 'Native saved/reloaded material coefficients; 96 x 64 Vulkan, 128 paths; SwiftShader CPU. Enlarged nearest-neighbour.', fill='#b9c8db')
 Canvas.save(Images / 'SavedDielectric.png')
-Saved = Root / 'Exhibits/LightCompute/Materials/Saved'
+Saved = Root / 'Exhibits/LightCompute/Materials/RoundTrips'
 Saved.mkdir(parents=True, exist_ok=True)
 for Material in Capture.glob('ClosedGlass*.material'):
     (Saved / Material.name).write_bytes(Material.read_bytes())
