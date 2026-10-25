@@ -12,6 +12,8 @@ index 1.0, no absorption. Middle: index 1.5, no absorption; the box visibly disp
 1.5 with RGB absorption coefficients 0.2/0.6/1.2 per scene-length unit. Native captures are **96×64**, 128 paths
 per glass pixel; the comparison enlarges them with nearest-neighbour sampling. No generated imagery.
 
+A subsequent [window phase](WindowDielectric.md) adds primary thin-sheet-to-solid paths.
+
 ## Measured acceptance
 
 | Test | Result |

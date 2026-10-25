@@ -28,10 +28,10 @@ for I, Title in enumerate(Titles):
     Hashes[Source.name] = hashlib.sha256(Source.read_bytes()).hexdigest()
 Draw.text((12,310), 'Actual 96 x 64 Vulkan captures, 32 paths/pixel; SwiftShader CPU. Enlarged nearest-neighbour.', fill='#b9c8db')
 Canvas.save(Images / 'MirrorDielectric.png')
-Report = {'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capture_dimensions': [96,64],
+Report = {'negative_control_revision': '8a1f38f', 'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capture_dimensions': [96,64],
           'paths_per_pixel': 32, 'interaction_cap': 32, 'capture_sha256': Hashes,
           'mirror_log': (Results/'MirrorDielectric.txt').read_text(),
           'negative_control_log': (Results/'MirrorDielectricOriginal.txt').read_text(),
-          'scope': 'Single planar mirror followed by smooth closed volumes. Rough-reflector extension separately tested. Primary thin-sheet-to-solid paths, nesting, rough glass boundaries, caustics and saved material-authoring integration remain unsupported.'}
+          'scope': 'Single planar mirror followed by smooth closed volumes. Rough-reflector extension separately tested. Thin-sheet extension separately tested; legacy compact diffuse transport, nesting, rough glass boundaries, caustics and saved material-authoring integration remain unsupported.'}
 (Results/'MirrorDielectric.json').write_text(json.dumps(Report,indent=2)+'\n')
 print('MIRROR_IMAGES captures=3 source_dimensions=96x64 software_vulkan=1')

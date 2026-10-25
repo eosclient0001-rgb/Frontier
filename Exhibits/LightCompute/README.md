@@ -5,13 +5,13 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
-## Smooth glass: camera, mirror and sampled rough reflection — 2026-10-25
+## Smooth glass: camera, mirror, rough reflector and thin window — 2026-10-25
 
-[Primary glass](SolidDielectric.md), [mirror extension](MirrorDielectric.md) and [rough-reflection extension](RoughDielectric.md)
-contain actual captures and focused acceptance. One flat proposal sequence and volume-trace site avoid the
-previous observed software-driver crash. This is rough **reflector** transport through **smooth glass**, not
-rough/frosted glass boundaries. Saved closed-glass authoring, primary thin-sheet-to-solid paths and physical
-GPU/editor integration remain incomplete. [Emoji done/remaining table](RendererProgress.md).
+[Primary glass](SolidDielectric.md), [mirror](MirrorDielectric.md), [rough reflector](RoughDielectric.md) and
+[thin window → closed glass](WindowDielectric.md) contain actual captures and focused acceptance. All authored
+receivers now share one flat proposal sequence and volume-trace site. The sheet keeps its previous parallel-
+sheet weighting approximation. This does not implement rough/frosted glass boundaries, compact-only diffuse
+transport through volumes, saved glass authoring or physical GPU/editor integration. [Done/remaining table](RendererProgress.md).
 
 ## Lower-cost working cloud preset — 2026-10-25
 

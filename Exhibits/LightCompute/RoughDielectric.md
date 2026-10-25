@@ -11,6 +11,9 @@ primary rays see only the reflectors. The three images use index-matched glass, 
 index-1.5 absorbing glass. Thirty-two samples × two BRDF proposals produce visible finite-sample noise.
 These are optical verification captures, not final-quality vehicle renders.
 
+The subsequent [window phase](WindowDielectric.md) also supports primary thin-sheet-to-solid paths.
+Historical exclusions below describe this rough-reflection checkpoint.
+
 ## Changed mechanism
 
 | Mechanism | Implementation |

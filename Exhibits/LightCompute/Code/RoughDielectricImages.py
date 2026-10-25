@@ -32,6 +32,6 @@ Report = {'negative_control_revision': '213f050', 'device': 'SwiftShader Device 
           'samples_per_pixel': 32, 'proposals_per_sample': 2, 'reflector_roughness': [.06,.3,.65], 'interaction_cap': 32, 'capture_sha256': Hashes,
           'rough_log': (Results/'RoughDielectric.txt').read_text(),
           'negative_control_log': (Results/'RoughDielectricOriginal.txt').read_text(),
-          'scope': 'Rough cosine/GGX reflector rays through smooth closed volumes. Rough glass boundaries, nesting, caustics, saved material authoring and primary thin-sheet-to-solid paths remain unsupported.'}
+          'scope': 'Rough cosine/GGX reflector rays through smooth closed volumes. Rough glass boundaries, nesting, caustics, saved material authoring and legacy compact diffuse paths remain unsupported.'}
 (Results/'RoughDielectric.json').write_text(json.dumps(Report,indent=2)+'\n')
 print('ROUGH_DIELECTRIC_IMAGES captures=3 source_dimensions=96x64 software_vulkan=1')

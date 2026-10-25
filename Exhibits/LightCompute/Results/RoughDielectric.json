@@ -21,5 +21,5 @@
   },
   "rough_log": "ROUGH_DIELECTRIC_DEVICE name=SwiftShader Device (Subzero) type=4\nROUGH_BEER changed_channels=11118 channel_ratios=0.924979,0.813363,0.71067 repeat_exact=1\nROUGH_GLASS_SCREEN case=0 bvh_exact=1\nROUGH_GLASS_SCREEN case=1 bvh_exact=1\nROUGH_GLASS_SCREEN case=2 bvh_exact=1\nROUGH_DIELECTRIC_PASS source_off_black=1 pixels=6144 samples=32 proposals_per_sample=2\n",
   "negative_control_log": "ROUGH_DIELECTRIC_DEVICE name=SwiftShader Device (Subzero) type=4\nROUGH_DIELECTRIC_ORIGINAL changed_channels=0 absorption_ignored=1 repeat_exact=1\n",
-  "scope": "Rough cosine/GGX reflector rays through smooth closed volumes. Rough glass boundaries, nesting, caustics, saved material authoring and primary thin-sheet-to-solid paths remain unsupported."
+  "scope": "Rough cosine/GGX reflector rays through smooth closed volumes. Rough glass boundaries, nesting, caustics, saved material authoring and legacy compact diffuse paths remain unsupported."
 }

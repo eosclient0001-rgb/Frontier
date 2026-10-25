@@ -17,11 +17,15 @@ mkdir -p "$Original" "$PWD/_ClaudeScratch/tmp"
 cp "$Build/"*.spv "$Build/MaterialSceneMaps.bin" "$Original/"
 python3 - <<'PYTHON'
 from pathlib import Path
-Source = Path('Frontier/Engine/Rendering/Shaders/LightInfluence.slang').read_text()
-assert Source.count('if (Category != 2)') == 1
-Path('_ClaudeScratch/tmp/MirrorDielectricOriginal.slang').write_text(Source.replace('if (Category != 2)', 'if (Category != 2 && Category != 1)'))
+import subprocess
+Folder = Path('_ClaudeScratch/tmp/MirrorDielectricOriginal')
+Folder.mkdir(parents=True,exist_ok=True)
+for Name in ('LightInfluence.slang','MaterialRayTransport.slang','SolidDielectricTransport.slang'):
+    Source = subprocess.check_output(['git','show','8a1f38f:Frontier/Engine/Rendering/Shaders/'+Name],text=True)
+    Source = Source.replace('../../../../Engine/',str(Path('Engine').resolve())+'/')
+    (Folder/Name).write_text(Source)
 PYTHON
-"${SLANGC:-$Tools/Slang/slangtorch/bin/slangc}" _ClaudeScratch/tmp/MirrorDielectricOriginal.slang \
+"${SLANGC:-$Tools/Slang/slangtorch/bin/slangc}" _ClaudeScratch/tmp/MirrorDielectricOriginal/LightInfluence.slang \
  -I Frontier/Engine/Rendering/Shaders -entry TraceSurfaceTransport -target spirv -profile spirv_1_3 \
  -emit-spirv-directly -O0 -o "$Original/Transport.spv"
 "$Build/LightComputeValidation" "$Driver" "$Original" --mirror-dielectric-original "$PWD/_ClaudeScratch/light-compute" \

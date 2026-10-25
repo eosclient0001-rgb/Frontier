@@ -16,6 +16,9 @@ smooth glass; statements below about the rough-path blocker describe this mirror
 The table below reflects the current regression readback; finite averaging order changed last-bit values
 when the integrator was flattened in the rough-reflection phase.
 
+A later [window-to-volume phase](WindowDielectric.md) also adds primary thin-sheet paths; the original
+checkpoint limitations below are historical.
+
 ## Verification
 
 | Check | Actual result |
@@ -35,8 +38,9 @@ The independent native slab series is multiplied by the existing mirror throughp
 The comparison is a central **mean**, not a per-pixel or whole-image convergence proof. Declared thresholds
 are 0.0001 for index matching and 0.08 for index 1.5; the observed errors above are substantially smaller.
 
-The negative control removes only the new mirror routing from the current production shader; it is not a
-full pinned-old-renderer replay. The same fixture then returns exactly black for all 196 central samples.
+The current negative control compiles the three transport shader files from `8a1f38f`, with unchanged shared
+scattering math. It is not a full pinned-application replay. The same fixture returns exactly black for all
+196 central samples. This replaces the earlier dispatch-condition-editing control.
 
 ## Driver-safe integration
 

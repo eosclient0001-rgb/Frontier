@@ -38,28 +38,6 @@ float3 ShadeRayStrike(SurfacePoint R)
 }
 #include "SolidDielectricTransport.slang"
 
-float3 TraceMaterialRadiance(float3 Origin, float3 Direction, out bool Hit)
-{
-    float3 Transmission = 1;
-    Hit = false;
-    for (uint Pane = 0; Pane < 8; ++Pane)
-    {
-        float3 Strike;
-        uint Index = NearestFacet(Origin, Direction, .001, 1e30, Strike);
-        if (Index == 0xffffffffu) return Transmission * EnvironmentRadiance(Direction);
-        Hit = true;
-        SurfacePoint R = FacetSurface(Index, Origin, Direction, Strike);
-        // The legacy primary thin-sheet route does not yet cross closed volumes.
-        if (MaterialTransport(R) == 4) return 0;
-        if (MaterialTransport(R) != 2) return Transmission * ShadeRayStrike(R);
-        float Cosine = max(.05, dot(R.NormalRoughness.xyz, -Direction));
-        float F = .04 + .96 * pow(1 - Cosine, 5);
-        // 📝 Parallel thin sheet, both interfaces; not a solid-volume refraction solver.
-        Transmission *= (1 - F) / (1 + F) * exp(-float3(.8, .15, .4) * .006 / Cosine);
-        Origin = R.PositionHit.xyz + Direction * .003;
-    }
-    return 0;
-}
 bool TraceDepthScreen(float3 Origin, float3 Direction, out SurfacePoint StrikeSurface)
 {
     StrikeSurface = (SurfacePoint)0;
@@ -116,15 +94,15 @@ float MaterialMixtureDensity(PreviewScattering S, float3 N, float3 V, float3 L)
 float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
 {
     uint Category = MaterialTransport(R);
-    bool Delta = Category == 1 || Category == 4, Mirror = Category == 1;
+    bool Sheet = Category == 2, Delta = Category == 1 || Category == 4 || Sheet, Mirror = Category == 1;
     PreviewScattering S = (PreviewScattering)0;
     if (!Delta) S = ReadMaterialScattering(R);
     float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
     float3 T = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)), B = cross(N, T);
     uint Bits = Pixel * 747796405u + Extent.Sampling.x;
     uint Samples = Delta ? min(128u, max(1u, Extent.Primary.z)) : max(1u, Extent.Primary.z);
-    uint Proposals = Delta ? 1 : S.Configuration.x + 1;
-    uint ScreenHits = 0, FallbackRays = 0, Hits = 0, Internal = 0, Capped = 0, Unsupported = 0;
+    uint Proposals = Sheet ? 2 : Delta ? 1 : S.Configuration.x + 1;
+    uint ScreenHits = 0, FallbackRays = 0, Hits = 0, ReflectedHits = 0, Internal = 0, Capped = 0, Unsupported = 0;
     float3 Sum = 0;
     // A flat proposal sequence and one solid-trace site avoid nested material/volume call sites in the tested driver.
     for (uint Path = 0; Path < Samples * Proposals; ++Path)
@@ -133,6 +111,14 @@ float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
         float3 L = Mirror ? reflect(-V, N) : -V;
         float3 Origin = Category == 4 ? CameraProjection(0).xyz : R.PositionHit.xyz + N * .003;
         float3 Weight = Mirror ? float3(.94) : float3(1);
+        if (Sheet)
+        {
+            float Cosine = saturate(dot(N, V)), F = .04 + .96 * pow(1 - Cosine, 5);
+            L = Proposal == 0 ? reflect(-V, N) : -V;
+            Origin = R.PositionHit.xyz + N * (Proposal == 0 ? .003 : -.003);
+            Weight = Proposal == 0 ? float3(2 * F / (1 + F)) :
+                     (1 - F) / (1 + F) * exp(-float3(.8, .15, .4) * .006 / max(.05, Cosine));
+        }
         if (!Delta)
         {
             float U = min(.999999, RandomUnit(Bits)), Angle = 2 * π * RandomUnit(Bits);
@@ -163,6 +149,7 @@ float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
             Incoming = TraceSolidDielectric(Origin, L, BoundaryBits, Tirs, Cap, Invalid, Hit);
             if (Delta) Bits = BoundaryBits;
             Internal += Tirs; Capped += Cap; Unsupported += Invalid; Hits += Hit;
+            ReflectedHits += Hit && Proposal == 0;
         }
         ScreenHits += Screen;
         FallbackRays += !Screen;
@@ -170,6 +157,7 @@ float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
     }
     if (Category == 4) R.ExpectedDirect.xyz = float3(5, Capped * 65536u + Internal, Unsupported);
     else if (Mirror) R.ExpectedDirect.xyz = float3(1, Hits > 0 ? 1 : 0, Capped * 256u + Unsupported);
+    else if (Sheet) R.ExpectedDirect.xyz = float3(2, ReflectedHits > 0 ? 1 : 0, Capped * 512u + Unsupported);
     else if (Category == 3) R.ExpectedDirect.xyz = float3(ScreenHits > 0 ? 3 : 4, FallbackRays, ScreenHits);
     else R.ExpectedDirect.xyz = float3(6, Capped, Unsupported);
     return Sum / Samples;

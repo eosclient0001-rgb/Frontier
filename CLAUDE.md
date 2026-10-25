@@ -346,3 +346,24 @@ The final ROUGH_DIELECTRIC_BUILD=0 wrapper passed: three new optical screen/BVH 
 primary/mirror slab and rejection checks,199 boundary cases,4/4native CTests,opaque history88probes, and the
 previous192x120 rough-reflection suite (14941screen/204392fallback rays, RGBerror0, sourceoff/movedfresh pass).
 Thirteen compute entry points compiled at Slang-O0. No physical GPU/Windows/editor or speedup claim.
+
+
+## Primary thin-sheet window followed by closed glass — 2026-10-25
+
+All authored primary receivers now use one `IntegrateBoundaryRays` site. Category2 adds two deterministic
+proposal directions with the previous Schlick/two-interface/Beer sheet weights; both directions use the one
+solid trace site. Removed the separate primary-sheet ray loop that returned black on category4 hits. Sheet
+marker2.y remains any reflected scene hit; .z packs capped*512+unsupported. Configured at most128samples,
+two directions each; tracer cap32 retained (previous primary-secondary pane loop cap8 not retained).
+`Exhibits/LightCompute/WindowDielectric.md`: actual96x64,64samples x2directions;4slab means (max .00312531),
+100central probes per case; sheet reflection and combined white-source controls maxerror1.1283e-6; all6144
+pixels sourceoff exactly black. Pinnedabed7c6 transport negative control verifies formerly blocked transmission.
+Mirror negative control updated to pinned8a1f38f transport files because its old dispatch edit no longer applies.
+This preserves approximate sheet weights, not exact sampling/traversal or a speed claim. Legacy compact-only
+diffuse integration, saved closed-glass authoring/vehicle binding, rough boundaries/nested media/inside cameras,
+caustics/full denoising/unified moving scene, physical RTX/GTX/Windows/editor remain incomplete.
+
+Final WINDOW_BUILD=0 wrapper exited0: pinned abed7c6 window control returns black on100 central pixels;
+pinned8a1f38f mirror control also passes. Primary/mirror/rough-glass,199boundary cases,opaque history and
+4native CTests passed; original rough reflection suite retains14941screen/204392fallback rays with RGBerror0.
+13compute kernels compiled. Evidence manifest163sources/211products verified; actual software Vulkan only.

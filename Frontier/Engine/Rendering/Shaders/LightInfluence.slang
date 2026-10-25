@@ -939,39 +939,13 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
     }
     if (MaterialAddress(R) > 0)
     {
-        uint Category = MaterialTransport(R);
-        float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
-        float3 Direction = reflect(-V, N), Origin = R.PositionHit.xyz + N * .003;
-        float3 Radiance = 0;
-        if (Category != 2)
-        {
-            Radiance = IntegrateBoundaryRays(R, Pixel);
-            StoreHistory(16, Pixel, float4(Radiance, 1));
-            R.ResidualSpecular.xyz += Radiance;
-            Receivers[Pixel] = R;
-            return;
-        }
-        if (Category == 1 || Category == 2)
-        {
-            bool Hit = false;
-            float3 Reflected = TraceMaterialRadiance(Origin, Direction, Hit);
-            float F = .04 + .96 * pow(1 - saturate(dot(N, V)), 5);
-            Radiance = Reflected * (Category == 1 ? float3(.94) : float3(2 * F / (1 + F)));
-            R.ExpectedDirect.x = Category;
-            R.ExpectedDirect.y = Hit ? 1 : 0;
-            if (Category == 2)
-            {
-                float3 Behind = TraceMaterialRadiance(R.PositionHit.xyz - N * .003, -V, Hit);
-                Radiance += Behind * ((1 - F) / (1 + F)) *
-                    exp(-float3(.8, .15, .4) * .006 / max(.05, dot(N, V)));
-            }
-            StoreHistory(16, Pixel, float4(Radiance, 1));
-            R.ResidualSpecular.xyz += Radiance;
-            Receivers[Pixel] = R;
-            return;
-        }
-
+        float3 Radiance = IntegrateBoundaryRays(R, Pixel);
+        StoreHistory(16, Pixel, float4(Radiance, 1));
+        R.ResidualSpecular.xyz += Radiance;
+        Receivers[Pixel] = R;
+        return;
     }
+
     float3 N = R.NormalRoughness.xyz;
     float3 Tangent = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)),
            Bitangent = cross(N, Tangent);
