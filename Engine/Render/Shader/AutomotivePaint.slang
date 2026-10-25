@@ -65,14 +65,22 @@ struct PaintSurface
     float Resolved;
     float PeelHeight;
 };
-PaintSurface EvaluatePaintSurface(AutomotivePaint Paint, float3 Position, float3 Albedo, float Roughness, float Metallic)
+PaintSurface EvaluatePaintSurface(AutomotivePaint Paint, float3 Position, float3 Albedo, float Roughness, float Metallic
+#ifdef FRONTIER_COMPUTE_PAINT
+    , float PixelFootprint
+#endif
+)
 {
     PaintSurface Surface;
     float3 Base = Albedo * exp(-Paint.Distribution.w * .28), Blended = Base;
     float Mask = 0, Random = 0;
     float Frequency = min(1e7, 52000 / max(.001, Paint.Distribution.y) * Paint.Distribution.z);
     float3 Domain = Position * Frequency;
+#ifdef FRONTIER_COMPUTE_PAINT
+    float Footprint = PixelFootprint * Frequency;
+#else
     float Footprint = max(length(ddx(Domain)), length(ddy(Domain)));
+#endif
     float Detail = 1 - smoothstep(.55, 1.6, Footprint);
     // 📝 Keep derivative evaluation in uniform flow; quad neighbours must not depend on a particle's occupancy.
     float3 Warp = float3(EvaluatePaintNoise(Domain * .31), EvaluatePaintNoise(Domain * .31 + 11.7), EvaluatePaintNoise(Domain * .31 + 37.4)) - .5;
@@ -83,7 +91,11 @@ PaintSurface EvaluatePaintSurface(AutomotivePaint Paint, float3 Position, float3
         // 📝 GLSL's column-major constructor is transposed explicitly for Slang's mul(matrix, vector).
         Point = mul(float3x3(.80,-.60,0, .36,.48,.80, -.48,-.64,.60), Point);
         float4 Cell = EvaluatePaintCell(Point, Level * 97.3 + 4.1);
+#ifdef FRONTIER_COMPUTE_PAINT
+        float Antialias = max(Footprint * .65, .009);
+#else
         float Antialias = max(fwidth(Cell.x) * .65, .009);
+#endif
         float Inset = .018 + Cell.w * .07;
         float Opacity = smoothstep(Inset - Antialias, Inset + Antialias, Cell.x) * step(1 - Paint.Distribution.x * .55, Cell.y);
         float3 Tint = lerp(SelectPaintTint(Paint, Cell.z), Base, Depth * Paint.Relief.y * .72);
@@ -101,6 +113,7 @@ PaintSurface EvaluatePaintSurface(AutomotivePaint Paint, float3 Position, float3
     Surface.PeelHeight = (EvaluatePaintNoise(Position * Paint.Relief.w) + .35 * EvaluatePaintNoise(Position * Paint.Relief.w * 2.1)) * Paint.Relief.z * .003;
     return Surface;
 }
+#ifndef FRONTIER_COMPUTE_PAINT
 float3 DerivePaintRelief(float Height, float3 Normal, float3 Position)
 {
     float3 First = ddx(Position), Second = ddy(Position);
@@ -121,3 +134,5 @@ float3 DerivePaintNormal(AutomotivePaint Paint, PaintSurface Surface, float3 Nor
     }
     return Normal;
 }
+
+#endif

@@ -6,6 +6,8 @@
 
 #define VK_NO_PROTOTYPES
 #include "LightComputeFormat.h"
+#include "Engine/Render/MaterialPreviewGeometry.h"
+#include "Engine/Render/ScatteringSequence.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -639,7 +641,9 @@ struct LightComputeSubmission
                           (Environment ? 1u : 0u) | (EmissiveSampling ? 2u : 0u) |
                               (ReconstructTransport ? 4u : 0u) |
                               ((!TransportHistoryValid || TransportDirty) ? 8u : 0u) |
-                              (CloudOffset != UINT32_MAX ? 16u : 0u)};
+                              (CloudOffset != UINT32_MAX ? 16u : 0u) |
+                              (std::any_of(Scene.Surfaces.begin(), Scene.Surfaces.end(),
+                                  [](const auto& F) { return F.Emissive[3] > 0; }) ? 32u : 0u)};
         if (PrimaryVisibility)
         {
             // 📝 No uploaded CPU surface channel may supply primary geometry or
@@ -1012,6 +1016,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "CloudShadowValidation.h"
 #include "FogScatteringValidation.h"
 #include "FogFacetValidation.h"
+#include "MaterialSceneValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -1032,6 +1037,11 @@ int main(int Count, char** Arguments)
                   << " type=" << Compute.Properties.deviceType << " api=" << Compute.Properties.apiVersion
                   << " ray_query_extensions=" << Compute.RayQueryExtensions
                   << " ray_query_executed=0 triangle_bvh_executed=1\n";
+        if (Count == 6 && std::string(Arguments[5]) == "--material-scene")
+        {
+            ValidateMaterialScene(Arguments[1], Arguments[2], Scene, Arguments[4]);
+            return 0;
+        }
         if (Count == 6 && std::string(Arguments[5]) == "--primary-only")
         {
             Compute.Prepare(Scene, Arguments[2]);

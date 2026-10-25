@@ -1,5 +1,9 @@
 # Material glint research and budget proposal
 
+**Current user decision (2026-10-25): cellular retained for automotive paint.** Earlier Glinty/default proposals
+are historical, not the selected implementation direction. [Native material renders](../../../Exhibits/LightCompute/MaterialScene.md).
+
+
 **2026-10-19 · Research plus isolated benchmark. Production implementation/default switch remain on hold.**
 
 Local software-renderer results: [executed comparison](../../../Exhibits/TextureStudio/GlintComparison.md).
@@ -206,3 +210,12 @@ acceptance or physical-GPU speed claim follows from this isolated exhibit.
 existing scattering sequence: 24 finite/nonnegative/reciprocal fixtures, three white-furnace excesses
 (maximum 1.36977433). Keep the existing material library; investigate those energy findings before
 claiming physically correct layered scene integration. Both analytic and emissive lighting remain required.
+
+## User selection — cellular retained, 2026-10-25
+
+The user selected **cellular for metallic automotive paint** after inspecting the paired renders; Glinty may
+remain useful for finer detail but is not the current replacement direction. This supersedes the earlier
+rewrite/default-selection proposal, without deleting the research or its permission limits.
+[Native material scene](../../../Exhibits/LightCompute/MaterialScene.md) now binds Racing Green cellular
+clearcoat, rubber, thin transmitting glass, BVH mirrors and plastic depth-screen reflections, and reuses the
+C++ shaderball/cloth geometry. It is a bounded integration, not full PBR-library or hardware acceptance.

@@ -1,11 +1,11 @@
 {
   "repository": "SultanAladin/Frontier",
   "branch": "arena/5e581235-frontier",
-  "revision": "be1d0a8e45d39738f37ccf711522a745e326e149",
+  "revision": "a76dbd34d12d5e0dbfafe24dd5aa9d4d5b414c73",
   "tree_complete": true,
   "files_compared": 455,
-  "identical": 452,
-  "different_or_absent": 3,
+  "identical": 451,
+  "different_or_absent": 4,
   "scope": "all Engine/Render files, EngineContent/MaterialArchives and Material-prefixed ContentInterchange sources",
   "difference_notes": "The three vector-coverage files differ: upstream adds multi-stop gradients and explicit gradient axes, with a 176-byte instruction versus local 112 bytes. No partial ABI import performed.",
   "meaning": "Git blob identity only; not new material physics, scene integration or hardware validation",
@@ -154,8 +154,8 @@
     {
       "path": "Engine/Render/Shader/AutomotivePaint.slang",
       "upstream_git_blob": "1b1fad2e5129997de361e07159dc815f5b30f34e",
-      "local_git_blob": "1b1fad2e5129997de361e07159dc815f5b30f34e",
-      "identical": true
+      "local_git_blob": "2d4e52f8da4306eeb3aae30ec22afa1b90e43000",
+      "identical": false
     },
     {
       "path": "Engine/Render/Shader/BrowserDrafting.slang",

@@ -1,5 +1,9 @@
 # Material reuse and glint rewrite audit
 
+**Current direction:** cellular selected for automotive paint. Latest upstream audit: **451/455 identical** at
+`a76dbd34d12d5e0dbfafe24dd5aa9d4d5b414c73`; all material archives match. Earlier counts/proposals below are historical.
+[Executed native material scene](../LightCompute/MaterialScene.md).
+
 ## Requested source — checked 2026-10-25
 
 User source: `SultanAladin/Frontier`, branch `arena/5e581235-frontier`.
@@ -81,3 +85,18 @@ and compares local Git blob hashes, without checking out another branch or impor
 (maximum 1.36977433). No production shader/preset was altered. This is an existing-model finding,
 not full material acceptance. [GlintPair.md](GlintPair.md) separately supplies the requested two matched
 Glinty-derived/cellular renders, software timings and resource scope; cellular remains legacy.
+
+## Cellular selected and scene bindings executed — 2026-10-25
+
+The user has now selected **cellular** for metallic car paint; the prior Glinty rewrite direction is
+superseded for this work. Glinty remains a possible fine-detail research path, not a selected engine default.
+[MaterialScene](../LightCompute/MaterialScene.md) records the green flaked clearcoat, baked rubber,
+thin transmitting glass, BVH mirrors, depth-screen plastic reflections and reused C++ shaderball/cloth renders.
+This is a native scene variant, not full editor/material-library acceptance.
+
+The linked branch advanced to **a76dbd34d12d5e0dbfafe24dd5aa9d4d5b414c73** (Baking Studio AO/curvature and UI).
+The audit is now pinned there: **451/455 identical**; all **399/399 material archive files still match**.
+The fourth difference is our `AutomotivePaint.slang` explicit compute-footprint path. Its ordinary production
+fragment compiles to byte-identical SPIR-V against the original source; the other three differences remain
+the unrelated vector ABI changes above. No blind merge/import was required for the optical materials.
+The newer AO/curvature Baking Studio work was inspected by change inventory, not imported or fully validated here.

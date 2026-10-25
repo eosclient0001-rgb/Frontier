@@ -10,7 +10,8 @@ Sources = list((Root / 'Frontier/Engine/Rendering').glob('*.h'))
 Sources += list((Root / 'Frontier/Engine/Rendering').glob('*.cpp'))
 Sources += list((Root / 'Frontier/Engine/Diagnostics').glob('*.h'))
 Sources += list((Root / 'Frontier/Engine/Diagnostics').glob('*.cpp'))
-Sources += [Root / 'Frontier/Engine/Rendering/Shaders/LightInfluence.slang']
+Sources += list((Root / 'Frontier/Engine/Rendering/Shaders').glob('*.slang'))
+Sources += [Root / 'Engine/Render' / P for P in ('ScatteringSequence.h', 'MaterialPreviewGeometry.h', 'DrapedClothPositions.h', 'Shader/ScatteringEvaluation.slang', 'Shader/AutomotivePaint.slang')]
 Sources += [P for P in Output.rglob('*') if P.suffix in ('.h', '.cpp', '.py', '.sh', '.ps1', '.md') or P.name == 'CMakeLists.txt']
 Sources += [Root / 'Exhibits/VehicleReference' / P for P in ('Code/VehicleCapture.cpp', 'Code/Materials.mjs', 'CMakeLists.txt')]
 Sources += [Root / 'Exhibits/ClusteredLighting/Fixtures/Synthetic.ies']
@@ -18,7 +19,7 @@ Sources += list((Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGr
 Sources += [Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Source' / P
             for P in ('MaterialSpecification.js', 'VehicleSpecification.js')]
 Products = list((Output / 'Images').glob('*.png')) + list((Output / 'Results').glob('*.txt'))
-Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json', Output / 'Results/Clouds.json', Output / 'Results/CloudShadows.json', Output / 'Results/Fog.json', Output / 'Results/FogSampling.json', Output / 'Results/FogFacets.json', Output / 'Results/CloudBudget.json', Output / 'Results/CloudPreview.json']
+Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json', Output / 'Results/Clouds.json', Output / 'Results/CloudShadows.json', Output / 'Results/Fog.json', Output / 'Results/FogSampling.json', Output / 'Results/FogFacets.json', Output / 'Results/CloudBudget.json', Output / 'Results/CloudPreview.json', Output / 'Results/MaterialScene.json', Output / 'Results/MaterialVerification.json']
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()
@@ -69,7 +70,8 @@ Report = {'execution': 'actual Vulkan compute with shared Slang', 'device': Devi
           'indirect_reconstruction_native_spatial_probes': 210,
           'windows_executed': False, 'vulkan_validation_layer_executed': False,
           'sources_sha256': Hashes(Sources), 'products_sha256': Hashes(Products),
-          'scratch_sha256': {}}
+          'scratch_sha256': {}, 'material_scene_report': 'Results/MaterialScene.json',
+          'material_scene_scope': 'native C++/Slang preset bindings, selected library samples; thin glass, depth-screen plastic/BVH fallback; not full material acceptance'}
 # Ignored binary captures can disappear in a sandbox reset. Preserve their historical digests,
 # but explicitly distinguish them from bytes verified in this execution.
 Manifest = Output / 'Results/Manifest.json'

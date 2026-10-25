@@ -394,3 +394,10 @@ Current checks and deliberate limits: [NativePatternWorkspace.md](NativePatternW
 software-Vulkan timings and scoped allocation/host-memory evidence. Not a production-default switch or
 physical-GPU result. [Native reused-material diagnostics](MaterialEnergy.md) report three white-furnace
 energy excesses; source reuse does not imply optical acceptance.
+
+## Cellular vehicle materials and native specimens
+
+The user selected cellular automotive flakes. [Native material scene](../LightCompute/MaterialScene.md)
+reuses the Racing Green/rubber/denim presets and C++ shaderball/cloth geometry, with actual BVH mirror,
+thin-glass and plastic depth-screen reflection captures. The [native bake measurement](Results/MaterialBakeTiming.json)
+compares CPU procedural denim evaluation with baked-map sampling; it is not a GPU/full-frame benchmark.

@@ -819,3 +819,11 @@ This executes shared shader lighting/history through a native Vulkan validation 
 editor viewport or a complete GPU renderer. Primary raster and sky/indirect transport remain CPU. Native rigid
 motion is tested; deforming scenes, broader history/bias regressions, physical GTX/RTX, hardware ray queries,
 Windows and interactive viewport acceptance remain open. Environment/Moon appearance requirements stay deferred.
+
+## Native vehicle material scene
+
+[MaterialScene.md](MaterialScene.md) supplies actual green cellular-clearcoat vehicle, glass/rubber/cone/mirror
+and shaderball/fabric captures. `bash Exhibits/LightCompute/RunMaterialScene.sh` selects this scene variant;
+the old yellow-car regression fixtures remain intact. Shared authored scattering is reused, not replaced.
+Glass is thin-sheet transport; plastic uses depth-screen tracing with BVH fallback. Full-library energy,
+editor integration and physical-GPU acceptance remain incomplete.

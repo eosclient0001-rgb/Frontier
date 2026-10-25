@@ -37,4 +37,4 @@ _ClaudeScratch/build/MaterialEnergyBaseline \
 
 Not covered: every archived preset, anisotropic/spectral/dispersion modes, all authored strata, full native Slang scene lighting, or sampling/PDF consistency. The [upstream identity audit](MaterialReuse.md) remains separate from these optical checks. The [two-render glint comparison](GlintPair.md) uses an isolated GLSL fixture; it does not validate this full native material evaluation inside the vehicle renderer.
 
-Next: trace the diffuse/specular/sheen energy allocation, validate any correction against both native and Slang evaluation, then continue layered scene integration with **both analytic and emissive lighting** retained. Cellular remains legacy; a licensed Glinty replacement and physical RTX/GTX/Windows measurements remain pending.
+Next: trace the diffuse/specular/sheen energy allocation, validate any correction against both native and Slang evaluation, then continue layered scene integration with **both analytic and emissive lighting** retained. The user has selected cellular for automotive paint; Glinty remains optional research. Physical RTX/GTX/Windows measurements remain pending.

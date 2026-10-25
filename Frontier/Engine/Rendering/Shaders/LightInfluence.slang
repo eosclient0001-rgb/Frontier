@@ -118,6 +118,9 @@ bool IntersectsFacet(FacetCorners Triangle, float3 Origin, float3 Direction, flo
 }
 bool Occluded(float3 Origin, float3 Direction, float Far)
 {
+    if ((Extent.Primary.w & 32u) != 0)
+        return all(MaterialShadowTransmission(Origin, Direction, Far) == 0);
+
     if (Extent.Grid.w == 0 || Far < 0)
         return false;
     InterlockedAdd(Counters[2], 1);
@@ -245,12 +248,16 @@ float ProposalPower(SurfacePoint R, uint Index)
     float3 Incident = Arrival(Lights[Index], R.PositionHit.xyz, Direction, Distance);
     return max(Power(Incident) * max(dot(R.NormalRoughness.xyz, Direction), 0), 1e-8);
 }
+#include "MaterialRayScattering.slang"
+
 float3 Brdf(SurfacePoint R, float3 Direction)
 {
     float3 N = Unit(R.NormalRoughness.xyz), V = Unit(R.ViewMetallic.xyz), L = Unit(Direction);
     float NV = max(dot(N, V), 0), NL = max(dot(N, L), 0);
     if (NV <= 0 || NL <= 0)
         return 0;
+    if (MaterialAddress(R) > 0)
+        return EvaluateScatteringSequence(ReadMaterialScattering(R), N, V, L, float3(1));
     float3 H = Unit(V + L);
     float NH = saturate(dot(N, H)), VH = saturate(dot(V, H));
     float Roughness = clamp(R.NormalRoughness.w, .04, 1), α = Roughness * Roughness, α2 = α * α;
@@ -270,7 +277,10 @@ float3 Contribution(SurfacePoint R, uint Index, out float3 Direction, out float 
     float3 Incoming = Arrival(Lights[Index], R.PositionHit.xyz, Direction, Distance, SunTransmittance);
     if (all(Incoming == 0))
         return 0;
-    return Brdf(R, Direction) * Incoming * max(dot(R.NormalRoughness.xyz, Direction), 0);
+    float3 Shadow = (Extent.Primary.w & 32u) != 0
+        ? MaterialShadowTransmission(R.PositionHit.xyz + R.NormalRoughness.xyz * .002, Direction, Distance - .004)
+        : float3(1);
+    return Brdf(R, Direction) * Incoming * Shadow * max(dot(R.NormalRoughness.xyz, Direction), 0);
 }
 uint NextRandom(inout uint Bits)
 {
@@ -791,6 +801,7 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
     R.ViewMetallic = float4(-Direction, F.OpticalToken.x);
     R.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
     R.ResidualSpecular = float4(F.Emissive.xyz, F.OpticalToken.z);
+    ApplyRayMaterial(R, F, Strike.yz);
     return R;
 }
 [shader("compute")][numthreads(64, 1, 1)] void TracePrimarySurfaces(uint3 Dispatch : SV_DispatchThreadID)
@@ -835,6 +846,7 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
     R.ViewMetallic = float4(-Direction, F.OpticalToken.x);
     R.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
     R.ResidualSpecular = float4(F.Emissive.xyz, F.OpticalToken.z);
+    ApplyRayMaterial(R, F, Strike.yz);
     float4 CurrentRigid = CameraProjection(8), PreviousRigid = CameraProjection(9);
     float3 PreviousPosition = Position, PreviousNormal = Normal;
     if (F.OpticalToken.w > CurrentRigid.z)
@@ -911,6 +923,8 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
     return DiffuseTransportResponse(R, Direction) * F.Emissive.xyz *
            (FogT * Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
 }
+#include "MaterialRayTransport.slang"
+
 [shader("compute")][numthreads(64, 1, 1)] void TraceSurfaceTransport(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
@@ -921,6 +935,49 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
     {
         StoreHistory(16, Pixel, 0);
         return;
+    }
+    if (MaterialAddress(R) > 0)
+    {
+        uint Category = MaterialTransport(R);
+        float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
+        float3 Direction = reflect(-V, N), Origin = R.PositionHit.xyz + N * .003;
+        float3 Radiance = 0;
+        if (Category == 1 || Category == 2 || Category == 3)
+        {
+            bool Hit = false;
+            SurfacePoint ScreenStrike;
+            bool Screen = Category == 3 && TraceDepthScreen(Origin, Direction, ScreenStrike);
+            float3 Reflected = Screen ? ShadeRayStrike(ScreenStrike) : TraceMaterialRadiance(Origin, Direction, Hit);
+            float F = .04 + .96 * pow(1 - saturate(dot(N, V)), 5);
+            float3 PlasticOrigin = lerp(float3(.04), R.AlbedoIor.xyz, saturate(R.ViewMetallic.w));
+            float3 PlasticFresnel = PlasticOrigin + (1 - PlasticOrigin) * pow(1 - saturate(dot(N, V)), 5);
+            Radiance = Reflected * (Category == 1 ? float3(.94) : Category == 2 ? float3(2 * F / (1 + F)) : PlasticFresnel);
+            R.ExpectedDirect.x = Category == 3 ? (Screen ? 3 : 4) : Category;
+            R.ExpectedDirect.y = Screen || Hit ? 1 : 0;
+            if (Category == 2)
+            {
+                float3 Behind = TraceMaterialRadiance(R.PositionHit.xyz - N * .003, -V, Hit);
+                Radiance += Behind * ((1 - F) / (1 + F)) *
+                    exp(-float3(.8, .15, .4) * .006 / max(.05, dot(N, V)));
+            }
+            if (Category != 3)
+            {
+                StoreHistory(16, Pixel, float4(Radiance, 1));
+                R.ResidualSpecular.xyz += Radiance;
+                Receivers[Pixel] = R;
+                return;
+            }
+            // 📝 Plastic uses a depth-screen specular lookup, BVH fallback and a separate diffuse estimator.
+            R.ResidualSpecular.xyz += Radiance;
+        }
+        else
+        {
+            Radiance = IntegrateMaterialRays(R, Pixel);
+            StoreHistory(16, Pixel, float4(Radiance, 1));
+            R.ResidualSpecular.xyz += Radiance;
+            Receivers[Pixel] = R;
+            return;
+        }
     }
     float3 N = R.NormalRoughness.xyz;
     float3 Tangent = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)),

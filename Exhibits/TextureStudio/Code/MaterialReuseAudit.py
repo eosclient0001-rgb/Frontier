@@ -5,7 +5,7 @@ import json
 import subprocess
 
 Root = Path(__file__).resolve().parents[3]
-Revision = 'be1d0a8e45d39738f37ccf711522a745e326e149'
+Revision = 'a76dbd34d12d5e0dbfafe24dd5aa9d4d5b414c73'
 Payload = subprocess.check_output(['gh', 'api', f'repos/SultanAladin/Frontier/git/trees/{Revision}?recursive=1'], cwd=Root)
 Tree = json.loads(Payload)
 assert not Tree.get('truncated'), 'Incomplete upstream tree cannot establish reuse identity'
