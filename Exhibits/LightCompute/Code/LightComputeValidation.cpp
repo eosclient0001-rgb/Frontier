@@ -1018,11 +1018,18 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "FogFacetValidation.h"
 #include "MaterialSceneValidation.h"
 #include "MaterialEnergyGpu.h"
+#include "RoughReflectionValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && (std::string(Arguments[3]) == "--rough-reflections" ||
+                           std::string(Arguments[3]) == "--rough-reflections-sharp"))
+        {
+            ValidateRoughReflections(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--rough-reflections-sharp");
+            return 0;
+        }
         if (Count == 4 && (std::string(Arguments[3]) == "--material-energy" ||
                            std::string(Arguments[3]) == "--material-energy-original"))
         {

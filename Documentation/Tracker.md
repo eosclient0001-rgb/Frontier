@@ -2,6 +2,14 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Sampled rough-lobe reflections — 2026-10-25
+
+- Plastic now integrates the shared BRDF with cosine/GGX rays; accepted screen proposals verify the actual reflected-ray/facet intersection and clear segment, otherwise use BVH. No separate sharp-reflection budget.
+- SwiftShader: 14,941 accepted screen rays / 204,392 fallbacks; same-seed BVH-only HDR matches exactly. Off-screen source contributes; source-off is black; moved source matches fresh submission; exact repeat.
+- Actual pinned sharp/new rough captures and two-position source animation: [RoughReflections](../Exhibits/LightCompute/RoughReflections.md). Four uniform-light checks, 384 native/34 Vulkan energy cases and four native CTests passed.
+- Finite 16 samples/proposal retain visible noise. No screen-colour mip history, temporal specular reconstruction, full sampling/PDF acceptance, speedup or physical RTX/GTX/Windows/viewport claim. Cellular and all archive assets retained.
+
+
 
 
 

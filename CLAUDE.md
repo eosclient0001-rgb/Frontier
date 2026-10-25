@@ -257,3 +257,23 @@ files use a different ABI; no partial import. Full layered material evaluation s
 Existing glint research and executed adapter comparison are retained; no physical-GPU winner or completed
 rewrite is implied. Licensing-safe implementation, sampling/PDF consistency and temporal/energy checks remain.
 Audit/reproduction: `Exhibits/TextureStudio/MaterialReuse.md` and `Code/MaterialReuseAudit.py`.
+
+## Retained cellular materials and rough reflections — 2026-10-25
+
+The user subsequently selected existing cellular flakes for the Racing Green car. This supersedes the earlier
+glint rewrite exception for this work; no replacement material library. Native ControlVehicle coat/rubber,
+thin transmitting windows, triangle-BVH side mirrors, plastic cones and reused shaderball/cloth are rendered
+in `Exhibits/LightCompute/MaterialScene.md`. All 399 archived material files remain unchanged.
+
+Energy allocation correction at 05e4090: paired diffuse interface transmission and bounded reciprocal fuzz
+coverage. Expanded 384 native/34 Vulkan cases pass the declared 1.02 energy threshold; this is not all-option
+or complete-library acceptance. See `Exhibits/TextureStudio/MaterialEnergyAcceptance.md`.
+
+Plastic now uses full shared-BRDF cosine/GGX sampled directions, verified screen-proposed facet intersections
+and clear segments, with BVH fallback. Same-seed BVH-only comparison is exactly equal for 14,941 screen rays
+and 204,392 fallbacks. Repeat, off-screen source contribution, all-sources-off black and moving-source/fresh
+submission equality pass on SwiftShader. Actual sharp/rough and two-position motion captures, reproduction
+and limitations: `Exhibits/LightCompute/RoughReflections.md`. Source-off/motion checks use fresh hit shading,
+not screen-colour history. Sixteen samples per proposal retain visible noise; no speed claim. Roughness-mip
+colour history, temporal specular reconstruction, solid-volume refraction, full sampling/PDF acceptance and
+physical RTX/GTX/Windows/viewport verification remain incomplete. Sun/flare/stars and both lighting types stay.

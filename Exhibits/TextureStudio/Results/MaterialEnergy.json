@@ -63,7 +63,7 @@
     "Exhibits/LightCompute/Code/MaterialEnergy.slang": "4cb34c6123ec37ad8c67a58abe37aceffce63000870328ccbdc69745b01d7b92",
     "Exhibits/LightCompute/Code/MaterialEnergyGpu.h": "943e4aeec773d93201d86f86ade6d6d04f0d83aeb2ea3c9d7a848a5ba6f379b0",
     "Exhibits/LightCompute/RunMaterialEnergy.sh": "08e99737291b3996e1946d5fb43b8d8277803661b5af2c6414c204ba19ed4863",
-    "Exhibits/LightCompute/Code/MaterialEnergyImages.py": "13d3d7a16c43f08e0a427a6582027a21e759d32f91a1bf0e0e0ac7a665ff3bae",
+    "Exhibits/LightCompute/Code/MaterialEnergyImages.py": "cbd3e769c93a207df21e9d23864689687c0011b8c0bc4b1c81aa1d28771c859a",
     "Exhibits/TextureStudio/Results/MaterialEnergyAcceptance.txt": "1b59f3ce104b2f418377733e15e605d5309abf8c13ba99daf7e2f87211082cc2",
     "Exhibits/TextureStudio/Results/MaterialEnergyCurrent.txt": "983cbd2da0c15c2b6cb78171c0816fc5959735877e109b19299390b9cb68cf8c",
     "Exhibits/TextureStudio/Results/MaterialEnergyGpuCurrent.txt": "131a5f103e4e62bd9d29daf0e12ab45b0d6d20a10d3da8f04f2a55e964fb5129",

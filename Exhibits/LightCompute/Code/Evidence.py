@@ -27,6 +27,8 @@ EnergyProducts = [Root / 'Exhibits/TextureStudio/Results' / P for P in (
     'MaterialEnergyAcceptance.txt', 'MaterialEnergyCurrent.txt', 'MaterialEnergyGpuCurrent.txt',
     'MaterialEnergyGpuOriginal.txt', 'MaterialEnergySanitizer.txt', 'MaterialEnergy.json', 'MaterialReuse.json')]
 Products += [P for P in EnergyProducts if P.exists()]
+Products += [Output / 'Results/RoughReflection.json'] if (Output / 'Results/RoughReflection.json').exists() else []
+Products += list((Output / 'Images').glob('Rough*.gif'))
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()

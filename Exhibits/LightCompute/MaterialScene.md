@@ -22,7 +22,7 @@
 | Tyre rubber | Existing `performance-rubber.material` and committed albedo/normal maps | Vehicle archive lacks UVs here; documented object-planar mapping |
 | Windows / glass | Existing Crystal Glass IOR/roughness plus explicit transmitting thin-sheet transport override | Original preset is **opaque**; no solid-volume Snell refraction, dispersion or caustics |
 | Side mirrors | Added reflective panes at both sides, actual triangle-BVH reflection | One shaded opaque secondary bounce; not hardware ray-query execution |
-| Plastic cones | Reused polypropylene parameters with orange tint; procedural radial geometry and band regions | Depth-screen specular tracing with BVH fallback, sharp-reflection approximation |
+| Plastic cones | Reused polypropylene parameters with orange tint; procedural radial geometry and band regions | [Sampled rough-lobe screen/BVH transport](RoughReflections.md), full shared BRDF |
 | Reflective cone bands | Metallic reflective band material, including metallic Fresnel in reflection | Not a retroreflector model or safety certification |
 | Shaderball / fabric | Existing C++ shaderball and draped-cloth geometry; retained layered/scattering equations | Selected samples, **not** proof that the entire PBR library works |
 
@@ -35,15 +35,16 @@ Device: **SwiftShader Device (Subzero), Vulkan CPU software device, Linux**. Pri
 | Original vehicle | All 25,068 original facets retained; 778 paint, 21,348 rubber, 74 glass facets assigned |
 | Overview reflection coverage | 733 mirror pixels hit scene geometry; 59 are side-mirror pixels |
 | Close-up side mirrors | 930 side-mirror pixels hit scene geometry |
-| Plastic overview | 397 depth-screen hits / 705 BVH fallbacks |
+| Plastic overview | 918 pixels with accepted screen rays / 184 with none; [per-ray routing acceptance](RoughReflections.md) |
 | Independent mirror queries | 64 native double-precision BVH comparisons per vehicle view |
 | Reused evaluator parity | 128 native scattering probes per capture; scaled error below 0.005 acceptance limit |
 | Repeat | Entire vehicle HDR readback repeats exactly; PNG wrapping is lossless |
-| Legacy regression | [4/4 native CTest, 13 compute shaders, 2 production material shaders](Results/MaterialVerification.json); [901 legacy transport probes](Results/MaterialTransportRegression.txt), max RGB error 4.63e-6 |
+| Current build / regression | [4/4 native CTest, 13 compute shaders, 2 production material shaders](Results/MaterialVerification.json); targeted [rough-lobe acceptance](RoughReflections.md) |
+| Historical legacy transport | [901 probes at `05e4090`](Results/MaterialTransportRegression.txt), max RGB error 4.63e-6; not rerun in the rough-reflection phase |
 
 Exact errors, device, source hashes, capture hashes and coverage: [report](Results/MaterialScene.json), [raw log](Results/MaterialScene.txt). Counters count visible samples, not reflection quality or performance. The large mirror/pane are calibration geometry, separate from the small vehicle panes.
 
-The ordinary authored-material path reuses the [energy-corrected](../TextureStudio/MaterialEnergyAcceptance.md) `ScatteringEvaluation.slang` and integrates cosine/GGX proposals with deterministic-mixture weights. Mirrors use a delta direction through the existing BVH. Glass transmits through up to eight parallel thin sheets with Fresnel and tinted Beer attenuation, including direct-light shadows. Plastic SSR marches the primary depth field, shades the hit for the reflected viewing direction, and falls back to the BVH when unavailable; it is not a roughness-filtered colour-buffer SSR implementation.
+The ordinary authored-material path reuses the [energy-corrected](../TextureStudio/MaterialEnergyAcceptance.md) `ScatteringEvaluation.slang` and integrates cosine/GGX proposals with deterministic-mixture weights. Mirrors use a delta direction through the existing BVH. Glass transmits through up to eight parallel thin sheets with Fresnel and tinted Beer attenuation, including direct-light shadows. Plastic now samples cosine/GGX directions through the full shared BRDF. Screen depth proposes a facet, the reflected ray/facet intersection and clear segment are checked, and unavailable or unsuitable hits use BVH fallback. Accepted hits are freshly shaded for the reflected direction; no roughness-mip colour history or temporal specular reconstruction is implied.
 
 ## Procedural versus baked
 

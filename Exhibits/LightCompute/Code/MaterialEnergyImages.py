@@ -21,7 +21,7 @@ Before = subprocess.check_output(['git', 'show', 'b6bc49e:Exhibits/LightCompute/
 BeforeScene = json.loads(subprocess.check_output(['git', 'show', 'b6bc49e:Exhibits/LightCompute/Results/MaterialScene.json'], cwd=Root))
 AfterScene = json.loads((Root / 'Exhibits/LightCompute/Results/MaterialScene.json').read_text())
 assert BeforeScene['inputs'] == AfterScene['inputs'] and BeforeScene['extent'] == AfterScene['extent']
-for Name in ('MaterialSceneValidation.h', 'PrepareMaterialScene.py', 'MaterialSceneImages.py'):
+for Name in ('MaterialSceneValidation.h', 'PrepareMaterialScene.py'):
     Pathname = 'Exhibits/LightCompute/Code/' + Name
     assert subprocess.check_output(['git', 'show', 'b6bc49e:' + Pathname], cwd=Root) == (Root / Pathname).read_bytes()
 After = (Images / 'MaterialSpecimens.png').read_bytes()

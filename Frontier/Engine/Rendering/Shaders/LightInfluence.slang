@@ -942,33 +942,24 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
         float3 Direction = reflect(-V, N), Origin = R.PositionHit.xyz + N * .003;
         float3 Radiance = 0;
-        if (Category == 1 || Category == 2 || Category == 3)
+        if (Category == 1 || Category == 2)
         {
             bool Hit = false;
-            SurfacePoint ScreenStrike;
-            bool Screen = Category == 3 && TraceDepthScreen(Origin, Direction, ScreenStrike);
-            float3 Reflected = Screen ? ShadeRayStrike(ScreenStrike) : TraceMaterialRadiance(Origin, Direction, Hit);
+            float3 Reflected = TraceMaterialRadiance(Origin, Direction, Hit);
             float F = .04 + .96 * pow(1 - saturate(dot(N, V)), 5);
-            float3 PlasticOrigin = lerp(float3(.04), R.AlbedoIor.xyz, saturate(R.ViewMetallic.w));
-            float3 PlasticFresnel = PlasticOrigin + (1 - PlasticOrigin) * pow(1 - saturate(dot(N, V)), 5);
-            Radiance = Reflected * (Category == 1 ? float3(.94) : Category == 2 ? float3(2 * F / (1 + F)) : PlasticFresnel);
-            R.ExpectedDirect.x = Category == 3 ? (Screen ? 3 : 4) : Category;
-            R.ExpectedDirect.y = Screen || Hit ? 1 : 0;
+            Radiance = Reflected * (Category == 1 ? float3(.94) : float3(2 * F / (1 + F)));
+            R.ExpectedDirect.x = Category;
+            R.ExpectedDirect.y = Hit ? 1 : 0;
             if (Category == 2)
             {
                 float3 Behind = TraceMaterialRadiance(R.PositionHit.xyz - N * .003, -V, Hit);
                 Radiance += Behind * ((1 - F) / (1 + F)) *
                     exp(-float3(.8, .15, .4) * .006 / max(.05, dot(N, V)));
             }
-            if (Category != 3)
-            {
-                StoreHistory(16, Pixel, float4(Radiance, 1));
-                R.ResidualSpecular.xyz += Radiance;
-                Receivers[Pixel] = R;
-                return;
-            }
-            // 📝 Plastic uses a depth-screen specular lookup, BVH fallback and a separate diffuse estimator.
+            StoreHistory(16, Pixel, float4(Radiance, 1));
             R.ResidualSpecular.xyz += Radiance;
+            Receivers[Pixel] = R;
+            return;
         }
         else
         {

@@ -31,5 +31,8 @@
     "revision": "b6bc49e",
     "fragment_byte_identical_with_without_compute_footprint": true,
     "not_a_current_energy_comparison": true
-  }
+  },
+  "rough_reflection_acceptance_passed": true,
+  "rough_reflection_report": "RoughReflection.json",
+  "legacy_transport_regression_scope": "historical 05e4090 result, not rerun during rough-reflection phase"
 }

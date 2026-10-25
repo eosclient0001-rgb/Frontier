@@ -80,9 +80,16 @@ bool TraceDepthScreen(float3 Origin, float3 Direction, out SurfacePoint StrikeSu
             float Difference = Depth - SurfaceDepth;
             if (Difference >= 0 && Difference < .10 + Travel * .012)
             {
-                StrikeSurface = FacetSurface(uint(Visible.y), Eye, Ray, float3(Visible.x, Visible.zw));
-                StrikeSurface.ViewMetallic.xyz = -Direction;
-                if (length(StrikeSurface.PositionHit.xyz - Origin) > .12) return true;
+                // 📝 Screen depth proposes a facet, never a substituted point from another viewing ray.
+                // Verify the actual reflection-ray intersection and its clear segment, including thin glass.
+                uint Candidate = uint(Visible.y);
+                float3 Strike;
+                if (FacetStrike(Facets[Candidate], Origin, Direction, .006, 1e30, Strike) &&
+                    all(MaterialShadowTransmission(Origin, Direction, Strike.x - .002) == 1))
+                {
+                    StrikeSurface = FacetSurface(Candidate, Origin, Direction, Strike);
+                    if (MaterialTransport(StrikeSurface) != 2) return true;
+                }
             }
         }
         Travel += .035 + Travel * .07;
@@ -98,13 +105,15 @@ float MaterialMixtureDensity(PreviewScattering S, float3 N, float3 V, float3 L)
                saturate(dot(N, H)) / max(1e-6, 4 * abs(dot(V, H)));
     return Sum;
 }
-float3 IntegrateMaterialRays(SurfacePoint R, uint Pixel)
+float3 IntegrateMaterialRays(inout SurfacePoint R, uint Pixel)
 {
     PreviewScattering S = ReadMaterialScattering(R);
     float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
     float3 T = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)), B = cross(N, T);
     uint Bits = Pixel * 747796405u + Extent.Sampling.x;
     float3 Sum = 0;
+    bool ScreenEnabled = MaterialTransport(R) == 3;
+    uint ScreenHits = 0, FallbackRays = 0;
     for (uint Sample = 0; Sample < Extent.Primary.z; ++Sample)
         for (uint Proposal = 0; Proposal <= S.Configuration.x; ++Proposal)
         {
@@ -123,8 +132,19 @@ float3 IntegrateMaterialRays(SurfacePoint R, uint Pixel)
             float NL = dot(N, L);
             if (NL <= 0) continue;
             bool Hit;
-            float3 Incoming = TraceMaterialRadiance(R.PositionHit.xyz + N * .003, L, Hit);
+            SurfacePoint ScreenStrike;
+            float3 Origin = R.PositionHit.xyz + N * .003;
+            bool Screen = ScreenEnabled && TraceDepthScreen(Origin, L, ScreenStrike);
+            float3 Incoming = Screen ? ShadeRayStrike(ScreenStrike) : TraceMaterialRadiance(Origin, L, Hit);
+            ScreenHits += Screen;
+            FallbackRays += !Screen;
             Sum += Brdf(R, L) * Incoming * NL / max(1e-8, MaterialMixtureDensity(S, N, V, L));
         }
+    if (ScreenEnabled)
+    {
+        R.ExpectedDirect.x = ScreenHits > 0 ? 3 : 4;
+        R.ExpectedDirect.y = FallbackRays;
+        R.ExpectedDirect.z = ScreenHits;
+    }
     return Sum / Extent.Primary.z;
 }
