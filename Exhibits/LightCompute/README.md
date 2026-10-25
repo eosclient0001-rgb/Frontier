@@ -5,6 +5,97 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Shadowed fog and light shafts — executed
+
+![Same broken-cloud sky: cloud shadow disabled for fog scattering on the left, enabled on the right](Images/FogSkyComparison.png)
+
+![Same point/IES/spot fixtures and vehicle: fog disabled left, illuminated fog right](Images/FogLocalComparison.png)
+
+![Vehicle: fog disabled, fog with unshadowed Sun scattering, then cloud-shadowed Sun scattering](Images/FogComparison.png)
+
+### What was reused, and what changed
+
+The cloud density is the inherited native four-octave value-noise slab, ported to shared Slang—not a newly
+invented cloud-shape model or downloaded cloud asset. Earlier work improved visible per-pixel integration,
+ambient input and spatial surface/Sun shadows. It did **not** integrate cloud-shadowed light in the air between
+camera and scene; the clear atmosphere cube alone cannot provide those shafts.
+
+The inherited `FogTransmittance`/`ApplyFog` path is analytic extinction plus a constant-colour blend. That legacy
+native reference-renderer mode remains available. This phase adds **new shadowed single scattering** through
+that height-density profile: a native `IntegrateFogRadiance` reference and shared Slang `IntegrateFogScattering`.
+The existing analytic column was also stabilized near horizontal rays with `expm1`; the shader uses a stable
+small-argument polynomial. No radial screen blur, beam sprite or painted shaft image is used.
+
+Each camera-ray segment gathers phase-weighted analytic illumination with:
+
+- Exact analytic exponential optical depth along the camera and light segments.
+- Cloud transmittance at the actual sample position, not one observer factor.
+- Triangle-BVH geometry occlusion, including off-screen geometry.
+- Existing point/IES/spot falloff and angular profiles, plus HG directional scattering.
+- Surface-light and secondary-hit analytic arrival attenuation through fog; sampled emitter-to-surface
+  extinction is included without removing visible emission or area sampling.
+- Final volume integration stopping at the visible opaque surface, or a bounded local-medium distance.
+
+A segment contributes `(T_before − T_after) × scattering_albedo × incident_radiance`; constant illumination
+therefore matches the analytic uniform-medium integral. Surface lighting is reconstructed before camera fog is
+resolved. Resolved fog does not feed surface-colour history. Cloud/fog selection changes invalidate surface
+histories; switching fog on/off matches a cold reconstruction.
+
+| Executed check | Result |
+|---|---|
+| Numeric camera-ray/native checks | 654 rays across five daylight cases and a point/IES/spot case |
+| Native surface-light arrivals through fog | 270 receivers; maximum RGB discrepancy 5.21472e-5 |
+| Daylight numeric ray integral | Maximum RGB discrepancy 1.14637e-5 |
+| Local-light numeric ray integral | 109 rays; maximum RGB discrepancy 1.04968e-5 |
+| Actual capture/native comparisons | 390 rays; maximum RGB discrepancy 5.48751e-5 |
+| Zero fog density | Entire output bitwise equal to fog disabled |
+| Uniform Beer and ambient scattering | Native closed forms passed; nonzero ambient input |
+| Near-horizontal column | Stable against the horizontal limit |
+| Geometry occlusion | Disabling it changes local-light scattering |
+| Surface history and fog toggles | No resolved-fog feedback; on/off cold equality passed |
+| Invalid march extent | Rejected before dispatch |
+| Regressions | Cloud shadows/toggles, legacy Vulkan, indirect reconstruction and native CTest 4/4 passed |
+
+The default fixture uses 32 camera midpoints, 16 cloud-shadow samples, scattering albedo 0.9, HG g=0.65,
+base extinction 0.0007/m and height scale 650 m. Camera integration is bounded at 2.5 km; light columns at 40 km.
+Local-light captures use 64 camera steps, 0.07/m, a 10-m scale height and g=0.35. The IES profile is the retained
+**synthetic relative-to-peak fixture**, not a newly calibrated measured lamp.
+
+The sky comparison deliberately uses a thinner broken-cloud slab (800–1100 m, density scale 2.5, extinction
+0.02/m) to expose shafts. It is a separate raised sky camera, not the vehicle view. Vehicle shots retain the
+original authored vehicle and analytic/visible-emissive lighting plus four-sample emissive/diffuse transport.
+The standard cloud slab remains 800–1800 m, density scale 1.5 in this fixture. A separate vehicle capture advances
+wind to 120 seconds. Sun elevation is a fixed 20° fixture, not an observer/time ephemeris.
+
+**These are actual 320×200 Vulkan readbacks**, not 640×400 renders or upscaled quality evidence. Timings do not
+establish real-time performance. Source and output SHA256 coverage is retained in `Results/Manifest.json`.
+The compiler is GCC 12.2; captures are Release and focused checks are RelWithDebInfo under ASan/UBSan with
+external-driver leak detection disabled. Device remains **SwiftShader CPU type 4**. Windows script parity is
+retained but Windows and physical RTX/GTX execution are not verified.
+
+### Quality limits — not a finished participating-media renderer
+
+- Single scattering only; ambient illumination remains approximate, not multiple scattering.
+- Regular camera/shadow sampling can band or alias. On the first 12 numeric rays, increasing view steps
+  from 32 to 128 changed red radiance by up to 0.00311955; increasing cloud-shadow steps from 16 to 64
+  changed it by up to 0.0293056. These are subset sensitivities, not full-image convergence guarantees.
+- Fog has no temporal reconstruction. The cloud slab and indirect cube retain their earlier appearance limits.
+- Diffuse inter-bounce fog extinction/in-scattering is not fully coupled; emissive-volume in-scattering is absent.
+- Cloud/atmosphere/fog overlap is composited approximately, not solved as one coupled planetary medium.
+- These are soft physical single-scattering shafts, not a claim of cinematic/final cloud appearance.
+- Existing native Sun, flare and stars are preserved, not newly connected here. Moon remains planned.
+
+Reproduction (run software-Vulkan jobs serially):
+
+```bash
+bash Exhibits/LightCompute/RunFog.sh
+```
+
+`--fog-checks` omits captures; `--fog-rays` captures the vehicle/day/local-light comparisons; `--fog-sky` captures
+the separate broken-cloud comparison. The shader now has **13 compute entries**, still eight SSBOs, 128-byte
+push constants and unchanged history/output allocation. The fog offset uses the previously unused bounding-box
+`.w` word. Fog, primary, transport, receiver and reuse SPIR-V require only Shader capability and 32-bit integers.
+
 ## Spatial cloud shadows — surface and secondary rays
 
 ![Cloud shadows advect across the same ground under a 700-m overhead camera](Images/CloudShadowGround.png)
@@ -129,7 +220,7 @@ isotropic and approximate; spatial shadows now move, but there is no finite-Sun 
 verified environment path with smoother visible clouds, **not final cloud appearance**. Moon, night exposure,
 licensed Milky Way/catalogue work, GPU atmosphere, physical RTX/GTX and Windows acceptance remain open.
 
-There are now **12 compute entries**, eight SSBOs and unchanged 128-byte push constants. The cloud cube plus
+The cloud checkpoint used **12 compute entries**, eight SSBOs and unchanged 128-byte push constants. The cloud cube plus
 one Sun record adds 221,200 bytes after the 21 output/history slabs (86,237,200 total bytes at 640×400, excluding
 receivers and scene/profile buffers). Camera cloud marching uses no CPU cloud pixels. Cloud parameters precede
 the emissive CDF, so changing weather invalidates the existing exact environment/profile revision prefix.
@@ -331,7 +422,7 @@ is not temporally accumulated or spatially denoised. Multi-bounce transport, emi
 glossy transport, seamless/high-resolution atmosphere evaluation and sky/cloud appearance are still open.
 This capture establishes the executed transport path, not final renderer quality or a performance win.
 
-This earlier transport checkpoint used eight entries; the current shader has **12 compute entries**, eight
+This earlier transport checkpoint used eight entries; the current shader has **13 compute entries**, eight
 SSBOs and the unchanged 128-byte push ABI. The native
 cube adds 165,888 bytes and hemisphere directions add 192 bytes to the profile/sample buffer; no per-pixel CPU
 residual is uploaded. Private camera metadata stores their offsets. `TransportScene.bin` is retained only in

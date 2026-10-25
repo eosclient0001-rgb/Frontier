@@ -25,3 +25,4 @@ _ClaudeScratch/build/vehicle-reference-cmake/VehicleCapture "$PWD/_ClaudeScratch
 "$Build/LightComputeValidation" "$Driver" "$Build" _ClaudeScratch/primary-motion/VehicleMotion0.bin _ClaudeScratch/light-compute --transport-reconstruction _ClaudeScratch/primary-motion | tee Exhibits/LightCompute/Results/TransportReconstruction.txt
 python3 Exhibits/LightCompute/Code/TransportReconstructionImages.py
 bash Exhibits/LightCompute/RunClouds.sh
+bash Exhibits/LightCompute/RunFog.sh

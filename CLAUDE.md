@@ -183,3 +183,21 @@ view was resumed successfully; operation-specific Vulkan failures and capture re
 Still SwiftShader CPU type 4, twelve entries, eight SSBOs, 128-byte pushes and no Int64 feature. No physical
 GPU/Windows/real-time acceptance. CPU atmosphere, flat-slab horizon artifacts, approximate ambient, indirect cube
 seams, finite-Sun penumbrae, Moon and night/catalogue work remain open. Spatial cloud shadows are no longer open.
+
+### Cloud-shadowed fog and shaft checkpoint — 2026-10-25
+
+The inherited cloud density was ported, not redesigned. Previous ground shadows were not god rays. Added new
+native/GPU single scattering through the inherited height-fog density: cloud/triangle-shadowed directional and
+point/IES/spot arrivals, analytic camera/light optical depth, source-to-surface fog attenuation and sampled
+emitter-to-surface extinction. Legacy native colour-blend `ApplyFog` remains, not relabelled as this feature.
+
+Actual 320×200 sky, ControlVehicle and local-light comparisons are in `Exhibits/LightCompute/Images/Fog*.png`;
+`README.md` explains the deliberate thin broken-cloud sky fixture and all limitations. Native checks cover
+654 numeric and 390 captured camera rays plus 270 surface arrivals. Zero density is bitwise unchanged; analytic,
+geometry-occlusion, history-isolation, toggle/cold and bounds checks passed under ASan/UBSan. Regular sampling
+is not converged: shadow16→64 differs by up to 0.0293056 red on 12 sampled rays. Do not claim final-quality fog,
+multiple scattering, emissive-volume scattering or fully coupled inter-bounce/cloud/atmosphere transport.
+
+Thirteen compute entries, eight SSBOs, 128-byte pushes; unchanged allocation and no shaderInt64 feature. Still
+SwiftShader CPU type 4, no physical-GPU/Windows/real-time acceptance. Existing Sun/flare/stars unchanged; Moon
+remains planned. Run `Exhibits/LightCompute/RunFog.sh` serially; detailed checks live in `Results/Fog.json`.

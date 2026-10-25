@@ -7,6 +7,28 @@
 
 
 
+
+## Cloud-shadowed fog and light shafts — 2026-10-25
+
+- Clarified provenance: inherited four-octave cloud density was ported and its rendering integration improved;
+  it was not replaced by a new cloud-shape model. Earlier cloud/ground shadows did not establish air light shafts.
+- Added new native/GPU height-fog single scattering, exact camera/light optical depth, HG phase, cloud visibility
+  at each volume sample and triangle occlusion. Original point/IES/spot profiles illuminate the fog. Analytic
+  arrivals and sampled emitter-to-surface segments receive fog extinction; both lighting paths remain.
+- Actual 320×200 captures: `Exhibits/LightCompute/Images/FogSkyComparison.png` (cloud shadow off/on in fog),
+  `FogLocalComparison.png` (local-light fog off/on), `FogComparison.png` (original ControlVehicle), plus wind120.
+  The sky fixture uses an explicit thinner 800–1100 m broken-cloud slab to expose soft shafts, not a hidden effect.
+- 654 numeric camera probes, 390 capture camera probes and 270 native surface-arrival probes. Daylight numeric
+  RGB maximum discrepancy 1.14637e-5; local-light 1.04968e-5; capture maximum 5.48751e-5; surface maximum 5.21472e-5.
+  Uniform Beer/ambient, near-horizontal stability, bitwise zero density, geometry occlusion, bounded steps,
+  dry-history isolation and enable/disable cold equality passed. Focused checks passed ASan/UBSan.
+- Sampling is not converged: on 12 numeric rays, view32→128 changed red radiance by up to 0.00311955 and
+  shadow16→64 by up to 0.0293056. Remaining: alias/banding, temporal fog, multiple scattering, emissive-volume
+  scattering, full inter-bounce/coupled-media transport and final cloud shapes/appearance.
+- Thirteen entries, eight SSBOs, 128-byte pushes; no new output slabs or Int64 shader feature. SwiftShader CPU
+  type 4 only, not physical-GPU/Windows/real-time acceptance. Existing native Sun/flare/stars remain; Moon planned.
+- Reproduction, exact checks and scope: `Exhibits/LightCompute/README.md`, `RunFog.sh`, `Results/Fog.json`.
+
 ## Spatial cloud-shadow checkpoint — 2026-10-25
 
 - Matching directional sunlight now integrates cloud extinction at each primary receiver and secondary hit,

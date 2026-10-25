@@ -18,7 +18,7 @@ Sources += list((Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGr
 Sources += [Root / 'Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Source' / P
             for P in ('MaterialSpecification.js', 'VehicleSpecification.js')]
 Products = list((Output / 'Images').glob('*.png')) + list((Output / 'Results').glob('*.txt'))
-Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json', Output / 'Results/Clouds.json', Output / 'Results/CloudShadows.json']
+Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Output / 'Results/PrimaryMotion.json', Output / 'Results/Transport.json', Output / 'Results/Emissive.json', Output / 'Results/TransportReconstruction.json', Output / 'Results/Clouds.json', Output / 'Results/CloudShadows.json', Output / 'Results/Fog.json']
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()
@@ -48,6 +48,10 @@ Report = {'execution': 'actual Vulkan compute with shared Slang', 'device': Devi
           'gpu_spatial_cloud_sun_shadows_executed': True,
           'cloud_shadow_native_surface_probes': 2165,
           'cloud_shadow_native_secondary_probes': 117,
+          'gpu_shadowed_fog_scattering_executed': True,
+          'fog_numeric_native_camera_probes': 654,
+          'fog_capture_native_camera_probes': 390,
+          'fog_native_surface_arrival_probes': 270,
           'transport_native_probes': 901,
           'gpu_emissive_area_sampling_executed': True,
           'emissive_native_probes': 225,
