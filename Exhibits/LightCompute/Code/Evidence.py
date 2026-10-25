@@ -11,6 +11,11 @@ Sources += list((Root / 'Frontier/Engine/Rendering').glob('*.cpp'))
 Sources += list((Root / 'Frontier/Engine/Diagnostics').glob('*.h'))
 Sources += list((Root / 'Frontier/Engine/Diagnostics').glob('*.cpp'))
 Sources += list((Root / 'Frontier/Engine/Rendering/Shaders').glob('*.slang'))
+Sources += [Root / P for P in ('Engine/Render/SurfaceMaterial.h', 'Engine/Render/SurfaceMaterial.cpp',
+    'Engine/Render/MaterialProceduralBaking.h', 'Engine/Render/MaterialProceduralBaking.cpp',
+    'Engine/Render/StbImageImplementation.cpp', 'Engine/ContentInterchange/MaterialAuthoring.h',
+    'Engine/ContentInterchange/MaterialAuthoring.cpp')]
+Sources += list((Output / 'Materials').rglob('*.material'))
 Sources += [Root / 'Engine/Render' / P for P in ('ScatteringSequence.h', 'DielectricRefraction.h', 'Shader/DielectricRefraction.slang', 'MaterialPreviewGeometry.h', 'DrapedClothPositions.h', 'Shader/ScatteringEvaluation.slang', 'Shader/AutomotivePaint.slang', 'Shader/MaterialSurface.slang')]
 Sources += [P for P in Output.rglob('*') if P.suffix in ('.h', '.cpp', '.py', '.sh', '.ps1', '.md', '.slang') or P.name == 'CMakeLists.txt']
 Sources += [Root / 'Exhibits/VehicleReference' / P for P in ('Code/VehicleCapture.cpp', 'Code/Materials.mjs', 'CMakeLists.txt')]
@@ -23,6 +28,7 @@ Products += [Output / 'Results/Images.json', Output / 'Results/History.json', Ou
 Sources += [Root / 'Exhibits/TextureStudio' / P for P in (
     'Code/MaterialEnergyValidation.cpp', 'Code/MaterialEnergyBaseline.cpp', 'Code/MaterialReuseAudit.py',
     'MaterialEnergyAcceptance.md', 'MaterialEnergy.md', 'MaterialReuse.md', 'GlintPair.md')]
+Products += [Output / 'Results/SavedDielectric.json', Output / 'Results/VehicleGlassEdges.json'] if (Output / 'Results/SavedDielectric.json').exists() else []
 EnergyProducts = [Root / 'Exhibits/TextureStudio/Results' / P for P in (
     'MaterialEnergyAcceptance.txt', 'MaterialEnergyCurrent.txt', 'MaterialEnergyGpuCurrent.txt',
     'MaterialEnergyGpuOriginal.txt', 'MaterialEnergySanitizer.txt', 'MaterialEnergy.json', 'MaterialReuse.json')]

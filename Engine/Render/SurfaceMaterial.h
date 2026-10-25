@@ -74,6 +74,22 @@ struct MaterialProceduralChannel
     std::map<std::string,std::string> Texts;
 };
 
+// 📝 Surface-independent volume coefficients; geometry supplies distance, never a coating thickness.
+struct DielectricVolume
+{
+    float Ior = 1.5f;                         // [-] - exterior-relative refractive index
+    std::array<float,3> Absorption{};          // [1/m] - interior RGB extinction
+    bool operator==(const DielectricVolume &) const = default;
+};
+
+inline bool ValidateDielectricVolume(const DielectricVolume &Volume)
+{
+    if (!std::isfinite(Volume.Ior) || Volume.Ior < 1 || Volume.Ior > 3) return false;
+    for (const float Coefficient : Volume.Absorption)
+        if (!std::isfinite(Coefficient) || Coefficient < 0 || Coefficient > 100) return false;
+    return true;
+}
+
 struct MaterialDefinition
 {
     std::string Name = "Untitled material";
@@ -87,6 +103,7 @@ struct MaterialDefinition
     // 📝 Optional [Authoring] layer-stack document; decoded/encoded verbatim through the strict normalize
     // gate so HTML-authored stacks survive native round trips without silent field loss.
     std::optional<MaterialAuthoringDocument> Authoring;
+    std::optional<DielectricVolume> ClosedVolume = std::nullopt;
 };
 
 struct MaterialMipRegion
@@ -121,6 +138,7 @@ struct CompiledSurfaceMaterial
     MaterialScattering Scattering;
     std::array<MaterialTexturePyramid,4> Textures;
     std::array<MaterialTexturePyramid,6> AuthoringMaps;
+    std::optional<DielectricVolume> ClosedVolume = std::nullopt;
 };
 
 inline bool ValidateMaterialScattering(const MaterialScattering &Material)

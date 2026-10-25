@@ -2,6 +2,16 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Saved smooth-volume material spectra — 2026-10-26
+
+- Optional native TOML IOR/RGB absorption survives disk round trips and material compilation without changing
+  the shader material layout. Actual Vulkan slab uploads use the compiled spectrum; no shader arithmetic changed.
+- Strict and sanitizer native authoring checks, pinned previous-decoder rejection and actual saved-material
+  Vulkan slab/repeat/source-removal/rejection evidence: [SavedDielectric](../Exhibits/LightCompute/SavedDielectric.md).
+- Vehicle edge audit: 74 glass triangles, 68 unmatched exact-position edges; thin-sheet assignment retained.
+  No vehicle closed-volume geometry, glass studio preview, editor controls, general renderer importer,
+  physical GPU or Windows-editor completion claim.
+
 ## Pole shadows and authored-reflection history — 2026-10-25
 
 - Reported previous-project half-shadow not reproduced: 72 directional/point/spot, receiver-view, caster-route and light-selection combinations; 3,538,944 analytic comparisons, zero mismatches, including 111,408 far-half shadow checks. Previous project/screenshot still needed; no speculative shadow fix.

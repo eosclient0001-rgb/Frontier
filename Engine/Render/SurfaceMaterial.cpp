@@ -86,12 +86,24 @@ MaterialDefinition DecodeSurfaceMaterial(std::string_view Text)
 {
     if (Text.size() > 1048576) throw std::runtime_error("Material TOML exceeds 1 MiB.");
     auto Table = toml::parse(Text);
-    ValidateKeys(Table,{"Format","Name","UvScaleOffset","Radiance","NormalStrength","Textures","Strata","AutomotivePaint","Authoring"});
+    ValidateKeys(Table,{"Format","Name","UvScaleOffset","Radiance","NormalStrength","Textures","Strata","AutomotivePaint","Authoring","DielectricVolume"});
     if (Table["Format"].value<int64_t>() != 1) throw std::runtime_error("Unsupported material format; expected Format = 1.");
     MaterialDefinition Material;
     const auto Name = Table["Name"].value<std::string>();
     if (!Name || Name->empty() || Name->size() > 128) throw std::runtime_error("Material Name must contain 1..128 bytes.");
     Material.Name = *Name;
+    if (Table.contains("DielectricVolume"))
+    {
+        auto *Volume = Table["DielectricVolume"].as_table();
+        if (!Volume) throw std::runtime_error("DielectricVolume must be a table.");
+        ValidateKeys(*Volume,{"Ior","Absorption"});
+        if (!Volume->contains("Ior") || !Volume->contains("Absorption"))
+            throw std::runtime_error("DielectricVolume requires Ior and RGB Absorption in inverse metres.");
+        Material.ClosedVolume = DielectricVolume{DecodeCoefficient((*Volume)["Ior"],1.5f),
+                                               DecodeSpectrum<3>((*Volume)["Absorption"],{})};
+        if (!ValidateDielectricVolume(*Material.ClosedVolume))
+            throw std::runtime_error("DielectricVolume requires Ior 1..3 and finite RGB Absorption 0..100.");
+    }
     Material.Scattering.UvScaleOffset = DecodeSpectrum(Table["UvScaleOffset"],Material.Scattering.UvScaleOffset);
     const auto Radiance = DecodeSpectrum<3>(Table["Radiance"],{0,0,0});
     std::copy(Radiance.begin(),Radiance.end(),Material.Scattering.RadianceNormal.begin());
@@ -279,11 +291,15 @@ std::optional<MaterialPoolLocation> QueryProceduralPool(const MaterialDefinition
 
 std::string EncodeSurfaceMaterial(const MaterialDefinition &Material)
 {
-    if (!ValidateMaterialScattering(Material.Scattering) || Material.Name.empty() || Material.Name.size() > 128)
+    if ((Material.ClosedVolume && !ValidateDielectricVolume(*Material.ClosedVolume)) ||
+        !ValidateMaterialScattering(Material.Scattering) || Material.Name.empty() || Material.Name.size() > 128)
         throw std::runtime_error("Cannot encode invalid material.");
     toml::table Table{{"Format",1},{"Name",Material.Name},{"UvScaleOffset",EncodeSpectrum(Material.Scattering.UvScaleOffset)},
         {"Radiance",EncodeSpectrum<3>({Material.Scattering.RadianceNormal[0],Material.Scattering.RadianceNormal[1],Material.Scattering.RadianceNormal[2]})},
         {"NormalStrength",double(Material.Scattering.RadianceNormal[3])}};
+    if (Material.ClosedVolume)
+        Table.insert("DielectricVolume",toml::table{{"Ior",double(Material.ClosedVolume->Ior)},
+            {"Absorption",EncodeSpectrum(Material.ClosedVolume->Absorption)}});
     const auto &Paint = Material.Scattering.Paint;
     if (Paint.Configuration[3])
     {
@@ -550,7 +566,9 @@ void EnsureProceduralChannelBakes(MaterialDefinition &Material, uint32_t Extent)
 CompiledSurfaceMaterial CompileSurfaceMaterial(const MaterialDefinition &Material,const std::filesystem::path &ContentDirectory)
 {
     if (!ValidateMaterialScattering(Material.Scattering)) throw std::runtime_error("Material scattering cannot be compiled.");
-    CompiledSurfaceMaterial Compiled{Material.Name,Material.Scattering,{},{}};
+    if (Material.ClosedVolume && !ValidateDielectricVolume(*Material.ClosedVolume))
+        throw std::runtime_error("Invalid dielectric volume cannot be compiled.");
+    CompiledSurfaceMaterial Compiled{Material.Name,Material.Scattering,{},{},Material.ClosedVolume};
     auto &Paint = Compiled.Scattering.Paint;
     const std::array<float,4> NeutralColour{1,1,1,0}, NeutralNormal{.5f,.5f,1,0};
     const std::array<float,4> NeutralRoughness{1,0,0,0}, NeutralMetalness{0,0,0,0}, NeutralOcclusion{1,0,0,0};

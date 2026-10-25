@@ -5,13 +5,21 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Saved closed-volume material coefficients — 2026-10-26
+
+[Native saved-glass authoring](SavedDielectric.md) adds strict optional `[DielectricVolume]` IOR/RGB absorption
+metadata, retains it through disk round trips and native material compilation, and uploads the compiled
+coefficients into actual Vulkan slab validation. The studio surface approximation is unchanged: no glass
+editor controls or full-renderer importer claim. The retained vehicle's 74 glass triangles have 68 unmatched
+exact-position edges, so their thin-sheet assignment is preserved rather than blindly changed to solid glass.
+
 ## Smooth glass: camera, mirror, rough reflector, window and compact diffuse — 2026-10-25
 
 [Primary glass](SolidDielectric.md), [mirror](MirrorDielectric.md), [rough reflector](RoughDielectric.md),
 [window → glass](WindowDielectric.md) and [compact diffuse → glass](DiffuseDielectric.md) provide actual captures
 and focused acceptance. All receiver classes now share one bounded volume-trace site; compact receivers keep
-their uploaded cosine samples and diffuse response. This is not full material/PDF, rough/nested glass, saved
-closed-glass authoring, unified-scene or physical GPU/editor completion. [Done/remaining table](RendererProgress.md).
+their uploaded cosine samples and diffuse response. This is not full material/PDF, rough/nested glass, complete
+saved-material/editor integration, unified-scene or physical GPU/editor completion. [Done/remaining table](RendererProgress.md).
 
 ## Lower-cost working cloud preset — 2026-10-25
 

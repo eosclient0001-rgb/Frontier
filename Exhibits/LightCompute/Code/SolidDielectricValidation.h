@@ -2,10 +2,29 @@
                                                    SOLIDDIELECTRICVALIDATION.H
 ==========================================================================================================================================*/
 // 🧩 Trace outward-wound closed slabs, compare uniform emission with analytic slab transport and capture checker displacement.
-void ValidateSolidDielectric(const char* Driver, const std::string& Shaders, const std::string& Output)
+void ValidateSolidDielectric(const char*        Driver,
+                             const std::string& Shaders,
+                             const std::string& Output,
+                             const std::string& Saved = "")
 {
     using namespace TransportReference;
     std::filesystem::create_directories(Output);
+    std::array<std::array<float,4>,4> Authored{};
+    if (!Saved.empty())
+    {
+        std::ifstream Input(Saved,std::ios::binary | std::ios::ate);
+        Require(Input && Input.tellg() == std::streamoff(sizeof(Authored)),"Invalid native saved-volume capture");
+        Input.seekg(0);
+        Input.read(reinterpret_cast<char*>(Authored.data()),sizeof(Authored));
+        Require(bool(Input),"Truncated native saved-volume capture");
+        for (const auto &Volume : Authored)
+        {
+            Require(std::isfinite(Volume[0]) && Volume[0] >= 1 && Volume[0] <= 3,"Invalid saved IOR");
+            for (uint32_t C = 1; C < 4; ++C)
+                Require(std::isfinite(Volume[C]) && Volume[C] >= 0 && Volume[C] <= 100,"Invalid saved absorption");
+        }
+        std::cout << "SAVED_VOLUME_UPLOAD native_records=4 category=4 descriptor_layout_unchanged=1" << std::endl;
+    }
     LightComputeArchive Scene;
     Prepare(Scene,128,4,false);
     auto Materials = AppendSceneMaterials(Scene,Shaders);
@@ -33,6 +52,11 @@ void ValidateSolidDielectric(const char* Driver, const std::string& Shaders, con
     {
         double Ior = Case < 2 ? 1 : 1.5;
         std::array<double,3> Sigma = Case%2 ? std::array<double,3>{.2,.6,1.2} : std::array<double,3>{0,0,0};
+        if (!Saved.empty())
+        {
+            Ior = Authored[Case][0];
+            for (uint32_t C = 0; C < 3; ++C) Sigma[C] = Authored[Case][C+1];
+        }
         Scene.Angles[Offset+13] = float(Ior);
         for (uint32_t C = 0; C < 3; ++C) Scene.Angles[Offset+16+C] = float(Sigma[C]);
         auto Pixels = Compute.Execute(Scene,0,16,71,64,0,true,true,128,false);
@@ -74,8 +98,28 @@ void ValidateSolidDielectric(const char* Driver, const std::string& Shaders, con
     {
         Scene.Angles[Offset+13] = Case ? 1.5f : 1.f;
         for (uint32_t C = 0; C < 3; ++C) Scene.Angles[Offset+16+C] = Case == 2 ? std::array<float,3>{.2f,.6f,1.2f}[C] : 0;
+        if (!Saved.empty())
+        {
+            uint32_t Source = Case == 0 ? 0 : Case == 1 ? 2 : 3;
+            Scene.Angles[Offset+13] = Authored[Source][0];
+            for (uint32_t C = 0; C < 3; ++C) Scene.Angles[Offset+16+C] = Authored[Source][C+1];
+        }
         auto Pixels = Compute.Execute(Scene,0,16,71,64,0,true,true,128,false);
-        WriteImage(Output+"/SolidDielectric"+std::to_string(Case)+".ppm",Pixels,Scene.Width,Scene.Height);
+        if (!Saved.empty())
+        {
+            const auto Repeat = Compute.Execute(Scene,0,16,71,64,0,true,true,128,false);
+            Require(Pixels == Repeat,"Saved material seeded repeat changed");
+        }
+        WriteImage(Output+(Saved.empty() ? "/SolidDielectric" : "/SavedDielectric")+std::to_string(Case)+".ppm",Pixels,Scene.Width,Scene.Height);
+    }
+    if (!Saved.empty())
+    {
+        auto Off = Scene;
+        for (auto &Facet : Off.Surfaces) Facet.Emissive[0] = Facet.Emissive[1] = Facet.Emissive[2] = 0;
+        const auto Black = Compute.Execute(Off,0,16,71,64,0,false,true,128,false);
+        for (const auto &Pixel : Black)
+            Require(Pixel[0] == 0 && Pixel[1] == 0 && Pixel[2] == 0,"Saved volume retained a removed source");
+        std::cout << "SAVED_VOLUME_REPEAT exact=1 source_off_black=1 pixels=" << Black.size() << std::endl;
     }
     auto RejectUnsupported = [&](const char* Name) {
         auto Pixels = Compute.Execute(Scene,0,16,71,64,0,true,true,128,false);

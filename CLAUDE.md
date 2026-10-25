@@ -390,3 +390,22 @@ CTest tests pass; retained vehicle 901-probe native oracle max error 4.6271e-6, 
 probes max 4.8961e-8. Six 160x100 poses exercise reuse/reset (0/12076/12067/0/12064/12079), preserve current
 emission and direct histories (max delta 3.8147e-6). Actual 640x400 retained vehicle readback is included,
 explicitly NOT newly authored glass bindings. Evidence manifest: 167 sources / 221 products.
+
+
+## Saved closed-volume coefficients — 2026-10-26
+
+`MaterialDefinition` and `CompiledSurfaceMaterial` now carry optional host-only `ClosedVolume` metadata.
+Strict native Format1 TOML accepts `[DielectricVolume]` with mandatory finite Ior1..3 and RGB Absorption0..100
+in inverse metres; no thickness or roughness fields. Absent table preserves existing surface behaviour.
+`MaterialScattering`/shader descriptors remain unchanged; studio rendering still uses the existing opaque
+surface approximation. This is NOT glass editor controls or a full-renderer importer. Native material
+compilation retains the spectrum; the exhibit uploads its saved/reloaded compiled floats to category4.
+`Exhibits/LightCompute/SavedDielectric.md` retains source, outputs, native checks and Vulkan slab readbacks.
+The actual retained vehicle has74 glass triangles /68 unmatched exact-position edges /77paired edges.
+Do NOT blindly assign closed-solid transport: thin sheets remain intact; finite-thickness outward glazing
+construction/acceptance is still required. Exact edge incidence is not a general welding/intersection test.
+
+Saved-volume wrapper exited0:39 native assertions strict +ASan/UBSan; pinnedcec27e4 decoder rejects the
+new table. Four slab cases max mean RGB error .00346691; valid-fixture cap/unsupported0; exact repeated
+captures;6144 sourceoff pixels black; inside/inverted rejection retained. Four existing native CTests pass.
+Shader arithmetic and prior optical sampling/history policies are unchanged in this phase.

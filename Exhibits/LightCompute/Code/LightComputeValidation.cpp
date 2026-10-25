@@ -1045,6 +1045,11 @@ int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 6 && std::string(Arguments[3]) == "--saved-dielectric")
+        {
+            ValidateSolidDielectric(Arguments[1],Arguments[2],Arguments[4],Arguments[5]);
+            return 0;
+        }
         if (Count == 5 && (std::string(Arguments[3]) == "--diffuse-dielectric" || std::string(Arguments[3]) == "--diffuse-dielectric-original"))
         {
             ValidateDiffuseDielectric(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--diffuse-dielectric-original");
