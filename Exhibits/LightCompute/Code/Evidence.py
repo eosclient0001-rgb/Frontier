@@ -34,6 +34,7 @@ Products += [Output / 'Results/SolidDielectric.json'] if (Output / 'Results/Soli
 Products += [Output / 'Results/MirrorDielectric.json'] if (Output / 'Results/MirrorDielectric.json').exists() else []
 Products += [Output / 'Results/RoughDielectric.json'] if (Output / 'Results/RoughDielectric.json').exists() else []
 Products += [Output / 'Results/WindowDielectric.json'] if (Output / 'Results/WindowDielectric.json').exists() else []
+Products += [Output / 'Results/DiffuseDielectric.json'] if (Output / 'Results/DiffuseDielectric.json').exists() else []
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()

@@ -32,6 +32,6 @@ Report = {'negative_control_revision': '8a1f38f', 'device': 'SwiftShader Device 
           'paths_per_pixel': 32, 'interaction_cap': 32, 'capture_sha256': Hashes,
           'mirror_log': (Results/'MirrorDielectric.txt').read_text(),
           'negative_control_log': (Results/'MirrorDielectricOriginal.txt').read_text(),
-          'scope': 'Single planar mirror followed by smooth closed volumes. Rough-reflector extension separately tested. Thin-sheet extension separately tested; legacy compact diffuse transport, nesting, rough glass boundaries, caustics and saved material-authoring integration remain unsupported.'}
+          'scope': 'Single planar mirror followed by smooth closed volumes. Rough-reflector extension separately tested. Thin-sheet extension separately tested; compact diffuse extension separately tested; nesting, rough glass boundaries, caustics and saved material-authoring integration remain unsupported.'}
 (Results/'MirrorDielectric.json').write_text(json.dumps(Report,indent=2)+'\n')
 print('MIRROR_IMAGES captures=3 source_dimensions=96x64 software_vulkan=1')

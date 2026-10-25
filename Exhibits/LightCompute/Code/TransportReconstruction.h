@@ -5,7 +5,7 @@
 
 void ValidateTransportReconstruction(const char* Driver, const std::string& Shaders,
                                      const std::string& Directory, const std::string& Output,
-                                     bool CaptureFull = true)
+                                     bool CaptureFull = true, bool CompactMotion = false)
 {
     auto Load = [&](uint32_t Pose, bool Small)
     {
@@ -140,16 +140,16 @@ void ValidateTransportReconstruction(const char* Driver, const std::string& Shad
         Require(P[0] == 0 && P[1] == 0 && P[2] == 0, "Indirect history leaked after all sources disabled");
     std::cout << "TRANSPORT_RECONSTRUCTION_RESET emission_cold_equal=1 camera_cut_cold_equal=1 "
                  "sources_off_black=1\n";
-    if (!CaptureFull)
+    if (!CaptureFull && !CompactMotion)
         return;
-    // 📝 Full-resolution visual proof uses identical direct-light histories and seeds, differing only in indirect reconstruction.
-    auto Scene = Load(0, false);
+    // 📝 Motion verification uses identical direct histories and seeds; the existing full-resolution capture mode remains available.
+    auto Scene = Load(0, CompactMotion);
     LightComputeSubmission Full(Driver), Fresh(Driver);
     Full.Prepare(Scene, Shaders);
     Fresh.Prepare(Scene, Shaders);
     for (uint32_t Pose = 0; Pose < 6; ++Pose)
     {
-        Scene = Load(Pose, false);
+        Scene = Load(Pose, CompactMotion);
         auto A = Fresh.Execute(Scene, 3, 16, 201 + Pose, 64, 7, false, true, 16, true, true, false);
         auto B = Full.Execute(Scene, 3, 16, 201 + Pose, 64, 7, false, true, 16, true, true, true);
         uint32_t Reused = 0;
@@ -181,6 +181,7 @@ void ValidateTransportReconstruction(const char* Driver, const std::string& Shad
         Require(DirectMaximum < .00002, "Indirect reconstruction changed the direct-light histories");
         std::cout << "TRANSPORT_RECONSTRUCTION_MOTION pose=" << Pose << " accepted=" << Reused
                   << " current_emission_preserved=1 direct_max_delta=" << DirectMaximum << "\n";
+        if (CompactMotion) continue;
         WriteImage(Output + "/TransportFiltered" + std::to_string(Pose) + ".ppm", B, Scene.Width,
                    Scene.Height);
         WriteImage(Output + "/TransportUnfiltered" + std::to_string(Pose) + ".ppm", A, Scene.Width,

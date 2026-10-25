@@ -1,11 +1,11 @@
 # Renderer progress — 2026-10-25
 
-**Latest verified addition: primary thin-window rays followed by smooth closed glass.** All current
+**Latest verified addition: compact diffuse receivers receive transported light through smooth closed glass.** All current
 execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RTX/GTX or the Windows editor.
 
 **Legend:** 🟢 verified within the stated scope · 🚧 partial / still needs work · 🔴 blocked or not done.
 
-![Actual thin-window views of index-matched, clear and absorbing closed glass](Images/WindowDielectric.png)
+![Actual compact diffuse receivers under index-matched, clear and absorbing glass transport](Images/DiffuseDielectric.png)
 
 ## Done and remaining
 
@@ -18,8 +18,9 @@ execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RT
 | 🟢 | Current pole-shadow fixture | 72 combinations, 3,538,944 silhouette comparisons, zero mismatches | Does not reproduce the user's old project defect |
 | 🟢 | Rough reflection history fixture | Angular-aware reconstruction, 88 native filter probes; stale authored geometry history rejection; compact-only diffuse policy retained | Broader motion/noise/convergence coverage |
 | 🟢 | Sun/flare/stars and selected cellular flakes | Existing implementations retained, not replaced by unrelated rewrites | Deferred sky/cloud appearance improvements below |
-| 🟢 | Sampled rough reflection → smooth glass | Flat shared trace site; cosine/GGX proposals; absorption monotonicity, seeded repeat, screen/BVH equality and source-off checks | Legacy compact-only diffuse paths remain unsupported |
+| 🟢 | Sampled rough reflection → smooth glass | Flat shared trace site; cosine/GGX proposals; absorption monotonicity, seeded repeat, screen/BVH equality and source-off checks | Broader material/scale and estimator acceptance remain |
 | 🟢 | Thin window → smooth glass | Four sheet/slab cases, two retained sheet-energy controls, source-off and pinned blocked-path control | Approximate sheet optics; no exhaustive multilayer/scale acceptance |
+| 🟢 | Compact diffuse → smooth glass | Uploaded cosine samples and diffuse weights retained; Beer/repeat/source-off/counter checks and shielded emitter-routing fixture | Pure-sheet emitter weighting and complete MIS/caustic acceptance remain |
 | 🚧 | Full glass/material system | Runtime coefficient override, bounded 32-interaction / 128-sample volume tracer | Saved TOML/preset/editor integration, rough glass, nested media, inside cameras, caustics and transmitted direct shadows |
 | 🚧 | Reflection reconstruction / denoising | Limited authored rough-surface reconstruction and tested invalidation | Roughness-mip prior-screen colour/exitance, full denoiser and complete sampling/PDF/material acceptance |
 | 🚧 | Clouds, fog and shafts | Earlier actual cloud/fog/geometry-shadow fixtures; lower-cost working cloud budget | Improve blocky clouds, horizon/sky, Milky Way/catalogues/extrasolar stars and dawn/sunset; moving full-scene acceptance |
@@ -38,21 +39,22 @@ execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RT
 | Mirror slab cases | 4/4 |
 | Window/slab cases and sheet controls | 4/4 plus 2/2 |
 | Rough reflector / smooth glass | 3 optical screen/BVH comparisons, Beer monotonicity, exact repeat and source-off checks |
+| Compact diffuse / smooth glass | Beer monotonicity, exact repeat, counters, shielded emitter routing and source-off checks; 901-probe vehicle oracle; six compact moving poses and improved reconstruction RMSE |
 | Native renderer CTests | 4/4 |
 | Physical-GPU / Windows checks in this batch | Not run |
 
 Those passing fractions describe fixtures, **not overall renderer completion**. A global percentage would
-be misleading while hardware/editor, material authoring, legacy diffuse integration and unified moving-scene
+be misleading while hardware/editor, material authoring and unified moving-scene
 acceptance are outstanding. No real-time performance or completed renderer claim.
 
 ## Suggested execution order
 
-1. Legacy compact-only diffuse integration, with numeric checks and actual captures.
-2. Authored closed-glass bindings on ControlVehicle; moving captures, lighting refresh and reconstruction.
-3. Complete sampling/material acceptance and roughness-mip prior-screen lighting plus denoising.
+1. Saved closed-glass authoring and actual ControlVehicle bindings; moving captures, lighting refresh and reconstruction.
+2. Pure-sheet emitter weighting, complete sampling/material acceptance and broader optical geometry/scale coverage.
+3. Roughness-mip prior-screen lighting, full denoising and unified moving-scene acceptance.
 4. Physical RTX/GTX and Windows editor integration; measured device budgets.
 5. Deferred sky/cloud appearance, Moon and separately scoped native vehicle-dynamics work.
 
-Evidence: [thin window phase](WindowDielectric.md), [rough-reflection glass phase](RoughDielectric.md), [mirror phase](MirrorDielectric.md), [primary glass](SolidDielectric.md),
+Evidence: [compact diffuse phase](DiffuseDielectric.md), [thin window phase](WindowDielectric.md), [rough-reflection glass phase](RoughDielectric.md), [mirror phase](MirrorDielectric.md), [primary glass](SolidDielectric.md),
 [shadow/history investigation](ShadowHistory.md), [rough reflections](RoughReflections.md),
 [vehicle/material scene](MaterialScene.md). Foliage remains isolated and inactive.

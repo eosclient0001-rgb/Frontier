@@ -32,6 +32,6 @@ Report = {'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capt
           'samples_per_pixel': 64, 'directions_per_sample': 2, 'negative_control_revision': 'abed7c6', 'interaction_cap': 32, 'capture_sha256': Hashes,
           'window_log': (Results/'WindowDielectric.txt').read_text(),
           'negative_control_log': (Results/'WindowDielectricOriginal.txt').read_text(),
-          'scope': 'Primary parallel thin sheet followed by smooth closed volumes. Legacy compact diffuse integration, nesting, rough glass boundaries, caustics and saved material authoring remain unsupported.'}
+          'scope': 'Primary parallel thin sheet followed by smooth closed volumes. Compact diffuse extension separately tested; nesting, rough glass boundaries, caustics and saved material authoring remain unsupported.'}
 (Results/'WindowDielectric.json').write_text(json.dumps(Report,indent=2)+'\n')
 print('WINDOW_IMAGES captures=3 source_dimensions=96x64 software_vulkan=1')

@@ -22,9 +22,9 @@ float3 MaterialShadowTransmission(float3 Origin, float3 Direction, float Far)
     }
     return 0;
 }
-float3 ShadeRayStrike(SurfacePoint R)
+float3 ShadeRayStrike(SurfacePoint R, bool ExcludeEmission = false)
 {
-    float3 Incoming = R.ResidualSpecular.xyz;
+    float3 Incoming = ExcludeEmission ? float3(0) : R.ResidualSpecular.xyz;
     float SunT = CloudSunTransmittance(R.PositionHit.xyz);
     for (uint I = 0; I < Extent.Dimensions.y; ++I)
     {
@@ -94,14 +94,16 @@ float MaterialMixtureDensity(PreviewScattering S, float3 N, float3 V, float3 L)
 float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
 {
     uint Category = MaterialTransport(R);
+    bool Compact = MaterialAddress(R) == 0;
     bool Sheet = Category == 2, Delta = Category == 1 || Category == 4 || Sheet, Mirror = Category == 1;
     PreviewScattering S = (PreviewScattering)0;
-    if (!Delta) S = ReadMaterialScattering(R);
+    if (!Delta && !Compact) S = ReadMaterialScattering(R);
     float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
     float3 T = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)), B = cross(N, T);
     uint Bits = Pixel * 747796405u + Extent.Sampling.x;
     uint Samples = Delta ? min(128u, max(1u, Extent.Primary.z)) : max(1u, Extent.Primary.z);
-    uint Proposals = Sheet ? 2 : Delta ? 1 : S.Configuration.x + 1;
+    uint Proposals = Compact ? 1 : Sheet ? 2 : Delta ? 1 : S.Configuration.x + 1;
+    uint EmissiveBits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
     uint ScreenHits = 0, FallbackRays = 0, Hits = 0, ReflectedHits = 0, Internal = 0, Capped = 0, Unsupported = 0;
     float3 Sum = 0;
     // A flat proposal sequence and one solid-trace site avoid nested material/volume call sites in the tested driver.
@@ -119,7 +121,15 @@ float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
             Weight = Proposal == 0 ? float3(2 * F / (1 + F)) :
                      (1 - F) / (1 + F) * exp(-float3(.8, .15, .4) * .006 / max(.05, Cosine));
         }
-        if (!Delta)
+        if (Compact)
+        {
+            uint Base = uint(CameraProjection(8).w) + Path * 3;
+            float3 Local = float3(Angles[Base], Angles[Base+1], Angles[Base+2]);
+            L = Unit(T * Local.x + B * Local.y + N * Local.z);
+            Origin = R.PositionHit.xyz + N * .002;
+            Weight = DiffuseTransportResponse(R, L) * π;
+        }
+        if (!Delta && !Compact)
         {
             float U = min(.999999, RandomUnit(Bits)), Angle = 2 * π * RandomUnit(Bits);
             if (Proposal == 0)
@@ -146,16 +156,24 @@ float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
             bool Hit;
             // Boundary branching must not perturb the subsequent BRDF proposal sequence.
             uint BoundaryBits = Delta ? Bits : Bits ^ (Path * 2246822519u + 3266489917u);
-            Incoming = TraceSolidDielectric(Origin, L, BoundaryBits, Tirs, Cap, Invalid, Hit);
+            Incoming = TraceSolidDielectric(Origin, L, BoundaryBits, Tirs, Cap, Invalid, Hit, Compact, Compact && (Extent.Primary.w & 2u) != 0);
             if (Delta) Bits = BoundaryBits;
             Internal += Tirs; Capped += Cap; Unsupported += Invalid; Hits += Hit;
             ReflectedHits += Hit && Proposal == 0;
+            if (Compact)
+            {
+                InterlockedAdd(Counters[13], 1);
+                if (Hit) InterlockedAdd(Counters[14], 1);
+                else InterlockedAdd(Counters[15], 1);
+            }
         }
         ScreenHits += Screen;
         FallbackRays += !Screen;
         Sum += Weight * Incoming;
+        if (Compact && (Extent.Primary.w & 2u) != 0) Sum += SampleEmissiveFacet(R, EmissiveBits);
     }
-    if (Category == 4) R.ExpectedDirect.xyz = float3(5, Capped * 65536u + Internal, Unsupported);
+    if (Compact) R.ExpectedDirect.xyz = float3(7, Capped, Unsupported);
+    else if (Category == 4) R.ExpectedDirect.xyz = float3(5, Capped * 65536u + Internal, Unsupported);
     else if (Mirror) R.ExpectedDirect.xyz = float3(1, Hits > 0 ? 1 : 0, Capped * 256u + Unsupported);
     else if (Sheet) R.ExpectedDirect.xyz = float3(2, ReflectedHits > 0 ? 1 : 0, Capped * 512u + Unsupported);
     else if (Category == 3) R.ExpectedDirect.xyz = float3(ScreenHits > 0 ? 3 : 4, FallbackRays, ScreenHits);

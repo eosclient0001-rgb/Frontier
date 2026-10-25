@@ -9,6 +9,9 @@ Actual **96×64 Vulkan readbacks**, 64 samples × two sheet directions, enlarged
 sees a thin pane in front of the same closed box and emissive checker in each image. The box is index matched
 on the left, index 1.5 in the middle, and index 1.5 with RGB absorption 0.2/0.6/1.2 on the right.
 
+A subsequent [compact diffuse extension](DiffuseDielectric.md) closes the material-address-zero gap.
+The limitations below describe this window checkpoint.
+
 ## Verification
 
 | Check | Result |

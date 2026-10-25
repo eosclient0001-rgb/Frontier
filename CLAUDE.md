@@ -367,3 +367,26 @@ Final WINDOW_BUILD=0 wrapper exited0: pinned abed7c6 window control returns blac
 pinned8a1f38f mirror control also passes. Primary/mirror/rough-glass,199boundary cases,opaque history and
 4native CTests passed; original rough reflection suite retains14941screen/204392fallback rays with RGBerror0.
 13compute kernels compiled. Evidence manifest163sources/211products verified; actual software Vulkan only.
+
+
+## Compact diffuse receivers through smooth closed glass — 2026-10-25
+
+The compact material-address-zero route now joins `IntegrateBoundaryRays`: same uploaded cosine directions,
+diffuse response*pi, .002 origin and first-hit lower bound0; compact counters13/14/15 retained. Marker7 exports
+capped/unsupported counts. NaN-poisoned material-address channel remains valid unassigned data, not a material.
+Root emitter sampling still excludes ordinary first-terminal emission; terminal emission after a closed-solid
+boundary is retained because direct-emitter shadow rays conservatively block volumes. Shielded emitter fixture
+requires positive exact equality with emitter sampling enabled/disabled. Pure-sheet emitter weighting is not
+newly validated; only closed-solid encounters trigger this terminal-emission exception.
+`Exhibits/LightCompute/DiffuseDielectric.md`: actual96x64,64cosine samples; three diffuse albedos .3/.6/.9;
+Beer absorption changes15360channels, ratios .903583/.761600/.632968; seeded repeat/sourceoff/counters verified;
+shielded refracted RGBtotal71.4212. Pinned02d5d13 transport negative control verifies the previous blocked route.
+Native compact-only history-revision policy is unchanged; see final regression logs for vehicle/history tests.
+No complete MIS, caustic, rough/nested glass, saved authoring/vehicle-binding, physical GPU/editor or speed claim.
+
+The compact phase full regression wrapper exited 0: prior boundary/primary/mirror/rough/sheet checks and four
+CTest tests pass; retained vehicle 901-probe native oracle max error 4.6271e-6, source-family linearity
+8.44436e-6 and source-off black. Compact reconstruction RMSE .0103498 → .0058573, 210 native spatial
+probes max 4.8961e-8. Six 160x100 poses exercise reuse/reset (0/12076/12067/0/12064/12079), preserve current
+emission and direct histories (max delta 3.8147e-6). Actual 640x400 retained vehicle readback is included,
+explicitly NOT newly authored glass bindings. Evidence manifest: 167 sources / 221 products.

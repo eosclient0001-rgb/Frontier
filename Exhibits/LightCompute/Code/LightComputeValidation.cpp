@@ -1039,11 +1039,17 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "MirrorDielectricValidation.h"
 #include "RoughDielectricValidation.h"
 #include "WindowDielectricValidation.h"
+#include "DiffuseDielectricValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && (std::string(Arguments[3]) == "--diffuse-dielectric" || std::string(Arguments[3]) == "--diffuse-dielectric-original"))
+        {
+            ValidateDiffuseDielectric(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--diffuse-dielectric-original");
+            return 0;
+        }
         if (Count == 5 && (std::string(Arguments[3]) == "--window-dielectric" || std::string(Arguments[3]) == "--window-dielectric-original"))
         {
             ValidateWindowDielectric(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--window-dielectric-original");
@@ -1147,6 +1153,11 @@ int main(int Count, char** Arguments)
         if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction")
         {
             ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4]);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction-compact-motion")
+        {
+            ValidateTransportReconstruction(Arguments[1],Arguments[2],Arguments[6],Arguments[4],false,true);
             return 0;
         }
         if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction-checks")

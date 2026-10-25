@@ -6,20 +6,20 @@
 #include "../../../../Engine/Render/Shader/DielectricRefraction.slang"
 
 float3 TraceSolidDielectric(float3 Origin, float3 Direction, inout uint Bits, out uint InternalReflections,
-                            out uint Capped, out uint Unsupported, out bool Hit)
+                            out uint Capped, out uint Unsupported, out bool Hit, bool Compact, bool ExcludeUnscatteredEmission)
 {
     const float Offset = .00002;
     float DistanceCorrection = 0;
     float3 Throughput = 1, Absorption = 0;
     float MediumIor = 1;
     uint MediumAddress = 0;
-    bool Inside = false;
+    bool Inside = false, SolidSeen = false;
     InternalReflections = Capped = Unsupported = 0;
     Hit = false;
     for (uint Interaction = 0; Interaction < 32; ++Interaction)
     {
         float3 Strike;
-        uint Index = NearestFacet(Origin, Direction, -Offset * .25, 1e30, Strike);
+        uint Index = NearestFacet(Origin, Direction, Compact && Interaction == 0 ? 0 : -Offset * .25, 1e30, Strike);
         if (Index == 0xffffffffu)
         {
             if (Inside) { Unsupported = 1; return 0; }
@@ -39,7 +39,8 @@ float3 TraceSolidDielectric(float3 Origin, float3 Direction, inout uint Bits, ou
             Origin = R.PositionHit.xyz + Direction * Offset;
             continue;
         }
-        if (Category != 4) return Throughput * ShadeRayStrike(R);
+        if (Category != 4) return Throughput * ShadeRayStrike(R, ExcludeUnscatteredEmission && !SolidSeen);
+        SolidSeen = true;
         FacetCorners Facet = Facets[Index];
         float3 Outward = Unit(cross(Facet.B.xyz - Facet.A.xyz, Facet.C.xyz - Facet.A.xyz));
         bool Entering = dot(Direction, Outward) < 0;

@@ -937,57 +937,9 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         StoreHistory(16, Pixel, 0);
         return;
     }
-    if (MaterialAddress(R) > 0)
-    {
-        float3 Radiance = IntegrateBoundaryRays(R, Pixel);
-        StoreHistory(16, Pixel, float4(Radiance, 1));
-        R.ResidualSpecular.xyz += Radiance;
-        Receivers[Pixel] = R;
-        return;
-    }
-
-    float3 N = R.NormalRoughness.xyz;
-    float3 Tangent = Unit(cross(abs(N.z) < .999 ? float3(0, 0, 1) : float3(0, 1, 0), N)),
-           Bitangent = cross(N, Tangent);
-    uint Offset = uint(CameraProjection(8).w);
-    float3 Sum = 0;
-    uint EmissiveBits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
-    for (uint Sample = 0; Sample < Extent.Primary.z; ++Sample)
-    {
-        uint Base = Offset + Sample * 3;
-        float3 Local = float3(Angles[Base], Angles[Base + 1], Angles[Base + 2]);
-        float3 Direction = Unit(Tangent * Local.x + Bitangent * Local.y + N * Local.z);
-        float3 Origin = R.PositionHit.xyz + N * .002, Strike;
-        uint Index = NearestFacet(Origin, Direction, 0, 1e30, Strike);
-        float3 Incoming = 0;
-        InterlockedAdd(Counters[13], 1);
-        if (Index == 0xffffffffu)
-        {
-            Incoming = EnvironmentRadiance(Direction);
-            InterlockedAdd(Counters[15], 1);
-        }
-        else
-        {
-            InterlockedAdd(Counters[14], 1);
-            SurfacePoint Bounce = FacetSurface(Index, Origin, Direction, Strike);
-            Incoming = (Extent.Primary.w & 2u) != 0 ? float3(0) : Bounce.ResidualSpecular.xyz;
-            float SunTransmittance = CloudSunTransmittance(Bounce.PositionHit.xyz);
-            for (uint I = 0; I < Extent.Dimensions.y; ++I)
-            {
-                float3 ToLight;
-                float Distance;
-                float3 C = Contribution(Bounce, I, ToLight, Distance, SunTransmittance);
-                if (any(C != 0) && !Occluded(Bounce.PositionHit.xyz + Bounce.NormalRoughness.xyz * .002,
-                                             ToLight, Distance - .004))
-                    Incoming += C;
-            }
-        }
-        Sum += DiffuseTransportResponse(R, Direction) * Incoming * 3.141592653589793;
-        if ((Extent.Primary.w & 2u) != 0)
-            Sum += SampleEmissiveFacet(R, EmissiveBits);
-    }
-    StoreHistory(16, Pixel, float4(Sum / Extent.Primary.z, 1));
-    R.ResidualSpecular.xyz += Sum / Extent.Primary.z;
+    float3 Radiance = IntegrateBoundaryRays(R, Pixel);
+    StoreHistory(16, Pixel, float4(Radiance, 1));
+    R.ResidualSpecular.xyz += Radiance;
     Receivers[Pixel] = R;
 }
 
