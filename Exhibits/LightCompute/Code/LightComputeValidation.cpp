@@ -106,13 +106,13 @@ struct LightComputeSubmission
     std::array<BufferSpan, 8> Buffers{};
     std::array<VkPipeline, 4> HistoryPipelines{};
     std::array<VkPipeline, 3> TransportReconstruction{};
-    VkPipeline CloudPipeline = VK_NULL_HANDLE;
+    VkPipeline CloudPipeline = VK_NULL_HANDLE, FogPipeline = VK_NULL_HANDLE;
     bool TransportHistoryValid = false, TransportDirty = true;
     std::vector<std::array<float, 4>> EmissionPalette;
     std::vector<LightComputeShape> PreviousLights;
     std::vector<float> PreviousAngles;
     uint32_t HistorySequence = 0, ReceiverCount = 0;
-    uint32_t PreviousCloudOffset = UINT32_MAX;
+    uint32_t PreviousCloudOffset = UINT32_MAX, PreviousFogOffset = UINT32_MAX;
     bool HistoryDirty = true;
     uint32_t Family = 0;
     bool RayQueryExtensions = false;
@@ -233,6 +233,8 @@ struct LightComputeSubmission
             for (auto Pipeline : HistoryPipelines)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
+            if (FogPipeline)
+                DestroyPipeline(Device, FogPipeline, nullptr);
             if (CloudPipeline)
                 DestroyPipeline(Device, CloudPipeline, nullptr);
             for (auto Pipeline : TransportReconstruction)
@@ -423,6 +425,7 @@ struct LightComputeSubmission
         for (uint32_t I = 0; I < 3; ++I)
             TransportReconstruction[I] = ConstructPipeline(Shaders + "/" + TransportNames[I] + ".spv");
         CloudPipeline = ConstructPipeline(Shaders + "/Clouds.spv");
+        FogPipeline = ConstructPipeline(Shaders + "/Fog.spv");
         TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
         PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
         CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
@@ -538,7 +541,7 @@ struct LightComputeSubmission
             uint32_t StackCapacity = 64, uint32_t Reconstruction = 7, bool ResetHistory = false,
             bool PrimaryVisibility = false, uint32_t TransportSamples = 0, bool Environment = false,
             bool EmissiveSampling = false, bool ReconstructTransport = false,
-            uint32_t CloudOffset = UINT32_MAX)
+            uint32_t CloudOffset = UINT32_MAX, uint32_t FogOffset = UINT32_MAX, bool ResolveFog = true)
     {
         Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
@@ -571,15 +574,33 @@ struct LightComputeSubmission
             for (uint32_t I : {16u, 17u, 18u, 24u, 25u, 26u})
                 Require(P[I] >= 0, "Negative cloud incident radiance");
         }
+        if (FogOffset != UINT32_MAX)
+        {
+            Require(PrimaryVisibility && size_t(FogOffset) + 16 <= Scene.Angles.size(), "Invalid fog parameter span");
+            const float* P = Scene.Angles.data() + FogOffset;
+            for (uint32_t I = 0; I < 16; ++I)
+                Require(std::isfinite(P[I]), "Nonfinite fog parameter");
+            Require(P[0] >= 0 && P[0] <= 1 && std::abs(P[1]) <= 10000 && P[2] >= 1 && P[2] <= 10000 &&
+                    P[3] >= 0 && P[3] <= 1 && std::abs(P[4]) < .95 && P[5] > 0 && P[5] <= 6000 &&
+                    P[6] >= 1 && P[6] <= 128 && std::floor(P[6]) == P[6] &&
+                    P[7] >= 1 && P[7] <= 128 && std::floor(P[7]) == P[7] &&
+                    P[8] >= 0 && P[9] >= 0 && P[10] >= 0 &&
+                    (P[11] == 0 || P[11] == 1) && (P[12] == 0 || P[12] == 1) &&
+                    (P[13] == 0 || P[13] == 1) && P[14] > 0 && P[14] <= 100000,
+                    "Fog parameters exceed bounded integration domain");
+        }
         Upload(Scene);
         // 📝 Feature selection is outside the angle prefix; changing it must invalidate both histories too.
-        if (CloudOffset != PreviousCloudOffset)
+        if (CloudOffset != PreviousCloudOffset || FogOffset != PreviousFogOffset)
         {
             HistoryDirty = true;
             TransportDirty = true;
             PreviousCloudOffset = CloudOffset;
+            PreviousFogOffset = FogOffset;
         }
         ComputeExtent Extent;
+        uint32_t FogAddress = FogOffset != UINT32_MAX ? FogOffset + 1 : 0;
+        std::memcpy(&Extent.Minimum[3], &FogAddress, 4);
         Extent.Dimensions = {uint32_t(Scene.Receivers.size()), uint32_t(Scene.Lights.size()), Capacity, Mode};
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
         Extent.Sampling = {Seed, 8, uint32_t(Scene.Visibility.Corners.size()), StackCapacity};
@@ -694,6 +715,15 @@ struct LightComputeSubmission
             }
             Dispatch(HistoryPipelines[3]);
         }
+        if (FogOffset != UINT32_MAX && ResolveFog)
+        {
+            Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
+            CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, FogPipeline);
+            CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+        }
         Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         Barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
         CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1,
@@ -704,7 +734,7 @@ struct LightComputeSubmission
         Submission.commandBufferCount = 1;
         Submission.pCommandBuffers = &Commands;
         Confirm(QueueSubmit(Queue, 1, &Submission, Completion));
-        Confirm(WaitForFences(Device, 1, &Completion, VK_TRUE, 120000000000ull));
+        Confirm(WaitForFences(Device, 1, &Completion, VK_TRUE, 600000000000ull));
         std::vector<std::array<float, 4>> Result(Scene.Receivers.size());
         std::memcpy(Result.data(), Buffers[6].Address, Result.size() * 16);
         if (Mode == 3)
@@ -956,6 +986,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "TransportReconstruction.h"
 #include "CloudCubeValidation.h"
 #include "CloudShadowValidation.h"
+#include "FogScatteringValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -1017,6 +1048,13 @@ int main(int Count, char** Arguments)
         if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction-checks")
         {
             ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4], false);
+            return 0;
+        }
+        if (Count == 6 && (std::string(Arguments[5]) == "--fog-rays" ||
+                           std::string(Arguments[5]) == "--fog-checks" || std::string(Arguments[5]) == "--fog-sky"))
+        {
+            ValidateFogScattering(Arguments[1], Arguments[2], Scene, Arguments[4],
+                                  std::string(Arguments[5]) != "--fog-checks", std::string(Arguments[5]) == "--fog-sky");
             return 0;
         }
         if (Count == 7 && std::string(Arguments[5]) == "--cloud-shadow-captures")

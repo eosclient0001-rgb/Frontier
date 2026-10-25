@@ -28,7 +28,8 @@ double ProfileIntegral(double Z0, double DZ, double T0, double T1, double Base, 
             return std::exp(-std::max(ZA - Base, 0.0) / H) * (B - A);
         }
         const double ZB = Z0 + DZ * B;
-        return (H / DZ) * (std::exp(-(ZA - Base) / H) - std::exp(-(ZB - Base) / H));
+        const double Length = B - A, Ratio = std::abs(DZ) * Length / H;
+        return std::exp(-(std::min(ZA, ZB) - Base) / H) * Length * (-std::expm1(-Ratio) / Ratio);
     };
     const double ZA = Z0 + DZ * T0;
     const double ZB = Z0 + DZ * T1;
@@ -66,6 +67,35 @@ SpectrumRgb ApplyFog(const FogParameters& P, SpectrumRgb Radiance, double Transm
     const double T = std::clamp(Transmittance, 0.0, 1.0);
     return {Radiance.R * T + P.Colour.R * (1.0 - T), Radiance.G * T + P.Colour.G * (1.0 - T),
             Radiance.B * T + P.Colour.B * (1.0 - T)};
+}
+
+FogRadianceIntegral IntegrateFogRadiance(
+    const FogParameters& Medium,
+    SpatialVector Origin,
+    SpatialVector Direction,
+    double DistanceM,
+    uint32_t Steps,
+    double ScatteringAlbedo,
+    const std::function<SpectrumRgb(SpatialVector)>& Incident)
+{
+    FogRadianceIntegral Result;
+    if (DistanceM <= 0 || Steps == 0 || Medium.DensityAtBase <= 0)
+        return Result;
+    const double StepM = DistanceM / Steps, Albedo = std::clamp(ScatteringAlbedo, 0., 1.);
+    for (uint32_t I = 0; I < Steps; ++I)
+    {
+        double EndT = FogTransmittance(Medium, Origin, Direction, StepM * (I + 1));
+        SpatialVector At{Origin.X + Direction.X * StepM * (I + .5),
+                         Origin.Y + Direction.Y * StepM * (I + .5),
+                         Origin.Z + Direction.Z * StepM * (I + .5)};
+        auto Light = Incident(At);
+        double Weight = (Result.Transmittance - EndT) * Albedo;
+        Result.Radiance.R += Weight * Light.R;
+        Result.Radiance.G += Weight * Light.G;
+        Result.Radiance.B += Weight * Light.B;
+        Result.Transmittance = EndT;
+    }
+    return Result;
 }
 
 } // namespace Frontier

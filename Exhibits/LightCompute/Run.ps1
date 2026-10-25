@@ -5,7 +5,7 @@ $Build = Join-Path (Get-Location) '_ClaudeScratch/build/light-compute-windows'
 $Slang = if ($env:SLANGC) { $env:SLANGC } else { 'slangc' }
 $Driver = if ($env:VULKAN_LIBRARY) { $env:VULKAN_LIBRARY } else { 'vulkan-1.dll' }
 New-Item -ItemType Directory -Force $Build, '_ClaudeScratch/light-compute' | Out-Null
-foreach ($Pair in @(@('AssignLightCells', 'Cells'), @('EvaluateLightReceivers', 'Receivers'), @('ReuseLightNeighbours', 'Reuse'), @('ReconstructLightHistory', 'Reconstruct'), @('FilterLightNeighbours', 'Filter'), @('FinalizeLightHistory', 'Finalize'), @('TracePrimarySurfaces', 'Primary'), @('TraceSurfaceTransport', 'Transport'), @('ReprojectSurfaceTransport', 'TransportTemporal'), @('FilterSurfaceTransport', 'TransportSpatial'), @('ResolveSurfaceTransport', 'TransportResolve'), @('BakeCloudRadiance', 'Clouds'))) {
+foreach ($Pair in @(@('AssignLightCells', 'Cells'), @('EvaluateLightReceivers', 'Receivers'), @('ReuseLightNeighbours', 'Reuse'), @('ReconstructLightHistory', 'Reconstruct'), @('FilterLightNeighbours', 'Filter'), @('FinalizeLightHistory', 'Finalize'), @('TracePrimarySurfaces', 'Primary'), @('TraceSurfaceTransport', 'Transport'), @('ReprojectSurfaceTransport', 'TransportTemporal'), @('FilterSurfaceTransport', 'TransportSpatial'), @('ResolveSurfaceTransport', 'TransportResolve'), @('BakeCloudRadiance', 'Clouds'), @('IntegrateFogScattering', 'Fog'))) {
     & $Slang 'Frontier/Engine/Rendering/Shaders/LightInfluence.slang' -entry $Pair[0] -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$Build/$($Pair[1]).spv"
     Confirm-Exit
 }
@@ -36,3 +36,8 @@ cmake --build $Build --config Release; Confirm-Exit
 & "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--clouds-only'; Confirm-Exit
 
 & "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--cloud-shadows'; Confirm-Exit
+
+& "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--fog-checks'; Confirm-Exit
+& "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--fog-rays'; Confirm-Exit
+
+& "$Build/Release/LightComputeValidation.exe" $Driver $Build '_ClaudeScratch/primary-motion/VehicleMotion0.bin' '_ClaudeScratch/light-compute' '--fog-sky'; Confirm-Exit

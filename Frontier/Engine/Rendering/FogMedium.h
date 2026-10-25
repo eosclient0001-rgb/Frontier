@@ -13,6 +13,7 @@
 
 #include "AtmosphereModel.h"   // SpectrumRgb
 #include "ClusterNesting.h"
+#include <functional>
 
 namespace Frontier
 {
@@ -31,5 +32,22 @@ struct FogParameters
 
 // L_in attenuated + fog colour gathered: L·T + C·(1 − T).
 [[nodiscard]] SpectrumRgb ApplyFog(const FogParameters& P, SpectrumRgb Radiance, double Transmittance) noexcept;
+
+struct FogRadianceIntegral
+{
+    SpectrumRgb Radiance{};
+    double Transmittance = 1.0;
+};
+
+// Single scattering with midpoint incident light and exact exponential optical depth per segment.
+// Incident supplies phase-weighted, shadowed radiance at a world position; no screen-space ray effect.
+[[nodiscard]] FogRadianceIntegral IntegrateFogRadiance(
+    const FogParameters& Medium,
+    SpatialVector Origin,
+    SpatialVector Direction,
+    double DistanceM,
+    uint32_t Steps,
+    double ScatteringAlbedo,
+    const std::function<SpectrumRgb(SpatialVector)>& Incident);
 
 } // namespace Frontier

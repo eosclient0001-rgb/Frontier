@@ -202,7 +202,8 @@ float3 Arrival(LightShape L, float3 Point, out float3 Direction, out float Dista
     {
         bool Solar = (Extent.Primary.w & 16u) != 0 &&
                      dot(L.PositionReach.xyz, CloudParameter(3).xyz) > .9999;
-        return L.RadianceCategory.xyz * (Solar ? SunTransmittance : 1);
+        float FogT = asuint(Extent.Minimum.w) != 0 ? FogTransmission(Point, Direction, FogParameter(3).z) : 1;
+        return L.RadianceCategory.xyz * ((Solar ? SunTransmittance : 1) * FogT);
     }
     float3 Delta = L.PositionReach.xyz - Point;
     Distance = length(Delta);
@@ -233,7 +234,9 @@ float3 Arrival(LightShape L, float3 Point, out float3 Direction, out float Dista
         Window = 1 - Q * Q * Q * Q;
         Window *= Window;
     }
-    return L.RadianceCategory.xyz * (Angular * Window / max(Distance * Distance, 1e-6));
+    float FogT = asuint(Extent.Minimum.w) != 0
+        ? FogTransmission(Point, Direction, min(Distance, FogParameter(3).z)) : 1;
+    return L.RadianceCategory.xyz * (Angular * Window * FogT / max(Distance * Distance, 1e-6));
 }
 float ProposalPower(SurfacePoint R, uint Index)
 {
@@ -904,8 +907,9 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
     float Length = length(Segment);
     if (Length <= .004 || Occluded(ShadowOrigin, Segment / Length, Length - .002))
         return 0;
+    float FogT = asuint(Extent.Minimum.w) != 0 ? FogTransmission(ShadowOrigin, Segment / Length, Length) : 1;
     return DiffuseTransportResponse(R, Direction) * F.Emissive.xyz *
-           (Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
+           (FogT * Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
 }
 [shader("compute")][numthreads(64, 1, 1)] void TraceSurfaceTransport(uint3 Dispatch : SV_DispatchThreadID)
 {
@@ -1129,7 +1133,7 @@ float CloudMedium(float3 P)
            Layer.w;
 }
 // 📝 Transmittance-only surface shadow ray: no phase or nested scattering march.
-float CloudSunTransmittance(float3 Origin)
+float CloudSunTransmittance(float3 Origin, uint ShadowSteps = 0)
 {
     if ((Extent.Primary.w & 16u) == 0)
         return 1;
@@ -1149,7 +1153,7 @@ float CloudSunTransmittance(float3 Origin)
         if (Exit <= Enter)
             return 1;
     }
-    uint Steps = uint(Wind.w);
+    uint Steps = ShadowSteps != 0 ? ShadowSteps : uint(Wind.w);
     if (Steps == 0 || Layer.w == 0 || Medium.x == 0)
         return 1;
     float Dt = (Exit - Enter) / Steps, T = 1;
@@ -1233,4 +1237,83 @@ float4 CloudRay(float3 Origin, float3 Direction)
     uint Offset = uint(CameraProjection(10).x) + Index * 3;
     float3 Sky = float3(Angles[Offset], Angles[Offset + 1], Angles[Offset + 2]);
     OutputColour[Extent.Dimensions.x * 21 + Index] = float4(Cloud.xyz + Cloud.w * Sky, Cloud.w);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                              SHADOWED HEIGHT-FOG SCATTERING
+//------------------------------------------------------------------------------------------------------------------------
+float4 FogParameter(uint Slot)
+{
+    uint Offset = asuint(Extent.Minimum.w) - 1 + Slot * 4;
+    return float4(Angles[Offset], Angles[Offset + 1], Angles[Offset + 2], Angles[Offset + 3]);
+}
+float FogAboveIntegral(float Z0, float Dz, float A, float B, float Height, float Scale)
+{
+    float Length = B - A, Low = min(Z0 + Dz * A, Z0 + Dz * B);
+    float Q = abs(Dz) * Length / Scale;
+    float Ratio = Q < .01 ? 1 - Q * .5 + Q * Q / 6 - Q * Q * Q / 24 + Q * Q * Q * Q / 120
+                          : (1 - exp(-Q)) / Q;
+    return exp(-max(Low - Height, 0) / Scale) * Length * Ratio;
+}
+float FogTransmission(float3 Origin, float3 Direction, float Distance)
+{
+    float4 Medium = FogParameter(0);
+    float A = Origin.z, B = A + Direction.z * Distance, Integral;
+    if (A <= Medium.y && B <= Medium.y)
+        Integral = Distance;
+    else if (A >= Medium.y && B >= Medium.y)
+        Integral = FogAboveIntegral(A, Direction.z, 0, Distance, Medium.y, Medium.z);
+    else
+    {
+        float Crossing = (Medium.y - A) / Direction.z;
+        Integral = A < Medium.y
+            ? Crossing + FogAboveIntegral(A, Direction.z, Crossing, Distance, Medium.y, Medium.z)
+            : FogAboveIntegral(A, Direction.z, 0, Crossing, Medium.y, Medium.z) + Distance - Crossing;
+    }
+    return exp(-max(Medium.x * Integral, 0));
+}
+[shader("compute")][numthreads(64, 1, 1)] void IntegrateFogScattering(uint3 Dispatch : SV_DispatchThreadID)
+{
+    uint Pixel = Dispatch.x;
+    if (Pixel >= Extent.Dimensions.x)
+        return;
+    float4 Medium = FogParameter(0), March = FogParameter(1), Ambient = FogParameter(2), Lighting = FogParameter(3);
+    if (Medium.x == 0)
+        return;
+    float3 Origin = CameraProjection(0).xyz;
+    uint2 Coordinate = uint2(Pixel % Extent.History.x, Pixel / Extent.History.x);
+    float2 Ndc = (float2(Coordinate) + .5) / float2(Extent.History.xy) * 2 - 1;
+    Ndc.y = -Ndc.y;
+    float3 Direction = Unit(CameraProjection(1).xyz + CameraProjection(2).xyz * (Ndc.x * CameraProjection(2).w)
+                           + CameraProjection(3).xyz * (Ndc.y * CameraProjection(3).w));
+    SurfacePoint R = Receivers[Pixel];
+    float Distance = R.PositionHit.w != 0 ? min(length(R.PositionHit.xyz - Origin), March.y) : March.y;
+    uint Steps = uint(March.z);
+    float StepM = Distance / Steps, T = 1;
+    float3 Radiance = 0;
+    for (uint I = 0; I < Steps; ++I)
+    {
+        float3 At = Origin + Direction * (StepM * (I + .5));
+        float NextT = FogTransmission(Origin, Direction, StepM * (I + 1));
+        float3 Incident = Ambient.xyz;
+        float SunT = Lighting.x != 0 ? CloudSunTransmittance(At, uint(March.w)) : 1;
+        if (Lighting.y != 0)
+            for (uint J = 0; J < Extent.Dimensions.y; ++J)
+            {
+                float3 Toward;
+                float Far;
+                float3 Light = Arrival(Lights[J], At, Toward, Far, SunT);
+                if (all(Light == 0))
+                    continue;
+                Far = min(Far, Lighting.z);
+                if (Ambient.w != 0 && Occluded(At + Toward * .002, Toward, max(Far - .004, 0)))
+                    continue;
+                float Den = 1 + March.x * March.x - 2 * March.x * dot(Direction, Toward);
+                float Phase = (1 - March.x * March.x) / (4 * 3.141592653589793 * Den * sqrt(max(Den, 1e-12)));
+                Incident += Light * Phase;
+            }
+        Radiance += (T - NextT) * Medium.w * Incident;
+        T = NextT;
+    }
+    OutputColour[Pixel].xyz = OutputColour[Pixel].xyz * T + Radiance;
 }
