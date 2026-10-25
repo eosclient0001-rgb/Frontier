@@ -256,6 +256,7 @@ float3 Brdf(SurfacePoint R, float3 Direction)
     float NV = max(dot(N, V), 0), NL = max(dot(N, L), 0);
     if (NV <= 0 || NL <= 0)
         return 0;
+    if (MaterialAddress(R) > 0 && MaterialTransport(R) == 4) return 0;
     if (MaterialAddress(R) > 0)
         return EvaluateScatteringSequence(ReadMaterialScattering(R), N, V, L, float3(1));
     float3 H = Unit(V + L);
@@ -942,6 +943,14 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         float3 N = R.NormalRoughness.xyz, V = R.ViewMetallic.xyz;
         float3 Direction = reflect(-V, N), Origin = R.PositionHit.xyz + N * .003;
         float3 Radiance = 0;
+        if (Category == 4)
+        {
+            Radiance = IntegrateSolidDielectric(R, Pixel);
+            StoreHistory(16, Pixel, float4(Radiance, 1));
+            R.ResidualSpecular.xyz += Radiance;
+            Receivers[Pixel] = R;
+            return;
+        }
         if (Category == 1 || Category == 2)
         {
             bool Hit = false;
@@ -1021,7 +1030,7 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
     // 📝 Authored delta/very smooth surfaces are not diffuse signals: do not blur them with this reconstruction.
 bool PreserveTransportDirection(SurfacePoint R)
 {
-    return MaterialAddress(R) > 0 && (MaterialTransport(R) == 1 || MaterialTransport(R) == 2 || R.NormalRoughness.w < .12);
+    return MaterialAddress(R) > 0 && (MaterialTransport(R) == 1 || MaterialTransport(R) == 2 || MaterialTransport(R) == 4 || R.NormalRoughness.w < .12);
 }
 float TransportDirectionWeight(SurfacePoint A, float3 OtherView, float3 OtherNormal)
 {

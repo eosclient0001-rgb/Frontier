@@ -5,6 +5,14 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Primary closed-volume refraction — 2026-10-25
+
+[Actual captures and analytic acceptance](SolidDielectric.md): Snell bending, exact Fresnel, total internal
+reflection and distance absorption now run for opt-in primary smooth volumes. 199 boundary cases and four
+slab cases pass on SwiftShader. Existing thin-sheet windows remain unchanged. **Secondary solid transport
+is blocked by a reproduced software-driver pipeline crash**; nested/rough glass and saved material-authoring
+integration are not implemented. This does not mark the broader renderer complete.
+
 ## Lower-cost working cloud preset — 2026-10-25
 
 ![32 samples left, finite 64-sample reference right; wind 0 / 120 seconds](Images/CloudBudgetComparison.png)

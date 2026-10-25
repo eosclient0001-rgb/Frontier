@@ -11,7 +11,7 @@ Sources += list((Root / 'Frontier/Engine/Rendering').glob('*.cpp'))
 Sources += list((Root / 'Frontier/Engine/Diagnostics').glob('*.h'))
 Sources += list((Root / 'Frontier/Engine/Diagnostics').glob('*.cpp'))
 Sources += list((Root / 'Frontier/Engine/Rendering/Shaders').glob('*.slang'))
-Sources += [Root / 'Engine/Render' / P for P in ('ScatteringSequence.h', 'MaterialPreviewGeometry.h', 'DrapedClothPositions.h', 'Shader/ScatteringEvaluation.slang', 'Shader/AutomotivePaint.slang', 'Shader/MaterialSurface.slang')]
+Sources += [Root / 'Engine/Render' / P for P in ('ScatteringSequence.h', 'DielectricRefraction.h', 'Shader/DielectricRefraction.slang', 'MaterialPreviewGeometry.h', 'DrapedClothPositions.h', 'Shader/ScatteringEvaluation.slang', 'Shader/AutomotivePaint.slang', 'Shader/MaterialSurface.slang')]
 Sources += [P for P in Output.rglob('*') if P.suffix in ('.h', '.cpp', '.py', '.sh', '.ps1', '.md', '.slang') or P.name == 'CMakeLists.txt']
 Sources += [Root / 'Exhibits/VehicleReference' / P for P in ('Code/VehicleCapture.cpp', 'Code/Materials.mjs', 'CMakeLists.txt')]
 Sources += [Root / 'Exhibits/ClusteredLighting/Fixtures/Synthetic.ies']
@@ -30,6 +30,7 @@ Products += [P for P in EnergyProducts if P.exists()]
 Products += [Output / 'Results/RoughReflection.json'] if (Output / 'Results/RoughReflection.json').exists() else []
 Products += list((Output / 'Images').glob('Rough*.gif'))
 Products += [Output / 'Results/ShadowHistory.json'] if (Output / 'Results/ShadowHistory.json').exists() else []
+Products += [Output / 'Results/SolidDielectric.json'] if (Output / 'Results/SolidDielectric.json').exists() else []
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()

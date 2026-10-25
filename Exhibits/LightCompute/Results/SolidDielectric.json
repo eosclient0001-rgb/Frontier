@@ -1,0 +1,18 @@
+{
+  "device": "SwiftShader Device (Subzero)",
+  "physical_gpu": false,
+  "capture_dimensions": [
+    96,
+    64
+  ],
+  "paths_per_pixel": 128,
+  "interaction_cap": 32,
+  "capture_sha256": {
+    "SolidDielectric0.ppm": "763b79e37f884943d49159af2899401bfa52d1cacf5e79c4c485ec926993a739",
+    "SolidDielectric1.ppm": "2c03325ea07f3c1d1d6c436f8ad2e798ff00e9ab01e41ffc3cb5b0986e7aea5f",
+    "SolidDielectric2.ppm": "6894dac2e467ef1baf7bc6594b7a132dd57b622a47a38d53a3b3a8919bcfd59a"
+  },
+  "boundary_log": "DIELECTRIC_BOUNDARY device=SwiftShader Device (Subzero) type=4 cases=199 reciprocal_identities=149 tir=45 invalid=5 max_error=2.18084e-06\n",
+  "volume_log": "SOLID_DEVICE name=SwiftShader Device (Subzero) type=4\nSOLID_SLAB case=0 ior=1 glass_pixels=1444 analytic_pixels=100 max_mean_error=0 capped=0 unsupported=0 tir=0\nSOLID_SLAB case=1 ior=1 glass_pixels=1444 analytic_pixels=100 max_mean_error=4.7391e-08 capped=0 unsupported=0 tir=0\nSOLID_SLAB case=2 ior=1.5 glass_pixels=1444 analytic_pixels=100 max_mean_error=0.00346691 capped=0 unsupported=0 tir=57689\nSOLID_SLAB case=3 ior=1.5 glass_pixels=1444 analytic_pixels=100 max_mean_error=0.00281872 capped=0 unsupported=0 tir=57689\nSOLID_REJECTION case=inverted_winding diagnosed_pixels=1444\nSOLID_REJECTION case=inside_camera diagnosed_pixels=6144\n",
+  "scope": "Primary smooth closed volumes only; no secondary solid refraction, nesting, rough glass, caustics or saved material-authoring integration."
+}

@@ -8,6 +8,7 @@
 #include "LightComputeFormat.h"
 #include "Engine/Render/MaterialPreviewGeometry.h"
 #include "Engine/Render/ScatteringSequence.h"
+#include "Engine/Render/DielectricRefraction.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -1033,11 +1034,23 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "RoughReflectionValidation.h"
 #include "PoleShadowValidation.h"
 #include "SpecularHistoryValidation.h"
+#include "DielectricBoundaryValidation.h"
+#include "SolidDielectricValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && std::string(Arguments[3]) == "--solid-dielectric")
+        {
+            ValidateSolidDielectric(Arguments[1],Arguments[2],Arguments[4]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--dielectric-boundaries")
+        {
+            ValidateDielectricBoundaries(Arguments[1],Arguments[2]);
+            return 0;
+        }
         if (Count == 5 && (std::string(Arguments[3]) == "--specular-history" || std::string(Arguments[3]) == "--specular-history-original"))
         {
             ValidateSpecularHistory(Arguments[1],Arguments[2],Arguments[4],std::string(Arguments[3]) == "--specular-history-original");

@@ -294,3 +294,21 @@ emitter geometry without changing its colour/token retained indirect history. Pa
 invalidate authored-scene history (compact-only diffuse moving-history policy is retained); moved output matches a fresh submission exactly (negative-control RMSE 0.156373). This is
 not the pole-shadow defect. Snapshot memory/comparison cost is not optimized or a speed claim. No screen-
 colour mip history, complete specular-denoising acceptance, physical GPU/Windows/editor or sanitizer claim.
+
+
+## Primary smooth dielectric volumes — 2026-10-25
+
+`Exhibits/LightCompute/SolidDielectric.md` records actual 96x64, 128-path SwiftShader CPU Vulkan captures.
+Runtime category-4 float-atlas override only: exact Fresnel/Snell/TIR, radiance index factors, interior-distance
+Beer absorption, 32-interaction cap, 128-primary-sample cap, geometric outward normals, directional history
+bypass. Saved TOML/preset validation and existing category-2 thin sheets are unchanged. 199 boundary cases
+(max error 2.18084e-6), 149 reciprocal native identities, four slab fixtures (max central mean error .00346691),
+zero valid-fixture capped/unsupported paths; inside-camera/inverted-winding rejection tests pass. Origin
+normal offset 2e-5 and negative local hit tolerance -5e-6 fix demonstrated coincident-corner path escapes;
+not a general watertight mesh/scale proof. Primary-only exhibit, not completed solid-glass integration.
+
+Secondary solid paths inside sampled material-ray loops reproduced a SwiftShader pipeline-construction
+segfault, including after moving terminal shade evaluation outside the solid interaction loop. Removed that
+candidate; secondary category-4 encounters explicitly return black. Do not claim working reflected/rough
+secondary solid refraction, physical GPU/Windows/editor, caustics, rough glass, nested media or saved authoring.
+No speed claim. Existing analytic/emissive lighting, cellular flakes, sun/flare/stars preserved.

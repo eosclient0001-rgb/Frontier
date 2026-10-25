@@ -36,6 +36,8 @@ float3 ShadeRayStrike(SurfacePoint R)
     }
     return Incoming;
 }
+#include "SolidDielectricTransport.slang"
+
 float3 TraceMaterialRadiance(float3 Origin, float3 Direction, out bool Hit)
 {
     float3 Transmission = 1;
@@ -47,6 +49,8 @@ float3 TraceMaterialRadiance(float3 Origin, float3 Direction, out bool Hit)
         if (Index == 0xffffffffu) return Transmission * EnvironmentRadiance(Direction);
         Hit = true;
         SurfacePoint R = FacetSurface(Index, Origin, Direction, Strike);
+        // Secondary smooth-volume paths are not supported by this primary-volume stage.
+        if (MaterialTransport(R) == 4) return 0;
         if (MaterialTransport(R) != 2) return Transmission * ShadeRayStrike(R);
         float Cosine = max(.05, dot(R.NormalRoughness.xyz, -Direction));
         float F = .04 + .96 * pow(1 - Cosine, 5);
@@ -88,7 +92,7 @@ bool TraceDepthScreen(float3 Origin, float3 Direction, out SurfacePoint StrikeSu
                     all(MaterialShadowTransmission(Origin, Direction, Strike.x - .002) == 1))
                 {
                     StrikeSurface = FacetSurface(Candidate, Origin, Direction, Strike);
-                    if (MaterialTransport(StrikeSurface) != 2) return true;
+                    if (MaterialTransport(StrikeSurface) != 2 && MaterialTransport(StrikeSurface) != 4) return true;
                 }
             }
         }
