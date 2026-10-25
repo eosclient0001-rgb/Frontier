@@ -8,6 +8,31 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 
 
+
+## Spatial cloud-shadow checkpoint — 2026-10-25
+
+- Matching directional sunlight now integrates cloud extinction at each primary receiver and secondary hit,
+  not at one observer position. Exact, reservoir-target and spatial-reuse evaluations use current-position T;
+  proposal mass stays unattenuated with support retained. Both analytic and emissive lighting remain.
+- Five cases × 433 native surface probes (2,165): maximum RGB discrepancy 8.87267e-6. Secondary transport:
+  117 native probes, maximum 7.40833e-8. Each single-Sun case exercises 16,000 temporal and 63,438 spatial
+  reuses; maximum exact/reused RGB discrepancy 9.53674e-7. Non-Solar analytic lighting is bitwise unchanged.
+- Wind revision matches cold reconstruction. Reproduced an additional cloud-disable stale-history defect,
+  then tracked out-of-prefix cloud selection: disable/re-enable now match cold direct/indirect output bitwise.
+- Fixed omitted ambient RGB initializers from the previous cloud upload. The strengthened uniform check
+  requires nonzero ambient. All 2,230 cube and 396 camera probes and corrected volume captures passed ASan/UBSan;
+  maximum composite cube RGB error 8.32318e-6 and camera RGB error 8.63495e-6.
+- Four actual 640×400 wind times (0/60/120/180 s), original ControlVehicle and original ground, are retained in
+  `Exhibits/LightCompute/Images/CloudShadowVehicle.png`, `CloudShadowGround.png` and `CloudShadowComparison.png`.
+  Cameras and vehicle are stationary; wind moves. The overhead direct-only view isolates spatial shadows.
+- Final spatial/toggle ASan/UBSan and fresh-sampling checks passed. Legacy Vulkan, indirect reconstruction and
+  native CTest 4/4 passed; their exact execution chronology is retained in `Results/CloudShadowRegression.txt`.
+  Concurrent full-size software runs hit allocation errors; serial volume checks and resumed final view passed.
+- Still twelve entries/eight SSBOs/128-byte pushes; no added slabs or Int64 shader feature. SwiftShader CPU
+  type 4, not physical GPU, Windows or real-time acceptance. No new Moon/Sun/flare/star presentation integration.
+  Remaining: flat-slab horizon artifacts, approximate ambient, indirect cube seams and finite-Sun penumbrae.
+- Detailed evidence and reproduction: `Exhibits/LightCompute/README.md`, `RunClouds.sh`, `Results/CloudShadows.json`.
+
 ## Vulkan cloud environment checkpoint — 2026-10-25
 
 - Added GPU cloud density, 64-step per-camera-ray integration, six-step Sun self-shadowing and a cloud radiance

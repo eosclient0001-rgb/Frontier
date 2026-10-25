@@ -23,7 +23,7 @@ void SetCloudCamera(LightComputeArchive &Scene, bool Overhead, uint32_t Width, u
         Scene.Camera[4 + I] = Scene.Camera[I];
 }
 void ValidateCloudShadows(const char *Driver, const std::string &Shaders, const LightComputeArchive &Original,
-                          const std::string &Output, bool Capture)
+                          const std::string &Output, bool Capture, uint32_t FirstCapture = 0)
 {
     using namespace TransportReference;
     constexpr double π = 3.141592653589793;
@@ -44,6 +44,7 @@ void ValidateCloudShadows(const char *Driver, const std::string &Shaders, const 
     CloudParameters P;
     uint32_t Offset = AppendCloudParameters(Numeric, P, Sun, {}, 64);
     P.ExtinctionPerM = Numeric.Angles[Offset + 4];
+    if (FirstCapture == 0)
     {
         LightComputeSubmission Compute(Driver);
         Compute.Prepare(Numeric, Shaders);
@@ -100,10 +101,20 @@ void ValidateCloudShadows(const char *Driver, const std::string &Shaders, const 
                 Compute.Execute(Scene, 1, 1, 71, 64, 0, true, true, 0, true, false, false, Offset);
             Require(Pixels == Clustered, "Cloud shadow changed clustered/fallback equality");
             auto Ris = Compute.Execute(Scene, 3, 16, 71, 64, 3, true, true, 0, true, false, false, Offset);
+            // 📝 A second unchanged-weather update must exercise temporal and spatial reuse at current
+            // positions.
+            auto Temporal =
+                Compute.Execute(Scene, 3, 16, 72, 64, 3, false, true, 0, true, false, false, Offset);
+            auto ReuseCounts = Compute.HistoryStatistics();
+            Require(ReuseCounts[4] > 0 && ReuseCounts[8] > 0,
+                    "Cloud fixture did not exercise reservoir reuse");
             double RisError = 0;
             for (uint32_t I = 0; I < Pixels.size(); ++I)
                 for (uint32_t C = 0; C < 3; ++C)
+                {
                     RisError = std::max(RisError, std::abs(double(Ris[I][C]) - Pixels[I][C]));
+                    RisError = std::max(RisError, std::abs(double(Temporal[I][C]) - Pixels[I][C]));
+                }
             Require(RisError < .00002, "Single-Sun reservoir reuse changed spatial attenuation");
             if (Case == 0)
             {
@@ -118,7 +129,8 @@ void ValidateCloudShadows(const char *Driver, const std::string &Shaders, const 
             if (Case == 3)
                 Require(Earlier != Pixels, "Wind did not move surface cloud shadows");
             std::cout << "CLOUD_SHADOW_REUSE case=" << Case << " max_rgb_error=" << RisError
-                      << " cluster_equal=1\n";
+                      << " cluster_equal=1 temporal_accepted=" << ReuseCounts[4]
+                      << " spatial_accepted=" << ReuseCounts[8] << "\n";
         }
         // 📝 A different directional source and point/IES/spot lights must not
         // inherit Sun-only extinction.
@@ -182,10 +194,17 @@ void ValidateCloudShadows(const char *Driver, const std::string &Shaders, const 
         auto Restart = Cold.Execute(Weather, 3, 16, 71, 64, 3, true, true, 16, true, false, true, Offset);
         Require(Changed == Restart, "Weather revision retained stale direct/indirect illumination");
         std::cout << "CLOUD_SHADOW_RESET wind_cold_equal=1\n";
+        auto Disabled = Compute.Execute(Weather, 3, 16, 71, 64, 3, false, true, 16, true, false, true);
+        auto DisabledCold = Cold.Execute(Weather, 3, 16, 71, 64, 3, true, true, 16, true, false, true);
+        Require(Disabled == DisabledCold, "Disabling clouds retained stale illumination");
+        auto Enabled = Compute.Execute(Weather, 3, 16, 71, 64, 3, false, true, 16, true, false, true, Offset);
+        auto EnabledCold = Cold.Execute(Weather, 3, 16, 71, 64, 3, true, true, 16, true, false, true, Offset);
+        Require(Enabled == EnabledCold, "Enabling clouds retained stale illumination");
+        std::cout << "CLOUD_SHADOW_TOGGLE disabled_cold_equal=1 enabled_cold_equal=1\n";
     }
     if (!Capture)
         return;
-    for (uint32_t Pose = 0; Pose < 4; ++Pose)
+    for (uint32_t Pose = FirstCapture; Pose < 4; ++Pose)
     {
         auto Scene = Original;
         Sun = Vector(Numeric.Lights[0].PositionReach);

@@ -56,7 +56,7 @@ Report = {'checks': Rows, 'case_order': ['clear 35-degree Sun', 'procedural clou
           'camera_clouds': '64-step per-pixel GPU raymarch, six-step sun self-shadowing',
           'indirect_environment': 'six 48x48 GPU cloud-composited faces; native CPU single-scattering atmosphere input',
           'ambient': 'constant isotropic upper-hemisphere sky approximation, not multiple scattering',
-          'direct_sun_shadow': 'one cloud transmittance at observer, shared across local receivers; not a world shadow map',
+          'direct_sun_shadow': '64-step transmittance at each shaded receiver and secondary hit; observer record is diagnostic only',
           'sun_positions': 'explicit fixture angles, not observer/time ephemeris',
           'ordinary_sun_flare_stars': 'existing rendering code preserved; not newly connected to these captures',
           'physical_gpu_executed': False, 'moon_executed': False, 'gpu_atmosphere_executed': False,

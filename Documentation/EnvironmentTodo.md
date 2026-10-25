@@ -22,4 +22,13 @@ That does not establish that a Moon disc, surface texture or moonlight is connec
 - Existing native Sun, flare and star paths are unchanged. CPU atmospheric precomputation remains; no GPU
   atmosphere, new star catalogue, lunar rendering or observer/time ephemeris is implied.
 - Cloud appearance is not final: regular-march horizon structure, approximate isotropic ambient illumination,
-  cube seams/resolution and spatial cloud shadows still need work. Dawn/night/rise-set sequences remain open.
+  cube seams/resolution and finite-Sun penumbrae still need work. Dawn/night/rise-set sequences remain open.
+
+## Spatial cloud-shadow continuation — 2026-10-25
+
+- Surface and secondary-hit Sun extinction replaces the observer-wide lighting factor. Exact/clustered,
+  reservoir/spatial reuse, non-Solar-source preservation and wind-history refresh are checked. Four actual
+  ControlVehicle/ground wind captures accompany the native-reference results in `Exhibits/LightCompute/README.md`.
+- Fixed the omitted ambient RGB upload from the first cloud checkpoint and strengthened its uniform-medium
+  check to require nonzero incident radiance. Updated cloud images must be generated from corrected readbacks.
+- Regular cloud stepping, the flat slab, indirect cube seams, physical GPU/Windows acceptance and Moon remain open.

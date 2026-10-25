@@ -164,3 +164,22 @@ no shaderInt64 feature needed. Optional native cloud ambient defaults to zero. B
 remain. Existing native Sun, flare and stars are unchanged. Verification is SwiftShader CPU type 4, not physical
 GPU or Windows acceptance. CPU atmosphere, approximate ambient, horizon march artifacts, spatial cloud shadows,
 Moon and night/catalogue work remain open; see `Documentation/EnvironmentTodo.md`.
+
+### Spatial cloud-shadow continuation — 2026-10-25
+
+Sun extinction now uses each receiver and secondary-hit position, including reservoir/spatial targets, rather
+than the observer-wide factor. Five-case native direct probes (2,165) and 117 secondary probes passed under
+ASan/UBSan; temporal/spatial reuse is explicitly exercised. Wind and cloud disable/re-enable match cold direct/
+indirect reconstruction. The disable case first reproduced stale history; cloud selection now participates in
+history invalidation. Both lighting paths and existing native Sun/flare/stars remain.
+
+The previous ambient field was accidentally zero-filled during upload. Fixed the missing initializers, required
+nonzero RGB in its analytic check, and reran all cube/camera probes and cloud captures under ASan/UBSan. Four
+actual vehicle/ground wind captures are retained in `Exhibits/LightCompute/Images/CloudShadowVehicle.png` and
+`CloudShadowGround.png`. Full-size concurrent software runs hit allocation errors; run captures serially. A final
+view was resumed successfully; operation-specific Vulkan failures and capture resumption are retained.
+
+`Exhibits/LightCompute/README.md` and `Results/CloudShadowRegression.txt` record scope and regression chronology.
+Still SwiftShader CPU type 4, twelve entries, eight SSBOs, 128-byte pushes and no Int64 feature. No physical
+GPU/Windows/real-time acceptance. CPU atmosphere, flat-slab horizon artifacts, approximate ambient, indirect cube
+seams, finite-Sun penumbrae, Moon and night/catalogue work remain open. Spatial cloud shadows are no longer open.

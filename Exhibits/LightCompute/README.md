@@ -5,7 +5,79 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
-## Vulkan clouds, local Sun attenuation and low-Sun lighting — executed
+## Spatial cloud shadows — surface and secondary rays
+
+![Cloud shadows advect across the same ground under a 700-m overhead camera](Images/CloudShadowGround.png)
+
+![The original ControlVehicle under the same four wind times](Images/CloudShadowVehicle.png)
+
+`CloudSunTransmittance` integrates extinction **at the actual shading position**, using the same bounded
+64-midpoint density march as the cloud sky. Primary direct-light evaluation, temporal/spatial reservoir targets
+and secondary-hit analytic arrivals use the local factor. The prior observer-wide factor is no longer used for
+surface illumination. The observer-to-Sun cache record remains a diagnostic only.
+
+The transmittance-only function skips phase and nested scattering work. Each evaluation computes it once per
+receiver (or secondary hit), not once per light or reservoir candidate. Light proposal mass deliberately remains
+unattenuated and retains support; targets and final contributions use current-position cloud extinction.
+Point/IES/spot lights, unrelated directional sources and visible/area-sampled material emission are not scaled
+by the Sun-only factor. No extra compute entry, descriptor, push constant or output slab was added.
+
+| Check | Verified result |
+|---|---|
+| Native direct shading, five cases | 433 surface probes per case; maximum RGB discrepancy 8.87267e-6 |
+| Procedural field at 35° Sun | Native T spans 0.00598468–0.988228 across the tested ground positions |
+| Same field, wind at 120 seconds | Native T spans 0.00374286–0.992511; rendered surface lighting changes |
+| Clear and uniform-medium fixtures | Clear output bitwise unchanged; uniform native shading agrees |
+| Clustered/exhaustive evaluation | Bitwise equal in all five cases, including capacity-one selection |
+| Single-Sun reservoir and spatial reuse | Maximum RGB discrepancy from exact evaluation 9.53674e-7 |
+| Non-Solar analytic sources | Bitwise unchanged with the cloud feature enabled/disabled |
+| Secondary-hit diffuse illumination | 117 independent native probes; maximum RGB discrepancy 7.40833e-8 |
+| Weather-history revision | Wind update and cloud on/off equal cold direct/indirect restarts bitwise |
+
+The four **640×400 actual Vulkan** vehicle and ground captures use wind times 0/60/120/180 seconds at a fixed
+35° Sun. Vehicle captures retain 16-sample diffuse transport and analytic plus emissive lighting. The overhead
+view uses exact direct plus visible emission only, isolating spatial shadows over the original scene's ground;
+the vehicle occupies very few pixels at that scale. Both cameras remain below the cloud base. The vehicle and
+camera are stationary within each sequence: wind is moving, not the geometry. Animation timing is illustrative.
+
+Changing the cloud-enable selection also invalidates both histories. A new regression first reproduced stale
+illumination when clouds were switched off without changing the parameter bytes; tracking that out-of-prefix
+selection now makes both disable and re-enable match cold reconstruction bitwise.
+
+### Ambient upload correction
+
+The previous checkpoint added an ambient input, but `AppendCloudParameters` omitted its final four initializers,
+so the upload silently zeroed that input. The uniform test then read the same zero back and did not detect it.
+This phase fixes the upload and requires **nonzero RGB** before the closed-form ambient check. The cloud cube,
+full-resolution camera and clear/cloud/low-Sun images are rerun with the corrected input, not relabelled old
+captures. The moving-shadow fixture explicitly uses ambient RGB `[0.1, 0.12, 0.15]`; this remains an isotropic
+approximation, not multiple scattering.
+
+Focused reproduction (builds all shared entries and captures both views):
+
+```bash
+CLOUD_SHADOWS_ONLY=1 bash Exhibits/LightCompute/RunClouds.sh
+```
+
+`RunClouds.sh` without the environment switch runs both cloud-volume and spatial-shadow phases. The separate
+`--cloud-shadow-checks` executable option omits full-resolution captures. The tested C++ configurations
+are GCC 12.2 Release for captures and RelWithDebInfo with `-fsanitize=address,undefined -fno-omit-frame-pointer`
+for focused checks. External-driver leak detection is disabled, and UBSan halts on error. Each of the five
+single-Sun fixtures accepts 16,000 temporal and 63,438 spatial reservoir reuses on its second update.
+
+Run large software-Vulkan captures serially: simultaneous validation runs exhausted allocation resources in this
+sandbox. Earlier views were retained and the final wind view resumed successfully with `--cloud-shadow-captures 3`.
+The resume option accepts first indices 1–3 and runs the remaining full views without repeating numeric checks.
+Unneeded focused-mode buffer/pipeline preparation was also removed from `main`, and Vulkan allocation/pipeline
+failures now name the operation. No memory-usage or speedup measurement is claimed.
+
+Retained checks and scope are in
+`Results/CloudShadows.txt` and `CloudShadows.json`; platform verification remains **SwiftShader CPU type 4**,
+not physical RTX/GTX or Windows. These are point-Sun extinction shadows, not finite-disc penumbrae. Geometry seen through the cloud medium is not
+validated; these cameras stay below its base. Flat-slab
+horizon artifacts, approximate ambient and the observer-centred indirect environment cube remain limitations.
+
+## Vulkan cloud volume and low-Sun lighting — executed
 
 ![Clear atmosphere left; procedural volumetric clouds right](Images/CloudComparison.png)
 
@@ -28,15 +100,15 @@ uniform ambient illumination analytically per step; it is an approximation, not 
 
 Sun irradiance in the scene is attenuated by native atmospheric transmittance to ground. The cloud Sun source
 uses atmospheric transmittance at 1.3 km. Vulkan also computes cloud transmittance along the observer-to-Sun
-ray and applies it to the matching directional Sun for local surface lighting. This is **one observer-local
-factor**, not a spatial world cloud-shadow map. Camera, sky and indirect rays use the current cloud parameters.
+ray for a diagnostic record. Matching directional sunlight at surfaces now uses the actual shading-position
+transmittance described above. Camera, sky and indirect rays use the current cloud parameters.
 
 | Verified check | Observed result |
 |---|---|
 | Cube-native comparisons | 446 directions × 5 cases = 2,230 double-reference probes |
 | Maximum transmittance discrepancy | 1.186e-5; procedural cases at most 3.36908e-6 |
-| Maximum composite cube RGB discrepancy | 1.06147e-5 |
-| Full-resolution camera-native comparisons | 99 rays × 4 cases = 396; maximum RGB discrepancy 9.02517e-6 |
+| Maximum composite cube RGB discrepancy | 8.32318e-6 |
+| Full-resolution camera-native comparisons | 99 rays × 4 cases = 396; maximum RGB discrepancy 8.63495e-6 |
 | Uniform-density Beer-Lambert comparison | Maximum absolute transmittance discrepancy 1.186e-5 |
 | Uniform ambient integral | Native result matches the closed form within 1e-12 |
 | Zero cloud density | Entire vehicle output bitwise equal to clear-atmosphere path |
@@ -53,7 +125,7 @@ not alter the native renderer's existing Sun, flare or stars, nor newly connect 
 
 **Remaining appearance limits:** the flat cloud slab and regular 64-step march can show compressed/rippled
 horizon structure; indirect cloud lighting still uses a low-resolution non-seamless cube. Cloud ambient is
-isotropic and approximate, and the local Sun factor does not produce spatial moving cloud shadows. This is a
+isotropic and approximate; spatial shadows now move, but there is no finite-Sun penumbra model. This is a
 verified environment path with smoother visible clouds, **not final cloud appearance**. Moon, night exposure,
 licensed Milky Way/catalogue work, GPU atmosphere, physical RTX/GTX and Windows acceptance remain open.
 

@@ -2,6 +2,9 @@
 from Images import Root, Output, Read, Png
 import hashlib
 import json
+import platform
+import shutil
+import subprocess
 import struct
 import zlib
 Scratch = Root / '_ClaudeScratch/light-compute'
@@ -57,6 +60,12 @@ Ground = Read(Scratch / 'CloudShadowGround0.ppm')
 Comparison = b''.join(Vehicle[Y*1920:(Y+1)*1920] + Ground[Y*1920:(Y+1)*1920] for Y in range(400))
 (Output / 'Images/CloudShadowComparison.png').write_bytes(Png(1280, 400, Comparison))
 Report = {'checks': Rows, 'device': Log.splitlines()[0], 'physical_gpu_executed': False,
+          'platform': platform.platform(), 'compiler': subprocess.check_output(['c++', '--version'], text=True).splitlines()[0] if shutil.which('c++') else 'not detected by packager; see CMake compiler selection',
+          'configuration': 'Release full captures; RelWithDebInfo ASan/UBSan numeric and cloud-volume checks',
+          'shader_sha256': hashlib.sha256((Root / 'Frontier/Engine/Rendering/Shaders/LightInfluence.slang').read_bytes()).hexdigest(),
+          'checkout_head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=Root, text=True).strip(),
+          'working_tree_changes': subprocess.check_output(['git', 'diff', '--name-only'], cwd=Root, text=True).splitlines(),
+          'exact_sources': 'SHA256 source coverage in Results/Manifest.json',
           'windows_executed': False, 'extent': [640, 400], 'wind_seconds': [0, 60, 120, 180],
           'sun': 'fixed 35-degree elevation; native atmospheric attenuation at ground and cloud altitude',
           'sun_shadows': '64 midpoint samples of the cloud field at each receiver and secondary-hit position',

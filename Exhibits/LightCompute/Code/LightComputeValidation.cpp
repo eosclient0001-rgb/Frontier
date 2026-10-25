@@ -29,10 +29,10 @@ void Require(bool Condition, const char* Message)
     if (!Condition)
         throw std::runtime_error(Message);
 }
-void Confirm(VkResult Result)
+void Confirm(VkResult Result, const std::string& Operation = "unspecified call")
 {
     if (Result != VK_SUCCESS)
-        throw std::runtime_error("Vulkan error " + std::to_string(Result));
+        throw std::runtime_error("Vulkan error " + std::to_string(Result) + " at " + Operation);
 }
 #define LightVulkanFunctions(F)                                                                              \
     F(DestroyInstance)                                                                                       \
@@ -112,6 +112,7 @@ struct LightComputeSubmission
     std::vector<LightComputeShape> PreviousLights;
     std::vector<float> PreviousAngles;
     uint32_t HistorySequence = 0, ReceiverCount = 0;
+    uint32_t PreviousCloudOffset = UINT32_MAX;
     bool HistoryDirty = true;
     uint32_t Family = 0;
     bool RayQueryExtensions = false;
@@ -307,9 +308,10 @@ struct LightComputeSubmission
         Allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         Allocation.allocationSize = Requirements.size;
         Allocation.memoryTypeIndex = Type;
-        Confirm(AllocateMemory(Device, &Allocation, nullptr, &B.Memory));
+        Confirm(AllocateMemory(Device, &Allocation, nullptr, &B.Memory),
+                "AllocateMemory storage=" + std::to_string(Index) + " bytes=" + std::to_string(Requirements.size));
         Confirm(BindBufferMemory(Device, B.Buffer, B.Memory, 0));
-        Confirm(MapMemory(Device, B.Memory, 0, B.Size, 0, &B.Address));
+        Confirm(MapMemory(Device, B.Memory, 0, B.Size, 0, &B.Address), "MapMemory storage=" + std::to_string(Index));
         std::memset(B.Address, 0, B.Size);
         if (Size && Bytes)
             std::memcpy(B.Address, Bytes, Size);
@@ -344,7 +346,7 @@ struct LightComputeSubmission
         VkPipeline Result = VK_NULL_HANDLE;
         auto Status = CreateComputePipelines(Device, VK_NULL_HANDLE, 1, &Pipeline, nullptr, &Result);
         DestroyShaderModule(Device, Shader, nullptr);
-        Confirm(Status);
+        Confirm(Status, "CreateComputePipelines " + Path);
         return Result;
     }
     void Prepare(const LightComputeArchive& Scene, const std::string& Shaders)
@@ -570,6 +572,13 @@ struct LightComputeSubmission
                 Require(P[I] >= 0, "Negative cloud incident radiance");
         }
         Upload(Scene);
+        // 📝 Feature selection is outside the angle prefix; changing it must invalidate both histories too.
+        if (CloudOffset != PreviousCloudOffset)
+        {
+            HistoryDirty = true;
+            TransportDirty = true;
+            PreviousCloudOffset = CloudOffset;
+        }
         ComputeExtent Extent;
         Extent.Dimensions = {uint32_t(Scene.Receivers.size()), uint32_t(Scene.Lights.size()), Capacity, Mode};
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
@@ -1008,6 +1017,13 @@ int main(int Count, char** Arguments)
         if (Count == 7 && std::string(Arguments[5]) == "--transport-reconstruction-checks")
         {
             ValidateTransportReconstruction(Arguments[1], Arguments[2], Arguments[6], Arguments[4], false);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[5]) == "--cloud-shadow-captures")
+        {
+            std::string Text = Arguments[6];
+            Require(Text.size() == 1 && Text[0] >= '1' && Text[0] <= '3', "Invalid first cloud capture index");
+            ValidateCloudShadows(Arguments[1], Arguments[2], Scene, Arguments[4], true, uint32_t(Text[0] - '0'));
             return 0;
         }
         if (Count == 6 && (std::string(Arguments[5]) == "--cloud-shadows" ||
