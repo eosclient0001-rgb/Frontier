@@ -30,6 +30,7 @@ Sources += [Root / 'Exhibits/TextureStudio' / P for P in (
     'MaterialEnergyAcceptance.md', 'MaterialEnergy.md', 'MaterialReuse.md', 'GlintPair.md')]
 Products += [Output / 'Results/SavedDielectric.json', Output / 'Results/VehicleGlassEdges.json'] if (Output / 'Results/SavedDielectric.json').exists() else []
 Products += [Output / 'Results/VehicleGlazing.json'] if (Output / 'Results/VehicleGlazing.json').exists() else []
+Products += [Output / 'Results/GlazingMotion.json'] if (Output / 'Results/GlazingMotion.json').exists() else []
 EnergyProducts = [Root / 'Exhibits/TextureStudio/Results' / P for P in (
     'MaterialEnergyAcceptance.txt', 'MaterialEnergyCurrent.txt', 'MaterialEnergyGpuCurrent.txt',
     'MaterialEnergyGpuOriginal.txt', 'MaterialEnergySanitizer.txt', 'MaterialEnergy.json', 'MaterialReuse.json')]
