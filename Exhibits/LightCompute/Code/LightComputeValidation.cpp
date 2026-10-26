@@ -1036,6 +1036,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PoleShadowValidation.h"
 #include "SpecularHistoryValidation.h"
 #include "DielectricBoundaryValidation.h"
+#include "FaintPathValidation.h"
 #include "VehicleGlazingScene.h"
 #include "VehicleGlazingValidation.h"
 #include "GlazingMotionValidation.h"
@@ -1091,6 +1092,11 @@ int main(int Count, char** Arguments)
         if (Count == 5 && std::string(Arguments[3]) == "--solid-dielectric")
         {
             ValidateSolidDielectric(Arguments[1],Arguments[2],Arguments[4]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--faint-path")
+        {
+            ValidateFaintPath(Arguments[1],Arguments[2]);
             return 0;
         }
         if (Count == 4 && std::string(Arguments[3]) == "--dielectric-boundaries")

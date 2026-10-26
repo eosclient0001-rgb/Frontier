@@ -490,3 +490,13 @@ normal13SPIRV remain intact. Audit terminal cap encodes total in-medium travel*1
 minimum segment*1e9 intoInternalReflections (summed/packed by caller): interpret as debug distances ONLY.
 Must distinguish true long absorbing TIR paths from zero-distance looping. Current debugpose path uses one
 submission, marks fresh_reference=0/acceptance=0, returns before PASS; actual default sixpose comparison unchanged.
+
+Distance audit finished exit1(expected negative control):capped2, combined in-medium travel36822mm,
+min-segment packing saturated65535nm. No claim each individual distance recovered; summed diagnostic.
+Now TESTING unbiased faint-path Russian roulette in SolidDielectricTransport.slang: after32interactions,
+latch if maxRGBthroughput<1e-6; every8interactions survive probability1/2 and compensate×2, separate RNG.
+This is not a deterministic cutoff; no2048/128limit/zero-cap assertion relaxed. Not accepted yet.
+Three processes running: sixpose motion, static glazing, full retained DIFFUSE_BUILD=0 chain. Production-block
+GPU parity probe added:240cases with exact paired-draw first moments, latch/depth/draw-boundary checks.
+All final images/regression/digests must be refreshed; prior13/13shader/everyPNGexact observations describe
+PRE-roulette extraction only, NOT current changed shader. RunGlazingRayAudit pins1b5691e pre-survival source.

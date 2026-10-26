@@ -68,3 +68,22 @@ The production13SPIR-V files and shader sources remain unchanged. Raising the li
 them is not a fix. Need to distinguish physically guided absorbing paths from a zero-distance numerical loop
 before selecting a justified remedy. `GLAZING_DEBUG_POSE=4` isolates one pose and never produces a fullPASS;
 its single-submission path does not claim a paired fresh-reference comparison.
+
+## Candidate faint-path remedy — acceptance pending
+
+The negative-control distance audit found36822mm combined in-medium travel at the two capped paths.
+The minimum-segment aggregate saturates its65535nm diagnostic field; individual path minima/distances
+were not recovered. Preserve that failed control rather than interpreting its repurposed fields as invalid rays.
+
+The candidate adds **unbiased Russian roulette**, not an absorption/radiance cutoff: after32interactions,
+maximum throughput below1e-6 latches a faint state. Every8interactions thereafter, a separate draw survives with
+probability1/2 and doubles surviving RGB weight. Each trial's expected weight is exactly
+`0.5 × (2 × weight) + 0.5 × 0 = weight`. Latching prevents compensation from disabling later trials.
+The separate RNG avoids disturbing ordinary boundary draws. Short/bright paths retain their existing path.
+The2048interaction hard cap,128sample ceiling and zero-cap acceptance assertions remain unchanged.
+This does not guarantee absence of caps for arbitrary lossless geometry or eliminate the finite-cap limitation.
+
+`RunFaintPath.sh` extracts the actual production block into a numerical GPU kernel and checks240cases,
+including the strict1e-6 activation boundary, pre/post-depth32, draw=.5, initial/inherited latch and exact
+paired-draw RGB first moments. Full retained optical, static-vehicle and moving-vehicle runs are being repeated
+because the shader changed. Pre-remedy static byte-equality evidence above remains historical extraction proof.

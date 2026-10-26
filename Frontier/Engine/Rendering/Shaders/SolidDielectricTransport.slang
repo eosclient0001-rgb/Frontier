@@ -13,7 +13,8 @@ float3 TraceSolidDielectric(float3 Origin, float3 Direction, inout uint Bits, ou
     float3 Throughput = 1, Absorption = 0;
     float MediumIor = 1;
     uint MediumAddress = 0;
-    bool Inside = false, SolidSeen = false;
+    bool Inside = false, SolidSeen = false, Faint = false;
+    uint SurvivalBits = Bits ^ 0xa511e9b3u;
     InternalReflections = Capped = Unsupported = 0;
     Hit = false;
     // 📝 Curved six-millimetre glazing can guide rays through hundreds of total internal reflections.
@@ -72,6 +73,15 @@ float3 TraceSolidDielectric(float3 Origin, float3 Direction, inout uint Bits, ou
                 MediumIor = Ior;
                 Absorption = max(0, MaterialCoefficients(Address - 1 + 16).xyz);
             }
+        }
+        // 📝 Unbiased survival, NOT a radiance cutoff: retain each faint continuation with probability 1/2
+        // and double its weight. Latch activation so compensation cannot disable subsequent trials.
+        // Separate draws preserve the boundary proposal stream; ordinary short/bright paths are unchanged.
+        Faint = Faint || (Interaction >= 32 && max(Throughput.x, max(Throughput.y, Throughput.z)) < 1e-6);
+        if (Faint && (Interaction & 7u) == 7u)
+        {
+            if (RandomUnit(SurvivalBits) >= .5) return 0;
+            Throughput *= 2;
         }
         // Offset along the geometric normal: a directional offset can cross an adjacent face at a corner.
         float3 Displacement = Outward * (Inside ? -Offset : Offset);
