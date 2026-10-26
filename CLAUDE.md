@@ -442,3 +442,7 @@ Rough-through-volume regression completed:11118absorption-changedchannels, ratio
 three screen/BVH cases exact;6144sourceoffblack;pinnedold ignoresabsorption. Retained rough192x120 scene:
 7250floorpixels,14941screen/204392BVH rays; hybrid/BVH error0; repeat/sourceoff/movedfresh checks pass.
 Window stage now running; full chain final result pending.
+Window regression completed:4x100analyticpixels maxmean.00312531; energycontrols4.58834e-9/1.1283e-6;
+6144black; pinned100centralblocked. Compact diffuse positive fixture passed:15360changedchannels,
+ratios.903583/.761600/.632969;327680rays=146417hits+181263misses; shieldedNEE exact;6144black.
+Diffuse pinned control then retained vehicle transport/history remain running; final chain pending.
