@@ -114,7 +114,12 @@ void ValidateGlazingMotion(const char*        Driver,
             if (Pane)
             {
                 Require(R.ExpectedDirect[0] == 5,"Visible pane did not execute volume transport");
-                Capped += uint32_t(R.ExpectedDirect[1])/65536; Invalid += uint32_t(R.ExpectedDirect[2]);
+                const auto Cap = uint32_t(R.ExpectedDirect[1])/65536, Bad = uint32_t(R.ExpectedDirect[2]);
+                Capped += Cap; Invalid += Bad;
+                if (Cap || Bad) std::cerr << "GLAZING_MOTION_BAD name=" << Name << " pixel=" << I
+                    << " cap=" << Cap << " unsupported=" << Bad << " position=" << R.PositionHit[0] << ','
+                    << R.PositionHit[1] << ',' << R.PositionHit[2] << " diagnostic=" << R.ExpectedDirect[0] << ','
+                    << R.ExpectedDirect[1] << ',' << R.ExpectedDirect[2] << std::endl;
             }
             if (I%3 == 0)
             {
@@ -128,6 +133,8 @@ void ValidateGlazingMotion(const char*        Driver,
                 ++Probes;
             }
         }
+        std::cout << "GLAZING_MOTION_COUNTS name=" << Name << " glass=" << Glass << " mirrors=" << Mirrors
+                  << " probes=" << Probes << " capped=" << Capped << " unsupported=" << Invalid << std::endl;
         Require(Glass > 100 && Probes > 0 && !Capped && !Invalid,"Moving glass geometry/transport acceptance failed");
         Require(MotionError < 2e-5 && DirectError < 2e-5,"Moving boundary/direct histories differ from native reference");
         if (ExpectReset) Require(Reused == 0,"Moved authored geometry retained obsolete indirect history");
@@ -140,6 +147,14 @@ void ValidateGlazingMotion(const char*        Driver,
         WriteImage(Output+"/"+Name+".ppm",Image,Scene.Width,Scene.Height);
         Last = Image;
     };
+    const auto DebugPose = std::getenv("GLAZING_DEBUG_POSE");
+    if (DebugPose)
+    {
+        const auto Pose = uint32_t(std::stoul(DebugPose));
+        Require(Pose < 6,"Invalid diagnostic pose");
+        Compare(Frames[Pose],71,true,"GlazingDebug"+std::to_string(Pose));
+        return; // 📝 Diagnostic-only run never emits the six-pose acceptance marker.
+    }
     Compare(Frames[0],71,true,"GlazingMotion0");
     Compare(Frames[0],72,false,"GlazingMotionWarm");
     for (uint32_t Pose = 1; Pose < 6; ++Pose) Compare(Frames[Pose],71,true,"GlazingMotion"+std::to_string(Pose));

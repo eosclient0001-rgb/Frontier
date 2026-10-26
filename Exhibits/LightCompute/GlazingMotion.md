@@ -1,6 +1,7 @@
 # Moving closed-glass ControlVehicle — 2026-10-26
 
-**In progress:** native six-pose construction and ASan+UBSan passed; six-pose GPU acceptance pending.
+**In progress:** native six-pose construction and ASan+UBSan passed; six-pose GPU acceptance **failed at pose4; under investigation**.
+Poses0–3 and warm opaque reuse passed. No accepted six-pose animation yet.
 Static native/320×200 Vulkan regression passed, including exact equality of all five prior published PNGs.
 Do not substitute prior static-glazing observations for completion of this moving-scene check.
 

@@ -475,3 +475,10 @@ pass;39nativeauthoring passes. GPU acceptance pending: compare glass/mirror dire
 reconstruction-disabled reference with matching direct histories; require no temporal/spatial blur on delta
 routes, conservative authored-geometry resets, static opaque warmup reuse, source revision/reset and six-frame
 animation. No shader/ABI/history-policy changes yet. Current source not optically accepted until fresh GPU run.
+
+Moving-glazing GPU run did NOT pass: poses0–3 and static warmup passed, then pose4 failed the unchanged
+Glass>100/probe>0/cap=0/unsupported=0 gate. Root cause unknown pending diagnostic. First-attempt log retained.
+Observed warm opaque reuse17718; pose0..3 glass319/316/314/606, mirrors11/10/5/5; motion error<=1.5501e-7,
+direct residual<=3.8147e-6, directional fresh exact. Static regression exit0, all5priorPNGbytes exact2e3eb62,
+all13SPIRVdigests exact. ASan+UBSan native sixpose exit0. GLDebugPose environment diagnostic added;
+never emits sixposePASS and image presenter requires fullPASS plus actual mirror coverage. No animation claimed.
