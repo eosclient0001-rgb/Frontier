@@ -409,3 +409,12 @@ Saved-volume wrapper exited0:39 native assertions strict +ASan/UBSan; pinnedcec2
 new table. Four slab cases max mean RGB error .00346691; valid-fixture cap/unsupported0; exact repeated
 captures;6144 sourceoff pixels black; inside/inverted rejection retained. Four existing native CTests pass.
 Shader arithmetic and prior optical sampling/history policies are unchanged in this phase.
+
+## Vehicle glazing recovery checkpoint — 2026-10-26
+
+The workspace resumed at the last pushed checkpoint and lost uncommitted glazing changes / scratch runs.
+`PaneThickness.h` and ray-aligned shared-edge evaluation / 2048-step volume bound have been restored from
+conversation history. Current restored build is NOT yet accepted: rebuild native/Vulkan tests and retain
+fresh results before claiming completion. Prior turn observations are not proof of this build. No material
+GPU ABI change; TIR diagnostic saturates at65535 before capped*65536 packing. Continue restoring native
+vehicle fixture, geometry tests, reproduction and images, then run full retained transport regressions.

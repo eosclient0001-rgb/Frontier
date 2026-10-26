@@ -173,7 +173,7 @@ float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
         if (Compact && (Extent.Primary.w & 2u) != 0) Sum += SampleEmissiveFacet(R, EmissiveBits);
     }
     if (Compact) R.ExpectedDirect.xyz = float3(7, Capped, Unsupported);
-    else if (Category == 4) R.ExpectedDirect.xyz = float3(5, Capped * 65536u + Internal, Unsupported);
+    else if (Category == 4) R.ExpectedDirect.xyz = float3(5, Capped * 65536u + min(65535u, Internal), Unsupported);
     else if (Mirror) R.ExpectedDirect.xyz = float3(1, Hits > 0 ? 1 : 0, Capped * 256u + Unsupported);
     else if (Sheet) R.ExpectedDirect.xyz = float3(2, ReflectedHits > 0 ? 1 : 0, Capped * 512u + Unsupported);
     else if (Category == 3) R.ExpectedDirect.xyz = float3(ScreenHits > 0 ? 3 : 4, FallbackRays, ScreenHits);

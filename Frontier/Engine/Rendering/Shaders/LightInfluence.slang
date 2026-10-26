@@ -675,25 +675,27 @@ float4 CameraProjection(uint Slot)
     uint Offset = Extent.Primary.y + Slot * 4;
     return float4(Angles[Offset], Angles[Offset + 1], Angles[Offset + 2], Angles[Offset + 3]);
 }
+// 📝 Ray-aligned edge functions share projected coordinates; precise products preserve shared-edge evaluation.
 bool FacetStrike(FacetCorners Triangle, float3 Origin, float3 Direction, float Minimum, float Maximum,
                  out float3 Strike)
 {
     Strike = 0;
-    float3 E1 = Triangle.B.xyz - Triangle.A.xyz, E2 = Triangle.C.xyz - Triangle.A.xyz;
-    float3 P = cross(Direction, E2);
-    float Determinant = dot(E1, P);
-    if (abs(Determinant) < 1e-12)
-        return false;
-    float3 Offset = Origin - Triangle.A.xyz;
-    float U = dot(Offset, P) / Determinant;
-    if (U < 0 || U > 1)
-        return false;
-    float3 Q = cross(Offset, E1);
-    float V = dot(Direction, Q) / Determinant;
-    if (V < 0 || U + V > 1)
-        return false;
-    float Distance = dot(E2, Q) / Determinant;
-    Strike = float3(Distance, U, V);
+    uint Kz = abs(Direction.x) > abs(Direction.y) ? 0u : 1u;
+    if (abs(Direction.z) > abs(Direction[Kz])) Kz = 2;
+    if (abs(Direction[Kz]) < 1e-20) return false;
+    uint Kx = (Kz + 1) % 3, Ky = (Kx + 1) % 3;
+    if (Direction[Kz] < 0) { uint Swap = Kx; Kx = Ky; Ky = Swap; }
+    float3 A = Triangle.A.xyz - Origin, B = Triangle.B.xyz - Origin, C = Triangle.C.xyz - Origin;
+    float Sx = Direction[Kx] / Direction[Kz], Sy = Direction[Ky] / Direction[Kz], Sz = 1 / Direction[Kz];
+    precise float Ax = A[Kx] - Sx * A[Kz], Ay = A[Ky] - Sy * A[Kz];
+    precise float Bx = B[Kx] - Sx * B[Kz], By = B[Ky] - Sy * B[Kz];
+    precise float Cx = C[Kx] - Sx * C[Kz], Cy = C[Ky] - Sy * C[Kz];
+    precise float U = Cx * By - Cy * Bx, V = Ax * Cy - Ay * Cx, W = Bx * Ay - By * Ax;
+    if ((U < 0 || V < 0 || W < 0) && (U > 0 || V > 0 || W > 0)) return false;
+    float Determinant = U + V + W;
+    if (Determinant == 0) return false;
+    float Distance = (U * A[Kz] + V * B[Kz] + W * C[Kz]) * Sz / Determinant;
+    Strike = float3(Distance, V / Determinant, W / Determinant);
     return Distance > Minimum && Distance < Maximum;
 }
 uint NearestFacet(float3 Origin, float3 Direction, float Minimum, float Maximum, out float3 Strike)

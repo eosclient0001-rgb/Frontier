@@ -16,7 +16,8 @@ float3 TraceSolidDielectric(float3 Origin, float3 Direction, inout uint Bits, ou
     bool Inside = false, SolidSeen = false;
     InternalReflections = Capped = Unsupported = 0;
     Hit = false;
-    for (uint Interaction = 0; Interaction < 32; ++Interaction)
+    // 📝 Curved six-millimetre glazing can guide rays through hundreds of total internal reflections.
+    for (uint Interaction = 0; Interaction < 2048; ++Interaction)
     {
         float3 Strike;
         uint Index = NearestFacet(Origin, Direction, Compact && Interaction == 0 ? 0 : -Offset * .25, 1e30, Strike);
