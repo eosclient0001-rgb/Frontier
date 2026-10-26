@@ -10,5 +10,31 @@
   },
   "compiled_shader_equality": "13/13 SPIR-V digests match previous accepted manifest",
   "native_saved_spectrum_sha256": "3e3994170be2774e88f0da7c7e7ea5db732829c70e20fb1abd83bfdb7e71d57a",
-  "source_setup_unchanged": "320x200 static fixtures retain all original images byte-for-byte after preparation extraction"
+  "source_setup_unchanged": "320x200 static fixtures retain all original images byte-for-byte after preparation extraction",
+  "post_survival": {
+    "static_fixture_exit_code": 0,
+    "prior_png_byte_equality": {
+      "VehicleGlazing.png": true,
+      "VehicleGlazingAbsorbed.png": true,
+      "VehicleGlazingClear.png": true,
+      "VehicleGlazingMoved.png": true,
+      "VehicleGlazingSheet.png": true
+    },
+    "prior_compiled_shader_byte_equality": {
+      "_ClaudeScratch/build/light-compute/Cells.spv": true,
+      "_ClaudeScratch/build/light-compute/Clouds.spv": true,
+      "_ClaudeScratch/build/light-compute/Filter.spv": true,
+      "_ClaudeScratch/build/light-compute/Finalize.spv": true,
+      "_ClaudeScratch/build/light-compute/Fog.spv": true,
+      "_ClaudeScratch/build/light-compute/Primary.spv": true,
+      "_ClaudeScratch/build/light-compute/Receivers.spv": true,
+      "_ClaudeScratch/build/light-compute/Reconstruct.spv": true,
+      "_ClaudeScratch/build/light-compute/Reuse.spv": true,
+      "_ClaudeScratch/build/light-compute/Transport.spv": false,
+      "_ClaudeScratch/build/light-compute/TransportResolve.spv": true,
+      "_ClaudeScratch/build/light-compute/TransportSpatial.spv": true,
+      "_ClaudeScratch/build/light-compute/TransportTemporal.spv": true
+    },
+    "change": "Only Transport.spv changes: compensated faint-path survival. Static CTests, authoring, repeats, moved/cold and all-source-off checks pass."
+  }
 }

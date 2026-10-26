@@ -504,3 +504,8 @@ PRE-roulette extraction only, NOT current changed shader. RunGlazingRayAudit pin
 FaintPath GPU parity PASSED exit0:240cases/76trials/38terminated, exact RGB first moments, latch and .5boundary.
 Retained `Results/FaintPath.{txt,json}` production block /generated/compiled shader SHA. Remaining3GPU chains
 stillrunning; no sixpose/static/post-remedy full-chain acceptance yet. Do not treat numeric parity as film proof.
+
+POST-survival static glazing regression PASS exit0; all5publishedPNGbytes STILL identical2e3eb62,
+allcounts887/1851/0cap/0invalid/64000black unchanged.12/13SPIRVmatch; onlyTransport.spv changes as intended.
+Results/GlazingMotionRegression.json distinguishes extraction(pre-remedy) and post-survival observations.
+Motion poses0..2/warm passed so far; full retained chain passed numeric199/slab4/rejection controls, stillrunning.
