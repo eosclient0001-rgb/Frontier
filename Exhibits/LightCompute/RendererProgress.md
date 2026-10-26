@@ -1,11 +1,12 @@
 # Renderer progress — 2026-10-26
 
-**Latest addition: derived closed vehicle glazing with native saved coefficients and actual vehicle readbacks.** All current
+**Latest addition: six posed closed-glass vehicles, posed mirrors, exact fresh directional comparisons and actual animation.**
+The broader optical regression after faint-path survival is still running; see [motion report](GlazingMotion.md). All current
 execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RTX/GTX or the Windows editor.
 
 **Legend:** 🟢 verified within the stated scope · 🚧 partial / still needs work · 🔴 blocked or not done.
 
-![Actual native vehicle glazing comparison](Images/VehicleGlazing.png)
+![Actual six-pose native glazing animation](Images/GlazingMotion.gif)
 
 ## Done and remaining
 
@@ -22,7 +23,8 @@ execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RT
 | 🟢 | Thin window → smooth glass | Four sheet/slab cases, two retained sheet-energy controls, source-off and pinned blocked-path control | Approximate sheet optics; no exhaustive multilayer/scale acceptance |
 | 🟢 | Compact diffuse → smooth glass | Uploaded cosine samples and diffuse weights retained; Beer/repeat/source-off/counter checks and shielded emitter-routing fixture | Pure-sheet emitter weighting and complete MIS/caustic acceptance remain |
 | 🟢 | Saved volume spectrum | Native optional TOML IOR/RGB absorption, disk round trips, compiled metadata and actual slab uploads; [evidence](SavedDielectric.md) | Glass studio preview, editor controls and general renderer importer |
-| 🟢 | Derived vehicle glazing | Three closed6mm components /284 triangles; saved native coefficients; fresh vehicle Vulkan acceptance | General CAD/editor importer and complete moving-scene acceptance |
+| 🟢 | Derived vehicle glazing | Three closed6mm components /284 triangles; saved native coefficients; fresh vehicle Vulkan acceptance | General CAD/editor importer and unified full-scene acceptance |
+| 🟢 | Six-pose closed glazing | 6/6poses,284closed triangles/4mirror facets each,17718warm opaque reuse,3547glass/72mirror observations exact fresh,23040black pixels; [report](GlazingMotion.md) | Global moving authored history stays conservative; physical/editor/unified scene still open |
 | 🚧 | Full glass/material system | Bounded2048-interaction /128-sample tracer, saved spectra and derived vehicle assignment | Full preset/editor integration, rough glass, nested media, inside cameras, caustics and transmitted direct shadows |
 | 🚧 | Reflection reconstruction / denoising | Limited authored rough-surface reconstruction and tested invalidation | Roughness-mip prior-screen colour/exitance, full denoiser and complete sampling/PDF/material acceptance |
 | 🚧 | Clouds, fog and shafts | Earlier actual cloud/fog/geometry-shadow fixtures; lower-cost working cloud budget | Improve blocky clouds, horizon/sky, Milky Way/catalogues/extrasolar stars and dawn/sunset; moving full-scene acceptance |
@@ -51,7 +53,7 @@ acceptance are outstanding. No real-time performance or completed renderer claim
 
 ## Suggested execution order
 
-1. Saved closed-glass authoring and actual ControlVehicle bindings; moving captures, lighting refresh and reconstruction.
+1. Complete retained optical regression after faint-path survival; saved closed-glass authoring and six-pose vehicle captures now pass.
 2. Pure-sheet emitter weighting, complete sampling/material acceptance and broader optical geometry/scale coverage.
 3. Roughness-mip prior-screen lighting, full denoising and unified moving-scene acceptance.
 4. Physical RTX/GTX and Windows editor integration; measured device budgets.

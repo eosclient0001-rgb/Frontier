@@ -509,3 +509,8 @@ POST-survival static glazing regression PASS exit0; all5publishedPNGbytes STILL 
 allcounts887/1851/0cap/0invalid/64000black unchanged.12/13SPIRVmatch; onlyTransport.spv changes as intended.
 Results/GlazingMotionRegression.json distinguishes extraction(pre-remedy) and post-survival observations.
 Motion poses0..2/warm passed so far; full retained chain passed numeric199/slab4/rejection controls, stillrunning.
+
+Sixpose motion GPU PASS exit0 with survival:glass319/316/314/606/587/543,mirrors11/10/5/5/4/13;
+all0cap/0unsupported/exactfresh;warm17718opaque;3547glass+72mirror observations(total includeswarm/emission),
+maxnativeplanarmotion1.91807e-7/direct3.8147e-6,emissionrevision1,23040black. ActualGIF6frames384x264from192x120,
+nointerpolation; contact sheet read/inspected andGIFpresented. Docs/progress updated but fullretainedchainstillRUNNING.

@@ -705,3 +705,14 @@ static/moving history, light-off/residual refresh and all four native CTests pas
 attempt used the primary-motion archive (no uploaded raster receivers), correctly failed its coverage assertion,
 and was rerun successfully using native `--vulkan-input` and `--motion-input` archives. Chronology is retained
 in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-selection error, not a renderer fix.
+
+## Closed-glass vehicle motion — 2026-10-26
+
+- Six native posed ControlVehicle views with284closed glass/4mirror triangles each pass SwiftShader CPU Vulkan:
+  exact fresh directional glass/mirrors, conservative geometry reset,17718stationary opaque history reuse,
+  emission revision and23040black source-off pixels. Actual GIF/report: `Exhibits/LightCompute/GlazingMotion.md`.
+- Original pose4 failure preserved (2capped/0unsupported paths); faint-path compensated survival addresses the
+  capped absorbing continuations without raising2048/128limits or relaxing zero-cap tests.240production-block
+  GPU arithmetic cases pass; all5previous static PNGs remain byte-identical.
+- Broader retained optical chain after the shader change is still running. No physical GPU, Windows/editor,
+  continuous moving authored indirect reuse, glass denoiser or completed unified renderer claim.
