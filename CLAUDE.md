@@ -418,3 +418,7 @@ conversation history. Current restored build is NOT yet accepted: rebuild native
 fresh results before claiming completion. Prior turn observations are not proof of this build. No material
 GPU ABI change; TIR diagnostic saturates at65535 before capped*65536 packing. Continue restoring native
 vehicle fixture, geometry tests, reproduction and images, then run full retained transport regressions.
+Recovery native checks now pass on f157e14:52 geometry/host-packing assertions strict and ASan+UBSan;
+39 native saved-spectrum assertions and four existing CTests. All13 production shader entries rebuilt
+from current sources; duplicate Transport compilation byte-identical. GPU vehicle/full regressions remain
+pending and must be freshly completed. Do not substitute the prior interrupted workspace's observations.
