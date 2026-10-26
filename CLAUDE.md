@@ -422,3 +422,6 @@ Recovery native checks now pass on f157e14:52 geometry/host-packing assertions s
 39 native saved-spectrum assertions and four existing CTests. All13 production shader entries rebuilt
 from current sources; duplicate Transport compilation byte-identical. GPU vehicle/full regressions remain
 pending and must be freshly completed. Do not substitute the prior interrupted workspace's observations.
+Fresh pinned250616f optical shader control on the restored vehicle fixture completed0:59 capped /16unsupported
+paths, matching the previous turn's reported failure. Retained Results/VehicleGlazingBoundPrevious.txt.
+Production corrected vehicle acceptance and complete retained optical regressions are still running.

@@ -42,6 +42,13 @@ is now **2,048**, rather than 32. The primary TIR diagnostic saturates at 65,535
 capped-path count, preventing diagnostic overflow without changing radiance. GPU descriptors/material ABI are
 unchanged. No performance improvement or hardware tracing claim is made.
 
+## Fresh pinned negative control
+
+[Previous shader control](Results/VehicleGlazingBoundPrevious.txt), pinned to `250616f` for the three optical
+shader files and compiled against the same current fixture: **59 capped paths / 16 unsupported paths**.
+The probe device line describes the production limit; the preceding source-override line explicitly identifies
+the previous 32-step shader. This is an old-source/current-fixture comparison, not the entire previous app.
+
 ## Fresh native checks
 
 | Check | Result |
