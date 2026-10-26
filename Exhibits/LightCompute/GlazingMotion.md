@@ -1,6 +1,7 @@
 # Moving closed-glass ControlVehicle — 2026-10-26
 
-**In progress:** native six-pose construction passed; GPU/static-regression and sanitizer acceptance pending.
+**In progress:** native six-pose construction and ASan+UBSan passed; six-pose GPU acceptance pending.
+Static native/320×200 Vulkan regression passed, including exact equality of all five prior published PNGs.
 Do not substitute prior static-glazing observations for completion of this moving-scene check.
 
 ## What changes
@@ -42,3 +43,12 @@ when a completed sanitizer result is already retained.
 - No shader/descriptor/material ABI or temporal policy changes are intended in this phase.
 - No physical RTX/GTX/Windows/editor importer, general CAD offset certification, nested/rough glass,
   transmitted analytic shadows, caustic solver or unified moving SDF/cloud/fog acceptance claim.
+
+## Static extraction regression
+
+The refactored setup produced the exact previous five PNG byte streams at checkpoint2e3eb62, not just matching
+counts. All13 compiled SPIR-V byte streams also retain their previous accepted digests. Static acceptance
+again reports887glass pixels /1851changed channels /0caps /0unsupported, exact repeat, moved=cold and
+64000black source-off pixels. The native exporter again passes39checks and all4native CTests pass.
+See `Results/GlazingMotionRegression.json` and `Results/VehicleGlazingGpu.txt`. The previous full optical
+chain is retained; it was not rerun unchanged in this phase because no shader/core-renderer changes occurred.
