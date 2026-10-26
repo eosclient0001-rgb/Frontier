@@ -464,3 +464,14 @@ Reconstruction160x100 RMSE.0103498->.00585726;210nativeprobesmax4.23087e-8; sixp
 currentemissionpreserved/directdelta<=3.8147e-6. Retained sixposes are NOT a sixpose closed-glazing film.
 SoftwareSwiftShaderCPU only; no physicalRTX/GTX/Windows/editor/fullrenderer/realtime/generalCAD claim.
 Report Exhibits/LightCompute/VehicleGlazing.md. Preserve sun/flare/stars/cellular flakes and both source families.
+
+## Moving closed-glazing phase — work in progress
+
+Static glazing setup/saved-coefficient binding extracted to VehicleGlazingScene.h; old defaults preserved.
+New GlazingMotionValidation.h builds six actual archive poses with rotated/translated closed panes and mirror
+facets. Moving derived tokens must exceed archive vehicle threshold (100700glass/100301mirror), unlike the
+static fixture's700/301; previous-position shader otherwise treats them as static. Native build/24pose groups
+pass;39nativeauthoring passes. GPU acceptance pending: compare glass/mirror directional transport to a
+reconstruction-disabled reference with matching direct histories; require no temporal/spatial blur on delta
+routes, conservative authored-geometry resets, static opaque warmup reuse, source revision/reset and six-frame
+animation. No shader/ABI/history-policy changes yet. Current source not optically accepted until fresh GPU run.

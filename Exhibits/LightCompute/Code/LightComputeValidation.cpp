@@ -1036,7 +1036,9 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PoleShadowValidation.h"
 #include "SpecularHistoryValidation.h"
 #include "DielectricBoundaryValidation.h"
+#include "VehicleGlazingScene.h"
 #include "VehicleGlazingValidation.h"
+#include "GlazingMotionValidation.h"
 #include "SolidDielectricValidation.h"
 #include "MirrorDielectricValidation.h"
 #include "RoughDielectricValidation.h"
@@ -1047,6 +1049,13 @@ int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 7 && (std::string(Arguments[3]) == "--glazing-motion" ||
+                           std::string(Arguments[3]) == "--glazing-motion-native"))
+        {
+            ValidateGlazingMotion(Arguments[1],Arguments[2],Arguments[4],Arguments[5],Arguments[6],
+                                  std::string(Arguments[3]) == "--glazing-motion-native");
+            return 0;
+        }
         if (Count == 7 && (std::string(Arguments[3]) == "--vehicle-glazing" ||
                            std::string(Arguments[3]) == "--vehicle-glazing-probe"))
         {
