@@ -432,3 +432,7 @@ sourceoff pixels. Native52 strict+ASan/UBSan,39 saved authoring and4CTest passed
 native round-trip documents retained. Pinned250616f shader control59capped/16unsupported freshly reproduced.
 Full RunDiffuseDielectric chain is still running: _ClaudeScratch/logs/vehicle-glazing-regressions.txt;
 background process full-retained-transport-regressi-8f915a04. Do not claim its final result until exit0.
+Full regression progress: RunSolidDielectric completed successfully (boundary199; four slab cases maxmean
+.00346691; caps/unsupported0; winding/inside diagnostics; opaquehistory88 probes max9.8307e-7; RMSE
+.246571->.0927787; camera/moved/sourceoff checks;4CTest). Fresh SolidDielectric products checkpointed.
+Mirror stage is now running under the same full regression process. Final chain exit still pending.
