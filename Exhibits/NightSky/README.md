@@ -1,34 +1,36 @@
-# Night sky and sun-disc flare exhibit
+# Night sky, Moon and sun-disc lens flare exhibit
 
-Native CPU renderer (no GPU) for four sky views, built from the existing `CelestialModel` and `LensFlareModel` cores.
-The Sun, lens-flare ghost table and existing star code were not modified.
+Native CPU renderer (no GPU, headless). Reproduce: `PYTHON=<venv python with Pillow> bash Exhibits/NightSky/RunNightSky.sh`
+(GCC, `-std=c++17 -Wall -Wextra -Werror`). Last run: 16/16 checks pass (`Results.txt`). Existing Sun, lens-flare ghost
+table and star code are not modified; the new code calls CelestialModel, AtmosphereModel and LensFlareModel.
 
-Reproduce: `bash Exhibits/NightSky/RunNightSky.sh` (GCC, `-std=c++17 -Wall -Wextra -Werror`, Benoni, ZA, 2026-10-26).
+## Images
 
-| Image | Content |
+| Image | What it shows |
 |---|---|
-| `Images/NightSkyMilkyWay.png` | Milky Way band, 30,000-star procedural field, airglow; aimed at the brightest band point above 25 deg |
-| `Images/NightSkyMoon.png` | Same sky centred on the Moon: disc with phase terminator |
-| `Images/SunDiskLensFlare.png` | 16:30 local sun disc, glow, and the six `LensFlareModel` ghosts |
-| `Images/MoonPhases.png` | Four phases of the cycle containing the date, each with the lit side from the Sun's ephemeris |
+| `Images/SunDiskLensFlare.png` | 16:30 SAST sun, single-scattering sky, six LensFlareModel ghosts (sun right of centre) |
+| `Images/MoonClose.png` | Moon disc at 20:30 SAST (illuminated 0.995), procedural albedo, lit-side shading |
+| `Images/NightSkyMoonField.png` | Night field centred on the Moon, Hipparcos stars |
+| `Images/NightSkyCatalogueMilkyWay.png` | Night field aimed at the brightest Milky Way band point above 25 deg |
+| `Images/MoonPhases.png` | New, first quarter, full, last quarter, each with the lit side from the Sun's ephemeris |
+| `Images/DuskSequence.png` | Sun at +14, +2, -2, -6, -12, -18 deg at azimuth 270 (elevation sweep, not a time series) |
 
-## Checks (`Results.txt`)
+## Checks (16 PASS)
 
-- Sun elevation matches `CelestialModel::SunPosition` to `1.7e-13` deg (identical series).
-- Equatorial/local round trip `1.7e-16` rad.
-- Moon raster lit fraction matches the geometric lit fraction to `2.9e-4` (rendering check).
-- Zero visibility removes every ghost; unoccluded ghosts change pixels by `1.05`.
-- Night-view disc area check runs only when the Moon is in frame; here it is not (INFO).
+- Sun elevation vs `CelestialModel::SunPosition`: `1.7e-13` deg. Equatorial/local round trip `1.7e-16` rad.
+- Hipparcos catalogue loaded: 41,359 stars.
+- Transmittance LUT bakes; zenith is blue (B/R 3.93); sky toward the sun is brighter than away (2.99x); sky at -2 deg toward the sun is warm (R/B 382).
+- Moon raster lit fraction vs geometry: `9.5e-5`. Mean-age comparison is INFO only: 0.066 at quarter, from the lunar equation of centre.
+- Moon close-up disc area vs pi r^2: `0.99998`. Night fields draw 3,000+ catalogue stars.
+- Sun flare: zero visibility removes all ghosts; ghost centres collinear with sun and frame centre to `1.4e-17`.
+- **Rendering-level ghost check:** each ghost rendered alone, residual centroid vs expected position: `0.0005 px` worst case (6 of 6 ghosts).
 
-## Limits (stated, not claimed as fixed)
+## Limits, stated plainly
 
-- **Star field is procedural**, from `GenerateStarCatalogue`. It is not a licensed astronomical catalogue, so star
-  positions are not real and the Milky Way has no real star density. The Milky Way is an analytic band.
-- **Lunar position** uses a Meeus low-precision series (main terms). Its phase differs from `CelestialModel`'s
-  mean-age formula by up to 0.066 at quarter (INFO; that formula ignores the lunar equation of centre).
-- **Orientation** of the bright limb in `MoonPhases.png` uses a moon-centred frame, not the zenith, and has no external
-  reference image, so orientation is not validated against an astronomical chart.
-- **Sky colour** is a simple gradient, not the atmosphere model. The sun-disc view still reads pale; the whitish horizon
-  is not solved.
-- **Not in this exhibit**: clouds (the blocky cloud appearance is not verified as fixed), physical GPU, Windows,
-  real-time rendering, moonlight in the scene, and the Moon's topocentric parallax.
+- **Clouds: not done.** Nothing in this pass changes cloud appearance. The blocky-cloud issue remains open.
+- **Moon surface is procedural.** Maria are fractal noise, not a measured lunar map. Surface is not astronomically accurate and has no craters.
+- **Lunar position** is a Meeus low-precision series (main terms), not a JPL ephemeris. No topocentric parallax, no moonlight in the scene.
+- **Star field** is the Hipparcos-derived catalogue (XHIP, Anderson & Francis 2012, VizieR V/137D), packaged in `d3-celestial` 0.7.35 (BSD-3-Clause), mag <= 8. CDS/VizieR terms should be checked before any commercial release. The Milky Way is an analytic band plus catalogue star density, not a measured galactic model.
+- **Daytime flare:** the sun disc is small in a 30 deg field; the flare ghosts are a LensFlareModel layout (not a physical optical-system simulation).
+- **Dusk:** the sun-elevation sweep uses the same atmosphere model; the ground strip at the bottom is a flat dark colour, not a terrain. Dusk colours are a single-scattering result, not verified against photographs.
+- **Not verified:** physical GPU, Windows, real-time rendering, the GPU sky path in the renderer.

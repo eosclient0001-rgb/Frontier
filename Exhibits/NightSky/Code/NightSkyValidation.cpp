@@ -1,15 +1,16 @@
 /*==========================================================================================================================================
                                                        NIGHT SKY EXHIBIT
                                      ------------------------------------------------------------------
-              Moon disc with phase terminator, Milky Way band, star splats and a sun-disc lens flare, rendered
-              on the CPU from the existing CelestialModel and LensFlareModel cores (headless, no GPU).
+              Hipparcos star field, Milky Way band, Moon disc and field, single-scattering day and dusk sky, and
+              a sun-disc lens flare with ghosts measured in the rendered image. CPU only, headless.
 ==========================================================================================================================================*/
 
-// 🧩 Sky exhibit. Solar position and lunar phase come from Frontier/Engine/Rendering/CelestialModel.*; ghost
-//    placement comes from LensFlareModel.h. The lunar ephemeris is a Meeus low-precision series (main terms
-//    only), the star field is the deterministic procedural catalogue (not a licensed astronomical catalogue),
-//    and the Milky Way is an analytic band model. Output is PPM for a Python converter in Code/.
+// 🧩 Sky exhibit. Solar position and lunar phase come from CelestialModel; the single-scattering day and dusk sky
+//    comes from AtmosphereModel (transmittance LUT); ghost placement comes from LensFlareModel. Stars are the open
+//    Hipparcos-derived catalogue in Data/Hipparcos8.csv (XHIP via d3-celestial, BSD-3). The lunar ephemeris is a
+//    Meeus low-precision series. Lunar maria are procedural noise, not a licensed or measured lunar map.
 
+#include "Engine/Rendering/AtmosphereModel.h"
 #include "Engine/Rendering/CelestialModel.h"
 #include "Engine/Rendering/LensFlareModel.h"
 
@@ -18,6 +19,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -26,13 +30,13 @@ namespace
 
 constexpr double Pi = 3.14159265358979323846;
 constexpr double DegToRad = Pi / 180.0;
+constexpr double ArcsecToRad = Pi / (180.0 * 3600.0);
 constexpr double BenoniLatitudeDeg = -26.1885;   // Benoni, Gauteng, ZA
 constexpr double BenoniLongitudeDeg = 28.3209;
 constexpr double MoonAngularRadius = 0.2725 * DegToRad;   // mean semi-diameter
 constexpr double SunAngularRadius = 0.2666 * DegToRad;
-constexpr int ImageWidth = 960;
-constexpr int ImageHeight = 600;
-constexpr double HalfFovTangent = 0.2679;   // tan(15 deg): vertical field 30 degrees
+constexpr double StandardHalfTangent = 0.2679;   // tan(15 deg): 30 degree vertical field
+constexpr double CatalogueEpochYearsToDate = 26.82;   // J2000.0 to 2026-10-26
 
 struct SkyVector
 {
@@ -68,10 +72,9 @@ double Smoothstep(double Edge0, double Edge1, double X)
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-//                                                   TIME AND FRAMES
+//                                                   TIME, FRAMES AND CATALOGUE
 //------------------------------------------------------------------------------------------------------------------------
 
-// Local sidereal time (radians) at Benoni, same GMST series as CelestialModel's SunPosition.
 double LocalSiderealRad(double Julian)
 {
     const double N = Julian - 2451545.0;
@@ -80,7 +83,7 @@ double LocalSiderealRad(double Julian)
     return (GmstHours * 15.0 + BenoniLongitudeDeg) * DegToRad;
 }
 
-// Equatorial (RA, Dec) to local ENU, using the same azimuth convention as CelestialModel's SunDirectionLocal.
+// Equatorial (RA, Dec) to local ENU, same azimuth convention as CelestialModel's SunDirectionLocal.
 SkyVector EquatorialToLocal(double RightAscensionRad, double DeclinationRad, double LocalSiderealRadians)
 {
     const double Latitude = BenoniLatitudeDeg * DegToRad;
@@ -93,7 +96,6 @@ SkyVector EquatorialToLocal(double RightAscensionRad, double DeclinationRad, dou
     return {std::cos(Altitude) * std::sin(Azimuth), std::cos(Altitude) * std::cos(Azimuth), std::sin(Altitude)};
 }
 
-// Inverse of EquatorialToLocal, used for the round-trip check.
 void LocalToEquatorial(SkyVector V, double LocalSiderealRadians, double& RightAscensionRad, double& DeclinationRad)
 {
     const double Latitude = BenoniLatitudeDeg * DegToRad;
@@ -102,11 +104,9 @@ void LocalToEquatorial(SkyVector V, double LocalSiderealRadians, double& RightAs
     DeclinationRad = std::asin(std::clamp(std::sin(Latitude) * std::sin(Altitude) +
                                               std::cos(Latitude) * std::cos(Altitude) * std::cos(AzimuthNorth),
                                           -1.0, 1.0));
-    // Scaled by cos(latitude) cos(declination) > 0, which leaves the atan2 quadrant unchanged.
     const double SinHour = -std::sin(AzimuthNorth) * std::cos(Altitude) * std::cos(Latitude);
     const double CosHour = std::sin(Altitude) - std::sin(Latitude) * std::sin(DeclinationRad);
-    const double HourAngle = std::atan2(SinHour, CosHour);
-    RightAscensionRad = LocalSiderealRadians - HourAngle;
+    RightAscensionRad = LocalSiderealRadians - std::atan2(SinHour, CosHour);
 }
 
 struct EquatorialPoint
@@ -115,7 +115,6 @@ struct EquatorialPoint
     double DeclinationRad = 0.0;
 };
 
-// Low-precision Sun (same series as CelestialModel), returned in equatorial coordinates.
 EquatorialPoint SunEquatorial(double Julian)
 {
     const double N = Julian - 2451545.0;
@@ -127,7 +126,7 @@ EquatorialPoint SunEquatorial(double Julian)
             std::asin(std::sin(Obliquity) * std::sin(Lambda))};
 }
 
-// Meeus chapter 47 truncated lunar series (longitude, latitude; 6.289 deg, 5.128 deg main terms).
+// Meeus chapter 47, main terms (longitude 6.289 deg, latitude 5.128 deg).
 EquatorialPoint MoonEquatorial(double Julian)
 {
     const double D = Julian - 2451545.0;
@@ -141,7 +140,6 @@ EquatorialPoint MoonEquatorial(double Julian)
             std::asin(std::sin(Beta) * std::cos(Obliquity) + std::cos(Beta) * std::sin(Obliquity) * std::sin(Lambda))};
 }
 
-// Fraction of the lit disc from the geometric elongation, k = (1 - cos psi) / 2.
 double GeometricIlluminatedFraction(EquatorialPoint Sun, EquatorialPoint Moon)
 {
     const double CosElongation = std::sin(Sun.DeclinationRad) * std::sin(Moon.DeclinationRad) +
@@ -150,11 +148,66 @@ double GeometricIlluminatedFraction(EquatorialPoint Sun, EquatorialPoint Moon)
     return 0.5 * (1.0 - CosElongation);
 }
 
+// Precession from J2000 to the observation date (IAU first-order: m = 46.124, n = 20.043 arcsec per year).
+EquatorialPoint PrecessFromJ2000(double RightAscensionRad, double DeclinationRad, double Years)
+{
+    constexpr double M = 46.124, N = 20.043;
+    const double DeltaRa = (M + N * std::sin(RightAscensionRad) * std::tan(DeclinationRad)) * Years * ArcsecToRad;
+    const double DeltaDec = N * std::cos(RightAscensionRad) * Years * ArcsecToRad;
+    return {RightAscensionRad + DeltaRa, DeclinationRad + DeltaDec};
+}
+
+struct CatalogueStar
+{
+    double RightAscensionRad = 0.0;   // J2000
+    double DeclinationRad = 0.0;      // J2000
+    double Magnitude = 0.0;
+    double ColourBv = 0.0;
+};
+
+// Reads Data/Hipparcos8.csv (id,ra_deg,dec_deg,mag,bv). Returns an empty vector if the file is missing.
+std::vector<CatalogueStar> LoadHipparcosCatalogue(const std::string& Path)
+{
+    std::vector<CatalogueStar> Stars;
+    std::ifstream File(Path);
+    std::string Line;
+    while (std::getline(File, Line))
+    {
+        if (Line.empty() || Line[0] == '#' || Line.rfind("id,", 0) == 0) continue;
+        std::stringstream Fields(Line);
+        std::string Id, Ra, Dec, Mag, Bv;
+        if (!std::getline(Fields, Id, ',') || !std::getline(Fields, Ra, ',') || !std::getline(Fields, Dec, ',') ||
+            !std::getline(Fields, Mag, ',') || !std::getline(Fields, Bv, ','))
+            continue;
+        CatalogueStar Star;
+        Star.RightAscensionRad = std::strtod(Ra.c_str(), nullptr) * DegToRad;
+        Star.DeclinationRad = std::strtod(Dec.c_str(), nullptr) * DegToRad;
+        Star.Magnitude = std::strtod(Mag.c_str(), nullptr);
+        Star.ColourBv = std::strtod(Bv.c_str(), nullptr);
+        Stars.push_back(Star);
+    }
+    return Stars;
+}
+
+// Blackbody-like colour from B-V (Ballesteros temperature, Tanner Helland blackbody fit), normalised to max 1.
+Radiance StarColour(double Bv)
+{
+    const double Temperature = 4600.0 * (1.0 / (0.92 * Bv + 1.7) + 1.0 / (0.92 * Bv + 0.62));
+    const double T = Temperature / 100.0;
+    const double Red = T <= 66.0 ? 255.0 : 329.698727446 * std::pow(T - 60.0, -0.1332047592);
+    const double Green = T <= 66.0 ? 99.4708025861 * std::log(T) - 161.1195681661
+                                   : 288.1221695283 * std::pow(T - 60.0, -0.0755148492);
+    const double Blue = T >= 66.0 ? 255.0 : (T <= 19.0 ? 0.0 : 138.5177312231 * std::log(T - 10.0) - 305.0447927307);
+    Radiance Colour{std::clamp(Red, 0.0, 255.0) / 255.0, std::clamp(Green, 0.0, 255.0) / 255.0,
+                    std::clamp(Blue, 0.0, 255.0) / 255.0};
+    const double Peak = std::max({Colour.R, Colour.G, Colour.B, 1e-6});
+    return Colour * (1.0 / Peak);
+}
+
 //------------------------------------------------------------------------------------------------------------------------
-//                                                   MOON DISC
+//                                                   MOON
 //------------------------------------------------------------------------------------------------------------------------
 
-// Orthonormal frame on the lunar sphere: Observer points from the moon to the observer, Right/Up match the image.
 struct MoonFrame
 {
     SkyVector Right;
@@ -172,26 +225,6 @@ MoonFrame MakeMoonFrame(SkyVector MoonDirection, SkyVector SunDirection)
     Frame.TowardSun = SunDirection;
     return Frame;
 }
-
-// Lit fraction of the disc sample (A, B) in [-1, 1]^2 on the projected disc; returns negative outside the disc.
-double MoonDiscLambert(const MoonFrame& Frame, double A, double B)
-{
-    const double Radicand = 1.0 - A * A - B * B;
-    if (Radicand < 0.0) return -1.0;
-    const SkyVector Normal = Frame.Right * A + Frame.Up * B + Frame.Observer * std::sqrt(Radicand);
-    return Dot(Normal, Frame.TowardSun);
-}
-
-Radiance MoonDiscRadiance(double Lambert)
-{
-    // Lambert shading with a faint earthshine floor on the night side.
-    const double Lit = 2.0 * std::max(Lambert, 0.0);
-    return Radiance{Lit + 0.01, Lit * 0.98 + 0.01, Lit * 0.92 + 0.012};
-}
-
-//------------------------------------------------------------------------------------------------------------------------
-//                                                   SKY BACKGROUND
-//------------------------------------------------------------------------------------------------------------------------
 
 double HashLattice(int X, int Y, int Z)
 {
@@ -217,35 +250,40 @@ double ValueNoise(SkyVector P)
     return Value;
 }
 
-struct StarMarker
+// Procedural lunar albedo on the unit sphere: dark maria from low-frequency noise plus highland grain.
+// Not a measured or licensed lunar map.
+double MoonAlbedo(SkyVector Normal)
 {
-    double Px = 0.0, Py = 0.0;
-    double Sigma = 1.0;
-    double Peak = 0.0;
-    Radiance Colour{};
-};
+    // Fractal sum with fine octaves so the maria edges are ragged rather than blob-shaped.
+    const double Large = 0.45 * ValueNoise(Normal * 2.6) + 0.27 * ValueNoise(Normal * 5.3 + SkyVector{7.1, 3.3, 1.9}) +
+                         0.14 * ValueNoise(Normal * 11.0) + 0.07 * ValueNoise(Normal * 23.0);
+    const double Maria = 1.0 - Smoothstep(0.44, 0.52, Large);
+    const double Grain = 0.90 + 0.20 * ValueNoise(Normal * 40.0);
+    return (0.50 - 0.20 * Maria) * Grain;
+}
 
-// Milky Way band: galactic latitude from the north galactic pole, bulge brightening toward the galactic centre.
-Radiance NightBackground(SkyVector D, SkyVector GalacticPole, SkyVector GalacticCentre)
+// Lambert shading on the disc sample (A, B) in units of the angular radius; negative outside the disc.
+double MoonDiscLambert(const MoonFrame& Frame, double A, double B, SkyVector* NormalOut = nullptr)
 {
-    const double Latitude = std::asin(std::clamp(Dot(D, GalacticPole), -1.0, 1.0));
-    const double Separation = std::acos(std::clamp(Dot(D, GalacticCentre), -1.0, 1.0));
-    const double Lane = Smoothstep(0.45, 0.75, ValueNoise(D * 9.0)) * std::exp(-std::pow(Latitude / 0.07, 2.0));
-    const double Band = std::exp(-std::pow(Latitude / 0.12, 2.0)) * (0.22 + 0.78 * std::exp(-std::pow(Separation / 0.55, 2.0)));
-    const double Clouds = 0.55 + 0.45 * ValueNoise(D * 6.0);
-    const double Milky = 0.030 * Band * Clouds * (1.0 - 0.75 * Lane);
-    const double Warm = std::exp(-std::pow(Separation / 0.8, 2.0));
-    const Radiance Milk{0.80 + 0.2 * Warm, 0.86 + 0.06 * Warm, 1.0 - 0.22 * Warm};
+    const double Radicand = 1.0 - A * A - B * B;
+    if (Radicand < 0.0) return -1.0;
+    const SkyVector Normal = Frame.Right * A + Frame.Up * B + Frame.Observer * std::sqrt(Radicand);
+    if (NormalOut) *NormalOut = Normal;
+    return Dot(Normal, Frame.TowardSun);
+}
 
-    // Airglow and urban light pollution: faint, warm at the horizon, never a whitish wash.
-    const double Altitude = std::asin(std::clamp(D.Z, -1.0, 1.0));
-    const Radiance Glow{0.0016 + 0.010 * std::exp(-Altitude / 0.07), 0.0020 + 0.0075 * std::exp(-Altitude / 0.07),
-                        0.0036 + 0.0045 * std::exp(-Altitude / 0.07)};
-    return Glow + Milk * Milky;
+Radiance MoonDiscRadiance(const MoonFrame& Frame, double A, double B)
+{
+    SkyVector Normal{};
+    const double Lambert = MoonDiscLambert(Frame, A, B, &Normal);
+    const double Albedo = MoonAlbedo(Normal);
+    const double Lit = 2.4 * Albedo * std::max(Lambert, 0.0);
+    const double Earthshine = 0.010 * Albedo;
+    return Radiance{Lit + Earthshine, (Lit * 0.97 + Earthshine), (Lit * 0.92 + Earthshine * 1.05)};
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-//                                                   CAMERA
+//                                                   CAMERA AND CANVAS
 //------------------------------------------------------------------------------------------------------------------------
 
 struct SkyCamera
@@ -253,35 +291,37 @@ struct SkyCamera
     SkyVector Forward;
     SkyVector Right;
     SkyVector Up;
+    double Tangent = StandardHalfTangent;
+    int Width = 0;
+    int Height = 0;
 };
 
-SkyCamera MakeSkyCamera(SkyVector Aim)
+SkyCamera MakeSkyCamera(SkyVector Aim, int Width, int Height, double Tangent)
 {
     SkyCamera Camera;
     Camera.Forward = Normalize(Aim);
     Camera.Right = Normalize(Cross(Camera.Forward, {0.0, 0.0, 1.0}));
     Camera.Up = Cross(Camera.Right, Camera.Forward);
+    Camera.Tangent = Tangent;
+    Camera.Width = Width;
+    Camera.Height = Height;
     return Camera;
 }
 
-// Height-normalised screen coordinates: X right, Y up, both in units of half the frame height.
+// Height-normalised screen coordinates (X right, Y up, units of half the frame height).
 void ScreenCoordinates(const SkyCamera& Camera, SkyVector D, double& X, double& Y)
 {
     const double Depth = Dot(D, Camera.Forward);
-    X = Dot(D, Camera.Right) / Depth / HalfFovTangent;
-    Y = Dot(D, Camera.Up) / Depth / HalfFovTangent;
+    X = Dot(D, Camera.Right) / Depth / Camera.Tangent;
+    Y = Dot(D, Camera.Up) / Depth / Camera.Tangent;
 }
 
 SkyVector PixelDirection(const SkyCamera& Camera, double Px, double Py)
 {
-    const double X = (Px - ImageWidth * 0.5) / (ImageHeight * 0.5);
-    const double Y = (ImageHeight * 0.5 - Py) / (ImageHeight * 0.5);
-    return Normalize(Camera.Forward + Camera.Right * (X * HalfFovTangent) + Camera.Up * (Y * HalfFovTangent));
+    const double X = (Px - Camera.Width * 0.5) / (Camera.Height * 0.5);
+    const double Y = (Camera.Height * 0.5 - Py) / (Camera.Height * 0.5);
+    return Normalize(Camera.Forward + Camera.Right * (X * Camera.Tangent) + Camera.Up * (Y * Camera.Tangent));
 }
-
-//------------------------------------------------------------------------------------------------------------------------
-//                                                   IMAGE OUTPUT
-//------------------------------------------------------------------------------------------------------------------------
 
 struct Canvas
 {
@@ -290,13 +330,13 @@ struct Canvas
     std::vector<Radiance> Pixels;
     Canvas(int W, int H) : Width(W), Height(H), Pixels(static_cast<size_t>(W) * H) {}
     Radiance& At(int X, int Y) { return Pixels[static_cast<size_t>(Y) * Width + X]; }
+    const Radiance& At(int X, int Y) const { return Pixels[static_cast<size_t>(Y) * Width + X]; }
 };
 
 uint8_t ToByte(double Linear, double Exposure)
 {
     const double Mapped = 1.0 - std::exp(-Exposure * std::max(Linear, 0.0));
-    const double Encoded = std::pow(Clamp01(Mapped), 1.0 / 2.2);
-    return static_cast<uint8_t>(std::lround(Encoded * 255.0));
+    return static_cast<uint8_t>(std::lround(std::pow(Clamp01(Mapped), 1.0 / 2.2) * 255.0));
 }
 
 bool WritePpm(const std::string& Path, const Canvas& Image, double Exposure)
@@ -314,10 +354,99 @@ bool WritePpm(const std::string& Path, const Canvas& Image, double Exposure)
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                   SKY MODELS
+//------------------------------------------------------------------------------------------------------------------------
+
+// Night factor from solar elevation: 0 at civil twilight and above, 1 from astronomical twilight down.
+double NightFactor(double SunElevationRad)
+{
+    return Smoothstep(-6.0 * DegToRad, -15.0 * DegToRad, SunElevationRad);
+}
+
+// Single-scattering sky for a view direction (ENU), sun direction (ENU) and the atmosphere LUT.
+Radiance ScatteredSky(const Frontier::AtmosphereParameters& Atmosphere, const Frontier::TransmittanceLut& Lut,
+                      SkyVector D, SkyVector Sun)
+{
+    const double GroundKm = Atmosphere.GroundRadiusKm;
+    const Frontier::SpectrumRgb Light = Frontier::SingleScattering(
+        Atmosphere, {0.0, 0.0, GroundKm + 0.001}, {D.X, D.Y, D.Z}, {Sun.X, Sun.Y, Sun.Z},
+        Frontier::SpectrumRgb{9.0, 9.0, 9.0}, &Lut, 24);
+    return Radiance{Light.R, Light.G, Light.B};
+}
+
+// Night background: airglow and urban glow near the horizon, plus the Milky Way band from galactic latitude and
+// a brighter bulge toward the galactic centre, with dust lanes from procedural noise.
+Radiance NightBackground(SkyVector D, SkyVector GalacticPole, SkyVector GalacticCentre, double Night)
+{
+    const double Latitude = std::asin(std::clamp(Dot(D, GalacticPole), -1.0, 1.0));
+    const double Separation = std::acos(std::clamp(Dot(D, GalacticCentre), -1.0, 1.0));
+    const double Lane = Smoothstep(0.45, 0.75, ValueNoise(D * 9.0)) * std::exp(-std::pow(Latitude / 0.07, 2.0));
+    const double Band = std::exp(-std::pow(Latitude / 0.12, 2.0)) * (0.30 + 0.70 * std::exp(-std::pow(Separation / 0.55, 2.0)));
+    const double Clouds = 0.55 + 0.45 * ValueNoise(D * 6.0);
+    const double Milky = 0.060 * Band * Clouds * (1.0 - 0.75 * Lane);
+    const double Warm = std::exp(-std::pow(Separation / 0.8, 2.0));
+    const Radiance Milk{0.80 + 0.2 * Warm, 0.86 + 0.06 * Warm, 1.0 - 0.22 * Warm};
+    const double Altitude = std::asin(std::clamp(D.Z, -1.0, 1.0));
+    const Radiance Glow{0.0016 + 0.010 * std::exp(-Altitude / 0.07), 0.0020 + 0.0075 * std::exp(-Altitude / 0.07),
+                        0.0036 + 0.0045 * std::exp(-Altitude / 0.07)};
+    return (Glow + Milk * Milky) * Night;
+}
+
+// Gaussian splat with peak from magnitude and colour from B-V; scaled to the image size.
+struct StarSplat
+{
+    double Px = 0.0, Py = 0.0, Sigma = 1.0, Peak = 0.0;
+    Radiance Colour{};
+};
+
+void SplatStars(Canvas& Image, const std::vector<StarSplat>& Splats, double Scale)
+{
+    for (const StarSplat& Splat : Splats)
+    {
+        const double Sigma = Splat.Sigma * Scale;
+        const int Reach = static_cast<int>(std::ceil(3.0 * Sigma));
+        const int CentreX = static_cast<int>(std::lround(Splat.Px));
+        const int CentreY = static_cast<int>(std::lround(Splat.Py));
+        for (int Y = std::max(0, CentreY - Reach); Y <= std::min(Image.Height - 1, CentreY + Reach); ++Y)
+            for (int X = std::max(0, CentreX - Reach); X <= std::min(Image.Width - 1, CentreX + Reach); ++X)
+            {
+                const double Dx = X + 0.5 - Splat.Px, Dy = Y + 0.5 - Splat.Py;
+                const double Weight = std::exp(-(Dx * Dx + Dy * Dy) / (2.0 * Sigma * Sigma));
+                Image.At(X, Y) = Image.At(X, Y) + Splat.Colour * (Splat.Peak * Weight);
+            }
+    }
+}
+
+std::vector<StarSplat> BuildStarSplats(const std::vector<CatalogueStar>& Catalogue, const SkyCamera& Camera,
+                                       double LocalSidereal, double Night)
+{
+    std::vector<StarSplat> Splats;
+    Splats.reserve(Catalogue.size());
+    for (const CatalogueStar& Star : Catalogue)
+    {
+        const EquatorialPoint Date = PrecessFromJ2000(Star.RightAscensionRad, Star.DeclinationRad, CatalogueEpochYearsToDate);
+        const SkyVector D = EquatorialToLocal(Date.RightAscensionRad, Date.DeclinationRad, LocalSidereal);
+        if (D.Z < -0.02 || Dot(D, Camera.Forward) <= 0.0) continue;
+        double Sx = 0.0, Sy = 0.0;
+        ScreenCoordinates(Camera, D, Sx, Sy);
+        const double AspectHalf = static_cast<double>(Camera.Width) / Camera.Height;
+        if (std::fabs(Sx) > 1.05 * AspectHalf || std::fabs(Sy) > 1.05) continue;
+        StarSplat Splat;
+        Splat.Px = Sx * Camera.Height * 0.5 + Camera.Width * 0.5;
+        Splat.Py = Camera.Height * 0.5 - Sy * Camera.Height * 0.5;
+        Splat.Sigma = 0.70 + 0.30 * std::clamp(3.0 - Star.Magnitude, 0.0, 4.0);
+        Splat.Peak = Night * 6.0 * std::pow(10.0, -0.4 * (Star.Magnitude + 1.0));
+        Splat.Colour = StarColour(Star.ColourBv);
+        Splats.push_back(Splat);
+    }
+    return Splats;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                   SCENES
 //------------------------------------------------------------------------------------------------------------------------
 
-struct ValidationCounter
+struct Counter
 {
     int Passed = 0;
     int Failed = 0;
@@ -328,112 +457,147 @@ struct ValidationCounter
     }
 };
 
-// Gaussian splat: each star adds a point-spread profile; peak is set from magnitude and colour index.
-void SplatStars(Canvas& Image, const std::vector<StarMarker>& Markers)
+struct SceneLight
 {
-    for (const StarMarker& Marker : Markers)
-    {
-        const int Reach = static_cast<int>(std::ceil(3.0 * Marker.Sigma));
-        const int CentreX = static_cast<int>(std::lround(Marker.Px));
-        const int CentreY = static_cast<int>(std::lround(Marker.Py));
-        for (int Y = std::max(0, CentreY - Reach); Y <= std::min(Image.Height - 1, CentreY + Reach); ++Y)
-            for (int X = std::max(0, CentreX - Reach); X <= std::min(Image.Width - 1, CentreX + Reach); ++X)
-            {
-                const double Dx = X - Marker.Px, Dy = Y - Marker.Py;
-                const double Weight = std::exp(-(Dx * Dx + Dy * Dy) / (2.0 * Marker.Sigma * Marker.Sigma));
-                Image.At(X, Y) = Image.At(X, Y) + Marker.Colour * (Marker.Peak * Weight);
-            }
-    }
-}
+    SkyVector Sun;
+    SkyVector Moon;
+    double SunElevationRad = 0.0;
+    double Night = 1.0;
+};
 
-// Night view: Milky Way, stars and the Moon. The aim is chosen by the caller.
-Canvas RenderNightSky(SkyVector Aim, double JulianDay, const SkyVector& Moon, const SkyVector& Sun)
+// Night field with the Milky Way, the Hipparcos catalogue and the Moon disc.
+Canvas RenderNightField(SkyVector Aim, int Width, int Height, double Tangent, double LocalSidereal,
+                        const SceneLight& Light, const std::vector<CatalogueStar>& Catalogue, uint32_t* StarCountOut)
 {
-    Canvas Image(ImageWidth, ImageHeight);
-    const SkyCamera Camera = MakeSkyCamera(Aim);
-    const double Lst = LocalSiderealRad(JulianDay);
-    const SkyVector GalacticPole = EquatorialToLocal(192.85948 * DegToRad, 27.12825 * DegToRad, Lst);
-    const SkyVector GalacticCentre = EquatorialToLocal(266.40499 * DegToRad, -28.93618 * DegToRad, Lst);
-    const MoonFrame Frame = MakeMoonFrame(Moon, Sun);
+    Canvas Image(Width, Height);
+    const SkyCamera Camera = MakeSkyCamera(Aim, Width, Height, Tangent);
+    const SkyVector GalacticPole = EquatorialToLocal(192.85948 * DegToRad, 27.12825 * DegToRad, LocalSidereal);
+    const SkyVector GalacticCentre = EquatorialToLocal(266.40499 * DegToRad, -28.93618 * DegToRad, LocalSidereal);
+    const MoonFrame Frame = MakeMoonFrame(Light.Moon, Light.Sun);
+    const double Scale = static_cast<double>(Width) / 960.0;
 
-    for (int Y = 0; Y < ImageHeight; ++Y)
-        for (int X = 0; X < ImageWidth; ++X)
+    constexpr int Samples = 2;   // 2x2 supersampling for disc edges and star cores
+    for (int Y = 0; Y < Height; ++Y)
+        for (int X = 0; X < Width; ++X)
         {
-            const SkyVector D = PixelDirection(Camera, X + 0.5, Y + 0.5);
-            Radiance Value = NightBackground(D, GalacticPole, GalacticCentre);
-            const double A = Dot(D, Frame.Right) / MoonAngularRadius;
-            const double B = Dot(D, Frame.Up) / MoonAngularRadius;
-            const double Lambert = MoonDiscLambert(Frame, A, B);
-            if (Lambert > -1.0 && Dot(D, Moon) > std::cos(MoonAngularRadius * 1.5))
-                Value = MoonDiscRadiance(Lambert);
-            Image.At(X, Y) = Value;
+            Radiance Accumulated{};
+            for (int Sy = 0; Sy < Samples; ++Sy)
+                for (int Sx = 0; Sx < Samples; ++Sx)
+                {
+                    const SkyVector D = PixelDirection(Camera, X + (Sx + 0.5) / Samples, Y + (Sy + 0.5) / Samples);
+                    Radiance Value = NightBackground(D, GalacticPole, GalacticCentre, Light.Night);
+                    const double MoonCos = Dot(D, Light.Moon);
+                    if (MoonCos > std::cos(MoonAngularRadius * 1.25))
+                    {
+                        const double A = Dot(D, Frame.Right) / MoonAngularRadius;
+                        const double B = Dot(D, Frame.Up) / MoonAngularRadius;
+                        if (A * A + B * B <= 1.0) Value = MoonDiscRadiance(Frame, A, B);
+                    }
+                    Accumulated = Accumulated + Value;
+                }
+            Image.At(X, Y) = Accumulated * (1.0 / (Samples * Samples));
         }
 
-    // Stars: procedural uniform-sphere catalogue, equatorial frame converted to local directions.
-    std::vector<StarMarker> Markers;
-    const std::vector<Frontier::StarRecord> Catalogue = Frontier::GenerateStarCatalogue(30000, 1234);
-    for (const Frontier::StarRecord& Star : Catalogue)
-    {
-        const double Ra = std::atan2(Star.Direction.Y, Star.Direction.X);
-        const double Dec = std::asin(std::clamp(Star.Direction.Z, -1.0, 1.0));
-        const SkyVector D = EquatorialToLocal(Ra, Dec, Lst);
-        if (D.Z < -0.02 || Dot(D, Camera.Forward) <= 0.0) continue;
-        double Sx = 0.0, Sy = 0.0;
-        ScreenCoordinates(Camera, D, Sx, Sy);
-        if (std::fabs(Sx) > 1.02 * ImageWidth / ImageHeight || std::fabs(Sy) > 1.02) continue;
-        StarMarker Marker;
-        Marker.Px = (Sx * ImageHeight * 0.5) + ImageWidth * 0.5;
-        Marker.Py = ImageHeight * 0.5 - Sy * ImageHeight * 0.5;
-        Marker.Sigma = 0.55 + 0.25 * std::clamp(2.0 - Star.Magnitude, 0.0, 3.0);
-        Marker.Peak = 1.6 * std::pow(10.0, -0.4 * (Star.Magnitude + 1.0));
-        const double Tint = std::clamp(Star.ColourIndex, -1.0, 1.0);
-        Marker.Colour = {1.0 + 0.25 * Tint, 1.0 - 0.05 * std::fabs(Tint), 1.0 - 0.30 * Tint};
-        Markers.push_back(Marker);
-    }
-    SplatStars(Image, Markers);
+    const std::vector<StarSplat> Splats = BuildStarSplats(Catalogue, Camera, LocalSidereal, Light.Night);
+    SplatStars(Image, Splats, Scale);
+    if (StarCountOut) *StarCountOut = static_cast<uint32_t>(Splats.size());
     return Image;
 }
 
-// Sun-disc lens flare: bright disc, glow, and the LensFlareModel ghost chain along the sun-centre axis.
-Radiance DaySkyRadiance(SkyVector D, SkyVector Sun)
+// Moon close-up: disc fills most of the frame, so the terminator and surface shading can be inspected.
+// Disc radius is 0.42 of the frame half-height by construction (tangent = angular radius / 0.42).
+Canvas RenderMoonCloseUp(SkyVector MoonDirection, SkyVector Sun, int Size, int* DiscPixelsOut)
 {
-    const double Blue = 1.0 - std::exp(-2.2 * std::max(D.Z, 0.0));
-    const Radiance Zenith{0.10, 0.25, 0.66};
-    const Radiance Horizon{0.62, 0.72, 0.84};
-    const Radiance Base = Horizon * (1.0 - Blue) + Zenith * Blue;
-    const double Theta = std::acos(std::clamp(Dot(D, Sun), -1.0, 1.0));
-    const Radiance Forward{1.0, 0.93, 0.80};
-    return Base + Forward * (0.55 * std::exp(-std::pow(Theta / 0.22, 2.0)));
+    Canvas Image(Size, Size);
+    const double Tangent = MoonAngularRadius / 0.42;
+    const SkyCamera Camera = MakeSkyCamera(MoonDirection, Size, Size, Tangent);
+    const MoonFrame Frame = MakeMoonFrame(MoonDirection, Sun);
+    for (int Y = 0; Y < Size; ++Y)
+        for (int X = 0; X < Size; ++X)
+        {
+            const SkyVector D = PixelDirection(Camera, X + 0.5, Y + 0.5);
+            const double A = Dot(D, Frame.Right) / MoonAngularRadius;
+            const double B = Dot(D, Frame.Up) / MoonAngularRadius;
+            Radiance Value{0.0012, 0.0015, 0.0028};
+            if (A * A + B * B <= 1.0)
+            {
+                Value = MoonDiscRadiance(Frame, A, B);
+                if (DiscPixelsOut) ++*DiscPixelsOut;
+            }
+            Image.At(X, Y) = Value;
+        }
+    return Image;
 }
 
-Canvas RenderSunFlare(SkyVector Aim, SkyVector Sun, double Visibility, std::array<Frontier::FlareGhost, 6>* GhostsOut)
+// Four phases of the cycle containing the date, each as a centred disc with the Sun's real lit side.
+Canvas RenderMoonPhases(double JulianDay, int TileSize, std::vector<double>& Geometric, std::vector<double>& Raster,
+                        std::vector<double>& ModelFraction)
 {
-    Canvas Image(ImageWidth, ImageHeight);
-    const SkyCamera Camera = MakeSkyCamera(Aim);
+    constexpr int TileCount = 4;
+    const double TileRadius = TileSize * 0.42;
+    Canvas Image(TileSize * TileCount, TileSize);
+    const double CycleStart = Frontier::NewMoonEpochJulian +
+                              std::floor((JulianDay - Frontier::NewMoonEpochJulian) / Frontier::SynodicMonthDays) *
+                                  Frontier::SynodicMonthDays;
+    for (int Tile = 0; Tile < TileCount; ++Tile)
+    {
+        const double PhaseJulian = CycleStart + Frontier::SynodicMonthDays * Tile / 4.0;
+        const double Lst = LocalSiderealRad(PhaseJulian);
+        const SkyVector Moon = EquatorialToLocal(MoonEquatorial(PhaseJulian).RightAscensionRad,
+                                                 MoonEquatorial(PhaseJulian).DeclinationRad, Lst);
+        const SkyVector Sun = EquatorialToLocal(SunEquatorial(PhaseJulian).RightAscensionRad,
+                                                SunEquatorial(PhaseJulian).DeclinationRad, Lst);
+        const MoonFrame Frame = MakeMoonFrame(Moon, Sun);
+        double Lit = 0.0, Samples = 0.0;
+        for (int Y = 0; Y < TileSize; ++Y)
+            for (int X = 0; X < TileSize; ++X)
+            {
+                const double A = (X + 0.5 - TileSize * 0.5) / TileRadius;
+                const double B = (TileSize * 0.5 - (Y + 0.5)) / TileRadius;
+                Radiance Value{0.0012, 0.0015, 0.0028};
+                if (A * A + B * B <= 1.0)
+                {
+                    Value = MoonDiscRadiance(Frame, A, B);
+                    Lit += MoonDiscLambert(Frame, A, B) > 0.0 ? 1.0 : 0.0;
+                    Samples += 1.0;
+                }
+                Image.At(Tile * TileSize + X, Y) = Value;
+            }
+        Geometric.push_back(GeometricIlluminatedFraction(SunEquatorial(PhaseJulian), MoonEquatorial(PhaseJulian)));
+        Raster.push_back(Lit / Samples);
+        ModelFraction.push_back(Frontier::MoonPhase(PhaseJulian).Illumination);
+    }
+    return Image;
+}
+
+// Sun-disc flare on the scattering sky. Ghost positions come from LensFlareModel and are measured in the image.
+// OnlyGhost >= 0 keeps a single ghost, so its contribution can be isolated for the rendering-level centroid check.
+Canvas RenderSunFlare(SkyVector Aim, SkyVector Sun, double Visibility, const Frontier::AtmosphereParameters& Atmosphere,
+                      const Frontier::TransmittanceLut& Lut, std::array<Frontier::FlareGhost, 6>* GhostsOut,
+                      int OnlyGhost = -1)
+{
+    const int Width = 1280, Height = 800;
+    Canvas Image(Width, Height);
+    const SkyCamera Camera = MakeSkyCamera(Aim, Width, Height, StandardHalfTangent);
     double SunX = 0.0, SunY = 0.0;
     ScreenCoordinates(Camera, Sun, SunX, SunY);
     const std::array<Frontier::FlareGhost, 6> Ghosts = Frontier::LayoutFlareGhosts(SunX, SunY, Visibility);
     if (GhostsOut) *GhostsOut = Ghosts;
-
     static const Radiance GhostTint[6] = {{0.95, 0.60, 0.30}, {0.40, 0.85, 0.55}, {0.50, 0.62, 1.00},
                                           {1.00, 0.45, 0.45}, {0.85, 0.90, 0.40}, {0.55, 0.90, 0.95}};
-
-    for (int Y = 0; Y < ImageHeight; ++Y)
-        for (int X = 0; X < ImageWidth; ++X)
+    for (int Y = 0; Y < Height; ++Y)
+        for (int X = 0; X < Width; ++X)
         {
             const SkyVector D = PixelDirection(Camera, X + 0.5, Y + 0.5);
-            Radiance Value = DaySkyRadiance(D, Sun);
+            Radiance Value = ScatteredSky(Atmosphere, Lut, D, Sun);
             const double Theta = std::acos(std::clamp(Dot(D, Sun), -1.0, 1.0));
             if (Theta < SunAngularRadius)
-                Value = Radiance{90.0, 88.0, 80.0};
-            else
-                Value = Value + Radiance{1.0, 0.92, 0.78} * (0.9 * std::exp(-std::pow(Theta / 0.03, 2.0)) +
-                                                              0.0025 / (Theta * Theta + 0.0006));
-
+                Value = Radiance{60.0, 58.0, 52.0};
             double Px = 0.0, Py = 0.0;
             ScreenCoordinates(Camera, D, Px, Py);
             for (size_t Index = 0; Index < Ghosts.size(); ++Index)
             {
+                if (OnlyGhost >= 0 && static_cast<int>(Index) != OnlyGhost) continue;
                 const Frontier::FlareGhost& Ghost = Ghosts[Index];
                 const double Distance = std::hypot(Px - Ghost.PositionX, Py - Ghost.PositionY);
                 const double Disc = 1.0 - Smoothstep(Ghost.RadiusNdc * 0.85, Ghost.RadiusNdc, Distance);
@@ -444,52 +608,34 @@ Canvas RenderSunFlare(SkyVector Aim, SkyVector Sun, double Visibility, std::arra
     return Image;
 }
 
-// Four phases of the cycle containing the chosen date, each as a centred disc with the Sun's real lit side.
-Canvas RenderMoonPhases(double JulianDay, std::vector<double>& GeometricFractions, std::vector<double>& RasterFractions,
-                        std::vector<double>& ModelFractions)
+// Dusk sweep: sun elevation at a fixed azimuth, with the same scattering model and night fade.
+Canvas RenderDuskFrame(double SunElevationRad, const Frontier::AtmosphereParameters& Atmosphere,
+                       const Frontier::TransmittanceLut& Lut, const SkyVector& GalacticPole,
+                       const SkyVector& GalacticCentre, const std::vector<CatalogueStar>& Catalogue, double LocalSidereal)
 {
-    constexpr int TileSize = 240;
-    constexpr int TileCount = 4;
-    constexpr double TileRadius = 100.0;
-    Canvas Image(TileSize * TileCount, TileSize);
-    const double CycleStart = Frontier::NewMoonEpochJulian +
-                              std::floor((JulianDay - Frontier::NewMoonEpochJulian) / Frontier::SynodicMonthDays) *
-                                  Frontier::SynodicMonthDays;
-
-    for (int Tile = 0; Tile < TileCount; ++Tile)
-    {
-        const double PhaseJulian = CycleStart + Frontier::SynodicMonthDays * Tile / 4.0;
-        const double Lst2 = LocalSiderealRad(PhaseJulian);
-        const SkyVector Moon = EquatorialToLocal(MoonEquatorial(PhaseJulian).RightAscensionRad,
-                                                 MoonEquatorial(PhaseJulian).DeclinationRad, Lst2);
-        const SkyVector Sun = EquatorialToLocal(SunEquatorial(PhaseJulian).RightAscensionRad,
-                                                SunEquatorial(PhaseJulian).DeclinationRad, Lst2);
-        const MoonFrame Frame = MakeMoonFrame(Moon, Sun);
-
-        double Lit = 0.0, Samples = 0.0;
-        for (int Y = 0; Y < TileSize; ++Y)
-            for (int X = 0; X < TileSize; ++X)
+    constexpr int Width = 480, Height = 300;
+    Canvas Image(Width, Height);
+    const SkyVector Sun{std::cos(SunElevationRad) * std::sin(270.0 * DegToRad),
+                        std::cos(SunElevationRad) * std::cos(270.0 * DegToRad), std::sin(SunElevationRad)};
+    const SkyVector Aim{std::cos(15.0 * DegToRad) * std::sin(270.0 * DegToRad),
+                        std::cos(15.0 * DegToRad) * std::cos(270.0 * DegToRad), std::sin(15.0 * DegToRad)};
+    const SkyCamera Camera = MakeSkyCamera(Aim, Width, Height, 0.40);
+    const double Night = NightFactor(SunElevationRad);
+    for (int Y = 0; Y < Height; ++Y)
+        for (int X = 0; X < Width; ++X)
+        {
+            const SkyVector D = PixelDirection(Camera, X + 0.5, Y + 0.5);
+            Radiance Value{0.03, 0.025, 0.02};   // unlit ground below the horizon
+            if (D.Z >= 0.0)
             {
-                const double A = (X + 0.5 - TileSize * 0.5) / TileRadius;
-                const double B = (TileSize * 0.5 - (Y + 0.5)) / TileRadius;
-                const double Lambert = MoonDiscLambert(Frame, A, B);
-                Radiance Value{0.0015, 0.0018, 0.0030};
-                if (Lambert > -1.0 && A * A + B * B <= 1.0)
-                {
-                    Value = MoonDiscRadiance(Lambert);
-                    if (A * A + B * B > 0.999) Value = Value * 0.5;
-                }
-                Image.At(Tile * TileSize + X, Y) = Value;
-                if (Lambert > -1.0 && A * A + B * B <= 1.0)
-                {
-                    Lit += Lambert > 0.0 ? 1.0 : 0.0;
-                    Samples += 1.0;
-                }
+                const double DaySky = 1.0 - Night;
+                Value = ScatteredSky(Atmosphere, Lut, D, Sun) * DaySky;
+                Value = Value + NightBackground(D, GalacticPole, GalacticCentre, Night);
             }
-        GeometricFractions.push_back(GeometricIlluminatedFraction(SunEquatorial(PhaseJulian), MoonEquatorial(PhaseJulian)));
-        RasterFractions.push_back(Lit / Samples);
-        ModelFractions.push_back(Frontier::MoonPhase(PhaseJulian).Illumination);
-    }
+            Image.At(X, Y) = Value;
+        }
+    std::vector<StarSplat> Splats = BuildStarSplats(Catalogue, Camera, LocalSidereal, Night);
+    SplatStars(Image, Splats, 0.5);
     return Image;
 }
 
@@ -498,52 +644,77 @@ Canvas RenderMoonPhases(double JulianDay, std::vector<double>& GeometricFraction
 int main(int ArgumentCount, char** Arguments)
 {
     const std::string OutputPrefix = ArgumentCount > 1 ? Arguments[1] : "Capture/";
-    ValidationCounter Counter;
+    const std::string CataloguePath = ArgumentCount > 2 ? Arguments[2] : "Data/Hipparcos8.csv";
+    Counter Check;
 
-    // 2026-10-26 20:30 local (SAST, UTC+2) for the night view; 16:30 local for the sun-disc flare.
-    const double NightJulian = Frontier::JulianDate(2026, 10, 26, 18.5);
-    const double DayJulian = Frontier::JulianDate(2026, 10, 26, 14.5);
+    const double NightJulian = Frontier::JulianDate(2026, 10, 26, 18.5);   // 20:30 SAST
+    const double DayJulian = Frontier::JulianDate(2026, 10, 26, 14.5);     // 16:30 SAST
+    const double NightLst = LocalSiderealRad(NightJulian);
+    const double DayLst = LocalSiderealRad(DayJulian);
 
-    // Sanity: the local ENU Sun matches CelestialModel's SunDirectionLocal at Benoni.
+    // Catalogue.
+    const std::vector<CatalogueStar> Catalogue = LoadHipparcosCatalogue(CataloguePath);
+    Check.Check("Hipparcos catalogue loaded (stars)", Catalogue.size() > 40000, static_cast<double>(Catalogue.size()));
+
+    // Sun: ENU sun matches CelestialModel at Benoni.
     const Frontier::SolarPosition CoreSun = Frontier::SunPosition(DayJulian, BenoniLatitudeDeg, BenoniLongitudeDeg);
-    const SkyVector SunVector = EquatorialToLocal(SunEquatorial(DayJulian).RightAscensionRad,
-                                                  SunEquatorial(DayJulian).DeclinationRad, LocalSiderealRad(DayJulian));
-    const double SunCoreError = std::fabs(std::asin(SunVector.Z) - CoreSun.ElevationRad) / DegToRad;
-    Counter.Check("sun elevation vs CelestialModel (deg)", SunCoreError < 0.05, SunCoreError);
-    std::printf("INFO sun elevation at 16:30 local = %.3f deg, azimuth %.3f deg\n", CoreSun.ElevationRad / DegToRad,
+    const SkyVector DaySun = EquatorialToLocal(SunEquatorial(DayJulian).RightAscensionRad,
+                                               SunEquatorial(DayJulian).DeclinationRad, DayLst);
+    const double SunError = std::fabs(std::asin(DaySun.Z) - CoreSun.ElevationRad) / DegToRad;
+    Check.Check("sun elevation vs CelestialModel (deg)", SunError < 0.05, SunError);
+    std::printf("INFO sun at 16:30 SAST: elevation %.3f deg, azimuth %.3f deg\n", CoreSun.ElevationRad / DegToRad,
                 CoreSun.AzimuthRad / DegToRad);
 
-    // Equatorial round trip for the local transform used by the stars, Milky Way and Moon.
+    // Equatorial round trip.
     double RaBack = 0.0, DecBack = 0.0;
-    const double Ra0 = 1.2, Dec0 = -0.4;
-    LocalToEquatorial(EquatorialToLocal(Ra0, Dec0, LocalSiderealRad(NightJulian)), LocalSiderealRad(NightJulian), RaBack, DecBack);
-    const double RoundTrip = std::fabs(std::remainder(RaBack - Ra0, 2.0 * Pi)) + std::fabs(DecBack - Dec0);
-    Counter.Check("equatorial round trip (rad)", RoundTrip < 1e-9, RoundTrip);
+    LocalToEquatorial(EquatorialToLocal(1.2, -0.4, NightLst), NightLst, RaBack, DecBack);
+    const double RoundTrip = std::fabs(std::remainder(RaBack - 1.2, 2.0 * Pi)) + std::fabs(DecBack + 0.4);
+    Check.Check("equatorial round trip (rad)", RoundTrip < 1e-9, RoundTrip);
 
-    // Moon: geometric lit fraction versus CelestialModel's mean-phase model, then raster versus geometry.
-    std::vector<double> Geometric, Raster, Model;
-    const Canvas Phases = RenderMoonPhases(NightJulian, Geometric, Raster, Model);
-    double WorstModelGap = 0.0, WorstRasterGap = 0.0;
+    // Atmosphere: LUT bake and sky colour sanity (zenith blue, forward scattering toward the sun).
+    Frontier::AtmosphereParameters Atmosphere;
+    Frontier::TransmittanceLut Lut;
+    Check.Check("transmittance LUT baked", Lut.Bake(Atmosphere), 1.0);
+    const Radiance Zenith = ScatteredSky(Atmosphere, Lut, {0.0, 0.0, 1.0}, DaySun);
+    const SkyVector AwayFromSun = Normalize({-DaySun.X, -DaySun.Y, 0.5});   // antisolar, about 30 deg up
+    const Radiance Toward = ScatteredSky(Atmosphere, Lut, DaySun, DaySun);
+    const Radiance Opposite = ScatteredSky(Atmosphere, Lut, AwayFromSun, DaySun);
+    Check.Check("zenith sky is blue (B over R)", Zenith.B > Zenith.R, Zenith.B / Zenith.R);
+    Check.Check("sky brighter toward the sun than away", Toward.R + Toward.G + Toward.B > Opposite.R + Opposite.G + Opposite.B,
+                (Toward.R + Toward.G + Toward.B) / (Opposite.R + Opposite.G + Opposite.B));
+
+    // Moon: geometry, raster, and the mean-age comparison as information only.
+    std::vector<double> Geometric, Raster, ModelFraction;
+    const Canvas Phases = RenderMoonPhases(NightJulian, 300, Geometric, Raster, ModelFraction);
+    double WorstRaster = 0.0, WorstModel = 0.0;
     for (size_t I = 0; I < Geometric.size(); ++I)
     {
-        WorstModelGap = std::max(WorstModelGap, std::fabs(Geometric[I] - Model[I]));
-        WorstRasterGap = std::max(WorstRasterGap, std::fabs(Raster[I] - Geometric[I]));
-        std::printf("INFO phase %zu geometric %.4f raster %.4f mean-age %.4f\n", I, Geometric[I], Raster[I], Model[I]);
+        WorstRaster = std::max(WorstRaster, std::fabs(Raster[I] - Geometric[I]));
+        WorstModel = std::max(WorstModel, std::fabs(Geometric[I] - ModelFraction[I]));
+        std::printf("INFO phase %zu geometric %.4f raster %.4f mean-age %.4f\n", I, Geometric[I], Raster[I], ModelFraction[I]);
     }
-    Counter.Check("moon raster lit fraction vs geometry", WorstRasterGap < 0.01, WorstRasterGap);
-    // Information only: CelestialModel's mean-age formula ignores the lunar equation of centre (about +/-6 deg in
-    // longitude), so the quarter-phase gap is a model difference, not a rendering defect.
-    std::printf("INFO moon geometry vs mean-age phase model, worst gap %.4f (model difference, not a render check)\n",
-                WorstModelGap);
-    Counter.Check("phase strip runs new (0) to full (2)", Geometric[0] < 0.1 && Geometric[2] > 0.9, Geometric[2]);
+    Check.Check("moon raster lit fraction vs geometry", WorstRaster < 0.01, WorstRaster);
+    std::printf("INFO moon geometry vs mean-age model, worst gap %.4f (model difference, not a render check)\n", WorstModel);
+    Check.Check("phase strip runs new (0) to full (2)", Geometric[0] < 0.1 && Geometric[2] > 0.9, Geometric[2]);
 
-    // Night view: aim at the brightest Milky Way patch above 25 degrees altitude.
     const SkyVector NightMoon = EquatorialToLocal(MoonEquatorial(NightJulian).RightAscensionRad,
-                                                  MoonEquatorial(NightJulian).DeclinationRad, LocalSiderealRad(NightJulian));
+                                                  MoonEquatorial(NightJulian).DeclinationRad, NightLst);
     const SkyVector NightSun = EquatorialToLocal(SunEquatorial(NightJulian).RightAscensionRad,
-                                                 SunEquatorial(NightJulian).DeclinationRad, LocalSiderealRad(NightJulian));
-    const double Lst = LocalSiderealRad(NightJulian);
-    const SkyVector GalacticPole = EquatorialToLocal(192.85948 * DegToRad, 27.12825 * DegToRad, Lst);
+                                                 SunEquatorial(NightJulian).DeclinationRad, NightLst);
+    const SceneLight NightLight{NightSun, NightMoon, std::asin(NightSun.Z), NightFactor(std::asin(NightSun.Z))};
+    std::printf("INFO moon at 20:30 SAST: altitude %.2f deg, illuminated %.3f\n", std::asin(NightMoon.Z) / DegToRad,
+                GeometricIlluminatedFraction(SunEquatorial(NightJulian), MoonEquatorial(NightJulian)));
+
+    // Moon close-up: check the disc area in pixels against pi r^2.
+    const int CloseSize = 720;
+    int DiscPixels = 0;
+    const Canvas Close = RenderMoonCloseUp(NightMoon, NightSun, CloseSize, &DiscPixels);
+    const double ClosePixelRadius = 0.42 * CloseSize * 0.5;
+    const double ExpectedDiscPixels = Pi * ClosePixelRadius * ClosePixelRadius;
+    Check.Check("moon close-up disc area vs pi r^2", std::fabs(DiscPixels - ExpectedDiscPixels) < 0.03 * ExpectedDiscPixels,
+                DiscPixels / ExpectedDiscPixels);
+
+    // Night field: Milky Way aimed at the brightest band point above 25 degrees, and a field centred on the Moon.
     SkyVector BestAim{0.0, 1.0, 0.0};
     double BestScore = -1.0;
     for (double Azimuth = 0.0; Azimuth < 360.0; Azimuth += 2.0)
@@ -551,62 +722,89 @@ int main(int ArgumentCount, char** Arguments)
         {
             const double Az = Azimuth * DegToRad, Al = Altitude * DegToRad;
             const SkyVector Aim{std::cos(Al) * std::sin(Az), std::cos(Al) * std::cos(Az), std::sin(Al)};
-            const double Latitude = std::asin(std::clamp(Dot(Aim, GalacticPole), -1.0, 1.0));
+            const SkyVector Pole = EquatorialToLocal(192.85948 * DegToRad, 27.12825 * DegToRad, NightLst);
+            const double Latitude = std::asin(std::clamp(Dot(Aim, Pole), -1.0, 1.0));
             const double Score = std::exp(-std::pow(Latitude / 0.12, 2.0));
             if (Score > BestScore) { BestScore = Score; BestAim = Aim; }
         }
-    const Canvas Night = RenderNightSky(BestAim, NightJulian, NightMoon, NightSun);
-    // Second night frame centred on the Moon, so the disc, phase terminator and stars are all in view.
-    const Canvas MoonNight = RenderNightSky(NightMoon, NightJulian, NightMoon, NightSun);
-    // Independent geometric count of disc pixels inside the frame, compared with pi r^2 in pixels.
-    const SkyCamera NightCamera = MakeSkyCamera(BestAim);
-    const double RadiusPixels = MoonAngularRadius / HalfFovTangent * ImageHeight * 0.5;
-    int DiscPixels = 0;
-    for (int Y = 0; Y < ImageHeight; ++Y)
-        for (int X = 0; X < ImageWidth; ++X)
-            if (std::acos(std::clamp(Dot(PixelDirection(NightCamera, X + 0.5, Y + 0.5), NightMoon), -1.0, 1.0)) < MoonAngularRadius)
-                ++DiscPixels;
-    const double ExpectedPixels = Pi * RadiusPixels * RadiusPixels;
-    if (DiscPixels > 0)
-        Counter.Check("night moon disc pixel area vs pi r^2", std::fabs(DiscPixels - ExpectedPixels) < 0.15 * ExpectedPixels,
-                      DiscPixels / ExpectedPixels);
-    else
-        std::printf("INFO moon outside night frame (area check not applicable)\n");
-    std::printf("INFO night aim azimuth/altitude %.1f / %.1f deg, moon alt %.2f deg\n",
-                std::atan2(BestAim.X, BestAim.Y) / DegToRad, std::asin(BestAim.Z) / DegToRad,
-                std::asin(NightMoon.Z) / DegToRad);
-    Counter.Check("night Milky Way aim above 25 deg", BestScore > 0.0, BestScore);
+    uint32_t StarCountMilky = 0, StarCountMoon = 0;
+    const Canvas MilkyWay = RenderNightField(BestAim, 1280, 800, StandardHalfTangent * 1.4, NightLst, NightLight, Catalogue,
+                                             &StarCountMilky);
+    Check.Check("night field stars drawn (Milky Way aim)", StarCountMilky > 3000, static_cast<double>(StarCountMilky));
+    const Canvas MoonField = RenderNightField(NightMoon, 1280, 800, StandardHalfTangent * 1.8, NightLst, NightLight,
+                                              Catalogue, &StarCountMoon);
+    Check.Check("moon field stars drawn", StarCountMoon > 3000, static_cast<double>(StarCountMoon));
 
-    // Sun-disc flare: aim up-and-off the sun so the ghost chain lies in frame.
-    const SkyVector DaySun = SunVector;
-    // Aim so the sun sits right of and above centre (about +0.55, +0.25 frame half-heights), leaving the ghost
-    // chain on the opposite side of the frame.
+    // Sun-disc lens flare: aim so the sun is right of and above centre, leaving ghosts on the opposite side.
     const SkyVector SunEast = Normalize(Cross(DaySun, {0.0, 0.0, 1.0}));
     const SkyVector SunUp = Cross(SunEast, DaySun);
-    const SkyVector DayAim = Normalize(DaySun - SunEast * (0.55 * HalfFovTangent) - SunUp * (0.25 * HalfFovTangent));
+    const SkyVector DayAim = Normalize(DaySun - SunEast * (0.55 * StandardHalfTangent) - SunUp * (0.25 * StandardHalfTangent));
+    std::array<Frontier::FlareGhost, 6> Ghosts{};
+    const Canvas Flare = RenderSunFlare(DayAim, DaySun, 1.0, Atmosphere, Lut, &Ghosts);
+    std::array<Frontier::FlareGhost, 6> HiddenGhosts{};
+    const Canvas FlareHidden = RenderSunFlare(DayAim, DaySun, 0.0, Atmosphere, Lut, &HiddenGhosts);
+    double HiddenStrength = 0.0;
+    for (const Frontier::FlareGhost& Ghost : HiddenGhosts) HiddenStrength = std::max(HiddenStrength, Ghost.Strength);
+    Check.Check("zero visibility removes every ghost", HiddenStrength == 0.0, HiddenStrength);
+
+    // Rendering-level ghost check: residual (flare minus no-flare) centroid near each LensFlareModel position.
+    const SkyCamera FlareCamera = MakeSkyCamera(DayAim, 1280, 800, StandardHalfTangent);
+    double SunX = 0.0, SunY = 0.0;
+    ScreenCoordinates(FlareCamera, DaySun, SunX, SunY);
+    double CollinearityError = 0.0;
+    for (size_t I = 0; I < Ghosts.size(); ++I)
     {
-        double Sx = 0.0, Sy = 0.0;
-        ScreenCoordinates(MakeSkyCamera(DayAim), DaySun, Sx, Sy);
-        std::printf("INFO sun NDC in day flare frame (%.3f, %.3f)\n", Sx, Sy);
+        const double Cross2 = Ghosts[I].PositionX * SunY - Ghosts[I].PositionY * SunX;
+        CollinearityError = std::max(CollinearityError, std::fabs(Cross2));
     }
-    std::array<Frontier::FlareGhost, 6> GhostsFull{};
-    const Canvas Flare = RenderSunFlare(DayAim, DaySun, 1.0, &GhostsFull);
-    std::array<Frontier::FlareGhost, 6> GhostsHidden{};
-    const Canvas FlareHidden = RenderSunFlare(DayAim, DaySun, 0.0, &GhostsHidden);
-    double HiddenGhostGap = 0.0;
-    for (size_t I = 0; I < GhostsHidden.size(); ++I) HiddenGhostGap = std::max(HiddenGhostGap, GhostsHidden[I].Strength);
-    Counter.Check("zero visibility removes every ghost", HiddenGhostGap == 0.0, HiddenGhostGap);
-    double FlareDifference = 0.0;
-    for (size_t I = 0; I < Flare.Pixels.size(); ++I)
-        FlareDifference = std::max(FlareDifference, std::fabs(Flare.Pixels[I].R - FlareHidden.Pixels[I].R));
-    Counter.Check("ghost chain visible when unoccluded", FlareDifference > 0.05, FlareDifference);
+    Check.Check("ghost centres collinear with sun and frame centre", CollinearityError < 1e-12, CollinearityError);
+    double WorstCentroidPixels = 0.0;
+    int MeasuredGhosts = 0;
+    for (size_t I = 0; I < Ghosts.size(); ++I)
+    {
+        if (Ghosts[I].Strength <= 0.0) continue;
+        // Ghost alone: render with only this ghost, subtract the flare-off frame, and take the intensity centroid.
+        const Canvas Alone = RenderSunFlare(DayAim, DaySun, 1.0, Atmosphere, Lut, nullptr, static_cast<int>(I));
+        // Height-normalised units to pixels: half-height is 400 px and the frame centre is (640, 400).
+        const double ExpectedX = 640.0 + Ghosts[I].PositionX * 400.0;
+        const double ExpectedY = 400.0 - Ghosts[I].PositionY * 400.0;
+        double SumWeight = 0.0, SumX = 0.0, SumY = 0.0;
+        for (int Y = 0; Y < 800; ++Y)
+            for (int X = 0; X < 1280; ++X)
+            {
+                const double Weight = std::max(0.0, Alone.At(X, Y).R - FlareHidden.At(X, Y).R);
+                SumWeight += Weight;
+                SumX += Weight * (X + 0.5);
+                SumY += Weight * (Y + 0.5);
+            }
+        if (SumWeight <= 0.0) continue;
+        ++MeasuredGhosts;
+        const double Error = std::hypot(SumX / SumWeight - ExpectedX, SumY / SumWeight - ExpectedY);
+        WorstCentroidPixels = std::max(WorstCentroidPixels, Error);
+        std::printf("INFO ghost %zu expected (%.1f, %.1f) px, isolated centroid error %.2f px\n", I, ExpectedX, ExpectedY, Error);
+    }
+    Check.Check("rendered ghost centroids within 2 px", MeasuredGhosts >= 5 && WorstCentroidPixels < 2.0, WorstCentroidPixels);
 
-    const bool Wrote = WritePpm(OutputPrefix + "NightSky.ppm", Night, 1.0) &&
-                       WritePpm(OutputPrefix + "NightSkyMoon.ppm", MoonNight, 1.0) &&
-                       WritePpm(OutputPrefix + "SunFlare.ppm", Flare, 1.0) &&
-                       WritePpm(OutputPrefix + "MoonPhases.ppm", Phases, 1.0);
-    Counter.Check("PPM outputs written", Wrote, Wrote ? 1.0 : 0.0);
+    // Dusk sweep at a fixed azimuth: 14 deg above to 18 deg below the horizon.
+    const SkyVector GalacticPole = EquatorialToLocal(192.85948 * DegToRad, 27.12825 * DegToRad, NightLst);
+    const SkyVector GalacticCentre = EquatorialToLocal(266.40499 * DegToRad, -28.93618 * DegToRad, NightLst);
+    const std::array<double, 6> DuskElevations{14.0, 2.0, -2.0, -6.0, -12.0, -18.0};
+    std::vector<Canvas> Dusk;
+    for (double Elevation : DuskElevations)
+        Dusk.push_back(RenderDuskFrame(Elevation * DegToRad, Atmosphere, Lut, GalacticPole, GalacticCentre, Catalogue, NightLst));
+    const Radiance Horizon = Dusk[2].At(240, 246);   // sample just above the horizon, toward the sun column
+    Check.Check("sunset horizon is warm (R over B) at -2 deg", Horizon.R > Horizon.B, Horizon.R / Horizon.B);
 
-    std::printf("SUMMARY passed %d failed %d\n", Counter.Passed, Counter.Failed);
-    return Counter.Failed == 0 ? 0 : 1;
+    const bool Wrote = WritePpm(OutputPrefix + "NightField.ppm", MilkyWay, 1.0) &&
+                       WritePpm(OutputPrefix + "MoonField.ppm", MoonField, 1.0) &&
+                       WritePpm(OutputPrefix + "MoonClose.ppm", Close, 1.0) &&
+                       WritePpm(OutputPrefix + "MoonPhases.ppm", Phases, 1.0) &&
+                       WritePpm(OutputPrefix + "SunFlare.ppm", Flare, 1.0);
+    bool WroteDusk = true;
+    for (size_t I = 0; I < Dusk.size(); ++I)
+        WroteDusk = WroteDusk && WritePpm(OutputPrefix + "Dusk" + std::to_string(I) + ".ppm", Dusk[I], 1.0);
+    Check.Check("PPM outputs written", Wrote && WroteDusk, Wrote && WroteDusk ? 1.0 : 0.0);
+
+    std::printf("SUMMARY passed %d failed %d\n", Check.Passed, Check.Failed);
+    return Check.Failed == 0 ? 0 : 1;
 }

@@ -1,59 +1,55 @@
-"""Convert the night-sky PPM captures to PNG using only the standard library."""
+"""Convert night-sky PPM captures to labelled PNG images and tile the dusk sweep.
 
-import struct
+Requires Pillow (PyPI). Usage: NightSkyImages.py <capture_dir> <image_dir>
+"""
+
 import sys
-import zlib
 from pathlib import Path
 
-
-def read_ppm(path: Path):
-    data = path.read_bytes()
-    tokens, index = [], 0
-    while len(tokens) < 4:
-        while data[index:index + 1].isspace():
-            index += 1
-        if data[index:index + 1] == b"#":
-            while data[index:index + 1] not in (b"\n", b""):
-                index += 1
-            continue
-        start = index
-        while not data[index:index + 1].isspace():
-            index += 1
-        tokens.append(data[start:index])
-    index += 1
-    magic, width, height, _maximum = tokens
-    assert magic == b"P6", magic
-    return int(width), int(height), data[index:]
+from PIL import Image, ImageDraw
 
 
-def write_png(path: Path, width: int, height: int, rgb: bytes):
-    raw = bytearray()
-    stride = width * 3
-    for row in range(height):
-        raw.append(0)
-        raw.extend(rgb[row * stride:(row + 1) * stride])
+DUSK_LABELS = ["Sun +14 deg", "Sun +2 deg", "Sun -2 deg", "Sun -6 deg", "Sun -12 deg", "Sun -18 deg"]
 
-    def chunk(kind: bytes, payload: bytes) -> bytes:
-        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+SINGLE = {
+    "NightField": "NightSkyCatalogueMilkyWay",
+    "MoonField": "NightSkyMoonField",
+    "MoonClose": "MoonClose",
+    "SunFlare": "SunDiskLensFlare",
+}
 
-    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(bytes(raw), 9)) + chunk(b"IEND", b""))
+
+def label(image: Image.Image, text: str) -> Image.Image:
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, 8 * len(text) + 12, 18), fill=(0, 0, 0))
+    draw.text((6, 4), text, fill=(235, 235, 235))
+    return image
 
 
 def main():
-    capture_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "Exhibits/NightSky/Capture")
-    image_dir = Path(sys.argv[2] if len(sys.argv) > 2 else "Exhibits/NightSky/Images")
-    image_dir.mkdir(parents=True, exist_ok=True)
-    names = {
-        "NightSky": "NightSkyMilkyWay",
-        "NightSkyMoon": "NightSkyMoon",
-        "SunFlare": "SunDiskLensFlare",
-        "MoonPhases": "MoonPhases",
-    }
-    for source, target in names.items():
-        width, height, rgb = read_ppm(capture_dir / f"{source}.ppm")
-        write_png(image_dir / f"{target}.png", width, height, rgb)
-        print(f"wrote {image_dir / (target + '.png')} {width}x{height}")
+    capture = Path(sys.argv[1] if len(sys.argv) > 1 else "Exhibits/NightSky/Capture")
+    images = Path(sys.argv[2] if len(sys.argv) > 2 else "Exhibits/NightSky/Images")
+    images.mkdir(parents=True, exist_ok=True)
+
+    for source, target in SINGLE.items():
+        Image.open(capture / f"{source}.ppm").save(images / f"{target}.png")
+        print(f"wrote {target}.png")
+
+    phases = Image.open(capture / "MoonPhases.ppm")
+    tile = phases.width // 4
+    names = ["New", "First quarter", "Full", "Last quarter"]
+    for index, name in enumerate(names):
+        label(phases.crop((index * tile, 0, (index + 1) * tile, phases.height)), name)
+    phases.save(images / "MoonPhases.png")
+    print("wrote MoonPhases.png")
+
+    frames = [Image.open(capture / f"Dusk{index}.ppm") for index in range(len(DUSK_LABELS))]
+    width, height = frames[0].size
+    sheet = Image.new("RGB", (width * 3, height * 2), (0, 0, 0))
+    for index, frame in enumerate(frames):
+        sheet.paste(label(frame, DUSK_LABELS[index]), ((index % 3) * width, (index // 3) * height))
+    sheet.save(images / "DuskSequence.png")
+    print("wrote DuskSequence.png")
 
 
 if __name__ == "__main__":
