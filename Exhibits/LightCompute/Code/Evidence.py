@@ -37,6 +37,7 @@ EnergyProducts = [Root / 'Exhibits/TextureStudio/Results' / P for P in (
 Products += [P for P in EnergyProducts if P.exists()]
 Products += [Output / 'Results/RoughReflection.json'] if (Output / 'Results/RoughReflection.json').exists() else []
 Products += list((Output / 'Images').glob('Rough*.gif'))
+Products += list((Output / 'Images').glob('GlazingMotion*.gif'))
 Products += [Output / 'Results/ShadowHistory.json'] if (Output / 'Results/ShadowHistory.json').exists() else []
 Products += [Output / 'Results/SolidDielectric.json'] if (Output / 'Results/SolidDielectric.json').exists() else []
 Products += [Output / 'Results/MirrorDielectric.json'] if (Output / 'Results/MirrorDielectric.json').exists() else []
@@ -109,6 +110,8 @@ Scratch += [Root / P for P in ('_ClaudeScratch/vehicle-reference/VehicleLightInp
                               '_ClaudeScratch/light-compute/CloudScene.bin')]
 Scratch += list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*.bin'))
 Scratch += list((Root / '_ClaudeScratch/primary-motion').glob('VehicleMotion*.bin'))
+Scratch += list((Root / '_ClaudeScratch/glazing-motion').glob('*.ppm'))
+Scratch += list((Root / '_ClaudeScratch/glazing-motion').glob('*.bin'))
 Present = Hashes([P for P in Scratch if P.exists()])
 Retained = {P: H for P, H in Previous.get('scratch_sha256', {}).items() if not (Root / P).exists()}
 Report['scratch_sha256'] = {**Retained, **Present}

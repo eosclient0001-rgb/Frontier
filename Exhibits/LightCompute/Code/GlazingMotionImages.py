@@ -5,6 +5,7 @@
 from pathlib import Path
 import hashlib
 import json
+import re
 import sys
 Root = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Root / '_ClaudeScratch/tmp/MaterialTools'))
@@ -14,6 +15,11 @@ Images = Root / 'Exhibits/LightCompute/Images'
 Results = Root / 'Exhibits/LightCompute/Results'
 Canvas = Image.new('RGB', (576, 304), '#151b23')
 Draw = ImageDraw.Draw(Canvas)
+Log = (Results / 'GlazingMotionGpu.txt').read_text()
+Passed = re.search(r'GLAZING_MOTION_PASS poses=6 warm_opaque_reused=(\d+) tested_glass_pixels=(\d+) tested_mirror_pixels=(\d+)', Log)
+assert Passed and all(int(Passed[I]) > 0 for I in range(1, 4)), 'Incomplete motion pass or missing visible mirror/warm-history coverage'
+for Pose in range(6):
+    assert f'GLAZING_MOTION_FRAME name=GlazingMotion{Pose} ' in Log
 Frames = []
 Hashes = {}
 for Pose in range(6):
