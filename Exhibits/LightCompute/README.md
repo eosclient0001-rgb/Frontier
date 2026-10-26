@@ -5,6 +5,12 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Derived closed vehicle glazing — 2026-10-26
+
+[Actual vehicle glazing](VehicleGlazing.md): three nominal6mm closed components from the retained74 window
+triangles, saved native IOR/RGB absorption, shared-edge and long-TIR corrections. Fresh software Vulkan vehicle
+acceptance passed; full retained transport regressions are still running. No editor/physical-GPU completion claim.
+
 ## Saved closed-volume material coefficients — 2026-10-26
 
 [Native saved-glass authoring](SavedDielectric.md) adds strict optional `[DielectricVolume]` IOR/RGB absorption

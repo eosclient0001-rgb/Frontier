@@ -425,3 +425,10 @@ pending and must be freshly completed. Do not substitute the prior interrupted w
 Fresh pinned250616f optical shader control on the restored vehicle fixture completed0:59 capped /16unsupported
 paths, matching the previous turn's reported failure. Retained Results/VehicleGlazingBoundPrevious.txt.
 Production corrected vehicle acceptance and complete retained optical regressions are still running.
+
+Fresh restored vehicle wrapper completed0 on de892da-source optical code:887 primary glass pixels,
+1851 decreased channels(max9.13125,sum43.2632), cap/unsupported0; exactrepeat; moved/cold exact;64000black
+sourceoff pixels. Native52 strict+ASan/UBSan,39 saved authoring and4CTest passed. Actual images and four
+native round-trip documents retained. Pinned250616f shader control59capped/16unsupported freshly reproduced.
+Full RunDiffuseDielectric chain is still running: _ClaudeScratch/logs/vehicle-glazing-regressions.txt;
+background process full-retained-transport-regressi-8f915a04. Do not claim its final result until exit0.

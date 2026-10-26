@@ -3,8 +3,30 @@
 This phase derives closed glazing from the retained vehicle's window surfaces and binds native saved/reloaded
 IOR and RGB absorption to the resulting geometry. Original archives and the thin-sheet comparison are retained.
 
-**Validation status:** native acceptance passed; fresh restored-build Vulkan and full regression runs are pending.
-Earlier interrupted-workspace observations are not substituted for retained results from this build.
+**Validation status:** native and vehicle Vulkan acceptance passed freshly on the restored build. The broader
+retained transport regression chain is still running. Prior interrupted-workspace observations are not used as
+proof of this build.
+
+![Actual native Vulkan vehicle readbacks, with same-pixel enlarged window crops](Images/VehicleGlazing.png)
+
+Actual 320×200 captures, 16 transport samples, **SwiftShader Device (Subzero), CPU type 4**, triangle BVH.
+Left: original thin-sheet model; centre: closed clear panes; right: saved RGB absorption. The lower row is a
+nearest-neighbour crop of those same pixels, not new detail. Finite sample noise is visible; no glass denoiser
+or finished appearance claim. The sheet and solid models differ physically, so this is not an energy identity.
+
+| Fresh vehicle check | Result |
+|---------------------|--------|
+| Visible glass | 887 primary pixels |
+| Absorption | 1,851 channels decrease; monotone on primary glass; max decrease 9.13125 / sum 43.2632 linear RGB |
+| Bounded paths | **0 capped / 0 unsupported** on visible primary glazing |
+| Repeat | Exact seeded absorbing-render equality |
+| Camera movement | Moved camera equals cold submission; fresh transport, not denoising |
+| Source removal | **64,000 black pixels** after analytic/emissive/environment removal |
+
+[Fresh GPU log](Results/VehicleGlazingGpu.txt), [source/capture hashes](Results/VehicleGlazing.json),
+[authored spectrum](Materials/VehicleGlazing.material), and
+[retained native round trip](Materials/VehicleGlazingRoundTrips/ClosedGlass3.material).
+The maximum/sum decrease are scene-radiance differences, not a new analytic error bound.
 
 ## Construction
 

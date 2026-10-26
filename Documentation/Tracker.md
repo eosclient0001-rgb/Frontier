@@ -2,6 +2,19 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Derived finite-thickness vehicle glazing — 2026-10-26
+
+- Three exact-edge-connected components from 74 retained window triangles become 284 closed triangles at
+  nominal 6 mm thickness. Native saved IOR1.52 / RGB absorption [1,4,12] feed the existing volume atlas.
+- Fresh restored-build strict and ASan/UBSan:52 assertions,16 malformed cases rejected, six-pose closure;
+  native saved-material39 assertions and four CTests passed. Current 13 SPIR-V entries rebuilt.
+- Fresh SwiftShader320x200 /16 samples:887 glass pixels,1851 absorption-changed channels, cap/unsupported0,
+  exact repeat, moved/cold equality and64000 source-off black pixels. Pinned250616f control fails59/16.
+- Ray-aligned shared-edge intersection correction; finite2048-step guided-TIR budget; diagnostic TIR saturation.
+  Material-buffer/descriptor ABI unchanged. Actual captures and limitations: [VehicleGlazing](../Exhibits/LightCompute/VehicleGlazing.md).
+- Full retained transport regression chain remains running. No physical RTX/GTX, Windows/editor importer,
+  glass denoiser, general CAD offset certification or unified moving sun/sky/cloud/fog completion claim.
+
 ## Saved smooth-volume material spectra — 2026-10-26
 
 - Optional native TOML IOR/RGB absorption survives disk round trips and material compilation without changing
