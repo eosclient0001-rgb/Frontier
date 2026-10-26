@@ -438,3 +438,7 @@ Full regression progress: RunSolidDielectric completed successfully (boundary199
 Mirror stage is now running under the same full regression process. Final chain exit still pending.
 Mirror regression completed:four196-pixel slabs (maxmean .00307568),6144sourceoffblack; pinnedblocked196
 centralpixels; captures regenerated with current2048 bound. Rough reflection stage now running; chain pending.
+Rough-through-volume regression completed:11118absorption-changedchannels, ratios.924979/.813363/.71067;
+three screen/BVH cases exact;6144sourceoffblack;pinnedold ignoresabsorption. Retained rough192x120 scene:
+7250floorpixels,14941screen/204392BVH rays; hybrid/BVH error0; repeat/sourceoff/movedfresh checks pass.
+Window stage now running; full chain final result pending.

@@ -13,7 +13,7 @@
     0.3,
     0.65
   ],
-  "interaction_cap": 32,
+  "interaction_cap": 2048,
   "capture_sha256": {
     "RoughDielectric0.ppm": "21b0f2f093add0df232115b2d345257f6177d08e570effb6722d231d5061bf18",
     "RoughDielectric1.ppm": "3316dd3b6aa3b5044c92b787f9b112e732456127aba46387688b95f0489e8990",
