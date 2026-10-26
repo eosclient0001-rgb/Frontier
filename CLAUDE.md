@@ -500,3 +500,7 @@ Three processes running: sixpose motion, static glazing, full retained DIFFUSE_B
 GPU parity probe added:240cases with exact paired-draw first moments, latch/depth/draw-boundary checks.
 All final images/regression/digests must be refreshed; prior13/13shader/everyPNGexact observations describe
 PRE-roulette extraction only, NOT current changed shader. RunGlazingRayAudit pins1b5691e pre-survival source.
+
+FaintPath GPU parity PASSED exit0:240cases/76trials/38terminated, exact RGB first moments, latch and .5boundary.
+Retained `Results/FaintPath.{txt,json}` production block /generated/compiled shader SHA. Remaining3GPU chains
+stillrunning; no sixpose/static/post-remedy full-chain acceptance yet. Do not treat numeric parity as film proof.

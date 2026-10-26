@@ -32,6 +32,7 @@ Products += [Output / 'Results/SavedDielectric.json', Output / 'Results/VehicleG
 Products += [Output / 'Results/VehicleGlazing.json'] if (Output / 'Results/VehicleGlazing.json').exists() else []
 Products += [Output / 'Results/GlazingMotion.json'] if (Output / 'Results/GlazingMotion.json').exists() else []
 Products += [Output / 'Results/GlazingMotionRegression.json'] if (Output / 'Results/GlazingMotionRegression.json').exists() else []
+Products += [Output / 'Results/FaintPath.json'] if (Output / 'Results/FaintPath.json').exists() else []
 EnergyProducts = [Root / 'Exhibits/TextureStudio/Results' / P for P in (
     'MaterialEnergyAcceptance.txt', 'MaterialEnergyCurrent.txt', 'MaterialEnergyGpuCurrent.txt',
     'MaterialEnergyGpuOriginal.txt', 'MaterialEnergySanitizer.txt', 'MaterialEnergy.json', 'MaterialReuse.json')]
@@ -113,6 +114,9 @@ Scratch += list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*
 Scratch += list((Root / '_ClaudeScratch/primary-motion').glob('VehicleMotion*.bin'))
 Scratch += list((Root / '_ClaudeScratch/glazing-motion').glob('*.ppm'))
 Scratch += list((Root / '_ClaudeScratch/glazing-motion').glob('*.bin'))
+Scratch += list((Root / '_ClaudeScratch/build/faint-path').glob('*.slang'))
+Scratch += list((Root / '_ClaudeScratch/build/faint-path').glob('*.sha256'))
+Scratch += list((Root / '_ClaudeScratch/build/faint-path').glob('*.spv'))
 Present = Hashes([P for P in Scratch if P.exists()])
 Retained = {P: H for P, H in Previous.get('scratch_sha256', {}).items() if not (Root / P).exists()}
 Report['scratch_sha256'] = {**Retained, **Present}
