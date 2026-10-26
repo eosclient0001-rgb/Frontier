@@ -1,5 +1,9 @@
 # Saved smooth closed-glass materials — 2026-10-26
 
+> Historical checkpoint: [VehicleGlazing](VehicleGlazing.md) subsequently adds derived vehicle panes,
+> shared-edge evaluation and a 2,048-interaction bound. Earlier 32-step descriptions below refer to the
+> original checkpoint, not the current runtime limit.
+
 Native material documents now retain a distinct **closed-volume IOR and RGB absorption spectrum** through
 TOML decoding, disk save/reload and `CompileSurfaceMaterial`. The exhibit uploads those compiled coefficients
 to the existing category-4 atlas and traces the actual Vulkan slab fixture. No shader descriptor layout changed.

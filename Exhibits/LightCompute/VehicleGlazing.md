@@ -3,8 +3,8 @@
 This phase derives closed glazing from the retained vehicle's window surfaces and binds native saved/reloaded
 IOR and RGB absorption to the resulting geometry. Original archives and the thin-sheet comparison are retained.
 
-**Validation status:** native and vehicle Vulkan acceptance passed freshly on the restored build. The broader
-retained transport regression chain is still running. Prior interrupted-workspace observations are not used as
+**Validation status:** native and vehicle Vulkan acceptance passed freshly on the restored build. The complete retained
+transport regression chain also completed with **exit 0**. Prior interrupted-workspace observations are not used as
 proof of this build.
 
 ![Actual native Vulkan vehicle readbacks, with same-pixel enlarged window crops](Images/VehicleGlazing.png)
@@ -86,6 +86,34 @@ the previous 32-step shader. This is an old-source/current-fixture comparison, n
 - [Geometry sanitizers](Results/PaneThicknessSanitized.txt)
 - [Native saved coefficients](Results/VehicleGlazingAuthoring.txt)
 - [Four native CTests](Results/VehicleGlazingNative.txt)
+
+## Full retained regression — exit 0
+
+`DIFFUSE_BUILD=0 bash Exhibits/LightCompute/RunDiffuseDielectric.sh` completed successfully with the current
+13 production shader entries and restored native host. This reruns the previous camera, mirror, rough,
+window and diffuse glass fixtures, pinned negative controls, opaque-history/filter tests and four native CTests.
+
+| Retained check | Fresh result |
+|----------------|--------------|
+| Boundary / primary glass | 199 boundary cases; four slabs, max mean error 0.00346691; caps/unsupported zero |
+| Mirror / glass | Four 196-pixel analytic cases; source-off black and pinned blocked-path control |
+| Rough / glass | 11,118 absorption-changed channels; all three screen/BVH comparisons exact |
+| Retained rough reflection | 14,941 screen / 204,392 BVH rays; hybrid/BVH RGB error zero; source-off/moved/repeat pass |
+| Window / glass | Four 100-pixel cases; sheet-energy, source-removal and pinned blocked-path checks pass |
+| Compact diffuse / glass | 15,360 absorption-changed channels; 327,680 rays = 146,417 hits + 181,263 misses |
+| Emitter routing | Shielded refracted source remains exactly equal with emitter sampling on/off |
+| Retained vehicle transport | 901 native probes; max RGB error 4.5973e-6; 3,603,424 secondary rays |
+| Source families | Analytic/emissive/environment retained; additivity error 8.44436e-6; source-off black |
+| Reconstruction | Fresh RMSE 0.0103498 → filtered 0.00585726; 210 native probes, max error 4.23087e-8 |
+| Six poses | Reuse 0/12076/12067/0/12064/12079; current emission preserved; direct delta ≤3.8147e-6 |
+
+[Full vehicle transport](Results/DiffuseDielectricTransportRegression.txt),
+[reconstruction and six poses](Results/DiffuseDielectricHistoryRegression.txt), and
+[compact diffuse](Results/DiffuseDielectric.txt).
+
+These 640×400 vehicle / 160×100 history fixtures retain their earlier material assignments; they are regression
+checks, **not** a six-pose film of the new closed glazing. New closed-glazing captures are the separate 320×200
+vehicle comparison and moved-camera image above. No timing/performance acceptance is inferred.
 
 ## Reproduce
 

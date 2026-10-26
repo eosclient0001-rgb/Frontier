@@ -1,5 +1,9 @@
 # Thin window followed by closed glass — 2026-10-25
 
+> Historical checkpoint: [VehicleGlazing](VehicleGlazing.md) subsequently adds derived vehicle panes,
+> shared-edge evaluation and a 2,048-interaction bound. Earlier 32-step descriptions below refer to the
+> original checkpoint, not the current runtime limit.
+
 **Primary camera rays can now cross the existing parallel-sheet window and then traverse smooth closed
 volumes.** The sheet is still an approximation, not a newly implemented refracting thin-film model.
 

@@ -12,7 +12,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   exact repeat, moved/cold equality and64000 source-off black pixels. Pinned250616f control fails59/16.
 - Ray-aligned shared-edge intersection correction; finite2048-step guided-TIR budget; diagnostic TIR saturation.
   Material-buffer/descriptor ABI unchanged. Actual captures and limitations: [VehicleGlazing](../Exhibits/LightCompute/VehicleGlazing.md).
-- Full retained transport regression chain remains running. No physical RTX/GTX, Windows/editor importer,
+- Full retained transport chain completed0:camera/mirror/rough/window/diffuse, pinned controls, four CTests,
+  retained640x400 vehicle901probes(max4.5973e-6), reconstructionRMSE.0103498→.00585726 and six poses passed.
+  No physical RTX/GTX, Windows/editor importer,
   glass denoiser, general CAD offset certification or unified moving sun/sky/cloud/fog completion claim.
 
 ## Saved smooth-volume material spectra — 2026-10-26

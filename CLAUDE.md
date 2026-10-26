@@ -450,3 +450,17 @@ Diffuse pinned control passed(absorption ignored). Fresh retained640x400 vehicle
 901 nativeprobes mean2.12644e-8/max4.5973e-6;3603424rays=263475hits+3339949misses; analytic/emissive/env
 2053.59/19571.8/612.624; additiveerror8.44436e-6; sourceoffblack. Final160x100 sixpose reconstruction/history
 is now running; fullchain final exit pending. These are retained-scene regressions, not six-pose closed-glass film.
+
+## Vehicle glazing phase accepted — 2026-10-26
+Fresh restored-build vehicle wrapper AND full RunDiffuseDielectric regression chain exited0. All pending notes
+above are historical progress, now superseded. Current bound2048 /max128delta samples; TIR diagnostic saturates
+65535; shared-edge ray-aligned precise projection. Material1760byte GPU ABI unchanged. Three derived6mm pane
+components,284triangles from74windows; no archive rewrite or general editor importer. Native52 strict+ASan/UBSan,
+39 saved-spectrum assertions,4CTest. Actual320x200 closedvehicle:887glasspixels1851decreasedchannels, cap/invalid0,
+exactrepeat,moved/cold equality,64000black. Pinned250616f control59capped16invalid on same fixture.
+Full retained suite: prior boundary/primary/mirror/rough/window/diffuse and opaque/history checks pass. Retained
+640x400 vehicle901probes mean2.12644e-8/max4.5973e-6;3,603,424rays=263475hits+3339949misses; additivity8.44436e-6.
+Reconstruction160x100 RMSE.0103498->.00585726;210nativeprobesmax4.23087e-8; sixpose reuse0/12076/12067/0/12064/12079,
+currentemissionpreserved/directdelta<=3.8147e-6. Retained sixposes are NOT a sixpose closed-glazing film.
+SoftwareSwiftShaderCPU only; no physicalRTX/GTX/Windows/editor/fullrenderer/realtime/generalCAD claim.
+Report Exhibits/LightCompute/VehicleGlazing.md. Preserve sun/flare/stars/cellular flakes and both source families.

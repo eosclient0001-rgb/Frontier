@@ -9,7 +9,7 @@ No physical GPU, hardware ray-query or Windows execution is claimed.
 
 [Actual vehicle glazing](VehicleGlazing.md): three nominal6mm closed components from the retained74 window
 triangles, saved native IOR/RGB absorption, shared-edge and long-TIR corrections. Fresh software Vulkan vehicle
-acceptance passed; full retained transport regressions are still running. No editor/physical-GPU completion claim.
+acceptance and the complete retained transport regression chain passed. No editor/physical-GPU completion claim.
 
 ## Saved closed-volume material coefficients — 2026-10-26
 

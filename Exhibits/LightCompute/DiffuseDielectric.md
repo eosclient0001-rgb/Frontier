@@ -1,5 +1,9 @@
 # Compact diffuse receivers through smooth glass — 2026-10-25
 
+> Historical checkpoint: [VehicleGlazing](VehicleGlazing.md) subsequently adds derived vehicle panes,
+> shared-edge evaluation and a 2,048-interaction bound. Earlier 32-step descriptions below refer to the
+> original checkpoint, not the current runtime limit.
+
 **The retained compact material path now receives transported light through smooth closed volumes.** This
 closes the previous material-address-zero gap without replacing its uploaded cosine samples with GGX proposals.
 

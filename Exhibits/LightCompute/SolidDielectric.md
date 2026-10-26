@@ -1,5 +1,9 @@
 # Closed-volume dielectric transport — 2026-10-25
 
+> Historical checkpoint: [VehicleGlazing](VehicleGlazing.md) subsequently adds derived vehicle panes,
+> shared-edge evaluation and a 2,048-interaction bound. Earlier 32-step descriptions below refer to the
+> original checkpoint, not the current runtime limit.
+
 **This checkpoint covers primary-camera smooth closed volumes.** Subsequent [mirror transport](MirrorDielectric.md)
 adds a verified primary-mirror-to-volume route. A later [rough-reflection phase](RoughDielectric.md) adds
 sampled rough reflector paths through smooth glass. Historical secondary-blocker notes below refer to this original checkpoint. Actual C++/Slang Vulkan captures and analytic checks;
