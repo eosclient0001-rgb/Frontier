@@ -446,3 +446,7 @@ Window regression completed:4x100analyticpixels maxmean.00312531; energycontrols
 6144black; pinned100centralblocked. Compact diffuse positive fixture passed:15360changedchannels,
 ratios.903583/.761600/.632969;327680rays=146417hits+181263misses; shieldedNEE exact;6144black.
 Diffuse pinned control then retained vehicle transport/history remain running; final chain pending.
+Diffuse pinned control passed(absorption ignored). Fresh retained640x400 vehicle transport completed:
+901 nativeprobes mean2.12644e-8/max4.5973e-6;3603424rays=263475hits+3339949misses; analytic/emissive/env
+2053.59/19571.8/612.624; additiveerror8.44436e-6; sourceoffblack. Final160x100 sixpose reconstruction/history
+is now running; fullchain final exit pending. These are retained-scene regressions, not six-pose closed-glass film.
