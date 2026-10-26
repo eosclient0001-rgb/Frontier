@@ -1,7 +1,7 @@
 # Renderer progress — 2026-10-26
 
 **Latest addition: six posed closed-glass vehicles, posed mirrors, exact fresh directional comparisons and actual animation.**
-The broader optical regression after faint-path survival is still running; see [motion report](GlazingMotion.md). All current
+The complete retained optical regression after faint-path survival passed; see [motion report](GlazingMotion.md). All current
 execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RTX/GTX or the Windows editor.
 
 **Legend:** 🟢 verified within the stated scope · 🚧 partial / still needs work · 🔴 blocked or not done.
@@ -53,7 +53,7 @@ acceptance are outstanding. No real-time performance or completed renderer claim
 
 ## Suggested execution order
 
-1. Complete retained optical regression after faint-path survival; saved closed-glass authoring and six-pose vehicle captures now pass.
+1. Saved closed-glass authoring, six-pose vehicle captures and the complete retained optical regression now pass.
 2. Pure-sheet emitter weighting, complete sampling/material acceptance and broader optical geometry/scale coverage.
 3. Roughness-mip prior-screen lighting, full denoising and unified moving-scene acceptance.
 4. Physical RTX/GTX and Windows editor integration; measured device budgets.

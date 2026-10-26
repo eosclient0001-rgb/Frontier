@@ -5,6 +5,14 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Six-pose closed-glass vehicle motion — 2026-10-26
+
+[Actual moving glazing animation and acceptance](GlazingMotion.md):6/6posed closed-glass vehicles and
+body-mounted mirrors;3547glass/72mirror observations exactly fresh,17718static opaque reuse and23040black
+source-off pixels. Faint absorbing paths use compensated survival without raising2048interaction limits.
+240production-block numerical cases and the complete retained optical regression pass. Software Vulkan only;
+geometry changes still conservatively reset indirect history, not continuous moving authored reuse.
+
 ## Derived closed vehicle glazing — 2026-10-26
 
 [Actual vehicle glazing](VehicleGlazing.md): three nominal6mm closed components from the retained74 window

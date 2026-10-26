@@ -1,6 +1,6 @@
 # Moving closed-glass ControlVehicle — 2026-10-26
 
-**Six-pose Vulkan acceptance passed. Broader retained optical regression is still running.**
+**Six-pose Vulkan acceptance and the complete retained optical regression both passed (exit0).**
 Device: **SwiftShader Device (Subzero), type4 / CPU Vulkan**. Triangle BVH, no hardware ray queries.
 Actual192×120 readbacks,16samples,2048interaction limit. Not a real-time or physical RTX/GTX result.
 
@@ -85,9 +85,14 @@ published vehicle PNGs remain byte-for-byte identical to2e3eb62**, including the
 all13SPIR-V digests matched; afterwards only`Transport.spv` changes (12/13unchanged). All4native CTests pass.
 See `Results/GlazingMotionRegression.json` and `Results/VehicleGlazingGpu.txt`.
 
-Because a production shader changed, the full retained boundary/slab/history/mirror/rough/window/diffuse/
-vehicle regression chain is being rerun. **Its final outcome is not known yet.** Do not substitute the earlier
-accepted full chain for acceptance of the new survival code.
+Because a production shader changed, the complete retained boundary/slab/history/mirror/rough/window/diffuse/
+vehicle regression chain was rerun and **finished exit0**. `Results/GlazingMotionRetainedRegression.txt`
+retains the full current log, not merely a reference to the pre-remedy run. Among the retained results:
+199boundary cases/149reciprocal identities;4slab,4mirror and4window cases;3rough screen/BVH comparisons;
+diffuse absorption/emitter routing;901vehicle oracle probes(max4.5973e-6);both analytic/emissive/environment
+routes(2053.59/19571.8/612.624);linearity max8.44436e-6;160×100reconstruction RMSE.0103498→.00585726;
+210native spatial probes(max4.23087e-8);old-material six-pose history/direct refresh and all4native CTests.
+Those retained old-material poses are regression evidence, not a substitute for the new closed-glass film.
 
 ## Reproduce
 

@@ -465,7 +465,7 @@ currentemissionpreserved/directdelta<=3.8147e-6. Retained sixposes are NOT a six
 SoftwareSwiftShaderCPU only; no physicalRTX/GTX/Windows/editor/fullrenderer/realtime/generalCAD claim.
 Report Exhibits/LightCompute/VehicleGlazing.md. Preserve sun/flare/stars/cellular flakes and both source families.
 
-## Moving closed-glazing phase — work in progress
+## Moving closed-glazing phase — chronology (completed; final acceptance below)
 
 Static glazing setup/saved-coefficient binding extracted to VehicleGlazingScene.h; old defaults preserved.
 New GlazingMotionValidation.h builds six actual archive poses with rotated/translated closed panes and mirror
@@ -514,3 +514,23 @@ Sixpose motion GPU PASS exit0 with survival:glass319/316/314/606/587/543,mirrors
 all0cap/0unsupported/exactfresh;warm17718opaque;3547glass+72mirror observations(total includeswarm/emission),
 maxnativeplanarmotion1.91807e-7/direct3.8147e-6,emissionrevision1,23040black. ActualGIF6frames384x264from192x120,
 nointerpolation; contact sheet read/inspected andGIFpresented. Docs/progress updated but fullretainedchainstillRUNNING.
+
+## Moving closed-glazing final acceptance — 2026-10-26
+
+All phase runs COMPLETE: sixpose GPU exit0, static GPU/native/4CTest exit0, ASan+UBSan native24posegroups
+exit0, native saved-authoring39checks, extracted production survival240cases/76trials/38terminations exit0,
+and FULL retained DIFFUSE_BUILD=0 chain exit0. This final entry supersedes pending statuses in chronology.
+Full current combined log: Results/GlazingMotionRetainedRegression.txt. Boundary199/149reciprocal, slab4,
+mirror4, rough3screen/BVH, window4+2energy, diffuse+emitter routing, vehicle901probes/4.5973e-6,
+analytic/emissive/env2053.59/19571.8/612.624, linearity8.44436e-6, reconstructionRMSE.0103498→.00585726,
+spatial210probes/4.23087e-8, retained oldmaterial6poses allpassed. No regression source/threshold relaxed.
+New closed-glass6poses all0caps/invalid/exactfresh;3547glass/72mirror observations;warm17718opaque;
+23040black;planarpreviouspositionmax1.91807e-7/direct3.8147e-6. Original pose4 cap2+4092TIR failed control
+and36822mm summed-distance audit preserved. Unbiased faint-path trial confirmed by actual production-block
+GPU extraction; finite cap still2048/max128samples, not arbitrary lossless/nested/roughglass completion.
+5/5old staticPNGbyte streams preserved2e3eb62 even after remedy;12/13SPIRV unchanged(Transportonlychanges).
+ActualGIF6steppedframes/192x120/16samples inspected/presented. DeviceSwiftShaderCPU4, triangleBVH,
+no physicalRTX/GTX/Windows/editor/full-renderer/realtime claim. Authored movement resets ALL indirect
+history; warm opaque reuse tested only when stationary. Foliageinactive; oldhalfpolenotfixed.
+Next scope: pure-sheet emitter weighting/material sampling, prior-screen exitance/reconstruction and unified
+moving baked-distance-field/cloud/fog scene; physicalRTX/GTX/Windows/editor acceptance still outstanding.

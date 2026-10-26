@@ -36,5 +36,12 @@
       "_ClaudeScratch/build/light-compute/TransportTemporal.spv": true
     },
     "change": "Only Transport.spv changes: compensated faint-path survival. Static CTests, authoring, repeats, moved/cold and all-source-off checks pass."
+  },
+  "retained_optical_regression": {
+    "exit_code": 0,
+    "command": "DIFFUSE_BUILD=0 bash Exhibits/LightCompute/RunDiffuseDielectric.sh",
+    "log": "Results/GlazingMotionRetainedRegression.txt",
+    "log_sha256": "7c776cf758c85daefca5bfa1201e5fc3119f8494bc189878e7bae364d751407a",
+    "scope": "Full post-survival boundary/slab/opaque-history/mirror/rough/window/diffuse/retained-vehicle/old-material-six-pose regression, not physical GPU acceptance."
   }
 }

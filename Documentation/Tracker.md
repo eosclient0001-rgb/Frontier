@@ -714,5 +714,6 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
 - Original pose4 failure preserved (2capped/0unsupported paths); faint-path compensated survival addresses the
   capped absorbing continuations without raising2048/128limits or relaxing zero-cap tests.240production-block
   GPU arithmetic cases pass; all5previous static PNGs remain byte-identical.
-- Broader retained optical chain after the shader change is still running. No physical GPU, Windows/editor,
+- Complete retained optical chain after the shader change passed(exit0), including vehicle transport and
+  old-material moving-history regressions. No physical GPU, Windows/editor,
   continuous moving authored indirect reuse, glass denoiser or completed unified renderer claim.
