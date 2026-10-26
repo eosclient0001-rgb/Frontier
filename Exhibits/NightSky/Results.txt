@@ -1,0 +1,18 @@
+PASS sun elevation vs CelestialModel (deg) = 1.68569e-13
+INFO sun elevation at 16:30 local = 23.453 deg, azimuth 267.073 deg
+PASS equatorial round trip (rad) = 1.66533e-16
+INFO phase 0 geometric 0.0086 raster 0.0089 mean-age 0.0000
+INFO phase 1 geometric 0.5099 raster 0.5099 mean-age 0.5000
+INFO phase 2 geometric 0.9980 raster 0.9979 mean-age 1.0000
+INFO phase 3 geometric 0.4340 raster 0.4338 mean-age 0.5000
+PASS moon raster lit fraction vs geometry = 0.00029213
+INFO moon geometry vs mean-age phase model, worst gap 0.0660 (model difference, not a render check)
+PASS phase strip runs new (0) to full (2) = 0.998045
+INFO moon outside night frame (area check not applicable)
+INFO night aim azimuth/altitude -50.0 / 25.0 deg, moon alt 19.86 deg
+PASS night Milky Way aim above 25 deg = 0.999927
+INFO sun NDC in day flare frame (0.535, 0.281)
+PASS zero visibility removes every ghost = 0
+PASS ghost chain visible when unoccluded = 1.05011
+PASS PPM outputs written = 1
+SUMMARY passed 8 failed 0
