@@ -53,3 +53,18 @@ again reports887glass pixels /1851changed channels /0caps /0unsupported, exact r
 64000black source-off pixels. The native exporter again passes39checks and all4native CTests pass.
 See `Results/GlazingMotionRegression.json` and `Results/VehicleGlazingGpu.txt`. The previous full optical
 chain is retained; it was not rerun unchanged in this phase because no shader/core-renderer changes occurred.
+
+## Failed pose4 diagnostic (not an acceptance render)
+
+The isolated unchanged-shader run identifies **2 paths capped at2048 interactions**, both at pixel12015
+(position1.38482,-0.742537,1.15988). There are587visible glass pixels,4mirror pixels and193native motion
+probes. Unsupported boundary count is0; this is not currently evidence of a malformed-medium error.
+The packed diagnostic135164 decodes as2×65536 +4092total TIR events across the pixel's16samples.
+
+A separate ignored shader copy is measuring cumulative in-medium distance and minimum segment length at
+those capped paths. It repurposes unsupported diagnostics for **millimetres travelled** and the low packed
+TIR field for **nanometres of minimum segment length**; those instrumented values are not production counters.
+The production13SPIR-V files and shader sources remain unchanged. Raising the limit, accepting caps or hiding
+them is not a fix. Need to distinguish physically guided absorbing paths from a zero-distance numerical loop
+before selecting a justified remedy. `GLAZING_DEBUG_POSE=4` isolates one pose and never produces a fullPASS;
+its single-submission path does not claim a paired fresh-reference comparison.

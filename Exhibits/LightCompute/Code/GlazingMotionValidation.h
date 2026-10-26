@@ -72,8 +72,9 @@ void ValidateGlazingMotion(const char*        Driver,
         Capacity.Visibility.Enclosures.resize(std::max(Capacity.Visibility.Enclosures.size(),F.Visibility.Enclosures.size()));
         Capacity.Angles.resize(std::max(Capacity.Angles.size(),F.Angles.size()));
     }
+    const auto DebugPose = std::getenv("GLAZING_DEBUG_POSE");
     LightComputeSubmission History(Driver), Fresh(Driver);
-    History.Prepare(Capacity,Shaders); Fresh.Prepare(Capacity,Shaders);
+    History.Prepare(Capacity,Shaders); if (!DebugPose) Fresh.Prepare(Capacity,Shaders);
     std::cout << "GLAZING_MOTION_DEVICE name=" << History.Properties.deviceName << " type=" << History.Properties.deviceType
               << " triangle_bvh=1 hardware_ray_query=0 width=192 height=120 samples=16 interaction_cap=2048" << std::endl;
     uint32_t TotalGlass = 0, TotalMirror = 0, TotalWarm = 0;
@@ -82,10 +83,11 @@ void ValidateGlazingMotion(const char*        Driver,
     auto Compare = [&](LightComputeArchive& Scene,uint32_t Seed,bool ExpectReset,const std::string& Name)
     {
         // 📝 Both submissions have identical direct histories. Only one enables indirect reconstruction.
-        const auto Raw = Fresh.Execute(Scene,3,16,Seed,64,7,false,true,16,true,true,false);
-        const auto RawReceivers = Fresh.PrimaryReceivers();
+        auto Raw = DebugPose ? std::vector<std::array<float,4>>{} : Fresh.Execute(Scene,3,16,Seed,64,7,false,true,16,true,true,false);
+        auto RawReceivers = DebugPose ? std::vector<LightComputeReceiver>{} : Fresh.PrimaryReceivers();
         const auto Image = History.Execute(Scene,3,16,Seed,64,7,false,true,16,true,true,true);
         const auto Receivers = History.PrimaryReceivers();
+        if (DebugPose) { Raw = Image; RawReceivers = Receivers; }
         const auto Diagnostic = History.TransportSlab(20), Incoming = History.TransportSlab(16), Resolved = History.TransportSlab(19);
         uint32_t Glass = 0, Mirrors = 0, Reused = 0, Capped = 0, Invalid = 0, Probes = 0;
         for (uint32_t I = 0; I < Image.size(); ++I)
@@ -143,15 +145,15 @@ void ValidateGlazingMotion(const char*        Driver,
         std::cout << "GLAZING_MOTION_FRAME name=" << Name << " glass_pixels=" << Glass << " mirror_pixels=" << Mirrors
                   << " opaque_reused=" << Reused << " capped=" << Capped << " unsupported=" << Invalid
                   << " native_motion_probes=" << Probes << " max_motion_error=" << MotionError
-                  << " direct_max_error=" << DirectError << " directional_fresh_equal=1" << std::endl;
+                  << " direct_max_error=" << DirectError << " directional_fresh_equal=" << int(!DebugPose) << std::endl;
         WriteImage(Output+"/"+Name+".ppm",Image,Scene.Width,Scene.Height);
         Last = Image;
     };
-    const auto DebugPose = std::getenv("GLAZING_DEBUG_POSE");
     if (DebugPose)
     {
         const auto Pose = uint32_t(std::stoul(DebugPose));
         Require(Pose < 6,"Invalid diagnostic pose");
+        std::cout << "GLAZING_DIAGNOSTIC_ONLY fresh_reference=0 acceptance=0" << std::endl;
         Compare(Frames[Pose],71,true,"GlazingDebug"+std::to_string(Pose));
         return; // 📝 Diagnostic-only run never emits the six-pose acceptance marker.
     }

@@ -482,3 +482,11 @@ Observed warm opaque reuse17718; pose0..3 glass319/316/314/606, mirrors11/10/5/5
 direct residual<=3.8147e-6, directional fresh exact. Static regression exit0, all5priorPNGbytes exact2e3eb62,
 all13SPIRVdigests exact. ASan+UBSan native sixpose exit0. GLDebugPose environment diagnostic added;
 never emits sixposePASS and image presenter requires fullPASS plus actual mirror coverage. No animation claimed.
+
+Pose4 isolated production shader diagnosis:587glass/4mirror/193probes, capped=2/unsupported=0 atpixel12015,
+position[1.38482,-.742537,1.15988], packed[5,135164,0] =2caps+4092TIR. Do not silently raise2048/relaxzero.
+Distance audit running on copied shader tree in _ClaudeScratch/glazing-ray-audit, isolatedSPVBuild folder;
+normal13SPIRV remain intact. Audit terminal cap encodes total in-medium travel*1000 intoUnsupported and
+minimum segment*1e9 intoInternalReflections (summed/packed by caller): interpret as debug distances ONLY.
+Must distinguish true long absorbing TIR paths from zero-distance looping. Current debugpose path uses one
+submission, marks fresh_reference=0/acceptance=0, returns before PASS; actual default sixpose comparison unchanged.
