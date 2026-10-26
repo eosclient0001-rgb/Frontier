@@ -29,7 +29,7 @@ for I, Title in enumerate(Titles):
 Draw.text((12,310), 'Actual 96 x 64 Vulkan captures, 64 samples x 2 sheet directions; SwiftShader CPU. Enlarged nearest-neighbour.', fill='#b9c8db')
 Canvas.save(Images / 'WindowDielectric.png')
 Report = {'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capture_dimensions': [96,64],
-          'samples_per_pixel': 64, 'directions_per_sample': 2, 'negative_control_revision': 'abed7c6', 'interaction_cap': 32, 'capture_sha256': Hashes,
+          'samples_per_pixel': 64, 'directions_per_sample': 2, 'negative_control_revision': 'abed7c6', 'interaction_cap': 2048, 'capture_sha256': Hashes,
           'window_log': (Results/'WindowDielectric.txt').read_text(),
           'negative_control_log': (Results/'WindowDielectricOriginal.txt').read_text(),
           'scope': 'Primary parallel thin sheet followed by smooth closed volumes. Compact diffuse extension separately tested; nesting, rough glass boundaries, caustics and saved material authoring remain unsupported.'}

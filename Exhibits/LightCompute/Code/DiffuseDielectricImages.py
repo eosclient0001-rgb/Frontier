@@ -36,7 +36,7 @@ if Vehicle.exists():
     Picture.save(Images / 'DiffuseVehicleTransport.png')
     Hashes[Vehicle.name] = hashlib.sha256(Vehicle.read_bytes()).hexdigest()
 Report = {'negative_control_revision': '02d5d13', 'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capture_dimensions': [96,64], 'retained_vehicle_dimensions': VehicleDimensions,
-          'samples_per_pixel': 64, 'proposals_per_sample': 1, 'receiver_albedo': [.3,.6,.9], 'interaction_cap': 32, 'capture_sha256': Hashes,
+          'samples_per_pixel': 64, 'proposals_per_sample': 1, 'receiver_albedo': [.3,.6,.9], 'interaction_cap': 2048, 'capture_sha256': Hashes,
           'diffuse_log': (Results/'DiffuseDielectric.txt').read_text(),
           'negative_control_log': (Results/'DiffuseDielectricOriginal.txt').read_text(),
           'retained_vehicle_log': (Results/'DiffuseDielectricTransportRegression.txt').read_text(),

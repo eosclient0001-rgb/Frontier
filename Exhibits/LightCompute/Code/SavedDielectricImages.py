@@ -33,7 +33,7 @@ Saved.mkdir(parents=True, exist_ok=True)
 for Material in Capture.glob('ClosedGlass*.material'):
     (Saved / Material.name).write_bytes(Material.read_bytes())
 Report = {'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capture_dimensions': [96,64],
-          'paths_per_pixel': 128, 'interaction_cap': 32, 'capture_sha256': Hashes,
+          'paths_per_pixel': 128, 'interaction_cap': 2048, 'capture_sha256': Hashes,
           'authoring_log': (Results/'SavedDielectricAuthoring.txt').read_text(),
           'sanitizer_log': (Results/'SavedDielectricSanitized.txt').read_text(),
           'native_regression_log': (Results/'SavedDielectricNative.txt').read_text(),

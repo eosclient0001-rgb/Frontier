@@ -29,7 +29,7 @@ for I, Title in enumerate(Titles):
 Draw.text((12,310), 'Actual 96 x 64 Vulkan captures, 32 samples x 2 proposals; roughness .06 / .30 / .65; SwiftShader CPU. Enlarged nearest-neighbour.', fill='#b9c8db')
 Canvas.save(Images / 'RoughDielectric.png')
 Report = {'negative_control_revision': '213f050', 'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capture_dimensions': [96,64],
-          'samples_per_pixel': 32, 'proposals_per_sample': 2, 'reflector_roughness': [.06,.3,.65], 'interaction_cap': 32, 'capture_sha256': Hashes,
+          'samples_per_pixel': 32, 'proposals_per_sample': 2, 'reflector_roughness': [.06,.3,.65], 'interaction_cap': 2048, 'capture_sha256': Hashes,
           'rough_log': (Results/'RoughDielectric.txt').read_text(),
           'negative_control_log': (Results/'RoughDielectricOriginal.txt').read_text(),
           'scope': 'Rough cosine/GGX reflector rays through smooth closed volumes. Rough glass boundaries, nesting, caustics, saved material authoring and compact diffuse extension separately tested.'}

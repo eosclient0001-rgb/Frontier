@@ -149,18 +149,10 @@ void MaterialCamera(LightComputeArchive& Scene, SpatialVector Eye, SpatialVector
 //                                                       RENDERED VALIDATION
 //------------------------------------------------------------------------------------------------------------------------
 
-void ValidateMaterialScene(const char* Driver, const std::string& Shaders, LightComputeArchive Scene,
-                           const std::string& Output)
+// 📝 Shared selectors preserve native vehicle material assignment and planar UVs across captures.
+std::array<uint32_t,3> AssignVehicleSurfaces(LightComputeArchive& Scene, const std::array<uint32_t,5>& Materials)
 {
-    using namespace TransportReference;
-    for (auto& L : Scene.Lights)
-        if (L.RadianceCategory[3] == 0) L.RadianceCategory = {5.5f, 5.2f, 4.7f, 0};
-    Prepare(Scene, 8, 24, true);
-    auto Materials = AppendSceneMaterials(Scene, Shaders);
-    uint32_t Green = Materials[0], Rubber = Materials[1], Glass = Materials[2], Plastic = Materials[3], Fabric = Materials[4];
-    uint32_t Mirror = DuplicateSceneMaterial(Scene, Plastic, 1, {.94f, .94f, .94f, .04f}, 1);
-    uint32_t Orange = DuplicateSceneMaterial(Scene, Plastic, 3, {.85f, .105f, .009f, .22f}, 0);
-    uint32_t Band = DuplicateSceneMaterial(Scene, Plastic, 3, {.82f, .85f, .88f, .12f}, .65f);
+    const uint32_t Green = Materials[0], Rubber = Materials[1], Glass = Materials[2];
     uint32_t PaintFacets = 0, RubberFacets = 0, GlassFacets = 0;
     for (auto& F : Scene.Surfaces)
     {
@@ -183,6 +175,22 @@ void ValidateMaterialScene(const char* Driver, const std::string& Shaders, Light
         }
     }
     Require(PaintFacets == 778 && GlassFacets == 74 && RubberFacets > 1000, "Vehicle material assignment changed");
+    return {PaintFacets,RubberFacets,GlassFacets};
+}
+
+void ValidateMaterialScene(const char* Driver, const std::string& Shaders, LightComputeArchive Scene,
+                           const std::string& Output)
+{
+    using namespace TransportReference;
+    for (auto& L : Scene.Lights)
+        if (L.RadianceCategory[3] == 0) L.RadianceCategory = {5.5f, 5.2f, 4.7f, 0};
+    Prepare(Scene, 8, 24, true);
+    auto Materials = AppendSceneMaterials(Scene, Shaders);
+    uint32_t Green = Materials[0], Rubber = Materials[1], Glass = Materials[2], Plastic = Materials[3], Fabric = Materials[4];
+    uint32_t Mirror = DuplicateSceneMaterial(Scene, Plastic, 1, {.94f, .94f, .94f, .04f}, 1);
+    uint32_t Orange = DuplicateSceneMaterial(Scene, Plastic, 3, {.85f, .105f, .009f, .22f}, 0);
+    uint32_t Band = DuplicateSceneMaterial(Scene, Plastic, 3, {.82f, .85f, .88f, .12f}, .65f);
+    const auto [PaintFacets,RubberFacets,GlassFacets] = AssignVehicleSurfaces(Scene,Materials);
     MaterialCone(Scene, 2.8, -2.9, Orange, Band);
     MaterialCone(Scene, -.4, -3.5, Orange, Band);
     // 📝 Added actual reflective panes, one at each side; housing geometry remains the authored vehicle.

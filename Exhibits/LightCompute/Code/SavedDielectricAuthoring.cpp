@@ -21,7 +21,7 @@ int main(int Count,char **Arguments)
 {
     try
     {
-        if (Count != 3) throw std::runtime_error("Expected repository root and scratch destination.");
+        if (Count != 3 && Count != 4) throw std::runtime_error("Expected repository root and scratch destination.");
         const std::filesystem::path Root(Arguments[1]), Output(Arguments[2]);
         std::filesystem::create_directories(Output);
         uint32_t Checks = 0;
@@ -30,7 +30,8 @@ int main(int Count,char **Arguments)
             if (!Condition) throw std::runtime_error("Saved volume assertion failed.");
             ++Checks;
         };
-        const auto Material = DecodeSurfaceMaterial(ReadText(Root/"Exhibits/LightCompute/Materials/ClosedGlass.material"));
+        const auto Material = DecodeSurfaceMaterial(ReadText(Count == 4 ? std::filesystem::path(Arguments[3]) :
+            Root/"Exhibits/LightCompute/Materials/ClosedGlass.material"));
         Check(Material.ClosedVolume.has_value());
         const std::string Prefix = "Format=1\nName='Invalid volume'\n[[Strata]]\nCategory='Opaque'\n";
         for (const std::string Bad : {"Ior=0.9\nAbsorption=[0,0,0]", "Ior=3.1\nAbsorption=[0,0,0]",
@@ -62,7 +63,7 @@ int main(int Count,char **Arguments)
         for (uint32_t Case = 0; Case < 4; ++Case)
         {
             auto Edited = Material;
-            Edited.ClosedVolume->Ior = Case < 2 ? 1.f : 1.5f;
+            Edited.ClosedVolume->Ior = Case < 2 ? 1.f : Material.ClosedVolume->Ior;
             if (!(Case%2)) Edited.ClosedVolume->Absorption = {};
             const auto Path = Output/("ClosedGlass"+std::to_string(Case)+".material");
             { std::ofstream File(Path); File << EncodeSurfaceMaterial(Edited); Check(bool(File)); }

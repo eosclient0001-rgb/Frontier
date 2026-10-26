@@ -29,7 +29,7 @@ for I, Title in enumerate(Titles):
 Draw.text((12,310), 'Actual 96 x 64 Vulkan captures, 128 paths/pixel; SwiftShader CPU. Enlarged nearest-neighbour.', fill='#b9c8db')
 Canvas.save(Images / 'SolidDielectric.png')
 Report = {'device': 'SwiftShader Device (Subzero)', 'physical_gpu': False, 'capture_dimensions': [96,64],
-          'paths_per_pixel': 128, 'interaction_cap': 32, 'capture_sha256': Hashes,
+          'paths_per_pixel': 128, 'interaction_cap': 2048, 'capture_sha256': Hashes,
           'boundary_log': (Results/'DielectricBoundary.txt').read_text(),
           'volume_log': (Results/'SolidDielectric.txt').read_text(),
           'scope': 'Primary smooth closed-volume acceptance; mirror and rough-reflector secondary extensions separately tested. Thin-sheet extension separately tested; compact diffuse extension separately tested; nesting, rough glass boundaries, caustics and saved material authoring remain unsupported.'}

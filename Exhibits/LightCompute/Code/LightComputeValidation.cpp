@@ -8,6 +8,7 @@
 #include "LightComputeFormat.h"
 #include "Engine/Render/MaterialPreviewGeometry.h"
 #include "Engine/Render/ScatteringSequence.h"
+#include "Engine/Render/PaneThickness.h"
 #include "Engine/Render/DielectricRefraction.h"
 #include <algorithm>
 #include <cmath>
@@ -1035,6 +1036,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PoleShadowValidation.h"
 #include "SpecularHistoryValidation.h"
 #include "DielectricBoundaryValidation.h"
+#include "VehicleGlazingValidation.h"
 #include "SolidDielectricValidation.h"
 #include "MirrorDielectricValidation.h"
 #include "RoughDielectricValidation.h"
@@ -1045,6 +1047,13 @@ int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 7 && (std::string(Arguments[3]) == "--vehicle-glazing" ||
+                           std::string(Arguments[3]) == "--vehicle-glazing-probe"))
+        {
+            ValidateVehicleGlazing(Arguments[1],Arguments[2],LightComputeArchive::Load(Arguments[4]),Arguments[5],Arguments[6],
+                                   std::string(Arguments[3]) == "--vehicle-glazing-probe");
+            return 0;
+        }
         if (Count == 6 && std::string(Arguments[3]) == "--saved-dielectric")
         {
             ValidateSolidDielectric(Arguments[1],Arguments[2],Arguments[4],Arguments[5]);
