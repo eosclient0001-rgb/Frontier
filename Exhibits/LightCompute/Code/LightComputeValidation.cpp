@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <vulkan/vulkan.h>
 #ifdef _WIN32
@@ -81,6 +82,129 @@ struct alignas(16) ComputeExtent
     std::array<uint32_t, 4> History{}, Reconstruction{}, Primary{};
 };
 static_assert(sizeof(ComputeExtent) == 128, "Push constant stride mismatch");
+struct CanonicalUnposedFacet
+{
+    int32_t Token = 0, Material = 0;
+    double CentroidX = 0;
+    std::array<double, 9> Positions{}, Normals{};
+    std::array<float, 4> Albedo{}, Optical{}, Emissive{};
+};
+inline CanonicalUnposedFacet UnposeRigidFacet(const LightComputeFacet& F, double Theta, double OffsetX,
+                                              double Threshold)
+{
+    CanonicalUnposedFacet R;
+    R.Token = int32_t(std::lround(F.OpticalToken[3]));
+    R.Material = F.Emissive[3] > 0 ? int32_t(std::lround(F.Emissive[3])) : 0;
+    R.Albedo = F.AlbedoRoughness;
+    R.Optical = F.OpticalToken;
+    R.Emissive = F.Emissive;
+    bool Rigid = Threshold > 0 && double(F.OpticalToken[3]) > Threshold;
+    double C = std::cos(Theta), S = std::sin(Theta);
+    const std::array<float, 4>* Corners[3] = {&F.A, &F.B, &F.C};
+    const std::array<float, 4>* VertexNormals[3] = {&F.NormalA, &F.NormalB, &F.NormalC};
+    for (uint32_t I = 0; I < 3; ++I)
+    {
+        double Px = (*Corners[I])[0], Py = (*Corners[I])[1], Pz = (*Corners[I])[2];
+        double Nx = (*VertexNormals[I])[0], Ny = (*VertexNormals[I])[1], Nz = (*VertexNormals[I])[2];
+        if (Rigid)
+        {
+            double Dx = Px - OffsetX;
+            Px = C * Dx + S * Py;
+            Py = -S * Dx + C * Py;
+            double Rx = C * Nx + S * Ny;
+            Ny = -S * Nx + C * Ny;
+            Nx = Rx;
+        }
+        R.Positions[I * 3 + 0] = Px;
+        R.Positions[I * 3 + 1] = Py;
+        R.Positions[I * 3 + 2] = Pz;
+        R.Normals[I * 3 + 0] = Nx;
+        R.Normals[I * 3 + 1] = Ny;
+        R.Normals[I * 3 + 2] = Nz;
+    }
+    R.CentroidX = (R.Positions[0] + R.Positions[3] + R.Positions[6]) / 3.0;
+    return R;
+}
+inline bool ConfirmRigidPoseContinuation(const std::vector<LightComputeFacet>& Previous,
+                                         const std::vector<LightComputeFacet>& Current,
+                                         const std::array<float, 4>& PreviousPose,
+                                         const std::array<float, 4>& CurrentPose,
+                                         const std::array<float, 4>& ReportedPrevious,
+                                         const std::array<float, 4>& Rotations)
+{
+    if (Previous.empty() || Previous.size() != Current.size())
+        return false;
+    double PrevTheta = PreviousPose[0], PrevOffsetX = PreviousPose[1], PrevThreshold = PreviousPose[2];
+    double Theta = CurrentPose[0], OffsetX = CurrentPose[1], Threshold = CurrentPose[2];
+    if (!(Threshold > 0) || std::abs(Threshold - PrevThreshold) > 1e-5 ||
+        std::abs(double(ReportedPrevious[0]) - PrevTheta) > 1e-5 ||
+        std::abs(double(ReportedPrevious[1]) - PrevOffsetX) > 1e-5 ||
+        std::abs(double(ReportedPrevious[2]) - PrevThreshold) > 1e-5 ||
+        std::abs(double(Rotations[0]) - std::cos(Theta)) > 1e-4 ||
+        std::abs(double(Rotations[1]) - std::sin(Theta)) > 1e-4 ||
+        std::abs(double(Rotations[2]) - std::cos(PrevTheta)) > 1e-4 ||
+        std::abs(double(Rotations[3]) - std::sin(PrevTheta)) > 1e-4)
+        return false;
+    std::vector<CanonicalUnposedFacet> A, B;
+    A.reserve(Previous.size());
+    B.reserve(Current.size());
+    for (const auto& F : Previous)
+        A.push_back(UnposeRigidFacet(F, PrevTheta, PrevOffsetX, PrevThreshold));
+    for (const auto& F : Current)
+        B.push_back(UnposeRigidFacet(F, Theta, OffsetX, Threshold));
+    auto Order = [](const CanonicalUnposedFacet& L, const CanonicalUnposedFacet& R)
+    {
+        if (L.Token != R.Token)
+            return L.Token < R.Token;
+        if (L.Material != R.Material)
+            return L.Material < R.Material;
+        return L.CentroidX < R.CentroidX;
+    };
+    std::sort(A.begin(), A.end(), Order);
+    std::sort(B.begin(), B.end(), Order);
+    std::vector<uint8_t> Matched(B.size(), 0);
+    size_t WindowStart = 0;
+    for (size_t I = 0; I < A.size(); ++I)
+    {
+        while (WindowStart < B.size() &&
+               (B[WindowStart].Token < A[I].Token ||
+                (B[WindowStart].Token == A[I].Token && B[WindowStart].Material < A[I].Material) ||
+                (B[WindowStart].Token == A[I].Token && B[WindowStart].Material == A[I].Material &&
+                 B[WindowStart].CentroidX < A[I].CentroidX - 2e-3)))
+            ++WindowStart;
+        bool Found = false;
+        for (size_t J = WindowStart; J < B.size(); ++J)
+        {
+            if (B[J].Token != A[I].Token || B[J].Material != A[I].Material ||
+                B[J].CentroidX > A[I].CentroidX + 2e-3)
+                break;
+            if (Matched[J])
+                continue;
+            double PositionGap = 0, NormalGap = 0, ParameterGap = 0;
+            for (uint32_t K = 0; K < 9; ++K)
+            {
+                PositionGap = std::max(PositionGap, std::abs(A[I].Positions[K] - B[J].Positions[K]));
+                NormalGap = std::max(NormalGap, std::abs(A[I].Normals[K] - B[J].Normals[K]));
+            }
+            for (uint32_t K = 0; K < 4; ++K)
+            {
+                ParameterGap = std::max(ParameterGap, double(std::abs(A[I].Albedo[K] - B[J].Albedo[K])));
+                ParameterGap = std::max(ParameterGap, double(std::abs(A[I].Optical[K] - B[J].Optical[K])));
+            }
+            for (uint32_t K = 0; K < 3; ++K)
+                ParameterGap = std::max(ParameterGap, double(std::abs(A[I].Emissive[K] - B[J].Emissive[K])));
+            if (PositionGap < 5e-4 && NormalGap < 2e-3 && ParameterGap < 1e-5)
+            {
+                Matched[J] = 1;
+                Found = true;
+                break;
+            }
+        }
+        if (!Found)
+            return false;
+    }
+    return true;
+}
 struct LightComputeSubmission
 {
 #ifdef _WIN32
@@ -110,15 +234,17 @@ struct LightComputeSubmission
     std::array<BufferSpan, 8> Buffers{};
     std::array<VkPipeline, 4> HistoryPipelines{};
     std::array<VkPipeline, 3> TransportReconstruction{};
-    VkPipeline CloudPipeline = VK_NULL_HANDLE, FogPipeline = VK_NULL_HANDLE;
+    VkPipeline CloudPipeline = VK_NULL_HANDLE, FogPipeline = VK_NULL_HANDLE, ExitancePyramidPipeline = VK_NULL_HANDLE;
     bool TransportHistoryValid = false, TransportDirty = true;
-    bool TransportGeometryRevision = true;
+    bool TransportGeometryRevision = true, RigidMotionHistory = false;
+    bool PriorExitanceReady = false, IgnoreLightingRevisionForPriorExitance = false, RigidPoseRecorded = false;
+    std::array<float, 4> PreviousRigidPose{};
     std::vector<std::array<float, 4>> EmissionPalette;
     std::vector<LightComputeShape> PreviousLights;
     std::vector<float> PreviousAngles;
     std::vector<LightComputeFacet> TransportFacets;
-    uint32_t HistorySequence = 0, ReceiverCount = 0;
-    uint32_t PreviousCloudOffset = UINT32_MAX, PreviousFogOffset = UINT32_MAX;
+    uint32_t HistorySequence = 0, ReceiverCount = 0, ReceiverWidth = 0, ReceiverHeight = 0;
+    uint32_t PreviousCloudOffset = UINT32_MAX, PreviousFogOffset = UINT32_MAX, PreviousDistanceOffset = UINT32_MAX;
     bool HistoryDirty = true;
     uint32_t Family = 0;
     bool RayQueryExtensions = false;
@@ -241,6 +367,8 @@ struct LightComputeSubmission
                     DestroyPipeline(Device, Pipeline, nullptr);
             if (FogPipeline)
                 DestroyPipeline(Device, FogPipeline, nullptr);
+            if (ExitancePyramidPipeline)
+                DestroyPipeline(Device, ExitancePyramidPipeline, nullptr);
             if (CloudPipeline)
                 DestroyPipeline(Device, CloudPipeline, nullptr);
             for (auto Pipeline : TransportReconstruction)
@@ -378,8 +506,8 @@ struct LightComputeSubmission
             ProfileSamples.resize(ProfileSamples.size() + Scene.Surfaces.size() * 4);
         ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
-        ConstructBuffer(6, nullptr, (Scene.Receivers.size() * 21 + 6 * 48 * 48 + 1) * 16);
-        ConstructBuffer(7, nullptr, 64);
+        ConstructBuffer(6, nullptr, (Scene.Receivers.size() * 24 + 13889) * 16);
+        ConstructBuffer(7, nullptr, 96);
         std::array<VkDescriptorSetLayoutBinding, 8> Slots{};
         for (uint32_t I = 0; I < 8; ++I)
         {
@@ -432,6 +560,8 @@ struct LightComputeSubmission
             TransportReconstruction[I] = ConstructPipeline(Shaders + "/" + TransportNames[I] + ".spv");
         CloudPipeline = ConstructPipeline(Shaders + "/Clouds.spv");
         FogPipeline = ConstructPipeline(Shaders + "/Fog.spv");
+        if (std::filesystem::exists(Shaders + "/ExitancePyramid.spv"))
+            ExitancePyramidPipeline = ConstructPipeline(Shaders + "/ExitancePyramid.spv");
         TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
         PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
         CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
@@ -468,6 +598,8 @@ struct LightComputeSubmission
     {
         Require(Scene.Receivers.size() == ReceiverCount,
                 "History receiver extent changed; recreate submission");
+        ReceiverWidth = Scene.Width;
+        ReceiverHeight = Scene.Height;
         auto Copy = [&](uint32_t Index, const void* Bytes, size_t Size)
         {
             Require(Size <= Buffers[Index].Size, "Scene exceeds prepared buffer span");
@@ -484,12 +616,23 @@ struct LightComputeSubmission
         if (TransportGeometryRevision && (TransportFacets.size() != Surfaces.size() ||
             (!Surfaces.empty() && std::memcmp(TransportFacets.data(), Surfaces.data(), Surfaces.size() * sizeof(LightComputeFacet)) != 0)))
         {
-            // 📝 Preserve the retained compact diffuse path's moving-history policy; this revision guards authored transport.
-            auto Authored = [](const LightComputeFacet& F) { return F.Emissive[3] > 0; };
-            if (std::any_of(Surfaces.begin(), Surfaces.end(), Authored) ||
-                std::any_of(TransportFacets.begin(), TransportFacets.end(), Authored)) TransportDirty = true;
-            TransportFacets = Surfaces;
+            if (RigidMotionHistory && RigidPoseRecorded &&
+                ConfirmRigidPoseContinuation(TransportFacets, Surfaces, PreviousRigidPose, Scene.Camera[8],
+                                             Scene.Camera[9], Scene.Camera[11]))
+            {
+                TransportFacets = Surfaces;
+            }
+            else
+            {
+                // 📝 Preserve the retained compact diffuse path's moving-history policy; this revision guards authored transport.
+                auto Authored = [](const LightComputeFacet& F) { return F.Emissive[3] > 0; };
+                if (std::any_of(Surfaces.begin(), Surfaces.end(), Authored) ||
+                    std::any_of(TransportFacets.begin(), TransportFacets.end(), Authored)) TransportDirty = true;
+                TransportFacets = Surfaces;
+            }
         }
+        PreviousRigidPose = Scene.Camera[8];
+        RigidPoseRecorded = true;
         auto Samples = ProjectedAngles(Scene);
         Copy(4, Samples.data(), Samples.size() * 4);
         std::array<float, 4> Poison;
@@ -557,7 +700,8 @@ struct LightComputeSubmission
             uint32_t StackCapacity = 64, uint32_t Reconstruction = 7, bool ResetHistory = false,
             bool PrimaryVisibility = false, uint32_t TransportSamples = 0, bool Environment = false,
             bool EmissiveSampling = false, bool ReconstructTransport = false,
-            uint32_t CloudOffset = UINT32_MAX, uint32_t FogOffset = UINT32_MAX, bool ResolveFog = true)
+            uint32_t CloudOffset = UINT32_MAX, uint32_t FogOffset = UINT32_MAX, bool ResolveFog = true,
+            bool PriorExitance = false, uint32_t DistanceOffset = UINT32_MAX)
     {
         Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
@@ -565,6 +709,29 @@ struct LightComputeSubmission
                 "Receiver dispatch exceeds device group limit");
         Require(uint64_t(Scene.Receivers.size()) * Scene.Lights.size() < UINT32_MAX,
                 "Compute counter extent exceeds uint32");
+        Require(!PriorExitance ||
+                    (Mode == 3 && PrimaryVisibility && ExitancePyramidPipeline != VK_NULL_HANDLE),
+                "Prior-screen exitance requires Mode 3 primary visibility and ExitancePyramid.spv");
+        if (DistanceOffset != UINT32_MAX)
+        {
+            Require(PrimaryVisibility && size_t(DistanceOffset) + 16 <= Scene.Angles.size(),
+                    "DistanceFieldSpace requires primary visibility and valid header offset");
+            const float* H = Scene.Angles.data() + DistanceOffset;
+            for (uint32_t I = 0; I < 16; ++I)
+                Require(std::isfinite(H[I]), "DistanceFieldSpace header is non-finite");
+            Require(H[4] > H[0] && H[5] > H[1] && H[6] > H[2] && H[3] > 0 && H[7] > 0 &&
+                        H[8] >= 2 && H[8] <= 256 && std::floor(H[8]) == H[8] &&
+                        H[9] >= 2 && H[9] <= 256 && std::floor(H[9]) == H[9] &&
+                        H[10] >= 2 && H[10] <= 256 && std::floor(H[10]) == H[10] &&
+                        (H[15] == 1.0f || H[15] == 2.0f),
+                    "DistanceFieldSpace header bounds or resolution are invalid");
+            size_t Count = size_t(H[8]) * size_t(H[9]) * size_t(H[10]);
+            Require(Count <= 2097152 && size_t(DistanceOffset) + 16 + Count <= Scene.Angles.size(),
+                    "DistanceFieldSpace sample span exceeds uploaded angles");
+            for (size_t I = 0; I < Count; ++I)
+                Require(std::isfinite(H[16 + I]) && H[16 + I] >= 0,
+                        "DistanceFieldSpace contains invalid signed distance");
+        }
         Require(!EmissiveSampling || (PrimaryVisibility && TransportSamples > 0 &&
                                       std::isfinite(Scene.Camera[10][2]) && Scene.Camera[10][2] > 0),
                 "Area emission requires primary transport and a valid distribution");
@@ -631,20 +798,27 @@ struct LightComputeSubmission
         }
         Upload(Scene);
         // 📝 Feature selection is outside the angle prefix; changing it must invalidate both histories too.
-        if (CloudOffset != PreviousCloudOffset || FogOffset != PreviousFogOffset)
+        if (CloudOffset != PreviousCloudOffset || FogOffset != PreviousFogOffset ||
+            DistanceOffset != PreviousDistanceOffset)
         {
             HistoryDirty = true;
             TransportDirty = true;
             PreviousCloudOffset = CloudOffset;
             PreviousFogOffset = FogOffset;
+            PreviousDistanceOffset = DistanceOffset;
         }
         ComputeExtent Extent;
         uint32_t FogAddress = FogOffset != UINT32_MAX ? FogOffset + 1 : 0;
+        uint32_t DistanceAddress = DistanceOffset != UINT32_MAX ? DistanceOffset + 1 : 0;
         std::memcpy(&Extent.Minimum[3], &FogAddress, 4);
+        std::memcpy(&Extent.Maximum[3], &DistanceAddress, 4);
         Extent.Dimensions = {uint32_t(Scene.Receivers.size()), uint32_t(Scene.Lights.size()), Capacity, Mode};
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
         Extent.Sampling = {Seed, 8, uint32_t(Scene.Visibility.Corners.size()), StackCapacity};
         bool Reset = HistoryDirty || ResetHistory;
+        bool SamplePriorExitance =
+            PriorExitance && PriorExitanceReady &&
+            (IgnoreLightingRevisionForPriorExitance || (!Reset && !TransportDirty));
         Extent.History = {Scene.Width, Scene.Height, Reset ? 0 : HistorySequence, Reset ? 1u : 0u};
         Extent.Reconstruction = {Reconstruction & 1 ? 1u : 0u, Reconstruction & 2 ? 1u : 0u,
                                  Reconstruction & 4 ? 1u : 0u, 0};
@@ -657,7 +831,8 @@ struct LightComputeSubmission
                               ((!TransportHistoryValid || TransportDirty) ? 8u : 0u) |
                               (CloudOffset != UINT32_MAX ? 16u : 0u) |
                               (std::any_of(Scene.Surfaces.begin(), Scene.Surfaces.end(),
-                                  [](const auto& F) { return F.Emissive[3] > 0; }) ? 32u : 0u)};
+                                  [](const auto& F) { return F.Emissive[3] > 0; }) ? 32u : 0u) |
+                              (SamplePriorExitance ? 64u : 0u)};
         if (PrimaryVisibility)
         {
             // 📝 No uploaded CPU surface channel may supply primary geometry or
@@ -671,7 +846,7 @@ struct LightComputeSubmission
             }
             std::memcpy(Buffers[1].Address, Poisoned.data(), Poisoned.size() * sizeof(LightComputeReceiver));
         }
-        std::memset(Buffers[7].Address, 0, 64);
+        std::memset(Buffers[7].Address, 0, 96);
         Confirm(ResetCommandPool(Device, Pool, 0));
         Confirm(ResetFences(Device, 1, &Completion));
         VkCommandBufferBeginInfo Begin{};
@@ -756,6 +931,30 @@ struct LightComputeSubmission
                 Dispatch(HistoryPipelines[2]);
             }
             Dispatch(HistoryPipelines[3]);
+            if (PriorExitance)
+            {
+                for (uint32_t Level = 0; Level <= 5; ++Level)
+                {
+                    VkMemoryBarrier Dependency{};
+                    Dependency.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                    Dependency.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    Dependency.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+                    CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                       VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Dependency, 0, nullptr, 0,
+                                       nullptr);
+                    Extent.Reconstruction[3] = Level;
+                    CmdPushConstants(Commands, PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Extent),
+                                     &Extent);
+                    CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, ExitancePyramidPipeline);
+                    uint32_t MipWidth = Scene.Width, MipHeight = Scene.Height;
+                    for (uint32_t Tier = 0; Tier < Level; ++Tier)
+                    {
+                        MipWidth = std::max(1u, (MipWidth + 1u) >> 1u);
+                        MipHeight = std::max(1u, (MipHeight + 1u) >> 1u);
+                    }
+                    CmdDispatch(Commands, (MipWidth * MipHeight + 63) / 64, 1, 1);
+                }
+            }
         }
         if (FogOffset != UINT32_MAX && ResolveFog)
         {
@@ -788,8 +987,40 @@ struct LightComputeSubmission
         {
             TransportHistoryValid = ReconstructTransport;
             TransportDirty = false;
+            PriorExitanceReady = PriorExitance;
         }
+        else
+            PriorExitanceReady = false;
         return Result;
+    }
+    std::vector<std::array<float, 4>> ExitanceMip(uint32_t Level) const
+    {
+        Require(Level <= 5 && ReceiverWidth > 0 && ReceiverHeight > 0, "Invalid ExitancePyramid mip request");
+        size_t Start = size_t(ReceiverCount) * 21 + 13825;
+        uint32_t W = ReceiverWidth, H = ReceiverHeight;
+        for (uint32_t I = 0; I < Level; ++I)
+        {
+            Start += size_t(W) * H;
+            // 📝 Ceiling condensation: edge texels keep a partial 2x2 block, exactly as ExitancePyramid writes them.
+            W = std::max(1u, (W + 1u) >> 1u);
+            H = std::max(1u, (H + 1u) >> 1u);
+        }
+        std::vector<std::array<float, 4>> Mip(size_t(W) * H);
+        std::memcpy(Mip.data(), static_cast<const char*>(Buffers[6].Address) + Start * 16, Mip.size() * 16);
+        return Mip;
+    }
+    std::vector<std::array<float, 4>> DistanceDiagnostics() const
+    {
+        std::vector<std::array<float, 4>> R(ReceiverCount);
+        size_t Start = size_t(ReceiverCount) * 23 + 13889;
+        std::memcpy(R.data(), static_cast<const char*>(Buffers[6].Address) + Start * 16, R.size() * 16);
+        return R;
+    }
+    std::array<uint32_t, 24> ExtendedStatistics() const
+    {
+        std::array<uint32_t, 24> Counts{};
+        std::memcpy(Counts.data(), Buffers[7].Address, 96);
+        return Counts;
     }
     std::vector<std::array<float, 4>> TransportSlab(uint32_t Slot) const
     {
@@ -1046,11 +1277,30 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "WindowDielectricValidation.h"
 #include "DiffuseDielectricValidation.h"
 #include "PaneTransmittanceValidation.h"
+#include "PriorExitanceValidation.h"
+#include "UnifiedSceneValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 6 && (std::string(Arguments[3]) == "--prior-exitance" ||
+                           std::string(Arguments[3]) == "--prior-exitance-native" ||
+                           std::string(Arguments[3]) == "--prior-exitance-original"))
+        {
+            const std::string Mode = Arguments[3];
+            ValidatePriorExitance(Arguments[1], Arguments[2], Arguments[4], Arguments[5],
+                                  Mode == "--prior-exitance-native",
+                                  Mode == "--prior-exitance-original");
+            return 0;
+        }
+        if (Count == 7 && (std::string(Arguments[3]) == "--unified-scene" ||
+                           std::string(Arguments[3]) == "--unified-scene-native"))
+        {
+            ValidateUnifiedScene(Arguments[1], Arguments[2], Arguments[4], Arguments[5], Arguments[6],
+                                 std::string(Arguments[3]) == "--unified-scene-native");
+            return 0;
+        }
         if (Count == 6 && (std::string(Arguments[3]) == "--pane-transmittance" ||
                            std::string(Arguments[3]) == "--pane-transmittance-native" ||
                            std::string(Arguments[3]) == "--pane-transmittance-original"))

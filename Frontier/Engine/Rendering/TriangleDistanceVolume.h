@@ -89,6 +89,10 @@ class TriangleDistanceVolume
     {
         return Samples;
     }
+    SpatialVector MinimumBound() const noexcept { return Minimum; }
+    SpatialVector MaximumBound() const noexcept { return Maximum; }
+    SpatialVector CellStep() const noexcept { return Step; }
+    std::array<uint32_t, 3> GridResolution() const noexcept { return Resolution; }
     TriangleVisibilitySpace::TriangleProximity ExactDistance(SpatialVector P) const
     {
         return Geometry.Nearest(P);

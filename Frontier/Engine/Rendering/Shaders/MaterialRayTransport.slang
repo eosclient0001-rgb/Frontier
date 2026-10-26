@@ -83,6 +83,110 @@ bool TraceDepthScreen(float3 Origin, float3 Direction, out SurfacePoint StrikeSu
     }
     return false;
 }
+bool SampleExitanceMip(uint Level, float2 Uv, out float3 Radiance)
+{
+    uint Width, Height, Offset;
+    ExitanceMipDimensions(Level, Width, Height, Offset);
+    float2 Coordinate = Uv * float2(Width, Height) - .5;
+    int2 Low = int2(floor(Coordinate));
+    float2 Blend = frac(Coordinate);
+    float3 Weighted = 0;
+    float WeightSum = 0;
+    for (int Dy = 0; Dy <= 1; ++Dy)
+        for (int Dx = 0; Dx <= 1; ++Dx)
+        {
+            int2 P = clamp(Low + int2(Dx, Dy), int2(0), int2(int(Width) - 1, int(Height) - 1));
+            float Bilinear = (Dx == 0 ? 1 - Blend.x : Blend.x) * (Dy == 0 ? 1 - Blend.y : Blend.y);
+            float4 Texel = OutputColour[Offset + uint(P.y) * Width + uint(P.x)];
+            float Weight = Bilinear * Texel.w;
+            Weighted += Texel.xyz * Weight;
+            WeightSum += Weight;
+        }
+    Radiance = WeightSum > 1e-6 ? Weighted / WeightSum : float3(0);
+    return WeightSum > 1e-6;
+}
+bool SampleExitancePyramid(float2 Uv, float λ, out float3 Radiance)
+{
+    λ = clamp(λ, 0.0, 5.0);
+    uint LowLevel = uint(floor(λ)), HighLevel = min(LowLevel + 1u, 5u);
+    float Fraction = λ - float(LowLevel);
+    float3 LowRadiance, HighRadiance;
+    bool ValidLow = SampleExitanceMip(LowLevel, Uv, LowRadiance);
+    if (LowLevel == HighLevel || Fraction <= 1e-6)
+    {
+        Radiance = LowRadiance;
+        return ValidLow;
+    }
+    bool ValidHigh = SampleExitanceMip(HighLevel, Uv, HighRadiance);
+    if (ValidLow && ValidHigh)
+    {
+        Radiance = lerp(LowRadiance, HighRadiance, Fraction);
+        return true;
+    }
+    Radiance = ValidLow ? LowRadiance : HighRadiance;
+    return ValidLow || ValidHigh;
+}
+// 📝 Reproject the struck screen surface into the prior frame, verify token/normal/position correspondence,
+// and sample the roughness-cone exitance mip; disoccluded or refreshed rays fall back to fresh shading.
+float3 EvaluateScreenStrikeExitance(SurfacePoint Receiver, SurfacePoint StrikeSurface)
+{
+    if ((Extent.Primary.w & 64u) == 0)
+        return ShadeRayStrike(StrikeSurface);
+    float3 PreviousNormal;
+    float3 PreviousPosition = ReprojectToPreviousWorld(
+        StrikeSurface.PositionHit.xyz, StrikeSurface.NormalRoughness.xyz,
+        StrikeSurface.MotionPositionToken.w, PreviousNormal);
+    float4 PreviousEye = CameraProjection(4), PreviousForward = CameraProjection(5),
+           PreviousRight = CameraProjection(6), PreviousUp = CameraProjection(7);
+    float3 Relative = PreviousPosition - PreviousEye.xyz;
+    float Depth = dot(Relative, PreviousForward.xyz);
+    if (Depth <= PreviousEye.w)
+    {
+        InterlockedAdd(Counters[17], 1);
+        return ShadeRayStrike(StrikeSurface);
+    }
+    float2 PriorUv = float2(dot(Relative, PreviousRight.xyz) / (Depth * PreviousRight.w) * .5 + .5,
+                            .5 - dot(Relative, PreviousUp.xyz) / (Depth * PreviousUp.w) * .5);
+    if (any(PriorUv < 0) || any(PriorUv >= 1))
+    {
+        InterlockedAdd(Counters[17], 1);
+        return ShadeRayStrike(StrikeSurface);
+    }
+    int2 Corner = int2(floor(PriorUv * float2(Extent.History.xy) - .5));
+    float Tolerance = max(.06, Depth * PreviousUp.w * 6 / float(Extent.History.y));
+    bool Matched = false;
+    for (int Dy = 0; Dy <= 1; ++Dy)
+        for (int Dx = 0; Dx <= 1; ++Dx)
+        {
+            int2 P = Corner + int2(Dx, Dy);
+            if (any(P < 0) || P.x >= int(Extent.History.x) || P.y >= int(Extent.History.y))
+                continue;
+            uint Index = uint(P.y) * Extent.History.x + uint(P.x);
+            float4 PriorPosition = LoadHistory(8, Index), PriorNormal = LoadHistory(9, Index);
+            if (PriorPosition.w == StrikeSurface.MotionPositionToken.w &&
+                dot(Unit(PriorNormal.xyz), Unit(PreviousNormal)) > .90 &&
+                length(PriorPosition.xyz - PreviousPosition) < Tolerance)
+                Matched = true;
+        }
+    if (!Matched)
+    {
+        InterlockedAdd(Counters[17], 1);
+        return ShadeRayStrike(StrikeSurface);
+    }
+    float RayDistance = length(StrikeSurface.PositionHit.xyz - Receiver.PositionHit.xyz);
+    float Roughness = clamp(Receiver.NormalRoughness.w, .04, 1.0);
+    float FootprintPixels = RayDistance * Roughness * Roughness * float(Extent.History.y) /
+                            max(1e-4, Depth * PreviousUp.w);
+    float λ = clamp(log2(max(FootprintPixels, 1.0)), 0.0, 5.0);
+    float3 Sampled;
+    if (SampleExitancePyramid(PriorUv, λ, Sampled))
+    {
+        InterlockedAdd(Counters[16], 1);
+        return Sampled;
+    }
+    InterlockedAdd(Counters[17], 1);
+    return ShadeRayStrike(StrikeSurface);
+}
 float MaterialMixtureDensity(PreviewScattering S, float3 N, float3 V, float3 L)
 {
     float NL = max(dot(N, L), 0), Sum = NL / π;
@@ -154,7 +258,7 @@ float3 IntegrateBoundaryRays(inout SurfacePoint R, uint Pixel)
         SurfacePoint ScreenStrike;
         bool Screen = !Delta && Category == 3 && TraceDepthScreen(Origin, L, ScreenStrike);
         float3 Incoming;
-        if (Screen) Incoming = ShadeRayStrike(ScreenStrike);
+        if (Screen) Incoming = EvaluateScreenStrikeExitance(R, ScreenStrike);
         else
         {
             uint Tirs, Cap, Invalid;

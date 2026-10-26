@@ -116,11 +116,131 @@ bool IntersectsFacet(FacetCorners Triangle, float3 Origin, float3 Direction, flo
     float Distance = dot(EdgeB, Q) / Determinant;
     return Distance >= 0 && Distance <= Far;
 }
+float4 DistanceFieldHeader(uint Slot)
+{
+    uint Offset = asuint(Extent.Maximum.w) - 1u + Slot * 4u;
+    return float4(Angles[Offset], Angles[Offset + 1u], Angles[Offset + 2u], Angles[Offset + 3u]);
+}
+float3 TransformToDistanceFieldSpace(float3 WorldPoint)
+{
+    float4 Pose = DistanceFieldHeader(3);
+    float X = WorldPoint.x - Pose.z, Y = WorldPoint.y;
+    return float3(Pose.x * X + Pose.y * Y, -Pose.y * X + Pose.x * Y, WorldPoint.z);
+}
+float3 RotateToDistanceFieldSpace(float3 WorldVector)
+{
+    float4 Pose = DistanceFieldHeader(3);
+    return float3(Pose.x * WorldVector.x + Pose.y * WorldVector.y,
+                  -Pose.y * WorldVector.x + Pose.x * WorldVector.y, WorldVector.z);
+}
+// 📝 1-Lipschitz corner-corrected trilinear lower bound over the baked unsigned triangle-distance volume.
+float EvaluateDistanceFieldLowerBound(float3 LocalPoint)
+{
+    float4 LowStep = DistanceFieldHeader(0), HighStep = DistanceFieldHeader(1), ExtentStep = DistanceFieldHeader(2);
+    float3 Minimum = LowStep.xyz, Maximum = HighStep.xyz;
+    float3 Step = float3(LowStep.w, HighStep.w, ExtentStep.w);
+    uint3 Resolution = uint3(ExtentStep.xyz);
+    float3 Outside = max(max(Minimum - LocalPoint, float3(0)), LocalPoint - Maximum);
+    float OutsideSquared = dot(Outside, Outside);
+    if (OutsideSquared > 0)
+        return max(0.0, sqrt(OutsideSquared) - 2e-5);
+    float3 GridCoordinate = clamp((LocalPoint - Minimum) / Step, float3(0), float3(Resolution - 1u));
+    uint3 Cell = min(uint3(GridCoordinate), Resolution - 2u);
+    float3 Fraction = GridCoordinate - float3(Cell);
+    uint SamplesOffset = asuint(Extent.Maximum.w) - 1u + 16u;
+    float Lower = 0;
+    for (uint Z = 0; Z < 2u; ++Z)
+        for (uint Y = 0; Y < 2u; ++Y)
+            for (uint X = 0; X < 2u; ++X)
+            {
+                float Weight = (X != 0u ? Fraction.x : 1.0 - Fraction.x) *
+                               (Y != 0u ? Fraction.y : 1.0 - Fraction.y) *
+                               (Z != 0u ? Fraction.z : 1.0 - Fraction.z);
+                float3 Offset = (float3(X, Y, Z) - Fraction) * Step;
+                uint SampleIndex = ((Cell.z + Z) * Resolution.y + (Cell.y + Y)) * Resolution.x + Cell.x + X;
+                Lower += Weight * (Angles[SamplesOffset + SampleIndex] - length(Offset));
+            }
+    return max(0.0, Lower - 2e-5);
+}
+bool AdvanceDistanceFieldInterval(float3 WorldOrigin, float3 WorldDirection, inout float MinimumTravel,
+                                  float MaximumTravel)
+{
+    InterlockedAdd(Counters[18], 1);
+    float3 Origin = TransformToDistanceFieldSpace(WorldOrigin);
+    float3 Direction = RotateToDistanceFieldSpace(WorldDirection);
+    float Speed = length(Direction);
+    if (Speed <= 1e-12 || !(MaximumTravel > MinimumTravel))
+        return true;
+    float3 Minimum = DistanceFieldHeader(0).xyz, Maximum = DistanceFieldHeader(1).xyz;
+    float Near = max(0.0, MinimumTravel), Far = MaximumTravel;
+    for (uint Axis = 0; Axis < 3u; ++Axis)
+    {
+        if (abs(Direction[Axis]) < 1e-20)
+        {
+            if (Origin[Axis] < Minimum[Axis] || Origin[Axis] > Maximum[Axis])
+            {
+                InterlockedAdd(Counters[19], 1);
+                return false;
+            }
+        }
+        else
+        {
+            float A = (Minimum[Axis] - Origin[Axis]) / Direction[Axis];
+            float B = (Maximum[Axis] - Origin[Axis]) / Direction[Axis];
+            Near = max(Near, min(A, B));
+            Far = min(Far, max(A, B));
+            if (Far < Near)
+            {
+                InterlockedAdd(Counters[19], 1);
+                return false;
+            }
+        }
+    }
+    float Travel = Near;
+    for (uint Stride = 0; Stride < 48u; ++Stride)
+    {
+        float Lower = EvaluateDistanceFieldLowerBound(Origin + Direction * Travel);
+        if (Lower < 2e-4)
+        {
+            MinimumTravel = max(MinimumTravel, Travel - 1e-3);
+            return true;
+        }
+        Travel += Lower / Speed;
+        if (Travel > Far + 1e-5)
+        {
+            InterlockedAdd(Counters[19], 1);
+            return false;
+        }
+    }
+    MinimumTravel = max(MinimumTravel, Travel - 1e-3);
+    return true;
+}
+uint ExitancePyramidStart()
+{
+    return Extent.Dimensions.x * 21u + 13825u;
+}
+uint DistanceDiagnosticStart()
+{
+    return Extent.Dimensions.x * 23u + 13889u;
+}
+void ExitanceMipDimensions(uint Level, out uint Width, out uint Height, out uint Offset)
+{
+    Width = Extent.History.x;
+    Height = Extent.History.y;
+    Offset = ExitancePyramidStart();
+    for (uint Tier = 0; Tier < Level; ++Tier)
+    {
+        Offset += Width * Height;
+        Width = max(1u, (Width + 1u) >> 1u);
+        Height = max(1u, (Height + 1u) >> 1u);
+    }
+}
 bool OccludedGeometry(float3 Origin, float3 Direction, float Far)
 {
     if (Extent.Grid.w == 0 || Far < 0)
         return false;
     InterlockedAdd(Counters[2], 1);
+    // 📝 DistanceFieldSpace bounds only the rigid prism; it cannot reject other scene geometry, so traversal stays exact.
     uint Stack[64];
     uint Count = 1;
     Stack[0] = 0;
@@ -713,6 +833,7 @@ uint NearestFacet(float3 Origin, float3 Direction, float Minimum, float Maximum,
     Strike = float3(Maximum, 0, 0);
     if (Extent.Grid.w == 0)
         return Selected;
+    // 📝 Exact BVH traversal: the baked field is a clearance query for diagnostics, not a traversal interval.
     uint Stack[64];
     uint Count = 1;
     Stack[0] = 0;
@@ -813,8 +934,27 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
     R.ViewMetallic = float4(-Direction, F.OpticalToken.x);
     R.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
     R.ResidualSpecular = float4(F.Emissive.xyz, F.OpticalToken.z);
+    R.MotionPositionToken.w = F.OpticalToken.w;
     ApplyRayMaterial(R, F, Strike.yz);
     return R;
+}
+float3 ReprojectToPreviousWorld(float3 Position, float3 Normal, float Token, out float3 PreviousNormal)
+{
+    float4 CurrentRigid = CameraProjection(8), PreviousRigid = CameraProjection(9);
+    float3 PreviousPosition = Position;
+    PreviousNormal = Normal;
+    if (Token > CurrentRigid.z)
+    {
+        float4 Rotation = CameraProjection(11);
+        float X = Position.x - CurrentRigid.y, Y = Position.y;
+        float2 Local = float2(Rotation.x * X + Rotation.y * Y, -Rotation.y * X + Rotation.x * Y);
+        PreviousPosition.xy = float2(Rotation.z * Local.x - Rotation.w * Local.y + PreviousRigid.y,
+                                     Rotation.w * Local.x + Rotation.z * Local.y);
+        float Cosine = Rotation.z * Rotation.x + Rotation.w * Rotation.y;
+        float Sine = Rotation.w * Rotation.x - Rotation.z * Rotation.y;
+        PreviousNormal.xy = float2(Cosine * Normal.x - Sine * Normal.y, Sine * Normal.x + Cosine * Normal.y);
+    }
+    return PreviousPosition;
 }
 [shader("compute")][numthreads(64, 1, 1)] void TracePrimarySurfaces(uint3 Dispatch : SV_DispatchThreadID)
 {
@@ -843,6 +983,8 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
         R.ResidualSpecular = float4(Sky, 0);
         Receivers[Pixel] = R;
         StoreHistory(15, Pixel, float4(-1, -1, 0, 0));
+        if (asuint(Extent.Maximum.w) != 0 && DistanceFieldHeader(3).w == 2.0)
+            OutputColour[DistanceDiagnosticStart() + Pixel] = float4(-1, 0, 0, 0);
         InterlockedAdd(Counters[11], 1);
         return;
     }
@@ -859,19 +1001,8 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
     R.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
     R.ResidualSpecular = float4(F.Emissive.xyz, F.OpticalToken.z);
     ApplyRayMaterial(R, F, Strike.yz);
-    float4 CurrentRigid = CameraProjection(8), PreviousRigid = CameraProjection(9);
-    float3 PreviousPosition = Position, PreviousNormal = Normal;
-    if (F.OpticalToken.w > CurrentRigid.z)
-    {
-        float4 Rotation = CameraProjection(11);
-        float X = Position.x - CurrentRigid.y, Y = Position.y;
-        float2 Local = float2(Rotation.x * X + Rotation.y * Y, -Rotation.y * X + Rotation.x * Y);
-        PreviousPosition.xy = float2(Rotation.z * Local.x - Rotation.w * Local.y + PreviousRigid.y,
-                                     Rotation.w * Local.x + Rotation.z * Local.y);
-        float Cosine = Rotation.z * Rotation.x + Rotation.w * Rotation.y;
-        float Sine = Rotation.w * Rotation.x - Rotation.z * Rotation.y;
-        PreviousNormal.xy = float2(Cosine * Normal.x - Sine * Normal.y, Sine * Normal.x + Cosine * Normal.y);
-    }
+    float3 PreviousNormal;
+    float3 PreviousPosition = ReprojectToPreviousWorld(Position, Normal, F.OpticalToken.w, PreviousNormal);
     R.MotionPositionToken = float4(PreviousPosition, F.OpticalToken.w);
     R.MotionNormal = float4(PreviousNormal, 0);
     float4 PreviousEye = CameraProjection(4), PreviousForward = CameraProjection(5),
@@ -884,6 +1015,17 @@ SurfacePoint FacetSurface(uint Index, float3 Origin, float3 Direction, float3 St
             (dot(Relative, PreviousRight.xyz) / (Depth * PreviousRight.w) * .5 + .5) * Extent.History.x - .5,
             (.5 - dot(Relative, PreviousUp.xyz) / (Depth * PreviousUp.w) * .5) * Extent.History.y - .5,
             max(.03, Depth * PreviousUp.w * 4 / Extent.History.y), 1);
+    }
+    if (asuint(Extent.Maximum.w) != 0 && DistanceFieldHeader(3).w == 2.0)
+    {
+        // 📝 The certified bound is evaluated at the surface point itself, matching the native exact-distance comparison.
+        float3 SamplePoint = Position + Normal * .12;
+        float LowerBound = EvaluateDistanceFieldLowerBound(TransformToDistanceFieldSpace(Position));
+        float3 SolarDirection = Extent.Dimensions.y > 0 ? Unit(Lights[0].PositionReach.xyz) : float3(0, 0, 1);
+        float ProbeMinimum = 0;
+        bool ClearOfVehicle = !AdvanceDistanceFieldInterval(SamplePoint, SolarDirection, ProbeMinimum, 25.0);
+        OutputColour[DistanceDiagnosticStart() + Pixel] =
+            float4(LowerBound, ClearOfVehicle ? 1.0 : 0.0, ProbeMinimum, 1.0);
     }
     Receivers[Pixel] = R;
     StoreHistory(15, Pixel, float4(Strike.x, float(Index), Strike.yz));
@@ -1384,4 +1526,45 @@ float3 SampleFogFacet(float3 At, float3 ViewDirection, inout uint Bits)
         T = NextT;
     }
     OutputColour[Pixel].xyz = OutputColour[Pixel].xyz * T + Radiance;
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                              PRIOR-SCREEN EXITANCE PYRAMID
+//------------------------------------------------------------------------------------------------------------------------
+
+// 📝 Telescoping validity-weighted 2x2 condensation preserves exact Level-0 surface means without sky/glass dilution.
+[shader("compute")][numthreads(64, 1, 1)] void CondenseExitancePyramid(uint3 Dispatch : SV_DispatchThreadID)
+{
+    uint Level = Extent.Reconstruction.w;
+    uint Width, Height, DestinationOffset;
+    ExitanceMipDimensions(Level, Width, Height, DestinationOffset);
+    uint Texel = Dispatch.x;
+    if (Texel >= Width * Height)
+        return;
+    if (Level == 0u)
+    {
+        SurfacePoint R = Receivers[Texel];
+        uint Category = MaterialTransport(R);
+        bool OpaqueSurface = R.PositionHit.w != 0 && Category != 2u && Category != 4u;
+        float3 Exitance = OpaqueSurface ? max(0, OutputColour[Texel].xyz) : float3(0);
+        OutputColour[DestinationOffset + Texel] = float4(Exitance, OpaqueSurface ? 1.0 : 0.0);
+        return;
+    }
+    uint SourceWidth, SourceHeight, SourceOffset;
+    ExitanceMipDimensions(Level - 1u, SourceWidth, SourceHeight, SourceOffset);
+    uint2 Base = uint2(Texel % Width, Texel / Width) * 2u;
+    float3 WeightedSum = 0;
+    float CoverageSum = 0;
+    for (uint Dy = 0; Dy < 2u; ++Dy)
+        for (uint Dx = 0; Dx < 2u; ++Dx)
+        {
+            uint2 P = Base + uint2(Dx, Dy);
+            if (P.x >= SourceWidth || P.y >= SourceHeight)
+                continue;
+            float4 FineSample = OutputColour[SourceOffset + P.y * SourceWidth + P.x];
+            WeightedSum += FineSample.xyz * FineSample.w;
+            CoverageSum += FineSample.w;
+        }
+    float3 Condensed = CoverageSum > 1e-6 ? WeightedSum / CoverageSum : float3(0);
+    OutputColour[DestinationOffset + Texel] = float4(Condensed, CoverageSum * .25);
 }

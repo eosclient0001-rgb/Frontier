@@ -2,6 +2,14 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Prior-screen exitance, rigid motion and unified moving vehicle — 2026-10-26
+
+- Roughness-cone exitance pyramid, verified natively (max mip RGB error 6.7e-7) and on SwiftShader; pinned 3e8259c control resets cold on authored motion; guarded lighting refresh matches cold build.
+- Rigid prism reuses 318 pixels under motion; unified six-pose fixture: 14k–15k opaque reuse per moving pose, zero caps/invalid, 23,040 source-off black pixels.
+- DistanceFieldSpace is a certified clearance bound (0 violations); it does not accelerate traversal. Traversal-acceleration claim removed.
+- Sharp-strip estimator bias 5.7% (noise 1.2%) recorded as a limitation. [Report](../Exhibits/LightCompute/PriorExitance.md).
+- Still open: physical RTX/GTX, Windows/editor, production scene, full denoiser, moving general authored geometry without conservative reset.
+
 ## Derived finite-thickness vehicle glazing — 2026-10-26
 
 - Three exact-edge-connected components from 74 retained window triangles become 284 closed triangles at

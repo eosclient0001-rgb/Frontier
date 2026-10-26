@@ -10,6 +10,8 @@ execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RT
 
 ![Actual six-pose native glazing animation](Images/GlazingMotion.gif)
 
+**Latest addition: prior-screen exitance pyramid, rigid authored motion and unified six-pose vehicle.** See [prior-screen exitance report](PriorExitance.md). Software Vulkan (SwiftShader CPU type 4) only. The baked DistanceFieldSpace is a certified clearance query, not a traversal accelerator.
+
 ## Done and remaining
 
 | Status | Area | Done / evidence | Remaining |
@@ -29,9 +31,11 @@ execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RT
 | 🟢 | Derived vehicle glazing | Three closed6mm components /284 triangles; saved native coefficients; fresh vehicle Vulkan acceptance | General CAD/editor importer and unified full-scene acceptance |
 | 🟢 | Six-pose closed glazing | 6/6poses,284closed triangles/4mirror facets each,17718warm opaque reuse,3547glass/72mirror observations exact fresh,23040black pixels; [report](GlazingMotion.md) | Global moving authored history stays conservative; physical/editor/unified scene still open |
 | 🚧 | Full glass/material system | Bounded2048-interaction /128-sample tracer, saved spectra and derived vehicle assignment | Full preset/editor integration, rough glass, nested media, inside cameras, caustics and transmitted direct shadows |
-| 🚧 | Reflection reconstruction / denoising | Limited authored rough-surface reconstruction and tested invalidation | Roughness-mip prior-screen colour/exitance, full denoiser and complete sampling/PDF/material acceptance |
+| 🚧 | Reflection reconstruction / denoising | Roughness-cone prior-screen exitance pyramid (native, pinned control, guarded refresh); sharp-strip estimator bias 5.7% measured | Full denoiser, mirror-lobe comparison and complete sampling/PDF/material acceptance |
 | 🚧 | Clouds, fog and shafts | Earlier actual cloud/fog/geometry-shadow fixtures; lower-cost working cloud budget | Improve blocky clouds, horizon/sky, Milky Way/catalogues/extrasolar stars and dawn/sunset; moving full-scene acceptance |
 | 🚧 | Bake / moving full scene | Earlier vehicle, triangle-BVH and distance-field-related exhibits exist | Unified ControlVehicle + baked distance field + sun/sky/cloud/fog moving-scene acceptance; no inherited full-SDF completion claim |
+| 🟢 | Unified moving vehicle scene (fixture) | Six poses with closed glass, mirrors, cones, cloth, clouds, fog, analytic + emissive light, zero caps, 23,040 source-off black | Production scene, editor import, physical GPU |
+| 🔴 | DistanceFieldSpace traversal acceleration | Clearance bound verified (0 violations); traversal uses exact BVH | Hierarchical skip for rigid subset only if measured faster |
 | 🔴 | Physical rendering integration | Software Vulkan fallback exercises triangle BVH | Physical RTX hardware tracing, physical GTX fallback, Windows/editor/viewport validation and real device timings |
 | 🔴 | Old half-pole shadow defect | Current fixture investigated; no reproduction | Need the old project/commit/file or screenshot to identify it; not marked fixed |
 | 🔴 | Moon | Planned feature only | Implementation and rendered verification |
