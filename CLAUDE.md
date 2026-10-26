@@ -436,3 +436,5 @@ Full regression progress: RunSolidDielectric completed successfully (boundary199
 .00346691; caps/unsupported0; winding/inside diagnostics; opaquehistory88 probes max9.8307e-7; RMSE
 .246571->.0927787; camera/moved/sourceoff checks;4CTest). Fresh SolidDielectric products checkpointed.
 Mirror stage is now running under the same full regression process. Final chain exit still pending.
+Mirror regression completed:four196-pixel slabs (maxmean .00307568),6144sourceoffblack; pinnedblocked196
+centralpixels; captures regenerated with current2048 bound. Rough reflection stage now running; chain pending.

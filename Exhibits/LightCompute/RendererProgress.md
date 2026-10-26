@@ -1,18 +1,18 @@
 # Renderer progress — 2026-10-26
 
-**Latest addition: native saved closed-glass coefficients with Vulkan slab verification.** All current
+**Latest addition: derived closed vehicle glazing with native saved coefficients and actual vehicle readbacks.** All current
 execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RTX/GTX or the Windows editor.
 
 **Legend:** 🟢 verified within the stated scope · 🚧 partial / still needs work · 🔴 blocked or not done.
 
-![Native saved/reloaded glass coefficients rendered by Vulkan](Images/SavedDielectric.png)
+![Actual native vehicle glazing comparison](Images/VehicleGlazing.png)
 
 ## Done and remaining
 
 | Status | Area | Done / evidence | Remaining |
 |--------|------|-----------------|-----------|
 | 🟢 | Analytic and emissive lighting | Both preserved; clustered analytic selection, visibility and temporal/spatial reservoir fixtures | Full engine/hardware acceptance; not a claim every emitter type is exhaustively covered |
-| 🟢 | Original ControlVehicle material scene | Existing Racing Green cellular-flake coat, rubber, thin windows, BVH mirrors, cones and reused material previews captured in earlier checkpoints | Closed-volume vehicle geometry/assignment; full saved-material/editor integration |
+| 🟢 | Original ControlVehicle material scene | Existing Racing Green cellular-flake coat, rubber, thin windows, BVH mirrors, cones and reused material previews captured in earlier checkpoints | General scene/editor importer; full moving-scene and hardware integration |
 | 🟢 | Primary smooth closed glass | Snell, exact Fresnel/TIR, radiance-index factors, distance absorption; four analytic slab cases | General arbitrary-mesh and scale acceptance |
 | 🟢 | Mirror → closed glass | Four additional slab cases; actual behind-camera geometry seen through mirror; 6,144-pixel source-off black test | More mirror layouts, moving volume captures and general recursive mirror chains |
 | 🟢 | Current pole-shadow fixture | 72 combinations, 3,538,944 silhouette comparisons, zero mismatches | Does not reproduce the user's old project defect |
