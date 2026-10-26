@@ -145,6 +145,9 @@ void ValidateGlazingMotion(const char*        Driver,
     for (uint32_t Pose = 1; Pose < 6; ++Pose) Compare(Frames[Pose],71,true,"GlazingMotion"+std::to_string(Pose));
     // 📝 Static source revision is isolated from body movement: change emission without moving a single facet/token.
     auto Changed = Frames.back();
+    for (uint32_t I = 0; I < 4; ++I) Changed.Camera[4+I] = Changed.Camera[I];
+    for (uint32_t I = 0; I < 3; ++I) Changed.Camera[9][I] = Changed.Camera[8][I];
+    Changed.Camera[11][2] = Changed.Camera[11][0]; Changed.Camera[11][3] = Changed.Camera[11][1];
     for (auto &F : Changed.Surfaces)
         for (uint32_t C = 0; C < 3; ++C) F.Emissive[C] *= C == 0 ? .1f : C == 1 ? .3f : .6f;
     Changed.Angles.resize(size_t(Changed.Camera[10][2]));
