@@ -5,6 +5,15 @@ reuse, reprojection rejection, temporal moments and edge-aware reconstruction on
 The tested device is **SwiftShader Device (Subzero), CPU type 4**, Vulkan 1.3.0, Slang 2026.14.1.
 No physical GPU, hardware ray-query or Windows execution is claimed.
 
+## Thin-pane emitter, volumetric fog shafts and multi-stratum mixtures — 2026-10-26
+
+[Actual clerestory studio shafts and thin-pane acceptance](PaneTransmittance.md): `SegmentShadowTransmittance`
+applies Fresnel + RGB Beer transmittance across up to seven thin panes (`CrossedPanes < 8` BSDF continuation) in
+surface area-emitter quadrature (`2,016` probes, max `1.54e-8`), analytic volumetric fog (`922` probes, max `7.09e-7`)
+and emissive volumetric fog (`541` probes, max `1.45e-6`), plus monotonic native quadrature convergence across four
+reused multi-stratum presets (`racing-green`, `performance-rubber`, `pp-polypropylene`, `indigo-denim`). Pinned
+`f5d99d4` negative control and all five static vehicle PNG byte streams verified. Software Vulkan only.
+
 ## Six-pose closed-glass vehicle motion — 2026-10-26
 
 [Actual moving glazing animation and acceptance](GlazingMotion.md):6/6posed closed-glass vehicles and

@@ -116,11 +116,8 @@ bool IntersectsFacet(FacetCorners Triangle, float3 Origin, float3 Direction, flo
     float Distance = dot(EdgeB, Q) / Determinant;
     return Distance >= 0 && Distance <= Far;
 }
-bool Occluded(float3 Origin, float3 Direction, float Far)
+bool OccludedGeometry(float3 Origin, float3 Direction, float Far)
 {
-    if ((Extent.Primary.w & 32u) != 0)
-        return all(MaterialShadowTransmission(Origin, Direction, Far) == 0);
-
     if (Extent.Grid.w == 0 || Far < 0)
         return false;
     InterlockedAdd(Counters[2], 1);
@@ -153,6 +150,18 @@ bool Occluded(float3 Origin, float3 Direction, float Far)
         }
     }
     return false;
+}
+bool Occluded(float3 Origin, float3 Direction, float Far)
+{
+    if ((Extent.Primary.w & 32u) != 0)
+        return all(MaterialShadowTransmission(Origin, Direction, Far) == 0);
+    return OccludedGeometry(Origin, Direction, Far);
+}
+float3 SegmentShadowTransmittance(float3 Origin, float3 Direction, float Far)
+{
+    if ((Extent.Primary.w & 32u) != 0)
+        return MaterialShadowTransmission(Origin, Direction, Far);
+    return OccludedGeometry(Origin, Direction, Far) ? 0 : 1;
 }
 float2 Interval(uint Offset, uint Count, float Angle)
 {
@@ -920,10 +929,13 @@ float3 SampleEmissiveFacet(SurfacePoint R, inout uint Bits)
         return 0;
     float3 ShadowOrigin = R.PositionHit.xyz + R.NormalRoughness.xyz * .002, Segment = Position - ShadowOrigin;
     float Length = length(Segment);
-    if (Length <= .004 || Occluded(ShadowOrigin, Segment / Length, Length - .002))
+    if (Length <= .004)
+        return 0;
+    float3 Transmittance = SegmentShadowTransmittance(ShadowOrigin, Segment / Length, Length - .002);
+    if (all(Transmittance == 0))
         return 0;
     float FogT = asuint(Extent.Minimum.w) != 0 ? FogTransmission(ShadowOrigin, Segment / Length, Length) : 1;
-    return DiffuseTransportResponse(R, Direction) * F.Emissive.xyz *
+    return DiffuseTransportResponse(R, Direction) * F.Emissive.xyz * Transmittance *
            (FogT * Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
 }
 #include "MaterialRayTransport.slang"
@@ -1309,13 +1321,17 @@ float3 SampleFogFacet(float3 At, float3 ViewDirection, inout uint Bits)
         return 0;
     float3 Toward = Delta / Distance, Normal = Unit(cross(F.B.xyz - F.A.xyz, F.C.xyz - F.A.xyz));
     float Geometry = abs(dot(Normal, Toward));
-    if (Geometry == 0 || (FogParameter(2).w != 0 &&
-        Occluded(At + Toward * .002, Toward, Distance - .004)))
+    if (Geometry == 0)
+        return 0;
+    float3 Transmittance = FogParameter(2).w != 0
+        ? SegmentShadowTransmittance(At + Toward * .002, Toward, Distance - .004)
+        : 1;
+    if (all(Transmittance == 0))
         return 0;
     float G = FogParameter(1).x, Den = 1 + G * G - 2 * G * dot(ViewDirection, Toward);
     float Phase = (1 - G * G) / (4 * 3.141592653589793 * Den * sqrt(max(Den, 1e-12)));
     float T = FogTransmission(At, Toward, min(Distance, FogParameter(3).z));
-    return F.Emissive.xyz * (T * Phase * Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
+    return F.Emissive.xyz * Transmittance * (T * Phase * Geometry * Angles[Entry + 2] / (Squared * Angles[Entry + 1]));
 }
 
 [shader("compute")][numthreads(64, 1, 1)] void IntegrateFogScattering(uint3 Dispatch : SV_DispatchThreadID)
@@ -1353,11 +1369,14 @@ float3 SampleFogFacet(float3 At, float3 ViewDirection, inout uint Bits)
                 if (all(Light == 0))
                     continue;
                 Far = min(Far, Lighting.z);
-                if (Ambient.w != 0 && Occluded(At + Toward * .002, Toward, max(Far - .004, 0)))
+                float3 Transmittance = Ambient.w != 0
+                    ? SegmentShadowTransmittance(At + Toward * .002, Toward, max(Far - .004, 0))
+                    : 1;
+                if (all(Transmittance == 0))
                     continue;
                 float Den = 1 + March.x * March.x - 2 * March.x * dot(Direction, Toward);
                 float Phase = (1 - March.x * March.x) / (4 * 3.141592653589793 * Den * sqrt(max(Den, 1e-12)));
-                Incident += Light * Phase;
+                Incident += Light * Transmittance * Phase;
             }
         for (uint J = 0; J < uint(Lighting.w); ++J)
             Incident += SampleFogFacet(At, Direction, EmitterBits) / Lighting.w;

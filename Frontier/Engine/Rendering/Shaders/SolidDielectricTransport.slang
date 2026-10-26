@@ -12,7 +12,7 @@ float3 TraceSolidDielectric(float3 Origin, float3 Direction, inout uint Bits, ou
     float DistanceCorrection = 0;
     float3 Throughput = 1, Absorption = 0;
     float MediumIor = 1;
-    uint MediumAddress = 0;
+    uint MediumAddress = 0, CrossedPanes = 0;
     bool Inside = false, SolidSeen = false, Faint = false;
     uint SurvivalBits = Bits ^ 0xa511e9b3u;
     InternalReflections = Capped = Unsupported = 0;
@@ -35,13 +35,16 @@ float3 TraceSolidDielectric(float3 Origin, float3 Direction, inout uint Bits, ou
         {
             // Retain the separate parallel-sheet approximation when a sheet is encountered in air.
             if (Inside) { Unsupported = 1; return 0; }
+            ++CrossedPanes;
             float Cosine = max(.05, dot(R.NormalRoughness.xyz, -Direction));
             float F = .04 + .96 * pow(1 - Cosine, 5);
             Throughput *= (1 - F) / (1 + F) * exp(-float3(.8, .15, .4) * .006 / Cosine);
             Origin = R.PositionHit.xyz + Direction * Offset;
             continue;
         }
-        if (Category != 4) return Throughput * ShadeRayStrike(R, ExcludeUnscatteredEmission && !SolidSeen);
+        // 📝 Straight segments across up to seven thin panes (eight shadow queries) are weighted by
+        // SegmentShadowTransmittance; retain terminal BSDF radiance at eight or more panes so no energy is lost.
+        if (Category != 4) return Throughput * ShadeRayStrike(R, ExcludeUnscatteredEmission && !SolidSeen && CrossedPanes < 8);
         SolidSeen = true;
         FacetCorners Facet = Facets[Index];
         float3 Outward = Unit(cross(Facet.B.xyz - Facet.A.xyz, Facet.C.xyz - Facet.A.xyz));

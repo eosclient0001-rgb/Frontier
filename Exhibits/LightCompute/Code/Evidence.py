@@ -46,6 +46,7 @@ Products += [Output / 'Results/MirrorDielectric.json'] if (Output / 'Results/Mir
 Products += [Output / 'Results/RoughDielectric.json'] if (Output / 'Results/RoughDielectric.json').exists() else []
 Products += [Output / 'Results/WindowDielectric.json'] if (Output / 'Results/WindowDielectric.json').exists() else []
 Products += [Output / 'Results/DiffuseDielectric.json'] if (Output / 'Results/DiffuseDielectric.json').exists() else []
+Products += [Output / 'Results/PaneTransmittance.json'] if (Output / 'Results/PaneTransmittance.json').exists() else []
 def Hashes(Paths):
     return {str(P.relative_to(Root)): hashlib.sha256(P.read_bytes()).hexdigest() for P in sorted(set(Paths))}
 Log = (Output / 'Results/Vulkan.txt').read_text()
@@ -113,6 +114,7 @@ Scratch += [Root / P for P in ('_ClaudeScratch/vehicle-reference/VehicleLightInp
 Scratch += list((Root / '_ClaudeScratch/vehicle-reference').glob('VehicleMotion*.bin'))
 Scratch += list((Root / '_ClaudeScratch/primary-motion').glob('VehicleMotion*.bin'))
 Scratch += list((Root / '_ClaudeScratch/glazing-motion').glob('*.ppm'))
+Scratch += list((Root / '_ClaudeScratch/pane-transmittance').glob('*.ppm'))
 Scratch += list((Root / '_ClaudeScratch/glazing-motion').glob('*.bin'))
 Scratch += list((Root / '_ClaudeScratch/build/faint-path').glob('*.slang'))
 Scratch += list((Root / '_ClaudeScratch/build/faint-path').glob('*.sha256'))

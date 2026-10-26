@@ -5,18 +5,23 @@
 
 float3 MaterialShadowTransmission(float3 Origin, float3 Direction, float Far)
 {
+    if (Far <= .001) return 1;
     float3 Throughput = 1;
     for (uint Pane = 0; Pane < 8; ++Pane)
     {
         float3 Strike;
         uint Index = NearestFacet(Origin, Direction, .001, Far, Strike);
         if (Index == 0xffffffffu) return Throughput;
-        SurfacePoint R = FacetSurface(Index, Origin, Direction, Strike);
-        if (MaterialTransport(R) != 2) return 0;
-        float Cosine = max(.05, dot(R.NormalRoughness.xyz, -Direction));
-        float F = .04 + .96 * pow(1 - Cosine, 5);
-        Throughput *= (1 - F) / (1 + F) * exp(-float3(.8, .15, .4) * .006 / Cosine);
-        Origin = R.PositionHit.xyz + Direction * .003;
+        FacetCorners F = Facets[Index];
+        uint Address = F.Emissive.w > 0 ? uint(F.Emissive.w) : 0;
+        if (Address == 0 || uint(Angles[Address]) != 2) return 0;
+        // 📝 Thin-sheet panes carry no procedural paint or normal pyramid; keep surface baking out of shadow/fog loops.
+        float3 Normal =
+            Unit(F.NormalA.xyz * (1 - Strike.y - Strike.z) + F.NormalB.xyz * Strike.y + F.NormalC.xyz * Strike.z);
+        float Cosine = max(.05, abs(dot(Normal, Direction)));
+        float Reflectance = .04 + .96 * pow(1 - Cosine, 5);
+        Throughput *= (1 - Reflectance) / (1 + Reflectance) * exp(-float3(.8, .15, .4) * .006 / Cosine);
+        Origin = (Origin + Direction * Strike.x) + Direction * .003;
         Far -= Strike.x + .003;
         if (Far <= .001) return Throughput;
     }

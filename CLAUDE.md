@@ -534,3 +534,22 @@ no physicalRTX/GTX/Windows/editor/full-renderer/realtime claim. Authored movemen
 history; warm opaque reuse tested only when stationary. Foliageinactive; oldhalfpolenotfixed.
 Next scope: pure-sheet emitter weighting/material sampling, prior-screen exitance/reconstruction and unified
 moving baked-distance-field/cloud/fog scene; physicalRTX/GTX/Windows/editor acceptance still outstanding.
+
+## Thin-pane transmittance, volumetric shafts and multi-stratum mixtures — 2026-10-26
+
+Accepted exit0 on native C++ (ASan+UBSan) and SwiftShader CPU Vulkan (type 4).
+`SegmentShadowTransmittance` (LightInfluence.slang) + `CrossedPanes < 8` (SolidDielectricTransport.slang)
+close the thin-sheet (Category==2) transmittance gap in `SampleEmissiveFacet`, `SampleFogFacet`,
+`IntegrateFogScattering` and 8-pane BSDF continuation; `MaterialShadowTransmission` avoids `FacetSurface`/
+`ApplyRayMaterial` inlining inside shadow/fog loops (Fog.spv 79K -> 56K).
+Verified: 8/8 native ASan+UBSan checks (`mixture_cosine_diff=7.36863e-7`), 2016 surface probes
+(`max_rgb_error=1.53749e-8`, NEE-vs-BSDF rel error `0.0031442`, exact 8-pane continuation), 4 multi-stratum
+reused presets (`racing-green`, `performance-rubber`, `pp-polypropylene`, `indigo-denim`: furnace `0.541175`,
+convergence `0.009686 -> 0.007453 -> 0.007295`), 922 analytic fog shaft probes (`7.09163e-7` max, mullion 0,
+5-pane ratio `0.708/0.723/0.717`), 541 emissive fog probes (`1.45148e-6` max, floor `0.65628`, shaft `0.65576`),
+combined 320x200 studio scene (1366 solid-glass, 1120 window, 589 paint, 971 fabric, 941 SSR px, 0 cap/invalid,
+exact repeat, 64000 black source-off), pinned f5d99d4 negative control (`0.99371` unattenuated floor leak,
+8-pane NEE+BSDF dropped to 0), focused optical regressions (window, diffuse, emissive, fog-facets, fog-checks,
+vehicle-glazing, 4/4 CTests) and 5/5 static VehicleGlazing PNGs byte-identical to 2e3eb62.
+Next scope: roughness-mip prior-screen exitance/denoising, unified moving ControlVehicle + baked distance-field
++ sun/sky/cloud/fog scene, and physical RTX/GTX + Windows/editor acceptance.

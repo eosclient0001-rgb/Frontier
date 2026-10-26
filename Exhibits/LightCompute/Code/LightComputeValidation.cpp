@@ -1045,11 +1045,22 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "RoughDielectricValidation.h"
 #include "WindowDielectricValidation.h"
 #include "DiffuseDielectricValidation.h"
+#include "PaneTransmittanceValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 6 && (std::string(Arguments[3]) == "--pane-transmittance" ||
+                           std::string(Arguments[3]) == "--pane-transmittance-native" ||
+                           std::string(Arguments[3]) == "--pane-transmittance-original"))
+        {
+            const std::string Mode = Arguments[3];
+            ValidatePaneTransmittance(Arguments[1], Arguments[2], Arguments[4], Arguments[5],
+                                      Mode == "--pane-transmittance-native",
+                                      Mode == "--pane-transmittance-original");
+            return 0;
+        }
         if (Count == 7 && (std::string(Arguments[3]) == "--glazing-motion" ||
                            std::string(Arguments[3]) == "--glazing-motion-native"))
         {

@@ -717,3 +717,16 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
 - Complete retained optical chain after the shader change passed(exit0), including vehicle transport and
   old-material moving-history regressions. No physical GPU, Windows/editor,
   continuous moving authored indirect reuse, glass denoiser or completed unified renderer claim.
+
+## Thin-pane transmittance, volumetric shafts and multi-stratum mixtures — 2026-10-26
+
+- `SegmentShadowTransmittance` and `CrossedPanes < 8` close the remaining thin-sheet (`Category == 2`) transmittance
+  gap across compact surface area-emitter quadrature (`SampleEmissiveFacet`), emissive volumetric fog (`SampleFogFacet`),
+  analytic volumetric fog (`IntegrateFogScattering`) and 8-pane BSDF continuation, while keeping surface baking out of
+  shadow/fog loops. Report and actual 4-panel Vulkan captures: `Exhibits/LightCompute/PaneTransmittance.md`.
+- Verified on SwiftShader CPU Vulkan (`type=4`) + ASan/UBSan native C++: 8/8 native checks (`7.37e-7` balance-heuristic
+  vs cosine identity), 2,016 surface emitter probes (`1.54e-8` max), 922 analytic fog probes (`7.09e-7` max), 541 emissive
+  fog probes (`1.45e-6` max), 4 reused multi-stratum preset mixtures (`0.00969 -> 0.00745 -> 0.00730`), pinned `f5d99d4`
+  negative control (`0.9937` floor leak vs `0.6563` accepted), 4/4 CTests, and 5/5 static `VehicleGlazing` PNGs byte-identical.
+- Still open: roughness-mip prior-screen exitance/denoising, unified moving `ControlVehicle` + baked distance-field +
+  sun/sky/cloud/fog scene, physical RTX/GTX + Windows/editor integration, legacy half-pole defect and native Jolt dynamics.
