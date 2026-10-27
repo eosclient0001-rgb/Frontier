@@ -44,4 +44,5 @@ SANITIZE=1 bash Exhibits/LightCompute/RunReplayMotion.sh
 ```
 
 [Original reproduction](Results/ReplayMotion-before.txt) · [release](Results/ReplayMotion-release.txt) ·
-[sanitized host](Results/ReplayMotion-sanitized.txt). The external SwiftShader driver is not sanitizer-instrumented.
+[sanitized host](Results/ReplayMotion-sanitized.txt) · [four motion captures](ReplayMotionCaptures.md).
+The external SwiftShader driver is not sanitizer-instrumented.

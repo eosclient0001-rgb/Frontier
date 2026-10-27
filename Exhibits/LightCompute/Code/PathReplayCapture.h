@@ -83,14 +83,17 @@ struct ReplayCaptureResult
 };
 ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const LightComputeArchive& Scene,
                                            uint32_t Hits, uint32_t FirstSeed, bool Reset, uint32_t Frames,
-                                           bool SampleFacets = false)
+                                           bool SampleFacets = false, const LightComputeArchive* Following = nullptr)
 {
+    Require(Frames >= 2 && (!Following || (Following->Width == Scene.Width && Following->Height == Scene.Height &&
+                Following->Receivers.size() == Scene.Receivers.size())), "Invalid replay capture sequence extent");
     std::vector<std::array<double,3>> Sum(Scene.Receivers.size());
     uint32_t Accumulated = 0;
     ReplayCaptureResult Result;
     for (uint32_t Frame = 0; Frame < Frames; ++Frame)
     {
-        const auto Pixels = Compute.ExecuteReplay(Scene, Hits, FirstSeed + Frame * 7919u, true, true,
+        const auto& FrameScene = Frame > 0 && Following ? *Following : Scene;
+        const auto Pixels = Compute.ExecuteReplay(FrameScene, Hits, FirstSeed + Frame * 7919u, true, true,
                                                    Reset && Frame == 0, {.025f,.025f,.025f}, .01f, true,
                                                    false, false, SampleFacets);
         const auto Counters = Compute.ExtendedStatistics();

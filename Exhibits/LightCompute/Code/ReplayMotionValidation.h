@@ -6,19 +6,20 @@
 
 namespace
 {
-LightComputeArchive ReplayMotionCamera(float Shift, float Blocker = 7)
+LightComputeArchive ReplayMotionCamera(float Shift, float Blocker = 7, uint32_t Width = 96, uint32_t Height = 96)
 {
     auto Scene = ReplayRoom(Blocker);
-    Scene.Width = 96; Scene.Height = 96;
+    Scene.Width = Width; Scene.Height = Height;
     Scene.Receivers.resize(size_t(Scene.Width) * Scene.Height);
-    Scene.Camera[2][3] = Scene.Camera[3][3];
+    Scene.Camera[2][3] = Scene.Camera[3][3] * float(Width) / float(Height);
     for (uint32_t I = 0; I < 4; ++I) Scene.Camera[4+I] = Scene.Camera[I];
     Scene.Camera[0][0] += Shift;
     return Scene;
 }
-LightComputeArchive ReplayMotionRigid(float Shift, float Angle)
+LightComputeArchive ReplayMotionRigid(float Shift, float Angle, uint32_t Width = 96, uint32_t Height = 96,
+                                      float Blocker = 7)
 {
-    auto Scene = ReplayMotionCamera(Shift);
+    auto Scene = ReplayMotionCamera(Shift, Blocker, Width, Height);
     const float Cosine = std::cos(Angle), Sine = std::sin(Angle);
     for (auto& F : Scene.Surfaces)
         if (F.OpticalToken[3] > 7.5f)
