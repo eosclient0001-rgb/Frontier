@@ -73,8 +73,8 @@ void ValidateReplayImportanceMotion(const char* Driver, const std::string& Shade
                 CosineCohorts[Batch / (Batches / 2)][I][C].Accumulate(CosineImage[Pixels[I]][C]);
                 MixtureCohorts[Batch / (Batches / 2)][I][C].Accumulate(MixtureImage[Pixels[I]][C]);
             }
-        for (uint32_t Frame = 0; Frame < 3; ++Frame)
-            (void)TraceRoughTextureReplay(Compute, Previous, 4, Seed + 10 + Frame, true, true, Frame == 0,
+        for (uint32_t Iteration = 0; Iteration < 3; ++Iteration)
+            (void)TraceRoughTextureReplay(Compute, Previous, 4, Seed + 10 + Iteration, true, true, Iteration == 0,
                                           true, true, true, false);
         const auto MovedImage = TraceRoughTextureReplay(Compute, Current, 4, Seed + 20, true, true, false,
                                                          true, true, true, true);

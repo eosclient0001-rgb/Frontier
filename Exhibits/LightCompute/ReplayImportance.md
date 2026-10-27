@@ -24,7 +24,11 @@ subset. The renderer/editor and a native hardware ray-query backend do not yet s
 ## Numerical checks
 
 All GPU results below are SwiftShader **CPU Vulkan**, not physical-GPU measurements. Independent CPU
-references evaluate the same bounded model; they are not measured material or scene calibration.
+references evaluate the same bounded model; they are not measured material or scene calibration. The complete
+importance and motion logs were collected at `3656f4f`; a later identifier-only formatting cleanup produced
+an identical release host executable (`d52e7f99…`) and identical shader SPIR-V after removing debug names
+(generate `1fc9b41a…`, resolve `29adc522…`). Default-off parity and diffuse/texture regressions were rerun
+after that cleanup.
 
 - **Proposal mass:** independent `1024×2048` quadrature gives upper direction mass `0.8176251` and rejected-GGX
   mass `0.3646301`; `upper + rejected/2 = 0.9999402`.
@@ -83,4 +87,5 @@ The parity runner retrieves the prior shader from the local Git checkpoint, not 
   [Default parity sanitized](Results/ReplayImportanceParity-sanitized.txt)
 - [Engine domain release](Results/ReplayImportance-engine-release.txt) ·
   [Engine domain sanitized](Results/ReplayImportance-engine-sanitized.txt)
+- [Default diffuse/texture regression](Results/ReplayImportance-regression.txt)
 - [Existing rough-textured renders](RoughTextureReplayCaptures.md).

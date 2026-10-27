@@ -13,29 +13,29 @@ namespace
 void ValidateReplayImportanceMass()
 {
     // 📝 Independent midpoint integration of outgoing density and rejected GGX-normal mass.
-    constexpr double Pi = 3.14159265358979323846, Roughness = .7, Angle = 1.2;
+    constexpr double π = 3.14159265358979323846, Roughness = .7, Angle = 1.2;
     constexpr uint32_t Steps = 1024, Azimuths = 2 * Steps;
-    const double Alpha2 = std::pow(Roughness, 4), Vx = std::sin(Angle), Vz = std::cos(Angle);
+    const double α2 = std::pow(Roughness, 4), Vx = std::sin(Angle), Vz = std::cos(Angle);
     double Upper = 0, Rejected = 0;
     for (uint32_t I = 0; I < Steps; ++I)
     {
-        const double Mu = (I + .5) / Steps, Radius = std::sqrt(1 - Mu * Mu);
-        const double Denom = Mu * Mu * (Alpha2 - 1) + 1;
-        const double HalfDensity = Alpha2 * Mu / (Pi * Denom * Denom);
+        const double μ = (I + .5) / Steps, Radius = std::sqrt(1 - μ * μ);
+        const double Denom = μ * μ * (α2 - 1) + 1;
+        const double HalfDensity = α2 * μ / (π * Denom * Denom);
         for (uint32_t J = 0; J < Azimuths; ++J)
         {
-            const double Phi = 2 * Pi * (J + .5) / Azimuths;
-            const double X = Radius * std::cos(Phi), ViewHalf = Vx * X + Vz * Mu;
-            if (ViewHalf <= 0 || 2 * ViewHalf * Mu - Vz <= 0) Rejected += HalfDensity;
-            const double ViewLight = Vx * X + Vz * Mu;
+            const double φ = 2 * π * (J + .5) / Azimuths;
+            const double X = Radius * std::cos(φ), ViewHalf = Vx * X + Vz * μ;
+            if (ViewHalf <= 0 || 2 * ViewHalf * μ - Vz <= 0) Rejected += HalfDensity;
+            const double ViewLight = Vx * X + Vz * μ;
             const double Magnitude = std::sqrt(2 + 2 * ViewLight);
-            const double Nh = (Vz + Mu) / Magnitude, Vh = (1 + ViewLight) / Magnitude;
-            const double D = Nh * Nh * (Alpha2 - 1) + 1;
-            const double Reflected = Alpha2 * Nh / (Pi * D * D * 4 * Vh);
-            Upper += .5 * (Mu / Pi + Reflected);
+            const double Nh = (Vz + μ) / Magnitude, Vh = (1 + ViewLight) / Magnitude;
+            const double D = Nh * Nh * (α2 - 1) + 1;
+            const double Reflected = α2 * Nh / (π * D * D * 4 * Vh);
+            Upper += .5 * (μ / π + Reflected);
         }
     }
-    const double Area = 2 * Pi / (double(Steps) * Azimuths);
+    const double Area = 2 * π / (double(Steps) * Azimuths);
     Upper *= Area;
     Rejected *= Area;
     std::printf("IMPORTANCE_MASS upper=%.9g rejected_ggx=%.9g combined=%.9g quadrature=%ux%u\n",
@@ -211,8 +211,8 @@ void ValidateReplayImportanceRoom(const char* Driver, const std::string& Shaders
         const uint32_t Seed = 717000 + 101 * Batch;
         Fresh.Accumulate(TraceRoughTextureReplay(Compute, Open, 4, Seed, false, false, true,
                                                   false, true, true, true), Open.Width);
-        for (uint32_t Frame = 0; Frame < 4; ++Frame)
-            (void)TraceRoughTextureReplay(Compute, Open, 4, Seed + 10 + Frame, true, false, Frame == 0,
+        for (uint32_t Iteration = 0; Iteration < 4; ++Iteration)
+            (void)TraceRoughTextureReplay(Compute, Open, 4, Seed + 10 + Iteration, true, false, Iteration == 0,
                                           false, true, true, false);
         ProposalChanged.Accumulate(TraceRoughTextureReplay(Compute, Open, 4, Seed + 20, true, true, false,
                                                             false, true, true, true), Open.Width);

@@ -39,8 +39,8 @@ bool ReplayImportanceDirection(SurfacePoint Receiver, inout uint Bits, out float
     else
     {
         float U = RandomUnit(Bits), Azimuth = 6.283185307179586 * RandomUnit(Bits);
-        float Roughness = Receiver.NormalRoughness.w, Alpha = Roughness * Roughness, Alpha2 = Alpha * Alpha;
-        float Cosine = sqrt((1 - U) / (1 + (Alpha2 - 1) * U));
+        float Roughness = Receiver.NormalRoughness.w, α = Roughness * Roughness, α2 = α * α;
+        float Cosine = sqrt((1 - U) / (1 + (α2 - 1) * U));
         float Sine = sqrt(max(0, 1 - Cosine * Cosine));
         float3 Tangent = Unit(cross(abs(N.z) < .999 ? float3(0,0,1) : float3(0,1,0), N));
         float3 Half = Unit(Tangent * (Sine * cos(Azimuth)) + cross(N, Tangent) * (Sine * sin(Azimuth)) + N * Cosine);

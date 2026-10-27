@@ -27,8 +27,8 @@ ReplayParityReadbacks ReadReplayParityCases(const char* Driver, const std::strin
         Compute.Prepare(Before, Shaders, false, false, false, false, true);
         Result.Images.push_back(TraceRoughTextureReplay(Compute, Before, 1, 740001, false, false, true));
         Result.Images.push_back(TraceRoughTextureReplay(Compute, Before, 4, 740002, false, false, true));
-        for (uint32_t Frame = 0; Frame < 4; ++Frame)
-            (void)TraceRoughTextureReplay(Compute, Before, 4, 740010 + Frame, true, false, Frame == 0);
+        for (uint32_t Iteration = 0; Iteration < 4; ++Iteration)
+            (void)TraceRoughTextureReplay(Compute, Before, 4, 740010 + Iteration, true, false, Iteration == 0);
         for (const auto* Scene : {&Changed, &Covered})
         {
             Result.Images.push_back(TraceRoughTextureReplay(Compute, *Scene, 4, 740030 + uint32_t(Result.Images.size()),
