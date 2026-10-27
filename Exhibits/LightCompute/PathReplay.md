@@ -31,24 +31,30 @@ radiance and an optional uniform environment. Temporal candidates use the suppli
 guide; spatial candidates may originate on different surfaces. Each reused seed is fully retraced through the
 **current** scene, including its occluders, rather than carrying a stale visibility result. Pre-spatial
 reservoirs are retained; the selection floor is positive (`0.01` in the tests), and the history count is
-bounded. A changed source, blocker, receiver or bounce budget can therefore be replayed without blindly
-copying the old radiance. The host rejects corrupt BVHs, zero selection floor, metallic and textured facets.
+bounded. On a scene, receiver, camera, environment or integrator change, the host deterministically limits the
+previous reservoir's represented count to one for that frame while retaining its seed and per-sample weight.
+This reduces reliance on a single stale-domain candidate without a global reset; the count can grow again in
+subsequent unchanged frames. A changed source, blocker, receiver or bounce budget can therefore be replayed
+without blindly copying the old radiance. The host rejects corrupt BVHs, zero selection floor, metallic and
+textured facets.
 
 | SwiftShader CPU Vulkan fixture | Independent target | Reused result |
 |---|---:|---:|
-| Fully blocked → half visible emitter | 0.1199091 | 0.1266262 ± 0.0046767 SE |
-| Moving receiver + blocker + spatial donors | 0.0178338 | 0.0173774 ± 0.0013387 SE |
-| Dark emitter → lit emitter | 0.1199091 | 0.1218184 ± 0.0045712 SE |
-| Revealed two-hit parallel-plane path | approximately 0.5 | 0.49999985 |
+| Fully blocked → half visible emitter | 0.1199091 | 0.1203033 ± 0.0036068 SE |
+| Moving receiver + blocker + spatial donors | 0.0178338 | 0.0213990 ± 0.0036185 SE |
+| Dark emitter → lit emitter | 0.1199091 | 0.1224039 ± 0.0036172 SE |
+| Revealed two-hit parallel-plane path | approximately 0.5 | 0.5 |
 | Four-hit reflective parallel planes | approximately 0.625 | 0.625 |
 
 Each statistical case uses 4,096 centre samples across four seeds; SE is the sample standard deviation divided
 by √4,096 and assumes independent centres. The first area integral converges within `6.86e-8` between 500²
 and 1,000² midpoint grids. Moving an occluder into the path returned exactly zero in the tested fixture.
-A coloured two-hit case matched `(0.5, 0.25, 0.125)`. The disocclusion example reduced standard deviation by
-only about 5% versus fresh sampling; it is not a general performance improvement. Every spatial candidate
-requires another full path trace, and no real-time or hardware-GPU claim is made. Release and sanitized-host
-checks pass; the external Vulkan driver is not sanitizer-instrumented.
+A coloured two-hit case matched `(0.5, 0.25, 0.125)`. In this disocclusion fixture the count cap reduced
+standard deviation to 77% of an otherwise identical long-history control; the finite-domain audit also
+recovers the exact toy mean after capping. This is not a general convergence or performance guarantee. Each
+spatial candidate requires another full path trace, and scene-change checks copy/compare host buffers; no
+real-time or hardware-GPU claim is made. Release and sanitized-host checks pass; the external Vulkan driver
+is not sanitizer-instrumented.
 
 This does **not** yet handle general materials, direct analytic lights, textured geometry, refraction, volumes,
 arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,

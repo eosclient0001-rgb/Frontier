@@ -95,7 +95,7 @@ void ValidatePathReplayGpu(const char* Driver, const std::string& Shaders)
     Compute.Prepare(Covered, Shaders, false, false, false, false, true);
     const double Reference = ReplayOccludedAreaIntegral(0, 0);
     const double Coarse = ReplayOccludedAreaIntegral(0, 0, 500);
-    DirectGpuMoments Fresh, Reused;
+    DirectGpuMoments Fresh, Reused, LongHistory;
     uint32_t Accepted = 0;
     for (uint32_t Batch = 0; Batch < 4; ++Batch)
     {
@@ -108,16 +108,25 @@ void ValidatePathReplayGpu(const char* Driver, const std::string& Shaders)
         }
         AccumulateReplayCentres(Reused, Compute.ExecuteReplay(Half, 1, Seed + 9, true, false), Half.Width);
         Accepted += Compute.ExtendedStatistics()[20];
-        Require(!Compute.ReplayLastReset, "Changed occluder unexpectedly reset replay history");
+        Require(!Compute.ReplayLastReset && Compute.ReplayLastHistoryCap == 1,
+                "Changed occluder unexpectedly reset history or failed to cap it");
+        for (uint32_t Frame = 0; Frame < 8; ++Frame)
+            (void)Compute.ExecuteReplay(Covered, 1, Seed + Frame, true, false, Frame == 0);
+        AccumulateReplayCentres(LongHistory, Compute.ExecuteReplay(Half, 1, Seed + 9, true, false, false,
+                                                                   {0,0,0}, .01f, false, true), Half.Width);
+        Require(Compute.ReplayLastHistoryCap == 64, "Long-history control did not retain its count");
     }
     std::printf("REPLAY_DISOCCLUSION exact=%.12g quadrature_delta=%.9g fresh=%.12g se=%.12g "
-                "temporal=%.12g se=%.12g std_ratio=%.9g accepted=%u n=%u\n", Reference, std::abs(Reference-Coarse),
-                Fresh.Mean(), Fresh.StandardError(), Reused.Mean(), Reused.StandardError(),
-                Reused.Deviation()/Fresh.Deviation(), Accepted, Reused.Count);
+                "capped=%.12g se=%.12g long=%.12g se=%.12g capped_vs_long_std=%.9g accepted=%u n=%u\n", Reference,
+                std::abs(Reference-Coarse), Fresh.Mean(), Fresh.StandardError(), Reused.Mean(), Reused.StandardError(),
+                LongHistory.Mean(), LongHistory.StandardError(), Reused.Deviation()/LongHistory.Deviation(),
+                Accepted, Reused.Count);
     Require(Accepted == 4 * 5120 && std::abs(Reference-Coarse) < 1e-6 &&
                 std::abs(Fresh.Mean()-Reference) < 6*Fresh.StandardError()+.002 &&
-                std::abs(Reused.Mean()-Reference) < 6*Reused.StandardError()+.002,
-            "Replay after disocclusion failed independent area integral");
+                std::abs(Reused.Mean()-Reference) < 6*Reused.StandardError()+.002 &&
+                std::abs(LongHistory.Mean()-Reference) < 6*LongHistory.StandardError()+.002 &&
+                Reused.Deviation() < .9 * LongHistory.Deviation(),
+            "Replay after disocclusion failed the area integral or long-history variance control");
     for (uint32_t Frame = 0; Frame < 8; ++Frame)
         (void)Compute.ExecuteReplay(Half, 1, 2000 + Frame, true, false, Frame == 0);
     const auto Darkened = Compute.ExecuteReplay(Covered, 1, 2010, true, false);

@@ -9,7 +9,8 @@
 namespace
 {
 template <size_t Extent> double EnumerateReusedMean(const std::array<double, Extent>& Previous,
-                                                     const std::array<double, Extent>& Current, double Floor)
+                                                     const std::array<double, Extent>& Current, double Floor,
+                                                     double Retained = 2)
 {
     // Two independent previous draws, one current draw, and both random selections are enumerated exactly.
     double Result = 0;
@@ -23,7 +24,7 @@ template <size_t Extent> double EnumerateReusedMean(const std::array<double, Ext
                 if (PreviousSum == 0)
                 {
                     // Negative control: count the two discarded zero-target draws as the old algorithm did.
-                    Result += DrawProbability * Current[Fresh] / 3;
+                    Result += DrawProbability * Current[Fresh] / (1 + Retained);
                     continue;
                 }
                 for (size_t Choice = 0; Choice < 2; ++Choice)
@@ -36,16 +37,16 @@ template <size_t Extent> double EnumerateReusedMean(const std::array<double, Ext
                     const double FreshTarget = Current[Fresh] + Floor;
                     const double ReusedTarget = Current[Prior] + Floor;
                     const double FreshWeight = FreshTarget;
-                    const double ReusedWeight = ReusedTarget * PriorWeight * 2;
+                    const double ReusedWeight = ReusedTarget * PriorWeight * Retained;
                     const double Sum = FreshWeight + ReusedWeight;
                     if (Sum == 0) continue;
                     // Explicitly enumerate the final reservoir selection rather than cancelling it algebraically.
                     if (FreshWeight > 0)
                         Result += DrawProbability * PriorSelection * (FreshWeight / Sum) *
-                                  Current[Fresh] * Sum / (3 * FreshTarget);
+                                  Current[Fresh] * Sum / ((1 + Retained) * FreshTarget);
                     if (ReusedWeight > 0)
                         Result += DrawProbability * PriorSelection * (ReusedWeight / Sum) *
-                                  Current[Prior] * Sum / (3 * ReusedTarget);
+                                  Current[Prior] * Sum / ((1 + Retained) * ReusedTarget);
                 }
             }
     return Result;
@@ -62,9 +63,11 @@ template <size_t Extent> bool Validate(const char* Name, const std::array<double
     const double Reference = ExactMean(Current);
     const double WithSupport = EnumerateReusedMean(Previous, Current, .125);
     const double WithoutSupport = EnumerateReusedMean(Previous, Current, 0);
-    const bool Recovered = std::abs(WithSupport - Reference) < 1e-12;
+    const double WithCap = EnumerateReusedMean(Previous, Current, .125, 1);
+    const bool Recovered = std::abs(WithSupport - Reference) < 1e-12 && std::abs(WithCap - Reference) < 1e-12;
     const bool Detected = !RequireBias || std::abs(WithoutSupport - Reference) > .05;
-    std::printf("%s exact=%.12g positive_floor=%.12g zero_floor=%.12g\n", Name, Reference, WithSupport, WithoutSupport);
+    std::printf("%s exact=%.12g positive_floor=%.12g capped_count=%.12g zero_floor=%.12g\n", Name, Reference,
+                WithSupport, WithCap, WithoutSupport);
     return Recovered && Detected;
 }
 } // namespace

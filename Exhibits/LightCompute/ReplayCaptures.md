@@ -1,8 +1,9 @@
 # Diffuse path-replay captures
 
 These are four **actual Vulkan readbacks** of an authored 24-triangle scene rendered on SwiftShader CPU Vulkan,
-not editor or hardware-GPU captures. Each pixel uses primary visibility plus fresh, temporal and spatial
-random-sequence replay; paths are retraced against the current BVH. Every image averages the final 24 of 48
+not editor or hardware-GPU captures. These were rendered at checkpoint `6740615`, before the subsequent
+history-count cap; see the capture log for the exact source hashes. Each pixel uses primary visibility plus
+fresh, temporal and spatial random-sequence replay; paths are retraced against the current BVH. Every image averages the final 24 of 48
 frames in linear RGB, then applies exposure 0.45 and display gamma 2.2. No denoising was applied. The noise
 and occasional bright speckles, particularly after reopening, are genuine limitations of the current reuse
 scheme rather than evidence of calibrated quality.

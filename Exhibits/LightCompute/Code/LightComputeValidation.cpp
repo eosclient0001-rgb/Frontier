@@ -243,7 +243,13 @@ struct LightComputeSubmission
     VkPipeline DiffuseGeneratePipeline = VK_NULL_HANDLE, DiffuseResolvePipeline = VK_NULL_HANDLE;
     VkPipeline RectangleGeneratePipeline = VK_NULL_HANDLE, RectangleResolvePipeline = VK_NULL_HANDLE;
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
-    bool ReplayLastReset = true;
+    bool ReplayLastReset = true, ReplayHasPriorInputs = false, ReplayPreviousPrimary = false;
+    uint32_t ReplayLastHistoryCap = 1, ReplayPreviousBounces = 0;
+    float ReplayPreviousFloor = 0;
+    std::array<float,3> ReplayPreviousEnvironment{};
+    std::array<std::array<float,4>,12> ReplayPreviousCamera{};
+    std::vector<LightComputeFacet> ReplayPreviousFacets;
+    std::vector<LightComputeReceiver> ReplayPreviousReceivers;
     RectangleDomain PreviousRectangle{};
     bool RectangleHistory = false, LastRectangleReset = true;
     std::vector<LightComputeFacet> DiffuseFacets;
@@ -758,7 +764,8 @@ struct LightComputeSubmission
     std::vector<std::array<float, 4>> ExecuteReplay(const LightComputeArchive& Scene, uint32_t Bounces, uint32_t Seed,
                                                     bool Temporal, bool Spatial, bool ResetHistory = false,
                                                     const std::array<float, 3>& Environment = {0,0,0},
-                                                    float PositiveFloor = .01f, bool PrimaryVisibility = false)
+                                                    float PositiveFloor = .01f, bool PrimaryVisibility = false,
+                                                    bool FullHistoryForAudit = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -767,6 +774,26 @@ struct LightComputeSubmission
                 "Invalid replay extent, domain or diffuse scene");
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
         ValidateReplayDomain(Scene, PrimaryVisibility);
+        bool Changed = !ReplayHasPriorInputs || ReplayPreviousBounces != Bounces || ReplayPreviousFloor != PositiveFloor ||
+                       ReplayPreviousPrimary != PrimaryVisibility || ReplayPreviousEnvironment != Environment ||
+                       ReplayPreviousCamera != Scene.Camera ||
+                       ReplayPreviousFacets.size() != Scene.Surfaces.size() ||
+                       ReplayPreviousReceivers.size() != Scene.Receivers.size();
+        if (!Changed)
+            Changed = (!Scene.Surfaces.empty() && std::memcmp(ReplayPreviousFacets.data(), Scene.Surfaces.data(),
+                            Scene.Surfaces.size() * sizeof(LightComputeFacet)) != 0) ||
+                      (!Scene.Receivers.empty() && std::memcmp(ReplayPreviousReceivers.data(), Scene.Receivers.data(),
+                            Scene.Receivers.size() * sizeof(LightComputeReceiver)) != 0);
+        ReplayPreviousFacets = Scene.Surfaces;
+        ReplayPreviousReceivers = Scene.Receivers;
+        ReplayPreviousCamera = Scene.Camera;
+        ReplayPreviousEnvironment = Environment;
+        ReplayPreviousFloor = PositiveFloor;
+        ReplayPreviousBounces = Bounces;
+        ReplayPreviousPrimary = PrimaryVisibility;
+        ReplayHasPriorInputs = true;
+        // Shrink old represented counts, not their per-sample weights, after scene/view/integrator changes.
+        ReplayLastHistoryCap = Changed && !FullHistoryForAudit ? 1u : 64u;
         bool Reset = ResetHistory || Scene.Width != ReceiverWidth || Scene.Height != ReceiverHeight;
         Upload(Scene);
         ReplayLastReset = Reset || HistoryDirty;
@@ -775,7 +802,7 @@ struct LightComputeSubmission
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
         Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), 64};
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
-        Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, 0, 0};
+        Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, 0, ReplayLastHistoryCap};
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, 0};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};

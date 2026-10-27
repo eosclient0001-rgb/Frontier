@@ -70,7 +70,9 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                 {
                     uint Candidate = DecodeReplaySeed(Source.xy);
                     float3 Replayed = EvaluateReplayPath(R, Candidate);
-                    float ReplayedTarget = ReplayTarget(Replayed), Retained = min(Source.w, 64.0);
+                    // A domain-change cap scales represented count and weight together; W remains per sample.
+                    float ReplayedTarget = ReplayTarget(Replayed);
+                    float Retained = min(Source.w, float(max(1u, Extent.Reconstruction.w)));
                     float Weight = ReplayedTarget * Source.z * Retained;
                     Sum += Weight; Count += Retained;
                     if (RandomUnit(SelectionBits) * Sum < Weight)
