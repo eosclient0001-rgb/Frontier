@@ -271,6 +271,20 @@ is reached, stop and notify the owner first — the owner will supply the full r
 Everything in this section is therefore an inventory of what the demo contains, not porting instructions; the
 supplied reference decides D6 and supersedes any mapping below where they differ.
 
+⭐ **Gate superseded by owner direction, 2026-10-27:** the owner explicitly sequenced Phase 7 and directed the
+three tyre models be ported from the HTML demo with Jolt integration and driving proofs. Audit result the port
+was built on: the in-tree demo (`Experimental/SlateReference/{A,B}`) does **not** contain
+`TyreContinuumElasticity.js`, `TyreCarcassProjection.js`, or any XPBD code (the inventory below describes a fuller
+demo than the copy in this repo); its "3D FEM" is the GPU PB-FEM *deformation* in `VehicleVisual.wgsl`, and its
+own text states there is no XPBD carcass in it. Ported 1:1 to `Frontier/Engine/Physics/`: `VehicleSpecification.h`,
+`TyreSlipSolver` (MF6.1, bit-exact vs the JS), `VehicleSolver` (480 Hz, carcass spring in series with GRIT struts),
+`TyreThermalSolver` (core; smoke emission excluded), `TyreDeformation.h` (the WGSL deformation + encoder). The
+XPBD lattice (`TyreCarcassLattice`) is a **new** implementation calibrated to the same tyre, labelled as such
+everywhere — if the owner's full physics reference (the missing continuum module) is supplied, it supersedes the
+lattice. Jolt C++ 5.2.0 integrates loose bodies + a chassis proxy exactly as `JoltWorld.js` does with WASM (D6
+option B honoured: the custom solvers own tyre forces). Proof: `Exhibits/VehiclePhysics/` (29/29 checks). Not yet
+ported from the demo: `RigidBodyWorld.js` (incl. wheels riding debris), fracture, tyre marks, the sculpted course.
+
 💡 The demo's `node_modules/jolt-physics` WASM bindings mirror Jolt's native C++ API almost name-for-name, so
 `JoltWorld.js` ports mechanically. The custom solvers stay custom — Jolt integrates bodies; Frontier computes
 powertrain and tyre forces and applies them at the contact patches.
