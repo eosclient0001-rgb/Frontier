@@ -78,6 +78,42 @@
     {
       "path": "Shader/ReservoirTemporal.wgsl",
       "git_blob": "a1d4f4eb272f38690ebde1f79d90d59cece6ede9"
+    },
+    {
+      "path": "Source/PlumeSpace.js",
+      "git_blob": "180cb02e8bd5ba29a63db820c5e5430460718727"
+    },
+    {
+      "path": "Source/SpatialGrid.js",
+      "git_blob": "01db6519bc8569d8442910373b6a1aa939a7746f"
+    },
+    {
+      "path": "Source/PlumeSourceProjection.js",
+      "git_blob": "f16facc11ebaa199439a055cb789aef5c8a7bd79"
+    },
+    {
+      "path": "Source/SmokeSequence.js",
+      "git_blob": "89fa45b85b86bfb9c090ccb88c4051dabdf728d2"
+    },
+    {
+      "path": "Shader/PlumeAdvection.wgsl",
+      "git_blob": "4c0b128800bf63f3e9c048f48ad089c534316cb5"
+    },
+    {
+      "path": "Shader/PlumeMarch.wgsl",
+      "git_blob": "26d673d451760fce7a6bb9a795d756bd0c7aa9cc"
+    },
+    {
+      "path": "Shader/PlumePressure.wgsl",
+      "git_blob": "3ac6350519526ec2584e1f4fceadfafa19eac573"
+    },
+    {
+      "path": "Shader/PlumeRecords.wgsl",
+      "git_blob": "be2f043db792f5dd45692c65d761b2e58892be4f"
+    },
+    {
+      "path": "Shader/PlumeVorticity.wgsl",
+      "git_blob": "3fa7354077e5b8f239099289dd2d4702253cafd7"
     }
   ]
 }

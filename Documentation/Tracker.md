@@ -37,6 +37,15 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   Four earlier noisy SwiftShader readbacks also show bounce and blocker changes. [Audit and scope](../Exhibits/LightCompute/PathReplay.md),
   [captures](../Exhibits/LightCompute/ReplayCaptures.md).
 
+## Gas and plume source audit — 2026-10-27
+
+- Retained the exact full VehicleHMI smoke/fire JS and five WGSL programs, including its distinct moving-grid
+  helper. All 28 retained full-demo blob hashes match; eight Node reference and stencil checks pass.
+- A periodic mathematical audit exposes a mismatch between the reference's centred divergence/gradient and its
+  nearest-neighbour pressure Laplacian; this is not a WGSL execution or a measurement of the bounded demo.
+  Smoke/fire remains unported to the native renderer and unverified on Vulkan; liquid-fluid scope is unidentified.
+  [Gas reference, evidence and next steps](../Exhibits/FluidReference/README.md).
+
 ## Vulkan solar optics and GI audit — 2026-10-27
 
 - Opt-in finite-pixel Sun and mixed warm/anamorphic flares execute in the LightCompute Vulkan validation
