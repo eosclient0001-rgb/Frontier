@@ -6,17 +6,25 @@
 
 namespace
 {
-void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibility)
+void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibility, bool RoughOpaque)
 {
-    Require(Scene.Lights.empty() && Scene.Surfaces.size() == Scene.Visibility.Corners.size() &&
+    Require(Scene.Lights.empty() && (!RoughOpaque || Scene.Angles.empty()) &&
+                Scene.Surfaces.size() == Scene.Visibility.Corners.size() &&
                 (Scene.Surfaces.empty() == Scene.Visibility.Enclosures.empty()),
             "Replay requires matching triangle/BVH extents and no analytic lights");
     for (size_t I = 0; I < Scene.Surfaces.size(); ++I)
     {
         const auto& F = Scene.Surfaces[I]; const auto& T = Scene.Visibility.Corners[I];
-        Require(F.A == T.A && F.B == T.B && F.C == T.C && F.Emissive[3] == 0 && F.OpticalToken[0] == 0 &&
+        Require(F.A == T.A && F.B == T.B && F.C == T.C && F.Emissive[3] == 0 &&
                     std::isfinite(F.OpticalToken[3]) && F.OpticalToken[3] > 0,
-                "Replay accepts only matching, identified, untextured nonmetallic facets");
+                "Replay accepts only matching, identified, untextured opaque facets");
+        if (RoughOpaque)
+            Require(std::isfinite(F.OpticalToken[0]) && F.OpticalToken[0] >= 0 && F.OpticalToken[0] <= 1 &&
+                        std::isfinite(F.OpticalToken[1]) && F.OpticalToken[1] >= 1 && F.OpticalToken[1] <= 3 &&
+                        std::isfinite(F.OpticalToken[2]) && F.OpticalToken[2] >= 0 && F.OpticalToken[2] <= 1 &&
+                        std::isfinite(F.AlbedoRoughness[3]) && F.AlbedoRoughness[3] >= .25f &&
+                        F.AlbedoRoughness[3] <= 1, "Rough replay facet lies outside the guarded GGX domain");
+        else Require(F.OpticalToken[0] == 0, "Diffuse replay rejects metallic facets");
         for (uint32_t C = 0; C < 3; ++C)
             Require(std::isfinite(F.AlbedoRoughness[C]) && F.AlbedoRoughness[C] >= 0 && F.AlbedoRoughness[C] <= 1 &&
                         std::isfinite(F.Emissive[C]) && F.Emissive[C] >= 0 && F.Emissive[C] <= 256 &&
@@ -76,9 +84,16 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
         {
             Require(R.PositionHit[3] == 0 || R.PositionHit[3] == 1, "Invalid replay receiver hit indicator");
             if (R.PositionHit[3] == 0) continue;
-            Require(R.ViewMetallic[3] == 0 && std::isfinite(R.MotionPositionToken[3]) && R.MotionPositionToken[3] > 0,
-                    "Replay receiver must be nonmetallic with a positive surface token");
-            double NormalSquared = 0;
+            Require(std::isfinite(R.MotionPositionToken[3]) && R.MotionPositionToken[3] > 0,
+                    "Replay receiver must have a positive surface token");
+            if (RoughOpaque)
+                Require(std::isfinite(R.ViewMetallic[3]) && R.ViewMetallic[3] >= 0 && R.ViewMetallic[3] <= 1 &&
+                            std::isfinite(R.AlbedoIor[3]) && R.AlbedoIor[3] >= 1 && R.AlbedoIor[3] <= 3 &&
+                            std::isfinite(R.ResidualSpecular[3]) && R.ResidualSpecular[3] >= 0 && R.ResidualSpecular[3] <= 1 &&
+                            std::isfinite(R.NormalRoughness[3]) && R.NormalRoughness[3] >= .25f &&
+                            R.NormalRoughness[3] <= 1, "Rough replay receiver lies outside the guarded GGX domain");
+            else Require(R.ViewMetallic[3] == 0, "Diffuse replay rejects metallic receivers");
+            double NormalSquared = 0, ViewSquared = 0, NormalView = 0;
             for (uint32_t C = 0; C < 3; ++C)
             {
                 Require(std::isfinite(R.PositionHit[C]) && std::isfinite(R.NormalRoughness[C]) &&
@@ -86,9 +101,16 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
                             std::isfinite(R.MotionPositionToken[C]) && std::isfinite(R.ResidualSpecular[C]) &&
                             R.ResidualSpecular[C] >= 0, "Invalid replay receiver");
                 NormalSquared += double(R.NormalRoughness[C]) * R.NormalRoughness[C];
+                if (RoughOpaque)
+                {
+                    Require(std::isfinite(R.ViewMetallic[C]), "Invalid rough replay view");
+                    ViewSquared += double(R.ViewMetallic[C]) * R.ViewMetallic[C];
+                    NormalView += double(R.NormalRoughness[C]) * R.ViewMetallic[C];
+                }
             }
-            Require(NormalSquared > 1e-12 && std::isfinite(R.MotionPixel[0]) && std::isfinite(R.MotionPixel[1]) &&
-                        std::isfinite(R.MotionPixel[3]), "Invalid replay receiver normal or motion");
+            Require(NormalSquared > 1e-12 && (!RoughOpaque || (ViewSquared > 1e-12 && NormalView > 1e-8)) &&
+                        std::isfinite(R.MotionPixel[0]) && std::isfinite(R.MotionPixel[1]) &&
+                        std::isfinite(R.MotionPixel[3]), "Invalid replay receiver normal, view or motion");
         }
 }
 } // namespace

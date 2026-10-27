@@ -20,13 +20,38 @@ ReplayReferenceVector ReplayReferenceCross(ReplayReferenceVector A, ReplayRefere
 ReplayReferenceVector ReplayReferenceUnit(ReplayReferenceVector A)
 { return ReplayReferenceScale(A, 1 / std::sqrt(ReplayReferenceDot(A,A))); }
 ReplayReferenceVector ReplayReferenceXyz(const std::array<float,4>& P) { return {P[0],P[1],P[2]}; }
+std::array<double,3> RoughReplayBrdf(const LightComputeReceiver& R, ReplayReferenceVector Incoming)
+{
+    const auto N = ReplayReferenceUnit(ReplayReferenceXyz(R.NormalRoughness));
+    const auto V = ReplayReferenceUnit(ReplayReferenceXyz(R.ViewMetallic));
+    const double NV = std::max(0.0, ReplayReferenceDot(N,V)), NL = std::max(0.0, ReplayReferenceDot(N,Incoming));
+    if (NV <= 0 || NL <= 0) return {};
+    const auto H = ReplayReferenceUnit(ReplayReferenceAdd(V,Incoming));
+    const double NH = std::clamp(ReplayReferenceDot(N,H), 0.0, 1.0);
+    const double VH = std::clamp(ReplayReferenceDot(V,H), 0.0, 1.0);
+    const double Rough = R.NormalRoughness[3], Alpha = Rough*Rough, Alpha2 = Alpha*Alpha;
+    const double Denom = NH*NH*(Alpha2-1)+1, D = Alpha2/(3.14159265358979323846*Denom*Denom);
+    const double Visibility = .5 / (NL*std::sqrt(NV*NV*(1-Alpha2)+Alpha2) +
+                                     NV*std::sqrt(NL*NL*(1-Alpha2)+Alpha2));
+    const double Ior = R.AlbedoIor[3], Ratio = (Ior-1)/(Ior+1), Metallic = R.ViewMetallic[3];
+    const double Dielectric = Ratio*Ratio*R.ResidualSpecular[3]*2;
+    std::array<double,3> Value{};
+    for (uint32_t C = 0; C < 3; ++C)
+    {
+        const double Base = R.AlbedoIor[C], F0 = Dielectric*(1-Metallic) + Base*Metallic;
+        const double Fresnel = F0 + (1-F0)*std::pow(1-VH,5);
+        Value[C] = D*Visibility*Fresnel + (1-Fresnel)*Base*(1-Metallic)/3.14159265358979323846;
+    }
+    return Value;
+}
 ReplayReferenceVector ReplayReferencePath(const LightComputeArchive& Scene, const LightComputeReceiver& Receiver,
-                                           uint32_t Hits, std::mt19937_64& Random)
+                                           uint32_t Hits, std::mt19937_64& Random, bool RoughOpaque = false)
 {
     ReplayReferenceVector Normal = ReplayReferenceUnit(ReplayReferenceXyz(Receiver.NormalRoughness));
     ReplayReferenceVector Origin = ReplayReferenceAdd(ReplayReferenceXyz(Receiver.PositionHit),
                                                        ReplayReferenceScale(Normal, .001));
-    ReplayReferenceVector Throughput = ReplayReferenceXyz(Receiver.AlbedoIor), Result{};
+    ReplayReferenceVector Throughput{1,1,1}, Result{};
+    LightComputeReceiver Current = Receiver;
     for (uint32_t Bounce = 0; Bounce < Hits; ++Bounce)
     {
         const double U = std::generate_canonical<double,53>(Random), V = std::generate_canonical<double,53>(Random);
@@ -39,6 +64,10 @@ ReplayReferenceVector ReplayReferencePath(const LightComputeArchive& Scene, cons
         auto Direction = ReplayReferenceAdd(ReplayReferenceScale(Tangent, R*std::cos(Phi)),
                                             ReplayReferenceScale(Bitangent, R*std::sin(Phi)));
         Direction = ReplayReferenceUnit(ReplayReferenceAdd(Direction, ReplayReferenceScale(Normal, std::sqrt(1-U))));
+        const auto Scatter = RoughOpaque ? RoughReplayBrdf(Current, Direction) : ReplayReferenceXyz(Current.AlbedoIor);
+        for (uint32_t C = 0; C < 3; ++C)
+            Throughput[C] *= Scatter[C] * (RoughOpaque ? 3.14159265358979323846 : 1);
+        if (std::max({Throughput[0],Throughput[1],Throughput[2]}) <= 0) break;
         double Distance = 1e30, HitU = 0, HitV = 0;
         size_t Hit = Scene.Surfaces.size();
         // Brute-force Möller–Trumbore, not the GPU's packed BVH traversal.
@@ -65,12 +94,7 @@ ReplayReferenceVector ReplayReferencePath(const LightComputeArchive& Scene, cons
             break;
         }
         const auto& F = Scene.Surfaces[Hit];
-        for (uint32_t C = 0; C < 3; ++C)
-        {
-            Result[C] += Throughput[C] * F.Emissive[C];
-            Throughput[C] *= F.AlbedoRoughness[C];
-        }
-        if (std::max({Throughput[0],Throughput[1],Throughput[2]}) <= 0) break;
+        for (uint32_t C = 0; C < 3; ++C) Result[C] += Throughput[C] * F.Emissive[C];
         const auto N = ReplayReferenceAdd(ReplayReferenceAdd(ReplayReferenceScale(ReplayReferenceXyz(F.NormalA), 1-HitU-HitV),
                                                               ReplayReferenceScale(ReplayReferenceXyz(F.NormalB), HitU)),
                                            ReplayReferenceScale(ReplayReferenceXyz(F.NormalC), HitV));
@@ -78,18 +102,24 @@ ReplayReferenceVector ReplayReferencePath(const LightComputeArchive& Scene, cons
         if (ReplayReferenceDot(Normal, Direction) > 0) Normal = ReplayReferenceScale(Normal, -1);
         Origin = ReplayReferenceAdd(ReplayReferenceAdd(Origin, ReplayReferenceScale(Direction, Distance)),
                                     ReplayReferenceScale(Normal, .001));
+        Current = {};
+        Current.NormalRoughness = {float(Normal[0]),float(Normal[1]),float(Normal[2]),F.AlbedoRoughness[3]};
+        Current.ViewMetallic = {float(-Direction[0]),float(-Direction[1]),float(-Direction[2]),F.OpticalToken[0]};
+        Current.AlbedoIor = {F.AlbedoRoughness[0],F.AlbedoRoughness[1],F.AlbedoRoughness[2],F.OpticalToken[1]};
+        Current.ResidualSpecular[3] = F.OpticalToken[2];
     }
     return Result;
 }
 using ReplayRgbMoments = std::array<DirectGpuMoments,3>;
-ReplayRgbMoments ReplayReferenceIntegrate(const LightComputeArchive& Scene, uint32_t Hits, uint64_t Seed)
+ReplayRgbMoments ReplayReferenceIntegrate(const LightComputeArchive& Scene, uint32_t Hits, uint64_t Seed,
+                                            bool RoughOpaque = false)
 {
     ReplayRgbMoments Result;
     std::mt19937_64 Random(Seed);
     const auto& Receiver = Scene.Receivers[size_t(Scene.Width) + 1];
     for (uint32_t Sample = 0; Sample < 400000; ++Sample)
     {
-        const auto Value = ReplayReferencePath(Scene, Receiver, Hits, Random);
+        const auto Value = ReplayReferencePath(Scene, Receiver, Hits, Random, RoughOpaque);
         for (uint32_t C = 0; C < 3; ++C) Result[C].Accumulate(Value[C]);
     }
     return Result;

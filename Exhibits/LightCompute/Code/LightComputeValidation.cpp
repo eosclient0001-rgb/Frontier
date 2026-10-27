@@ -244,7 +244,8 @@ struct LightComputeSubmission
     VkPipeline DiffuseGeneratePipeline = VK_NULL_HANDLE, DiffuseResolvePipeline = VK_NULL_HANDLE;
     VkPipeline RectangleGeneratePipeline = VK_NULL_HANDLE, RectangleResolvePipeline = VK_NULL_HANDLE;
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
-    bool ReplayLastReset = true, ReplayHasPriorInputs = false, ReplayPreviousPrimary = false;
+    bool ReplayLastReset = true, ReplayHasPriorInputs = false, ReplayPreviousPrimary = false,
+         ReplayPreviousRoughOpaque = false;
     uint32_t ReplayLastHistoryCap = 1, ReplayPreviousBounces = 0;
     float ReplayPreviousFloor = 0;
     std::array<float,3> ReplayPreviousEnvironment{};
@@ -766,7 +767,7 @@ struct LightComputeSubmission
                                                     bool Temporal, bool Spatial, bool ResetHistory = false,
                                                     const std::array<float, 3>& Environment = {0,0,0},
                                                     float PositiveFloor = .01f, bool PrimaryVisibility = false,
-                                                    bool FullHistoryForAudit = false)
+                                                    bool FullHistoryForAudit = false, bool RoughOpaque = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -774,9 +775,10 @@ struct LightComputeSubmission
                     PositiveFloor <= 10 && Scene.Lights.empty() && Scene.Surfaces.size() == Scene.Visibility.Corners.size(),
                 "Invalid replay extent, domain or diffuse scene");
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
-        ValidateReplayDomain(Scene, PrimaryVisibility);
+        ValidateReplayDomain(Scene, PrimaryVisibility, RoughOpaque);
         bool Changed = !ReplayHasPriorInputs || ReplayPreviousBounces != Bounces || ReplayPreviousFloor != PositiveFloor ||
-                       ReplayPreviousPrimary != PrimaryVisibility || ReplayPreviousEnvironment != Environment ||
+                       ReplayPreviousPrimary != PrimaryVisibility || ReplayPreviousRoughOpaque != RoughOpaque ||
+                       ReplayPreviousEnvironment != Environment ||
                        ReplayPreviousCamera != Scene.Camera ||
                        ReplayPreviousFacets.size() != Scene.Surfaces.size() ||
                        ReplayPreviousReceivers.size() != Scene.Receivers.size();
@@ -792,6 +794,7 @@ struct LightComputeSubmission
         ReplayPreviousFloor = PositiveFloor;
         ReplayPreviousBounces = Bounces;
         ReplayPreviousPrimary = PrimaryVisibility;
+        ReplayPreviousRoughOpaque = RoughOpaque;
         ReplayHasPriorInputs = true;
         // Shrink old represented counts, not their per-sample weights, after scene/view/integrator changes.
         ReplayLastHistoryCap = Changed && !FullHistoryForAudit ? 1u : 64u;
@@ -804,7 +807,7 @@ struct LightComputeSubmission
         Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), 64};
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
         Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, 0, ReplayLastHistoryCap};
-        Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, 0};
+        Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, RoughOpaque ? 64u : 0u};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
         std::memset(Buffers[7].Address, 0, 96);
@@ -1609,11 +1612,18 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PathReplayCapture.h"
 #include "PathReplayGpuValidation.h"
 #include "ReplayRoomReference.h"
+#include "RoughReplayValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--rough-replay")
+        {
+            ValidateRoughReplay(Arguments[1], Arguments[2]);
+            ValidateRoughReplayRoom(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--replay-room-reference")
         {
             ValidateReplayRoomReference(Arguments[1], Arguments[2]);

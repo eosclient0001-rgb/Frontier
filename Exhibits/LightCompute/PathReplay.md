@@ -26,17 +26,19 @@ adaptive reuse, or full ReSTIR GI.
 ## Bounded Vulkan implementation
 
 `PathReplayReservoir.slang` now runs the replay idea through the LightCompute Vulkan host. It traces opaque,
-untextured Lambertian triangles against the current BVH, up to eight hits, with two-sided constant facet
-radiance and an optional uniform environment. Temporal candidates use the supplied prior-pixel/position/token
-guide; spatial candidates may originate on different surfaces. Each reused seed is fully retraced through the
+untextured triangles against the current BVH, up to eight hits, with two-sided constant facet radiance and an
+optional uniform environment. The default transport is Lambertian; an opt-in bounded rough-opaque mode uses
+the existing GGX/diffuse BRDF with cosine-hemisphere sampling. Temporal candidates use the supplied
+prior-pixel/position/token guide; spatial candidates may originate on different surfaces. Each reused seed is fully retraced through the
 **current** scene, including its occluders, rather than carrying a stale visibility result. Pre-spatial
 reservoirs are retained; the selection floor is positive (`0.01` in the tests), and the history count is
 bounded. On a scene, receiver, camera, environment or integrator change, the host deterministically limits the
 previous reservoir's represented count to one for that frame while retaining its seed and per-sample weight.
 This reduces reliance on a single stale-domain candidate without a global reset; the count can grow again in
 subsequent unchanged frames. A changed source, blocker, receiver or bounce budget can therefore be replayed
-without blindly copying the old radiance. The host rejects corrupt BVHs, zero selection floor, metallic and
-textured facets.
+without blindly copying the old radiance. The host rejects corrupt BVHs, zero selection floor and textured
+facets. The original Lambertian mode rejects metallic surfaces; the optional rough mode accepts metallic
+fractions 0–1 and roughness 0.25–1, while rejecting near-delta materials.
 
 | SwiftShader CPU Vulkan fixture | Independent target | Reused result |
 |---|---:|---:|
@@ -61,11 +63,28 @@ brute-force Möller–Trumbore intersections, a different cosine basis and `mt19
 and RNG. Three reference cases each used 400,000 paths; 16 Vulkan batches supplied 16,384 sampled centres per
 case. All RGB channels passed the specified six-combined-SE-plus-tolerance test for one-hit open, four-hit open,
 four-hit blocked fresh, and four-hit blocked after temporal/spatial reuse. For example, blocked/reused red was
-`0.025697 ± 0.000633` batch SE versus CPU `0.027512 ± 0.000438` SE. The GPU pixel and batch standard errors
+`0.025697 ± 0.000633` batch SE versus CPU `0.027470 ± 0.000436` SE. The GPU pixel and batch standard errors
 are both recorded; independence and finite-sample tails remain assumptions. Both implementations deliberately
 share the same diffuse scene, ray offset and transport model, so this is an independent implementation check,
 not measured real-world ground truth. [Release](Results/ReplayRoomReference-release.txt) ·
 [sanitized host](Results/ReplayRoomReference-sanitized.txt).
+
+### Rough opaque extension
+
+The opt-in mode evaluates the repository's single-layer GGX/diffuse BRDF at each bounce and multiplies
+throughput by `π × BRDF`, the weight for a cosine-distributed direction. Independent double-precision
+hemisphere quadrature agrees within the recorded statistical bounds for a dielectric and a rough metallic
+receiver, including a dielectric-to-metal temporal/spatial transition. For the reused metallic red channel,
+quadrature was `0.685029`, versus `0.671844 ± 0.005604` batch SE over 8,192 centres. The CPU quadrature
+changed by less than `0.0001` between 256×512 and 512×1024 directions.
+
+A separate 24-triangle rough-material room used 400,000 CPU paths per reference and 8 Vulkan batches of
+1,024 centres. Four-hit open, blocked fresh, and blocked after moving-occluder reuse passed all RGB bounds.
+For blocked/reused red, the CPU mean was `0.022068 ± 0.000335` SE and Vulkan was `0.022388 ± 0.001282`
+pixel SE. These tests validate the guarded implementation against the same model, not the real-world accuracy
+of that material model. Cosine sampling can have high variance for glossy lobes; there is no importance-sampled
+GGX proposal, and perfect mirrors are deliberately rejected. [Release](Results/RoughReplay-release.txt) ·
+[sanitized host](Results/RoughReplay-sanitized.txt).
 
 This does **not** yet handle general materials, direct analytic lights, textured geometry, refraction, volumes,
 arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,
@@ -82,6 +101,8 @@ bash Exhibits/LightCompute/RunPathReplayGpu.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunPathReplayGpu.sh
 bash Exhibits/LightCompute/RunReplayRoomReference.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunReplayRoomReference.sh
+bash Exhibits/LightCompute/RunRoughReplay.sh
+SANITIZE=1 bash Exhibits/LightCompute/RunRoughReplay.sh
 ```
 
 [Release output](Results/PathDomainSupport-release.txt) · [sanitized output](Results/PathDomainSupport-sanitized.txt)

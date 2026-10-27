@@ -1,7 +1,7 @@
 /*==========================================================================================================================================
                                                   PATHREPLAYRESERVOIR.SLANG
 ==========================================================================================================================================*/
-// 🧩 Reservoir sampling of replayable diffuse-path random sequences in a common positive-support domain.
+// 🧩 Reservoir sampling of replayable diffuse or rough-opaque random sequences in a common positive-support domain.
 // 📝 Every reused sequence is fully retraced in the current triangle BVH. This is not vertex reconnection,
 //    a hardware ray-query implementation, or a complete general-material ReSTIR GI renderer.
 #include "LightInfluence.slang"
@@ -22,10 +22,15 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
     uint Bits = Seed;
     float3 Normal = Unit(Receiver.NormalRoughness.xyz);
     float3 Origin = Receiver.PositionHit.xyz + Normal * .001;
-    float3 Throughput = clamp(Receiver.AlbedoIor.xyz, 0, 1), Radiance = 0;
+    float3 Throughput = 1, Radiance = 0;
+    bool RoughOpaque = (Extent.Primary.w & 64u) != 0;
+    SurfacePoint Current = Receiver;
     for (uint Bounce = 0; Bounce < Extent.Primary.z; ++Bounce)
     {
         float3 Direction = ReplayDirection(Normal, Bits), Strike;
+        // With cosine-weighted sampling, f*cos/pdf = pi*f. The original diffuse mode stays Lambertian.
+        Throughput *= RoughOpaque ? 3.141592653589793 * Brdf(Current, Direction) : clamp(Current.AlbedoIor.xyz, 0, 1);
+        if (max(Throughput.x, max(Throughput.y, Throughput.z)) <= 0) break;
         uint Index = NearestFacet(Origin, Direction, .0001, 1e30, Strike);
         if (Index == 0xffffffffu)
         {
@@ -34,11 +39,14 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
         }
         FacetCorners F = Facets[Index];
         Radiance += Throughput * max(F.Emissive.xyz, 0); // Two-sided constant facet radiance.
-        Throughput *= clamp(F.AlbedoRoughness.xyz, 0, 1);
-        if (max(Throughput.x, max(Throughput.y, Throughput.z)) <= 0) break;
         Normal = Unit(F.NormalA.xyz * (1 - Strike.y - Strike.z) + F.NormalB.xyz * Strike.y + F.NormalC.xyz * Strike.z);
         if (dot(Normal, Direction) > 0) Normal = -Normal;
         Origin = Origin + Direction * Strike.x + Normal * .001;
+        Current = (SurfacePoint)0;
+        Current.NormalRoughness = float4(Normal, F.AlbedoRoughness.w);
+        Current.ViewMetallic = float4(-Direction, F.OpticalToken.x);
+        Current.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
+        Current.ResidualSpecular.w = F.OpticalToken.z;
     }
     return Radiance;
 }
@@ -49,7 +57,8 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
     if (Pixel >= Extent.Dimensions.x) return;
     SurfacePoint R = Receivers[Pixel];
     float4 Packed = 0, SelectedRadiance = 0;
-    if (R.PositionHit.w != 0 && R.MotionPositionToken.w > 0 && R.ViewMetallic.w == 0)
+    if (R.PositionHit.w != 0 && R.MotionPositionToken.w > 0 &&
+        (R.ViewMetallic.w == 0 || (Extent.Primary.w & 64u) != 0))
     {
         uint SeedBits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
         uint SelectionBits = (Extent.Sampling.x * 277803737u + 1597334677u) ^ (Pixel * 2891336453u + 1u);
@@ -122,7 +131,7 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
         }
     float3 Indirect = Count > 0 ? Chosen * (Sum / (Count * ChosenTarget)) : float3(0);
     OutputColour[Pixel] = float4(Indirect + R.ResidualSpecular.xyz, 1);
-    // Persist only pre-spatial history; all cross-pixel candidates are independently replayed next time.
+    // Persist only pre-spatial history; cross-pixel candidates are retraced, not assumed statistically independent.
     OutputColour[ReplaySlot(0, Pixel)] = Local;
     OutputColour[ReplaySlot(1, Pixel)] = float4(R.PositionHit.xyz, R.PositionHit.w != 0 ? R.MotionPositionToken.w : 0);
 }
