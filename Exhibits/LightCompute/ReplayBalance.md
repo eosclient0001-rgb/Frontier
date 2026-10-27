@@ -44,5 +44,6 @@ SANITIZE=1 bash Exhibits/LightCompute/RunReplayBalance.sh
 ```
 
 [Release](Results/ReplayBalance-release.txt) · [sanitized host](Results/ReplayBalance-sanitized.txt) ·
-[facet-only mode](FacetReplay.md) · [visibility endpoint audit](ReplayEndpoint.md).
+[six comparison captures](ReplayBalanceCaptures.md) · [facet-only mode](FacetReplay.md) ·
+[visibility endpoint audit](ReplayEndpoint.md).
 The external SwiftShader driver is not sanitizer-instrumented; hardware-GPU and editor validation remain open.

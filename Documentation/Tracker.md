@@ -18,7 +18,8 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   a reproduced near-source light leak is fixed in a bounded open-segment test, subject to floating-point limits.
   [Endpoint audit](../Exhibits/LightCompute/ReplayEndpoint.md). Optional balanced facet/BSDF sampling passes
   four-hit references but helps a large-light variance fixture and worsens a small-light one; no timing claim.
-  [Sampling comparison](../Exhibits/LightCompute/ReplayBalance.md).
+  [Sampling comparison](../Exhibits/LightCompute/ReplayBalance.md),
+  [six Vulkan comparison captures](../Exhibits/LightCompute/ReplayBalanceCaptures.md).
   [Facet sampling](../Exhibits/LightCompute/FacetReplay.md), [four new Vulkan captures](../Exhibits/LightCompute/FacetReplayCaptures.md).
   Four earlier noisy SwiftShader readbacks also show bounce and blocker changes. [Audit and scope](../Exhibits/LightCompute/PathReplay.md),
   [captures](../Exhibits/LightCompute/ReplayCaptures.md).
