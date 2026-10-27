@@ -9,8 +9,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 - An isolated SwiftShader Vulkan experiment now retraces temporal and spatial reservoir seeds in the current
   opaque diffuse triangle scene. Moving-occluder, source, receiver and bounce-budget fixtures match independent
   area integrals or bounded plane results through four hits; changed visibility is recomputed. This is not the
-  demo's geometric reconnection and does not integrate general materials or a production/editor frame. Multiple
-  render captures are still pending. [Audit and scope](../Exhibits/LightCompute/PathReplay.md).
+  demo's geometric reconnection and does not integrate general materials or a production/editor frame. Four noisy
+  SwiftShader readbacks show bounce and blocker changes. [Audit and scope](../Exhibits/LightCompute/PathReplay.md),
+  [captures](../Exhibits/LightCompute/ReplayCaptures.md).
 
 ## Vulkan solar optics and GI audit — 2026-10-27
 

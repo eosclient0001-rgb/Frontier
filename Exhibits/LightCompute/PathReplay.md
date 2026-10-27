@@ -52,8 +52,8 @@ checks pass; the external Vulkan driver is not sanitizer-instrumented.
 
 This does **not** yet handle general materials, direct analytic lights, textured geometry, refraction, volumes,
 arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,
-not the retained demo's endpoint-reconnection algorithm, and rare-event variance may be large. Multiple
-actual render captures are still pending.
+not the retained demo's endpoint-reconnection algorithm, and rare-event variance may be large. Four noisy
+actual captures are shown in [ReplayCaptures.md](ReplayCaptures.md).
 
 [Release Vulkan output](Results/PathReplay-vulkan-release.txt) ·
 [sanitized Vulkan output](Results/PathReplay-vulkan-sanitized.txt)
