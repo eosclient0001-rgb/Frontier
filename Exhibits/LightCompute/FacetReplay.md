@@ -48,7 +48,9 @@ The implementation remains a full random-sequence replay experiment, not classic
 reconnection or an integrated editor renderer. It handles bounded opaque triangles, constant two-sided
 facet radiance and the existing uniform environment; it does not handle textured or transparent sources,
 analytic lights, volumes or general materials. Ray offsets and finite shadow-endpoint tolerances can miss
-blockers extremely close to a source. Uniform triangle selection can be inefficient with many unequal lights.
+blockers extremely close to a source. A blocker 84 float32 ULPs in front of the light leaked nearly the entire
+open-light contribution in a [reproduced negative case](Results/ReplayEndpoint-before.txt). Uniform triangle
+selection can be inefficient with many unequal lights.
 Finite 32-bit RNG streams and the positive target floor are not a proof of independence or continuous support.
 
 ```bash
