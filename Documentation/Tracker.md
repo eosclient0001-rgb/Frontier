@@ -50,6 +50,11 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 ## Vulkan solar optics and GI audit — 2026-10-27
 
+- Isolated SwiftShader readbacks now verify the existing analytic starburst: six blades make six spikes, five
+  make ten, aperture rotation moves them, and opaque source cover removes them. Starburst, warm streak and
+  blue anamorphic layers add together. Three inspected images and release/sanitized results are in the
+  [starburst audit](../Exhibits/LightCompute/SolarStarburst.md). This is not the demo's exact burst, editor
+  integration, physical-GPU validation or measured-lens calibration.
 - Opt-in finite-pixel Sun and mixed warm/anamorphic flares execute in the LightCompute Vulkan validation
   host, with limb-weighted opaque triangle and geometric-horizon visibility. SwiftShader readbacks pass flux,
   Cartesian integration and partial-occlusion checks. The editor remains unconnected; no physical GPU,

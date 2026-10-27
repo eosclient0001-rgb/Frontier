@@ -26,6 +26,8 @@ nonzero and additive within `3e-8` of peak. An illuminated scene test preserved 
 while adding solar light to the sky. These are model/invariant tests, not photographic fidelity or lens
 measurements. Exact output and source hashes: [release](Results/SolarOptics-vulkan-release.txt) and
 [sanitized host](Results/SolarOptics-vulkan-sanitized.txt); the external driver is not sanitizer-instrumented.
+The later [isolated starburst audit](SolarStarburst.md) checks six- and five-blade spike counts, rotation,
+opaque cover, and simultaneous starburst/warm/blue layers, with three SwiftShader readbacks.
 
 The default solar diameter is `1919.253` arcseconds, consistent with NASA's mean `1919` arcseconds at 1 AU
 ([NASA Sun fact sheet](https://nssdc.gsfc.nasa.gov/planetary/factsheet/sunfact.html)). Size varies with distance.

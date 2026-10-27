@@ -1646,6 +1646,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PriorExitanceValidation.h"
 #include "UnifiedSceneValidation.h"
 #include "SolarOpticsValidation.h"
+#include "SolarStarburstValidation.h"
 #include "SolarCaptureGpu.h"
 #include "DirectSpatialGpuValidation.h"
 #include "StaticDiffuseGpuValidation.h"
@@ -1671,6 +1672,11 @@ int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && std::string(Arguments[3]) == "--solar-starburst")
+        {
+            ValidateSolarStarburst(Arguments[1], Arguments[2], Arguments[4]);
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-texture-motion")
         {
             CaptureReplayTextureMotion(Arguments[1], Arguments[2], Arguments[4]);
