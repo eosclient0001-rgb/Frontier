@@ -84,6 +84,28 @@ not the new ground fill.
 | Raster checks | Ground coverage/reprojection, finite radiance, once-only shadows, blue fill, receiver rejection, grazing-Sun guard | `Results/RasterTiming.txt` |
 | HDR ramp 1 / 2 / 4 / 8 | Display bytes 202 / 224 / 238 / 246, no premature white clipping | `Results/RasterTiming.txt` |
 
+### Separate Project Drive vehicle core
+
+The hook-based Project Drive core at `SultanAladin/Frontier-` commit `3f14808a6dcc909ae64070d62639a7019f5de794`
+is now available separately under `Frontier/Engine/Physics/ProjectDrive/`. It includes its contact fan, suspension,
+Pacejka forces **and aligning torque**, slip dynamics, drivetrain, brakes/ABS, aerodynamics and thermal model. It is
+not the existing HTML-demo vehicle solver; hosts must bind the Project Drive chassis/ground hooks and opt into this
+module. A visual bridge feeds Project Drive wheel telemetry and host-supplied pressures into the new demo XPBD/solid
+shape models without feeding their prescribed reactions back into the Project Drive chassis.
+
+`RunProjectDriveValidation.sh` verifies the retained reference blob hashes, preprocesses each of six imported core
+translation units against the unmodified source, and separately builds/runs both implementations. Source and imported
+outputs match for 7,350 force/torque cases, 4,320 transient-slip steps, 8,640 drivetrain steps, and the upstream
+invariant and mock-chassis suites (126 checks). A separate 480-step mock-chassis test checks the visual bridge and
+confirms identical dynamics with and without it. Normal and sanitizer outputs are in `Results/ProjectDrive*.txt`.
+The standalone CMake static library also builds and links the visual-bridge consumer.
+
+Important limitations: this is a source import, not evidence of complete independent GRIT/MF6.1 accuracy or measured
+real-car calibration. Project Drive's Newton slip method is explicitly a reconstruction, not a bit-faithful GRIT copy.
+The upstream `VehicleSceneValidation.cpp` is stale and does not compile against its own `WheelMount` revision; the
+other drive checks use a mock chassis. Jolt/editor hosting, a complete Project Drive project port, live thermal-to-visual
+wiring, and comparisons with measured tyres/vehicles remain open.
+
 ### New demo tyre tests: scope and limitations
 
 `RunDemoTyreValidation.sh` verifies the unchanged source/shader blob identities, generates reference data directly
@@ -122,6 +144,10 @@ This is not a physical-GPU benchmark or a claim of real-time engine performance.
 PYTHON="$PWD/_ClaudeScratch/venv/bin/python" bash Exhibits/VehiclePhysics/RunVehiclePhysics.sh
 bash Exhibits/VehiclePhysics/RunDemoTyreValidation.sh
 SANITIZE=1 RESULTS="$PWD/Exhibits/VehiclePhysics/Results/DemoTyresSanitized.txt" bash Exhibits/VehiclePhysics/RunDemoTyreValidation.sh
+bash Exhibits/VehiclePhysics/RunProjectDriveValidation.sh
+SANITIZE=1 RESULTS="$PWD/Exhibits/VehiclePhysics/Results/ProjectDriveSanitized.txt" bash Exhibits/VehiclePhysics/RunProjectDriveValidation.sh
+cmake -S Frontier/Engine/Physics/ProjectDrive -B _ClaudeScratch/build/projectdrive -DCMAKE_BUILD_TYPE=Release
+cmake --build _ClaudeScratch/build/projectdrive -j2
 # Known failing extended drop diagnostic; use a scratch result so it doesn't overwrite the passing run:
 FULL_DROP=1 RESULTS="$PWD/_ClaudeScratch/tyre-continuum/long-diagnostic.txt" bash Exhibits/VehiclePhysics/RunDemoTyreValidation.sh
 bash Exhibits/VehiclePhysics/CompareRaster.sh
