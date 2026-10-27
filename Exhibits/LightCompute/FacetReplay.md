@@ -37,6 +37,11 @@ rough blocked/reused red channel the CPU reference was `0.0218093 ± 0.0003296` 
 `0.0217174 ± 0.0004996` batch SE. Pixel and batch SEs are both recorded; independence and finite-sample tails
 remain assumptions. This is a model/implementation comparison, not real-world calibration.
 
+## Captures
+
+[Four unfiltered Vulkan readbacks](FacetReplayCaptures.md) show the open, blocked and reopened room at one or
+four hits. They are authored SwiftShader scenes, not an editor or hardware-GPU capture.
+
 ## Scope and reproduction
 
 The implementation remains a full random-sequence replay experiment, not classical cheap endpoint

@@ -13,8 +13,8 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   is not the demo's geometric reconnection and does not integrate general materials or a production/editor frame.
   Optional explicit emissive-facet sampling passes occlusion, source-change, rough and four-hit reference checks;
   it reduces per-sample variance in one small-source fixture but is not benchmarked at equal cost.
-  [Facet sampling](../Exhibits/LightCompute/FacetReplay.md). Four noisy SwiftShader readbacks show bounce and blocker
-  changes. [Audit and scope](../Exhibits/LightCompute/PathReplay.md),
+  [Facet sampling](../Exhibits/LightCompute/FacetReplay.md), [four new Vulkan captures](../Exhibits/LightCompute/FacetReplayCaptures.md).
+  Four earlier noisy SwiftShader readbacks also show bounce and blocker changes. [Audit and scope](../Exhibits/LightCompute/PathReplay.md),
   [captures](../Exhibits/LightCompute/ReplayCaptures.md).
 
 ## Vulkan solar optics and GI audit — 2026-10-27
