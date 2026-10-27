@@ -17,6 +17,46 @@ float3 ReplayDirection(float3 Normal, inout uint Bits)
     return Unit(Tangent * (Radius * cos(Azimuth)) + Bitangent * (Radius * sin(Azimuth)) +
                 Normal * sqrt(max(0, 1 - Radius * Radius)));
 }
+// 📝 Test the open segment and skip only the sampled endpoint triangle, rather than shortening the shadow ray.
+bool ReplaySegmentOccluded(float3 Origin, float3 Direction, float Distance, uint Endpoint)
+{
+    if (Extent.Grid.w == 0 || Distance <= 0) return false;
+    InterlockedAdd(Counters[2], 1);
+    uint Stack[64], Count = 1;
+    Stack[0] = 0;
+    while (Count > 0)
+    {
+        FacetEnclosure Box = Enclosures[Stack[--Count]];
+        if (!IntersectsBox(Box, Origin, Direction, Distance)) continue;
+        if (Box.Links.z != 0)
+        {
+            for (uint I = 0; I < Box.Links.y; ++I)
+            {
+                uint Index = Box.Links.x + I;
+                float3 Strike;
+                if (Index != Endpoint && FacetStrike(Facets[Index], Origin, Direction, 0, Distance, Strike))
+                    return true;
+            }
+        }
+        else
+        {
+            if (Count + 2 > min(64u, max(1u, Extent.Sampling.w)))
+            {
+                InterlockedAdd(Counters[3], 1);
+                for (uint I = 0; I < Extent.Sampling.z; ++I)
+                {
+                    float3 Strike;
+                    if (I != Endpoint && FacetStrike(Facets[I], Origin, Direction, 0, Distance, Strike))
+                        return true;
+                }
+                return false;
+            }
+            Stack[Count++] = Box.Links.x;
+            Stack[Count++] = Box.Links.y;
+        }
+    }
+    return false;
+}
 // 📝 Uniformly select one emissive facet, then a uniform point on its area. No BSDF-hit light is added in this mode.
 float3 ReplayFacetRadiance(SurfacePoint Receiver, float3 Origin, bool RoughOpaque, inout uint Bits)
 {
@@ -40,7 +80,7 @@ float3 ReplayFacetRadiance(SurfacePoint Receiver, float3 Origin, bool RoughOpaqu
     DirectionCosine = max(0, dot(Unit(Receiver.NormalRoughness.xyz), Direction));
     float SourceCosine = abs(dot(AreaNormal / DoubleArea, Direction));
     if (DirectionCosine <= 0 || SourceCosine <= 0 ||
-        OccludedGeometry(Origin, Direction, Distance - max(1e-5, Distance * 1e-6))) return 0;
+        ReplaySegmentOccluded(Origin, Direction, Distance, FacetIndex)) return 0;
     float3 Scattering = RoughOpaque ? Brdf(Receiver, Direction) : clamp(Receiver.AlbedoIor.xyz, 0, 1) / 3.141592653589793;
     float Measure = DirectionCosine * SourceCosine * (.5 * DoubleArea) * float(FacetCount) / DistanceSquared;
     return Scattering * max(F.Emissive.xyz, 0) * Measure;

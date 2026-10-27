@@ -34,7 +34,7 @@ A 24-triangle room used 400,000 independent double-precision CPU paths per confi
 intersections and a different RNG. Four-hit diffuse and rough-opaque open/blocked cases, including temporal and
 spatial reuse across a moving blocker, passed the recorded six-combined-SE-plus-tolerance bounds. For the
 rough blocked/reused red channel the CPU reference was `0.0218093 ± 0.0003296` SE and Vulkan was
-`0.0217174 ± 0.0004996` batch SE. Pixel and batch SEs are both recorded; independence and finite-sample tails
+`0.0217390 ± 0.0004958` batch SE. Pixel and batch SEs are both recorded; independence and finite-sample tails
 remain assumptions. This is a model/implementation comparison, not real-world calibration.
 
 ## Captures
@@ -47,10 +47,10 @@ four hits. They are authored SwiftShader scenes, not an editor or hardware-GPU c
 The implementation remains a full random-sequence replay experiment, not classical cheap endpoint
 reconnection or an integrated editor renderer. It handles bounded opaque triangles, constant two-sided
 facet radiance and the existing uniform environment; it does not handle textured or transparent sources,
-analytic lights, volumes or general materials. Ray offsets and finite shadow-endpoint tolerances can miss
-blockers extremely close to a source. A blocker 84 float32 ULPs in front of the light leaked nearly the entire
-open-light contribution in a [reproduced negative case](Results/ReplayEndpoint-before.txt). Uniform triangle
-selection can be inefficient with many unequal lights.
+analytic lights, volumes or general materials. The shadow test now skips the sampled source triangle instead
+of discarding a fixed endpoint interval; it blocks a previously leaking 84-float32-ULP separation, including
+under moving temporal/spatial reuse. Float intersection and origin-offset limitations remain.
+[Endpoint audit](ReplayEndpoint.md). Uniform triangle selection can be inefficient with many unequal lights.
 Finite 32-bit RNG streams and the positive target floor are not a proof of independence or continuous support.
 
 ```bash

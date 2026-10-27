@@ -31,7 +31,7 @@ NaN motion radii/normals and excessively large supplied normals are rejected by 
 Four-hit, explicit-facet-sampled replay was also compared with freshly generated spatial estimates in
 8 paired batches each, for camera motion alone, camera plus moving blocker, and camera plus rigid object.
 All RGB differences passed the recorded `6 × batch SE + 0.004` bounds. For camera plus blocker, the red-channel
-mean difference (reused minus fresh) was `0.00714 ± 0.00517` batch SE, with 64,520 temporal accepts and
+mean difference (reused minus fresh) was `0.00713 ± 0.00517` batch SE, with 64,520 temporal accepts and
 273,504 spatial links across the batches. This paired implementation comparison is **not an independent
 physical reference**, a proof of unbiasedness, or a real-time benchmark; both estimates share the path kernel
 and finite pseudorandom streams. Independent area and four-hit room comparisons are documented in

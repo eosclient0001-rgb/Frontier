@@ -1,7 +1,7 @@
 Host build: release; external Vulkan driver is not sanitizer-instrumented
 5d98298b72cd79e3e950dc957d5fd33d268234247fe3a7db807de66898c68634  Frontier/Engine/Rendering/Shaders/LightInfluence.slang
-bec0288a816109a80f0742ed624d8064c9eafed5e05f30f329f53045ee069035  Frontier/Engine/Rendering/Shaders/PathReplayReservoir.slang
-69f3c7cd39ef16833aab5b9b02d06ec96c5d7d2fc00734736267c3d2df150479  Exhibits/LightCompute/Code/LightComputeValidation.cpp
+71ccacf8de537f4ea7399874381504eead1e8e569bb9ab20877752238474835c  Frontier/Engine/Rendering/Shaders/PathReplayReservoir.slang
+43b06a98812f8da404612582b171f2044df9d200906abf954692b584bb672945  Exhibits/LightCompute/Code/LightComputeValidation.cpp
 832a756a4501f4392292f56dc3b8fdbd45a51ebcb80e2b17a005d895e5284332  Exhibits/LightCompute/Code/PathReplayDomain.h
 764a2ee980ff0f4e2050d9fd772d8c5aed4d7517593fa604f48c6841b1d4198c  Exhibits/LightCompute/Code/ReplayRoomReference.h
 6cf6f168d2e852ee16d2c892bb9f8eed69bf55ac0e5187232f52c1eb5c672ec9  Exhibits/LightCompute/Code/RoughReplayValidation.h
@@ -21,22 +21,22 @@ FACET_ROUGH channel=1 quadrature=0.0524090954978 mean=0.0514680222691 se=0.00070
 FACET_ROUGH channel=2 quadrature=0.0183867051614 mean=0.0180578630703 se=0.000245864952793 n=8192
 PASS explicit facet sampling on bounded opaque paths; not general materials or analytic lights
 FACET_ROOM tracing two 400000-path independent CPU references
-ROOM_REFERENCE facet_open_four channel=0 cpu=0.837936204 cpu_se=0.00378979899 vulkan=0.832349824 pixel_se=0.00282981053 batch_se=0.00217711926 n=400000/8192 batches=8
-ROOM_REFERENCE facet_open_four channel=1 cpu=0.69878172 cpu_se=0.00314441072 vulkan=0.693793397 pixel_se=0.00225888252 batch_se=0.00168191104 n=400000/8192 batches=8
-ROOM_REFERENCE facet_open_four channel=2 cpu=0.62329792 cpu_se=0.00259358919 vulkan=0.619096015 pixel_se=0.00220803197 batch_se=0.00161783474 n=400000/8192 batches=8
-ROOM_REFERENCE facet_blocked_fresh_four channel=0 cpu=0.0282508523 cpu_se=0.000446431379 vulkan=0.0257982881 pixel_se=0.00125334925 batch_se=0.00155986785 n=400000/8192 batches=8
-ROOM_REFERENCE facet_blocked_fresh_four channel=1 cpu=0.0234870177 cpu_se=0.000334088152 vulkan=0.0217176347 pixel_se=0.00103686241 batch_se=0.00114397124 n=400000/8192 batches=8
-ROOM_REFERENCE facet_blocked_fresh_four channel=2 cpu=0.0330799871 cpu_se=0.000430666366 vulkan=0.030371012 pixel_se=0.00129337468 batch_se=0.00118222671 n=400000/8192 batches=8
-ROOM_REFERENCE facet_blocked_reused_four channel=0 cpu=0.0282508523 cpu_se=0.000446431379 vulkan=0.0269650885 pixel_se=0.00185433106 batch_se=0.00136748038 n=400000/8192 batches=8
-ROOM_REFERENCE facet_blocked_reused_four channel=1 cpu=0.0234870177 cpu_se=0.000334088152 vulkan=0.022233129 pixel_se=0.00148717296 batch_se=0.00132862581 n=400000/8192 batches=8
-ROOM_REFERENCE facet_blocked_reused_four channel=2 cpu=0.0330799871 cpu_se=0.000430666366 vulkan=0.0301966666 pixel_se=0.00147602084 batch_se=0.00157160053 n=400000/8192 batches=8
+ROOM_REFERENCE facet_open_four channel=0 cpu=0.837936204 cpu_se=0.00378979899 vulkan=0.832368579 pixel_se=0.00282981696 batch_se=0.00217732575 n=400000/8192 batches=8
+ROOM_REFERENCE facet_open_four channel=1 cpu=0.69878172 cpu_se=0.00314441072 vulkan=0.693809931 pixel_se=0.00225887595 batch_se=0.0016818696 n=400000/8192 batches=8
+ROOM_REFERENCE facet_open_four channel=2 cpu=0.62329792 cpu_se=0.00259358919 vulkan=0.619114205 pixel_se=0.00220798503 batch_se=0.00161709107 n=400000/8192 batches=8
+ROOM_REFERENCE facet_blocked_fresh_four channel=0 cpu=0.0282508523 cpu_se=0.000446431379 vulkan=0.0258141916 pixel_se=0.00125337551 batch_se=0.00155912392 n=400000/8192 batches=8
+ROOM_REFERENCE facet_blocked_fresh_four channel=1 cpu=0.0234870177 cpu_se=0.000334088152 vulkan=0.0217254357 pixel_se=0.00103687196 batch_se=0.00114351961 n=400000/8192 batches=8
+ROOM_REFERENCE facet_blocked_fresh_four channel=2 cpu=0.0330799871 cpu_se=0.000430666366 vulkan=0.0303811221 pixel_se=0.00129337483 batch_se=0.00118106488 n=400000/8192 batches=8
+ROOM_REFERENCE facet_blocked_reused_four channel=0 cpu=0.0282508523 cpu_se=0.000446431379 vulkan=0.026979621 pixel_se=0.00185434258 batch_se=0.00136917523 n=400000/8192 batches=8
+ROOM_REFERENCE facet_blocked_reused_four channel=1 cpu=0.0234870177 cpu_se=0.000334088152 vulkan=0.0222438694 pixel_se=0.00148717976 batch_se=0.00132918552 n=400000/8192 batches=8
+ROOM_REFERENCE facet_blocked_reused_four channel=2 cpu=0.0330799871 cpu_se=0.000430666366 vulkan=0.0302011966 pixel_se=0.00147603359 batch_se=0.00156792645 n=400000/8192 batches=8
 FACET_ROOM accepted=40960 spatial_links=97280 cpu_rng=mt19937_64 brute_force=1
 FACET_ROUGH_ROOM tracing two 400000-path CPU references
-ROOM_REFERENCE facet_rough_open_four channel=0 cpu=0.714061626 cpu_se=0.00328945681 vulkan=0.719630087 pixel_se=0.00258438999 batch_se=0.00207581197 n=400000/8192 batches=8
-ROOM_REFERENCE facet_rough_open_four channel=1 cpu=0.59456586 cpu_se=0.00273503292 vulkan=0.600036333 pixel_se=0.00211939544 batch_se=0.00153735747 n=400000/8192 batches=8
-ROOM_REFERENCE facet_rough_open_four channel=2 cpu=0.513637979 cpu_se=0.00225982996 vulkan=0.517475609 pixel_se=0.00200042933 batch_se=0.00123267876 n=400000/8192 batches=8
-ROOM_REFERENCE facet_rough_blocked_reused_four channel=0 cpu=0.0218092643 cpu_se=0.000329583234 vulkan=0.0217173774 pixel_se=0.000439738493 batch_se=0.000499574731 n=400000/8192 batches=8
-ROOM_REFERENCE facet_rough_blocked_reused_four channel=1 cpu=0.0182034319 cpu_se=0.000253258684 vulkan=0.017928241 pixel_se=0.000383726058 batch_se=0.000410363051 n=400000/8192 batches=8
-ROOM_REFERENCE facet_rough_blocked_reused_four channel=2 cpu=0.0230093985 cpu_se=0.000333155503 vulkan=0.0227639295 pixel_se=0.000710130878 batch_se=0.000517158042 n=400000/8192 batches=8
+ROOM_REFERENCE facet_rough_open_four channel=0 cpu=0.714061626 cpu_se=0.00328945681 vulkan=0.719646637 pixel_se=0.00258434 batch_se=0.00207510542 n=400000/8192 batches=8
+ROOM_REFERENCE facet_rough_open_four channel=1 cpu=0.59456586 cpu_se=0.00273503292 vulkan=0.600048361 pixel_se=0.0021193706 batch_se=0.00153691834 n=400000/8192 batches=8
+ROOM_REFERENCE facet_rough_open_four channel=2 cpu=0.513637979 cpu_se=0.00225982996 vulkan=0.517486229 pixel_se=0.00200040439 batch_se=0.00123270596 n=400000/8192 batches=8
+ROOM_REFERENCE facet_rough_blocked_reused_four channel=0 cpu=0.0218092643 cpu_se=0.000329583234 vulkan=0.0217389675 pixel_se=0.000439720929 batch_se=0.000495845799 n=400000/8192 batches=8
+ROOM_REFERENCE facet_rough_blocked_reused_four channel=1 cpu=0.0182034319 cpu_se=0.000253258684 vulkan=0.017937795 pixel_se=0.000383727627 batch_se=0.000409937511 n=400000/8192 batches=8
+ROOM_REFERENCE facet_rough_blocked_reused_four channel=2 cpu=0.0230093985 cpu_se=0.000333155503 vulkan=0.0227679032 pixel_se=0.000710144522 batch_se=0.000517486357 n=400000/8192 batches=8
 FACET_ROUGH_ROOM accepted=40960 spatial_links=97280 cpu_rng=mt19937_64 brute_force=1
 PASS four-hit diffuse and rough facet sampling against independent path references

@@ -778,12 +778,13 @@ struct LightComputeSubmission
                                                     float PositiveFloor = .01f, bool PrimaryVisibility = false,
                                                     bool FullHistoryForAudit = false, bool RoughOpaque = false,
                                                     bool SampleFacets = false, bool DoubleCountForAudit = false,
-                                                    bool StrictMotionForAudit = false)
+                                                    bool StrictMotionForAudit = false, uint32_t StackLimit = 64)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
                     Bounces > 0 && Bounces <= 8 && std::isfinite(PositiveFloor) && PositiveFloor >= 1e-4f &&
-                    PositiveFloor <= 10 && Scene.Lights.empty() && Scene.Surfaces.size() == Scene.Visibility.Corners.size(),
+                    PositiveFloor <= 10 && StackLimit >= 1 && StackLimit <= 64 && Scene.Lights.empty() &&
+                    Scene.Surfaces.size() == Scene.Visibility.Corners.size(),
                 "Invalid replay extent, domain or diffuse scene");
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
         ValidateReplayDomain(Scene, PrimaryVisibility, RoughOpaque);
@@ -826,7 +827,7 @@ struct LightComputeSubmission
         ComputeExtent Extent;
         Extent.Dimensions[0] = uint32_t(Scene.Receivers.size());
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
-        Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), 64};
+        Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), StackLimit};
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
         Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, uint32_t(FacetSources.size()), ReplayLastHistoryCap};
         const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
