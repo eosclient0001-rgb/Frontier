@@ -20,6 +20,56 @@ ReplayReferenceVector ReplayReferenceCross(ReplayReferenceVector A, ReplayRefere
 ReplayReferenceVector ReplayReferenceUnit(ReplayReferenceVector A)
 { return ReplayReferenceScale(A, 1 / std::sqrt(ReplayReferenceDot(A,A))); }
 ReplayReferenceVector ReplayReferenceXyz(const std::array<float,4>& P) { return {P[0],P[1],P[2]}; }
+struct ReplayTextureReferenceSample
+{
+    ReplayReferenceVector Albedo{};
+    uint32_t Mip = 0;
+    bool Wrapped = false, NearMipBoundary = false;
+};
+// 📝 Independent double-precision UV, footprint, mip and periodic bilinear evaluation of a guarded atlas.
+ReplayTextureReferenceSample ReplayReferenceTexture(const LightComputeArchive& Scene, const LightComputeFacet& F,
+                                                    double BaryU, double BaryV, ReplayReferenceVector Position,
+                                                    ReplayReferenceVector Normal, ReplayReferenceVector View)
+{
+    const auto& Atlas = Scene.Angles;
+    const size_t MaterialOffset = size_t(F.Emissive[3]) - 1;
+    const double Weight = 1 - BaryU - BaryV;
+    const double U = (F.A[3]*Weight + F.B[3]*BaryU + F.C[3]*BaryV) * Atlas[MaterialOffset+4] + Atlas[MaterialOffset+6];
+    const double V = (F.NormalA[3]*Weight + F.NormalB[3]*BaryU + F.NormalC[3]*BaryV) * Atlas[MaterialOffset+5] + Atlas[MaterialOffset+7];
+    const auto Eye = ReplayReferenceXyz(Scene.Camera[0]);
+    const auto Delta = ReplayReferenceSub(Position, Eye);
+    const double Footprint = 2 * std::sqrt(ReplayReferenceDot(Delta,Delta)) * Scene.Camera[3][3] /
+        (Scene.Height * std::max(.05, ReplayReferenceDot(Normal,View))) *
+        std::max(std::abs(double(Atlas[MaterialOffset+4])), std::abs(double(Atlas[MaterialOffset+5])));
+    size_t Cursor = size_t(Atlas[MaterialOffset+2]);
+    uint32_t Size = uint32_t(Atlas[Cursor]);
+    Cursor += 4;
+    ReplayTextureReferenceSample Result;
+    Result.Wrapped = U < 0 || U >= 1 || V < 0 || V >= 1;
+    while (Size > 1)
+    {
+        if (std::abs(Footprint * Size - 1) < 1e-5) Result.NearMipBoundary = true;
+        if (Footprint * Size <= 1) break;
+        Cursor += size_t(Size) * Size * 3;
+        Size /= 2;
+        ++Result.Mip;
+    }
+    const double X = (U - std::floor(U)) * Size - .5, Y = (V - std::floor(V)) * Size - .5;
+    const int X0 = int(std::floor(X)), Y0 = int(std::floor(Y));
+    const double Fx = X - X0, Fy = Y - Y0;
+    auto Texel = [&](int Px, int Py, uint32_t C)
+    {
+        const auto Wrap = [Size](int P) { return uint32_t((P % int(Size) + int(Size)) % int(Size)); };
+        return double(Atlas[Cursor + (size_t(Wrap(Py)) * Size + Wrap(Px)) * 3 + C]);
+    };
+    for (uint32_t C = 0; C < 3; ++C)
+    {
+        const double Top = Texel(X0,Y0,C) * (1-Fx) + Texel(X0+1,Y0,C) * Fx;
+        const double Bottom = Texel(X0,Y0+1,C) * (1-Fx) + Texel(X0+1,Y0+1,C) * Fx;
+        Result.Albedo[C] = Atlas[MaterialOffset+8+C] * (Top * (1-Fy) + Bottom * Fy);
+    }
+    return Result;
+}
 std::array<double,3> RoughReplayBrdf(const LightComputeReceiver& R, ReplayReferenceVector Incoming)
 {
     const auto N = ReplayReferenceUnit(ReplayReferenceXyz(R.NormalRoughness));

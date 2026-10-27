@@ -244,15 +244,17 @@ struct LightComputeSubmission
     VkPipeline DiffuseGeneratePipeline = VK_NULL_HANDLE, DiffuseResolvePipeline = VK_NULL_HANDLE;
     VkPipeline RectangleGeneratePipeline = VK_NULL_HANDLE, RectangleResolvePipeline = VK_NULL_HANDLE;
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
+    bool PendingOrdinaryHistoryReset = false;
     bool ReplayLastReset = true, ReplayHasPriorInputs = false, ReplayPreviousPrimary = false,
          ReplayPreviousRoughOpaque = false, ReplayPreviousSampleFacets = false, ReplayPreviousDoubleCount = false,
-         ReplayPreviousStrictMotion = false, ReplayPreviousBalanceSampling = false;
+         ReplayPreviousStrictMotion = false, ReplayPreviousBalanceSampling = false, ReplayPreviousTexturedDiffuse = false;
     uint32_t ReplayLastHistoryCap = 1, ReplayPreviousBounces = 0, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
     float ReplayPreviousFloor = 0;
     std::array<float,3> ReplayPreviousEnvironment{};
     std::array<std::array<float,4>,12> ReplayPreviousCamera{};
     std::vector<LightComputeFacet> ReplayPreviousFacets;
     std::vector<LightComputeReceiver> ReplayPreviousReceivers;
+    std::vector<float> ReplayPreviousMaterialAtlas;
     RectangleDomain PreviousRectangle{};
     bool RectangleHistory = false, LastRectangleReset = true;
     std::vector<LightComputeFacet> DiffuseFacets;
@@ -670,7 +672,7 @@ struct LightComputeSubmission
             Samples.insert(Samples.end(), V.begin(), V.end());
         return Samples;
     }
-    void Upload(const LightComputeArchive& Scene)
+    void Upload(const LightComputeArchive& Scene, bool ReplayMaterialRevision = false)
     {
         Require(Scene.Receivers.size() == ReceiverCount,
                 "History receiver extent changed; recreate submission");
@@ -754,21 +756,24 @@ struct LightComputeSubmission
             Require(Count == 0 || Previous == 1, "Emissive CDF is not normalized");
         }
         // 📝 Moving emissive geometry changes its CDF, not the analytic reservoirs' light/profile revision.
-        bool Changed =
-            PreviousLights.size() != Scene.Lights.size() || PreviousAngles.size() != RevisionAngles;
-        if (!Changed)
+        bool LightsChanged = PreviousLights.size() != Scene.Lights.size();
+        bool AnglesChanged = PreviousAngles.size() != RevisionAngles;
+        if (!LightsChanged && !Scene.Lights.empty())
+            LightsChanged = std::memcmp(PreviousLights.data(), Scene.Lights.data(),
+                                        Scene.Lights.size() * sizeof(LightComputeShape)) != 0;
+        if (!AnglesChanged && RevisionAngles != 0)
+            AnglesChanged = std::memcmp(PreviousAngles.data(), Scene.Angles.data(), RevisionAngles * sizeof(float)) != 0;
+        if (LightsChanged || AnglesChanged)
         {
-            Changed = (!Scene.Lights.empty() &&
-                       std::memcmp(PreviousLights.data(), Scene.Lights.data(),
-                                   Scene.Lights.size() * sizeof(LightComputeShape)) != 0) ||
-                      (RevisionAngles != 0 &&
-                       std::memcmp(PreviousAngles.data(), Scene.Angles.data(), RevisionAngles * 4) != 0);
-        }
-        if (Changed)
-        {
-            HistoryDirty = true;
             PreviousLights = Scene.Lights;
             PreviousAngles.assign(Scene.Angles.begin(), Scene.Angles.begin() + RevisionAngles);
+        }
+        // 📝 Replay retraces material changes; ordinary pipelines still require their original hard reset.
+        if (ReplayMaterialRevision && AnglesChanged) PendingOrdinaryHistoryReset = true;
+        if (LightsChanged || (!ReplayMaterialRevision && (AnglesChanged || PendingOrdinaryHistoryReset)))
+        {
+            HistoryDirty = true;
+            if (!ReplayMaterialRevision) PendingOrdinaryHistoryReset = false;
         }
     }
     // Replays sampled random sequences against the current diffuse triangle scene and optional primary rays.
@@ -779,7 +784,7 @@ struct LightComputeSubmission
                                                     bool FullHistoryForAudit = false, bool RoughOpaque = false,
                                                     bool SampleFacets = false, bool DoubleCountForAudit = false,
                                                     bool StrictMotionForAudit = false, uint32_t StackLimit = 64,
-                                                    bool BalanceSampling = false)
+                                                    bool BalanceSampling = false, bool TexturedDiffuse = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -788,7 +793,7 @@ struct LightComputeSubmission
                     Scene.Surfaces.size() == Scene.Visibility.Corners.size(),
                 "Invalid replay extent, domain or diffuse scene");
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
-        ValidateReplayDomain(Scene, PrimaryVisibility, RoughOpaque);
+        ValidateReplayDomain(Scene, PrimaryVisibility, RoughOpaque, TexturedDiffuse);
         Require(!DoubleCountForAudit || SampleFacets, "Double-count control requires explicit source sampling");
         Require(!BalanceSampling || (SampleFacets && !DoubleCountForAudit),
                 "Balanced sampling requires facet sampling without the double-count control");
@@ -799,14 +804,17 @@ struct LightComputeSubmission
                        ReplayPreviousPrimary != PrimaryVisibility || ReplayPreviousRoughOpaque != RoughOpaque ||
                        ReplayPreviousSampleFacets != SampleFacets || ReplayPreviousDoubleCount != DoubleCountForAudit ||
                        ReplayPreviousStrictMotion != StrictMotionForAudit || ReplayPreviousBalanceSampling != BalanceSampling ||
-                       ReplayPreviousEnvironment != Environment || ReplayPreviousCamera != Scene.Camera ||
-                       ReplayPreviousFacets.size() != Scene.Surfaces.size() ||
-                       ReplayPreviousReceivers.size() != Scene.Receivers.size();
+                       ReplayPreviousTexturedDiffuse != TexturedDiffuse || ReplayPreviousEnvironment != Environment ||
+                       ReplayPreviousCamera != Scene.Camera || ReplayPreviousFacets.size() != Scene.Surfaces.size() ||
+                       ReplayPreviousReceivers.size() != Scene.Receivers.size() ||
+                       ReplayPreviousMaterialAtlas.size() != Scene.Angles.size();
         if (!Changed)
             Changed = (!Scene.Surfaces.empty() && std::memcmp(ReplayPreviousFacets.data(), Scene.Surfaces.data(),
                             Scene.Surfaces.size() * sizeof(LightComputeFacet)) != 0) ||
                       (!Scene.Receivers.empty() && std::memcmp(ReplayPreviousReceivers.data(), Scene.Receivers.data(),
-                            Scene.Receivers.size() * sizeof(LightComputeReceiver)) != 0);
+                                            Scene.Receivers.size() * sizeof(LightComputeReceiver)) != 0) ||
+                      (!Scene.Angles.empty() && std::memcmp(ReplayPreviousMaterialAtlas.data(), Scene.Angles.data(),
+                                            Scene.Angles.size() * sizeof(float)) != 0);
         ReplayPreviousFacets = Scene.Surfaces;
         ReplayPreviousReceivers = Scene.Receivers;
         ReplayPreviousCamera = Scene.Camera;
@@ -819,11 +827,13 @@ struct LightComputeSubmission
         ReplayPreviousDoubleCount = DoubleCountForAudit;
         ReplayPreviousStrictMotion = StrictMotionForAudit;
         ReplayPreviousBalanceSampling = BalanceSampling;
+        ReplayPreviousTexturedDiffuse = TexturedDiffuse;
+        ReplayPreviousMaterialAtlas = Scene.Angles;
         ReplayHasPriorInputs = true;
         // Shrink old represented counts, not their per-sample weights, after scene/view/integrator changes.
         ReplayLastHistoryCap = Changed && !FullHistoryForAudit ? 1u : 64u;
         bool Reset = ResetHistory || Scene.Width != ReceiverWidth || Scene.Height != ReceiverHeight;
-        Upload(Scene);
+        Upload(Scene, TexturedDiffuse);
         if (!FacetSources.empty())
             std::memcpy(static_cast<float*>(Buffers[4].Address) + ReplayFacetStart,
                         FacetSources.data(), FacetSources.size() * sizeof(float));
@@ -836,7 +846,7 @@ struct LightComputeSubmission
         Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, uint32_t(FacetSources.size()), ReplayLastHistoryCap};
         const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
                                      (DoubleCountForAudit ? 256u : 0u) | (StrictMotionForAudit ? 512u : 0u) |
-                                     (BalanceSampling ? 1024u : 0u);
+                                     (BalanceSampling ? 1024u : 0u) | (TexturedDiffuse ? 2048u : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -1651,11 +1661,20 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayEndpointValidation.h"
 #include "ReplayBalanceValidation.h"
 #include "ReplayBalanceCapture.h"
+#include "ReplayTextureValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-texture")
+        {
+            ValidateReplayTextureGuards();
+            ValidateReplayTextureAnalytic(Arguments[1], Arguments[2]);
+            ValidateReplayTextureSecondaryFiltering(Arguments[1], Arguments[2]);
+            ValidateReplayTexturePrimary(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-balance")
         {
             CaptureReplayBalance(Arguments[1], Arguments[2], Arguments[4]);

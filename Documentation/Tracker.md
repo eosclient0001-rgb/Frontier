@@ -4,6 +4,11 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 ## Dynamic path reuse continuation — 2026-10-27
 
+- An opt-in opaque Lambertian texture subset now evaluates the existing albedo pyramid at secondary hits. Atlas
+  contents trigger seed retracing and a one-candidate history cap; unrelated pipelines retain their hard reset.
+  Release and sanitized-host checks cover 28 invalid inputs, primary and secondary filtering, two-hit relighting
+  and moving occlusion. Four-hit textured-room references and multiple captures remain to be verified.
+  [Texture replay audit](../Exhibits/LightCompute/ReplayTexture.md).
 - A finite-domain audit exposes missing-support bias when previously dark paths become visible. A positive
   selection floor recovers the exact toy mean when random-number-domain paths are replayed.
 - An isolated SwiftShader Vulkan experiment now retraces temporal and spatial reservoir seeds in current opaque

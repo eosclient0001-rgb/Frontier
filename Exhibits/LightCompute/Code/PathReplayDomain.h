@@ -6,8 +6,80 @@
 
 namespace
 {
-void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibility, bool RoughOpaque)
+// 📝 Validate every referenced mip before the shader can dereference the untrusted float atlas.
+void ValidateReplayDiffuseAtlas(const LightComputeArchive& Scene, uint32_t MaterialOffset)
 {
+    const auto& Atlas = Scene.Angles;
+    Require(Atlas.size() <= (1u << 24) && MaterialOffset <= Atlas.size() && Atlas.size() - MaterialOffset >= 268,
+            "Replay diffuse material record is out of bounds");
+    for (size_t I = MaterialOffset; I < size_t(MaterialOffset) + 268; ++I)
+        Require(std::isfinite(Atlas[I]), "Replay diffuse material record is not finite");
+    const float* Material = Atlas.data() + MaterialOffset;
+    Require(Material[0] == 1 && Material[1] == 0 && Material[3] == 0 && Material[200] == 0,
+            "Replay diffuse atlas forbids layered, non-opaque, normal-mapped and procedural-paint materials");
+    for (uint32_t I = 4; I < 8; ++I)
+        Require(std::abs(Material[I]) <= 10000, "Replay diffuse UV mapping exceeds the bounded domain");
+    for (uint32_t I = 8; I < 11; ++I)
+        Require(Material[I] >= 0 && Material[I] <= 1, "Replay diffuse base colour is outside [0,1]");
+    Require(Material[11] == 1 && Material[12] == 0 && Material[13] >= 1 && Material[13] <= 3 &&
+                Material[14] == 1 && Material[15] >= 0 && Material[15] <= 1,
+            "Replay diffuse atlas requires opaque, non-metallic, uncoated materials");
+    const float TextureOffset = Material[2];
+    Require(TextureOffset >= 1 && TextureOffset < float(Atlas.size()) && std::floor(TextureOffset) == TextureOffset,
+            "Replay diffuse albedo texture address is invalid");
+    const size_t Map = size_t(TextureOffset);
+    Require(Atlas.size() - Map >= 4, "Replay diffuse texture header is out of bounds");
+    const float Dimension = Atlas[Map];
+    Require(std::isfinite(Dimension) && Dimension >= 1 && Dimension <= 1024 && std::floor(Dimension) == Dimension,
+            "Replay diffuse texture dimension is invalid");
+    for (size_t I = Map + 1; I < Map + 4; ++I)
+        Require(std::isfinite(Atlas[I]), "Replay diffuse texture header is not finite");
+    uint32_t Size = uint32_t(Dimension);
+    Require((Size & (Size - 1)) == 0, "Replay diffuse texture must have power-of-two mip dimensions");
+    size_t Cursor = Map + 4;
+    for (;;)
+    {
+        const size_t Values = size_t(Size) * Size * 3;
+        Require(Cursor <= Atlas.size() && Values <= Atlas.size() - Cursor, "Replay diffuse mip is out of bounds");
+        for (size_t I = Cursor; I < Cursor + Values; ++I)
+            Require(std::isfinite(Atlas[I]) && Atlas[I] >= 0 && Atlas[I] <= 1,
+                    "Replay diffuse texel is outside finite [0,1]");
+        Cursor += Values;
+        if (Size == 1) break;
+        Size /= 2;
+    }
+}
+void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibility, bool RoughOpaque,
+                          bool TexturedDiffuse = false)
+{
+    Require(!TexturedDiffuse || !RoughOpaque, "Textured replay is limited to opaque Lambertian scattering");
+    if (TexturedDiffuse)
+    {
+        Require(Scene.Angles.size() <= (1u << 24) && Scene.Camera[10][2] == 0 &&
+                    std::isfinite(Scene.Camera[3][3]) && Scene.Camera[3][3] >= 0 && Scene.Camera[3][3] <= 10000,
+                "Invalid replay diffuse atlas or camera footprint");
+        for (const auto& Projection : Scene.Camera)
+            for (float Coefficient : Projection)
+                Require(std::isfinite(Coefficient) && std::abs(Coefficient) <= 1000000,
+                        "Invalid replay diffuse camera projection");
+        if (PrimaryVisibility)
+        {
+            Require(Scene.Camera[0][3] >= 0 && Scene.Camera[1][3] > Scene.Camera[0][3] &&
+                        Scene.Camera[2][3] > 0 && Scene.Camera[3][3] > 0 && Scene.Camera[4][3] >= 0 &&
+                        Scene.Camera[6][3] > 0 && Scene.Camera[7][3] > 0,
+                    "Invalid replay diffuse primary camera frustum");
+            for (uint32_t CameraOffset : {0u, 4u})
+                for (uint32_t A = 1; A <= 3; ++A)
+                    for (uint32_t B = A; B <= 3; ++B)
+                    {
+                        double Dot = 0;
+                        for (uint32_t C = 0; C < 3; ++C) Dot += double(Scene.Camera[CameraOffset+A][C]) * Scene.Camera[CameraOffset+B][C];
+                        Require(std::abs(Dot - (A == B ? 1.0 : 0.0)) <= .005,
+                                "Replay diffuse camera axes must be orthonormal");
+                    }
+        }
+    }
+    std::map<uint32_t, bool> ValidatedMaterials;
     Require(Scene.Lights.empty() && (!RoughOpaque || Scene.Angles.empty()) &&
                 Scene.Surfaces.size() == Scene.Visibility.Corners.size() &&
                 (Scene.Surfaces.empty() == Scene.Visibility.Enclosures.empty()),
@@ -15,9 +87,25 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
     for (size_t I = 0; I < Scene.Surfaces.size(); ++I)
     {
         const auto& F = Scene.Surfaces[I]; const auto& T = Scene.Visibility.Corners[I];
-        Require(F.A == T.A && F.B == T.B && F.C == T.C && F.Emissive[3] == 0 &&
+        Require(std::isfinite(F.Emissive[3]) && F.Emissive[3] >= 0 &&
                     std::isfinite(F.OpticalToken[3]) && F.OpticalToken[3] > 0,
-                "Replay accepts only matching, identified, untextured opaque facets");
+                "Replay requires an identified opaque facet with a valid material address");
+        const bool HasMaterial = F.Emissive[3] != 0;
+        Require(!HasMaterial || TexturedDiffuse, "Replay textured diffuse materials require explicit opt-in");
+        if (HasMaterial)
+        {
+            Require(F.Emissive[3] <= float(Scene.Angles.size()) && std::floor(F.Emissive[3]) == F.Emissive[3],
+                    "Replay diffuse material address is invalid");
+            const uint32_t MaterialOffset = uint32_t(F.Emissive[3]) - 1;
+            if (ValidatedMaterials.emplace(MaterialOffset, true).second) ValidateReplayDiffuseAtlas(Scene, MaterialOffset);
+            for (const auto* Coordinate : {&F.A, &F.B, &F.C, &F.NormalA, &F.NormalB, &F.NormalC})
+                Require(std::isfinite((*Coordinate)[3]) && std::abs((*Coordinate)[3]) <= 10000,
+                        "Replay diffuse UV coordinate is invalid");
+            for (uint32_t C = 0; C < 3; ++C)
+                Require(F.A[C] == T.A[C] && F.B[C] == T.B[C] && F.C[C] == T.C[C],
+                        "Replay material facet does not match the BVH triangle");
+        }
+        else Require(F.A == T.A && F.B == T.B && F.C == T.C, "Replay facet does not match the BVH triangle");
         if (RoughOpaque)
             Require(std::isfinite(F.OpticalToken[0]) && F.OpticalToken[0] >= 0 && F.OpticalToken[0] <= 1 &&
                         std::isfinite(F.OpticalToken[1]) && F.OpticalToken[1] >= 1 && F.OpticalToken[1] <= 3 &&
@@ -33,6 +121,10 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
                         std::isfinite(F.NormalB[C]) && std::abs(F.NormalB[C]) <= 1e6f &&
                         std::isfinite(F.NormalC[C]) && std::abs(F.NormalC[C]) <= 1e6f,
                     "Invalid replay facet coefficients");
+        if (TexturedDiffuse)
+            for (const auto* P : {&F.A, &F.B, &F.C})
+                for (uint32_t C = 0; C < 3; ++C)
+                    Require(std::abs((*P)[C]) <= 1000000, "Replay diffuse geometry exceeds the bounded domain");
         for (const auto* N : {&F.NormalA, &F.NormalB, &F.NormalC})
             Require((*N)[0]*(*N)[0] + (*N)[1]*(*N)[1] + (*N)[2]*(*N)[2] > 1e-12f,
                     "Replay facet normal is degenerate");
@@ -98,8 +190,8 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
             double NormalSquared = 0, ViewSquared = 0, NormalView = 0;
             for (uint32_t C = 0; C < 3; ++C)
             {
-                Require(std::isfinite(R.PositionHit[C]) && std::isfinite(R.NormalRoughness[C]) &&
-                            std::abs(R.NormalRoughness[C]) <= 1e6f &&
+                Require(std::isfinite(R.PositionHit[C]) && (!TexturedDiffuse || std::abs(R.PositionHit[C]) <= 1000000) &&
+                            std::isfinite(R.NormalRoughness[C]) && std::abs(R.NormalRoughness[C]) <= 1e6f &&
                             std::isfinite(R.AlbedoIor[C]) && R.AlbedoIor[C] >= 0 && R.AlbedoIor[C] <= 1 &&
                             std::isfinite(R.MotionPositionToken[C]) && std::isfinite(R.MotionNormal[C]) &&
                             std::abs(R.MotionNormal[C]) <= 1e6f &&

@@ -127,12 +127,17 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
         }
         Normal = Unit(F.NormalA.xyz * (1 - Strike.y - Strike.z) + F.NormalB.xyz * Strike.y + F.NormalC.xyz * Strike.z);
         if (dot(Normal, Direction) > 0) Normal = -Normal;
-        Origin = Origin + Direction * Strike.x + Normal * .001;
+        float3 HitPosition = Origin + Direction * Strike.x;
         Current = (SurfacePoint)0;
+        Current.PositionHit = float4(HitPosition, 1);
         Current.NormalRoughness = float4(Normal, F.AlbedoRoughness.w);
         Current.ViewMetallic = float4(-Direction, F.OpticalToken.x);
         Current.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
         Current.ResidualSpecular.w = F.OpticalToken.z;
+        // 📝 The host admits only opaque single-stratum albedo maps in this opt-in mode.
+        if ((Extent.Primary.w & 2048u) != 0 && F.Emissive.w > 0)
+            ApplyRayMaterial(Current, F, Strike.yz);
+        Origin = HitPosition + Normal * .001;
     }
     return Radiance;
 }
