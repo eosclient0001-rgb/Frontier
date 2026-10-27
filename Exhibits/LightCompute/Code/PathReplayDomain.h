@@ -113,4 +113,25 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
                         std::isfinite(R.MotionPixel[3]), "Invalid replay receiver normal, view or motion");
         }
 }
+
+std::vector<float> CompileReplayFacetSources(const LightComputeArchive& Scene)
+{
+    Require(Scene.Surfaces.size() <= (1u << 24), "Replay facet indices exceed exact float storage");
+    std::vector<float> Indices;
+    for (size_t Index = 0; Index < Scene.Surfaces.size(); ++Index)
+    {
+        const auto& F = Scene.Surfaces[Index];
+        if (!(F.Emissive[0] > 0 || F.Emissive[1] > 0 || F.Emissive[2] > 0)) continue;
+        const double Ax = double(F.B[0]) - F.A[0], Ay = double(F.B[1]) - F.A[1], Az = double(F.B[2]) - F.A[2];
+        const double Bx = double(F.C[0]) - F.A[0], By = double(F.C[1]) - F.A[1], Bz = double(F.C[2]) - F.A[2];
+        const double Px = Ay*Bz, Qx = Az*By, Py = Az*Bx, Qy = Ax*Bz, Pz = Ax*By, Qz = Ay*Bx;
+        const double CrossSquared = (Px-Qx)*(Px-Qx) + (Py-Qy)*(Py-Qy) + (Pz-Qz)*(Pz-Qz);
+        Require(std::isfinite(CrossSquared) && CrossSquared >= 1e-16 && CrossSquared <= 1e32 &&
+                    std::max({std::abs(Ax),std::abs(Ay),std::abs(Az),std::abs(Bx),std::abs(By),std::abs(Bz)}) <= 1e16 &&
+                    std::max({std::abs(Px),std::abs(Qx),std::abs(Py),std::abs(Qy),std::abs(Pz),std::abs(Qz)}) <= 1e16,
+                "Replay source facet is degenerate or outside bounded area arithmetic");
+        Indices.push_back(float(Index));
+    }
+    return Indices;
+}
 } // namespace

@@ -89,6 +89,11 @@ of that material model. Cosine sampling can have high variance for glossy lobes;
 GGX proposal, and perfect mirrors are deliberately rejected. [Release](Results/RoughReplay-release.txt) ·
 [sanitized host](Results/RoughReplay-sanitized.txt).
 
+An additional opt-in mode explicitly samples emissive triangles at each bounce and suppresses duplicate
+BSDF-hit light contributions. Moving blockers, changing source lists, three lights, rough surfaces and four-hit
+rooms are checked against area integrals and independent CPU paths. The measured small-source variance
+reduction is fixture-specific, not an equal-cost performance result. [Facet sampling and limitations](FacetReplay.md).
+
 This does **not** yet handle general materials, direct analytic lights, textured geometry, refraction, volumes,
 arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,
 not the retained demo's endpoint-reconnection algorithm, and rare-event variance may be large. Four noisy

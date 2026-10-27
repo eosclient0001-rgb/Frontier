@@ -17,16 +17,45 @@ float3 ReplayDirection(float3 Normal, inout uint Bits)
     return Unit(Tangent * (Radius * cos(Azimuth)) + Bitangent * (Radius * sin(Azimuth)) +
                 Normal * sqrt(max(0, 1 - Radius * Radius)));
 }
+// 📝 Uniformly select one emissive facet, then a uniform point on its area. No BSDF-hit light is added in this mode.
+float3 ReplayFacetRadiance(SurfacePoint Receiver, float3 Origin, bool RoughOpaque, inout uint Bits)
+{
+    uint FacetCount = Extent.Reconstruction.z;
+    if (FacetCount == 0) return 0;
+    // 📝 Rejection removes modulo bias for a uniformly distributed 32-bit draw.
+    uint Threshold = (0u - FacetCount) % FacetCount, SampleBits;
+    do { SampleBits = NextRandom(Bits); } while (SampleBits < Threshold);
+    uint Offset = asuint(Extent.Maximum.y), FacetIndex = uint(Angles[Offset + SampleBits % FacetCount]);
+    FacetCorners F = Facets[FacetIndex];
+    float3 EdgeA = F.B.xyz - F.A.xyz, EdgeB = F.C.xyz - F.A.xyz;
+    float3 AreaNormal = cross(EdgeA, EdgeB);
+    float DoubleArea = length(AreaNormal);
+    float Root = sqrt(RandomUnit(Bits)), Along = RandomUnit(Bits);
+    float3 Point = F.A.xyz * (1 - Root) + F.B.xyz * (Root * (1 - Along)) + F.C.xyz * (Root * Along);
+    float3 Delta = Point - Origin;
+    float DistanceSquared = dot(Delta, Delta);
+    if (DoubleArea <= 0 || DistanceSquared <= 1e-10) return 0;
+    float Distance = sqrt(DistanceSquared), DirectionCosine;
+    float3 Direction = Delta / Distance;
+    DirectionCosine = max(0, dot(Unit(Receiver.NormalRoughness.xyz), Direction));
+    float SourceCosine = abs(dot(AreaNormal / DoubleArea, Direction));
+    if (DirectionCosine <= 0 || SourceCosine <= 0 ||
+        OccludedGeometry(Origin, Direction, Distance - max(1e-5, Distance * 1e-6))) return 0;
+    float3 Scattering = RoughOpaque ? Brdf(Receiver, Direction) : clamp(Receiver.AlbedoIor.xyz, 0, 1) / 3.141592653589793;
+    float Measure = DirectionCosine * SourceCosine * (.5 * DoubleArea) * float(FacetCount) / DistanceSquared;
+    return Scattering * max(F.Emissive.xyz, 0) * Measure;
+}
 float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
 {
     uint Bits = Seed;
     float3 Normal = Unit(Receiver.NormalRoughness.xyz);
     float3 Origin = Receiver.PositionHit.xyz + Normal * .001;
     float3 Throughput = 1, Radiance = 0;
-    bool RoughOpaque = (Extent.Primary.w & 64u) != 0;
+    bool RoughOpaque = (Extent.Primary.w & 64u) != 0, SampleFacets = (Extent.Primary.w & 128u) != 0;
     SurfacePoint Current = Receiver;
     for (uint Bounce = 0; Bounce < Extent.Primary.z; ++Bounce)
     {
+        if (SampleFacets) Radiance += Throughput * ReplayFacetRadiance(Current, Origin, RoughOpaque, Bits);
         float3 Direction = ReplayDirection(Normal, Bits), Strike;
         // With cosine-weighted sampling, f*cos/pdf = pi*f. The original diffuse mode stays Lambertian.
         Throughput *= RoughOpaque ? 3.141592653589793 * Brdf(Current, Direction) : clamp(Current.AlbedoIor.xyz, 0, 1);
@@ -38,7 +67,9 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
             break;
         }
         FacetCorners F = Facets[Index];
-        Radiance += Throughput * max(F.Emissive.xyz, 0); // Two-sided constant facet radiance.
+        // 📝 Explicit light sampling already accounts for every emissive hit. Bit 256 is an intentionally wrong audit control.
+        if (!SampleFacets || (Extent.Primary.w & 256u) != 0)
+            Radiance += Throughput * max(F.Emissive.xyz, 0);
         Normal = Unit(F.NormalA.xyz * (1 - Strike.y - Strike.z) + F.NormalB.xyz * Strike.y + F.NormalC.xyz * Strike.z);
         if (dot(Normal, Direction) > 0) Normal = -Normal;
         Origin = Origin + Direction * Strike.x + Normal * .001;

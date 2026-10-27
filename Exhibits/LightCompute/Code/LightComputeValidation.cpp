@@ -245,8 +245,8 @@ struct LightComputeSubmission
     VkPipeline RectangleGeneratePipeline = VK_NULL_HANDLE, RectangleResolvePipeline = VK_NULL_HANDLE;
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
     bool ReplayLastReset = true, ReplayHasPriorInputs = false, ReplayPreviousPrimary = false,
-         ReplayPreviousRoughOpaque = false;
-    uint32_t ReplayLastHistoryCap = 1, ReplayPreviousBounces = 0;
+         ReplayPreviousRoughOpaque = false, ReplayPreviousSampleFacets = false, ReplayPreviousDoubleCount = false;
+    uint32_t ReplayLastHistoryCap = 1, ReplayPreviousBounces = 0, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
     float ReplayPreviousFloor = 0;
     std::array<float,3> ReplayPreviousEnvironment{};
     std::array<std::array<float,4>,12> ReplayPreviousCamera{};
@@ -540,6 +540,14 @@ struct LightComputeSubmission
         if (Scene.Camera[10][2] > 0)
             ProfileSamples.resize(ProfileSamples.size() + Scene.Surfaces.size() * 4);
         ProfileSamples.resize(ProfileSamples.size() + SolarOpticsPayloadFloats);
+        if (ReplayOnly)
+        {
+            Require(ProfileSamples.size() <= UINT32_MAX && Scene.Surfaces.size() <= UINT32_MAX - ProfileSamples.size(),
+                    "Replay source index span exceeds addressable storage");
+            ReplayFacetStart = uint32_t(ProfileSamples.size());
+            ReplayFacetCapacity = uint32_t(Scene.Surfaces.size());
+            ProfileSamples.resize(ProfileSamples.size() + ReplayFacetCapacity);
+        }
         ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
         ConstructBuffer(6, nullptr,
@@ -767,7 +775,8 @@ struct LightComputeSubmission
                                                     bool Temporal, bool Spatial, bool ResetHistory = false,
                                                     const std::array<float, 3>& Environment = {0,0,0},
                                                     float PositiveFloor = .01f, bool PrimaryVisibility = false,
-                                                    bool FullHistoryForAudit = false, bool RoughOpaque = false)
+                                                    bool FullHistoryForAudit = false, bool RoughOpaque = false,
+                                                    bool SampleFacets = false, bool DoubleCountForAudit = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -776,8 +785,13 @@ struct LightComputeSubmission
                 "Invalid replay extent, domain or diffuse scene");
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
         ValidateReplayDomain(Scene, PrimaryVisibility, RoughOpaque);
+        Require(!DoubleCountForAudit || SampleFacets, "Double-count control requires explicit source sampling");
+        const auto FacetSources = SampleFacets ? CompileReplayFacetSources(Scene) : std::vector<float>{};
+        Require(FacetSources.size() <= ReplayFacetCapacity && ProjectedAngles(Scene).size() <= ReplayFacetStart,
+                "Replay facet-source list exceeds the prepared storage span");
         bool Changed = !ReplayHasPriorInputs || ReplayPreviousBounces != Bounces || ReplayPreviousFloor != PositiveFloor ||
                        ReplayPreviousPrimary != PrimaryVisibility || ReplayPreviousRoughOpaque != RoughOpaque ||
+                       ReplayPreviousSampleFacets != SampleFacets || ReplayPreviousDoubleCount != DoubleCountForAudit ||
                        ReplayPreviousEnvironment != Environment ||
                        ReplayPreviousCamera != Scene.Camera ||
                        ReplayPreviousFacets.size() != Scene.Surfaces.size() ||
@@ -795,21 +809,29 @@ struct LightComputeSubmission
         ReplayPreviousBounces = Bounces;
         ReplayPreviousPrimary = PrimaryVisibility;
         ReplayPreviousRoughOpaque = RoughOpaque;
+        ReplayPreviousSampleFacets = SampleFacets;
+        ReplayPreviousDoubleCount = DoubleCountForAudit;
         ReplayHasPriorInputs = true;
         // Shrink old represented counts, not their per-sample weights, after scene/view/integrator changes.
         ReplayLastHistoryCap = Changed && !FullHistoryForAudit ? 1u : 64u;
         bool Reset = ResetHistory || Scene.Width != ReceiverWidth || Scene.Height != ReceiverHeight;
         Upload(Scene);
+        if (!FacetSources.empty())
+            std::memcpy(static_cast<float*>(Buffers[4].Address) + ReplayFacetStart,
+                        FacetSources.data(), FacetSources.size() * sizeof(float));
         ReplayLastReset = Reset || HistoryDirty;
         ComputeExtent Extent;
         Extent.Dimensions[0] = uint32_t(Scene.Receivers.size());
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
         Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), 64};
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
-        Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, 0, ReplayLastHistoryCap};
-        Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, RoughOpaque ? 64u : 0u};
+        Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, uint32_t(FacetSources.size()), ReplayLastHistoryCap};
+        const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
+                                     (DoubleCountForAudit ? 256u : 0u);
+        Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
+        std::memcpy(&Extent.Maximum[1], &ReplayFacetStart, sizeof(ReplayFacetStart));
         std::memset(Buffers[7].Address, 0, 96);
         Confirm(ResetCommandPool(Device, Pool, 0));
         Confirm(ResetFences(Device, 1, &Completion));
@@ -1613,11 +1635,18 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PathReplayGpuValidation.h"
 #include "ReplayRoomReference.h"
 #include "RoughReplayValidation.h"
+#include "ReplayFacetSamplingValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--facet-replay")
+        {
+            ValidateReplayFacetSampling(Arguments[1], Arguments[2]);
+            ValidateReplayFacetRoom(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--rough-replay")
         {
             ValidateRoughReplay(Arguments[1], Arguments[2]);
