@@ -3,13 +3,14 @@ loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/Cont
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleTyre.facet: 1984 verts 3968 facets smooth=1
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleRim.facet: 786 verts 1568 facets smooth=1
 CPU raster 1280x720: 3 fixed poses, 3 warmups, 27 measured, no file IO or simulation in timing
-median_ms=66.354 min_ms=47.068 max_ms=167.246 retained_buffer_bytes=25804800
+median_ms=61.213 min_ms=52.728 max_ms=169.153 retained_buffer_bytes=25804800
 == after ==
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleBody.facet: 1492 verts 2924 facets smooth=0
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleTyre.facet: 1984 verts 3968 facets smooth=1
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleRim.facet: 786 verts 1568 facets smooth=1
 CPU raster 1280x720: 3 fixed poses, 3 warmups, 27 measured, no file IO or simulation in timing
-median_ms=44.072 min_ms=36.221 max_ms=135.766 retained_buffer_bytes=25804800
+median_ms=38.163 min_ms=31.615 max_ms=179.722 retained_buffer_bytes=25804800
+PASS ground ray coverage 2812 samples; reprojection error 0.01062 pixels
 PASS highlight ramp 1/2/4/8 -> 202/224/238/246 (no premature white clipping)
 PASS finite radiance; once-only shadow; blue fill retained (26256 pixels); non-ground unchanged; horizon safe
 == after ==
@@ -17,7 +18,8 @@ loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/Cont
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleTyre.facet: 1984 verts 3968 facets smooth=1
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleRim.facet: 786 verts 1568 facets smooth=1
 CPU raster 1280x720: 3 fixed poses, 3 warmups, 27 measured, no file IO or simulation in timing
-median_ms=47.157 min_ms=39.702 max_ms=130.560 retained_buffer_bytes=25804800
+median_ms=36.695 min_ms=31.740 max_ms=163.502 retained_buffer_bytes=25804800
+PASS ground ray coverage 2812 samples; reprojection error 0.01062 pixels
 PASS highlight ramp 1/2/4/8 -> 202/224/238/246 (no premature white clipping)
 PASS finite radiance; once-only shadow; blue fill retained (26256 pixels); non-ground unchanged; horizon safe
 == before ==
@@ -25,4 +27,4 @@ loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/Cont
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleTyre.facet: 1984 verts 3968 facets smooth=1
 loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleRim.facet: 786 verts 1568 facets smooth=1
 CPU raster 1280x720: 3 fixed poses, 3 warmups, 27 measured, no file IO or simulation in timing
-median_ms=60.994 min_ms=49.338 max_ms=145.434 retained_buffer_bytes=25804800
+median_ms=62.930 min_ms=53.250 max_ms=175.660 retained_buffer_bytes=25804800

@@ -9,7 +9,8 @@ if [ ! -f "$JOLT/libJolt.a" ]; then
     echo 'Run RunVehiclePhysics.sh first to build the pinned Jolt dependency.' >&2
     exit 1
 fi
-git show ae0bb7d:Exhibits/VehiclePhysics/Code/SceneRender.cpp > "$BUILD/SceneRenderBefore.cpp"
+# Compare with the restored pre-ground-change implementation (the renderer is a test tool, not a visual oracle).
+git show 29c5ab194276552e56eb204b77c7fc1567b1219a:Exhibits/VehiclePhysics/Code/SceneRender.cpp > "$BUILD/SceneRenderBefore.cpp"
 for VARIANT in before after; do
     DEFINES=()
     if [ "$VARIANT" = before ]; then
@@ -18,7 +19,7 @@ for VARIANT in before after; do
     g++ -std=c++17 -O2 -Wall -Wextra -Werror -DNDEBUG -I Frontier -I "$JOLT/JoltPhysics-5.2.0" \
         "${DEFINES[@]}" Exhibits/VehiclePhysics/Code/RasterComparison.cpp \
         "$BUILD/VehicleSolver.o" "$BUILD/TyreSlipSolver.o" "$BUILD/TyreThermalSolver.o" \
-        "$BUILD/TyreCarcassLattice.o" "$JOLT/libJolt.a" -pthread -o "$BUILD/Raster-$VARIANT"
+        "$BUILD/TyreCarcassLattice.o" "$BUILD/TyreContinuum.o" "$JOLT/libJolt.a" -pthread -o "$BUILD/Raster-$VARIANT"
 done
 # Alternate ordering to expose scheduling/thermal bias. Do not run other workloads concurrently.
 for VARIANT in before after after before; do

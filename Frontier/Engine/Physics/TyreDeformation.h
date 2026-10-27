@@ -1,9 +1,8 @@
 //============================================================================================================================
 // 🧩 Frontier — TyreDeformation.h
 //============================================================================================================================
-// 📝 Volumetric tyre deformation — the demonstration's "3D FEM": the PB-FEM-style continuum deformation of
-//    VehicleVisual.wgsl's ResolveWheelVertex (Chaos-Flesh-style volumetric incompressibility & pressure dilatation),
-//    transcribed equation-for-equation in float, with its per-wheel record encoder from VehicleVisualState.js.
+// 📝 The demo's analytical spring-deformation fallback and nodal interpolation from VehicleVisual.wgsl,
+//    with the per-wheel deformation record from VehicleVisualState.js. Neither path supplies physical contact forces.
 //    Provenance, stated plainly: in the demo this is a GPU vertex deformation driven by the dynamics (contact angle,
 //    carcass deflection, gauge pressure, lateral-force shear) — it shapes the rubber, it does not feed forces back.
 //    Here it is the same contract on CPU: VehicleSolver's wheel state in, deformed wheel-local vertex out, ready for
@@ -12,6 +11,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 #include "Engine/Physics/VehicleSolver.h"
@@ -151,6 +151,58 @@ inline void ResolveDeformedWheelVertex(const TyreDeformationRecord& Record, bool
             OutNormal[0] = Tilted[0] / L; OutNormal[1] = Tilted[1] / L; OutNormal[2] = Tilted[2] / L;
         }
     }
+}
+
+// 📝 Current demo's 32×5 nodal interpolation path, including its tangential normal adjustment.
+//    A zero-load or shredded tyre follows the same guards as the retained VehicleVisual.wgsl.
+inline void ResolveContinuumWheelVertex(const TyreDeformationRecord& Record, bool IsTyreFamily,
+                                        const TyreContinuumPositions& Rest, const TyreContinuumPositions& Local,
+                                        const float Position[3], const float Normal[3],
+                                        float OutPosition[3], float OutNormal[3])
+{
+    for (int Axis = 0; Axis < 3; ++Axis) { OutPosition[Axis] = Position[Axis]; OutNormal[Axis] = Normal[Axis]; }
+    if (IsTyreFamily && Record.Shredded)
+    {
+        OutPosition[0] = OutPosition[1] = OutPosition[2] = 0.0f;
+        return;
+    }
+    if (!IsTyreFamily || Record.Deflection <= 1.0e-5f) return;
+    constexpr float Pi = 3.14159265358979323846f, RimRadius = 0.3448f, OuterRadius = 0.50855f;
+    const float Radius = std::sqrt(Position[0]*Position[0] + Position[2]*Position[2]);
+    if (Radius <= RimRadius + 1e-4f) return;
+    const float Phi = std::atan2(Position[2], Position[0]);
+    float Turns = Phi / (2.0f * Pi) + 1.0f;
+    Turns -= std::floor(Turns);
+    const float SectorCoord = Turns * 32.0f;
+    const int S0 = static_cast<int>(std::floor(SectorCoord)) & 31, S1 = (S0 + 1) & 31;
+    const float SectorFraction = SectorCoord - std::floor(SectorCoord);
+    const float RingCoord = std::fmax(0.5f, std::fmin(3.5f, (Position[1] / 0.118f) * 1.35f + 2.0f));
+    const int M0 = std::min(static_cast<int>(std::floor(RingCoord)), 3), M1 = M0 + 1;
+    const float RingFraction = std::fmax(0.0f, std::fmin(1.0f, RingCoord - M0));
+    const auto Displacement = [&](int Sector, int Ring, int Axis)
+    {
+        const int Index = (Sector * 5 + Ring) * 3 + Axis;
+        return Local[Index] - Rest[Index];
+    };
+    const float Fraction = std::fmax(0.0f, std::fmin(1.0f, (Radius - RimRadius) / (OuterRadius - RimRadius)));
+    const float U = std::fmax(0.0f, std::fmin(1.0f, Fraction / 0.88f));
+    const float Weight = U * U * (3.0f - 2.0f * U);
+    float U00[3], U10[3];
+    for (int Axis = 0; Axis < 3; ++Axis)
+    {
+        U00[Axis] = Displacement(S0, M0, Axis); U10[Axis] = Displacement(S1, M0, Axis);
+        const float U01 = Displacement(S0, M1, Axis), U11 = Displacement(S1, M1, Axis);
+        const float Row0 = U00[Axis] * (1.0f - SectorFraction) + U10[Axis] * SectorFraction;
+        const float Row1 = U01 * (1.0f - SectorFraction) + U11 * SectorFraction;
+        OutPosition[Axis] += (Row0 * (1.0f - RingFraction) + Row1 * RingFraction) * Weight;
+    }
+    const float SinPhi = std::sin(Phi), CosPhi = std::cos(Phi);
+    const float Tilt = ((U10[0] - U00[0]) * CosPhi + (U10[2] - U00[2]) * SinPhi) * Weight * 4.5f;
+    OutNormal[0] = Normal[0] + SinPhi * Tilt;
+    OutNormal[1] = Normal[1];
+    OutNormal[2] = Normal[2] - CosPhi * Tilt;
+    const float Magnitude = std::sqrt(OutNormal[0]*OutNormal[0] + OutNormal[1]*OutNormal[1] + OutNormal[2]*OutNormal[2]);
+    if (Magnitude > 1e-12f) for (int Axis = 0; Axis < 3; ++Axis) OutNormal[Axis] /= Magnitude;
 }
 
 } // namespace Frontier

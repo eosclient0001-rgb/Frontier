@@ -63,6 +63,26 @@ int main(int ArgumentCount, char** Arguments)
     for (float Radiance : Raster.Colour)
         if (!std::isfinite(Radiance) || Radiance < 0.0f) return 4;
 #ifndef RASTER_BASELINE
+    // Every downward ray should reach the ground, including rays whose old tiles crossed the near plane.
+    Raster.Cam = LookAt({0, -3, 1}, {0, 0, 0.4f}, 60.0f, 1280.0f / 720.0f);
+    Raster.Background(); Raster.GroundPlane();
+    size_t GroundSamples = 0; float WorstProjection = 0.0f;
+    for (int Y = 0; Y < Raster.H; Y += 13)
+        for (int X = 0; X < Raster.W; X += 17)
+        {
+            const float Vertical = (1.0f - 2.0f * (Y + 0.5f) / Raster.H) * Raster.Cam.TanHalfFovY;
+            const float RayZ = Raster.Cam.Forward.Z + Raster.Cam.Up.Z * Vertical;
+            if (RayZ >= -0.01f) continue;
+            const size_t I = static_cast<size_t>(Y) * Raster.W + X;
+            if (Raster.WorldPos[I].Z != 0.0f || !std::isfinite(Raster.Depth[I])) return 13;
+            float SX, SY; const float Z = Raster.Project(Raster.WorldPos[I], SX, SY);
+            if (!std::isfinite(Z)) return 14;
+            WorstProjection = std::max({WorstProjection, std::abs(SX-(X+0.5f)),
+                                       std::abs(SY-(Raster.H-Y-0.5f))});
+            ++GroundSamples;
+        }
+    if (GroundSamples < 100 || WorstProjection > 0.1f) return 15;
+    std::printf("PASS ground ray coverage %zu samples; reprojection error %.5g pixels\n", GroundSamples, WorstProjection);
     // Shadow is applied once, affects only ground and preserves more blue skylight than red sunlight.
     Raster.Cam = LookAt({0, -3, 3}, {0, 0, 0}, 60.0f, 1280.0f / 720.0f);
     Raster.Background();

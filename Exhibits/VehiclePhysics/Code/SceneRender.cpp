@@ -6,8 +6,8 @@
 //    from Frontier's ControlVehicleStructure / RubberFL / RimFL .inl archives by FacetArchiveCodec.py), assembled the
 //    way FacetStructure.js assembles them (right wheels Y-mirrored with winding restored, rim hard-shaded and scaled to
 //    the configured radius, tyre smooth). Materials are the authored linear albedos of MaterialSpecification.js.
-//    Every frame is posed by production physics: VehicleSolver advances, tyre vertices pass through the ported PB-FEM
-//    deformation (ResolveDeformedWheelVertex) in wheel-local space exactly as the WGSL does, and the cone scene is
+//    Every frame is posed by VehicleSolver. Spring tyres use the demo's analytical fallback; projection and solid
+//    modes interpolate their nodal displacements as in VehicleVisual.wgsl. The cone scene is
 //    stepped by Jolt 5.2.0 through the same chassis-proxy exchange as JoltScene.cpp. The rasterizer is a small
 //    z-buffered triangle renderer (lambert + hemisphere + Blinn sheen, planar projected shadow, sRGB output) — a
 //    proof visual, not the engine renderer.
@@ -346,32 +346,36 @@ namespace
         }
         void GroundPlane()
         {
-            // Tiled ground snapped to a world-aligned grid around the camera: the rasterizer drops any
-            // triangle with a vertex behind the camera, so one giant quad can never survive a chase view.
-            const float Tile = 10.0f;
-            const int Ox = (int)std::floor(Cam.Position.X / Tile), Oy = (int)std::floor(Cam.Position.Y / Tile);
-            Material Mat = { { 0.255f, 0.255f, 0.265f }, 0.9f, 0.0f, { 0, 0, 0 } };
-            for (int Ty = Oy - 14; Ty < Oy + 14; ++Ty)
-                for (int Tx = Ox - 14; Tx < Ox + 14; ++Tx)
+            // Intersect view rays with the flat test ground. One scanline has a constant view depth,
+            // so this avoids clipped tile holes, thousands of checker triangles and per-fragment shading.
+            // This is still the cheap test raster, not the engine's terrain or a fidelity reference.
+            const float NdotL = std::fmax(0.0f, SunDir.Z);
+            const F3 Base = { 0.255f * (0.30f + SunColour.X * NdotL),
+                              0.255f * (0.38f + SunColour.Y * NdotL),
+                              0.265f * (0.52f + SunColour.Z * NdotL) };
+            const F3 Haze = { 0.52f, 0.59f, 0.72f };
+            const float StepX = 2.0f * Cam.TanHalfFovY * Cam.Aspect / W;
+            for (int Y = 0; Y < H; ++Y)
+            {
+                const float Vertical = (1.0f - 2.0f * (Y + 0.5f) / H) * Cam.TanHalfFovY;
+                const F3 Ray = Cam.Forward + Cam.Up * Vertical + Cam.Right * ((0.5f - 0.5f * W) * StepX);
+                if (Ray.Z >= -1e-7f) continue;
+                const float Z = -Cam.Position.Z / Ray.Z;
+                if (Z < 0.05f) continue;
+                const float Fog = 0.55f * ClampF(Z * 0.0016f, 0.0f, 1.0f);
+                const F3 Ground = Base * (1.0f - Fog) + Haze * Fog;
+                F3 World = Cam.Position + Ray * Z;
+                const F3 Delta = Cam.Right * (StepX * Z);
+                for (int X = 0; X < W; ++X)
                 {
-                    const float X0 = Tx * Tile, Y0 = Ty * Tile;
-                    const F3 A = { X0, Y0, 0 }, B = { X0 + Tile, Y0, 0 }, C = { X0 + Tile, Y0 + Tile, 0 }, D = { X0, Y0 + Tile, 0 };
-                    Triangle(A, B, C, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, Mat, false, { 1, 1, 1 });
-                    Triangle(A, C, D, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, Mat, false, { 1, 1, 1 });
+                    const size_t Index = (size_t)Y * W + X;
+                    Depth[Index] = Z;
+                    WorldPos[Index] = { World.X, World.Y, 0.0f };
+                    float* Out = &Colour[Index * 3];
+                    Out[0] = Ground.X; Out[1] = Ground.Y; Out[2] = Ground.Z;
+                    World = World + Delta;
                 }
-            // Near-field checker cells (2 m) as thin quads slightly above the plane, world-aligned.
-            const float Z = 0.002f;
-            const int Cx0 = (int)std::floor(Cam.Position.X / 2.0f), Cy0 = (int)std::floor(Cam.Position.Y / 2.0f);
-            for (int CellY = Cy0 - 24; CellY < Cy0 + 24; ++CellY)
-                for (int CellX = Cx0 - 32; CellX < Cx0 + 32; ++CellX)
-                {
-                    if ((CellX + CellY) & 1) continue;
-                    const float X0 = CellX * 2.0f, Y0 = CellY * 2.0f;
-                    Material Cell = { { 0.165f, 0.165f, 0.175f }, 0.9f, 0.0f, { 0, 0, 0 } };
-                    const F3 A = { X0, Y0, Z }, B = { X0 + 2, Y0, Z }, C = { X0 + 2, Y0 + 2, Z }, D = { X0, Y0 + 2, Z };
-                    Triangle(A, B, C, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, Cell, false, { 1, 1, 1 });
-                    Triangle(A, C, D, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, Cell, false, { 1, 1, 1 });
-                }
+            }
         }
         void Disc(F3 Centre, float RadiusWorld, F3 ColourLinear)
         {
@@ -464,7 +468,7 @@ namespace
         std::vector<F3> TyreWorld, TyreNormalsWorld, RimWorld;
     };
 
-    // Poses body + wheels from the solver, deforming tyre vertices through the ported PB-FEM in wheel-local space.
+    // Pose the solver's wheels and choose the active analytical or nodal visual deformation path.
     void PoseVehicle(const VehicleSolver& Car, const VehicleMeshes& Meshes,
                      std::vector<F3>& BodyWorld, WheelRenderState Wheels[4])
     {
@@ -483,6 +487,18 @@ namespace
             double Hub[3], Quat[4];
             Car.QueryWheelPose(Wheel, Hub, Quat);
             const TyreDeformationRecord Record = ResolveTyreDeformationRecord(Car.Wheels[Wheel], Car.Orientation);
+            const TyreContinuumPositions* Rest = nullptr;
+            const TyreContinuumPositions* Local = nullptr;
+            if (Car.QueryCarcassModel() == CarcassProjectionModel)
+            {
+                Rest = &Car.QueryCarcassProjection(Wheel).QueryRestPositions();
+                Local = &Car.QueryCarcassProjection(Wheel).QueryLocalPositions();
+            }
+            else if (Car.QueryCarcassModel() == CarcassSolidModel)
+            {
+                Rest = &Car.QueryCarcassSolid(Wheel).QueryRestPositions();
+                Local = &Car.QueryCarcassSolid(Wheel).QueryLocalPositions();
+            }
             WheelRenderState& State = Wheels[Wheel];
             State.TyreWorld.resize(Tyre.Positions.size());
             State.TyreNormalsWorld.resize(Tyre.Positions.size());
@@ -491,7 +507,8 @@ namespace
                 const float In[3] = { Tyre.Positions[I].X, Tyre.Positions[I].Y, Tyre.Positions[I].Z };
                 const float NIn[3] = { Tyre.VertexNormals[I].X, Tyre.VertexNormals[I].Y, Tyre.VertexNormals[I].Z };
                 float OutP[3], OutN[3];
-                ResolveDeformedWheelVertex(Record, true, In, NIn, OutP, OutN);
+                if (Rest && Local) ResolveContinuumWheelVertex(Record, true, *Rest, *Local, In, NIn, OutP, OutN);
+                else ResolveDeformedWheelVertex(Record, true, In, NIn, OutP, OutN);
                 const F3 P = RotateD(Quat, F3{ OutP[0], OutP[1], OutP[2] });
                 State.TyreWorld[I] = { P.X + (float)Hub[0], P.Y + (float)Hub[1], P.Z + (float)Hub[2] };
                 State.TyreNormalsWorld[I] = Norm(RotateD(Quat, F3{ OutN[0], OutN[1], OutN[2] }));
@@ -672,6 +689,18 @@ int main(int Argc, char** Argv)
         Car.Respawn(Spawn, -0.55);
         for (int S = 0; S < 420; ++S) Car.Advance(Idle, 1.0 / 120.0);
         RenderCorner("tyre-lattice.ppm", true, true);
+        // Demo projection and solid shapes both use the same spring loads. Show their nodal interpolation
+        // at 30 kPa so the deformation is visible; the older lattice above is a separate force model.
+        Car.Thermal.Inflate(FlatPressures);
+        Car.RestoreTyres();
+        Car.AssignCarcassModel(CarcassProjectionModel);
+        Car.Respawn(Spawn, -0.55);
+        for (int S = 0; S < 360; ++S) Car.Advance(Idle, 1.0 / 120.0);
+        RenderCorner("tyre-demo-xpbd.ppm", false, false);
+        Car.AssignCarcassModel(CarcassSolidModel);
+        Car.Respawn(Spawn, -0.55);
+        for (int S = 0; S < 360; ++S) Car.Advance(Idle, 1.0 / 120.0);
+        RenderCorner("tyre-demo-solid.ppm", false, false);
         return 0;
     }
 

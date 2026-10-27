@@ -11,6 +11,7 @@
 
 #include "Engine/Physics/VehicleSolver.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -172,6 +173,10 @@ void VehicleSolver::Respawn(const double SpawnPosition[3], double Yaw)
         m_SampleSeconds[Wheel] = 0.0;
         m_SlipTravel[Wheel] = 0.0;
         m_Lattices[Wheel].Reset();
+        TyreContinuumInput Input;
+        QueryWheelPose(Wheel, Input.Centre, Input.Orientation);
+        m_Projections[Wheel].Reset(Input);
+        m_Solids[Wheel].Reset(Input);
     }
     m_Events = VehicleEvents();
     SteerAngle = 0.0;
@@ -206,6 +211,25 @@ void VehicleSolver::AssignCarcassModel(CarcassModel Model)
     m_CarcassModel = Model;
     for (int Wheel = 0; Wheel < 4; ++Wheel)
         m_Lattices[Wheel].Reset();
+    // 📝 The demo advances its selected visual solver once on assignment; inactive solvers retain their shape.
+    AdvanceTyreContinuum(1.0 / 120.0);
+}
+
+void VehicleSolver::AdvanceTyreContinuum(double Seconds)
+{
+    if (m_CarcassModel != CarcassProjectionModel && m_CarcassModel != CarcassSolidModel) return;
+    for (int Wheel = 0; Wheel < 4; ++Wheel)
+    {
+        if (Wheels[Wheel].Shredded) continue;
+        TyreContinuumInput Input;
+        QueryWheelPose(Wheel, Input.Centre, Input.Orientation);
+        Copy(Wheels[Wheel].GroundNormal, Input.GroundNormal);
+        Input.Deflection = Wheels[Wheel].Contact ? Wheels[Wheel].TyreDeflection : 0.0;
+        Input.Pressure = Wheels[Wheel].Pressure;
+        Input.LateralForce = Wheels[Wheel].LateralForce;
+        if (m_CarcassModel == CarcassProjectionModel) m_Projections[Wheel].Advance(Input, Seconds, 2);
+        else m_Solids[Wheel].Advance(Input, Seconds, 2);
+    }
 }
 
 void VehicleSolver::AssignTyrePressures(const double Pressures[4])
@@ -293,6 +317,9 @@ void VehicleSolver::Advance(const VehicleCommand& Command, double Seconds)
         Step(Command, SubstepSeconds);
         m_Accumulator -= SubstepSeconds;
     }
+    // 📝 The VehicleHMI demo updates its selected shape once after the fixed vehicle substeps.
+    const double ShapeSeconds = std::max(SubstepSeconds, std::min(Seconds != 0.0 ? Seconds : 1.0 / 60.0, 1.0 / 30.0));
+    AdvanceTyreContinuum(ShapeSeconds);
     // 📝 The demo host's per-advance thermal wiring: readings averaged over the substeps, thermal step, pressures and
     //    grip assigned back, tyre wear advanced, pinch cuts turned into punctures.
     if (Seconds > 0.0)

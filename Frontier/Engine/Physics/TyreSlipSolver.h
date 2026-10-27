@@ -1,10 +1,10 @@
 //============================================================================================================================
 // 🧩 Frontier — TyreSlipSolver.h
 //============================================================================================================================
-// 📝 Pacejka Magic Formula MF6.1 — pure-slip longitudinal and lateral force and the cosine combined-slip weighting.
-//    Port of the HTML demonstration's TyreSlipSolver.js (itself a unit-for-unit port of Frontier's
-//    PacejkaMagicFormula.cpp / GRIT's ComputePacejka*): loads in newtons, normalised to kN internally, forces
-//    returned in newtons. Coefficients are the GRIT spec-sheet defaults in VehicleSpecification.h.
+// 📝 HTML demo's Pacejka-style pure-slip longitudinal/lateral forces and combined-slip weighting.
+//    Loads are in newtons, normalized to kN internally; output forces are newtons. This reduced demo
+//    implementation does not calculate the Project Drive aligning moment and is not a verified full
+//    Project Drive / GRIT Magic Formula port or a measured tyre calibration.
 //============================================================================================================================
 
 #pragma once

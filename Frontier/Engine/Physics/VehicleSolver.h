@@ -3,10 +3,10 @@
 //============================================================================================================================
 // 📝 ControlVehicle rigid-body dynamics: socket struts, transient-slip MF6.1 tyres, GT-R powertrain, brakes, aero, contact.
 //    Port of the HTML demonstration's VehicleSolver.js, equation-for-equation at its fixed 480 Hz substep. The chassis,
-//    sockets, strut calibration, tyre sheet, torque curve, ratios, brake and steering limits are the Project-Drive
-//    ControlVehicle's own. Two carcass choices carry the corner load in series with the strut: the demo's pressure-fed
-//    carcass spring (CarcassSpringModel, the 1:1 port) and the XPBD particle lattice of TyreCarcassLattice.h
-//    (CarcassLatticeModel — Frontier's soft-tyre model, which the demo describes but does not contain).
+//    sockets, struts and simplified drivetrain follow the HTML demo and are not a verified Project Drive vehicle port.
+//    The demo spring carries corner load in spring, projection and solid modes. Projection and Hex8 are the current
+//    VehicleHMI demo's 160-particle deformation solvers; their prescribed forces do not feed back into the chassis.
+//    The older 84-particle lattice is a separate approximation that does feed its reaction into the vehicle.
 //    Deviations from the demo, stated: the driving surface is a caller-supplied height function (the demo's sculpted
 //    course is exhibit content, not engine), wheels do not yet ride loose debris (the demo's RigidBodyWorld support),
 //    the 700-point production hull is not assigned so the demo's sphere hull stands in, and scrape/spark bookkeeping
@@ -22,6 +22,7 @@
 #include "Engine/Physics/TyreSlipSolver.h"
 #include "Engine/Physics/TyreThermalSolver.h"
 #include "Engine/Physics/TyreCarcassLattice.h"
+#include "Engine/Physics/TyreContinuum.h"
 #include "Engine/Physics/VehicleSpecification.h"
 
 namespace Frontier
@@ -46,11 +47,14 @@ struct ObstacleBox
     double Maximum[3] = { 0.0, 0.0, 0.0 };   // [m] world
 };
 
-// 📝 Which carcass carries the corner: the demo's pressure-fed spring, or the XPBD lattice.
+// 📝 Spring carries the load in the demo modes; its projection/solid models supply nodal deformation.
+//    The older lattice mode is separate and replaces the spring force with its own reaction.
 enum CarcassModel
 {
-    CarcassSpringModel  = 0,
-    CarcassLatticeModel = 1
+    CarcassSpringModel     = 0,
+    CarcassLatticeModel    = 1,
+    CarcassProjectionModel = 2,
+    CarcassSolidModel      = 3
 };
 
 // 📝 Caller-supplied driving surface. Height [m] at world (X, Y); Normal writes the unit surface normal. Either may be
@@ -142,6 +146,9 @@ public:
     // 📝 The XPBD carcass lattice of one wheel (particle queries for rendering/inspection; most recently stepped
     //    when the lattice carcass model is active).
     const TyreCarcassLattice& QueryCarcassLattice(int Index) const { return m_Lattices[Index]; }
+    const TyreCarcassProjection& QueryCarcassProjection(int Index) const { return m_Projections[Index]; }
+    const TyreCarcassSolid& QueryCarcassSolid(int Index) const { return m_Solids[Index]; }
+    CarcassModel QueryCarcassModel() const { return m_CarcassModel; }
 
     VehicleEvents ResolveEvents();
 
@@ -166,6 +173,7 @@ private:
     double ResolveDriveTorque(double ThrottleIn, double ForwardSpeed, double Seconds);
     void ResolveHullContacts();
     void AdvanceTyreWear(double Seconds);
+    void AdvanceTyreContinuum(double Seconds);
     void ShredTyre(int Index);
     double GroundHeight(double X, double Y) const;
     void GroundNormal(double X, double Y, double OutNormal[3]) const;
@@ -174,7 +182,9 @@ private:
     TyreSlipSolver m_Tyres;
     SuspensionSpecification m_Struts[4];
     TyreCarcassLattice m_Lattices[4];
-    CarcassModel m_CarcassModel = CarcassSpringModel;
+    TyreCarcassProjection m_Projections[4];
+    TyreCarcassSolid m_Solids[4];
+    CarcassModel m_CarcassModel = CarcassSpringModel; // demo defaults to solid; native default preserves existing callers
     double m_StaticLength = 0.6436 - 0.0914;       // [m] socket separation at rest
     double m_InertiaBody[3] = { 0.0, 0.0, 0.0 };   // [kg·m²]
     double m_Accumulator = 0.0;                    // [s]

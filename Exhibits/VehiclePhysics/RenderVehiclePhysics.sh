@@ -23,12 +23,12 @@ if [ ! -f "$JOLT/libJolt.a" ]; then
 fi
 
 echo "== compiling production physics + renderer =="
-for f in VehicleSolver TyreSlipSolver TyreThermalSolver TyreCarcassLattice; do
+for f in VehicleSolver TyreSlipSolver TyreThermalSolver TyreCarcassLattice TyreContinuum; do
   g++ -std=c++17 -O2 -Wall -Wextra -Werror -I Frontier -c "Frontier/Engine/Physics/$f.cpp" -o "$BUILD/$f.o"
 done
 g++ -std=c++17 -O2 -Wall -Wextra -Werror -I Frontier -I "$JOLT/JoltPhysics-5.2.0" -DNDEBUG \
   Exhibits/VehiclePhysics/Code/SceneRender.cpp \
-  "$BUILD/VehicleSolver.o" "$BUILD/TyreSlipSolver.o" "$BUILD/TyreThermalSolver.o" "$BUILD/TyreCarcassLattice.o" \
+  "$BUILD/VehicleSolver.o" "$BUILD/TyreSlipSolver.o" "$BUILD/TyreThermalSolver.o" "$BUILD/TyreCarcassLattice.o" "$BUILD/TyreContinuum.o" \
   "$JOLT/libJolt.a" -pthread -o "$BUILD/SceneRender"
 
 echo "== rendering =="

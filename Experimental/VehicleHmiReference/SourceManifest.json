@@ -62,6 +62,10 @@
     {
       "path": "Source/MaterialSpecification.js",
       "git_blob": "617d9a966742611ecf6a922304684ec472326ea6"
+    },
+    {
+      "path": "Shader/VehicleVisual.wgsl",
+      "git_blob": "22359e7e799da472c7cb4e6a7d518458278c5813"
     }
   ]
 }

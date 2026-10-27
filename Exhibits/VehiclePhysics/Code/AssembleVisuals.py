@@ -62,19 +62,25 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     still(frames, outdir, "hero/hero.ppm",
           "ControlVehicle - real .facet geometry, 480 Hz spring-model physics",
-          "Settled on PB-FEM-deformed tyres (14 mm deflection @ 220 kPa). Flat-shaded software raster.")
+          "Settled on analytically deformed spring tyres. Flat-shaded software raster.")
     still(frames, outdir, "hero/hero-rear.ppm",
           "ControlVehicle - rear three-quarter",
           "Authored materials (BodyCoat chartreuse, headlight/taillight glass, black plastic flanks).")
     still(frames, outdir, "tyre/tyre-nominal.ppm",
-          "PB-FEM tyre @ 220 kPa - 14.0 mm deflection",
-          "Contact-patch flatten + sidewall bulge from TyreDeformation.h on the production tyre state.")
+          "Analytical spring tyre @ 220 kPa",
+          "Contact flattening and sidewall bulge from the demo's spring-deformation fallback.")
     still(frames, outdir, "tyre/tyre-flat.ppm",
-          "PB-FEM tyre @ 30 kPa - 60.2 mm deflection (flat)",
+          "Analytical spring tyre @ 30 kPa (flat)",
           "Same vehicle re-settled at 30 kPa: the carcass spring sags, the mesh follows.")
     still(frames, outdir, "tyre/tyre-lattice.ppm",
-          "XPBD carcass lattice (new implementation) @ 220 kPa - 13.8 mm",
-          "28x3 particles (blue = crown, amber = sidewall) driving the same car; rubber hidden.")
+          "Independent 84-particle lattice @ 220 kPa",
+          "28x3 particles (blue = crown, amber = sidewall); separate from the demo's 160-particle XPBD.")
+    still(frames, outdir, "tyre/tyre-demo-xpbd.ppm",
+          "VehicleHMI demo XPBD shape @ 30 kPa",
+          "160-particle projection; the spring still carries chassis load, as in the demo.")
+    still(frames, outdir, "tyre/tyre-demo-solid.ppm",
+          "VehicleHMI demo 3D solid shape @ 30 kPa",
+          "128 Hex8 cells; the spring still carries chassis load, as in the demo.")
     gif(frames, outdir, "drive", "SlalomDrive.gif",
         "Slalom drive - spring-model tyre forces (480 Hz)",
         "Closed-loop steering at 15 m/s. Tyre deflection + camber deformation live per frame.")

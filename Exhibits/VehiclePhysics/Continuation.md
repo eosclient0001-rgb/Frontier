@@ -1,6 +1,6 @@
 # VehicleHMI continuation — source audit and measured rendering changes
 
-Continued from `arena/2ac8ddab-frontier` at `ae0bb7d`, on `arena/2711375f-frontier`.
+Continued from `arena/2ac8ddab-frontier` at `ae0bb7d`. The restored base is `29c5ab1`; this checkpoint is on `arena/672a179a-frontier`.
 Tested 2026-10-27, GCC 12.2 / Node 22.22.3 / Linux CPU. No Windows binary, GPU or editor acceptance is claimed.
 
 ## The important correction
@@ -25,8 +25,14 @@ exactly `deflection × (25000 + 0.88 × pressure)`, rather than summed constrain
 deflection cases confirm this. The continuum variants also retain prescribed reaction laws. Consequently, blindly
 replacing the current solver with the demo would not establish a more realistic force model.
 
-**The full 160-particle XPBD/continuum port remains open.** Existing physics is preserved, not silently relabelled.
-The original five full-demo tests now run locally. The spring-model C++ suite still passes all 29 checks.
+**Current update:** the demo's 160-node XPBD projection and 128-cell Hex8 solid solvers are now ported and selectable
+as deformation-only vehicle modes. The demo's separate *shell* model is not ported. The spring continues to carry the
+chassis loads in both new modes, as it does in the source. The renderer now interpolates the actual nodal displacement
+field instead of using the analytical spring fallback for these modes. The old 84-particle lattice remains separate.
+
+Direct source comparisons and mode-switch tests are detailed below. These establish limited source parity, not a
+real-world tyre measurement or Project Drive vehicle/drivetrain/Pacejka parity. The existing native `TyreSlipSolver`
+implements the demo's reduced force model and lacks Project Drive's aligning moment.
 
 ## Changes delivered
 
@@ -50,7 +56,13 @@ Near-plane triangle clipping remains missing. Glass is opaque. Existing authored
 
 ## Actual captures
 
-![Identical-camera before and after](Visuals/RasterComparison.png)
+The two new captures below were rendered and inspected on this checkpoint. They show the test raster and are not
+visual-fidelity or physical-validation evidence. The older `RasterComparison.png` depicts the earlier base changes,
+not the new ground fill.
+
+![Demo XPBD-deformed tyre](Visuals/tyre-demo-xpbd.png)
+
+![Demo solid-deformed tyre](Visuals/tyre-demo-solid.png)
 
 ![Full-demo lunar texture in the production lunar evaluator](../NightSky/Images/MoonClose.png)
 
@@ -66,22 +78,41 @@ Near-plane triangle clipping remains missing. Glass is opaque. Existing authored
 | Existing production vehicle/Jolt suite | 29/29 | `Results.txt` |
 | Full-demo unmodified JS tyre tests | 5/5 | `Results/FullDemoTyres.txt` |
 | Recovered XPBD force/shape audit | 12/12 | `Results/ReferenceXpbd.txt` |
-| Raster checks | Finite radiance, once-only shadows, blue fill, receiver rejection, grazing-Sun guard | `Results/RasterTiming.txt` |
+| Native XPBD/Hex8 node and interpolation checks | 16/16; same under ASan/UBSan | `Results/DemoTyres.txt`, `Results/DemoTyresSanitized.txt` |
+| Spring and vehicle deformation wiring | 3,480 controlled spring steps; 180 frame advances, 105,600 node observations; same under ASan/UBSan | `Results/DemoTyres.txt` |
+| Extended hard-drop diagnostic | **Fails strict parity** after further impacts; cause unconfirmed | `Results/DemoTyresExtendedDrop.txt` |
+| Raster checks | Ground coverage/reprojection, finite radiance, once-only shadows, blue fill, receiver rejection, grazing-Sun guard | `Results/RasterTiming.txt` |
 | HDR ramp 1 / 2 / 4 / 8 | Display bytes 202 / 224 / 238 / 246, no premature white clipping | `Results/RasterTiming.txt` |
+
+### New demo tyre tests: scope and limitations
+
+`RunDemoTyreValidation.sh` verifies the unchanged source/shader blob identities, generates reference data directly
+from JavaScript and builds the comparisons. Across 12 pressure/deflection/orientation/normal/force cases and eight
+samples per model, the greatest local node difference is `2.71e-20 m`; world coordinates, prescribed forces and
+contact counts match in this run. Interpolation also has synthetic constant-field, bilinear and guard checks; it is a
+CPU transliteration, **not** a GPU execution comparison. Vehicle mode-switch tests synchronize prescribed pressure and
+grip before each step, intentionally excluding the native host's thermal evolution.
+
+Spring tests cover nominal, low, asymmetric and zero pressure, and a hard drop with pinched and airborne wheels.
+Over the included 3,480 steps the greatest force error is `0.00145 N`, with no contact/pinch/top-out mismatches. The
+same drop continued from 600 to 720 steps fails strict tolerances: maximum position error `0.00210 m` and load error
+`334.5 N`. The divergence occurs after further impacts and its cause has not been isolated. The 600-step passing
+result must not be interpreted as long-duration impact parity. No loose-body, shell, or thermal-coupled parity is claimed.
 
 ### Performance: observed, not a universal guarantee
 
 Same GCC `-O2`, 1280 × 720, same three fixed cameras, settled production vehicle, three warmups and 27 timed draws
 per run. Alternating before/after/after/before order; no concurrent workload. Timing excludes simulation, encoding
-and file I/O. Old source is extracted from pinned revision `ae0bb7d`, not reimplemented.
+and file I/O. The pre-ground-change source is extracted from pinned revision `29c5ab1`, not reimplemented.
 
 | Measurement | Before | After |
 |---|---:|---:|
-| First run median | 66.354 ms | 44.072 ms |
-| Reverse-order run median | 60.994 ms | 47.157 ms |
+| First run median | 61.213 ms | 38.163 ms |
+| Reverse-order run median | 62.930 ms | 36.695 ms |
 | RGB + depth + position buffers | 25,804,800 bytes | 25,804,800 bytes |
 
-Observed median reduction **23–34%** in these paired runs. Shared-host scheduling varies; maxima are retained too.
+The analytic ground-plane fill replaces clipped ground/checker triangles; observed medians fell **38–42%** in these
+paired runs. Shared-host scheduling varies; maxima are retained too.
 This is not a physical-GPU benchmark or a claim of real-time engine performance.
 
 ## Reproduce
@@ -89,6 +120,10 @@ This is not a physical-GPU benchmark or a claim of real-time engine performance.
 ```sh
 # Prerequisites: g++, ar, curl, Node; Pillow in PYTHON. First command fetches pinned Jolt 5.2.0.
 PYTHON="$PWD/_ClaudeScratch/venv/bin/python" bash Exhibits/VehiclePhysics/RunVehiclePhysics.sh
+bash Exhibits/VehiclePhysics/RunDemoTyreValidation.sh
+SANITIZE=1 RESULTS="$PWD/Exhibits/VehiclePhysics/Results/DemoTyresSanitized.txt" bash Exhibits/VehiclePhysics/RunDemoTyreValidation.sh
+# Known failing extended drop diagnostic; use a scratch result so it doesn't overwrite the passing run:
+FULL_DROP=1 RESULTS="$PWD/_ClaudeScratch/tyre-continuum/long-diagnostic.txt" bash Exhibits/VehiclePhysics/RunDemoTyreValidation.sh
 bash Exhibits/VehiclePhysics/CompareRaster.sh
 _ClaudeScratch/venv/bin/python Exhibits/VehiclePhysics/Code/AssembleRasterComparison.py
 node --test Experimental/VehicleHmiReference/Tools/VolumetricTyrePhysics.test.mjs
@@ -101,4 +136,4 @@ _ClaudeScratch/build/environment/EnvironmentPipelineValidation
 
 For the sanitized environment run, use a separate Debug build directory and
 `-DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"`.
-No GitHub Actions, push or pull request was initiated.
+The user approved a checkpoint push to the current `arena/672a179a-frontier` branch, including any resulting GitHub Actions.
