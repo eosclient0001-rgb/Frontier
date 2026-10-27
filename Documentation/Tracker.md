@@ -39,6 +39,15 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   Four earlier noisy SwiftShader readbacks also show bounce and blocker changes. [Audit and scope](../Exhibits/LightCompute/PathReplay.md),
   [captures](../Exhibits/LightCompute/ReplayCaptures.md).
 
+## Analytic spot and IES cells — 2026-10-27
+
+- Non-overflow SwiftShader cell lists match exhaustive summation for a spot, a synthetic IES point and an
+  IES spot, including moved sources, source disabling and opaque shadows. Capacity-one and outside-grid
+  fallback controls also pass; native RGB discrepancy is at most `1.23e-5`. Release and sanitized hosts pass.
+  [Fixture and scope](../Exhibits/LightCompute/ClusterSpotIes.md).
+- This is analytic-light clustering only. Emissive triangles use a separate global distribution or bounded
+  replay-facet sampling; clustered emissive selection, physical-GPU and editor acceptance remain open.
+
 ## Gas and plume source audit — 2026-10-27
 
 - Retained the exact full VehicleHMI smoke/fire JS and five WGSL programs, including its distinct moving-grid

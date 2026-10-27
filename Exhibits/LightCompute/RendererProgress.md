@@ -1,5 +1,9 @@
 # Renderer progress — 2026-10-26
 
+This is a dated exhibit; later progress and corrections are recorded in the [project tracker](../../Documentation/Tracker.md).
+In particular, [spot/IES cell checks](ClusterSpotIes.md) now distinguish analytic clustering from separate,
+non-clustered emissive-facet sampling; Moon and vehicle reference work have also progressed beyond this snapshot.
+
 **Latest addition: thin-pane spectral transmittance across area-emitter quadrature, volumetric fog shafts and multi-stratum mixtures.**
 See [thin-pane & shaft report](PaneTransmittance.md) and [six-pose glazing animation](GlazingMotion.md). All current
 execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RTX/GTX or the Windows editor.
@@ -16,7 +20,7 @@ execution evidence is native C++ and **SwiftShader CPU Vulkan**, not physical RT
 
 | Status | Area | Done / evidence | Remaining |
 |--------|------|-----------------|-----------|
-| 🟢 | Analytic and emissive lighting | Both preserved; clustered analytic selection, visibility and temporal/spatial reservoir fixtures | Full engine/hardware acceptance; not a claim every emitter type is exhaustively covered |
+| 🚧 | Analytic and emissive lighting | Clustered analytic selection, visibility and reservoir fixtures; separate emissive-facet sampling | Emissive clustering, full engine/hardware acceptance; not every emitter type is covered |
 | 🟢 | Original ControlVehicle material scene | Existing Racing Green cellular-flake coat, rubber, thin windows, BVH mirrors, cones and reused material previews captured in earlier checkpoints | General scene/editor importer; full moving-scene and hardware integration |
 | 🟢 | Primary smooth closed glass | Snell, exact Fresnel/TIR, radiance-index factors, distance absorption; four analytic slab cases | General arbitrary-mesh and scale acceptance |
 | 🟢 | Mirror → closed glass | Four additional slab cases; actual behind-camera geometry seen through mirror; 6,144-pixel source-off black test | More mirror layouts, moving volume captures and general recursive mirror chains |
