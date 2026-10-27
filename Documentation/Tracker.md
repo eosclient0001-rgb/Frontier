@@ -5,7 +5,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 ## VehicleHMI, Project Drive and finite-pixel Sun continuation — 2026-10-27
 
 - Demo 160-particle XPBD and Hex8 solid deformation modes are ported with controlled JavaScript comparisons;
-  spring carries chassis loads. The 720-step extended impact diverges after step 645; cause unknown. Shell is unported.
+  spring carries chassis loads. The 720-step extended impact diverges after step 645. Synchronized one-step checks
+  match on that path; same-source perturbations show strong impact sensitivity, but do not prove the sole cause.
+  The hard-drop timestep sequence is not converged. Shell is unported.
 - Project Drive at `3f14808` is imported separately: six units preprocess identically and source/import traces match.
   The visual-only demo-tyre bridge passes a mock host; no editor/Jolt integration or measured-vehicle validation.
 - The CPU reference renderer now uses finite-pixel solar filtering and an opt-in mixed-flare layer, with full

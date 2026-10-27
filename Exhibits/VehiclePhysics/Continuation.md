@@ -81,7 +81,9 @@ not the new ground fill.
 | Recovered XPBD force/shape audit | 12/12 | `Results/ReferenceXpbd.txt` |
 | Native XPBD/Hex8 node and interpolation checks | 16/16; same under ASan/UBSan | `Results/DemoTyres.txt`, `Results/DemoTyresSanitized.txt` |
 | Spring and vehicle deformation wiring | 3,480 controlled spring steps; 180 frame advances, 105,600 node observations; same under ASan/UBSan | `Results/DemoTyres.txt` |
-| Extended hard-drop diagnostic | **Fails strict parity** after further impacts; cause unconfirmed | `Results/DemoTyresExtendedDrop.txt` |
+| Extended hard-drop diagnostic | **Fails strict parity** after further impacts | `Results/DemoTyresExtendedDrop.txt` |
+| Synchronized one-step hard-drop | 720 JS states: max position `3.34e-16 m`, force/load `0 N`; release and ASan/UBSan | `Results/SpringStability-*.txt` |
+| Hard-drop sensitivity / timestep | Same JS source is highly sensitive at impact; sampled timestep sequence does not converge | `Results/SpringStability-*.txt` |
 | Raster checks | Ground coverage/reprojection, finite radiance, once-only shadows, blue fill, receiver rejection, grazing-Sun guard | `Results/RasterTiming.txt` |
 | HDR ramp 1 / 2 / 4 / 8 | Display bytes 202 / 224 / 238 / 246, no premature white clipping | `Results/RasterTiming.txt` |
 
@@ -119,8 +121,26 @@ grip before each step, intentionally excluding the native host's thermal evoluti
 Spring tests cover nominal, low, asymmetric and zero pressure, and a hard drop with pinched and airborne wheels.
 Over the included 3,480 steps the greatest force error is `0.00145 N`, with no contact/pinch/top-out mismatches. The
 same drop continued from 600 to 720 steps fails strict tolerances: maximum position error `0.00210 m` and load error
-`334.5 N`. The divergence occurs after further impacts and its cause has not been isolated. The 600-step passing
-result must not be interpreted as long-duration impact parity. No loose-body, shell, or thermal-coupled parity is claimed.
+`334.5 N`. The 600-step passing result must not be interpreted as long-duration impact parity.
+
+A targeted follow-up synchronizes public chassis and wheel inputs to each of the 720 states of that JavaScript
+trajectory, then independently advances C++ once. At every synchronized step, tyre force/load and length match
+exactly in this run; position differs by at most `3.34e-16 m`, spin/slip by `7.99e-15`. This supports matching
+one-step equations **on that trajectory**, not free-running long-duration parity. Zero-pedal, flat-ground inputs are
+used and thermal evolution is excluded.
+
+A separate same-JavaScript perturbation test repeats exactly at identical initial conditions. Changing the initial
+height by `1e-15 m` produces a maximum force difference `1,736 N` and three wheel-contact differences over 720 steps.
+With only the hull-contact method disabled as a diagnostic control, the same perturbation produces `0.0041 N` maximum
+force difference and no wheel-contact differences. This demonstrates strong impact/contact sensitivity that can
+amplify tiny deviations; it does **not** prove that it is the sole cause of the C++/JS divergence.
+
+The direct-JS timestep study compares 1/480, 1/960 and 1/1920 s against a 1/3840 s run, each sampled for 1.5 s.
+A moderate drop shows decreasing maximum position differences `8.42 / 1.73 / 0.71 mm`; the hard drop gives
+`0.234 / 0.169 / 0.367 m` and does not show monotonic convergence. The finest run is not ground truth; wheel force
+and load samples come from the beginning of each final substep, so sharp contact onset is not synchronized across
+rates. The demo host normally uses 1/480 s; other `Step` rates are diagnostics, not advertised host configurations.
+No loose-body, shell, thermal-coupled or measured-vehicle validation is claimed.
 
 ### Performance: observed, not a universal guarantee
 
@@ -145,6 +165,8 @@ This is not a physical-GPU benchmark or a claim of real-time engine performance.
 PYTHON="$PWD/_ClaudeScratch/venv/bin/python" bash Exhibits/VehiclePhysics/RunVehiclePhysics.sh
 bash Exhibits/VehiclePhysics/RunDemoTyreValidation.sh
 SANITIZE=1 RESULTS="$PWD/Exhibits/VehiclePhysics/Results/DemoTyresSanitized.txt" bash Exhibits/VehiclePhysics/RunDemoTyreValidation.sh
+bash Exhibits/VehiclePhysics/RunSpringStability.sh
+SANITIZE=1 bash Exhibits/VehiclePhysics/RunSpringStability.sh
 bash Exhibits/VehiclePhysics/RunProjectDriveValidation.sh
 SANITIZE=1 RESULTS="$PWD/Exhibits/VehiclePhysics/Results/ProjectDriveSanitized.txt" bash Exhibits/VehiclePhysics/RunProjectDriveValidation.sh
 cmake -S Frontier/Engine/Physics/ProjectDrive -B _ClaudeScratch/build/projectdrive -DCMAKE_BUILD_TYPE=Release
