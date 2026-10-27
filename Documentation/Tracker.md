@@ -16,7 +16,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   [four camera/object/blocker captures](../Exhibits/LightCompute/ReplayMotionCaptures.md).
   Optional explicit emissive-facet sampling passes occlusion, source-change, rough and four-hit reference checks;
   a reproduced near-source light leak is fixed in a bounded open-segment test, subject to floating-point limits.
-  [Endpoint audit](../Exhibits/LightCompute/ReplayEndpoint.md). Small-source variance is not benchmarked at equal cost.
+  [Endpoint audit](../Exhibits/LightCompute/ReplayEndpoint.md). Optional balanced facet/BSDF sampling passes
+  four-hit references but helps a large-light variance fixture and worsens a small-light one; no timing claim.
+  [Sampling comparison](../Exhibits/LightCompute/ReplayBalance.md).
   [Facet sampling](../Exhibits/LightCompute/FacetReplay.md), [four new Vulkan captures](../Exhibits/LightCompute/FacetReplayCaptures.md).
   Four earlier noisy SwiftShader readbacks also show bounce and blocker changes. [Audit and scope](../Exhibits/LightCompute/PathReplay.md),
   [captures](../Exhibits/LightCompute/ReplayCaptures.md).

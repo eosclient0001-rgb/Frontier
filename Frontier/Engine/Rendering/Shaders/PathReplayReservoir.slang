@@ -83,7 +83,9 @@ float3 ReplayFacetRadiance(SurfacePoint Receiver, float3 Origin, bool RoughOpaqu
         ReplaySegmentOccluded(Origin, Direction, Distance, FacetIndex)) return 0;
     float3 Scattering = RoughOpaque ? Brdf(Receiver, Direction) : clamp(Receiver.AlbedoIor.xyz, 0, 1) / 3.141592653589793;
     float Measure = DirectionCosine * SourceCosine * (.5 * DoubleArea) * float(FacetCount) / DistanceSquared;
-    return Scattering * max(F.Emissive.xyz, 0) * Measure;
+    // 📝 For cosine sampling, Measure/π is the ratio p_bsdf / p_facet in solid angle.
+    float Balance = (Extent.Primary.w & 1024u) != 0 ? 1 / (1 + Measure / 3.141592653589793) : 1;
+    return Scattering * max(F.Emissive.xyz, 0) * (Measure * Balance);
 }
 float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
 {
@@ -107,9 +109,22 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
             break;
         }
         FacetCorners F = Facets[Index];
-        // 📝 Explicit light sampling already accounts for every emissive hit. Bit 256 is an intentionally wrong audit control.
+        // 📝 Without balance weighting, explicit facet sampling accounts for emissive hits; bit 256 is a wrong control.
         if (!SampleFacets || (Extent.Primary.w & 256u) != 0)
             Radiance += Throughput * max(F.Emissive.xyz, 0);
+        else if ((Extent.Primary.w & 1024u) != 0 && any(F.Emissive.xyz > 0) && Extent.Reconstruction.z > 0)
+        {
+            float3 AreaNormal = cross(F.B.xyz - F.A.xyz, F.C.xyz - F.A.xyz);
+            float DoubleArea = length(AreaNormal), DistanceSquared = Strike.x * Strike.x;
+            if (DoubleArea > 0 && DistanceSquared > 0)
+            {
+                float ReceiverCosine = max(0, dot(Normal, Direction));
+                float SourceCosine = abs(dot(AreaNormal / DoubleArea, Direction));
+                float Ratio = ReceiverCosine * SourceCosine * (.5 * DoubleArea) * float(Extent.Reconstruction.z) /
+                              (3.141592653589793 * DistanceSquared);
+                Radiance += Throughput * max(F.Emissive.xyz, 0) * (Ratio / (1 + Ratio));
+            }
+        }
         Normal = Unit(F.NormalA.xyz * (1 - Strike.y - Strike.z) + F.NormalB.xyz * Strike.y + F.NormalC.xyz * Strike.z);
         if (dot(Normal, Direction) > 0) Normal = -Normal;
         Origin = Origin + Direction * Strike.x + Normal * .001;

@@ -246,7 +246,7 @@ struct LightComputeSubmission
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
     bool ReplayLastReset = true, ReplayHasPriorInputs = false, ReplayPreviousPrimary = false,
          ReplayPreviousRoughOpaque = false, ReplayPreviousSampleFacets = false, ReplayPreviousDoubleCount = false,
-         ReplayPreviousStrictMotion = false;
+         ReplayPreviousStrictMotion = false, ReplayPreviousBalanceSampling = false;
     uint32_t ReplayLastHistoryCap = 1, ReplayPreviousBounces = 0, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
     float ReplayPreviousFloor = 0;
     std::array<float,3> ReplayPreviousEnvironment{};
@@ -778,7 +778,8 @@ struct LightComputeSubmission
                                                     float PositiveFloor = .01f, bool PrimaryVisibility = false,
                                                     bool FullHistoryForAudit = false, bool RoughOpaque = false,
                                                     bool SampleFacets = false, bool DoubleCountForAudit = false,
-                                                    bool StrictMotionForAudit = false, uint32_t StackLimit = 64)
+                                                    bool StrictMotionForAudit = false, uint32_t StackLimit = 64,
+                                                    bool BalanceSampling = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -789,14 +790,16 @@ struct LightComputeSubmission
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
         ValidateReplayDomain(Scene, PrimaryVisibility, RoughOpaque);
         Require(!DoubleCountForAudit || SampleFacets, "Double-count control requires explicit source sampling");
+        Require(!BalanceSampling || (SampleFacets && !DoubleCountForAudit),
+                "Balanced sampling requires facet sampling without the double-count control");
         const auto FacetSources = SampleFacets ? CompileReplayFacetSources(Scene) : std::vector<float>{};
         Require(FacetSources.size() <= ReplayFacetCapacity && ProjectedAngles(Scene).size() <= ReplayFacetStart,
                 "Replay facet-source list exceeds the prepared storage span");
         bool Changed = !ReplayHasPriorInputs || ReplayPreviousBounces != Bounces || ReplayPreviousFloor != PositiveFloor ||
                        ReplayPreviousPrimary != PrimaryVisibility || ReplayPreviousRoughOpaque != RoughOpaque ||
                        ReplayPreviousSampleFacets != SampleFacets || ReplayPreviousDoubleCount != DoubleCountForAudit ||
-                       ReplayPreviousStrictMotion != StrictMotionForAudit || ReplayPreviousEnvironment != Environment ||
-                       ReplayPreviousCamera != Scene.Camera ||
+                       ReplayPreviousStrictMotion != StrictMotionForAudit || ReplayPreviousBalanceSampling != BalanceSampling ||
+                       ReplayPreviousEnvironment != Environment || ReplayPreviousCamera != Scene.Camera ||
                        ReplayPreviousFacets.size() != Scene.Surfaces.size() ||
                        ReplayPreviousReceivers.size() != Scene.Receivers.size();
         if (!Changed)
@@ -815,6 +818,7 @@ struct LightComputeSubmission
         ReplayPreviousSampleFacets = SampleFacets;
         ReplayPreviousDoubleCount = DoubleCountForAudit;
         ReplayPreviousStrictMotion = StrictMotionForAudit;
+        ReplayPreviousBalanceSampling = BalanceSampling;
         ReplayHasPriorInputs = true;
         // Shrink old represented counts, not their per-sample weights, after scene/view/integrator changes.
         ReplayLastHistoryCap = Changed && !FullHistoryForAudit ? 1u : 64u;
@@ -831,7 +835,8 @@ struct LightComputeSubmission
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
         Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, uint32_t(FacetSources.size()), ReplayLastHistoryCap};
         const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
-                                     (DoubleCountForAudit ? 256u : 0u) | (StrictMotionForAudit ? 512u : 0u);
+                                     (DoubleCountForAudit ? 256u : 0u) | (StrictMotionForAudit ? 512u : 0u) |
+                                     (BalanceSampling ? 1024u : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -1644,11 +1649,18 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayMotionValidation.h"
 #include "ReplayMotionCapture.h"
 #include "ReplayEndpointValidation.h"
+#include "ReplayBalanceValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-balance")
+        {
+            ValidateReplayBalance(Arguments[1], Arguments[2]);
+            ValidateReplayBalanceRoom(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--replay-endpoint")
         {
             ValidateReplayEndpoint(Arguments[1], Arguments[2]);

@@ -96,6 +96,8 @@ An additional opt-in mode explicitly samples emissive triangles at each bounce a
 BSDF-hit light contributions. Moving blockers, changing source lists, three lights, rough surfaces and four-hit
 rooms are checked against area integrals and independent CPU paths. The measured small-source variance
 reduction is fixture-specific, not an equal-cost performance result. [Facet sampling and limitations](FacetReplay.md).
+An opt-in balance heuristic also combines light and BSDF proposals; it improves a large-light fixture but
+worsens a small-light fixture. [Comparison and four-hit references](ReplayBalance.md).
 
 This does **not** yet handle general materials, direct analytic lights, textured geometry, refraction, volumes,
 arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,

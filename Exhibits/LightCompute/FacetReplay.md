@@ -5,9 +5,10 @@ uniform point on that triangle. The contribution includes the receiver BRDF, bot
 squared distance, triangle area, source-count probability and current-BVH shadow visibility. The host rebuilds
 the source index list when the scene changes. Degenerate emissive triangles are rejected.
 
-This implementation uses **one strategy per light path**, not multiple importance sampling: when explicit
-facet sampling is enabled, later BSDF hits on emissive triangles do not add that same emitted radiance again.
-Uniform-environment misses are still evaluated by the BSDF path. A deliberately double-counted audit mode is
+The default explicit-facet mode uses **one strategy per light path**: later BSDF hits on emissive triangles
+do not add that same emitted radiance again. A separate, opt-in [balance-heuristic mode](ReplayBalance.md)
+combines the two strategies; it improves one large-light variance fixture but worsens a small-light fixture.
+Uniform-environment misses remain evaluated by the BSDF path. A deliberately double-counted audit mode is
 included only as a negative control. Source selection is uniform by triangle, not weighted by area or power.
 
 ## Vulkan results
