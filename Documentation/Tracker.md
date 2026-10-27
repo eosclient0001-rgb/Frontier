@@ -27,6 +27,14 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 ## Dynamic path reuse continuation — 2026-10-27
 
+- An opt-in 50/50 uniform/power emitter proposal uses matching selection probabilities for explicit sampling and
+  BSDF-hit MIS. SwiftShader area, colour-coded one/three/five-source, empty-source and four-hit textured-room
+  tests cover proposal, blocker and relighting transitions. In a bright-blocked fixture its per-sample SD is
+  `1.708×` uniform versus `20.586×` for pure power; with both lights visible it is `0.597×` uniform. The ideal
+  fixed-receiver second-moment bound is twice uniform, **not** a variance or adaptive-reservoir guarantee.
+  Previous modes remain default and their readbacks match the prior shader. Physical-GPU/editor integration,
+  equal-time performance, general motion and general unbiasedness remain open.
+  [Mixture evidence](../Exhibits/LightCompute/ReplayFacetMixture.md).
 - Optional area/luminance-weighted emissive-facet replay now uses the shared Engine CDF and matching MIS
   probabilities; proposal, source-power and blocker changes retrace capped history. Independent area and
   four-hit room references pass on SwiftShader, while default-off cosine/GGX readbacks remain bit-identical.

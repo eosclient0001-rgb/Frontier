@@ -104,10 +104,12 @@ std::vector<std::array<float, 4>> TraceReplayPower(LightComputeSubmission& Compu
                                                     uint32_t Bounces, uint32_t Seed, bool Temporal, bool Spatial,
                                                     bool Reset, bool Weighted, bool Balance = false, bool Rough = false,
                                                     bool Textured = false, bool Importance = false,
-                                                    const std::array<float, 3>& Environment = {0, 0, 0})
+                                                    const std::array<float, 3>& Environment = {0, 0, 0},
+                                                    bool UniformMixture = false)
 {
     return Compute.ExecuteReplay(Scene, Bounces, Seed, Temporal, Spatial, Reset, Environment, .01f,
-                                 false, false, Rough, true, false, false, 64, Balance, Textured, Importance, Weighted);
+                                 false, false, Rough, true, false, false, 64, Balance, Textured, Importance, Weighted,
+                                 UniformMixture);
 }
 
 void ValidateReplayPowerFacets(const char* Driver, const std::string& Shaders)

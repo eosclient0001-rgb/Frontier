@@ -92,6 +92,15 @@ bool ReplaySegmentOccluded(float3 Origin, float3 Direction, float Distance, uint
     }
     return false;
 }
+// 📝 A half-uniform mixture bounds each emitter's selection probability below by 0.5 / FacetCount.
+float ReplayFacetProbability(uint Entry, uint FacetCount)
+{
+    float Probability = Angles[Entry + 1];
+    if ((Extent.Primary.w & 16384u) != 0)
+        Probability = .5 * Probability + .5 / float(FacetCount);
+    return Probability;
+}
+
 // 📝 The Engine CDF is ordered by facet index. Return zero for a source outside that distribution.
 float ReplayFacetInverseProbability(uint FacetIndex)
 {
@@ -105,7 +114,7 @@ float ReplayFacetInverseProbability(uint FacetIndex)
         else High = Mid;
     }
     if (Low >= FacetCount || uint(Angles[Offset + 1 + Low * 4]) != FacetIndex) return 0;
-    return 1 / Angles[Offset + 2 + Low * 4];
+    return 1 / ReplayFacetProbability(Offset + 1 + Low * 4, FacetCount);
 }
 
 // 📝 Select an emissive facet by the optional Engine CDF or uniformly, then a uniform point on its area.
@@ -117,17 +126,30 @@ float3 ReplayFacetRadiance(SurfacePoint Receiver, float3 Origin, bool RoughOpaqu
     float InverseProbability;
     if ((Extent.Primary.w & 8192u) != 0)
     {
-        float Draw = RandomUnit(Bits);
-        uint Low = 0, High = FacetCount - 1;
-        while (Low < High)
+        bool UniformDraw = false;
+        if ((Extent.Primary.w & 16384u) != 0) UniformDraw = RandomUnit(Bits) < .5;
+        uint Selected;
+        if (UniformDraw)
         {
-            uint Mid = (Low + High) / 2;
-            if (Draw < Angles[Offset + 1 + Mid * 4 + 3]) High = Mid;
-            else Low = Mid + 1;
+            uint Threshold = (0u - FacetCount) % FacetCount, SampleBits;
+            do { SampleBits = NextRandom(Bits); } while (SampleBits < Threshold);
+            Selected = SampleBits % FacetCount;
         }
-        uint Entry = Offset + 1 + Low * 4;
+        else
+        {
+            float Draw = RandomUnit(Bits);
+            uint Low = 0, High = FacetCount - 1;
+            while (Low < High)
+            {
+                uint Mid = (Low + High) / 2;
+                if (Draw < Angles[Offset + 1 + Mid * 4 + 3]) High = Mid;
+                else Low = Mid + 1;
+            }
+            Selected = Low;
+        }
+        uint Entry = Offset + 1 + Selected * 4;
         FacetIndex = uint(Angles[Entry]);
-        InverseProbability = 1 / Angles[Entry + 1];
+        InverseProbability = 1 / ReplayFacetProbability(Entry, FacetCount);
     }
     else
     {

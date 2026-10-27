@@ -16,7 +16,8 @@ struct ReplayParityReadbacks
     std::vector<std::array<uint32_t,3>> History;
 };
 
-ReplayParityReadbacks ReadReplayParityCases(const char* Driver, const std::string& Shaders, bool Importance = false)
+ReplayParityReadbacks ReadReplayParityCases(const char* Driver, const std::string& Shaders, bool Importance = false,
+                                            bool PowerWeighted = false)
 {
     ReplayParityReadbacks Result;
     const auto Before = RoughTexturedRoom(0, 7, .65f, .35f);
@@ -26,16 +27,16 @@ ReplayParityReadbacks ReadReplayParityCases(const char* Driver, const std::strin
         LightComputeSubmission Compute(Driver);
         Compute.Prepare(Before, Shaders, false, false, false, false, true);
         Result.Images.push_back(TraceRoughTextureReplay(Compute, Before, 1, 740001, false, false, true,
-                                                        false, true, true, Importance));
+                                                        false, true, true, Importance, PowerWeighted));
         Result.Images.push_back(TraceRoughTextureReplay(Compute, Before, 4, 740002, false, false, true,
-                                                        false, true, true, Importance));
+                                                        false, true, true, Importance, PowerWeighted));
         for (uint32_t Iteration = 0; Iteration < 4; ++Iteration)
             (void)TraceRoughTextureReplay(Compute, Before, 4, 740010 + Iteration, true, false, Iteration == 0,
-                                           false, true, true, Importance);
+                                           false, true, true, Importance, PowerWeighted);
         for (const auto* Scene : {&Changed, &Covered})
         {
             Result.Images.push_back(TraceRoughTextureReplay(Compute, *Scene, 4, 740030 + uint32_t(Result.Images.size()),
-                                                            true, true, false, false, true, true, Importance));
+                                                            true, true, false, false, true, true, Importance, PowerWeighted));
             const auto Counts = Compute.ExtendedStatistics();
             Result.History.push_back({Counts[20], Counts[22], Compute.ReplayLastHistoryCap});
             Require(!Compute.ReplayLastReset && Counts[20] > 0 && Counts[22] > 0 && Compute.ReplayLastHistoryCap == 1,
@@ -48,7 +49,7 @@ ReplayParityReadbacks ReadReplayParityCases(const char* Driver, const std::strin
         LightComputeSubmission Compute(Driver);
         Compute.Prepare(Scene, Shaders, false, false, false, false, true);
         Result.Images.push_back(TraceRoughTextureReplay(Compute, Scene, 4, 740101, false, true, true, true,
-                                                        true, true, Importance));
+                                                        true, true, Importance, PowerWeighted));
     }
     return Result;
 }

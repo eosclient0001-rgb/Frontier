@@ -775,7 +775,8 @@ struct LightComputeSubmission
                                                     bool SampleFacets = false, bool DoubleCountForAudit = false,
                                                     bool StrictMotionForAudit = false, uint32_t StackLimit = 64,
                                                     bool BalanceSampling = false, bool TexturedDiffuse = false,
-                                                    bool ImportanceRough = false, bool PowerWeightedFacets = false)
+                                                    bool ImportanceRough = false, bool PowerWeightedFacets = false,
+                                                    bool UniformFacetMixture = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -789,6 +790,7 @@ struct LightComputeSubmission
         Require(!BalanceSampling || (SampleFacets && !DoubleCountForAudit),
                 "Balanced sampling requires facet sampling without the double-count control");
         Require(!PowerWeightedFacets || SampleFacets, "Weighted sampling requires explicit facet sampling");
+        Require(!UniformFacetMixture || PowerWeightedFacets, "Uniform/power mixture requires the weighted CDF");
         const auto FacetIndices = SampleFacets ? CompilePathReplayFacetSources(Scene.Surfaces) : std::vector<float>{};
         const auto FacetSources = PowerWeightedFacets ? CompileRadiantFacetDistribution(Scene.Surfaces) : FacetIndices;
         const uint32_t SourceCount = PowerWeightedFacets ? uint32_t(FacetSources[0]) : uint32_t(FacetIndices.size());
@@ -797,7 +799,7 @@ struct LightComputeSubmission
                 "Replay facet-source distribution exceeds the prepared storage span");
         const PathReplayHistorySpecification ReplaySpecification{Bounces, PositiveFloor, Environment, PrimaryVisibility,
             RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse,
-            ImportanceRough, PowerWeightedFacets};
+            ImportanceRough, PowerWeightedFacets, UniformFacetMixture};
         // 📝 The engine owns revision tracking; the exhibit only submits its bounded GPU experiment.
         ReplayLastHistoryCap = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
                                                            FullHistoryForAudit).MaximumHistory;
@@ -816,7 +818,8 @@ struct LightComputeSubmission
         const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
                                      (DoubleCountForAudit ? 256u : 0u) | (StrictMotionForAudit ? 512u : 0u) |
                                      (BalanceSampling ? 1024u : 0u) | (TexturedDiffuse ? 2048u : 0u) |
-                                     (ImportanceRough ? 4096u : 0u) | (PowerWeightedFacets ? 8192u : 0u);
+                                     (ImportanceRough ? 4096u : 0u) | (PowerWeightedFacets ? 8192u : 0u) |
+                                     (UniformFacetMixture ? 16384u : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -1607,6 +1610,8 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayImportanceMotionValidation.h"
 #include "ReplayImportanceParityValidation.h"
 #include "ReplayFacetPowerValidation.h"
+#include "ReplayFacetMixtureValidation.h"
+#include "ReplayFacetMixtureSpectrumValidation.h"
 #include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
 } // namespace
@@ -1617,6 +1622,23 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--medium-radiance")
         {
             ValidateMediumRadianceGpu(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-facet-mixture")
+        {
+            ValidateReplayFacetMixture(Arguments[1], Arguments[2]);
+            ValidateReplayFacetMixtureSpectrum(Arguments[1], Arguments[2]);
+            ValidateReplayFacetMixtureRoom(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-facet-mixture-spectrum")
+        {
+            ValidateReplayFacetMixtureSpectrum(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--replay-facet-mixture-parity")
+        {
+            ValidateReplayFacetMixtureParity(Arguments[1], Arguments[2], Arguments[4]);
             return 0;
         }
         if (Count == 4 && std::string(Arguments[3]) == "--replay-facet-power")
