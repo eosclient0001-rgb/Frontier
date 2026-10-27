@@ -27,7 +27,10 @@ samples and blur shadows. Raw readbacks: [motion](Images/TexturedMotionMovedFirs
 
 | Camera, object and palette | Blocker inserted |
 | --- | --- |
-| ![First motion](Images/TexturedMotionMovedFirstPreview.png) | ![First blocker](Images/TexturedMotionBlockedFirstPreview.png) |
+| ![First motion][first-motion] | ![First blocker][first-blocker] |
+
+[first-motion]: Images/TexturedMotionMovedFirstPreview.png
+[first-blocker]: Images/TexturedMotionBlockedFirstPreview.png
 
 Blocker removed and palette restored:
 

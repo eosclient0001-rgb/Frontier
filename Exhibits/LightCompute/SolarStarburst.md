@@ -7,7 +7,11 @@ except where noted. Exposure is `0.45`, followed by `1-exp(-L×exposure)` and ga
 
 | Six blades | Five blades | Six blades + warm streak + blue anamorphic |
 | --- | --- | --- |
-| ![Six spikes](Images/StarburstSix.png) | ![Ten spikes](Images/StarburstFive.png) | ![Three flare layers](Images/StarburstMixed.png) |
+| ![Six spikes][six] | ![Ten spikes][five] | ![Three flare layers][mixed] |
+
+[six]: Images/StarburstSix.png
+[five]: Images/StarburstFive.png
+[mixed]: Images/StarburstMixed.png
 
 | Isolated check | Result |
 | --- | --- |

@@ -8,12 +8,12 @@ The tests use SwiftShader CPU Vulkan, not a hardware GPU or the editor.
 
 | Check | Result |
 | --- | --- |
-| Normal capacity `16`, each source type | `14,336` candidate visits vs `163,840` exhaustive; **zero** fallbacks; identical float4 readbacks |
+| Normal capacity `16`, each source type | `14,336` vs `163,840` visits; **zero** fallbacks; identical float4s |
 | Moved to a cell boundary (`x=4`) | Same exhaustive/cluster equality and zero fallbacks |
 | Moved near either domain edge (`x=±15.5`) | `11,264` visits vs `163,840`; zero fallbacks; identical readbacks |
 | Capacity `1` | `4,096` overflow queries fell back to exhaustive; identical readbacks |
 | Two receivers outside the grid | Exactly two fallback queries; identical readbacks |
-| Open vs opaque rectangular panel, source on/off | Both controls changed readback for every source type; 60 main-source samples were shadowed |
+| Panel open/blocked, source on/off | Controls changed all cases; 60 main-source samples shadowed |
 | Rotate synthetic IES basis | Readbacks changed for IES point and IES spot; both still match native lighting |
 | GPU vs native reference | Worst absolute RGB error over all tested cases `1.23e-5` |
 
@@ -31,8 +31,8 @@ integration. The domain, receiver arrangement, range, blocker and light counts a
 ## Emissive geometry is separate
 
 The tested cell lists hold analytic directional, point, spot and IES lights, **not emissive triangles**. The
-existing [emissive-area comparison](README.md#emissive-triangle-importance-sampling--executed) uses a separate global cumulative
-triangle distribution and compared selected probes with a native reference. The newer bounded replay can sample
+existing [emissive-area comparison](README.md#emissive-triangle-importance-sampling--executed) uses a separate
+global cumulative triangle distribution and compared selected probes with a native reference. The newer bounded replay can sample
 emissive facets separately. Neither constitutes clustered emissive-light selection; a scalable emitter structure,
 PDF/support validation, dynamic updates, double-counting policy and hardware/editor tests remain open.
 
