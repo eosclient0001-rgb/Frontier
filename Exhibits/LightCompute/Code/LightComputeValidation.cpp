@@ -1668,12 +1668,18 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayTextureCapture.h"
 #include "ReplayTextureMotionValidation.h"
 #include "RoughTextureReplayValidation.h"
+#include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && std::string(Arguments[3]) == "--capture-rough-texture")
+        {
+            CaptureRoughTextureReplay(Arguments[1], Arguments[2], Arguments[4]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--rough-texture-replay")
         {
             ValidateReplayTextureGuards();

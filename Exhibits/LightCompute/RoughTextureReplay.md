@@ -56,4 +56,4 @@ SANITIZE=1 bash Exhibits/LightCompute/RunRoughTextureReplay.sh
 
 [Release results](Results/RoughTextureReplay-release.txt) · [Sanitized host](Results/RoughTextureReplay-sanitized.txt)
 · [Replay regressions](Results/RoughTextureReplay-regression.txt) · [Diffuse texture audit](ReplayTexture.md)
-· [Bounded replay](PathReplay.md).
+· [Bounded replay](PathReplay.md) · [Motion and blocker renders](RoughTextureReplayCaptures.md).
