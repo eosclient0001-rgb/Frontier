@@ -1637,11 +1637,17 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "RoughReplayValidation.h"
 #include "ReplayFacetSamplingValidation.h"
 #include "ReplayFacetCapture.h"
+#include "ReplayMotionValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-motion")
+        {
+            ValidateReplayMotion(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-facet-replay")
         {
             CaptureReplayFacetRooms(Arguments[1], Arguments[2], Arguments[4]);
