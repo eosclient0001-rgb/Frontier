@@ -13,6 +13,12 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   output agree byte-for-byte; 18 guard cases pass in release and ASan/UBSan. Four actual SwiftShader fog-area cases
   and their analytic/empty/invalid controls pass. This is a global CDF, not clustered emissive selection or editor
   integration. [Reproduction and limits](../Exhibits/LightCompute/RadiantFacetDistribution.md).
+- Made the existing demo XPBD/Hex8 models and spring/continuum visual vertex projection independently consumable
+  without vehicle/Jolt dependencies. Release and ASan/UBSan JS-reference checks pass; 22,528 sampled native
+  projections are byte-identical to the prior Engine header and agree with the actual demo WGSL on SwiftShader
+  within `0.097 mm` position / `5.73e-5` normal-component maxima. Spring contact dynamics remain vehicle-coupled,
+  and hard-drop convergence and measured tyre calibration remain open.
+  [Standalone tyre evidence](../Exhibits/VehiclePhysics/StandaloneTyreProjection.md).
 
 ## Dynamic path reuse continuation — 2026-10-27
 

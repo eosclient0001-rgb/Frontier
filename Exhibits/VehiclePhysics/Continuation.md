@@ -30,8 +30,9 @@ as deformation-only vehicle modes. The demo's separate *shell* model is not port
 chassis loads in both new modes, as it does in the source. The renderer now interpolates the actual nodal displacement
 field instead of using the analytical spring fallback for these modes. The old 84-particle lattice remains separate.
 
-Direct source comparisons and mode-switch tests are detailed below. These establish limited source parity, not a
-real-world tyre measurement or Project Drive vehicle/drivetrain/Pacejka parity. The existing native `TyreSlipSolver`
+Direct source comparisons and mode-switch tests are detailed below. The later standalone library and actual demo
+WGSL surface-projection comparison are documented in [StandaloneTyreProjection.md](StandaloneTyreProjection.md).
+These establish limited source parity, not a real-world tyre measurement or Project Drive vehicle/drivetrain/Pacejka parity. The existing native `TyreSlipSolver`
 implements the demo's reduced force model and lacks Project Drive's aligning moment.
 
 ## Changes delivered

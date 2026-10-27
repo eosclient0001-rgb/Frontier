@@ -5,7 +5,7 @@
 ==========================================================================================================================================*/
 
 #include "Engine/Physics/TyreContinuum.h"
-#include "Engine/Physics/TyreDeformation.h"
+#include "Engine/Physics/TyreSurfaceProjection.h"
 
 #include <algorithm>
 #include <cmath>
