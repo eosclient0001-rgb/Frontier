@@ -244,6 +244,20 @@ void ValidatePathReplayGpu(const char* Driver, const std::string& Shaders)
     std::printf("REPLAY_GUARDS zero_floor=%u metallic=%u corrupt_bvh=%u\n", RejectedFloor ? 1u : 0u,
                 RejectedMaterial ? 1u : 0u, RejectedBvh ? 1u : 0u);
     Require(RejectedFloor && RejectedMaterial && RejectedBvh, "Replay domain guards did not reject invalid input");
+    ReplayCaptureResult PreviewFixture;
+    PreviewFixture.Pixels = {{1,0,0,1},{3,0,0,1},{0,0,3,1},{0,1,0,1}};
+    PreviewFixture.Guides.resize(4);
+    for (uint32_t I = 0; I < 3; ++I)
+    {
+        PreviewFixture.Guides[I].PositionHit[3] = 1;
+        PreviewFixture.Guides[I].NormalRoughness = {0,0,1,0};
+        PreviewFixture.Guides[I].MotionPositionToken[3] = I == 2 ? 2 : 1;
+    }
+    const auto Preview = FilterReplayPreview(PreviewFixture, 4, 1);
+    Require(Preview[0][0] > 1 && Preview[0][0] < 3 && Preview[1][0] > 1 && Preview[1][0] < 3 &&
+                Preview[2][2] == 3 && Preview[2][0] == 0 && Preview[3][1] == 1,
+            "Display filter mixed surface tokens or missed its smoothing range");
+    std::printf("REPLAY_PREVIEW_FILTER same_surface_smoothed=1 cross_surface_rejected=1 background_preserved=1\n");
     std::printf("PASS bounded diffuse replay with moving occluder; general materials and production frame remain open\n");
 }
 } // namespace

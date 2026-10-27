@@ -1605,8 +1605,8 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "DirectSpatialGpuValidation.h"
 #include "StaticDiffuseGpuValidation.h"
 #include "RectangleReconnectionGpuValidation.h"
-#include "PathReplayGpuValidation.h"
 #include "PathReplayCapture.h"
+#include "PathReplayGpuValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {

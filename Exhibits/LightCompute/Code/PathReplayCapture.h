@@ -76,8 +76,9 @@ LightComputeArchive ReplayRoom(float BlockShift)
 struct ReplayCaptureResult
 {
     std::vector<std::array<float,4>> Pixels;
+    std::vector<LightComputeReceiver> Guides;
     double WholeMean = 0, FloorMean = 0;
-    uint32_t Accepted = 0, SpatialLinks = 0;
+    uint32_t Accepted = 0, SpatialLinks = 0, HistoryCap = 0;
     bool Reset = false;
 };
 ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const LightComputeArchive& Scene,
@@ -94,7 +95,7 @@ ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const
         if (Frame == 0)
         {
             Result.Accepted = Counters[20]; Result.SpatialLinks = Counters[22];
-            Result.Reset = Compute.ReplayLastReset;
+            Result.Reset = Compute.ReplayLastReset; Result.HistoryCap = Compute.ReplayLastHistoryCap;
         }
         if (Frame >= Frames / 2)
         {
@@ -121,7 +122,44 @@ ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const
         }
     Result.WholeMean /= Result.Pixels.size();
     Result.FloorMean /= FloorCount;
+    Result.Guides.resize(Scene.Receivers.size());
+    std::memcpy(Result.Guides.data(), Compute.Buffers[1].Address, Result.Guides.size() * sizeof(LightComputeReceiver));
     return Result;
+}
+// Small geometry-guided linear-RGB blur for display only. It is not used by any numerical validation.
+std::vector<std::array<float,4>> FilterReplayPreview(const ReplayCaptureResult& Image, uint32_t Width, uint32_t Height)
+{
+    std::vector<std::array<float,4>> Filtered = Image.Pixels;
+    constexpr int Radius = 4;
+    constexpr double SigmaSquared = 4.0;
+    for (uint32_t Y = 0; Y < Height; ++Y)
+        for (uint32_t X = 0; X < Width; ++X)
+        {
+            const size_t Index = size_t(Y) * Width + X;
+            const auto& Centre = Image.Guides[Index];
+            if (Centre.PositionHit[3] == 0 || Centre.MotionPositionToken[3] <= 0) continue;
+            std::array<double,3> Total{};
+            double Sum = 0;
+            for (int DY = -Radius; DY <= Radius; ++DY)
+                for (int DX = -Radius; DX <= Radius; ++DX)
+                {
+                    const int PX = int(X) + DX, PY = int(Y) + DY;
+                    if (PX < 0 || PY < 0 || PX >= int(Width) || PY >= int(Height)) continue;
+                    const size_t Near = size_t(PY) * Width + size_t(PX);
+                    const auto& Other = Image.Guides[Near];
+                    const double Dot = Centre.NormalRoughness[0]*Other.NormalRoughness[0] +
+                                       Centre.NormalRoughness[1]*Other.NormalRoughness[1] +
+                                       Centre.NormalRoughness[2]*Other.NormalRoughness[2];
+                    if (Other.PositionHit[3] == 0 || Centre.MotionPositionToken[3] != Other.MotionPositionToken[3] ||
+                        Dot < .99) continue;
+                    const double Weight = std::exp(-double(DX*DX + DY*DY) / (2*SigmaSquared));
+                    for (uint32_t C = 0; C < 3; ++C) Total[C] += Weight * Image.Pixels[Near][C];
+                    Sum += Weight;
+                }
+            if (Sum > 0)
+                for (uint32_t C = 0; C < 3; ++C) Filtered[Index][C] = float(Total[C] / Sum);
+        }
+    return Filtered;
 }
 void CaptureReplayRooms(const char* Driver, const std::string& Shaders, const std::string& Directory)
 {
@@ -133,22 +171,31 @@ void CaptureReplayRooms(const char* Driver, const std::string& Shaders, const st
     Compute.Prepare(Open, Shaders, false, false, false, false, true);
     const uint32_t Frames = 48;
     const auto One = CaptureReplaySequence(Compute, Open, 1, 1000, true, Frames);
+    std::printf("ROOM completed one-hit open sequence\n"); std::fflush(stdout);
     const auto Four = CaptureReplaySequence(Compute, Open, 4, 2000, true, Frames);
+    std::printf("ROOM completed four-hit open sequence\n"); std::fflush(stdout);
     const auto Occluded = CaptureReplaySequence(Compute, Blocked, 4, 3000, false, Frames);
+    std::printf("ROOM completed four-hit blocked sequence\n"); std::fflush(stdout);
     const auto Reopened = CaptureReplaySequence(Compute, Open, 4, 4000, false, Frames);
+    std::printf("ROOM completed four-hit reopened sequence\n"); std::fflush(stdout);
     Require(!Occluded.Reset && !Reopened.Reset && Occluded.Accepted > 0 && Reopened.Accepted > 0 &&
-                Occluded.SpatialLinks > 0 && Reopened.SpatialLinks > 0, "Moving-room capture did not retain histories");
+                Occluded.SpatialLinks > 0 && Reopened.SpatialLinks > 0 && Occluded.HistoryCap == 1 &&
+                Reopened.HistoryCap == 1, "Moving-room capture did not retain and cap histories");
     std::filesystem::create_directories(Directory);
     WriteImage(Directory + "/ReplayRoomOne.ppm", One.Pixels, Open.Width, Open.Height);
     WriteImage(Directory + "/ReplayRoomOpen.ppm", Four.Pixels, Open.Width, Open.Height);
     WriteImage(Directory + "/ReplayRoomBlocked.ppm", Occluded.Pixels, Open.Width, Open.Height);
     WriteImage(Directory + "/ReplayRoomReopened.ppm", Reopened.Pixels, Open.Width, Open.Height);
+    WriteImage(Directory + "/ReplayRoomOnePreview.ppm", FilterReplayPreview(One, Open.Width, Open.Height), Open.Width, Open.Height);
+    WriteImage(Directory + "/ReplayRoomOpenPreview.ppm", FilterReplayPreview(Four, Open.Width, Open.Height), Open.Width, Open.Height);
+    WriteImage(Directory + "/ReplayRoomBlockedPreview.ppm", FilterReplayPreview(Occluded, Open.Width, Open.Height), Open.Width, Open.Height);
+    WriteImage(Directory + "/ReplayRoomReopenedPreview.ppm", FilterReplayPreview(Reopened, Open.Width, Open.Height), Open.Width, Open.Height);
     std::printf("ROOM_CAPTURE frames_each=%u averaged_last=%u one_floor=%.9g open_floor=%.9g "
                 "blocked_floor=%.9g reopened_floor=%.9g\n", Frames, Frames/2, One.FloorMean, Four.FloorMean,
                 Occluded.FloorMean, Reopened.FloorMean);
-    std::printf("ROOM_MOTION blocked_accepted=%u reopened_accepted=%u spatial_links=%u/%u reset=%u/%u\n",
+    std::printf("ROOM_MOTION blocked_accepted=%u reopened_accepted=%u spatial_links=%u/%u reset=%u/%u cap=%u/%u\n",
                 Occluded.Accepted, Reopened.Accepted, Occluded.SpatialLinks, Reopened.SpatialLinks,
-                Occluded.Reset ? 1u : 0u, Reopened.Reset ? 1u : 0u);
+                Occluded.Reset ? 1u : 0u, Reopened.Reset ? 1u : 0u, Occluded.HistoryCap, Reopened.HistoryCap);
     Require(Four.FloorMean > One.FloorMean && Four.FloorMean > Occluded.FloorMean &&
                 Reopened.FloorMean > Occluded.FloorMean, "Rendered floor did not respond to path depth or moving blocker");
     std::printf("PASS four disclosed synthetic Vulkan readbacks; display exposure=.45 gamma=2.2\n");

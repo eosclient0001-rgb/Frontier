@@ -40,7 +40,8 @@ import sys
 from PIL import Image
 source, destination = map(pathlib.Path, sys.argv[1:])
 hashes = set()
-for name in ('ReplayRoomOne', 'ReplayRoomOpen', 'ReplayRoomBlocked', 'ReplayRoomReopened'):
+for name in ('ReplayRoomOne', 'ReplayRoomOpen', 'ReplayRoomBlocked', 'ReplayRoomReopened',
+             'ReplayRoomOnePreview', 'ReplayRoomOpenPreview', 'ReplayRoomBlockedPreview', 'ReplayRoomReopenedPreview'):
     with Image.open(source / (name + '.ppm')) as image:
         rgb = image.convert('RGB')
         assert rgb.size == (256, 160)
