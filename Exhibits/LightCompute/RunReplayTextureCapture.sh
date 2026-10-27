@@ -29,7 +29,11 @@ done
 RESULTS="${RESULTS:-$ROOT/Exhibits/LightCompute/Results/ReplayTexture-capture.txt}"
 mkdir -p "$(dirname "$RESULTS")"
 {
-    "$SLANG" -version
+    printf 'Host build: release; external Vulkan driver is not sanitizer-instrumented\n'
+    printf 'Platform: '; uname -sm
+    COMPILER="$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' "$BUILD/CMakeCache.txt")"
+    printf 'C++ compiler: '; "$COMPILER" --version 2>&1 | sed -n '1p'
+    "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir}.slang \
               Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomain.h,PathReplayCapture.h,ReplayTextureValidation.h,ReplayTextureCapture.h}
     "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --capture-replay-texture "$OUTPUT"

@@ -7,7 +7,10 @@ camera strikes already use the same `ApplyRayMaterial` path. The replay estimato
 ## Bounded domain
 
 - One opaque, non-metallic, full-coverage stratum with roughness coefficient `1` and a power-of-two RGB albedo
-  pyramid, up to 1,024 texels per side. Replay uses Lambertian response, not authored specular or sheen terms.
+  pyramid, up to 1,024 texels per side. Absorption, coating classification, sheen intensity and the reserved
+  optics component must be zero. Replay uses Lambertian response, not authored specular terms.
+- The earlier capture fixture at `4ed4ef6` mistakenly set the reserved optics component to `1`; the shader did
+  not use it. The corrected fixture sets it to `0`, and the guard rejects that old layout. Capture refresh is pending.
 - Float atlas material and mip spans, finite `[0,1]` texels, finite bounded UVs/mapping and triangle/BVH XYZ are
   checked before submission. Textured vertices keep UVs in the `.w` channels, which need not equal BVH padding.
 - The camera and triangle coordinates are bounded; primary cameras must have finite orthonormal current and
@@ -26,7 +29,7 @@ rare rays can miss their finite boundaries.
 
 | Check | Result |
 | --- | --- |
-| Malformed atlas, UV, camera and domain inputs | 28 cases rejected; opt-in and rough-material guards held |
+| Malformed atlas, UV, camera and domain inputs | 33 cases rejected; opt-in and rough-material guards held |
 | Two-hit planes, RGB analytic `(0.8, 0.2, 0.1)` | Fresh `(0.8000000, 0.2000000, 0.1000000)` |
 | Black → coloured atlas with reused candidates | `(0.7999905, 0.1999976, 0.0999988)` |
 | Moving blocker / reopened | `0` / `(0.7999882, 0.1999970, 0.0999985)` |

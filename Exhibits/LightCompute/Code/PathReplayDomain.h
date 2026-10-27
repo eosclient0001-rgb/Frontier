@@ -22,8 +22,10 @@ void ValidateReplayDiffuseAtlas(const LightComputeArchive& Scene, uint32_t Mater
     for (uint32_t I = 8; I < 11; ++I)
         Require(Material[I] >= 0 && Material[I] <= 1, "Replay diffuse base colour is outside [0,1]");
     Require(Material[11] == 1 && Material[12] == 0 && Material[13] >= 1 && Material[13] <= 3 &&
-                Material[14] == 1 && Material[15] >= 0 && Material[15] <= 1,
-            "Replay diffuse atlas requires opaque, non-metallic, uncoated materials");
+                Material[14] == 1 && Material[15] == 0 && Material[27] == 0,
+            "Replay diffuse atlas requires full coverage, reserved-zero optics and no sheen");
+    for (uint32_t I = 16; I < 24; ++I)
+        Require(Material[I] == 0, "Replay diffuse atlas forbids absorption and coating classification");
     const float TextureOffset = Material[2];
     Require(TextureOffset >= 1 && TextureOffset < float(Atlas.size()) && std::floor(TextureOffset) == TextureOffset,
             "Replay diffuse albedo texture address is invalid");

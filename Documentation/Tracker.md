@@ -6,10 +6,11 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 - An opt-in opaque Lambertian texture subset now evaluates the existing albedo pyramid at secondary hits. Atlas
   contents trigger seed retracing and a one-candidate history cap; unrelated pipelines retain their hard reset.
-  Release and sanitized-host checks cover 28 invalid inputs, primary and secondary filtering, and two-hit relighting.
+  Release and sanitized-host checks cover 33 invalid inputs, primary and secondary filtering, and two-hit relighting.
   Four-hit textured rooms pass independent CPU references and paired textured/untextured controls while retaining
   capped history across atlas and blocker changes. Four settled and three first-transition SwiftShader readbacks
-  were generated and inspected. [Texture replay audit](../Exhibits/LightCompute/ReplayTexture.md),
+  were generated and inspected; their fixture's ignored reserved optics component was corrected afterwards,
+  so capture refresh remains pending. [Texture replay audit](../Exhibits/LightCompute/ReplayTexture.md),
   [captures](../Exhibits/LightCompute/ReplayTextureCaptures.md).
 - A finite-domain audit exposes missing-support bias when previously dark paths become visible. A positive
   selection floor recovers the exact toy mean when random-number-domain paths are replayed.

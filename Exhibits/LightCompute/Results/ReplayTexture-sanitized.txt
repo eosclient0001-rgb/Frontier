@@ -1,12 +1,15 @@
 Host build: sanitized; external Vulkan driver is not sanitizer-instrumented
+Platform: Linux x86_64
+C++ compiler: c++ (Debian 12.2.0-14+deb12u1) 12.2.0
+2026.14.1
 5d98298b72cd79e3e950dc957d5fd33d268234247fe3a7db807de66898c68634  Frontier/Engine/Rendering/Shaders/LightInfluence.slang
 64a92501fd670589911034ee6c0cfd4a3e85e1e1bf7f84791bdf07588fa13446  Frontier/Engine/Rendering/Shaders/PathReplayReservoir.slang
-53cf38c1e7237c5f20c652cf1862da32a90e27e8788c2258f9022ef99ff399ac  Exhibits/LightCompute/Code/LightComputeValidation.cpp
-f2a9afb5854833a8e4b54c21e880617603af1f749563f3212ba7de6ddc84826e  Exhibits/LightCompute/Code/PathReplayDomain.h
-7da0688c3c68f55cdd35ae28398b6556dc5177b12fdf9b56623a457824feacc5  Exhibits/LightCompute/Code/ReplayRoomReference.h
+a25d67d379e2daf6ccfe43fa9357ff762cc89a6674e1247f93d374ffbc5837e9  Exhibits/LightCompute/Code/LightComputeValidation.cpp
+15b81c34d390231e3e3cb4aa21b2ed7953dc95f2173d2cff9c3e48604b514e7d  Exhibits/LightCompute/Code/PathReplayDomain.h
+8ca8aa2ef045a66a01d8e60a038d823d96fa2b81828de350aa4df2582af6e715  Exhibits/LightCompute/Code/ReplayRoomReference.h
 6cf6f168d2e852ee16d2c892bb9f8eed69bf55ac0e5187232f52c1eb5c672ec9  Exhibits/LightCompute/Code/RoughReplayValidation.h
-43155d220f7ebda3fec726eed83c349ba96ffc967ff1e324fc24838943eaa2ee  Exhibits/LightCompute/Code/ReplayTextureValidation.h
-TEXTURE_GUARDS malformed=28 opt_in=1 rough_rejected=1
+e52c5512c0a90ede472b8e522fa01f3839f0eb539e7fec34e4b2cecf0fc219e1  Exhibits/LightCompute/Code/ReplayTextureValidation.h
+TEXTURE_GUARDS malformed=33 opt_in=1 rough_rejected=1
 TEXTURE_TWO_HIT channel=0 exact=0.8 fresh=0.800000012 changed=0.799990542 blocked=0 reopened=0.799988174
 TEXTURE_TWO_HIT channel=1 exact=0.2 fresh=0.200000003 changed=0.199997635 blocked=0 reopened=0.199997044
 TEXTURE_TWO_HIT channel=2 exact=0.1 fresh=0.100000001 changed=0.0999988177 blocked=0 reopened=0.0999985218

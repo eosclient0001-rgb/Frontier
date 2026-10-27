@@ -34,7 +34,10 @@ RESULTS="${RESULTS:-$ROOT/Exhibits/LightCompute/Results/ReplayTextureRoom-$MODE.
 mkdir -p "$(dirname "$RESULTS")"
 {
     printf 'Host build: %s; external Vulkan driver is not sanitizer-instrumented\n' "$MODE"
-    "$SLANG" -version
+    printf 'Platform: '; uname -sm
+    COMPILER="$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' "$BUILD/CMakeCache.txt")"
+    printf 'C++ compiler: '; "$COMPILER" --version 2>&1 | sed -n '1p'
+    "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir}.slang \
               Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomain.h,ReplayRoomReference.h,RoughReplayValidation.h,ReplayTextureValidation.h,ReplayTextureRoomValidation.h}
     "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --replay-texture-room

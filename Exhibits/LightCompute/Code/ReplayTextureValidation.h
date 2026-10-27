@@ -16,7 +16,7 @@ void ReplayInstallTexture(LightComputeArchive& Scene, const std::vector<ReplayTe
     Scene.Angles[2] = 268;     // Absolute float offset of the texture header.
     Scene.Angles[4] = Scene.Angles[5] = 1;
     Scene.Angles[8] = Scene.Angles[9] = Scene.Angles[10] = Scene.Angles[11] = 1;
-    Scene.Angles[13] = 1.5f; Scene.Angles[14] = Scene.Angles[15] = 1;
+    Scene.Angles[13] = 1.5f; Scene.Angles[14] = 1;
     Scene.Angles[268] = float(Dimension);
     auto Level = Pixels;
     uint32_t Size = Dimension;
@@ -128,6 +128,11 @@ void ValidateReplayTextureGuards()
     Bad = Valid; Bad.Angles[11] = .5f; Check(Bad);
     Bad = Valid; Bad.Angles[12] = .2f; Check(Bad);
     Bad = Valid; Bad.Angles[14] = .5f; Check(Bad);
+    Bad = Valid; Bad.Angles[15] = 1; Check(Bad);
+    Bad = Valid; Bad.Angles[16] = .1f; Check(Bad);
+    Bad = Valid; Bad.Angles[20] = 1; Check(Bad);
+    Bad = Valid; Bad.Angles[21] = 1; Check(Bad);
+    Bad = Valid; Bad.Angles[27] = .5f; Check(Bad);
     Bad = Valid; Bad.Angles[4] = std::numeric_limits<float>::infinity(); Check(Bad);
     Bad = Valid; Bad.Angles[2] = float(Bad.Angles.size()); Check(Bad);
     Bad = Valid; Bad.Angles[2] = 268.5f; Check(Bad);
