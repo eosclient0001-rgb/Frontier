@@ -21,7 +21,8 @@ namespace Frontier
 // 📝 LightInfluence.slang reads a count followed by (facet index, probability, area, cumulative probability).
 //    The 24-bit probability lattice reserves one tick per nondegenerate, luminous facet. This keeps arbitrarily
 //    dim sources selectable, but changes their probability from the ideal area/luminance ratio by up to the
-//    reserved-tick allocation. Geometric area is two-sided; this is not clustered source selection.
+//    reserved-tick allocation. The compiler emits ascending facet indices; the generic validator below does not
+//    enforce ordering or uniqueness. Geometric area is two-sided; this is not clustered source selection.
 inline constexpr uint32_t RadiantFacetProbabilityTicks = 1u << 24;
 
 [[nodiscard]] std::vector<float> CompileRadiantFacetDistribution(const std::vector<PathReplayFacet>& Facets);

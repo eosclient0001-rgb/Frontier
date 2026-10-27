@@ -152,6 +152,7 @@ void ValidateEngineReplayHistory()
     Specification.Environment[1] = .5f; Compare(true, 1); Compare(false, 64);
     Specification.BalanceSampling = false; Compare(true, 1); Compare(false, 64);
     Specification.ImportanceRough = true; Compare(true, 1); Compare(false, 64);
+    Specification.PowerWeightedFacets = true; Compare(true, 1); Compare(false, 64);
     Specification.RoughOpaque = false; Compare(true, 1); Compare(false, 64);
     Fixture.MaterialAtlas[0] = .5f;
     const auto Audit = History.Resolve(Fixture.View(), Specification, true);
@@ -163,7 +164,7 @@ void ValidateEngineReplayHistory()
     Compare(false, 64);
     History.Invalidate();
     Compare(true, 1);
-    std::printf("ENGINE_REPLAY_HISTORY exact_revisions=10 proposal=1 in_place_atlas=1 audit=1 invalidation=1\n");
+    std::printf("ENGINE_REPLAY_HISTORY exact_revisions=11 proposal=1 weighted_facets=1 in_place_atlas=1 audit=1 invalidation=1\n");
 }
 } // namespace
 

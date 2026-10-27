@@ -92,15 +92,51 @@ bool ReplaySegmentOccluded(float3 Origin, float3 Direction, float Distance, uint
     }
     return false;
 }
-// 📝 Uniformly select one emissive facet, then a uniform point on its area. No BSDF-hit light is added in this mode.
+// 📝 The Engine CDF is ordered by facet index. Return zero for a source outside that distribution.
+float ReplayFacetInverseProbability(uint FacetIndex)
+{
+    uint FacetCount = Extent.Reconstruction.z;
+    if ((Extent.Primary.w & 8192u) == 0) return float(FacetCount);
+    uint Offset = asuint(Extent.Maximum.y), Low = 0, High = FacetCount;
+    while (Low < High)
+    {
+        uint Mid = (Low + High) / 2;
+        if (uint(Angles[Offset + 1 + Mid * 4]) < FacetIndex) Low = Mid + 1;
+        else High = Mid;
+    }
+    if (Low >= FacetCount || uint(Angles[Offset + 1 + Low * 4]) != FacetIndex) return 0;
+    return 1 / Angles[Offset + 2 + Low * 4];
+}
+
+// 📝 Select an emissive facet by the optional Engine CDF or uniformly, then a uniform point on its area.
 float3 ReplayFacetRadiance(SurfacePoint Receiver, float3 Origin, bool RoughOpaque, inout uint Bits)
 {
     uint FacetCount = Extent.Reconstruction.z;
     if (FacetCount == 0) return 0;
-    // 📝 Rejection removes modulo bias for a uniformly distributed 32-bit draw.
-    uint Threshold = (0u - FacetCount) % FacetCount, SampleBits;
-    do { SampleBits = NextRandom(Bits); } while (SampleBits < Threshold);
-    uint Offset = asuint(Extent.Maximum.y), FacetIndex = uint(Angles[Offset + SampleBits % FacetCount]);
+    uint Offset = asuint(Extent.Maximum.y), FacetIndex;
+    float InverseProbability;
+    if ((Extent.Primary.w & 8192u) != 0)
+    {
+        float Draw = RandomUnit(Bits);
+        uint Low = 0, High = FacetCount - 1;
+        while (Low < High)
+        {
+            uint Mid = (Low + High) / 2;
+            if (Draw < Angles[Offset + 1 + Mid * 4 + 3]) High = Mid;
+            else Low = Mid + 1;
+        }
+        uint Entry = Offset + 1 + Low * 4;
+        FacetIndex = uint(Angles[Entry]);
+        InverseProbability = 1 / Angles[Entry + 1];
+    }
+    else
+    {
+        // 📝 Rejection removes modulo bias for a uniformly distributed 32-bit draw.
+        uint Threshold = (0u - FacetCount) % FacetCount, SampleBits;
+        do { SampleBits = NextRandom(Bits); } while (SampleBits < Threshold);
+        FacetIndex = uint(Angles[Offset + SampleBits % FacetCount]);
+        InverseProbability = float(FacetCount);
+    }
     FacetCorners F = Facets[FacetIndex];
     float3 EdgeA = F.B.xyz - F.A.xyz, EdgeB = F.C.xyz - F.A.xyz;
     float3 AreaNormal = cross(EdgeA, EdgeB);
@@ -117,13 +153,13 @@ float3 ReplayFacetRadiance(SurfacePoint Receiver, float3 Origin, bool RoughOpaqu
     if (DirectionCosine <= 0 || SourceCosine <= 0 ||
         ReplaySegmentOccluded(Origin, Direction, Distance, FacetIndex)) return 0;
     float3 Scattering = RoughOpaque ? Brdf(Receiver, Direction) : clamp(Receiver.AlbedoIor.xyz, 0, 1) / 3.141592653589793;
-    float Measure = DirectionCosine * SourceCosine * (.5 * DoubleArea) * float(FacetCount) / DistanceSquared;
+    float Measure = DirectionCosine * SourceCosine * (.5 * DoubleArea) * InverseProbability / DistanceSquared;
     // 📝 The balance ratio is p_bsdf / p_facet in solid angle, for the same proposal used below.
     float Balance = 1;
     if ((Extent.Primary.w & 1024u) != 0)
     {
         float Ratio = (Extent.Primary.w & 4096u) != 0
-            ? ReplayImportancePdf(Receiver, Direction) * SourceCosine * (.5 * DoubleArea) * float(FacetCount) / DistanceSquared
+            ? ReplayImportancePdf(Receiver, Direction) * SourceCosine * (.5 * DoubleArea) * InverseProbability / DistanceSquared
             : Measure / 3.141592653589793;
         Balance = 1 / (1 + Ratio);
     }
@@ -173,12 +209,18 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
             {
                 float ReceiverCosine = max(0, dot(Normal, Direction));
                 float SourceCosine = abs(dot(AreaNormal / DoubleArea, Direction));
-                float Ratio = ImportanceRough
-                    ? ReplayImportancePdf(Current, Direction) * SourceCosine * (.5 * DoubleArea) *
-                      float(Extent.Reconstruction.z) / DistanceSquared
-                    : ReceiverCosine * SourceCosine * (.5 * DoubleArea) * float(Extent.Reconstruction.z) /
-                      (3.141592653589793 * DistanceSquared);
-                Radiance += Throughput * max(F.Emissive.xyz, 0) * (Ratio / (1 + Ratio));
+                float InverseProbability = ReplayFacetInverseProbability(Index);
+                if (InverseProbability == 0)
+                    Radiance += Throughput * max(F.Emissive.xyz, 0);
+                else
+                {
+                    float Ratio = ImportanceRough
+                        ? ReplayImportancePdf(Current, Direction) * SourceCosine * (.5 * DoubleArea) *
+                          InverseProbability / DistanceSquared
+                        : ReceiverCosine * SourceCosine * (.5 * DoubleArea) * InverseProbability /
+                          (3.141592653589793 * DistanceSquared);
+                    Radiance += Throughput * max(F.Emissive.xyz, 0) * (Ratio / (1 + Ratio));
+                }
             }
         }
         Normal = Unit(F.NormalA.xyz * (1 - Strike.y - Strike.z) + F.NormalB.xyz * Strike.y + F.NormalC.xyz * Strike.z);

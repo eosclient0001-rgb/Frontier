@@ -68,6 +68,7 @@ struct PathReplayHistorySpecification
     bool BalanceSampling = false;
     bool TexturedDiffuse = false;
     bool ImportanceRough = false;
+    bool PowerWeightedFacets = false;
     bool operator==(const PathReplayHistorySpecification&) const = default;
 };
 

@@ -27,6 +27,13 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 ## Dynamic path reuse continuation — 2026-10-27
 
+- Optional area/luminance-weighted emissive-facet replay now uses the shared Engine CDF and matching MIS
+  probabilities; proposal, source-power and blocker changes retrace capped history. Independent area and
+  four-hit room references pass on SwiftShader, while default-off cosine/GGX readbacks remain bit-identical.
+  Visibility-blind weighting reduced unblocked sample SD to `0.181×` uniform but increased it to `18.26×`
+  when the bright emitter was blocked. A separate 256-batch rare-event repeat is recorded; neither it nor
+  the fixed-receiver room establishes general unbiasedness, hardware performance or clustered emitters.
+  [Weighted replay evidence](../Exhibits/LightCompute/ReplayFacetPower.md).
 - An optional Engine-shader cosine/GGX mixture improves the measured rough-metal environment SD to `0.138×`
   cosine and the moving textured floor's blue batch SD to `0.309×`; a nearly matte environment and one object
   channel get worse. Independent quadrature, bounded four-hit CPU references and changed-proposal/moving-blocker

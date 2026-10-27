@@ -546,10 +546,11 @@ struct LightComputeSubmission
         ProfileSamples.resize(ProfileSamples.size() + SolarOpticsPayloadFloats);
         if (ReplayOnly)
         {
-            Require(ProfileSamples.size() <= UINT32_MAX && Scene.Surfaces.size() <= UINT32_MAX - ProfileSamples.size(),
-                    "Replay source index span exceeds addressable storage");
+            Require(Scene.Surfaces.size() <= (UINT32_MAX - 1u) / 4u && ProfileSamples.size() <= UINT32_MAX &&
+                        1 + Scene.Surfaces.size() * 4 <= UINT32_MAX - ProfileSamples.size(),
+                    "Replay source distribution exceeds addressable storage");
             ReplayFacetStart = uint32_t(ProfileSamples.size());
-            ReplayFacetCapacity = uint32_t(Scene.Surfaces.size());
+            ReplayFacetCapacity = uint32_t(1 + Scene.Surfaces.size() * 4);
             ProfileSamples.resize(ProfileSamples.size() + ReplayFacetCapacity);
         }
         ConstructBuffer(4, ProfileSamples);
@@ -774,7 +775,7 @@ struct LightComputeSubmission
                                                     bool SampleFacets = false, bool DoubleCountForAudit = false,
                                                     bool StrictMotionForAudit = false, uint32_t StackLimit = 64,
                                                     bool BalanceSampling = false, bool TexturedDiffuse = false,
-                                                    bool ImportanceRough = false)
+                                                    bool ImportanceRough = false, bool PowerWeightedFacets = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -787,12 +788,16 @@ struct LightComputeSubmission
         Require(!DoubleCountForAudit || SampleFacets, "Double-count control requires explicit source sampling");
         Require(!BalanceSampling || (SampleFacets && !DoubleCountForAudit),
                 "Balanced sampling requires facet sampling without the double-count control");
-        const auto FacetSources = SampleFacets ? CompilePathReplayFacetSources(Scene.Surfaces) : std::vector<float>{};
+        Require(!PowerWeightedFacets || SampleFacets, "Weighted sampling requires explicit facet sampling");
+        const auto FacetIndices = SampleFacets ? CompilePathReplayFacetSources(Scene.Surfaces) : std::vector<float>{};
+        const auto FacetSources = PowerWeightedFacets ? CompileRadiantFacetDistribution(Scene.Surfaces) : FacetIndices;
+        const uint32_t SourceCount = PowerWeightedFacets ? uint32_t(FacetSources[0]) : uint32_t(FacetIndices.size());
+        Require(SourceCount == FacetIndices.size(), "Weighted and replay source domains disagree");
         Require(FacetSources.size() <= ReplayFacetCapacity && ProjectedAngles(Scene).size() <= ReplayFacetStart,
-                "Replay facet-source list exceeds the prepared storage span");
+                "Replay facet-source distribution exceeds the prepared storage span");
         const PathReplayHistorySpecification ReplaySpecification{Bounces, PositiveFloor, Environment, PrimaryVisibility,
             RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse,
-            ImportanceRough};
+            ImportanceRough, PowerWeightedFacets};
         // 📝 The engine owns revision tracking; the exhibit only submits its bounded GPU experiment.
         ReplayLastHistoryCap = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
                                                            FullHistoryForAudit).MaximumHistory;
@@ -807,11 +812,11 @@ struct LightComputeSubmission
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
         Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), StackLimit};
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
-        Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, uint32_t(FacetSources.size()), ReplayLastHistoryCap};
+        Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, SourceCount, ReplayLastHistoryCap};
         const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
                                      (DoubleCountForAudit ? 256u : 0u) | (StrictMotionForAudit ? 512u : 0u) |
                                      (BalanceSampling ? 1024u : 0u) | (TexturedDiffuse ? 2048u : 0u) |
-                                     (ImportanceRough ? 4096u : 0u);
+                                     (ImportanceRough ? 4096u : 0u) | (PowerWeightedFacets ? 8192u : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -1601,6 +1606,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayImportanceValidation.h"
 #include "ReplayImportanceMotionValidation.h"
 #include "ReplayImportanceParityValidation.h"
+#include "ReplayFacetPowerValidation.h"
 #include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
 } // namespace
@@ -1611,6 +1617,17 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--medium-radiance")
         {
             ValidateMediumRadianceGpu(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-facet-power")
+        {
+            ValidateReplayPowerFacets(Arguments[1], Arguments[2]);
+            ValidateReplayPowerRoom(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--replay-facet-power-parity")
+        {
+            ValidateReplayPowerDefaultParity(Arguments[1], Arguments[2], Arguments[4]);
             return 0;
         }
         if (Count == 5 && std::string(Arguments[3]) == "--replay-importance-parity")
