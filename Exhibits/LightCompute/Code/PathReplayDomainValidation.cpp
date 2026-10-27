@@ -116,10 +116,14 @@ void ValidateEngineReplayInput()
     Fixture.Surfaces[0].AlbedoRoughness[3] = .249f;
     Require(Rejected([&] { ValidatePathReplayDomain(Fixture.View(), {false, true, false}); }),
             "Near-delta rough facet accepted");
+    Fixture = ReplayInputFixture{};
+    Require(Rejected([&] { ValidatePathReplayDomain(Fixture.View(), {false, false, false, true}); }),
+            "GGX proposal accepted outside the rough-opaque domain");
+    ValidatePathReplayDomain(Fixture.View(), {false, true, false, true});
     auto ShortCamera = Fixture.View();
     ShortCamera.Camera = ShortCamera.Camera.first(11);
     Require(Rejected([&] { ValidatePathReplayDomain(ShortCamera, {}); }), "Short camera span accepted");
-    std::printf("ENGINE_REPLAY_DOMAIN abi=18_float4 fields source_indices=1 rejected=7\n");
+    std::printf("ENGINE_REPLAY_DOMAIN abi=18_float4 fields source_indices=1 rejected=8 ggx_guard=1\n");
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -147,6 +151,7 @@ void ValidateEngineReplayHistory()
     Specification.BounceCount = 3; Compare(true, 1); Compare(false, 64);
     Specification.Environment[1] = .5f; Compare(true, 1); Compare(false, 64);
     Specification.BalanceSampling = false; Compare(true, 1); Compare(false, 64);
+    Specification.ImportanceRough = true; Compare(true, 1); Compare(false, 64);
     Specification.RoughOpaque = false; Compare(true, 1); Compare(false, 64);
     Fixture.MaterialAtlas[0] = .5f;
     const auto Audit = History.Resolve(Fixture.View(), Specification, true);
@@ -158,7 +163,7 @@ void ValidateEngineReplayHistory()
     Compare(false, 64);
     History.Invalidate();
     Compare(true, 1);
-    std::printf("ENGINE_REPLAY_HISTORY exact_revisions=9 in_place_atlas=1 audit=1 invalidation=1\n");
+    std::printf("ENGINE_REPLAY_HISTORY exact_revisions=10 proposal=1 in_place_atlas=1 audit=1 invalidation=1\n");
 }
 } // namespace
 

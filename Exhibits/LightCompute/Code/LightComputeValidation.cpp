@@ -14,6 +14,7 @@
 #include "Engine/Render/PaneThickness.h"
 #include "Engine/Render/DielectricRefraction.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -782,7 +783,8 @@ struct LightComputeSubmission
                                                     bool FullHistoryForAudit = false, bool RoughOpaque = false,
                                                     bool SampleFacets = false, bool DoubleCountForAudit = false,
                                                     bool StrictMotionForAudit = false, uint32_t StackLimit = 64,
-                                                    bool BalanceSampling = false, bool TexturedDiffuse = false)
+                                                    bool BalanceSampling = false, bool TexturedDiffuse = false,
+                                                    bool ImportanceRough = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -791,7 +793,7 @@ struct LightComputeSubmission
                     Scene.Surfaces.size() == Scene.Visibility.Corners.size(),
                 "Invalid replay extent, domain or diffuse scene");
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
-        ValidatePathReplayDomain(ReplayDomainView(Scene), {PrimaryVisibility, RoughOpaque, TexturedDiffuse});
+        ValidatePathReplayDomain(ReplayDomainView(Scene), {PrimaryVisibility, RoughOpaque, TexturedDiffuse, ImportanceRough});
         Require(!DoubleCountForAudit || SampleFacets, "Double-count control requires explicit source sampling");
         Require(!BalanceSampling || (SampleFacets && !DoubleCountForAudit),
                 "Balanced sampling requires facet sampling without the double-count control");
@@ -799,7 +801,8 @@ struct LightComputeSubmission
         Require(FacetSources.size() <= ReplayFacetCapacity && ProjectedAngles(Scene).size() <= ReplayFacetStart,
                 "Replay facet-source list exceeds the prepared storage span");
         const PathReplayHistorySpecification ReplaySpecification{Bounces, PositiveFloor, Environment, PrimaryVisibility,
-            RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse};
+            RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse,
+            ImportanceRough};
         // 📝 The engine owns revision tracking; the exhibit only submits its bounded GPU experiment.
         ReplayLastHistoryCap = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
                                                            FullHistoryForAudit).MaximumHistory;
@@ -817,7 +820,8 @@ struct LightComputeSubmission
         Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, uint32_t(FacetSources.size()), ReplayLastHistoryCap};
         const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
                                      (DoubleCountForAudit ? 256u : 0u) | (StrictMotionForAudit ? 512u : 0u) |
-                                     (BalanceSampling ? 1024u : 0u) | (TexturedDiffuse ? 2048u : 0u);
+                                     (BalanceSampling ? 1024u : 0u) | (TexturedDiffuse ? 2048u : 0u) |
+                                     (ImportanceRough ? 4096u : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -1640,6 +1644,9 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayTextureMotionValidation.h"
 #include "RoughTextureReplayValidation.h"
 #include "RoughTextureMotionValidation.h"
+#include "ReplayImportanceValidation.h"
+#include "ReplayImportanceMotionValidation.h"
+#include "ReplayImportanceParityValidation.h"
 #include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
 } // namespace
@@ -1647,6 +1654,24 @@ int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && std::string(Arguments[3]) == "--replay-importance-parity")
+        {
+            ValidateReplayImportanceDefaultParity(Arguments[1], Arguments[2], Arguments[4]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-importance-motion")
+        {
+            ValidateReplayImportanceMotion(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-importance")
+        {
+            ValidateReplayImportanceMass();
+            ValidateReplayImportanceEnvironment(Arguments[1], Arguments[2]);
+            ValidateReplayImportanceFacet(Arguments[1], Arguments[2]);
+            ValidateReplayImportanceRoom(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--rough-texture-fresh-floor")
         {
             ValidateRoughTextureFreshFloor(Arguments[1], Arguments[2]);

@@ -11,7 +11,8 @@ or complete ReSTIR GI.
   metallic `0–1`, IOR `1–3`, and a validated power-of-two RGB albedo pyramid. The diffuse-only mode still
   rejects rough or metallic atlas coefficients.
 - No analytic lights, normal maps, sheen, absorption, coatings, paint, refraction or layered materials. Very smooth
-  or delta lobes are rejected. Sampling is cosine-weighted, not a GGX proposal; high variance remains possible.
+  or delta lobes are rejected. Sampling defaults to cosine weighting; a later [optional GGX mixture](ReplayImportance.md)
+  can improve some cases but can increase variance on others.
 - Authored atlas scattering and the compact rough model use **different diffuse Fresnel terms**. The CPU oracle
   evaluates the authored entrance/exit term for atlas hits, rather than silently substituting the compact model.
 - Texture footprints use the existing camera-distance heuristic, not ray differentials. Mip/address/UV, material

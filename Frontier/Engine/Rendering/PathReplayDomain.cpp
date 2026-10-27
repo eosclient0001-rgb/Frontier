@@ -74,6 +74,7 @@ void ValidatePathReplayDomain(const PathReplaySceneView& Scene, const PathReplay
     const bool PrimaryVisibility = Specification.PrimaryVisibility;
     const bool RoughOpaque = Specification.RoughOpaque;
     const bool TexturedDiffuse = Specification.TexturedDiffuse;
+    Require(!Specification.ImportanceRough || RoughOpaque, "GGX replay sampling requires the rough-opaque domain");
     Require(Scene.Camera.size() == 12, "Replay camera requires twelve float4 entries");
     if (TexturedDiffuse)
     {

@@ -9,8 +9,9 @@ BSDF weight. Occlusion is re-evaluated against the current triangle BVH.
 
 This mode is **optional and off by default**. It requires explicit facet sampling and rejects the intentional
 double-count audit control. Switching estimators retains the seed but caps represented history for that frame.
-Only the existing bounded diffuse and rough-opaque models are covered; the proposal is cosine-weighted even
-for rough GGX, not an importance-sampled GGX lobe. Triangles are chosen uniformly, not by power or area.
+Only the existing bounded diffuse and rough-opaque models are covered. The default proposal is cosine-weighted;
+rough replay now has a separately [opt-in GGX mixture](ReplayImportance.md). Triangles are chosen uniformly,
+not by power or area.
 
 ## Results
 

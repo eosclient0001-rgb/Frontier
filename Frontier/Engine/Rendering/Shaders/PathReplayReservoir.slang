@@ -17,6 +17,41 @@ float3 ReplayDirection(float3 Normal, inout uint Bits)
     return Unit(Tangent * (Radius * cos(Azimuth)) + Bitangent * (Radius * sin(Azimuth)) +
                 Normal * sqrt(max(0, 1 - Radius * Radius)));
 }
+// 📝 The GGX NDF samples all microfacet normals, including ones whose reflections leave the upper hemisphere.
+//    Such draws are zero-contribution events, not resampled. Cosine retains support over the whole hemisphere.
+float ReplayImportancePdf(SurfacePoint Receiver, float3 Direction)
+{
+    float3 N = Unit(Receiver.NormalRoughness.xyz), V = Unit(Receiver.ViewMetallic.xyz);
+    float NL = max(0, dot(N, Direction));
+    if (NL <= 0) return 0;
+    float3 H = Unit(V + Direction);
+    float NH = max(0, dot(N, H)), VH = max(0, dot(V, H));
+    float Ggx = VH > 0 ? EvaluateGgxDistribution(NH, Receiver.NormalRoughness.w) * NH / (4 * VH) : 0;
+    return .5 * (NL / 3.141592653589793 + Ggx);
+}
+bool ReplayImportanceDirection(SurfacePoint Receiver, inout uint Bits, out float3 Direction, out float Pdf)
+{
+    float3 N = Unit(Receiver.NormalRoughness.xyz), V = Unit(Receiver.ViewMetallic.xyz);
+    Direction = 0;
+    Pdf = 0;
+    if (RandomUnit(Bits) < .5)
+        Direction = ReplayDirection(N, Bits);
+    else
+    {
+        float U = RandomUnit(Bits), Azimuth = 6.283185307179586 * RandomUnit(Bits);
+        float Roughness = Receiver.NormalRoughness.w, Alpha = Roughness * Roughness, Alpha2 = Alpha * Alpha;
+        float Cosine = sqrt((1 - U) / (1 + (Alpha2 - 1) * U));
+        float Sine = sqrt(max(0, 1 - Cosine * Cosine));
+        float3 Tangent = Unit(cross(abs(N.z) < .999 ? float3(0,0,1) : float3(0,1,0), N));
+        float3 Half = Unit(Tangent * (Sine * cos(Azimuth)) + cross(N, Tangent) * (Sine * sin(Azimuth)) + N * Cosine);
+        float ViewHalf = dot(V, Half);
+        if (ViewHalf <= 0) return false;
+        Direction = Unit(2 * ViewHalf * Half - V);
+        if (dot(N, Direction) <= 0) return false;
+    }
+    Pdf = ReplayImportancePdf(Receiver, Direction);
+    return Pdf > 0;
+}
 // 📝 Test the open segment and skip only the sampled endpoint triangle, rather than shortening the shadow ray.
 bool ReplaySegmentOccluded(float3 Origin, float3 Direction, float Distance, uint Endpoint)
 {
@@ -83,8 +118,15 @@ float3 ReplayFacetRadiance(SurfacePoint Receiver, float3 Origin, bool RoughOpaqu
         ReplaySegmentOccluded(Origin, Direction, Distance, FacetIndex)) return 0;
     float3 Scattering = RoughOpaque ? Brdf(Receiver, Direction) : clamp(Receiver.AlbedoIor.xyz, 0, 1) / 3.141592653589793;
     float Measure = DirectionCosine * SourceCosine * (.5 * DoubleArea) * float(FacetCount) / DistanceSquared;
-    // 📝 For cosine sampling, Measure/π is the ratio p_bsdf / p_facet in solid angle.
-    float Balance = (Extent.Primary.w & 1024u) != 0 ? 1 / (1 + Measure / 3.141592653589793) : 1;
+    // 📝 The balance ratio is p_bsdf / p_facet in solid angle, for the same proposal used below.
+    float Balance = 1;
+    if ((Extent.Primary.w & 1024u) != 0)
+    {
+        float Ratio = (Extent.Primary.w & 4096u) != 0
+            ? ReplayImportancePdf(Receiver, Direction) * SourceCosine * (.5 * DoubleArea) * float(FacetCount) / DistanceSquared
+            : Measure / 3.141592653589793;
+        Balance = 1 / (1 + Ratio);
+    }
     return Scattering * max(F.Emissive.xyz, 0) * (Measure * Balance);
 }
 float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
@@ -94,13 +136,24 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
     float3 Origin = Receiver.PositionHit.xyz + Normal * .001;
     float3 Throughput = 1, Radiance = 0;
     bool RoughOpaque = (Extent.Primary.w & 64u) != 0, SampleFacets = (Extent.Primary.w & 128u) != 0;
+    bool ImportanceRough = (Extent.Primary.w & 4096u) != 0;
     SurfacePoint Current = Receiver;
     for (uint Bounce = 0; Bounce < Extent.Primary.z; ++Bounce)
     {
         if (SampleFacets) Radiance += Throughput * ReplayFacetRadiance(Current, Origin, RoughOpaque, Bits);
-        float3 Direction = ReplayDirection(Normal, Bits), Strike;
-        // With cosine-weighted sampling, f*cos/pdf = pi*f. The original diffuse mode stays Lambertian.
-        Throughput *= RoughOpaque ? 3.141592653589793 * Brdf(Current, Direction) : clamp(Current.AlbedoIor.xyz, 0, 1);
+        float3 Direction, Strike;
+        if (ImportanceRough)
+        {
+            float Pdf;
+            if (!ReplayImportanceDirection(Current, Bits, Direction, Pdf)) break;
+            Throughput *= Brdf(Current, Direction) * (max(0, dot(Normal, Direction)) / Pdf);
+        }
+        else
+        {
+            Direction = ReplayDirection(Normal, Bits);
+            // With cosine-weighted sampling, f*cos/pdf = pi*f. The original diffuse mode stays Lambertian.
+            Throughput *= RoughOpaque ? 3.141592653589793 * Brdf(Current, Direction) : clamp(Current.AlbedoIor.xyz, 0, 1);
+        }
         if (max(Throughput.x, max(Throughput.y, Throughput.z)) <= 0) break;
         uint Index = NearestFacet(Origin, Direction, .0001, 1e30, Strike);
         if (Index == 0xffffffffu)
@@ -120,8 +173,11 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
             {
                 float ReceiverCosine = max(0, dot(Normal, Direction));
                 float SourceCosine = abs(dot(AreaNormal / DoubleArea, Direction));
-                float Ratio = ReceiverCosine * SourceCosine * (.5 * DoubleArea) * float(Extent.Reconstruction.z) /
-                              (3.141592653589793 * DistanceSquared);
+                float Ratio = ImportanceRough
+                    ? ReplayImportancePdf(Current, Direction) * SourceCosine * (.5 * DoubleArea) *
+                      float(Extent.Reconstruction.z) / DistanceSquared
+                    : ReceiverCosine * SourceCosine * (.5 * DoubleArea) * float(Extent.Reconstruction.z) /
+                      (3.141592653589793 * DistanceSquared);
                 Radiance += Throughput * max(F.Emissive.xyz, 0) * (Ratio / (1 + Ratio));
             }
         }

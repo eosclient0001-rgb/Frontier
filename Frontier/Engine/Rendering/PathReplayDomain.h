@@ -37,6 +37,7 @@ struct PathReplayDomainSpecification
     bool PrimaryVisibility = false;
     bool RoughOpaque = false;
     bool TexturedDiffuse = false;
+    bool ImportanceRough = false;
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -66,6 +67,7 @@ struct PathReplayHistorySpecification
     bool StrictMotionForAudit = false;
     bool BalanceSampling = false;
     bool TexturedDiffuse = false;
+    bool ImportanceRough = false;
     bool operator==(const PathReplayHistorySpecification&) const = default;
 };
 

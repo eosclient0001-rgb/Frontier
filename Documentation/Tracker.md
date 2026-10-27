@@ -4,6 +4,12 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 ## Dynamic path reuse continuation — 2026-10-27
 
+- An optional Engine-shader cosine/GGX mixture improves the measured rough-metal environment SD to `0.138×`
+  cosine and the moving textured floor's blue batch SD to `0.309×`; a nearly matte environment and one object
+  channel get worse. Independent quadrature, bounded four-hit CPU references and changed-proposal/moving-blocker
+  reuse pass on SwiftShader. Default-off readbacks match the prior shader bit-for-bit. This is not complete
+  ReSTIR GI, general unbiasedness, a universal speedup or hardware/editor integration.
+  [Proposal, controls and limits](../Exhibits/LightCompute/ReplayImportance.md).
 - The bounded replay footprints, BVH/material/receiver guards, emissive-index compiler and exact-input history
   policy now have a single authoritative home in `Frontier/Engine/Rendering`. The exhibit links the reusable Engine
   library; the exhibit-local implementation was removed. Independent C++20 domain and C++17 legacy-archive tests

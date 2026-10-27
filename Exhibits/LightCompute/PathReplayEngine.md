@@ -20,9 +20,10 @@ finite random streams and physical-GPU validation remain in force.
 
 ## Verification
 
-- An independent Engine consumer checks the ABI, source index compilation, seven malformed-domain cases,
-  nine revision axes, in-place atlas mutation, the audit override and invalidation. Its release and
-  ASan/UBSan builds pass CTest.
+- At the Engine-promotion checkpoint an independent consumer checked the ABI, source index compilation,
+  seven malformed-domain cases, nine revision axes, in-place atlas mutation, the audit override and invalidation.
+  Its release and ASan/UBSan builds passed CTest. The later [GGX proposal](ReplayImportance.md) adds another
+  domain rejection and revision-axis check.
 - A separately compiled C++17 consumer reproduces 864 bytes of the previous archive layout and reloads them.
   The existing C++17 VehicleCapture also builds and exports its 28,276-facet fixture using the shared footprint.
 - The Engine library also builds standalone. SwiftShader CPU-Vulkan regression results are linked below;

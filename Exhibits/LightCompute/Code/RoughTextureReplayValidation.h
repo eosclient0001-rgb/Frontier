@@ -26,10 +26,11 @@ void SetRoughTextureReplayMaterials(LightComputeArchive& Scene, float Roughness,
 std::vector<std::array<float,4>> TraceRoughTextureReplay(LightComputeSubmission& Compute,
                                                           const LightComputeArchive& Scene, uint32_t Hits,
                                                           uint32_t Seed, bool Temporal, bool Spatial, bool Reset,
-                                                          bool Primary = false, bool Facets = true, bool Balance = true)
+                                                          bool Primary = false, bool Facets = true, bool Balance = true,
+                                                          bool ImportanceRough = false)
 {
     return Compute.ExecuteReplay(Scene, Hits, Seed, Temporal, Spatial, Reset, {.025f,.025f,.025f}, .01f,
-                                 Primary, false, true, Facets, false, false, 64, Balance, true);
+                                 Primary, false, true, Facets, false, false, 64, Balance, true, ImportanceRough);
 }
 
 LightComputeArchive RoughTexturedRoom(uint32_t Palette, float Blocker, float Roughness, float Metallic)
