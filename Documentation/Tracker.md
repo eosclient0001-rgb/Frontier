@@ -12,7 +12,12 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   The visual-only demo-tyre bridge passes a mock host; no editor/Jolt integration or measured-vehicle validation.
 - The CPU reference renderer now uses finite-pixel solar filtering and an opt-in mixed-flare layer, with full
   mesh/planet occlusion checks. Seven-camera flux error ≤ `0.000439`; normal and ASan/UBSan results pass.
-- [Evidence, capture and limitations](../Exhibits/NightSky/README.md); [vehicle evidence](../Exhibits/VehiclePhysics/Continuation.md).
+- An opt-in static one-bounce SDF-emitter temporal reservoir passes analytic tests. The existing CPU direct-light
+  spatial reuse was corrected for tested static discrete-light domains (the old sparse mean was `0.502607` vs
+  exhaustive `0.352533`; corrected `0.355025 ± 0.002030`). The retained demo's separate spatial path shader gives an
+  exact 1.25 mean for a fixture with expected 1.0; no general GI fix is claimed.
+  [GI evidence and scope](../Exhibits/LightCompute/StaticIndirect.md).
+- [Celestial evidence](../Exhibits/NightSky/README.md); [vehicle evidence](../Exhibits/VehiclePhysics/Continuation.md).
   No physical lens/sky/tyre calibration, complete GI/ReSTIR, GPU execution or Windows/editor claim. Partial solar
   clipping at the planet limb, subpixel occlusion, Moon integration in the reference renderer and Moon-map licence remain open.
 - This entry supersedes the stale XPBD/solar status in the earlier 2026-10-27 entry below.

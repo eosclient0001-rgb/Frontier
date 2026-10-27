@@ -66,6 +66,18 @@
     {
       "path": "Shader/VehicleVisual.wgsl",
       "git_blob": "22359e7e799da472c7cb4e6a7d518458278c5813"
+    },
+    {
+      "path": "Shader/ReservoirRecords.wgsl",
+      "git_blob": "a999b1cff7a48f6a34594dd611ce501bda424c7a"
+    },
+    {
+      "path": "Shader/ReservoirSpatial.wgsl",
+      "git_blob": "be6c589140c8fb9bc8ef699c5bb8abdd9284a3e6"
+    },
+    {
+      "path": "Shader/ReservoirTemporal.wgsl",
+      "git_blob": "a1d4f4eb272f38690ebde1f79d90d59cece6ede9"
     }
   ]
 }

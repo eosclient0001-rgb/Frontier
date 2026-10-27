@@ -11,6 +11,7 @@ This reference differs materially from both local `SlateReference` copies:
 |---|---|
 | `Shader/CelestialSky.wgsl` | Soft-edged limb-darkened Sun, sampled lunar atlas, not just the old hard Sun step |
 | `Shader/LensFlare.wgsl` | Independently mixable warm streak, blue anamorphic, burst, ghosts and halo |
+| `Shader/Reservoir{Records,Temporal,Spatial}.wgsl` | Current demo's GI sample storage and temporal/spatial reuse |
 | `Source/CelestialAtlas.js` | Actual 2048 × 1024 six-body sRGB atlas; Luna JPEG retained in `EngineContent/CelestialMaps` |
 | `Source/TyreContinuumElasticity.js` | 160-particle solid and curved-surface continuum deformation |
 | `Source/TyreCarcassProjection.js` | 160-particle compliant-distance XPBD deformation, prescribed spring reaction force |
@@ -40,4 +41,6 @@ The existing C++ `TyreCarcassLattice` instead has 84 particles, accumulated mult
 It is a separately authored approximation, not this source's port. Its earlier validation remains useful but cannot
 establish parity with this 160-particle implementation. No force solver is silently replaced in this continuation.
 
-See `Exhibits/VehiclePhysics/Continuation.md` for measured checks, changes, remaining work and limits.
+See `Exhibits/VehiclePhysics/Continuation.md` for numerical checks, changes, remaining work and limits.
+The retained spatial GI shader rejects zero-weight donor reservoirs; an exact counterexample and the limited CPU
+reference temporal implementation are documented in `Exhibits/LightCompute/StaticIndirect.md`.

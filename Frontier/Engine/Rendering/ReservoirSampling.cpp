@@ -61,13 +61,18 @@ void Reservoir::ClampSampleCount(uint32_t MaxCount) noexcept
 
 void Reservoir::Finalize(double TargetAtSample) noexcept
 {
+    FinalizeWithNormalization(TargetAtSample, SampleCount_);
+}
+
+void Reservoir::FinalizeWithNormalization(double TargetAtSample, uint64_t SupportingCandidateCount) noexcept
+{
     const double Target = ParticipatingFactor(TargetAtSample);
-    if (SampleCount_ == 0 || Target <= 0.0)
+    if (SupportingCandidateCount == 0 || Target <= 0.0)
     {
         Weight_ = 0.0;
         return;
     }
-    Weight_ = WeightSum_ / (Target * static_cast<double>(SampleCount_));
+    Weight_ = WeightSum_ / (Target * static_cast<double>(SupportingCandidateCount));
 }
 
 } // namespace Frontier

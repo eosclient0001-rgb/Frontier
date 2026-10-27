@@ -8,6 +8,7 @@
 #include "DiscrepancySequence.h"
 #include "ReservoirSampling.h"
 #include "SolarDiscFilter.h"
+#include "StaticIndirectReservoir.h"
 #include "VarianceFiltering.h"
 #include "Engine/Foundation/DeterministicRandom.h"
 #include "Engine/Foundation/Math.h"
@@ -611,12 +612,16 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
     VarianceHistory          History;
     History.Resize(W, H);
     std::vector<Reservoir>   PreviousReservoirs(PixelCount);
+    const bool IndirectReservoirEnabled = Settings.IndirectTemporalReuse && Settings.IndirectSamples > 0 &&
+                                          !Scene_.Distance.Primitives().empty();
+    std::vector<StaticIndirectReservoir> PreviousIndirect(IndirectReservoirEnabled ? PixelCount : 0);
 
     const uint32_t Frames = std::max(Settings.AccumulationFrames, 1u);
     std::vector<double> FrameLuminance(PixelCount, 0.0);
     for (uint32_t Frame = 0; Frame < Frames; ++Frame)
     {
         std::vector<Reservoir> Reservoirs(PixelCount);
+        std::vector<StaticIndirectReservoir> IndirectReservoirs(IndirectReservoirEnabled ? PixelCount : 0);
         std::vector<SpectrumRgb> FrameColour(PixelCount, SpectrumRgb{});
         std::vector<SpectrumRgb> DirectColour(PixelCount, SpectrumRgb{});
         std::vector<SpectrumRgb> ResidualColour(PixelCount, SpectrumRgb{});   // indirect + emissive
@@ -714,7 +719,22 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
             SpectrumRgb Indirect = EnvironmentBuffer[P];
             if (Settings.IndirectSamples > 0 && !Scene_.Distance.Primitives().empty())
             {
-                const double E = Scene_.Distance.IndirectIrradiance(Point, Normal, Settings.IndirectSamples, Random);
+                double E = 0.0;
+                if (IndirectReservoirEnabled)
+                {
+                    StaticIndirectReservoir& IndirectReservoir = IndirectReservoirs[P];
+                    IndirectReservoir.Stream(Scene_.Distance, Point, Normal, Settings.IndirectSamples, Random);
+                    if (Frame > 0)
+                    {
+                        const uint32_t MaximumHistory = Settings.IndirectSamples > UINT32_MAX / 20u
+                            ? UINT32_MAX : 20u * Settings.IndirectSamples;
+                        IndirectReservoir.Reuse(PreviousIndirect[P], Scene_.Distance, MaximumHistory, Random);
+                    }
+                    IndirectReservoir.Finalize(Scene_.Distance);
+                    E = IndirectReservoir.Irradiance(Scene_.Distance);
+                }
+                else
+                    E = Scene_.Distance.IndirectIrradiance(Point, Normal, Settings.IndirectSamples, Random);
                 Indirect = AddRgb(Indirect, {Material.Albedo.R * (1.0 - Material.Metallic) * E / Pi,
                                               Material.Albedo.G * (1.0 - Material.Metallic) * E / Pi,
                                               Material.Albedo.B * (1.0 - Material.Metallic) * E / Pi});
@@ -741,10 +761,15 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
             FrameColour[P]    = AddRgb(Direct, ResidualColour[P]);
         }
 
-        // Spatial reuse pass (borrow right/below neighbours; target re-evaluated here).
+        // History must contain only same-pixel temporal reservoirs. Feeding the spatial result back
+        // would hide the original source domains needed by the selected-sample MIS normalization.
+        PreviousReservoirs = Reservoirs;
+
+        // Spatial direct-light reuse over the two adjacent source domains. Include zero-weight
+        // reservoirs in the domain tally; their random draw does not determine proposal support.
         if (Settings.SpatialReuse && !Settings.ExhaustiveLights && !Scene_.Lights.empty())
         {
-            const std::vector<Reservoir> Source = Reservoirs;
+            const std::vector<Reservoir>& Source = PreviousReservoirs;
             for (uint32_t Y = 0; Y < H; ++Y)
             {
                 for (uint32_t X = 0; X < W; ++X)
@@ -759,30 +784,53 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                     const size_t Neighbours[2] = {P + (X + 1 < W ? 1 : 0), P + (Y + 1 < H ? W : 0)};
                     for (size_t NP : Neighbours)
                     {
-                        if (NP == P || !HitMask[NP] || !Source[NP].HasSample())
+                        if (NP == P || !HitMask[NP])
                         {
                             continue;
                         }
-                        SpatialVector Dir; double Dist;
-                        const double TargetHere = Luminance(LightContribution(
-                            Scene_.Lights[Source[NP].Sample().Candidate], WorldPos[P], WorldNormal[P], Normalised(Sub(Camera.Position, WorldPos[P])),
-                            MaterialBuffer[P], Dir, Dist));
+                        double TargetHere = 0.0;
+                        if (Source[NP].HasSample())
+                        {
+                            SpatialVector Dir; double Dist;
+                            TargetHere = Luminance(LightContribution(
+                                Scene_.Lights[Source[NP].Sample().Candidate], WorldPos[P], WorldNormal[P],
+                                Normalised(Sub(Camera.Position, WorldPos[P])), MaterialBuffer[P], Dir, Dist));
+                        }
                         R.Combine(Source[NP], TargetHere, 1.0, Random.NextUnit());
                     }
-                    SpatialVector Dir; double Dist;
-                    R.Finalize(Luminance(LightContribution(Scene_.Lights[R.Sample().Candidate], WorldPos[P],
-                                                           WorldNormal[P], Normalised(Sub(Camera.Position, WorldPos[P])), MaterialBuffer[P], Dir, Dist)));
                     if (R.HasSample())
                     {
-                        SpectrumRgb F = LightContribution(Scene_.Lights[R.Sample().Candidate], WorldPos[P],
-                                                          WorldNormal[P], Normalised(Sub(Camera.Position, WorldPos[P])), MaterialBuffer[P], Dir, Dist);
+                        const uint32_t Selected = R.Sample().Candidate;
+                        // For a candidate y, Z(y) sums M over domains whose proposal can produce y
+                        // and whose selection target at y is positive. This is deterministic from
+                        // the domains, including those whose actual stored sample had zero weight.
+                        const auto Supports = [&](size_t Q) {
+                            if (Source[Q].SampleCount() == 0) return false;
+                            if (Settings.ClusteredLights)
+                            {
+                                const auto& Candidates = LightGrid.Candidates(WorldPos[Q]);
+                                if (std::find(Candidates.begin(), Candidates.end(), Selected) == Candidates.end())
+                                    return false;
+                            }
+                            SpatialVector Dir; double Dist;
+                            return Luminance(LightContribution(
+                                Scene_.Lights[Selected], WorldPos[Q], WorldNormal[Q],
+                                Normalised(Sub(Camera.Position, WorldPos[Q])), MaterialBuffer[Q], Dir, Dist)) > 0.0;
+                        };
+                        uint64_t Z = Supports(P) ? Source[P].SampleCount() : 0;
+                        for (size_t NP : Neighbours)
+                            if (NP != P && HitMask[NP] && Supports(NP)) Z += Source[NP].SampleCount();
+
+                        SpatialVector Dir; double Dist;
+                        SpectrumRgb F = LightContribution(Scene_.Lights[Selected], WorldPos[P], WorldNormal[P],
+                            Normalised(Sub(Camera.Position, WorldPos[P])), MaterialBuffer[P], Dir, Dist);
+                        R.FinalizeWithNormalization(Luminance(F), Z);
                         const SpatialVector Origin = Add(WorldPos[P], Mul(WorldNormal[P], 2e-3));
                         if (Visibility_.Occluded(Origin, Dir, 0.0, Dist - 4e-3))
                         {
                             F = {};
                         }
-                        // Replace this pixel's direct term with the spatially-reused estimate;
-                        // indirect + emissive stay as computed this frame.
+                        // Replace this pixel's direct term; indirect + emissive stay as computed.
                         DirectColour[P] = {F.R * R.Weight(), F.G * R.Weight(), F.B * R.Weight()};
                         FrameColour[P]  = AddRgb(DirectColour[P], ResidualColour[P]);
                     }
@@ -790,7 +838,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
             }
         }
 
-        PreviousReservoirs = Reservoirs;
+        if (IndirectReservoirEnabled) PreviousIndirect = std::move(IndirectReservoirs);
 
         for (size_t P = 0; P < PixelCount; ++P)
         {

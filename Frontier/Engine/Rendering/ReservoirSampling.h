@@ -52,8 +52,9 @@ class Reservoir
 
     // Streams another *finalised* reservoir's sample as a meta-candidate:
     //   w = TargetHere(Other.Sample) · Jacobian · Other.Weight · Other.SampleCount
-    // which is exactly the weight that sample would have accumulated had Other's M candidates been
-    // streamed here directly. SampleCount grows by Other.SampleCount. Returns true when it wins.
+    // This is a resampled meta-candidate, not the exact sum of all original candidates at the new
+    // receiver. Correct spatial reuse also requires compatible support, visibility and normalization;
+    // calling Combine alone does not establish unbiasedness. SampleCount grows by Other.SampleCount.
     bool Combine(const Reservoir& Other, double TargetHere, double Jacobian, double Uniform01) noexcept;
 
     // Bounds history influence before a temporal Combine: M = min(M, MaxCount). Weight is untouched
@@ -62,6 +63,9 @@ class Reservoir
 
     // W = WeightSum / (M · pHat(y)). Zero M or non-positive target finalises to W = 0.
     void Finalize(double TargetAtSample) noexcept;
+    // Spatial MIS may instead use the selected sample's count of supporting source-domain
+    // candidates. The caller must establish support and avoid double-counting source histories.
+    void FinalizeWithNormalization(double TargetAtSample, uint64_t SupportingCandidateCount) noexcept;
 
     // The shading estimate F(y)·W. Meaningful only after Finalize().
     [[nodiscard]] double Estimate(double ContributionAtSample) const noexcept

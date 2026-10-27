@@ -8,8 +8,8 @@
 
 // 🧩 Distance field: the portable form of the demo's Distance* units (Records/Union/Traversal/Transfer).
 //
-// The demo's internals stay unread (WGSL was never copied); this core implements the canonical mechanism
-// its unit names describe, over the same double-precision spatial types as the geometry core:
+// This analytic scene is not a verbatim port of the demo's distance-field WGSL; it implements related
+// mechanisms over the same double-precision spatial types as the geometry core:
 //   * a scene is the CSG union (minimum) of exact SDF primitives — sphere, box, half-space — each
 //     carrying a scalar emissive radiance for indirect gathering;
 //   * sphere tracing marches the exact field (Lipschitz-1, so steps never overstep a surface);

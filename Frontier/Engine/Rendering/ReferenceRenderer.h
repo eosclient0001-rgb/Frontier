@@ -140,6 +140,7 @@ struct ReferenceRenderSettings
     double               CloudSunScale = 0.06;   // couples march radiance into frame units
     bool                 FogEnabled = false;
     FogParameters        Fog{};
+    bool                 IndirectTemporalReuse = false; // Static SDF-emitter paths; history lasts one Render call.
 };
 
 struct ReferenceRenderStats
