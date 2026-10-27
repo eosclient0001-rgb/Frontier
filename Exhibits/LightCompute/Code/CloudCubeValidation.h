@@ -3,43 +3,18 @@
 ==========================================================================================================================================*/
 // 🧩 Native cloud-ray and Beer-Lambert references for a Vulkan atmospheric radiance cube.
 
-uint32_t AppendCloudParameters(LightComputeArchive& Scene, const CloudParameters& P, SpatialVector Sun,
+uint32_t AppendCloudParameters(LightComputeArchive& Scene, const CloudParameters& Medium, SpatialVector Sun,
                                SpectrumRgb Solar, uint32_t Steps)
 {
-    uint32_t Offset = uint32_t(Scene.Angles.size());
-    float Low, High;
-    uint32_t A = uint32_t(P.Seed), B = uint32_t(P.Seed >> 32);
-    std::memcpy(&Low, &A, 4);
-    std::memcpy(&High, &B, 4);
-    std::array<float, 28> F{float(P.BaseHeightM),
-                            float(P.TopHeightM),
-                            float(P.Coverage),
-                            float(P.DensityScale),
-                            float(P.ExtinctionPerM),
-                            float(P.PhaseG),
-                            float(P.WindTimeS),
-                            float(P.UniformDensityOverride),
-                            float(P.WindXMps),
-                            float(P.WindYMps),
-                            40000,
-                            float(Steps),
-                            float(Sun.X),
-                            float(Sun.Y),
-                            float(Sun.Z),
-                            6,
-                            float(Solar.R),
-                            float(Solar.G),
-                            float(Solar.B),
-                            Scene.Camera[0][2],
-                            Low,
-                            High,
-                            0,
-                            0,
-                            float(P.AmbientRadiance.R),
-                            float(P.AmbientRadiance.G),
-                            float(P.AmbientRadiance.B),
-                            0};
-    Scene.Angles.insert(Scene.Angles.end(), F.begin(), F.end());
+    CloudRadianceSpecification Specification;
+    Specification.Medium = Medium;
+    Specification.SolarDirection = Sun;
+    Specification.SolarRadiance = Solar;
+    Specification.ObserverHeightM = Scene.Camera[0][2];
+    Specification.ViewSamples = Steps;
+    const auto Payload = CompileCloudRadiancePayload(Specification);
+    const uint32_t Offset = uint32_t(Scene.Angles.size());
+    Scene.Angles.insert(Scene.Angles.end(), Payload.begin(), Payload.end());
     return Offset;
 }
 void ValidateCloudCube(const char* Driver, const std::string& Shaders, const LightComputeArchive& Original,

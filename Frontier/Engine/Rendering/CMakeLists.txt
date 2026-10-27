@@ -3,6 +3,16 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(FrontierPathReplay LANGUAGES CXX)
 endif()
 
+# 📝 Typed shader inputs do not provide Vulkan submission or editor integration.
+add_library(FrontierMediumRadiancePayload STATIC MediumRadiancePayload.cpp)
+target_compile_features(FrontierMediumRadiancePayload PUBLIC cxx_std_17)
+target_include_directories(FrontierMediumRadiancePayload PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+if(MSVC)
+    target_compile_options(FrontierMediumRadiancePayload PRIVATE /utf-8 /W4)
+else()
+    target_compile_options(FrontierMediumRadiancePayload PRIVATE -Wall -Wextra -Werror)
+endif()
+
 # 📝 Float32 source distribution is shared by surface and fog transport; submission remains separate.
 add_library(FrontierRadiantFacetDistribution STATIC RadiantFacetDistribution.cpp)
 target_compile_features(FrontierRadiantFacetDistribution PUBLIC cxx_std_17)

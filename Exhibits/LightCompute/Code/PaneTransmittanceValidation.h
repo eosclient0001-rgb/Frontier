@@ -480,8 +480,21 @@ void ValidatePaneTransmittance(
     Studio.Lights = {ShaftLight};
     EmissiveQuadrature::AppendDistribution(Studio);
     const uint32_t FogOffset = uint32_t(Studio.Angles.size());
-    const std::array<float, 16> Fog{.075f, 0, 60, .95f, .62f, 20, 48, 8, 0, 0, 0, 1, 0, 1, 40, 4};
-    Studio.Angles.insert(Studio.Angles.end(), Fog.begin(), Fog.end());
+    FogRadianceSpecification Fog;
+    Fog.Medium.DensityAtBase = .075;
+    Fog.Medium.BaseHeightM = 0;
+    Fog.Medium.FalloffHeightM = 60;
+    Fog.ScatteringAlbedo = .95;
+    Fog.PhaseAsymmetry = .62;
+    Fog.MaximumViewDistanceM = 20;
+    Fog.ViewSamples = 48;
+    Fog.CloudShadowSamples = 8;
+    Fog.AmbientRadiance = {};
+    Fog.CloudShadowsEnabled = false;
+    Fog.MaximumLightDistanceM = 40;
+    Fog.FacetSamples = 4;
+    const auto FogPayload = CompileFogRadiancePayload(Fog);
+    Studio.Angles.insert(Studio.Angles.end(), FogPayload.begin(), FogPayload.end());
 
     auto Capacity = Studio;
     Capacity.Angles.resize(Capacity.Angles.size() + 8192);

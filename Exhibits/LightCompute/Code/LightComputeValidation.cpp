@@ -8,6 +8,7 @@
 #include "LightComputeFormat.h"
 #include "Engine/Rendering/PathReplayDomain.h"
 #include "Engine/Rendering/RadiantFacetDistribution.h"
+#include "Engine/Rendering/MediumRadiancePayload.h"
 #include "Engine/Rendering/SolarOpticsPayload.h"
 #include "Engine/Rendering/SolarDiscFilter.h"
 #include "Engine/Render/MaterialPreviewGeometry.h"
@@ -521,9 +522,9 @@ struct LightComputeSubmission
     }
     void Prepare(const LightComputeArchive& Scene, const std::string& Shaders, bool SolarOnly = false,
                  bool DirectOnly = false, bool DiffuseOnly = false, bool RectangleOnly = false,
-                 bool ReplayOnly = false)
+                 bool ReplayOnly = false, bool MediumOnly = false)
     {
-        Require(int(SolarOnly) + int(DirectOnly) + int(DiffuseOnly) + int(RectangleOnly) + int(ReplayOnly) <= 1,
+        Require(int(SolarOnly) + int(DirectOnly) + int(DiffuseOnly) + int(RectangleOnly) + int(ReplayOnly) + int(MediumOnly) <= 1,
                 "Compute preparation modes conflict");
         for (const auto& B : Buffers)
             Require(B.Buffer == VK_NULL_HANDLE, "Compute buffers are already prepared");
@@ -618,7 +619,7 @@ struct LightComputeSubmission
             DiffuseGeneratePipeline = ConstructPipeline(Shaders + "/DiffuseGenerate.spv");
             DiffuseResolvePipeline = ConstructPipeline(Shaders + "/DiffuseResolve.spv");
         }
-        if (!SolarOnly && !DirectOnly && !DiffuseOnly && !RectangleOnly && !ReplayOnly)
+        if (!SolarOnly && !DirectOnly && !DiffuseOnly && !RectangleOnly && !ReplayOnly && !MediumOnly)
         {
             const char* TransportNames[] = {"TransportTemporal", "TransportSpatial", "TransportResolve"};
             for (uint32_t I = 0; I < 3; ++I)
@@ -629,13 +630,18 @@ struct LightComputeSubmission
                 ExitancePyramidPipeline = ConstructPipeline(Shaders + "/ExitancePyramid.spv");
             TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
         }
-        if (!SolarOnly && !DiffuseOnly && !RectangleOnly && !ReplayOnly)
+        if (MediumOnly)
+        {
+            CloudPipeline = ConstructPipeline(Shaders + "/Clouds.spv");
+            FogPipeline = ConstructPipeline(Shaders + "/Fog.spv");
+        }
+        if (!SolarOnly && !DiffuseOnly && !RectangleOnly && !ReplayOnly && !MediumOnly)
         {
             const char* Names[] = {"Reuse", "Reconstruct", "Filter", "Finalize"};
             for (uint32_t I = 0; I < 4; ++I)
                 HistoryPipelines[I] = ConstructPipeline(Shaders + "/" + Names[I] + ".spv");
         }
-        if (!DirectOnly && !DiffuseOnly && !RectangleOnly && !ReplayOnly && std::filesystem::exists(Shaders + "/SolarVisibility.spv") &&
+        if (!DirectOnly && !DiffuseOnly && !RectangleOnly && !ReplayOnly && !MediumOnly && std::filesystem::exists(Shaders + "/SolarVisibility.spv") &&
             std::filesystem::exists(Shaders + "/SolarOptics.spv"))
         {
             SolarVisibilityPipeline = ConstructPipeline(Shaders + "/SolarVisibility.spv");
@@ -1037,39 +1043,18 @@ struct LightComputeSubmission
                 "Transport reconstruction requires primary history mode");
         if (CloudOffset != UINT32_MAX)
         {
+            Require(CloudPipeline != VK_NULL_HANDLE, "Cloud shader was not prepared");
             Require(PrimaryVisibility && Environment && Scene.Camera[10][1] >= 1 &&
                         Scene.Camera[10][1] <= 48 && size_t(CloudOffset) + 28 <= Scene.Angles.size(),
                     "Invalid cloud cube extent or parameters");
-            const float* P = Scene.Angles.data() + CloudOffset;
-            for (uint32_t I = 0; I < 28; ++I)
-                if (I != 20 && I != 21)
-                    Require(std::isfinite(P[I]), "Nonfinite cloud parameter");
-            Require(P[1] > P[0] && P[2] >= 0 && P[2] <= 1 && P[3] >= 0 && P[3] <= 16 && P[4] >= 0 &&
-                        P[4] <= .1 && std::abs(P[5]) < .99 && std::abs(P[6]) <= 1000000 && P[7] >= -1 &&
-                        P[7] <= 16 && std::abs(P[8]) <= 100 && std::abs(P[9]) <= 100 && P[10] >= 0 &&
-                        P[10] <= 100000 && P[11] >= 0 && P[11] <= 128 && std::floor(P[11]) == P[11] &&
-                        P[15] >= 0 && P[15] <= 8 && std::floor(P[15]) == P[15],
-                    "Cloud parameters exceed bounded march domain");
-            double SunLength = P[12] * P[12] + P[13] * P[13] + P[14] * P[14];
-            Require(std::abs(SunLength - 1) < .001, "Cloud sun direction is not unit length");
-            for (uint32_t I : {16u, 17u, 18u, 24u, 25u, 26u})
-                Require(P[I] >= 0, "Negative cloud incident radiance");
+            ValidateCloudRadiancePayload(Scene.Angles.data() + CloudOffset, CloudRadianceFloatCount);
         }
         if (FogOffset != UINT32_MAX)
         {
+            Require(!ResolveFog || FogPipeline != VK_NULL_HANDLE, "Fog shader was not prepared");
             Require(PrimaryVisibility && size_t(FogOffset) + 16 <= Scene.Angles.size(), "Invalid fog parameter span");
             const float* P = Scene.Angles.data() + FogOffset;
-            for (uint32_t I = 0; I < 16; ++I)
-                Require(std::isfinite(P[I]), "Nonfinite fog parameter");
-            Require(P[0] >= 0 && P[0] <= 1 && std::abs(P[1]) <= 10000 && P[2] >= 1 && P[2] <= 10000 &&
-                    P[3] >= 0 && P[3] <= 1 && std::abs(P[4]) < .95 && P[5] > 0 && P[5] <= 6000 &&
-                    P[6] >= 1 && P[6] <= 128 && std::floor(P[6]) == P[6] &&
-                    P[7] >= 1 && P[7] <= 128 && std::floor(P[7]) == P[7] &&
-                    P[8] >= 0 && P[9] >= 0 && P[10] >= 0 &&
-                    (P[11] == 0 || P[11] == 1) && (P[12] == 0 || P[12] == 1) &&
-                    (P[13] == 0 || P[13] == 1) && P[14] > 0 && P[14] <= 100000 &&
-                    P[15] >= 0 && P[15] <= 64 && std::floor(P[15]) == P[15],
-                    "Fog parameters exceed bounded integration domain");
+            ValidateFogRadiancePayload(P, FogRadianceFloatCount);
             if (P[15] > 0)
             {
                 float Address = Scene.Camera[10][2];
@@ -1570,6 +1555,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "CloudShadowValidation.h"
 #include "FogScatteringValidation.h"
 #include "FogFacetValidation.h"
+#include "MediumRadianceGpuValidation.h"
 #include "MaterialSceneValidation.h"
 #include "MaterialEnergyGpu.h"
 #include "RoughReflectionValidation.h"
@@ -1622,6 +1608,11 @@ int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--medium-radiance")
+        {
+            ValidateMediumRadianceGpu(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--replay-importance-parity")
         {
             ValidateReplayImportanceDefaultParity(Arguments[1], Arguments[2], Arguments[4]);

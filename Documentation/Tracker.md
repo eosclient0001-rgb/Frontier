@@ -13,6 +13,11 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   output agree byte-for-byte; 18 guard cases pass in release and ASan/UBSan. Four actual SwiftShader fog-area cases
   and their analytic/empty/invalid controls pass. This is a global CDF, not clustered emissive selection or editor
   integration. [Reproduction and limits](../Exhibits/LightCompute/RadiantFacetDistribution.md).
+- Shared cloud/fog float32 payload compilers and guards now live in Engine rather than the exhibit host. Previous
+  builders match byte-for-byte across 64 cloud cases and the fog fixture; 37 guards pass release and ASan/UBSan.
+  A small SwiftShader sky-only scene matches homogeneous cloud/fog closed forms (maximum `6.83e-7`); it does not
+  cover shadows, cloud noise, physical GPUs or editor integration. The full-size fog run was stopped, not passed.
+  [Medium payload evidence](../Exhibits/LightCompute/MediumRadiancePayload.md).
 - Made the existing demo XPBD/Hex8 models and spring/continuum visual vertex projection independently consumable
   without vehicle/Jolt dependencies. Release and ASan/UBSan JS-reference checks pass; 22,528 sampled native
   projections are byte-identical to the prior Engine header and agree with the actual demo WGSL on SwiftShader

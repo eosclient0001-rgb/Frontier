@@ -5,10 +5,13 @@
 
 uint32_t AppendFogParameters(LightComputeArchive &Scene)
 {
-    uint32_t Offset = uint32_t(Scene.Angles.size());
-    const std::array<float, 16> Fog{.0015f, 0,     450,   .9f, .65f, 2500, 32,    32,
-                                    .01f,   .012f, .015f, 1,   1,    1,    40000, 0};
-    Scene.Angles.insert(Scene.Angles.end(), Fog.begin(), Fog.end());
+    FogRadianceSpecification Specification;
+    Specification.Medium.DensityAtBase = .0015;
+    Specification.Medium.BaseHeightM = 0;
+    Specification.Medium.FalloffHeightM = 450;
+    const auto Payload = CompileFogRadiancePayload(Specification);
+    const uint32_t Offset = uint32_t(Scene.Angles.size());
+    Scene.Angles.insert(Scene.Angles.end(), Payload.begin(), Payload.end());
     return Offset;
 }
 SpatialVector FogCameraRay(const LightComputeArchive &Scene, uint32_t Pixel)
