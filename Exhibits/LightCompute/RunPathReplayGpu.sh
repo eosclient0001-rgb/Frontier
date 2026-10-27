@@ -36,6 +36,8 @@ mkdir -p "$(dirname "$RESULTS")"
     printf 'Host build: %s; external Vulkan driver is not sanitizer-instrumented\n' "$MODE"
     "$SLANG" -version
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir}.slang \
-              Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomain.h,PathReplayCapture.h,PathReplayGpuValidation.h,DirectSpatialGpuValidation.h}
+              Frontier/Engine/Rendering/{PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp} \
+              Frontier/Engine/Rendering/CMakeLists.txt \
+              Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayCapture.h,PathReplayGpuValidation.h,DirectSpatialGpuValidation.h}
     "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --path-replay
 } | tee "$RESULTS"

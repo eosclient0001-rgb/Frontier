@@ -1,15 +1,28 @@
 /*==========================================================================================================================================
-                                                    PATHREPLAYDOMAIN.H
+                                                    PATHREPLAYDOMAIN.CPP
 ==========================================================================================================================================*/
-// 🧩 Validate diffuse triangle coefficients and the bounded BVH used by path-sequence replay.
-#pragma once
+// 🧩 Guard replay-compatible BVH, material and receiver inputs before shader submission.
 
+#include "PathReplayDomain.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <map>
+#include <stdexcept>
+
+namespace Frontier
+{
 namespace
 {
-// 📝 Validate every referenced mip before the shader can dereference the untrusted float atlas.
-void ValidateReplayDiffuseAtlas(const LightComputeArchive& Scene, uint32_t MaterialOffset, bool RoughOpaque)
+void Require(bool Condition, const char* Message)
 {
-    const auto& Atlas = Scene.Angles;
+    if (!Condition) throw std::runtime_error(Message);
+}
+// 📝 Validate every referenced mip before the shader can dereference the untrusted float atlas.
+void ValidateReplayDiffuseAtlas(const PathReplaySceneView& Scene, uint32_t MaterialOffset, bool RoughOpaque)
+{
+    const auto& Atlas = Scene.MaterialAtlas;
     Require(Atlas.size() <= (1u << 24) && MaterialOffset <= Atlas.size() && Atlas.size() - MaterialOffset >= 268,
             "Replay diffuse material record is out of bounds");
     for (size_t I = MaterialOffset; I < size_t(MaterialOffset) + 268; ++I)
@@ -54,12 +67,17 @@ void ValidateReplayDiffuseAtlas(const LightComputeArchive& Scene, uint32_t Mater
         Size /= 2;
     }
 }
-void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibility, bool RoughOpaque,
-                          bool TexturedDiffuse = false)
+} // namespace
+
+void ValidatePathReplayDomain(const PathReplaySceneView& Scene, const PathReplayDomainSpecification& Specification)
 {
+    const bool PrimaryVisibility = Specification.PrimaryVisibility;
+    const bool RoughOpaque = Specification.RoughOpaque;
+    const bool TexturedDiffuse = Specification.TexturedDiffuse;
+    Require(Scene.Camera.size() == 12, "Replay camera requires twelve float4 entries");
     if (TexturedDiffuse)
     {
-        Require(Scene.Angles.size() <= (1u << 24) && Scene.Camera[10][2] == 0 &&
+        Require(Scene.MaterialAtlas.size() <= (1u << 24) && Scene.Camera[10][2] == 0 &&
                     std::isfinite(Scene.Camera[3][3]) && Scene.Camera[3][3] >= 0 && Scene.Camera[3][3] <= 10000,
                 "Invalid replay diffuse atlas or camera footprint");
         for (const auto& Projection : Scene.Camera)
@@ -84,13 +102,13 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
         }
     }
     std::map<uint32_t, bool> ValidatedMaterials;
-    Require(Scene.Lights.empty() && (!RoughOpaque || TexturedDiffuse || Scene.Angles.empty()) &&
-                Scene.Surfaces.size() == Scene.Visibility.Corners.size() &&
-                (Scene.Surfaces.empty() == Scene.Visibility.Enclosures.empty()),
+    Require(Scene.AnalyticLightCount == 0 && (!RoughOpaque || TexturedDiffuse || Scene.MaterialAtlas.empty()) &&
+                Scene.Surfaces.size() == Scene.Corners.size() &&
+                (Scene.Surfaces.empty() == Scene.Enclosures.empty()),
             "Replay requires matching triangle/BVH extents and no analytic lights");
     for (size_t I = 0; I < Scene.Surfaces.size(); ++I)
     {
-        const auto& F = Scene.Surfaces[I]; const auto& T = Scene.Visibility.Corners[I];
+        const auto& F = Scene.Surfaces[I]; const auto& T = Scene.Corners[I];
         Require(std::isfinite(F.Emissive[3]) && F.Emissive[3] >= 0 &&
                     std::isfinite(F.OpticalToken[3]) && F.OpticalToken[3] > 0,
                 "Replay requires an identified opaque facet with a valid material address");
@@ -98,7 +116,7 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
         Require(!HasMaterial || TexturedDiffuse, "Replay textured diffuse materials require explicit opt-in");
         if (HasMaterial)
         {
-            Require(F.Emissive[3] <= float(Scene.Angles.size()) && std::floor(F.Emissive[3]) == F.Emissive[3],
+            Require(F.Emissive[3] <= float(Scene.MaterialAtlas.size()) && std::floor(F.Emissive[3]) == F.Emissive[3],
                     "Replay diffuse material address is invalid");
             const uint32_t MaterialOffset = uint32_t(F.Emissive[3]) - 1;
             if (ValidatedMaterials.emplace(MaterialOffset, true).second)
@@ -134,16 +152,16 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
             Require((*N)[0]*(*N)[0] + (*N)[1]*(*N)[1] + (*N)[2]*(*N)[2] > 1e-12f,
                     "Replay facet normal is degenerate");
     }
-    if (!Scene.Visibility.Enclosures.empty())
+    if (!Scene.Enclosures.empty())
     {
-        std::vector<uint8_t> Seen(Scene.Visibility.Enclosures.size()), Covered(Scene.Surfaces.size());
+        std::vector<uint8_t> Seen(Scene.Enclosures.size()), Covered(Scene.Surfaces.size());
         std::vector<uint32_t> Pending{0};
         while (!Pending.empty())
         {
             const uint32_t Index = Pending.back(); Pending.pop_back();
             Require(Index < Seen.size() && Seen[Index] == 0, "Replay BVH has an invalid or repeated enclosure");
             Seen[Index] = 1;
-            const auto& Box = Scene.Visibility.Enclosures[Index];
+            const auto& Box = Scene.Enclosures[Index];
             for (uint32_t C = 0; C < 3; ++C)
                 Require(std::isfinite(Box.Minimum[C]) && std::isfinite(Box.Maximum[C]) &&
                             Box.Minimum[C] <= Box.Maximum[C], "Invalid replay BVH bounds");
@@ -166,8 +184,8 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
             {
                 for (uint32_t Nested : {Box.Links[0], Box.Links[1]})
                 {
-                    Require(Nested < Scene.Visibility.Enclosures.size(), "Replay BVH nested enclosure exceeds extent");
-                    const auto& Inner = Scene.Visibility.Enclosures[Nested];
+                    Require(Nested < Scene.Enclosures.size(), "Replay BVH nested enclosure exceeds extent");
+                    const auto& Inner = Scene.Enclosures[Nested];
                     for (uint32_t C = 0; C < 3; ++C)
                         Require(Inner.Minimum[C] >= Box.Minimum[C] && Inner.Maximum[C] <= Box.Maximum[C],
                                 "Replay BVH enclosure does not contain its nested bounds");
@@ -217,13 +235,13 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
         }
 }
 
-std::vector<float> CompileReplayFacetSources(const LightComputeArchive& Scene)
+std::vector<float> CompilePathReplayFacetSources(std::span<const PathReplayFacet> Surfaces)
 {
-    Require(Scene.Surfaces.size() <= (1u << 24), "Replay facet indices exceed exact float storage");
+    Require(Surfaces.size() <= (1u << 24), "Replay facet indices exceed exact float storage");
     std::vector<float> Indices;
-    for (size_t Index = 0; Index < Scene.Surfaces.size(); ++Index)
+    for (size_t Index = 0; Index < Surfaces.size(); ++Index)
     {
-        const auto& F = Scene.Surfaces[Index];
+        const auto& F = Surfaces[Index];
         if (!(F.Emissive[0] > 0 || F.Emissive[1] > 0 || F.Emissive[2] > 0)) continue;
         const double Ax = double(F.B[0]) - F.A[0], Ay = double(F.B[1]) - F.A[1], Az = double(F.B[2]) - F.A[2];
         const double Bx = double(F.C[0]) - F.A[0], By = double(F.C[1]) - F.A[1], Bz = double(F.C[2]) - F.A[2];
@@ -237,4 +255,51 @@ std::vector<float> CompileReplayFacetSources(const LightComputeArchive& Scene)
     }
     return Indices;
 }
-} // namespace
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                  REPLAY HISTORY INTAKE
+//------------------------------------------------------------------------------------------------------------------------
+
+PathReplayHistoryDecision PathReplayHistoryDomain::Resolve(const PathReplaySceneView& Scene,
+                                                           const PathReplayHistorySpecification& Specification,
+                                                           bool FullHistoryForAudit)
+{
+    Require(Scene.Camera.size() == PriorCamera.size(), "Replay camera requires twelve float4 entries");
+    bool Changed = !PriorAvailable || PriorSpecification != Specification ||
+                   !std::equal(Scene.Camera.begin(), Scene.Camera.end(), PriorCamera.begin()) ||
+                   PriorSurfaces.size() != Scene.Surfaces.size() || PriorReceivers.size() != Scene.Receivers.size() ||
+                   PriorMaterialAtlas.size() != Scene.MaterialAtlas.size();
+    if (!Changed)
+    {
+        Changed = (!Scene.Surfaces.empty() && std::memcmp(PriorSurfaces.data(), Scene.Surfaces.data(),
+                                                         Scene.Surfaces.size_bytes()) != 0) ||
+                  (!Scene.Receivers.empty() && std::memcmp(PriorReceivers.data(), Scene.Receivers.data(),
+                                                          Scene.Receivers.size_bytes()) != 0) ||
+                  (!Scene.MaterialAtlas.empty() && std::memcmp(PriorMaterialAtlas.data(), Scene.MaterialAtlas.data(),
+                                                              Scene.MaterialAtlas.size_bytes()) != 0);
+    }
+    // 📝 Construct all replacement snapshots before changing the retained domain, so allocation failures are atomic.
+    std::vector<PathReplayFacet> CurrentSurfaces(Scene.Surfaces.size());
+    std::vector<PathReplayReceiver> CurrentReceivers(Scene.Receivers.size());
+    std::vector<float> CurrentMaterialAtlas(Scene.MaterialAtlas.size());
+    if (!Scene.Surfaces.empty()) std::memcpy(CurrentSurfaces.data(), Scene.Surfaces.data(), Scene.Surfaces.size_bytes());
+    if (!Scene.Receivers.empty()) std::memcpy(CurrentReceivers.data(), Scene.Receivers.data(), Scene.Receivers.size_bytes());
+    if (!Scene.MaterialAtlas.empty())
+        std::memcpy(CurrentMaterialAtlas.data(), Scene.MaterialAtlas.data(), Scene.MaterialAtlas.size_bytes());
+    std::copy(Scene.Camera.begin(), Scene.Camera.end(), PriorCamera.begin());
+    PriorSpecification = Specification;
+    PriorSurfaces.swap(CurrentSurfaces);
+    PriorReceivers.swap(CurrentReceivers);
+    PriorMaterialAtlas.swap(CurrentMaterialAtlas);
+    PriorAvailable = true;
+    return {Changed, Changed && !FullHistoryForAudit ? 1u : 64u};
+}
+
+void PathReplayHistoryDomain::Invalidate() noexcept
+{
+    PriorAvailable = false;
+    PriorSurfaces.clear();
+    PriorReceivers.clear();
+    PriorMaterialAtlas.clear();
+}
+} // namespace Frontier

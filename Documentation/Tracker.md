@@ -4,6 +4,11 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 ## Dynamic path reuse continuation — 2026-10-27
 
+- The bounded replay footprints, BVH/material/receiver guards, emissive-index compiler and exact-input history
+  policy now have a single authoritative home in `Frontier/Engine/Rendering`. The exhibit links the reusable Engine
+  library; the exhibit-local implementation was removed. Independent C++20 domain and C++17 legacy-archive tests
+  pass in release and ASan/UBSan. This is not an editor-integrated GI pipeline or a scalable revision system.
+  [Engine ownership and verification](../Exhibits/LightCompute/PathReplayEngine.md).
 - Guarded single-stratum rough GGX and albedo-texture replay can now be opted into together. SwiftShader release
   and sanitized hosts pass independent hemisphere quadrature, two textured primary-pixel references and four-hit
   atlas/blocker/reopening references with capped temporal/spatial reuse. Two rough-textured moving-primary probes

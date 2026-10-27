@@ -35,7 +35,9 @@ mkdir -p "$(dirname "$RESULTS")"
     printf 'C++ compiler: '; "$COMPILER" --version 2>&1 | sed -n '1p'
     "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir}.slang \
-              Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomain.h,PathReplayCapture.h,ReplayMotionValidation.h,ReplayMotionCapture.h,ReplayTextureValidation.h,ReplayTextureMotionValidation.h,ReplayTextureMotionCapture.h}
+              Frontier/Engine/Rendering/{PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp} \
+              Frontier/Engine/Rendering/CMakeLists.txt \
+              Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayCapture.h,ReplayMotionValidation.h,ReplayMotionCapture.h,ReplayTextureValidation.h,ReplayTextureMotionValidation.h,ReplayTextureMotionCapture.h}
     "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --capture-texture-motion "$OUTPUT"
     "$PYTHON" - "$OUTPUT" "$ROOT/Exhibits/LightCompute/Images" <<'PY'
 import hashlib

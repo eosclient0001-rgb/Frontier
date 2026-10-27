@@ -40,6 +40,8 @@ mkdir -p "$(dirname "$RESULTS")"
     printf 'C++ compiler: '; "$COMPILER" --version 2>&1 | sed -n '1p'
     "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir}.slang \
-              Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomain.h,PathReplayCapture.h,ReplayRoomReference.h,ReplayMotionValidation.h,ReplayTextureValidation.h,ReplayTextureMotionValidation.h}
+              Frontier/Engine/Rendering/{PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp} \
+              Frontier/Engine/Rendering/CMakeLists.txt \
+              Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayCapture.h,ReplayRoomReference.h,ReplayMotionValidation.h,ReplayTextureValidation.h,ReplayTextureMotionValidation.h}
     "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --replay-texture-motion
 } | tee "$RESULTS"

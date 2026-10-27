@@ -6,6 +6,7 @@
 
 #define VK_NO_PROTOTYPES
 #include "LightComputeFormat.h"
+#include "Engine/Rendering/PathReplayDomain.h"
 #include "Engine/Rendering/SolarOpticsPayload.h"
 #include "Engine/Rendering/SolarDiscFilter.h"
 #include "Engine/Render/MaterialPreviewGeometry.h"
@@ -209,7 +210,11 @@ inline bool ConfirmRigidPoseContinuation(const std::vector<LightComputeFacet>& P
     return true;
 }
 #include "RectangleDomainValidation.h"
-#include "PathReplayDomain.h"
+PathReplaySceneView ReplayDomainView(const LightComputeArchive& Scene)
+{
+    return {Scene.Receivers, Scene.Surfaces, Scene.Visibility.Enclosures, Scene.Visibility.Corners,
+            Scene.Angles, Scene.Camera, Scene.Lights.size()};
+}
 struct LightComputeSubmission
 {
 #ifdef _WIN32
@@ -245,16 +250,9 @@ struct LightComputeSubmission
     VkPipeline RectangleGeneratePipeline = VK_NULL_HANDLE, RectangleResolvePipeline = VK_NULL_HANDLE;
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
     bool PendingOrdinaryHistoryReset = false;
-    bool ReplayLastReset = true, ReplayHasPriorInputs = false, ReplayPreviousPrimary = false,
-         ReplayPreviousRoughOpaque = false, ReplayPreviousSampleFacets = false, ReplayPreviousDoubleCount = false,
-         ReplayPreviousStrictMotion = false, ReplayPreviousBalanceSampling = false, ReplayPreviousTexturedDiffuse = false;
-    uint32_t ReplayLastHistoryCap = 1, ReplayPreviousBounces = 0, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
-    float ReplayPreviousFloor = 0;
-    std::array<float,3> ReplayPreviousEnvironment{};
-    std::array<std::array<float,4>,12> ReplayPreviousCamera{};
-    std::vector<LightComputeFacet> ReplayPreviousFacets;
-    std::vector<LightComputeReceiver> ReplayPreviousReceivers;
-    std::vector<float> ReplayPreviousMaterialAtlas;
+    bool ReplayLastReset = true;
+    uint32_t ReplayLastHistoryCap = 1, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
+    PathReplayHistoryDomain ReplayHistoryDomain;
     RectangleDomain PreviousRectangle{};
     bool RectangleHistory = false, LastRectangleReset = true;
     std::vector<LightComputeFacet> DiffuseFacets;
@@ -793,45 +791,18 @@ struct LightComputeSubmission
                     Scene.Surfaces.size() == Scene.Visibility.Corners.size(),
                 "Invalid replay extent, domain or diffuse scene");
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
-        ValidateReplayDomain(Scene, PrimaryVisibility, RoughOpaque, TexturedDiffuse);
+        ValidatePathReplayDomain(ReplayDomainView(Scene), {PrimaryVisibility, RoughOpaque, TexturedDiffuse});
         Require(!DoubleCountForAudit || SampleFacets, "Double-count control requires explicit source sampling");
         Require(!BalanceSampling || (SampleFacets && !DoubleCountForAudit),
                 "Balanced sampling requires facet sampling without the double-count control");
-        const auto FacetSources = SampleFacets ? CompileReplayFacetSources(Scene) : std::vector<float>{};
+        const auto FacetSources = SampleFacets ? CompilePathReplayFacetSources(Scene.Surfaces) : std::vector<float>{};
         Require(FacetSources.size() <= ReplayFacetCapacity && ProjectedAngles(Scene).size() <= ReplayFacetStart,
                 "Replay facet-source list exceeds the prepared storage span");
-        bool Changed = !ReplayHasPriorInputs || ReplayPreviousBounces != Bounces || ReplayPreviousFloor != PositiveFloor ||
-                       ReplayPreviousPrimary != PrimaryVisibility || ReplayPreviousRoughOpaque != RoughOpaque ||
-                       ReplayPreviousSampleFacets != SampleFacets || ReplayPreviousDoubleCount != DoubleCountForAudit ||
-                       ReplayPreviousStrictMotion != StrictMotionForAudit || ReplayPreviousBalanceSampling != BalanceSampling ||
-                       ReplayPreviousTexturedDiffuse != TexturedDiffuse || ReplayPreviousEnvironment != Environment ||
-                       ReplayPreviousCamera != Scene.Camera || ReplayPreviousFacets.size() != Scene.Surfaces.size() ||
-                       ReplayPreviousReceivers.size() != Scene.Receivers.size() ||
-                       ReplayPreviousMaterialAtlas.size() != Scene.Angles.size();
-        if (!Changed)
-            Changed = (!Scene.Surfaces.empty() && std::memcmp(ReplayPreviousFacets.data(), Scene.Surfaces.data(),
-                            Scene.Surfaces.size() * sizeof(LightComputeFacet)) != 0) ||
-                      (!Scene.Receivers.empty() && std::memcmp(ReplayPreviousReceivers.data(), Scene.Receivers.data(),
-                                            Scene.Receivers.size() * sizeof(LightComputeReceiver)) != 0) ||
-                      (!Scene.Angles.empty() && std::memcmp(ReplayPreviousMaterialAtlas.data(), Scene.Angles.data(),
-                                            Scene.Angles.size() * sizeof(float)) != 0);
-        ReplayPreviousFacets = Scene.Surfaces;
-        ReplayPreviousReceivers = Scene.Receivers;
-        ReplayPreviousCamera = Scene.Camera;
-        ReplayPreviousEnvironment = Environment;
-        ReplayPreviousFloor = PositiveFloor;
-        ReplayPreviousBounces = Bounces;
-        ReplayPreviousPrimary = PrimaryVisibility;
-        ReplayPreviousRoughOpaque = RoughOpaque;
-        ReplayPreviousSampleFacets = SampleFacets;
-        ReplayPreviousDoubleCount = DoubleCountForAudit;
-        ReplayPreviousStrictMotion = StrictMotionForAudit;
-        ReplayPreviousBalanceSampling = BalanceSampling;
-        ReplayPreviousTexturedDiffuse = TexturedDiffuse;
-        ReplayPreviousMaterialAtlas = Scene.Angles;
-        ReplayHasPriorInputs = true;
-        // Shrink old represented counts, not their per-sample weights, after scene/view/integrator changes.
-        ReplayLastHistoryCap = Changed && !FullHistoryForAudit ? 1u : 64u;
+        const PathReplayHistorySpecification ReplaySpecification{Bounces, PositiveFloor, Environment, PrimaryVisibility,
+            RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse};
+        // 📝 The engine owns revision tracking; the exhibit only submits its bounded GPU experiment.
+        ReplayLastHistoryCap = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
+                                                           FullHistoryForAudit).MaximumHistory;
         bool Reset = ResetHistory || Scene.Width != ReceiverWidth || Scene.Height != ReceiverHeight;
         Upload(Scene, TexturedDiffuse);
         if (!FacetSources.empty())

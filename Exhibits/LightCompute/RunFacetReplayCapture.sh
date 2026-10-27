@@ -31,7 +31,9 @@ mkdir -p "$(dirname "$RESULTS")"
 {
     "$SLANG" -version
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir}.slang \
-              Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomain.h,PathReplayCapture.h,ReplayFacetCapture.h}
+              Frontier/Engine/Rendering/{PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp} \
+              Frontier/Engine/Rendering/CMakeLists.txt \
+              Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayCapture.h,ReplayFacetCapture.h}
     "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --capture-facet-replay "$OUTPUT"
     "$PYTHON" - "$OUTPUT" "$ROOT/Exhibits/LightCompute/Images" <<'PY'
 import hashlib

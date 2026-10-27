@@ -5,6 +5,7 @@
 // Vulkan compute validation.
 #pragma once
 #include "Engine/Rendering/ReferenceRenderer.h"
+#include "Engine/Rendering/PathReplayFootprint.h"
 #include <array>
 #include <fstream>
 namespace Frontier
@@ -15,17 +16,8 @@ struct alignas(16) LightComputeShape
     std::array<uint32_t, 4> Profile{};
     std::array<float, 4> PeakActive{};
 };
-struct alignas(16) LightComputeReceiver
-{
-    std::array<float, 4> PositionHit{}, NormalRoughness{}, ViewMetallic{}, AlbedoIor{}, ResidualSpecular{},
-        ExpectedDirect{}, MotionPositionToken{}, MotionNormal{}, MotionPixel{};
-};
-struct LightComputeFacet
-{
-    std::array<float, 4> A{}, B{}, C{}, NormalA{}, NormalB{}, NormalC{}, AlbedoRoughness{}, OpticalToken{},
-        Emissive{};
-};
-static_assert(sizeof(LightComputeFacet) == 144, "Facet storage stride mismatch");
+using LightComputeReceiver = PathReplayReceiver;
+using LightComputeFacet = PathReplayFacet;
 struct LightComputeArchive
 {
     uint32_t Width = 0, Height = 0;

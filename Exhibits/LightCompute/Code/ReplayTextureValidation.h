@@ -94,10 +94,10 @@ std::vector<std::array<float,4>> TraceTexturedReplay(LightComputeSubmission& Com
 void ValidateReplayTextureGuards()
 {
     const auto Valid = ReplayTexturedPlanes({.8f,.2f,.1f});
-    ValidateReplayDomain(Valid, false, false, true);
+    ValidatePathReplayDomain(ReplayDomainView(Valid), {false, false, true});
     auto Rejected = [](const LightComputeArchive& Scene, bool Rough = false, bool OptIn = true, bool Primary = false)
     {
-        try { ValidateReplayDomain(Scene, Primary, Rough, OptIn); }
+        try { ValidatePathReplayDomain(ReplayDomainView(Scene), {Primary, Rough, OptIn}); }
         catch (const std::exception&) { return true; }
         return false;
     };
@@ -158,7 +158,7 @@ void ValidateReplayTextureGuards()
     Bad = Valid; Bad.Receivers[size_t(Bad.Width)+1].PositionHit[0] = 1000001; Check(Bad);
     Bad = Valid; Bad.Surfaces[0].A[0] = Bad.Visibility.Corners[0].A[0] = 1000001; Check(Bad);
     auto Primary = ReplayTexturedRoom(0, 7);
-    ValidateReplayDomain(Primary, true, false, true);
+    ValidatePathReplayDomain(ReplayDomainView(Primary), {true, false, true});
     Primary.Camera[1][0] = 1;
     Require(Rejected(Primary, false, true, true), "Malformed primary camera was not rejected");
     ++Cases;

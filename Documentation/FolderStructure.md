@@ -87,6 +87,15 @@ ContentDirectory resolves bundled content from the executable independently of t
 The font catalogue has a native TOML form; JSON remains only an automation/report interchange.
 
 
+## Bounded path replay ownership — 2026-10-27
+
+- `Frontier/Engine/Rendering/PathReplayFootprint.h` owns shared C++17-compatible GPU input footprints;
+  `PathReplayDomain.{h,cpp}` owns C++20 bounded domain guards, emissive-facet indices and history-cap tracking;
+  `FrontierPathReplayDomain` is their reusable CMake library.
+- `Frontier/Engine/Rendering/Shaders/PathReplayReservoir.slang` owns the corresponding bounded shader.
+  `Exhibits/LightCompute/` retains fixture generation, an isolated Vulkan submission host and verification.
+- The root editor target does not yet submit this shader; the shared location is not a production-integration claim.
+
 ## VehicleHMI reference and celestial content — 2026-10-27
 
 - `Experimental/VehicleHmiReference/`: selected immutable full-demo sources, blob manifest and original tyre tests.
