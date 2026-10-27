@@ -37,8 +37,39 @@ rare rays can miss their finite boundaries.
 Primary filtering comparison uses Vulkan's hit positions and barycentrics with an independent double-precision
 CPU sampler; it is not an independent primary-intersection test. The secondary plane probes independently specify
 the expected texel colours and transport. Earlier diffuse, rough, balance, motion and direct-light regression
-fixtures still pass; see the retained logs. A four-hit textured-room CPU comparison and multiple rendered views are
-the next acceptance checks, not yet implied by this table.
+fixtures still pass; see the retained logs.
+
+## Four-hit room
+
+The floor and cuboid use an 8×8 checker pyramid; the fixed manual receiver stays untextured so differences originate
+at secondary hits. Three independent CPU baselines each trace 400,000 paths with double-precision brute-force
+triangle tests and `mt19937_64`. Fresh Vulkan facet-only and balanced modes, plus reused balanced transitions,
+agree within the recorded six-combined-SE-plus-tolerance limits. Each GPU comparison uses eight reset batches of
+1,024 centre pixels. Batch-mean SE now uses **sample** variance, correcting the earlier population-variance report.
+
+| Transition / check | Independent CPU mean ± SE | SwiftShader mean ± batch SE |
+| --- | ---: | ---: |
+| Open, changed texture, reused — red | `0.815045 ± 0.003769` | `0.811707 ± 0.001845` |
+| Changed texture + moving blocker, reused — red | `0.027136 ± 0.000433` | `0.027303 ± 0.000292` |
+| Reopened and original texture, reused — red | `0.809796 ± 0.003761` | `0.809596 ± 0.001510` |
+| Textured minus untextured, paired — green | `-0.0003039 ± 0.0000245` | `-0.0002953 ± 0.0000513` |
+
+The paired counterfactual uses the same random draws within each CPU pair and, separately, within each GPU pair:
+120,000 CPU paths and 24 GPU batches of 1,024 pixels. It detects a secondary-albedo effect rather than merely
+matching a scene dominated by the direct source. A one-hit control is bitwise identical after the secondary-only
+texture change. Each of the atlas, blocker and combined transitions retained 40,960 temporal candidates, capped
+history at one and exercised spatial reuse. This is a statistical comparison of a specific model, not a general
+unbiasedness proof.
+
+```bash
+bash Exhibits/LightCompute/RunReplayTextureRoom.sh
+SANITIZE=1 bash Exhibits/LightCompute/RunReplayTextureRoom.sh
+```
+
+[Four-hit release](Results/ReplayTextureRoom-release.txt) ·
+[four-hit sanitized host](Results/ReplayTextureRoom-sanitized.txt) ·
+[texture, diffuse and balanced regressions](Results/ReplayTextureRoom-regression.txt). Multiple textured room
+captures remain to be verified.
 
 ```bash
 bash Exhibits/LightCompute/RunReplayTexture.sh

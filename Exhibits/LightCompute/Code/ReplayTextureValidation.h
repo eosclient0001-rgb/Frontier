@@ -85,9 +85,10 @@ LightComputeArchive ReplayTexturedRoom(uint32_t Palette, float Blocker)
 }
 std::vector<std::array<float,4>> TraceTexturedReplay(LightComputeSubmission& Compute, const LightComputeArchive& Scene,
                                                       uint32_t Hits, uint32_t Seed, bool Temporal, bool Spatial, bool Reset,
-                                                      bool Primary = false, bool Facets = false, bool Balance = false)
+                                                      bool Primary = false, bool Facets = false, bool Balance = false,
+                                                      const std::array<float,3>& Environment = {0,0,0})
 {
-    return Compute.ExecuteReplay(Scene, Hits, Seed, Temporal, Spatial, Reset, {0,0,0}, .01f, Primary,
+    return Compute.ExecuteReplay(Scene, Hits, Seed, Temporal, Spatial, Reset, Environment, .01f, Primary,
                                  false, false, Facets, false, false, 64, Balance, true);
 }
 void ValidateReplayTextureGuards()

@@ -53,8 +53,8 @@ fractions 0–1 and roughness 0.25–1, while rejecting near-delta materials.
 | Revealed two-hit parallel-plane path | approximately 0.5 | 0.5 |
 | Four-hit reflective parallel planes | approximately 0.625 | 0.625 |
 
-Each statistical case uses 4,096 centre samples across four seeds; SE is the sample standard deviation divided
-by √4,096 and assumes independent centres. The first area integral converges within `6.86e-8` between 500²
+Each statistical case uses 4,096 centre samples across four seeds; the historical SE uses population standard
+deviation divided by √4,096 and assumes independent centres. The sample-variance correction is negligible here. The first area integral converges within `6.86e-8` between 500²
 and 1,000² midpoint grids. Moving an occluder into the path returned exactly zero in the tested fixture.
 A coloured two-hit case matched `(0.5, 0.25, 0.125)`. In this disocclusion fixture the count cap reduced
 standard deviation to 77% of an otherwise identical long-history control; the finite-domain audit also
@@ -69,8 +69,9 @@ brute-force Möller–Trumbore intersections, a different cosine basis and `mt19
 and RNG. Three reference cases each used 400,000 paths; 16 Vulkan batches supplied 16,384 sampled centres per
 case. All RGB channels passed the specified six-combined-SE-plus-tolerance test for one-hit open, four-hit open,
 four-hit blocked fresh, and four-hit blocked after temporal/spatial reuse. For example, blocked/reused red was
-`0.025697 ± 0.000633` batch SE versus CPU `0.027470 ± 0.000436` SE. The GPU pixel and batch standard errors
-are both recorded; independence and finite-sample tails remain assumptions. Both implementations deliberately
+`0.025697 ± 0.000633` batch SE versus CPU `0.027470 ± 0.000436` SE. That historical batch SE uses population
+variance; its sample-variance counterpart is approximately `0.000654` for 16 batches. The GPU pixel and batch
+standard errors are both recorded; independence and finite-sample tails remain assumptions. Both implementations deliberately
 share the same diffuse scene, ray offset and transport model, so this is an independent implementation check,
 not measured real-world ground truth. [Release](Results/ReplayRoomReference-release.txt) ·
 [sanitized host](Results/ReplayRoomReference-sanitized.txt).
@@ -81,8 +82,9 @@ The opt-in mode evaluates the repository's single-layer GGX/diffuse BRDF at each
 throughput by `π × BRDF`, the weight for a cosine-distributed direction. Independent double-precision
 hemisphere quadrature agrees within the recorded statistical bounds for a dielectric and a rough metallic
 receiver, including a dielectric-to-metal temporal/spatial transition. For the reused metallic red channel,
-quadrature was `0.685029`, versus `0.671844 ± 0.005604` batch SE over 8,192 centres. The CPU quadrature
-changed by less than `0.0001` between 256×512 and 512×1024 directions.
+quadrature was `0.685029`, versus `0.671844 ± 0.005991` sample-variance batch SE over 8,192 centres. The historical
+log's population-variance batch SE is `0.005604`. The CPU quadrature changed by less than `0.0001` between
+256×512 and 512×1024 directions.
 
 A separate 24-triangle rough-material room used 400,000 CPU paths per reference and 8 Vulkan batches of
 1,024 centres. Four-hit open, blocked fresh, and blocked after moving-occluder reuse passed all RGB bounds.

@@ -95,7 +95,8 @@ std::array<double,3> RoughReplayBrdf(const LightComputeReceiver& R, ReplayRefere
     return Value;
 }
 ReplayReferenceVector ReplayReferencePath(const LightComputeArchive& Scene, const LightComputeReceiver& Receiver,
-                                           uint32_t Hits, std::mt19937_64& Random, bool RoughOpaque = false)
+                                           uint32_t Hits, std::mt19937_64& Random, bool RoughOpaque = false,
+                                           bool TexturedDiffuse = false)
 {
     ReplayReferenceVector Normal = ReplayReferenceUnit(ReplayReferenceXyz(Receiver.NormalRoughness));
     ReplayReferenceVector Origin = ReplayReferenceAdd(ReplayReferenceXyz(Receiver.PositionHit),
@@ -150,27 +151,33 @@ ReplayReferenceVector ReplayReferencePath(const LightComputeArchive& Scene, cons
                                            ReplayReferenceScale(ReplayReferenceXyz(F.NormalC), HitV));
         Normal = ReplayReferenceUnit(N);
         if (ReplayReferenceDot(Normal, Direction) > 0) Normal = ReplayReferenceScale(Normal, -1);
-        Origin = ReplayReferenceAdd(ReplayReferenceAdd(Origin, ReplayReferenceScale(Direction, Distance)),
-                                    ReplayReferenceScale(Normal, .001));
+        const auto StrikePosition = ReplayReferenceAdd(Origin, ReplayReferenceScale(Direction, Distance));
+        Origin = ReplayReferenceAdd(StrikePosition, ReplayReferenceScale(Normal, .001));
         Current = {};
         Current.NormalRoughness = {float(Normal[0]),float(Normal[1]),float(Normal[2]),F.AlbedoRoughness[3]};
         Current.ViewMetallic = {float(-Direction[0]),float(-Direction[1]),float(-Direction[2]),F.OpticalToken[0]};
         Current.AlbedoIor = {F.AlbedoRoughness[0],F.AlbedoRoughness[1],F.AlbedoRoughness[2],F.OpticalToken[1]};
         Current.ResidualSpecular[3] = F.OpticalToken[2];
+        if (TexturedDiffuse && F.Emissive[3] > 0)
+        {
+            const auto Sample = ReplayReferenceTexture(Scene, F, HitU, HitV, StrikePosition, Normal,
+                                                         ReplayReferenceScale(Direction, -1));
+            for (uint32_t C = 0; C < 3; ++C) Current.AlbedoIor[C] = float(Sample.Albedo[C]);
+        }
     }
     return Result;
 }
 using ReplayRgbMoments = std::array<DirectGpuMoments,3>;
 ReplayRgbMoments ReplayReferenceIntegrate(const LightComputeArchive& Scene, uint32_t Hits, uint64_t Seed,
-                                            bool RoughOpaque = false)
+                                            bool RoughOpaque = false, bool TexturedDiffuse = false)
 {
     ReplayRgbMoments Result;
     std::mt19937_64 Random(Seed);
     const auto& Receiver = Scene.Receivers[size_t(Scene.Width) + 1];
     for (uint32_t Sample = 0; Sample < 400000; ++Sample)
     {
-        const auto Value = ReplayReferencePath(Scene, Receiver, Hits, Random, RoughOpaque);
-        for (uint32_t C = 0; C < 3; ++C) Result[C].Accumulate(Value[C]);
+        const auto Radiance = ReplayReferencePath(Scene, Receiver, Hits, Random, RoughOpaque, TexturedDiffuse);
+        for (uint32_t C = 0; C < 3; ++C) Result[C].Accumulate(Radiance[C]);
     }
     return Result;
 }
@@ -202,14 +209,16 @@ void ReplayCompareRgb(const char* Name, const ReplayRgbMoments& Reference, const
     for (uint32_t C = 0; C < 3; ++C)
     {
         const double PixelSe = Actual.Pixels[C].StandardError();
-        // Batch-mean SE is reported independently and allowed to enlarge the acceptance interval.
-        const double BatchSe = Actual.Batches[C].StandardError();
+        // 📝 Use sample, not population, variance for the finite set of independent batch means.
+        const double BatchSe = Actual.Batches[C].Count > 1 ? Actual.Batches[C].StandardError() *
+            std::sqrt(double(Actual.Batches[C].Count) / (Actual.Batches[C].Count - 1)) : 0;
         const double CombinedSe = std::hypot(Reference[C].StandardError(), std::max(PixelSe, BatchSe));
         std::printf("ROOM_REFERENCE %s channel=%u cpu=%.9g cpu_se=%.9g vulkan=%.9g pixel_se=%.9g "
                     "batch_se=%.9g n=%u/%u batches=%u\n", Name, C, Reference[C].Mean(), Reference[C].StandardError(),
                     Actual.Pixels[C].Mean(), PixelSe, BatchSe, Reference[C].Count, Actual.Pixels[C].Count,
                     Actual.Batches[C].Count);
-        Require(std::abs(Reference[C].Mean()-Actual.Pixels[C].Mean()) < 6*CombinedSe + .01*Reference[C].Mean() + 1e-4,
+        Require(std::abs(Reference[C].Mean()-Actual.Pixels[C].Mean()) <
+                    6*CombinedSe + .01*std::abs(Reference[C].Mean()) + 1e-4,
                 "Room replay disagrees with independent brute-force Monte Carlo reference");
     }
 }

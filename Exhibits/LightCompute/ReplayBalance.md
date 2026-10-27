@@ -34,9 +34,10 @@ changed history at one, with 97,280 spatial links in the moving test.
 For four-hit diffuse and rough rooms, independent double-precision brute-force CPU tracing used 400,000 paths
 per scene and a different RNG; all RGB channels passed the recorded six-combined-SE-plus-tolerance bounds.
 The rough blocked/reused red reference was `0.0223152 ± 0.0003396` SE versus Vulkan
-`0.0224561 ± 0.0003409` batch SE. These are comparisons of the same model, not physical calibration or a proof
-of unbiased adaptive reuse. Finite pseudorandom correlations, origin offsets and near-coincident geometry
-remain limitations.
+`0.0224561 ± 0.0003644` batch SE using sample variance. The earlier log reported `0.0003409` using population
+variance for eight batches; the corrected comparison is in [the texture-room regression](Results/ReplayTextureRoom-regression.txt).
+These are comparisons of the same model, not physical calibration or a proof of unbiased adaptive reuse. Finite
+pseudorandom correlations, origin offsets and near-coincident geometry remain limitations.
 
 ```bash
 bash Exhibits/LightCompute/RunReplayBalance.sh
