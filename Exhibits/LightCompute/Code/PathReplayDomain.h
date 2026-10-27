@@ -29,7 +29,9 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
             Require(std::isfinite(F.AlbedoRoughness[C]) && F.AlbedoRoughness[C] >= 0 && F.AlbedoRoughness[C] <= 1 &&
                         std::isfinite(F.Emissive[C]) && F.Emissive[C] >= 0 && F.Emissive[C] <= 256 &&
                         std::isfinite(F.A[C]) && std::isfinite(F.B[C]) && std::isfinite(F.C[C]) &&
-                        std::isfinite(F.NormalA[C]) && std::isfinite(F.NormalB[C]) && std::isfinite(F.NormalC[C]),
+                        std::isfinite(F.NormalA[C]) && std::abs(F.NormalA[C]) <= 1e6f &&
+                        std::isfinite(F.NormalB[C]) && std::abs(F.NormalB[C]) <= 1e6f &&
+                        std::isfinite(F.NormalC[C]) && std::abs(F.NormalC[C]) <= 1e6f,
                     "Invalid replay facet coefficients");
         for (const auto* N : {&F.NormalA, &F.NormalB, &F.NormalC})
             Require((*N)[0]*(*N)[0] + (*N)[1]*(*N)[1] + (*N)[2]*(*N)[2] > 1e-12f,
@@ -97,9 +99,12 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
             for (uint32_t C = 0; C < 3; ++C)
             {
                 Require(std::isfinite(R.PositionHit[C]) && std::isfinite(R.NormalRoughness[C]) &&
+                            std::abs(R.NormalRoughness[C]) <= 1e6f &&
                             std::isfinite(R.AlbedoIor[C]) && R.AlbedoIor[C] >= 0 && R.AlbedoIor[C] <= 1 &&
-                            std::isfinite(R.MotionPositionToken[C]) && std::isfinite(R.ResidualSpecular[C]) &&
-                            R.ResidualSpecular[C] >= 0, "Invalid replay receiver");
+                            std::isfinite(R.MotionPositionToken[C]) && std::isfinite(R.MotionNormal[C]) &&
+                            std::abs(R.MotionNormal[C]) <= 1e6f &&
+                            std::isfinite(R.ResidualSpecular[C]) && R.ResidualSpecular[C] >= 0,
+                        "Invalid replay receiver");
                 NormalSquared += double(R.NormalRoughness[C]) * R.NormalRoughness[C];
                 if (RoughOpaque)
                 {
@@ -110,6 +115,7 @@ void ValidateReplayDomain(const LightComputeArchive& Scene, bool PrimaryVisibili
             }
             Require(NormalSquared > 1e-12 && (!RoughOpaque || (ViewSquared > 1e-12 && NormalView > 1e-8)) &&
                         std::isfinite(R.MotionPixel[0]) && std::isfinite(R.MotionPixel[1]) &&
+                        std::isfinite(R.MotionPixel[2]) && R.MotionPixel[2] >= 0 &&
                         std::isfinite(R.MotionPixel[3]), "Invalid replay receiver normal, view or motion");
         }
 }

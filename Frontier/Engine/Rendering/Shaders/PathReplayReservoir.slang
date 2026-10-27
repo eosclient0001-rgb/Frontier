@@ -104,8 +104,21 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                 uint Previous = uint(P.y) * Extent.History.x + uint(P.x);
                 float4 Source = OutputColour[ReplaySlot(0, Previous)];
                 float4 Guide = OutputColour[ReplaySlot(1, Previous)];
+                float3 PriorNormal = OutputColour[ReplaySlot(4, Previous)].xyz;
+                float3 MotionNormal = R.MotionNormal.xyz;
+                float PriorLength = dot(PriorNormal, PriorNormal), MotionLength = dot(MotionNormal, MotionNormal);
+                bool MatchingPosition = all(Guide.xyz == R.MotionPositionToken.xyz);
+                // Round-to-pixel reprojection generally lands on a nearby point, not the identical world position.
+                // The audit flag retains the old exact test; missing normals also fall back to exact positions.
+                if ((Extent.Primary.w & 512u) == 0 && PriorLength > 1e-12 && MotionLength > 1e-12)
+                {
+                    float3 Delta = Guide.xyz - R.MotionPositionToken.xyz;
+                    float Radius = clamp(R.MotionPixel.z, 0.0, .25);
+                    MatchingPosition = dot(Delta, Delta) <= Radius * Radius &&
+                                       dot(PriorNormal, MotionNormal) >= .9 * sqrt(PriorLength * MotionLength);
+                }
                 bool Compatible = Source.w > 0 && Source.z > 0 && Guide.w == R.MotionPositionToken.w &&
-                                  all(Guide.xyz == R.MotionPositionToken.xyz);
+                                  MatchingPosition;
                 if (Compatible)
                 {
                     uint Candidate = DecodeReplaySeed(Source.xy);
@@ -165,4 +178,5 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
     // Persist only pre-spatial history; cross-pixel candidates are retraced, not assumed statistically independent.
     OutputColour[ReplaySlot(0, Pixel)] = Local;
     OutputColour[ReplaySlot(1, Pixel)] = float4(R.PositionHit.xyz, R.PositionHit.w != 0 ? R.MotionPositionToken.w : 0);
+    OutputColour[ReplaySlot(4, Pixel)] = float4(R.NormalRoughness.xyz, 0);
 }

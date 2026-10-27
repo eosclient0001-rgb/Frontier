@@ -11,6 +11,8 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   or bounded plane results through four hits; changed visibility is recomputed. An opt-in rough GGX/diffuse mode
   also passes hemisphere quadrature and a four-hit moving-blocker CPU comparison within statistical bounds. This
   is not the demo's geometric reconnection and does not integrate general materials or a production/editor frame.
+  Nearby-position and normal guides retain history across a tested camera shift and authored rigid-object motion;
+  this is not general deforming-mesh reprojection. [Motion audit](../Exhibits/LightCompute/ReplayMotion.md).
   Optional explicit emissive-facet sampling passes occlusion, source-change, rough and four-hit reference checks;
   it reduces per-sample variance in one small-source fixture but is not benchmarked at equal cost.
   [Facet sampling](../Exhibits/LightCompute/FacetReplay.md), [four new Vulkan captures](../Exhibits/LightCompute/FacetReplayCaptures.md).

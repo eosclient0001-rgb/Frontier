@@ -245,7 +245,8 @@ struct LightComputeSubmission
     VkPipeline RectangleGeneratePipeline = VK_NULL_HANDLE, RectangleResolvePipeline = VK_NULL_HANDLE;
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
     bool ReplayLastReset = true, ReplayHasPriorInputs = false, ReplayPreviousPrimary = false,
-         ReplayPreviousRoughOpaque = false, ReplayPreviousSampleFacets = false, ReplayPreviousDoubleCount = false;
+         ReplayPreviousRoughOpaque = false, ReplayPreviousSampleFacets = false, ReplayPreviousDoubleCount = false,
+         ReplayPreviousStrictMotion = false;
     uint32_t ReplayLastHistoryCap = 1, ReplayPreviousBounces = 0, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
     float ReplayPreviousFloor = 0;
     std::array<float,3> ReplayPreviousEnvironment{};
@@ -776,7 +777,8 @@ struct LightComputeSubmission
                                                     const std::array<float, 3>& Environment = {0,0,0},
                                                     float PositiveFloor = .01f, bool PrimaryVisibility = false,
                                                     bool FullHistoryForAudit = false, bool RoughOpaque = false,
-                                                    bool SampleFacets = false, bool DoubleCountForAudit = false)
+                                                    bool SampleFacets = false, bool DoubleCountForAudit = false,
+                                                    bool StrictMotionForAudit = false)
     {
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
@@ -792,7 +794,7 @@ struct LightComputeSubmission
         bool Changed = !ReplayHasPriorInputs || ReplayPreviousBounces != Bounces || ReplayPreviousFloor != PositiveFloor ||
                        ReplayPreviousPrimary != PrimaryVisibility || ReplayPreviousRoughOpaque != RoughOpaque ||
                        ReplayPreviousSampleFacets != SampleFacets || ReplayPreviousDoubleCount != DoubleCountForAudit ||
-                       ReplayPreviousEnvironment != Environment ||
+                       ReplayPreviousStrictMotion != StrictMotionForAudit || ReplayPreviousEnvironment != Environment ||
                        ReplayPreviousCamera != Scene.Camera ||
                        ReplayPreviousFacets.size() != Scene.Surfaces.size() ||
                        ReplayPreviousReceivers.size() != Scene.Receivers.size();
@@ -811,6 +813,7 @@ struct LightComputeSubmission
         ReplayPreviousRoughOpaque = RoughOpaque;
         ReplayPreviousSampleFacets = SampleFacets;
         ReplayPreviousDoubleCount = DoubleCountForAudit;
+        ReplayPreviousStrictMotion = StrictMotionForAudit;
         ReplayHasPriorInputs = true;
         // Shrink old represented counts, not their per-sample weights, after scene/view/integrator changes.
         ReplayLastHistoryCap = Changed && !FullHistoryForAudit ? 1u : 64u;
@@ -827,7 +830,7 @@ struct LightComputeSubmission
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
         Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, uint32_t(FacetSources.size()), ReplayLastHistoryCap};
         const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
-                                     (DoubleCountForAudit ? 256u : 0u);
+                                     (DoubleCountForAudit ? 256u : 0u) | (StrictMotionForAudit ? 512u : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};

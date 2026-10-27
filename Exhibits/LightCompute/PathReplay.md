@@ -35,11 +35,12 @@ reservoirs are retained; the selection floor is positive (`0.01` in the tests), 
 bounded. On a scene, receiver, camera, environment or integrator change, the host deterministically limits the
 previous reservoir's represented count to one for that frame while retaining its seed and per-sample weight.
 This reduces reliance on a single stale-domain candidate without a global reset; the count can grow again in
-subsequent unchanged frames. Temporal compatibility currently requires exact prior-position and token equality;
-when it fails the shader falls back to fresh sampling. A primary-ray room probe with a 0.07-unit camera shift
-had 8,640 hits but **zero** accepted histories (8,545 rejected), despite no global reset;
-[before-fix output](Results/ReplayMotion-before.txt). This diagnoses lost reuse, not an image bias. That
-conservative check is not a general deforming-mesh motion-vector system. A changed source, blocker, receiver or bounce budget can therefore be replayed
+subsequent unchanged frames. Temporal compatibility now permits nearby reprojected positions with matching
+surface tokens and normals, within a capped radius; missing normals fall back to exact positions. A 0.07-unit
+camera shift accepted 8,512 histories versus zero under the old exact-position check, and an authored rigid
+object plus moving blocker were separately exercised. The guide remains a bounded heuristic, not a general
+deforming-mesh motion-vector system. [Motion audit and limitations](ReplayMotion.md). A changed source,
+blocker, receiver or bounce budget can therefore be replayed
 without blindly copying the old radiance. The host rejects corrupt BVHs, zero selection floor and textured
 facets. The original Lambertian mode rejects metallic surfaces; the optional rough mode accepts metallic
 fractions 0–1 and roughness 0.25–1, while rejecting near-delta materials.
