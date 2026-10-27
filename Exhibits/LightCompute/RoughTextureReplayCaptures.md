@@ -60,10 +60,10 @@ The mode combines emissive-facet and cosine sampling with balance weighting.
 
 The fixed lower-image linear luminance means were `0.169474`, `0.249564`, `0.016004` and `0.168702`. They are
 scene sanity checks, not photometric ground truth. Exposure is `0.45` with `1-exp(-L×exposure)` and gamma `2.2`.
-These images use a larger motion than the independently checked fixtures, and moving **rough-textured primary**
-history has not yet been compared to independent numerical reference paths. The existing
-[rough-textured numerical checks](RoughTextureReplay.md) separately cover static primary probes and dynamic
-secondary material/blocker changes.
+These images use a larger motion than the independently checked fixtures. The
+[rough-textured moving-primary reference](RoughTextureMotion.md) checks two probes during a smaller motion;
+[other numerical checks](RoughTextureReplay.md) cover static primary probes and dynamic secondary changes.
+Neither test validates the larger rendered motion or establishes image-wide correctness.
 
 ```bash
 bash Exhibits/LightCompute/RunRoughTextureCapture.sh

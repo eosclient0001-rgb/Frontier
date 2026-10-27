@@ -44,10 +44,10 @@ The paired control changes only the texture to a dark constant, using 120,000 CP
 The two primary-pixel references each use 240,000 CPU paths and 128 reset Vulkan batches. Room and primary RGB
 comparisons pass `6 × combined SE + 1% of CPU mean + 1e-4`; finite GPU seed independence is not established.
 
-The primary probes are static; rough-textured camera/rigid-motion history, all image pixels, broader scene scales,
-near-delta convergence, hardware GPUs, performance and the editor remain unverified. The dynamic atlas and blocker
-checks use a manual untextured receiver, with rough textured surfaces at secondary hits. The CPU quadrature and
-path reference check the implemented analytic material model, not observed real-world materials.
+The primary probes here are static; a [separate small-motion test](RoughTextureMotion.md) checks two moving
+rough-textured primary pixels. All image pixels, broader scene scales, near-delta convergence, hardware GPUs,
+performance and the editor remain unverified. The dynamic atlas and blocker checks here use a manual untextured
+receiver, with rough-textured secondary hits. The CPU references check an analytic model, not observed materials.
 
 ```bash
 bash Exhibits/LightCompute/RunRoughTextureReplay.sh
