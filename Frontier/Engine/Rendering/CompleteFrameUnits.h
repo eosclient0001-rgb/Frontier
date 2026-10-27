@@ -6,14 +6,10 @@
                            declaration the ordering/atlas/barrier machinery resolves.
 ==========================================================================================================================================*/
 
-// 🧩 Complete frame: merges ViewportUnits' surface/present bookends with IlluminationUnits and
-//    EnvironmentUnits, closing every loop the partial declarations left as imports:
-//      * SurfaceRaster writes SurfaceAttributes + SurfaceDepth in-frame (no longer imports);
-//      * LightingHistoryUpdate writes the filtered result back for next frame's VarianceTemporal;
-//      * DisplayPresent composites FilteredLighting with EnvironmentRadiance by depth.
-//    The one remaining import is ReservoirsPrevious — correct by construction: it is last frame's
-//    ReservoirsSpatial under the host ping-pong swap, so nothing in-frame may write it.
-//    This is the declaration the SDK phase records; ReferenceRenderer executes its mathematics on CPU.
+// 🧩 Complete frame declaration: names surface, illumination, environment, history and present units.
+// 📝 These declarations describe intended target touches and ordering; they do not allocate a frame,
+//    submit Vulkan commands, ping-pong reservoirs, composite an editor viewport or establish that
+//    any ReSTIR estimator is unbiased. The CPU reference renderer implements only separate, scoped models.
 
 #pragma once
 

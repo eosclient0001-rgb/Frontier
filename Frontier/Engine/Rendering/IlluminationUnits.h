@@ -10,16 +10,17 @@
 //   [indirect prelude] DistanceRecords → DistanceTraversal ┐
 //                        CardCapture → CardDirect → CardRadiosity → CardFinal ┴→ DistanceTransfer
 //     → DiscrepancySequence → ClusteredLights → DirectRadiance (initial candidates, +IndirectRadiance)
-//     → ReservoirTemporal (prev-frame import, M-clamped) → ReservoirSpatial (Jacobian-corrected)
+//     → ReservoirTemporal (prev-frame import) → ReservoirSpatial (intended reuse stage)
 //     → MaterialResolve → SurfaceReflectance (shade the winning sample)
 //     → VarianceTemporal → VarianceWavelet ×5 → VarianceUpsample
 //
 // Target classes follow §7.1: the reservoir previous-frame import, lighting history and moments are
 // Persistent (never atlas-aliased — aliasing a ping-pong pair would corrupt temporal reuse), the
 // surface attributes are an imported read from the surface phase, and everything else is transient.
-// Reservoir records use the Rg32Uint class declared for them in RenderTarget.h. The SDK phase records
-// exactly this declaration with Slang bodies; the portable layer orders it, aliases it and derives its
-// barriers today, and Exhibits/IlluminationChain proves the estimator/filter mathematics behind it.
+// Reservoir records use the Rg32Uint class declared for them in RenderTarget.h. These are declarations,
+// not proof that the named shaders execute or that their reuse equations are unbiased. The portable layer
+// orders target touches and derives barriers; Exhibits/IlluminationChain tests selected CPU mathematics.
+// The retained demo's temporal reconnection has a separately documented missing-Jacobian counterexample.
 
 #pragma once
 
