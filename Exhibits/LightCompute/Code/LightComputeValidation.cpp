@@ -1687,6 +1687,11 @@ int main(int Count, char** Arguments)
             ValidateRoughTextureMotion(Arguments[1], Arguments[2]);
             return 0;
         }
+        if (Count == 4 && std::string(Arguments[3]) == "--capture-replay-default-parity")
+        {
+            ValidateReplayCaptureDefaultParity(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-mixture")
         {
             CaptureReplayFacetMixture(Arguments[1], Arguments[2], Arguments[4]);

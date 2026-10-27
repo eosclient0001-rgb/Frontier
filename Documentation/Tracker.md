@@ -37,7 +37,8 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   but independence and monotonic convergence are unproven. Physical-GPU/editor integration, equal-time
   performance, general motion and general unbiasedness remain open. Four settled and three first-transition
   SwiftShader readbacks now show the mixture through camera, object, source and blocker changes; release and
-  sanitized-host decoded RGB hashes agree. The prior full-gallery recapture was stopped, not passed.
+  sanitized-host decoded RGB hashes agree. A two-frame default-capture check matches the previous submission
+  arguments bit-for-bit; the prior full-gallery recapture was stopped, not passed.
   [Mixture evidence](../Exhibits/LightCompute/ReplayFacetMixture.md),
   [readbacks](../Exhibits/LightCompute/ReplayFacetMixtureCaptures.md).
 - Optional area/luminance-weighted emissive-facet replay now uses the shared Engine CDF and matching MIS

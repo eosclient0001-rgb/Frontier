@@ -47,8 +47,11 @@ and retained random sequences are retraced through the current triangle BVH.
 The fixed lower-image linear luminance means for the four settled views were `0.098905`, `0.136965`,
 `0.013177` and `0.101817`. These are scene sanity checks, not photometric ground truth. The release
 and sanitized-host runs produced matching decoded RGB hashes for all 14 raw and preview PNGs.
-An attempted full recapture of the older 16-frame gallery was stopped before its first sequence
-completed; it is **not** claimed as a passing regression. Its earlier committed images are unchanged.
+A focused default-off regression compares the capture helper with the previous explicit submission
+arguments across two `96 × 128` frames: all 98,304 float components match, including 11,616 temporal
+accepts and 46,030 spatial links on the second frame. Both release and sanitized hosts pass. This is
+not a full-gallery comparison: an attempted recapture of the older 16-frame gallery was stopped before
+its first sequence completed. Its earlier committed images are unchanged.
 
 Independent area and four-hit references for the mixture are documented in
 [ReplayFacetMixture.md](ReplayFacetMixture.md). Those fixed-receiver numerical fixtures do **not**
@@ -62,6 +65,8 @@ numerical tests.
 ```sh
 Exhibits/LightCompute/RunReplayFacetMixtureCapture.sh
 SANITIZE=1 BUILD_JOBS=1 Exhibits/LightCompute/RunReplayFacetMixtureCapture.sh
+CHECK=--capture-replay-default-parity Exhibits/LightCompute/RunReplayFacetMixtureCapture.sh
+CHECK=--capture-replay-default-parity SANITIZE=1 BUILD_JOBS=1 Exhibits/LightCompute/RunReplayFacetMixtureCapture.sh
 ```
 
 Requires the prepared Slang/SwiftShader toolchain, CMake and Pillow. The sanitized run instruments
@@ -69,4 +74,6 @@ host code only and writes its PNGs to scratch; Vulkan and shader execution are n
 
 [Release capture and RGB hashes](Results/ReplayFacetMixtureCapture-release.txt) ·
 [Sanitized capture and RGB hashes](Results/ReplayFacetMixtureCapture-sanitized.txt) ·
+[Default capture parity](Results/ReplayFacetMixtureCaptureDefaultParity-release.txt) ·
+[Sanitized default parity](Results/ReplayFacetMixtureCaptureDefaultParity-sanitized.txt) ·
 [Stopped earlier-gallery recapture](Results/ReplayFacetMixtureCaptureLegacy-regression.txt).

@@ -106,4 +106,56 @@ void CaptureReplayFacetMixture(const char* Driver, const std::string& Shaders, c
             "The mixture capture's blocker did not reduce lower-room illumination");
     std::printf("PASS four settled and three first-transition mixture Vulkan readbacks\n");
 }
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                             DEFAULT CAPTURE PARITY
+//------------------------------------------------------------------------------------------------------------------------
+
+void ValidateReplayCaptureDefaultParity(const char* Driver, const std::string& Shaders)
+{
+    constexpr uint32_t Width = 96, Height = 128, FirstSeed = 919000;
+    auto Scene = ReplayTexturedMotionRigid(0, 0, 0, 7, Width, Height);
+    SetRoughTextureReplayMaterials(Scene, .65f, .35f);
+    LightComputeSubmission CaptureCompute(Driver);
+    CaptureCompute.Prepare(Scene, Shaders, false, false, false, false, true);
+    const auto Captured = CaptureReplaySequence(CaptureCompute, Scene, 4, FirstSeed, true, 2,
+                                                 true, nullptr, true, true, true, true);
+    const auto CaptureLastCounts = CaptureCompute.ExtendedStatistics();
+    const bool CaptureLastReset = CaptureCompute.ReplayLastReset;
+    const uint32_t CaptureLastCap = CaptureCompute.ReplayLastHistoryCap;
+    LightComputeSubmission LegacyCompute(Driver);
+    LegacyCompute.Prepare(Scene, Shaders, false, false, false, false, true);
+    const auto First = LegacyCompute.ExecuteReplay(Scene, 4, FirstSeed, true, true, true,
+                                                   {.025f, .025f, .025f}, .01f, true, false, true,
+                                                   true, false, false, 64, true, true);
+    const auto Counts = LegacyCompute.ExtendedStatistics();
+    const uint32_t Cap = LegacyCompute.ReplayLastHistoryCap;
+    const bool Reset = LegacyCompute.ReplayLastReset;
+    const auto Last = LegacyCompute.ExecuteReplay(Scene, 4, FirstSeed + 7919u, true, true, false,
+                                                  {.025f, .025f, .025f}, .01f, true, false, true,
+                                                  true, false, false, 64, true, true);
+    const auto LastCounts = LegacyCompute.ExtendedStatistics();
+    Require(First.size() == Captured.FirstPixels.size() && Last.size() == Captured.Pixels.size(),
+            "Default capture image extent changed");
+    uint64_t Different = 0, Components = 0;
+    for (size_t Pixel = 0; Pixel < First.size(); ++Pixel)
+        for (uint32_t Channel = 0; Channel < 4; ++Channel)
+        {
+            Different += std::memcmp(&First[Pixel][Channel], &Captured.FirstPixels[Pixel][Channel], sizeof(float)) != 0;
+            Different += std::memcmp(&Last[Pixel][Channel], &Captured.Pixels[Pixel][Channel], sizeof(float)) != 0;
+            Components += 2;
+        }
+    Require(Different == 0 && Captured.Accepted == Counts[20] && Captured.SpatialLinks == Counts[22] &&
+                Captured.HistoryCap == Cap && Captured.Reset == Reset && std::isfinite(Captured.FloorMean) &&
+                CaptureLastCounts[20] == LastCounts[20] && CaptureLastCounts[22] == LastCounts[22] &&
+                LastCounts[20] > 0 && LastCounts[22] > 0 && !CaptureLastReset && !LegacyCompute.ReplayLastReset &&
+                CaptureLastCap == LegacyCompute.ReplayLastHistoryCap && CaptureLastCap == 64,
+            "Default capture helper changed the legacy two-submission path");
+    std::printf("MIXTURE_CAPTURE_DEFAULT_PARITY images=2 components=%llu differing_float_bits=%llu "
+                "first_temporal=%u first_spatial=%u first_reset=%u first_cap=%u last_temporal=%u last_spatial=%u "
+                "last_reset=%u last_cap=%u\n", (unsigned long long)Components, (unsigned long long)Different,
+                Counts[20], Counts[22], Reset ? 1u : 0u, Cap, LastCounts[20], LastCounts[22],
+                CaptureLastReset ? 1u : 0u, CaptureLastCap);
+    std::printf("PASS default capture helper against the previous submission arguments\n");
+}
 } // namespace
