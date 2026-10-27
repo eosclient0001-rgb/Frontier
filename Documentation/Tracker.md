@@ -7,8 +7,10 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 - Independent double-precision primary rays and four-hit CPU paths now check actual textured pixels during a
   combined camera shift, rigid cuboid rotation, atlas change and subsequent blocker insertion. Release and
   sanitized-host runs match within stated statistical bounds on SwiftShader; both probes retain one temporal
-  candidate in every transition. This strengthens fixture evidence, not production integration or a general
-  unbiasedness claim. [Textured motion reference](../Exhibits/LightCompute/ReplayTextureMotion.md).
+  candidate in every transition. Four settled and three first-transition textured-motion readbacks were captured
+  and inspected. This strengthens fixture evidence, not production integration or a general unbiasedness claim.
+  [Textured motion reference](../Exhibits/LightCompute/ReplayTextureMotion.md),
+  [readbacks](../Exhibits/LightCompute/ReplayTextureMotionCaptures.md).
 - An opt-in opaque Lambertian texture subset now evaluates the existing albedo pyramid at secondary hits. Atlas
   contents trigger seed retracing and a one-candidate history cap; unrelated pipelines retain their hard reset.
   Release and sanitized-host checks cover 33 invalid inputs, primary and secondary filtering, and two-hit relighting.

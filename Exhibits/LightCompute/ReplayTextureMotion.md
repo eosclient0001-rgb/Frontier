@@ -64,4 +64,4 @@ motion fixtures; the older eight-batch motion log uses population-variance SE, a
 [ReplayMotion.md](ReplayMotion.md). Physical GPUs, Windows and Khronos validation layers were not run.
 
 See [texture domain and earlier independent room tests](ReplayTexture.md),
-[previous motion tests](ReplayMotion.md), and [current room readbacks](ReplayTextureCaptures.md).
+[previous motion tests](ReplayMotion.md), and [moving textured-room readbacks](ReplayTextureMotionCaptures.md).
