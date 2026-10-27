@@ -2,6 +2,21 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Reference daylight and lunar bounce continuation — 2026-10-27
+
+- Opt-in CPU reference-renderer surface Sun now follows atmospheric extinction and planet/triangle visibility;
+  the atmosphere LUT rebakes when parameters change. Day/night HDR backgrounds include the actual demo Moon
+  texture and a local-direction Hipparcos catalogue. Daylight naturally reduces star contrast.
+- Opt-in lunar surface illumination and a static one-bounce, same-receiver temporal SDF reservoir are wired to
+  the reference renderer. This is **not** full ReSTIR GI: no GPU, dynamic reprojection, GI spatial shifts or
+  multibounce. Indirect shadows see analytic SDF primitives rather than general triangle meshes.
+- The new release and ASan/UBSan suite passes 37/37; 6,228 star directions differ from Astropy/ERFA by at most
+  `0.007170°` on the selected 2026 cases. Vertical atmospheric optical depth, lunar flux and a lunar-lit wall
+  also have scoped analytic checks. Existing VehicleReference CTests pass 7/7 and the recorded default-off
+  binary64 probe remains `04da4f54d91705d0`. Details and limitations: [Daylight evidence](../Exhibits/NightSky/DaylightReference.md).
+- No physical sky/lunar photometry, measured observations, editor/Vulkan or lunar texture licensing approval is
+  claimed. This entry supersedes the older reference-renderer Moon integration status immediately below.
+
 ## VehicleHMI, Project Drive and finite-pixel Sun continuation — 2026-10-27
 
 - Demo 160-particle XPBD and Hex8 solid deformation modes are ported with controlled JavaScript comparisons;
@@ -14,7 +29,8 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   mesh/planet occlusion checks. Seven-camera flux error ≤ `0.000439`; normal and ASan/UBSan results pass.
 - NightSky Moon position now includes the Meeus periodic series and topocentric parallax. Against JPL DE421,
   max Moon direction error `0.003118°` over 960 selected 2026 cases (old exhibit `2.912255°`); this is a model
-  comparison, not measured sky calibration. The actual demo texture remains in NightSky, not the reference renderer.
+  comparison, not measured sky calibration. At that checkpoint the texture was NightSky-only; the later CPU
+  reference-renderer integration is recorded above.
 - An opt-in static one-bounce SDF-emitter temporal reservoir passes analytic tests. The existing CPU direct-light
   spatial reuse was corrected for tested static discrete-light domains (the old sparse mean was `0.502607` vs
   exhaustive `0.352533`; corrected `0.355025 ± 0.002030`). The retained demo's separate spatial path shader gives an
@@ -22,7 +38,7 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   [GI evidence and scope](../Exhibits/LightCompute/StaticIndirect.md).
 - [Celestial evidence](../Exhibits/NightSky/README.md); [vehicle evidence](../Exhibits/VehiclePhysics/Continuation.md).
   No physical lens/sky/tyre calibration, complete GI/ReSTIR, GPU execution or Windows/editor claim. Partial solar
-  clipping at the planet limb, subpixel occlusion, Moon integration in the reference renderer and Moon-map licence remain open.
+  clipping at the planet limb, general subpixel occlusion, editor/GPU Moon integration and Moon-map licence remain open.
 - This entry supersedes the stale XPBD/solar status in the earlier 2026-10-27 entry below.
 
 ## Sun disc, lens-flare optics, measured Moon — 2026-10-26

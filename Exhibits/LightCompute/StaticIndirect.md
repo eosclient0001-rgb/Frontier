@@ -97,9 +97,16 @@ the correct integral is `1`. The following exhaustively enumerates the demo's me
 neighbor's domain fixes this simple fixture only; a general spatial estimator must also handle sample-dependent
 reconnection, visibility, support, domain rejection and correlations. No general fix is claimed here.
 
+## Moon-lit reference continuation
+
+A separate opt-in `LunarBounceReservoir` now samples one Moon-lit diffuse bounce from analytic SDF primitives,
+with same-receiver temporal reuse only. The full Moon/Sun ratio, direct lighting, occlusion, analytic-wall checks
+and limitations are documented in [DaylightReference.md](../NightSky/DaylightReference.md). It does not replace
+or complete the demo's GPU ReSTIR GI pipeline.
+
 ## Boundaries
 
-- The temporal reservoir samples constant scalar emissive radiance on analytic SDF primitives. It has no sky
+- The original `StaticIndirectReservoir` samples constant scalar emissive radiance on analytic SDF primitives. It has no sky
   candidates, RGB card radiance, spatial reuse, multi-bounce paths, moving receiver, motion reprojection, dynamic
   geometry or updated-illumination history. It is discarded at the end of each `Render` call.
 - Reuse rejects a different receiver or scene object, but a caller must not mutate the same scene object during reuse;

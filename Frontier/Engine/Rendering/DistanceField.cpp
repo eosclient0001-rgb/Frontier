@@ -115,6 +115,75 @@ DistanceTraceResult DistanceFieldScene::Trace(SpatialVector Origin, SpatialVecto
     return Result;
 }
 
+DistanceTraceResult DistanceFieldScene::IntersectAnalytic(SpatialVector Origin, SpatialVector Direction,
+                                                          double MaxDistance) const noexcept
+{
+    DistanceTraceResult Result;
+    Result.Distance = MaxDistance;
+    const auto Finite = [](SpatialVector V) { return std::isfinite(V.X) && std::isfinite(V.Y) && std::isfinite(V.Z); };
+    const double A = Dot(Direction, Direction);
+    if (!Finite(Origin) || !Finite(Direction) || !std::isfinite(A) || !std::isfinite(MaxDistance) ||
+        MaxDistance <= 0.0 || A <= 1e-24)
+        return Result;
+    for (uint32_t Index = 0; Index < Primitives_.size(); ++Index)
+    {
+        ++Result.StepsUsed;
+        const auto& Primitive = Primitives_[Index];
+        if (!Finite(Primitive.Centre) || !Finite(Primitive.Extents)) continue;
+        const SpatialVector Local = Sub(Origin, Primitive.Centre);
+        double Hit = MaxDistance;
+        if (Primitive.Kind == DistancePrimitiveKind::Sphere && Primitive.Extents.X > 0.0)
+        {
+            const double B = Dot(Local, Direction);
+            const double C = Dot(Local, Local) - Primitive.Extents.X * Primitive.Extents.X;
+            if (C <= 0.0) Hit = 0.0;
+            else
+            {
+                const double Discriminant = B*B - A*C;
+                if (B < 0.0 && Discriminant >= 0.0)
+                    Hit = C / (-B + std::sqrt(Discriminant)); // Avoid subtractive cancellation near a sphere.
+            }
+        }
+        else if (Primitive.Kind == DistancePrimitiveKind::Box && Primitive.Extents.X >= 0.0 &&
+                 Primitive.Extents.Y >= 0.0 && Primitive.Extents.Z >= 0.0)
+        {
+            const double OriginAxis[3] = {Local.X, Local.Y, Local.Z};
+            const double DirectionAxis[3] = {Direction.X, Direction.Y, Direction.Z};
+            const double Extent[3] = {Primitive.Extents.X, Primitive.Extents.Y, Primitive.Extents.Z};
+            double Near = 0.0, Far = MaxDistance;
+            bool Intersects = true;
+            for (int Axis = 0; Axis < 3; ++Axis)
+            {
+                if (std::abs(DirectionAxis[Axis]) < 1e-15)
+                {
+                    if (OriginAxis[Axis] < -Extent[Axis] || OriginAxis[Axis] > Extent[Axis]) Intersects = false;
+                    continue;
+                }
+                double Enter = (-Extent[Axis] - OriginAxis[Axis]) / DirectionAxis[Axis];
+                double Exit = (Extent[Axis] - OriginAxis[Axis]) / DirectionAxis[Axis];
+                if (Enter > Exit) std::swap(Enter, Exit);
+                Near = std::max(Near, Enter); Far = std::min(Far, Exit);
+                if (Near > Far) { Intersects = false; break; }
+            }
+            if (Intersects) Hit = Near;
+        }
+        else if (Primitive.Kind == DistancePrimitiveKind::HalfSpace && Dot(Primitive.Extents, Primitive.Extents) > 0.0)
+        {
+            const double Signed = Dot(Local, Primitive.Extents);
+            const double Speed = Dot(Direction, Primitive.Extents);
+            if (Signed <= 0.0) Hit = 0.0;
+            else if (Speed < 0.0) Hit = -Signed / Speed;
+        }
+        if (Hit >= 0.0 && Hit < Result.Distance)
+        {
+            Result.Hit = true;
+            Result.Distance = Hit;
+            Result.Primitive = Index;
+        }
+    }
+    return Result;
+}
+
 bool DistanceFieldScene::SegmentVisible(SpatialVector A, SpatialVector B, double EndpointEpsilon) const noexcept
 {
     const SpatialVector Delta     = Sub(B, A);

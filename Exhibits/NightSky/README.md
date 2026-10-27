@@ -18,6 +18,11 @@ PYTHON="$PWD/_ClaudeScratch/venv/bin/python" SANITIZE=1 bash Exhibits/NightSky/R
 # Requires CMake and g++; CAPTURE=1 also requires Pillow.
 CMAKE=cmake PYTHON="$PWD/_ClaudeScratch/venv/bin/python" CAPTURE=1 bash Exhibits/NightSky/RunSolarValidation.sh
 CMAKE=cmake SANITIZE=1 bash Exhibits/NightSky/RunSolarValidation.sh
+# Actual reference-renderer daylight, textured Moon, star catalogue and lunar bounce.
+CMAKE=cmake PYTHON="$PWD/_ClaudeScratch/venv/bin/python" CAPTURE=1 bash Exhibits/NightSky/RunDaylightValidation.sh
+CMAKE=cmake PYTHON="$PWD/_ClaudeScratch/venv/bin/python" SANITIZE=1 bash Exhibits/NightSky/RunDaylightValidation.sh
+PYTHON="$PWD/_ClaudeScratch/venv/bin/python" bash Exhibits/NightSky/RunCatalogueValidation.sh
+PYTHON="$PWD/_ClaudeScratch/venv/bin/python" SANITIZE=1 bash Exhibits/NightSky/RunCatalogueValidation.sh
 ```
 
 If CMake is installed in the virtual environment, set `CMAKE="$PWD/_ClaudeScratch/venv/bin/cmake"` instead.
@@ -25,6 +30,14 @@ If CMake is installed in the virtual environment, set `CMAKE="$PWD/_ClaudeScratc
 GCC 12.2, C++17, `-O2 -Wall -Wextra -Werror`, Linux CPU. Source basis: `ae0bb7d` plus this continuation's changes.
 The runner converts the retained demo JPEG into the ignored runtime PPM. The previous checkout omitted its lunar
 source; the initial reproduction failed 3 checks. That failure is retained in `Results/InheritedSkyFailure.txt`.
+
+## Reference-renderer daylight continuation
+
+The actual CPU `ReferenceRenderer` now has opt-in atmospheric surface sunlight, day/night textured Moon and
+Hipparcos stars, lunar direct light and a static one-bounce lunar SDF path. Release and ASan/UBSan pass 37/37;
+the 6,228-case Astropy/ERFA catalogue comparison has max angular difference `0.007170°`. The Moon uses the
+actual demo map. These are limited reference paths, **not** a complete GPU ReSTIR GI pipeline or observed-sky
+calibration. Setup, evidence, captures and limitations: [DaylightReference.md](DaylightReference.md).
 
 ## Source audit and changes — 2026-10-27
 
@@ -53,6 +66,9 @@ existing parameterized implementation; this is not a wholesale pixel-identical p
 |---|---|
 | `Images/SunDiskLensFlare.png` | NightSky exhibit: scattering sky with simultaneous warm and blue streaks |
 | `Images/SolarReferenceMixed.png` | Actual CPU reference-renderer capture with both streaks and other flare terms |
+| `Images/DayMoonReference.png` | Actual reference renderer: daylight Moon, 3° view, Benoni model time |
+| `Images/DaySkyReference.png` / `Images/DayStarsBoostedReference.png` | Same daylight view/exposure; second uses nonphysical 100,000× star gain |
+| `Images/NightMoonReference.png` / `Images/NightStarsReference.png` | Actual reference renderer: night Moon and catalogue field; exposures differ |
 | `Images/SunDiscClose.png` | Telephoto Sun at sky exposure |
 | `Images/SunDiscFiltered.png` | Same radiance at solar-filter exposure, revealing limb darkening |
 | `Images/MoonClose.png` | Restored demo texture, Benoni moonrise orientation, atmospheric tint |

@@ -6,6 +6,8 @@
 #include <stdexcept>
 
 #include "DiscrepancySequence.h"
+#include "LunarBounceReservoir.h"
+#include "LunarDiscProjection.h"
 #include "ReservoirSampling.h"
 #include "SolarDiscFilter.h"
 #include "StaticIndirectReservoir.h"
@@ -42,6 +44,53 @@ SpatialVector Normalised(SpatialVector A) noexcept
 double Luminance(const SpectrumRgb& C) noexcept { return 0.2126 * C.R + 0.7152 * C.G + 0.0722 * C.B; }
 SpectrumRgb MulRgb(const SpectrumRgb& A, double S) noexcept { return {A.R * S, A.G * S, A.B * S}; }
 SpectrumRgb AddRgb(const SpectrumRgb& A, const SpectrumRgb& B) noexcept { return {A.R + B.R, A.G + B.G, A.B + B.B}; }
+
+bool SameAtmosphere(const AtmosphereParameters& A, const AtmosphereParameters& B) noexcept
+{
+    return A.GroundRadiusKm == B.GroundRadiusKm && A.TopRadiusKm == B.TopRadiusKm &&
+        A.RayleighScattering.R == B.RayleighScattering.R && A.RayleighScattering.G == B.RayleighScattering.G &&
+        A.RayleighScattering.B == B.RayleighScattering.B && A.RayleighScaleHeightKm == B.RayleighScaleHeightKm &&
+        A.MieScattering == B.MieScattering && A.MieAbsorption == B.MieAbsorption &&
+        A.MieScaleHeightKm == B.MieScaleHeightKm && A.MiePhaseG == B.MiePhaseG &&
+        A.OzoneAbsorption.R == B.OzoneAbsorption.R && A.OzoneAbsorption.G == B.OzoneAbsorption.G &&
+        A.OzoneAbsorption.B == B.OzoneAbsorption.B && A.OzonePeakKm == B.OzonePeakKm &&
+        A.OzoneWidthKm == B.OzoneWidthKm && A.GroundAlbedo == B.GroundAlbedo;
+}
+
+double PlanetHorizonCos(const AtmosphereParameters& P, double AltitudeKm) noexcept
+{
+    const double Radius = P.GroundRadiusKm + std::max(0.0, AltitudeKm);
+    if (Radius <= 0.0) return 0.0;
+    const double Ratio = P.GroundRadiusKm / Radius;
+    return -std::sqrt(std::max(0.0, 1.0 - Ratio * Ratio));
+}
+
+// The transmittance integrator stops at the ground, so explicitly reject a planet-blocked beam.
+SpectrumRgb CelestialBeam(const ReferenceRenderSettings& Settings, SpatialVector Direction,
+                          double AltitudeKm, SpectrumRgb TopIrradiance, bool Attenuate) noexcept
+{
+    Direction = Normalised(Direction);
+    if (Length(Direction) == 0.0 || Direction.Z <= PlanetHorizonCos(Settings.Atmosphere, AltitudeKm)) return {};
+    if (!Settings.AtmosphereEnabled || !Attenuate) return TopIrradiance;
+    const auto T = TransmittanceToTop(Settings.Atmosphere,
+        Settings.Atmosphere.GroundRadiusKm + std::max(0.0, AltitudeKm), Direction.Z, 96);
+    return {TopIrradiance.R*T.R, TopIrradiance.G*T.G, TopIrradiance.B*T.B};
+}
+
+// B-V to approximate RGB chromaticity (Ballesteros temperature and a blackbody RGB fit).
+SpectrumRgb StarColour(double Bv) noexcept
+{
+    Bv = std::clamp(Bv, -0.39, 2.0);
+    const double T = 46.0 * (1.0 / (0.92*Bv + 1.7) + 1.0 / (0.92*Bv + 0.62));
+    const double R = T <= 66.0 ? 255.0 : 329.698727446 * std::pow(T - 60.0, -0.1332047592);
+    const double G = T <= 66.0 ? 99.4708025861 * std::log(T) - 161.1195681661
+                               : 288.1221695283 * std::pow(T - 60.0, -0.0755148492);
+    const double B = T >= 66.0 ? 255.0 : (T <= 19.0 ? 0.0 : 138.5177312231 * std::log(T - 10.0) - 305.0447927307);
+    const SpectrumRgb C{std::clamp(R, 0.0, 255.0)/255.0, std::clamp(G, 0.0, 255.0)/255.0,
+                        std::clamp(B, 0.0, 255.0)/255.0};
+    const double L = Luminance(C);
+    return L > 0.0 ? MulRgb(C, 1.0/L) : SpectrumRgb{1, 1, 1};
+}
 
 struct PreparedTri
 {
@@ -356,11 +405,22 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
     }
     const double AltitudeKm = std::max(Camera.Position.Z, 0.0) / 1000.0;
     const SpatialVector PlanetObserver{0.0, 0.0, Settings.Atmosphere.GroundRadiusKm + AltitudeKm};
-    if (Settings.AtmosphereEnabled && !AtmosphereLutBaked_)
+    if (Settings.AtmosphereEnabled &&
+        (!AtmosphereLutBaked_ || !SameAtmosphere(AtmosphereLutParameters_, Settings.Atmosphere)))
     {
-        (void)AtmosphereLut_.Bake(Settings.Atmosphere, 128, 32, 48);
-        AtmosphereLutBaked_ = true;
+        AtmosphereLutBaked_ = AtmosphereLut_.Bake(Settings.Atmosphere, 128, 32, 48);
+        AtmosphereLutParameters_ = Settings.Atmosphere;
     }
+    std::unique_ptr<LunarDiscProjection> LunarProjection;
+    if (Settings.LunarDiscEnabled || Settings.LunarSurfaceLighting || Settings.LunarIndirectLighting)
+        LunarProjection = std::make_unique<LunarDiscProjection>(Settings.Lunar, Settings.SunDirection,
+                                                                Settings.SunIrradiance);
+    const bool LunarValid = LunarProjection && LunarProjection->Valid();
+    const SpatialVector MoonDirection = LunarValid ? LunarProjection->Direction() : SpatialVector{};
+    const SpectrumRgb MoonTopIrradiance = LunarValid ? LunarProjection->Irradiance() : SpectrumRgb{};
+    const SpectrumRgb MoonAtCamera = LunarValid
+        ? CelestialBeam(Settings, MoonDirection, AltitudeKm, MoonTopIrradiance, true) : SpectrumRgb{};
+    const double MoonLuminance = Luminance(MoonAtCamera);
 
     const double TanY = std::tan(Camera.FovYRadians * 0.5);
     const double TanX = TanY * Camera.Aspect;
@@ -559,6 +619,38 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
         Image.Stats.MeanEnvironmentIbl /= std::max<uint32_t>(Image.Stats.SurfacePixels, 1u);
     }
 
+    // Celestial beams are separate from the sampled analytic-light list and remain in the spatial result.
+    const bool CelestialDirectEnabled = Settings.SolarSurfaceLighting || (Settings.LunarSurfaceLighting && LunarValid);
+    std::vector<SpectrumRgb> CelestialDirect(CelestialDirectEnabled ? PixelCount : 0);
+    if (CelestialDirectEnabled)
+    {
+        const SpatialVector SolarDirection = Normalised(Settings.SunDirection);
+        for (size_t P = 0; P < PixelCount; ++P)
+        {
+            if (!HitMask[P]) continue;
+            const SpatialVector View = Normalised(Sub(Camera.Position, WorldPos[P]));
+            auto AddBeam = [&](SpatialVector Direction, SpectrumRgb Irradiance) {
+                if (Luminance(Irradiance) <= 0.0) return;
+                ReferenceLight Light;
+                Light.Kind = ReferenceLight::Kind::Directional;
+                Light.Vector = Direction;
+                Light.Radiance = Irradiance;
+                SpatialVector Dir; double Dist;
+                const auto F = LightContribution(Light, WorldPos[P], WorldNormal[P], View, MaterialBuffer[P], Dir, Dist);
+                if (Luminance(F) > 0.0 &&
+                    !Visibility_.Occluded(Add(WorldPos[P], Mul(WorldNormal[P], 0.002)), Dir, 0.0, Dist - 0.004))
+                    CelestialDirect[P] = AddRgb(CelestialDirect[P], F);
+            };
+            const double SurfaceAltitudeKm = std::max(WorldPos[P].Z, 0.0) / 1000.0;
+            if (Settings.SolarSurfaceLighting)
+                AddBeam(SolarDirection, CelestialBeam(Settings, SolarDirection, SurfaceAltitudeKm,
+                                                       Settings.SunIrradiance, Settings.AtmosphericSunlight));
+            if (Settings.LunarSurfaceLighting && LunarValid)
+                AddBeam(MoonDirection, CelestialBeam(Settings, MoonDirection, SurfaceAltitudeKm,
+                                                    MoonTopIrradiance, true));
+        }
+    }
+
     LightInfluenceSpace   LightGrid;
     std::vector<uint32_t> AllLights(Scene_.Lights.size());
     std::iota(AllLights.begin(), AllLights.end(), 0u);
@@ -615,6 +707,10 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
     const bool IndirectReservoirEnabled = Settings.IndirectTemporalReuse && Settings.IndirectSamples > 0 &&
                                           !Scene_.Distance.Primitives().empty();
     std::vector<StaticIndirectReservoir> PreviousIndirect(IndirectReservoirEnabled ? PixelCount : 0);
+    const bool LunarBounceEnabled = Settings.LunarIndirectLighting && LunarValid && MoonLuminance > 0.0 &&
+                                     Settings.IndirectSamples > 0 && !Scene_.Distance.Primitives().empty();
+    const bool LunarTemporalEnabled = LunarBounceEnabled && Settings.IndirectTemporalReuse;
+    std::vector<LunarBounceReservoir> PreviousLunar(LunarTemporalEnabled ? PixelCount : 0);
 
     const uint32_t Frames = std::max(Settings.AccumulationFrames, 1u);
     std::vector<double> FrameLuminance(PixelCount, 0.0);
@@ -622,6 +718,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
     {
         std::vector<Reservoir> Reservoirs(PixelCount);
         std::vector<StaticIndirectReservoir> IndirectReservoirs(IndirectReservoirEnabled ? PixelCount : 0);
+        std::vector<LunarBounceReservoir> LunarReservoirs(LunarTemporalEnabled ? PixelCount : 0);
         std::vector<SpectrumRgb> FrameColour(PixelCount, SpectrumRgb{});
         std::vector<SpectrumRgb> DirectColour(PixelCount, SpectrumRgb{});
         std::vector<SpectrumRgb> ResidualColour(PixelCount, SpectrumRgb{});   // indirect + emissive
@@ -715,6 +812,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                         Direct = AddRgb(Direct, F);
                 }
             }
+            if (CelestialDirectEnabled) Direct = AddRgb(Direct, CelestialDirect[P]);
             // Indirect: distance-field gather + optional card texel.
             SpectrumRgb Indirect = EnvironmentBuffer[P];
             if (Settings.IndirectSamples > 0 && !Scene_.Distance.Primitives().empty())
@@ -738,6 +836,27 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                 Indirect = AddRgb(Indirect, {Material.Albedo.R * (1.0 - Material.Metallic) * E / Pi,
                                               Material.Albedo.G * (1.0 - Material.Metallic) * E / Pi,
                                               Material.Albedo.B * (1.0 - Material.Metallic) * E / Pi});
+            }
+            if (LunarBounceEnabled)
+            {
+                // Separate random stream keeps the pre-existing emitter estimator unchanged.
+                DeterministicRandom LunarRandom(Settings.Seed ^ (0xA24BAED4963EE407ull * (P + 1)), 0xC3A5ull + Frame);
+                LunarBounceReservoir Fresh;
+                LunarBounceReservoir& Bounce = LunarTemporalEnabled ? LunarReservoirs[P] : Fresh;
+                Bounce.Stream(Scene_.Distance, Point, Normal, MoonDirection, MoonLuminance,
+                              Settings.IndirectSamples, LunarRandom);
+                if (LunarTemporalEnabled && Frame > 0)
+                {
+                    const uint32_t MaximumHistory = Settings.IndirectSamples > UINT32_MAX / 20u
+                        ? UINT32_MAX : 20u * Settings.IndirectSamples;
+                    Bounce.Reuse(PreviousLunar[P], Scene_.Distance, MaximumHistory, LunarRandom);
+                }
+                Bounce.Finalize();
+                const double E = Bounce.Irradiance();
+                const double Scale = (1.0 - Material.Metallic) * E / (Pi * MoonLuminance);
+                Indirect = AddRgb(Indirect, {Material.Albedo.R * MoonAtCamera.R * Scale,
+                                             Material.Albedo.G * MoonAtCamera.G * Scale,
+                                             Material.Albedo.B * MoonAtCamera.B * Scale});
             }
             if (Scene_.Cards != nullptr && Scene_.Cards->TexelCount() > 0)
             {
@@ -832,6 +951,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                         }
                         // Replace this pixel's direct term; indirect + emissive stay as computed.
                         DirectColour[P] = {F.R * R.Weight(), F.G * R.Weight(), F.B * R.Weight()};
+                        if (CelestialDirectEnabled) DirectColour[P] = AddRgb(DirectColour[P], CelestialDirect[P]);
                         FrameColour[P]  = AddRgb(DirectColour[P], ResidualColour[P]);
                     }
                 }
@@ -839,6 +959,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
         }
 
         if (IndirectReservoirEnabled) PreviousIndirect = std::move(IndirectReservoirs);
+        if (LunarTemporalEnabled) PreviousLunar = std::move(LunarReservoirs);
 
         for (size_t P = 0; P < PixelCount; ++P)
         {
@@ -853,6 +974,7 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
 
     // --- Sky (computed once) ------------------------------------------------------------------------------
     std::vector<SpectrumRgb> Sky(PixelCount, SpectrumRgb{});
+    std::vector<double> CloudTransmission(Settings.SiderealStarsEnabled && Settings.CloudsEnabled ? PixelCount : 0, 1.0);
     const SpatialVector SunDirection = Normalised(Settings.SunDirection);
     const double SunDepth = Dot(SunDirection, Camera.Forward);
     double SunU = 0.0, SunV = 0.0, SolarScaleX = 0.0, SolarScaleY = 0.0, SolarShear = 0.0;
@@ -907,7 +1029,30 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
     if (SolarPixelWidth > 0.0 && SolarPixelHeight > 0.0)
         PixelProfile.EdgeBlurRad = std::max(PixelProfile.EdgeBlurRad, 0.6 * std::sqrt(SolarPixelWidth*SolarPixelHeight));
     const SolarDiscPixelFilter SolarFilter(PixelProfile);
-    if (Settings.AtmosphereEnabled)
+
+    const double MoonDepth = Dot(MoonDirection, Camera.Forward);
+    const SpectrumRgb MoonTransmission = LunarValid
+        ? CelestialBeam(Settings, MoonDirection, AltitudeKm, {1, 1, 1}, true) : SpectrumRgb{};
+    double MoonU = 0, MoonV = 0, MoonScaleX = 0, MoonScaleY = 0, MoonShear = 0;
+    double MoonPixelWidth = 0, MoonPixelHeight = 0;
+    SpatialVector MoonRight{}, MoonUp{};
+    const bool MoonInSky = Settings.LunarDiscEnabled && LunarValid && MoonDepth > 1e-6 &&
+                           Luminance(MoonTransmission) > 0.0 && TanY > 0.0 && TanX > 0.0;
+    if (MoonInSky)
+    {
+        MoonU = Dot(MoonDirection, Camera.Right) / MoonDepth;
+        MoonV = Dot(MoonDirection, Camera.Up) / MoonDepth;
+        MoonRight = Normalised(Sub(Camera.Right, Mul(MoonDirection, Dot(Camera.Right, MoonDirection))));
+        MoonUp = Normalised(Sub(Sub(Camera.Up, Mul(MoonDirection, Dot(Camera.Up, MoonDirection))),
+                                Mul(MoonRight, Dot(Camera.Up, MoonRight))));
+        MoonScaleX = MoonDepth * Dot(Camera.Right, MoonRight);
+        MoonScaleY = MoonDepth * Dot(Camera.Up, MoonUp);
+        MoonShear = MoonDepth * Dot(Camera.Up, MoonRight);
+        MoonPixelWidth = 2.0 * TanX * MoonScaleX / W;
+        MoonPixelHeight = 2.0 * TanY * MoonScaleY / H;
+    }
+    if (Settings.AtmosphereEnabled || MoonInSky ||
+        (Settings.CloudsEnabled && Settings.SiderealStarsEnabled && Settings.SiderealStars))
     {
         for (uint32_t Y = 0; Y < H; ++Y)
         {
@@ -922,14 +1067,30 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                 const double NdcY = 1.0 - 2.0 * (Y + 0.5) / H;
                 const SpatialVector Dir = Normalised(Add(Add(Camera.Forward, Mul(Camera.Right, NdcX * TanX)),
                                                          Mul(Camera.Up, NdcY * TanY)));
-                SpectrumRgb Value = SingleScattering(Settings.Atmosphere, PlanetObserver, Dir, Settings.SunDirection,
-                                                     Settings.SunIrradiance, &AtmosphereLut_, 24);
+                SpectrumRgb Value = Settings.AtmosphereEnabled
+                    ? SingleScattering(Settings.Atmosphere, PlanetObserver, Dir, Settings.SunDirection,
+                                       Settings.SunIrradiance, &AtmosphereLut_, 24) : SpectrumRgb{};
+                SpectrumRgb Solar{};
                 if (Settings.SunDiscEnabled && SunDepth > 1e-6 && SolarPixelWidth > 0.0 && SolarPixelHeight > 0.0)
                 {
                     const double Du = NdcX*TanX - SunU, Dv = NdcY*TanY - SunV;
                     const double Dx = Du*SolarScaleX + Dv*SolarShear, Dy = Dv*SolarScaleY;
-                    Value = AddRgb(Value, SolarFilter.Evaluate(Dx, Dy, SolarPixelWidth, SolarPixelHeight, SunAtCamera));
+                    Solar = SolarFilter.Evaluate(Dx, Dy, SolarPixelWidth, SolarPixelHeight, SunAtCamera);
                 }
+                LunarPixel Lunar;
+                if (MoonInSky && MoonPixelWidth > 0.0 && MoonPixelHeight > 0.0)
+                {
+                    const double Du = NdcX*TanX - MoonU, Dv = NdcY*TanY - MoonV;
+                    const double Dx = Du*MoonScaleX + Dv*MoonShear, Dy = Dv*MoonScaleY;
+                    const double Reach = std::sin(Settings.Lunar.AngularRadiusRad) +
+                                         4.0 * std::max(MoonPixelWidth, MoonPixelHeight);
+                    if (std::abs(Dx) <= Reach && std::abs(Dy) <= Reach)
+                        Lunar = LunarProjection->Evaluate(Dx, Dy, MoonPixelWidth, MoonPixelHeight, MoonRight, MoonUp);
+                }
+                // The atmosphere is in front; only the celestial Sun and stars are masked by the Moon.
+                Value = AddRgb(Value, MulRgb(Solar, 1.0 - Lunar.Coverage));
+                Value = AddRgb(Value, {Lunar.Radiance.R*MoonTransmission.R, Lunar.Radiance.G*MoonTransmission.G,
+                                       Lunar.Radiance.B*MoonTransmission.B});
                 if (Settings.CloudsEnabled && Dir.Z > -0.05)
                 {
                     const CloudMarchResult CM = MarchClouds(Settings.Clouds, Camera.Position, Dir,
@@ -938,9 +1099,62 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                                                             30000.0, 40, 4);
                     Value = {Value.R * CM.Transmittance + CM.Radiance.R, Value.G * CM.Transmittance + CM.Radiance.G,
                              Value.B * CM.Transmittance + CM.Radiance.B};
+                    if (!CloudTransmission.empty()) CloudTransmission[P] = CM.Transmittance;
                 }
                 Sky[P] = Value;
             }
+        }
+    }
+
+    // Celestial stars remain in the linear HDR background in both day and night. Their magnitude
+    // sets integrated flux relative to the Sun; daylight scattering can overwhelm that contrast.
+    if (Settings.SiderealStarsEnabled && Settings.SiderealStars && TanX > 0.0 && TanY > 0.0)
+    {
+        constexpr double SunVisualMagnitude = -26.74;
+        constexpr double SigmaPixels = 0.65;
+        const double StarGain = std::isfinite(Settings.StarBrightnessScale)
+            ? std::max(0.0, Settings.StarBrightnessScale) : 0.0;
+        const double SolarLum = std::max(0.0, Luminance(Settings.SunIrradiance)) * StarGain;
+        const double Root2Sigma = std::sqrt(2.0) * SigmaPixels;
+        const double NdcWidth = 2.0 * TanX / W, NdcHeight = 2.0 * TanY / H;
+        for (const StarRecord& Star : *Settings.SiderealStars)
+        {
+            if (!std::isfinite(Star.Direction.X) || !std::isfinite(Star.Direction.Y) ||
+                !std::isfinite(Star.Direction.Z) || !std::isfinite(Star.Magnitude) ||
+                !std::isfinite(Star.ColourIndex) || Star.Magnitude < -35.0 || Star.Magnitude > 40.0) continue;
+            const SpatialVector Direction = Normalised(Star.Direction);
+            const double Depth = Dot(Direction, Camera.Forward);
+            if (Depth <= 1e-6 || Direction.Z <= PlanetHorizonCos(Settings.Atmosphere, AltitudeKm)) continue;
+            // Occlude the point source geometrically before applying the camera PSF, even for a subpixel Moon.
+            if (MoonInSky && Dot(Direction, MoonDirection) >= std::cos(Settings.Lunar.AngularRadiusRad)) continue;
+            if (Visibility_.Occluded(Camera.Position, Direction, 0.0, 1e30)) continue;
+            const double U = Dot(Direction, Camera.Right) / Depth, V = Dot(Direction, Camera.Up) / Depth;
+            const double CentreX = (U/TanX + 1.0) * 0.5 * W - 0.5;
+            const double CentreY = (1.0 - V/TanY) * 0.5 * H - 0.5;
+            if (CentreX < -5.0 || CentreY < -5.0 || CentreX > W + 5.0 || CentreY > H + 5.0) continue;
+            const auto T = CelestialBeam(Settings, Direction, AltitudeKm, {1, 1, 1}, true);
+            const auto Colour = StarColour(Star.ColourIndex);
+            const double Flux = SolarLum * std::pow(10.0, -0.4 * (Star.Magnitude - SunVisualMagnitude));
+            const int X0 = std::max(0, static_cast<int>(std::floor(CentreX)) - 4);
+            const int X1 = std::min(static_cast<int>(W) - 1, static_cast<int>(std::floor(CentreX)) + 4);
+            const int Y0 = std::max(0, static_cast<int>(std::floor(CentreY)) - 4);
+            const int Y1 = std::min(static_cast<int>(H) - 1, static_cast<int>(std::floor(CentreY)) + 4);
+            for (int Y = Y0; Y <= Y1; ++Y)
+                for (int X = X0; X <= X1; ++X)
+                {
+                    const size_t P = static_cast<size_t>(Y) * W + static_cast<uint32_t>(X);
+                    if (HitMask[P]) continue;
+                    const double Wx = 0.5 * (std::erf((X + 0.5 - CentreX)/Root2Sigma) -
+                                             std::erf((X - 0.5 - CentreX)/Root2Sigma));
+                    const double Wy = 0.5 * (std::erf((Y + 0.5 - CentreY)/Root2Sigma) -
+                                             std::erf((Y - 0.5 - CentreY)/Root2Sigma));
+                    const double Px = (2.0*(X + 0.5)/W - 1.0)*TanX;
+                    const double Py = (1.0 - 2.0*(Y + 0.5)/H)*TanY;
+                    const double Omega = NdcWidth * NdcHeight / std::pow(1.0 + Px*Px + Py*Py, 1.5);
+                    const double Visible = CloudTransmission.empty() ? 1.0 : CloudTransmission[P];
+                    const double Scale = Omega > 0.0 ? Flux * Wx * Wy * Visible / Omega : 0.0;
+                    Sky[P] = AddRgb(Sky[P], {Colour.R*T.R*Scale, Colour.G*T.G*Scale, Colour.B*T.B*Scale});
+                }
         }
     }
 

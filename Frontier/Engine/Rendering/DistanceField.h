@@ -48,6 +48,8 @@ struct DistancePrimitive
     SpatialVector         Centre{};
     SpatialVector         Extents{1.0, 1.0, 1.0};
     double                EmissiveRadiance = 0.0;   // [radiance] - scalar channel
+    // Opt-in diffuse reflector for the reference lunar one-bounce path, not a mesh material.
+    double                DiffuseReflectance = 0.0; // [0, 1], scalar Lambertian albedo
 };
 
 struct DistanceFieldSample
@@ -85,6 +87,11 @@ class DistanceFieldScene
     // Sphere tracing along a unit direction. Hits when the field drops to SurfaceEpsilon.
     [[nodiscard]] DistanceTraceResult Trace(SpatialVector Origin, SpatialVector Direction, double MaxDistance,
                                             double SurfaceEpsilon = 1e-4, uint32_t MaxSteps = 512) const noexcept;
+
+    // Exact ray intersections for this scene's analytic sphere, axis-aligned box and half-space union.
+    // Direction is unit length; StepsUsed counts tested primitives, not sphere-tracing steps.
+    [[nodiscard]] DistanceTraceResult IntersectAnalytic(SpatialVector Origin, SpatialVector Direction,
+                                                        double MaxDistance) const noexcept;
 
     // Is the straight segment A→B free of surfaces? (Endpoints are nudged inward by EndpointEpsilon
     // so resting on a surface does not self-occlude.)

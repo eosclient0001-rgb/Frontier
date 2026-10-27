@@ -19,6 +19,7 @@
 #include "ClusterNesting.h"
 
 #include <cstdint>
+#include <iosfwd>
 #include <vector>
 
 namespace Frontier
@@ -152,6 +153,11 @@ struct StarRecord
     double        Magnitude = 0.0;   // [mag] lower is brighter
     double        ColourIndex = 0.0; // [-] blue (-1) .. red (+1), deterministic per star
 };
+
+// Decode id,ra_deg,dec_deg,mag,bv CSV (J2000, e.g. Exhibits/NightSky/Data/Hipparcos8.csv).
+// Converts to east/north/up using UT1 and first-order precession; no proper motion or refraction.
+[[nodiscard]] std::vector<StarRecord> DecodeHipparcosCatalogue(std::istream& Input, double JulianUt1,
+                                                               double LatitudeDeg, double LongitudeDeg);
 
 // Deterministic catalogue: uniform sphere directions, magnitudes from a power law on the seed stream.
 [[nodiscard]] std::vector<StarRecord> GenerateStarCatalogue(uint32_t Count, uint64_t Seed);

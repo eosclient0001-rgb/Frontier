@@ -20,6 +20,7 @@
 
 #include "AtmosphereModel.h"
 #include "CandelaDistribution.h"
+#include "CelestialModel.h"
 #include "CloudField.h"
 #include "ClusterNesting.h"
 #include "DistanceField.h"
@@ -104,6 +105,21 @@ struct ReferenceScene
 //                                                          SETTINGS
 //------------------------------------------------------------------------------------------------------------------------
 
+// Directions are local world-space unit vectors pointing from the observer toward the bodies.
+// The map must be loaded by the caller; see Automation/PrepareMoonAlbedo.py.
+struct ReferenceLunarProfile
+{
+    std::shared_ptr<const LunarAlbedoMap> Albedo = nullptr;
+    SpatialVector Direction{0, 0, 1};
+    SpatialVector North{0, 1, 0};
+    double AngularRadiusRad = 0.004596; // Approximate mean apparent radius at opposition.
+    double SubObserverLongitudeRad = 0.0;
+    double SubObserverLatitudeRad = 0.0;
+    double EarthshineStrength = 0.0;
+    // Visual magnitude difference of approximately 14 between the Sun and full Moon.
+    double FullMoonFluxRatio = 2.51188643150958e-6;
+};
+
 struct ReferenceRenderSettings
 {
     uint32_t Width  = 256;
@@ -140,7 +156,20 @@ struct ReferenceRenderSettings
     double               CloudSunScale = 0.06;   // couples march radiance into frame units
     bool                 FogEnabled = false;
     FogParameters        Fog{};
-    bool                 IndirectTemporalReuse = false; // Static SDF-emitter paths; history lasts one Render call.
+    bool                 IndirectTemporalReuse = false; // Static SDF emitter/lunar paths; history lasts one Render call.
+
+    // Opt in to a separate directional Sun; disable an existing analytic Sun to avoid double counting.
+    bool SolarSurfaceLighting = false;
+    bool AtmosphericSunlight = true; // Attenuate that Sun by the current atmosphere when enabled.
+    bool LunarDiscEnabled = false;
+    bool LunarSurfaceLighting = false;
+    bool LunarIndirectLighting = false; // One diffuse bounce from SDF primitives; not full ReSTIR GI.
+    ReferenceLunarProfile Lunar{};
+    bool SiderealStarsEnabled = false;
+    // Optional artistic gain; 1 uses the visual-magnitude/Sun ratio without an extra boost.
+    double StarBrightnessScale = 1.0;
+    // Directions must already be rotated into the same local world coordinates as the camera.
+    std::shared_ptr<const std::vector<StarRecord>> SiderealStars = nullptr;
 };
 
 struct ReferenceRenderStats
@@ -199,6 +228,7 @@ class ReferenceRenderer
     ReferenceScene              Scene_;
     std::vector<PreparedMesh>   Prepared_;
     TransmittanceLut            AtmosphereLut_;
+    AtmosphereParameters        AtmosphereLutParameters_{};
     bool                        AtmosphereLutBaked_ = false;
 };
 

@@ -17,6 +17,7 @@ set(REFERENCE_SOURCES
     ${RENDERING}/DistanceField.cpp
     ${RENDERING}/SurfaceCards.cpp
     ${RENDERING}/AtmosphereModel.cpp
+    ${RENDERING}/CelestialModel.cpp
     ${RENDERING}/CloudField.cpp
     ${RENDERING}/FogMedium.cpp
     ${RENDERING}/ReferenceRenderer.cpp)

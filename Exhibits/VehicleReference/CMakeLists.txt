@@ -8,7 +8,7 @@ set(ReferenceSources
     ${Root}/Frontier/Engine/Diagnostics/LogCategories.cpp
     ${Root}/Frontier/Engine/Diagnostics/LogStream.cpp)
 foreach(Source ClusterNesting VisibilityCull DiscrepancySequence ReservoirSampling VarianceFiltering
-               DistanceField SurfaceCards AtmosphereModel CloudField FogMedium ReferenceRenderer)
+               DistanceField SurfaceCards AtmosphereModel CelestialModel CloudField FogMedium ReferenceRenderer)
     list(APPEND ReferenceSources "${Rendering}/${Source}.cpp")
 endforeach()
 find_package(Threads REQUIRED)
@@ -17,9 +17,10 @@ add_executable(TriangleVisibilityValidation Code/TriangleVisibilityValidation.cp
 add_executable(TriangleDistanceValidation Code/TriangleDistanceValidation.cpp ${ReferenceSources})
 add_executable(LightValidation ../ClusteredLighting/Code/LightValidation.cpp ${ReferenceSources})
 add_executable(SolarReferenceValidation ../NightSky/Code/SolarReferenceValidation.cpp ${ReferenceSources})
+add_executable(DaylightCelestialValidation ../NightSky/Code/DaylightCelestialValidation.cpp ${ReferenceSources})
 add_executable(StaticIndirectValidation ../LightCompute/Code/StaticIndirectValidation.cpp ${ReferenceSources})
 add_executable(DirectSpatialValidation ../LightCompute/Code/DirectSpatialValidation.cpp ${ReferenceSources})
-foreach(Target VehicleCapture TriangleVisibilityValidation TriangleDistanceValidation LightValidation SolarReferenceValidation StaticIndirectValidation DirectSpatialValidation)
+foreach(Target VehicleCapture TriangleVisibilityValidation TriangleDistanceValidation LightValidation SolarReferenceValidation DaylightCelestialValidation StaticIndirectValidation DirectSpatialValidation)
     target_include_directories(${Target} PRIVATE "${Root}/Frontier")
     target_link_libraries(${Target} PRIVATE Threads::Threads)
     if(MSVC)

@@ -7,10 +7,14 @@
 #include "Engine/Foundation/DeterministicRandom.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <istream>
+#include <sstream>
+#include <string>
 
 namespace Frontier
 {
@@ -519,6 +523,56 @@ SpectrumRgb EvaluateLunarDiscRadiance(const LunarAlbedoMap& Map,
 //------------------------------------------------------------------------------------------------------------------------
 //                                                            STARS
 //------------------------------------------------------------------------------------------------------------------------
+
+std::vector<StarRecord> DecodeHipparcosCatalogue(std::istream& Input, double JulianUt1,
+                                                  double LatitudeDeg, double LongitudeDeg)
+{
+    std::vector<StarRecord> Stars;
+    if (!std::isfinite(JulianUt1) || !std::isfinite(LatitudeDeg) || !std::isfinite(LongitudeDeg) ||
+        std::abs(LatitudeDeg) > 90.0) return Stars;
+    const double Years = (JulianUt1 - 2451545.0) / 365.25;
+    const double Latitude = LatitudeDeg * DegToRad;
+    const double GmstHours = std::fmod(18.697374558 + 24.06570982441908 * (JulianUt1 - 2451545.0), 24.0);
+    const double Sidereal = (GmstHours * 15.0 + LongitudeDeg) * DegToRad;
+    constexpr double ArcsecToRad = Pi / (180.0 * 3600.0);
+    const double M = 46.124 * Years * ArcsecToRad, N = 20.043 * Years * ArcsecToRad;
+    const double CosM = std::cos(M), SinM = std::sin(M), CosN = std::cos(N), SinN = std::sin(N);
+    const double CosSidereal = std::cos(Sidereal), SinSidereal = std::sin(Sidereal);
+    const double CosLatitude = std::cos(Latitude), SinLatitude = std::sin(Latitude);
+    std::string Line;
+    while (std::getline(Input, Line))
+    {
+        if (Line.empty() || Line[0] == '#' || Line.rfind("id,", 0) == 0) continue;
+        std::stringstream Fields(Line);
+        std::string Id, RaText, DecText, MagnitudeText, ColourText;
+        if (!std::getline(Fields, Id, ',') || !std::getline(Fields, RaText, ',') ||
+            !std::getline(Fields, DecText, ',') || !std::getline(Fields, MagnitudeText, ',') ||
+            !std::getline(Fields, ColourText, ',')) continue;
+        auto Number = [](const std::string& Text, double& Out) {
+            char* End = nullptr;
+            Out = std::strtod(Text.c_str(), &End);
+            if (End == Text.c_str()) return false;
+            while (std::isspace(static_cast<unsigned char>(*End))) ++End;
+            return *End == '\0' && std::isfinite(Out);
+        };
+        double RaDeg = 0, DecDeg = 0, Magnitude = 0, Colour = 0;
+        if (!Number(RaText, RaDeg) || !Number(DecText, DecDeg) || !Number(MagnitudeText, Magnitude) ||
+            !Number(ColourText, Colour) || RaDeg < 0.0 || RaDeg >= 360.0 || std::abs(DecDeg) > 90.0 ||
+            Magnitude < -35.0 || Magnitude > 40.0) continue;
+        const double Ra = RaDeg * DegToRad, Dec = DecDeg * DegToRad;
+        // Apply the first-order precession rates as 3D rotations, avoiding the RA tan(Dec) pole singularity.
+        const double X = std::cos(Dec) * std::cos(Ra), Y = std::cos(Dec) * std::sin(Ra), Z = std::sin(Dec);
+        const double RotatedX = CosN*X - SinN*Z;
+        const double RotatedZ = SinN*X + CosN*Z;
+        const double EquatorialX = CosM*RotatedX - SinM*Y;
+        const double EquatorialY = SinM*RotatedX + CosM*Y;
+        const double Meridian = CosSidereal*EquatorialX + SinSidereal*EquatorialY;
+        const SpatialVector Direction{-SinSidereal*EquatorialX + CosSidereal*EquatorialY,
+            RotatedZ*CosLatitude - Meridian*SinLatitude, RotatedZ*SinLatitude + Meridian*CosLatitude};
+        Stars.push_back({Direction, Magnitude, Colour});
+    }
+    return Stars;
+}
 
 std::vector<StarRecord> GenerateStarCatalogue(uint32_t Count, uint64_t Seed)
 {

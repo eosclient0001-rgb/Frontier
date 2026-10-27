@@ -20,7 +20,7 @@ node Exhibits/RendererPlanning/Code/CompareReferences.mjs > "$Output/BinComparis
 python3 Exhibits/RecoveryAudit/Code/ValidateRecovered.py > "$Output/CoreResults.txt"
 if [[ "${SANITIZE:-0}" == 1 ]]; then
  Sources=(Frontier/Engine/Diagnostics/Log{RingStore,Categories,Stream}.cpp)
- for Name in ClusterNesting VisibilityCull DiscrepancySequence ReservoirSampling VarianceFiltering DistanceField SurfaceCards AtmosphereModel CloudField FogMedium ReferenceRenderer; do
+ for Name in ClusterNesting VisibilityCull DiscrepancySequence ReservoirSampling VarianceFiltering DistanceField SurfaceCards AtmosphereModel CelestialModel CloudField FogMedium ReferenceRenderer; do
   Sources+=("Frontier/Engine/Rendering/$Name.cpp")
  done
  "${CXX:-c++}" -std=c++17 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -IFrontier "$Output/Code/LightValidation.cpp" "${Sources[@]}" -o _ClaudeScratch/build/LightSanitized
