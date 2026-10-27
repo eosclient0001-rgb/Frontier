@@ -10,6 +10,11 @@ soft Sun edges and several independently mixed flare components. The local Slate
 python3 -m venv _ClaudeScratch/venv
 _ClaudeScratch/venv/bin/pip install Pillow
 PYTHON="$PWD/_ClaudeScratch/venv/bin/python" bash Exhibits/NightSky/RunNightSky.sh
+PYTHON="$PWD/_ClaudeScratch/venv/bin/python" SANITIZE=1 bash Exhibits/NightSky/RunNightSky.sh
+# Independent, offline JPL DE421 comparison; downloads the pinned Python dependencies once.
+_ClaudeScratch/venv/bin/pip install -r Exhibits/NightSky/Code/EphemerisRequirements.txt
+PYTHON="$PWD/_ClaudeScratch/venv/bin/python" bash Exhibits/NightSky/RunEphemerisValidation.sh
+PYTHON="$PWD/_ClaudeScratch/venv/bin/python" SANITIZE=1 bash Exhibits/NightSky/RunEphemerisValidation.sh
 # Requires CMake and g++; CAPTURE=1 also requires Pillow.
 CMAKE=cmake PYTHON="$PWD/_ClaudeScratch/venv/bin/python" CAPTURE=1 bash Exhibits/NightSky/RunSolarValidation.sh
 CMAKE=cmake SANITIZE=1 bash Exhibits/NightSky/RunSolarValidation.sh
@@ -32,6 +37,8 @@ source; the initial reproduction failed 3 checks. That failure is retained in `R
 | Mixed optics | Independent warm streak gain/rotation/spread, added alongside blue anamorphic, burst, ghosts and halo |
 | Moon | Actual demo `luna_2k.jpg`, 2048 × 1024; byte-identical source retained with provenance |
 | Moon colour | Fixed sRGB bytes being treated as linear radiance; decode before interpolation, matching the demo texture |
+| Moon position | Meeus periodic series, topocentric WGS84 parallax and distance-dependent apparent radius; star coverage is masked |
+| Moon phase | New geocentric finite-distance illuminated-fraction API; legacy `MoonPhase` remains a mean-age approximation |
 
 The generic flare model retains a zero warm-streak default for existing callers. In `ReferenceRenderSettings`, flares
 are opt-in; when enabled, warm streak (gain 0.35, angle −0.18 rad) and blue anamorphic streak are both active. Flare
@@ -54,7 +61,8 @@ existing parameterized implementation; this is not a wholesale pixel-identical p
 | `Images/NightSkyMoonField.png` | Moon at its angular size and Hipparcos stars |
 | `Images/NightSkyCatalogueMilkyWay.png` | Catalogue field, unchanged |
 
-`Results.txt` records the NightSky exhibit. `Results/Solar-{release,sanitized}.txt` records the additional
+`Results.txt` and `Results/NightSky-sanitized.txt` record the 42/42 NightSky exhibit checks.
+`Results/Solar-{release,sanitized}.txt` records the additional
 finite-pixel and actual-reference-renderer tests, run on Linux x86-64 with GCC 12.2 at base `0eb6d76` plus this
 change. The solar filter and the two changed reference source files also compile with `-Wall -Wextra -Werror`.
 The release reference build passes five CTests, including the existing lighting and complete-renderer regressions.
@@ -78,6 +86,31 @@ Existing checks include:
 - Existing lunar phase area, Lommel–Seeliger full-disc flatness, libration and named-feature orientation.
 - Environment regression: 73 checks; retained in `../VehiclePhysics/Results/EnvironmentRegression.txt`.
 
+## Independent ephemeris comparison
+
+`Results/Ephemeris-{release,sanitized}.txt` compares 192 dates and times across 2026 at five WGS84 locations
+(Benoni, Greenwich, equator and both poles), using Astropy/jplephem with the **JPL DE421 kernel**, not ERFA's
+built-in Moon model, which shares the Meeus basis. The kernel is downloaded only by the pinned Python dependency,
+not committed; SHA-256 `a20a7139da04cbc462454634918e9a9ca69127044e2cc9d4f9c16e238d2deedc` is checked at runtime.
+Reference directions are apparent topocentric with refraction disabled; Frontier directions are mean-geometric.
+TT−UTC is fixed to 69.184 s for 2026 and UTC approximates UT1. This is an independent **model** comparison,
+not a telescope measurement.
+
+| 960 comparisons | Maximum deviation from DE421 | Before |
+|---|---:|---:|
+| Moon direction, topocentric | `0.003118°` | `2.912255°` (two-term geocentric exhibit) |
+| Moon direction at Benoni | `0.003063°` | `2.758499°` |
+| Sun direction, topocentric | `0.012497°` | unchanged |
+| Moon distance / angular radius | `47.740 km` / `0.113723 arcsec` | not previously computed |
+| Geometric illuminated fraction | `0.000102` | mean-age model `0.085448` maximum gap |
+
+The benchmark also reproduces Meeus example 47.a and rejects invalid inputs. It checks five selected places and
+2026 dates, not the entire supported time range. The new ephemeris takes TT and UT1 explicitly and rejects dates
+outside approximately 1500–2500; the exhibit's own 2026 conversion is not a general UTC-to-TT implementation.
+The `MoonPhase` mean-age API is unchanged, so existing consumers retain its larger error; callers wanting
+geometric phase can use `MoonGeometricIllumination`. The new position series adapts Sonia Keys' MIT-licensed
+implementation; notice and license are retained in `Documentation/SourceNotices.md`.
+
 ## What these checks do not prove
 
 - No comparison to calibrated sky photographs, measured lens PSFs, measured tyre data or absolute lunar photometry.
@@ -89,7 +122,8 @@ Existing checks include:
 - Flare is a parameterized camera effect, not optical ray tracing through a measured lens prescription. Screen-space
   visibility is coarse and can miss subpixel occluders; clouds use a single sampled Sun ray, not a full optical solve.
 - Multiple scattering remains the bounded factored approximation, not the full demo's multiple-scattering LUT.
-- Moon remains low-precision Meeus geometry with approximate phase darkening and earthshine; no topocentric
-  parallax, eclipse, relief, Hapke fit or Moon illumination of scene geometry. It is used by the separate NightSky
-  exhibit, not the reference-renderer sky path. Source-map licensing requires review.
+- Moon direction now includes topocentric parallax, but nutation, diurnal aberration, refraction, terrain and
+  topocentric libration are still approximate or absent. Phase darkening and earthshine are artistic approximations;
+  there is no eclipse, relief, Hapke fit or Moon illumination of scene geometry. The texture is used by the separate
+  NightSky exhibit, not the reference-renderer sky path. Source-map licensing requires review.
 - No changes to clouds. No claim of GPU, physical hardware, Windows/editor or real-time acceptance.

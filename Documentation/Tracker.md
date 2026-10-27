@@ -12,6 +12,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   The visual-only demo-tyre bridge passes a mock host; no editor/Jolt integration or measured-vehicle validation.
 - The CPU reference renderer now uses finite-pixel solar filtering and an opt-in mixed-flare layer, with full
   mesh/planet occlusion checks. Seven-camera flux error ≤ `0.000439`; normal and ASan/UBSan results pass.
+- NightSky Moon position now includes the Meeus periodic series and topocentric parallax. Against JPL DE421,
+  max Moon direction error `0.003118°` over 960 selected 2026 cases (old exhibit `2.912255°`); this is a model
+  comparison, not measured sky calibration. The actual demo texture remains in NightSky, not the reference renderer.
 - An opt-in static one-bounce SDF-emitter temporal reservoir passes analytic tests. The existing CPU direct-light
   spatial reuse was corrected for tested static discrete-light domains (the old sparse mean was `0.502607` vs
   exhaustive `0.352533`; corrected `0.355025 ± 0.002030`). The retained demo's separate spatial path shader gives an

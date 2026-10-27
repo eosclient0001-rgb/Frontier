@@ -16,20 +16,22 @@ PASS transmittance LUT baked = 1
 INFO zenith radiance 0.0362 0.0682 0.1276, toward sun 0.4900 0.5317 0.6249, multiple factor 0.256 0.187 0.117
 PASS zenith sky is blue (B over R) = 3.52248
 PASS sky brighter toward the sun than away = 3.22428
-INFO phase 0 geometric 0.0086 raster 0.0087 mean-age 0.0000
-INFO phase 1 geometric 0.5099 raster 0.5099 mean-age 0.5000
-INFO phase 2 geometric 0.9980 raster 0.9980 mean-age 1.0000
-INFO phase 3 geometric 0.4340 raster 0.4339 mean-age 0.5000
-PASS moon raster lit fraction vs geometry = 9.53632e-05
-INFO moon geometry vs mean-age model, worst gap 0.0660 (model difference, not a render check)
-PASS phase strip runs new (0) to full (2) = 0.998045
-INFO moon at 20:30 SAST: altitude 19.86 deg, illuminated 0.995
-PASS libration latitude vs pole geometry (deg) = -0.289841
-PASS libration longitude within optical range (deg) = 4.85707
-INFO libration sub-observer lon 4.86 lat -6.50 deg, pole position components (-0.946, -0.324)
+INFO phase 0 geometric 0.0071 raster 0.0072 mean-age 0.0000
+INFO phase 1 geometric 0.5051 raster 0.5051 mean-age 0.5000
+INFO phase 2 geometric 0.9978 raster 0.9978 mean-age 1.0000
+INFO phase 3 geometric 0.4312 raster 0.4313 mean-age 0.5000
+PASS moon raster lit fraction vs geometry = 0.000148241
+INFO moon geometry vs mean-age model, worst gap 0.0688 (model difference, not a render check)
+PASS phase strip runs new (0) to full (2) = 0.997807
+INFO moon at 20:30 SAST: altitude 17.56 deg, angular diameter 1963.3 arcsec, illuminated 0.992
+INFO geocentric phase fraction 0.993 (topocentric differs slightly)
+PASS libration latitude vs pole geometry (deg) = -0.0282176
+PASS libration longitude within optical range (deg) = 3.36018
+INFO libration sub-observer lon 3.36 lat -6.33 deg, pole position components (-0.949, -0.316)
 PASS moon close-up disc area vs pi r^2 = 0.999981
 PASS night field stars drawn (Milky Way aim) = 3505
-PASS moon field stars drawn = 3034
+PASS moon field stars drawn = 2898
+PASS Moon coverage masks background stars = 0
 PASS zero visibility removes every ghost = 0
 PASS ghost centres collinear with sun and frame centre = 1.38778e-17
 INFO ghost 0 expected (586.5, 428.1) px, isolated centroid error 0.00 px
@@ -57,4 +59,4 @@ PASS rendered disc dominates sky at 2.3 radii = 70278.8
 INFO telephoto disc centre 1.509e+05 limb 2.846e+04 outside 2.147, filtered exposure 3.98e-06
 PASS sunset horizon is warm (R over B) at -2 deg = 435.345
 PASS PPM outputs written = 1
-SUMMARY passed 41 failed 0
+SUMMARY passed 42 failed 0

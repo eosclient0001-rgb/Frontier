@@ -119,6 +119,243 @@ const char* DayPhaseName(DayPhase Phase) noexcept
 //                                                            MOON
 //------------------------------------------------------------------------------------------------------------------------
 
+// Meeus chapter 47 periodic coefficients and algorithm adapted from Sonia Keys' MIT-licensed
+// github.com/soniakeys/meeus/v3/moonposition, revision bfbd9ac2c7f709c94f1dee190c633d24a723f628.
+// Copyright 2013 Sonia Keys. Full license: Documentation/Notices/SoniaKeysMeeus.LICENSE.
+namespace
+{
+struct LunarLongitudeTerm { int D, M, Prime, F, Longitude, Distance; };
+struct LunarLatitudeTerm { int D, M, Prime, F, Latitude; };
+constexpr LunarLongitudeTerm LunarLongitudeTerms[] = {
+    {0, 0, 1, 0, 6288774, -20905355},
+    {2, 0, -1, 0, 1274027, -3699111},
+    {2, 0, 0, 0, 658314, -2955968},
+    {0, 0, 2, 0, 213618, -569925},
+    {0, 1, 0, 0, -185116, 48888},
+    {0, 0, 0, 2, -114332, -3149},
+    {2, 0, -2, 0, 58793, 246158},
+    {2, -1, -1, 0, 57066, -152138},
+    {2, 0, 1, 0, 53322, -170733},
+    {2, -1, 0, 0, 45758, -204586},
+    {0, 1, -1, 0, -40923, -129620},
+    {1, 0, 0, 0, -34720, 108743},
+    {0, 1, 1, 0, -30383, 104755},
+    {2, 0, 0, -2, 15327, 10321},
+    {0, 0, 1, 2, -12528, 0},
+    {0, 0, 1, -2, 10980, 79661},
+    {4, 0, -1, 0, 10675, -34782},
+    {0, 0, 3, 0, 10034, -23210},
+    {4, 0, -2, 0, 8548, -21636},
+    {2, 1, -1, 0, -7888, 24208},
+    {2, 1, 0, 0, -6766, 30824},
+    {1, 0, -1, 0, -5163, -8379},
+    {1, 1, 0, 0, 4987, -16675},
+    {2, -1, 1, 0, 4036, -12831},
+    {2, 0, 2, 0, 3994, -10445},
+    {4, 0, 0, 0, 3861, -11650},
+    {2, 0, -3, 0, 3665, 14403},
+    {0, 1, -2, 0, -2689, -7003},
+    {2, 0, -1, 2, -2602, 0},
+    {2, -1, -2, 0, 2390, 10056},
+    {1, 0, 1, 0, -2348, 6322},
+    {2, -2, 0, 0, 2236, -9884},
+    {0, 1, 2, 0, -2120, 5751},
+    {0, 2, 0, 0, -2069, 0},
+    {2, -2, -1, 0, 2048, -4950},
+    {2, 0, 1, -2, -1773, 4130},
+    {2, 0, 0, 2, -1595, 0},
+    {4, -1, -1, 0, 1215, -3958},
+    {0, 0, 2, 2, -1110, 0},
+    {3, 0, -1, 0, -892, 3258},
+    {2, 1, 1, 0, -810, 2616},
+    {4, -1, -2, 0, 759, -1897},
+    {0, 2, -1, 0, -713, -2117},
+    {2, 2, -1, 0, -700, 2354},
+    {2, 1, -2, 0, 691, 0},
+    {2, -1, 0, -2, 596, 0},
+    {4, 0, 1, 0, 549, -1423},
+    {0, 0, 4, 0, 537, -1117},
+    {4, -1, 0, 0, 520, -1571},
+    {1, 0, -2, 0, -487, -1739},
+    {2, 1, 0, -2, -399, 0},
+    {0, 0, 2, -2, -381, -4421},
+    {1, 1, 1, 0, 351, 0},
+    {3, 0, -2, 0, -340, 0},
+    {4, 0, -3, 0, 330, 0},
+    {2, -1, 2, 0, 327, 0},
+    {0, 2, 1, 0, -323, 1165},
+    {1, 1, -1, 0, 299, 0},
+    {2, 0, 3, 0, 294, 0},
+    {2, 0, -1, -2, 0, 8752}
+};
+constexpr LunarLatitudeTerm LunarLatitudeTerms[] = {
+    {0, 0, 0, 1, 5128122},
+    {0, 0, 1, 1, 280602},
+    {0, 0, 1, -1, 277693},
+    {2, 0, 0, -1, 173237},
+    {2, 0, -1, 1, 55413},
+    {2, 0, -1, -1, 46271},
+    {2, 0, 0, 1, 32573},
+    {0, 0, 2, 1, 17198},
+    {2, 0, 1, -1, 9266},
+    {0, 0, 2, -1, 8822},
+    {2, -1, 0, -1, 8216},
+    {2, 0, -2, -1, 4324},
+    {2, 0, 1, 1, 4200},
+    {2, 1, 0, -1, -3359},
+    {2, -1, -1, 1, 2463},
+    {2, -1, 0, 1, 2211},
+    {2, -1, -1, -1, 2065},
+    {0, 1, -1, -1, -1870},
+    {4, 0, -1, -1, 1828},
+    {0, 1, 0, 1, -1794},
+    {0, 0, 0, 3, -1749},
+    {0, 1, -1, 1, -1565},
+    {1, 0, 0, 1, -1491},
+    {0, 1, 1, 1, -1475},
+    {0, 1, 1, -1, -1410},
+    {0, 1, 0, -1, -1344},
+    {1, 0, 0, -1, -1335},
+    {0, 0, 3, 1, 1107},
+    {4, 0, 0, -1, 1021},
+    {4, 0, -1, 1, 833},
+    {0, 0, 1, -3, 777},
+    {4, 0, -2, 1, 671},
+    {2, 0, 0, -3, 607},
+    {2, 0, 2, -1, 596},
+    {2, -1, 1, -1, 491},
+    {2, 0, -2, 1, -451},
+    {0, 0, 3, -1, 439},
+    {2, 0, 2, 1, 422},
+    {2, 0, -3, -1, 421},
+    {2, 1, -1, 1, -366},
+    {2, 1, 0, 1, -351},
+    {4, 0, 0, 1, 331},
+    {2, -1, 1, 1, 315},
+    {2, -2, 0, -1, 302},
+    {0, 0, 1, 3, -283},
+    {2, 1, 1, -1, -229},
+    {1, 1, 0, -1, 223},
+    {1, 1, 0, 1, 223},
+    {0, 1, -2, -1, -220},
+    {2, 1, -1, -1, -220},
+    {1, 0, 1, 1, -185},
+    {2, -1, -2, -1, 181},
+    {0, 1, 2, 1, -177},
+    {4, 0, -2, -1, 176},
+    {4, -1, -1, -1, 166},
+    {1, 0, 1, -1, -164},
+    {4, 0, 1, -1, 132},
+    {1, 0, -1, -1, -119},
+    {4, -1, 0, -1, 115},
+    {2, -2, 0, 1, 107}
+};
+
+double Polynomial(double T, double A, double B, double C, double D, double E = 0.0) noexcept
+{
+    return ((((E*T + D)*T + C)*T + B)*T + A) * DegToRad;
+}
+double SolarEccentricityFactor(int SolarMultiplier, double E) noexcept
+{
+    return SolarMultiplier == 0 ? 1.0 : (std::abs(SolarMultiplier) == 1 ? E : E*E);
+}
+} // namespace
+
+LunarGeocentricPosition MoonGeocentric(double JulianTt) noexcept
+{
+    if (!std::isfinite(JulianTt)) return {};
+    const double T = (JulianTt - 2451545.0)/36525.0;
+    if (!std::isfinite(T) || std::abs(T) > 5.0) return {}; // bounded approximation, years ~1500–2500
+    const double L = Polynomial(T, 218.3164477, 481267.88123421, -0.0015786, 1.0/538841.0, -1.0/65194000.0);
+    const double D = Polynomial(T, 297.8501921, 445267.1114034, -0.0018819, 1.0/545868.0, -1.0/113065000.0);
+    const double M = Polynomial(T, 357.5291092, 35999.0502909, -0.0001535, 1.0/24490000.0);
+    const double Prime = Polynomial(T, 134.9633964, 477198.8675055, 0.0087414, 1.0/69699.0, -1.0/14712000.0);
+    const double F = Polynomial(T, 93.272095, 483202.0175233, -0.0036539, -1.0/3526000.0, 1.0/863310000.0);
+    const double A1 = (119.75 + 131.849*T)*DegToRad, A2 = (53.09 + 479264.29*T)*DegToRad;
+    const double A3 = (313.45 + 481266.484*T)*DegToRad;
+    const double E = 1.0 - 0.002516*T - 0.0000074*T*T;
+    double Longitude = 3958.0*std::sin(A1) + 1962.0*std::sin(L-F) + 318.0*std::sin(A2);
+    double Distance = 0.0;
+    double Latitude = -2235.0*std::sin(L) + 382.0*std::sin(A3) + 175.0*std::sin(A1-F) +
+                      175.0*std::sin(A1+F) + 127.0*std::sin(L-Prime) - 115.0*std::sin(L+Prime);
+    for (const auto& Term : LunarLongitudeTerms)
+    {
+        const double Angle = Term.D*D + Term.M*M + Term.Prime*Prime + Term.F*F;
+        const double Factor = SolarEccentricityFactor(Term.M, E);
+        Longitude += Term.Longitude * std::sin(Angle) * Factor;
+        Distance += Term.Distance * std::cos(Angle) * Factor;
+    }
+    for (const auto& Term : LunarLatitudeTerms)
+    {
+        const double Angle = Term.D*D + Term.M*M + Term.Prime*Prime + Term.F*F;
+        Latitude += Term.Latitude * std::sin(Angle) * SolarEccentricityFactor(Term.M, E);
+    }
+    double LongitudeRad = std::fmod(L + Longitude*1e-6*DegToRad, 2.0*Pi);
+    if (LongitudeRad < 0.0) LongitudeRad += 2.0*Pi;
+    return {LongitudeRad, Latitude*1e-6*DegToRad, 385000.56 + Distance*1e-3, F};
+}
+
+double MoonGeometricIllumination(const LunarGeocentricPosition& Moon, double JulianTt) noexcept
+{
+    if (!std::isfinite(JulianTt) || std::abs(JulianTt - 2451545.0) > 5.0*36525.0 ||
+        !std::isfinite(Moon.LongitudeRad) || !std::isfinite(Moon.LatitudeRad) ||
+        std::abs(Moon.LatitudeRad) > 0.5*Pi || !std::isfinite(Moon.DistanceKm) || Moon.DistanceKm <= 6379.0)
+        return 0.0;
+    const double N = JulianTt - 2451545.0;
+    const double Anomaly = WrapDegrees(357.528 + 0.9856003*N)*DegToRad;
+    const double SunLongitude = (WrapDegrees(280.460 + 0.9856474*N) +
+                                 1.915*std::sin(Anomaly) + 0.020*std::sin(2.0*Anomaly))*DegToRad;
+    const double SunDistanceKm = 149597870.7*(1.00014 - 0.01671*std::cos(Anomaly) - 0.00014*std::cos(2.0*Anomaly));
+    const double CosElongation = std::clamp(std::cos(Moon.LatitudeRad)*std::cos(Moon.LongitudeRad-SunLongitude), -1.0, 1.0);
+    const double SunMoonDistance = std::sqrt(SunDistanceKm*SunDistanceKm + Moon.DistanceKm*Moon.DistanceKm -
+                                              2.0*SunDistanceKm*Moon.DistanceKm*CosElongation);
+    if (!std::isfinite(SunMoonDistance) || SunMoonDistance <= 0.0) return 0.0;
+    const double CosPhase = (Moon.DistanceKm - SunDistanceKm*CosElongation)/SunMoonDistance;
+    return 0.5*(1.0 + std::clamp(CosPhase, -1.0, 1.0));
+}
+
+LunarTopocentricPosition MoonTopocentric(const LunarGeocentricPosition& Moon,
+    double JulianUt1, double LatitudeDeg, double LongitudeDeg, double HeightMeters) noexcept
+{
+    if (!std::isfinite(Moon.LongitudeRad) || !std::isfinite(Moon.LatitudeRad) ||
+        std::abs(Moon.LatitudeRad) > 0.5*Pi || !std::isfinite(Moon.DistanceKm) ||
+        Moon.DistanceKm <= 6379.0 || !std::isfinite(JulianUt1) || !std::isfinite(LatitudeDeg) ||
+        std::abs(LatitudeDeg) > 90.0 || !std::isfinite(LongitudeDeg) || !std::isfinite(HeightMeters)) return {};
+    const double T = (JulianUt1 - 2451545.0)/36525.0;
+    if (!std::isfinite(T) || std::abs(T) > 5.0) return {};
+    const double Obliquity = (23.4392911111 - 0.0130041667*T - 0.0000001639*T*T +
+                              0.0000005036*T*T*T)*DegToRad;
+    const double Lambda = Moon.LongitudeRad, Beta = Moon.LatitudeRad;
+    const double RightAscension = std::atan2(std::sin(Lambda)*std::cos(Obliquity) -
+                                              std::tan(Beta)*std::sin(Obliquity), std::cos(Lambda));
+    const double Declination = std::asin(std::clamp(std::sin(Beta)*std::cos(Obliquity) +
+        std::cos(Beta)*std::sin(Obliquity)*std::sin(Lambda), -1.0, 1.0));
+    const double N = JulianUt1 - 2451545.0;
+    const double SiderealHours = std::fmod(18.697374558 + 24.06570982441908*N, 24.0);
+    const double HourAngle = (SiderealHours*15.0 + LongitudeDeg)*DegToRad - RightAscension;
+    const double Latitude = LatitudeDeg*DegToRad, CosDec = std::cos(Declination), SinDec = std::sin(Declination);
+    // Geocentric unit vector in east/north/up coordinates.
+    const double X = -CosDec*std::sin(HourAngle);
+    const double Y = SinDec*std::cos(Latitude) - CosDec*std::cos(HourAngle)*std::sin(Latitude);
+    const double Z = SinDec*std::sin(Latitude) + CosDec*std::cos(HourAngle)*std::cos(Latitude);
+    // WGS84 observer position, resolved into the same local basis. Height is ellipsoidal.
+    constexpr double EarthRadiusKm = 6378.137, Flattening = 1.0/298.257223563;
+    constexpr double EccentricitySquared = Flattening*(2.0-Flattening);
+    const double SinLat = std::sin(Latitude), CosLat = std::cos(Latitude);
+    const double PrimeVertical = EarthRadiusKm/std::sqrt(1.0-EccentricitySquared*SinLat*SinLat);
+    const double Equatorial = (PrimeVertical+HeightMeters*0.001)*CosLat;
+    const double Polar = (PrimeVertical*(1.0-EccentricitySquared)+HeightMeters*0.001)*SinLat;
+    const double ObserverNorth = -Equatorial*SinLat + Polar*CosLat;
+    const double ObserverUp = Equatorial*CosLat + Polar*SinLat;
+    const double TopoX = Moon.DistanceKm*X;
+    const double TopoY = Moon.DistanceKm*Y - ObserverNorth;
+    const double TopoZ = Moon.DistanceKm*Z - ObserverUp;
+    const double DistanceKm = std::sqrt(TopoX*TopoX + TopoY*TopoY + TopoZ*TopoZ);
+    if (!std::isfinite(DistanceKm) || DistanceKm <= 1737.4) return {};
+    return {{TopoX/DistanceKm, TopoY/DistanceKm, TopoZ/DistanceKm}, DistanceKm,
+            std::asin(1737.4/DistanceKm)};
+}
+
 LunarPhase MoonPhase(double Julian) noexcept
 {
     double Age = std::fmod(Julian - NewMoonEpochJulian, SynodicMonthDays);

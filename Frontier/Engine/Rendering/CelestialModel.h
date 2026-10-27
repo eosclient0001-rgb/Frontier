@@ -62,13 +62,36 @@ enum class DayPhase : uint8_t
 struct LunarPhase
 {
     double AgeDays = 0.0;        // [days] since new moon, [0, synodic)
-    double Illumination = 0.0;   // [-] lit fraction of the disc, [0, 1]
+    double Illumination = 0.0;   // [-] mean-age approximation, not geometric ephemeris illumination
 };
 
 inline constexpr double SynodicMonthDays = 29.530588853;
 inline constexpr double NewMoonEpochJulian = 2451550.26;   // 2000-01-06 ~18:14 UTC
 
 [[nodiscard]] LunarPhase MoonPhase(double Julian) noexcept;
+
+// Geocentric mean-ecliptic-of-date Moon position using the Meeus chapter 47 periodic series. Input
+// is Julian Terrestrial Time (TT), not UTC. Outside approximately 1500–2500 the result is empty.
+// This is a compact approximation, not a JPL ephemeris.
+struct LunarGeocentricPosition
+{
+    double LongitudeRad = 0.0, LatitudeRad = 0.0, DistanceKm = 0.0;
+    double ArgumentLatitudeRad = 0.0; // mean argument F, useful for approximate optical libration
+};
+[[nodiscard]] LunarGeocentricPosition MoonGeocentric(double JulianTt) noexcept;
+// Geocentric illuminated fraction using Sun/Moon geometry and finite Sun distance (not brightness).
+[[nodiscard]] double MoonGeometricIllumination(const LunarGeocentricPosition& Moon, double JulianTt) noexcept;
+
+struct LunarTopocentricPosition
+{
+    SpatialVector Direction{}; // unit local east/north/up vector; refraction excluded
+    double DistanceKm = 0.0;
+    double AngularRadiusRad = 0.0; // spherical Moon, 1737.4 km radius
+};
+// UT1 is used for sidereal rotation; HeightMeters is height above the WGS84 ellipsoid.
+// Nutation, polar motion, atmospheric refraction and terrain are not modeled.
+[[nodiscard]] LunarTopocentricPosition MoonTopocentric(const LunarGeocentricPosition& Moon,
+    double JulianUt1, double LatitudeDeg, double LongitudeDeg, double HeightMeters = 0.0) noexcept;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                       LUNAR SURFACE

@@ -41,7 +41,7 @@ implements the demo's reduced force model and lacks Project Drive's aligning mom
 | Atmosphere | Cornette–Shanks aerosol phase, matching the full demo | Multiple scattering still approximate |
 | Flare | Warm and blue anamorphic streaks mixed with other terms in the opt-in CPU reference effect | Coarse visibility; not GPU |
 | Sun | Limb-darkened finite-pixel disc in the CPU reference renderer | Resolved erfc edge is approximate |
-| Moon | Real 2048 × 1024 demo JPEG retained; runner regenerates PPM | Luna only; licensing needs review |
+| Moon | Real 2048 × 1024 demo JPEG retained; runner regenerates PPM; topocentric position and angular size | Luna only; not reference renderer; licensing needs review |
 | Moon colour | sRGB decoded before interpolation | Not absolute reflectance calibration |
 | Cheap lighting | Lower, cooler hemispherical fill improves surface contrast | Artistic Lambert/Blinn lighting |
 | Cheap shadows | Remove direct-light share while retaining blue skylight; guard grazing/below-ground Sun | Planar ground only |
@@ -72,7 +72,8 @@ not the new ground fill.
 
 | Check | Result | Retained evidence |
 |---|---|---|
-| Sky, solar disc, Moon and mixed optics | 41/41 | `../NightSky/Results.txt` |
+| Sky, solar disc, Moon and mixed optics | 42/42 | `../NightSky/Results.txt` |
+| Independent Sun/Moon ephemeris comparison | 960 2026 cases; max topocentric Moon error `0.003118°` vs JPL DE421 | `../NightSky/Results/Ephemeris-*.txt` |
 | Reference solar pixels and mixed flares | Release and ASan/UBSan pass; flux error ≤ `0.000439` in seven views | `../NightSky/Results/Solar-*.txt` |
 | Environment regression, release | 73/73 | `Results/EnvironmentRegression.txt` |
 | Environment ASan + UBSan | 73/73, no diagnostics | `Results/EnvironmentSanitized.txt` |

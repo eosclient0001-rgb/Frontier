@@ -17,6 +17,14 @@ Downloaded archives preserve their licence files. The adapted official Win32/DX1
 licence at `Exhibits/UIFoundation/Code/ImGui.LICENSE`; dependency notices are included by Windows installation.
 Third-party code is not represented as original Frontier work.
 
+## Lunar ephemeris
+
+`Frontier/Engine/Rendering/CelestialModel.cpp` adapts Sonia Keys' Meeus chapter 47 Moon-position series and
+coefficient tables from `github.com/soniakeys/meeus` revision `bfbd9ac2c7f709c94f1dee190c633d24a723f628`.
+Copyright 2013 Sonia Keys; the complete upstream MIT notice is retained at
+`Documentation/Notices/SoniaKeysMeeus.LICENSE`. JPL DE421 (installed via `skyfield-data`) and Astropy/jplephem
+are used only as offline validation dependencies; they are not copied or bundled into the engine.
+
 The inherited six ImGui patches were originally cut against `83f6686`; they apply cleanly to the locked `3bae66c`
 pin used here. ThorVG's staged initializer adjustment is inherited and leaves its downloaded source untouched.
 
