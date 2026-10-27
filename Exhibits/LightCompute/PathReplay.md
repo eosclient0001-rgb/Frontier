@@ -25,14 +25,15 @@ adaptive reuse, or full ReSTIR GI.
 
 ## Bounded Vulkan implementation
 
-`PathReplayReservoir.slang` now runs the replay idea through the LightCompute Vulkan host. It traces opaque,
-untextured triangles against the current BVH, up to eight hits, with two-sided constant facet radiance and an
-optional uniform environment. The default transport is Lambertian; an opt-in bounded rough-opaque mode uses
-the existing GGX/diffuse BRDF with cosine-hemisphere sampling. Temporal candidates use the supplied
-prior-pixel/position/token guide; spatial candidates may originate on different surfaces. Each reused seed is fully retraced through the
-**current** scene, including its occluders, rather than carrying a stale visibility result. Pre-spatial
-reservoirs are retained; the selection floor is positive (`0.01` in the tests), and the history count is
-bounded. On a scene, receiver, camera, environment or integrator change, the host deterministically limits the
+`PathReplayReservoir.slang` runs the replay idea through the LightCompute Vulkan host. Its original mode traces
+opaque, untextured triangles against the current BVH, up to eight hits, with two-sided constant facet radiance
+and an optional uniform environment. The default transport is Lambertian; an opt-in bounded rough-opaque mode
+uses the existing GGX/diffuse BRDF with cosine-hemisphere sampling. A separate
+[guarded diffuse texture mode](ReplayTexture.md) has since been added. Temporal candidates use the supplied
+prior-pixel/position/token guide; spatial candidates may originate on different surfaces. Each reused seed is
+fully retraced through the **current** scene, including its occluders, rather than carrying a stale visibility
+result. Pre-spatial reservoirs are retained; the selection floor is positive (`0.01` in the tests), and history
+count is bounded. On a scene, receiver, camera, environment or integrator change, the host deterministically limits the
 previous reservoir's represented count to one for that frame while retaining its seed and per-sample weight.
 This reduces reliance on a single stale-domain candidate without a global reset; the count can grow again in
 subsequent unchanged frames. Temporal compatibility now permits nearby reprojected positions with matching
@@ -54,8 +55,9 @@ fractions 0–1 and roughness 0.25–1, while rejecting near-delta materials.
 | Four-hit reflective parallel planes | approximately 0.625 | 0.625 |
 
 Each statistical case uses 4,096 centre samples across four seeds; the historical SE uses population standard
-deviation divided by √4,096 and assumes independent centres. The sample-variance correction is negligible here. The first area integral converges within `6.86e-8` between 500²
-and 1,000² midpoint grids. Moving an occluder into the path returned exactly zero in the tested fixture.
+deviation divided by √4,096 and assumes independent centres. The sample-variance correction is negligible here.
+The first area integral converges within `6.86e-8` between 500² and 1,000² midpoint grids. Moving an occluder
+into the path returned exactly zero in the tested fixture.
 A coloured two-hit case matched `(0.5, 0.25, 0.125)`. In this disocclusion fixture the count cap reduced
 standard deviation to 77% of an otherwise identical long-history control; the finite-domain audit also
 recovers the exact toy mean after capping. This is not a general convergence or performance guarantee. Each
@@ -71,9 +73,9 @@ case. All RGB channels passed the specified six-combined-SE-plus-tolerance test 
 four-hit blocked fresh, and four-hit blocked after temporal/spatial reuse. For example, blocked/reused red was
 `0.025697 ± 0.000633` batch SE versus CPU `0.027470 ± 0.000436` SE. That historical batch SE uses population
 variance; its sample-variance counterpart is approximately `0.000654` for 16 batches. The GPU pixel and batch
-standard errors are both recorded; independence and finite-sample tails remain assumptions. Both implementations deliberately
-share the same diffuse scene, ray offset and transport model, so this is an independent implementation check,
-not measured real-world ground truth. [Release](Results/ReplayRoomReference-release.txt) ·
+standard errors are both recorded; independence and finite-sample tails remain assumptions. Both implementations
+deliberately share the same diffuse scene, ray offset and transport model, so this is an independent implementation
+check, not measured real-world ground truth. [Release](Results/ReplayRoomReference-release.txt) ·
 [sanitized host](Results/ReplayRoomReference-sanitized.txt).
 
 ### Rough opaque extension

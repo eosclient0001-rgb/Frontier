@@ -19,7 +19,7 @@ The tolerance is a bounded quality heuristic, not a universal world-scale or dis
 | Same camera shift, old exact-position control | 0 accepted, 8,545 rejected |
 | Same camera shift, nearby-position/normal gate | 8,512 accepted, 33 rejected; no reset, cap 1 |
 | Rotated/translated cuboid plus camera motion | 454 of 469 cuboid primary receivers accepted; no reset, cap 1 |
-| Nearby manual guide, half-occluded light | 0.120576 ± 0.001124 SE vs independent area integral 0.119909; 4,096 centres |
+| Nearby manual guide, half-occluded light | 0.120576 ± 0.001124 SE vs area integral 0.119909; 4,096 centres |
 | Mismatched token, opposite normal, outside radius or outside 0.25 cap | All rejected in the fixtures |
 | Missing previous normal | Exact position accepted, non-exact position rejected |
 

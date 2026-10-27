@@ -10,7 +10,8 @@ camera strikes already use the same `ApplyRayMaterial` path. The replay estimato
   pyramid, up to 1,024 texels per side. Absorption, coating classification, sheen intensity and the reserved
   optics component must be zero. Replay uses Lambertian response, not authored specular terms.
 - The earlier capture fixture at `4ed4ef6` mistakenly set the reserved optics component to `1`; the shader did
-  not use it. The corrected fixture sets it to `0`, and the guard rejects that old layout. Capture refresh is pending.
+  not use it. The corrected fixture sets it to `0`, and the guard rejects the old layout. All 14 refreshed PNGs
+  are byte-identical to the earlier captures.
 - Float atlas material and mip spans, finite `[0,1]` texels, finite bounded UVs/mapping and triangle/BVH XYZ are
   checked before submission. Textured vertices keep UVs in the `.w` channels, which need not equal BVH padding.
 - The camera and triangle coordinates are bounded; primary cameras must have finite orthonormal current and
@@ -23,8 +24,9 @@ camera strikes already use the same `ApplyRayMaterial` path. The replay estimato
 
 ## Validation
 
-SwiftShader CPU Vulkan, Slang 2026.14.1, Linux release host and ASan/UBSan host; the external Vulkan driver is not
-sanitizer-instrumented. Expected plane values are effectively exact for these 2,000-unit-wide fixtures; extremely
+Source revision `ba385ae`; SwiftShader CPU Vulkan, Linux x86-64, GCC 12.2 release and ASan/UBSan debug hosts,
+Slang 2026.14.1 with `-O0` SPIR-V. The external Vulkan driver is not sanitizer-instrumented. Expected plane values
+are effectively exact for these 2,000-unit-wide fixtures; extremely
 rare rays can miss their finite boundaries.
 
 | Check | Result |
@@ -34,8 +36,8 @@ rare rays can miss their finite boundaries.
 | Black → coloured atlas with reused candidates | `(0.7999905, 0.1999976, 0.0999988)` |
 | Moving blocker / reopened | `0` / `(0.7999882, 0.1999970, 0.0999985)` |
 | Changed atlas, blocked, reopened | 40,960 temporal accepts each; changed-atlas test 97,280 spatial links |
-| Secondary texture probes | Texel centre, bilinear interpolation, negative wrap, seam and 1×1 mip matched analytic RGB |
-| Primary CPU filter comparison | 8,625 strikes, 7,858 wrapped; mips 0/1/2/3: 1,236/5,098/2,007/284; max RGB error `7.28e-7` |
+| Secondary texture probes | Centre, bilinear, negative wrap, seam and 1×1 mip matched analytic RGB |
+| Primary CPU filter | 8,625 strikes, 7,858 wrapped; mips 0/1/2/3: 1,236/5,098/2,007/284; max RGB error `7.28e-7` |
 | Other pipeline reset | Pending ordinary-history reset tested after the replay atlas change |
 
 Primary filtering comparison uses Vulkan's hit positions and barycentrics with an independent double-precision

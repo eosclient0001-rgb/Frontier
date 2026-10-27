@@ -13,11 +13,11 @@ unfiltered readbacks.
 
 | Initial palette | In-place texture change |
 | --- | --- |
-| ![Initial palette in the open room](Images/TextureRoomInitialPreview.png) | ![Changed palette in the open room](Images/TextureRoomChangedPreview.png) |
+| ![Initial](Images/TextureRoomInitialPreview.png) | ![Changed](Images/TextureRoomChangedPreview.png) |
 
 | Blocker inserted | Blocker removed and initial palette restored |
 | --- | --- |
-| ![Changed palette with blocker](Images/TextureRoomBlockedPreview.png) | ![Reopened room with initial palette](Images/TextureRoomReopenedPreview.png) |
+| ![Blocked](Images/TextureRoomBlockedPreview.png) | ![Reopened](Images/TextureRoomReopenedPreview.png) |
 
 ## First submission after each change
 
@@ -25,9 +25,13 @@ These are individual submissions, not the settled averages above. They are visib
 filtered for display only. Raw readbacks: [texture change](Images/TextureRoomChangedFirst.png),
 [blocker](Images/TextureRoomBlockedFirst.png), [reopening](Images/TextureRoomReopenedFirst.png).
 
-| Texture change | Blocker inserted | Simultaneous reopening + texture change |
-| --- | --- | --- |
-| ![First texture-change submission](Images/TextureRoomChangedFirstPreview.png) | ![First blocked submission](Images/TextureRoomBlockedFirstPreview.png) | ![First reopened submission](Images/TextureRoomReopenedFirstPreview.png) |
+| Texture change | Blocker inserted |
+| --- | --- |
+| ![Change](Images/TextureRoomChangedFirstPreview.png) | ![Block](Images/TextureRoomBlockedFirstPreview.png) |
+
+Simultaneous reopening and texture change:
+
+![First reopening](Images/TextureRoomReopenedFirstPreview.png)
 
 | Transition | Accepted temporal candidates | Spatial links | Reset | History cap |
 | --- | ---: | ---: | ---: | ---: |
@@ -47,9 +51,12 @@ bash Exhibits/LightCompute/RunReplayTextureCapture.sh
 
 [Capture log and image hashes](Results/ReplayTexture-capture.txt) ·
 [release regression](Results/ReplayTextureCapture-regression.txt) ·
-[sanitized texture checks](Results/ReplayTextureCapture-sanitized.txt) ·
+[sanitized texture checks](Results/ReplayTexture-sanitized.txt) ·
 [sanitized preview-filter checks](Results/ReplayTextureCapture-filter-sanitized.txt) ·
 [texture reference and scope](ReplayTexture.md).
 
-The external Vulkan driver is not sanitizer-instrumented. This is not full ReSTIR GI, a measured material or
-optical result, editor integration, hardware-GPU validation, or a real-time benchmark.
+The refreshed captures used source revision `ba385ae`, Linux x86-64, GCC 12.2 and Slang 2026.14.1
+(`-O0` SPIR-V, release C++ host). All 14 PNG files are byte-identical to `4ed4ef6` despite correcting that
+fixture's ignored reserved optics component; the corrected host now rejects the old layout. The external Vulkan
+driver is not sanitizer-instrumented. This is not full ReSTIR GI, a measured material or optical result, editor
+integration, hardware-GPU validation, or a real-time benchmark.

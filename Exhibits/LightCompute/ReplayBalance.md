@@ -17,7 +17,7 @@ for rough GGX, not an importance-sampled GGX lobe. Triangles are chosen uniforml
 SwiftShader CPU Vulkan; 8 batches of 1,024 centre samples. The table compares per-sample standard deviations,
 not equal-time measurements. Both modes trace a light sample and a BSDF direction; runtime was not benchmarked.
 
-| Unoccluded source fixture | Independent integral | Facet-only mean ± pixel SE | Balanced mean ± pixel SE | Balanced / facet-only SD |
+| Source fixture | Integral | Facet-only mean ± pixel SE | Balanced mean ± pixel SE | Balanced / facet-only SD |
 |---|---:|---:|---:|---:|
 | Large square | 0.951516 | 0.956678 ± 0.027311 | 0.947849 ± 0.004196 | 0.154 |
 | Small square | 0.00317886 | 0.00317886 ± 0.00000007 | 0.00318039 ± 0.00000211 | 28.5 |
@@ -35,7 +35,7 @@ For four-hit diffuse and rough rooms, independent double-precision brute-force C
 per scene and a different RNG; all RGB channels passed the recorded six-combined-SE-plus-tolerance bounds.
 The rough blocked/reused red reference was `0.0223152 ± 0.0003396` SE versus Vulkan
 `0.0224561 ± 0.0003644` batch SE using sample variance. The earlier log reported `0.0003409` using population
-variance for eight batches; the corrected comparison is in [the texture-room regression](Results/ReplayTextureRoom-regression.txt).
+variance for eight batches; see the corrected [texture-room regression](Results/ReplayTextureRoom-regression.txt).
 These are comparisons of the same model, not physical calibration or a proof of unbiased adaptive reuse. Finite
 pseudorandom correlations, origin offsets and near-coincident geometry remain limitations.
 
