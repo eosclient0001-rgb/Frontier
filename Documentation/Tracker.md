@@ -2,6 +2,18 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Exhibit ownership audit and lighting extraction — 2026-10-27
+
+- Reviewed all 27 top-level exhibit directories against both Engine trees and production UI ownership. Existing
+  CPU atmosphere/cloud/fog, celestial/optics and demo XPBD/Hex8 code is already shared; shader/editor integration,
+  the demo continuum shell and full gas remain incomplete. Vehicle dynamics and Jolt work are explicitly held.
+  [Ownership evidence and scope](../Exhibits/RecoveryAudit/EngineOwnershipAudit.md).
+- The previously exhibit-local area/luminance radiant-facet distribution and duplicate host validation now live in
+  `Frontier/Engine/Rendering` and are consumed by LightCompute. On 4,096 facets the exact former builder and Engine
+  output agree byte-for-byte; 18 guard cases pass in release and ASan/UBSan. Four actual SwiftShader fog-area cases
+  and their analytic/empty/invalid controls pass. This is a global CDF, not clustered emissive selection or editor
+  integration. [Reproduction and limits](../Exhibits/LightCompute/RadiantFacetDistribution.md).
+
 ## Dynamic path reuse continuation — 2026-10-27
 
 - An optional Engine-shader cosine/GGX mixture improves the measured rough-metal environment SD to `0.138×`

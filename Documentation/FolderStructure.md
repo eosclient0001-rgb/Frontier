@@ -96,6 +96,13 @@ The font catalogue has a native TOML form; JSON remains only an automation/repor
   `Exhibits/LightCompute/` retains fixture generation, an isolated Vulkan submission host and verification.
 - The root editor target does not yet submit this shader; the shared location is not a production-integration claim.
 
+## Shared radiant-facet distribution — 2026-10-27
+
+- `Frontier/Engine/Rendering/RadiantFacetDistribution.{h,cpp}` and CMake target
+  `FrontierRadiantFacetDistribution` own area/luminance sampling and encoded-distribution validation.
+- `Exhibits/LightCompute/` retains archive offsets, independent comparisons and the isolated Vulkan submission;
+  this extraction does not connect the root editor to the GPU shader.
+
 ## VehicleHMI reference and celestial content — 2026-10-27
 
 - `Experimental/VehicleHmiReference/`: selected immutable full-demo sources, blob manifest and original tyre tests.

@@ -3,6 +3,16 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     project(FrontierPathReplay LANGUAGES CXX)
 endif()
 
+# 📝 Float32 source distribution is shared by surface and fog transport; submission remains separate.
+add_library(FrontierRadiantFacetDistribution STATIC RadiantFacetDistribution.cpp)
+target_compile_features(FrontierRadiantFacetDistribution PUBLIC cxx_std_17)
+target_include_directories(FrontierRadiantFacetDistribution PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+if(MSVC)
+    target_compile_options(FrontierRadiantFacetDistribution PRIVATE /utf-8 /W4)
+else()
+    target_compile_options(FrontierRadiantFacetDistribution PRIVATE -Wall -Wextra -Werror)
+endif()
+
 # 📝 Reusable bounded replay-domain intake; shader submission and editor wiring are separate work.
 add_library(FrontierPathReplayDomain STATIC PathReplayDomain.cpp)
 target_compile_features(FrontierPathReplayDomain PUBLIC cxx_std_20)

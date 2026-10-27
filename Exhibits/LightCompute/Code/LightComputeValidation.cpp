@@ -7,6 +7,7 @@
 #define VK_NO_PROTOTYPES
 #include "LightComputeFormat.h"
 #include "Engine/Rendering/PathReplayDomain.h"
+#include "Engine/Rendering/RadiantFacetDistribution.h"
 #include "Engine/Rendering/SolarOpticsPayload.h"
 #include "Engine/Rendering/SolarDiscFilter.h"
 #include "Engine/Render/MaterialPreviewGeometry.h"
@@ -735,24 +736,7 @@ struct LightComputeSubmission
             Require(std::isfinite(Offset) && Offset < Scene.Angles.size() && std::floor(Offset) == Offset,
                     "Invalid emissive CDF offset");
             RevisionAngles = size_t(Offset);
-            double Count = Scene.Angles[RevisionAngles];
-            Require(std::isfinite(Count) && Count >= 0 && Count <= Scene.Surfaces.size() &&
-                        std::floor(Count) == Count &&
-                        RevisionAngles + 1 + size_t(Count) * 4 <= Scene.Angles.size(),
-                    "Invalid emissive CDF extent");
-            float Previous = 0;
-            for (size_t I = 0; I < size_t(Count); ++I)
-            {
-                const float* Entry = Scene.Angles.data() + RevisionAngles + 1 + I * 4;
-                Require(std::isfinite(Entry[0]) && Entry[0] >= 0 && Entry[0] < Scene.Surfaces.size() &&
-                            std::floor(Entry[0]) == Entry[0] && std::isfinite(Entry[1]) && Entry[1] > 0 &&
-                            std::isfinite(Entry[2]) && Entry[2] > 0 && std::isfinite(Entry[3]) &&
-                            Entry[3] > Previous && Entry[3] <= 1 &&
-                            std::abs((Entry[3] - Previous) - Entry[1]) < 1e-7,
-                        "Invalid emissive CDF entry");
-                Previous = Entry[3];
-            }
-            Require(Count == 0 || Previous == 1, "Emissive CDF is not normalized");
+            ValidateRadiantFacetDistribution(Scene.Angles, RevisionAngles, Scene.Surfaces.size());
         }
         // 📝 Moving emissive geometry changes its CDF, not the analytic reservoirs' light/profile revision.
         bool LightsChanged = PreviousLights.size() != Scene.Lights.size();
@@ -1091,23 +1075,7 @@ struct LightComputeSubmission
                 float Address = Scene.Camera[10][2];
                 Require(std::isfinite(Address) && Address > 0 && Address < Scene.Angles.size() &&
                             std::floor(Address) == Address, "Fog emitter CDF address is invalid");
-                size_t Offset = size_t(Address);
-                float Count = Scene.Angles[Offset];
-                Require(std::isfinite(Count) && Count >= 0 && Count <= Scene.Surfaces.size() &&
-                            std::floor(Count) == Count && Offset + 1 + size_t(Count) * 4 <= Scene.Angles.size(),
-                        "Fog emitter CDF span is invalid");
-                float Previous = 0;
-                for (size_t I = 0; I < size_t(Count); ++I)
-                {
-                    const float* E = Scene.Angles.data() + Offset + 1 + I * 4;
-                    Require(std::isfinite(E[0]) && E[0] >= 0 && E[0] < Scene.Surfaces.size() &&
-                                std::floor(E[0]) == E[0] && std::isfinite(E[1]) && E[1] > 0 &&
-                                std::isfinite(E[2]) && E[2] > 0 && std::isfinite(E[3]) && E[3] > Previous &&
-                                E[3] <= 1 && std::abs(E[1] - (E[3] - Previous)) < 1e-7,
-                            "Fog emitter CDF entry is invalid");
-                    Previous = E[3];
-                }
-                Require(Count == 0 || Previous == 1, "Fog emitter CDF is not normalized");
+                ValidateRadiantFacetDistribution(Scene.Angles, size_t(Address), Scene.Surfaces.size());
             }
         }
         Upload(Scene);

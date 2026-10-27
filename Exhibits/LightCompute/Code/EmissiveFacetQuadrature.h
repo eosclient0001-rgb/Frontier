@@ -8,48 +8,12 @@ namespace EmissiveQuadrature
 using namespace TransportReference;
 void AppendDistribution(LightComputeArchive& Scene)
 {
-    struct FacetMass
-    {
-        uint32_t Facet;
-        double Area, Mass;
-    };
-    std::vector<FacetMass> Facets;
-    double Total = 0;
-    for (uint32_t I = 0; I < Scene.Surfaces.size(); ++I)
-    {
-        const auto& F = Scene.Surfaces[I];
-        auto N = Cross(Sub(Vector(F.B), Vector(F.A)), Sub(Vector(F.C), Vector(F.A)));
-        double Area = .5 * std::sqrt(Dot(N, N)),
-               Power = .2126 * F.Emissive[0] + .7152 * F.Emissive[1] + .0722 * F.Emissive[2];
-        if (Area > 0 && Power > 0)
-        {
-            Facets.push_back({I, Area, Area * Power});
-            Total += Area * Power;
-        }
-    }
+    // 📝 The archive controls its own offset; probability construction belongs to the shared Engine.
+    Require(Scene.Angles.size() > 0 && Scene.Angles.size() <= RadiantFacetProbabilityTicks,
+            "Radiant facet distribution offset exceeds float32 precision");
+    const auto Distribution = CompileRadiantFacetDistribution(Scene.Surfaces);
     Scene.Camera[10][2] = float(Scene.Angles.size());
-    uint32_t Offset = uint32_t(Scene.Angles.size());
-    Scene.Angles.push_back(0);
-    // 📝 Reserve one exactly representable probability tick per facet, including arbitrarily dim emitters.
-    constexpr uint32_t Ticks = 1u << 24;
-    Require(Facets.size() < Ticks, "Emissive facet count exceeds discrete CDF precision");
-    double Sum = 0;
-    float Previous = 0;
-    uint32_t Count = 0;
-    for (size_t I = 0; I < Facets.size(); ++I)
-    {
-        const auto& F = Facets[I];
-        Sum += F.Mass;
-        uint32_t Tick = I + 1 == Facets.size()
-                            ? Ticks
-                            : uint32_t(I + 1) + uint32_t(std::floor(Sum / Total * (Ticks - Facets.size())));
-        float Cdf = float(Tick) / Ticks;
-        Require(Cdf > Previous, "Emissive probability tick collapsed");
-        Scene.Angles.insert(Scene.Angles.end(), {float(F.Facet), Cdf - Previous, float(F.Area), Cdf});
-        Previous = Cdf;
-        ++Count;
-    }
-    Scene.Angles[Offset] = float(Count);
+    Scene.Angles.insert(Scene.Angles.end(), Distribution.begin(), Distribution.end());
 }
 uint32_t Next(uint32_t& Bits)
 {
