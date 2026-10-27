@@ -9,7 +9,8 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   Cartesian integration and partial-occlusion checks. The editor remains unconnected; no physical GPU,
   Windows, real-time, Moon masking, per-ray clouds/fog or measured-lens calibration is claimed.
 - An on-axis sensor-FWHM conversion accepts supplied measurements; the checked sensor example is synthetic.
-  NASA's mean solar diameter checks angular size only. [Detailed scope and results](../Exhibits/LightCompute/SolarOpticsAndReuse.md).
+  NASA's mean solar diameter checks angular size only. A 640×360 synthetic scene capture shows actual Vulkan
+  solar readback, not a physical GPU or editor image. [Detailed scope and results](../Exhibits/LightCompute/SolarOpticsAndReuse.md).
 - Direct-light reservoirs now retain dark proposal domains, normalize by selected support and store pre-spatial
   history. Changed receiver/view/material domains conservatively reject temporal history and match cold in
   tested fixtures; this is not general dynamic reuse.

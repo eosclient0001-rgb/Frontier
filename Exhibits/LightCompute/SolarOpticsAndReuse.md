@@ -40,6 +40,19 @@ diffuse experiment reserves seven additional pixel-sized slabs. The solar payloa
 float4s in the angle buffer; counters 20–22 contain RGB visibility (reused as diagnostic counters in the
 diffuse-only experiment). A future host must allocate these regions and perform dispatches and barriers.
 
+## Synthetic Vulkan capture
+
+![Synthetic sunset using the Vulkan solar composite](Images/SolarCaptureVulkan.png)
+
+This 640×360 image is a readback of the primary-visibility and solar-composite Vulkan passes on **SwiftShader
+CPU Vulkan**, not a physical GPU or an editor screenshot. The sky cube, mountain triangles, disc irradiance and
+flare strengths are deliberately authored for visibility; they are not atmospheric observations or measured
+lens parameters. The default apparent solar diameter is retained. Warm streaks and a blue horizontal anamorphic
+layer are both enabled. A fixed exposure (`0.45`) and display gamma (`2.2`) are applied to the linear readback;
+PNG packaging verifies the decoded RGB bytes against the generated PPM. No flare or Sun was painted onto the
+image after rendering. Source, parameters and hashes: [capture code](Code/SolarCaptureGpu.h) and
+[capture log](Results/SolarCapture-vulkan.txt).
+
 ## Vulkan direct-light reservoir audit
 
 The previous spatial pass omitted zero-weight domains and normalized by winning donors. The new pass retains
@@ -94,6 +107,7 @@ are mathematical audits of the retained equation, **not WGSL execution and not a
 python3 Exhibits/LightCompute/Code/Prepare.py  # pinned tools, ignored locally
 bash Exhibits/LightCompute/RunSolarOptics.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunSolarOptics.sh
+bash Exhibits/LightCompute/RunSolarCapture.sh
 bash Exhibits/LightCompute/RunSolarPayloadValidation.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunSolarPayloadValidation.sh
 bash Exhibits/LightCompute/RunDirectSpatialGpu.sh

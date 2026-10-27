@@ -1418,6 +1418,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PriorExitanceValidation.h"
 #include "UnifiedSceneValidation.h"
 #include "SolarOpticsValidation.h"
+#include "SolarCaptureGpu.h"
 #include "DirectSpatialGpuValidation.h"
 #include "StaticDiffuseGpuValidation.h"
 } // namespace
@@ -1425,6 +1426,11 @@ int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 5 && std::string(Arguments[3]) == "--solar-capture")
+        {
+            CaptureSolarOptics(Arguments[1], Arguments[2], Arguments[4]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--static-diffuse")
         {
             ValidateStaticDiffuseGpu(Arguments[1], Arguments[2]);
