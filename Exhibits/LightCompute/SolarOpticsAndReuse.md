@@ -6,7 +6,7 @@
 |---|---|
 | Sun disc and mixed flares | Opt-in Vulkan compute in the **LightCompute validation host**, not the editor viewport. |
 | Calibration | Angular-size check against NASA; the Gaussian sensor-FWHM conversion is provided, but no measured lens PSF or flare data has been supplied or fitted. |
-| ReSTIR GI | Incomplete. An isolated diffuse path reservoir supports identical-domain pooling and multiple hits, not general dynamic reprojection, spatial GI reconnection, scene-frame integration or editor presentation. |
+| ReSTIR GI | Incomplete. One isolated diffuse-path reservoir supports identical-domain pooling and multiple hits; another reconnects moved endpoints for a single unobstructed rectangle. Neither supplies general-scene GI, production-frame integration or editor presentation. |
 | Device | Linux SwiftShader CPU Vulkan, not a physical GPU, Windows, hardware ray tracing, performance or real-time acceptance. |
 
 ## Solar optics
@@ -37,8 +37,22 @@ No lens calibration is implied. Payload normalization and invalid-domain checks 
 The normal validation buffer ABI reserves `25 × pixelCount + 13889 + 1536` float4s: 1,536 source samples
 follow the old `24 × pixelCount + 13889` region, followed by one prior-view float4 per pixel. The isolated
 diffuse experiment reserves seven additional pixel-sized slabs. The solar payload follows the camera's 12
-float4s in the angle buffer; counters 20–22 contain RGB visibility (reused as diagnostic counters in the
-diffuse-only experiment). A future host must allocate these regions and perform dispatches and barriers.
+float4s in the angle buffer; counters 20–22 contain RGB visibility (reused as diagnostics in the isolated
+diffuse and rectangle experiments). A future host must allocate these regions and perform dispatches and barriers.
+
+## What measured lens calibration would require
+
+The current lens layers are **not calibrated to a measured lens**. A named camera/lens, focal length, aperture,
+focus, sensor pixel pitch and linear, unsaturated point-source images at multiple field angles and exposure
+levels are needed to fit and independently validate the blur core, ghost positions/colour, streaks and glare.
+Dark frames and exposure-normalized samples help separate sensor noise from optical signal. An on-axis Gaussian
+FWHM alone does not identify off-axis ghosts or glare tails. [Imatest's veiling-glare guidance](https://www.imatest.com/docs/veilingglare/)
+recommends linear RAW-derived measurements rather than camera JPEGs; the
+[DxOMark flare measurement description](https://corp.dxomark.com/wp-content/uploads/2021/05/3468890-iqsp.pdf)
+uses a reproducible bright source and RAW capture. The present code does not yet fit these datasets or claim
+agreement with either measurement system. [Flare7K++](https://github.com/ykdai/Flare7K) includes real captured
+scattering patterns as well as synthetic patterns, but its public description alone does not provide a measured
+fit for this particular model.
 
 ## Synthetic Vulkan capture
 
@@ -93,6 +107,40 @@ hit and `0.5` for two hits. Identical-domain pixel reprojection reduced variance
 These fixtures are not an all-scene bias or variance guarantee. [Release](Results/StaticDiffuse-vulkan-release.txt)
 and [sanitized-host](Results/StaticDiffuse-vulkan-sanitized.txt) logs identify the shader and test sources.
 
+## Restricted moving-vertex reconnection on Vulkan
+
+`RectangularReconnection.slang` is a second isolated experiment, separate from the multihit static diffuse
+prototype. It generates cosine-sampled paths to a uniform, two-triangle rectangular emitter and stores the
+selected endpoint. A moving receiver or rigidly translated rectangle reuses a previous endpoint with the
+area-to-solid-angle Jacobian
+
+`J = (|nₛ·ωcurrent| / rcurrent²) / (|nₛ·ωprevious| / rprevious²)`.
+
+All accepted receivers face +Z below the horizontal rectangle. The host validates common proposal support:
+exactly two coplanar emissive triangles forming the rectangle, one enclosing BVH leaf, no other geometry or
+analytic lights, finite bounded positions and a uniform unchanged RGB source. The rectangle can translate,
+but not rotate, deform, change size or change radiance without a reset. Different receiver albedo/identity
+rejects history per pixel. Spatial donors may be at **different world positions** within this restricted
+common-support scene; their pre-spatial reservoirs are shifted to the receiver. The estimator traces one hit
+on the rectangle: it does **not** perform general indirect multibounce reconnection or visibility through
+occluders. `OmitJacobianForAudit` is an explicit negative control, not a production option.
+
+| Vulkan fixture, 4,096 centre samples | Area-integral reference | With Jacobian ± SE | Omitted Jacobian ± SE |
+|---|---:|---:|---:|
+| Receiver shifts 1 m | 0.0843765 | 0.0840934 ± 0.0011878 | 0.169676 ± 0.0016765 |
+| Four spatial donors at shifted positions | 0.0843765 | 0.0831476 ± 0.0014176 | 0.159085 ± 0.0021853 |
+| Moved-receiver temporal and spatial reuse together | 0.0843765 | 0.0833124 ± 0.0005427 | Not run |
+| Emitter translates 1 m | 0.0843765 | 0.0857310 ± 0.0011728 | 0.172514 ± 0.0016516 |
+| Receiver and emitter move; emitter height changes | 0.1183704 | 0.1167998 ± 0.0011858 | 0.229702 ± 0.0021974 |
+
+The receiver-shift fixture accepted 20,480 pixel histories across four batches; the spatial test counted 48,640
+links, and the endpoint fixture carried 20,480 histories. RGB selection, sub-tolerance material invalidation,
+shape/radiance/viewport resets, and rejection of extra geometry were checked. SE is the empirical centre-sample
+standard deviation divided by √4,096, assuming independent centres; pseudorandom samples are not a formal
+independence guarantee. The area integral uses midpoint quadrature; for the joint-motion fixture the
+500/1,000-grid difference was `3.75e-8`. These are bounded tests, not proof for arbitrary scenes or hardware. [Release](Results/RectangleReconnection-vulkan-release.txt) and
+[sanitized-host](Results/RectangleReconnection-vulkan-sanitized.txt) logs contain the exact fixtures and hashes.
+
 ## Retained demo temporal counterexample
 
 The retained temporal WGSL merges `Target × Prior.Weight × Tally` without the reconnection Jacobian used in its
@@ -113,6 +161,8 @@ SANITIZE=1 bash Exhibits/LightCompute/RunSolarPayloadValidation.sh
 bash Exhibits/LightCompute/RunDirectSpatialGpu.sh
 bash Exhibits/LightCompute/RunStaticDiffuseGpu.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunStaticDiffuseGpu.sh
+bash Exhibits/LightCompute/RunRectangleReconnectionGpu.sh
+SANITIZE=1 bash Exhibits/LightCompute/RunRectangleReconnectionGpu.sh
 bash Exhibits/LightCompute/RunTemporalReconnectionAudit.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunTemporalReconnectionAudit.sh
 ```

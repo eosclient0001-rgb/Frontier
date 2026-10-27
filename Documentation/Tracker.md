@@ -15,10 +15,13 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   history. Changed receiver/view/material domains conservatively reject temporal history and match cold in
   tested fixtures; this is not general dynamic reuse.
 - A separate Vulkan diffuse-path experiment supports identical-domain pooling and multiple opaque Lambertian
-  hits, with revision resets. It is not integrated into the editor or the scene frame.
-- Full ReSTIR GI, dynamic endpoint carry, general spatial reconnection and general multibounce reuse remain
-  unfinished. An independent area-integral audit exposes a retained-demo temporal shift without its required
-  Jacobian; it is not WGSL execution or a completed GI fix.
+  hits, with revision resets. A second, one-hit experiment carries a translated rectangle endpoint and shifts
+  reservoirs between moving/different receiver positions with an area Jacobian. Independent area integrals
+  and an omitted-Jacobian negative control validate that strictly unobstructed, common-support fixture only.
+  Neither experiment is integrated into the editor or scene frame.
+- Full ReSTIR GI, general dynamic endpoint carry, occlusion-aware spatial reconnection and general multibounce
+  reuse remain unfinished. The retained-demo temporal equation omits the audited Jacobian; this is not WGSL
+  execution or a completed GI fix.
 
 ## Reference daylight and lunar bounce continuation — 2026-10-27
 
