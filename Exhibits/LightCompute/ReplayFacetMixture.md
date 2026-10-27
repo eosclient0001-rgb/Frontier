@@ -40,6 +40,29 @@ these are finite-sample measurements, not a general variance guarantee. The mixt
 pure power's visible-light advantage for much more frequent draws of the dim, unobstructed source.
 The encoded two-source mixture probabilities are `0.748960465 / 0.251039535`.
 
+### Follow-up on the low uniform result
+
+Replaying the original 24 uniform batches shows that the bright source was selected for **11,975 of
+24,576** centre samples (`0.487264`, versus `0.5` expected). The batch-frequency SE was `0.003718`;
+a host implementation of the same shader generator reproduced all 24,576 selections. That generator
+comparison is a diagnostic, not an independent reference or proof of a generator defect. Assuming
+exact conditional area means, the observed selection frequency predicts `0.530896`, close to the
+measured `0.530825`: the source imbalance explains most of this particular short-run discrepancy.
+
+A new `mt19937` sequence supplies 128 unique frame seeds, none used by the original uniform batches.
+The same frame seed is paired across the uniform/mixture and open/blocked comparisons. The running
+32/64/128 results are retained in the logs; at 128 batches the measurements were:
+
+| Fixture | Uniform | Mixture | Independent integral |
+|---|---:|---:|---:|
+| Both visible | `0.543709 ± 0.001565` | `0.543700 ± 0.000946` | `0.544713` |
+| Bright source blocked | `0.00113521 ± 0.00000325` | `0.00113709 ± 0.00000578` | `0.00113246` |
+
+The open uniform bright-source frequency in the repeat was `0.499252 ± 0.001364` across batch
+means. These follow-up results do not distinguish an ordinary fluctuation from possible PRNG correlations,
+prove that batches or pixels are independent, or guarantee monotonic convergence. They also do not
+establish general adaptive-reservoir unbiasedness.
+
 Separate **one-, three- and five-source** fixtures use distinct RGB masks to count actual selected
 sources, including odd source counts, and compare colour-channel estimates with independent area
 quadrature. For five sources, one observed selection frequency is `0.104675` versus encoded `0.108903`,
@@ -75,13 +98,18 @@ set to select prepared tools or alternate output paths.
 ```sh
 Exhibits/LightCompute/RunReplayFacetMixture.sh
 CHECK=--replay-facet-mixture-spectrum Exhibits/LightCompute/RunReplayFacetMixture.sh
+CHECK=--replay-facet-mixture-convergence Exhibits/LightCompute/RunReplayFacetMixture.sh
 CHECK=--replay-facet-mixture-parity Exhibits/LightCompute/RunReplayFacetMixture.sh
 SANITIZE=1 BUILD_JOBS=1 Exhibits/LightCompute/RunReplayFacetMixture.sh
+CHECK=--replay-facet-mixture-convergence SANITIZE=1 BUILD_JOBS=1 Exhibits/LightCompute/RunReplayFacetMixture.sh
 CHECK=--replay-facet-mixture-parity SANITIZE=1 BUILD_JOBS=1 Exhibits/LightCompute/RunReplayFacetMixture.sh
 ```
 
 [Release](Results/ReplayFacetMixture-release.txt) · [Sanitized host](Results/ReplayFacetMixture-sanitized.txt) ·
-[Focused spectrum check](Results/ReplayFacetMixtureSpectrum-release.txt) · [Default parity](Results/ReplayFacetMixtureParity-release.txt) ·
+[Focused spectrum check](Results/ReplayFacetMixtureSpectrum-release.txt) ·
+[Convergence repeat](Results/ReplayFacetMixtureConvergence-release.txt) ·
+[Sanitized convergence repeat](Results/ReplayFacetMixtureConvergence-sanitized.txt) ·
+[Default parity](Results/ReplayFacetMixtureParity-release.txt) ·
 [Sanitized default parity](Results/ReplayFacetMixtureParity-sanitized.txt) ·
 [Pure-power regression](Results/ReplayFacetMixturePower-regression.txt) ·
 [Uniform-emitter regression](Results/ReplayFacetMixtureUniform-regression.txt) ·

@@ -15,6 +15,7 @@ CHECK="${CHECK:---replay-facet-mixture}"
 case "$CHECK" in
     --replay-facet-mixture) RESULT_STEM=ReplayFacetMixture ;;
     --replay-facet-mixture-spectrum) RESULT_STEM=ReplayFacetMixtureSpectrum ;;
+    --replay-facet-mixture-convergence) RESULT_STEM=ReplayFacetMixtureConvergence ;;
     --replay-facet-mixture-parity) RESULT_STEM=ReplayFacetMixtureParity ;;
     *) printf 'Unknown replay mixture check\n' >&2; exit 1 ;;
 esac
@@ -58,7 +59,7 @@ fi
     "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/{PathReplayDomain.h,PathReplayDomain.cpp,RadiantFacetDistribution.h,RadiantFacetDistribution.cpp} \
         Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir,MaterialRayScattering}.slang \
-        Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomainValidation.cpp,ReplayFacetPowerValidation.h,ReplayFacetMixtureValidation.h,ReplayFacetMixtureSpectrumValidation.h,ReplayImportanceParityValidation.h,RoughTextureReplayValidation.h,ReplayRoomReference.h}
+        Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomainValidation.cpp,ReplayFacetPowerValidation.h,ReplayFacetMixtureValidation.h,ReplayFacetMixtureSpectrumValidation.h,ReplayFacetMixtureConvergenceValidation.h,ReplayImportanceParityValidation.h,RoughTextureReplayValidation.h,ReplayRoomReference.h}
     "$BUILD/PathReplayDomainValidation"
     if [[ "$CHECK" == --replay-facet-mixture-parity ]]; then
         printf 'Prior replay shader checkpoint: 0d5af89\n'
