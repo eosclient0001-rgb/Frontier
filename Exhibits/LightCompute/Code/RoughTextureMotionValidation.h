@@ -150,4 +150,54 @@ void ValidateRoughTextureMotion(const char* Driver, const std::string& Shaders)
             "Rough motion probes did not retain history or the independent blocker control was insensitive");
     std::printf("PASS independent rough-textured primary and four-hit paths during rigid motion and occlusion\n");
 }
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                              HIGHER-SAMPLE FRESH FLOOR CHECK
+//------------------------------------------------------------------------------------------------------------------------
+
+void ValidateRoughTextureFreshFloor(const char* Driver, const std::string& Shaders)
+{
+    constexpr uint32_t Width = 64, Height = 64, CpuPaths = 960000, Batches = 512;
+    constexpr uint32_t Pixel = 50 * Width + 46;
+    auto Current = ReplayTexturedMotionRigid(.07f, .12f, 1, 7, Width, Height);
+    SetRoughTextureReplayMaterials(Current, .48f, .7f);
+    LightComputeSubmission Compute(Driver);
+    std::printf("ROUGH_TEXTURE_FRESH preparing Vulkan on %s\n", Compute.Properties.deviceName);
+    std::fflush(stdout);
+    Compute.Prepare(Current, Shaders, false, false, false, false, true);
+    (void)TraceRoughTextureReplay(Compute, Current, 1, 462999, false, false, true, true);
+    const auto Guides = Compute.PrimaryReceivers();
+    const auto Reference = ValidateReplayPrimaryReference(Current, Guides, "rough_fresh_repeat");
+    ValidateRoughMotionCoefficients(Current, Reference, Guides, "fresh_repeat");
+    Require(Reference[Pixel].Hit && Reference[Pixel].Mip == 2 &&
+                Current.Surfaces[Reference[Pixel].Facet].OpticalToken[3] == 1 &&
+                Current.Surfaces[Reference[Pixel].Facet].Emissive[3] > 0,
+            "Fresh repeat did not target the original textured floor probe");
+    std::printf("ROUGH_TEXTURE_FRESH tracing %u independently seeded CPU paths for pixel=%u,%u\n",
+                CpuPaths, Pixel % Width, Pixel / Width);
+    std::fflush(stdout);
+    const auto Cpu = TraceRoughMotionReference(Current, Reference[Pixel], 361111, CpuPaths);
+    ReplayRgbMoments Gpu;
+    uint64_t SpatialLinks = 0;
+    for (uint32_t Batch = 0; Batch < Batches; ++Batch)
+    {
+        const auto Fresh = TraceRoughTextureReplay(Compute, Current, 4, 463000 + 101 * Batch,
+                                                    false, true, true, true);
+        const auto Counts = Compute.ExtendedStatistics();
+        SpatialLinks += Counts[22];
+        for (uint32_t C = 0; C < 3; ++C) Gpu[C].Accumulate(Fresh[Pixel][C]);
+        if ((Batch + 1) % 128 == 0)
+        {
+            std::printf("ROUGH_TEXTURE_FRESH completed=%u/%u batches\n", Batch + 1, Batches);
+            std::fflush(stdout);
+        }
+    }
+    CompareReplayMotionProbe("rough_floor_fresh_repeat", Cpu, Gpu);
+    const double CombinedSe = std::hypot(ReplaySampleStandardError(Cpu[2]), ReplaySampleStandardError(Gpu[2]));
+    std::printf("ROUGH_TEXTURE_FRESH blue_delta=%.9g combined_se=%.9g z=%.9g spatial_links=%llu\n",
+                Gpu[2].Mean() - Cpu[2].Mean(), CombinedSe, std::abs(Gpu[2].Mean() - Cpu[2].Mean()) / CombinedSe,
+                (unsigned long long)SpatialLinks);
+    Require(SpatialLinks > 0, "Fresh repeat did not exercise spatial candidates");
+    std::printf("PASS independently seeded higher-sample rough-textured fresh floor reference\n");
+}
 } // namespace

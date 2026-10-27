@@ -7,8 +7,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 - Guarded single-stratum rough GGX and albedo-texture replay can now be opted into together. SwiftShader release
   and sanitized hosts pass independent hemisphere quadrature, two textured primary-pixel references and four-hit
   atlas/blocker/reopening references with capped temporal/spatial reuse. Two rough-textured moving-primary probes
-  also pass independent four-hit references after camera, rigid and material changes and blocker insertion. One
-  fresh blue channel differs by 3.65 combined standard errors and needs a larger independent-seed follow-up.
+  also pass independent four-hit references after camera, rigid and material changes and blocker insertion. An
+  initial fresh-blue difference of 3.65 combined SE did not recur in a four-times-larger disjoint-seed follow-up
+  (0.68 SE); its GPU SE rose, so convergence and seed correlations still need study.
   General motion/materials, hardware GPU and editor integration remain open. Four settled and three first-transition
   renders are captured; previews blur noise and are not ghosting proof.
   [Rough-textured evidence](../Exhibits/LightCompute/RoughTextureReplay.md),

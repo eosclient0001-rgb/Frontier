@@ -1676,6 +1676,11 @@ int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--rough-texture-fresh-floor")
+        {
+            ValidateRoughTextureFreshFloor(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--rough-texture-motion")
         {
             ValidateRoughTextureMotion(Arguments[1], Arguments[2]);
