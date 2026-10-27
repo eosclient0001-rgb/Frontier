@@ -238,6 +238,11 @@ struct LightComputeSubmission
     std::array<VkPipeline, 3> TransportReconstruction{};
     VkPipeline CloudPipeline = VK_NULL_HANDLE, FogPipeline = VK_NULL_HANDLE, ExitancePyramidPipeline = VK_NULL_HANDLE;
     VkPipeline SolarVisibilityPipeline = VK_NULL_HANDLE, SolarOpticsPipeline = VK_NULL_HANDLE;
+    VkPipeline DiffuseGeneratePipeline = VK_NULL_HANDLE, DiffuseResolvePipeline = VK_NULL_HANDLE;
+    std::vector<LightComputeFacet> DiffuseFacets;
+    std::vector<TriangleVisibilitySpace::FloatEnclosure> DiffuseEnclosures;
+    uint32_t DiffuseBounces = 0;
+    bool LastDiffuseReset = true;
     bool TransportHistoryValid = false, TransportDirty = true;
     bool TransportGeometryRevision = true, RigidMotionHistory = false;
     bool PriorExitanceReady = false, IgnoreLightingRevisionForPriorExitance = false, RigidPoseRecorded = false;
@@ -368,6 +373,8 @@ struct LightComputeSubmission
             for (auto Pipeline : HistoryPipelines)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
+            if (DiffuseResolvePipeline) DestroyPipeline(Device, DiffuseResolvePipeline, nullptr);
+            if (DiffuseGeneratePipeline) DestroyPipeline(Device, DiffuseGeneratePipeline, nullptr);
             if (SolarOpticsPipeline) DestroyPipeline(Device, SolarOpticsPipeline, nullptr);
             if (SolarVisibilityPipeline) DestroyPipeline(Device, SolarVisibilityPipeline, nullptr);
             if (FogPipeline)
@@ -490,8 +497,10 @@ struct LightComputeSubmission
         Confirm(Status, "CreateComputePipelines " + Path);
         return Result;
     }
-    void Prepare(const LightComputeArchive& Scene, const std::string& Shaders, bool SolarOnly = false)
+    void Prepare(const LightComputeArchive& Scene, const std::string& Shaders, bool SolarOnly = false,
+                 bool DirectOnly = false, bool DiffuseOnly = false)
     {
+        Require(int(SolarOnly) + int(DirectOnly) + int(DiffuseOnly) <= 1, "Compute preparation modes conflict");
         for (const auto& B : Buffers)
             Require(B.Buffer == VK_NULL_HANDLE, "Compute buffers are already prepared");
         ConstructBuffer(0, Scene.Lights);
@@ -513,7 +522,7 @@ struct LightComputeSubmission
         ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
         ConstructBuffer(6, nullptr,
-                        (Scene.Receivers.size() * 25 + 13889 + SolarSourceCount) * 16);
+                        (Scene.Receivers.size() * (DiffuseOnly ? 32 : 25) + 13889 + SolarSourceCount) * 16);
         ConstructBuffer(7, nullptr, 96);
         std::array<VkDescriptorSetLayoutBinding, 8> Slots{};
         for (uint32_t I = 0; I < 8; ++I)
@@ -562,7 +571,12 @@ struct LightComputeSubmission
             Writes[I].pBufferInfo = &Spans[I];
         }
         UpdateDescriptorSets(Device, 8, Writes.data(), 0, nullptr);
-        if (!SolarOnly)
+        if (DiffuseOnly)
+        {
+            DiffuseGeneratePipeline = ConstructPipeline(Shaders + "/DiffuseGenerate.spv");
+            DiffuseResolvePipeline = ConstructPipeline(Shaders + "/DiffuseResolve.spv");
+        }
+        if (!SolarOnly && !DirectOnly && !DiffuseOnly)
         {
             const char* TransportNames[] = {"TransportTemporal", "TransportSpatial", "TransportResolve"};
             for (uint32_t I = 0; I < 3; ++I)
@@ -573,21 +587,24 @@ struct LightComputeSubmission
                 ExitancePyramidPipeline = ConstructPipeline(Shaders + "/ExitancePyramid.spv");
             TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
         }
-        if (!SolarOnly)
+        if (!SolarOnly && !DiffuseOnly)
         {
             const char* Names[] = {"Reuse", "Reconstruct", "Filter", "Finalize"};
             for (uint32_t I = 0; I < 4; ++I)
                 HistoryPipelines[I] = ConstructPipeline(Shaders + "/" + Names[I] + ".spv");
         }
-        if (std::filesystem::exists(Shaders + "/SolarVisibility.spv") &&
+        if (!DirectOnly && !DiffuseOnly && std::filesystem::exists(Shaders + "/SolarVisibility.spv") &&
             std::filesystem::exists(Shaders + "/SolarOptics.spv"))
         {
             SolarVisibilityPipeline = ConstructPipeline(Shaders + "/SolarVisibility.spv");
             SolarOpticsPipeline = ConstructPipeline(Shaders + "/SolarOptics.spv");
         }
-        PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
-        CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
-        ReceiverPipeline = ConstructPipeline(Shaders + "/Receivers.spv");
+        if (!DirectOnly && !DiffuseOnly) PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
+        if (!DiffuseOnly)
+        {
+            CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
+            ReceiverPipeline = ConstructPipeline(Shaders + "/Receivers.spv");
+        }
         ReceiverCount = uint32_t(Scene.Receivers.size());
         Upload(Scene);
     }
@@ -713,6 +730,75 @@ struct LightComputeSubmission
             PreviousLights = Scene.Lights;
             PreviousAngles.assign(Scene.Angles.begin(), Scene.Angles.begin() + RevisionAngles);
         }
+    }
+    // Identical-domain diffuse experiment; any triangle or bounce-budget revision invalidates history.
+    std::vector<std::array<float, 4>> ExecuteDiffuse(const LightComputeArchive& Scene, uint32_t Bounces,
+                                                      uint32_t Seed, bool Temporal, bool Spatial,
+                                                      bool ResetHistory = false)
+    {
+        Require(DiffuseGeneratePipeline && DiffuseResolvePipeline && Scene.Width > 0 && Scene.Height > 0 &&
+                    size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() && Bounces > 0 && Bounces <= 8,
+                "Invalid diffuse experiment or unavailable pipelines");
+        auto Facets = PackedSurfaces(Scene);
+        for (const auto& F : Facets)
+            Require(F.Emissive[3] == 0 && F.OpticalToken[0] == 0,
+                    "Diffuse experiment requires untextured nonmetallic triangles");
+        bool Changed = DiffuseFacets.size() != Facets.size() ||
+                       DiffuseEnclosures.size() != Scene.Visibility.Enclosures.size();
+        if (!Changed)
+            Changed = (!Facets.empty() && std::memcmp(DiffuseFacets.data(), Facets.data(),
+                          Facets.size() * sizeof(LightComputeFacet)) != 0) ||
+                      (!DiffuseEnclosures.empty() && std::memcmp(DiffuseEnclosures.data(), Scene.Visibility.Enclosures.data(),
+                          DiffuseEnclosures.size() * sizeof(TriangleVisibilitySpace::FloatEnclosure)) != 0);
+        DiffuseFacets = std::move(Facets);
+        DiffuseEnclosures = Scene.Visibility.Enclosures;
+        Upload(Scene);
+        LastDiffuseReset = HistoryDirty || ResetHistory || Changed || DiffuseBounces != Bounces;
+        DiffuseBounces = Bounces;
+        ComputeExtent Extent;
+        Extent.Dimensions[0] = uint32_t(Scene.Receivers.size());
+        Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
+        Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), 64};
+        Extent.History = {Scene.Width, Scene.Height, LastDiffuseReset ? 0u : HistorySequence, LastDiffuseReset ? 1u : 0u};
+        Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, 0, 0};
+        Extent.Primary[2] = Bounces;
+        std::memset(Buffers[7].Address, 0, 96);
+        Confirm(ResetCommandPool(Device, Pool, 0));
+        Confirm(ResetFences(Device, 1, &Completion));
+        VkCommandBufferBeginInfo Begin{};
+        Begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        Begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        Confirm(BeginCommandBuffer(Commands, &Begin));
+        VkMemoryBarrier Barrier{};
+        Barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        Barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
+        CmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+        CmdPushConstants(Commands, PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Extent), &Extent);
+        CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, DiffuseGeneratePipeline);
+        CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+        Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           0, 1, &Barrier, 0, nullptr, 0, nullptr);
+        CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, DiffuseResolvePipeline);
+        CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+        Barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                           0, 1, &Barrier, 0, nullptr, 0, nullptr);
+        Confirm(EndCommandBuffer(Commands));
+        VkSubmitInfo Submission{};
+        Submission.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        Submission.commandBufferCount = 1;
+        Submission.pCommandBuffers = &Commands;
+        Confirm(QueueSubmit(Queue, 1, &Submission, Completion));
+        Confirm(WaitForFences(Device, 1, &Completion, VK_TRUE, 600000000000ull));
+        std::vector<std::array<float, 4>> Result(Scene.Receivers.size());
+        std::memcpy(Result.data(), Buffers[6].Address, Result.size() * 16);
+        HistorySequence = LastDiffuseReset ? 1 : HistorySequence + 1;
+        HistoryDirty = false;
+        return Result;
     }
     std::vector<std::array<float, 4>>
     Execute(const LightComputeArchive& Scene, uint32_t Mode, uint32_t Capacity = 16, uint32_t Seed = 1,
@@ -1332,11 +1418,24 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PriorExitanceValidation.h"
 #include "UnifiedSceneValidation.h"
 #include "SolarOpticsValidation.h"
+#include "DirectSpatialGpuValidation.h"
+#include "StaticDiffuseGpuValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--static-diffuse")
+        {
+            ValidateStaticDiffuseGpu(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && (std::string(Arguments[3]) == "--direct-spatial" ||
+                           std::string(Arguments[3]) == "--direct-spatial-observe"))
+        {
+            ValidateDirectSpatialGpu(Arguments[1], Arguments[2], std::string(Arguments[3]) == "--direct-spatial");
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--solar-optics")
         {
             ValidateSolarOptics(Arguments[1], Arguments[2]);

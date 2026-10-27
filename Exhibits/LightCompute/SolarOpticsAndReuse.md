@@ -6,7 +6,7 @@
 |---|---|
 | Sun disc and mixed flares | Opt-in Vulkan compute in the **LightCompute validation host**, not the editor viewport. |
 | Calibration | Angular-size check against NASA; the Gaussian sensor-FWHM conversion is provided, but no measured lens PSF or flare data has been supplied or fitted. |
-| ReSTIR GI | Incomplete. The editor viewport is a placeholder; general dynamic reprojection, spatial GI reconnection and multibounce integration are not demonstrated. |
+| ReSTIR GI | Incomplete. An isolated diffuse path reservoir supports identical-domain pooling and multiple hits, not general dynamic reprojection, spatial GI reconnection, scene-frame integration or editor presentation. |
 | Device | Linux SwiftShader CPU Vulkan, not a physical GPU, Windows, hardware ray tracing, performance or real-time acceptance. |
 
 ## Solar optics
@@ -34,10 +34,51 @@ For an on-axis Gaussian core, `CalibrateSolarBlur` converts sensor FWHM to angul
 No lens calibration is implied. Payload normalization and invalid-domain checks passed in
 [release](Results/SolarPayload-release.txt) and [ASan/UBSan](Results/SolarPayload-sanitized.txt).
 
-The validation buffer ABI reserves `25 × pixelCount + 13889 + 1536` float4s: 1,536 source samples follow the
-old `24 × pixelCount + 13889` region, with a further pixel-sized reserved tail for direct-history metadata.
-The solar payload follows the camera's 12 float4s in the angle buffer; counters 20–22 contain RGB visibility.
-A future production host must allocate these regions and perform the compute barriers and dispatches explicitly.
+The normal validation buffer ABI reserves `25 × pixelCount + 13889 + 1536` float4s: 1,536 source samples
+follow the old `24 × pixelCount + 13889` region, followed by one prior-view float4 per pixel. The isolated
+diffuse experiment reserves seven additional pixel-sized slabs. The solar payload follows the camera's 12
+float4s in the angle buffer; counters 20–22 contain RGB visibility (reused as diagnostic counters in the
+diffuse-only experiment). A future host must allocate these regions and perform dispatches and barriers.
+
+## Vulkan direct-light reservoir audit
+
+The previous spatial pass omitted zero-weight domains and normalized by winning donors. The new pass retains
+their counts, normalizes by domains supporting the selected light and persists pre-spatial history. A direct
+history is reused only when stored float receiver position, normal, view and material match exactly; an epsilon
+can cross a discontinuous light-support or visibility boundary. Changed domains fall back to fresh sampling,
+not general dynamic reconnection. Geometry revisions, arbitrary visibility and all proposal supports remain
+unproven.
+
+| Fixture, 1,024 groups | Previous / exact | Current / exact |
+|---|---:|---:|
+| Sparse spatial | 2.29642 | 0.99844 |
+| Eight-frame static temporal | 1.23601 | 1.01514 |
+| Unequal clustered support | 0.26782 | 1.01193 |
+| Receiver moved into local light | 5,053 pixels differ from cold | 5,120 domains rejected, 0 differ |
+
+A synthetic pixel-grid shift between identical world domains accepted 5,120 histories and reduced standard
+deviation from `3.148e-9` cold to `1.022e-9`. Position change `5e-7` and albedo change `5e-5` are each rejected
+for all 5,120 live pixels. [Detailed Vulkan results](Results/DirectSpatial-vulkan.txt) compare the same host and
+device with the shader pinned to `98fbc76`. These are direct-light fixtures, not ReSTIR GI.
+
+## Restricted GPU diffuse path reservoirs
+
+`StaticDiffuseReservoir.slang` is an isolated Vulkan experiment. It traces up to eight cosine-sampled,
+Lambertian triangle hits and reservoir-resamples path **contributions**, with host-supplied initial receivers.
+The contract is opaque, untextured, nonmetallic diffuse triangles and two-sided emissive surfaces; no environment,
+analytic lights, glass, specular paths, volumes or texture transport. The selected contribution has no path
+vertices, so it cannot reconnect to a moved receiver. Temporal reprojection and spatial pooling require exact
+float receiver domains; the spatial fixture deliberately uses duplicated world receivers arranged in crosses,
+not neighboring scene surfaces. History is pre-spatial and scene/BVH bytes or bounce-budget changes reset it.
+
+The independent square-emitter area integral is `0.239818`. Across 4,096 seeded cross centres, fresh estimate
+was `0.249512 ± 0.006761` and spatial estimate `0.244922 ± 0.003011` standard error; spatial standard deviation
+was `0.445×` fresh. Eight static temporal frames gave `0.234253 ± 0.004513`, standard deviation `0.334×` fresh.
+A symmetric red/blue emitter checked RGB weighting. A nearly infinite parallel-plane test returned zero for one
+hit and `0.5` for two hits. Identical-domain pixel reprojection reduced variance; changed receivers, including
+`5e-7` motion, were rejected and matched cold output. In-place emission and geometry revisions reset history.
+These fixtures are not an all-scene bias or variance guarantee. [Release](Results/StaticDiffuse-vulkan-release.txt)
+and [sanitized-host](Results/StaticDiffuse-vulkan-sanitized.txt) logs identify the shader and test sources.
 
 ## Retained demo temporal counterexample
 
@@ -55,6 +96,9 @@ bash Exhibits/LightCompute/RunSolarOptics.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunSolarOptics.sh
 bash Exhibits/LightCompute/RunSolarPayloadValidation.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunSolarPayloadValidation.sh
+bash Exhibits/LightCompute/RunDirectSpatialGpu.sh
+bash Exhibits/LightCompute/RunStaticDiffuseGpu.sh
+SANITIZE=1 bash Exhibits/LightCompute/RunStaticDiffuseGpu.sh
 bash Exhibits/LightCompute/RunTemporalReconnectionAudit.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunTemporalReconnectionAudit.sh
 ```

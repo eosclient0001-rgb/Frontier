@@ -513,27 +513,47 @@ float RandomUnit(inout uint Bits) { return float(NextRandom(Bits) >> 8) * (1.0 /
             {
                 InterlockedAdd(Counters[4], 1);
                 float4 Source = LoadHistory(1, uint(Previous));
-                if (Source.y > 0 && Source.z > 0 && uint(Source.x) < Extent.Dimensions.y &&
-                    Extent.Reconstruction.x != 0)
+                float4 PreviousPosition = LoadHistory(8, uint(Previous));
+                float4 PreviousNormal = LoadHistory(9, uint(Previous));
+                float4 PreviousMaterial = LoadHistory(10, uint(Previous));
+                float2 PreviousOptics = LoadHistory(11, uint(Previous)).xy;
+                float3 PreviousView = OutputColour[DirectTemporalDomainStart() + uint(Previous)].xyz;
+                // A tolerance can cross a discontinuous clustered support or visibility edge.
+                bool SameDomain = all(PreviousPosition.xyz == R.PositionHit.xyz) &&
+                                  all(PreviousNormal == R.NormalRoughness) &&
+                                  all(PreviousView == R.ViewMetallic.xyz) &&
+                                  all(PreviousMaterial == float4(R.AlbedoIor.xyz, R.ViewMetallic.w)) &&
+                                  all(PreviousOptics == float2(R.AlbedoIor.w, R.ResidualSpecular.w));
+                if (!SameDomain && Extent.Reconstruction.x != 0)
                 {
-                    float3 PreviousDirection;
-                    float PreviousDistance;
-                    float3 F = Contribution(R, uint(Source.x), PreviousDirection, PreviousDistance, SunTransmittance);
-                    float Target = Power(F), SourceCount = min(Source.z, 64);
-                    float Weight = Target * Source.y * SourceCount;
+                    // 📝 Aggregate reservoirs do not retain the provenance needed for changed proposal domains.
+                    ColourValid = false;
+                    InterlockedAdd(Counters[23], 1);
+                }
+                if (Source.z > 0 && SameDomain && Extent.Reconstruction.x != 0)
+                {
+                    // A zero-weight reservoir still represents proposal draws.
+                    float SourceCount = min(Source.z, 64);
                     Multiplicity += SourceCount;
-                    WeightSum += Weight;
-                    if (RandomUnit(Bits) * WeightSum < Weight)
+                    if (Source.y > 0 && uint(Source.x) < Extent.Dimensions.y)
                     {
-                        Selected = uint(Source.x);
-                        SelectedTarget = Target;
-                    }
-                    bool Visible = any(F != 0) && !Occluded(R.PositionHit.xyz + R.NormalRoughness.xyz * .002,
-                                                            PreviousDirection, PreviousDistance - .004);
-                    if (float(Visible) != Source.w)
-                    {
-                        ColourValid = false;
-                        InterlockedAdd(Counters[7], 1);
+                        float3 PreviousDirection;
+                        float PreviousDistance;
+                        float3 F = Contribution(R, uint(Source.x), PreviousDirection, PreviousDistance, SunTransmittance);
+                        float Target = Power(F), Weight = Target * Source.y * SourceCount;
+                        WeightSum += Weight;
+                        if (RandomUnit(Bits) * WeightSum < Weight)
+                        {
+                            Selected = uint(Source.x);
+                            SelectedTarget = Target;
+                        }
+                        bool Visible = any(F != 0) && !Occluded(R.PositionHit.xyz + R.NormalRoughness.xyz * .002,
+                                                                PreviousDirection, PreviousDistance - .004);
+                        if (float(Visible) != Source.w)
+                        {
+                            ColourValid = false;
+                            InterlockedAdd(Counters[7], 1);
+                        }
                     }
                 }
             }
@@ -630,6 +650,20 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
            abs(A.NormalRoughness.w - B.NormalRoughness.w) < 1e-4 &&
            abs(A.ResidualSpecular.w - B.ResidualSpecular.w) < 1e-4;
 }
+// A winning light may only be proposed by donor domains containing it (or exhaustive fallback).
+bool LightInProposalDomain(SurfacePoint Receiver, uint Selected)
+{
+    float3 Point = Receiver.PositionHit.xyz;
+    if (any(Point < Extent.Minimum.xyz) || any(Point >= Extent.Maximum.xyz)) return true;
+    uint3 Cell = min(uint3((Point - Extent.Minimum.xyz) / (Extent.Maximum.xyz - Extent.Minimum.xyz) *
+                           float3(Extent.Grid.xyz)), Extent.Grid.xyz - 1);
+    uint First = ((Cell.z * Extent.Grid.y + Cell.y) * Extent.Grid.x + Cell.x) * (Extent.Dimensions.z + 1);
+    uint Count = Cells[First];
+    if (Count > Extent.Dimensions.z) return true;
+    for (uint Index = 0; Index < Count; ++Index)
+        if (Cells[First + 1 + Index] == Selected) return true;
+    return false;
+}
 [shader("compute")][numthreads(64, 1, 1)] void ReuseLightNeighbours(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
@@ -663,32 +697,51 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
         if (I > 0 && !NearbyReceiver(R, Receivers[Index], max(.03, R.MotionPixel.z * 2)))
             continue;
         float4 Source = LoadHistory(2, Index);
-        if (Source.y <= 0 || Source.z <= 0 || uint(Source.x) >= Extent.Dimensions.y)
-            continue;
+        if (Source.z <= 0) continue;
+        float Multiplicity = min(Source.z, I == 0 ? 72 : 32);
+        Count += Multiplicity; // Dark draws still represent a proposal domain.
+        if (I > 0) InterlockedAdd(Counters[8], 1);
+        if (Source.y <= 0 || uint(Source.x) >= Extent.Dimensions.y) continue;
         float3 Direction;
         float Distance;
         float Target = Power(Contribution(R, uint(Source.x), Direction, Distance, SunTransmittance));
-        float Multiplicity = min(Source.z, I == 0 ? 72 : 32), Weight = Target * Source.y * Multiplicity;
-        Count += Multiplicity;
+        float Weight = Target * Source.y * Multiplicity;
         Sum += Weight;
         if (RandomUnit(Bits) * Sum < Weight)
         {
             Selected = uint(Source.x);
             SelectedTarget = Target;
         }
-        if (I > 0)
-            InterlockedAdd(Counters[8], 1);
     }
     float3 Direct = 0;
     float Weight = 0, Visible = 0;
     if (SelectedTarget > 0)
     {
+        // 📝 Include all domains that can propose and select this winner, including dark draws.
+        float Supported = 0;
+        for (uint I = 0; I < 5; ++I)
+        {
+            if (I > 0 && Extent.Reconstruction.y == 0) break;
+            int2 Offset = I == 0 ? int2(0, 0) : I == 1 ? int2(1, 0) : I == 2 ? int2(-1, 0)
+                          : I == 3 ? int2(0, 1) : int2(0, -1);
+            int2 P = Centre + Offset;
+            if (any(P < 0) || P.x >= int(Extent.History.x) || P.y >= int(Extent.History.y)) continue;
+            uint Index = uint(P.y) * Extent.History.x + uint(P.x);
+            SurfacePoint Domain = Receivers[Index];
+            if (I > 0 && !NearbyReceiver(R, Domain, max(.03, R.MotionPixel.z * 2))) continue;
+            float4 Source = LoadHistory(2, Index);
+            if (Source.z <= 0 || !LightInProposalDomain(Domain, Selected)) continue;
+            float3 Direction;
+            float Distance;
+            float DomainSun = CloudSunTransmittance(Domain.PositionHit.xyz);
+            if (Power(Contribution(Domain, Selected, Direction, Distance, DomainSun)) > 0)
+                Supported += min(Source.z, I == 0 ? 72 : 32);
+        }
         float3 Direction;
         float Distance;
         float3 F = Contribution(R, Selected, Direction, Distance, SunTransmittance);
-        Visible =
-            Occluded(R.PositionHit.xyz + R.NormalRoughness.xyz * .002, Direction, Distance - .004) ? 0 : 1;
-        Weight = Sum / (max(Count, 1) * SelectedTarget);
+        Visible = Occluded(R.PositionHit.xyz + R.NormalRoughness.xyz * .002, Direction, Distance - .004) ? 0 : 1;
+        Weight = Supported > 0 ? Sum / (Supported * SelectedTarget) : 0;
         Direct = F * (Weight * Visible);
     }
     StoreHistory(3, Pixel, float4(Selected, Weight, Count, Visible));
@@ -791,10 +844,12 @@ bool NearbyReceiver(SurfacePoint A, SurfacePoint B, float Radius)
     SurfacePoint R = Receivers[Pixel];
     float4 Reconstructed = LoadHistory(7, Pixel), Moments = LoadHistory(14, Pixel);
     OutputColour[Pixel] = float4(Reconstructed.xyz + R.ResidualSpecular.xyz, Power(Reconstructed.xyz));
-    StoreHistory(1, Pixel, LoadHistory(3, Pixel));
+    // 📝 Preserve the pre-spatial reservoir; merged donors do not carry their separate domains forward.
+    StoreHistory(1, Pixel, LoadHistory(2, Pixel));
     StoreHistory(4, Pixel, float4(LoadHistory(6, Pixel).xyz, Moments.z));
     StoreHistory(8, Pixel, float4(R.PositionHit.xyz, R.PositionHit.w != 0 ? R.MotionPositionToken.w : 0));
     StoreHistory(9, Pixel, R.NormalRoughness);
+    OutputColour[DirectTemporalDomainStart() + Pixel] = float4(R.ViewMetallic.xyz, 0);
     StoreHistory(10, Pixel, float4(R.AlbedoIor.xyz, R.ViewMetallic.w));
     StoreHistory(11, Pixel, float4(R.AlbedoIor.w, R.ResidualSpecular.w, Moments.xy));
 }

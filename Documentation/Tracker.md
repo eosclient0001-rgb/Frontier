@@ -10,9 +10,14 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   Windows, real-time, Moon masking, per-ray clouds/fog or measured-lens calibration is claimed.
 - An on-axis sensor-FWHM conversion accepts supplied measurements; the checked sensor example is synthetic.
   NASA's mean solar diameter checks angular size only. [Detailed scope and results](../Exhibits/LightCompute/SolarOpticsAndReuse.md).
-- Full ReSTIR GI, dynamic endpoint carry, general spatial reconnection and multibounce remain unfinished.
-  An independent area-integral audit exposes a retained-demo temporal shift without its required Jacobian;
-  it is not WGSL execution or a completed GI fix.
+- Direct-light reservoirs now retain dark proposal domains, normalize by selected support and store pre-spatial
+  history. Changed receiver/view/material domains conservatively reject temporal history and match cold in
+  tested fixtures; this is not general dynamic reuse.
+- A separate Vulkan diffuse-path experiment supports identical-domain pooling and multiple opaque Lambertian
+  hits, with revision resets. It is not integrated into the editor or the scene frame.
+- Full ReSTIR GI, dynamic endpoint carry, general spatial reconnection and general multibounce reuse remain
+  unfinished. An independent area-integral audit exposes a retained-demo temporal shift without its required
+  Jacobian; it is not WGSL execution or a completed GI fix.
 
 ## Reference daylight and lunar bounce continuation — 2026-10-27
 
