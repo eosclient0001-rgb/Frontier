@@ -1,0 +1,22 @@
+loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleBody.facet: 1492 verts 2924 facets smooth=0
+loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleTyre.facet: 1984 verts 3968 facets smooth=1
+loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleRim.facet: 786 verts 1568 facets smooth=1
+TIMING 0 134.066797 ms
+TIMING 1 130.227796 ms
+TIMING 2 133.694191 ms
+TIMING 3 132.166273 ms
+TIMING 4 133.165956 ms
+TIMING 5 139.190775 ms
+TIMING 6 131.265110 ms
+TIMING 7 131.572103 ms
+TIMING 8 129.187877 ms
+TIMING 9 130.052397 ms
+TIMING 10 130.082175 ms
+TIMING 11 129.947973 ms
+TIMING 12 128.796823 ms
+TIMING 13 128.436971 ms
+TIMING 14 133.583747 ms
+MEDIAN 130.673642 ms (12 samples after 3 warmups, 1600x900, no file IO or simulation)
+PASS hero capture writes
+PASS actual vehicle HDR pixels finite and nonnegative
+SUMMARY failed 0

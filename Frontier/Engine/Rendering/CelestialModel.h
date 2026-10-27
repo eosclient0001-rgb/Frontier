@@ -74,11 +74,11 @@ inline constexpr double NewMoonEpochJulian = 2451550.26;   // 2000-01-06 ~18:14 
 //                                                       LUNAR SURFACE
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 Measured lunar albedo (EngineContent/CelestialMaps, JPL/USGS-derived mosaic; provenance in
-//    MoonAlbedoProvenance.md). Equirectangular: U = (selenographic east longitude + π)/2π — Mare
+// 📝 Photographic lunar surface map (EngineContent/CelestialMaps; distribution and unresolved
+//    scientific provenance in MoonAlbedoProvenance.md). Equirectangular: U = (selenographic east longitude + π)/2π — Mare
 //    Crisium at +59° east — V = (π/2 − latitude)/π. The demonstration tree carries no lunar texture,
-//    so this replaces procedural-noise maria with the measured surface. Values are map albedo in
-//    [0, 1] per channel (source byte / 255); absolute calibration is the radiance scale below.
+//    so this replaces procedural-noise maria with the photographed surface. Values are texture samples in
+//    [0, 1] per channel (source byte / 255), not calibrated physical reflectance.
 class LunarAlbedoMap
 {
   public:

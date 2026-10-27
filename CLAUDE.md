@@ -581,3 +581,17 @@ exposures set from measured radiances, telephoto disc pair (sky + solar-filter e
 Exhibits/EnvironmentPipeline regression gate still 73/73. CPU reference only: no GPU/Slang form,
 physical-GPU, Windows, cloud, moonlight-in-scene, parallax or Hapke claim. Preserve existing
 ghost table API, star catalogue and both source families.
+
+## Continuation audit and cheap vehicle rasterization — 2026-10-27
+
+Continued ae0bb7d on the active Arena session branch. Missing ignored EngineContent/CelestialMaps restored with
+pinned three.js photographic source JPG, distribution licence, hashes and unresolved-original-provenance note;
+NightSky runner now regenerates runtime PPM. Earlier "measured/JPL-USGS" map attribution is not independently
+verified: do not call the texture calibrated reflectance or a demo port. Sky33/environment73/physics29 all pass;
+eight sky PNGs unchanged. Cheap SceneRender exhibit remains Lambert/Blinn, now ray-plane ground, fading checker,
+sunlight-only planar shadows and exposure-before-Reinhard/exact sRGB. Raster10/10 and ASan/UBSan passed.
+Matched1600x900CPU medians125.527→110.153ms; reverse-order repeat130.674→108.444ms, not GPU/Windows claims.
+Supplied Frontier-3382938 tyre/thermal/vehicle JS independently fetched and byte-identical to local reference.
+XPBD is still newly calibrated, not recovered source/measured tyre validation. Full audit and actual comparison:
+Exhibits/VehiclePhysics/RasterizationAudit.md. No Actions/push/PR or binary delivery. Self-shadowing, receiver
+geometry, clipping, external physical calibration and sky reference→Slang/Vulkan integration remain open.

@@ -1,0 +1,6 @@
+Linux e2b.local 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+g++ (Debian 12.2.0-14+deb12u1) 12.2.0
+Baseline ae0bb7d5056ed6c1bcae347d5310770a5e431de5; current source hash:
+69d98610f1e0c4bc61226d852660f6de69155b8c17e8da3949c056995262e6e9  Exhibits/VehiclePhysics/Code/SceneRender.cpp
+c0df91296445484b9403d9b2b314eee2332a68f6a757ddbe0b894e8398ab40b8  Exhibits/VehiclePhysics/Code/RasterValidation.cpp
+Flags: -std=c++17 -O2 -Wall -Wextra -Werror -DNDEBUG; CPU, single-threaded rendering

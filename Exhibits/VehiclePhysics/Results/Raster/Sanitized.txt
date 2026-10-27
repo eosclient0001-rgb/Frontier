@@ -1,0 +1,30 @@
+PASS downward view: ground has no near-camera holes
+PASS ground ray intersections reproject to pixel centres
+PASS shadow preserves sky fill and haze
+PASS overlapping casters do not multiply shadow darkness
+PASS horizon sun cannot divide by zero in projection
+PASS occlusion retains lamp radiance
+PASS highlight ramp writes
+PASS 1, 2, 4, 8 linear highlights remain distinct, not clipped
+loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleBody.facet: 1492 verts 2924 facets smooth=0
+loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleTyre.facet: 1984 verts 3968 facets smooth=1
+loaded Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleRim.facet: 786 verts 1568 facets smooth=1
+TIMING 0 561.106031 ms
+TIMING 1 512.665935 ms
+TIMING 2 518.535532 ms
+TIMING 3 515.409594 ms
+TIMING 4 512.608613 ms
+TIMING 5 516.579192 ms
+TIMING 6 528.970270 ms
+TIMING 7 512.512096 ms
+TIMING 8 516.883468 ms
+TIMING 9 512.283049 ms
+TIMING 10 518.630609 ms
+TIMING 11 530.630210 ms
+TIMING 12 521.383951 ms
+TIMING 13 530.391914 ms
+TIMING 14 529.002474 ms
+MEDIAN 517.757039 ms (12 samples after 3 warmups, 1600x900, no file IO or simulation)
+PASS hero capture writes
+PASS actual vehicle HDR pixels finite and nonnegative
+SUMMARY failed 0

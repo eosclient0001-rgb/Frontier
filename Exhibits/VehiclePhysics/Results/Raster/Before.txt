@@ -1,0 +1,22 @@
+loaded /home/user/Frontier/Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleBody.facet: 1492 verts 2924 facets smooth=0
+loaded /home/user/Frontier/Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleTyre.facet: 1984 verts 3968 facets smooth=1
+loaded /home/user/Frontier/Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/Archive/ControlVehicleRim.facet: 786 verts 1568 facets smooth=1
+TIMING 0 123.632139 ms
+TIMING 1 122.947876 ms
+TIMING 2 122.631193 ms
+TIMING 3 123.855756 ms
+TIMING 4 124.167383 ms
+TIMING 5 119.526123 ms
+TIMING 6 124.679842 ms
+TIMING 7 122.884207 ms
+TIMING 8 121.125983 ms
+TIMING 9 126.374599 ms
+TIMING 10 130.503530 ms
+TIMING 11 129.982497 ms
+TIMING 12 130.551760 ms
+TIMING 13 130.643422 ms
+TIMING 14 130.027049 ms
+MEDIAN 125.527220 ms (12 samples after 3 warmups, 1600x900, no file IO or simulation)
+PASS hero capture writes
+PASS actual vehicle HDR pixels finite and nonnegative
+SUMMARY failed 0

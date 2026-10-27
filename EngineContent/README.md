@@ -1,7 +1,7 @@
 # Engine Content
 
 - `Icons/`: shared SVG content used by the native interface.
-- `CelestialMaps/`: measured lunar albedo (source JPG, runtime PPM, provenance note),
+- `CelestialMaps/`: photographic lunar surface map (retained source JPG, generated runtime PPM, provenance note),
   loaded by `Frontier::LunarAlbedoMap`; regenerate with `Automation/PrepareMoonAlbedo.py`.
 - `FontArchives/<font name>/`: downloaded static fonts and original OFL licence notices.
 - `FontArchives/FontCatalogue.toml`: generated metadata consumed by native C++ font discovery.

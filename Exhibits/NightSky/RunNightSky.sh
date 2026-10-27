@@ -7,6 +7,7 @@ BUILD="$ROOT/_ClaudeScratch/build/night-sky"
 CAPTURE="$ROOT/_ClaudeScratch/night-sky"
 PYTHON="${PYTHON:-python3}"
 mkdir -p "$BUILD" "$CAPTURE" "$ROOT/Exhibits/NightSky/Images"
+"$PYTHON" "$ROOT/Automation/PrepareMoonAlbedo.py" "$ROOT/EngineContent/CelestialMaps"
 g++ -std=c++17 -O2 -Wall -Wextra -Werror -I "$ROOT/Frontier" \
     "$ROOT/Exhibits/NightSky/Code/NightSkyValidation.cpp" \
     "$ROOT/Frontier/Engine/Rendering/CelestialModel.cpp" \

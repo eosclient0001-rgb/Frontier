@@ -5,7 +5,7 @@ Native CPU renderer (no GPU, headless). Reproduce:
 (GCC, `-std=c++17 -Wall -Wextra -Werror`).
 
 Production code under test, all in `Frontier/Engine/Rendering/`: `CelestialModel`
-(solar position, lunar phase, measured lunar albedo sampling, Lommel–Seeliger disc
+(solar position, lunar phase, photographic lunar surface sampling, Lommel–Seeliger disc
 radiance), `AtmosphereModel` (Rayleigh/Mie/ozone transmittance LUT, single + factored
 multiple scattering), `LensFlareModel` (ghost layout, limb-darkened sun disc with
 Gaussian-blurred analytic limb, aperture ghosts, diffraction starburst, anamorphic
@@ -20,7 +20,7 @@ Narkowicz ACES (`DisplayPresent.wgsl` `ProjectFilmic`) with the exact sRGB trans
 | WGSL single-scattering quadrature into a 192×108 sky-view texture | `SingleScattering` + transmittance LUT on CPU; multiple scattering is the production factored approximation, sun-gated and calibrated to the 10–30% clear-sky range |
 | `DirectRadiance.wgsl` hard solar disc (`cos > 0.99998 → +2500×`) | Replaced by `EvaluateSunDiscRadiance`: quadratic limb darkening (limb 0.38 of centre) with an erfc Gaussian-blurred analytic limb, disc flux checked against the analytic integral |
 | Lens flare | **Absent from the demonstration tree** (no flare/streak code in either SlateReference copy or `ReSTIR.html`). `LensFlareModel`'s radiance layer is new production work, measured here; the pre-existing ghost placement table is unchanged |
-| Moon | Light direction only in the demonstration; no disc, no texture files anywhere in the tree. The measured albedo in `EngineContent/CelestialMaps` (JPL/USGS-derived, see its provenance note) replaces the previous procedural-noise maria |
+| Moon | Light direction only in the demonstration; no disc, no texture files anywhere in the tree. The photographic surface map in `EngineContent/CelestialMaps` (see its provenance note) replaces the previous procedural-noise maria |
 
 ## Images
 
@@ -29,7 +29,7 @@ Narkowicz ACES (`DisplayPresent.wgsl` `ProjectFilmic`) with the exact sRGB trans
 | `Images/SunDiskLensFlare.png` | 16:30 SAST sun in a 30° field: scattering sky + forward aureole, sun disc, six aperture ghosts, 6-spike starburst, horizontal anamorphic streak, antipode halo. Exposed for the sky (ACES ×1.15), as a real sun photograph must be |
 | `Images/SunDiscClose.png` | Same sun at 3.2° field, flare-in-sky exposure (×0.5) |
 | `Images/SunDiscFiltered.png` | The identical radiance at solar-filter exposure (centre at ACES input 0.6): the limb-darkening law and blurred analytic limb, sky black — the disc outshines the sky ~10⁵:1, no single exposure shows both |
-| `Images/MoonClose.png` | Moon at 20:30 SAST (illuminated 0.995, alt 19.9°), measured albedo, true pole orientation for Benoni (lunar north points left-down at moonrise), libration sub-observer (+4.86°, −6.50°), atmospheric tint |
+| `Images/MoonClose.png` | Moon at 20:30 SAST (illuminated 0.995, alt 19.9°), photographic surface map, true pole orientation for Benoni (lunar north points left-down at moonrise), libration sub-observer (+4.86°, −6.50°), atmospheric tint |
 | `Images/NightSkyMoonField.png` | Night field centred on the Moon at true angular size, Hipparcos stars |
 | `Images/NightSkyCatalogueMilkyWay.png` | Night field aimed at the brightest Milky Way band point above 25° |
 | `Images/MoonPhases.png` | New, first quarter, full, last quarter with the Sun's real lit side; earthshine on the dark side; no atmospheric tint (phase-geometry study) |
@@ -74,3 +74,12 @@ Narkowicz ACES (`DisplayPresent.wgsl` `ProjectFilmic`) with the exact sRGB trans
   full multi-scatter LUT chain. Sky colours are not verified against photographs.
 - **Not verified:** physical GPU, Windows, real-time rendering, Slang/Vulkan forms of these
   models (the formulations here are the portable reference such a port must measure against).
+
+## Clean-checkout restoration — 2026-10-27
+
+The linked branch ignored `EngineContent/CelestialMaps`, so the claimed retained Moon source was absent.
+The three.js `r170` source JPG and distribution licence are now tracked, with source/conversion hashes in
+`EngineContent/CelestialMaps/MoonAlbedoProvenance.md`. The runner generates the PPM automatically.
+All 33 checks re-ran successfully, and all eight retained PNGs reproduced byte-for-byte on GCC 12.2 / Pillow.
+The image is **not absolutely calibrated lunar reflectance**; its earlier JPL/USGS attribution remains unverified.
+This restoration does not establish texture parity with the user's other demo revision, nor physical-photo validation.

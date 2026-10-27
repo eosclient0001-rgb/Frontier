@@ -77,6 +77,25 @@ Reproduce: `bash Exhibits/VehiclePhysics/RenderVehiclePhysics.sh` (builds Jolt 5
 modes, assembles via `Code/AssembleVisuals.py`).
 
 Renderer caveats, stated plainly: smooth tyre shading uses per-vertex averaged normals (demo shades per-corner);
-the ground is a camera-snapped tile grid because the rasterizer drops triangles with a vertex behind the camera
-(no near-plane clipping); shadows are a single planar projection of the car onto z=0; headlight/taillight
+the ground now uses exact ray/plane intersections with distance-faded checker contrast;
+vehicle and projected-shadow triangles still lack near-plane clipping; shadows remain flat-ground-only
+(no self-shadowing), and remove direct sunlight while preserving sky fill and haze; headlight/taillight
 emission is scaled down from the authored HDR values so the flat renderer does not blow out.
+
+
+## Cheap renderer revision and source audit — 2026-10-27
+
+The renderer remains Lambert / hemisphere / Blinn, **not PBR**. Exposure now precedes Reinhard,
+with exact sRGB encoding; bright lamps retain gradation rather than clipping to white.
+No extra pixel buffers, shadow maps, SSAO, ray tracing, temporal accumulation or extra geometry samples.
+Actual before/after images, matched timings, focused checks and physics-reference findings:
+[Rasterization audit](RasterizationAudit.md).
+
+```bash
+PYTHONPATH="$PWD/ExternalPackages/Python" bash Exhibits/VehiclePhysics/RunVehiclePhysics.sh
+PYTHONPATH="$PWD/ExternalPackages/Python" bash Exhibits/VehiclePhysics/RunRasterValidation.sh
+```
+
+`ExternalPackages/Python` is optional: use any Python with Pillow installed. Jolt 5.2.0 and physics objects
+must be built by the first command. Local C++ validation executables are generated under ignored scratch;
+no Linux executable is a deliverable. Windows compilation/runtime and physical-GPU performance remain untested.

@@ -237,14 +237,16 @@ namespace
             Sy = (0.5f + 0.5f * Y / (Z * Cam.TanHalfFovY)) * (float)H;
             return Z;
         }
-        F3 Shade(F3 Albedo, float Roughness, float Metal, F3 Emission, F3 N, F3 World) const
+        F3 Shade(F3 Albedo, float Roughness, float Metal, F3 Emission, F3 N, F3 World, float SunVisibility = 1.0f) const
         {
-            const float NdotL = std::fmax(0.0f, Dot(N, SunDir));
+            const float NdotL = std::fmax(0.0f, Dot(N, SunDir)) * SunVisibility;
             const float HemiMix = 0.5f + 0.5f * N.Z;
             const F3 Hemi = { 0.26f + 0.24f * HemiMix, 0.27f + 0.26f * HemiMix, 0.30f + 0.34f * HemiMix };
             F3 Out = { Albedo.X * (Hemi.X + SunColour.X * NdotL), Albedo.Y * (Hemi.Y + SunColour.Y * NdotL),
                        Albedo.Z * (Hemi.Z + SunColour.Z * NdotL) };
-            const F3 View = Norm(Cam.Position - World);
+            const F3 ToCamera = Cam.Position - World;
+            const float Distance = Len(ToCamera);
+            const F3 View = ToCamera * (1.0f / std::fmax(Distance, 1e-12f));
             const F3 Half = Norm(View + SunDir);
             const float Exponent = 2.0f + (1.0f - Roughness) * 220.0f;
             const float Spec = std::pow(std::fmax(0.0f, Dot(N, Half)), Exponent) * (0.04f + 0.5f * (1.0f - Roughness));
@@ -252,7 +254,6 @@ namespace
             Out = Out + SpecTint * (Spec * NdotL * 1.2f);
             Out = Out + Emission;
             // Proving-ground haze with distance.
-            const float Distance = Len(World - Cam.Position);
             const float Haze = 1.0f - std::exp(-Distance * 0.0016f);
             const F3 HazeColour = { 0.52f, 0.59f, 0.72f };
             return Out * (1.0f - Haze * 0.55f) + HazeColour * (Haze * 0.55f);
@@ -304,6 +305,7 @@ namespace
         // Planar projected shadow: rasterize onto the stored ground pixels only.
         void ShadowTriangle(F3 P0, F3 P1, F3 P2)
         {
+            if (SunDir.Z <= 1e-4f) return;
             const auto Flatten = [&](F3 P)
             {
                 const float T = P.Z / SunDir.Z;
@@ -329,39 +331,51 @@ namespace
                     if (W0 < 0.0f || W1 < 0.0f || W2 < 0.0f) continue;
                     const size_t Index = (size_t)(H - 1 - Py) * W + Px;
                     if (WorldPos[Index].Z > 0.02f) continue;      // ground pixels only (z == 0)
+                    // 📝 Occlusion removes direct sunlight, not sky fill or distance haze.
+                    const F3 World = WorldPos[Index];
+                    const F3 C = Shade(GroundAlbedo(World), 0.9f, 0.0f, {}, { 0, 0, 1 }, World, 0.0f);
                     float* Out = &Colour[Index * 3];
-                    Out[0] *= 0.42f; Out[1] *= 0.42f; Out[2] *= 0.46f;
-                    WorldPos[Index].Z = 0.03f;                    // darken once
+                    Out[0] = C.X; Out[1] = C.Y; Out[2] = C.Z;
+                    WorldPos[Index].Z = 0.03f;                    // [m] - Mark once, independent of caster overlap
                 }
         }
+        F3 GroundAlbedo(F3 World) const
+        {
+            const float Distance = Len(World - Cam.Position);
+            // 📝 Fade unresolved 2 m cells to their mean; no temporal shimmer at the far horizon.
+            const float Footprint = Distance * (2.0f * Cam.TanHalfFovY / (float)H);
+            const float Contrast = ClampF(1.0f - Footprint, 0.0f, 1.0f);
+            const int CellX = (int)std::floor(World.X * 0.5f);
+            const int CellY = (int)std::floor(World.Y * 0.5f);
+            const float Checker = ((CellX + CellY) & 1) ? 1.0f : -1.0f;
+            const float Grey = 0.210f + 0.045f * Contrast * Checker;
+            return { Grey, Grey, Grey + 0.010f };
+        }
+
         void GroundPlane()
         {
-            // Tiled ground snapped to a world-aligned grid around the camera: the rasterizer drops any
-            // triangle with a vertex behind the camera, so one giant quad can never survive a chase view.
-            const float Tile = 10.0f;
-            const int Ox = (int)std::floor(Cam.Position.X / Tile), Oy = (int)std::floor(Cam.Position.Y / Tile);
-            Material Mat = { { 0.255f, 0.255f, 0.265f }, 0.9f, 0.0f, { 0, 0, 0 } };
-            for (int Ty = Oy - 14; Ty < Oy + 14; ++Ty)
-                for (int Tx = Ox - 14; Tx < Ox + 14; ++Tx)
+            // 📝 Exact ray/plane intersection replaces thousands of overlapping ground triangles.
+            //    It also fixes near-camera holes without adding a shadow map or another pixel buffer.
+            for (int Row = 0; Row < H; ++Row)
+            {
+                const float ScreenY = 1.0f - 2.0f * (Row + 0.5f) / (float)H;
+                const F3 Scan = Cam.Forward + Cam.Up * (ScreenY * Cam.TanHalfFovY);
+                for (int X = 0; X < W; ++X)
                 {
-                    const float X0 = Tx * Tile, Y0 = Ty * Tile;
-                    const F3 A = { X0, Y0, 0 }, B = { X0 + Tile, Y0, 0 }, C = { X0 + Tile, Y0 + Tile, 0 }, D = { X0, Y0 + Tile, 0 };
-                    Triangle(A, B, C, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, Mat, false, { 1, 1, 1 });
-                    Triangle(A, C, D, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, Mat, false, { 1, 1, 1 });
+                    const float ScreenX = 2.0f * (X + 0.5f) / (float)W - 1.0f;
+                    const F3 Ray = Scan + Cam.Right * (ScreenX * Cam.TanHalfFovY * Cam.Aspect);
+                    if (Ray.Z >= -1e-5f || Cam.Position.Z <= 0.0f) continue;
+                    const float Z = -Cam.Position.Z / Ray.Z;
+                    if (Z < 0.05f || Z > 10000.0f) continue;
+                    const F3 World = Cam.Position + Ray * Z;
+                    const size_t Index = (size_t)Row * W + X;
+                    WorldPos[Index] = { World.X, World.Y, 0.0f };
+                    Depth[Index] = Z;
+                    const F3 C = Shade(GroundAlbedo(World), 0.9f, 0.0f, {}, { 0, 0, 1 }, World);
+                    float* Out = &Colour[Index * 3];
+                    Out[0] = C.X; Out[1] = C.Y; Out[2] = C.Z;
                 }
-            // Near-field checker cells (2 m) as thin quads slightly above the plane, world-aligned.
-            const float Z = 0.002f;
-            const int Cx0 = (int)std::floor(Cam.Position.X / 2.0f), Cy0 = (int)std::floor(Cam.Position.Y / 2.0f);
-            for (int CellY = Cy0 - 24; CellY < Cy0 + 24; ++CellY)
-                for (int CellX = Cx0 - 32; CellX < Cx0 + 32; ++CellX)
-                {
-                    if ((CellX + CellY) & 1) continue;
-                    const float X0 = CellX * 2.0f, Y0 = CellY * 2.0f;
-                    Material Cell = { { 0.165f, 0.165f, 0.175f }, 0.9f, 0.0f, { 0, 0, 0 } };
-                    const F3 A = { X0, Y0, Z }, B = { X0 + 2, Y0, Z }, C = { X0 + 2, Y0 + 2, Z }, D = { X0, Y0 + 2, Z };
-                    Triangle(A, B, C, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, Cell, false, { 1, 1, 1 });
-                    Triangle(A, C, D, { 0, 0, 1 }, { 0, 0, 1 }, { 0, 0, 1 }, Cell, false, { 1, 1, 1 });
-                }
+            }
         }
         void Disc(F3 Centre, float RadiusWorld, F3 ColourLinear)
         {
@@ -392,8 +406,11 @@ namespace
             std::vector<uint8_t> Bytes((size_t)W * H * 3);
             for (size_t I = 0; I < Bytes.size(); ++I)
             {
-                const float Tonemapped = Colour[I] / (1.0f + Colour[I]);
-                Bytes[I] = (uint8_t)std::lround(255.0f * ClampF(std::pow(Tonemapped * 1.5f, 1.0f / 2.2f), 0.0f, 1.0f));
+                const float Exposed = std::fmax(0.0f, Colour[I]) * 1.5f;
+                const float Tonemapped = Exposed / (1.0f + Exposed);
+                const float Srgb = Tonemapped <= 0.0031308f ? 12.92f * Tonemapped
+                    : 1.055f * std::pow(Tonemapped, 1.0f / 2.4f) - 0.055f;
+                Bytes[I] = (uint8_t)std::lround(255.0f * ClampF(Srgb, 0.0f, 1.0f));
             }
             std::fwrite(Bytes.data(), 1, Bytes.size(), File);
             std::fclose(File);

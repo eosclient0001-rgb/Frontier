@@ -751,3 +751,18 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
   negative control (`0.9937` floor leak vs `0.6563` accepted), 4/4 CTests, and 5/5 static `VehicleGlazing` PNGs byte-identical.
 - Still open: roughness-mip prior-screen exitance/denoising, unified moving `ControlVehicle` + baked distance-field +
   sun/sky/cloud/fog scene, physical RTX/GTX + Windows/editor integration, legacy half-pole defect and native Jolt dynamics.
+
+## Cheap vehicle rasterization and continuation audit — 2026-10-27
+
+- Continued `arena/2ac8ddab-frontier` at `ae0bb7d` on the active session branch; no branch switch, push or Actions.
+- Fixed missing ignored lunar source: tracked pinned photographic map/licence/provenance, generated PPM in sky runner.
+  Re-ran sky 33/33, environment 73/73 and physics 29/29; all eight sky PNGs unchanged.
+- Cheap exhibit renderer remains Lambert/Blinn: ray/plane ground coverage, distance-faded checker,
+  sunlight-only projected shadows, exposure-before-Reinhard and exact sRGB. No extra pixel buffers or PBR.
+- Focused raster 10/10, same checks under ASan/UBSan; matched 1600×900 CPU medians 125.527→110.153 ms,
+  reciprocal-order repeat 130.674→108.444 ms. No GPU/Windows or general performance guarantee.
+- Independently fetched the supplied previous-project reference: tyre-force, thermal and vehicle JS match local
+  sources byte-for-byte. XPBD remains a newly calibrated approximation with disclosed flat-tyre stiffness error,
+  not a recovered port or measured-tyre validation. Lunar map scientific attribution remains unverified.
+- Actual images, source hashes, commands and remaining limits: [rasterization audit](../Exhibits/VehiclePhysics/RasterizationAudit.md).
+  Sky CPU→GPU integration, self-shadowing, external physical calibration and Windows acceptance remain open.
