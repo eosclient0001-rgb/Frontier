@@ -39,8 +39,8 @@ implements the demo's reduced force model and lacks Project Drive's aligning mom
 | Area | Change | Limit |
 |---|---|---|
 | Atmosphere | Cornette–Shanks aerosol phase, matching the full demo | Multiple scattering still approximate |
-| Flare | Independent warm streak port, mixed with existing blue anamorphic and other components | CPU model only |
-| Sun | Retained limb-darkened erfc disc; corrected claims about blur accuracy | Not a full 2D PSF convolution |
+| Flare | Warm and blue anamorphic streaks mixed with other terms in the opt-in CPU reference effect | Coarse visibility; not GPU |
+| Sun | Limb-darkened finite-pixel disc in the CPU reference renderer | Resolved erfc edge is approximate |
 | Moon | Real 2048 × 1024 demo JPEG retained; runner regenerates PPM | Luna only; licensing needs review |
 | Moon colour | sRGB decoded before interpolation | Not absolute reflectance calibration |
 | Cheap lighting | Lower, cooler hemispherical fill improves surface contrast | Artistic Lambert/Blinn lighting |
@@ -66,13 +66,14 @@ not the new ground fill.
 
 ![Full-demo lunar texture in the production lunar evaluator](../NightSky/Images/MoonClose.png)
 
-![Simultaneous warm streak, anamorphic streak and other optics](../NightSky/Images/SunDiskLensFlare.png)
+![Simultaneous warm streak, anamorphic streak and other optics](../NightSky/Images/SolarReferenceMixed.png)
 
 ## Verification
 
 | Check | Result | Retained evidence |
 |---|---|---|
 | Sky, solar disc, Moon and mixed optics | 41/41 | `../NightSky/Results.txt` |
+| Reference solar pixels and mixed flares | Release and ASan/UBSan pass; flux error ≤ `0.000439` in seven views | `../NightSky/Results/Solar-*.txt` |
 | Environment regression, release | 73/73 | `Results/EnvironmentRegression.txt` |
 | Environment ASan + UBSan | 73/73, no diagnostics | `Results/EnvironmentSanitized.txt` |
 | Existing production vehicle/Jolt suite | 29/29 | `Results.txt` |
@@ -155,6 +156,8 @@ _ClaudeScratch/venv/bin/python Exhibits/VehiclePhysics/Code/AssembleRasterCompar
 node --test Experimental/VehicleHmiReference/Tools/VolumetricTyrePhysics.test.mjs
 node Exhibits/VehiclePhysics/Code/ReferenceTyreAudit.mjs
 PYTHON="$PWD/_ClaudeScratch/venv/bin/python" bash Exhibits/NightSky/RunNightSky.sh
+CMAKE=cmake bash Exhibits/NightSky/RunSolarValidation.sh
+CMAKE=cmake SANITIZE=1 bash Exhibits/NightSky/RunSolarValidation.sh
 cmake -S Exhibits/EnvironmentPipeline -B _ClaudeScratch/build/environment -DCMAKE_BUILD_TYPE=Release
 cmake --build _ClaudeScratch/build/environment -j2
 _ClaudeScratch/build/environment/EnvironmentPipelineValidation

@@ -5,10 +5,11 @@ EngineUpdate establishes documentation, audits inherited violations, and repairs
 
 ## Current VehicleHMI continuation
 
-The earlier branch `arena/2ac8ddab-frontier` is continued on `arena/2711375f-frontier`.
+The earlier branch `arena/2ac8ddab-frontier` is continued on `arena/672a179a-frontier`.
 See [source audit, renderer comparison and executed checks](Exhibits/VehiclePhysics/Continuation.md).
-The full reference was recovered: Moon texture, mixed flare components and the missing tyre sources are present.
-The 84-particle C++ lattice is not the full demo's 160-particle XPBD port; that parity work remains open.
+The actual demo Moon texture, mixed flares and selectable XPBD/solid tyre shapes are retained and tested.
+Project Drive's vehicle core is separately available, but is not wired into the editor or a Jolt host. Long-impact
+parity and validation against measured tyres, vehicles, sky and lens data remain open.
 
 ## Start here
 

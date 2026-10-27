@@ -2,6 +2,19 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## VehicleHMI, Project Drive and finite-pixel Sun continuation — 2026-10-27
+
+- Demo 160-particle XPBD and Hex8 solid deformation modes are ported with controlled JavaScript comparisons;
+  spring carries chassis loads. The 720-step extended impact diverges after step 645; cause unknown. Shell is unported.
+- Project Drive at `3f14808` is imported separately: six units preprocess identically and source/import traces match.
+  The visual-only demo-tyre bridge passes a mock host; no editor/Jolt integration or measured-vehicle validation.
+- The CPU reference renderer now uses finite-pixel solar filtering and an opt-in mixed-flare layer, with full
+  mesh/planet occlusion checks. Seven-camera flux error ≤ `0.000439`; normal and ASan/UBSan results pass.
+- [Evidence, capture and limitations](../Exhibits/NightSky/README.md); [vehicle evidence](../Exhibits/VehiclePhysics/Continuation.md).
+  No physical lens/sky/tyre calibration, complete GI/ReSTIR, GPU execution or Windows/editor claim. Partial solar
+  clipping at the planet limb, subpixel occlusion, Moon integration in the reference renderer and Moon-map licence remain open.
+- This entry supersedes the stale XPBD/solar status in the earlier 2026-10-27 entry below.
+
 ## Sun disc, lens-flare optics, measured Moon — 2026-10-26
 
 - `LensFlareModel` radiance layer: limb-darkened sun disc (flux 1.00001 vs analytic), aperture

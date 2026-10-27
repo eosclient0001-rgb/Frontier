@@ -25,6 +25,7 @@
 #include "DistanceField.h"
 #include "FogMedium.h"
 #include "LightInfluenceSpace.h"
+#include "LensFlareModel.h"
 #include "SurfaceCards.h"
 #include "TriangleDistanceVolume.h"
 #include "TriangleVisibilitySpace.h"
@@ -128,6 +129,12 @@ struct ReferenceRenderSettings
     AtmosphereParameters Atmosphere{};
     SpatialVector        SunDirection{0.0, 0.0, 1.0};   // toward the sun (world)
     SpectrumRgb          SunIrradiance{20.0, 20.0, 20.0};
+    bool                 SunDiscEnabled = true;
+    SunDiscProfile       SunDisc{}; // EdgeBlurRad is a minimum; the pixel footprint may require more blur.
+    bool                 LensFlaresEnabled = false; // Explicit opt-in; applied over geometry after compositing.
+    FlareOpticsProfile   LensFlares = [] {
+        FlareOpticsProfile P; P.StreakStrength = 0.35; P.StreakAngleRad = -0.18; return P;
+    }();
     bool                 CloudsEnabled = false;
     CloudParameters      Clouds{};
     double               CloudSunScale = 0.06;   // couples march radiance into frame units

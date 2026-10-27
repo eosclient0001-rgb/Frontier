@@ -7,6 +7,7 @@
 
 #include "DiscrepancySequence.h"
 #include "ReservoirSampling.h"
+#include "SolarDiscFilter.h"
 #include "VarianceFiltering.h"
 #include "Engine/Foundation/DeterministicRandom.h"
 #include "Engine/Foundation/Math.h"
@@ -804,9 +805,62 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
 
     // --- Sky (computed once) ------------------------------------------------------------------------------
     std::vector<SpectrumRgb> Sky(PixelCount, SpectrumRgb{});
+    const SpatialVector SunDirection = Normalised(Settings.SunDirection);
+    const double SunDepth = Dot(SunDirection, Camera.Forward);
+    double SunU = 0.0, SunV = 0.0, SolarScaleX = 0.0, SolarScaleY = 0.0, SolarShear = 0.0;
+    double SolarPixelWidth = 0.0, SolarPixelHeight = 0.0, SunVisibility = 0.0;
+    const double PlanetRadius = Settings.Atmosphere.GroundRadiusKm;
+    const double ViewingRadius = PlanetRadius + AltitudeKm;
+    const double PlanetEdgeCos = ViewingRadius > 0.0
+        ? -std::sqrt(std::max(0.0, 1.0 - (PlanetRadius/ViewingRadius)*(PlanetRadius/ViewingRadius))) : 0.0;
+    // TransmittanceToTop integrates only as far as the planet, so it must not make a fully hidden Sun visible.
+    // Partial clipping/refraction at the planet edge remains outside this approximation.
+    const bool PlanetBlocksSun = std::asin(std::clamp(SunDirection.Z, -1.0, 1.0)) +
+                                 std::max(0.0, Settings.SunDisc.AngularRadiusRad) <= std::asin(PlanetEdgeCos);
+    SpectrumRgb SunAtCamera{};
+    if (Settings.AtmosphereEnabled && !PlanetBlocksSun && SunDepth > 1e-6 && TanY > 0.0 && TanX > 0.0)
+    {
+        SunU = Dot(SunDirection, Camera.Right) / SunDepth;
+        SunV = Dot(SunDirection, Camera.Up) / SunDepth;
+        // Local tangent metric; the small pixel shear is ignored by the rectangular PSF integral.
+        const SpatialVector Right = Normalised(Sub(Camera.Right, Mul(SunDirection, Dot(Camera.Right, SunDirection))));
+        const SpatialVector Up = Normalised(Sub(Sub(Camera.Up, Mul(SunDirection, Dot(Camera.Up, SunDirection))),
+                                                  Mul(Right, Dot(Camera.Up, Right))));
+        SolarScaleX = SunDepth * Dot(Camera.Right, Right);
+        SolarScaleY = SunDepth * Dot(Camera.Up, Up);
+        SolarShear = SunDepth * Dot(Camera.Up, Right);
+        SolarPixelWidth = 2.0 * TanX * SolarScaleX / W;
+        SolarPixelHeight = 2.0 * TanY * SolarScaleY / H;
+        const SpectrumRgb T = AtmosphereLut_.Sample(Settings.Atmosphere, Settings.Atmosphere.GroundRadiusKm + AltitudeKm,
+                                                     std::clamp(SunDirection.Z, -1.0, 1.0));
+        SunAtCamera = {Settings.SunIrradiance.R*T.R, Settings.SunIrradiance.G*T.G, Settings.SunIrradiance.B*T.B};
+        if (Settings.LensFlaresEnabled && SolarPixelWidth > 0.0 && SolarPixelHeight > 0.0)
+        {
+            // Visibility is a coarse screen-space disc sample; this is not a subpixel geometry or optical-occlusion solve.
+            int Samples = 0, Visible = 0;
+            for (int Y = -2; Y <= 2; ++Y) for (int X = -2; X <= 2; ++X)
+            {
+                if (X*X+Y*Y > 4) continue;
+                const double U = SunU + 0.5 * X * Settings.SunDisc.AngularRadiusRad / SolarScaleX;
+                const double V = SunV + 0.5 * Y * Settings.SunDisc.AngularRadiusRad / SolarScaleY;
+                const int PX = static_cast<int>(std::floor((U/TanX + 1.0)*0.5*W));
+                const int PY = static_cast<int>(std::floor((1.0 - V/TanY)*0.5*H));
+                ++Samples;
+                if (PX >= 0 && PY >= 0 && PX < static_cast<int>(W) && PY < static_cast<int>(H) &&
+                    !HitMask[static_cast<size_t>(PY)*W+PX]) ++Visible;
+            }
+            SunVisibility = Samples ? static_cast<double>(Visible) / Samples : 0.0;
+            if (SunVisibility > 0.0 && Settings.CloudsEnabled)
+                SunVisibility *= MarchClouds(Settings.Clouds, Camera.Position, SunDirection, SunDirection,
+                    MulRgb(Settings.SunIrradiance, Settings.CloudSunScale), 30000.0, 40, 4).Transmittance;
+        }
+    }
+    SunDiscProfile PixelProfile = Settings.SunDisc;
+    if (SolarPixelWidth > 0.0 && SolarPixelHeight > 0.0)
+        PixelProfile.EdgeBlurRad = std::max(PixelProfile.EdgeBlurRad, 0.6 * std::sqrt(SolarPixelWidth*SolarPixelHeight));
+    const SolarDiscPixelFilter SolarFilter(PixelProfile);
     if (Settings.AtmosphereEnabled)
     {
-        const double CosSunDisc = std::cos(0.00465);
         for (uint32_t Y = 0; Y < H; ++Y)
         {
             for (uint32_t X = 0; X < W; ++X)
@@ -822,15 +876,11 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
                                                          Mul(Camera.Up, NdcY * TanY)));
                 SpectrumRgb Value = SingleScattering(Settings.Atmosphere, PlanetObserver, Dir, Settings.SunDirection,
                                                      Settings.SunIrradiance, &AtmosphereLut_, 24);
-                const double CosSun = Dot(Dir, Settings.SunDirection);
-                if (CosSun > CosSunDisc)
+                if (Settings.SunDiscEnabled && SunDepth > 1e-6 && SolarPixelWidth > 0.0 && SolarPixelHeight > 0.0)
                 {
-                    const double RadiusKm = Settings.Atmosphere.GroundRadiusKm + AltitudeKm;
-                    const SpectrumRgb T = AtmosphereLut_.Sample(Settings.Atmosphere, RadiusKm,
-                                                                std::clamp(Dir.Z, -1.0, 1.0));
-                    const SpectrumRgb Disc{Settings.SunIrradiance.R * T.R * 40.0, Settings.SunIrradiance.G * T.G * 40.0,
-                                           Settings.SunIrradiance.B * T.B * 40.0};
-                    Value = AddRgb(Value, Disc);
+                    const double Du = NdcX*TanX - SunU, Dv = NdcY*TanY - SunV;
+                    const double Dx = Du*SolarScaleX + Dv*SolarShear, Dy = Dv*SolarScaleY;
+                    Value = AddRgb(Value, SolarFilter.Evaluate(Dx, Dy, SolarPixelWidth, SolarPixelHeight, SunAtCamera));
                 }
                 if (Settings.CloudsEnabled && Dir.Z > -0.05)
                 {
@@ -893,6 +943,15 @@ ReferenceImage ReferenceRenderer::Render(const CullCamera& Camera, const Referen
             const double T = FogTransmittance(Settings.Fog, Camera.Position,
                                               Distance > 0 ? Mul(Delta, 1.0 / Distance) : Camera.Forward, Distance);
             Value = ApplyFog(Settings.Fog, Value, T);
+        }
+        if (Settings.LensFlaresEnabled && SunVisibility > 0.0)
+        {
+            const uint32_t X = static_cast<uint32_t>(P % W), Y = static_cast<uint32_t>(P / W);
+            const double ScreenX = (static_cast<double>(X) + 0.5 - 0.5*W) / (0.5*H);
+            const double ScreenY = (0.5*H - static_cast<double>(Y) - 0.5) / (0.5*H);
+            const auto Flare = EvaluateLensFlareRadiance(ScreenX, ScreenY, SunU/TanY, SunV/TanY,
+                                                        SunAtCamera, SunVisibility, Settings.LensFlares);
+            Value = AddRgb(Value, Flare);
         }
         Image.Pixels[P] = Value;
         LuminanceSum += Luminance(Value);
