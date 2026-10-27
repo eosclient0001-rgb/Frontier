@@ -35,8 +35,11 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   Previous modes remain default and their readbacks match the prior shader. A separate 128-batch seed repeat
   investigates an unusually low 24-batch uniform result; the repeat approaches the independent area integral,
   but independence and monotonic convergence are unproven. Physical-GPU/editor integration, equal-time
-  performance, general motion and general unbiasedness remain open.
-  [Mixture evidence](../Exhibits/LightCompute/ReplayFacetMixture.md).
+  performance, general motion and general unbiasedness remain open. Four settled and three first-transition
+  SwiftShader readbacks now show the mixture through camera, object, source and blocker changes; release and
+  sanitized-host decoded RGB hashes agree. The prior full-gallery recapture was stopped, not passed.
+  [Mixture evidence](../Exhibits/LightCompute/ReplayFacetMixture.md),
+  [readbacks](../Exhibits/LightCompute/ReplayFacetMixtureCaptures.md).
 - Optional area/luminance-weighted emissive-facet replay now uses the shared Engine CDF and matching MIS
   probabilities; proposal, source-power and blocker changes retrace capped history. Independent area and
   four-hit room references pass on SwiftShader, while default-off cosine/GGX readbacks remain bit-identical.

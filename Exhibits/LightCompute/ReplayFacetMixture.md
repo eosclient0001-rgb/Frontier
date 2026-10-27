@@ -86,8 +86,9 @@ shader are not instrumented.
 The current approach fully retraces random sequences through a bounded opaque triangle scene.
 Analytic-light GI, heterogeneous media, general materials and deforming motion, scalable history,
 production/editor submission, physical-GPU verification, equal-time performance and a general
-unbiasedness proof remain open. See the [previous power-weighted counterexample](ReplayFacetPower.md)
-and [prior rendered motion gallery](RoughTextureReplayCaptures.md).
+unbiasedness proof remain open. See the [previous power-weighted counterexample](ReplayFacetPower.md),
+the [mixture motion readbacks](ReplayFacetMixtureCaptures.md) and the
+[prior rendered motion gallery](RoughTextureReplayCaptures.md).
 
 ## Reproduce
 

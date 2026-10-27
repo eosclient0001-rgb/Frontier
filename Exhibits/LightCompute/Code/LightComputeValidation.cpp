@@ -1613,6 +1613,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayFacetMixtureValidation.h"
 #include "ReplayFacetMixtureSpectrumValidation.h"
 #include "ReplayFacetMixtureConvergenceValidation.h"
+#include "ReplayFacetMixtureCapture.h"
 #include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
 } // namespace
@@ -1684,6 +1685,11 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--rough-texture-motion")
         {
             ValidateRoughTextureMotion(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-mixture")
+        {
+            CaptureReplayFacetMixture(Arguments[1], Arguments[2], Arguments[4]);
             return 0;
         }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-rough-texture")
