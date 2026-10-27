@@ -1664,11 +1664,17 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayTextureValidation.h"
 #include "ReplayTextureRoomValidation.h"
 #include "ReplayTextureCapture.h"
+#include "ReplayTextureMotionValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-texture-motion")
+        {
+            ValidateReplayTextureMotion(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-texture")
         {
             CaptureReplayTexture(Arguments[1], Arguments[2], Arguments[4]);

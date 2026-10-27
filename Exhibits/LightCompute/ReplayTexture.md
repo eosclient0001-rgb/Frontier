@@ -75,7 +75,8 @@ SANITIZE=1 bash Exhibits/LightCompute/RunReplayTextureRoom.sh
 [Four-hit release](Results/ReplayTextureRoom-release.txt) ·
 [four-hit sanitized host](Results/ReplayTextureRoom-sanitized.txt) ·
 [texture, diffuse and balanced regressions](Results/ReplayTextureRoom-regression.txt) ·
-[four settled and three first-transition captures](ReplayTextureCaptures.md).
+[four settled and three first-transition captures](ReplayTextureCaptures.md) ·
+[independent textured camera, rigid-motion and blocker reference](ReplayTextureMotion.md).
 
 ```bash
 bash Exhibits/LightCompute/RunReplayTexture.sh
