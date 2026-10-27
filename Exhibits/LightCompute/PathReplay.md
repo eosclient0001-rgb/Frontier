@@ -56,6 +56,17 @@ spatial candidate requires another full path trace, and scene-change checks copy
 real-time or hardware-GPU claim is made. Release and sanitized-host checks pass; the external Vulkan driver
 is not sanitizer-instrumented.
 
+The rendered 24-triangle room also has an independent **double-precision CPU Monte Carlo** reference: it uses
+brute-force Möller–Trumbore intersections, a different cosine basis and `mt19937_64`, rather than the GPU BVH
+and RNG. Three reference cases each used 400,000 paths; 16 Vulkan batches supplied 16,384 sampled centres per
+case. All RGB channels passed the specified six-combined-SE-plus-tolerance test for one-hit open, four-hit open,
+four-hit blocked fresh, and four-hit blocked after temporal/spatial reuse. For example, blocked/reused red was
+`0.025697 ± 0.000633` batch SE versus CPU `0.027512 ± 0.000438` SE. The GPU pixel and batch standard errors
+are both recorded; independence and finite-sample tails remain assumptions. Both implementations deliberately
+share the same diffuse scene, ray offset and transport model, so this is an independent implementation check,
+not measured real-world ground truth. [Release](Results/ReplayRoomReference-release.txt) ·
+[sanitized host](Results/ReplayRoomReference-sanitized.txt).
+
 This does **not** yet handle general materials, direct analytic lights, textured geometry, refraction, volumes,
 arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,
 not the retained demo's endpoint-reconnection algorithm, and rare-event variance may be large. Four noisy
@@ -69,6 +80,8 @@ bash Exhibits/LightCompute/RunPathDomainSupportAudit.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunPathDomainSupportAudit.sh
 bash Exhibits/LightCompute/RunPathReplayGpu.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunPathReplayGpu.sh
+bash Exhibits/LightCompute/RunReplayRoomReference.sh
+SANITIZE=1 bash Exhibits/LightCompute/RunReplayRoomReference.sh
 ```
 
 [Release output](Results/PathDomainSupport-release.txt) · [sanitized output](Results/PathDomainSupport-sanitized.txt)

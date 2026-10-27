@@ -21,6 +21,7 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <random>
 #include <vulkan/vulkan.h>
 #ifdef _WIN32
 #define NOMINMAX
@@ -1607,11 +1608,17 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "RectangleReconnectionGpuValidation.h"
 #include "PathReplayCapture.h"
 #include "PathReplayGpuValidation.h"
+#include "ReplayRoomReference.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-room-reference")
+        {
+            ValidateReplayRoomReference(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-path-replay")
         {
             CaptureReplayRooms(Arguments[1], Arguments[2], Arguments[4]);
