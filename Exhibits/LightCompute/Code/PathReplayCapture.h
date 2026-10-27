@@ -75,8 +75,8 @@ LightComputeArchive ReplayRoom(float BlockShift)
 }
 struct ReplayCaptureResult
 {
-    std::vector<std::array<float,4>> Pixels;
-    std::vector<LightComputeReceiver> Guides;
+    std::vector<std::array<float,4>> Pixels, FirstPixels;
+    std::vector<LightComputeReceiver> Guides, FirstGuides;
     double WholeMean = 0, FloorMean = 0;
     uint32_t Accepted = 0, SpatialLinks = 0, HistoryCap = 0;
     bool Reset = false;
@@ -84,7 +84,8 @@ struct ReplayCaptureResult
 ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const LightComputeArchive& Scene,
                                            uint32_t Hits, uint32_t FirstSeed, bool Reset, uint32_t Frames,
                                            bool SampleFacets = false, const LightComputeArchive* Following = nullptr,
-                                           bool BalanceSampling = false)
+                                           bool BalanceSampling = false, bool TexturedDiffuse = false,
+                                           bool CaptureFirst = false)
 {
     Require(Frames >= 2 && (!Following || (Following->Width == Scene.Width && Following->Height == Scene.Height &&
                 Following->Receivers.size() == Scene.Receivers.size())), "Invalid replay capture sequence extent");
@@ -96,12 +97,18 @@ ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const
         const auto& FrameScene = Frame > 0 && Following ? *Following : Scene;
         const auto Pixels = Compute.ExecuteReplay(FrameScene, Hits, FirstSeed + Frame * 7919u, true, true,
                                                    Reset && Frame == 0, {.025f,.025f,.025f}, .01f, true,
-                                                   false, false, SampleFacets, false, false, 64, BalanceSampling);
+                                                   false, false, SampleFacets, false, false, 64, BalanceSampling,
+                                                   TexturedDiffuse);
         const auto Counters = Compute.ExtendedStatistics();
         if (Frame == 0)
         {
             Result.Accepted = Counters[20]; Result.SpatialLinks = Counters[22];
             Result.Reset = Compute.ReplayLastReset; Result.HistoryCap = Compute.ReplayLastHistoryCap;
+            if (CaptureFirst)
+            {
+                Result.FirstPixels = Pixels;
+                Result.FirstGuides = Compute.PrimaryReceivers();
+            }
         }
         if (Frame >= Frames / 2)
         {
@@ -133,7 +140,8 @@ ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const
     return Result;
 }
 // Small geometry-guided linear-RGB blur for display only. It is not used by any numerical validation.
-std::vector<std::array<float,4>> FilterReplayPreview(const ReplayCaptureResult& Image, uint32_t Width, uint32_t Height)
+std::vector<std::array<float,4>> FilterReplayPreview(const ReplayCaptureResult& Image, uint32_t Width, uint32_t Height,
+                                                     bool RespectAlbedo = false)
 {
     std::vector<std::array<float,4>> Filtered = Image.Pixels;
     constexpr int Radius = 4;
@@ -158,6 +166,9 @@ std::vector<std::array<float,4>> FilterReplayPreview(const ReplayCaptureResult& 
                                        Centre.NormalRoughness[2]*Other.NormalRoughness[2];
                     if (Other.PositionHit[3] == 0 || Centre.MotionPositionToken[3] != Other.MotionPositionToken[3] ||
                         Dot < .99) continue;
+                    if (RespectAlbedo && (std::abs(Centre.AlbedoIor[0]-Other.AlbedoIor[0]) > .12f ||
+                                          std::abs(Centre.AlbedoIor[1]-Other.AlbedoIor[1]) > .12f ||
+                                          std::abs(Centre.AlbedoIor[2]-Other.AlbedoIor[2]) > .12f)) continue;
                     const double Weight = std::exp(-double(DX*DX + DY*DY) / (2*SigmaSquared));
                     for (uint32_t C = 0; C < 3; ++C) Total[C] += Weight * Image.Pixels[Near][C];
                     Sum += Weight;

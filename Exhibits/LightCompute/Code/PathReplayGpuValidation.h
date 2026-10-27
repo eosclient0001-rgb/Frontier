@@ -257,7 +257,13 @@ void ValidatePathReplayGpu(const char* Driver, const std::string& Shaders)
     Require(Preview[0][0] > 1 && Preview[0][0] < 3 && Preview[1][0] > 1 && Preview[1][0] < 3 &&
                 Preview[2][2] == 3 && Preview[2][0] == 0 && Preview[3][1] == 1,
             "Display filter mixed surface tokens or missed its smoothing range");
-    std::printf("REPLAY_PREVIEW_FILTER same_surface_smoothed=1 cross_surface_rejected=1 background_preserved=1\n");
+    PreviewFixture.Guides[0].AlbedoIor = {1,0,0,1};
+    PreviewFixture.Guides[1].AlbedoIor = {0,0,1,1};
+    const auto AlbedoPreview = FilterReplayPreview(PreviewFixture, 4, 1, true);
+    Require(AlbedoPreview[0][0] == 1 && AlbedoPreview[1][0] == 3,
+            "Texture preview blurred across a large albedo edge");
+    std::printf("REPLAY_PREVIEW_FILTER same_surface_smoothed=1 cross_surface_rejected=1 "
+                "background_preserved=1 albedo_edge_rejected=1\n");
     std::printf("PASS bounded diffuse replay with moving occluder; general materials and production frame remain open\n");
 }
 } // namespace

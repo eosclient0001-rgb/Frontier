@@ -6,7 +6,8 @@ camera strikes already use the same `ApplyRayMaterial` path. The replay estimato
 
 ## Bounded domain
 
-- One opaque, non-metallic, uncoated stratum with a power-of-two RGB albedo pyramid, up to 1,024 texels per side.
+- One opaque, non-metallic, full-coverage stratum with roughness coefficient `1` and a power-of-two RGB albedo
+  pyramid, up to 1,024 texels per side. Replay uses Lambertian response, not authored specular or sheen terms.
 - Float atlas material and mip spans, finite `[0,1]` texels, finite bounded UVs/mapping and triangle/BVH XYZ are
   checked before submission. Textured vertices keep UVs in the `.w` channels, which need not equal BVH padding.
 - The camera and triangle coordinates are bounded; primary cameras must have finite orthonormal current and
@@ -68,8 +69,8 @@ SANITIZE=1 bash Exhibits/LightCompute/RunReplayTextureRoom.sh
 
 [Four-hit release](Results/ReplayTextureRoom-release.txt) ·
 [four-hit sanitized host](Results/ReplayTextureRoom-sanitized.txt) ·
-[texture, diffuse and balanced regressions](Results/ReplayTextureRoom-regression.txt). Multiple textured room
-captures remain to be verified.
+[texture, diffuse and balanced regressions](Results/ReplayTextureRoom-regression.txt) ·
+[four settled and three first-transition captures](ReplayTextureCaptures.md).
 
 ```bash
 bash Exhibits/LightCompute/RunReplayTexture.sh
