@@ -21,13 +21,48 @@ more because every reused seed must be retraced in the current scene.
 
 The finite enumeration assumes uniform independent input draws, independent weighted selections, fixed
 counts and a positive target. It is **not** proof of random-generator independence, unbiasedness under all
-adaptive reuse, a Vulkan implementation, an efficient renderer, or full ReSTIR GI. GPU tests, dynamic
-occluders, multibounce transport, material coverage, production integration and multiple actual renders
-remain to be implemented and verified.
+adaptive reuse, or full ReSTIR GI.
+
+## Bounded Vulkan implementation
+
+`PathReplayReservoir.slang` now runs the replay idea through the LightCompute Vulkan host. It traces opaque,
+untextured Lambertian triangles against the current BVH, up to eight hits, with two-sided constant facet
+radiance and an optional uniform environment. Temporal candidates use the supplied prior-pixel/position/token
+guide; spatial candidates may originate on different surfaces. Each reused seed is fully retraced through the
+**current** scene, including its occluders, rather than carrying a stale visibility result. Pre-spatial
+reservoirs are retained; the selection floor is positive (`0.01` in the tests), and the history count is
+bounded. A changed source, blocker, receiver or bounce budget can therefore be replayed without blindly
+copying the old radiance. The host rejects corrupt BVHs, zero selection floor, metallic and textured facets.
+
+| SwiftShader CPU Vulkan fixture | Independent target | Reused result |
+|---|---:|---:|
+| Fully blocked → half visible emitter | 0.1199091 | 0.1266262 ± 0.0046767 SE |
+| Moving receiver + blocker + spatial donors | 0.0178338 | 0.0173774 ± 0.0013387 SE |
+| Dark emitter → lit emitter | 0.1199091 | 0.1218184 ± 0.0045712 SE |
+| Revealed two-hit parallel-plane path | approximately 0.5 | 0.49999985 |
+| Four-hit reflective parallel planes | approximately 0.625 | 0.625 |
+
+Each statistical case uses 4,096 centre samples across four seeds; SE is the sample standard deviation divided
+by √4,096 and assumes independent centres. The first area integral converges within `6.86e-8` between 500²
+and 1,000² midpoint grids. Moving an occluder into the path returned exactly zero in the tested fixture.
+A coloured two-hit case matched `(0.5, 0.25, 0.125)`. The disocclusion example reduced standard deviation by
+only about 5% versus fresh sampling; it is not a general performance improvement. Every spatial candidate
+requires another full path trace, and no real-time or hardware-GPU claim is made. Release and sanitized-host
+checks pass; the external Vulkan driver is not sanitizer-instrumented.
+
+This does **not** yet handle general materials, direct analytic lights, textured geometry, refraction, volumes,
+arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,
+not the retained demo's endpoint-reconnection algorithm, and rare-event variance may be large. Multiple
+actual render captures are still pending.
+
+[Release Vulkan output](Results/PathReplay-vulkan-release.txt) ·
+[sanitized Vulkan output](Results/PathReplay-vulkan-sanitized.txt)
 
 ```bash
 bash Exhibits/LightCompute/RunPathDomainSupportAudit.sh
 SANITIZE=1 bash Exhibits/LightCompute/RunPathDomainSupportAudit.sh
+bash Exhibits/LightCompute/RunPathReplayGpu.sh
+SANITIZE=1 bash Exhibits/LightCompute/RunPathReplayGpu.sh
 ```
 
 [Release output](Results/PathDomainSupport-release.txt) · [sanitized output](Results/PathDomainSupport-sanitized.txt)

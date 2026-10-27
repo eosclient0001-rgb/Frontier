@@ -4,10 +4,13 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 ## Dynamic path reuse continuation — 2026-10-27
 
-- A finite-domain exhaustive audit exposes the missing-support bias when previously dark paths become visible.
-  A positive selection floor recovers the exact toy mean when random-number-domain paths are replayed. This is
-  a mathematical prerequisite only: GPU execution, general occlusion, multibounce integration and multiple
-  render validations are still open. [Audit and scope](../Exhibits/LightCompute/PathReplay.md).
+- A finite-domain audit exposes missing-support bias when previously dark paths become visible. A positive
+  selection floor recovers the exact toy mean when random-number-domain paths are replayed.
+- An isolated SwiftShader Vulkan experiment now retraces temporal and spatial reservoir seeds in the current
+  opaque diffuse triangle scene. Moving-occluder, source, receiver and bounce-budget fixtures match independent
+  area integrals or bounded plane results through four hits; changed visibility is recomputed. This is not the
+  demo's geometric reconnection and does not integrate general materials or a production/editor frame. Multiple
+  render captures are still pending. [Audit and scope](../Exhibits/LightCompute/PathReplay.md).
 
 ## Vulkan solar optics and GI audit — 2026-10-27
 
