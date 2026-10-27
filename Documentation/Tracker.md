@@ -2,6 +2,18 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Vulkan solar optics and GI audit — 2026-10-27
+
+- Opt-in finite-pixel Sun and mixed warm/anamorphic flares execute in the LightCompute Vulkan validation
+  host, with limb-weighted opaque triangle and geometric-horizon visibility. SwiftShader readbacks pass flux,
+  Cartesian integration and partial-occlusion checks. The editor remains unconnected; no physical GPU,
+  Windows, real-time, Moon masking, per-ray clouds/fog or measured-lens calibration is claimed.
+- An on-axis sensor-FWHM conversion accepts supplied measurements; the checked sensor example is synthetic.
+  NASA's mean solar diameter checks angular size only. [Detailed scope and results](../Exhibits/LightCompute/SolarOpticsAndReuse.md).
+- Full ReSTIR GI, dynamic endpoint carry, general spatial reconnection and multibounce remain unfinished.
+  An independent area-integral audit exposes a retained-demo temporal shift without its required Jacobian;
+  it is not WGSL execution or a completed GI fix.
+
 ## Reference daylight and lunar bounce continuation — 2026-10-27
 
 - Opt-in CPU reference-renderer surface Sun now follows atmospheric extinction and planet/triangle visibility;

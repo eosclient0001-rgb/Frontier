@@ -11,10 +11,9 @@
 // 📝 Radiance layer (2026-10-26): limb-darkened solar disc with a Gaussian-blurred analytic limb,
 //    aperture-shaped ghosts with coating tints and rim fringing, diffraction starburst, anamorphic
 //    streak, centre halo ring, two-lobe glow and veiling glare. Every term is linear in the sun's
-//    disc-integrated irradiance at the lens and in the caller's disc visibility, so occlusion and
-//    exposure stay physical. Screen coordinates are height-normalised (half the frame height = 1),
-//    matching the ghost table below. The local SlateReference copy lacks flare code; the full VehicleHMI reference has it. This is
-//    the measured-optics formulation the ghost table was always the placement half of.
+//    disc-integrated irradiance at the lens and in the caller's disc visibility. Screen coordinates
+//    are height-normalised (half the frame height = 1), matching the ghost table. The coefficients and
+//    profiles are parametric approximations, not a measurement or energy-calibrated lens model.
 
 #pragma once
 
@@ -397,8 +396,7 @@ inline constexpr std::array<FlareGhostAppearance, 6> DefaultFlareGhostAppearance
                         (0.50 * std::exp(-(Rho / 0.035) * (Rho / 0.035)) + 0.025 * std::exp(-(Rho / 0.30) * (Rho / 0.30)));
     Out = AddRgb(Out, ScaleRgb(DiscIrradiance, Glow * V));
     // Veiling glare: a near-uniform wash, slightly stronger toward the sun's side of the frame.
-    // 📝 Coated-optics scale (~0.5–1% of the disc irradiance): stronger values erase sky contrast
-    //    wholesale, as the exhibit's first calibrated render demonstrated.
+    // 📝 This scale is artistic and uncalibrated; stronger values can erase sky contrast wholesale.
     const double Veil = Profile.VeilingStrength * (0.004 + 0.008 * std::exp(-(Rho / 1.2) * (Rho / 1.2)));
     Out = AddRgb(Out, ScaleRgb(DiscIrradiance, Veil * V));
     // Halo: ring centred on the sun's antipode (−SunX, −SunY) with radius |Sun|, passing through the

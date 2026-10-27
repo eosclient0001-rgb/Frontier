@@ -8,7 +8,7 @@ find_path(VulkanHeaders vulkan/vulkan.h
     REQUIRED)
 set(Sources)
 foreach(Name ClusterNesting VisibilityCull DiscrepancySequence ReservoirSampling VarianceFiltering
-             DistanceField SurfaceCards AtmosphereModel CloudField FogMedium ReferenceRenderer)
+             DistanceField SurfaceCards AtmosphereModel CelestialModel CloudField FogMedium ReferenceRenderer)
     list(APPEND Sources "${Root}/Frontier/Engine/Rendering/${Name}.cpp")
 endforeach()
 foreach(Name LogRingStore LogCategories LogStream)

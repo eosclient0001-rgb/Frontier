@@ -43,6 +43,10 @@ struct ComputeExtent
 [[vk::binding(7, 0)]] RWStructuredBuffer<uint> Counters;
 [[vk::push_constant]] ConstantBuffer<ComputeExtent> Extent;
 
+// Shared tail: solar visibility samples followed by previous direct receiver views.
+static const uint SolarSourceSampleCount = 1536u;
+uint DirectTemporalDomainStart() { return Extent.Dimensions.x * 24u + 13889u + SolarSourceSampleCount; }
+
 float3 Unit(float3 P)
 {
     float Squared = dot(P, P);
@@ -1568,3 +1572,5 @@ float3 SampleFogFacet(float3 At, float3 ViewDirection, inout uint Bits)
     float3 Condensed = CoverageSum > 1e-6 ? WeightedSum / CoverageSum : float3(0);
     OutputColour[DestinationOffset + Texel] = float4(Condensed, CoverageSum * .25);
 }
+
+#include "SolarOptics.slang"

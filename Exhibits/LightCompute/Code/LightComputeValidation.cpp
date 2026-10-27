@@ -6,6 +6,8 @@
 
 #define VK_NO_PROTOTYPES
 #include "LightComputeFormat.h"
+#include "Engine/Rendering/SolarOpticsPayload.h"
+#include "Engine/Rendering/SolarDiscFilter.h"
 #include "Engine/Render/MaterialPreviewGeometry.h"
 #include "Engine/Render/ScatteringSequence.h"
 #include "Engine/Render/PaneThickness.h"
@@ -235,6 +237,7 @@ struct LightComputeSubmission
     std::array<VkPipeline, 4> HistoryPipelines{};
     std::array<VkPipeline, 3> TransportReconstruction{};
     VkPipeline CloudPipeline = VK_NULL_HANDLE, FogPipeline = VK_NULL_HANDLE, ExitancePyramidPipeline = VK_NULL_HANDLE;
+    VkPipeline SolarVisibilityPipeline = VK_NULL_HANDLE, SolarOpticsPipeline = VK_NULL_HANDLE;
     bool TransportHistoryValid = false, TransportDirty = true;
     bool TransportGeometryRevision = true, RigidMotionHistory = false;
     bool PriorExitanceReady = false, IgnoreLightingRevisionForPriorExitance = false, RigidPoseRecorded = false;
@@ -365,6 +368,8 @@ struct LightComputeSubmission
             for (auto Pipeline : HistoryPipelines)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
+            if (SolarOpticsPipeline) DestroyPipeline(Device, SolarOpticsPipeline, nullptr);
+            if (SolarVisibilityPipeline) DestroyPipeline(Device, SolarVisibilityPipeline, nullptr);
             if (FogPipeline)
                 DestroyPipeline(Device, FogPipeline, nullptr);
             if (ExitancePyramidPipeline)
@@ -485,7 +490,7 @@ struct LightComputeSubmission
         Confirm(Status, "CreateComputePipelines " + Path);
         return Result;
     }
-    void Prepare(const LightComputeArchive& Scene, const std::string& Shaders)
+    void Prepare(const LightComputeArchive& Scene, const std::string& Shaders, bool SolarOnly = false)
     {
         for (const auto& B : Buffers)
             Require(B.Buffer == VK_NULL_HANDLE, "Compute buffers are already prepared");
@@ -504,9 +509,11 @@ struct LightComputeSubmission
         auto ProfileSamples = ProjectedAngles(Scene);
         if (Scene.Camera[10][2] > 0)
             ProfileSamples.resize(ProfileSamples.size() + Scene.Surfaces.size() * 4);
+        ProfileSamples.resize(ProfileSamples.size() + SolarOpticsPayloadFloats);
         ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
-        ConstructBuffer(6, nullptr, (Scene.Receivers.size() * 24 + 13889) * 16);
+        ConstructBuffer(6, nullptr,
+                        (Scene.Receivers.size() * 25 + 13889 + SolarSourceCount) * 16);
         ConstructBuffer(7, nullptr, 96);
         std::array<VkDescriptorSetLayoutBinding, 8> Slots{};
         for (uint32_t I = 0; I < 8; ++I)
@@ -555,20 +562,32 @@ struct LightComputeSubmission
             Writes[I].pBufferInfo = &Spans[I];
         }
         UpdateDescriptorSets(Device, 8, Writes.data(), 0, nullptr);
-        const char* TransportNames[] = {"TransportTemporal", "TransportSpatial", "TransportResolve"};
-        for (uint32_t I = 0; I < 3; ++I)
-            TransportReconstruction[I] = ConstructPipeline(Shaders + "/" + TransportNames[I] + ".spv");
-        CloudPipeline = ConstructPipeline(Shaders + "/Clouds.spv");
-        FogPipeline = ConstructPipeline(Shaders + "/Fog.spv");
-        if (std::filesystem::exists(Shaders + "/ExitancePyramid.spv"))
-            ExitancePyramidPipeline = ConstructPipeline(Shaders + "/ExitancePyramid.spv");
-        TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
+        if (!SolarOnly)
+        {
+            const char* TransportNames[] = {"TransportTemporal", "TransportSpatial", "TransportResolve"};
+            for (uint32_t I = 0; I < 3; ++I)
+                TransportReconstruction[I] = ConstructPipeline(Shaders + "/" + TransportNames[I] + ".spv");
+            CloudPipeline = ConstructPipeline(Shaders + "/Clouds.spv");
+            FogPipeline = ConstructPipeline(Shaders + "/Fog.spv");
+            if (std::filesystem::exists(Shaders + "/ExitancePyramid.spv"))
+                ExitancePyramidPipeline = ConstructPipeline(Shaders + "/ExitancePyramid.spv");
+            TransportPipeline = ConstructPipeline(Shaders + "/Transport.spv");
+        }
+        if (!SolarOnly)
+        {
+            const char* Names[] = {"Reuse", "Reconstruct", "Filter", "Finalize"};
+            for (uint32_t I = 0; I < 4; ++I)
+                HistoryPipelines[I] = ConstructPipeline(Shaders + "/" + Names[I] + ".spv");
+        }
+        if (std::filesystem::exists(Shaders + "/SolarVisibility.spv") &&
+            std::filesystem::exists(Shaders + "/SolarOptics.spv"))
+        {
+            SolarVisibilityPipeline = ConstructPipeline(Shaders + "/SolarVisibility.spv");
+            SolarOpticsPipeline = ConstructPipeline(Shaders + "/SolarOptics.spv");
+        }
         PrimaryPipeline = ConstructPipeline(Shaders + "/Primary.spv");
         CellPipeline = ConstructPipeline(Shaders + "/Cells.spv");
         ReceiverPipeline = ConstructPipeline(Shaders + "/Receivers.spv");
-        const char* Names[] = {"Reuse", "Reconstruct", "Filter", "Finalize"};
-        for (uint32_t I = 0; I < 4; ++I)
-            HistoryPipelines[I] = ConstructPipeline(Shaders + "/" + Names[I] + ".spv");
         ReceiverCount = uint32_t(Scene.Receivers.size());
         Upload(Scene);
     }
@@ -701,8 +720,14 @@ struct LightComputeSubmission
             bool PrimaryVisibility = false, uint32_t TransportSamples = 0, bool Environment = false,
             bool EmissiveSampling = false, bool ReconstructTransport = false,
             uint32_t CloudOffset = UINT32_MAX, uint32_t FogOffset = UINT32_MAX, bool ResolveFog = true,
-            bool PriorExitance = false, uint32_t DistanceOffset = UINT32_MAX)
+            bool PriorExitance = false, uint32_t DistanceOffset = UINT32_MAX,
+            const SolarOpticsParameters* SolarOptics = nullptr)
     {
+        Require(!SolarOptics || (PrimaryVisibility && SolarVisibilityPipeline && SolarOpticsPipeline),
+                "Solar optics requires primary visibility and both solar programs");
+        Require(Mode != 3 || HistoryPipelines[0], "History shaders were not prepared");
+        Require(!PrimaryVisibility || PrimaryPipeline, "Primary visibility shader was not prepared");
+        Require(TransportSamples == 0 || TransportPipeline, "Transport shader was not prepared");
         Require(Capacity >= 1 && Capacity <= 16 && Mode <= 3 && StackCapacity >= 1 && StackCapacity <= 64,
                 "Unsupported compute extent selection");
         Require((Scene.Receivers.size() + 63) / 64 <= Properties.limits.maxComputeWorkGroupCount[0],
@@ -797,6 +822,13 @@ struct LightComputeSubmission
             }
         }
         Upload(Scene);
+        if (SolarOptics)
+        {
+            const auto Payload = CompileSolarOpticsPayload(*SolarOptics);
+            const size_t Offset = (Scene.Angles.size() + Scene.Camera.size() * 4) * sizeof(float);
+            Require(Offset + Payload.size() * sizeof(float) <= Buffers[4].Size, "Solar payload exceeds storage");
+            std::memcpy(static_cast<char*>(Buffers[4].Address) + Offset, Payload.data(), Payload.size() * sizeof(float));
+        }
         // 📝 Feature selection is outside the angle prefix; changing it must invalidate both histories too.
         if (CloudOffset != PreviousCloudOffset || FogOffset != PreviousFogOffset ||
             DistanceOffset != PreviousDistanceOffset)
@@ -965,6 +997,19 @@ struct LightComputeSubmission
             CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, FogPipeline);
             CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
         }
+        if (SolarOptics)
+        {
+            Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
+            CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, SolarVisibilityPipeline);
+            CmdDispatch(Commands, 1, 1, 1);
+            CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
+            CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, SolarOpticsPipeline);
+            CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+        }
         Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         Barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
         CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1,
@@ -1021,6 +1066,13 @@ struct LightComputeSubmission
         std::array<uint32_t, 24> Counts{};
         std::memcpy(Counts.data(), Buffers[7].Address, 96);
         return Counts;
+    }
+    std::array<float, 3> SolarVisibility() const
+    {
+        std::array<float, 3> Visibility{};
+        std::memcpy(Visibility.data(), static_cast<const char*>(Buffers[7].Address) + 20 * sizeof(uint32_t),
+                    Visibility.size() * sizeof(float));
+        return Visibility;
     }
     std::vector<std::array<float, 4>> TransportSlab(uint32_t Slot) const
     {
@@ -1279,11 +1331,17 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "PaneTransmittanceValidation.h"
 #include "PriorExitanceValidation.h"
 #include "UnifiedSceneValidation.h"
+#include "SolarOpticsValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--solar-optics")
+        {
+            ValidateSolarOptics(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 6 && (std::string(Arguments[3]) == "--prior-exitance" ||
                            std::string(Arguments[3]) == "--prior-exitance-native" ||
                            std::string(Arguments[3]) == "--prior-exitance-original"))
