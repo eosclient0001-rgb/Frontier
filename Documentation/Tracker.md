@@ -2,6 +2,13 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Dynamic path reuse continuation — 2026-10-27
+
+- A finite-domain exhaustive audit exposes the missing-support bias when previously dark paths become visible.
+  A positive selection floor recovers the exact toy mean when random-number-domain paths are replayed. This is
+  a mathematical prerequisite only: GPU execution, general occlusion, multibounce integration and multiple
+  render validations are still open. [Audit and scope](../Exhibits/LightCompute/PathReplay.md).
+
 ## Vulkan solar optics and GI audit — 2026-10-27
 
 - Opt-in finite-pixel Sun and mixed warm/anamorphic flares execute in the LightCompute Vulkan validation
