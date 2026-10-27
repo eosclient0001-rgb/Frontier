@@ -35,7 +35,9 @@ reservoirs are retained; the selection floor is positive (`0.01` in the tests), 
 bounded. On a scene, receiver, camera, environment or integrator change, the host deterministically limits the
 previous reservoir's represented count to one for that frame while retaining its seed and per-sample weight.
 This reduces reliance on a single stale-domain candidate without a global reset; the count can grow again in
-subsequent unchanged frames. A changed source, blocker, receiver or bounce budget can therefore be replayed
+subsequent unchanged frames. Temporal compatibility currently requires exact prior-position and token equality;
+when it fails the shader falls back to fresh sampling. That conservative check is not a general deforming-mesh
+motion-vector system. A changed source, blocker, receiver or bounce budget can therefore be replayed
 without blindly copying the old radiance. The host rejects corrupt BVHs, zero selection floor and textured
 facets. The original Lambertian mode rejects metallic surfaces; the optional rough mode accepts metallic
 fractions 0–1 and roughness 0.25–1, while rejecting near-delta materials.
@@ -55,8 +57,9 @@ A coloured two-hit case matched `(0.5, 0.25, 0.125)`. In this disocclusion fixtu
 standard deviation to 77% of an otherwise identical long-history control; the finite-domain audit also
 recovers the exact toy mean after capping. This is not a general convergence or performance guarantee. Each
 spatial candidate requires another full path trace, and scene-change checks copy/compare host buffers; no
-real-time or hardware-GPU claim is made. Release and sanitized-host checks pass; the external Vulkan driver
-is not sanitizer-instrumented.
+real-time or hardware-GPU claim is made. Seeds and selection streams are finite 32-bit pseudorandom sequences;
+a positive target does not prove their independence or support over all continuous paths. Release and
+sanitized-host checks pass; the external Vulkan driver is not sanitizer-instrumented.
 
 The rendered 24-triangle room also has an independent **double-precision CPU Monte Carlo** reference: it uses
 brute-force Möller–Trumbore intersections, a different cosine basis and `mt19937_64`, rather than the GPU BVH
