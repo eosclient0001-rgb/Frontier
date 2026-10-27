@@ -139,6 +139,10 @@ public:
     // 📝 Hub world position and full wheel orientation quaternion (body · steer about +Z · spin about +Y).
     void QueryWheelPose(int Index, double OutHub[3], double OutOrientation[4]) const;
 
+    // 📝 The XPBD carcass lattice of one wheel (particle queries for rendering/inspection; most recently stepped
+    //    when the lattice carcass model is active).
+    const TyreCarcassLattice& QueryCarcassLattice(int Index) const { return m_Lattices[Index]; }
+
     VehicleEvents ResolveEvents();
 
     // 📝 Chassis state, world frame (demo field layout).

@@ -51,3 +51,32 @@ chassis proxy that exchanges only collision velocity deltas.
 `DriveTrace.png`, `JoltScene.png`, and the CSVs they render (`pacejka.csv`, `lattice.csv`, `lattice_particles.csv`,
 `fem_outline.csv`, `drive.csv`, `jolt_trace.csv`). Code lives in `Code/` per exhibit convention and links only
 production physics + Jolt — no exhibit-local physics.
+
+## 🎞️ Visuals — the actual ControlVehicle, rendered (`Visuals/`, `RenderVehiclePhysics.sh`)
+
+`Code/SceneRender.cpp` is a small software rasterizer (no GPU in the sandbox) that loads the real production
+geometry — `ControlVehicleBody/Tyre/Rim.facet` from the VehicleProvingGrounds archive — assembles the wheels
+exactly as the demo's `ProjectWheelFacets` does (Y-mirrored right wheels with swapped winding, rim scaled to the
+tyre rim radius, rim family 9 → RimBase), shades with the demo's authored `CourseMaterial` linear albedos
+(BodyCoat chartreuse, near-black VehiclePlastic flanks, blue-metal Hub accent), and drives the mesh from the live
+production physics: body pose and wheel poses from `VehicleSolver`, tyre vertices deformed per frame by
+`TyreDeformation.h` (PB-FEM) from each corner's true deflection/pressure/camber, tread tint from
+`TyreThermalSolver` surface temperatures, cones/wall from the Jolt scene. Flat lambert+hemisphere+Blinn shading,
+planar projected shadow, checker proving ground — deliberately a fast flat render, not the path tracer.
+
+- `Visuals/hero.png`, `hero-rear.png` — settled car on deformed tyres (14 mm @ 220 kPa).
+- `Visuals/tyre-nominal.png` / `tyre-flat.png` — same corner at 220 kPa (14.0 mm) and 30 kPa (60.2 mm): the mesh
+  follows the carcass spring.
+- `Visuals/tyre-lattice.png` — the XPBD lattice's 84 particles (blue crown, amber sidewall) carrying the car at
+  13.8 mm, rubber hidden.
+- `Visuals/SlalomDrive.gif` — launch → governed 15 m/s slalom → brake, chase camera, live tyre deformation.
+- `Visuals/Burnout.gif` — line-lock burnout; the rear tread mesh glows as the thermal solver heats it.
+- `Visuals/ConeHits.gif` — Jolt cone row + wall, proxy velocity-delta exchange stopping the car.
+
+Reproduce: `bash Exhibits/VehiclePhysics/RenderVehiclePhysics.sh` (builds Jolt 5.2.0 if absent, renders all
+modes, assembles via `Code/AssembleVisuals.py`).
+
+Renderer caveats, stated plainly: smooth tyre shading uses per-vertex averaged normals (demo shades per-corner);
+the ground is a camera-snapped tile grid because the rasterizer drops triangles with a vertex behind the camera
+(no near-plane clipping); shadows are a single planar projection of the car onto z=0; headlight/taillight
+emission is scaled down from the authored HDR values so the flat renderer does not blow out.
