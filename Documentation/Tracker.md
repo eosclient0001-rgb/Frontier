@@ -62,10 +62,13 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 
 - Retained the exact full VehicleHMI smoke/fire JS and five WGSL programs, including its distinct moving-grid
   helper. All 28 retained full-demo blob hashes match; eight Node reference and stencil checks pass.
-- A periodic mathematical audit exposes a mismatch between the reference's centred divergence/gradient and its
-  nearest-neighbour pressure Laplacian; this is not a WGSL execution or a measurement of the bounded demo.
-  Smoke/fire remains unported to the native renderer and unverified on Vulkan; liquid-fluid scope is unidentified.
-  [Gas reference, evidence and next steps](../Exhibits/FluidReference/README.md).
+- The unchanged reference pressure WGSL also runs on SwiftShader CPU Vulkan and matches independent CPU stencils,
+  including ground/open/solid probes and shifted-window clearing. In one bounded 3D fixture a near-grid velocity
+  mode retains `98.1%` of its centred divergence despite a small six-point pressure residual after 256 sweeps;
+  this is not a complete animated-plume measurement. Smoke/fire remains unported to the native renderer; advection,
+  full solver, physical GPU and liquid-fluid scope remain open.
+  [Gas reference](../Exhibits/FluidReference/README.md),
+  [actual pressure-shader results](../Exhibits/FluidReference/PlumePressure.md).
 
 ## Vulkan solar optics and GI audit — 2026-10-27
 
