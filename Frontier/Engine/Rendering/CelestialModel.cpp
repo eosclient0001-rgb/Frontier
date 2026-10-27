@@ -197,9 +197,14 @@ bool LunarAlbedoMap::LoadPpm(const char* Path)
     }
     Values_.resize(static_cast<size_t>(Width_) * Height_);
     const double Scale = 1.0 / Maximum;
+    const auto DecodeSrgb = [Scale](unsigned char Byte) noexcept
+    {
+        const double Encoded = Byte * Scale;
+        return Encoded <= 0.04045 ? Encoded / 12.92 : std::pow((Encoded + 0.055) / 1.055, 2.4);
+    };
     for (size_t I = 0; I < Values_.size(); ++I)
     {
-        Values_[I] = {Bytes[3 * I] * Scale, Bytes[3 * I + 1] * Scale, Bytes[3 * I + 2] * Scale};
+        Values_[I] = {DecodeSrgb(Bytes[3 * I]), DecodeSrgb(Bytes[3 * I + 1]), DecodeSrgb(Bytes[3 * I + 2])};
     }
     return true;
 }

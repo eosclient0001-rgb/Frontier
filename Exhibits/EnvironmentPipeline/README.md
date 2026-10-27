@@ -4,7 +4,7 @@ Headless proof for the Phase 6 portable cores (plan §8.1 atmosphere/celestial/c
 flare-fog/precipitation groups, §13 Phase 6):
 
 - `Frontier/Engine/Rendering/AtmosphereModel.*` — Rayleigh/Mie/ozone medium, numeric
-  transmittance + horizon-stretched LUT, Rayleigh/Henyey-Greenstein phases, single
+  transmittance + horizon-stretched LUT, Rayleigh/Henyey-Greenstein/Cornette–Shanks phases, single
   scattering and a bounded multiple-scattering approximation;
 - `Frontier/Engine/Rendering/CelestialModel.*` — Julian dates, low-precision solar
   position, twilight classification, lunar phase, deterministic star catalogue;
@@ -37,8 +37,8 @@ sunset under cloud deck], single-scattering + cloud march (PNG master in `Captur
 
 Scope honesty: Earth constants are the canonical published ones (Bruneton/Hillaire).
 Parameter parity with the demonstration's AtmosphereScattering.wgsl was verified on
-2026-10-26 and is pinned by a check in Exhibits/NightSky; the WGSL's Cornette–Shanks-style
-phase blend vs this model's Henyey–Greenstein remains the one known formulation difference.
+2026-10-26 and is pinned by a check in Exhibits/NightSky; the aerosol phase now matches the full demo's normalized Cornette–Shanks form (2026-10-27).
+This is not full multiple-scattering LUT parity.
 Multiple scattering is a bounded, sun-gated second-order approximation (calibrated
 2026-10-26 to the measured 10–30% clear-sky range; the previous form returned ~190%
 and was sun-independent). Lightning is

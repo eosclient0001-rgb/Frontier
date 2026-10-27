@@ -1,8 +1,10 @@
 PASS Hipparcos catalogue loaded (stars) = 41359
-PASS lunar albedo map loaded (1024x512) = 1024
-PASS Tycho samples brighter than Plato (orientation) = 2.87988
-PASS Mare Crisium samples dark against Tycho = 0.421313
-INFO moon map Tycho 0.916 Plato 0.318 Crisium 0.421
+PASS lunar interpolation occurs in linear space = 0.5
+PASS lunar sRGB mid-grey decodes to 0.21586 = 0.215861
+PASS lunar albedo map loaded (2048x1024) = 2048
+PASS Tycho samples brighter than Plato (orientation) = 2.99542
+PASS Mare Crisium samples dark against Tycho = 0.232689
+INFO moon map Tycho 0.769 Plato 0.257 Crisium 0.233
 PASS full disc flat under Lommel-Seeliger = 1
 PASS earthshine present and faint on dark side = 0.0156
 PASS quarter phase dimming exp(-1.10 g) = 0.177661
@@ -11,9 +13,9 @@ INFO sun at 16:30 SAST: elevation 23.453 deg, azimuth 267.073 deg
 PASS equatorial round trip (rad) = 1.66533e-16
 PASS Mie extinction total matches demonstration (1/km) = 0.0044
 PASS transmittance LUT baked = 1
-INFO zenith radiance 0.0366 0.0685 0.1278, toward sun 0.4488 0.4997 0.6029, multiple factor 0.256 0.187 0.117
-PASS zenith sky is blue (B over R) = 3.49626
-PASS sky brighter toward the sun than away = 3.0364
+INFO zenith radiance 0.0362 0.0682 0.1276, toward sun 0.4900 0.5317 0.6249, multiple factor 0.256 0.187 0.117
+PASS zenith sky is blue (B over R) = 3.52248
+PASS sky brighter toward the sun than away = 3.22428
 INFO phase 0 geometric 0.0086 raster 0.0087 mean-age 0.0000
 INFO phase 1 geometric 0.5099 raster 0.5099 mean-age 0.5000
 INFO phase 2 geometric 0.9980 raster 0.9980 mean-age 1.0000
@@ -37,6 +39,12 @@ INFO ghost 3 expected (372.5, 540.4) px, isolated centroid error 0.00 px
 INFO ghost 4 expected (276.2, 590.9) px, isolated centroid error 0.00 px
 INFO ghost 5 expected (147.8, 658.3) px, isolated centroid error 0.00 px
 PASS rendered ghost centroids within 2 px = 0.00676441
+PASS Cornette-Shanks integrates to one = 1
+PASS zero-asymmetry aerosol equals Rayleigh = 0
+PASS warm streak matches full-demo formula and coordinate scale = 0.356728
+PASS warm plus anamorphic independently additive = 0.356728
+PASS warm streak rotation and partial occlusion = 0.5
+PASS warm streak hidden exactly = 0
 PASS sun disc flux vs analytic limb integral = 1.00001
 PASS disc radiance at limb (half of 0.38 limb law) = 0.19
 PASS blurred limb falls off strictly = 0.0673254
@@ -45,8 +53,8 @@ PASS anamorphic streak anisotropic (along vs across) = 3.75405
 PASS starburst spikes from 6-blade aperture = 6
 INFO flare sample 0.0788, streak along 3.7540 across 0, spikes 6
 PASS rendered disc limb ratio at geometric edge = 0.188571
-PASS rendered disc dominates sky at 2.3 radii = 71649
-INFO telephoto disc centre 1.509e+05 limb 2.846e+04 outside 2.106, filtered exposure 3.98e-06
-PASS sunset horizon is warm (R over B) at -2 deg = 411.769
+PASS rendered disc dominates sky at 2.3 radii = 70278.8
+INFO telephoto disc centre 1.509e+05 limb 2.846e+04 outside 2.147, filtered exposure 3.98e-06
+PASS sunset horizon is warm (R over B) at -2 deg = 435.345
 PASS PPM outputs written = 1
-SUMMARY passed 33 failed 0
+SUMMARY passed 41 failed 0

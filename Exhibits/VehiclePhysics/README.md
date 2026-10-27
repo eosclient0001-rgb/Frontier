@@ -1,5 +1,11 @@
 # 🧩 VehiclePhysics — Phase 7: three tyre models, vehicle dynamics, Jolt collisions
 
+> **2026-10-27 correction:** the actual full VehicleHMI reference has 160-particle XPBD and continuum files.
+> The absence claims below describe only the incomplete local SlateReference copy, not the owner's full demo.
+> The C++ 84-particle lattice remains a separate implementation. See [verified continuation](Continuation.md)
+> for recovered sources, 5 original demo tests, 12 XPBD audit cases, renderer timings and current captures.
+
+
 Proves the production physics in `Frontier/Engine/Physics/` against the HTML demonstration's own code and numbers, then
 drives the car on it. Run everything (Jolt 5.2.0 is fetched/built once into `_ClaudeScratch/`, node runs the demo's
 JS oracles):

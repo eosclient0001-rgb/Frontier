@@ -3,6 +3,13 @@
 General-purpose, cross-platform editor with reusable engine code.
 EngineUpdate establishes documentation, audits inherited violations, and repairs code in reviewed batches.
 
+## Current VehicleHMI continuation
+
+The earlier branch `arena/2ac8ddab-frontier` is continued on `arena/2711375f-frontier`.
+See [source audit, renderer comparison and executed checks](Exhibits/VehiclePhysics/Continuation.md).
+The full reference was recovered: Moon texture, mixed flare components and the missing tyre sources are present.
+The 84-particle C++ lattice is not the full demo's 160-particle XPBD port; that parity work remains open.
+
 ## Start here
 
 - Read [agent instructions](CLAUDE.md) and the four mandatory skills before contributing.
@@ -18,7 +25,7 @@ Approved source baseline: `SultanAladin/Frontier-` at `338293863d7df4e585dec0c4a
 This checkout is `SultanAladin/Frontier`, initially at `4a77bfd17f23536e32781718553ec6a171e39021`.
 A selective UI foundation and Control Centre port is now present; the rest of the linked engine has not been imported or merged.
 See [port evidence and Windows build steps](Exhibits/UIFoundation/README.md).
-The working branch remains `arena/73e163a3-frontier`.
+That selective-port baseline predates the current VehicleHMI continuation above.
 
 ## Builds and binaries
 

@@ -74,15 +74,16 @@ inline constexpr double NewMoonEpochJulian = 2451550.26;   // 2000-01-06 ~18:14 
 //                                                       LUNAR SURFACE
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 Measured lunar albedo (EngineContent/CelestialMaps, JPL/USGS-derived mosaic; provenance in
+// 📝 Original VehicleHMI Luna texture (EngineContent/CelestialMaps; pinned source provenance in
 //    MoonAlbedoProvenance.md). Equirectangular: U = (selenographic east longitude + π)/2π — Mare
-//    Crisium at +59° east — V = (π/2 − latitude)/π. The demonstration tree carries no lunar texture,
-//    so this replaces procedural-noise maria with the measured surface. Values are map albedo in
-//    [0, 1] per channel (source byte / 255); absolute calibration is the radiance scale below.
+//    Crisium at +59° east — V = (π/2 − latitude)/π. The full demo has this texture; the older local
+//    SlateReference copy does not. Samples are relative surface reflectance in
+//    [0, 1] per channel after sRGB decoding; the radiance scale below is not absolute photometric calibration.
 class LunarAlbedoMap
 {
   public:
     // Binary PPM (P6, max 255). Returns false and stays empty when the file is absent or malformed.
+    // P6 RGB bytes are sRGB, decoded to linear reflectance before interpolation.
     bool LoadPpm(const char* Path);
 
     [[nodiscard]] SpectrumRgb Sample(double LongitudeEastRad, double LatitudeRad) const noexcept;

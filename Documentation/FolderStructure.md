@@ -85,3 +85,10 @@ ExternalPackages/
 
 ContentDirectory resolves bundled content from the executable independently of the launch working directory.
 The font catalogue has a native TOML form; JSON remains only an automation/report interchange.
+
+
+## VehicleHMI reference and celestial content — 2026-10-27
+
+- `Experimental/VehicleHmiReference/`: selected immutable full-demo sources, blob manifest and original tyre tests.
+- `EngineContent/CelestialMaps/`: retained demo lunar JPEG and provenance; generated runtime PPM stays ignored.
+- `Exhibits/VehiclePhysics/Continuation.md`: source audit, renderer comparison, validation and remaining scope.

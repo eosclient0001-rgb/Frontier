@@ -271,6 +271,12 @@ is reached, stop and notify the owner first — the owner will supply the full r
 Everything in this section is therefore an inventory of what the demo contains, not porting instructions; the
 supplied reference decides D6 and supersedes any mapping below where they differ.
 
+**Verified correction, 2026-10-27:** the paragraph below is historical and its missing-source conclusion is
+superseded. The actual VehicleHMI branch at `6afb6f00b5f25c45f7cda92c7da65b64845768f3` contains
+`TyreContinuumElasticity.js` and `TyreCarcassProjection.js` (160-particle XPBD), now retained with their tests in
+`Experimental/VehicleHmiReference`. The original five tests pass; this is not a completed native continuum port.
+The existing 84-particle C++ lattice is independent. See `Exhibits/VehiclePhysics/Continuation.md`.
+
 ⭐ **Gate superseded by owner direction, 2026-10-27:** the owner explicitly sequenced Phase 7 and directed the
 three tyre models be ported from the HTML demo with Jolt integration and driving proofs. Audit result the port
 was built on: the in-tree demo (`Experimental/SlateReference/{A,B}`) does **not** contain

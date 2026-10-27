@@ -13,6 +13,8 @@ EngineContent/*
 !EngineContent/MaterialArchives/
 !EngineContent/PatternArchives/
 !EngineContent/EnvironmentArchives/
+!EngineContent/CelestialMaps/
+EngineContent/CelestialMaps/*.ppm
 
 # Agent scratch space.
 _ClaudeScratch/

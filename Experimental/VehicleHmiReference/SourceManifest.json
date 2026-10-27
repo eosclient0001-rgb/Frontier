@@ -1,0 +1,67 @@
+{
+  "repository": "SultanAladin/Frontier",
+  "commit": "6afb6f00b5f25c45f7cda92c7da65b64845768f3",
+  "prefix": "Experimental/VehicleHmiPrototype/",
+  "files": [
+    {
+      "path": "Source/CelestialAtlas.js",
+      "git_blob": "6893540f2d2a3d688e3b108a53f0121de92e1e3d"
+    },
+    {
+      "path": "Source/NativeLensFlareKernel.js",
+      "git_blob": "62e42e79ef9f5b37887cb3af008cfe3afa974b4c"
+    },
+    {
+      "path": "Shader/CelestialSky.wgsl",
+      "git_blob": "17f915eb859e59df790b69185ee2eb10be592207"
+    },
+    {
+      "path": "Shader/LensFlare.wgsl",
+      "git_blob": "b6906f6ebb04618be8161b6148588bc80edf266b"
+    },
+    {
+      "path": "Shader/AtmosphereScattering.wgsl",
+      "git_blob": "02ab1bb7f00750f28ccf3c023a16c98102aa4467"
+    },
+    {
+      "path": "Tools/VolumetricTyrePhysics.test.mjs",
+      "git_blob": "7e2372a39d8bebc2f2fd71e1d7271b4f98c5e550"
+    },
+    {
+      "path": "Source/VehicleVisualState.js",
+      "git_blob": "75ee8cb6daa5b6fd729e9f24ae873218cd4b3cbe"
+    },
+    {
+      "path": "Source/TransformProjection.js",
+      "git_blob": "7d669de08c6dd7019ccd9d075f9bdc22bd92b6b3"
+    },
+    {
+      "path": "Source/TyreContinuumElasticity.js",
+      "git_blob": "0d62f516175845d2b842b73ff9ff491419451208"
+    },
+    {
+      "path": "Source/VehicleSolver.js",
+      "git_blob": "6e5f9afa0e7d358fdd4e9d904a2c707ee30977d2"
+    },
+    {
+      "path": "Source/TyreSlipSolver.js",
+      "git_blob": "be41b73a4c6c40fe5320217bd5915687c29672ef"
+    },
+    {
+      "path": "Source/VehicleSpecification.js",
+      "git_blob": "e76779117b3eaeed9eea59daf6ad1d04b7cfc03c"
+    },
+    {
+      "path": "Source/TyreCarcassProjection.js",
+      "git_blob": "8d2719e5c9959f88c7b8f4fda8c81d1cbd1ab26e"
+    },
+    {
+      "path": "Source/CourseStructure.js",
+      "git_blob": "c943f7eca90d643a68f8056dfcd8e1720a6853da"
+    },
+    {
+      "path": "Source/MaterialSpecification.js",
+      "git_blob": "617d9a966742611ecf6a922304684ec472326ea6"
+    }
+  ]
+}

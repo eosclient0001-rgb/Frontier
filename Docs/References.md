@@ -34,6 +34,16 @@ default · ask before pushing / GitHub Actions · 140-wide file banners, `//`+12
 rulers · banned identifier stems (Graph, Frame, Pass, Entity, Manager, … — see
 SKILL-naming) · compact delivery with executed proof, never faked results.
 
+## Full reference recovered — 2026-10-27
+
+The VehicleHMI branch `arena/e9bd7db5-frontier` resolves to `6afb6f00b5f25c45f7cda92c7da65b64845768f3`.
+Selected byte-identical sources and a blob manifest now live in `Experimental/VehicleHmiReference/`.
+Unlike the local SlateReference copies, it includes independent warm/blue flare components, a lunar texture atlas,
+160-particle XPBD and solid/curved-surface continuum tyre implementations. Luna's original JPEG is retained in
+`EngineContent/CelestialMaps`. Do not repeat the earlier claim that those files do not exist in the owner's demo.
+The existing C++ force/vehicle port matches the older spring-model source; the full continuum port is still open.
+See `Exhibits/VehiclePhysics/Continuation.md` for executed source audits and limits.
+
 ## References (owner-supplied)
 
 | Reference | Where | What it governs |

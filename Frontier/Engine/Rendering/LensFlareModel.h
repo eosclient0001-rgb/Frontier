@@ -13,7 +13,7 @@
 //    streak, centre halo ring, two-lobe glow and veiling glare. Every term is linear in the sun's
 //    disc-integrated irradiance at the lens and in the caller's disc visibility, so occlusion and
 //    exposure stay physical. Screen coordinates are height-normalised (half the frame height = 1),
-//    matching the ghost table below. The demonstration tree carries no flare code to port; this is
+//    matching the ghost table below. The local SlateReference copy lacks flare code; the full VehicleHMI reference has it. This is
 //    the measured-optics formulation the ghost table was always the placement half of.
 
 #pragma once
@@ -71,8 +71,9 @@ inline constexpr std::array<FlareGhostSpec, 6> DefaultFlareGhosts{{
 
 // 📝 Quadratic limb darkening I(μ)/I(1) = 1 − u₁(1−μ) − u₂(1−μ)² with μ = √(1−ρ²) across the disc
 //    (broadband visible coefficients; the limb sits at 0.38 of disc centre). The limb itself is the
-//    analytic convolution of a step disc with a Gaussian point spread: ½·erfc((θ−θ_disc)/(√2·σ)), so
-//    the disc has a real photographic edge at any resolution — set σ from the pixel angular size.
+//    locally planar approximation to a Gaussian-blurred step edge: ½·erfc((θ−θ_disc)/(√2·σ)), so
+//    valid for σ small relative to the disc radius; it is not a flux-preserving 2D PSF convolution.
+//    Set σ from the pixel angular size. Unresolved discs require integrated pixel coverage.
 struct SunDiscProfile
 {
     double AngularRadiusRad = 0.0046524;   // [rad] 0.2666°, mean apparent solar semi-diameter
@@ -129,6 +130,9 @@ struct FlareOpticsProfile
     double   AnamorphicAngleRad    = 0.0;      // [rad] streak direction, 0 = frame horizontal
     double   AnamorphicLengthNdc   = 1.35;     // [NDC] streak exponential reach
     double   AnamorphicThicknessNdc = 0.006;   // [NDC] streak Gaussian σ across its length
+    double   StreakStrength        = 0.0;      // [-] independent warm streak; 0 preserves existing presets
+    double   StreakAngleRad        = 0.5;      // [rad] separate rotation from the blue anamorphic layer
+    double   StreakSpread          = 1.0;      // [-] demo spread, clamped to [0.25, 2]
     double   GlowStrength          = 1.0;      // [-] two-lobe point-spread glow about the sun
     double   HaloStrength          = 1.0;      // [-] antipode-centred ring through frame centre
     double   VeilingStrength       = 1.0;      // [-] frame-wide low-contrast wash
@@ -339,6 +343,30 @@ inline constexpr std::array<FlareGhostAppearance, 6> DefaultFlareGhostAppearance
             DiscIrradiance.B * 1.00 * Shape * 0.55 * V};
 }
 
+// Warm rotatable streak from VehicleHMI LensFlare.wgsl / NativeLensFlareKernel.js.
+// 📝 Demo coordinates use full image height; this API uses half-height, hence the 0.5 conversion.
+//    Irradiance multiplication replaces the demo's artistic brightness clamp, preserving exposure linearity.
+[[nodiscard]] inline SpectrumRgb EvaluateWarmStreak(double                    PixelX,
+                                                   double                    PixelY,
+                                                   double                    SunX,
+                                                   double                    SunY,
+                                                   const SpectrumRgb&        DiscIrradiance,
+                                                   double                    Visibility,
+                                                   const FlareOpticsProfile& Profile) noexcept
+{
+    const double Gain = LensFlareDetail::ClampVisibility(Visibility) * Profile.StreakStrength;
+    if (Gain <= 0.0) return {};
+    const double Spread = std::fmax(0.25, std::fmin(2.0, Profile.StreakSpread));
+    const double Cosine = std::cos(Profile.StreakAngleRad);
+    const double Sine = std::sin(Profile.StreakAngleRad);
+    const double OffsetX = 0.5 * (PixelX - SunX);
+    const double OffsetY = 0.5 * (PixelY - SunY);
+    const double Along = OffsetX * Cosine + OffsetY * Sine;
+    const double Across = -OffsetX * Sine + OffsetY * Cosine;
+    const double Shape = 0.65 * Gain * std::exp(-(160.0 * std::abs(Across) + 3.0 * std::abs(Along)) / Spread);
+    return {DiscIrradiance.R * Shape, DiscIrradiance.G * Shape * 0.8, DiscIrradiance.B * Shape * 0.55};
+}
+
 // Full lens flare at one screen point: ghost chain + starburst + anamorphic streak + two-lobe glow
 // + antipode halo ring + veiling glare. Add to the scene radiance before tonemapping; the sun disc
 // itself is EvaluateSunDiscRadiance, evaluated on view directions rather than screen points.
@@ -359,6 +387,7 @@ inline constexpr std::array<FlareGhostAppearance, 6> DefaultFlareGhostAppearance
     SpectrumRgb Out = EvaluateFlareGhostRadiance(PixelX, PixelY, SunX, SunY, DiscIrradiance, V, Profile);
     Out = AddRgb(Out, EvaluateDiffractionStarburst(PixelX, PixelY, SunX, SunY, DiscIrradiance, V, Profile));
     Out = AddRgb(Out, EvaluateAnamorphicStreak(PixelX, PixelY, SunX, SunY, DiscIrradiance, V, Profile));
+    Out = AddRgb(Out, EvaluateWarmStreak(PixelX, PixelY, SunX, SunY, DiscIrradiance, V, Profile));
 
     const double Dx  = PixelX - SunX;
     const double Dy  = PixelY - SunY;

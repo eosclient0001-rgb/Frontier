@@ -751,3 +751,21 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
   negative control (`0.9937` floor leak vs `0.6563` accepted), 4/4 CTests, and 5/5 static `VehicleGlazing` PNGs byte-identical.
 - Still open: roughness-mip prior-screen exitance/denoising, unified moving `ControlVehicle` + baked distance-field +
   sun/sky/cloud/fog scene, physical RTX/GTX + Windows/editor integration, legacy half-pole defect and native Jolt dynamics.
+
+
+## VehicleHMI reference correction and low-cost raster continuation — 2026-10-27
+
+- Continued `ae0bb7d` on `arena/2711375f-frontier`; corrected the incomplete-source audit, not a new physics rewrite.
+- Full reference at `6afb6f00b5f25c45f7cda92c7da65b64845768f3` contains lunar textures, separate warm/anamorphic
+  streaks, 160-particle XPBD and continuum tyres. Selected originals + hashes: `Experimental/VehicleHmiReference`.
+- Restored actual Luna 2K JPEG; fixed missing ignored texture and sRGB decoding before filtering. Added independent
+  warm streak and Cornette–Shanks aerosol phase. Sky 41/41; environment 73/73 release and ASan+UBSan.
+- Existing production physics 29/29; full-demo original tests 5/5; recovered XPBD audit 12 cases verifies prescribed
+  spring-force output, not integrated continuum reactions. Existing 84-particle lattice is not the full-demo port.
+- Exhibit raster retains Lambert/Blinn + planar shadows. Improved hemispherical contrast, sky-coloured shadow fill,
+  exposure-before-tone-map; skip matte highlights and reuse view distance. Same-camera paired medians 60.994–66.354 ms
+  before, 44.072–47.157 ms after, unchanged 25,804,800-byte image buffers. Not a Vulkan renderer performance claim.
+- Evidence and reproduction: `Exhibits/VehiclePhysics/Continuation.md`; actual before/after, Moon and flare captures.
+- Open: full native continuum/XPBD parity, measured tyre/lens/sky validation, GPU/editor integration, Windows,
+  unresolved solar-disc PSF, Moon parallax/scene illumination, cloud appearance and lunar-map licence confirmation.
+- This entry supersedes earlier statements that the owner's demo had no flare, Moon texture or XPBD sources.

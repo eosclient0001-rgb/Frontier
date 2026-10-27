@@ -126,6 +126,15 @@ double HenyeyGreensteinPhase(double CosTheta, double G) noexcept
     return (1.0 - G * G) / (4.0 * Pi * Denom * std::sqrt(std::max(Denom, 1e-12)));
 }
 
+// Cornette–Shanks aerosol phase: the demonstration's Rayleigh-shaped HG correction.
+double CornetteShanksPhase(double CosTheta, double G) noexcept
+{
+    const double Cosine = std::clamp(CosTheta, -1.0, 1.0);
+    const double Asymmetry = std::clamp(G, -0.999, 0.999);
+    return HenyeyGreensteinPhase(Cosine, Asymmetry) *
+           1.5 * (1.0 + Cosine * Cosine) / (2.0 + Asymmetry * Asymmetry);
+}
+
 SpectrumRgb TransmittanceBetween(const AtmosphereParameters& P, SpatialVector A, SpatialVector B, uint32_t Steps) noexcept
 {
     return ExpNeg(OpticalDepthBetween(P, A, B, Steps));
@@ -221,7 +230,7 @@ SpectrumRgb SingleScattering(const AtmosphereParameters& P, SpatialVector Positi
     }
     const double CosTheta = Dot(Direction, SunDirection);
     const double PhaseR   = RayleighPhase(CosTheta);
-    const double PhaseM   = HenyeyGreensteinPhase(CosTheta, P.MiePhaseG);
+    const double PhaseM   = CornetteShanksPhase(CosTheta, P.MiePhaseG);
     const double Dt       = LengthKm / static_cast<double>(Steps);
 
     SpectrumRgb Radiance{};

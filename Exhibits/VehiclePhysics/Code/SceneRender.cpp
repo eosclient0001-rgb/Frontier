@@ -241,18 +241,23 @@ namespace
         {
             const float NdotL = std::fmax(0.0f, Dot(N, SunDir));
             const float HemiMix = 0.5f + 0.5f * N.Z;
-            const F3 Hemi = { 0.26f + 0.24f * HemiMix, 0.27f + 0.26f * HemiMix, 0.30f + 0.34f * HemiMix };
+            const F3 Hemi = { 0.10f + 0.20f * HemiMix, 0.12f + 0.26f * HemiMix, 0.15f + 0.37f * HemiMix };
             F3 Out = { Albedo.X * (Hemi.X + SunColour.X * NdotL), Albedo.Y * (Hemi.Y + SunColour.Y * NdotL),
                        Albedo.Z * (Hemi.Z + SunColour.Z * NdotL) };
-            const F3 View = Norm(Cam.Position - World);
-            const F3 Half = Norm(View + SunDir);
-            const float Exponent = 2.0f + (1.0f - Roughness) * 220.0f;
-            const float Spec = std::pow(std::fmax(0.0f, Dot(N, Half)), Exponent) * (0.04f + 0.5f * (1.0f - Roughness));
-            const F3 SpecTint = Metal > 0.5f ? Albedo * 3.0f : F3{ 1, 1, 1 };
-            Out = Out + SpecTint * (Spec * NdotL * 1.2f);
+            // 📝 Reuse the view distance for haze; matte ground needs no half-vector or power evaluation.
+            const F3 ViewOffset = Cam.Position - World;
+            const float Distance = Len(ViewOffset);
+            if (Roughness < 0.85f && NdotL > 0.0f)
+            {
+                const F3 View = ViewOffset * (1.0f / std::fmax(Distance, 1.0e-12f));
+                const F3 Half = Norm(View + SunDir);
+                const float Exponent = 2.0f + (1.0f - Roughness) * 220.0f;
+                const float Spec = std::pow(std::fmax(0.0f, Dot(N, Half)), Exponent) *
+                                   (0.04f + 0.5f * (1.0f - Roughness));
+                const F3 SpecTint = Metal > 0.5f ? Albedo * 3.0f : F3{ 1, 1, 1 };
+                Out = Out + SpecTint * (Spec * NdotL * 1.2f);
+            }
             Out = Out + Emission;
-            // Proving-ground haze with distance.
-            const float Distance = Len(World - Cam.Position);
             const float Haze = 1.0f - std::exp(-Distance * 0.0016f);
             const F3 HazeColour = { 0.52f, 0.59f, 0.72f };
             return Out * (1.0f - Haze * 0.55f) + HazeColour * (Haze * 0.55f);
@@ -304,6 +309,11 @@ namespace
         // Planar projected shadow: rasterize onto the stored ground pixels only.
         void ShadowTriangle(F3 P0, F3 P1, F3 P2)
         {
+            if (SunDir.Z <= 0.001f) return;
+            // 📝 Block direct sunlight, not the blue hemispherical fill. No additional shadow buffer.
+            const F3 ShadowRatio = { 0.30f / (0.30f + SunColour.X * SunDir.Z),
+                                     0.38f / (0.38f + SunColour.Y * SunDir.Z),
+                                     0.52f / (0.52f + SunColour.Z * SunDir.Z) };
             const auto Flatten = [&](F3 P)
             {
                 const float T = P.Z / SunDir.Z;
@@ -330,7 +340,7 @@ namespace
                     const size_t Index = (size_t)(H - 1 - Py) * W + Px;
                     if (WorldPos[Index].Z > 0.02f) continue;      // ground pixels only (z == 0)
                     float* Out = &Colour[Index * 3];
-                    Out[0] *= 0.42f; Out[1] *= 0.42f; Out[2] *= 0.46f;
+                    Out[0] *= ShadowRatio.X; Out[1] *= ShadowRatio.Y; Out[2] *= ShadowRatio.Z;
                     WorldPos[Index].Z = 0.03f;                    // darken once
                 }
         }
@@ -392,8 +402,9 @@ namespace
             std::vector<uint8_t> Bytes((size_t)W * H * 3);
             for (size_t I = 0; I < Bytes.size(); ++I)
             {
-                const float Tonemapped = Colour[I] / (1.0f + Colour[I]);
-                Bytes[I] = (uint8_t)std::lround(255.0f * ClampF(std::pow(Tonemapped * 1.5f, 1.0f / 2.2f), 0.0f, 1.0f));
+                const float Exposed = std::fmax(0.0f, Colour[I]) * 1.5f;
+                const float Tonemapped = Exposed / (1.0f + Exposed);
+                Bytes[I] = (uint8_t)std::lround(255.0f * ClampF(std::pow(Tonemapped, 1.0f / 2.2f), 0.0f, 1.0f));
             }
             std::fwrite(Bytes.data(), 1, Bytes.size(), File);
             std::fclose(File);

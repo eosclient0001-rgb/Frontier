@@ -712,7 +712,8 @@ Canvas RenderSunFlare(SkyVector Aim, SkyVector Sun, double Visibility, const Fro
     Frontier::SunDiscProfile DiscProfile;
     DiscProfile.EdgeBlurRad = 0.75 * StandardHalfTangent / (Height * 0.5);   // [rad] ~0.75 px σ
     const SunRadianceSetup SunSetup = SetupSunRadiance(Atmosphere, Lut, Sun, DiscProfile);
-    const Frontier::FlareOpticsProfile Optics;
+    Frontier::FlareOpticsProfile Optics;
+    Optics.StreakStrength = 0.35;
     for (int Y = 0; Y < Height; ++Y)
         for (int X = 0; X < Width; ++X)
         {
@@ -829,7 +830,7 @@ int main(int ArgumentCount, char** Arguments)
 {
     const std::string OutputPrefix = ArgumentCount > 1 ? Arguments[1] : "Capture/";
     const std::string CataloguePath = ArgumentCount > 2 ? Arguments[2] : "Data/Hipparcos8.csv";
-    const std::string MoonMapPath = ArgumentCount > 3 ? Arguments[3] : "EngineContent/CelestialMaps/MoonAlbedo1024.ppm";
+    const std::string MoonMapPath = ArgumentCount > 3 ? Arguments[3] : "EngineContent/CelestialMaps/MoonAlbedo2048.ppm";
     Counter Check;
 
     const double NightJulian = Frontier::JulianDate(2026, 10, 26, 18.5);   // 20:30 SAST
@@ -841,11 +842,39 @@ int main(int ArgumentCount, char** Arguments)
     const std::vector<CatalogueStar> Catalogue = LoadHipparcosCatalogue(CataloguePath);
     Check.Check("Hipparcos catalogue loaded (stars)", Catalogue.size() > 40000, static_cast<double>(Catalogue.size()));
 
+    // IEC sRGB decoding must happen before bilinear interpolation, matching rgba8unorm-srgb in the demo.
+    {
+        const std::string Path = OutputPrefix + "SrgbProbe.ppm";
+        FILE* File = std::fopen(Path.c_str(), "wb");
+        if (File == nullptr) return 2;
+        std::fprintf(File, "P6\n4 2\n255\n");
+        for (int Pixel = 0; Pixel < 8; ++Pixel)
+        {
+            const unsigned char Grey = Pixel % 4 < 2 ? 0 : 255;
+            for (int Channel = 0; Channel < 3; ++Channel) std::fputc(Grey, File);
+        }
+        std::fclose(File);
+        Frontier::LunarAlbedoMap Probe;
+        const bool Loaded = Probe.LoadPpm(Path.c_str());
+        const double Midpoint = Probe.Sample(0.0, 0.0).R;
+        Check.Check("lunar interpolation occurs in linear space", Loaded && std::abs(Midpoint - 0.5) < 1e-14,
+                    Midpoint);
+        File = std::fopen(Path.c_str(), "wb");
+        if (File == nullptr) return 2;
+        std::fprintf(File, "P6\n4 2\n255\n");
+        for (int Byte = 0; Byte < 24; ++Byte) std::fputc(128, File);
+        std::fclose(File);
+        const bool GreyLoaded = Probe.LoadPpm(Path.c_str());
+        const double GreyLinear = Probe.Sample(0.0, 0.0).R;
+        Check.Check("lunar sRGB mid-grey decodes to 0.21586", GreyLoaded && std::abs(GreyLinear - 0.2158605001) < 1e-10,
+                    GreyLinear);
+    }
+
     // Measured lunar albedo map: named-feature samples pin the selenographic orientation
     // (Tycho bright ray crater, Plato dark floor, Mare Crisium dark against its highlands).
     Frontier::LunarAlbedoMap MoonMap;
     const bool MoonMapLoaded = MoonMap.LoadPpm(MoonMapPath.c_str());
-    Check.Check("lunar albedo map loaded (1024x512)", MoonMapLoaded && MoonMap.Width() == 1024 && MoonMap.Height() == 512,
+    Check.Check("lunar albedo map loaded (2048x1024)", MoonMapLoaded && MoonMap.Width() == 2048 && MoonMap.Height() == 1024,
                 MoonMapLoaded ? static_cast<double>(MoonMap.Width()) : 0.0);
     const double TychoAlbedo = MoonMap.Sample(-11.0 * DegToRad, -43.0 * DegToRad).R;
     const double PlatoAlbedo = MoonMap.Sample(-9.0 * DegToRad, 51.0 * DegToRad).R;
@@ -1027,6 +1056,42 @@ int main(int ArgumentCount, char** Arguments)
         std::printf("INFO ghost %zu expected (%.1f, %.1f) px, isolated centroid error %.2f px\n", I, ExpectedX, ExpectedY, Error);
     }
     Check.Check("rendered ghost centroids within 2 px", MeasuredGhosts >= 5 && WorstCentroidPixels < 2.0, WorstCentroidPixels);
+
+    // Independent physical identities, not a comparison against the implementation itself.
+    {
+        constexpr int Samples = 100000;
+        double PhaseIntegral = 0.0;
+        double RayleighDifference = 0.0;
+        for (int Index = 0; Index < Samples; ++Index)
+        {
+            const double Cosine = -1.0 + 2.0 * (Index + 0.5) / Samples;
+            PhaseIntegral += Frontier::CornetteShanksPhase(Cosine, 0.8) * 4.0 * Pi / Samples;
+            RayleighDifference = std::max(RayleighDifference,
+                std::abs(Frontier::CornetteShanksPhase(Cosine, 0.0) - Frontier::RayleighPhase(Cosine)));
+        }
+        Check.Check("Cornette-Shanks integrates to one", std::abs(PhaseIntegral - 1.0) < 1e-6, PhaseIntegral);
+        Check.Check("zero-asymmetry aerosol equals Rayleigh", RayleighDifference < 1e-14, RayleighDifference);
+        Frontier::FlareOpticsProfile Optics;
+        Optics.StreakStrength = 1.0;
+        Optics.StreakAngleRad = 0.0;
+        const Frontier::SpectrumRgb Unit{1.0, 1.0, 1.0};
+        const auto Warm = Frontier::EvaluateWarmStreak(0.4, 0.0, 0.0, 0.0, Unit, 1.0, Optics);
+        const double Expected = 0.65 * std::exp(-0.2 * 3.0);
+        Check.Check("warm streak matches full-demo formula and coordinate scale",
+                    std::abs(Warm.R - Expected) < 1e-14 && std::abs(Warm.B / Warm.R - 0.55) < 1e-14, Warm.R);
+        const auto Mixed = Frontier::EvaluateLensFlareRadiance(0.4, 0.0, 0.0, 0.0, Unit, 1.0, Optics);
+        Optics.StreakStrength = 0.0;
+        const auto Without = Frontier::EvaluateLensFlareRadiance(0.4, 0.0, 0.0, 0.0, Unit, 1.0, Optics);
+        Check.Check("warm plus anamorphic independently additive", std::abs(Mixed.R - Without.R - Warm.R) < 1e-14,
+                    Mixed.R - Without.R);
+        Optics.StreakStrength = 1.0;
+        Optics.StreakAngleRad = Pi * 0.5;
+        const auto Rotated = Frontier::EvaluateWarmStreak(0.0, 0.4, 0.0, 0.0, Unit, 0.5, Optics);
+        const auto Hidden = Frontier::EvaluateWarmStreak(0.0, 0.4, 0.0, 0.0, Unit, 0.0, Optics);
+        Check.Check("warm streak rotation and partial occlusion", std::abs(Rotated.R / Warm.R - 0.5) < 1e-14,
+                    Rotated.R / Warm.R);
+        Check.Check("warm streak hidden exactly", Hidden.R == 0.0 && Hidden.G == 0.0 && Hidden.B == 0.0, Hidden.R);
+    }
 
     // Sun disc: integrated flux against the analytic limb-darkened integral, limb ratio at the
     // geometric edge (½ from the Gaussian point-spread edge × 0.38 limb law), strict falloff.

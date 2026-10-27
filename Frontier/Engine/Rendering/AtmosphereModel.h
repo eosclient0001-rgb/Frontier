@@ -9,9 +9,8 @@
 //    Multiple/Scattering). Canonical Earth parameters (Bruneton & Neyret 2008; Hillaire 2020).
 //    Parameter parity with the demonstration's AtmosphereScattering.wgsl was verified on
 //    2026-10-26 (identical Rayleigh/Mie/ozone coefficients, scale heights, radii, g = 0.8) and is
-//    pinned by a check in Exhibits/NightSky; the remaining known divergence is the phase function
-//    (this model evaluates Henyey–Greenstein directly where the WGSL uses its Rayleigh-blended
-//    Cornette–Shanks form, equal at the forward peak to ~12%). Units are kilometres internally
+//    pinned by a check in Exhibits/NightSky. The aerosol phase now uses the demonstration's
+//    normalized Cornette–Shanks form; HG remains available for other media. Units are kilometres internally
 //    (the LUT-friendly convention of every published model); the public API converts at the
 //    boundary where noted. Double precision so validation can hold the numeric integrator to
 //    analytic optical depths.
@@ -61,6 +60,7 @@ struct AtmosphereParameters
 // Phase functions (normalised: integral over the sphere is 1).
 [[nodiscard]] double RayleighPhase(double CosTheta) noexcept;
 [[nodiscard]] double HenyeyGreensteinPhase(double CosTheta, double G) noexcept;
+[[nodiscard]] double CornetteShanksPhase(double CosTheta, double G) noexcept;
 
 // Transmittance between two points (planet-centred coordinates, km), by numeric integration.
 // Ground intersection truncates the path (returns 0 beyond the surface via the segment length).

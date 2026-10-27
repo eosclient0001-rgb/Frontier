@@ -1,8 +1,8 @@
 """Convert the retained lunar albedo source image into the runtime PPM the engine loads.
 
-Source: EngineContent/CelestialMaps/MoonAlbedoSource1024.jpg (1024x512 equirectangular,
-JPL/USGS-derived lunar albedo as distributed with the three.js examples; see
-EngineContent/CelestialMaps/MoonAlbedoProvenance.md). Output: MoonAlbedo1024.ppm (binary P6),
+Source: EngineContent/CelestialMaps/MoonAlbedoSource2048.jpg (2048x1024 equirectangular,
+the actual VehicleHMI luna_2k.jpg; see
+EngineContent/CelestialMaps/MoonAlbedoProvenance.md). Output: MoonAlbedo2048.ppm (binary P6),
 sampled by Frontier::LunarAlbedoMap with U = (selenographic east longitude + 180 deg) / 360 deg
 and V = (90 deg - latitude) / 180 deg. Requires Pillow (PyPI).
 
@@ -17,8 +17,8 @@ from PIL import Image
 
 def main():
     folder = Path(sys.argv[1] if len(sys.argv) > 1 else "EngineContent/CelestialMaps")
-    source = Image.open(folder / "MoonAlbedoSource1024.jpg").convert("RGB")
-    target = folder / "MoonAlbedo1024.ppm"
+    source = Image.open(folder / "MoonAlbedoSource2048.jpg").convert("RGB")
+    target = folder / "MoonAlbedo2048.ppm"
     source.save(target)
     grey = source.convert("L")
     values = list(grey.getdata())
