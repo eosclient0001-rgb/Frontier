@@ -1,8 +1,9 @@
 # Opaque diffuse texture replay
 
 An opt-in replay mode evaluates the existing float-atlas albedo pyramid at every secondary triangle hit. Primary
-camera strikes already use the same `ApplyRayMaterial` path. The replay estimator remains Lambertian; this does
-**not** enable the atlas's authored GGX, normal maps, automotive paint, glass, layered materials or analytic lights.
+camera strikes already use the same `ApplyRayMaterial` path. This exhibit records the original **Lambertian**
+subset. A later [rough-textured extension](RoughTextureReplay.md) also tests guarded authored GGX. Neither enables
+normal maps, automotive paint, glass, layered materials or analytic lights.
 
 ## Bounded domain
 
@@ -31,7 +32,7 @@ rare rays can miss their finite boundaries.
 
 | Check | Result |
 | --- | --- |
-| Malformed atlas, UV, camera and domain inputs | 33 cases rejected; opt-in and rough-material guards held |
+| Malformed atlas, UV, camera and domain inputs | 33 cases rejected; diffuse-only opt-in and material guards held |
 | Two-hit planes, RGB analytic `(0.8, 0.2, 0.1)` | Fresh `(0.8000000, 0.2000000, 0.1000000)` |
 | Black → coloured atlas with reused candidates | `(0.7999905, 0.1999976, 0.0999988)` |
 | Moving blocker / reopened | `0` / `(0.7999882, 0.1999970, 0.0999985)` |

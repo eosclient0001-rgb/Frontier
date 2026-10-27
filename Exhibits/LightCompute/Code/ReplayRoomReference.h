@@ -84,13 +84,18 @@ std::array<double,3> RoughReplayBrdf(const LightComputeReceiver& R, ReplayRefere
     const double Visibility = .5 / (NL*std::sqrt(NV*NV*(1-Alpha2)+Alpha2) +
                                      NV*std::sqrt(NL*NL*(1-Alpha2)+Alpha2));
     const double Ior = R.AlbedoIor[3], Ratio = (Ior-1)/(Ior+1), Metallic = R.ViewMetallic[3];
-    const double Dielectric = Ratio*Ratio*R.ResidualSpecular[3]*2;
+    const bool Authored = R.ExpectedDirect[3] > 0;
+    // 📝 Authored strata use fixed specular level .5 and separate entrance/exit diffuse Fresnel factors.
+    const double Dielectric = Ratio*Ratio*(Authored ? 1 : R.ResidualSpecular[3]*2);
     std::array<double,3> Value{};
     for (uint32_t C = 0; C < 3; ++C)
     {
         const double Base = R.AlbedoIor[C], F0 = Dielectric*(1-Metallic) + Base*Metallic;
         const double Fresnel = F0 + (1-F0)*std::pow(1-VH,5);
-        Value[C] = D*Visibility*Fresnel + (1-Fresnel)*Base*(1-Metallic)/3.14159265358979323846;
+        const double Entrance = F0 + (1-F0)*std::pow(1-NL,5);
+        const double Exit = F0 + (1-F0)*std::pow(1-NV,5);
+        const double Diffuse = Authored ? (1-Entrance)*(1-Exit) : 1-Fresnel;
+        Value[C] = D*Visibility*Fresnel + Diffuse*Base*(1-Metallic)/3.14159265358979323846;
     }
     return Value;
 }
@@ -162,7 +167,12 @@ ReplayReferenceVector ReplayReferencePath(const LightComputeArchive& Scene, cons
         {
             const auto Sample = ReplayReferenceTexture(Scene, F, HitU, HitV, StrikePosition, Normal,
                                                          ReplayReferenceScale(Direction, -1));
+            const size_t Offset = size_t(F.Emissive[3]) - 1;
             for (uint32_t C = 0; C < 3; ++C) Current.AlbedoIor[C] = float(Sample.Albedo[C]);
+            Current.NormalRoughness[3] = Scene.Angles[Offset + 11];
+            Current.ViewMetallic[3] = Scene.Angles[Offset + 12];
+            Current.AlbedoIor[3] = Scene.Angles[Offset + 13];
+            Current.ExpectedDirect[3] = F.Emissive[3];
         }
     }
     return Result;

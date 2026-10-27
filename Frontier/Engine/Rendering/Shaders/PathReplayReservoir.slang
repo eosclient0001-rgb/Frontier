@@ -134,7 +134,7 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
         Current.ViewMetallic = float4(-Direction, F.OpticalToken.x);
         Current.AlbedoIor = float4(F.AlbedoRoughness.xyz, F.OpticalToken.y);
         Current.ResidualSpecular.w = F.OpticalToken.z;
-        // 📝 The host admits only opaque single-stratum albedo maps in this opt-in mode.
+        // 📝 The host admits only guarded opaque single-stratum albedo maps. Rough mode uses the authored BRDF.
         if ((Extent.Primary.w & 2048u) != 0 && F.Emissive.w > 0)
             ApplyRayMaterial(Current, F, Strike.yz);
         Origin = HitPosition + Normal * .001;

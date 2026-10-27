@@ -6,16 +6,16 @@ three cases: spot without IES, point with a synthetic asymmetric IES profile, an
 The overlapping inactive entry deliberately triggers the capacity-one fallback; it is still assigned to cells.
 The tests use SwiftShader CPU Vulkan, not a hardware GPU or the editor.
 
-| Check | Result |
-| --- | --- |
-| Normal capacity `16`, each source type | `14,336` vs `163,840` visits; **zero** fallbacks; identical float4s |
-| Moved to a cell boundary (`x=4`) | Same exhaustive/cluster equality and zero fallbacks |
-| Moved near either domain edge (`x=±15.5`) | `11,264` visits vs `163,840`; zero fallbacks; identical readbacks |
-| Capacity `1` | `4,096` overflow queries fell back to exhaustive; identical readbacks |
-| Two receivers outside the grid | Exactly two fallback queries; identical readbacks |
-| Panel open/blocked, source on/off | Controls changed all cases; 60 main-source samples shadowed |
-| Rotate synthetic IES basis | Readbacks changed for IES point and IES spot; both still match native lighting |
-| GPU vs native reference | Worst absolute RGB error over all tested cases `1.23e-5` |
+| Check                                     | Result                                                                |
+| ----------------------------------------- | --------------------------------------------------------------------- |
+| Normal capacity `16`, each source type    | `14,336` vs `163,840` visits; **zero** fallbacks; identical float4s   |
+| Moved to a cell boundary (`x=4`)          | Same exhaustive/cluster equality and zero fallbacks                   |
+| Moved near either domain edge (`x=±15.5`) | `11,264` visits vs `163,840`; zero fallbacks; identical readbacks     |
+| Capacity `1`                              | `4,096` overflow queries fell back to exhaustive; identical readbacks |
+| Two receivers outside the grid            | Exactly two fallback queries; identical readbacks                     |
+| Panel open/blocked, source on/off         | Controls changed all cases; 60 main-source samples shadowed           |
+| Rotate synthetic IES basis                | Point and spot changed; both still match native lighting              |
+| GPU vs native reference                   | Worst absolute RGB error over all tested cases `1.23e-5`              |
 
 The independent geometric shadow oracle intersects an analytic rectangle; it does not reuse the shader's triangle
 or BVH intersection. Source arrival, spot attenuation, GGX BRDF and IES interpolation are compared with separate
@@ -32,9 +32,10 @@ integration. The domain, receiver arrangement, range, blocker and light counts a
 
 The tested cell lists hold analytic directional, point, spot and IES lights, **not emissive triangles**. The
 existing [emissive-area comparison](README.md#emissive-triangle-importance-sampling--executed) uses a separate
-global cumulative triangle distribution and compared selected probes with a native reference. The newer bounded replay can sample
-emissive facets separately. Neither constitutes clustered emissive-light selection; a scalable emitter structure,
-PDF/support validation, dynamic updates, double-counting policy and hardware/editor tests remain open.
+global cumulative triangle distribution and compared selected probes with a native reference. The newer bounded
+replay can sample emissive facets separately. Neither constitutes clustered emissive-light selection; a scalable
+emitter structure, PDF/support validation, dynamic updates, double-counting policy and hardware/editor tests remain
+open.
 
 ```bash
 bash Exhibits/LightCompute/RunClusterSpotIes.sh

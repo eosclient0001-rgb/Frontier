@@ -29,7 +29,8 @@ adaptive reuse, or full ReSTIR GI.
 opaque, untextured triangles against the current BVH, up to eight hits, with two-sided constant facet radiance
 and an optional uniform environment. The default transport is Lambertian; an opt-in bounded rough-opaque mode
 uses the existing GGX/diffuse BRDF with cosine-hemisphere sampling. A separate
-[guarded diffuse texture mode](ReplayTexture.md) has since been added. Temporal candidates use the supplied
+[guarded diffuse texture mode](ReplayTexture.md) and a later [rough-textured extension](RoughTextureReplay.md)
+have since been added. Temporal candidates use the supplied
 prior-pixel/position/token guide; spatial candidates may originate on different surfaces. Each reused seed is
 fully retraced through the **current** scene, including its occluders, rather than carrying a stale visibility
 result. Pre-spatial reservoirs are retained; the selection floor is positive (`0.01` in the tests), and history
@@ -43,8 +44,8 @@ object plus moving blocker were separately exercised. The guide remains a bounde
 deforming-mesh motion-vector system. [Motion audit and limitations](ReplayMotion.md). A changed source,
 blocker, receiver or bounce budget can therefore be replayed
 without blindly copying the old radiance. The host rejects corrupt BVHs, zero selection floor and textured
-facets. The original Lambertian mode rejects metallic surfaces; the optional rough mode accepts metallic
-fractions 0–1 and roughness 0.25–1, while rejecting near-delta materials.
+facets without the texture opt-in. The original Lambertian mode rejects metallic surfaces; the optional rough
+mode accepts metallic fractions 0–1 and roughness 0.25–1, while rejecting near-delta materials.
 
 | SwiftShader CPU Vulkan fixture | Independent target | Reused result |
 |---|---:|---:|
@@ -103,8 +104,8 @@ reduction is fixture-specific, not an equal-cost performance result. [Facet samp
 An opt-in balance heuristic also combines light and BSDF proposals; it improves a large-light fixture but
 worsens a small-light fixture. [Comparison and four-hit references](ReplayBalance.md).
 
-This does **not** yet handle general materials, direct analytic lights, textured geometry, refraction, volumes,
-arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,
+This does **not** yet handle general materials, direct analytic lights, general textured materials, refraction,
+volumes, arbitrary motion-vector generation or production/editor integration. Replay is a path-sampling experiment,
 not the retained demo's endpoint-reconnection algorithm, and rare-event variance may be large. Four noisy
 actual captures are shown in [ReplayCaptures.md](ReplayCaptures.md).
 

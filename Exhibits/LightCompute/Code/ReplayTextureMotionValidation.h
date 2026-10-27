@@ -162,7 +162,12 @@ ReplayPrimaryReference TraceReplayPrimaryReference(const LightComputeArchive& Sc
     {
         const auto Sample = ReplayReferenceTexture(Scene, F, Result.BaryU, Result.BaryV, Position, Normal,
                                                     ReplayReferenceScale(Direction, -1));
+        const size_t Offset = size_t(F.Emissive[3]) - 1;
         for (uint32_t C = 0; C < 3; ++C) R.AlbedoIor[C] = float(Sample.Albedo[C]);
+        R.NormalRoughness[3] = Scene.Angles[Offset + 11];
+        R.ViewMetallic[3] = Scene.Angles[Offset + 12];
+        R.AlbedoIor[3] = Scene.Angles[Offset + 13];
+        R.ExpectedDirect[3] = F.Emissive[3];
         Result.Mip = Sample.Mip;
         Result.NearMipBoundary = Sample.NearMipBoundary;
     }

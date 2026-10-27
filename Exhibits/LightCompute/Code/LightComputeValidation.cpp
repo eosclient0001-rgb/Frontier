@@ -1667,12 +1667,21 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayTextureRoomValidation.h"
 #include "ReplayTextureCapture.h"
 #include "ReplayTextureMotionValidation.h"
+#include "RoughTextureReplayValidation.h"
 #include "ReplayTextureMotionCapture.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
     try
     {
+        if (Count == 4 && std::string(Arguments[3]) == "--rough-texture-replay")
+        {
+            ValidateReplayTextureGuards();
+            ValidateRoughTextureQuadrature(Arguments[1], Arguments[2]);
+            ValidateRoughTextureRoom(Arguments[1], Arguments[2]);
+            ValidateRoughTexturePrimary(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--cluster-spot-ies")
         {
             ValidateClusterSpotIes(Arguments[1], Arguments[2]);

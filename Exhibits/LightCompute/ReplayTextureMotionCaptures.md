@@ -11,12 +11,12 @@ albedo-aware display blur. Unfiltered readbacks: [before](Images/TexturedMotionB
 [moved](Images/TexturedMotionMoved.png), [blocked](Images/TexturedMotionBlocked.png),
 [reopened](Images/TexturedMotionReopened.png).
 
-| Before motion | Camera and cuboid moved; palette changed |
-| --- | --- |
+| Before motion                                      | Camera and cuboid moved; palette changed        |
+| -------------------------------------------------- | ----------------------------------------------- |
 | ![Initial](Images/TexturedMotionBeforePreview.png) | ![Moved](Images/TexturedMotionMovedPreview.png) |
 
-| Blocker inserted | Blocker removed; initial palette restored |
-| --- | --- |
+| Blocker inserted                                    | Blocker removed; initial palette restored             |
+| --------------------------------------------------- | ----------------------------------------------------- |
 | ![Blocked](Images/TexturedMotionBlockedPreview.png) | ![Reopened](Images/TexturedMotionReopenedPreview.png) |
 
 ## First submission after each change
@@ -25,8 +25,8 @@ These are individual, visibly noisy submissions, not the settled averages. The p
 samples and blur shadows. Raw readbacks: [motion](Images/TexturedMotionMovedFirst.png),
 [blocker](Images/TexturedMotionBlockedFirst.png), [reopening](Images/TexturedMotionReopenedFirst.png).
 
-| Camera, object and palette | Blocker inserted |
-| --- | --- |
+| Camera, object and palette    | Blocker inserted                |
+| ----------------------------- | ------------------------------- |
 | ![First motion][first-motion] | ![First blocker][first-blocker] |
 
 [first-motion]: Images/TexturedMotionMovedFirstPreview.png
@@ -40,11 +40,11 @@ The camera shifts `0.35` world units; the cuboid rotates `0.28` rad and translat
 supplies both the current and previous rigid/camera transforms and rebuilds the BVH. In all three transitions,
 old paths are retraced against current geometry, with represented history capped at one.
 
-| Transition | Temporal candidates accepted | Spatial links | Reset | History cap |
-| --- | ---: | ---: | ---: | ---: |
-| Camera, cuboid and palette | 34,922 | 142,226 | 0 | 1 |
-| Blocker inserted | 34,470 | 142,148 | 0 | 1 |
-| Reopen and restore palette | 34,470 | 142,226 | 0 | 1 |
+| Transition                 | Temporal candidates accepted | Spatial links | Reset | History cap |
+| -------------------------- | ---------------------------: | ------------: | ----: | ----------: |
+| Camera, cuboid and palette | 34,922                       | 142,226       | 0     | 1           |
+| Blocker inserted           | 34,470                       | 142,148       | 0     | 1           |
+| Reopen and restore palette | 34,470                       | 142,226       | 0     | 1           |
 
 The fixed lower-image linear luminance means were `0.211452`, `0.361572`, `0.014354` and `0.210945`, respectively.
 They are scene sanity checks, not measured photometric ground truth. Exposure is 0.45 with

@@ -107,8 +107,19 @@ void ValidateReplayTextureGuards()
         Require(Rejected(Scene), "Malformed diffuse atlas was not rejected");
         ++Cases;
     };
-    Require(Rejected(Valid, false, false) && Rejected(Valid, true, true),
-            "Textured diffuse replay failed opt-in or rough-material guard");
+    Require(Rejected(Valid, false, false) && !Rejected(Valid, true, true),
+            "Textured replay failed opt-in or guarded rough-material acceptance");
+    auto Rough = Valid;
+    Rough.Angles[11] = .6f; Rough.Angles[12] = .4f;
+    Require(Rejected(Rough, false, true) && !Rejected(Rough, true, true),
+            "Textured GGX coefficients bypassed the diffuse guard or failed the rough guard");
+    for (const auto& Pair : std::array<std::pair<uint32_t, float>, 4>{{{11, .249f}, {11, 1.01f},
+                                                                       {12, -.01f}, {12, 1.01f}}})
+    {
+        auto BadRough = Rough;
+        BadRough.Angles[Pair.first] = Pair.second;
+        Require(Rejected(BadRough, true, true), "Out-of-domain rough texture coefficients were accepted");
+    }
     auto TexturedFacet = [](LightComputeArchive& S) -> LightComputeFacet&
     {
         for (auto& F : S.Surfaces) if (F.Emissive[3] != 0) return F;
@@ -151,7 +162,7 @@ void ValidateReplayTextureGuards()
     Primary.Camera[1][0] = 1;
     Require(Rejected(Primary, false, true, true), "Malformed primary camera was not rejected");
     ++Cases;
-    std::printf("TEXTURE_GUARDS malformed=%u opt_in=1 rough_rejected=1\n", Cases);
+    std::printf("TEXTURE_GUARDS malformed=%u opt_in=1 rough_opt_in=1 rough_bounds=4 diffuse_rejects_rough=1\n", Cases);
 }
 void ValidateReplayTextureAnalytic(const char* Driver, const std::string& Shaders)
 {
