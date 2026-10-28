@@ -3,9 +3,9 @@
 > **Historical-source correction:** much of this page describes an earlier, incomplete demo checkout. The
 > retained full VehicleHMI demo does contain a 160-particle XPBD-labelled carcass, Hex8 solid and continuum
 > shell; the separate older 84-particle Engine lattice is not the same implementation. Project Drive is a
-> different reference. The later [standalone projection](TyreProjectionDevice.md) and [Hex8 solid](TyreSolidDevice.md)
-> GPU exhibits execute on SwiftShader CPU Vulkan, not a physical GPU or the editor. None proves calibrated
-> real-world tyre physics. Further vehicle-dynamics/Jolt porting remains deferred. Statements below are
+> different reference. The later [projection](TyreProjectionDevice.md), [Hex8 solid](TyreSolidDevice.md) and
+> [curved-shell](TyreMembraneDevice.md) GPU exhibits execute on SwiftShader CPU Vulkan, not a physical GPU or
+> the editor. None proves calibrated real-world tyre physics; the curved-shell audit finds mechanics limitations. Further vehicle-dynamics/Jolt porting remains deferred. Statements below are
 > historical exhibit scope, not evidence that all models are integrated in the current application.
 
 See [verified continuation](Continuation.md) for recovered sources, five original demo tests, twelve XPBD

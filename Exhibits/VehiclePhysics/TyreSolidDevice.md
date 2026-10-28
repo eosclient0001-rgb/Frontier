@@ -93,6 +93,8 @@ SANITIZE=1 bash Exhibits/VehiclePhysics/RunTyreSolidDevice.sh
 [XPBD regression, sanitized](Results/TyreSolidProjectionRegression-sanitized.txt). Both projection regressions
 exited successfully and retained their previous readback digest.
 
-The port still requires GPU continuum-shell and spring-contact dynamics, long-duration/convergence analysis,
-measured-tyre calibration, physical GPU/Windows testing, a real graphics consumer and editor/scene scheduling.
+A separate [curved-shell GPU port](TyreMembraneDevice.md) now covers the demo's other continuum model, with
+important independent mechanics counterexamples. Standalone spring-contact dynamics, long-duration/convergence
+analysis, measured-tyre calibration, physical GPU/Windows testing, a real graphics consumer and editor/scene
+scheduling remain open.
 The prior hard-drop convergence failure remains unresolved; no real-time or physical accuracy claim is made.

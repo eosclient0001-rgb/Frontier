@@ -87,7 +87,7 @@ and the approximately `0.1 mm` maximum has not been attributed to a specific cau
 
 No physical-GPU/Windows test, performance measurement, long-duration stability or measured tyre validation
 is provided. The previously documented free-running hard-drop convergence failure remains unresolved.
-The separate [Hex8 implementation](TyreSolidDevice.md) remains similarly isolated. GPU continuum shell,
-spring-contact dynamics, an actual graphics pipeline consuming these GPU particles and editor integration are
-still open. Results here compare a simulation to the demo/Engine implementation, not to
+The separate [Hex8 solid](TyreSolidDevice.md) and [curved-shell](TyreMembraneDevice.md) GPU implementations
+remain similarly isolated. Standalone spring-contact dynamics, an actual graphics pipeline consuming these GPU
+particles and editor integration are still open. Results here compare a simulation to the demo/Engine implementation, not to
 independent physical data.

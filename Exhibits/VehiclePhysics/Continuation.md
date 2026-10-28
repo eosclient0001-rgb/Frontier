@@ -1,5 +1,10 @@
 # VehicleHMI continuation — source audit and measured rendering changes
 
+> **Later standalone GPU work:** the demo [projection](TyreProjectionDevice.md), [Hex8 solid](TyreSolidDevice.md)
+> and [curved-shell model](TyreMembraneDevice.md) now run in isolated SwiftShader Vulkan fixtures. This does
+> not add a shell vehicle mode or editor integration; the shell investigation also records independent mechanics
+> counterexamples. The older source and integration descriptions below remain historical.
+
 Continued from `arena/2ac8ddab-frontier` at `ae0bb7d`. The restored base is `29c5ab1`; this checkpoint is on `arena/672a179a-frontier`.
 Tested 2026-10-27, GCC 12.2 / Node 22.22.3 / Linux CPU. No Windows binary, GPU or editor acceptance is claimed.
 

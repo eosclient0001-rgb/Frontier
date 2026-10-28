@@ -433,7 +433,9 @@ void ValidateSurface(const std::vector<SurfaceProbe> &Probes, const SurfaceResul
 int Run(int Count, char **Arguments)
 {
     using namespace Frontier;
-    if (Count != 6) throw std::runtime_error("Expected reset.spv advance.spv surface.spv commands.bin output.bin");
+    const bool Membrane = Count == 7 && std::string(Arguments[6]) == "membrane";
+    if (Count != 6 && !Membrane)
+        throw std::runtime_error("Expected reset.spv advance.spv surface.spv commands.bin output.bin [membrane]");
     std::ifstream File(Arguments[4], std::ios::binary);
     if (!File) throw std::runtime_error("Cannot read fixture commands");
     std::uint32_t Tyres = 0, Steps = 0;
@@ -458,8 +460,9 @@ int Run(int Count, char **Arguments)
     auto *Results = static_cast<TyreProjectionResult *>(Device.ResultBuffer.Mapped);
     std::memcpy(MappedCommands, All.data(), sizeof(All[0]) * Tyres);
     Device.Execute(TyreProjectionOperation::Reset, Tyres);
-    std::vector<TyreCarcassProjection> Cpu(Tyres);
-    for (std::uint32_t I = 0; I < Tyres; ++I) Cpu[I].Reset(Expand(All[I]));
+    std::vector<TyreCarcassProjection> Cpu(Membrane ? 0 : Tyres);
+    if (!Membrane)
+        for (std::uint32_t I = 0; I < Tyres; ++I) Cpu[I].Reset(Expand(All[I]));
     double WorstLocal = 0.0, WorstWorld = 0.0, WorstForce = 0.0;
     std::size_t Pinned = 0;
     for (std::uint32_t Step = 0; Step < Steps; ++Step)
@@ -477,7 +480,8 @@ int Run(int Count, char **Arguments)
         for (std::uint32_t I = 0; I < Tyres; ++I)
         {
             const auto Input = Expand(Commands[I]);
-            const double Force = Cpu[I].Advance(Input, Commands[I].PressureLateralSeconds[2], Commands[I].IterationCounts[0]);
+            const double Force = Membrane ? Input.Deflection * (25000.0 + 0.88 * Input.Pressure) :
+                Cpu[I].Advance(Input, Commands[I].PressureLateralSeconds[2], Commands[I].IterationCounts[0]);
             if (Results[I].ForceStatus[1] != 1.0f) throw std::runtime_error("Valid GPU command rejected");
             WorstForce = std::max(WorstForce, std::abs(Force - Results[I].ForceStatus[0]));
             for (int N = 0; N < TyreContinuumParticleCount; ++N)
@@ -487,8 +491,11 @@ int Run(int Count, char **Arguments)
                 {
                     if (!std::isfinite(Particle.Local[Axis]) || !std::isfinite(Particle.World[Axis]))
                         throw std::runtime_error("Nonfinite GPU particle");
-                    WorstLocal = std::max(WorstLocal, std::abs(double(Particle.Local[Axis]) - Cpu[I].QueryLocalPositions()[N*3+Axis]));
-                    WorstWorld = std::max(WorstWorld, std::abs(double(Particle.World[Axis]) - Cpu[I].QueryWorldPositions()[N*3+Axis]));
+                    if (!Membrane)
+                    {
+                        WorstLocal = std::max(WorstLocal, std::abs(double(Particle.Local[Axis]) - Cpu[I].QueryLocalPositions()[N*3+Axis]));
+                        WorstWorld = std::max(WorstWorld, std::abs(double(Particle.World[Axis]) - Cpu[I].QueryWorldPositions()[N*3+Axis]));
+                    }
                     if (N % 5 == 0 || N % 5 == 4)
                     {
                         if (Particle.Local[Axis] != Particle.RestInverseMass[Axis])
@@ -502,10 +509,14 @@ int Run(int Count, char **Arguments)
         Output.write(reinterpret_cast<const char *>(Results), sizeof(*Results) * Tyres);
     }
     if (!Output) throw std::runtime_error("GPU output write failed");
-    std::printf("TYRE_DEVICE_CPU tyres=%u steps=%u particles=%zu max_local_m=%.9g max_world_m=%.9g max_force_n=%.9g pinned_components=%zu\n",
-                Tyres, Steps, std::size_t(Tyres) * Steps * TyreContinuumParticleCount, WorstLocal, WorstWorld, WorstForce, Pinned);
-    if (WorstLocal > 0.0003 || WorstWorld > 0.0003 || WorstForce > 0.02)
-        throw std::runtime_error("GPU differs from CPU solver beyond tolerance");
+    if (Membrane)
+        std::printf("TYRE_MEMBRANE_FORCE tyres=%u steps=%u particles=%zu max_force_n=%.9g pinned_components=%zu cpu_membrane=0\n",
+                    Tyres, Steps, std::size_t(Tyres) * Steps * TyreContinuumParticleCount, WorstForce, Pinned);
+    else
+        std::printf("TYRE_DEVICE_CPU tyres=%u steps=%u particles=%zu max_local_m=%.9g max_world_m=%.9g max_force_n=%.9g pinned_components=%zu\n",
+                    Tyres, Steps, std::size_t(Tyres) * Steps * TyreContinuumParticleCount, WorstLocal, WorstWorld, WorstForce, Pinned);
+    if ((!Membrane && (WorstLocal > 0.0003 || WorstWorld > 0.0003)) || WorstForce > 0.02)
+        throw std::runtime_error("GPU differs from CPU force or projection beyond tolerance");
     ValidateSurface(SurfaceProbes, static_cast<const SurfaceResult *>(Device.SurfaceResultBuffer.Mapped), Particles, Tyres);
 
     // 📝 A partial final group must not process other tyres merely because their descriptor ranges are larger.
