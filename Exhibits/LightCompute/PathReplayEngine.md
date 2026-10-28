@@ -22,8 +22,9 @@ finite random streams and physical-GPU validation remain in force.
 ## Caller-owned Vulkan recorder
 
 `LightComputeFootprint.h` supplies the shared 128-byte push-constant ABI and `PathReplayVulkan.{h,cpp}` records
-optional primary visibility, replay generation and resolve. It inserts compute-write to compute-read/write
-barriers **between** those stages, but deliberately does not submit, wait, transition resources, present, or
+optional primary visibility, replay generation and resolve. It also supports an opt-in
+[bounded temporal colour reconstruction](ReplayReconstruction.md) with two more pipelines. It inserts compute
+dependencies **between** those stages, but deliberately does not submit, wait, transition resources, present, or
 insert the final consumer barrier. The caller must provide input and output synchronization, queue ownership,
 properly initialized histories, descriptor and resource lifetimes, matching pipelines and non-aliasing storage.
 The regular LightCompute replay path now calls this recorder; diagnostic-only probe and tail passes still use
@@ -35,7 +36,8 @@ pointers, device workgroup/push-constant limits, pipeline layout, descriptor set
 layout must expose bindings 0–7 as in `LightInfluence.slang` and a compute-stage 128-byte push range at offset 0.
 The pipeline entry points are `TracePrimarySurfaces` (optional), `GenerateReplayReservoirs` and
 `ResolveReplayReservoirs`; `Primary` writes receiver records, and resolved colour goes to output records `[0, N)`.
-The replay environment contributes to escaping indirect paths, but the recorder does not enable the separate
+Opt-in reconstruction adds `GatherReplayReconstruction` and `FinalizeReplayReconstruction` from the separate
+reconstruction shader. The replay environment contributes to escaping indirect paths, but the recorder does not enable the separate
 primary sky-map flags: primary misses are black unless the caller handles background composition separately.
 All eight descriptor bindings must satisfy the actual Vulkan pipeline/layout contract, even for unused resources.
 
@@ -54,8 +56,10 @@ For this recorder, the push fields are:
 `PathReplayVulkanBuffers` contains **descriptor-range** lengths in records, not allocation byte sizes. Bind at
 least `N` receivers, the declared enclosures/facets, `PathReplayCounterWords` uints and
 `PathReplayRequiredOutputRecords(N)` float4s. The output formula includes the shared tail and five replay
-slots; the recorder also checks `PathReplayMaxReceivers` for shader-`uint` overflow. The device's storage-range,
-allocation and dispatch limits can be much lower. Camera storage needs 48 floats starting at `Primary.y` not
+slots; the recorder also checks `PathReplayMaxReceivers` for shader-`uint` overflow. Reconstruction requires
+`PathReplayRequiredReconstructedOutputRecords(N)` and 24 counter words, with its own lower uint-index limit.
+The device's storage-range, allocation and dispatch limits can be much lower. Camera storage needs 48 floats
+starting at `Primary.y` not
 only when primary visibility is enabled but also when textured secondary rays are enabled. Source-table and
 camera arithmetic are checked against the 32-bit shader index range. The weighted table has one header float
 and four floats per source; the uniform table has one float per source.
@@ -78,7 +82,8 @@ reflection system, unified PBR, or a complete reconstruction/presentation pipeli
   The existing C++17 VehicleCapture also builds and exports its 28,276-facet fixture using the shared footprint.
 - The Engine library also builds standalone. The recorder mock checks both stage sequences and barriers,
   padded dispatch, the full push payload, a valid weighted-source span, the largest legal uint-indexed output
-  and 22 fail-before-recording cases, including overflow and a missing textured-secondary camera.
+  and 27 fail-before-recording cases, including reconstruction resource limits, overflow and a missing
+  textured-secondary camera.
 - Moving-radiant 128×160 readbacks cover eight frames per state and first-transition images. On SwiftShader CPU
   Vulkan the Engine recorder's 14 PNGs matched the pre-change exhibit scheduler byte-for-byte in release and
   ASan/UBSan-host builds; the external Vulkan driver and GPU shaders are not sanitizer-instrumented. Camera,

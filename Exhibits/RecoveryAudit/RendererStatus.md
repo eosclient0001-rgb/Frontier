@@ -5,8 +5,9 @@
 **ReSTIR GI is not complete or connected to the editor.** The current repository has a bounded,
 SwiftShader-executed software-traced research path with temporal/spatial replay, dynamic-light and blocker
 fixtures and image readbacks. An [Engine command recorder](../LightCompute/PathReplayEngine.md) now schedules
-normal replay in that fixture; Vulkan resource creation and submission remain caller-owned. It does not have an
-accepted production scene/render loop, general dynamic and deforming-geometry reprojection, converged denoising
+normal replay and [bounded static colour reconstruction](../LightCompute/ReplayReconstruction.md) in that fixture;
+Vulkan resource creation and submission remain caller-owned. It does not have an accepted production scene/render
+loop, general dynamic and deforming-geometry reprojection, converged denoising
 or a tested physical GPU path. There is no defensible single completion percentage without defining and testing a
 full production acceptance checklist.
 
@@ -35,8 +36,8 @@ or a Vulkan validation host in Exhibits, is not by itself evidence that the edit
 
 | Area | Evidence | Still missing |
 |---|---|---|
-| Dynamic/multibounce GI | [Moving-light and blocker fixture](../LightCompute/ReplayFacetMixtureMotion.md), [14 captures](../LightCompute/ReplayFacetMixtureMotionCaptures.md), and [2,048-seed follow-up](../LightCompute/ReplayRigidVarianceRepeat.md) test limited scenes on CPU Vulkan, including four-hit paths and cap-one reuse | General unbiasedness/PRNG dependence, rare-path behaviour, arbitrary animated/deforming geometry, production integration, physical GPU, temporal stability and denoising |
-| Reflections | [Rough sampled screen proposals with software-BVH fallback](../LightCompute/RoughReflections.md), source-off and moved-source checks, and later limited history work | General motion/disocclusion, roughness-mip screen-colour history, full temporal specular reconstruction, general multi-bounce/noise acceptance, hardware RT and editor linkage |
+| Dynamic/multibounce GI | [Moving-light and blocker fixture](../LightCompute/ReplayFacetMixtureMotion.md), [14 captures](../LightCompute/ReplayFacetMixtureMotionCaptures.md), [2,048-seed follow-up](../LightCompute/ReplayRigidVarianceRepeat.md) and [bounded static colour history](../LightCompute/ReplayReconstruction.md) test limited scenes on CPU Vulkan | General unbiasedness/PRNG dependence, rare paths, arbitrary animated/deforming geometry, production integration, physical GPU and motion-safe denoising; current colour history resets globally on scene revisions |
+| Reflections | [Rough sampled screen proposals with software-BVH fallback](../LightCompute/RoughReflections.md), limited specular history and [static rough-opaque replay colour accumulation](../LightCompute/ReplayReconstruction.md) | General motion/disocclusion, roughness-mip screen-colour history, full temporal specular reconstruction, general multi-bounce/noise acceptance, hardware RT and editor linkage |
 | PBR | [Offscreen authored opaque/coating material pipelines](../Renderer/README.md), plus separate research glass/transport fixtures | Unified transmission/refraction, SSS, complex-IOR/multiple-scattering acceptance, converged GI, authoring/document material assignment, colour/presentation and native editor integration |
 | Atmosphere, clouds, fog | CPU atmosphere and reference sky; cloud/fog GPU shader payloads and bounded validation | Full GPU atmosphere/volume production scheduling, scene linkage and measured sky/volume acceptance |
 | Sun, Moon, stars, flares | CPU celestial model and actual demo Moon texture; isolated Vulkan Sun and simultaneous flare components | GPU/editor Moon, star and general celestial integration, Moon occlusion/indirect-light coverage, lens calibration and texture licence review |

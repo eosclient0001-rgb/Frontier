@@ -4,6 +4,17 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Bounded replay colour reconstruction — 2026-10-28
+
+- Added opt-in Vulkan gather/finalize stages for the existing combined diffuse and rough-opaque replay output.
+  In a static 32×32 half-blocked emitter fixture, 20-frame bounded reconstruction reduced RGB RMSE from
+  `0.3193` to `0.07184` (diffuse) and `0.3740` to `0.08401` (rough opaque). Host recurrence, eleven
+  malformed-guide rejections, out-of-bounds/background, reservoir composition and first-change resets pass.
+- Camera, blocker, material and lighting changes conservatively reset the colour history, even while replay
+  reservoirs may keep cap-one histories. This is **not** general animated/disocclusion-safe reconstruction;
+  no physical GPU, hardware RT, editor viewport, dedicated full reflection denoiser or unified PBR is claimed.
+  [Algorithm, readbacks, tests and limitations](../Exhibits/LightCompute/ReplayReconstruction.md).
+
 ## Caller-owned ReSTIR replay recording — 2026-10-28
 
 - Moved normal primary/generate/resolve Vulkan command ordering into `Frontier/Engine/Rendering`, with a shared

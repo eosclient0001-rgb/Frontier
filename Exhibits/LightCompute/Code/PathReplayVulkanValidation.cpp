@@ -20,6 +20,9 @@ using namespace Frontier;
 static_assert(PathReplayRequiredOutputRecords(65) == 17375);
 static_assert(PathReplayRequiredOutputRecords(PathReplayMaxReceivers) - 1 <= UINT32_MAX);
 static_assert(PathReplayRequiredOutputRecords(PathReplayMaxReceivers + 1) - 1 > UINT32_MAX);
+static_assert(PathReplayRequiredReconstructedOutputRecords(65) == 17765);
+static_assert(PathReplayRequiredReconstructedOutputRecords(PathReplayMaxReconstructedReceivers) - 1 <= UINT32_MAX);
+static_assert(PathReplayRequiredReconstructedOutputRecords(PathReplayMaxReconstructedReceivers + 1) - 1 > UINT32_MAX);
 template <class T> T Handle(std::uintptr_t Value)
 {
     if constexpr (std::is_pointer_v<T>) return reinterpret_cast<T>(Value);
@@ -67,9 +70,11 @@ VKAPI_ATTR void VKAPI_CALL PipelineBarrier(VkCommandBuffer, VkPipelineStageFlags
 {
     if (Source != VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT || Target != VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT ||
         Flags != 0 || MemoryCount != 1 || !Memory || BufferCount != 0 || ImageCount != 0 ||
-        Memory->sType != VK_STRUCTURE_TYPE_MEMORY_BARRIER || Memory->srcAccessMask != VK_ACCESS_SHADER_WRITE_BIT ||
+        Memory->sType != VK_STRUCTURE_TYPE_MEMORY_BARRIER ||
+        (Memory->srcAccessMask != VK_ACCESS_SHADER_WRITE_BIT &&
+         Memory->srcAccessMask != (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) ||
         Memory->dstAccessMask != (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) ++CallbackErrors;
-    Events.push_back({'M', MemoryCount});
+    Events.push_back({Memory && (Memory->srcAccessMask & VK_ACCESS_SHADER_READ_BIT) ? 'R' : 'M', MemoryCount});
 }
 void Require(bool Condition, const char *Message)
 {
@@ -121,6 +126,21 @@ int main()
         for (std::size_t I = 0; I < Events.size(); ++I)
             Require(Events[I].Kind == WithoutPrimary[I].Kind && Events[I].Value == WithoutPrimary[I].Value,
                     "Non-primary replay stage ordering differs");
+        auto ReconstructionAccess = Access;
+        ReconstructionAccess.GatherReconstruction = Handle<VkPipeline>(7);
+        ReconstructionAccess.FinalizeReconstruction = Handle<VkPipeline>(8);
+        auto ReconstructionExtent = Extent; ReconstructionExtent.Primary[3] = PathReplayReconstruct;
+        auto ReconstructionBuffers = Buffers;
+        ReconstructionBuffers.CounterWords = PathReplayReconstructionCounterWords;
+        ReconstructionBuffers.OutputColourRecords = PathReplayRequiredReconstructedOutputRecords(65);
+        Events.clear();
+        RecordPathReplay(Commands, ReconstructionAccess, ReconstructionBuffers, ReconstructionExtent);
+        const std::vector<Event> WithReconstruction{{'D',1}, {'P',128}, {'B',5}, {'X',2}, {'M',1},
+            {'B',7}, {'X',2}, {'R',1}, {'B',6}, {'X',2}, {'M',1}, {'B',8}, {'X',2}};
+        Require(Events.size() == WithReconstruction.size(), "Unexpected reconstruction command count");
+        for (std::size_t I = 0; I < Events.size(); ++I)
+            Require(Events[I].Kind == WithReconstruction[I].Kind && Events[I].Value == WithReconstruction[I].Value,
+                    "Reconstruction command order or write-after-read barrier differs");
 
         auto InvalidExtent = Extent; InvalidExtent.History[0] = 12;
         RequireRejection([&] { RecordPathReplay(Commands, Access, Buffers, InvalidExtent); });
@@ -188,8 +208,22 @@ int main()
         std::memcpy(&InvalidExtent.Maximum[1], &OverflowOffset, sizeof(OverflowOffset));
         InvalidBuffers.AngleFloats = UINT64_MAX;
         RequireRejection([&] { RecordPathReplay(Commands, Access, InvalidBuffers, InvalidExtent); });
+        RequireRejection([&] { RecordPathReplay(Commands, Access, ReconstructionBuffers, ReconstructionExtent); });
+        InvalidExtent = Extent; InvalidExtent.Primary[3] = PathReplayResetReconstruction;
+        RequireRejection([&] { RecordPathReplay(Commands, ReconstructionAccess, ReconstructionBuffers, InvalidExtent); });
+        InvalidBuffers = ReconstructionBuffers; --InvalidBuffers.OutputColourRecords;
+        RequireRejection([&] { RecordPathReplay(Commands, ReconstructionAccess, InvalidBuffers, ReconstructionExtent); });
+        InvalidBuffers = ReconstructionBuffers; --InvalidBuffers.CounterWords;
+        RequireRejection([&] { RecordPathReplay(Commands, ReconstructionAccess, InvalidBuffers, ReconstructionExtent); });
+        InvalidExtent = ReconstructionExtent; InvalidExtent.Dimensions[0] = PathReplayMaxReconstructedReceivers + 1;
+        InvalidExtent.History[0] = PathReplayMaxReconstructedReceivers + 1; InvalidExtent.History[1] = 1;
+        InvalidBuffers = ReconstructionBuffers; InvalidBuffers.ReceiverRecords = PathReplayMaxReconstructedReceivers + 1;
+        InvalidBuffers.OutputColourRecords = UINT64_MAX;
+        InvalidAccess = ReconstructionAccess; InvalidAccess.MaxGroupCountX = UINT32_MAX;
+        RequireRejection([&] { RecordPathReplay(Commands, InvalidAccess, InvalidBuffers, InvalidExtent); });
         std::printf("REPLAY_RECORDERS primary_and_input=1 barriers=3 padded_dispatch=1 push128=1 "
-                    "invalid_before_recording=22 weighted_span=1 uint_index_limit=1 secondary_camera=1\n");
+                    "invalid_before_recording=27 weighted_span=1 uint_index_limit=1 secondary_camera=1 "
+                    "reconstruction_order_and_WAR=1\n");
         return 0;
     }
     catch (const std::exception &Error)

@@ -249,9 +249,11 @@ struct LightComputeSubmission
     VkPipeline DiffuseGeneratePipeline = VK_NULL_HANDLE, DiffuseResolvePipeline = VK_NULL_HANDLE;
     VkPipeline RectangleGeneratePipeline = VK_NULL_HANDLE, RectangleResolvePipeline = VK_NULL_HANDLE;
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
+    VkPipeline ReplayGatherReconstructionPipeline = VK_NULL_HANDLE, ReplayFinalizeReconstructionPipeline = VK_NULL_HANDLE;
     VkPipeline ReplayProbeRegionPipeline = VK_NULL_HANDLE, ReplayTailAuditPipeline = VK_NULL_HANDLE;
     bool PendingOrdinaryHistoryReset = false;
-    bool ReplayLastReset = true;
+    bool ReplayLastReset = true, ReplayLastReconstructionReset = true, ReplayReconstructionActive = false;
+    bool ReplayPreviousTemporal = false, ReplayPreviousSpatial = false;
     uint32_t ReplayLastHistoryCap = 1, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
     PathReplayHistoryDomain ReplayHistoryDomain;
     RectangleDomain PreviousRectangle{};
@@ -392,6 +394,8 @@ struct LightComputeSubmission
                     DestroyPipeline(Device, Pipeline, nullptr);
             if (ReplayTailAuditPipeline) DestroyPipeline(Device, ReplayTailAuditPipeline, nullptr);
             if (ReplayProbeRegionPipeline) DestroyPipeline(Device, ReplayProbeRegionPipeline, nullptr);
+            if (ReplayFinalizeReconstructionPipeline) DestroyPipeline(Device, ReplayFinalizeReconstructionPipeline, nullptr);
+            if (ReplayGatherReconstructionPipeline) DestroyPipeline(Device, ReplayGatherReconstructionPipeline, nullptr);
             if (ReplayResolvePipeline) DestroyPipeline(Device, ReplayResolvePipeline, nullptr);
             if (ReplayGeneratePipeline) DestroyPipeline(Device, ReplayGeneratePipeline, nullptr);
             if (RectangleResolvePipeline) DestroyPipeline(Device, RectangleResolvePipeline, nullptr);
@@ -528,6 +532,9 @@ struct LightComputeSubmission
                 "Compute preparation modes conflict");
         for (const auto& B : Buffers)
             Require(B.Buffer == VK_NULL_HANDLE, "Compute buffers are already prepared");
+        const bool HasReplayGather = ReplayOnly && std::filesystem::exists(Shaders + "/ReplayGatherReconstruction.spv");
+        const bool HasReplayFinalize = ReplayOnly && std::filesystem::exists(Shaders + "/ReplayFinalizeReconstruction.spv");
+        Require(HasReplayGather == HasReplayFinalize, "Replay reconstruction needs both compute stages");
         ConstructBuffer(0, Scene.Lights);
         ConstructBuffer(1, Scene.Receivers);
         // 📝 Poison the uploaded oracle channel: shader output must not depend on
@@ -556,7 +563,8 @@ struct LightComputeSubmission
         ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
         ConstructBuffer(6, nullptr,
-                        (Scene.Receivers.size() * ((DiffuseOnly || RectangleOnly || ReplayOnly) ? 32 : 25) + 13889 + SolarSourceCount) * 16);
+                        (Scene.Receivers.size() * (HasReplayGather ? 36 :
+                            ((DiffuseOnly || RectangleOnly || ReplayOnly) ? 32 : 25)) + 13889 + SolarSourceCount) * 16);
         ConstructBuffer(7, nullptr, 96);
         std::array<VkDescriptorSetLayoutBinding, 8> Slots{};
         for (uint32_t I = 0; I < 8; ++I)
@@ -609,6 +617,11 @@ struct LightComputeSubmission
         {
             ReplayGeneratePipeline = ConstructPipeline(Shaders + "/ReplayGenerate.spv");
             ReplayResolvePipeline = ConstructPipeline(Shaders + "/ReplayResolve.spv");
+            if (HasReplayGather)
+            {
+                ReplayGatherReconstructionPipeline = ConstructPipeline(Shaders + "/ReplayGatherReconstruction.spv");
+                ReplayFinalizeReconstructionPipeline = ConstructPipeline(Shaders + "/ReplayFinalizeReconstruction.spv");
+            }
             if (std::filesystem::exists(Shaders + "/ReplayProbeRegion.spv"))
                 ReplayProbeRegionPipeline = ConstructPipeline(Shaders + "/ReplayProbeRegion.spv");
             if (std::filesystem::exists(Shaders + "/ReplayTailAudit.spv"))
@@ -781,8 +794,11 @@ struct LightComputeSubmission
                                                     bool BalanceSampling = false, bool TexturedDiffuse = false,
                                                     bool ImportanceRough = false, bool PowerWeightedFacets = false,
                                                     bool UniformFacetMixture = false, bool ProbeRegionForAudit = false,
-                                                    bool TailForAudit = false)
+                                                    bool TailForAudit = false, bool ReconstructReplay = false)
     {
+        Require(!ReconstructReplay || (!ProbeRegionForAudit && !TailForAudit && ReplayGatherReconstructionPipeline &&
+                                       ReplayFinalizeReconstructionPipeline),
+                "Replay colour reconstruction requires its own pipelines and excludes audit-only stages");
         Require(!TailForAudit || (PrimaryVisibility && Spatial && !Temporal && Bounces == 4 && ProbeRegionForAudit &&
                                   ReplayTailAuditPipeline && Scene.Width == 64 && Scene.Height == 64),
                 "Replay tail audit requires its four-hit fresh spatial probe pipeline and 64x64 extent");
@@ -811,15 +827,18 @@ struct LightComputeSubmission
         const PathReplayHistorySpecification ReplaySpecification{Bounces, PositiveFloor, Environment, PrimaryVisibility,
             RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse,
             ImportanceRough, PowerWeightedFacets, UniformFacetMixture};
-        // 📝 The engine owns revision tracking; the exhibit only submits its bounded GPU experiment.
-        ReplayLastHistoryCap = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
-                                                           FullHistoryForAudit).MaximumHistory;
+        // 📝 Reservoir replay can retain capped history across changes; radiance accumulation cannot.
+        const auto ReplayDecision = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
+                                                                FullHistoryForAudit);
+        ReplayLastHistoryCap = ReplayDecision.MaximumHistory;
         bool Reset = ResetHistory || Scene.Width != ReceiverWidth || Scene.Height != ReceiverHeight;
         Upload(Scene, TexturedDiffuse);
         if (!FacetSources.empty())
             std::memcpy(static_cast<float*>(Buffers[4].Address) + ReplayFacetStart,
                         FacetSources.data(), FacetSources.size() * sizeof(float));
         ReplayLastReset = Reset || HistoryDirty;
+        ReplayLastReconstructionReset = ReplayLastReset || ReplayDecision.Changed || !ReplayReconstructionActive ||
+                                        ReplayPreviousTemporal != Temporal || ReplayPreviousSpatial != Spatial;
         ComputeExtent Extent;
         Extent.Dimensions[0] = uint32_t(Scene.Receivers.size());
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
@@ -834,7 +853,9 @@ struct LightComputeSubmission
                                      (TexturedDiffuse ? PathReplayTexturedDiffuse : 0u) |
                                      (ImportanceRough ? PathReplayImportanceRough : 0u) |
                                      (PowerWeightedFacets ? PathReplayPowerWeightedFacets : 0u) |
-                                     (UniformFacetMixture ? PathReplayUniformFacetMixture : 0u);
+                                     (UniformFacetMixture ? PathReplayUniformFacetMixture : 0u) |
+                                     (ReconstructReplay ? PathReplayReconstruct : 0u) |
+                                     (ReconstructReplay && ReplayLastReconstructionReset ? PathReplayResetReconstruction : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -856,7 +877,8 @@ struct LightComputeSubmission
         {
             const PathReplayVulkanAccess Access{PipelineLayout, DescriptorSet, PrimaryPipeline, ReplayGeneratePipeline,
                 ReplayResolvePipeline, CmdBindPipeline, CmdBindDescriptorSets, CmdPushConstants, CmdDispatch,
-                CmdPipelineBarrier, Properties.limits.maxComputeWorkGroupCount[0], Properties.limits.maxPushConstantsSize};
+                CmdPipelineBarrier, Properties.limits.maxComputeWorkGroupCount[0], Properties.limits.maxPushConstantsSize,
+                ReplayGatherReconstructionPipeline, ReplayFinalizeReconstructionPipeline};
             const PathReplayVulkanBuffers Spans{Buffers[1].Size / sizeof(LightComputeReceiver),
                 Buffers[2].Size / sizeof(TriangleVisibilitySpace::FloatEnclosure), Buffers[3].Size / sizeof(LightComputeFacet),
                 Buffers[4].Size / sizeof(float), Buffers[6].Size / sizeof(std::array<float, 4>),
@@ -897,6 +919,9 @@ struct LightComputeSubmission
         std::memcpy(Result.data(), Buffers[6].Address, Result.size() * 16);
         HistorySequence = ReplayLastReset ? 1 : HistorySequence + 1;
         HistoryDirty = false;
+        ReplayReconstructionActive = ReconstructReplay;
+        ReplayPreviousTemporal = Temporal;
+        ReplayPreviousSpatial = Spatial;
         return Result;
     }
     // One translating, unobstructed rectangular source; other geometry or changing emission is rejected/reset.
@@ -1654,6 +1679,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayFacetMixtureMotionCapture.h"
 #include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
+#include "ReplayReconstructionValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -1662,6 +1688,16 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--medium-radiance")
         {
             ValidateMediumRadianceGpu(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-reconstruction")
+        {
+            ValidateReplayReconstruction(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-reconstruction")
+        {
+            CaptureReplayReconstruction(Arguments[1], Arguments[2], Arguments[4]);
             return 0;
         }
         if (Count == 4 && std::string(Arguments[3]) == "--replay-facet-mixture")

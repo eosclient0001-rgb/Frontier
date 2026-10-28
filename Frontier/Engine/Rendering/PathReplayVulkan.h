@@ -15,9 +15,9 @@ namespace Frontier
 inline constexpr std::uint32_t PathReplayRoughOpaque = 64u, PathReplaySampleFacets = 128u,
     PathReplayAuditDoubleCount = 256u, PathReplayAuditStrictMotion = 512u, PathReplayBalanceSampling = 1024u,
     PathReplayTexturedDiffuse = 2048u, PathReplayImportanceRough = 4096u, PathReplayPowerWeightedFacets = 8192u,
-    PathReplayUniformFacetMixture = 16384u;
+    PathReplayUniformFacetMixture = 16384u, PathReplayReconstruct = 32768u, PathReplayResetReconstruction = 65536u;
 
-inline constexpr std::uint32_t PathReplayCounterWords = 23;
+inline constexpr std::uint32_t PathReplayCounterWords = 23, PathReplayReconstructionCounterWords = 24;
 inline constexpr std::uint32_t PathReplayCameraFloats = 48;
 inline constexpr std::uint64_t PathReplayFixedOutputRecords = 15425;
 inline constexpr std::uint32_t PathReplayMaxReceivers =
@@ -26,6 +26,12 @@ inline constexpr std::uint32_t PathReplayMaxReceivers =
 constexpr std::uint64_t PathReplayRequiredOutputRecords(std::uint32_t Receivers) noexcept
 {
     return std::uint64_t(Receivers) * 30u + PathReplayFixedOutputRecords;
+}
+inline constexpr std::uint32_t PathReplayMaxReconstructedReceivers =
+    static_cast<std::uint32_t>((std::numeric_limits<std::uint32_t>::max() - (PathReplayFixedOutputRecords - 1u)) / 36u);
+constexpr std::uint64_t PathReplayRequiredReconstructedOutputRecords(std::uint32_t Receivers) noexcept
+{
+    return std::uint64_t(Receivers) * 36u + PathReplayFixedOutputRecords;
 }
 
 struct PathReplayVulkanAccess
@@ -39,6 +45,7 @@ struct PathReplayVulkanAccess
     PFN_vkCmdDispatch Dispatch = nullptr;
     PFN_vkCmdPipelineBarrier PipelineBarrier = nullptr;
     std::uint32_t MaxGroupCountX = 0, MaxPushConstantBytes = 0;
+    VkPipeline GatherReconstruction = VK_NULL_HANDLE, FinalizeReconstruction = VK_NULL_HANDLE;
 };
 
 // 📝 Counts describe the descriptor ranges, not merely the sizes of the underlying allocations.
@@ -49,6 +56,10 @@ struct PathReplayVulkanBuffers
 };
 
 // 📝 Records optional primary visibility, replay generation and resolve with compute-to-compute barriers.
+//    PathReplayReconstruct adds an old-guide gather before resolve and colour-history finalization afterward;
+//    it requires both extra pipelines, 24 counter words and PathReplayRequiredReconstructedOutputRecords(N).
+//    The caller must set PathReplayResetReconstruction for first use and every incompatible scene, camera,
+//    material, lighting, history allocation or sampling-policy revision. It is not a general motion denoiser.
 //    Bindings 0–7 must match LightInfluence.slang; the pipeline layout must expose a 128-byte compute push
 //    constant range at offset zero. The caller validates the scene and material atlas, keeps descriptor ranges
 //    and objects alive, and supplies all input/output barriers, queue ownership, submission and history lifecycle.
