@@ -191,6 +191,30 @@ int main()
         for (std::size_t I = 0; I < Events.size(); ++I)
             Require(Events[I].Kind == WithSampleHistory[I].Kind && Events[I].Value == WithSampleHistory[I].Value,
                     "Sample-history command order or write-after-read barrier differs");
+        auto SeedCandidateExtent = SampleExtent;
+        SeedCandidateExtent.Primary[3] |= PathReplaySampleHistoryCandidates;
+        const std::vector<Event> WithSeedCandidates{{'D',1}, {'P',128}, {'B',4}, {'X',2}, {'M',1},
+            {'B',9}, {'X',2}, {'R',1}, {'B',5}, {'X',2}, {'R',1}, {'B',6}, {'X',2}, {'M',1},
+            {'B',10}, {'X',2}};
+        for (std::uint32_t Reuse = 0; Reuse < 4; ++Reuse)
+        {
+            SeedCandidateExtent.Reconstruction[0] = Reuse & 1u;
+            SeedCandidateExtent.Reconstruction[1] = (Reuse >> 1u) & 1u;
+            Events.clear();
+            RecordPathReplay(Commands, SampleAccess, SampleBuffers, SeedCandidateExtent);
+            Require(Events.size() == WithSeedCandidates.size(), "Unexpected seed-candidate command count");
+            for (std::size_t I = 0; I < Events.size(); ++I)
+                Require(Events[I].Kind == WithSeedCandidates[I].Kind && Events[I].Value == WithSeedCandidates[I].Value,
+                        "Seed-candidate gather, generation or read/write dependency differs");
+            Require(Pushed.Reconstruction == SeedCandidateExtent.Reconstruction,
+                    "Seed-candidate reservoir policy was not recorded");
+        }
+        auto InvalidSeedCandidate = SeedCandidateExtent;
+        InvalidSeedCandidate.Primary[3] = PathReplaySampleHistoryCandidates;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSeedCandidate); });
+        InvalidSeedCandidate = SeedCandidateExtent; InvalidSeedCandidate.Sampling[1] = 2;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSeedCandidate); });
+
         auto InvalidSample = SampleExtent;
         InvalidSample.Primary[0] = 0;
         RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
@@ -313,7 +337,8 @@ int main()
         std::printf("REPLAY_RECORDERS primary_and_input=1 barriers=3 padded_dispatch=1 push128=1 "
                     "invalid_before_recording=32 candidates_0_to_4=1 weighted_span=1 uint_index_limit=1 "
                     "secondary_camera=1 reconstruction_order_and_WAR=1 diffuse_camera_guards=1 "
-                    "sample_history_order_and_WAR=1 sample_history_rejections=14 sample_uint_limit=1\n");
+                    "sample_history_order_and_WAR=1 sample_history_rejections=14 sample_uint_limit=1 "
+                    "seed_candidate_order_and_WAR=1 reuse_policies=4 seed_candidate_rejections=2\n");
         return 0;
     }
     catch (const std::exception &Error)

@@ -1,0 +1,65 @@
+Unselected seed candidates and reservoir replay; host release; external driver/shaders not sanitizer-instrumented
+Base 3de9061, plus working changes identified by source hashes.
+Linux 6.1.158+ x86_64
+c++ (Debian 12.2.0-14+deb12u1) 12.2.0
+2026.14.1
+5d98298b72cd79e3e950dc957d5fd33d268234247fe3a7db807de66898c68634  Frontier/Engine/Rendering/Shaders/LightInfluence.slang
+849d62c2a053cd4bd74437e243215523ece1d8b8a2494ad548ef0aae4e510f39  Frontier/Engine/Rendering/Shaders/PathReplayReservoir.slang
+caee9d526d1fe8eb32797d86053fe9ed003f2eda6134bee89adfb728eb5618ce  Frontier/Engine/Rendering/Shaders/PathReplaySampleHistory.slang
+0a7062077859f50add4e789681423bcfec6b894a702cbe9117486513f90bd4dc  Frontier/Engine/Rendering/PathReplayVulkan.h
+c0566b6d084d624c966a09e18b2ddc15327391ecec2dfece5f4d935e1975005b  Frontier/Engine/Rendering/PathReplayVulkan.cpp
+614dec2cc9acde78d21d077ec50d0fcc1ca61ccbf7fa5560e030f624ba85a6cf  Frontier/Engine/Rendering/PathReplayDomain.h
+183472ac3c4a33572e3e2570a13cd10c22f0bdf37c38aab7199797b278152da2  Frontier/Engine/Rendering/PathReplayDomain.cpp
+8752eb98e626d4e2c8b9fee99fac4087a9c9d466a306ed73fc15c90952090045  Exhibits/LightCompute/Code/LightComputeValidation.cpp
+70475485ae8b640c984228cff53d60639a35cbc3df0cd8ef080be1753cbd44d3  Exhibits/LightCompute/Code/PathReplayVulkanValidation.cpp
+7b1c812ef54b89caf1e3b045c170270f18d8b3720672e095a24a4bca82c1cf4b  Exhibits/LightCompute/Code/ReplaySampleHistoryValidation.h
+218083421226dde9cd54777bb4df30183fa9d50b87e79496d5b625b1bb555a1b  Exhibits/LightCompute/Code/ReplaySeedCandidatesValidation.h
+6e62de1368393c89a4e987fdc913dffc7b45523047b7c4e2b749425352f4136f  Exhibits/LightCompute/Code/ReplaySeedDomainAudit.cpp
+a361e7380e79b765983e9a2f653dffded2e722b2031a5f050af06936d42b33b1  Exhibits/LightCompute/CMakeLists.txt
+97a78347195b4a3779ac16264db5993a58942152b69038a4d342a4101cef228d  Exhibits/LightCompute/RunReplaySeedCandidates.sh
+8ee5ac00fd7968e863b05e0f6808057db16a00ad322777e5a05bed51d4f84085  /home/user/Frontier/ExternalPackages/VulkanCompute/SwiftShader/libvulkan.so.1
+2f3ceffaaca7d031bc3943f8eacf398a5d9c42c5fe0d15d8840b9acfa630b58e  /home/user/Frontier/ExternalPackages/VulkanCompute/SwiftShader/libvk_swiftshader.so
+c9eef28b6b984fec220ef0abfecc40b502d46946706e47bfe97707027cb818bd  /home/user/Frontier/ExternalPackages/VulkanCompute/SwiftShader/vk_swiftshader_icd.json
+2dfd2b1501888b151ccce4575f57d9e2c6384bcee74b650fdcfbdccf2260fe22  /home/user/Frontier/_ClaudeScratch/build/replay-seed-candidates-release/Primary.spv
+e2a05c75381df019fe686e5baf1bf23317a648416c7c1384056ab8c974080d30  /home/user/Frontier/_ClaudeScratch/build/replay-seed-candidates-release/ReplayGenerate.spv
+af6aa41193a49377a65c9ae2f1436aaced61f875ea17aae060f2891547119017  /home/user/Frontier/_ClaudeScratch/build/replay-seed-candidates-release/ReplayResolve.spv
+712c8afd827094d2627180f93c884c5a45e3348d543434b59e9f0740e53bb533  /home/user/Frontier/_ClaudeScratch/build/replay-seed-candidates-release/ReplayGatherSampleHistory.spv
+7de725700a8ce35e3aaf981680db266437a0dff89e81e57ff7d93a89741b6524  /home/user/Frontier/_ClaudeScratch/build/replay-seed-candidates-release/ReplayFinalizeSampleHistory.spv
+INVERTED exact=0.5 unselected_full=0.5 unselected_cap_one=0.5 selected_seed=0.45
+DARK_TO_BRIGHT exact=1 unselected_full=1 unselected_cap_one=1 selected_seed=1
+UNEQUAL exact=1.75 unselected_full=1.75 unselected_cap_one=1.75 selected_seed=1.87714932127
+UNCHANGED exact=1.5 unselected_full=1.5 unselected_cap_one=1.5 selected_seed=1.60603677368
+PASS finite common-domain enumeration; not a proof for adaptive GPU reuse or RNG independence
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/replay-seed-candidates-release
+Test project /home/user/Frontier/_ClaudeScratch/build/replay-seed-candidates-release
+    Start 1: PathReplayDomainValidation
+1/6 Test #1: PathReplayDomainValidation .......   Passed    0.00 sec
+    Start 2: PathReplayVulkanValidation
+2/6 Test #2: PathReplayVulkanValidation .......   Passed    0.00 sec
+    Start 3: ReplaySeedDomainAudit
+3/6 Test #3: ReplaySeedDomainAudit ............   Passed    0.00 sec
+    Start 4: RadiantFacetValidation
+4/6 Test #4: RadiantFacetValidation ...........   Passed    0.00 sec
+    Start 5: MediumRadianceValidation
+5/6 Test #5: MediumRadianceValidation .........   Passed    0.00 sec
+    Start 6: PathReplayArchiveValidation
+6/6 Test #6: PathReplayArchiveValidation ......   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 6
+
+Total Test time (real) =   0.02 sec
+SEED_CANDIDATES_SUBPIXEL accepted=970 disoccluded=22 fresh_local=22 temporal=970 spatial=3968 fresh_stored=1024 different_winner=770 changed_visibility=3 local_oracle=819 spatial_oracle=818 ambiguous_local=7 local_max=0 spatial_max=0
+SEED_CANDIDATES_GUARDS moving_reset=1 reset_matches_control=1 temporal=904 spatial=3968 policy_reset=1 corrupt_bank_rejected=1 valid_temporal_retained=1 invalid_request=1 toggle_reservoir_cap=1 toggle_seed_reset=1
+SEED_CANDIDATES_FACETS batches=16 points=794 reference=0.106268904 quadrature_rmse=0.00028989958 four_fresh=0.10612942 fresh_se=0.000107142134 combined=0.106244988 combined_se=0.000142192123 fresh_rmse=0.0110356781 combined_rmse=0.012329439 paired=0.000115567881 paired_se=0.000130183876
+SEED_CANDIDATES_RELIGHT source_off_black=1 source_off_reset=1 relight_reset=1
+SEED_CANDIDATES_BATCHES completed=4/16
+SEED_CANDIDATES_BATCHES completed=8/16
+SEED_CANDIDATES_BATCHES completed=12/16
+SEED_CANDIDATES_BATCHES completed=16/16
+SEED_CANDIDATES_MULTIBOUNCE bounces=4 cpu_paths=406528 batches=16 points=794 accepted=970 reference=0.117553847 cpu_mean_se=0.000478085137 four_fresh=0.117010016 fresh_se=0.00143578431 combined=0.117232082 combined_se=0.00120646594 fresh_rmse=0.0917604093 combined_rmse=0.0791301304 paired=0.000222066082 paired_se=0.00131525654
+PASS bounded seed candidates with temporal/spatial replay and independent CPU checks
+SEED_CANDIDATES_CAPTURE 120x75 bounces=4 warm_frames=3 camera_shift=.03 full=8107 partial=0 rejected=92 background=801 temporal=8107 spatial=32414
+PASS direct software-Vulkan room readbacks; no denoising or equal-time claim
+ReplaySeedCandidatesFresh.png 120x75 RGB_SHA256=9329671c32133a66a904ec732a877cb446419287d69bfbb8f4d5dc4214d252b0
+ReplaySeedCandidatesCombined.png 120x75 RGB_SHA256=53922a1a51609f512244d0070cd83016fc67ed9577cad8e67e1425f5d0d63d05
+ReplaySeedCandidatesAcceptance.png 120x75 RGB_SHA256=542625350e160bad89d62de77c0e6e4b2c44c75c0e10fe0cf43ab6cb90b328f2

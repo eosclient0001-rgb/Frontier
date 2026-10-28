@@ -9,6 +9,24 @@ uint ReplayHistoryStart() { return Extent.Dimensions.x * 25u + 13889u + SolarSou
 uint ReplaySlot(uint Slot, uint Pixel) { return ReplayHistoryStart() + Slot * Extent.Dimensions.x + Pixel; }
 float2 EncodeReplaySeed(uint Seed) { return float2(float(Seed & 65535u), float(Seed >> 16u)); }
 uint DecodeReplaySeed(float2 Packed) { return uint(Packed.x) | (uint(Packed.y) << 16u); }
+uint ReplayFirstSeed(uint Pixel)
+{
+    uint Bits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
+    return NextRandom(Bits);
+}
+// 📝 Every half is an exactly representable uint16, avoiding float-to-uint conversion of corrupt history.
+bool ReplaySeedHalfValid(float Value)
+{
+    return isfinite(Value) && Value >= 0 && Value <= 65535 && floor(Value) == Value;
+}
+bool ReplaySeedBankValid(float4 First, float4 Second)
+{
+    float Count = Second.z;
+    return isfinite(Count) && Count >= 1 && Count <= 3 && floor(Count) == Count &&
+        ReplaySeedHalfValid(First.x) && ReplaySeedHalfValid(First.y) &&
+        (Count < 2 || (ReplaySeedHalfValid(First.z) && ReplaySeedHalfValid(First.w))) &&
+        (Count < 3 || (ReplaySeedHalfValid(Second.x) && ReplaySeedHalfValid(Second.y)));
+}
 // 📝 Keep float-to-int conversion defined even for extreme or non-finite reprojected coordinates.
 bool ReplayMotionConvertible(float2 Pixel)
 {
@@ -294,6 +312,29 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                 Selected = Candidate;
                 Radiance = CandidateRadiance;
                 Target = CandidateTarget;
+            }
+        }
+        // 📝 In the opt-in seed-candidate mode, gather ran before generation. These are unselected fresh
+        //    draws from earlier frames, not previous reservoir winners or stored radiance.
+        if ((Extent.Primary.w & 1048576u) != 0)
+        {
+            float4 First = OutputColour[ReplaySlot(13, Pixel)];
+            float4 Second = OutputColour[ReplaySlot(14, Pixel)];
+            uint Retained = ReplaySeedBankValid(First, Second) ? uint(Second.z) : 0;
+            for (uint Index = 0; Index < Retained; ++Index)
+            {
+                float2 PackedSeed = Index == 0 ? First.xy : (Index == 1 ? First.zw : Second.xy);
+                uint Candidate = DecodeReplaySeed(PackedSeed);
+                float3 CandidateRadiance = EvaluateReplayPath(R, Candidate);
+                float CandidateTarget = ReplayTarget(CandidateRadiance);
+                Sum += CandidateTarget;
+                Count += 1;
+                if (RandomUnit(SelectionBits) * Sum < CandidateTarget)
+                {
+                    Selected = Candidate;
+                    Radiance = CandidateRadiance;
+                    Target = CandidateTarget;
+                }
             }
         }
         if (Extent.Reconstruction.x != 0 && Extent.History.z != 0 && Extent.History.w == 0 &&

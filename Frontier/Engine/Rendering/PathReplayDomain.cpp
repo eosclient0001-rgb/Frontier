@@ -286,6 +286,10 @@ PathReplayHistoryDecision PathReplayHistoryDomain::Resolve(const PathReplayScene
     Require(Specification.InitialCandidates >= 1 &&
                 Specification.InitialCandidates <= PathReplayMaximumInitialCandidates,
             "Replay history requires one to four initial candidates");
+    Require(!Specification.SampleHistoryCandidates ||
+                (Specification.PrimaryVisibility && !Specification.RoughOpaque && !Specification.TexturedDiffuse &&
+                 Specification.InitialCandidates == 1),
+            "Seed-candidate history requires one untextured diffuse primary candidate");
     const bool SpecificationChanged = !PriorAvailable || PriorSpecification != Specification;
     const bool CameraChanged = !PriorAvailable ||
                                std::memcmp(Scene.Camera.data(), PriorCamera.data(),

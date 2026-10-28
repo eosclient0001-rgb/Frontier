@@ -3,8 +3,9 @@
 This **default-off** experiment keeps up to three previously generated, unselected random seeds. It retraces
 those seeds at the **current** surface, then averages the resulting paths with one current fresh path. It does
 not interpolate or accumulate old radiance, so a retained seed's shadow answer is recomputed in the current
-triangle BVH. This is software ray tracing, not hardware RT, non-ray-traced GI, completed ReSTIR GI, an editor
-viewport or general animated reconstruction. It does not yet combine with temporal/spatial reservoir reuse.
+triangle BVH. This original arithmetic-mean mode does not combine with temporal/spatial reservoir reuse. A separate
+[seed-candidate mode](ReplaySeedCandidates.md) now permits bounded reservoir composition. Both are software ray
+tracing, not hardware RT, non-ray-traced GI, completed ReSTIR GI, an editor viewport or general animated reconstruction.
 
 ## Contract and cost
 

@@ -18,7 +18,7 @@ inline constexpr std::uint32_t PathReplayRoughOpaque = 64u, PathReplaySampleFace
     PathReplayTexturedDiffuse = 2048u, PathReplayImportanceRough = 4096u, PathReplayPowerWeightedFacets = 8192u,
     PathReplayUniformFacetMixture = 16384u, PathReplayReconstruct = 32768u, PathReplayResetReconstruction = 65536u,
     PathReplayDiffuseCameraReprojection = 131072u, PathReplaySampleHistory = 262144u,
-    PathReplayResetSampleHistory = 524288u;
+    PathReplayResetSampleHistory = 524288u, PathReplaySampleHistoryCandidates = 1048576u;
 
 inline constexpr std::uint32_t PathReplayCounterWords = 23, PathReplayReconstructionCounterWords = 24;
 inline constexpr std::uint32_t PathReplayCameraFloats = 48;
@@ -75,13 +75,16 @@ struct PathReplayVulkanBuffers
 //    permits strict same-world-point history only for an unchanged diffuse, untextured primary scene and a
 //    verified camera-only transition. The caller must establish those conditions and valid previous projection;
 //    the recorder cannot inspect buffer contents. It is not a general motion denoiser.
-//    PathReplaySampleHistory is mutually exclusive with colour reconstruction and reservoir reuse; it averages
-//    one fresh path and up to three previously unselected seeds, all evaluated at the current surface. It requires
-//    primary, untextured diffuse inputs, one initial candidate, two additional pipelines, 24 counter words and
-//    PathReplayRequiredSampleHistoryOutputRecords(N). Reset on first use, allocation/policy changes and all scene
-//    revisions except a validated camera-only transition; never use this contract for animated scene reuse. The
-//    caller must validate the same diffuse camera domain and previous projection as above, and must invalidate
-//    snapshots after failed submission. These paths cost up to four evaluations; independence is not guaranteed.
+//    PathReplaySampleHistory requires primary, untextured diffuse inputs, one initial candidate, two additional
+//    pipelines, 24 counter words and PathReplayRequiredSampleHistoryOutputRecords(N). With no additional flag it
+//    averages one fresh path and up to three retained unselected seeds, and excludes reservoir reuse. Opt-in
+//    PathReplaySampleHistoryCandidates instead adds those seeds as candidates to replay generation and permits
+//    temporal/spatial reservoir reuse. Every seed is retraced at the current surface; overlapping seed/reservoir
+//    histories may be correlated and incur extra path evaluations. Both modes exclude colour reconstruction.
+//    Reset sample history on first use, allocation or reuse-policy changes, and all scene revisions except a
+//    validated camera-only transition; never use this contract for animated scene reuse. The caller validates the
+//    same diffuse camera domain and previous projection as above and invalidates snapshots after failed submission.
+//    Neither mode establishes independence, general unbiasedness, a speedup or complete ReSTIR GI.
 //    Bindings 0–7 must match LightInfluence.slang; the pipeline layout must expose a 128-byte compute push
 //    constant range at offset zero. The caller validates the scene and material atlas, keeps descriptor ranges
 //    and objects alive, and supplies all input/output barriers, queue ownership, submission and history lifecycle.

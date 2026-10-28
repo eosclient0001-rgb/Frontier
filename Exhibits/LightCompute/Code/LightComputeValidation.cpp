@@ -256,6 +256,7 @@ struct LightComputeSubmission
     bool ReplayLastReset = true, ReplayLastReconstructionReset = true, ReplayReconstructionActive = false;
     bool ReplayLastSampleHistoryReset = true, ReplaySampleHistoryActive = false;
     bool ReplayPreviousTemporal = false, ReplayPreviousSpatial = false, ReplayPreviousDiffuseCamera = false;
+    bool ReplayPreviousSeedCandidates = false;
     uint32_t ReplayLastHistoryCap = 1, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
     PathReplayHistoryDomain ReplayHistoryDomain;
     RectangleDomain PreviousRectangle{};
@@ -808,14 +809,17 @@ struct LightComputeSubmission
                                                     bool UniformFacetMixture = false, bool ProbeRegionForAudit = false,
                                                     bool TailForAudit = false, bool ReconstructReplay = false,
                                                     uint32_t InitialCandidates = 1, bool ExplicitOneForAudit = false,
-                                                    bool DiffuseCameraReprojection = false, bool SampleHistory = false)
+                                                    bool DiffuseCameraReprojection = false, bool SampleHistory = false,
+                                                    bool SampleHistoryCandidates = false)
     {
         Require(!DiffuseCameraReprojection || (ReconstructReplay && PrimaryVisibility && !RoughOpaque && !TexturedDiffuse),
                 "Diffuse camera reprojection requires reconstruction and untextured diffuse primary rays");
+        Require(!SampleHistoryCandidates || SampleHistory, "Seed candidates require sample history");
         Require(!SampleHistory || (PrimaryVisibility && !RoughOpaque && !TexturedDiffuse && !ReconstructReplay &&
-                    !Temporal && !Spatial && !DoubleCountForAudit && InitialCandidates == 1 && !ProbeRegionForAudit &&
-                    !TailForAudit && ReplayGatherSampleHistoryPipeline && ReplayFinalizeSampleHistoryPipeline),
-                "Sample history requires untextured diffuse primary rays, one fresh candidate and no reservoir reuse");
+                    (SampleHistoryCandidates || (!Temporal && !Spatial)) && !DoubleCountForAudit &&
+                    InitialCandidates == 1 && !ProbeRegionForAudit && !TailForAudit &&
+                    ReplayGatherSampleHistoryPipeline && ReplayFinalizeSampleHistoryPipeline),
+                "Sample history requires untextured diffuse primary rays, one fresh candidate and a compatible reuse policy");
         Require(!ExplicitOneForAudit || InitialCandidates == 1, "Explicit-one audit requires one initial candidate");
         Require(!ReconstructReplay || (!ProbeRegionForAudit && !TailForAudit && ReplayGatherReconstructionPipeline &&
                                        ReplayFinalizeReconstructionPipeline),
@@ -851,7 +855,7 @@ struct LightComputeSubmission
                 "Replay facet-source distribution exceeds the prepared storage span");
         const PathReplayHistorySpecification ReplaySpecification{Bounces, PositiveFloor, Environment, PrimaryVisibility,
             RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse,
-            ImportanceRough, PowerWeightedFacets, UniformFacetMixture, InitialCandidates};
+            ImportanceRough, PowerWeightedFacets, UniformFacetMixture, InitialCandidates, SampleHistoryCandidates};
         // 📝 Reservoir replay can retain capped history across changes; radiance accumulation cannot.
         const auto ReplayDecision = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
                                                                 FullHistoryForAudit);
@@ -868,7 +872,9 @@ struct LightComputeSubmission
                                         ReplayPreviousSpatial != Spatial ||
                                         ReplayPreviousDiffuseCamera != DiffuseCameraReprojection;
         ReplayLastSampleHistoryReset = ReplayLastReset || (ReplayDecision.Changed && !CameraTransition) ||
-                                       !ReplaySampleHistoryActive;
+                                       !ReplaySampleHistoryActive || ReplayPreviousTemporal != Temporal ||
+                                       ReplayPreviousSpatial != Spatial ||
+                                       ReplayPreviousSeedCandidates != SampleHistoryCandidates;
         ComputeExtent Extent;
         Extent.Dimensions[0] = uint32_t(Scene.Receivers.size());
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
@@ -890,7 +896,8 @@ struct LightComputeSubmission
                                      (DiffuseCameraReprojection && CameraTransition && !ReplayLastReconstructionReset ?
                                           PathReplayDiffuseCameraReprojection : 0u) |
                                      (SampleHistory ? PathReplaySampleHistory : 0u) |
-                                     (SampleHistory && ReplayLastSampleHistoryReset ? PathReplayResetSampleHistory : 0u);
+                                     (SampleHistory && ReplayLastSampleHistoryReset ? PathReplayResetSampleHistory : 0u) |
+                                     (SampleHistoryCandidates ? PathReplaySampleHistoryCandidates : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -960,6 +967,7 @@ struct LightComputeSubmission
         ReplayPreviousTemporal = Temporal;
         ReplayPreviousSpatial = Spatial;
         ReplayPreviousDiffuseCamera = DiffuseCameraReprojection;
+        ReplayPreviousSeedCandidates = SampleHistoryCandidates;
         return Result;
     }
     // One translating, unobstructed rectangular source; other geometry or changing emission is rejected/reset.
@@ -1722,6 +1730,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayCameraReprojectionValidation.h"
 #include "ReplayDynamicCameraValidation.h"
 #include "ReplaySampleHistoryValidation.h"
+#include "ReplaySeedCandidatesValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -1745,6 +1754,16 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--replay-sample-history")
         {
             ValidateReplaySampleHistory(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-seed-candidates")
+        {
+            ValidateReplaySeedCandidates(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-seed-candidates")
+        {
+            CaptureReplaySeedCandidates(Arguments[1], Arguments[2], Arguments[4]);
             return 0;
         }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-sample-history")

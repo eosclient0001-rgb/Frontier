@@ -6,10 +6,12 @@
 SwiftShader-executed software-traced research path with temporal/spatial replay, dynamic-light and blocker
 fixtures and image readbacks. An [Engine command recorder](../LightCompute/PathReplayEngine.md) now schedules
 normal replay and [bounded static colour reconstruction](../LightCompute/ReplayReconstruction.md) in that fixture;
-Vulkan resource creation and submission remain caller-owned. It does not have an accepted production scene/render
-loop, general dynamic and deforming-geometry reprojection, converged denoising
-or a tested physical GPU path. There is no defensible single completion percentage without defining and testing a
-full production acceptance checklist.
+Vulkan resource creation and submission remain caller-owned. A newer
+[opt-in seed-candidate mode](../LightCompute/ReplaySeedCandidates.md) combines previously unselected seed
+retracing with bounded temporal/spatial reservoir replay; the original
+arithmetic-mean seed mode remains separate. This does not establish an accepted production scene/render loop,
+general dynamic/deforming-geometry reprojection, converged denoising or a tested physical GPU path. There is no
+defensible single completion percentage without defining and testing a full production acceptance checklist.
 
 Both inspected editor routes explicitly display a scene-canvas placeholder:
 `Frontier/Applications/Editor/FrontierMain.cpp` and `UI/Editor/EditorWorkspace.cpp`. An Engine source file,
@@ -36,17 +38,40 @@ or a Vulkan validation host in Exhibits, is not by itself evidence that the edit
 
 | Area | Evidence | Still missing |
 |---|---|---|
-| Dynamic/multibounce GI | [Moving-light and blocker fixture](../LightCompute/ReplayFacetMixtureMotion.md), [14 captures](../LightCompute/ReplayFacetMixtureMotionCaptures.md), [2,048-seed follow-up](../LightCompute/ReplayRigidVarianceRepeat.md) and [bounded static colour history](../LightCompute/ReplayReconstruction.md) test limited scenes on CPU Vulkan | General unbiasedness/PRNG dependence, rare paths, arbitrary animated/deforming geometry, production integration, physical GPU and motion-safe denoising; current colour history resets globally on scene revisions |
+| Dynamic/multibounce GI | [Moving-light and blocker fixture](../LightCompute/ReplayFacetMixtureMotion.md), [14 captures](../LightCompute/ReplayFacetMixtureMotionCaptures.md), [2,048-seed follow-up](../LightCompute/ReplayRigidVarianceRepeat.md), [bounded static colour history](../LightCompute/ReplayReconstruction.md) and [unselected seed candidates plus replay](../LightCompute/ReplaySeedCandidates.md) test limited scenes on CPU Vulkan | Overlapping histories, adaptive selection and PRNG dependence preclude a general unbiasedness claim; rare paths, arbitrary animated/deforming geometry, production integration, physical GPU and motion-safe denoising remain open. Current colour history resets globally on scene revisions. |
 | Reflections | [Rough sampled screen proposals with software-BVH fallback](../LightCompute/RoughReflections.md), limited specular history and [static rough-opaque replay colour accumulation](../LightCompute/ReplayReconstruction.md) | General motion/disocclusion, roughness-mip screen-colour history, full temporal specular reconstruction, general multi-bounce/noise acceptance, hardware RT and editor linkage |
 | PBR | [Offscreen authored opaque/coating material pipelines](../Renderer/README.md), plus separate research glass/transport fixtures | Unified transmission/refraction, SSS, complex-IOR/multiple-scattering acceptance, converged GI, authoring/document material assignment, colour/presentation and native editor integration |
-| Atmosphere, clouds, fog | CPU atmosphere and reference sky; cloud/fog GPU shader payloads and bounded validation | Full GPU atmosphere/volume production scheduling, scene linkage and measured sky/volume acceptance |
+| Atmosphere, clouds, fog | C++ cloud/fog models and payloads plus Slang cloud marching, shadows and fog single scattering; SwiftShader [cloud](../LightCompute/Images/CloudComparison.png) and [fog](../LightCompute/Images/FogComparison.png) comparisons are historical exhibit captures | Full GPU atmosphere/volume production scheduling, editor/scene linkage, multiple scattering and measured sky/volume acceptance |
 | Sun, Moon, stars, flares | CPU celestial model and actual demo Moon texture; isolated Vulkan Sun and simultaneous flare components | GPU/editor Moon, star and general celestial integration, Moon occlusion/indirect-light coverage, lens calibration and texture licence review |
 | Analytic / emissive lights | Bounded clustered point/spot/IES checks; global area/luminance emissive distribution | **Clustered emissive triangles**, broad IES/scene coverage and production submission; global CDF is not a clustered light grid |
 | Tyres | Standalone GPU [XPBD projection](../VehiclePhysics/TyreProjectionDevice.md), [Hex8 solid](../VehiclePhysics/TyreSolidDevice.md) and [curved-shell](../VehiclePhysics/TyreMembraneDevice.md), including resident surface probes on SwiftShader | Shell mechanics counterexamples, standalone spring-contact dynamics, measured tyre validation, stable hard-drop results, physical GPU, actual mesh rendering and editor integration |
 | Gas / fluids | [Engine footprints and demo WGSL transport](../FluidReference/PlumeTransport.md); separate [matched face-flux pressure prototype](../FluidReference/GasProjection.md) passes bounded checks | Original plume pressure defect remains; prototype needs compatible advection, moving/open boundaries and production scheduling; scene/editor rendering, extended stability and physical validation; liquid solver not established |
+| UI/editor | Selective native [UI foundation](../UIFoundation/README.md), [Control Centre](../ControlCentre/README.md) and [Project Browser](../ProjectBrowser/README.md) tests/readbacks | Full VehicleHMI UI parity, actual scene canvases and a production renderer integration are not established; this session did not verify Windows execution. |
 
 The vehicle dynamics/Jolt port remains explicitly deferred. The new tyre work is standalone and does not
 change it.
+
+## Visual evidence
+
+These are exhibit captures, **not editor screenshots**. The cloud and fog panels below are historical SwiftShader
+readbacks assembled side by side without changing their pixels. Their full-size fixtures predate the latest payload
+extraction; a focused homogeneous-medium check passed afterward, not a repeat of every full-size capture.
+
+**Clouds: clear sky versus procedural cloud raymarch**
+
+![Clear sky and procedural clouds](../LightCompute/Images/CloudComparison.png)
+
+**Fog: disabled, unshadowed scattering, then cloud/geometry-shadowed scattering**
+
+![Fog comparison](../LightCompute/Images/FogComparison.png)
+
+**Current bounded GI test: seed candidates with temporal and spatial replay**
+
+![Seed candidates with replay](../LightCompute/Images/ReplaySeedCandidatesCombined.png)
+
+This new `120 × 75` image is a noisy, undenoised SwiftShader readback, not real-time or physical-GPU proof. The
+[four-fresh comparison, acceptance mask, numerical tests and costs](../LightCompute/ReplaySeedCandidates.md) give
+its context; the acceptance mask is a CPU-generated diagnostic, not radiance.
 
 ## What the GI chart actually means
 

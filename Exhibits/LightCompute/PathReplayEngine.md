@@ -76,7 +76,11 @@ reflection system, unified PBR, or a complete reconstruction/presentation pipeli
 sampling revision: use canonical 1–4 in `PathReplayHistorySpecification` even if the GPU uses legacy zero for one.
 See [initial candidate tests](ReplayCandidates.md) for history caps, colour resets and numerical limitations. A
 separate default-off [strict diffuse camera mode](ReplayCameraReprojection.md) requires a validated camera-only
-transition and exact matching points; the recorder cannot certify that condition from GPU buffers.
+transition and exact matching points; the recorder cannot certify that condition from GPU buffers. Another
+[seed-candidate mode](ReplaySeedCandidates.md) retraces unselected seed-bank entries as reservoir candidates,
+then permits bounded temporal/spatial reuse. Set `PathReplayHistorySpecification::SampleHistoryCandidates` to match
+that mode so changes cap old reservoir history; reset the sample bank on reuse-policy changes. Caller-owned resource,
+barrier, successful-submission and static-diffuse camera-domain requirements still apply.
 
 ## Verification
 

@@ -185,6 +185,23 @@ void ValidateEngineReplayHistory()
     Specification.InitialCandidates = 5;
     Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Specification); }), "Excess candidates accepted");
     Specification.InitialCandidates = 4; Compare(false, 64);
+    Specification.PrimaryVisibility = true; Compare(true, 1); Compare(false, 64);
+    Specification.ImportanceRough = false; Compare(true, 1); Compare(false, 64);
+    Specification.InitialCandidates = 1; Compare(true, 1); Compare(false, 64);
+    Specification.SampleHistoryCandidates = true; Compare(true, 1); Compare(false, 64);
+    Specification.InitialCandidates = 2;
+    Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Specification); }), "Multiple fresh seed candidates accepted");
+    Specification.InitialCandidates = 1;
+    Specification.RoughOpaque = true;
+    Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Specification); }), "Rough seed-candidate history accepted");
+    Specification.RoughOpaque = false;
+    Specification.TexturedDiffuse = true;
+    Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Specification); }), "Textured seed-candidate history accepted");
+    Specification.TexturedDiffuse = false;
+    Specification.PrimaryVisibility = false;
+    Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Specification); }), "Seed-candidate history without primary accepted");
+    Specification.PrimaryVisibility = true; Compare(false, 64);
+    Specification.SampleHistoryCandidates = false; Compare(true, 1); Compare(false, 64);
     Fixture.MaterialAtlas[0] = .5f;
     const auto Audit = History.Resolve(Fixture.View(), Specification, true);
     Require(Audit.Changed && Audit.MaximumHistory == 64, "Explicit full-history audit was not isolated");
@@ -234,9 +251,10 @@ void ValidateEngineReplayHistory()
     CameraFixture.Camera[5][0] = 0.f;
     Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
     Require(Camera.Changed && !Camera.CameraOnly, "Signed-zero previous projection mismatch was overlooked");
-    std::printf("ENGINE_REPLAY_HISTORY exact_revisions=13 proposal=1 weighted_facets=1 uniform_mixture=1 "
-                "candidate_revision=1 candidate_rejections=2 in_place_atlas=1 audit=1 invalidation=1 "
-                "camera_only=1 bvh_enclosure_corner=1 prior_projection=1 motion_metadata=1 signed_zero_camera=1\n");
+    std::printf("ENGINE_REPLAY_HISTORY exact_revisions=1 proposal=1 weighted_facets=1 uniform_mixture=1 "
+                "candidate_revision=1 candidate_rejections=2 seed_candidate_revision=1 seed_candidate_rejections=4 "
+                "in_place_atlas=1 audit=1 invalidation=1 camera_only=1 bvh_enclosure_corner=1 prior_projection=1 "
+                "motion_metadata=1 signed_zero_camera=1\n");
 }
 } // namespace
 

@@ -4,12 +4,35 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Seed candidates with temporal/spatial replay — 2026-10-28
+
+- Added an opt-in mode that retraces up to three previously unselected seeds as current-surface reservoir
+  candidates, then permits bounded temporal and spatial replay. The fresh, unselected seed—not a reservoir
+  winner—is retained. Recorder ordering, synchronization guards, seed-policy resets and history-cap revisions
+  are covered; the original sample-average mode remains unchanged.
+- In the SwiftShader half-pixel fixture, 970 seed banks and temporal reservoirs were accepted, 3,968 spatial
+  links were used, and all 22 changed-token temporal donors were rejected. Separate rectangle/host checks
+  matched 819 local and 818 spatial outputs; reset, corruption and relighting controls pass. An exact finite
+  example shows the selected-winner negative control is biased, but does not prove general adaptive reuse.
+- In a four-bounce fixture, 406,528 CPU paths and 16 seed batches produced red RMSE `0.091760` for four fresh
+  candidates with reservoirs and `0.079130` for seed candidates with reservoirs. An explicit-emitter fixture
+  is worse for the new mode (`0.012329` vs `0.011036`). Neither comparison is equal-time or proof of a universal
+  improvement; correlated streams and rare tails remain open.
+  [Details and readbacks](../Exhibits/LightCompute/ReplaySeedCandidates.md).
+- Release and host ASan/UBSan runs pass 6/6 CTests and match all three captured PNGs; original sample-history
+  numerical rows and four captures are unchanged. Existing replay parity has zero differing bits across 20 test
+  images. The strict camera numerical rows and three images also match earlier runs. Shaders and the SwiftShader
+  driver are not sanitizer-instrumented.
+- ReSTIR GI, motion-safe reconstruction, hardware RT, unified PBR and editor integration remain incomplete.
+  Execution is SwiftShader CPU Vulkan, not physical-GPU or Windows validation. Vehicle/Jolt remains deferred.
+
 ## Subpixel diffuse path-seed retracing — 2026-10-28
 
-- Added a default-off, one-candidate mode which retains up to three unselected fresh seeds and retraces them at
-  the current diffuse surface. It does not accumulate old radiance and cannot be combined with reservoir reuse
-  or colour reconstruction. A half-pixel SwiftShader fixture accepts 970 banks, rejects all 22 changed-token
-  disocclusions, and reproduces 10 changed shadow-path answers at the current point. Scene changes reset history.
+- Added a default-off, one-candidate arithmetic-mean mode which retains up to three unselected fresh seeds and
+  retraces them at the current diffuse surface. This original mode does not accumulate old radiance and cannot be
+  combined with reservoir reuse or colour reconstruction. A half-pixel SwiftShader fixture accepts 970 banks,
+  rejects all 22 changed-token disocclusions, and reproduces 10 changed shadow-path answers at the current point.
+  Scene changes reset history.
 - Independent one-bounce rectangle checks, seven corrupt-bank and seven invalid-request controls, five CTests,
   release/host-sanitized rows and strict-camera regressions pass. On four-bounce half-pixel motion, `813,056`
   CPU paths and 16 GPU seed batches give red RMSE `0.1530` for four fresh paths versus `0.1517` for four current

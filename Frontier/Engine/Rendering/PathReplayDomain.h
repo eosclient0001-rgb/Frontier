@@ -72,6 +72,7 @@ struct PathReplayHistorySpecification
     bool PowerWeightedFacets = false;
     bool UniformFacetMixture = false;
     uint32_t InitialCandidates = 1;
+    bool SampleHistoryCandidates = false;
     bool operator==(const PathReplayHistorySpecification&) const = default;
 };
 
