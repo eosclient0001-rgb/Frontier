@@ -62,7 +62,9 @@ became noisier. Paired seeds do not establish statistical independence, and thes
 imply a universal variance, convergence or equal-time improvement. The floor blue mixture running
 means at 32/64/96 batches were `0.039259 / 0.039141 / 0.039004`, with sample SE
 `0.002941 / 0.002087 / 0.001869`; the independent reference was `0.035758 ± 0.001140`.
-A handful of running means is not a monotonic-convergence proof.
+A handful of running means is not a monotonic-convergence proof. A later
+[disjoint-seed repeat](ReplayFacetMixtureMotionRepeat.md) compares fresh and reused samples and exposes
+a rigid-red uniform/reference discrepancy that needs further investigation.
 
 The shorter 8-batch smoke test also passed in release, but is not a convergence measurement. The
 full release and ASan/UBSan host runs both exited successfully and their printed numerical diagnostics

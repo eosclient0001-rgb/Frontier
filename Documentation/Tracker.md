@@ -2,6 +2,17 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Disjoint moving-GI convergence repeat — 2026-10-28
+
+- Four disjoint seed groups (256 batches) compare fresh uniform/mixture and cap-one temporal/spatial reuse
+  against six independent 240,000-path CPU references. Release and ASan/UBSan host runs pass the existing
+  tolerances and produce byte-identical sample tables; restricted/full primary probes match bit-for-bit
+  in a three-seed audit. Shader/driver code is not sanitizer-instrumented.
+- The earlier rigid-green mixture/uniform SD ratio `1.515` varied from `0.716–1.480` across groups and is
+  `1.125` overall; fresh rigid red is `3.84` nominal combined SE below the CPU reference under uniform
+  sampling despite passing the six-SE tolerance. This discrepancy needs a longer disjoint follow-up; neither
+  a general improvement nor convergence is claimed. [Data, chart and limits](../Exhibits/LightCompute/ReplayFacetMixtureMotionRepeat.md).
+
 ## Moving emissive-mixture GI reference — 2026-10-28
 
 - Independent primary-ray and four-hit CPU-path checks now exercise the optional facet mixture through camera,
