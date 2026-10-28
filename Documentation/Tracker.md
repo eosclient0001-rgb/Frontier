@@ -2,6 +2,15 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Rigid GI rare-path audit — 2026-10-28
+
+- The three largest uniform-spatial samples in the 2,048-seed set replay to large path radiance before
+  reservoir scaling; their final scale factors are below one. Eight post-selected uniform/mixture cases
+  match their recorded output, and an independent host reservoir reconstruction agrees exactly in this
+  fixture. Release, ASan/UBSan-host and default-off regression checks pass.
+- The audit reuses the shader path evaluator; it does not independently validate those paths or explain
+  which bounce/PDF/PRNG behavior caused the spikes. [Mechanism and logs](../Exhibits/LightCompute/ReplayRigidTailAudit.md).
+
 ## Rigid GI tail follow-up — 2026-10-28
 
 - A further 2,048 disjoint frame seeds compare uniform/mixture proposals with spatial reuse off/on against
