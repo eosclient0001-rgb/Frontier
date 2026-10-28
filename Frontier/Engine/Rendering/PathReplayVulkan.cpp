@@ -57,7 +57,7 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
         (!(Flags & PathReplayResetSampleHistory) || SampleHistory) &&
         (!SampleHistory || (Primary && !Reconstruct &&
             !(Flags & (PathReplayRoughOpaque | PathReplayTexturedDiffuse | PathReplayAuditDoubleCount)) &&
-            Extent.Sampling[1] <= 1 && Extent.Reconstruction[0] == 0 && Extent.Reconstruction[1] == 0)) &&
+            Extent.Sampling[1] <= 1)) &&
         (Sources || Extent.Reconstruction[2] == 0));
     for (std::uint32_t Axis = 0; Axis < 3; ++Axis)
         RequireReplay(std::isfinite(Extent.Minimum[Axis]) && Extent.Minimum[Axis] >= 0 && Extent.Minimum[Axis] <= 256);
@@ -114,15 +114,26 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
         }
     };
     if (Primary) Dispatch(Access.Primary, VK_ACCESS_SHADER_WRITE_BIT);
-    Dispatch(Access.Generate, VK_ACCESS_SHADER_WRITE_BIT);
-    if (Reconstruct || SampleHistory)
+    if (SampleHistory)
     {
-        // 📝 Gather must finish reading old guides and seed banks before either is overwritten.
-        Dispatch(SampleHistory ? Access.GatherSampleHistory : Access.GatherReconstruction,
-                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        // 📝 Gather must finish reading old guides and seed banks before resolve overwrites them, and
+        //    generation now consumes the gathered bank, so gather precedes generation in this mode.
+        Dispatch(Access.GatherSampleHistory, VK_ACCESS_SHADER_WRITE_BIT);
+        Dispatch(Access.Generate, VK_ACCESS_SHADER_WRITE_BIT);
         Dispatch(Access.Resolve, VK_ACCESS_SHADER_WRITE_BIT);
-        Dispatch(SampleHistory ? Access.FinalizeSampleHistory : Access.FinalizeReconstruction, 0);
+        Dispatch(Access.FinalizeSampleHistory, 0);
     }
-    else Dispatch(Access.Resolve, 0);
+    else
+    {
+        Dispatch(Access.Generate, VK_ACCESS_SHADER_WRITE_BIT);
+        if (Reconstruct)
+        {
+            // 📝 Gather must finish reading old guides before either is overwritten.
+            Dispatch(Access.GatherReconstruction, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            Dispatch(Access.Resolve, VK_ACCESS_SHADER_WRITE_BIT);
+            Dispatch(Access.FinalizeReconstruction, 0);
+        }
+        else Dispatch(Access.Resolve, 0);
+    }
 }
 } // namespace Frontier

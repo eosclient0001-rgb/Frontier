@@ -4,6 +4,20 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Subpixel seed retracing combined with reservoir reuse — 2026-10-28
+
+- The default-off seed-bank mode now combines with temporal and/or spatial reservoir reuse: gathered
+  unselected seeds enter generation as one-sample reservoir candidates (duplicates of the temporal seed
+  are skipped), resolve keeps its reservoir estimator, and finalize only shifts the bank with the fresh
+  seed. Recorder dispatch is primary, gather, generate, resolve, finalize in this mode.
+- Host release and ASan/UBSan CTests pass 5/5 and all five Slang entries compile to SPIR-V in this sandbox.
+  The SwiftShader GPU check (`ValidateReplaySampleCombined`: rejected pixels bit-match reservoir-only
+  output, accepted pixels shift the fresh bank) is wired into the sample-history run but was **not run**
+  here — no Vulkan CPU driver is available in this sandbox. No unbiasedness, equal-time or editor claim.
+  [Contract and limits](../Exhibits/LightCompute/ReplaySampleCombined.md).
+- ReSTIR GI, hardware RT, non-ray-traced GI, general animated reconstruction, unified PBR and editor
+  integration remain incomplete. The editor plan and vehicle dynamics/Jolt remain deferred.
+
 ## Subpixel diffuse path-seed retracing — 2026-10-28
 
 - Added a default-off, one-candidate mode which retains up to three unselected fresh seeds and retraces them at

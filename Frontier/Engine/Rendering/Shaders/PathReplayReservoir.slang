@@ -266,6 +266,19 @@ float3 EvaluateReplayPath(SurfacePoint Receiver, uint Seed)
     }
     return Radiance;
 }
+// 📝 Every half is an exactly representable uint16, avoiding float-to-uint conversion of corrupt history.
+bool ReplaySeedHalfValid(float Value)
+{
+    return isfinite(Value) && Value >= 0 && Value <= 65535 && floor(Value) == Value;
+}
+bool ReplaySeedBankValid(float4 First, float4 Second)
+{
+    float Count = Second.z;
+    return isfinite(Count) && Count >= 1 && Count <= 3 && floor(Count) == Count &&
+        ReplaySeedHalfValid(First.x) && ReplaySeedHalfValid(First.y) &&
+        (Count < 2 || (ReplaySeedHalfValid(First.z) && ReplaySeedHalfValid(First.w))) &&
+        (Count < 3 || (ReplaySeedHalfValid(Second.x) && ReplaySeedHalfValid(Second.y)));
+}
 float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Maximum.x; }
 [shader("compute")][numthreads(64,1,1)] void GenerateReplayReservoirs(uint3 Dispatch : SV_DispatchThreadID)
 {
@@ -296,6 +309,8 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                 Target = CandidateTarget;
             }
         }
+        bool TemporalReplayed = false;
+        uint TemporalSeed = 0;
         if (Extent.Reconstruction.x != 0 && Extent.History.z != 0 && Extent.History.w == 0 &&
             R.MotionPixel.w != 0 && ReplayMotionConvertible(R.MotionPixel.xy))
         {
@@ -333,9 +348,42 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                     {
                         Selected = Candidate; Radiance = Replayed; Target = ReplayedTarget;
                     }
+                    TemporalReplayed = true;
+                    TemporalSeed = Candidate;
                     InterlockedAdd(Counters[20], 1);
                 }
                 else InterlockedAdd(Counters[21], 1);
+            }
+        }
+        // 📝 Retained unselected seeds are retraced here as ordinary one-sample reservoir candidates.
+        //    Each enters with its current-surface target and count one, exactly like an extra fresh
+        //    candidate; the resolve stage therefore keeps its usual reservoir estimator and no old
+        //    radiance or visibility answer is reused. A seed already entered as the temporal candidate
+        //    is skipped so the same path is never counted twice in one reservoir.
+        if ((Extent.Primary.w & 262144u) != 0 && (Extent.Reconstruction.x != 0 || Extent.Reconstruction.y != 0))
+        {
+            float4 BankFirst = OutputColour[ReplaySlot(13, Pixel)];
+            float4 BankSecond = OutputColour[ReplaySlot(14, Pixel)];
+            if (ReplaySeedBankValid(BankFirst, BankSecond))
+            {
+                uint RetainedCount = uint(BankSecond.z);
+                for (uint RetainedIndex = 0; RetainedIndex < RetainedCount; ++RetainedIndex)
+                {
+                    float2 PackedSeed = RetainedIndex == 0 ? BankFirst.xy :
+                                        (RetainedIndex == 1 ? BankFirst.zw : BankSecond.xy);
+                    uint Candidate = DecodeReplaySeed(PackedSeed);
+                    if (TemporalReplayed && Candidate == TemporalSeed) continue;
+                    float3 CandidateRadiance = EvaluateReplayPath(R, Candidate);
+                    float CandidateTarget = ReplayTarget(CandidateRadiance);
+                    Sum += CandidateTarget;
+                    Count += 1;
+                    if (RandomUnit(SelectionBits) * Sum < CandidateTarget)
+                    {
+                        Selected = Candidate;
+                        Radiance = CandidateRadiance;
+                        Target = CandidateTarget;
+                    }
+                }
             }
         }
         Packed = float4(EncodeReplaySeed(Selected), Sum / (Count * Target), Count);

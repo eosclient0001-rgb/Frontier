@@ -446,6 +446,63 @@ void ValidateReplaySampleMultibounce(const char* Driver, const std::string& Shad
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                             SAMPLE HISTORY COMBINED WITH RESERVOIR REUSE
+//------------------------------------------------------------------------------------------------------------------------
+
+void ValidateReplaySampleCombined(const char* Driver, const std::string& Shaders)
+{
+    const auto Previous = ReplayCameraPlane(0, 0), Current = ReplayCameraPlane(.03125f, 0);
+    LightComputeSubmission Reservoir(Driver), Combined(Driver);
+    Reservoir.Prepare(Previous, Shaders, false, false, false, false, true);
+    Combined.Prepare(Previous, Shaders, false, false, false, false, true);
+    for (uint32_t Frame = 0; Frame < 3; ++Frame)
+    {
+        const uint32_t Seed = 150001u + 7919u * Frame;
+        (void)ExecuteReplaySampleHistory(Reservoir, Previous, Seed, Frame == 0, false, 1, {0,0,0},
+                                         1, true, true);
+        (void)ExecuteReplaySampleHistory(Combined, Previous, Seed, Frame == 0, true, 1, {0,0,0},
+                                         1, true, true);
+    }
+    constexpr uint32_t FrameSeed = 191111;
+    const auto ReservoirImage = ExecuteReplaySampleHistory(Reservoir, Current, FrameSeed, false, false, 1,
+                                                           {0,0,0}, 1, true, true);
+    const auto CombinedImage = ExecuteReplaySampleHistory(Combined, Current, FrameSeed, false, true, 1,
+                                                          {0,0,0}, 1, true, true);
+    uint32_t Accepted = 0, Rejected = 0, Changed = 0;
+    for (uint32_t Pixel = 0; Pixel < CombinedImage.size(); ++Pixel)
+    {
+        const auto GatheredFirst = ReplaySampleSlot(Combined, 13, Pixel);
+        const auto GatheredSecond = ReplaySampleSlot(Combined, 14, Pixel);
+        const uint32_t Count = uint32_t(GatheredSecond[2]);
+        Require(Count <= 3 && std::isfinite(CombinedImage[Pixel][0]) && CombinedImage[Pixel][0] >= 0,
+                "Combined sample-history output is invalid");
+        if (Count == 0)
+        {
+            ++Rejected;
+            Require(std::memcmp(ReservoirImage[Pixel].data(), CombinedImage[Pixel].data(),
+                                sizeof(CombinedImage[Pixel])) == 0,
+                    "Combined mode changed a pixel that retained no seed");
+        }
+        else
+        {
+            ++Accepted;
+            Changed += std::memcmp(ReservoirImage[Pixel].data(), CombinedImage[Pixel].data(),
+                                   sizeof(CombinedImage[Pixel])) != 0 ? 1u : 0u;
+            const auto NewFirst = ReplaySampleSlot(Combined, 11, Pixel);
+            const auto NewSecond = ReplaySampleSlot(Combined, 12, Pixel);
+            Require(ReplaySampleSeed(NewFirst[0], NewFirst[1]) == ReplayFreshSeed(FrameSeed, Pixel) &&
+                        NewFirst[2] == GatheredFirst[0] && NewFirst[3] == GatheredFirst[1] &&
+                        NewSecond[2] == float(std::min(Count + 1, 3u)),
+                    "Combined mode did not shift the fresh seed bank");
+        }
+    }
+    Require(Accepted == Combined.ExtendedStatistics()[23] && Accepted > 100 && Rejected > 0 && Changed > 50,
+            "Combined mode did not exercise accepted, rejected and changed pixels");
+    std::printf("SAMPLE_COMBINED temporal=1 spatial=1 accepted=%u rejected=%u rejected_reservoir_exact=1 "
+                "changed=%u bank_shift_fresh=1\n", Accepted, Rejected, Changed);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                           CORRUPTION AND HOST GUARDS
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -490,8 +547,8 @@ void ValidateReplaySampleGuards(const char* Driver, const std::string& Shaders)
         catch (const std::exception&) { ++Rejected; }
     };
     ExpectRejected([&] { (void)ExecuteReplaySampleHistory(Retraced, Scene, 1, false, true, 1, {0,0,0}, 2); });
-    ExpectRejected([&] { (void)ExecuteReplaySampleHistory(Retraced, Scene, 1, false, true, 1, {0,0,0}, 1, true); });
-    ExpectRejected([&] { (void)ExecuteReplaySampleHistory(Retraced, Scene, 1, false, true, 1, {0,0,0}, 1, false, true); });
+    ExpectRejected([&] { (void)ExecuteReplaySampleHistory(Retraced, Scene, 1, false, true, 1, {0,0,0}, 1, true, false, true); });
+    ExpectRejected([&] { (void)ExecuteReplaySampleHistory(Retraced, Scene, 1, false, true, 1, {0,0,0}, 1, false, true, false, false, true); });
     ExpectRejected([&] { (void)ExecuteReplaySampleHistory(Retraced, Scene, 1, false, true, 1, {0,0,0}, 1, false, false, true); });
     ExpectRejected([&] { (void)ExecuteReplaySampleHistory(Retraced, Scene, 1, false, true, 1, {0,0,0}, 1, false, false, false, true); });
     ExpectRejected([&] { (void)ExecuteReplaySampleHistory(Retraced, Scene, 1, false, true, 1, {0,0,0}, 1, false, false, false, false, true); });
@@ -570,6 +627,7 @@ void CaptureReplaySampleHistory(const char* Driver, const std::string& Shaders, 
 void ValidateReplaySampleHistory(const char* Driver, const std::string& Shaders)
 {
     ValidateReplaySampleSubpixel(Driver, Shaders);
+    ValidateReplaySampleCombined(Driver, Shaders);
     ValidateReplaySampleFacetConvergence(Driver, Shaders);
     ValidateReplaySampleMultibounce(Driver, Shaders);
     ValidateReplaySampleGuards(Driver, Shaders);

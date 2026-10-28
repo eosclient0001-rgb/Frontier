@@ -4,7 +4,8 @@ This **default-off** experiment keeps up to three previously generated, unselect
 those seeds at the **current** surface, then averages the resulting paths with one current fresh path. It does
 not interpolate or accumulate old radiance, so a retained seed's shadow answer is recomputed in the current
 triangle BVH. This is software ray tracing, not hardware RT, non-ray-traced GI, completed ReSTIR GI, an editor
-viewport or general animated reconstruction. It does not yet combine with temporal/spatial reservoir reuse.
+viewport or general animated reconstruction. A later mode combines it with temporal/spatial reservoir reuse;
+see [combined reservoir reuse](ReplaySampleCombined.md).
 
 ## Contract and cost
 
@@ -13,7 +14,7 @@ viewport or general animated reconstruction. It does not yet combine with tempor
 | Scene | Validated, static, untextured opaque diffuse scene and primary visibility; changed geometry, lights, material, environment or sampling reset the seed bank. |
 | Camera | The same `PathReplayDomainSpecification::DiffuseCameraReprojection` validation and `PathReplayHistoryDomain` camera-only decision used by [strict colour reprojection](ReplayCameraReprojection.md). The previous projection must identify the last completed frame. |
 | Opt-in | `PathReplaySampleHistory`, with `PathReplayResetSampleHistory` on first use, reallocation, toggling, failed submission, incompatible revision or policy change. |
-| Exclusions | No colour reconstruction, rough/textured mode, adaptive reservoir reuse or multi-candidate selection. One initial fresh candidate; temporal and spatial reservoir options must be off. |
+| Exclusions | No colour reconstruction, rough/textured mode or multi-candidate selection. One initial fresh candidate. In this mode temporal and spatial reservoir options are off; the combined contract is separate. |
 | Recorder | Two additional pipelines, 24 counter words, and `PathReplayRequiredSampleHistoryOutputRecords(N)` float4 records. The recorder validates ranges and incompatible flags, but cannot validate GPU buffer contents or whether a submission succeeded. |
 | Work | One current path plus up to three **new current-frame retraces**. The three old seeds are not free path results; the shader may trace four paths per pixel and adds buffer traffic. |
 

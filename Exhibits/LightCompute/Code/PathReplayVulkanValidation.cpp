@@ -185,7 +185,7 @@ int main()
         Events.clear();
         RecordPathReplay(Commands, SampleAccess, SampleBuffers, SampleExtent);
         const std::vector<Event> WithSampleHistory{{'D',1}, {'P',128}, {'B',4}, {'X',2}, {'M',1},
-            {'B',5}, {'X',2}, {'M',1}, {'B',9}, {'X',2}, {'R',1}, {'B',6}, {'X',2}, {'M',1},
+            {'B',9}, {'X',2}, {'M',1}, {'B',5}, {'X',2}, {'M',1}, {'B',6}, {'X',2}, {'M',1},
             {'B',10}, {'X',2}};
         Require(Events.size() == WithSampleHistory.size(), "Unexpected sample-history command count");
         for (std::size_t I = 0; I < Events.size(); ++I)
@@ -202,10 +202,18 @@ int main()
         RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
         InvalidSample = SampleExtent; InvalidSample.Primary[3] |= PathReplayAuditDoubleCount | PathReplaySampleFacets;
         RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
-        InvalidSample = SampleExtent; InvalidSample.Reconstruction[0] = 1;
-        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
-        InvalidSample = SampleExtent; InvalidSample.Reconstruction[1] = 1;
-        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        for (std::uint32_t Combined = 1; Combined <= 3; ++Combined)
+        {
+            auto CombinedExtent = SampleExtent;
+            CombinedExtent.Reconstruction[0] = Combined & 1u;
+            CombinedExtent.Reconstruction[1] = (Combined >> 1u) & 1u;
+            Events.clear();
+            RecordPathReplay(Commands, SampleAccess, SampleBuffers, CombinedExtent);
+            Require(Events.size() == WithSampleHistory.size() &&
+                        Pushed.Reconstruction[0] == CombinedExtent.Reconstruction[0] &&
+                        Pushed.Reconstruction[1] == CombinedExtent.Reconstruction[1],
+                    "Sample history combined with reservoir reuse was not recorded");
+        }
         InvalidSample = SampleExtent; InvalidSample.Sampling[1] = 2;
         RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
         InvalidSample = SampleExtent; InvalidSample.Primary[3] = PathReplayResetSampleHistory;

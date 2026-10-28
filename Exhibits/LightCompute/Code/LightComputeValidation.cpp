@@ -813,9 +813,9 @@ struct LightComputeSubmission
         Require(!DiffuseCameraReprojection || (ReconstructReplay && PrimaryVisibility && !RoughOpaque && !TexturedDiffuse),
                 "Diffuse camera reprojection requires reconstruction and untextured diffuse primary rays");
         Require(!SampleHistory || (PrimaryVisibility && !RoughOpaque && !TexturedDiffuse && !ReconstructReplay &&
-                    !Temporal && !Spatial && !DoubleCountForAudit && InitialCandidates == 1 && !ProbeRegionForAudit &&
+                    !DoubleCountForAudit && InitialCandidates == 1 && !ProbeRegionForAudit &&
                     !TailForAudit && ReplayGatherSampleHistoryPipeline && ReplayFinalizeSampleHistoryPipeline),
-                "Sample history requires untextured diffuse primary rays, one fresh candidate and no reservoir reuse");
+                "Sample history requires untextured diffuse primary rays and one fresh candidate");
         Require(!ExplicitOneForAudit || InitialCandidates == 1, "Explicit-one audit requires one initial candidate");
         Require(!ReconstructReplay || (!ProbeRegionForAudit && !TailForAudit && ReplayGatherReconstructionPipeline &&
                                        ReplayFinalizeReconstructionPipeline),

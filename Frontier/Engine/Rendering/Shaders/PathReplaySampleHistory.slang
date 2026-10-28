@@ -9,19 +9,7 @@
 //                                                SEED BANK INTAKE
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 Every half is an exactly representable uint16, avoiding float-to-uint conversion of corrupt history.
-bool ReplaySeedHalfValid(float Value)
-{
-    return isfinite(Value) && Value >= 0 && Value <= 65535 && floor(Value) == Value;
-}
-bool ReplaySeedBankValid(float4 First, float4 Second)
-{
-    float Count = Second.z;
-    return isfinite(Count) && Count >= 1 && Count <= 3 && floor(Count) == Count &&
-        ReplaySeedHalfValid(First.x) && ReplaySeedHalfValid(First.y) &&
-        (Count < 2 || (ReplaySeedHalfValid(First.z) && ReplaySeedHalfValid(First.w))) &&
-        (Count < 3 || (ReplaySeedHalfValid(Second.x) && ReplaySeedHalfValid(Second.y)));
-}
+// 📝 Seed-bank validity helpers live in PathReplayReservoir.slang; generation also consumes them.
 
 // 📝 This gather finishes before resolve overwrites the prior guides and before any thread replaces a seed bank.
 [shader("compute")][numthreads(64, 1, 1)] void GatherReplaySampleHistory(uint3 Dispatch : SV_DispatchThreadID)
@@ -67,8 +55,11 @@ bool ReplaySeedBankValid(float4 First, float4 Second)
 //                                             CURRENT-SURFACE RETRACING
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 Only the one fresh, unselected seed and up to three gathered fresh seeds enter this arithmetic mean.
-//    No prior colour, reservoir-selected seed, visibility answer or path contribution is retained.
+// 📝 Without reservoir reuse, only the one fresh, unselected seed and up to three gathered fresh seeds
+//    enter this arithmetic mean. With temporal or spatial reuse, generation has already entered the
+//    gathered seeds as reservoir candidates and resolve owns the output, so this stage only shifts
+//    the bank. No prior colour, reservoir-selected seed, visibility answer or path contribution is
+//    retained in either mode.
 [shader("compute")][numthreads(64, 1, 1)] void FinalizeReplaySampleHistory(uint3 Dispatch : SV_DispatchThreadID)
 {
     uint Pixel = Dispatch.x;
@@ -77,13 +68,28 @@ bool ReplaySeedBankValid(float4 First, float4 Second)
     float4 Current = OutputColour[ReplaySlot(2, Pixel)];
     float4 First = OutputColour[ReplaySlot(13, Pixel)];
     float4 Second = OutputColour[ReplaySlot(14, Pixel)];
-    if (R.PositionHit.w == 0 || R.MotionPositionToken.w <= 0 || Current.w != 1)
+    bool Combined = Extent.Reconstruction.x != 0 || Extent.Reconstruction.y != 0;
+    if (R.PositionHit.w == 0 || R.MotionPositionToken.w <= 0 || (Combined ? Current.w <= 0 : Current.w != 1))
     {
         OutputColour[ReplaySlot(11, Pixel)] = 0;
         OutputColour[ReplaySlot(12, Pixel)] = 0;
         return;
     }
     uint Count = ReplaySeedBankValid(First, Second) ? uint(Second.z) : 0;
+    if (Combined)
+    {
+        // 📝 The bank stores this frame's fresh draw, never the reservoir-selected seed. The fresh
+        //    draw is recomputed from the same generator state generation started from.
+        uint FreshBits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
+        float2 FreshSeed = EncodeReplaySeed(NextRandom(FreshBits));
+        float4 ShiftedFirst = float4(FreshSeed, 0, 0), ShiftedSecond = float4(0, 0, 1, 0);
+        if (Count > 0) ShiftedFirst.zw = First.xy;
+        if (Count > 1) ShiftedSecond.xy = First.zw;
+        ShiftedSecond.z = float(min(Count + 1, 3u));
+        OutputColour[ReplaySlot(11, Pixel)] = ShiftedFirst;
+        OutputColour[ReplaySlot(12, Pixel)] = ShiftedSecond;
+        return;
+    }
     if (Count > 0)
     {
         float3 Total = OutputColour[ReplaySlot(3, Pixel)].xyz;

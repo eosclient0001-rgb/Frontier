@@ -75,8 +75,10 @@ struct PathReplayVulkanBuffers
 //    permits strict same-world-point history only for an unchanged diffuse, untextured primary scene and a
 //    verified camera-only transition. The caller must establish those conditions and valid previous projection;
 //    the recorder cannot inspect buffer contents. It is not a general motion denoiser.
-//    PathReplaySampleHistory is mutually exclusive with colour reconstruction and reservoir reuse; it averages
-//    one fresh path and up to three previously unselected seeds, all evaluated at the current surface. It requires
+//    PathReplaySampleHistory is mutually exclusive with colour reconstruction. Without reservoir reuse it
+//    averages one fresh path and up to three previously unselected seeds, all evaluated at the current surface;
+//    with temporal and/or spatial reuse those seeds instead enter generation as one-sample reservoir
+//    candidates (a seed already entered temporally is not counted twice) and resolve owns the output. It requires
 //    primary, untextured diffuse inputs, one initial candidate, two additional pipelines, 24 counter words and
 //    PathReplayRequiredSampleHistoryOutputRecords(N). Reset on first use, allocation/policy changes and all scene
 //    revisions except a validated camera-only transition; never use this contract for animated scene reuse. The
