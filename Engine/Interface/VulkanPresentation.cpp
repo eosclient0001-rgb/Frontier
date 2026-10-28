@@ -16,6 +16,7 @@
 #include <imgui_impl_vulkan.h>
 #include <stdexcept>
 #include <algorithm>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -96,6 +97,19 @@ struct VulkanPresentation::PresentationAllocation
     std::vector<uint64_t> ImageSerials;
     std::function<void(VkCommandBuffer, uint64_t, uint64_t)> ConstructGpu;
     std::function<void()> ConfirmGpu;
+
+    // 📝 Viewport textures presented through ImGui::Image (see CreateDynamicTexture).
+    struct DynamicTexture
+    {
+        VkImage Image = VK_NULL_HANDLE;
+        VkDeviceMemory Memory = VK_NULL_HANDLE;
+        VkImageView View = VK_NULL_HANDLE;
+        VkSampler Sampler = VK_NULL_HANDLE;
+        VkDescriptorSet Set = VK_NULL_HANDLE;
+        uint32_t Width = 0, Height = 0;
+    };
+    std::vector<std::unique_ptr<DynamicTexture>> DynamicTextures;
+    VkCommandPool TexturePool = VK_NULL_HANDLE;
 
 #define FRONTIER_VULKAN_FUNCTIONS(Function)                                                                            \
     Function(GetPhysicalDeviceProperties) Function(DestroyInstance) Function(EnumeratePhysicalDevices)                 \
@@ -238,6 +252,17 @@ struct VulkanPresentation::PresentationAllocation
         ReclamationEnabled             = true;
         if (Device && DeviceWaitIdle)
             (void)DeviceWaitIdle(Device);
+        for (auto &Texture : DynamicTextures)
+        {
+            if (Texture->Set) ImGui_ImplVulkan_RemoveTexture(Texture->Set);
+            if (Texture->Sampler) Resolve<PFN_vkDestroySampler>(Instance, "vkDestroySampler")(Device, Texture->Sampler, nullptr);
+            if (Texture->View) Resolve<PFN_vkDestroyImageView>(Instance, "vkDestroyImageView")(Device, Texture->View, nullptr);
+            if (Texture->Image) Resolve<PFN_vkDestroyImage>(Instance, "vkDestroyImage")(Device, Texture->Image, nullptr);
+            if (Texture->Memory) Resolve<PFN_vkFreeMemory>(Instance, "vkFreeMemory")(Device, Texture->Memory, nullptr);
+        }
+        DynamicTextures.clear();
+        if (TexturePool) Resolve<PFN_vkDestroyCommandPool>(Instance, "vkDestroyCommandPool")(Device, TexturePool, nullptr);
+        TexturePool = VK_NULL_HANDLE;
         // 📝 Destroy secondary swapchains before the shared Vulkan device and before GLFW window reclamation.
         if (RendererReady)
         {
@@ -295,6 +320,168 @@ void VulkanPresentation::ConfigureRendering(std::function<void(VkCommandBuffer, 
 {
     Allocation->ConstructGpu = std::move(Construct);
     Allocation->ConfirmGpu = std::move(Confirm);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    DYNAMIC TEXTURES
+//------------------------------------------------------------------------------------------------------------------------
+
+uint64_t VulkanPresentation::CreateDynamicTexture(uint32_t Width, uint32_t Height)
+{
+    auto &Display = *Allocation;
+    if (!Display.RendererReady || Width == 0 || Height == 0)
+        return 0;
+    auto Texture = std::make_unique<PresentationAllocation::DynamicTexture>();
+    Texture->Width = Width;
+    Texture->Height = Height;
+    VkImageCreateInfo ImageInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ImageInfo.imageType = VK_IMAGE_TYPE_2D;
+    ImageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    ImageInfo.extent = {Width, Height, 1};
+    ImageInfo.mipLevels = 1;
+    ImageInfo.arrayLayers = 1;
+    ImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ImageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    ImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    RequireSuccess(Resolve<PFN_vkCreateImage>(Display.Instance, "vkCreateImage")(Display.Device, &ImageInfo, nullptr, &Texture->Image));
+    VkMemoryRequirements Requirements{};
+    Resolve<PFN_vkGetImageMemoryRequirements>(Display.Instance, "vkGetImageMemoryRequirements")(Display.Device, Texture->Image, &Requirements);
+    VkPhysicalDeviceMemoryProperties MemoryProperties{};
+    Resolve<PFN_vkGetPhysicalDeviceMemoryProperties>(Display.Instance, "vkGetPhysicalDeviceMemoryProperties")(Display.PhysicalDevice, &MemoryProperties);
+    uint32_t MemoryType = UINT32_MAX;
+    for (uint32_t I = 0; I < MemoryProperties.memoryTypeCount; ++I)
+        if ((Requirements.memoryTypeBits & (1u << I)) &&
+            (MemoryProperties.memoryTypes[I].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+        { MemoryType = I; break; }
+    if (MemoryType == UINT32_MAX)
+        throw std::runtime_error("Vulkan dynamic texture: no device-local memory type.");
+    VkMemoryAllocateInfo AllocateInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    AllocateInfo.allocationSize = Requirements.size;
+    AllocateInfo.memoryTypeIndex = MemoryType;
+    RequireSuccess(Resolve<PFN_vkAllocateMemory>(Display.Instance, "vkAllocateMemory")(Display.Device, &AllocateInfo, nullptr, &Texture->Memory));
+    RequireSuccess(Resolve<PFN_vkBindImageMemory>(Display.Instance, "vkBindImageMemory")(Display.Device, Texture->Image, Texture->Memory, 0));
+    VkImageViewCreateInfo ViewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    ViewInfo.image = Texture->Image;
+    ViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    ViewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    ViewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    RequireSuccess(Resolve<PFN_vkCreateImageView>(Display.Instance, "vkCreateImageView")(Display.Device, &ViewInfo, nullptr, &Texture->View));
+    VkSamplerCreateInfo SamplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    SamplerInfo.magFilter = VK_FILTER_LINEAR;
+    SamplerInfo.minFilter = VK_FILTER_LINEAR;
+    SamplerInfo.addressModeU = SamplerInfo.addressModeV = SamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    RequireSuccess(Resolve<PFN_vkCreateSampler>(Display.Instance, "vkCreateSampler")(Display.Device, &SamplerInfo, nullptr, &Texture->Sampler));
+    Texture->Set = ImGui_ImplVulkan_AddTexture(Texture->Sampler, Texture->View, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    const uint64_t Handle = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(Texture->Set));
+    Display.DynamicTextures.push_back(std::move(Texture));
+    return Handle;
+}
+
+void VulkanPresentation::UpdateDynamicTexture(uint64_t Handle, const void *RgbaPixels, uint32_t Width, uint32_t Height)
+{
+    auto &Display = *Allocation;
+    if (!Handle || !RgbaPixels)
+        return;
+    PresentationAllocation::DynamicTexture *Texture = nullptr;
+    for (auto &Candidate : Display.DynamicTextures)
+        if (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(Candidate->Set)) == Handle)
+            Texture = Candidate.get();
+    if (!Texture || Texture->Width != Width || Texture->Height != Height)
+        return;
+    const VkDeviceSize Bytes = VkDeviceSize(Width) * Height * 4;
+    VkBuffer Staging = VK_NULL_HANDLE;
+    VkDeviceMemory StagingMemory = VK_NULL_HANDLE;
+    VkBufferCreateInfo BufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    BufferInfo.size = Bytes;
+    BufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    RequireSuccess(Resolve<PFN_vkCreateBuffer>(Display.Instance, "vkCreateBuffer")(Display.Device, &BufferInfo, nullptr, &Staging));
+    VkMemoryRequirements Requirements{};
+    Resolve<PFN_vkGetBufferMemoryRequirements>(Display.Instance, "vkGetBufferMemoryRequirements")(Display.Device, Staging, &Requirements);
+    VkPhysicalDeviceMemoryProperties MemoryProperties{};
+    Resolve<PFN_vkGetPhysicalDeviceMemoryProperties>(Display.Instance, "vkGetPhysicalDeviceMemoryProperties")(Display.PhysicalDevice, &MemoryProperties);
+    uint32_t MemoryType = UINT32_MAX;
+    for (uint32_t I = 0; I < MemoryProperties.memoryTypeCount; ++I)
+        if ((Requirements.memoryTypeBits & (1u << I)) &&
+            (MemoryProperties.memoryTypes[I].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) ==
+                (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+        { MemoryType = I; break; }
+    if (MemoryType == UINT32_MAX)
+        throw std::runtime_error("Vulkan dynamic texture: no host-visible memory type.");
+    VkMemoryAllocateInfo AllocateInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    AllocateInfo.allocationSize = Requirements.size;
+    AllocateInfo.memoryTypeIndex = MemoryType;
+    RequireSuccess(Resolve<PFN_vkAllocateMemory>(Display.Instance, "vkAllocateMemory")(Display.Device, &AllocateInfo, nullptr, &StagingMemory));
+    RequireSuccess(Resolve<PFN_vkBindBufferMemory>(Display.Instance, "vkBindBufferMemory")(Display.Device, Staging, StagingMemory, 0));
+    void *Mapped = nullptr;
+    RequireSuccess(Resolve<PFN_vkMapMemory>(Display.Instance, "vkMapMemory")(Display.Device, StagingMemory, 0, Bytes, 0, &Mapped));
+    std::memcpy(Mapped, RgbaPixels, size_t(Bytes));
+    Resolve<PFN_vkUnmapMemory>(Display.Instance, "vkUnmapMemory")(Display.Device, StagingMemory);
+    if (!Display.TexturePool)
+    {
+        VkCommandPoolCreateInfo PoolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+        PoolInfo.queueFamilyIndex = Display.QueueFamily;
+        PoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        RequireSuccess(Resolve<PFN_vkCreateCommandPool>(Display.Instance, "vkCreateCommandPool")(Display.Device, &PoolInfo, nullptr, &Display.TexturePool));
+    }
+    VkCommandBufferAllocateInfo CommandInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    CommandInfo.commandPool = Display.TexturePool;
+    CommandInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    CommandInfo.commandBufferCount = 1;
+    VkCommandBuffer Commands = VK_NULL_HANDLE;
+    RequireSuccess(Resolve<PFN_vkAllocateCommandBuffers>(Display.Instance, "vkAllocateCommandBuffers")(Display.Device, &CommandInfo, &Commands));
+    VkCommandBufferBeginInfo Begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    Begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    RequireSuccess(Resolve<PFN_vkBeginCommandBuffer>(Display.Instance, "vkBeginCommandBuffer")(Commands, &Begin));
+    VkImageMemoryBarrier Barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    Barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    Barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    Barrier.srcQueueFamilyIndex = Barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    Barrier.image = Texture->Image;
+    Barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    Barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    Resolve<PFN_vkCmdPipelineBarrier>(Display.Instance, "vkCmdPipelineBarrier")(Commands, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
+    VkBufferImageCopy Region{};
+    Region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    Region.imageExtent = {Width, Height, 1};
+    Resolve<PFN_vkCmdCopyBufferToImage>(Display.Instance, "vkCmdCopyBufferToImage")(Commands, Staging, Texture->Image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &Region);
+    Barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    Barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    Barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    Resolve<PFN_vkCmdPipelineBarrier>(Display.Instance, "vkCmdPipelineBarrier")(Commands, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &Barrier);
+    RequireSuccess(Resolve<PFN_vkEndCommandBuffer>(Display.Instance, "vkEndCommandBuffer")(Commands));
+    VkSubmitInfo Submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    Submit.commandBufferCount = 1;
+    Submit.pCommandBuffers = &Commands;
+    RequireSuccess(Display.QueueSubmit(Display.Queue, 1, &Submit, VK_NULL_HANDLE));
+    RequireSuccess(Display.DeviceWaitIdle(Display.Device));
+    Resolve<PFN_vkFreeCommandBuffers>(Display.Instance, "vkFreeCommandBuffers")(Display.Device, Display.TexturePool, 1, &Commands);
+    Resolve<PFN_vkDestroyBuffer>(Display.Instance, "vkDestroyBuffer")(Display.Device, Staging, nullptr);
+    Resolve<PFN_vkFreeMemory>(Display.Instance, "vkFreeMemory")(Display.Device, StagingMemory, nullptr);
+}
+
+void VulkanPresentation::DestroyDynamicTexture(uint64_t Handle)
+{
+    auto &Display = *Allocation;
+    for (auto It = Display.DynamicTextures.begin(); It != Display.DynamicTextures.end(); ++It)
+    {
+        auto &Texture = *It;
+        if (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(Texture->Set)) != Handle)
+            continue;
+        if (Display.Device && Display.DeviceWaitIdle)
+            (void)Display.DeviceWaitIdle(Display.Device);
+        if (Texture->Set) ImGui_ImplVulkan_RemoveTexture(Texture->Set);
+        if (Texture->Sampler) Resolve<PFN_vkDestroySampler>(Display.Instance, "vkDestroySampler")(Display.Device, Texture->Sampler, nullptr);
+        if (Texture->View) Resolve<PFN_vkDestroyImageView>(Display.Instance, "vkDestroyImageView")(Display.Device, Texture->View, nullptr);
+        if (Texture->Image) Resolve<PFN_vkDestroyImage>(Display.Instance, "vkDestroyImage")(Display.Device, Texture->Image, nullptr);
+        if (Texture->Memory) Resolve<PFN_vkFreeMemory>(Display.Instance, "vkFreeMemory")(Display.Device, Texture->Memory, nullptr);
+        Display.DynamicTextures.erase(It);
+        return;
+    }
 }
 
 bool VulkanPresentation::Reconfigure(int Width, int Height)

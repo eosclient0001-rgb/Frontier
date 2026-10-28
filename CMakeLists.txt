@@ -148,6 +148,66 @@ if(WIN32)
     if(MSVC)
         target_link_options(TextureStudio PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
     endif()
+    # 📝 Frontier windowed editor (FRONTIER_WITH_INTERFACE_SDK): the full project window — LogStream,
+    #    Outliner, Inspector, Control Centre and the ReSTIR viewport (Engine ReplayViewportRenderer
+    #    presented through a VulkanPresentation dynamic texture).
+    if(NOT DEFINED FRONTIER_RENDERING_VULKAN_HEADERS AND EXISTS "${CMAKE_SOURCE_DIR}/ExternalPackages/vulkan-headers/include/vulkan/vulkan.h")
+        set(FRONTIER_RENDERING_VULKAN_HEADERS "${CMAKE_SOURCE_DIR}/ExternalPackages/vulkan-headers/include")
+    endif()
+    if(DEFINED FRONTIER_RENDERING_VULKAN_HEADERS AND NOT FRONTIER_RENDERING_VULKAN_HEADERS STREQUAL "")
+        add_subdirectory(Frontier/Engine/Rendering)
+    endif()
+    add_library(FrontierPortableEngine STATIC
+        Frontier/Engine/Diagnostics/LogCategories.cpp
+        Frontier/Engine/Diagnostics/LogRingStore.cpp
+        Frontier/Engine/Diagnostics/LogStream.cpp
+        Frontier/Engine/Interface/LogStreamPanel.cpp
+        Frontier/Engine/Interface/LogStreamPanelPresentation.cpp
+        Frontier/Engine/Interface/ProjectContent.cpp
+        Frontier/Engine/Interface/ProjectDescriptor.cpp
+        Frontier/Engine/Interface/SceneDirectoryPanel.cpp
+        Frontier/Engine/Interface/SceneDirectoryPanelPresentation.cpp
+        Frontier/Engine/Interface/SceneInspectorPanel.cpp
+        Frontier/Engine/Interface/StackRailControls.cpp
+        Frontier/Engine/Scene/EnvironmentRecords.cpp
+        Frontier/Engine/Scene/RecordEntry.cpp
+        Frontier/Engine/Scene/RecordStore.cpp
+        Frontier/Engine/Scene/SceneDirectory.cpp)
+    target_compile_features(FrontierPortableEngine PUBLIC cxx_std_20)
+    target_compile_definitions(FrontierPortableEngine PUBLIC FRONTIER_WITH_INTERFACE_SDK)
+    target_include_directories(FrontierPortableEngine PUBLIC "${CMAKE_SOURCE_DIR}/Frontier"
+        "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/ExternalPackages/tomlpp/include")
+    target_link_libraries(FrontierPortableEngine PUBLIC FrontierImGui)
+    add_executable(FrontierEditor
+        Frontier/Applications/Editor/FrontierMain.cpp
+        Frontier/Applications/Editor/CommandLine.cpp
+        Frontier/Applications/Editor/ProjectBrowserHost.cpp
+        Engine/Interface/WindowsApplication.cpp
+        Engine/Interface/VulkanPresentation.cpp
+        "${IMGUI_ROOT}/backends/imgui_impl_glfw.cpp"
+        "${IMGUI_ROOT}/backends/imgui_impl_vulkan.cpp")
+    target_compile_definitions(FrontierEditor PRIVATE FRONTIER_WITH_INTERFACE_SDK FRONTIER_UI_VULKAN=1
+        VK_NO_PROTOTYPES GLFW_INCLUDE_NONE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(FrontierEditor PRIVATE "${CMAKE_SOURCE_DIR}" "${CMAKE_SOURCE_DIR}/Frontier"
+        "${IMGUI_ROOT}" "${IMGUI_ROOT}/backends"
+        "${FRONTIER_RENDERING_VULKAN_HEADERS}")
+    if(TARGET FrontierReplayViewport)
+        target_link_libraries(FrontierEditor PRIVATE FrontierReplayViewport)
+    endif()
+    target_link_libraries(FrontierEditor PRIVATE FrontierEditorUI FrontierPortableEngine
+        FrontierInterface FrontierImGui glfw comdlg32 shell32)
+    if(MSVC)
+        target_link_options(FrontierEditor PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
+    endif()
+    # 📝 Replay SPIR-V lives next to the executable (Shaders/) exactly as the validation exhibits expect.
+    file(GLOB FRONTIER_REPLAY_SPV "${CMAKE_SOURCE_DIR}/Frontier/Engine/Rendering/Shaders/*.spv")
+    if(FRONTIER_REPLAY_SPV)
+        add_custom_command(TARGET FrontierEditor POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:FrontierEditor>/Shaders"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${FRONTIER_REPLAY_SPV}
+                    "$<TARGET_FILE_DIR:FrontierEditor>/Shaders")
+    endif()
+
     # Vulkan is the editor UI default. GLFW + the pinned ImGui Vulkan adapter own secondary-window presentation.
     add_executable(FrontierUI Exhibits/UIFoundation/Code/WindowsUI.cpp
         Engine/Interface/WindowsApplication.cpp

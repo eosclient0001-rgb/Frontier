@@ -244,7 +244,9 @@ int RunBrowserListing(const std::filesystem::path& FromExecutable)
 #include "Engine/Scene/EnvironmentRecords.h"
 #include "Engine/Scene/SceneDirectory.h"
 #include "Engine/Scene/SceneRecord.h"
+#include "Engine/Interface/VulkanPresentation.h"
 #include "Engine/Interface/WindowsApplication.h"
+#include "Engine/Rendering/ReplayViewportRenderer.h"
 #include "UI/Editor/ControlCentrePanel.h"
 
 #include <GLFW/glfw3.h>
@@ -287,21 +289,76 @@ struct WorkspaceSession
     std::filesystem::path              LayoutPath;
     float                              InterfaceScale = 1.0f;
     bool                               Prepared        = false;
+    // 📝 ReSTIR viewport: Engine replay renderer + its presentation texture (Phase 3 connection).
+    VulkanPresentation*                Presentation    = nullptr;
+    ReplayViewportRenderer             ViewportRenderer;
+    uint64_t                           ViewportTexture = 0;
+    bool                               ViewportTried   = false;
+    bool                               ViewportReady   = false;
+    std::string                        ViewportDiagnostic;
+    std::filesystem::path              ShaderDirectory;
+    ReplayViewportStats                ViewportStats;
 };
 
-// The Viewport panel until the Phase 3 renderer records into it: the same honest placeholder the
-// upstream editor shows for its Scene Canvas. The portable frame units it will present (render graph,
-// barriers, target atlas, the Proving Grounds scene) are validated headlessly in
-// Exhibits/RenderInfrastructure; nothing here fakes a rendered frame.
-void ConstructViewportPanel(const WorkspaceSession& Session)
+// The Viewport panel: the Phase 3 ReSTIR connection. The Engine replay renderer
+// (Frontier/Engine/Rendering/ReplayViewportRenderer) renders a bounded diffuse room with combined
+// temporal + spatial + seed-bank reservoir reuse on its own compute device; frames are uploaded
+// into a presentation dynamic texture and shown here. If no Vulkan driver or SPIR-V is available
+// the panel reports the diagnostic instead of faking a frame.
+void ConstructViewportPanel(WorkspaceSession& Session)
 {
     const ImGuiStyle& Style = ImGui::GetStyle();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28, 24));
-    ImGui::TextColored(Style.Colors[ImGuiCol_TextDisabled], "SCENE CANVAS");
+    ImGui::TextColored(Style.Colors[ImGuiCol_TextDisabled], "SCENE CANVAS · ReSTIR (temporal + spatial + seed bank)");
     ImGui::Spacing();
-    ImGui::TextWrapped("The VehicleHMI viewport connects here: the ReSTIR renderer port (Phase 3) records "
-                       "into this panel through VulkanPresentation. Native scene rendering is not connected "
-                       "yet — this surface will present the project document once the SDK build lands.");
+    if (!Session.ViewportTried)
+    {
+        Session.ViewportTried = true;
+        const char* Driver =
+#ifdef _WIN32
+            "vulkan-1.dll";
+#else
+            "libvulkan.so.1";
+#endif
+        std::error_code Error;
+        std::string ShaderDir = EncodeUtf8Path(Session.ShaderDirectory);
+        if (ShaderDir.empty() || !std::filesystem::is_directory(Session.ShaderDirectory, Error))
+            ShaderDir = "Shaders";
+        Session.ViewportReady = Session.ViewportRenderer.Initialize(Driver, ShaderDir, 256, 160,
+                                                                    Session.ViewportDiagnostic);
+        if (Session.ViewportReady && Session.Presentation)
+            Session.ViewportTexture = Session.Presentation->CreateDynamicTexture(256, 160);
+        const uint32_t Token = LogCategories().QueryByName("Render") != nullptr
+                                   ? LogCategories().QueryByName("Render")->Token : 0;
+        WriteLog(Token, Session.ViewportReady ? LogSeverity::Info : LogSeverity::Error, LogVerbosity::Log,
+                 Session.ViewportReady ? "ReSTIR viewport renderer initialised (combined reservoir mode)"
+                                       : ("ReSTIR viewport unavailable: " + Session.ViewportDiagnostic).c_str(),
+                 "FrontierMain.cpp");
+    }
+    if (Session.ViewportReady && Session.Presentation && Session.ViewportTexture)
+    {
+        std::vector<std::array<uint8_t, 4>> Pixels;
+        if (Session.ViewportRenderer.RenderFrame(Pixels, Session.ViewportStats, Session.ViewportDiagnostic))
+        {
+            Session.Presentation->UpdateDynamicTexture(Session.ViewportTexture, Pixels.data(), 256, 160);
+            const ImVec2 Avail = ImGui::GetContentRegionAvail();
+            const float Width = std::max(1.0f, Avail.x);
+            ImGui::Image((ImTextureID)Session.ViewportTexture, ImVec2(Width, Width * 160.0f / 256.0f));
+            ImGui::TextDisabled("frame %u · accepted banks %u/%u · %.2f ms submit · camera drift (temporal reuse live)",
+                                Session.ViewportStats.Frame, Session.ViewportStats.AcceptedBanks, 256u * 160u,
+                                Session.ViewportStats.Milliseconds);
+        }
+        else
+        {
+            ImGui::TextWrapped("ReSTIR frame failed: %s", Session.ViewportDiagnostic.c_str());
+            Session.ViewportReady = false;
+        }
+    }
+    else if (!Session.ViewportReady)
+    {
+        ImGui::TextWrapped("ReSTIR viewport unavailable: %s",
+                           Session.ViewportDiagnostic.empty() ? "initialisation pending" : Session.ViewportDiagnostic.c_str());
+    }
     ImGui::Separator();
     const auto Row = [](const char* Label, const std::string& Value) {
         ImGui::TextDisabled("%s", Label);
@@ -361,11 +418,13 @@ int RunProjectWindow(const ProjectDescriptor& Descriptor, const std::filesystem:
     Session.ProjectName     = Descriptor.Name;
     Session.ProjectLocation = EncodeUtf8Path(Descriptor.ProjectDirectory);
     Session.LayoutPath      = Descriptor.ProjectDirectory / "Saved" / "WorkspaceLayout.toml";
+    Session.ShaderDirectory = FromExecutable / "Shaders";
 
     ApplicationWindowCallbacks Callbacks;
     Callbacks.Title            = "Frontier · " + Descriptor.Name;
     Callbacks.Initialize       = [&Session](GLFWwindow* Window) { Session.Window = Window; };
-    Callbacks.InitializeVulkan = [](VulkanPresentation&) {
+    Callbacks.InitializeVulkan = [&Session](VulkanPresentation& Presentation) {
+        Session.Presentation = &Presentation;
         WriteLog(LogCategories().QueryByName("Render") != nullptr ? LogCategories().QueryByName("Render")->Token : 0,
                  LogSeverity::Info, LogVerbosity::Log, "Vulkan presentation initialising", "FrontierMain.cpp");
     };

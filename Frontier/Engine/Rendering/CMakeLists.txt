@@ -33,6 +33,24 @@ else()
     target_compile_options(FrontierPathReplayDomain PRIVATE -Wall -Wextra -Werror)
 endif()
 
+# 📝 Live viewport renderer: owns a compute submission and runs combined temporal + spatial + seed-bank
+#    reservoir replay through the recorder; presentation remains the caller's (editor) responsibility.
+if(FRONTIER_RENDERING_VULKAN_HEADERS)
+    add_library(FrontierReplayViewport STATIC ReplayViewportRenderer.cpp VisibilityCull.cpp ClusterNesting.cpp)
+    target_compile_features(FrontierReplayViewport PUBLIC cxx_std_20)
+    target_include_directories(FrontierReplayViewport PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+        "${FRONTIER_RENDERING_VULKAN_HEADERS}")
+    target_link_libraries(FrontierReplayViewport PUBLIC FrontierPathReplayDomain FrontierPathReplayVulkan)
+    if(MSVC)
+        target_compile_options(FrontierReplayViewport PRIVATE /utf-8 /W4)
+    else()
+        target_compile_options(FrontierReplayViewport PRIVATE -Wall -Wextra -Werror)
+    endif()
+    if(NOT WIN32)
+        target_link_libraries(FrontierReplayViewport PUBLIC dl)
+    endif()
+endif()
+
 # 📝 Optional caller-owned Vulkan path-replay recorder; pipelines, descriptors and queue remain external.
 if(FRONTIER_RENDERING_VULKAN_HEADERS)
     add_library(FrontierPathReplayVulkan STATIC PathReplayVulkan.cpp)
