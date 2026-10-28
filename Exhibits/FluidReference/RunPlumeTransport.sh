@@ -33,7 +33,7 @@ export WGPU_BACKEND_TYPE="${WGPU_BACKEND_TYPE:-Vulkan}"
         Experimental/VehicleHmiReference/Shader/{PlumeRecords,PlumeAdvection,PlumeVorticity,PlumePressure,SceneRecords,DistanceRecords,DistanceTraversal}.wgsl \
         "$TOOLS"/{libvulkan.so.1,libvk_swiftshader.so,vk_swiftshader_icd.json}
     "$CMAKE" -S Exhibits/FluidReference -B "$BUILD" "${CMAKE_ARGS[@]}" >/dev/null
-    "$CMAKE" --build "$BUILD" --target PlumeLatticeFootprintValidation --parallel "${BUILD_JOBS:-2}" >/dev/null
+    "$CMAKE" --build "$BUILD" --target PlumeLatticeFootprintValidation GasProjectionFootprintValidation --parallel "${BUILD_JOBS:-2}" >/dev/null
     "$CTEST" --test-dir "$BUILD" --output-on-failure -V
     if [[ "$LABEL" == sanitized ]]; then
         ldd "$BUILD/PlumeLatticeFootprintValidation" | grep -E 'libasan|libubsan'

@@ -33,6 +33,11 @@ else()
     target_compile_options(FrontierPathReplayDomain PRIVATE -Wall -Wextra -Werror)
 endif()
 
+# 📝 Matched face-flux gas projection parameters; shader submission and advection remain separate.
+add_library(FrontierGasProjectionFootprint INTERFACE)
+target_compile_features(FrontierGasProjectionFootprint INTERFACE cxx_std_17)
+target_include_directories(FrontierGasProjectionFootprint INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+
 # 📝 Typed plume input footprints and validation, without a renderer or GPU submission.
 add_library(FrontierPlumeLatticeFootprint STATIC PlumeLatticeFootprint.cpp)
 target_compile_features(FrontierPlumeLatticeFootprint PUBLIC cxx_std_17)

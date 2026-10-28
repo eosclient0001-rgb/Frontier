@@ -63,7 +63,9 @@ The chained transport case has **zero divergence and zero pressure**, so it does
 projection works for general flow. The independent nonzero-pressure regression remains unchanged: a
 near-grid mode retains `0.980990` of the original centred-divergence norm after 256 Jacobi sweeps, despite
 a small pressure-equation residual. The underlying centred-divergence/gradient versus nearest-neighbour
-Laplacian mismatch is explained in [PlumePressure.md](PlumePressure.md); this work does not fix it.
+Laplacian mismatch is explained in [PlumePressure.md](PlumePressure.md); the retained transport path still
+uses it. A later [separate matched face-flux projection](GasProjection.md) passes independent closed-domain
+checks, but its storage/boundary semantics differ and it is **not integrated into this plume**.
 
 This is a tiny, single-step analytic validation, not a finished fluid solver. The full demo scheduler, moving
 window updates, extended time stability, multi-source interaction, nonzero-pressure chain, moving-scene SDF

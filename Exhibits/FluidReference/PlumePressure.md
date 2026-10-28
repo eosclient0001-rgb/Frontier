@@ -44,7 +44,9 @@ In this bounded fixture, the near-grid mode retains roughly **98%** of its measu
 though the nearest-neighbour pressure residual is small after 256 sweeps. This is consistent with the mismatch
 between the centred divergence/gradient pair and the six-neighbour pressure Laplacian. It is not a measurement
 of a full animated plume, all boundary configurations, or atmospheric fluid behavior. The separate
-[idealized periodic audit](README.md#pressure-stencil-caution) explains the underlying stencil concern.
+[idealized periodic audit](README.md#pressure-stencil-caution) explains the underlying stencil concern. A later
+[matched face-flux experiment](GasProjection.md) passes closed/static-solid tests, but is not compatible with
+or integrated into this unchanged plume's cell-centred advection and open/moving boundaries.
 
 ## Reproduce
 

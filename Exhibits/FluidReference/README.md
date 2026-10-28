@@ -2,8 +2,10 @@
 
 The requested gas/fluid simulation is **not yet fully ported or integrated**. Engine now owns checked lattice
 and source footprints, while this exhibit executes the retained demo's advection, vorticity, pressure and light
-WGSL on SwiftShader CPU Vulkan in small analytic fixtures. A one-step chain is tested, but there is no native
-production plume scheduler, renderer/editor integration, long-term simulation or verified liquid solver.
+WGSL on SwiftShader CPU Vulkan in small analytic fixtures. A separate [face-flux pressure prototype](GasProjection.md)
+passes bounded closed-domain tests but is not integrated with the demo's cell-centred flow. A one-step reference
+chain is tested, but there is no native production plume scheduler, renderer/editor integration, long-term
+simulation or verified liquid solver.
 
 ## Source provenance and scope
 

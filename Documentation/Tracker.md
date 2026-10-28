@@ -4,6 +4,17 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Matched gas-pressure prototype — 2026-10-28
+
+- Added a separate Engine Slang face-flux pressure primitive with matching divergence, gradient and Laplacian.
+  SwiftShader tests through wgpu/Naga pass analytic long-/near-grid modes, an independent 56-cell least-squares
+  solve, disconnected regions, buffer guards and release/host-sanitizer checks. The long-wave case still needs
+  1,024 Jacobi sweeps to reach `1.25%` remaining divergence; no performance claim is justified.
+- This closed/static-solid prototype is not compatible with the demo's cell-centred transport and is not integrated
+  into it. The original plume still retains `98.1%` divergence in its near-grid regression. Open/moving boundaries,
+  compatible advection, scheduling, scene/editor integration and physical-GPU validation remain open.
+  [Contract and evidence](../Exhibits/FluidReference/GasProjection.md).
+
 ## Standalone GPU curved-shell tyre — 2026-10-28
 
 - Ported the demo's 160-particle, 128-patch curved-shell/membrane deformation to Engine Slang. Direct
