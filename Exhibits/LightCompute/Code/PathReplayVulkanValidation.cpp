@@ -23,6 +23,9 @@ static_assert(PathReplayRequiredOutputRecords(PathReplayMaxReceivers + 1) - 1 > 
 static_assert(PathReplayRequiredReconstructedOutputRecords(65) == 17765);
 static_assert(PathReplayRequiredReconstructedOutputRecords(PathReplayMaxReconstructedReceivers) - 1 <= UINT32_MAX);
 static_assert(PathReplayRequiredReconstructedOutputRecords(PathReplayMaxReconstructedReceivers + 1) - 1 > UINT32_MAX);
+static_assert(PathReplayRequiredSampleHistoryOutputRecords(65) == 18025);
+static_assert(PathReplayRequiredSampleHistoryOutputRecords(PathReplayMaxSampleHistoryReceivers) - 1 <= UINT32_MAX);
+static_assert(PathReplayRequiredSampleHistoryOutputRecords(PathReplayMaxSampleHistoryReceivers + 1) - 1 > UINT32_MAX);
 template <class T> T Handle(std::uintptr_t Value)
 {
     if constexpr (std::is_pointer_v<T>) return reinterpret_cast<T>(Value);
@@ -168,6 +171,64 @@ int main()
         InvalidCamera = CameraExtent; InvalidCamera.Primary[3] |= PathReplayTexturedDiffuse;
         RequireRejection([&] { RecordPathReplay(Commands, CameraAccess, ReconstructionBuffers, InvalidCamera); });
 
+        auto SampleAccess = Access;
+        SampleAccess.Primary = Handle<VkPipeline>(4);
+        SampleAccess.GatherSampleHistory = Handle<VkPipeline>(9);
+        SampleAccess.FinalizeSampleHistory = Handle<VkPipeline>(10);
+        auto SampleExtent = Extent;
+        SampleExtent.Primary[0] = 1;
+        SampleExtent.Primary[3] = PathReplaySampleHistory | PathReplayResetSampleHistory;
+        SampleExtent.Reconstruction[0] = SampleExtent.Reconstruction[1] = 0;
+        auto SampleBuffers = Buffers;
+        SampleBuffers.OutputColourRecords = PathReplayRequiredSampleHistoryOutputRecords(65);
+        SampleBuffers.CounterWords = PathReplayReconstructionCounterWords;
+        Events.clear();
+        RecordPathReplay(Commands, SampleAccess, SampleBuffers, SampleExtent);
+        const std::vector<Event> WithSampleHistory{{'D',1}, {'P',128}, {'B',4}, {'X',2}, {'M',1},
+            {'B',5}, {'X',2}, {'M',1}, {'B',9}, {'X',2}, {'R',1}, {'B',6}, {'X',2}, {'M',1},
+            {'B',10}, {'X',2}};
+        Require(Events.size() == WithSampleHistory.size(), "Unexpected sample-history command count");
+        for (std::size_t I = 0; I < Events.size(); ++I)
+            Require(Events[I].Kind == WithSampleHistory[I].Kind && Events[I].Value == WithSampleHistory[I].Value,
+                    "Sample-history command order or write-after-read barrier differs");
+        auto InvalidSample = SampleExtent;
+        InvalidSample.Primary[0] = 0;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        InvalidSample = SampleExtent; InvalidSample.Primary[3] |= PathReplayRoughOpaque;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        InvalidSample = SampleExtent; InvalidSample.Primary[3] |= PathReplayTexturedDiffuse;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        InvalidSample = SampleExtent; InvalidSample.Primary[3] |= PathReplayReconstruct;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        InvalidSample = SampleExtent; InvalidSample.Primary[3] |= PathReplayAuditDoubleCount | PathReplaySampleFacets;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        InvalidSample = SampleExtent; InvalidSample.Reconstruction[0] = 1;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        InvalidSample = SampleExtent; InvalidSample.Reconstruction[1] = 1;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        InvalidSample = SampleExtent; InvalidSample.Sampling[1] = 2;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        InvalidSample = SampleExtent; InvalidSample.Primary[3] = PathReplayResetSampleHistory;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
+        auto MissingSample = SampleAccess; MissingSample.GatherSampleHistory = VK_NULL_HANDLE;
+        RequireRejection([&] { RecordPathReplay(Commands, MissingSample, SampleBuffers, SampleExtent); });
+        MissingSample = SampleAccess; MissingSample.FinalizeSampleHistory = VK_NULL_HANDLE;
+        RequireRejection([&] { RecordPathReplay(Commands, MissingSample, SampleBuffers, SampleExtent); });
+        auto SmallSample = SampleBuffers; --SmallSample.OutputColourRecords;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SmallSample, SampleExtent); });
+        SmallSample = SampleBuffers; --SmallSample.CounterWords;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SmallSample, SampleExtent); });
+        InvalidSample = SampleExtent; InvalidSample.Dimensions[0] = PathReplayMaxSampleHistoryReceivers + 1;
+        InvalidSample.History[0] = PathReplayMaxSampleHistoryReceivers + 1; InvalidSample.History[1] = 1;
+        SmallSample = SampleBuffers; SmallSample.ReceiverRecords = PathReplayMaxSampleHistoryReceivers + 1;
+        SmallSample.OutputColourRecords = UINT64_MAX;
+        MissingSample = SampleAccess; MissingSample.MaxGroupCountX = UINT32_MAX;
+        RequireRejection([&] { RecordPathReplay(Commands, MissingSample, SmallSample, InvalidSample); });
+        InvalidSample.Dimensions[0] = InvalidSample.History[0] = PathReplayMaxSampleHistoryReceivers;
+        Events.clear();
+        RecordPathReplay(Commands, MissingSample, SmallSample, InvalidSample);
+        Require(!Events.empty(), "Largest sample-history output span was rejected");
+
         auto InvalidExtent = Extent; InvalidExtent.History[0] = 12;
         RequireRejection([&] { RecordPathReplay(Commands, Access, Buffers, InvalidExtent); });
         InvalidExtent = Extent; InvalidExtent.Dimensions[0] = 0;
@@ -251,7 +312,8 @@ int main()
         RequireRejection([&] { RecordPathReplay(Commands, InvalidAccess, InvalidBuffers, InvalidExtent); });
         std::printf("REPLAY_RECORDERS primary_and_input=1 barriers=3 padded_dispatch=1 push128=1 "
                     "invalid_before_recording=32 candidates_0_to_4=1 weighted_span=1 uint_index_limit=1 "
-                    "secondary_camera=1 reconstruction_order_and_WAR=1 diffuse_camera_guards=1\n");
+                    "secondary_camera=1 reconstruction_order_and_WAR=1 diffuse_camera_guards=1 "
+                    "sample_history_order_and_WAR=1 sample_history_rejections=14 sample_uint_limit=1\n");
         return 0;
     }
     catch (const std::exception &Error)

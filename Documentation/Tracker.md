@@ -4,6 +4,19 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Subpixel diffuse path-seed retracing — 2026-10-28
+
+- Added a default-off, one-candidate mode which retains up to three unselected fresh seeds and retraces them at
+  the current diffuse surface. It does not accumulate old radiance and cannot be combined with reservoir reuse
+  or colour reconstruction. A half-pixel SwiftShader fixture accepts 970 banks, rejects all 22 changed-token
+  disocclusions, and reproduces 10 changed shadow-path answers at the current point. Scene changes reset history.
+- Independent one-bounce rectangle checks, seven corrupt-bank and seven invalid-request controls, five CTests,
+  release/host-sanitized rows and existing strict-camera regressions pass. Up to four current paths are traced;
+  the `0.2923 → 0.1549` red RMSE comparison is **not equal work**. Four-bounce and equal-path-count checks are
+  still open at this checkpoint. [Contract, edge exclusions and evidence](../Exhibits/LightCompute/ReplaySampleHistory.md).
+- ReSTIR GI, hardware RT, non-ray-traced GI, general animated reconstruction, unified PBR and editor integration
+  remain incomplete. The editor plan and vehicle dynamics/Jolt remain deferred.
+
 ## Dynamic camera, blocker and multibounce replay — 2026-10-28
 
 - A simultaneous camera/blocker move now has a four-bounce, four-candidate SwiftShader CPU-Vulkan validation

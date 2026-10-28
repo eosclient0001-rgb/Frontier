@@ -17,7 +17,8 @@ inline constexpr std::uint32_t PathReplayRoughOpaque = 64u, PathReplaySampleFace
     PathReplayAuditDoubleCount = 256u, PathReplayAuditStrictMotion = 512u, PathReplayBalanceSampling = 1024u,
     PathReplayTexturedDiffuse = 2048u, PathReplayImportanceRough = 4096u, PathReplayPowerWeightedFacets = 8192u,
     PathReplayUniformFacetMixture = 16384u, PathReplayReconstruct = 32768u, PathReplayResetReconstruction = 65536u,
-    PathReplayDiffuseCameraReprojection = 131072u;
+    PathReplayDiffuseCameraReprojection = 131072u, PathReplaySampleHistory = 262144u,
+    PathReplayResetSampleHistory = 524288u;
 
 inline constexpr std::uint32_t PathReplayCounterWords = 23, PathReplayReconstructionCounterWords = 24;
 inline constexpr std::uint32_t PathReplayCameraFloats = 48;
@@ -35,6 +36,12 @@ constexpr std::uint64_t PathReplayRequiredReconstructedOutputRecords(std::uint32
 {
     return std::uint64_t(Receivers) * 36u + PathReplayFixedOutputRecords;
 }
+inline constexpr std::uint32_t PathReplayMaxSampleHistoryReceivers =
+    static_cast<std::uint32_t>((std::numeric_limits<std::uint32_t>::max() - (PathReplayFixedOutputRecords - 1u)) / 40u);
+constexpr std::uint64_t PathReplayRequiredSampleHistoryOutputRecords(std::uint32_t Receivers) noexcept
+{
+    return std::uint64_t(Receivers) * 40u + PathReplayFixedOutputRecords;
+}
 
 struct PathReplayVulkanAccess
 {
@@ -48,6 +55,7 @@ struct PathReplayVulkanAccess
     PFN_vkCmdPipelineBarrier PipelineBarrier = nullptr;
     std::uint32_t MaxGroupCountX = 0, MaxPushConstantBytes = 0;
     VkPipeline GatherReconstruction = VK_NULL_HANDLE, FinalizeReconstruction = VK_NULL_HANDLE;
+    VkPipeline GatherSampleHistory = VK_NULL_HANDLE, FinalizeSampleHistory = VK_NULL_HANDLE;
 };
 
 // 📝 Counts describe the descriptor ranges, not merely the sizes of the underlying allocations.
@@ -67,6 +75,13 @@ struct PathReplayVulkanBuffers
 //    permits strict same-world-point history only for an unchanged diffuse, untextured primary scene and a
 //    verified camera-only transition. The caller must establish those conditions and valid previous projection;
 //    the recorder cannot inspect buffer contents. It is not a general motion denoiser.
+//    PathReplaySampleHistory is mutually exclusive with colour reconstruction and reservoir reuse; it averages
+//    one fresh path and up to three previously unselected seeds, all evaluated at the current surface. It requires
+//    primary, untextured diffuse inputs, one initial candidate, two additional pipelines, 24 counter words and
+//    PathReplayRequiredSampleHistoryOutputRecords(N). Reset on first use, allocation/policy changes and all scene
+//    revisions except a validated camera-only transition; never use this contract for animated scene reuse. The
+//    caller must validate the same diffuse camera domain and previous projection as above, and must invalidate
+//    snapshots after failed submission. These paths cost up to four evaluations; independence is not guaranteed.
 //    Bindings 0–7 must match LightInfluence.slang; the pipeline layout must expose a 128-byte compute push
 //    constant range at offset zero. The caller validates the scene and material atlas, keeps descriptor ranges
 //    and objects alive, and supplies all input/output barriers, queue ownership, submission and history lifecycle.

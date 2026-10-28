@@ -1,0 +1,3 @@
+Existing strict camera mode regression after sample-history recorder changes.
+Compared CAMERA_ result rows against Results/ReplayCameraMultibounce-release.txt: exact match.
+The old and new runs used SwiftShader CPU Vulkan; this is not physical-GPU, Windows or editor evidence.

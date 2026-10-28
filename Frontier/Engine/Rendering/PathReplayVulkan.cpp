@@ -16,7 +16,7 @@ namespace
 constexpr std::uint32_t ReplayFlags = PathReplayRoughOpaque | PathReplaySampleFacets | PathReplayAuditDoubleCount |
     PathReplayAuditStrictMotion | PathReplayBalanceSampling | PathReplayTexturedDiffuse | PathReplayImportanceRough |
     PathReplayPowerWeightedFacets | PathReplayUniformFacetMixture | PathReplayReconstruct | PathReplayResetReconstruction |
-    PathReplayDiffuseCameraReprojection;
+    PathReplayDiffuseCameraReprojection | PathReplaySampleHistory | PathReplayResetSampleHistory;
 
 void RequireReplay(bool Condition)
 {
@@ -34,10 +34,12 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
     const bool Weighted = (Flags & PathReplayPowerWeightedFacets) != 0, Balance = (Flags & PathReplayBalanceSampling) != 0;
     const bool DoubleCount = (Flags & PathReplayAuditDoubleCount) != 0;
     const bool Reconstruct = (Flags & PathReplayReconstruct) != 0;
+    const bool SampleHistory = (Flags & PathReplaySampleHistory) != 0;
     RequireReplay(Commands != VK_NULL_HANDLE && Access.PipelineLayout != VK_NULL_HANDLE &&
         Access.Descriptors != VK_NULL_HANDLE && Access.Generate != VK_NULL_HANDLE && Access.Resolve != VK_NULL_HANDLE &&
         (!Primary || Access.Primary != VK_NULL_HANDLE) &&
         (!Reconstruct || (Access.GatherReconstruction != VK_NULL_HANDLE && Access.FinalizeReconstruction != VK_NULL_HANDLE)) &&
+        (!SampleHistory || (Access.GatherSampleHistory != VK_NULL_HANDLE && Access.FinalizeSampleHistory != VK_NULL_HANDLE)) &&
         Access.BindPipeline && Access.BindDescriptors && Access.PushConstants && Access.Dispatch && Access.PipelineBarrier &&
         Access.MaxPushConstantBytes >= sizeof(LightComputeFootprint));
     RequireReplay(Count > 0 && Groups <= Access.MaxGroupCountX && Extent.History[0] > 0 && Extent.History[1] > 0 &&
@@ -52,6 +54,10 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
         (!(Flags & PathReplayResetReconstruction) || Reconstruct) &&
         (!(Flags & PathReplayDiffuseCameraReprojection) ||
             (Reconstruct && Primary && !(Flags & (PathReplayRoughOpaque | PathReplayTexturedDiffuse)))) &&
+        (!(Flags & PathReplayResetSampleHistory) || SampleHistory) &&
+        (!SampleHistory || (Primary && !Reconstruct &&
+            !(Flags & (PathReplayRoughOpaque | PathReplayTexturedDiffuse | PathReplayAuditDoubleCount)) &&
+            Extent.Sampling[1] <= 1 && Extent.Reconstruction[0] == 0 && Extent.Reconstruction[1] == 0)) &&
         (Sources || Extent.Reconstruction[2] == 0));
     for (std::uint32_t Axis = 0; Axis < 3; ++Axis)
         RequireReplay(std::isfinite(Extent.Minimum[Axis]) && Extent.Minimum[Axis] >= 0 && Extent.Minimum[Axis] <= 256);
@@ -62,12 +68,15 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
         DistanceOffset == 0 && FogOffset == 0 && Buffers.ReceiverRecords >= Count && Buffers.FacetRecords >= Extent.Sampling[2] &&
         Buffers.EnclosureRecords >= Extent.Grid[3] && ((Extent.Sampling[2] == 0) == (Extent.Grid[3] == 0)) &&
         Extent.Reconstruction[2] <= Extent.Sampling[2] &&
-        Buffers.CounterWords >= (Reconstruct ? PathReplayReconstructionCounterWords : PathReplayCounterWords));
-    // ReplaySlot(4), or slot 10 with reconstruction, is the largest index. Shader offsets are uint32.
-    RequireReplay(Count <= (Reconstruct ? PathReplayMaxReconstructedReceivers : PathReplayMaxReceivers) &&
-        Buffers.OutputColourRecords >= (Reconstruct
-            ? PathReplayRequiredReconstructedOutputRecords(static_cast<std::uint32_t>(Count))
-            : PathReplayRequiredOutputRecords(static_cast<std::uint32_t>(Count))));
+        Buffers.CounterWords >= ((Reconstruct || SampleHistory) ? PathReplayReconstructionCounterWords : PathReplayCounterWords));
+    // 📝 ReplaySlot(4), slot 10 for colour, or slot 14 for the seed bank is the last shader index.
+    const std::uint32_t MaximumReceivers = SampleHistory ? PathReplayMaxSampleHistoryReceivers :
+        (Reconstruct ? PathReplayMaxReconstructedReceivers : PathReplayMaxReceivers);
+    const std::uint64_t RequiredOutput = SampleHistory ?
+        PathReplayRequiredSampleHistoryOutputRecords(static_cast<std::uint32_t>(Count)) :
+        (Reconstruct ? PathReplayRequiredReconstructedOutputRecords(static_cast<std::uint32_t>(Count)) :
+                       PathReplayRequiredOutputRecords(static_cast<std::uint32_t>(Count)));
+    RequireReplay(Count <= MaximumReceivers && Buffers.OutputColourRecords >= RequiredOutput);
     // Camera and source offsets are added as uint32 in Slang, even when the Vulkan range is larger.
     constexpr std::uint64_t ShaderAddressLimit = std::uint64_t(UINT32_MAX) + 1u;
     // Textured secondary hits use CameraProjection for their ray footprint even without primary tracing.
@@ -106,12 +115,13 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
     };
     if (Primary) Dispatch(Access.Primary, VK_ACCESS_SHADER_WRITE_BIT);
     Dispatch(Access.Generate, VK_ACCESS_SHADER_WRITE_BIT);
-    if (Reconstruct)
+    if (Reconstruct || SampleHistory)
     {
-        // Gather must finish reading old guides before resolve overwrites them (write-after-read dependency).
-        Dispatch(Access.GatherReconstruction, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        // 📝 Gather must finish reading old guides and seed banks before either is overwritten.
+        Dispatch(SampleHistory ? Access.GatherSampleHistory : Access.GatherReconstruction,
+                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         Dispatch(Access.Resolve, VK_ACCESS_SHADER_WRITE_BIT);
-        Dispatch(Access.FinalizeReconstruction, 0);
+        Dispatch(SampleHistory ? Access.FinalizeSampleHistory : Access.FinalizeReconstruction, 0);
     }
     else Dispatch(Access.Resolve, 0);
 }
