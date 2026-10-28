@@ -1207,3 +1207,11 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
   it), so no `WindowsWorkspaces` run could be dispatched. A Windows x64 test zip was cross-compiled locally
   with the pinned Zig toolchain instead (root Frontier host + TextureWorkspace, unsigned, not
   Defender-scanned) and delivered to the user outside Git. Enabling Actions in repo settings remains open.
+
+## Visual proofs for environment scene — 2026-10-28
+
+- GitHub Actions re-checked: still no workflows registered (`.github/workflows` absent from `main`,
+  agent token cannot read/enable Actions). PR #4 opened from this branch; merging it registers the
+  Windows workflow on the default branch. Actions still needs enabling in repo Settings.
+- Environment exhibit now emits small visual proofs in seconds: 2x2 comparison strip and a 16-frame
+  wind-drift GIF (256x160, ~7 s total). Release + ASan validation pass with identical frame hashes.

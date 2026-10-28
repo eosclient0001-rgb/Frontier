@@ -41,3 +41,11 @@ pinned ImGui/GLFW/toml++ dependencies.
 bash Exhibits/EnvironmentScene/Run.sh
 SANITIZE=1 bash Exhibits/EnvironmentScene/Run.sh
 ```
+
+## Visual proofs
+
+Small, fast CPU renders (seconds, not minutes): `Images/EnvironmentScene.png` (day frame),
+`Images/EnvironmentStrip.png` (2×2 clear / no-clouds / fog / night from the same validated run) and
+`Images/EnvironmentDrift.gif` (16 frames, 256×160, 30 s of wind-advected clouds). Regenerate with
+`EnvironmentSceneValidation out.ppm --strip --animate` plus any PPM→PNG/GIF converter. These are
+exhibit renders proving the record→render path, not captures of the editor viewport.

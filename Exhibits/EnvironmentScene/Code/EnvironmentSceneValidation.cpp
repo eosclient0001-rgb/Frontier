@@ -54,7 +54,8 @@ struct EnvironmentFrame
 
 EnvironmentFrame RenderEnvironment(const SunRecord &Sun, const AtmosphereRecord &Atmosphere,
                                    const CloudRecord &Clouds, const FogRecord &Fog,
-                                   const WindRecord &Wind, uint32_t Width, uint32_t Height)
+                                   const WindRecord &Wind, uint32_t Width, uint32_t Height,
+                                   double TimeSeconds = 12.0)
 {
     EnvironmentFrame Frame;
     Frame.Width = Width;
@@ -71,7 +72,7 @@ EnvironmentFrame RenderEnvironment(const SunRecord &Sun, const AtmosphereRecord 
         const double Bearing = Wind.BearingDegrees * 3.141592653589793 / 180.0;   // [rad]
         Cloud.WindXMps = Wind.SpeedMps * std::sin(Bearing);
         Cloud.WindYMps = Wind.SpeedMps * std::cos(Bearing);
-        Cloud.WindTimeS = 12.0;   // [s] - Fixed advection clock: the frame is deterministic
+        Cloud.WindTimeS = TimeSeconds;   // [s] - Advection clock; validation passes a fixed value.
     }
 
     const SpatialVector Origin{0, 0, 1.7};   // [m]
@@ -280,6 +281,43 @@ int main(int ArgumentCount, char **Arguments)
     }
     Check(NightMean < ClearMean, "below-horizon Sun darkens the frame");
     Check(WritePpm(Output, Clear), "scene frame written");
+
+    // 📝 Optional small visual proofs (kept tiny so they stay fast): a four-state comparison strip
+    //    reusing the frames above, and a short wind-advection frame sequence for GIF assembly.
+    bool Strip = false, Animate = false;
+    for (int I = 2; I < ArgumentCount; ++I)
+    {
+        Strip |= std::strcmp(Arguments[I], "--strip") == 0;
+        Animate |= std::strcmp(Arguments[I], "--animate") == 0;
+    }
+    if (Strip)
+    {
+        EnvironmentFrame StripFrame;
+        StripFrame.Width = Clear.Width * 2;
+        StripFrame.Height = Clear.Height * 2;
+        StripFrame.Pixels.resize(size_t(StripFrame.Width) * StripFrame.Height);
+        const EnvironmentFrame *Quads[4] = {&Clear, &NoClouds, &Fogged, &Night};
+        for (uint32_t Y = 0; Y < StripFrame.Height; ++Y)
+            for (uint32_t X = 0; X < StripFrame.Width; ++X)
+            {
+                const EnvironmentFrame &Q = *Quads[(Y / Clear.Height) * 2 + (X / Clear.Width)];
+                StripFrame.Pixels[size_t(Y) * StripFrame.Width + X] =
+                    Q.Pixels[size_t(Y % Clear.Height) * Clear.Width + (X % Clear.Width)];
+            }
+        Check(WritePpm("EnvironmentStrip.ppm", StripFrame), "comparison strip written");
+    }
+    if (Animate)
+    {
+        char Path[64];
+        for (int FrameIndex = 0; FrameIndex < 16; ++FrameIndex)
+        {
+            const EnvironmentFrame Frame = RenderEnvironment(Sun, Atmosphere, Clouds, Fog, Wind, 256, 160,
+                                                             double(FrameIndex) * 2.0);
+            std::snprintf(Path, sizeof(Path), "EnvironmentFrame%02d.ppm", FrameIndex);
+            if (!WritePpm(Path, Frame)) Check(false, "animation frame written");
+        }
+        Check(true, "animation frames written");
+    }
 
     std::printf("ENVIRONMENT_SCENE hash_clear=%llu hash_noclouds=%llu hash_fog=%llu hash_night=%llu\n",
                 (unsigned long long)Clear.Hash, (unsigned long long)NoClouds.Hash,
