@@ -2,6 +2,17 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Standalone GPU tyre projection — 2026-10-28
+
+- Ported the demo's 160-particle XPBD-labelled projection to Engine Slang, with a checked float32 ABI and a
+  caller-owned Vulkan command recorder. Direct SPIR-V execution on SwiftShader CPU Vulkan matches 12 JS/CPU
+  cases over 33 independent tyres × 8 steps within `9.95e-5 m` local and `9.69e-5 m` world; valid/invalid
+  commands, reset, buffer and dispatch guards pass. Release and ASan/UBSan-host readbacks match exactly.
+- This is a sequential-per-tyre, prescribed-target model and its force is not an integrated reaction. No
+  physical GPU, performance, measured-tyre, editor or mesh-renderer integration is claimed. GPU Hex8, shell,
+  spring-contact and long-duration stability remain open; vehicle/Jolt work remains explicitly deferred.
+  [ABI, commands and evidence](../Exhibits/VehiclePhysics/TyreProjectionDevice.md).
+
 ## Rigid GI rare-path audit — 2026-10-28
 
 - The three largest uniform-spatial samples in the 2,048-seed set replay to large path radiance before

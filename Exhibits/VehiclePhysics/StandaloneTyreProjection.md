@@ -9,6 +9,9 @@ continuum **visual vertex deformation** were separated from `TyreDeformation.h` 
 header-only `TyreSurfaceProjection.h`; the vehicle-state adapter remains in the old header and
 includes the shared projection. This is a dependency/ownership extraction, not a new tyre solver.
 
+A later [GPU XPBD-labelled projection slice](TyreProjectionDevice.md) adds an Engine compute shader and
+caller-owned Vulkan recorder; this does not yet link the particles to the editor or a tyre mesh renderer.
+
 The demo's spring contact-force law is still coupled to the existing `VehicleSolver.cpp`; it was not
 extracted or changed here. The separate demo continuum shell has not been ported. The older
 84-particle lattice is a different model, not the demo's 160-particle XPBD. No vehicle dynamics,
