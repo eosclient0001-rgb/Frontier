@@ -9,10 +9,10 @@ editor viewport or general animated reconstruction.
 
 | Requirement | Scope |
 |---|---|
-| Retained candidates | Up to three gathered, previously unselected fresh seeds are retraced at the current surface inside `GenerateReplayReservoirs`, after the temporal candidate. Each enters the reservoir with its current-surface target and count one, exactly like an extra fresh candidate. |
+| Retained candidates | Up to three gathered, previously banked unused-draw seeds are retraced at the current surface inside `GenerateReplayReservoirs`, after the temporal candidate (only the newest enters when temporal reuse is active — see the Seed bank row). Each enters the reservoir with its current-surface target and count one, exactly like an extra fresh candidate. |
 | Duplicate guard | A retained seed equal to the seed already entered as the temporal candidate is skipped, so one path is never counted twice in one reservoir. |
 | Output | `ResolveReplayReservoirs` keeps its reservoir estimator (`Chosen * Sum / (Count * ChosenTarget)`); the sample-history finalize stage no longer overwrites the output in combined mode. |
-| Seed bank | Finalize only shifts the bank and stores this frame's fresh draw, recomputed from the generator start state — never the reservoir-selected seed. |
+| Seed bank | Finalize only shifts the bank and stores the generator stream's next unused draw (after the generation draws) — never a candidate that entered the reservoir, nor the selected seed. Generation enters all banked seeds, or only the newest when temporal reuse is active. See [the correlation study](ReplaySeedCorrelation.md): the original fresh-draw banking measured −25.6% stationary bias in combination with temporal reuse. |
 | Ordering | The recorder now dispatches primary, gather, generate, resolve, finalize in sample-history mode, because generation consumes the gathered bank. Legacy no-reuse mode keeps its arithmetic-mean output and prior numeric behaviour. |
 | Exclusions | Still primary, untextured diffuse, one initial fresh candidate; no colour reconstruction, rough or textured mode, or audit double-count. |
 
@@ -40,4 +40,5 @@ SANITIZE=1 bash Exhibits/LightCompute/RunReplaySampleHistory.sh
 
 Host-only evidence from this sandbox is retained in
 [the combined host results](Results/ReplaySampleCombined-host.txt). Correlations between retained seeds
-across frames and pixels remain unresolved; no unbiasedness, equal-time speedup or real-time claim is made.
+across frames are now resolved by [the seed-correlation study](ReplaySeedCorrelation.md) (cross-pixel
+correlation is not separately measured); no equal-time speedup or real-time claim is made.

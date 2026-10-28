@@ -355,7 +355,7 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                 else InterlockedAdd(Counters[21], 1);
             }
         }
-        // 📝 Retained unselected seeds are retraced here as ordinary one-sample reservoir candidates.
+        // 📝 Retained unused-draw seeds are retraced here as ordinary one-sample reservoir candidates.
         //    Each enters with its current-surface target and count one, exactly like an extra fresh
         //    candidate; the resolve stage therefore keeps its usual reservoir estimator and no old
         //    radiance or visibility answer is reused. A seed already entered as the temporal candidate
@@ -367,7 +367,13 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
             if (ReplaySeedBankValid(BankFirst, BankSecond))
             {
                 uint RetainedCount = uint(BankSecond.z);
-                for (uint RetainedIndex = 0; RetainedIndex < RetainedCount; ++RetainedIndex)
+                // 📝 With temporal reuse, only the newest banked seed may enter: it was drawn after the
+                //    temporal reservoir was produced and never competed in it. Older banked seeds did
+                //    compete in reservoirs whose summaries return as temporal candidates, which correlates
+                //    their weights with the temporal weight and biases the merge (measured -25.6% stationary
+                //    bias in Exhibits/LightCompute/ReplaySeedCorrelation.md; newest-only entry: +0.4%).
+                uint RetainedEntries = Extent.Reconstruction.x != 0 ? min(RetainedCount, 1u) : RetainedCount;
+                for (uint RetainedIndex = 0; RetainedIndex < RetainedEntries; ++RetainedIndex)
                 {
                     float2 PackedSeed = RetainedIndex == 0 ? BankFirst.xy :
                                         (RetainedIndex == 1 ? BankFirst.zw : BankSecond.xy);

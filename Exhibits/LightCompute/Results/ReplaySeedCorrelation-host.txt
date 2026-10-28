@@ -1,0 +1,16 @@
+ReplaySeedCorrelation host release, base 266f343 plus working changes
+Reference expectations: state0 0.24127054 state1 0.41015991
+Stationary mode 0: mean 0.242007 ref 0.241271 bias +0.30505% sd 0.1239 z +0.38 | frame0 0.2463 frame3 0.2463 frame12 0.2262
+Stationary mode 1: mean 0.242633 ref 0.241271 bias +0.56451% sd 0.0956 z +0.91 | frame0 0.2463 frame3 0.2401 frame12 0.2352
+Stationary mode 2: mean 0.242314 ref 0.241271 bias +0.43267% sd 0.0798 z +0.84 | frame0 0.2463 frame3 0.2384 frame12 0.2403
+Dynamic mode 0: mean 0.407655 ref 0.410160 bias -0.61066% z -0.51
+Dynamic mode 1: mean 0.413577 ref 0.410160 bias +0.83323% z +0.92
+Dynamic mode 2: mean 0.415225 ref 0.410160 bias +1.23496% z +0.68
+Correlation mode 0: sd 0.5234 lag1 -0.0051 lag2 -0.0019 lag3 +0.0060 lag4 +0.0047
+Correlation mode 1: sd 0.2596 lag1 +0.4959 lag2 +0.2500 lag3 +0.0015 lag4 +0.0006
+Path evaluations: fresh 262144 combined 999424 combined-temporal 770048 (per equal frame count; combined modes trace retained paths, so this is cost accounting, not a speedup claim)
+ReplaySeedCorrelationValidation PASS
+
+--- pre-fix semantics (fresh-draw banking, all bank ages entered with temporal reuse), same harness:
+Stationary combined-temporal: mean 0.179621 ref 0.241271 bias -25.55% z -46.25 (FAIL measured during development)
+Fresh-draw banking, newest only: bias -14.82% z -24.09; next-draw banking, all ages: bias -14.34% z -29.52; temporal only (cap 1/8/64): bias +0.58/+0.41/+0.33% (clean); bank only: +0.75% z +0.97 (clean)

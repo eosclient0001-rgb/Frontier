@@ -42,6 +42,14 @@ uint32_t ReplayFreshSeed(uint32_t FrameSeed, uint32_t Pixel)
     uint32_t Bits = FrameSeed ^ (Pixel * 747796405u + 2891336453u);
     return NextReplayTailRandom(Bits);
 }
+// 📝 Combined mode banks the generator stream's next unused draw (after the fresh candidates), so a banked
+//    seed never competed in the reservoir whose temporal weight it may later accompany.
+uint32_t ReplayBankSeed(uint32_t FrameSeed, uint32_t Pixel, uint32_t Candidates)
+{
+    uint32_t Bits = FrameSeed ^ (Pixel * 747796405u + 2891336453u);
+    for (uint32_t Draw = 0; Draw < (Candidates > 0 ? Candidates : 1); ++Draw) NextReplayTailRandom(Bits);
+    return NextReplayTailRandom(Bits);
+}
 std::vector<std::array<float,4>> ExecuteReplaySampleHistory(LightComputeSubmission& Compute,
     const LightComputeArchive& Scene, uint32_t Seed, bool Reset, bool History, uint32_t Bounces = 1,
     const std::array<float,3>& Environment = {0,0,0}, uint32_t Candidates = 1,
@@ -490,16 +498,16 @@ void ValidateReplaySampleCombined(const char* Driver, const std::string& Shaders
                                    sizeof(CombinedImage[Pixel])) != 0 ? 1u : 0u;
             const auto NewFirst = ReplaySampleSlot(Combined, 11, Pixel);
             const auto NewSecond = ReplaySampleSlot(Combined, 12, Pixel);
-            Require(ReplaySampleSeed(NewFirst[0], NewFirst[1]) == ReplayFreshSeed(FrameSeed, Pixel) &&
+            Require(ReplaySampleSeed(NewFirst[0], NewFirst[1]) == ReplayBankSeed(FrameSeed, Pixel, 1) &&
                         NewFirst[2] == GatheredFirst[0] && NewFirst[3] == GatheredFirst[1] &&
                         NewSecond[2] == float(std::min(Count + 1, 3u)),
-                    "Combined mode did not shift the fresh seed bank");
+                    "Combined mode did not shift the unused-draw seed bank");
         }
     }
     Require(Accepted == Combined.ExtendedStatistics()[23] && Accepted > 100 && Rejected > 0 && Changed > 50,
             "Combined mode did not exercise accepted, rejected and changed pixels");
     std::printf("SAMPLE_COMBINED temporal=1 spatial=1 accepted=%u rejected=%u rejected_reservoir_exact=1 "
-                "changed=%u bank_shift_fresh=1\n", Accepted, Rejected, Changed);
+                "changed=%u bank_shift_unused_draw=1\n", Accepted, Rejected, Changed);
 }
 
 //------------------------------------------------------------------------------------------------------------------------

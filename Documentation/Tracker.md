@@ -1194,3 +1194,16 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
 - Open: full native continuum/XPBD parity, measured tyre/lens/sky validation, GPU/editor integration, Windows,
   unresolved solar-disc PSF, Moon parallax/scene illumination, cloud appearance and lunar-map licence confirmation.
 - This entry supersedes earlier statements that the owner's demo had no flare, Moon texture or XPBD sources.
+
+## Seed-bank correlation and Windows test binary — 2026-10-28
+
+- Statistical mirror of combined ReSTIR seed-bank reuse found the original fresh-draw banking biased −25.6%
+  (z −46) when combined with temporal reuse; temporal-only and bank-only are clean. Shipped fix: bank the
+  generator stream's next unused draw and enter only the newest banked seed while temporal reuse is active
+  (stationary bias +0.43%, z +0.84; dynamic +1.23%, z +0.68). Host CTests 6/6 release + ASan/UBSan; five
+  Slang entry points compile to SPIR-V; the GPU combined check remains unrun (no Vulkan driver in sandbox)
+  with its expectation updated. Evidence: `Exhibits/LightCompute/ReplaySeedCorrelation.md`.
+- GitHub Actions is disabled on this repository (workflows API returns none; the agent token cannot enable
+  it), so no `WindowsWorkspaces` run could be dispatched. A Windows x64 test zip was cross-compiled locally
+  with the pinned Zig toolchain instead (root Frontier host + TextureWorkspace, unsigned, not
+  Defender-scanned) and delivered to the user outside Git. Enabling Actions in repo settings remains open.

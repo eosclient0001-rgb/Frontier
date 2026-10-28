@@ -24,6 +24,8 @@ target_link_libraries(LightComputeValidation PRIVATE FrontierPathReplayDomain Fr
     FrontierMediumRadiancePayload)
 target_link_libraries(PathReplayDomainValidation PRIVATE FrontierPathReplayDomain)
 add_executable(PathReplayArchiveValidation Code/PathReplayArchiveValidation.cpp)
+add_executable(ReplaySeedCorrelationValidation Code/ReplaySeedCorrelationValidation.cpp)
+set_target_properties(ReplaySeedCorrelationValidation PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 add_executable(RadiantFacetValidation Code/RadiantFacetValidation.cpp)
 add_executable(MediumRadianceValidation Code/MediumRadianceValidation.cpp)
 target_link_libraries(RadiantFacetValidation PRIVATE FrontierRadiantFacetDistribution)
@@ -37,6 +39,7 @@ add_test(NAME PathReplayDomainValidation COMMAND PathReplayDomainValidation)
 add_test(NAME PathReplayVulkanValidation COMMAND PathReplayVulkanValidation)
 add_test(NAME RadiantFacetValidation COMMAND RadiantFacetValidation)
 add_test(NAME MediumRadianceValidation COMMAND MediumRadianceValidation)
+add_test(NAME ReplaySeedCorrelationValidation COMMAND ReplaySeedCorrelationValidation)
 add_test(NAME PathReplayArchiveValidation COMMAND PathReplayArchiveValidation
          "${CMAKE_CURRENT_BINARY_DIR}/ReplayArchiveFixture.bin")
 # 📝 A generic build can omit the optional generated fixture; preparing it later must force recompilation.

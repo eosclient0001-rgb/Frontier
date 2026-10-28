@@ -78,9 +78,12 @@
     uint Count = ReplaySeedBankValid(First, Second) ? uint(Second.z) : 0;
     if (Combined)
     {
-        // 📝 The bank stores this frame's fresh draw, never the reservoir-selected seed. The fresh
-        //    draw is recomputed from the same generator state generation started from.
+        // 📝 The bank stores the generator stream's next unused draw, never a seed that entered this
+        //    frame's reservoir (neither the fresh candidate nor the selected seed). A seed that competed
+        //    in a reservoir is correlated with that reservoir's stored weight; banking an unused draw
+        //    keeps later retracing statistically independent of it (ReplaySeedCorrelation.md).
         uint FreshBits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
+        for (uint Draw = 0; Draw < max(Extent.Sampling.y, 1u); ++Draw) NextRandom(FreshBits);
         float2 FreshSeed = EncodeReplaySeed(NextRandom(FreshBits));
         float4 ShiftedFirst = float4(FreshSeed, 0, 0), ShiftedSecond = float4(0, 0, 1, 0);
         if (Count > 0) ShiftedFirst.zw = First.xy;
