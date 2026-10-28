@@ -2,6 +2,16 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Rigid GI tail follow-up — 2026-10-28
+
+- A further 2,048 disjoint frame seeds compare uniform/mixture proposals with spatial reuse off/on against
+  2,000,000 separately seeded CPU paths. Release and ASan/UBSan-host runs pass and their sample tables
+  are identical; the low rigid-red mean does not recur. Shader/driver code remains uninstrumented.
+- The old versus new uniform means differ by `3.33` nominal combined SE; the red mixture/uniform SD ratio
+  reverses from `1.468` to `0.587` as rare large samples dominate the new set. These finite-sample intervals
+  and measured variance are tail-sensitive, not proof of bias or of a general speedup. The original
+  discrepancy remains unexplained. [Evidence and failed wrapper audit](../Exhibits/LightCompute/ReplayRigidVarianceRepeat.md).
+
 ## Disjoint moving-GI convergence repeat — 2026-10-28
 
 - Four disjoint seed groups (256 batches) compare fresh uniform/mixture and cap-one temporal/spatial reuse
@@ -10,8 +20,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   in a three-seed audit. Shader/driver code is not sanitizer-instrumented.
 - The earlier rigid-green mixture/uniform SD ratio `1.515` varied from `0.716–1.480` across groups and is
   `1.125` overall; fresh rigid red is `3.84` nominal combined SE below the CPU reference under uniform
-  sampling despite passing the six-SE tolerance. This discrepancy needs a longer disjoint follow-up; neither
-  a general improvement nor convergence is claimed. [Data, chart and limits](../Exhibits/LightCompute/ReplayFacetMixtureMotionRepeat.md).
+  sampling despite passing the six-SE tolerance. The follow-up above does not reproduce the low mean,
+  but its cause remains unresolved; neither a general improvement nor convergence is claimed.
+  [Data, chart and limits](../Exhibits/LightCompute/ReplayFacetMixtureMotionRepeat.md).
 
 ## Moving emissive-mixture GI reference — 2026-10-28
 

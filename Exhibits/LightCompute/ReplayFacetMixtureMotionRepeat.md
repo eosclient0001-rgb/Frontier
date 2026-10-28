@@ -56,8 +56,10 @@ It passes the pre-existing six-SE-plus-allowances assertion, but is too noticeab
 convergence. Fresh mixture is `0.00294235 ± 0.00011531`. The previous independently seeded CPU red
 estimate was `0.00281239 ± 0.00002872`, about `2.07` combined CPU SE from the new estimate. These
 are stochastic estimates using the same CPU reference method, not separate physical measurements.
-A longer disjoint-seed and higher-path-count follow-up is needed to distinguish fluctuation,
-rare events, pseudorandom correlations and an implementation defect.
+A [longer disjoint-seed, higher-path-count follow-up](ReplayRigidVarianceRepeat.md) does not reproduce
+the low mean and exposes rare high-valued samples and reversal of the red SD ratio. The cause of this
+original discrepancy remains unresolved; neither fluctuation, pseudorandom correlation nor an
+implementation defect has been established.
 
 Across all 256 masked submissions, transition temporal accepts total `75,776 / 86,528 / 86,528`;
 spatial links total `319,488` per transition. Both selected probes retained a represented count of two
