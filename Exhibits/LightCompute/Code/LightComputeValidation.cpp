@@ -1626,6 +1626,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayFacetMixtureCapture.h"
 #include "ReplayFacetMixtureMotionValidation.h"
 #include "ReplayFacetMixtureMotionRepeat.h"
+#include "ReplayRigidVarianceRepeat.h"
 #include "ReplayFacetMixtureMotionCapture.h"
 #include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
@@ -1674,6 +1675,17 @@ int main(int Count, char** Arguments)
         if (Count == 5 && std::string(Arguments[3]) == "--replay-facet-mixture-motion-repeat-smoke")
         {
             ValidateReplayFacetMixtureMotionRepeat(Arguments[1], Arguments[2], Arguments[4], 2, 8, 12000);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[3]) == "--replay-rigid-variance-repeat")
+        {
+            ValidateReplayRigidVarianceRepeat(Arguments[1], Arguments[2], Arguments[4], Arguments[5], Arguments[6]);
+            return 0;
+        }
+        if (Count == 7 && std::string(Arguments[3]) == "--replay-rigid-variance-repeat-smoke")
+        {
+            ValidateReplayRigidVarianceRepeat(Arguments[1], Arguments[2], Arguments[4], Arguments[5], Arguments[6],
+                                               2, 8, 10000);
             return 0;
         }
         if (Count == 5 && std::string(Arguments[3]) == "--replay-facet-mixture-parity")
