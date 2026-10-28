@@ -72,6 +72,13 @@ channels, source hashes and primary-guide statistics are in the
 [sanitized-host log](Results/ReplayFacetMixtureMotion-sanitized.txt); the
 [smoke log](Results/ReplayFacetMixtureMotionSmoke-release.txt) is retained separately.
 
+After extending the rough-texture submission helper, its disabled-mixture path was also rerun against
+the prior shader checkpoint `0d5af89`: 20 images across uniform/power facets and cosine/GGX proposals
+had all `655,360` float components bit-identical, with eight matching history records. Both release
+and sanitized hosts passed. This compares the current helper with the two shader versions; it is not
+the stopped full-gallery recapture. [Release parity](Results/ReplayFacetMixtureMotionPriorParity-release.txt) ·
+[sanitized parity](Results/ReplayFacetMixtureMotionPriorParity-sanitized.txt).
+
 ## Limits and reproduction
 
 This bounded opaque room and two radiance probes do not establish general unbiasedness, independent
@@ -88,6 +95,10 @@ CHECK=--replay-facet-mixture-motion-smoke Exhibits/LightCompute/RunReplayFacetMi
 # Full validation (240,000 paths for each of six references, 96 GPU batches)
 Exhibits/LightCompute/RunReplayFacetMixtureMotion.sh
 SANITIZE=1 Exhibits/LightCompute/RunReplayFacetMixtureMotion.sh
+
+# Previous-shader default-off regression (requires git checkpoint 0d5af89)
+CHECK=--replay-facet-mixture-parity RESULTS=Exhibits/LightCompute/Results/ReplayFacetMixtureMotionPriorParity-release.txt Exhibits/LightCompute/RunReplayFacetMixture.sh
+CHECK=--replay-facet-mixture-parity SANITIZE=1 BUILD_JOBS=1 RESULTS=Exhibits/LightCompute/Results/ReplayFacetMixtureMotionPriorParity-sanitized.txt Exhibits/LightCompute/RunReplayFacetMixture.sh
 ```
 
 Prepare the pinned tools using `python3 Exhibits/LightCompute/Code/Prepare.py`. The result files

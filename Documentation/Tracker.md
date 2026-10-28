@@ -13,7 +13,8 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   These two-probe measurements do not establish universal variance improvement or general unbiasedness.
   Physical-GPU/editor integration and general deforming-motion coverage remain open. A 14-image SwiftShader
   gallery now captures the translated sources; release/sanitized RGB hashes match, and the default capture
-  helper remains bit-identical for two submissions. These are not production or hardware renders.
+  helper remains bit-identical for two submissions. A 20-image prior-shader regression also remains bit-identical
+  across previous uniform/power and cosine/GGX modes. These are not production or hardware renders.
   [Fixture, uncertainties and results](../Exhibits/LightCompute/ReplayFacetMixtureMotion.md) ·
   [moving-light readbacks](../Exhibits/LightCompute/ReplayFacetMixtureMotionCaptures.md).
 
