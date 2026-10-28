@@ -55,6 +55,10 @@ spatial-only and full temporal+spatial+bank modes stay unbiased at every pixel (
 12 pixel/mode pairs, inside multiple-comparison noise): the spatial merge does not reintroduce the
 correlation bias, because a pixel's banked seeds never competed in a neighbour's reservoir.
 
+An exact 2D version mirrors `ResolveReplayReservoirs`' five offsets {(0,0), (−1,0), (1,0), (0,−1), (0,1)}
+and centre mapping on a 4×3 grid with position-drifting peak/scale: spatial-only worst |z| = 2.00 and
+temporal+spatial+bank worst |z| = 1.69 over 12 pixels each, again consistent with unbiased merges.
+
 ## Multiple fresh candidates (Sampling.y > 1)
 
 The unused draw sits after `max(Sampling.y, 1)` generator draws; the harness now also runs

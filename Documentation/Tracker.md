@@ -1223,3 +1223,15 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
   the temporal modes (-9.9% / -4.7%), confirming the harness detects the correlation it guards against.
   LightCompute 6/6 release + ASan/UBSan. GitHub Actions: user enabled "Allow all actions" in repo
   Settings; PR #4 merge into main is the remaining step before WindowsWorkspaces can be dispatched.
+
+## Automatic Windows CI + Sultan branch audit + 2D spatial mirror — 2026-10-28
+
+- This session branch was added to the WindowsWorkspaces push triggers; pushing with the
+  [publish-windows-unsigned-preview] commit marker now builds and publishes automatically, the pattern
+  used by SultanAladin/Frontier arena/4014756b (verified in its history).
+- SultanAladin/Frontier arena/4014756b audited: 276 commits (Texture Paint, stamps, Baking Studio,
+  modifiers) on an unrelated history (no merge base with this repo's main); NOT merged. Porting its
+  unique work is a separate scoped reconciliation, not a merge.
+- ReSTIR: exact 2D five-tap spatial mirror added to ReplaySeedCorrelationValidation (spatial-only
+  worst |z| 2.00, temporal+spatial+bank worst |z| 1.69 over 12 pixels). LightCompute 6/6 release +
+  ASan/UBSan.

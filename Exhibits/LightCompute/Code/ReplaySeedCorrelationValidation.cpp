@@ -329,6 +329,68 @@ int main()
             if (std::fabs(Z) > 5) { std::printf("FAIL: multi-candidate bias beyond 5 sigma\n"); Pass = false; }
         }
 
+    // 📝 Exact 2D five-tap spatial study: mirrors ResolveReplayReservoirs' Offsets {(0,0),(-1,0),(1,0),
+    //    (0,-1),(0,1)} and Centre = (Pixel % W, Pixel / W) on a 4x3 grid whose peak/scale drift with
+    //    position. The shader persists the pre-spatial Local before resolve; so does this mirror.
+    {
+        const int GridW = 4, GridH = 3, Grid = GridW * GridH, GReplicates = 1536;
+        auto PeakAt = [](int X, int Y) { return 0.24 + 0.02 * X + 0.015 * Y; };
+        auto ScaleAt = [](int X, int Y) { return 0.88 + 0.04 * X + 0.03 * Y; };
+        for (Mode M : {Mode::Fresh, Mode::CombinedTemporal})
+        {
+            std::vector<std::vector<double>> ChainMeans(Grid);
+            for (int R = 0; R < GReplicates; ++R)
+            {
+                PixelState Pixels[Grid];
+                std::vector<double> Acc(Grid, 0);
+                for (int F = 0; F < Frames; ++F)
+                {
+                    const uint32_t Base = 1357924u + (uint32_t)R * 733u + (uint32_t)F * 2654435761u;
+                    LocalReservoir Locals[Grid];
+                    long Dummy = 0;
+                    for (int P = 0; P < Grid; ++P)
+                        Locals[P] = GenerateLocal(Pixels[P], Base, 200u + (uint32_t)P,
+                                                  PeakAt(P % GridW, P / GridW), ScaleAt(P % GridW, P / GridW), M, Dummy);
+                    const int Offsets[5][2] = {{0,0},{-1,0},{1,0},{0,-1},{0,1}};
+                    for (int P = 0; P < Grid; ++P)
+                    {
+                        const int CX = P % GridW, CY = P / GridW;
+                        uint32_t SelectionBits = (Base * 2891336453u + 1013904223u) ^ ((200u + (uint32_t)P) * 277803737u + 13u);
+                        double Chosen = 0, ChosenTarget = 1e-4, Sum = 0, Count = 0;
+                        for (int I = 0; I < 5; ++I)
+                        {
+                            const int QX = CX + Offsets[I][0], QY = CY + Offsets[I][1];
+                            if (QX < 0 || QY < 0 || QX >= GridW || QY >= GridH) continue;
+                            const LocalReservoir &Source = Locals[QY * GridW + QX];
+                            double Radiance = I == 0 ? Source.Radiance
+                                : EvaluateFixturePeak(Source.Seed, PeakAt(CX, CY), ScaleAt(CX, CY));
+                            double Target = FixtureTarget(Radiance);
+                            double Weight = Target * (Source.Sum / (Source.Count * Source.Target)) * Source.Count;
+                            Sum += Weight; Count += Source.Count;
+                            if (RandomUnit(SelectionBits) * Sum < Weight) { Chosen = Radiance; ChosenTarget = Target; }
+                        }
+                        if (F >= Warmup) Acc[P] += Chosen * (Sum / (Count * ChosenTarget));
+                    }
+                }
+                for (int P = 0; P < Grid; ++P) ChainMeans[P].push_back(Acc[P] / (Frames - Warmup));
+            }
+            double WorstZ = 0; int WorstPixel = 0;
+            for (int P = 0; P < Grid; ++P)
+            {
+                const Summary S = Summarize(ChainMeans[P]);
+                const double Ref = ReferenceExpectationPeak(PeakAt(P % GridW, P / GridW), ScaleAt(P % GridW, P / GridW));
+                const double Z = (S.Mean - Ref) / (S.Sd / std::sqrt((double)GReplicates));
+                if (std::fabs(Z) > std::fabs(WorstZ)) { WorstZ = Z; WorstPixel = P; }
+            }
+            const Summary WS = Summarize(ChainMeans[WorstPixel]);
+            const double WRef = ReferenceExpectationPeak(PeakAt(WorstPixel % GridW, WorstPixel / GridW),
+                                                         ScaleAt(WorstPixel % GridW, WorstPixel / GridW));
+            std::printf("Spatial2D mode %d: worst pixel %d mean %.6f ref %.6f bias %+.5f%% z %+.2f (12 pixels)\n",
+                        (int)M, WorstPixel, WS.Mean, WRef, 100.0 * (WS.Mean - WRef) / WRef, WorstZ);
+            if (std::fabs(WorstZ) > 5) { std::printf("FAIL: 2D spatial bias beyond 5 sigma\n"); Pass = false; }
+        }
+    }
+
     std::printf("Path evaluations: fresh %ld combined %ld combined-temporal %ld (per equal frame count; combined modes trace retained paths, so this is cost accounting, not a speedup claim)\n",
                 Evals[0], Evals[1], Evals[2]);
     std::printf(Pass ? "ReplaySeedCorrelationValidation PASS\n" : "ReplaySeedCorrelationValidation FAIL\n");

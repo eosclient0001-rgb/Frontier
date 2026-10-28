@@ -1,4 +1,4 @@
-ReplaySeedCorrelation host release, base 21fa337 plus working changes
+ReplaySeedCorrelation host release, 96f31ec plus working changes (2D five-tap spatial mirror added)
 Reference expectations: state0 0.24127054 state1 0.41015991
 Stationary mode 0: mean 0.242007 ref 0.241271 bias +0.30505% sd 0.1239 z +0.38 | frame0 0.2463 frame3 0.2463 frame12 0.2262
 Stationary mode 1: mean 0.242633 ref 0.241271 bias +0.56451% sd 0.0956 z +0.91 | frame0 0.2463 frame3 0.2401 frame12 0.2352
@@ -24,8 +24,10 @@ Candidates=2 mode 1: mean 0.240767 ref 0.241271 bias -0.20880% z -0.40
 Candidates=2 mode 2: mean 0.240329 ref 0.241271 bias -0.39011% z -0.91
 Candidates=4 mode 1: mean 0.241748 ref 0.241271 bias +0.19774% z +0.48
 Candidates=4 mode 2: mean 0.241381 ref 0.241271 bias +0.04560% z +0.13
+Spatial2D mode 0: worst pixel 4 mean 0.216706 ref 0.219556 bias -1.29814% z -2.00 (12 pixels)
+Spatial2D mode 2: worst pixel 5 mean 0.227383 ref 0.229207 bias -0.79590% z -1.69 (12 pixels)
 Path evaluations: fresh 262144 combined 999424 combined-temporal 770048 (per equal frame count; combined modes trace retained paths, so this is cost accounting, not a speedup claim)
 ReplaySeedCorrelationValidation PASS
 
-Negative control (off-by-one bank skip, scratch build): Candidates=2 temporal bias -9.90% z -20.61 FAIL; Candidates=4 temporal bias -4.68% z -12.49 FAIL; bank-only unaffected, as predicted.
+Negative control (off-by-one bank skip): Candidates=2 temporal bias -9.90% z -20.61 FAIL; Candidates=4 temporal -4.68% z -12.49 FAIL; bank-only unaffected.
 Pre-fix semantics (fresh-draw banking, all ages): stationary combined-temporal bias -25.55% z -46.25 FAIL.
