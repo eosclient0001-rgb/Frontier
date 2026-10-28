@@ -25,7 +25,8 @@ validation host under Exhibits is the only consumer of the new recorder. No vehi
 - Bind storage buffers at set 0: commands (binding 0), particles (1) and results (2). Each command and
   particle is 80 bytes, each result 16 bytes. Particles for each tyre are contiguous in 32 × 5 order.
   Compile each Slang entry to SPIR-V, create matching Vulkan compute pipelines and use entry `main` if
-  compiling with the supplied runner. Specify `FRONTIER_TYRE_VULKAN_HEADERS` to build the optional Engine
+  compiling with the supplied runner. The pipeline layout must expose a four-byte compute push-constant range
+  at offset zero for the exact tyre count. Specify `FRONTIER_TYRE_VULKAN_HEADERS` to build the optional Engine
   recorder target; it has no Vulkan-loader dependency because it borrows command function pointers.
 - Reset a tyre before its first advance. A valid reset writes rest/local/previous/velocity/world values and
   a zero force; a valid advance updates local and world positions, previous positions, velocities and force.
@@ -36,10 +37,12 @@ validation host under Exhibits is the only consumer of the new recorder. No vehi
   ±1,000,000 m, deflection above 1 m, pressure above 2 MPa, lateral force beyond ±10 MN, time outside
   `[1e-6, 1]` seconds and substeps outside `[1, 32]`. These are bounded device-safety limits, not validated
   physical ranges. The shader checks the corresponding already-clamped float32 values and reserved fields.
-- Dispatch uses groups of 32 and checks the caller-supplied device group limit. The caller is responsible for
-  making command writes available before compute; ordering/reset-to-advance and particle visibility to later
-  compute/vertex consumers (including the correct destination stage/access); and ensuring no in-flight submission
-  uses replaced resources. The surface functions expect finite mesh positions and normals supplied by the caller.
+- Dispatch uses groups of 32, pushes the exact requested count and checks the caller-supplied device group
+  limit. Previously, padding could modify extra tyres when the bound buffers exceeded the requested count; the
+  corrected shader exits those lanes. The caller is responsible for making command writes available before
+  compute; ordering/reset-to-advance and particle visibility to later compute/vertex consumers (including the
+  correct destination stage/access); and ensuring no in-flight submission uses replaced resources. The surface
+  functions expect finite mesh positions and normals supplied by the caller.
 
 ## Reproducible evidence
 
@@ -64,9 +67,11 @@ physical GPU. The native host is ASan/UBSan-instrumented in the second run; the 
 
 The surface fixture uses the final simulation state directly on the GPU and compares its readback against
 `TyreSurfaceProjection.h`, applying the CPU projection to that exact GPU-generated particle field. It covers
-unloaded and shredded tyres, non-tyre geometry and invalid tyre indices. The previous reset/advance SPIR-V
-is byte-identical after extracting shared record definitions. These tests exercise surface functions in a
-compute entry; the separate vertex entry was **compile-only**, not an executed or displayed graphics render.
+unloaded and shredded tyres, non-tyre geometry and invalid tyre indices. Reset/advance SPIR-V is now changed
+by the exact-count guard; their complete trajectory readback remains identical to the prior `cc7906a` digest.
+A dispatch requesting one tyre from 33 bound tyres leaves every other particle and result byte untouched for
+both reset and advance. These tests exercise surface functions in a compute entry; the separate vertex entry
+was **compile-only**, not an executed or displayed graphics render.
 The older [standalone projection evidence](StandaloneTyreProjection.md) separately compares the CPU function
 with the retained demo WGSL.
 

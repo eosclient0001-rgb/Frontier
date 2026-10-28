@@ -46,15 +46,11 @@ export LD_LIBRARY_PATH="$TOOLS/SwiftShader${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         exit 1
     fi
     printf 'TYRE_DEVICE_DEPENDENCIES vehicle_header=0 jolt_header=0\n'
-    git show 1ae0bd6:Frontier/Engine/Physics/Shaders/TyreProjectionDevice.slang > "$BUILD/PriorTyreProjection.slang"
     for ENTRY in ResetTyreProjection AdvanceTyreProjection; do
         "$SLANG" Frontier/Engine/Physics/Shaders/TyreProjectionDevice.slang -entry "$ENTRY" \
             -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$BUILD/$ENTRY.spv"
-        "$SLANG" "$BUILD/PriorTyreProjection.slang" -entry "$ENTRY" \
-            -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$BUILD/Prior$ENTRY.spv"
-        cmp "$BUILD/$ENTRY.spv" "$BUILD/Prior$ENTRY.spv"
     done
-    printf 'TYRE_PROJECTION_PRIOR_SPIRV exact=1 entries=2\n'
+    printf 'TYRE_PROJECTION_COUNT_PUSH bytes=4 offset=0 entries=2\n'
     "$SLANG" Exhibits/VehiclePhysics/Code/TyreSurfaceDeviceProbe.slang -I Frontier/Engine/Physics/Shaders \
         -entry CompareTyreSurface -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$BUILD/TyreSurface.spv"
     "$SLANG" Exhibits/VehiclePhysics/Code/TyreSurfaceVertexProbe.slang -I Frontier/Engine/Physics/Shaders \

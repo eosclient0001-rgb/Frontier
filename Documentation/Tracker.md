@@ -4,6 +4,14 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## GPU tyre invocation bound — 2026-10-28
+
+- Fixed a dispatch-boundary defect: workgroups have 32 lanes, so previously a count smaller than the bound
+  buffer could update unintended tyres. The Engine recorder now pushes the exact count and both projection
+  entries exclude padded lanes. One requested tyre with 33 bound leaves the other 32 byte-identical in reset
+  and advance; release and ASan/UBSan-host checks pass on SwiftShader. The earlier trajectory digest is unchanged.
+  [Updated pipeline contract and evidence](../Exhibits/VehiclePhysics/TyreProjectionDevice.md).
+
 ## Plume footprints and reference transport — 2026-10-28
 
 - Engine owns validated 256-byte lattice and 48-byte source footprints; four unchanged demo JavaScript grade

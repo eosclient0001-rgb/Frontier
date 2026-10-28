@@ -20,14 +20,15 @@ struct TyreProjectionVulkanAccess
     VkDescriptorSet Descriptors = VK_NULL_HANDLE;
     PFN_vkCmdBindPipeline BindPipeline = nullptr;
     PFN_vkCmdBindDescriptorSets BindDescriptors = nullptr;
+    PFN_vkCmdPushConstants PushConstants = nullptr;
     PFN_vkCmdDispatch Dispatch = nullptr;
     std::uint32_t MaxGroupCountX = 0;
 };
 
-// 📝 Bindings 0/1/2 are command/particle/result storage buffers, respectively. Dispatch has 32
-//    invocations per group and exactly one invocation per tyre. The caller supplies correctly sized
-//    buffers, valid descriptor sets/pipelines and barriers between reset, advance and other consumers;
-//    it retains all objects until GPU completion. Zero tyres records no commands.
+// 📝 Projection bindings 0/1/2 are command/particle/result storage buffers. Pipelines require a four-byte
+//    compute push-constant range at offset zero. Dispatch groups contain 32 invocations; the recorded count
+//    excludes padded lanes, even if bound buffers contain additional tyres. The caller supplies valid pipelines,
+//    descriptor sets, correctly sized buffers, barriers and object lifetimes through completion. Zero tyres records nothing.
 void RecordTyreProjection(VkCommandBuffer Commands, const TyreProjectionVulkanAccess &Access,
                           TyreProjectionOperation Operation, std::uint32_t TyreCount);
 

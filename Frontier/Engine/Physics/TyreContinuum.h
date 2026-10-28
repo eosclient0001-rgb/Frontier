@@ -65,6 +65,10 @@ public:
     double QueryMeanJacobian() const { return m_MeanJacobian; }
     double QueryMeanStress() const { return m_MeanStress; }
     int QueryContactCount() const { return m_ContactCount; }
+    // 📝 Immutable reference operators for device uploads; these do not depend on the current deformation.
+    const std::array<std::uint16_t, TyreContinuumCellCount * 4>& QueryCellCorners() const { return m_Corners; }
+    const std::array<float, TyreContinuumCellCount * 12>& QueryCellGradients() const { return m_Gradient; }
+    const std::array<float, TyreContinuumCellCount>& QueryCellVolumes() const { return m_Volume; }
 
 private:
     void SyncPositions(const TyreContinuumInput& Input);

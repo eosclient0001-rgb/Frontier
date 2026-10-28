@@ -28,4 +28,9 @@ struct TyreProjectionResult
     float4 ForceStatus;
 };
 
+struct TyreInvocationExtent
+{
+    uint TyreCount;
+};
+
 #endif

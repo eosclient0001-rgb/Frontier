@@ -200,6 +200,9 @@ struct VulkanFixture
         VkPipelineLayoutCreateInfo PipelineInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         PipelineInfo.setLayoutCount = 1;
         PipelineInfo.pSetLayouts = &DescriptorLayout;
+        const VkPushConstantRange TyreExtent{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(std::uint32_t)};
+        PipelineInfo.pushConstantRangeCount = 1;
+        PipelineInfo.pPushConstantRanges = &TyreExtent;
         Confirm(vkCreatePipelineLayout(Device, &PipelineInfo, nullptr, &PipelineLayout), "vkCreatePipelineLayout");
         VkDescriptorPoolSize PoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6};
         VkDescriptorPoolCreateInfo PoolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
@@ -254,6 +257,7 @@ struct VulkanFixture
         Access.Descriptors = Descriptors;
         Access.BindPipeline = vkCmdBindPipeline;
         Access.BindDescriptors = vkCmdBindDescriptorSets;
+        Access.PushConstants = vkCmdPushConstants;
         Access.Dispatch = vkCmdDispatch;
         Access.MaxGroupCountX = Properties.limits.maxComputeWorkGroupCount[0];
         return Access;
@@ -504,6 +508,28 @@ int Run(int Count, char **Arguments)
         throw std::runtime_error("GPU differs from CPU solver beyond tolerance");
     ValidateSurface(SurfaceProbes, static_cast<const SurfaceResult *>(Device.SurfaceResultBuffer.Mapped), Particles, Tyres);
 
+    // 📝 A partial final group must not process other tyres merely because their descriptor ranges are larger.
+    if (Tyres > 1)
+    {
+        const std::vector<TyreProjectionParticle> TailParticles(Particles + TyreContinuumParticleCount,
+                                                                 Particles + Tyres * TyreContinuumParticleCount);
+        const std::vector<TyreProjectionResult> TailResults(Results + 1, Results + Tyres);
+        MappedCommands[0] = All[1];
+        Device.Execute(TyreProjectionOperation::Reset, 1);
+        if (Results[0].ForceStatus[0] != 0.0f || Results[0].ForceStatus[1] != 1.0f ||
+            std::memcmp(TailParticles.data(), Particles + TyreContinuumParticleCount,
+                        TailParticles.size() * sizeof(TailParticles[0])) != 0 ||
+            std::memcmp(TailResults.data(), Results + 1, TailResults.size() * sizeof(TailResults[0])) != 0)
+            throw std::runtime_error("Partial reset modified an unrequested tyre");
+        Device.Execute(TyreProjectionOperation::Advance, 1);
+        if (Results[0].ForceStatus[0] <= 0.0f || Results[0].ForceStatus[1] != 1.0f ||
+            std::memcmp(TailParticles.data(), Particles + TyreContinuumParticleCount,
+                        TailParticles.size() * sizeof(TailParticles[0])) != 0 ||
+            std::memcmp(TailResults.data(), Results + 1, TailResults.size() * sizeof(TailResults[0])) != 0)
+            throw std::runtime_error("Partial advance modified an unrequested tyre");
+        std::printf("TYRE_DEVICE_COUNT_BOUND requested=1 bound=%u reset_and_advance=1 untouched_tail=1\n", Tyres);
+    }
+
     // 📝 Failed shader commands must not mutate the first tyre's state.
     std::vector<TyreProjectionParticle> Saved(Particles, Particles + TyreContinuumParticleCount);
     MappedCommands[0].IterationCounts[0] = 0;
@@ -564,8 +590,14 @@ int Run(int Count, char **Arguments)
     try { RecordTyreProjection(Device.Commands, Access, TyreProjectionOperation::Advance, 1); }
     catch (const std::invalid_argument &) { Rejected = true; }
     if (!Rejected) throw std::runtime_error("Dispatch group limit not enforced");
+    Access = Device.QueryAccess();
+    Access.PushConstants = nullptr;
+    Rejected = false;
+    try { RecordTyreProjection(Device.Commands, Access, TyreProjectionOperation::Advance, 1); }
+    catch (const std::invalid_argument &) { Rejected = true; }
+    if (!Rejected) throw std::runtime_error("Missing count push-constant entry was accepted");
     RecordTyreProjection(VK_NULL_HANDLE, {}, TyreProjectionOperation::Reset, 0);
-    std::printf("TYRE_DEVICE_GUARDS invalid_gpu_advance=1 invalid_gpu_reset=1 valid_reset=1 short_particle_buffer=1 invalid_cpu_commands=5 dispatch_limit=1 zero_count=1\n");
+    std::printf("TYRE_DEVICE_GUARDS invalid_gpu_advance=1 invalid_gpu_reset=1 valid_reset=1 short_particle_buffer=1 invalid_cpu_commands=5 dispatch_limit=1 missing_push=1 zero_count=1\n");
     return 0;
 }
 } // namespace

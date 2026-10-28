@@ -9,6 +9,7 @@
 [[vk::binding(0, 0)]] StructuredBuffer<TyreProjectionCommand> Commands;
 [[vk::binding(1, 0)]] RWStructuredBuffer<TyreProjectionParticle> Particles;
 [[vk::binding(2, 0)]] RWStructuredBuffer<TyreProjectionResult> Results;
+[[vk::push_constant]] ConstantBuffer<TyreInvocationExtent> InvocationExtent;
 
 static const uint CircumferentialCount = 32;
 static const uint MeridionalCount = 5;
@@ -81,7 +82,7 @@ void SynchronizeWorld(uint Base, TyreProjectionCommand Command)
 void ResetTyreProjection(uint3 Thread : SV_DispatchThreadID)
 {
     uint Tyre = Thread.x;
-    if (!HasBuffers(Tyre)) return;
+    if (Tyre >= InvocationExtent.TyreCount || !HasBuffers(Tyre)) return;
     TyreProjectionCommand Command = Commands[Tyre];
     if (!CommandValid(Command))
     {
@@ -117,7 +118,7 @@ void ResetTyreProjection(uint3 Thread : SV_DispatchThreadID)
 void AdvanceTyreProjection(uint3 Thread : SV_DispatchThreadID)
 {
     uint Tyre = Thread.x;
-    if (!HasBuffers(Tyre)) return;
+    if (Tyre >= InvocationExtent.TyreCount || !HasBuffers(Tyre)) return;
     TyreProjectionCommand Command = Commands[Tyre];
     if (!CommandValid(Command))
     {
