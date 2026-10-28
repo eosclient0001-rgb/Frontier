@@ -47,7 +47,7 @@ done
     "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/{PathReplayDomain.h,PathReplayDomain.cpp,RadiantFacetDistribution.h,RadiantFacetDistribution.cpp} \
         Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir,MaterialRayScattering}.slang \
-        Exhibits/LightCompute/Code/{LightComputeValidation.cpp,LightComputeFormat.h,PathReplayDomainValidation.cpp,ReplayMotionValidation.h,ReplayTextureValidation.h,ReplayTextureRoomValidation.h,ReplayTextureMotionValidation.h,RoughTextureReplayValidation.h,RoughTextureMotionValidation.h,ReplayRoomReference.h,ReplayFacetMixtureCapture.h,ReplayFacetMixtureMotionValidation.h,ReplayRigidProbeRegion.slang,ReplayRigidTailAudit.slang,ReplayRigidTailAudit.h} \
+        Exhibits/LightCompute/Code/{LightComputeValidation.cpp,LightComputeFormat.h,PathReplayDomainValidation.cpp,ReplayMotionValidation.h,ReplayTextureValidation.h,ReplayTextureRoomValidation.h,ReplayTextureMotionValidation.h,RoughTextureReplayValidation.h,RoughTextureMotionValidation.h,ReplayRoomReference.h,ReplayFacetMixtureCapture.h,ReplayFacetMixtureMotionValidation.h,ReplayRigidProbeRegion.slang,ReplayRigidTailAudit.slang,ReplayRigidTailBreakdown.slang,ReplayRigidTailAudit.h} \
         Exhibits/LightCompute/RunReplayRigidTailAudit.sh "$TABLE"
     "$BUILD/PathReplayDomainValidation"
     "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --replay-rigid-tail-audit "$TABLE"

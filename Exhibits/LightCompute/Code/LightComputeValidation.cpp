@@ -789,9 +789,9 @@ struct LightComputeSubmission
                                                     bool UniformFacetMixture = false, bool ProbeRegionForAudit = false,
                                                     bool TailForAudit = false)
     {
-        Require(!TailForAudit || (PrimaryVisibility && Spatial && !Temporal && ProbeRegionForAudit &&
+        Require(!TailForAudit || (PrimaryVisibility && Spatial && !Temporal && Bounces == 4 && ProbeRegionForAudit &&
                                   ReplayTailAuditPipeline && Scene.Width == 64 && Scene.Height == 64),
-                "Replay tail audit requires its fresh spatial probe pipeline and 64x64 extent");
+                "Replay tail audit requires its four-hit fresh spatial probe pipeline and 64x64 extent");
         Require(!ProbeRegionForAudit || (PrimaryVisibility && ReplayProbeRegionPipeline &&
                                         Scene.Width == 64 && Scene.Height == 64),
                 "Replay probe-region audit requires its primary pipeline and 64x64 extent");

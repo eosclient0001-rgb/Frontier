@@ -8,8 +8,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   reservoir scaling; their final scale factors are below one. Eight post-selected uniform/mixture cases
   match their recorded output, and an independent host reservoir reconstruction agrees exactly in this
   fixture. Release, ASan/UBSan-host and default-off regression checks pass.
-- The audit reuses the shader path evaluator; it does not independently validate those paths or explain
-  which bounce/PDF/PRNG behavior caused the spikes. [Mechanism and logs](../Exhibits/LightCompute/ReplayRigidTailAudit.md).
+- A checked mirrored breakdown places the dominant contribution in all three high paths at bounce `2`,
+  hitting the same bright emissive triangle. It shares shader helpers and does not independently verify
+  path values, PDF/MIS or PRNG behavior. [Mechanism and logs](../Exhibits/LightCompute/ReplayRigidTailAudit.md).
 
 ## Rigid GI tail follow-up — 2026-10-28
 

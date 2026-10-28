@@ -80,12 +80,23 @@ void ValidateReplayRigidTailAudit(const char* Driver, const std::string& Shaders
     SetRoughTextureReplayMaterials(Scene, .48f, .7f);
     TranslateReplayRadiantFacets(Scene, .18f);
     SetReplayCaptureEmitterPowers(Scene, true);
+    const auto Distribution = CompileRadiantFacetDistribution(Scene.Surfaces);
+    for (uint32_t Source = 0; Source < uint32_t(Distribution[0]); ++Source)
+    {
+        const size_t Entry = 1 + Source * 4;
+        const uint32_t Facet = uint32_t(Distribution[Entry]);
+        const auto& Emission = Scene.Surfaces[Facet].Emissive;
+        const float Probability = Distribution[Entry + 1];
+        std::printf("RIGID_TAIL_SOURCE facet=%u emission=%.9g/%.9g/%.9g uniform=%.9g power=%.9g mixture=%.9g\n",
+                    Facet, Emission[0], Emission[1], Emission[2], 1.f / Distribution[0], Probability,
+                    .5f / Distribution[0] + .5f * Probability);
+    }
     LightComputeSubmission Compute(Driver);
     std::printf("RIGID_TAIL_AUDIT device=%s selected_top_uniform=3 selected_median=1\n", Compute.Properties.deviceName);
     Compute.Prepare(Scene, Shaders, false, false, false, false, true);
     Require(Compute.ReplayTailAuditPipeline && Compute.ReplayProbeRegionPipeline, "Rigid tail audit shaders missing");
     const std::array<size_t, 4> Selected{0, 1, 2, Samples.size() / 2};
-    double MaximumReconstructionError = 0;
+    double MaximumReconstructionError = 0, MaximumBreakdownError = 0;
     for (size_t Rank : Selected)
         for (uint32_t Mode = 0; Mode < 2; ++Mode)
         {
@@ -132,6 +143,26 @@ void ValidateReplayRigidTailAudit(const char* Driver, const std::string& Shaders
                             Audit[0], Random, Select ? 1u : 0u);
             }
             Require(Chosen < 5 && ChosenTarget > 0, "Rigid tail reservoir did not select a valid candidate");
+            const auto Detail = ReplayTailSlot(Compute, 5, Pixel + 20);
+            Require(Detail[3] == float(Chosen), "GPU and host selected different tail candidates");
+            std::array<double, 3> Terms{};
+            for (uint32_t Bounce = 0; Bounce < 4; ++Bounce)
+            {
+                const auto Direct = ReplayTailSlot(Compute, 5, Pixel + 16 + Bounce);
+                const auto Hit = ReplayTailSlot(Compute, 6, Pixel + 16 + Bounce);
+                for (uint32_t Channel = 0; Channel < 3; ++Channel) Terms[Channel] += Direct[Channel] + Hit[Channel];
+                std::printf("RIGID_TAIL_BOUNCE bounce=%u state=%.0f facet=%.0f direct_red=%.9g hit_red=%.9g "
+                            "direct_green=%.9g hit_green=%.9g\n", Bounce, Direct[3], Hit[3], Direct[0], Hit[0],
+                            Direct[1], Hit[1]);
+            }
+            for (uint32_t Channel = 0; Channel < 3; ++Channel)
+            {
+                const double Error = std::max(std::abs(double(Detail[Channel]) - ChosenRadiance[Channel]),
+                                              std::abs(Terms[Channel] - ChosenRadiance[Channel]));
+                MaximumBreakdownError = std::max(MaximumBreakdownError, Error);
+                Require(Error < 1e-7 + 2e-5 * std::abs(ChosenRadiance[Channel]),
+                        "Mirrored bounce breakdown disagrees with the Engine path");
+            }
             const float Scale = Sum / (5.f * ChosenTarget);
             for (uint32_t Channel = 0; Channel < 3; ++Channel)
             {
@@ -144,8 +175,8 @@ void ValidateReplayRigidTailAudit(const char* Driver, const std::string& Shaders
             std::printf("RIGID_TAIL_RECONSTRUCT chosen=%u centre_red=%.9g sum_weight=%.9g scale=%.9g "
                         "output_red=%.9g\n", Chosen, ChosenRadiance[0], Sum, Scale, Audited[Pixel][0]);
         }
-    std::printf("RIGID_TAIL_AUDIT cases=8 selected_output_parity_components=32 host_max_abs_error=%.9g\n",
-                MaximumReconstructionError);
+    std::printf("RIGID_TAIL_AUDIT cases=8 selected_output_parity_components=32 host_max_abs_error=%.9g "
+                "bounce_max_abs_error=%.9g\n", MaximumReconstructionError, MaximumBreakdownError);
     std::printf("PASS recorded rare-sample replay and host spatial-reservoir reconstruction\n");
 }
 } // namespace
