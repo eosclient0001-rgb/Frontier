@@ -1696,6 +1696,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayReconstructionValidation.h"
 #include "ReplayCandidateValidation.h"
 #include "ReplayCameraReprojectionValidation.h"
+#include "ReplayDynamicCameraValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -1709,6 +1710,11 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--replay-camera-reprojection")
         {
             ValidateReplayCameraReprojectionAll(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-dynamic-camera")
+        {
+            ValidateReplayDynamicCamera(Arguments[1], Arguments[2]);
             return 0;
         }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-camera")

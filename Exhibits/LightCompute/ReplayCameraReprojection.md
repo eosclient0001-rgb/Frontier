@@ -102,6 +102,8 @@ contributions. Its retained-colour recurrence agrees with the host within `1.87e
 moving the camera resets all four-bounce colour, and reopening resets it again; both match the corresponding
 unfiltered replay output bit-for-bit. This is a conservative transition control, **not** dynamic colour reuse.
 The finite reference and repeated batches do not prove general unbiasedness, independence or temporal safety.
+A separate [dynamic camera/blocker study](ReplayDynamicCamera.md) checks four-bounce temporal and spatial
+reservoir replay against CPU paths while colour remains reset.
 
 ## Diagnostic readbacks
 

@@ -4,6 +4,16 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Dynamic camera, blocker and multibounce replay — 2026-10-28
+
+- A simultaneous camera/blocker move now has a four-bounce, four-candidate SwiftShader CPU-Vulkan validation
+  with temporal and spatial reservoir replay active. Of 88 changed surface-token pixels, all reject the old
+  temporal donor; the frame still replays 904 temporal histories and 3,968 spatial links elsewhere.
+- Against 835,584 brute-force CPU paths over 816 plane points, 16 batches give red means `0.116587` CPU,
+  `0.116829` fresh and `0.116991` reused. The first changed and reopened colour frames reset and match raw.
+  Reuse incurs extra evaluations and prior frames; no equal-time speedup, general unbiasedness or arbitrary
+  dynamic colour reconstruction is claimed. [Methods, uncertainty and results](../Exhibits/LightCompute/ReplayDynamicCamera.md).
+
 ## Four-bounce diffuse camera reference — 2026-10-28
 
 - The strict camera-only mode now also has a four-bounce SwiftShader CPU-Vulkan check against 1,187,840
