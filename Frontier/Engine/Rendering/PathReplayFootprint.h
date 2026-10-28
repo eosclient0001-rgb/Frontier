@@ -5,9 +5,13 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 
 namespace Frontier
 {
+
+// 📝 One through four fresh path candidates share one reservoir; zero is the legacy one-candidate encoding.
+inline constexpr std::uint32_t PathReplayMaximumInitialCandidates = 4;
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                   GPU INPUT FOOTPRINTS

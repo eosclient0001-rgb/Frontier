@@ -42,6 +42,7 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
     RequireReplay(Count > 0 && Groups <= Access.MaxGroupCountX && Extent.History[0] > 0 && Extent.History[1] > 0 &&
         std::uint64_t(Extent.History[0]) * Extent.History[1] == Count && Extent.Dimensions[1] == 0 &&
         Extent.Primary[0] <= 1 && Extent.Primary[2] > 0 && Extent.Primary[2] <= 8 &&
+        Extent.Sampling[1] <= PathReplayMaximumInitialCandidates &&
         Extent.Sampling[3] > 0 && Extent.Sampling[3] <= 64 && Extent.Reconstruction[0] <= 1 &&
         Extent.Reconstruction[1] <= 1 && Extent.Reconstruction[3] > 0 && Extent.Reconstruction[3] <= 64);
     RequireReplay((Flags & ~ReplayFlags) == 0 && (!DoubleCount || Sources) && (!Balance || (Sources && !DoubleCount)) &&

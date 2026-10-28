@@ -4,6 +4,20 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Bounded replay initial candidates — 2026-10-28
+
+- Engine replay supports one to four fresh path candidates, with the previous single-candidate behaviour as the
+  default. Candidate changes cap prior reservoir history at one and reset accumulated colour in the exhibit.
+- SwiftShader CPU Vulkan and host ASan/UBSan pass an independent half-blocked area integral, 800,000 CPU
+  four-bounce room reference paths, host reservoir checks, moving-blocker and rough-textured camera controls.
+  Four candidates halve per-output SD in the tested fixtures but require four fresh paths: no equal-time claim.
+  Twenty default-mode images match the pre-change shader bit-for-bit; 14 separate mixture-on captures match prior
+  pixels. Five release CTests and reconstruction regressions pass.
+  [Contract and results](../Exhibits/LightCompute/ReplayCandidates.md).
+- GI is not complete: dynamic colour reconstruction, broad material/visibility cases, non-ray-traced GI,
+  hardware RT, physical-GPU validation and editor linkage remain open. Vehicle dynamics and Jolt remain deferred.
+  The [scene inspection/editor controls plan](Plans/Ongoing/EditorSceneInspection.md) is saved but not implemented.
+
 ## Bounded replay colour reconstruction — 2026-10-28
 
 - Added opt-in Vulkan gather/finalize stages for the existing combined diffuse and rough-opaque replay output.

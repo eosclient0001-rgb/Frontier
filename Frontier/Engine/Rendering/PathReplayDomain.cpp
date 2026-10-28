@@ -266,6 +266,9 @@ PathReplayHistoryDecision PathReplayHistoryDomain::Resolve(const PathReplayScene
                                                            bool FullHistoryForAudit)
 {
     Require(Scene.Camera.size() == PriorCamera.size(), "Replay camera requires twelve float4 entries");
+    Require(Specification.InitialCandidates >= 1 &&
+                Specification.InitialCandidates <= PathReplayMaximumInitialCandidates,
+            "Replay history requires one to four initial candidates");
     bool Changed = !PriorAvailable || PriorSpecification != Specification ||
                    !std::equal(Scene.Camera.begin(), Scene.Camera.end(), PriorCamera.begin()) ||
                    PriorSurfaces.size() != Scene.Surfaces.size() || PriorReceivers.size() != Scene.Receivers.size() ||

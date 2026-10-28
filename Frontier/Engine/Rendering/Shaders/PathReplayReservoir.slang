@@ -276,6 +276,21 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
         uint Selected = NextRandom(SeedBits);
         float3 Radiance = EvaluateReplayPath(R, Selected);
         float Target = ReplayTarget(Radiance), Sum = Target, Count = 1;
+        // 📝 Zero preserves the original one-candidate encoding and consumes no extra selection draws.
+        for (uint CandidateIndex = 1; CandidateIndex < max(Extent.Sampling.y, 1u); ++CandidateIndex)
+        {
+            uint Candidate = NextRandom(SeedBits);
+            float3 CandidateRadiance = EvaluateReplayPath(R, Candidate);
+            float CandidateTarget = ReplayTarget(CandidateRadiance);
+            Sum += CandidateTarget;
+            Count += 1;
+            if (RandomUnit(SelectionBits) * Sum < CandidateTarget)
+            {
+                Selected = Candidate;
+                Radiance = CandidateRadiance;
+                Target = CandidateTarget;
+            }
+        }
         if (Extent.Reconstruction.x != 0 && Extent.History.z != 0 && Extent.History.w == 0 && R.MotionPixel.w != 0)
         {
             int2 P = int2(floor(R.MotionPixel.xy + .5));

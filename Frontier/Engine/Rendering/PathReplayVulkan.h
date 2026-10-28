@@ -5,6 +5,7 @@
 #pragma once
 
 #include "LightComputeFootprint.h"
+#include "PathReplayFootprint.h"
 #include <cstdint>
 #include <limits>
 #include <vulkan/vulkan.h>
@@ -56,6 +57,8 @@ struct PathReplayVulkanBuffers
 };
 
 // 📝 Records optional primary visibility, replay generation and resolve with compute-to-compute barriers.
+//    Sampling[1] is the initial candidate count, 1–4; legacy zero means one. Changing it revises the sampling
+//    policy: callers must update their reservoir history cap and reset incompatible colour reconstruction.
 //    PathReplayReconstruct adds an old-guide gather before resolve and colour-history finalization afterward;
 //    it requires both extra pipelines, 24 counter words and PathReplayRequiredReconstructedOutputRecords(N).
 //    The caller must set PathReplayResetReconstruction for first use and every incompatible scene, camera,

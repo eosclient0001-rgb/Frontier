@@ -126,6 +126,14 @@ int main()
         for (std::size_t I = 0; I < Events.size(); ++I)
             Require(Events[I].Kind == WithoutPrimary[I].Kind && Events[I].Value == WithoutPrimary[I].Value,
                     "Non-primary replay stage ordering differs");
+        for (std::uint32_t Candidates = 1; Candidates <= PathReplayMaximumInitialCandidates; ++Candidates)
+        {
+            auto CandidateExtent = Extent;
+            CandidateExtent.Sampling[1] = Candidates;
+            Events.clear();
+            RecordPathReplay(Commands, Access, Buffers, CandidateExtent);
+            Require(!Events.empty() && Pushed.Sampling[1] == Candidates, "Candidate count was not recorded");
+        }
         auto ReconstructionAccess = Access;
         ReconstructionAccess.GatherReconstruction = Handle<VkPipeline>(7);
         ReconstructionAccess.FinalizeReconstruction = Handle<VkPipeline>(8);
@@ -161,6 +169,8 @@ int main()
         InvalidBuffers = Buffers; --InvalidBuffers.CounterWords;
         RequireRejection([&] { RecordPathReplay(Commands, Access, InvalidBuffers, Extent); });
         InvalidExtent = Extent; InvalidExtent.Primary[2] = 9;
+        RequireRejection([&] { RecordPathReplay(Commands, Access, Buffers, InvalidExtent); });
+        InvalidExtent = Extent; InvalidExtent.Sampling[1] = PathReplayMaximumInitialCandidates + 1;
         RequireRejection([&] { RecordPathReplay(Commands, Access, Buffers, InvalidExtent); });
         InvalidExtent = Extent; InvalidExtent.Sampling[3] = 0;
         RequireRejection([&] { RecordPathReplay(Commands, Access, Buffers, InvalidExtent); });
@@ -222,8 +232,8 @@ int main()
         InvalidAccess = ReconstructionAccess; InvalidAccess.MaxGroupCountX = UINT32_MAX;
         RequireRejection([&] { RecordPathReplay(Commands, InvalidAccess, InvalidBuffers, InvalidExtent); });
         std::printf("REPLAY_RECORDERS primary_and_input=1 barriers=3 padded_dispatch=1 push128=1 "
-                    "invalid_before_recording=27 weighted_span=1 uint_index_limit=1 secondary_camera=1 "
-                    "reconstruction_order_and_WAR=1\n");
+                    "invalid_before_recording=28 candidates_0_to_4=1 weighted_span=1 uint_index_limit=1 "
+                    "secondary_camera=1 reconstruction_order_and_WAR=1\n");
         return 0;
     }
     catch (const std::exception &Error)

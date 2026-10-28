@@ -794,20 +794,24 @@ struct LightComputeSubmission
                                                     bool BalanceSampling = false, bool TexturedDiffuse = false,
                                                     bool ImportanceRough = false, bool PowerWeightedFacets = false,
                                                     bool UniformFacetMixture = false, bool ProbeRegionForAudit = false,
-                                                    bool TailForAudit = false, bool ReconstructReplay = false)
+                                                    bool TailForAudit = false, bool ReconstructReplay = false,
+                                                    uint32_t InitialCandidates = 1, bool ExplicitOneForAudit = false)
     {
+        Require(!ExplicitOneForAudit || InitialCandidates == 1, "Explicit-one audit requires one initial candidate");
         Require(!ReconstructReplay || (!ProbeRegionForAudit && !TailForAudit && ReplayGatherReconstructionPipeline &&
                                        ReplayFinalizeReconstructionPipeline),
                 "Replay colour reconstruction requires its own pipelines and excludes audit-only stages");
-        Require(!TailForAudit || (PrimaryVisibility && Spatial && !Temporal && Bounces == 4 && ProbeRegionForAudit &&
-                                  ReplayTailAuditPipeline && Scene.Width == 64 && Scene.Height == 64),
-                "Replay tail audit requires its four-hit fresh spatial probe pipeline and 64x64 extent");
+        Require(!TailForAudit || (PrimaryVisibility && Spatial && !Temporal && Bounces == 4 && InitialCandidates == 1 &&
+                                  ProbeRegionForAudit && ReplayTailAuditPipeline && Scene.Width == 64 && Scene.Height == 64),
+                "Replay tail audit requires one initial candidate and its four-hit 64x64 spatial probe pipeline");
         Require(!ProbeRegionForAudit || (PrimaryVisibility && ReplayProbeRegionPipeline &&
                                         Scene.Width == 64 && Scene.Height == 64),
                 "Replay probe-region audit requires its primary pipeline and 64x64 extent");
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
-                    Bounces > 0 && Bounces <= 8 && std::isfinite(PositiveFloor) && PositiveFloor >= 1e-4f &&
+                    Bounces > 0 && Bounces <= 8 && InitialCandidates >= 1 &&
+                    InitialCandidates <= PathReplayMaximumInitialCandidates &&
+                    std::isfinite(PositiveFloor) && PositiveFloor >= 1e-4f &&
                     PositiveFloor <= 10 && StackLimit >= 1 && StackLimit <= 64 && Scene.Lights.empty() &&
                     Scene.Surfaces.size() == Scene.Visibility.Corners.size(),
                 "Invalid replay extent, domain or diffuse scene");
@@ -826,7 +830,7 @@ struct LightComputeSubmission
                 "Replay facet-source distribution exceeds the prepared storage span");
         const PathReplayHistorySpecification ReplaySpecification{Bounces, PositiveFloor, Environment, PrimaryVisibility,
             RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse,
-            ImportanceRough, PowerWeightedFacets, UniformFacetMixture};
+            ImportanceRough, PowerWeightedFacets, UniformFacetMixture, InitialCandidates};
         // 📝 Reservoir replay can retain capped history across changes; radiance accumulation cannot.
         const auto ReplayDecision = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
                                                                 FullHistoryForAudit);
@@ -842,7 +846,8 @@ struct LightComputeSubmission
         ComputeExtent Extent;
         Extent.Dimensions[0] = uint32_t(Scene.Receivers.size());
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
-        Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), StackLimit};
+        Extent.Sampling = {Seed, InitialCandidates == 1 && !ExplicitOneForAudit ? 0u : InitialCandidates,
+                           uint32_t(Scene.Visibility.Corners.size()), StackLimit};
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
         Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, SourceCount, ReplayLastHistoryCap};
         const uint32_t ReplayFlags = (RoughOpaque ? PathReplayRoughOpaque : 0u) |
@@ -1680,6 +1685,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
 #include "ReplayReconstructionValidation.h"
+#include "ReplayCandidateValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -1688,6 +1694,16 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--medium-radiance")
         {
             ValidateMediumRadianceGpu(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-candidates")
+        {
+            ValidateReplayCandidates(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--replay-candidates-parity")
+        {
+            ValidateReplayFacetMixtureParity(Arguments[1], Arguments[2], Arguments[4]);
             return 0;
         }
         if (Count == 4 && std::string(Arguments[3]) == "--replay-reconstruction")

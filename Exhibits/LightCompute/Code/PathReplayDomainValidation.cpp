@@ -155,6 +155,12 @@ void ValidateEngineReplayHistory()
     Specification.PowerWeightedFacets = true; Compare(true, 1); Compare(false, 64);
     Specification.UniformFacetMixture = true; Compare(true, 1); Compare(false, 64);
     Specification.RoughOpaque = false; Compare(true, 1); Compare(false, 64);
+    Specification.InitialCandidates = 4; Compare(true, 1); Compare(false, 64);
+    Specification.InitialCandidates = 0;
+    Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Specification); }), "Zero candidates accepted");
+    Specification.InitialCandidates = 5;
+    Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Specification); }), "Excess candidates accepted");
+    Specification.InitialCandidates = 4; Compare(false, 64);
     Fixture.MaterialAtlas[0] = .5f;
     const auto Audit = History.Resolve(Fixture.View(), Specification, true);
     Require(Audit.Changed && Audit.MaximumHistory == 64, "Explicit full-history audit was not isolated");
@@ -165,8 +171,8 @@ void ValidateEngineReplayHistory()
     Compare(false, 64);
     History.Invalidate();
     Compare(true, 1);
-    std::printf("ENGINE_REPLAY_HISTORY exact_revisions=12 proposal=1 weighted_facets=1 uniform_mixture=1 "
-                "in_place_atlas=1 audit=1 invalidation=1\n");
+    std::printf("ENGINE_REPLAY_HISTORY exact_revisions=13 proposal=1 weighted_facets=1 uniform_mixture=1 "
+                "candidate_revision=1 candidate_rejections=2 in_place_atlas=1 audit=1 invalidation=1\n");
 }
 } // namespace
 

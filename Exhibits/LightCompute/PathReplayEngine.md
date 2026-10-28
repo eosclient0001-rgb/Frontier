@@ -48,7 +48,9 @@ For this recorder, the push fields are:
 | `Dimensions` | `x = N` receivers; `y = 0` (analytic lights are not integrated); other components unused here |
 | `Minimum` | Nonnegative RGB uniform environment, each at most 256; `w` must be **bitwise** zero (no fog payload) |
 | `Maximum` | `x =` positive replay target floor in `[0.0001, 10]`; `y =` bit-cast `uint32_t` offset of the optional source table in `Angles`; `w` must be bitwise zero (no distance-field payload) |
-| `Grid`, `Sampling` | `Grid.w =` enclosure count; `Sampling = {seed, unused, facet count, stack limit}` with stack limit 1–64 |
+| `Grid` | `w =` enclosure count |
+| `Sampling` | `{seed, initial candidates, facet count, stack limit}`; initial candidates 1–4, legacy zero means one |
+| `Sampling.w` | Stack limit 1–64 |
 | `History` | `{width, height, sequence index, reset}` with `width × height = N`; the caller controls/reset-preserves the GPU histories |
 | `Reconstruction` | `{temporal reuse, spatial reuse, source count, history cap}`; reuse values are 0/1 and cap is 1–64. This is reservoir reuse, **not** a general temporal denoiser |
 | `Primary` | `{enabled, camera float offset, bounce count, option bits}`; enabled is 0/1, bounce count is 1–8. Named option bits are in `PathReplayVulkan.h`; the double-count and strict-motion bits are audit controls |
@@ -70,7 +72,9 @@ source weights, camera matrices or actual device capabilities. Run `ValidatePath
 source list/CDF for the exact uploaded scene, maintain valid revisions/history decisions, and validate all other
 resource and Vulkan requirements. Validation only applies to the bounded opaque domain. Software triangle
 traversal, limited rough specular transport and existing fixture filters are not hardware RT, a separate finished
-reflection system, unified PBR, or a complete reconstruction/presentation pipeline.
+reflection system, unified PBR, or a complete reconstruction/presentation pipeline. A candidate-count change is a
+sampling revision: use canonical 1–4 in `PathReplayHistorySpecification` even if the GPU uses legacy zero for one.
+See [initial candidate tests](ReplayCandidates.md) for history caps, colour resets and numerical limitations.
 
 ## Verification
 
@@ -82,8 +86,8 @@ reflection system, unified PBR, or a complete reconstruction/presentation pipeli
   The existing C++17 VehicleCapture also builds and exports its 28,276-facet fixture using the shared footprint.
 - The Engine library also builds standalone. The recorder mock checks both stage sequences and barriers,
   padded dispatch, the full push payload, a valid weighted-source span, the largest legal uint-indexed output
-  and 27 fail-before-recording cases, including reconstruction resource limits, overflow and a missing
-  textured-secondary camera.
+  and 28 fail-before-recording cases, including an excessive initial-candidate count, reconstruction resource
+  limits, overflow and a missing textured-secondary camera.
 - Moving-radiant 128×160 readbacks cover eight frames per state and first-transition images. On SwiftShader CPU
   Vulkan the Engine recorder's 14 PNGs matched the pre-change exhibit scheduler byte-for-byte in release and
   ASan/UBSan-host builds; the external Vulkan driver and GPU shaders are not sanitizer-instrumented. Camera,
