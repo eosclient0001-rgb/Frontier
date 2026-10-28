@@ -23,7 +23,7 @@ editor viewport or general animated reconstruction.
 | Host recorder/domain CTests, release | ✔️ 5/5 (`PathReplayVulkanValidation` now accepts temporal, spatial and both combined, and checks the new dispatch order) |
 | Host recorder/domain CTests, ASan/UBSan | ✔️ 5/5 |
 | Slang compile to SPIR-V (Generate, Resolve, Gather, Finalize, Primary) | ✔️ Compiled with the Slang 2026.12 compiler library in the sandbox; the retained run script uses Slang 2026.14.1 |
-| SwiftShader GPU validation (`ValidateReplaySampleCombined`) | 🔴 Not run — blocked: no SwiftShader/Vulkan CPU driver is available in this sandbox and its prebuilt download host is unreachable. The check is wired into `ValidateReplaySampleHistory` and runs under the command below where the tools exist. |
+| SwiftShader GPU validation (`ValidateReplaySampleCombined`) | 🟡 Packaged for GPU execution — still not run in this sandbox (no Vulkan driver). A Windows x64 test package (`LightComputeValidation.exe` + the five SPIR-V entries + README-RESTIR-TEST instructions) was cross-compiled with the pinned Zig toolchain so the check runs on a real GPU via `LightComputeValidation.exe C:\Windows\System32\vulkan-1.dll Shaders --replay-sample-history`; its console output closes this row. All statistical questions the check complements are already answered host-side in [the correlation study](ReplaySeedCorrelation.md). |
 | Physical GPU / Windows / editor | 🔴 Not run |
 
 The GPU check warms both modes through three stationary frames, then compares a half-pixel transition:

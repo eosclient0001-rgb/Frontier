@@ -1235,3 +1235,10 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
 - ReSTIR: exact 2D five-tap spatial mirror added to ReplaySeedCorrelationValidation (spatial-only
   worst |z| 2.00, temporal+spatial+bank worst |z| 1.69 over 12 pixels). LightCompute 6/6 release +
   ASan/UBSan.
+- ReSTIR completion pass: all sandbox-verifiable items closed (bias fix, cross-frame + 1D/2D cross-pixel
+  correlation, Sampling.y multi-candidate, negative controls; 6/6 release + ASan/UBSan; five Slang entries
+  to SPIR-V). The remaining GPU combined check cannot run in the sandbox (no Vulkan driver), so a
+  ReSTIR-specific Windows test package (LightComputeValidation.exe, correlation/domain/Vulkan host
+  checks, SPIR-V, README-RESTIR-TEST instructions incl. capture mode for visual proof) was cross-compiled
+  with the pinned Zig toolchain and delivered to the user; their GPU run of --replay-sample-history closes
+  the last item. Sandbox cross-build needed -Wno-error=c++20-extensions in CXX_FLAGS_RELEASE (Clang only).
