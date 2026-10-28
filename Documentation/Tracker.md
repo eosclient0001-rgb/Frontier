@@ -1215,3 +1215,6 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
   Windows workflow on the default branch. Actions still needs enabling in repo Settings.
 - Environment exhibit now emits small visual proofs in seconds: 2x2 comparison strip and a 16-frame
   wind-drift GIF (256x160, ~7 s total). Release + ASan validation pass with identical frame hashes.
+- ReSTIR continuation: cross-pixel (spatial) reservoir correlation now also measured in the mirror harness
+  (six-pixel strip, drifting integrand). Spatial-only and temporal+spatial+bank both unbiased at every pixel
+  (worst |z| 1.82). LightCompute 6/6 release + ASan/UBSan.

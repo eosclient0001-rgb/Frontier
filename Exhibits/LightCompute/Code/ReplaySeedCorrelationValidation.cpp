@@ -34,13 +34,25 @@ static double RandomUnit(uint32_t &Bits) { return double(NextRandom(Bits) >> 8) 
 // 📝 A seed drives the same two draws ReplayDirection consumes (radius, azimuth). The fixture maps them to a
 //    peaked, heavy-tailed scalar radiance so reservoir target weighting actually matters; State shifts both
 //    the peak position and the scale, emulating a lighting/albedo change at an otherwise identical surface.
-static double EvaluateFixture(uint32_t Seed, int State)
+static double EvaluateFixturePeak(uint32_t Seed, double Peak, double Scale)
 {
     uint32_t Bits = Seed;
     double U = RandomUnit(Bits), V = RandomUnit(Bits);
-    double Peak = State == 0 ? 0.30 : 0.62, Scale = State == 0 ? 1.0 : 1.7;
     double D = (U - Peak) / 0.045;
     return Scale * (2.6 * std::exp(-D * D) * (0.35 + V) + 0.04 + 0.10 * U * V);
+}
+
+static double ReferenceExpectationPeak(double Peak, double Scale)
+{
+    const int StepsU = 4096, StepsV = 64;
+    double Sum = 0;
+    for (int I = 0; I < StepsU; ++I)
+        for (int J = 0; J < StepsV; ++J)
+        {
+            double U = (I + 0.5) / StepsU, V = (J + 0.5) / StepsV, D = (U - Peak) / 0.045;
+            Sum += Scale * (2.6 * std::exp(-D * D) * (0.35 + V) + 0.04 + 0.10 * U * V);
+        }
+    return Sum / (double(StepsU) * double(StepsV));
 }
 
 // 📝 ReplayTarget on grey radiance: Power() luminance of (L,L,L) is L, plus the Extent.Maximum.x floor.
@@ -76,21 +88,23 @@ struct PixelState
     bool TemporalValid = false;
 };
 
-// 📝 One GenerateReplayReservoirs dispatch for one pixel, Sampling.y == 1 (one fresh candidate), followed by
-//    the FinalizeReplaySampleHistory combined bank shift. Resolve is the ProposalCount == 1 case, so the
-//    output is Chosen * Sum / (Count * ChosenTarget), exactly the pre-spatial reservoir estimator.
-static double RunFrame(PixelState &Pixel, uint32_t Sampling, uint32_t PixelIndex, int State, Mode M, long &PathEvals)
+struct LocalReservoir { uint32_t Seed; double Radiance, Target, Sum, Count; };
+
+// 📝 One GenerateReplayReservoirs dispatch for one pixel (Sampling.y == 1) followed by the
+//    FinalizeReplaySampleHistory combined bank shift; returns the pre-spatial Local reservoir.
+static LocalReservoir GenerateLocal(PixelState &Pixel, uint32_t Sampling, uint32_t PixelIndex,
+                                    double Peak, double Scale, Mode M, long &PathEvals)
 {
     uint32_t SeedBits = Sampling ^ (PixelIndex * 747796405u + 2891336453u);
     uint32_t SelectionBits = (Sampling * 277803737u + 1597334677u) ^ (PixelIndex * 2891336453u + 1u);
     uint32_t FreshSeed = NextRandom(SeedBits);
-    double Radiance = EvaluateFixture(FreshSeed, State); ++PathEvals;
+    double Radiance = EvaluateFixturePeak(FreshSeed, Peak, Scale); ++PathEvals;
     double Target = FixtureTarget(Radiance), Sum = Target, Count = 1;
     uint32_t Selected = FreshSeed;
     bool TemporalEntered = false;
     if (M == Mode::CombinedTemporal && Pixel.TemporalValid)
     {
-        double Replayed = EvaluateFixture(Pixel.TemporalSeed, State); ++PathEvals;
+        double Replayed = EvaluateFixturePeak(Pixel.TemporalSeed, Peak, Scale); ++PathEvals;
         double ReplayedTarget = FixtureTarget(Replayed);
         double Retained = Pixel.TemporalCount < 8 ? Pixel.TemporalCount : 8; // 📝 Reconstruction.w cap mirror.
         double Weight = ReplayedTarget * Pixel.TemporalW * Retained;
@@ -105,14 +119,12 @@ static double RunFrame(PixelState &Pixel, uint32_t Sampling, uint32_t PixelIndex
         {
             uint32_t Candidate = Pixel.Bank[I];
             if (TemporalEntered && Candidate == Pixel.TemporalSeed) continue; // 📝 Duplicate guard.
-            double CandidateRadiance = EvaluateFixture(Candidate, State); ++PathEvals;
+            double CandidateRadiance = EvaluateFixturePeak(Candidate, Peak, Scale); ++PathEvals;
             double CandidateTarget = FixtureTarget(CandidateRadiance);
             Sum += CandidateTarget; Count += 1;
             if (RandomUnit(SelectionBits) * Sum < CandidateTarget) { Selected = Candidate; Radiance = CandidateRadiance; Target = CandidateTarget; }
         }
-    double Output = Radiance * (Sum / (Count * Target));
-    // 📝 Persist pre-spatial history (slot 0) for the temporal candidate, then shift the bank: this frame's
-    //    fresh draw enters, oldest retained seed drops, count saturates at three. Selected seeds are never banked.
+    // 📝 Persist pre-spatial history (slot 0) for the temporal candidate, then shift the bank.
     Pixel.TemporalSeed = Selected;
     Pixel.TemporalW = Sum / (Count * Target);
     Pixel.TemporalCount = Count;
@@ -129,7 +141,15 @@ static double RunFrame(PixelState &Pixel, uint32_t Sampling, uint32_t PixelIndex
         Pixel.Bank[0] = BankSeed;
         Pixel.BankCount = Pixel.BankCount + 1 > 3 ? 3 : Pixel.BankCount + 1;
     }
-    return Output;
+    return {Selected, Radiance, Target, Sum, Count};
+}
+
+// 📝 Resolve with ProposalCount == 1: Chosen * Sum / (Count * ChosenTarget), the pre-spatial estimator.
+static double RunFrame(PixelState &Pixel, uint32_t Sampling, uint32_t PixelIndex, int State, Mode M, long &PathEvals)
+{
+    const LocalReservoir Local = GenerateLocal(Pixel, Sampling, PixelIndex, State == 0 ? 0.30 : 0.62,
+                                               State == 0 ? 1.0 : 1.7, M, PathEvals);
+    return Local.Radiance * (Local.Sum / (Local.Count * Local.Target));
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -218,6 +238,62 @@ int main()
             std::printf(" lag%d %+.4f", Lag, (Cov / N) / (S.Sd * S.Sd));
         }
         std::printf("\n");
+    }
+
+    // 📝 Cross-pixel (spatial) study: a six-pixel strip whose fixture peak drifts by 0.02 per pixel, so
+    //    spatial donors carry slightly different integrands, as on a real surface. Resolve mirrors the
+    //    shader's cross tap reduced to 1D (self, left, right): donors are retraced at the receiver,
+    //    weighted by target * donor W * donor count, and temporal history persists the pre-spatial Local.
+    {
+        const int Strip = 6, SReplicates = 2048;
+        for (Mode M : {Mode::Fresh, Mode::CombinedTemporal})
+        {
+            std::vector<std::vector<double>> ChainMeans(Strip);
+            for (int R = 0; R < SReplicates; ++R)
+            {
+                PixelState Pixels[Strip];
+                std::vector<double> Acc(Strip, 0);
+                for (int F = 0; F < Frames; ++F)
+                {
+                    const uint32_t Base = 2463531u + (uint32_t)R * 613u + (uint32_t)F * 2654435761u;
+                    LocalReservoir Locals[Strip];
+                    long Dummy = 0;
+                    for (int P = 0; P < Strip; ++P)
+                        Locals[P] = GenerateLocal(Pixels[P], Base, 100u + (uint32_t)P, 0.26 + 0.02 * P, 0.9 + 0.05 * P, M, Dummy);
+                    for (int P = 0; P < Strip; ++P)
+                    {
+                        uint32_t SelectionBits = (Base * 2891336453u + 1013904223u) ^ ((100u + (uint32_t)P) * 277803737u + 13u);
+                        double Chosen = 0, ChosenTarget = 1e-4, Sum = 0, Count = 0;
+                        const int Donors[3] = {P, P - 1, P + 1};
+                        for (int D = 0; D < 3; ++D)
+                        {
+                            const int Q = Donors[D];
+                            if (Q < 0 || Q >= Strip) continue;
+                            const LocalReservoir &Source = Locals[Q];
+                            double Radiance = D == 0 ? Source.Radiance
+                                : EvaluateFixturePeak(Source.Seed, 0.26 + 0.02 * P, 0.9 + 0.05 * P);
+                            double Target = FixtureTarget(Radiance);
+                            double Weight = Target * (Source.Sum / (Source.Count * Source.Target)) * Source.Count;
+                            Sum += Weight; Count += Source.Count;
+                            if (RandomUnit(SelectionBits) * Sum < Weight) { Chosen = Radiance; ChosenTarget = Target; }
+                        }
+                        if (F >= Warmup) Acc[P] += Chosen * (Sum / (Count * ChosenTarget));
+                    }
+                }
+                for (int P = 0; P < Strip; ++P) ChainMeans[P].push_back(Acc[P] / (Frames - Warmup));
+            }
+            double WorstZ = 0;
+            for (int P = 0; P < Strip; ++P)
+            {
+                const Summary S = Summarize(ChainMeans[P]);
+                const double Ref = ReferenceExpectationPeak(0.26 + 0.02 * P, 0.9 + 0.05 * P);
+                const double Z = (S.Mean - Ref) / (S.Sd / std::sqrt((double)SReplicates));
+                if (std::fabs(Z) > std::fabs(WorstZ)) WorstZ = Z;
+                std::printf("Spatial mode %d pixel %d: mean %.6f ref %.6f bias %+.5f%% z %+.2f\n",
+                            (int)M, P, S.Mean, Ref, 100.0 * (S.Mean - Ref) / Ref, Z);
+            }
+            if (std::fabs(WorstZ) > 5) { std::printf("FAIL: spatial bias beyond 5 sigma\n"); Pass = false; }
+        }
     }
 
     std::printf("Path evaluations: fresh %ld combined %ld combined-temporal %ld (per equal frame count; combined modes trace retained paths, so this is cost accounting, not a speedup claim)\n",

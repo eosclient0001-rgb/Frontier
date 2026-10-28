@@ -40,5 +40,5 @@ SANITIZE=1 bash Exhibits/LightCompute/RunReplaySampleHistory.sh
 
 Host-only evidence from this sandbox is retained in
 [the combined host results](Results/ReplaySampleCombined-host.txt). Correlations between retained seeds
-across frames are now resolved by [the seed-correlation study](ReplaySeedCorrelation.md) (cross-pixel
-correlation is not separately measured); no equal-time speedup or real-time claim is made.
+across frames and pixels are now resolved by [the seed-correlation study](ReplaySeedCorrelation.md);
+no equal-time speedup or real-time claim is made.

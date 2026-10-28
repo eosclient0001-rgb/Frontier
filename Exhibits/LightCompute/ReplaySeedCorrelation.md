@@ -1,8 +1,9 @@
 # Seed-bank correlation: measured bias and the unused-draw fix
 
 This closes the open item left by [combined seed-bank reuse](ReplaySampleCombined.md): "Correlations between
-retained seeds across frames and pixels remain unresolved." They are now measured, and the harmful part is
-fixed in `PathReplayReservoir.slang` / `PathReplaySampleHistory.slang`.
+retained seeds across frames and pixels remain unresolved." They are now measured — across frames and across
+pixels (spatial study below) — and the harmful part is fixed in `PathReplayReservoir.slang` /
+`PathReplaySampleHistory.slang`.
 
 ## Method
 
@@ -44,6 +45,15 @@ re-competition against descendant summaries. Either change alone is insufficient
   deviation halves vs fresh (0.260 vs 0.523) with lag-1 correlation +0.50 from candidate persistence — a
   variance/correlation trade, quantified here, **not** an equal-time speedup claim (combined modes trace
   2.9–3.8× the paths per frame in this harness; see the results file for path accounting).
+
+## Cross-pixel (spatial) study
+
+A six-pixel strip whose fixture peak (0.26→0.36) and scale (0.90→1.15) drift per pixel, so spatial donors
+carry genuinely different integrands. Resolve mirrors the shader cross tap reduced to 1D (self, left,
+right), retraces donors at the receiver, and persists the pre-spatial Local as temporal history. Both
+spatial-only and full temporal+spatial+bank modes stay unbiased at every pixel (worst |z| = 1.82 over
+12 pixel/mode pairs, inside multiple-comparison noise): the spatial merge does not reintroduce the
+correlation bias, because a pixel's banked seeds never competed in a neighbour's reservoir.
 
 ## Verification
 
