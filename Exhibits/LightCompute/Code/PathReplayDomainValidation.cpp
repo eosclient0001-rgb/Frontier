@@ -123,7 +123,31 @@ void ValidateEngineReplayInput()
     auto ShortCamera = Fixture.View();
     ShortCamera.Camera = ShortCamera.Camera.first(11);
     Require(Rejected([&] { ValidatePathReplayDomain(ShortCamera, {}); }), "Short camera span accepted");
-    std::printf("ENGINE_REPLAY_DOMAIN abi=18_float4 fields source_indices=1 rejected=8 ggx_guard=1\n");
+    auto ValidCamera = ReplayInputFixture{};
+    ValidCamera.Camera[0] = {0, 0, 2, .01f};
+    ValidCamera.Camera[1] = {0, 0, -1, 10};
+    ValidCamera.Camera[2] = {1, 0, 0, .5f};
+    ValidCamera.Camera[3] = {0, 1, 0, .5f};
+    for (uint32_t I = 0; I < 4; ++I) ValidCamera.Camera[I + 4] = ValidCamera.Camera[I];
+    const PathReplayDomainSpecification CameraDomain{true, false, false, false, true};
+    ValidatePathReplayDomain(ValidCamera.View(), CameraDomain);
+    Require(Rejected([&] { ValidatePathReplayDomain(ValidCamera.View(), {false, false, false, false, true}); }) &&
+                Rejected([&] { ValidatePathReplayDomain(ValidCamera.View(), {true, true, false, false, true}); }) &&
+                Rejected([&] { ValidatePathReplayDomain(ValidCamera.View(), {true, false, true, false, true}); }),
+            "Unsupported camera-reprojection mode accepted");
+    auto BadCamera = ValidCamera;
+    BadCamera.Camera[0][0] = std::numeric_limits<float>::quiet_NaN();
+    Require(Rejected([&] { ValidatePathReplayDomain(BadCamera.View(), CameraDomain); }), "Nonfinite camera accepted");
+    BadCamera = ValidCamera; BadCamera.Camera[0][3] = 0;
+    Require(Rejected([&] { ValidatePathReplayDomain(BadCamera.View(), CameraDomain); }), "Zero near plane accepted");
+    BadCamera = ValidCamera; BadCamera.Camera[6][3] = 0;
+    Require(Rejected([&] { ValidatePathReplayDomain(BadCamera.View(), CameraDomain); }), "Zero previous field of view accepted");
+    BadCamera = ValidCamera; BadCamera.Camera[2][0] = .3f;
+    Require(Rejected([&] { ValidatePathReplayDomain(BadCamera.View(), CameraDomain); }), "Skewed camera basis accepted");
+    BadCamera = ValidCamera; BadCamera.Surfaces[0].OpticalToken[1] = std::numeric_limits<float>::quiet_NaN();
+    Require(Rejected([&] { ValidatePathReplayDomain(BadCamera.View(), CameraDomain); }), "Nonfinite optical guide accepted");
+    std::printf("ENGINE_REPLAY_DOMAIN abi=18_float4 fields source_indices=1 rejected=8 ggx_guard=1 "
+                "camera_mode_rejections=3 camera_input_rejections=5\n");
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -171,8 +195,48 @@ void ValidateEngineReplayHistory()
     Compare(false, 64);
     History.Invalidate();
     Compare(true, 1);
+    ReplayInputFixture CameraFixture;
+    PathReplayHistoryDomain CameraHistory;
+    PathReplayHistorySpecification CameraSpecification{};
+    Require(!CameraHistory.Resolve(CameraFixture.View(), CameraSpecification).CameraOnly,
+            "First history was classified as camera-only");
+    CameraFixture.Camera[0][0] = .0625f;
+    auto Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
+    Require(Camera.Changed && Camera.CameraOnly && Camera.MaximumHistory == 1, "Camera-only revision was missed");
+    CameraFixture.Camera[4] = CameraFixture.Camera[0];
+    CameraFixture.Camera[0][0] += .0625f;
+    CameraFixture.Enclosures[0].Maximum[0] += .1f;
+    Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
+    Require(Camera.Changed && !Camera.CameraOnly, "Changed BVH enclosure was classified as camera-only");
+    CameraFixture.Camera[4] = CameraFixture.Camera[0];
+    CameraFixture.Camera[0][0] += .0625f;
+    CameraFixture.Corners[0].A[3] = .5f;
+    Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
+    Require(Camera.Changed && !Camera.CameraOnly, "Changed BVH corner was classified as camera-only");
+    CameraFixture.Camera[0][0] += .0625f;
+    CameraFixture.Camera[4][0] = 123;
+    Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
+    Require(Camera.Changed && !Camera.CameraOnly, "Mismatched previous projection was classified as camera-only");
+    CameraFixture.Camera[4] = CameraFixture.Camera[0];
+    CameraFixture.Camera[0][0] += .0625f;
+    CameraFixture.Camera[8][0] = 1;
+    Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
+    Require(Camera.Changed && !Camera.CameraOnly, "Changed motion metadata was classified as camera-only");
+    CameraFixture.Enclosures[0].Minimum[0] -= .1f;
+    Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
+    Require(Camera.Changed && !Camera.CameraOnly, "In-place BVH change failed to invalidate static history");
+    for (uint32_t I = 0; I < 4; ++I) CameraFixture.Camera[I + 4] = CameraFixture.Camera[I];
+    CameraFixture.Camera[1][0] = -0.f;
+    Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
+    Require(Camera.Changed && Camera.CameraOnly, "Signed-zero camera revision was overlooked");
+    for (uint32_t I = 0; I < 4; ++I) CameraFixture.Camera[I + 4] = CameraFixture.Camera[I];
+    CameraFixture.Camera[0][0] += .0625f;
+    CameraFixture.Camera[5][0] = 0.f;
+    Camera = CameraHistory.Resolve(CameraFixture.View(), CameraSpecification);
+    Require(Camera.Changed && !Camera.CameraOnly, "Signed-zero previous projection mismatch was overlooked");
     std::printf("ENGINE_REPLAY_HISTORY exact_revisions=13 proposal=1 weighted_facets=1 uniform_mixture=1 "
-                "candidate_revision=1 candidate_rejections=2 in_place_atlas=1 audit=1 invalidation=1\n");
+                "candidate_revision=1 candidate_rejections=2 in_place_atlas=1 audit=1 invalidation=1 "
+                "camera_only=1 bvh_enclosure_corner=1 prior_projection=1 motion_metadata=1 signed_zero_camera=1\n");
 }
 } // namespace
 

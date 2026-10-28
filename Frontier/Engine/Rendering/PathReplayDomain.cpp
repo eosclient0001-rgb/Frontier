@@ -74,13 +74,17 @@ void ValidatePathReplayDomain(const PathReplaySceneView& Scene, const PathReplay
     const bool PrimaryVisibility = Specification.PrimaryVisibility;
     const bool RoughOpaque = Specification.RoughOpaque;
     const bool TexturedDiffuse = Specification.TexturedDiffuse;
+    const bool DiffuseCamera = Specification.DiffuseCameraReprojection;
     Require(!Specification.ImportanceRough || RoughOpaque, "GGX replay sampling requires the rough-opaque domain");
+    Require(!DiffuseCamera || (PrimaryVisibility && !RoughOpaque && !TexturedDiffuse),
+            "Camera reprojection requires untextured diffuse primary rays");
     Require(Scene.Camera.size() == 12, "Replay camera requires twelve float4 entries");
     if (TexturedDiffuse)
-    {
         Require(Scene.MaterialAtlas.size() <= (1u << 24) && Scene.Camera[10][2] == 0 &&
                     std::isfinite(Scene.Camera[3][3]) && Scene.Camera[3][3] >= 0 && Scene.Camera[3][3] <= 10000,
                 "Invalid replay diffuse atlas or camera footprint");
+    if (TexturedDiffuse || DiffuseCamera)
+    {
         for (const auto& Projection : Scene.Camera)
             for (float Coefficient : Projection)
                 Require(std::isfinite(Coefficient) && std::abs(Coefficient) <= 1000000,
@@ -91,6 +95,14 @@ void ValidatePathReplayDomain(const PathReplaySceneView& Scene, const PathReplay
                         Scene.Camera[2][3] > 0 && Scene.Camera[3][3] > 0 && Scene.Camera[4][3] >= 0 &&
                         Scene.Camera[6][3] > 0 && Scene.Camera[7][3] > 0,
                     "Invalid replay diffuse primary camera frustum");
+            if (DiffuseCamera)
+            {
+                Require(Scene.Camera[0][3] >= 1e-4f && Scene.Camera[4][3] >= 1e-4f &&
+                            Scene.Camera[5][3] > Scene.Camera[4][3], "Invalid camera-reprojection clipping interval");
+                for (uint32_t Row : {2u, 3u, 6u, 7u})
+                    Require(Scene.Camera[Row][3] >= 1e-4f && Scene.Camera[Row][3] <= 10000,
+                            "Invalid camera-reprojection field of view");
+            }
             for (uint32_t CameraOffset : {0u, 4u})
                 for (uint32_t A = 1; A <= 3; ++A)
                     for (uint32_t B = A; B <= 3; ++B)
@@ -137,6 +149,11 @@ void ValidatePathReplayDomain(const PathReplaySceneView& Scene, const PathReplay
                         std::isfinite(F.AlbedoRoughness[3]) && F.AlbedoRoughness[3] >= .25f &&
                         F.AlbedoRoughness[3] <= 1, "Rough replay facet lies outside the guarded GGX domain");
         else Require(F.OpticalToken[0] == 0, "Diffuse replay rejects metallic facets");
+        if (DiffuseCamera)
+            Require(std::isfinite(F.OpticalToken[1]) && F.OpticalToken[1] >= 1 && F.OpticalToken[1] <= 3 &&
+                        std::isfinite(F.OpticalToken[2]) && F.OpticalToken[2] >= 0 && F.OpticalToken[2] <= 1 &&
+                        std::isfinite(F.AlbedoRoughness[3]) && F.AlbedoRoughness[3] >= 0 && F.AlbedoRoughness[3] <= 1,
+                    "Camera-reprojection facet has invalid optical guides");
         for (uint32_t C = 0; C < 3; ++C)
             Require(std::isfinite(F.AlbedoRoughness[C]) && F.AlbedoRoughness[C] >= 0 && F.AlbedoRoughness[C] <= 1 &&
                         std::isfinite(F.Emissive[C]) && F.Emissive[C] >= 0 && F.Emissive[C] <= 256 &&
@@ -145,7 +162,7 @@ void ValidatePathReplayDomain(const PathReplaySceneView& Scene, const PathReplay
                         std::isfinite(F.NormalB[C]) && std::abs(F.NormalB[C]) <= 1e6f &&
                         std::isfinite(F.NormalC[C]) && std::abs(F.NormalC[C]) <= 1e6f,
                     "Invalid replay facet coefficients");
-        if (TexturedDiffuse)
+        if (TexturedDiffuse || DiffuseCamera)
             for (const auto* P : {&F.A, &F.B, &F.C})
                 for (uint32_t C = 0; C < 3; ++C)
                     Require(std::abs((*P)[C]) <= 1000000, "Replay diffuse geometry exceeds the bounded domain");
@@ -269,34 +286,53 @@ PathReplayHistoryDecision PathReplayHistoryDomain::Resolve(const PathReplayScene
     Require(Specification.InitialCandidates >= 1 &&
                 Specification.InitialCandidates <= PathReplayMaximumInitialCandidates,
             "Replay history requires one to four initial candidates");
-    bool Changed = !PriorAvailable || PriorSpecification != Specification ||
-                   !std::equal(Scene.Camera.begin(), Scene.Camera.end(), PriorCamera.begin()) ||
-                   PriorSurfaces.size() != Scene.Surfaces.size() || PriorReceivers.size() != Scene.Receivers.size() ||
-                   PriorMaterialAtlas.size() != Scene.MaterialAtlas.size();
-    if (!Changed)
+    const bool SpecificationChanged = !PriorAvailable || PriorSpecification != Specification;
+    const bool CameraChanged = !PriorAvailable ||
+                               std::memcmp(Scene.Camera.data(), PriorCamera.data(),
+                                           PriorCamera.size() * sizeof(PriorCamera[0])) != 0;
+    bool SceneChanged = !PriorAvailable || PriorSurfaces.size() != Scene.Surfaces.size() ||
+                        PriorReceivers.size() != Scene.Receivers.size() ||
+                        PriorEnclosures.size() != Scene.Enclosures.size() || PriorCorners.size() != Scene.Corners.size() ||
+                        PriorMaterialAtlas.size() != Scene.MaterialAtlas.size();
+    if (!SceneChanged)
     {
-        Changed = (!Scene.Surfaces.empty() && std::memcmp(PriorSurfaces.data(), Scene.Surfaces.data(),
-                                                         Scene.Surfaces.size_bytes()) != 0) ||
-                  (!Scene.Receivers.empty() && std::memcmp(PriorReceivers.data(), Scene.Receivers.data(),
-                                                          Scene.Receivers.size_bytes()) != 0) ||
-                  (!Scene.MaterialAtlas.empty() && std::memcmp(PriorMaterialAtlas.data(), Scene.MaterialAtlas.data(),
-                                                              Scene.MaterialAtlas.size_bytes()) != 0);
+        SceneChanged = (!Scene.Surfaces.empty() && std::memcmp(PriorSurfaces.data(), Scene.Surfaces.data(),
+                                                              Scene.Surfaces.size_bytes()) != 0) ||
+                       (!Scene.Receivers.empty() && std::memcmp(PriorReceivers.data(), Scene.Receivers.data(),
+                                                               Scene.Receivers.size_bytes()) != 0) ||
+                       (!Scene.Enclosures.empty() && std::memcmp(PriorEnclosures.data(), Scene.Enclosures.data(),
+                                                                Scene.Enclosures.size_bytes()) != 0) ||
+                       (!Scene.Corners.empty() && std::memcmp(PriorCorners.data(), Scene.Corners.data(),
+                                                             Scene.Corners.size_bytes()) != 0) ||
+                       (!Scene.MaterialAtlas.empty() && std::memcmp(PriorMaterialAtlas.data(), Scene.MaterialAtlas.data(),
+                                                                   Scene.MaterialAtlas.size_bytes()) != 0);
     }
+    const bool Changed = SpecificationChanged || CameraChanged || SceneChanged;
+    // 📝 Previous projection must name the actual preceding camera, and non-camera metadata must not change.
+    const bool CameraOnly = PriorAvailable && CameraChanged && !SpecificationChanged && !SceneChanged &&
+                            std::memcmp(Scene.Camera.data() + 4, PriorCamera.data(), 4 * sizeof(PriorCamera[0])) == 0 &&
+                            std::memcmp(Scene.Camera.data() + 8, PriorCamera.data() + 8, 4 * sizeof(PriorCamera[0])) == 0;
     // 📝 Construct all replacement snapshots before changing the retained domain, so allocation failures are atomic.
     std::vector<PathReplayFacet> CurrentSurfaces(Scene.Surfaces.size());
     std::vector<PathReplayReceiver> CurrentReceivers(Scene.Receivers.size());
+    std::vector<TriangleVisibilitySpace::FloatEnclosure> CurrentEnclosures(Scene.Enclosures.size());
+    std::vector<TriangleVisibilitySpace::FloatFacet> CurrentCorners(Scene.Corners.size());
     std::vector<float> CurrentMaterialAtlas(Scene.MaterialAtlas.size());
     if (!Scene.Surfaces.empty()) std::memcpy(CurrentSurfaces.data(), Scene.Surfaces.data(), Scene.Surfaces.size_bytes());
     if (!Scene.Receivers.empty()) std::memcpy(CurrentReceivers.data(), Scene.Receivers.data(), Scene.Receivers.size_bytes());
+    if (!Scene.Enclosures.empty()) std::memcpy(CurrentEnclosures.data(), Scene.Enclosures.data(), Scene.Enclosures.size_bytes());
+    if (!Scene.Corners.empty()) std::memcpy(CurrentCorners.data(), Scene.Corners.data(), Scene.Corners.size_bytes());
     if (!Scene.MaterialAtlas.empty())
         std::memcpy(CurrentMaterialAtlas.data(), Scene.MaterialAtlas.data(), Scene.MaterialAtlas.size_bytes());
     std::copy(Scene.Camera.begin(), Scene.Camera.end(), PriorCamera.begin());
     PriorSpecification = Specification;
     PriorSurfaces.swap(CurrentSurfaces);
     PriorReceivers.swap(CurrentReceivers);
+    PriorEnclosures.swap(CurrentEnclosures);
+    PriorCorners.swap(CurrentCorners);
     PriorMaterialAtlas.swap(CurrentMaterialAtlas);
     PriorAvailable = true;
-    return {Changed, Changed && !FullHistoryForAudit ? 1u : 64u};
+    return {Changed, Changed && !FullHistoryForAudit ? 1u : 64u, CameraOnly};
 }
 
 void PathReplayHistoryDomain::Invalidate() noexcept
@@ -304,6 +340,8 @@ void PathReplayHistoryDomain::Invalidate() noexcept
     PriorAvailable = false;
     PriorSurfaces.clear();
     PriorReceivers.clear();
+    PriorEnclosures.clear();
+    PriorCorners.clear();
     PriorMaterialAtlas.clear();
 }
 } // namespace Frontier

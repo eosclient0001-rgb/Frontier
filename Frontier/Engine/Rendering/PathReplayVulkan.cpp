@@ -15,7 +15,8 @@ namespace
 {
 constexpr std::uint32_t ReplayFlags = PathReplayRoughOpaque | PathReplaySampleFacets | PathReplayAuditDoubleCount |
     PathReplayAuditStrictMotion | PathReplayBalanceSampling | PathReplayTexturedDiffuse | PathReplayImportanceRough |
-    PathReplayPowerWeightedFacets | PathReplayUniformFacetMixture | PathReplayReconstruct | PathReplayResetReconstruction;
+    PathReplayPowerWeightedFacets | PathReplayUniformFacetMixture | PathReplayReconstruct | PathReplayResetReconstruction |
+    PathReplayDiffuseCameraReprojection;
 
 void RequireReplay(bool Condition)
 {
@@ -48,7 +49,10 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
     RequireReplay((Flags & ~ReplayFlags) == 0 && (!DoubleCount || Sources) && (!Balance || (Sources && !DoubleCount)) &&
         (!Weighted || Sources) && (!(Flags & PathReplayUniformFacetMixture) || Weighted) &&
         (!(Flags & PathReplayImportanceRough) || (Flags & PathReplayRoughOpaque)) &&
-        (!(Flags & PathReplayResetReconstruction) || Reconstruct) && (Sources || Extent.Reconstruction[2] == 0));
+        (!(Flags & PathReplayResetReconstruction) || Reconstruct) &&
+        (!(Flags & PathReplayDiffuseCameraReprojection) ||
+            (Reconstruct && Primary && !(Flags & (PathReplayRoughOpaque | PathReplayTexturedDiffuse)))) &&
+        (Sources || Extent.Reconstruction[2] == 0));
     for (std::uint32_t Axis = 0; Axis < 3; ++Axis)
         RequireReplay(std::isfinite(Extent.Minimum[Axis]) && Extent.Minimum[Axis] >= 0 && Extent.Minimum[Axis] <= 256);
     std::uint32_t DistanceOffset = 0, FogOffset = 0;

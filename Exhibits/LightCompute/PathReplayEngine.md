@@ -74,7 +74,9 @@ resource and Vulkan requirements. Validation only applies to the bounded opaque 
 traversal, limited rough specular transport and existing fixture filters are not hardware RT, a separate finished
 reflection system, unified PBR, or a complete reconstruction/presentation pipeline. A candidate-count change is a
 sampling revision: use canonical 1–4 in `PathReplayHistorySpecification` even if the GPU uses legacy zero for one.
-See [initial candidate tests](ReplayCandidates.md) for history caps, colour resets and numerical limitations.
+See [initial candidate tests](ReplayCandidates.md) for history caps, colour resets and numerical limitations. A
+separate default-off [strict diffuse camera mode](ReplayCameraReprojection.md) requires a validated camera-only
+transition and exact matching points; the recorder cannot certify that condition from GPU buffers.
 
 ## Verification
 

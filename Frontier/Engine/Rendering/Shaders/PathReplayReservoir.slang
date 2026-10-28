@@ -9,6 +9,11 @@ uint ReplayHistoryStart() { return Extent.Dimensions.x * 25u + 13889u + SolarSou
 uint ReplaySlot(uint Slot, uint Pixel) { return ReplayHistoryStart() + Slot * Extent.Dimensions.x + Pixel; }
 float2 EncodeReplaySeed(uint Seed) { return float2(float(Seed & 65535u), float(Seed >> 16u)); }
 uint DecodeReplaySeed(float2 Packed) { return uint(Packed.x) | (uint(Packed.y) << 16u); }
+// 📝 Keep float-to-int conversion defined even for extreme or non-finite reprojected coordinates.
+bool ReplayMotionConvertible(float2 Pixel)
+{
+    return isfinite(Pixel.x) && isfinite(Pixel.y) && abs(Pixel.x) < 1073741824.0 && abs(Pixel.y) < 1073741824.0;
+}
 float3 ReplayDirection(float3 Normal, inout uint Bits)
 {
     float Radius = sqrt(RandomUnit(Bits)), Azimuth = 6.283185307179586 * RandomUnit(Bits);
@@ -291,7 +296,8 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                 Target = CandidateTarget;
             }
         }
-        if (Extent.Reconstruction.x != 0 && Extent.History.z != 0 && Extent.History.w == 0 && R.MotionPixel.w != 0)
+        if (Extent.Reconstruction.x != 0 && Extent.History.z != 0 && Extent.History.w == 0 &&
+            R.MotionPixel.w != 0 && ReplayMotionConvertible(R.MotionPixel.xy))
         {
             int2 P = int2(floor(R.MotionPixel.xy + .5));
             if (all(P >= 0) && all(P < int2(Extent.History.xy)))

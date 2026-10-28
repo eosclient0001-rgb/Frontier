@@ -13,7 +13,8 @@
     SurfacePoint R = Receivers[Pixel];
     float4 Retained = 0;
     if ((Extent.Primary.w & 65536u) == 0 && Extent.History.w == 0 && Extent.History.z != 0 &&
-        R.PositionHit.w != 0 && R.MotionPositionToken.w > 0 && R.MotionPixel.w != 0)
+        R.PositionHit.w != 0 && R.MotionPositionToken.w > 0 && R.MotionPixel.w != 0 &&
+        ReplayMotionConvertible(R.MotionPixel.xy))
     {
         int2 P = int2(floor(R.MotionPixel.xy + .5));
         if (all(P >= 0) && all(P < int2(Extent.History.xy)))
@@ -29,15 +30,27 @@
             float NormalLength = dot(Normal, Normal), MotionLength = dot(R.MotionNormal.xyz, R.MotionNormal.xyz);
             float3 Delta = Position.xyz - R.MotionPositionToken.xyz;
             float Radius = clamp(R.MotionPixel.z, 0, .25);
+            bool CameraOnly = (Extent.Primary.w & 131072u) != 0;
+            // 📝 View-independent diffuse colour may cross a camera change only at the exact same world point
+            //    and normal. Nearby points can lie on opposite sides of a visibility discontinuity.
+            bool PositionCompatible = CameraOnly ? all(Position.xyz == R.PositionHit.xyz) &&
+                                                   all(Position.xyz == R.MotionPositionToken.xyz)
+                                                 : dot(Delta, Delta) <= Radius * Radius;
+            bool NormalCompatible = CameraOnly ? all(Normal == R.NormalRoughness.xyz) &&
+                                                 all(Normal == R.MotionNormal.xyz)
+                                               : dot(Normal, R.MotionNormal.xyz) >= .99 * sqrt(NormalLength * MotionLength);
+            float3 CurrentOptics = float3(R.NormalRoughness.w, R.ViewMetallic.w, R.ResidualSpecular.w);
+            bool MaterialCompatible = CameraOnly ? all(Material == R.AlbedoIor) : all(abs(Material - R.AlbedoIor) <= 1e-5);
+            bool OpticsCompatible = CameraOnly ? all(Optics.xyz == CurrentOptics) : all(abs(Optics.xyz - CurrentOptics) <= 1e-5);
+            bool EmissionCompatible = CameraOnly ? all(Emission == R.ResidualSpecular.xyz)
+                                                 : all(abs(Emission - R.ResidualSpecular.xyz) <= 1e-5);
+            bool ViewCompatible = CameraOnly || all(abs(View - R.ViewMetallic.xyz) <= 1e-4);
             bool Finite = isfinite(Old.x) && isfinite(Old.y) && isfinite(Old.z) && isfinite(Old.w);
             bool Compatible = Finite && Old.w >= 1 && Old.w <= 16 && all(Old.xyz >= 0) &&
-                Position.w == R.MotionPositionToken.w && dot(Delta, Delta) <= Radius * Radius &&
-                NormalLength > 1e-12 && MotionLength > 1e-12 &&
-                dot(Normal, R.MotionNormal.xyz) >= .99 * sqrt(NormalLength * MotionLength) &&
-                all(abs(Material - R.AlbedoIor) <= 1e-5) &&
-                all(abs(Optics.xyz - float3(R.NormalRoughness.w, R.ViewMetallic.w, R.ResidualSpecular.w)) <= 1e-5) &&
-                Optics.w == float(MaterialAddress(R)) && all(abs(View - R.ViewMetallic.xyz) <= 1e-4) &&
-                all(abs(Emission - R.ResidualSpecular.xyz) <= 1e-5);
+                Position.w == R.MotionPositionToken.w && PositionCompatible &&
+                NormalLength > 1e-12 && MotionLength > 1e-12 && NormalCompatible &&
+                MaterialCompatible && OpticsCompatible && Optics.w == float(MaterialAddress(R)) &&
+                ViewCompatible && EmissionCompatible;
             if (Compatible)
             {
                 Retained = Old;

@@ -17,13 +17,14 @@ ordering. For a stable pixel, the first 16 frames are a running average. Thereaf
 A history is reused only when a positive surface token, motion coordinates, capped position radius, normal,
 albedo/IOR, roughness/metallic/specular level, material identity, view and emission agree, and the old colour
 and length are valid. Background and out-of-bounds pixels start fresh. The validation host also resets **all
-colour history** on any tracked scene, camera, emitter, material or integrator-domain change, when reconstruction
-is re-enabled, or when temporal/spatial reservoir policy changes. The replay reservoirs can still retain their
-existing cap-one history in those cases. This conservative rule avoids retaining the tested stale colour, but
-**does not reconstruct through actual camera, object, light or material motion**. In particular it is not a
-solution for arbitrary deforming geometry, disocclusions, reflections of moving objects or visibility changes
-that a caller fails to report. It may flicker as dynamic scenes reset and can lag rare bright samples even in a
-static scene. No general unbiasedness or temporal-stability claim follows from these checks.
+colour history** by default on any tracked scene, camera, emitter, material or integrator-domain change, when
+reconstruction is re-enabled, or when temporal/spatial reservoir policy changes. A separate, default-off
+[strict diffuse camera mode](ReplayCameraReprojection.md) can retain colour at exactly matching static points
+through a certified camera-only transition; it excludes rough and textured materials. The replay reservoirs can
+still retain their existing cap-one history in these cases. Neither mode is a solution for arbitrary deforming
+geometry, dynamic disocclusions, reflections of moving objects or visibility changes that a caller fails to report.
+It may flicker as dynamic scenes reset and can lag rare bright samples even in a static scene. No general
+unbiasedness or temporal-stability claim follows from these checks.
 
 ## Vulkan contract
 
@@ -33,7 +34,8 @@ Set `PathReplayReconstruct` in `LightComputeFootprint::Primary[3]`, supply `Gath
 `PathReplayReconstructionCounterWords` uint counters. The recorder checks these sizes and the shader's uint
 index limit. Counter 23 counts accepted colour histories. If reconstruction is first enabled, resized, switched
 to a different history allocation, or any relevant input/reuse policy changes, set
-`PathReplayResetReconstruction`; reset it only when a genuinely compatible previous result is available.
+`PathReplayResetReconstruction`; reset it only when a genuinely compatible previous result is available. The
+[strict diffuse camera exception](ReplayCameraReprojection.md) has additional explicit requirements.
 `PathReplayHistoryDomain::Resolve().Changed` provides a conservative bounded input-revision signal, but the
 application must also track history allocation/enablement, sampling policy, changes external to that domain and
 successful submission. A falsely unchanged revision can produce ghosting.
@@ -69,7 +71,8 @@ pipeline.
 
 Eleven deliberately corrupted histories (token, position, normal, material/optics/view/emission, non-finite
 colour, and invalid length) are individually rejected; 1,013 unaffected histories remain accepted. An
-out-of-bounds reprojected pixel and a background pixel remain fresh. Turning reconstruction off/on or changing
+out-of-bounds reprojected pixel, an extreme finite coordinate and a background pixel remain fresh in a later
+regression; the same three also reject temporal reservoir reuse. Turning reconstruction off/on or changing
 reuse policy resets colour. Blocker insertion, material changes and source-off revisions start from a non-dark
 history; their first reconstructed output matches fresh exactly, and the source-off image is black. A `0.07`
 camera shift retains 921 capped reservoir histories but accepts **zero**

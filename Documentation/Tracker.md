@@ -4,6 +4,21 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Strict diffuse camera reprojection — 2026-10-28
+
+- Added a default-off colour-history path for certified camera-only transitions in static, untextured diffuse
+  replay. It retains only exactly matching world points, normals and material guides; rough/textured modes,
+  dynamic geometry and lighting changes remain reset-only. The Engine domain now also snapshots BVH bounds and
+  corners, and the recorder rejects incompatible flags before recording.
+- In a `32 × 32` occluded-area fixture, 290 points retained colour and 734 were fresh; red RMSE against an
+  independent numerical area integral changed `0.03290 → 0.01055` after eight earlier frames. A half-pixel
+  shift accepted zero, exposing the deliberately narrow coverage. Revision, exact-guide, policy and invalid
+  input controls pass, with release and host-sanitized SwiftShader CPU-Vulkan readbacks.
+  [Contract, caveats and diagnostic images](../Exhibits/LightCompute/ReplayCameraReprojection.md).
+- This is not full ReSTIR GI, arbitrary animated/disocclusion-safe reconstruction, hardware RT, a finished
+  non-ray-traced GI path, physical-GPU validation, unified PBR or an editor viewport. Editor implementation and
+  vehicle dynamics/Jolt remain deferred.
+
 ## Bounded replay initial candidates — 2026-10-28
 
 - Engine replay supports one to four fresh path candidates, with the previous single-candidate behaviour as the
@@ -24,8 +39,9 @@ hardware RT, non-ray paths, reflections, PBR and the statistical limits of the r
   In a static 32×32 half-blocked emitter fixture, 20-frame bounded reconstruction reduced RGB RMSE from
   `0.3193` to `0.07184` (diffuse) and `0.3740` to `0.08401` (rough opaque). Host recurrence, eleven
   malformed-guide rejections, out-of-bounds/background, reservoir composition and first-change resets pass.
-- Camera, blocker, material and lighting changes conservatively reset the colour history, even while replay
-  reservoirs may keep cap-one histories. This is **not** general animated/disocclusion-safe reconstruction;
+- At this checkpoint camera, blocker, material and lighting changes reset colour, even while replay reservoirs
+  may keep cap-one histories. The later strict diffuse camera exception is described above. This is **not**
+  general animated/disocclusion-safe reconstruction;
   no physical GPU, hardware RT, editor viewport, dedicated full reflection denoiser or unified PBR is claimed.
   [Algorithm, readbacks, tests and limitations](../Exhibits/LightCompute/ReplayReconstruction.md).
 

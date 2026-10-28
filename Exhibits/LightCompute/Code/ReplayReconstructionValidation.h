@@ -203,20 +203,23 @@ void ValidateReplayReconstructionDisocclusion(const char* Driver, const std::str
     Scene.Receivers[0].MotionPixel[0] = -20;
     Scene.Receivers[1].PositionHit[3] = 0;
     Scene.Receivers[1].ResidualSpecular = {.7f,.2f,.1f,0};
+    Scene.Receivers[2].MotionPixel[0] = 1e30f; // Finite but far outside the shader's safe integer range.
     LightComputeSubmission Fresh(Driver), Filtered(Driver);
     Fresh.Prepare(Scene, Shaders, false, false, false, false, true);
     Filtered.Prepare(Scene, Shaders, false, false, false, false, true);
-    (void)RunReconstructionReplay(Fresh, Scene, 780000, true, false, false);
-    (void)RunReconstructionReplay(Filtered, Scene, 780000, true, false, true);
-    auto Raw = RunReconstructionReplay(Fresh, Scene, 780001, false, false, false);
-    auto Result = RunReconstructionReplay(Filtered, Scene, 780001, false, false, true);
+    (void)RunReconstructionReplay(Fresh, Scene, 780000, true, false, false, true);
+    (void)RunReconstructionReplay(Filtered, Scene, 780000, true, false, true, true);
+    auto Raw = RunReconstructionReplay(Fresh, Scene, 780001, false, false, false, true);
+    auto Result = RunReconstructionReplay(Filtered, Scene, 780001, false, false, true, true);
     const auto Counts = Filtered.ExtendedStatistics();
-    Require(Counts[23] == Scene.Receivers.size() - 2 && Raw[0] == Result[0] && Raw[1] == Result[1],
-            "Out-of-bounds reprojection or background retained colour");
+    Require(Counts[20] == Scene.Receivers.size() - 3 && Counts[23] == Scene.Receivers.size() - 3 &&
+                Raw[0] == Result[0] && Raw[1] == Result[1] && Raw[2] == Result[2],
+            "Out-of-bounds or extreme reprojection or background retained reservoir or colour");
     const auto* Records = static_cast<const std::array<float,4>*>(Filtered.Buffers[6].Address);
     const size_t N = Scene.Receivers.size(), Start = 25 * N + 15425;
     Require(Records[Start + 5*N + 1] == std::array<float,4>{0,0,0,0}, "Background stored a reusable history");
-    std::printf("RECONSTRUCTION_DISOCCLUSION outside=1 background=1 retained=%u raw_exact=1\n", Counts[23]);
+    std::printf("RECONSTRUCTION_DISOCCLUSION outside=1 extreme_coordinate=1 background=1 "
+                "reservoir=%u colour=%u raw_exact=1\n", Counts[20], Counts[23]);
 }
 void ValidateReplayReconstructionCamera(const char* Driver, const std::string& Shaders)
 {

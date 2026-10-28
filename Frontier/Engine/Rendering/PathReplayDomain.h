@@ -38,6 +38,7 @@ struct PathReplayDomainSpecification
     bool RoughOpaque = false;
     bool TexturedDiffuse = false;
     bool ImportanceRough = false;
+    bool DiffuseCameraReprojection = false;
 };
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -78,10 +79,13 @@ struct PathReplayHistoryDecision
 {
     bool Changed = true;
     uint32_t MaximumHistory = 1;
+    bool CameraOnly = false;
 };
 
-// 📝 Tracks exact input revisions, including in-place atlas changes. This is a bounded heuristic, not a proof of
-//     unbiased adaptive reuse; it does not own GPU histories or issue renderer commands.
+// 📝 Tracks exact input revisions, including in-place atlas and BVH changes. CameraOnly additionally requires
+//     the supplied previous camera to match the last resolved camera and unchanged non-camera metadata.
+//     This is a bounded heuristic, not a proof of unbiased adaptive reuse; it does not own GPU histories,
+//     validate submissions or issue renderer commands.
 class PathReplayHistoryDomain
 {
   public:
@@ -96,6 +100,8 @@ class PathReplayHistoryDomain
     std::array<std::array<float, 4>, 12> PriorCamera{};
     std::vector<PathReplayFacet> PriorSurfaces;
     std::vector<PathReplayReceiver> PriorReceivers;
+    std::vector<TriangleVisibilitySpace::FloatEnclosure> PriorEnclosures;
+    std::vector<TriangleVisibilitySpace::FloatFacet> PriorCorners;
     std::vector<float> PriorMaterialAtlas;
 };
 

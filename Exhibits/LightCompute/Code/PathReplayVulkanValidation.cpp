@@ -149,6 +149,24 @@ int main()
         for (std::size_t I = 0; I < Events.size(); ++I)
             Require(Events[I].Kind == WithReconstruction[I].Kind && Events[I].Value == WithReconstruction[I].Value,
                     "Reconstruction command order or write-after-read barrier differs");
+        auto CameraAccess = ReconstructionAccess;
+        CameraAccess.Primary = Handle<VkPipeline>(4);
+        auto CameraExtent = ReconstructionExtent;
+        CameraExtent.Primary[0] = 1;
+        CameraExtent.Primary[3] |= PathReplayDiffuseCameraReprojection;
+        Events.clear();
+        RecordPathReplay(Commands, CameraAccess, ReconstructionBuffers, CameraExtent);
+        Require(Pushed.Primary[3] == CameraExtent.Primary[3] && Events.size() == WithReconstruction.size() + 3,
+                "Diffuse camera reprojection was not recorded with primary rays");
+        auto InvalidCamera = CameraExtent;
+        InvalidCamera.Primary[3] = PathReplayDiffuseCameraReprojection;
+        RequireRejection([&] { RecordPathReplay(Commands, CameraAccess, ReconstructionBuffers, InvalidCamera); });
+        InvalidCamera = CameraExtent; InvalidCamera.Primary[0] = 0;
+        RequireRejection([&] { RecordPathReplay(Commands, CameraAccess, ReconstructionBuffers, InvalidCamera); });
+        InvalidCamera = CameraExtent; InvalidCamera.Primary[3] |= PathReplayRoughOpaque;
+        RequireRejection([&] { RecordPathReplay(Commands, CameraAccess, ReconstructionBuffers, InvalidCamera); });
+        InvalidCamera = CameraExtent; InvalidCamera.Primary[3] |= PathReplayTexturedDiffuse;
+        RequireRejection([&] { RecordPathReplay(Commands, CameraAccess, ReconstructionBuffers, InvalidCamera); });
 
         auto InvalidExtent = Extent; InvalidExtent.History[0] = 12;
         RequireRejection([&] { RecordPathReplay(Commands, Access, Buffers, InvalidExtent); });
@@ -232,8 +250,8 @@ int main()
         InvalidAccess = ReconstructionAccess; InvalidAccess.MaxGroupCountX = UINT32_MAX;
         RequireRejection([&] { RecordPathReplay(Commands, InvalidAccess, InvalidBuffers, InvalidExtent); });
         std::printf("REPLAY_RECORDERS primary_and_input=1 barriers=3 padded_dispatch=1 push128=1 "
-                    "invalid_before_recording=28 candidates_0_to_4=1 weighted_span=1 uint_index_limit=1 "
-                    "secondary_camera=1 reconstruction_order_and_WAR=1\n");
+                    "invalid_before_recording=32 candidates_0_to_4=1 weighted_span=1 uint_index_limit=1 "
+                    "secondary_camera=1 reconstruction_order_and_WAR=1 diffuse_camera_guards=1\n");
         return 0;
     }
     catch (const std::exception &Error)

@@ -253,7 +253,7 @@ struct LightComputeSubmission
     VkPipeline ReplayProbeRegionPipeline = VK_NULL_HANDLE, ReplayTailAuditPipeline = VK_NULL_HANDLE;
     bool PendingOrdinaryHistoryReset = false;
     bool ReplayLastReset = true, ReplayLastReconstructionReset = true, ReplayReconstructionActive = false;
-    bool ReplayPreviousTemporal = false, ReplayPreviousSpatial = false;
+    bool ReplayPreviousTemporal = false, ReplayPreviousSpatial = false, ReplayPreviousDiffuseCamera = false;
     uint32_t ReplayLastHistoryCap = 1, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
     PathReplayHistoryDomain ReplayHistoryDomain;
     RectangleDomain PreviousRectangle{};
@@ -795,8 +795,11 @@ struct LightComputeSubmission
                                                     bool ImportanceRough = false, bool PowerWeightedFacets = false,
                                                     bool UniformFacetMixture = false, bool ProbeRegionForAudit = false,
                                                     bool TailForAudit = false, bool ReconstructReplay = false,
-                                                    uint32_t InitialCandidates = 1, bool ExplicitOneForAudit = false)
+                                                    uint32_t InitialCandidates = 1, bool ExplicitOneForAudit = false,
+                                                    bool DiffuseCameraReprojection = false)
     {
+        Require(!DiffuseCameraReprojection || (ReconstructReplay && PrimaryVisibility && !RoughOpaque && !TexturedDiffuse),
+                "Diffuse camera reprojection requires reconstruction and untextured diffuse primary rays");
         Require(!ExplicitOneForAudit || InitialCandidates == 1, "Explicit-one audit requires one initial candidate");
         Require(!ReconstructReplay || (!ProbeRegionForAudit && !TailForAudit && ReplayGatherReconstructionPipeline &&
                                        ReplayFinalizeReconstructionPipeline),
@@ -816,7 +819,8 @@ struct LightComputeSubmission
                     Scene.Surfaces.size() == Scene.Visibility.Corners.size(),
                 "Invalid replay extent, domain or diffuse scene");
         for (float C : Environment) Require(std::isfinite(C) && C >= 0 && C <= 256, "Invalid replay environment");
-        ValidatePathReplayDomain(ReplayDomainView(Scene), {PrimaryVisibility, RoughOpaque, TexturedDiffuse, ImportanceRough});
+        ValidatePathReplayDomain(ReplayDomainView(Scene),
+                                 {PrimaryVisibility, RoughOpaque, TexturedDiffuse, ImportanceRough, DiffuseCameraReprojection});
         Require(!DoubleCountForAudit || SampleFacets, "Double-count control requires explicit source sampling");
         Require(!BalanceSampling || (SampleFacets && !DoubleCountForAudit),
                 "Balanced sampling requires facet sampling without the double-count control");
@@ -841,8 +845,11 @@ struct LightComputeSubmission
             std::memcpy(static_cast<float*>(Buffers[4].Address) + ReplayFacetStart,
                         FacetSources.data(), FacetSources.size() * sizeof(float));
         ReplayLastReset = Reset || HistoryDirty;
-        ReplayLastReconstructionReset = ReplayLastReset || ReplayDecision.Changed || !ReplayReconstructionActive ||
-                                        ReplayPreviousTemporal != Temporal || ReplayPreviousSpatial != Spatial;
+        const bool CameraTransition = DiffuseCameraReprojection && ReplayDecision.CameraOnly;
+        ReplayLastReconstructionReset = ReplayLastReset || (ReplayDecision.Changed && !CameraTransition) ||
+                                        !ReplayReconstructionActive || ReplayPreviousTemporal != Temporal ||
+                                        ReplayPreviousSpatial != Spatial ||
+                                        ReplayPreviousDiffuseCamera != DiffuseCameraReprojection;
         ComputeExtent Extent;
         Extent.Dimensions[0] = uint32_t(Scene.Receivers.size());
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
@@ -860,7 +867,8 @@ struct LightComputeSubmission
                                      (PowerWeightedFacets ? PathReplayPowerWeightedFacets : 0u) |
                                      (UniformFacetMixture ? PathReplayUniformFacetMixture : 0u) |
                                      (ReconstructReplay ? PathReplayReconstruct : 0u) |
-                                     (ReconstructReplay && ReplayLastReconstructionReset ? PathReplayResetReconstruction : 0u);
+                                     (ReconstructReplay && ReplayLastReconstructionReset ? PathReplayResetReconstruction : 0u) |
+                                     (CameraTransition && !ReplayLastReconstructionReset ? PathReplayDiffuseCameraReprojection : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -927,6 +935,7 @@ struct LightComputeSubmission
         ReplayReconstructionActive = ReconstructReplay;
         ReplayPreviousTemporal = Temporal;
         ReplayPreviousSpatial = Spatial;
+        ReplayPreviousDiffuseCamera = DiffuseCameraReprojection;
         return Result;
     }
     // One translating, unobstructed rectangular source; other geometry or changing emission is rejected/reset.
@@ -1598,7 +1607,7 @@ void ValidateFreshSampling(const char* Driver, const std::string& Shaders)
 }
 
 void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>& Pixels, uint32_t Width,
-                uint32_t Height)
+                uint32_t Height, double Exposure = .45)
 {
     std::ofstream Output(Path, std::ios::binary);
     Output.exceptions(std::ios::failbit | std::ios::badbit);
@@ -1613,7 +1622,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
         Image.Pixels.push_back({P[0], P[1], P[2]});
     }
     std::vector<uint8_t> Rgb;
-    EncodeDisplayRgb8(Image, .45, Rgb);
+    EncodeDisplayRgb8(Image, Exposure, Rgb);
     Output.write(reinterpret_cast<const char*>(Rgb.data()), std::streamsize(Rgb.size()));
 }
 #include "LightHistoryValidation.h"
@@ -1686,6 +1695,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayTextureMotionCapture.h"
 #include "ReplayReconstructionValidation.h"
 #include "ReplayCandidateValidation.h"
+#include "ReplayCameraReprojectionValidation.h"
 } // namespace
 int main(int Count, char** Arguments)
 {
@@ -1694,6 +1704,16 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--medium-radiance")
         {
             ValidateMediumRadianceGpu(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-camera-reprojection")
+        {
+            ValidateReplayCameraReprojectionAll(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-camera")
+        {
+            CaptureReplayCameraReprojection(Arguments[1], Arguments[2], Arguments[4]);
             return 0;
         }
         if (Count == 4 && std::string(Arguments[3]) == "--replay-candidates")

@@ -69,7 +69,8 @@ outputs and 3,968 donor links in the identical-receiver fixture.
   pixels match the committed PNGs; three reconstruction PNGs also match. Five release CTests pass.
 - Engine history validation rejects canonical counts zero/five and preserves its previous domain; the recorder
   accepts legacy zero and counts 1–4 and rejects five before recording. The validation host rejects zero/five.
-- Reconstruction still resets on camera, geometry, lighting and material revisions. No arbitrary animated
+- Reconstruction resets by default on camera, geometry, lighting and material revisions. A later default-off
+  [strict diffuse camera mode](ReplayCameraReprojection.md) has a narrow same-point exception. No arbitrary animated
   reconstruction, hardware-RT, physical-GPU, editor viewport or Windows validation is established.
 
 ## Reproduce
