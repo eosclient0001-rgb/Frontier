@@ -1747,6 +1747,11 @@ int main(int Count, char** Arguments)
             ValidateReplaySampleHistory(Arguments[1], Arguments[2]);
             return 0;
         }
+        if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-sample-history")
+        {
+            CaptureReplaySampleHistory(Arguments[1], Arguments[2], Arguments[4]);
+            return 0;
+        }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-camera")
         {
             CaptureReplayCameraReprojection(Arguments[1], Arguments[2], Arguments[4]);

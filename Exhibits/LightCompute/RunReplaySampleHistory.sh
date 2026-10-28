@@ -22,6 +22,11 @@ if [[ "${SANITIZE:-0}" == 1 ]]; then
 fi
 BUILD="$ROOT/_ClaudeScratch/build/replay-sample-history-$MODE"
 RESULTS="${RESULTS:-$ROOT/Exhibits/LightCompute/Results/ReplaySampleHistory-$MODE.txt}"
+OUTPUT="${OUTPUT:-$ROOT/_ClaudeScratch/replay-sample-capture-$MODE}"
+IMAGES="${IMAGES:-$OUTPUT/png}"
+if [[ -z "${PYTHON:-}" ]]; then
+    if [[ -x "$ROOT/_ClaudeScratch/venv/bin/python" ]]; then PYTHON="$ROOT/_ClaudeScratch/venv/bin/python"; else PYTHON=python3; fi
+fi
 mkdir -p "$BUILD" "$(dirname "$RESULTS")"
 for PAIR in 'GenerateReplayReservoirs ReplayGenerate' 'ResolveReplayReservoirs ReplayResolve'; do
     read -r ENTRY STEM <<< "$PAIR"
@@ -49,7 +54,28 @@ done
         Frontier/Engine/Rendering/{LightComputeFootprint.h,PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp,PathReplayVulkan.h,PathReplayVulkan.cpp} \
         Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomainValidation.cpp,PathReplayVulkanValidation.cpp,ReplaySampleHistoryValidation.h,ReplayCameraReprojectionValidation.h,ReplayRoomReference.h,ReplayCandidateValidation.h,ReplayReconstructionValidation.h,PathReplayGpuValidation.h} \
         Exhibits/LightCompute/RunReplaySampleHistory.sh \
-        "$TOOLS"/SwiftShader/{libvulkan.so.1,libvk_swiftshader.so,vk_swiftshader_icd.json}
+        "$TOOLS"/SwiftShader/{libvulkan.so.1,libvk_swiftshader.so,vk_swiftshader_icd.json} \
+        "$BUILD"/{Primary,ReplayGenerate,ReplayResolve,ReplayGatherSampleHistory,ReplayFinalizeSampleHistory}.spv
     "$CTEST" --test-dir "$BUILD" --output-on-failure
     "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --replay-sample-history
+    if [[ "${CAPTURE:-0}" == 1 ]]; then
+        mkdir -p "$OUTPUT" "$IMAGES"
+        "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" --capture-replay-sample-history "$OUTPUT"
+        "$PYTHON" - "$OUTPUT" "$IMAGES" <<'PY'
+import hashlib
+from pathlib import Path
+import sys
+from PIL import Image
+source, destination = map(Path, sys.argv[1:])
+for name in ('ReplaySampleFresh', 'ReplaySampleFourFresh', 'ReplaySampleRetraced', 'ReplaySampleAcceptance'):
+    with Image.open(source / (name + '.ppm')) as image:
+        rgb = image.convert('RGB')
+        assert rgb.size == (64, 64)
+        pixels = rgb.tobytes()
+        rgb.save(destination / (name + '.png'), optimize=True)
+    with Image.open(destination / (name + '.png')) as decoded:
+        assert decoded.convert('RGB').tobytes() == pixels
+    print(f'{name}.png 64x64 RGB_SHA256={hashlib.sha256(pixels).hexdigest()}')
+PY
+    fi
 } 2>&1 | tee "$RESULTS"

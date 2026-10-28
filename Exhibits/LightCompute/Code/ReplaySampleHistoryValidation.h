@@ -46,11 +46,18 @@ std::vector<std::array<float,4>> ExecuteReplaySampleHistory(LightComputeSubmissi
     const LightComputeArchive& Scene, uint32_t Seed, bool Reset, bool History, uint32_t Bounces = 1,
     const std::array<float,3>& Environment = {0,0,0}, uint32_t Candidates = 1,
     bool Temporal = false, bool Spatial = false, bool Reconstruct = false, bool Rough = false,
-    bool Textured = false, bool Primary = true)
+    bool Textured = false, bool Primary = true, bool SampleFacets = false)
 {
     return Compute.ExecuteReplay(Scene, Bounces, Seed, Temporal, Spatial, Reset, Environment, .01f, Primary,
-                                 false, Rough, false, false, false, 64, false, Textured, false,
+                                 false, Rough, SampleFacets, false, false, 64, false, Textured, false,
                                  false, false, false, false, Reconstruct, Candidates, false, false, History);
+}
+std::vector<std::array<float,4>> ExecuteReplaySampleFacets(LightComputeSubmission& Compute,
+    const LightComputeArchive& Scene, uint32_t Seed, bool Reset, bool History, uint32_t Bounces,
+    const std::array<float,3>& Environment)
+{
+    return ExecuteReplaySampleHistory(Compute, Scene, Seed, Reset, History, Bounces, Environment,
+                                      1, false, false, false, false, false, true, true);
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -221,7 +228,221 @@ void ValidateReplaySampleSubpixel(const char* Driver, const std::string& Shaders
     };
     CheckReset(Moved, 200011);
     CheckReset(Reopened, 200033);
-    std::printf("SAMPLE_SCENE_RESET blocker_and_camera=1 reopen=1 raw_bit_exact=1\n");
+    const auto WrongPrevious = ReplayCameraPlane(.075f, .2f);
+    CheckReset(WrongPrevious, 200055);
+    std::printf("SAMPLE_SCENE_RESET blocker_and_camera=1 reopen=1 wrong_previous_camera=1 raw_bit_exact=1\n");
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                             EXPLICIT FACET SAMPLING AND EQUAL-PATH VALIDATION
+//------------------------------------------------------------------------------------------------------------------------
+
+void ValidateReplaySampleFacetConvergence(const char* Driver, const std::string& Shaders)
+{
+    constexpr uint32_t WarmFrames = 3, Batches = 16;
+    const auto Previous = ReplayCameraPlane(0, 0), Current = ReplayCameraPlane(.03125f, 0);
+    const std::array<float,3> Environment{0,0,0};
+    LightComputeSubmission Fresh(Driver), Retraced(Driver);
+    Fresh.Prepare(Previous, Shaders, false, false, false, false, true);
+    Retraced.Prepare(Previous, Shaders, false, false, false, false, true);
+    std::vector<double> ReferencePoint(Previous.Receivers.size(), -1);
+    std::mt19937_64 BatchSeeds(0x4d793b21ull);
+    DirectGpuMoments FourBatches, RetracedBatches, DifferenceBatches;
+    double ReferenceSum = 0, QuadratureSquared = 0, FourSquared = 0, RetracedSquared = 0;
+    uint32_t ReferencePoints = 0;
+    for (uint32_t Batch = 0; Batch < Batches; ++Batch)
+    {
+        for (uint32_t Frame = 0; Frame < WarmFrames; ++Frame)
+            (void)ExecuteReplaySampleFacets(Retraced, Previous, uint32_t(BatchSeeds()), Frame == 0,
+                                            true, 1, Environment);
+        const uint32_t Seed = uint32_t(BatchSeeds());
+        const auto One = ExecuteReplaySampleFacets(Fresh, Current, Seed, true, false, 1, Environment);
+        const auto Replayed = ExecuteReplaySampleFacets(Retraced, Current, Seed, false, true, 1, Environment);
+        const auto Guides = Retraced.PrimaryReceivers();
+        std::vector<double> Four(One.size());
+        for (uint32_t Pixel = 0; Pixel < One.size(); ++Pixel) Four[Pixel] = One[Pixel][0];
+        for (uint32_t Path = 1; Path < 4; ++Path)
+        {
+            const auto Extra = ExecuteReplaySampleFacets(Fresh, Current, uint32_t(BatchSeeds()), true, false,
+                                                         1, Environment);
+            for (uint32_t Pixel = 0; Pixel < One.size(); ++Pixel) Four[Pixel] += Extra[Pixel][0];
+        }
+        Require(!Retraced.ReplayLastSampleHistoryReset && Retraced.ExtendedStatistics()[23] > 100,
+                "Facet sampling did not retain compatible seed histories");
+        if (Batch == 0)
+        {
+            for (uint32_t Pixel = 0; Pixel < Guides.size(); ++Pixel)
+            {
+                const auto& R = Guides[Pixel];
+                if (R.MotionPositionToken[3] != 1 || ReplaySampleSlot(Retraced, 14, Pixel)[2] != 3) continue;
+                const double Reference = ReplayCameraPlaneArea(R, 128), Coarse = ReplayCameraPlaneArea(R, 64);
+                ReferencePoint[Pixel] = Reference;
+                ReferenceSum += Reference;
+                QuadratureSquared += (Reference - Coarse) * (Reference - Coarse);
+                ++ReferencePoints;
+            }
+            Require(ReferencePoints > 500, "Facet-area reference lacks fully retained plane points");
+        }
+        double FourMean = 0, ReplayedMean = 0;
+        uint32_t Points = 0;
+        for (uint32_t Pixel = 0; Pixel < ReferencePoint.size(); ++Pixel)
+        {
+            if (ReferencePoint[Pixel] < 0) continue;
+            Require(ReplaySampleSlot(Retraced, 14, Pixel)[2] == 3, "Facet-area seed bank changed between batches");
+            const double A = Four[Pixel] / 4, B = Replayed[Pixel][0];
+            Require(std::isfinite(A) && std::isfinite(B) && A >= 0 && B >= 0, "Invalid facet-area output");
+            FourMean += A; ReplayedMean += B;
+            FourSquared += (A - ReferencePoint[Pixel]) * (A - ReferencePoint[Pixel]);
+            RetracedSquared += (B - ReferencePoint[Pixel]) * (B - ReferencePoint[Pixel]);
+            ++Points;
+        }
+        Require(Points == ReferencePoints, "Repeated facet-area reference point count changed");
+        FourBatches.Accumulate(FourMean / Points);
+        RetracedBatches.Accumulate(ReplayedMean / Points);
+        DifferenceBatches.Accumulate((ReplayedMean - FourMean) / Points);
+    }
+    const double Correction = std::sqrt(double(Batches) / (Batches - 1));
+    const double FourSe = FourBatches.StandardError() * Correction, RetracedSe = RetracedBatches.StandardError() * Correction;
+    const double DifferenceSe = DifferenceBatches.StandardError() * Correction;
+    const double ReferenceMean = ReferenceSum / ReferencePoints, Denominator = double(Batches) * ReferencePoints;
+    std::printf("SAMPLE_FACETS batches=%u points=%u reference=%.9g quadrature_rmse=%.9g "
+                "four_fresh=%.9g four_se=%.9g retraced=%.9g retraced_se=%.9g "
+                "four_rmse=%.9g retraced_rmse=%.9g paired_difference=%.9g paired_se=%.9g\n",
+                Batches, ReferencePoints, ReferenceMean, std::sqrt(QuadratureSquared / ReferencePoints),
+                FourBatches.Mean(), FourSe, RetracedBatches.Mean(), RetracedSe,
+                std::sqrt(FourSquared / Denominator), std::sqrt(RetracedSquared / Denominator),
+                DifferenceBatches.Mean(), DifferenceSe);
+    std::fflush(stdout);
+    Require(std::sqrt(QuadratureSquared / ReferencePoints) < .002 &&
+                std::abs(FourBatches.Mean() - ReferenceMean) < 6 * FourSe + .003 &&
+                std::abs(RetracedBatches.Mean() - ReferenceMean) < 6 * RetracedSe + .003 &&
+                std::abs(DifferenceBatches.Mean()) < 6 * DifferenceSe + .003,
+            "Subpixel facet samples disagree with the independent area integral or four-fresh control");
+    const auto Dark = ReplayCameraPlane(.03125f, .03125f, 0, 0);
+    const auto Relit = ReplayCameraPlane(.03125f, .03125f);
+    const auto DarkFresh = ExecuteReplaySampleFacets(Fresh, Dark, 399001, true, false, 1, Environment);
+    const auto DarkHistory = ExecuteReplaySampleFacets(Retraced, Dark, 399001, false, true, 1, Environment);
+    Require(Retraced.ReplayLastSampleHistoryReset && Retraced.ExtendedStatistics()[23] == 0 &&
+                ReplayCandidateImagesEqual(DarkFresh, DarkHistory) &&
+                std::all_of(DarkHistory.begin(), DarkHistory.end(), [](const auto& P)
+                    { return P[0] == 0 && P[1] == 0 && P[2] == 0; }),
+            "Turning the source off retained sample history or nonzero radiance");
+    const auto RelitFresh = ExecuteReplaySampleFacets(Fresh, Relit, 399003, true, false, 1, Environment);
+    const auto RelitHistory = ExecuteReplaySampleFacets(Retraced, Relit, 399003, false, true, 1, Environment);
+    Require(Retraced.ReplayLastSampleHistoryReset && Retraced.ExtendedStatistics()[23] == 0 &&
+                ReplayCandidateImagesEqual(RelitFresh, RelitHistory), "Relighting retained old sample history");
+    std::printf("SAMPLE_FACETS_RESET source_off_black=1 relit_raw_exact=1 both_reset=1\n");
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                FOUR-BOUNCE AND EQUAL-PATH VALIDATION
+//------------------------------------------------------------------------------------------------------------------------
+
+void ValidateReplaySampleMultibounce(const char* Driver, const std::string& Shaders)
+{
+    constexpr uint32_t Bounces = 4, WarmFrames = 3, Batches = 16, CpuSamples = 1024;
+    const auto Previous = ReplayCameraPlane(0, 0), Current = ReplayCameraPlane(.03125f, 0);
+    const std::array<float,3> Environment{.025f,.025f,.025f};
+    LightComputeSubmission Fresh(Driver), Retraced(Driver);
+    Fresh.Prepare(Previous, Shaders, false, false, false, false, true);
+    Retraced.Prepare(Previous, Shaders, false, false, false, false, true);
+    std::vector<double> ReferencePoint(Previous.Receivers.size(), -1);
+    std::mt19937_64 BatchSeeds(0xac7413d9ull);
+    DirectGpuMoments OneBatches, FourBatches, RetracedBatches, PairedDifference;
+    double ReferenceSum = 0, ReferenceVariance = 0, OneSquared = 0, FourSquared = 0, RetracedSquared = 0;
+    uint32_t ReferencePoints = 0, FirstAccepted = 0;
+    for (uint32_t Batch = 0; Batch < Batches; ++Batch)
+    {
+        for (uint32_t Frame = 0; Frame < WarmFrames; ++Frame)
+            (void)ExecuteReplaySampleHistory(Retraced, Previous, uint32_t(BatchSeeds()), Frame == 0, true,
+                                             Bounces, Environment);
+        const uint32_t Seed = uint32_t(BatchSeeds());
+        const auto One = ExecuteReplaySampleHistory(Fresh, Current, Seed, true, false, Bounces, Environment);
+        const auto Replayed = ExecuteReplaySampleHistory(Retraced, Current, Seed, false, true, Bounces, Environment);
+        const auto Guides = Retraced.PrimaryReceivers();
+        std::vector<std::array<double,3>> Four(One.size());
+        for (uint32_t Pixel = 0; Pixel < One.size(); ++Pixel)
+            for (uint32_t Channel = 0; Channel < 3; ++Channel) Four[Pixel][Channel] = One[Pixel][Channel];
+        for (uint32_t Path = 1; Path < 4; ++Path)
+        {
+            const auto Extra = ExecuteReplaySampleHistory(Fresh, Current, uint32_t(BatchSeeds()), true, false,
+                                                          Bounces, Environment);
+            for (uint32_t Pixel = 0; Pixel < Extra.size(); ++Pixel)
+                for (uint32_t Channel = 0; Channel < 3; ++Channel) Four[Pixel][Channel] += Extra[Pixel][Channel];
+        }
+        Require(!Retraced.ReplayLastSampleHistoryReset && Retraced.ExtendedStatistics()[23] > 100,
+                "Subpixel multibounce frame did not retain compatible seed histories");
+        if (Batch == 0)
+        {
+            FirstAccepted = Retraced.ExtendedStatistics()[23];
+            for (uint32_t Pixel = 0; Pixel < Guides.size(); ++Pixel)
+            {
+                const auto& R = Guides[Pixel];
+                if (R.MotionPositionToken[3] != 1 || ReplaySampleSlot(Retraced, 14, Pixel)[2] != 3) continue;
+                std::mt19937_64 Random(0xe51b1c39ull + uint64_t(Pixel) * 0x9e3779b97f4a7c15ull);
+                DirectGpuMoments Reference;
+                for (uint32_t Sample = 0; Sample < CpuSamples; ++Sample)
+                    Reference.Accumulate(ReplayReferencePath(Current, R, Bounces, Random)[0]);
+                const double Se = Reference.StandardError() * std::sqrt(double(CpuSamples) / (CpuSamples - 1));
+                ReferencePoint[Pixel] = Reference.Mean();
+                ReferenceSum += ReferencePoint[Pixel];
+                ReferenceVariance += Se * Se;
+                ++ReferencePoints;
+            }
+            Require(ReferencePoints > 500, "Subpixel multibounce reference lacks fully retained plane points");
+            std::printf("SAMPLE_MULTIBOUNCE_REFERENCE cpu_paths=%u points=%u reference=%.9g cpu_mean_se=%.9g "
+                        "cpu_point_rms_se=%.9g accepted=%u\n",
+                        ReferencePoints * CpuSamples, ReferencePoints, ReferenceSum / ReferencePoints,
+                        std::sqrt(ReferenceVariance) / ReferencePoints,
+                        std::sqrt(ReferenceVariance / ReferencePoints), FirstAccepted);
+            std::fflush(stdout);
+        }
+        double OneMean = 0, FourMean = 0, ReplayedMean = 0;
+        uint32_t Points = 0;
+        for (uint32_t Pixel = 0; Pixel < ReferencePoint.size(); ++Pixel)
+        {
+            if (ReferencePoint[Pixel] < 0) continue;
+            Require(ReplaySampleSlot(Retraced, 14, Pixel)[2] == 3, "Repeated camera frame lost its full seed bank");
+            const double A = One[Pixel][0], B = Four[Pixel][0] / 4, C = Replayed[Pixel][0];
+            Require(std::isfinite(A) && std::isfinite(B) && std::isfinite(C) && A >= 0 && B >= 0 && C >= 0,
+                    "Nonfinite or negative multibounce sample output");
+            OneMean += A; FourMean += B; ReplayedMean += C;
+            OneSquared += (A - ReferencePoint[Pixel]) * (A - ReferencePoint[Pixel]);
+            FourSquared += (B - ReferencePoint[Pixel]) * (B - ReferencePoint[Pixel]);
+            RetracedSquared += (C - ReferencePoint[Pixel]) * (C - ReferencePoint[Pixel]);
+            ++Points;
+        }
+        Require(Points == ReferencePoints, "Repeated camera reference point count changed");
+        OneBatches.Accumulate(OneMean / Points);
+        FourBatches.Accumulate(FourMean / Points);
+        RetracedBatches.Accumulate(ReplayedMean / Points);
+        PairedDifference.Accumulate((ReplayedMean - FourMean) / Points);
+        if ((Batch + 1) % 4 == 0)
+        {
+            std::printf("SAMPLE_MULTIBOUNCE_BATCHES completed=%u/%u\n", Batch + 1, Batches);
+            std::fflush(stdout);
+        }
+    }
+    const double Correction = std::sqrt(double(Batches) / (Batches - 1));
+    const double OneSe = OneBatches.StandardError() * Correction, FourSe = FourBatches.StandardError() * Correction;
+    const double RetracedSe = RetracedBatches.StandardError() * Correction;
+    const double DifferenceSe = PairedDifference.StandardError() * Correction;
+    const double ReferenceMean = ReferenceSum / ReferencePoints, ReferenceSe = std::sqrt(ReferenceVariance) / ReferencePoints;
+    const double Denominator = double(Batches) * ReferencePoints;
+    std::printf("SAMPLE_MULTIBOUNCE bounces=%u batches=%u points=%u reference=%.9g cpu_mean_se=%.9g "
+                "one=%.9g one_se=%.9g four_fresh=%.9g four_se=%.9g retraced=%.9g retraced_se=%.9g "
+                "one_rmse=%.9g four_rmse=%.9g retraced_rmse=%.9g\n",
+                Bounces, Batches, ReferencePoints, ReferenceMean, ReferenceSe, OneBatches.Mean(), OneSe,
+                FourBatches.Mean(), FourSe, RetracedBatches.Mean(), RetracedSe,
+                std::sqrt(OneSquared / Denominator), std::sqrt(FourSquared / Denominator),
+                std::sqrt(RetracedSquared / Denominator));
+    std::printf("SAMPLE_MULTIBOUNCE_PAIRED retraced_minus_four=%.9g batch_se=%.9g "
+                "current_paths_each=4 warm_frames=%u\n", PairedDifference.Mean(), DifferenceSe, WarmFrames);
+    Require(std::abs(OneBatches.Mean() - ReferenceMean) < 6 * std::hypot(OneSe, ReferenceSe) + .003 &&
+                std::abs(FourBatches.Mean() - ReferenceMean) < 6 * std::hypot(FourSe, ReferenceSe) + .003 &&
+                std::abs(RetracedBatches.Mean() - ReferenceMean) < 6 * std::hypot(RetracedSe, ReferenceSe) + .003 &&
+                std::abs(PairedDifference.Mean()) < 6 * DifferenceSe + .003,
+            "Subpixel multibounce averages disagree with the independent CPU model or four-fresh control");
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -285,10 +506,73 @@ void ValidateReplaySampleGuards(const char* Driver, const std::string& Shaders)
                 "sequence_unchanged=1 toggle_reset=1\n", Unaffected, Rejected);
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                              DIAGNOSTIC READBACKS
+//------------------------------------------------------------------------------------------------------------------------
+
+void CaptureReplaySampleHistory(const char* Driver, const std::string& Shaders, const std::string& Directory)
+{
+    constexpr uint32_t Size = 64, WarmFrames = 3, Bounces = 4;
+    const auto Previous = ReplayCameraPlane(0, 0, 0, 2, Size);
+    const auto Current = ReplayCameraPlane(1.f / Size, 0, 0, 2, Size);
+    const std::array<float,3> Environment{.025f,.025f,.025f};
+    LightComputeSubmission Fresh(Driver), Retraced(Driver);
+    Fresh.Prepare(Previous, Shaders, false, false, false, false, true);
+    Retraced.Prepare(Previous, Shaders, false, false, false, false, true);
+    for (uint32_t Frame = 0; Frame < WarmFrames; ++Frame)
+        (void)ExecuteReplaySampleFacets(Retraced, Previous, 340001u + Frame * 7919u, Frame == 0,
+                                        true, Bounces, Environment);
+    const auto Raw = ExecuteReplaySampleFacets(Fresh, Current, 380011, true, false, Bounces, Environment);
+    const auto Result = ExecuteReplaySampleFacets(Retraced, Current, 380011, false, true, Bounces, Environment);
+    std::vector<std::array<double,3>> FourSum(Raw.size());
+    for (uint32_t Pixel = 0; Pixel < Raw.size(); ++Pixel)
+        for (uint32_t Channel = 0; Channel < 3; ++Channel) FourSum[Pixel][Channel] = Raw[Pixel][Channel];
+    for (uint32_t Path = 1; Path < 4; ++Path)
+    {
+        const auto Extra = ExecuteReplaySampleFacets(Fresh, Current, 380011u + Path * 7919u, true, false,
+                                                     Bounces, Environment);
+        for (uint32_t Pixel = 0; Pixel < Raw.size(); ++Pixel)
+            for (uint32_t Channel = 0; Channel < 3; ++Channel) FourSum[Pixel][Channel] += Extra[Pixel][Channel];
+    }
+    std::vector<std::array<float,4>> Four(Raw.size()), Mask(Raw.size());
+    uint32_t Accepted = 0, Full = 0, Rejected = 0;
+    for (uint32_t Pixel = 0; Pixel < Raw.size(); ++Pixel)
+    {
+        for (uint32_t Channel = 0; Channel < 3; ++Channel) Four[Pixel][Channel] = float(FourSum[Pixel][Channel] / 4);
+        Four[Pixel][3] = Raw[Pixel][3];
+        const float Count = ReplaySampleSlot(Retraced, 14, Pixel)[2];
+        if (Count >= 1)
+        {
+            ++Accepted;
+            if (Count == 3) { ++Full; Mask[Pixel] = {.1f, 1, .1f, 1}; }
+            else Mask[Pixel] = {.05f, .1f, 1, 1};
+        }
+        else
+        {
+            ++Rejected;
+            Mask[Pixel] = {.5f, .02f, .02f, 1};
+            Require(std::memcmp(Raw[Pixel].data(), Result[Pixel].data(), sizeof(Result[Pixel])) == 0,
+                    "Rejected sample capture pixel differed from the fresh image");
+        }
+    }
+    Require(Accepted == Retraced.ExtendedStatistics()[23] && Full > 100 && Rejected > 0,
+            "Sample capture did not exercise both full and rejected seed banks");
+    std::filesystem::create_directories(Directory);
+    WriteImage(Directory + "/ReplaySampleFresh.ppm", Raw, Size, Size, 3);
+    WriteImage(Directory + "/ReplaySampleFourFresh.ppm", Four, Size, Size, 3);
+    WriteImage(Directory + "/ReplaySampleRetraced.ppm", Result, Size, Size, 3);
+    WriteImage(Directory + "/ReplaySampleAcceptance.ppm", Mask, Size, Size, 3);
+    std::printf("SAMPLE_CAPTURE %ux%u bounces=%u warm_frames=%u accepted=%u full=%u rejected=%u "
+                "rejected_raw_exact=1\n", Size, Size, Bounces, WarmFrames, Accepted, Full, Rejected);
+    std::printf("PASS subpixel seed and four-fresh path readbacks\n");
+}
+
 void ValidateReplaySampleHistory(const char* Driver, const std::string& Shaders)
 {
     ValidateReplaySampleSubpixel(Driver, Shaders);
+    ValidateReplaySampleFacetConvergence(Driver, Shaders);
+    ValidateReplaySampleMultibounce(Driver, Shaders);
     ValidateReplaySampleGuards(Driver, Shaders);
-    std::printf("PASS bounded subpixel seed retracing and history guards\n");
+    std::printf("PASS bounded subpixel seed retracing, area and multibounce references, and history guards\n");
 }
 } // namespace

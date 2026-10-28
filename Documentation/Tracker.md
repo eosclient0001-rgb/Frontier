@@ -11,9 +11,11 @@ hardware RT, non-ray paths, reflections, PBR and the statistical limits of the r
   or colour reconstruction. A half-pixel SwiftShader fixture accepts 970 banks, rejects all 22 changed-token
   disocclusions, and reproduces 10 changed shadow-path answers at the current point. Scene changes reset history.
 - Independent one-bounce rectangle checks, seven corrupt-bank and seven invalid-request controls, five CTests,
-  release/host-sanitized rows and existing strict-camera regressions pass. Up to four current paths are traced;
-  the `0.2923 → 0.1549` red RMSE comparison is **not equal work**. Four-bounce and equal-path-count checks are
-  still open at this checkpoint. [Contract, edge exclusions and evidence](../Exhibits/LightCompute/ReplaySampleHistory.md).
+  release/host-sanitized rows and strict-camera regressions pass. On four-bounce half-pixel motion, `813,056`
+  CPU paths and 16 GPU seed batches give red RMSE `0.1530` for four fresh paths versus `0.1517` for four current
+  paths including retraced seeds. The latter also uses prior frames; equal path count is **not equal time or total
+  work**. Explicit-facet sampling and source-off/relight resets pass in a separate one-bounce check.
+  [Contract, uncertainty and readbacks](../Exhibits/LightCompute/ReplaySampleHistory.md).
 - ReSTIR GI, hardware RT, non-ray-traced GI, general animated reconstruction, unified PBR and editor integration
   remain incomplete. The editor plan and vehicle dynamics/Jolt remain deferred.
 
