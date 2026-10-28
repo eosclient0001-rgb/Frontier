@@ -1,28 +1,33 @@
 # 🧩 VehiclePhysics — Phase 7: three tyre models, vehicle dynamics, Jolt collisions
 
-> **2026-10-27 correction:** the actual full VehicleHMI reference has 160-particle XPBD and continuum files.
-> The absence claims below describe only the incomplete local SlateReference copy, not the owner's full demo.
-> The C++ 84-particle lattice remains a separate implementation. See [verified continuation](Continuation.md)
-> for recovered sources, 5 original demo tests, 12 XPBD audit cases, renderer timings and current captures.
+> **Historical-source correction:** much of this page describes an earlier, incomplete demo checkout. The
+> retained full VehicleHMI demo does contain a 160-particle XPBD-labelled carcass, Hex8 solid and continuum
+> shell; the separate older 84-particle Engine lattice is not the same implementation. Project Drive is a
+> different reference. The later [standalone projection](TyreProjectionDevice.md) and [Hex8 solid](TyreSolidDevice.md)
+> GPU exhibits execute on SwiftShader CPU Vulkan, not a physical GPU or the editor. None proves calibrated
+> real-world tyre physics. Further vehicle-dynamics/Jolt porting remains deferred. Statements below are
+> historical exhibit scope, not evidence that all models are integrated in the current application.
 
+See [verified continuation](Continuation.md) for recovered sources, five original demo tests, twelve XPBD
+cases, the separate Project Drive audit and historical test-renderer captures.
 
-Proves the production physics in `Frontier/Engine/Physics/` against the HTML demonstration's own code and numbers, then
-drives the car on it. Run everything (Jolt 5.2.0 is fetched/built once into `_ClaudeScratch/`, node runs the demo's
+These historical checks exercised `Frontier/Engine/Physics/` against the reference available at the time and
+used it to drive a vehicle in a test host. Run everything (Jolt 5.2.0 is fetched/built once into `_ClaudeScratch/`, node runs the demo's
 JS oracles):
 
 ```
 PYTHON=<pillow python> bash Exhibits/VehiclePhysics/RunVehiclePhysics.sh
 ```
 
-## ⭐ What was ported, and what was not in the demo to port
+## ⭐ Historical port inventory and later source corrections
 
 | Model | Demo source | Verdict | Production file |
 |---|---|---|---|
-| Tyre force (Pacejka MF6.1) | `TyreSlipSolver.js` ✔️ real | ported 1:1 | `TyreSlipSolver.{h,cpp}` |
-| Carcass spring K = 25 kN/m + 0.9·p + vehicle | `VehicleSolver.js` ✔️ real | ported 1:1 | `VehicleSolver.{h,cpp}`, `VehicleSpecification.h` |
-| Tyre heat / gas law / grip / wear | `TyreThermalSolver.js` ✔️ real | core ported 1:1 (smoke emission excluded, stated) | `TyreThermalSolver.{h,cpp}` |
-| "3D FEM" deformation | `VehicleVisual.wgsl ResolveWheelVertex` ✔️ GPU PB-FEM *deformation* | ported 1:1 (vertex math + encoder) | `TyreDeformation.h` |
-| XPBD soft-body lattice | 🔴 **not in the demo** ("there is no XPBD carcass here") and not in this repo | **implemented new**, calibrated to the same tyre | `TyreCarcassLattice.{h,cpp}` |
+| Demo tyre force | `TyreSlipSolver.js` | Reduced demo force model with source comparisons; not the complete Project Drive MF6.1/aligning-moment model | `TyreSlipSolver.{h,cpp}` |
+| Carcass spring K = 25 kN/m + 0.9·p + vehicle | `VehicleSolver.js` | Bounded source comparisons; the later hard-drop convergence test fails | `VehicleSolver.{h,cpp}`, `VehicleSpecification.h` |
+| Tyre heat / gas law / grip / wear | `TyreThermalSolver.js` | Historical demo-source comparison; smoke emission excluded | `TyreThermalSolver.{h,cpp}` |
+| Analytical surface deformation | `VehicleVisual.wgsl ResolveWheelVertex` | Visual vertex projection, not a 3D FEM dynamics solver; later GPU functions are tested separately | `TyreDeformation.h`, `TyreSurfaceDevice.slang` |
+| XPBD soft-body lattice | The earlier checkout lacked the source; the restored full VehicleHMI demo has a 160-particle XPBD-labelled projection | The historical 84-particle lattice is a distinct model; the later 160-particle port is [tested separately](TyreProjectionDevice.md) | `TyreCarcassLattice.{h,cpp}`, `TyreContinuum.{h,cpp}` |
 | Collisions | `JoltWorld.js` (Jolt WASM loose bodies + chassis proxy) | same architecture on Jolt C++ 5.2.0 | exhibit `Code/JoltScene.cpp` |
 
 Stated deviations of the vehicle port: the driving surface is a caller height function (flat here) instead of the demo's

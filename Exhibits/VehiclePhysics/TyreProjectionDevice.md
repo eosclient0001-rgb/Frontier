@@ -79,13 +79,15 @@ Pinned beads remained exactly at rest; repeated commands in different invocation
 bytes; the zero-load tyre stayed static, and the largest loaded displacement was `0.07385 m`. The harness
 also exercised valid reset, invalid GPU commands, an undersized particle binding, CPU input guards, zero
 count and dispatch-limit rejection. The pre-existing CPU test covered both demo XPBD and Hex8 (16/16
-checks); only **XPBD** was advanced on Vulkan here. Error thresholds are finite acceptance tolerances, not
-bitwise CPU/GPU parity, and the approximately `0.1 mm` maximum has not been attributed to a specific cause.
+checks); only **XPBD** was advanced in this Vulkan fixture. A later [separate Hex8 GPU investigation](TyreSolidDevice.md)
+adds its own solid execution. Error thresholds are finite acceptance tolerances, not bitwise CPU/GPU parity,
+and the approximately `0.1 mm` maximum has not been attributed to a specific cause.
 
 ## Boundaries
 
 No physical-GPU/Windows test, performance measurement, long-duration stability or measured tyre validation
 is provided. The previously documented free-running hard-drop convergence failure remains unresolved.
-Hex8, continuum shell, spring-contact dynamics, an actual graphics pipeline consuming these GPU particles and
-editor integration are still open. Results here compare a simulation to the demo/Engine implementation, not to
+The separate [Hex8 implementation](TyreSolidDevice.md) remains similarly isolated. GPU continuum shell,
+spring-contact dynamics, an actual graphics pipeline consuming these GPU particles and editor integration are
+still open. Results here compare a simulation to the demo/Engine implementation, not to
 independent physical data.

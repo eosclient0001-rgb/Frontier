@@ -4,6 +4,18 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Standalone GPU Hex8 tyre — 2026-10-28
+
+- Ported the demo's 128-cell solid and checked cell/result footprints to Engine Slang/C++; the existing Vulkan
+  recorder supplies exact counts. Reset/advance and the resident surface projection execute in bounded
+  SwiftShader tests; 42,240 particle snapshots match JavaScript within `0.000102 m` and 4,096 surface probes
+  match CPU projection within `5.97e-8 m`. Release and ASan/UBSan-host readback hashes match.
+- A separate 64-gradient GPU constitutive check matches numerical derivatives of the Neo-Hookean energy for
+  positive, unclamped Jacobians; identity and the tested rigid rotation have zero stress. This does not
+  validate clamped/inverted cells, full-wheel mechanics or measured tyres. No physical GPU, graphics mesh,
+  application/editor integration, GPU shell or spring-contact dynamics is claimed; vehicle/Jolt remain deferred.
+  [Contract and numerical evidence](../Exhibits/VehiclePhysics/TyreSolidDevice.md).
+
 ## GPU tyre invocation bound — 2026-10-28
 
 - Fixed a dispatch-boundary defect: workgroups have 32 lanes, so previously a count smaller than the bound
@@ -33,8 +45,9 @@ hardware RT, non-ray paths, reflections, PBR and the statistical limits of the r
   buffer, the XPBD advance feeds 24,576 surface probes without CPU re-upload; maximum position errors versus
   CPU are `9.70e-5 m` spring and `5.97e-8 m` continuum. A vertex-stage entry compiles but was not rendered.
 - This is a sequential-per-tyre, prescribed-target model and its force is not an integrated reaction. No
-  physical GPU, performance, measured-tyre, editor or mesh-renderer integration is claimed. GPU Hex8, shell,
-  spring-contact and long-duration stability remain open; vehicle/Jolt work remains explicitly deferred.
+  physical GPU, performance, measured-tyre, editor or mesh-renderer integration is claimed. A later entry above
+  adds a separate GPU Hex8 fixture; GPU shell, spring-contact and long-duration stability remain open.
+  Vehicle/Jolt work remains explicitly deferred.
   [ABI, commands and evidence](../Exhibits/VehiclePhysics/TyreProjectionDevice.md).
 
 ## Rigid GI rare-path audit — 2026-10-28
