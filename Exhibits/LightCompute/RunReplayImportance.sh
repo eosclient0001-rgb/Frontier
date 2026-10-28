@@ -58,7 +58,7 @@ mkdir -p "$(dirname "$RESULTS")"
     printf 'C++ compiler: '; "$COMPILER" --version 2>&1 | sed -n '1p'
     "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir,MaterialRayScattering}.slang \
-              Frontier/Engine/Rendering/{PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp,CMakeLists.txt} \
+              Frontier/Engine/Rendering/{LightComputeFootprint.h,PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp,PathReplayVulkan.h,PathReplayVulkan.cpp,CMakeLists.txt} \
               Engine/Render/Shader/ScatteringEvaluation.slang \
               Exhibits/LightCompute/Code/{LightComputeValidation.cpp,ReplayImportanceValidation.h,ReplayImportanceMotionValidation.h,ReplayImportanceParityValidation.h,ReplayRoomReference.h,RoughReplayValidation.h,RoughTextureReplayValidation.h,RoughTextureMotionValidation.h,ReplayTextureValidation.h,ReplayTextureMotionValidation.h}
     if [[ "$CHECK" == --replay-importance-parity ]]; then

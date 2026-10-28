@@ -51,8 +51,8 @@ done
     uname -srm
     "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir,MaterialRayScattering}.slang \
-        Frontier/Engine/Rendering/{PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp,RadiantFacetDistribution.h,RadiantFacetDistribution.cpp} \
-        Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayCapture.h,ReplayMotionValidation.h,ReplayTextureValidation.h,ReplayTextureMotionValidation.h,RoughTextureReplayValidation.h,ReplayFacetMixtureCapture.h,ReplayFacetMixtureMotionValidation.h,ReplayFacetMixtureMotionCapture.h} \
+        Frontier/Engine/Rendering/{LightComputeFootprint.h,PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp,PathReplayVulkan.h,PathReplayVulkan.cpp,RadiantFacetDistribution.h,RadiantFacetDistribution.cpp} \
+        Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayVulkanValidation.cpp,PathReplayCapture.h,ReplayMotionValidation.h,ReplayTextureValidation.h,ReplayTextureMotionValidation.h,RoughTextureReplayValidation.h,ReplayFacetMixtureCapture.h,ReplayFacetMixtureMotionValidation.h,ReplayFacetMixtureMotionCapture.h} \
         Exhibits/LightCompute/RunReplayFacetMixtureMotionCapture.sh
     if [[ "$CHECK" == --capture-replay-default-parity ]]; then
         "$BUILD/LightComputeValidation" "$DRIVER" "$BUILD" "$CHECK"

@@ -7,6 +7,7 @@
 #define VK_NO_PROTOTYPES
 #include "LightComputeFormat.h"
 #include "Engine/Rendering/PathReplayDomain.h"
+#include "Engine/Rendering/PathReplayVulkan.h"
 #include "Engine/Rendering/RadiantFacetDistribution.h"
 #include "Engine/Rendering/MediumRadiancePayload.h"
 #include "Engine/Rendering/SolarOpticsPayload.h"
@@ -84,14 +85,7 @@ struct BufferSpan
     void* Address = nullptr;
     size_t Size = 0;
 };
-struct alignas(16) ComputeExtent
-{
-    std::array<uint32_t, 4> Dimensions{};
-    std::array<float, 4> Minimum{-16, -16, -2, 0}, Maximum{16, 16, 10, 0};
-    std::array<uint32_t, 4> Grid{8, 8, 4, 0}, Sampling{1, 8, 0, 0};
-    std::array<uint32_t, 4> History{}, Reconstruction{}, Primary{};
-};
-static_assert(sizeof(ComputeExtent) == 128, "Push constant stride mismatch");
+using ComputeExtent = LightComputeFootprint;
 struct CanonicalUnposedFacet
 {
     int32_t Token = 0, Material = 0;
@@ -832,11 +826,15 @@ struct LightComputeSubmission
         Extent.Sampling = {Seed, 0, uint32_t(Scene.Visibility.Corners.size()), StackLimit};
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
         Extent.Reconstruction = {Temporal ? 1u : 0u, Spatial ? 1u : 0u, SourceCount, ReplayLastHistoryCap};
-        const uint32_t ReplayFlags = (RoughOpaque ? 64u : 0u) | (SampleFacets ? 128u : 0u) |
-                                     (DoubleCountForAudit ? 256u : 0u) | (StrictMotionForAudit ? 512u : 0u) |
-                                     (BalanceSampling ? 1024u : 0u) | (TexturedDiffuse ? 2048u : 0u) |
-                                     (ImportanceRough ? 4096u : 0u) | (PowerWeightedFacets ? 8192u : 0u) |
-                                     (UniformFacetMixture ? 16384u : 0u);
+        const uint32_t ReplayFlags = (RoughOpaque ? PathReplayRoughOpaque : 0u) |
+                                     (SampleFacets ? PathReplaySampleFacets : 0u) |
+                                     (DoubleCountForAudit ? PathReplayAuditDoubleCount : 0u) |
+                                     (StrictMotionForAudit ? PathReplayAuditStrictMotion : 0u) |
+                                     (BalanceSampling ? PathReplayBalanceSampling : 0u) |
+                                     (TexturedDiffuse ? PathReplayTexturedDiffuse : 0u) |
+                                     (ImportanceRough ? PathReplayImportanceRough : 0u) |
+                                     (PowerWeightedFacets ? PathReplayPowerWeightedFacets : 0u) |
+                                     (UniformFacetMixture ? PathReplayUniformFacetMixture : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -854,21 +852,37 @@ struct LightComputeSubmission
         Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
         CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &Barrier, 0, nullptr, 0, nullptr);
-        CmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
-        CmdPushConstants(Commands, PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Extent), &Extent);
-        auto Dispatch = [&](VkPipeline Pipeline)
+        if (!ProbeRegionForAudit && !TailForAudit)
         {
-            CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline);
-            CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
-            Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                               0, 1, &Barrier, 0, nullptr, 0, nullptr);
-        };
-        if (PrimaryVisibility) Dispatch(PrimaryPipeline);
-        if (ProbeRegionForAudit) Dispatch(ReplayProbeRegionPipeline);
-        Dispatch(ReplayGeneratePipeline);
-        Dispatch(ReplayResolvePipeline);
-        if (TailForAudit) Dispatch(ReplayTailAuditPipeline);
+            const PathReplayVulkanAccess Access{PipelineLayout, DescriptorSet, PrimaryPipeline, ReplayGeneratePipeline,
+                ReplayResolvePipeline, CmdBindPipeline, CmdBindDescriptorSets, CmdPushConstants, CmdDispatch,
+                CmdPipelineBarrier, Properties.limits.maxComputeWorkGroupCount[0], Properties.limits.maxPushConstantsSize};
+            const PathReplayVulkanBuffers Spans{Buffers[1].Size / sizeof(LightComputeReceiver),
+                Buffers[2].Size / sizeof(TriangleVisibilitySpace::FloatEnclosure), Buffers[3].Size / sizeof(LightComputeFacet),
+                Buffers[4].Size / sizeof(float), Buffers[6].Size / sizeof(std::array<float, 4>),
+                Buffers[7].Size / sizeof(uint32_t)};
+            RecordPathReplay(Commands, Access, Spans, Extent);
+        }
+        else
+        {
+            // 📝 Audit-only receiver masking/tail passes remain outside the production recorder.
+            CmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, PipelineLayout, 0, 1, &DescriptorSet, 0, nullptr);
+            CmdPushConstants(Commands, PipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Extent), &Extent);
+            auto Dispatch = [&](VkPipeline Pipeline)
+            {
+                CmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, Pipeline);
+                CmdDispatch(Commands, (Extent.Dimensions[0] + 63) / 64, 1, 1);
+                Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                   0, 1, &Barrier, 0, nullptr, 0, nullptr);
+            };
+            if (PrimaryVisibility) Dispatch(PrimaryPipeline);
+            if (ProbeRegionForAudit) Dispatch(ReplayProbeRegionPipeline);
+            Dispatch(ReplayGeneratePipeline);
+            Dispatch(ReplayResolvePipeline);
+            if (TailForAudit) Dispatch(ReplayTailAuditPipeline);
+        }
+        Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         Barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
         CmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                            0, 1, &Barrier, 0, nullptr, 0, nullptr);

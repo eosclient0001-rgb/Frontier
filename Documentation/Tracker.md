@@ -4,6 +4,18 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Caller-owned ReSTIR replay recording — 2026-10-28
+
+- Moved normal primary/generate/resolve Vulkan command ordering into `Frontier/Engine/Rendering`, with a shared
+  128-byte push ABI, descriptor-range/dispatch/uint-offset guards and internal compute dependencies. The exhibit
+  now consumes it; diagnostic-only probe/tail scheduling and all resource creation/submission remain exhibit-owned.
+- Recorder mocks, five Engine/exhibit CTests, ASan/UBSan-host checks and SwiftShader CPU-Vulkan moving-scene
+  readbacks pass. Fourteen release and sanitized PNGs match the pre-change scheduler byte-for-byte; camera, rigid
+  motion and blocker regressions pass. This is scheduling parity in bounded fixtures, not a physical-GPU or
+  performance result. [API, verification and limitations](../Exhibits/LightCompute/PathReplayEngine.md).
+- ReSTIR GI, dedicated reflection reconstruction, unified PBR and the editor viewport are **not complete**;
+  no hardware-RT path or non-ray-traced GI pipeline is established. Vehicle dynamics and Jolt remain deferred.
+
 ## Matched gas-pressure prototype — 2026-10-28
 
 - Added a separate Engine Slang face-flux pressure primitive with matching divergence, gradient and Laplacian.

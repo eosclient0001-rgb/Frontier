@@ -4,9 +4,11 @@
 
 **ReSTIR GI is not complete or connected to the editor.** The current repository has a bounded,
 SwiftShader-executed software-traced research path with temporal/spatial replay, dynamic-light and blocker
-fixtures and image readbacks. It does not have an accepted production scene/render loop, general dynamic and
-deforming-geometry reprojection, converged denoising or a tested physical GPU path. There is no defensible
-single completion percentage without defining and testing a full production acceptance checklist.
+fixtures and image readbacks. An [Engine command recorder](../LightCompute/PathReplayEngine.md) now schedules
+normal replay in that fixture; Vulkan resource creation and submission remain caller-owned. It does not have an
+accepted production scene/render loop, general dynamic and deforming-geometry reprojection, converged denoising
+or a tested physical GPU path. There is no defensible single completion percentage without defining and testing a
+full production acceptance checklist.
 
 Both inspected editor routes explicitly display a scene-canvas placeholder:
 `Frontier/Applications/Editor/FrontierMain.cpp` and `UI/Editor/EditorWorkspace.cpp`. An Engine source file,

@@ -33,6 +33,19 @@ else()
     target_compile_options(FrontierPathReplayDomain PRIVATE -Wall -Wextra -Werror)
 endif()
 
+# 📝 Optional caller-owned Vulkan path-replay recorder; pipelines, descriptors and queue remain external.
+if(FRONTIER_RENDERING_VULKAN_HEADERS)
+    add_library(FrontierPathReplayVulkan STATIC PathReplayVulkan.cpp)
+    target_compile_features(FrontierPathReplayVulkan PUBLIC cxx_std_17)
+    target_include_directories(FrontierPathReplayVulkan PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../.."
+        "${FRONTIER_RENDERING_VULKAN_HEADERS}")
+    if(MSVC)
+        target_compile_options(FrontierPathReplayVulkan PRIVATE /utf-8 /W4)
+    else()
+        target_compile_options(FrontierPathReplayVulkan PRIVATE -Wall -Wextra -Werror)
+    endif()
+endif()
+
 # 📝 Matched face-flux gas projection parameters; shader submission and advection remain separate.
 add_library(FrontierGasProjectionFootprint INTERFACE)
 target_compile_features(FrontierGasProjectionFootprint INTERFACE cxx_std_17)

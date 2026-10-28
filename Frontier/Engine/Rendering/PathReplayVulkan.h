@@ -1,0 +1,60 @@
+/*==========================================================================================================================================
+                                                     PATHREPLAYVULKAN.H
+==========================================================================================================================================*/
+// 🧩 Record bounded software-traced replay passes into a caller-owned Vulkan command buffer.
+#pragma once
+
+#include "LightComputeFootprint.h"
+#include <cstdint>
+#include <limits>
+#include <vulkan/vulkan.h>
+
+namespace Frontier
+{
+// 📝 Flags occupy LightComputeFootprint::Primary[3]. The two audit flags are diagnostic controls, not quality modes.
+inline constexpr std::uint32_t PathReplayRoughOpaque = 64u, PathReplaySampleFacets = 128u,
+    PathReplayAuditDoubleCount = 256u, PathReplayAuditStrictMotion = 512u, PathReplayBalanceSampling = 1024u,
+    PathReplayTexturedDiffuse = 2048u, PathReplayImportanceRough = 4096u, PathReplayPowerWeightedFacets = 8192u,
+    PathReplayUniformFacetMixture = 16384u;
+
+inline constexpr std::uint32_t PathReplayCounterWords = 23;
+inline constexpr std::uint32_t PathReplayCameraFloats = 48;
+inline constexpr std::uint64_t PathReplayFixedOutputRecords = 15425;
+inline constexpr std::uint32_t PathReplayMaxReceivers =
+    static_cast<std::uint32_t>((std::numeric_limits<std::uint32_t>::max() - (PathReplayFixedOutputRecords - 1u)) / 30u);
+// 📝 Counts float4 records, not bytes; the recorder separately rejects counts that overflow shader uint indexing.
+constexpr std::uint64_t PathReplayRequiredOutputRecords(std::uint32_t Receivers) noexcept
+{
+    return std::uint64_t(Receivers) * 30u + PathReplayFixedOutputRecords;
+}
+
+struct PathReplayVulkanAccess
+{
+    VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSet Descriptors = VK_NULL_HANDLE;
+    VkPipeline Primary = VK_NULL_HANDLE, Generate = VK_NULL_HANDLE, Resolve = VK_NULL_HANDLE;
+    PFN_vkCmdBindPipeline BindPipeline = nullptr;
+    PFN_vkCmdBindDescriptorSets BindDescriptors = nullptr;
+    PFN_vkCmdPushConstants PushConstants = nullptr;
+    PFN_vkCmdDispatch Dispatch = nullptr;
+    PFN_vkCmdPipelineBarrier PipelineBarrier = nullptr;
+    std::uint32_t MaxGroupCountX = 0, MaxPushConstantBytes = 0;
+};
+
+// 📝 Counts describe the descriptor ranges, not merely the sizes of the underlying allocations.
+struct PathReplayVulkanBuffers
+{
+    std::uint64_t ReceiverRecords = 0, EnclosureRecords = 0, FacetRecords = 0;
+    std::uint64_t AngleFloats = 0, OutputColourRecords = 0, CounterWords = 0;
+};
+
+// 📝 Records optional primary visibility, replay generation and resolve with compute-to-compute barriers.
+//    Bindings 0–7 must match LightInfluence.slang; the pipeline layout must expose a 128-byte compute push
+//    constant range at offset zero. The caller validates the scene and material atlas, keeps descriptor ranges
+//    and objects alive, and supplies all input/output barriers, queue ownership, submission and history lifecycle.
+//    In particular, this function does not allocate buffers, schedule a separate reflection pass, present frames
+//    or provide hardware RT. Its rough opaque replay paths can contain specular as well as diffuse transport.
+//    Invalid arguments throw before recording any command. The caller must not alias buffers in ways that race.
+void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Access,
+                      const PathReplayVulkanBuffers &Buffers, const LightComputeFootprint &Extent);
+} // namespace Frontier
