@@ -59,8 +59,9 @@ validate every pixel or this larger camera/object motion. Earlier moving-primary
 and the previous gallery are documented in [RoughTextureMotion.md](RoughTextureMotion.md) and
 [RoughTextureReplayCaptures.md](RoughTextureReplayCaptures.md). A later
 [moving-primary mixture test](ReplayFacetMixtureMotion.md) checks two probes in a smaller related
-scene with translated emissive triangles; it does not validate every pixel in this gallery. Preview
-filtering is not used by numerical tests.
+scene with translated emissive triangles; it does not validate every pixel in this gallery. Its
+[separate moving-light readbacks](ReplayFacetMixtureMotionCaptures.md) use the same scene changes at
+another resolution. Preview filtering is not used by numerical tests.
 
 ## Reproduce
 

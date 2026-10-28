@@ -76,9 +76,10 @@ channels, source hashes and primary-guide statistics are in the
 
 This bounded opaque room and two radiance probes do not establish general unbiasedness, independent
 shader random streams, complete occlusion coverage, deforming-mesh reprojection, editor integration,
-physical-GPU performance or completed ReSTIR GI. The previously captured mixture gallery shows a
-related but different scene; it did not translate the radiant triangles:
-[existing readbacks](ReplayFacetMixtureCaptures.md).
+physical-GPU performance or completed ReSTIR GI. The [moving-light gallery](ReplayFacetMixtureMotionCaptures.md)
+shows the same scene changes at another resolution and with different seeds; the numerical probes do
+not validate every gallery pixel. The [older mixture gallery](ReplayFacetMixtureCaptures.md) uses
+larger camera/object motion but did not translate the radiant triangles.
 
 ```sh
 # Structural smoke test only

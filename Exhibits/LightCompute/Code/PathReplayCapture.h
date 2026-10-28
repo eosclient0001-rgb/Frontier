@@ -86,7 +86,7 @@ ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const
                                            bool SampleFacets = false, const LightComputeArchive* Following = nullptr,
                                            bool BalanceSampling = false, bool TexturedDiffuse = false,
                                            bool CaptureFirst = false, bool RoughOpaque = false,
-                                           bool UniformFacetMixture = false)
+                                           bool UniformFacetMixture = false, bool ImportanceRough = false)
 {
     Require(Frames >= 2 && (!Following || (Following->Width == Scene.Width && Following->Height == Scene.Height &&
                 Following->Receivers.size() == Scene.Receivers.size())), "Invalid replay capture sequence extent");
@@ -99,7 +99,8 @@ ReplayCaptureResult CaptureReplaySequence(LightComputeSubmission& Compute, const
         const auto Pixels = Compute.ExecuteReplay(FrameScene, Hits, FirstSeed + Frame * 7919u, true, true,
                                                    Reset && Frame == 0, {.025f,.025f,.025f}, .01f, true,
                                                    false, RoughOpaque, SampleFacets, false, false, 64, BalanceSampling,
-                                                   TexturedDiffuse, false, UniformFacetMixture, UniformFacetMixture);
+                                                   TexturedDiffuse, ImportanceRough, UniformFacetMixture,
+                                                   UniformFacetMixture);
         const auto Counters = Compute.ExtendedStatistics();
         if (Frame == 0)
         {

@@ -11,9 +11,11 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   Full release and ASan/UBSan host runs pass; shaders and the external driver are not sanitizer-instrumented.
 - The mixture/uniform fresh batch-SD ratio is `0.671–0.799` across floor channels, but `1.515` in object green.
   These two-probe measurements do not establish universal variance improvement or general unbiasedness.
-  Physical-GPU/editor integration and general deforming-motion coverage remain open; the pre-existing
-  rendered gallery depicts a related scene without translated sources.
-  [Fixture, uncertainties, results and reproduction](../Exhibits/LightCompute/ReplayFacetMixtureMotion.md).
+  Physical-GPU/editor integration and general deforming-motion coverage remain open. A 14-image SwiftShader
+  gallery now captures the translated sources; release/sanitized RGB hashes match, and the default capture
+  helper remains bit-identical for two submissions. These are not production or hardware renders.
+  [Fixture, uncertainties and results](../Exhibits/LightCompute/ReplayFacetMixtureMotion.md) ·
+  [moving-light readbacks](../Exhibits/LightCompute/ReplayFacetMixtureMotionCaptures.md).
 
 ## Exhibit ownership audit and lighting extraction — 2026-10-27
 
