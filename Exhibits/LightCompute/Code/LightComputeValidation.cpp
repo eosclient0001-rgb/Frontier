@@ -21,11 +21,13 @@
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
 #include <numeric>
 #include <random>
+#include <set>
 #include <vulkan/vulkan.h>
 #ifdef _WIN32
 #define NOMINMAX
@@ -252,6 +254,7 @@ struct LightComputeSubmission
     VkPipeline DiffuseGeneratePipeline = VK_NULL_HANDLE, DiffuseResolvePipeline = VK_NULL_HANDLE;
     VkPipeline RectangleGeneratePipeline = VK_NULL_HANDLE, RectangleResolvePipeline = VK_NULL_HANDLE;
     VkPipeline ReplayGeneratePipeline = VK_NULL_HANDLE, ReplayResolvePipeline = VK_NULL_HANDLE;
+    VkPipeline ReplayProbeRegionPipeline = VK_NULL_HANDLE;
     bool PendingOrdinaryHistoryReset = false;
     bool ReplayLastReset = true;
     uint32_t ReplayLastHistoryCap = 1, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
@@ -392,6 +395,7 @@ struct LightComputeSubmission
             for (auto Pipeline : HistoryPipelines)
                 if (Pipeline)
                     DestroyPipeline(Device, Pipeline, nullptr);
+            if (ReplayProbeRegionPipeline) DestroyPipeline(Device, ReplayProbeRegionPipeline, nullptr);
             if (ReplayResolvePipeline) DestroyPipeline(Device, ReplayResolvePipeline, nullptr);
             if (ReplayGeneratePipeline) DestroyPipeline(Device, ReplayGeneratePipeline, nullptr);
             if (RectangleResolvePipeline) DestroyPipeline(Device, RectangleResolvePipeline, nullptr);
@@ -609,6 +613,8 @@ struct LightComputeSubmission
         {
             ReplayGeneratePipeline = ConstructPipeline(Shaders + "/ReplayGenerate.spv");
             ReplayResolvePipeline = ConstructPipeline(Shaders + "/ReplayResolve.spv");
+            if (std::filesystem::exists(Shaders + "/ReplayProbeRegion.spv"))
+                ReplayProbeRegionPipeline = ConstructPipeline(Shaders + "/ReplayProbeRegion.spv");
         }
         if (RectangleOnly)
         {
@@ -776,8 +782,11 @@ struct LightComputeSubmission
                                                     bool StrictMotionForAudit = false, uint32_t StackLimit = 64,
                                                     bool BalanceSampling = false, bool TexturedDiffuse = false,
                                                     bool ImportanceRough = false, bool PowerWeightedFacets = false,
-                                                    bool UniformFacetMixture = false)
+                                                    bool UniformFacetMixture = false, bool ProbeRegionForAudit = false)
     {
+        Require(!ProbeRegionForAudit || (PrimaryVisibility && ReplayProbeRegionPipeline &&
+                                        Scene.Width == 64 && Scene.Height == 64),
+                "Replay probe-region audit requires its primary pipeline and 64x64 extent");
         Require(ReplayGeneratePipeline && ReplayResolvePipeline && (!PrimaryVisibility || PrimaryPipeline) &&
                     Scene.Width > 0 && Scene.Height > 0 && size_t(Scene.Width) * Scene.Height == Scene.Receivers.size() &&
                     Bounces > 0 && Bounces <= 8 && std::isfinite(PositiveFloor) && PositiveFloor >= 1e-4f &&
@@ -848,6 +857,7 @@ struct LightComputeSubmission
                                0, 1, &Barrier, 0, nullptr, 0, nullptr);
         };
         if (PrimaryVisibility) Dispatch(PrimaryPipeline);
+        if (ProbeRegionForAudit) Dispatch(ReplayProbeRegionPipeline);
         Dispatch(ReplayGeneratePipeline);
         Dispatch(ReplayResolvePipeline);
         Barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
@@ -1615,6 +1625,7 @@ void WriteImage(const std::string& Path, const std::vector<std::array<float, 4>>
 #include "ReplayFacetMixtureConvergenceValidation.h"
 #include "ReplayFacetMixtureCapture.h"
 #include "ReplayFacetMixtureMotionValidation.h"
+#include "ReplayFacetMixtureMotionRepeat.h"
 #include "ReplayFacetMixtureMotionCapture.h"
 #include "RoughTextureReplayCapture.h"
 #include "ReplayTextureMotionCapture.h"
@@ -1653,6 +1664,16 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--replay-facet-mixture-motion-smoke")
         {
             ValidateReplayFacetMixtureMotion(Arguments[1], Arguments[2], 12000, 8);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--replay-facet-mixture-motion-repeat")
+        {
+            ValidateReplayFacetMixtureMotionRepeat(Arguments[1], Arguments[2], Arguments[4]);
+            return 0;
+        }
+        if (Count == 5 && std::string(Arguments[3]) == "--replay-facet-mixture-motion-repeat-smoke")
+        {
+            ValidateReplayFacetMixtureMotionRepeat(Arguments[1], Arguments[2], Arguments[4], 2, 8, 12000);
             return 0;
         }
         if (Count == 5 && std::string(Arguments[3]) == "--replay-facet-mixture-parity")
