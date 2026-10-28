@@ -69,9 +69,10 @@ are sensitive to tails, and more samples do not guarantee a monotonically smalle
 observations motivate tracing rare paths and checking pseudorandom dependence rather than claiming a
 universal variance win, a demonstrated bias, or a cause for the earlier discrepancy. A later
 [rare-sample audit](ReplayRigidTailAudit.md) finds high replayed path values, rather than large final
-reservoir scales, in the three largest uniform observations; it does not independently validate the
-paths or identify their bounce-level cause. Spatial modes also perform more work, so the ratios are not
-equal-cost speedups.
+reservoir scales, in the three largest uniform observations. A later mirrored bounce breakdown locates
+large contributions at zero-based bounce 2 on the same bright emissive triangle; because it shares shader
+helpers it does not independently validate those paths, PDFs/MIS, or PRNG behavior. Spatial modes also
+perform more work, so the ratios are not equal-cost speedups.
 
 [Full release log](Results/ReplayRigidVarianceRepeat-release.txt) ·
 [full sanitized-host log](Results/ReplayRigidVarianceRepeat-sanitized.txt) ·

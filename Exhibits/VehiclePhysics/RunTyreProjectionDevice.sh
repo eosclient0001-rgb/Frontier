@@ -30,8 +30,8 @@ export LD_LIBRARY_PATH="$TOOLS/SwiftShader${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     "$PYTHON" -c 'import numpy; print("numpy", numpy.__version__)'
     [[ "$(git hash-object Experimental/VehicleHmiReference/Source/TyreCarcassProjection.js)" == 8d2719e5c9959f88c7b8f4fda8c81d1cbd1ab26e ]]
     [[ "$(git hash-object Experimental/VehicleHmiReference/Source/TyreContinuumElasticity.js)" == 0d62f516175845d2b842b73ff9ff491419451208 ]]
-    sha256sum Frontier/Engine/Physics/{TyreContinuum.h,TyreContinuum.cpp,TyreProjectionDevice.h,TyreProjectionDevice.cpp,TyreProjectionVulkan.h,TyreProjectionVulkan.cpp,Shaders/TyreProjectionDevice.slang} \
-        Exhibits/VehiclePhysics/Code/{TyreContinuumReference.mjs,TyreProjectionDeviceReference.py,TyreProjectionVulkanValidation.cpp} \
+    sha256sum Frontier/Engine/Physics/{TyreContinuum.h,TyreContinuum.cpp,TyreSurfaceProjection.h,TyreProjectionDevice.h,TyreProjectionDevice.cpp,TyreProjectionVulkan.h,TyreProjectionVulkan.cpp,Shaders/TyreProjectionDevice.slang,Shaders/TyreProjectionRecords.slang,Shaders/TyreSurfaceDevice.slang} \
+        Exhibits/VehiclePhysics/Code/{TyreContinuumReference.mjs,TyreProjectionDeviceReference.py,TyreProjectionVulkanValidation.cpp,TyreSurfaceDeviceProbe.slang,TyreSurfaceVertexProbe.slang} \
         Experimental/VehicleHmiReference/Source/{TyreCarcassProjection.js,TyreContinuumElasticity.js}
     "$CMAKE" -S Exhibits/VehiclePhysics -B "$BUILD" -DFRONTIER_TYRE_DEVICE_VALIDATION=ON "${CMAKE_ARGS[@]}" >/dev/null
     "$CMAKE" --build "$BUILD" --parallel "${BUILD_JOBS:-2}" >/dev/null
@@ -46,12 +46,22 @@ export LD_LIBRARY_PATH="$TOOLS/SwiftShader${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
         exit 1
     fi
     printf 'TYRE_DEVICE_DEPENDENCIES vehicle_header=0 jolt_header=0\n'
+    git show 1ae0bd6:Frontier/Engine/Physics/Shaders/TyreProjectionDevice.slang > "$BUILD/PriorTyreProjection.slang"
     for ENTRY in ResetTyreProjection AdvanceTyreProjection; do
         "$SLANG" Frontier/Engine/Physics/Shaders/TyreProjectionDevice.slang -entry "$ENTRY" \
             -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$BUILD/$ENTRY.spv"
+        "$SLANG" "$BUILD/PriorTyreProjection.slang" -entry "$ENTRY" \
+            -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$BUILD/Prior$ENTRY.spv"
+        cmp "$BUILD/$ENTRY.spv" "$BUILD/Prior$ENTRY.spv"
     done
-    sha256sum "$BUILD/ResetTyreProjection.spv" "$BUILD/AdvanceTyreProjection.spv"
+    printf 'TYRE_PROJECTION_PRIOR_SPIRV exact=1 entries=2\n'
+    "$SLANG" Exhibits/VehiclePhysics/Code/TyreSurfaceDeviceProbe.slang -I Frontier/Engine/Physics/Shaders \
+        -entry CompareTyreSurface -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$BUILD/TyreSurface.spv"
+    "$SLANG" Exhibits/VehiclePhysics/Code/TyreSurfaceVertexProbe.slang -I Frontier/Engine/Physics/Shaders \
+        -entry CheckTyreVertex -target spirv -profile spirv_1_3 -emit-spirv-directly -O0 -o "$BUILD/TyreSurfaceVertex.spv"
+    printf 'TYRE_SURFACE_VERTEX_STAGE compile_only=1 graphics_execution=0\n'
+    sha256sum "$BUILD/ResetTyreProjection.spv" "$BUILD/AdvanceTyreProjection.spv" "$BUILD/TyreSurface.spv" "$BUILD/TyreSurfaceVertex.spv"
     "$PYTHON" Exhibits/VehiclePhysics/Code/TyreProjectionDeviceReference.py \
         "$BUILD/TyreProjectionVulkanValidation" "$BUILD/ResetTyreProjection.spv" \
-        "$BUILD/AdvanceTyreProjection.spv" "$BUILD/fixtures"
+        "$BUILD/AdvanceTyreProjection.spv" "$BUILD/TyreSurface.spv" "$BUILD/fixtures"
 } 2>&1 | tee "$RESULTS/TyreProjectionDevice-$LABEL.txt"

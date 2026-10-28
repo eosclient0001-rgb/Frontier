@@ -8,6 +8,9 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
   caller-owned Vulkan command recorder. Direct SPIR-V execution on SwiftShader CPU Vulkan matches 12 JS/CPU
   cases over 33 independent tyres × 8 steps within `9.95e-5 m` local and `9.69e-5 m` world; valid/invalid
   commands, reset, buffer and dispatch guards pass. Release and ASan/UBSan-host readbacks match exactly.
+- Reusable spring/continuum surface functions now read the GPU particle layout. In one direct Vulkan command
+  buffer, the XPBD advance feeds 24,576 surface probes without CPU re-upload; maximum position errors versus
+  CPU are `9.70e-5 m` spring and `5.97e-8 m` continuum. A vertex-stage entry compiles but was not rendered.
 - This is a sequential-per-tyre, prescribed-target model and its force is not an integrated reaction. No
   physical GPU, performance, measured-tyre, editor or mesh-renderer integration is claimed. GPU Hex8, shell,
   spring-contact and long-duration stability remain open; vehicle/Jolt work remains explicitly deferred.

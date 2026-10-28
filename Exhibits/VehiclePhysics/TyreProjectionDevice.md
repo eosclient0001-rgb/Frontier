@@ -10,11 +10,15 @@ is a fidelity-first implementation, not a claim of efficient parallel constraint
 `deflection * (25000 + 0.88 * pressure)` in newtons, **not** a reaction integrated from the particles.
 This is not a general XPBD solver, a tyre/road force model, or proof of real-world tyre behaviour.
 
-The Engine now owns a checked float32 ABI (`TyreProjectionDevice.{h,cpp}`) and an optional Vulkan command
-recorder (`TyreProjectionVulkan.{h,cpp}`). Buffers, descriptor sets, pipeline creation, barriers, queue
-submission and retirement are owned by the caller. There is **no editor, scene, mesh-renderer or production
-simulation-loop consumer yet**; the direct Vulkan validation host under Exhibits is the only consumer of
-the new recorder. No vehicle dynamics or Jolt code was changed.
+The Engine now owns a checked float32 ABI (`TyreProjectionDevice.{h,cpp}`), an optional Vulkan command
+recorder (`TyreProjectionVulkan.{h,cpp}`), and spring/continuum surface functions in
+`Shaders/TyreSurfaceDevice.slang`. In the direct Vulkan fixture the continuum function reads the very same
+GPU particle buffer just written by the simulation; a compute-to-compute barrier orders them in the same
+command buffer, with no particle readback/re-upload between the two dispatches. The reusable function also
+compiles in a vertex entry, but that entry has **not** been run as graphics or connected to an actual mesh.
+Buffers, descriptor sets, pipeline creation, barriers, queue submission and retirement are owned by the caller.
+There is **no editor, scene, mesh-renderer or production simulation-loop consumer yet**; the direct Vulkan
+validation host under Exhibits is the only consumer of the new recorder. No vehicle dynamics or Jolt code was changed.
 
 ## Contract
 
@@ -34,7 +38,8 @@ the new recorder. No vehicle dynamics or Jolt code was changed.
   physical ranges. The shader checks the corresponding already-clamped float32 values and reserved fields.
 - Dispatch uses groups of 32 and checks the caller-supplied device group limit. The caller is responsible for
   making command writes available before compute; ordering/reset-to-advance and particle visibility to later
-  compute/vertex consumers; and ensuring no in-flight submission uses replaced resources.
+  compute/vertex consumers (including the correct destination stage/access); and ensuring no in-flight submission
+  uses replaced resources. The surface functions expect finite mesh positions and normals supplied by the caller.
 
 ## Reproducible evidence
 
@@ -52,7 +57,18 @@ physical GPU. The native host is ASan/UBSan-instrumented in the second run; the 
 | Worst world position vs JS / CPU | `9.6809119e-5 m` / `9.68575478e-5 m` |
 | Worst prescribed force vs JS / CPU | `0.001953125 N` / `0.000921011 N` |
 | Position / force test limits | `3e-4 m` / `0.02 N` |
-| Release/sanitized readback SHA-256 | both `5217678ba7fa33e0bc094a9f1e8e6469471176d574ff5fd345ca4c3ab8ee4318` |
+| Release/sanitized simulation readback SHA-256 | both `5217678ba7fa33e0bc094a9f1e8e6469471176d574ff5fd345ca4c3ab8ee4318` |
+| Same-buffer surface fixture | 12 cases × 2,048 vertices; 6 spring, 6 continuum |
+| Spring surface max position / normal-component error vs CPU | `9.69171524e-5 m` / `5.72428107e-5` |
+| Continuum surface max position / normal-component error vs CPU | `5.96046448e-8 m` / `8.71326774e-5` |
+
+The surface fixture uses the final simulation state directly on the GPU and compares its readback against
+`TyreSurfaceProjection.h`, applying the CPU projection to that exact GPU-generated particle field. It covers
+unloaded and shredded tyres, non-tyre geometry and invalid tyre indices. The previous reset/advance SPIR-V
+is byte-identical after extracting shared record definitions. These tests exercise surface functions in a
+compute entry; the separate vertex entry was **compile-only**, not an executed or displayed graphics render.
+The older [standalone projection evidence](StandaloneTyreProjection.md) separately compares the CPU function
+with the retained demo WGSL.
 
 Pinned beads remained exactly at rest; repeated commands in different invocation slots produced identical
 bytes; the zero-load tyre stayed static, and the largest loaded displacement was `0.07385 m`. The harness
@@ -65,6 +81,6 @@ bitwise CPU/GPU parity, and the approximately `0.1 mm` maximum has not been attr
 
 No physical-GPU/Windows test, performance measurement, long-duration stability or measured tyre validation
 is provided. The previously documented free-running hard-drop convergence failure remains unresolved.
-Hex8, continuum shell, spring-contact dynamics, actual visual consumption of these GPU particles and editor
-integration are still open. Results here compare a simulation to the demo/Engine implementation, not to
+Hex8, continuum shell, spring-contact dynamics, an actual graphics pipeline consuming these GPU particles and
+editor integration are still open. Results here compare a simulation to the demo/Engine implementation, not to
 independent physical data.

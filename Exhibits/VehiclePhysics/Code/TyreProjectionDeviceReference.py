@@ -51,10 +51,10 @@ def ReadReference():
 
 
 def Main():
-    if len(sys.argv) != 5:
-        raise RuntimeError('Expected Vulkan probe, reset SPIR-V, advance SPIR-V, and scratch directory')
-    Probe, Reset, Advance = (Path(PathName).resolve() for PathName in sys.argv[1:4])
-    Scratch = Path(sys.argv[4]).resolve()
+    if len(sys.argv) != 6:
+        raise RuntimeError('Expected Vulkan probe, reset SPIR-V, advance SPIR-V, surface SPIR-V, and scratch directory')
+    Probe, Reset, Advance, Surface = (Path(PathName).resolve() for PathName in sys.argv[1:5])
+    Scratch = Path(sys.argv[5]).resolve()
     Scratch.mkdir(parents=True, exist_ok=True)
     Cases = ReadReference()
     Commands = np.zeros((StepCount, TyreCount), dtype=CommandType)
@@ -72,7 +72,7 @@ def Main():
         raise RuntimeError('Unexpected Python ABI size')
     Input, Output = Scratch / 'commands.bin', Scratch / 'readback.bin'
     Input.write_bytes(struct.pack('<II', TyreCount, StepCount) + Commands.tobytes())
-    subprocess.run([str(Probe), str(Reset), str(Advance), str(Input), str(Output)], cwd=Root, check=True)
+    subprocess.run([str(Probe), str(Reset), str(Advance), str(Surface), str(Input), str(Output)], cwd=Root, check=True)
     Data = Output.read_bytes()
     ParticleBytes = TyreCount * ParticleCount * ParticleType.itemsize
     ResultBytes = TyreCount * 16

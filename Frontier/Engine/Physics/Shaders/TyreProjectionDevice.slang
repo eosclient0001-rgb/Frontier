@@ -4,28 +4,7 @@
 // 🧩 The VehicleHMI 32 x 5 XPBD carcass, with one invocation per independent tyre.
 //    Sequential distance constraints deliberately preserve the demo's order; this is not a throughput claim.
 
-struct TyreProjectionCommand
-{
-    float4 Centre;
-    float4 Orientation;
-    float4 GroundNormalDeflection;
-    float4 PressureLateralSeconds;
-    uint4 IterationCounts;
-};
-
-struct TyreProjectionParticle
-{
-    float4 RestInverseMass;
-    float4 Local;
-    float4 Previous;
-    float4 Velocity;
-    float4 World;
-};
-
-struct TyreProjectionResult
-{
-    float4 ForceStatus;
-};
+#include "TyreProjectionRecords.slang"
 
 [[vk::binding(0, 0)]] StructuredBuffer<TyreProjectionCommand> Commands;
 [[vk::binding(1, 0)]] RWStructuredBuffer<TyreProjectionParticle> Particles;

@@ -6,6 +6,7 @@
 #include "Engine/Physics/TyreContinuum.h"
 #include "Engine/Physics/TyreProjectionDevice.h"
 #include "Engine/Physics/TyreProjectionVulkan.h"
+#include "Engine/Physics/TyreSurfaceProjection.h"
 
 #include <algorithm>
 #include <cmath>
@@ -32,6 +33,14 @@ struct Buffer
     void *Mapped = nullptr;
 };
 
+struct alignas(16) SurfaceProbe
+{
+    float Position[4]{}, Normal[4]{}, Deformation[4]{};
+    std::uint32_t Controls[4]{};
+};
+struct alignas(16) SurfaceResult { float Position[4]{}, Normal[4]{}; };
+static_assert(sizeof(SurfaceProbe) == 64 && sizeof(SurfaceResult) == 32);
+
 struct VulkanFixture
 {
     VkInstance Instance = VK_NULL_HANDLE;
@@ -43,12 +52,15 @@ struct VulkanFixture
     VkDescriptorSetLayout DescriptorLayout = VK_NULL_HANDLE;
     VkDescriptorPool DescriptorPool = VK_NULL_HANDLE;
     VkDescriptorSet Descriptors = VK_NULL_HANDLE;
+    VkDescriptorSet SurfaceDescriptors = VK_NULL_HANDLE;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
     VkPipeline ResetPipeline = VK_NULL_HANDLE;
     VkPipeline AdvancePipeline = VK_NULL_HANDLE;
+    VkPipeline SurfacePipeline = VK_NULL_HANDLE;
     VkCommandPool CommandPool = VK_NULL_HANDLE;
     VkCommandBuffer Commands = VK_NULL_HANDLE;
-    Buffer CommandBuffer, ParticleBuffer, ResultBuffer;
+    Buffer CommandBuffer, ParticleBuffer, ResultBuffer, SurfaceProbeBuffer, SurfaceResultBuffer;
+    std::uint32_t SurfaceCount = 0;
 
     ~VulkanFixture()
     {
@@ -56,10 +68,11 @@ struct VulkanFixture
         if (Device && CommandPool) vkDestroyCommandPool(Device, CommandPool, nullptr);
         if (Device && ResetPipeline) vkDestroyPipeline(Device, ResetPipeline, nullptr);
         if (Device && AdvancePipeline) vkDestroyPipeline(Device, AdvancePipeline, nullptr);
+        if (Device && SurfacePipeline) vkDestroyPipeline(Device, SurfacePipeline, nullptr);
         if (Device && PipelineLayout) vkDestroyPipelineLayout(Device, PipelineLayout, nullptr);
         if (Device && DescriptorPool) vkDestroyDescriptorPool(Device, DescriptorPool, nullptr);
         if (Device && DescriptorLayout) vkDestroyDescriptorSetLayout(Device, DescriptorLayout, nullptr);
-        for (Buffer *Item : {&CommandBuffer, &ParticleBuffer, &ResultBuffer})
+        for (Buffer *Item : {&CommandBuffer, &ParticleBuffer, &ResultBuffer, &SurfaceProbeBuffer, &SurfaceResultBuffer})
         {
             if (Device && Item->Mapped) vkUnmapMemory(Device, Item->Memory);
             if (Device && Item->Handle) vkDestroyBuffer(Device, Item->Handle, nullptr);
@@ -162,12 +175,16 @@ struct VulkanFixture
         return Pipeline;
     }
 
-    void InitializeResources(std::uint32_t Count, const char *ResetPath, const char *AdvancePath)
+    void InitializeResources(std::uint32_t Count, const char *ResetPath, const char *AdvancePath,
+                             const char *SurfacePath, std::uint32_t ProbeCount)
     {
         using namespace Frontier;
         InitializeBuffer(CommandBuffer, sizeof(TyreProjectionCommand) * Count);
         InitializeBuffer(ParticleBuffer, sizeof(TyreProjectionParticle) * TyreContinuumParticleCount * Count);
         InitializeBuffer(ResultBuffer, sizeof(TyreProjectionResult) * Count);
+        SurfaceCount = ProbeCount;
+        InitializeBuffer(SurfaceProbeBuffer, sizeof(SurfaceProbe) * ProbeCount);
+        InitializeBuffer(SurfaceResultBuffer, sizeof(SurfaceResult) * ProbeCount);
         VkDescriptorSetLayoutBinding Bindings[3]{};
         for (std::uint32_t I = 0; I < 3; ++I)
         {
@@ -184,33 +201,39 @@ struct VulkanFixture
         PipelineInfo.setLayoutCount = 1;
         PipelineInfo.pSetLayouts = &DescriptorLayout;
         Confirm(vkCreatePipelineLayout(Device, &PipelineInfo, nullptr, &PipelineLayout), "vkCreatePipelineLayout");
-        VkDescriptorPoolSize PoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
+        VkDescriptorPoolSize PoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 6};
         VkDescriptorPoolCreateInfo PoolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-        PoolInfo.maxSets = 1;
+        PoolInfo.maxSets = 2;
         PoolInfo.poolSizeCount = 1;
         PoolInfo.pPoolSizes = &PoolSize;
         Confirm(vkCreateDescriptorPool(Device, &PoolInfo, nullptr, &DescriptorPool), "vkCreateDescriptorPool");
+        VkDescriptorSetLayout Layouts[2] = {DescriptorLayout, DescriptorLayout};
+        VkDescriptorSet Sets[2]{};
         VkDescriptorSetAllocateInfo Allocate{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         Allocate.descriptorPool = DescriptorPool;
-        Allocate.descriptorSetCount = 1;
-        Allocate.pSetLayouts = &DescriptorLayout;
-        Confirm(vkAllocateDescriptorSets(Device, &Allocate, &Descriptors), "vkAllocateDescriptorSets");
-        VkDescriptorBufferInfo BufferInfo[3]{};
-        VkWriteDescriptorSet Writes[3]{};
-        const VkBuffer Handles[3] = {CommandBuffer.Handle, ParticleBuffer.Handle, ResultBuffer.Handle};
-        for (std::uint32_t I = 0; I < 3; ++I)
+        Allocate.descriptorSetCount = 2;
+        Allocate.pSetLayouts = Layouts;
+        Confirm(vkAllocateDescriptorSets(Device, &Allocate, Sets), "vkAllocateDescriptorSets");
+        Descriptors = Sets[0];
+        SurfaceDescriptors = Sets[1];
+        VkDescriptorBufferInfo BufferInfo[6]{};
+        VkWriteDescriptorSet Writes[6]{};
+        const VkBuffer Handles[6] = {CommandBuffer.Handle, ParticleBuffer.Handle, ResultBuffer.Handle,
+                                     ParticleBuffer.Handle, SurfaceProbeBuffer.Handle, SurfaceResultBuffer.Handle};
+        for (std::uint32_t I = 0; I < 6; ++I)
         {
             BufferInfo[I] = {Handles[I], 0, VK_WHOLE_SIZE};
             Writes[I].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            Writes[I].dstSet = Descriptors;
-            Writes[I].dstBinding = I;
+            Writes[I].dstSet = Sets[I / 3];
+            Writes[I].dstBinding = I % 3;
             Writes[I].descriptorCount = 1;
             Writes[I].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             Writes[I].pBufferInfo = &BufferInfo[I];
         }
-        vkUpdateDescriptorSets(Device, 3, Writes, 0, nullptr);
+        vkUpdateDescriptorSets(Device, 6, Writes, 0, nullptr);
         ResetPipeline = InitializePipeline(ResetPath);
         AdvancePipeline = InitializePipeline(AdvancePath);
+        SurfacePipeline = InitializePipeline(SurfacePath);
         VkCommandPoolCreateInfo Pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
         Pool.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         Pool.queueFamilyIndex = QueueFamily;
@@ -236,12 +259,23 @@ struct VulkanFixture
         return Access;
     }
 
-    void Execute(Frontier::TyreProjectionOperation Operation, std::uint32_t Count)
+    void Execute(Frontier::TyreProjectionOperation Operation, std::uint32_t Count, bool IncludeSurface = false)
     {
         VkCommandBufferBeginInfo Begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         Begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         Confirm(vkBeginCommandBuffer(Commands, &Begin), "vkBeginCommandBuffer");
         Frontier::RecordTyreProjection(Commands, QueryAccess(), Operation, Count);
+        if (IncludeSurface)
+        {
+            VkMemoryBarrier ParticleBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            ParticleBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            ParticleBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(Commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &ParticleBarrier, 0, nullptr, 0, nullptr);
+            vkCmdBindPipeline(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, SurfacePipeline);
+            vkCmdBindDescriptorSets(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, PipelineLayout, 0, 1, &SurfaceDescriptors, 0, nullptr);
+            vkCmdDispatch(Commands, SurfaceCount / 64 + (SurfaceCount % 64 != 0 ? 1 : 0), 1, 1);
+        }
         VkMemoryBarrier Barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
         Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         Barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
@@ -280,27 +314,141 @@ void CheckRejected(const Frontier::TyreContinuumInput &Input, double Seconds, st
     throw std::runtime_error("Invalid CPU-side command was accepted");
 }
 
+std::vector<SurfaceProbe> ConstructSurfaceProbes(std::uint32_t Tyres)
+{
+    constexpr int SamplesPerCase = 2048;
+    constexpr double Pi = 3.14159265358979323846;
+    struct SurfaceCase { float Angle, Deflection, Pressure, Shift; std::uint32_t Tyre, Model, Flags; };
+    const SurfaceCase Cases[] = {
+        {0.0f, 0.035f, 220000.0f, 0.02f, 0, 0, 1},
+        {0.5f, 0.060f, 0.0f, -0.04f, 0, 0, 1},
+        {-2.1f, 0.014f, 350000.0f, 0.01f, 0, 0, 1},
+        {0.0f, 0.000011f, 220000.0f, 0.0f, 0, 0, 1},
+        {1.2f, 0.0f, 220000.0f, 0.02f, 0, 0, 1},
+        {0.0f, 0.035f, 220000.0f, 0.02f, 0, 0, 3},
+        {0.0f, 0.072f, 350000.0f, 0.0f, 11, 1, 1},
+        {0.0f, 0.072f, 0.0f, 0.0f, 2, 1, 1},
+        {0.0f, 0.0f, 350000.0f, 0.0f, 11, 1, 1},
+        {0.0f, 0.072f, 350000.0f, 0.0f, 11, 1, 3},
+        {0.0f, 0.072f, 350000.0f, 0.0f, Tyres, 1, 1},
+        {0.0f, 0.072f, 350000.0f, 0.0f, 11, 1, 0}};
+    const double Radii[8] = {0.32, 0.3447, 0.345, 0.37, 0.40, 0.45, 0.49, 0.50855};
+    std::vector<SurfaceProbe> Probes;
+    Probes.reserve(sizeof(Cases) / sizeof(Cases[0]) * SamplesPerCase);
+    for (const auto &Case : Cases)
+        for (int I = 0; I < SamplesPerCase; ++I)
+        {
+            const double Angle = 2.0 * Pi * ((I + 0.371) / SamplesPerCase) - Pi;
+            const double Radius = Radii[I % 8];
+            const double Nx = std::cos(Angle), Ny = 0.15 * std::sin(3.0 * Angle), Nz = std::sin(Angle);
+            const double Magnitude = std::sqrt(Nx*Nx + Ny*Ny + Nz*Nz);
+            SurfaceProbe Probe;
+            Probe.Position[0] = static_cast<float>(Radius * std::cos(Angle));
+            Probe.Position[1] = static_cast<float>(-0.13 + 0.26 * ((I * 37) % SamplesPerCase) / (SamplesPerCase - 1));
+            Probe.Position[2] = static_cast<float>(Radius * std::sin(Angle));
+            Probe.Normal[0] = static_cast<float>(Nx / Magnitude);
+            Probe.Normal[1] = static_cast<float>(Ny / Magnitude);
+            Probe.Normal[2] = static_cast<float>(Nz / Magnitude);
+            Probe.Deformation[0] = Case.Angle;
+            Probe.Deformation[1] = Case.Deflection;
+            Probe.Deformation[2] = Case.Pressure;
+            Probe.Deformation[3] = Case.Shift;
+            Probe.Controls[0] = Case.Tyre;
+            Probe.Controls[1] = Case.Model;
+            Probe.Controls[2] = I % 13 == 0 ? 0 : Case.Flags;
+            Probes.push_back(Probe);
+        }
+    return Probes;
+}
+
+void ValidateSurface(const std::vector<SurfaceProbe> &Probes, const SurfaceResult *Actual,
+                     const Frontier::TyreProjectionParticle *Particles, std::uint32_t Tyres)
+{
+    using namespace Frontier;
+    std::vector<TyreContinuumPositions> Rest(Tyres), Local(Tyres);
+    for (std::uint32_t Tyre = 0; Tyre < Tyres; ++Tyre)
+        for (int N = 0; N < TyreContinuumParticleCount; ++N)
+            for (int Axis = 0; Axis < 3; ++Axis)
+            {
+                const auto &Particle = Particles[Tyre * TyreContinuumParticleCount + N];
+                Rest[Tyre][N*3+Axis] = Particle.RestInverseMass[Axis];
+                Local[Tyre][N*3+Axis] = Particle.Local[Axis];
+            }
+    double WorstPosition[2]{}, WorstNormal[2]{}, LargestDisplacement[2]{};
+    std::size_t Guarded = 0;
+    for (std::size_t I = 0; I < Probes.size(); ++I)
+    {
+        const auto &Probe = Probes[I];
+        const bool Surface = (Probe.Controls[2] & 1) != 0;
+        const bool Shredded = (Probe.Controls[2] & 2) != 0;
+        TyreDeformationRecord Deformation;
+        Deformation.ContactAngle = Probe.Deformation[0];
+        Deformation.Deflection = Probe.Deformation[1];
+        Deformation.GaugePressure = Probe.Deformation[2];
+        Deformation.LateralDistortion = Probe.Deformation[3];
+        Deformation.Shredded = Shredded;
+        float Position[3], Normal[3];
+        if (Probe.Controls[1] == 0)
+            ResolveDeformedWheelVertex(Deformation, Surface, Probe.Position, Probe.Normal, Position, Normal);
+        else if (Probe.Controls[0] < Tyres)
+            ResolveContinuumWheelVertex(Deformation, Surface, Rest[Probe.Controls[0]], Local[Probe.Controls[0]],
+                                       Probe.Position, Probe.Normal, Position, Normal);
+        else
+        {
+            for (int Axis = 0; Axis < 3; ++Axis) { Position[Axis] = Probe.Position[Axis]; Normal[Axis] = Probe.Normal[Axis]; }
+        }
+        const std::uint32_t Model = Probe.Controls[1];
+        for (int Axis = 0; Axis < 3; ++Axis)
+        {
+            if (!std::isfinite(Actual[I].Position[Axis]) || !std::isfinite(Actual[I].Normal[Axis]))
+                throw std::runtime_error("Nonfinite surface result");
+            WorstPosition[Model] = std::max(WorstPosition[Model], std::abs(double(Actual[I].Position[Axis]) - Position[Axis]));
+            WorstNormal[Model] = std::max(WorstNormal[Model], std::abs(double(Actual[I].Normal[Axis]) - Normal[Axis]));
+            if (Surface && !Shredded && Deformation.Deflection > 0.00001f && Probe.Controls[0] < Tyres)
+                LargestDisplacement[Model] = std::max(LargestDisplacement[Model],
+                                                       std::abs(double(Actual[I].Position[Axis]) - Probe.Position[Axis]));
+            if (!Surface || Deformation.Deflection <= 0.00001f || (Model == 1 && Probe.Controls[0] >= Tyres))
+            {
+                if (!Shredded && (Actual[I].Position[Axis] != Probe.Position[Axis] || Actual[I].Normal[Axis] != Probe.Normal[Axis]))
+                    throw std::runtime_error("Surface pass-through guard failed");
+                ++Guarded;
+            }
+            if (Surface && Shredded && Actual[I].Position[Axis] != 0.0f)
+                throw std::runtime_error("Shredded surface did not collapse");
+        }
+    }
+    std::printf("TYRE_SURFACE_DEVICE probes=%zu cases=12 gpu_resident_particles=1 same_command_buffer=1 guards=%zu "
+                "spring_position_m=%.9g spring_normal=%.9g continuum_position_m=%.9g continuum_normal=%.9g "
+                "spring_motion_m=%.9g continuum_motion_m=%.9g\n", Probes.size(), Guarded,
+                WorstPosition[0], WorstNormal[0], WorstPosition[1], WorstNormal[1], LargestDisplacement[0], LargestDisplacement[1]);
+    for (int Model = 0; Model < 2; ++Model)
+        if (WorstPosition[Model] > 0.0003 || WorstNormal[Model] > 0.0003 || LargestDisplacement[Model] < 0.005)
+            throw std::runtime_error("GPU surface differs from Engine CPU projection or was not deformed");
+}
+
 int Run(int Count, char **Arguments)
 {
     using namespace Frontier;
-    if (Count != 5) throw std::runtime_error("Expected reset.spv advance.spv commands.bin output.bin");
-    std::ifstream File(Arguments[3], std::ios::binary);
+    if (Count != 6) throw std::runtime_error("Expected reset.spv advance.spv surface.spv commands.bin output.bin");
+    std::ifstream File(Arguments[4], std::ios::binary);
     if (!File) throw std::runtime_error("Cannot read fixture commands");
     std::uint32_t Tyres = 0, Steps = 0;
     File.read(reinterpret_cast<char *>(&Tyres), 4);
     File.read(reinterpret_cast<char *>(&Steps), 4);
-    if (!File || Tyres == 0 || Tyres > 128 || Steps == 0 || Steps > 64)
+    if (!File || Tyres < 12 || Tyres > 128 || Steps == 0 || Steps > 64)
         throw std::runtime_error("Invalid fixture dimensions");
     std::vector<TyreProjectionCommand> All(static_cast<std::size_t>(Tyres) * Steps);
     if (!File.read(reinterpret_cast<char *>(All.data()), static_cast<std::streamsize>(All.size() * sizeof(All[0]))) ||
         File.peek() != std::char_traits<char>::eof())
         throw std::runtime_error("Invalid fixture command bytes");
-    std::ofstream Output(Arguments[4], std::ios::binary);
+    std::ofstream Output(Arguments[5], std::ios::binary);
     if (!Output) throw std::runtime_error("Cannot write fixture output");
+    const auto SurfaceProbes = ConstructSurfaceProbes(Tyres);
 
     VulkanFixture Device;
     Device.InitializeDevice();
-    Device.InitializeResources(Tyres, Arguments[1], Arguments[2]);
+    Device.InitializeResources(Tyres, Arguments[1], Arguments[2], Arguments[3], static_cast<std::uint32_t>(SurfaceProbes.size()));
+    std::memcpy(Device.SurfaceProbeBuffer.Mapped, SurfaceProbes.data(), SurfaceProbes.size() * sizeof(SurfaceProbes[0]));
     auto *MappedCommands = static_cast<TyreProjectionCommand *>(Device.CommandBuffer.Mapped);
     auto *Particles = static_cast<TyreProjectionParticle *>(Device.ParticleBuffer.Mapped);
     auto *Results = static_cast<TyreProjectionResult *>(Device.ResultBuffer.Mapped);
@@ -321,7 +469,7 @@ int Run(int Count, char **Arguments)
                 throw std::runtime_error("Fixture bytes differ from the Engine command ABI");
         }
         std::memcpy(MappedCommands, Commands, sizeof(Commands[0]) * Tyres);
-        Device.Execute(TyreProjectionOperation::Advance, Tyres);
+        Device.Execute(TyreProjectionOperation::Advance, Tyres, Step + 1 == Steps);
         for (std::uint32_t I = 0; I < Tyres; ++I)
         {
             const auto Input = Expand(Commands[I]);
@@ -354,6 +502,7 @@ int Run(int Count, char **Arguments)
                 Tyres, Steps, std::size_t(Tyres) * Steps * TyreContinuumParticleCount, WorstLocal, WorstWorld, WorstForce, Pinned);
     if (WorstLocal > 0.0003 || WorstWorld > 0.0003 || WorstForce > 0.02)
         throw std::runtime_error("GPU differs from CPU solver beyond tolerance");
+    ValidateSurface(SurfaceProbes, static_cast<const SurfaceResult *>(Device.SurfaceResultBuffer.Mapped), Particles, Tyres);
 
     // 📝 Failed shader commands must not mutate the first tyre's state.
     std::vector<TyreProjectionParticle> Saved(Particles, Particles + TyreContinuumParticleCount);
