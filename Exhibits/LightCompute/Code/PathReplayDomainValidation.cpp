@@ -12,6 +12,7 @@
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace
@@ -256,6 +257,105 @@ void ValidateEngineReplayHistory()
                 "in_place_atlas=1 audit=1 invalidation=1 camera_only=1 bvh_enclosure_corner=1 prior_projection=1 "
                 "motion_metadata=1 signed_zero_camera=1\n");
 }
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                             CHANGED SURFACE-TOKEN INTAKE
+//------------------------------------------------------------------------------------------------------------------------
+
+void ValidateEngineSeedSceneHistory()
+{
+    ReplayInputFixture Fixture;
+    for (float Token : {2.f, 3.f})
+    {
+        auto Facet = Fixture.Surfaces[0];
+        Facet.OpticalToken[3] = Token;
+        Fixture.Surfaces.push_back(Facet);
+        Fixture.Corners.push_back({Facet.A, Facet.B, Facet.C});
+    }
+    Fixture.Enclosures[0].Links[1] = 3;
+    Fixture.Camera[0] = {0, 0, 2, .01f};
+    Fixture.Camera[1] = {0, 0, -1, 10};
+    Fixture.Camera[2] = {1, 0, 0, .5f};
+    Fixture.Camera[3] = {0, 1, 0, .5f};
+    for (uint32_t I = 0; I < 4; ++I) Fixture.Camera[I + 4] = Fixture.Camera[I];
+    PathReplayHistorySpecification Specification;
+    Specification.BounceCount = 1;
+    Specification.PositiveFloor = .01f;
+    Specification.PrimaryVisibility = true;
+    Specification.SampleHistoryCandidates = true;
+    Specification.SceneSeedHistory = true;
+    PathReplayHistoryDomain History;
+    auto Decision = History.Resolve(Fixture.View(), Specification);
+    Require(!Decision.SeedSceneCompatible && Decision.MaximumHistory == 1, "First scene history was not reset");
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.SeedSceneCompatible && Decision.RejectedSurfaceTokens.empty() && Decision.MaximumHistory == 1,
+            "Unchanged scene was not eligible with capped history");
+    Fixture.Surfaces[1].A[0] += .1f;
+    Fixture.Corners[1].A = Fixture.Surfaces[1].A;
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.Changed && Decision.SeedSceneCompatible && Decision.RejectedSurfaceTokens == std::vector<float>{2.f},
+            "Moved surface token was not isolated");
+    std::swap(Fixture.Surfaces[0], Fixture.Surfaces[2]);
+    std::swap(Fixture.Corners[0], Fixture.Corners[2]);
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.Changed && Decision.SeedSceneCompatible && Decision.RejectedSurfaceTokens.empty(),
+            "Facet reordering incorrectly changed a token group");
+    Fixture.Surfaces.push_back(Fixture.Surfaces[1]);
+    Fixture.Corners.push_back(Fixture.Corners[1]);
+    ++Fixture.Enclosures[0].Links[1];
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.RejectedSurfaceTokens == std::vector<float>{2.f}, "Added facet did not reject its token group");
+    Fixture.Surfaces.pop_back();
+    Fixture.Corners.pop_back();
+    --Fixture.Enclosures[0].Links[1];
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.RejectedSurfaceTokens == std::vector<float>{2.f}, "Removed facet did not reject its token group");
+    Fixture.Surfaces[0].Emissive[0] = 4;
+    Fixture.Surfaces[2].AlbedoRoughness[0] = .7f;
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.RejectedSurfaceTokens == std::vector<float>({1.f, 3.f}),
+            "Material and source revisions were not sorted into the rejection list");
+    Fixture.Receivers[0].AlbedoIor[0] = .8f;
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(!Decision.SeedSceneCompatible, "Changed receiver intake retained scene history");
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.SeedSceneCompatible, "Scene history did not resume after receiver reset");
+    Fixture.MaterialAtlas.push_back(.3f);
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(!Decision.SeedSceneCompatible, "Changed material atlas retained scene history");
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.SeedSceneCompatible, "Scene history did not resume after atlas reset");
+    Fixture.Camera[4][0] = .25f;
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(!Decision.SeedSceneCompatible, "Wrong previous camera retained scene history");
+    Fixture.Camera[4] = Fixture.Camera[0];
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.SeedSceneCompatible, "Correct previous camera did not resume scene history");
+    Fixture.Camera[8][0] = 1;
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(!Decision.SeedSceneCompatible, "Changed motion metadata retained scene history");
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.SeedSceneCompatible, "Scene history did not resume after metadata reset");
+    auto Invalid = Specification;
+    Invalid.SampleHistoryCandidates = false;
+    Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Invalid); }) &&
+                Rejected([&] { (void)History.Resolve(Fixture.View(), Specification, true); }),
+            "Unsupported scene seed policy was accepted");
+    const float Token = Fixture.Surfaces[0].OpticalToken[3];
+    Fixture.Surfaces[0].OpticalToken[3] = std::numeric_limits<float>::quiet_NaN();
+    Require(Rejected([&] { (void)History.Resolve(Fixture.View(), Specification); }),
+            "Nonfinite surface token reached the classifier");
+    Fixture.Surfaces[0].OpticalToken[3] = Token;
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(Decision.SeedSceneCompatible && Decision.RejectedSurfaceTokens.empty(),
+            "Rejected classification changed the prior history snapshot");
+    Specification.PositiveFloor = .02f;
+    Decision = History.Resolve(Fixture.View(), Specification);
+    Require(!Decision.SeedSceneCompatible && Decision.MaximumHistory == 1,
+            "Sampling-policy change retained scene history");
+    std::printf("ENGINE_SEED_SCENE moved_token=1 reorder=1 group_add_remove=1 material_source=1 "
+                "receiver_atlas_reset=1 camera_metadata_reset=1 invalid_policy=1 invalid_token_atomic=1 cap=1\n");
+}
 } // namespace
 
 int main()
@@ -264,6 +364,7 @@ int main()
     {
         ValidateEngineReplayInput();
         ValidateEngineReplayHistory();
+        ValidateEngineSeedSceneHistory();
         std::printf("PASS engine replay inputs, guards and bounded history revisions\n");
         return 0;
     }

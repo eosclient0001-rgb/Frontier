@@ -256,8 +256,9 @@ struct LightComputeSubmission
     bool ReplayLastReset = true, ReplayLastReconstructionReset = true, ReplayReconstructionActive = false;
     bool ReplayLastSampleHistoryReset = true, ReplaySampleHistoryActive = false;
     bool ReplayPreviousTemporal = false, ReplayPreviousSpatial = false, ReplayPreviousDiffuseCamera = false;
-    bool ReplayPreviousSeedCandidates = false;
+    bool ReplayPreviousSeedCandidates = false, ReplayLastSeedSceneCompatible = false;
     uint32_t ReplayLastHistoryCap = 1, ReplayFacetStart = 0, ReplayFacetCapacity = 0;
+    uint32_t ReplayTokenStart = 0, ReplayTokenCapacity = 0, ReplayLastRejectedTokenCount = 0;
     PathReplayHistoryDomain ReplayHistoryDomain;
     RectangleDomain PreviousRectangle{};
     bool RectangleHistory = false, LastRectangleReset = true;
@@ -567,6 +568,14 @@ struct LightComputeSubmission
             ReplayFacetStart = uint32_t(ProfileSamples.size());
             ReplayFacetCapacity = uint32_t(1 + Scene.Surfaces.size() * 4);
             ProfileSamples.resize(ProfileSamples.size() + ReplayFacetCapacity);
+            if (HasSampleGather)
+            {
+                Require(ProfileSamples.size() <= UINT32_MAX && Scene.Surfaces.size() <= UINT32_MAX - ProfileSamples.size(),
+                        "Replay surface-token list exceeds addressable storage");
+                ReplayTokenStart = uint32_t(ProfileSamples.size());
+                ReplayTokenCapacity = uint32_t(Scene.Surfaces.size());
+                ProfileSamples.resize(ProfileSamples.size() + ReplayTokenCapacity);
+            }
         }
         ConstructBuffer(4, ProfileSamples);
         ConstructBuffer(5, nullptr, 256 * 17 * 4);
@@ -810,11 +819,14 @@ struct LightComputeSubmission
                                                     bool TailForAudit = false, bool ReconstructReplay = false,
                                                     uint32_t InitialCandidates = 1, bool ExplicitOneForAudit = false,
                                                     bool DiffuseCameraReprojection = false, bool SampleHistory = false,
-                                                    bool SampleHistoryCandidates = false)
+                                                    bool SampleHistoryCandidates = false, bool SceneSeedHistory = false)
     {
         Require(!DiffuseCameraReprojection || (ReconstructReplay && PrimaryVisibility && !RoughOpaque && !TexturedDiffuse),
                 "Diffuse camera reprojection requires reconstruction and untextured diffuse primary rays");
         Require(!SampleHistoryCandidates || SampleHistory, "Seed candidates require sample history");
+        Require(!SceneSeedHistory || (SampleHistoryCandidates && !FullHistoryForAudit &&
+                                      Scene.Surfaces.size() <= ReplayTokenCapacity),
+                "Scene seed history requires bounded candidate history and a prepared surface-token span");
         Require(!SampleHistory || (PrimaryVisibility && !RoughOpaque && !TexturedDiffuse && !ReconstructReplay &&
                     (SampleHistoryCandidates || (!Temporal && !Spatial)) && !DoubleCountForAudit &&
                     InitialCandidates == 1 && !ProbeRegionForAudit && !TailForAudit &&
@@ -855,29 +867,42 @@ struct LightComputeSubmission
                 "Replay facet-source distribution exceeds the prepared storage span");
         const PathReplayHistorySpecification ReplaySpecification{Bounces, PositiveFloor, Environment, PrimaryVisibility,
             RoughOpaque, SampleFacets, DoubleCountForAudit, StrictMotionForAudit, BalanceSampling, TexturedDiffuse,
-            ImportanceRough, PowerWeightedFacets, UniformFacetMixture, InitialCandidates, SampleHistoryCandidates};
+            ImportanceRough, PowerWeightedFacets, UniformFacetMixture, InitialCandidates, SampleHistoryCandidates,
+            SceneSeedHistory};
         // 📝 Reservoir replay can retain capped history across changes; radiance accumulation cannot.
         const auto ReplayDecision = ReplayHistoryDomain.Resolve(ReplayDomainView(Scene), ReplaySpecification,
                                                                 FullHistoryForAudit);
         ReplayLastHistoryCap = ReplayDecision.MaximumHistory;
-        bool Reset = ResetHistory || Scene.Width != ReceiverWidth || Scene.Height != ReceiverHeight;
+        bool Reset = ResetHistory || Scene.Width != ReceiverWidth || Scene.Height != ReceiverHeight ||
+                     (SceneSeedHistory && (!ReplayDecision.SeedSceneCompatible || ReplayPreviousTemporal != Temporal ||
+                                           ReplayPreviousSpatial != Spatial));
         Upload(Scene, TexturedDiffuse);
         if (!FacetSources.empty())
             std::memcpy(static_cast<float*>(Buffers[4].Address) + ReplayFacetStart,
                         FacetSources.data(), FacetSources.size() * sizeof(float));
+        if (SceneSeedHistory && !ReplayDecision.RejectedSurfaceTokens.empty())
+            std::memcpy(static_cast<float*>(Buffers[4].Address) + ReplayTokenStart,
+                        ReplayDecision.RejectedSurfaceTokens.data(), ReplayDecision.RejectedSurfaceTokens.size() * sizeof(float));
         ReplayLastReset = Reset || HistoryDirty;
         const bool CameraTransition = (DiffuseCameraReprojection || SampleHistory) && ReplayDecision.CameraOnly;
+        const bool SeedSceneTransition = SceneSeedHistory && ReplayDecision.SeedSceneCompatible;
         ReplayLastReconstructionReset = ReplayLastReset || (ReplayDecision.Changed && !CameraTransition) ||
                                         !ReplayReconstructionActive || ReplayPreviousTemporal != Temporal ||
                                         ReplayPreviousSpatial != Spatial ||
                                         ReplayPreviousDiffuseCamera != DiffuseCameraReprojection;
-        ReplayLastSampleHistoryReset = ReplayLastReset || (ReplayDecision.Changed && !CameraTransition) ||
+        ReplayLastSampleHistoryReset = ReplayLastReset ||
+                                       (ReplayDecision.Changed && !(CameraTransition || SeedSceneTransition)) ||
                                        !ReplaySampleHistoryActive || ReplayPreviousTemporal != Temporal ||
                                        ReplayPreviousSpatial != Spatial ||
                                        ReplayPreviousSeedCandidates != SampleHistoryCandidates;
         ComputeExtent Extent;
         Extent.Dimensions[0] = uint32_t(Scene.Receivers.size());
         Extent.Grid[3] = uint32_t(Scene.Visibility.Enclosures.size());
+        if (SceneSeedHistory)
+        {
+            Extent.Grid[0] = ReplayTokenStart;
+            Extent.Grid[1] = uint32_t(ReplayDecision.RejectedSurfaceTokens.size());
+        }
         Extent.Sampling = {Seed, InitialCandidates == 1 && !ExplicitOneForAudit ? 0u : InitialCandidates,
                            uint32_t(Scene.Visibility.Corners.size()), StackLimit};
         Extent.History = {Scene.Width, Scene.Height, ReplayLastReset ? 0u : HistorySequence, ReplayLastReset ? 1u : 0u};
@@ -897,7 +922,8 @@ struct LightComputeSubmission
                                           PathReplayDiffuseCameraReprojection : 0u) |
                                      (SampleHistory ? PathReplaySampleHistory : 0u) |
                                      (SampleHistory && ReplayLastSampleHistoryReset ? PathReplayResetSampleHistory : 0u) |
-                                     (SampleHistoryCandidates ? PathReplaySampleHistoryCandidates : 0u);
+                                     (SampleHistoryCandidates ? PathReplaySampleHistoryCandidates : 0u) |
+                                     (SceneSeedHistory ? PathReplaySceneSeedHistory : 0u);
         Extent.Primary = {PrimaryVisibility ? 1u : 0u, uint32_t(Scene.Angles.size()), Bounces, ReplayFlags};
         Extent.Minimum = {Environment[0], Environment[1], Environment[2], 0};
         Extent.Maximum = {PositiveFloor, 0, 0, 0};
@@ -968,6 +994,8 @@ struct LightComputeSubmission
         ReplayPreviousSpatial = Spatial;
         ReplayPreviousDiffuseCamera = DiffuseCameraReprojection;
         ReplayPreviousSeedCandidates = SampleHistoryCandidates;
+        ReplayLastSeedSceneCompatible = SceneSeedHistory && ReplayDecision.SeedSceneCompatible;
+        ReplayLastRejectedTokenCount = SceneSeedHistory ? uint32_t(ReplayDecision.RejectedSurfaceTokens.size()) : 0;
         return Result;
     }
     // One translating, unobstructed rectangular source; other geometry or changing emission is rejected/reset.
@@ -1759,6 +1787,11 @@ int main(int Count, char** Arguments)
         if (Count == 4 && std::string(Arguments[3]) == "--replay-seed-candidates")
         {
             ValidateReplaySeedCandidates(Arguments[1], Arguments[2]);
+            return 0;
+        }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-seed-scene")
+        {
+            ValidateReplaySeedSceneHistory(Arguments[1], Arguments[2]);
             return 0;
         }
         if (Count == 5 && std::string(Arguments[3]) == "--capture-replay-seed-candidates")

@@ -8,8 +8,9 @@ fixtures and image readbacks. An [Engine command recorder](../LightCompute/PathR
 normal replay and [bounded static colour reconstruction](../LightCompute/ReplayReconstruction.md) in that fixture;
 Vulkan resource creation and submission remain caller-owned. A newer
 [opt-in seed-candidate mode](../LightCompute/ReplaySeedCandidates.md) combines previously unselected seed
-retracing with bounded temporal/spatial reservoir replay; the original
-arithmetic-mean seed mode remains separate. This does not establish an accepted production scene/render loop,
+retracing with bounded temporal/spatial reservoir replay; a second opt-in bit keeps that history only for surface
+tokens whose facet groups are unchanged, so a moved blocker rejects one token instead of the whole frame. The
+original arithmetic-mean seed mode remains separate. This does not establish an accepted production scene/render loop,
 general dynamic/deforming-geometry reprojection, converged denoising or a tested physical GPU path. There is no
 defensible single completion percentage without defining and testing a full production acceptance checklist.
 

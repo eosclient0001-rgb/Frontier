@@ -73,6 +73,7 @@ struct PathReplayHistorySpecification
     bool UniformFacetMixture = false;
     uint32_t InitialCandidates = 1;
     bool SampleHistoryCandidates = false;
+    bool SceneSeedHistory = false;
     bool operator==(const PathReplayHistorySpecification&) const = default;
 };
 
@@ -81,10 +82,14 @@ struct PathReplayHistoryDecision
     bool Changed = true;
     uint32_t MaximumHistory = 1;
     bool CameraOnly = false;
+    bool SeedSceneCompatible = false;
+    std::vector<float> RejectedSurfaceTokens;
 };
 
 // 📝 Tracks exact input revisions, including in-place atlas and BVH changes. CameraOnly additionally requires
 //     the supplied previous camera to match the last resolved camera and unchanged non-camera metadata.
+//     Opt-in SceneSeedHistory classifies every changed current surface token and keeps the reservoir cap at one.
+//     The caller must supply the sorted rejection list and reset both histories when SeedSceneCompatible is false.
 //     This is a bounded heuristic, not a proof of unbiased adaptive reuse; it does not own GPU histories,
 //     validate submissions or issue renderer commands.
 class PathReplayHistoryDomain

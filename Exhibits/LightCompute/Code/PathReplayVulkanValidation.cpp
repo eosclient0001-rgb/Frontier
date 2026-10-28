@@ -215,6 +215,45 @@ int main()
         InvalidSeedCandidate = SeedCandidateExtent; InvalidSeedCandidate.Sampling[1] = 2;
         RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSeedCandidate); });
 
+        auto SceneSeedExtent = SeedCandidateExtent;
+        SceneSeedExtent.Primary[3] |= PathReplaySceneSeedHistory;
+        SceneSeedExtent.Sampling[2] = 2;
+        SceneSeedExtent.Grid = {48, 2, 0, 1};
+        SceneSeedExtent.Reconstruction[3] = 1;
+        auto SceneSeedBuffers = SampleBuffers;
+        SceneSeedBuffers.EnclosureRecords = 1;
+        SceneSeedBuffers.FacetRecords = 2;
+        SceneSeedBuffers.AngleFloats = 50;
+        Events.clear();
+        RecordPathReplay(Commands, SampleAccess, SceneSeedBuffers, SceneSeedExtent);
+        Require(Events.size() == WithSeedCandidates.size() && Pushed.Grid == SceneSeedExtent.Grid,
+                "Changed-token seed history altered the dispatch order or list extent");
+        auto InvalidSceneSeed = SceneSeedExtent;
+        InvalidSceneSeed.Primary[3] &= ~PathReplaySampleHistoryCandidates;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SceneSeedBuffers, InvalidSceneSeed); });
+        InvalidSceneSeed = SceneSeedExtent; InvalidSceneSeed.Reconstruction[3] = 2;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SceneSeedBuffers, InvalidSceneSeed); });
+        InvalidSceneSeed = SceneSeedExtent; InvalidSceneSeed.Grid[1] = 3;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SceneSeedBuffers, InvalidSceneSeed); });
+        InvalidSceneSeed = SceneSeedExtent; InvalidSceneSeed.Grid[0] = 49;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SceneSeedBuffers, InvalidSceneSeed); });
+        InvalidSceneSeed = SceneSeedExtent; InvalidSceneSeed.Grid[0] = 47;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SceneSeedBuffers, InvalidSceneSeed); });
+        InvalidSceneSeed = SceneSeedExtent; InvalidSceneSeed.Grid[0] = UINT32_MAX;
+        auto OverflowSceneBuffers = SceneSeedBuffers; OverflowSceneBuffers.AngleFloats = UINT64_MAX;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, OverflowSceneBuffers, InvalidSceneSeed); });
+        InvalidSceneSeed = SceneSeedExtent; InvalidSceneSeed.Primary[3] |= PathReplaySampleFacets;
+        InvalidSceneSeed.Reconstruction[2] = 2;
+        const std::uint32_t OverlappingSource = 49;
+        std::memcpy(&InvalidSceneSeed.Maximum[1], &OverlappingSource, sizeof(OverlappingSource));
+        OverflowSceneBuffers.AngleFloats = 52;
+        RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, OverflowSceneBuffers, InvalidSceneSeed); });
+        const std::uint32_t AdjacentSource = 50;
+        std::memcpy(&InvalidSceneSeed.Maximum[1], &AdjacentSource, sizeof(AdjacentSource));
+        Events.clear();
+        RecordPathReplay(Commands, SampleAccess, OverflowSceneBuffers, InvalidSceneSeed);
+        Require(!Events.empty(), "Adjacent surface-token and source spans were rejected");
+
         auto InvalidSample = SampleExtent;
         InvalidSample.Primary[0] = 0;
         RequireRejection([&] { RecordPathReplay(Commands, SampleAccess, SampleBuffers, InvalidSample); });
@@ -338,7 +377,8 @@ int main()
                     "invalid_before_recording=32 candidates_0_to_4=1 weighted_span=1 uint_index_limit=1 "
                     "secondary_camera=1 reconstruction_order_and_WAR=1 diffuse_camera_guards=1 "
                     "sample_history_order_and_WAR=1 sample_history_rejections=14 sample_uint_limit=1 "
-                    "seed_candidate_order_and_WAR=1 reuse_policies=4 seed_candidate_rejections=2\n");
+                    "seed_candidate_order_and_WAR=1 reuse_policies=4 seed_candidate_rejections=2 "
+                    "scene_seed_order=1 token_span_rejections=7 adjacent_spans=1\n");
         return 0;
     }
     catch (const std::exception &Error)

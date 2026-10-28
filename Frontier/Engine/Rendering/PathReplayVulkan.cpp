@@ -17,7 +17,7 @@ constexpr std::uint32_t ReplayFlags = PathReplayRoughOpaque | PathReplaySampleFa
     PathReplayAuditStrictMotion | PathReplayBalanceSampling | PathReplayTexturedDiffuse | PathReplayImportanceRough |
     PathReplayPowerWeightedFacets | PathReplayUniformFacetMixture | PathReplayReconstruct | PathReplayResetReconstruction |
     PathReplayDiffuseCameraReprojection | PathReplaySampleHistory | PathReplayResetSampleHistory |
-    PathReplaySampleHistoryCandidates;
+    PathReplaySampleHistoryCandidates | PathReplaySceneSeedHistory;
 
 void RequireReplay(bool Condition)
 {
@@ -37,6 +37,7 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
     const bool Reconstruct = (Flags & PathReplayReconstruct) != 0;
     const bool SampleHistory = (Flags & PathReplaySampleHistory) != 0;
     const bool SeedCandidates = (Flags & PathReplaySampleHistoryCandidates) != 0;
+    const bool SceneSeedHistory = (Flags & PathReplaySceneSeedHistory) != 0;
     RequireReplay(Commands != VK_NULL_HANDLE && Access.PipelineLayout != VK_NULL_HANDLE &&
         Access.Descriptors != VK_NULL_HANDLE && Access.Generate != VK_NULL_HANDLE && Access.Resolve != VK_NULL_HANDLE &&
         (!Primary || Access.Primary != VK_NULL_HANDLE) &&
@@ -57,6 +58,8 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
         (!(Flags & PathReplayDiffuseCameraReprojection) ||
             (Reconstruct && Primary && !(Flags & (PathReplayRoughOpaque | PathReplayTexturedDiffuse)))) &&
         (!(Flags & PathReplayResetSampleHistory) || SampleHistory) && (!SeedCandidates || SampleHistory) &&
+        (!SceneSeedHistory || (SeedCandidates && Extent.Reconstruction[3] == 1 &&
+                               Extent.Grid[1] <= Extent.Sampling[2])) &&
         (!SampleHistory || (Primary && !Reconstruct &&
             !(Flags & (PathReplayRoughOpaque | PathReplayTexturedDiffuse | PathReplayAuditDoubleCount)) &&
             Extent.Sampling[1] <= 1 &&
@@ -97,6 +100,21 @@ void RecordPathReplay(VkCommandBuffer Commands, const PathReplayVulkanAccess &Ac
                                                 : Extent.Reconstruction[2];
         const std::uint64_t SourceEnd = std::uint64_t(Offset) + Required;
         RequireReplay(SourceEnd <= Buffers.AngleFloats && SourceEnd <= ShaderAddressLimit);
+    }
+    if (SceneSeedHistory && Extent.Grid[1] != 0)
+    {
+        const std::uint64_t First = Extent.Grid[0], End = First + std::uint64_t(Extent.Grid[1]);
+        const std::uint64_t CameraFirst = Extent.Primary[1], CameraEnd = CameraFirst + PathReplayCameraFloats;
+        RequireReplay(End <= Buffers.AngleFloats && End <= ShaderAddressLimit &&
+                      (End <= CameraFirst || First >= CameraEnd));
+        if (Sources)
+        {
+            std::uint32_t SourceFirst = 0;
+            std::memcpy(&SourceFirst, &Extent.Maximum[1], sizeof(SourceFirst));
+            const std::uint64_t SourceEnd = std::uint64_t(SourceFirst) +
+                (Weighted ? 1u + std::uint64_t(Extent.Reconstruction[2]) * 4u : Extent.Reconstruction[2]);
+            RequireReplay(End <= SourceFirst || First >= SourceEnd);
+        }
     }
 
     Access.BindDescriptors(Commands, VK_PIPELINE_BIND_POINT_COMPUTE, Access.PipelineLayout, 0, 1,

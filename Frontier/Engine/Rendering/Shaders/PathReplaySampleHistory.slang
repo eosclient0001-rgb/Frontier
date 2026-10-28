@@ -18,6 +18,7 @@
     float4 First = 0, Second = 0;
     if ((Extent.Primary.w & 524288u) == 0 && Extent.History.w == 0 && Extent.History.z != 0 &&
         R.PositionHit.w != 0 && R.MotionPositionToken.w > 0 && R.MotionPixel.w != 0 &&
+        !ReplayHistoryTokenRejected(R.MotionPositionToken.w) &&
         all(R.PositionHit.xyz == R.MotionPositionToken.xyz) &&
         all(R.NormalRoughness.xyz == R.MotionNormal.xyz) && isfinite(R.MotionPixel.z) &&
         ReplayMotionConvertible(R.MotionPixel.xy))

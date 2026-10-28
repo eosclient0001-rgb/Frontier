@@ -14,6 +14,19 @@ uint ReplayFirstSeed(uint Pixel)
     uint Bits = Extent.Sampling.x ^ (Pixel * 747796405u + 2891336453u);
     return NextRandom(Bits);
 }
+// 📝 The caller supplies the sorted changed-token list after exact previous/current facet-group comparison.
+bool ReplayHistoryTokenRejected(float Token)
+{
+    if ((Extent.Primary.w & 2097152u) == 0 || Extent.Grid.y == 0) return false;
+    uint Low = 0, High = Extent.Grid.y;
+    while (Low < High)
+    {
+        uint Middle = Low + (High - Low) / 2;
+        if (Angles[Extent.Grid.x + Middle] < Token) Low = Middle + 1;
+        else High = Middle;
+    }
+    return Low < Extent.Grid.y && Angles[Extent.Grid.x + Low] == Token;
+}
 // 📝 Every half is an exactly representable uint16, avoiding float-to-uint conversion of corrupt history.
 bool ReplaySeedHalfValid(float Value)
 {
@@ -360,7 +373,7 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                                        dot(PriorNormal, MotionNormal) >= .9 * sqrt(PriorLength * MotionLength);
                 }
                 bool Compatible = Source.w > 0 && Source.z > 0 && Guide.w == R.MotionPositionToken.w &&
-                                  MatchingPosition;
+                                  MatchingPosition && !ReplayHistoryTokenRejected(R.MotionPositionToken.w);
                 if (Compatible)
                 {
                     uint Candidate = DecodeReplaySeed(Source.xy);

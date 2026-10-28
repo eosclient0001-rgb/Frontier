@@ -48,7 +48,7 @@ For this recorder, the push fields are:
 | `Dimensions` | `x = N` receivers; `y = 0` (analytic lights are not integrated); other components unused here |
 | `Minimum` | Nonnegative RGB uniform environment, each at most 256; `w` must be **bitwise** zero (no fog payload) |
 | `Maximum` | `x =` positive replay target floor in `[0.0001, 10]`; `y =` bit-cast `uint32_t` offset of the optional source table in `Angles`; `w` must be bitwise zero (no distance-field payload) |
-| `Grid` | `w =` enclosure count |
+| `Grid` | `w =` enclosure count. With `PathReplaySceneSeedHistory`, `x` is the float offset and `y` the count of a sorted, unique changed-token list in `Angles`; otherwise both are zero |
 | `Sampling` | `{seed, initial candidates, facet count, stack limit}`; initial candidates 1–4, legacy zero means one |
 | `Sampling.w` | Stack limit 1–64 |
 | `History` | `{width, height, sequence index, reset}` with `width × height = N`; the caller controls/reset-preserves the GPU histories |
@@ -80,7 +80,12 @@ transition and exact matching points; the recorder cannot certify that condition
 [seed-candidate mode](ReplaySeedCandidates.md) retraces unselected seed-bank entries as reservoir candidates,
 then permits bounded temporal/spatial reuse. Set `PathReplayHistorySpecification::SampleHistoryCandidates` to match
 that mode so changes cap old reservoir history; reset the sample bank on reuse-policy changes. Caller-owned resource,
-barrier, successful-submission and static-diffuse camera-domain requirements still apply.
+barrier, successful-submission and static-diffuse camera-domain requirements still apply. An additional opt-in
+[changed surface-token mode](ReplaySeedCandidates.md) keeps the one-candidate cap while permitting bounded scene
+revisions: `PathReplayHistoryDomain` returns the sorted, unique tokens whose complete facet groups changed, the
+caller uploads them, and both gather and temporal reuse reject those tokens while spatial reuse retraces current
+candidates. Changed receivers, a changed atlas, a mismatched previous camera or a policy change still requires a
+reset; `PathReplayHistoryDecision::SeedSceneCompatible` reports that decision.
 
 ## Verification
 

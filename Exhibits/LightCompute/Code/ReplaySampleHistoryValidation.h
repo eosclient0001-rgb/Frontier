@@ -46,12 +46,13 @@ std::vector<std::array<float,4>> ExecuteReplaySampleHistory(LightComputeSubmissi
     const LightComputeArchive& Scene, uint32_t Seed, bool Reset, bool History, uint32_t Bounces = 1,
     const std::array<float,3>& Environment = {0,0,0}, uint32_t Candidates = 1,
     bool Temporal = false, bool Spatial = false, bool Reconstruct = false, bool Rough = false,
-    bool Textured = false, bool Primary = true, bool SampleFacets = false, bool SeedCandidates = false)
+    bool Textured = false, bool Primary = true, bool SampleFacets = false, bool SeedCandidates = false,
+    bool SceneSeedHistory = false)
 {
     return Compute.ExecuteReplay(Scene, Bounces, Seed, Temporal, Spatial, Reset, Environment, .01f, Primary,
                                  false, Rough, SampleFacets, false, false, 64, false, Textured, false,
                                  false, false, false, false, Reconstruct, Candidates, false, false, History,
-                                 SeedCandidates);
+                                 SeedCandidates, SceneSeedHistory);
 }
 std::vector<std::array<float,4>> ExecuteReplaySampleFacets(LightComputeSubmission& Compute,
     const LightComputeArchive& Scene, uint32_t Seed, bool Reset, bool History, uint32_t Bounces,

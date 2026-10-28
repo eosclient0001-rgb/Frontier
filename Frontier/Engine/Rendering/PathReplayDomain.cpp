@@ -10,6 +10,7 @@
 #include <cstring>
 #include <map>
 #include <stdexcept>
+#include <utility>
 
 namespace Frontier
 {
@@ -66,6 +67,44 @@ void ValidateReplayDiffuseAtlas(const PathReplaySceneView& Scene, uint32_t Mater
         if (Size == 1) break;
         Size /= 2;
     }
+}
+
+// 📝 Compare complete token groups, independent of BVH facet order. A reused token is excluded if any facet,
+//     material, normal or radiance in that group differs, including additions and removals within the group.
+std::vector<float> IdentifyChangedSeedTokens(std::span<const PathReplayFacet> Previous,
+                                             std::span<const PathReplayFacet> Current)
+{
+    using FacetGroup = std::vector<const PathReplayFacet*>;
+    std::map<float, FacetGroup> PreviousGroups, CurrentGroups;
+    const auto Index = [](std::span<const PathReplayFacet> Facets, std::map<float, FacetGroup>& Groups)
+    {
+        for (const auto& Facet : Facets)
+        {
+            const float Token = Facet.OpticalToken[3];
+            Require(std::isfinite(Token) && Token > 0, "Seed history requires finite positive surface tokens");
+            Groups[Token].push_back(&Facet);
+        }
+        for (auto& Entry : Groups)
+            std::sort(Entry.second.begin(), Entry.second.end(), [](const auto* A, const auto* B)
+                { return std::memcmp(A, B, sizeof(PathReplayFacet)) < 0; });
+    };
+    Index(Previous, PreviousGroups);
+    Index(Current, CurrentGroups);
+    std::vector<float> Rejected;
+    for (const auto& Entry : CurrentGroups)
+    {
+        const auto Prior = PreviousGroups.find(Entry.first);
+        bool Changed = Prior == PreviousGroups.end() || Prior->second.size() != Entry.second.size();
+        if (!Changed)
+            for (size_t I = 0; I < Entry.second.size(); ++I)
+                if (std::memcmp(Prior->second[I], Entry.second[I], sizeof(PathReplayFacet)) != 0)
+                {
+                    Changed = true;
+                    break;
+                }
+        if (Changed) Rejected.push_back(Entry.first);
+    }
+    return Rejected;
 }
 } // namespace
 
@@ -290,6 +329,9 @@ PathReplayHistoryDecision PathReplayHistoryDomain::Resolve(const PathReplayScene
                 (Specification.PrimaryVisibility && !Specification.RoughOpaque && !Specification.TexturedDiffuse &&
                  Specification.InitialCandidates == 1),
             "Seed-candidate history requires one untextured diffuse primary candidate");
+    Require(!Specification.SceneSeedHistory ||
+                (Specification.SampleHistoryCandidates && !FullHistoryForAudit && Scene.AnalyticLightCount == 0),
+            "Scene seed history requires seed candidates, bounded history and no analytic lights");
     const bool SpecificationChanged = !PriorAvailable || PriorSpecification != Specification;
     const bool CameraChanged = !PriorAvailable ||
                                std::memcmp(Scene.Camera.data(), PriorCamera.data(),
@@ -316,6 +358,18 @@ PathReplayHistoryDecision PathReplayHistoryDomain::Resolve(const PathReplayScene
     const bool CameraOnly = PriorAvailable && CameraChanged && !SpecificationChanged && !SceneChanged &&
                             std::memcmp(Scene.Camera.data() + 4, PriorCamera.data(), 4 * sizeof(PriorCamera[0])) == 0 &&
                             std::memcmp(Scene.Camera.data() + 8, PriorCamera.data() + 8, 4 * sizeof(PriorCamera[0])) == 0;
+    const bool SameReceivers = PriorReceivers.size() == Scene.Receivers.size() &&
+        (Scene.Receivers.empty() || std::memcmp(PriorReceivers.data(), Scene.Receivers.data(), Scene.Receivers.size_bytes()) == 0);
+    const bool SameAtlas = PriorMaterialAtlas.size() == Scene.MaterialAtlas.size() &&
+        (Scene.MaterialAtlas.empty() || std::memcmp(PriorMaterialAtlas.data(), Scene.MaterialAtlas.data(),
+                                                    Scene.MaterialAtlas.size_bytes()) == 0);
+    const bool SeedSceneCompatible = Specification.SceneSeedHistory && PriorAvailable && !SpecificationChanged &&
+        SameReceivers && SameAtlas &&
+        std::memcmp(Scene.Camera.data() + 4, PriorCamera.data(), 4 * sizeof(PriorCamera[0])) == 0 &&
+        std::memcmp(Scene.Camera.data() + 8, PriorCamera.data() + 8, 4 * sizeof(PriorCamera[0])) == 0;
+    std::vector<float> RejectedSurfaceTokens;
+    if (SeedSceneCompatible && SceneChanged)
+        RejectedSurfaceTokens = IdentifyChangedSeedTokens(PriorSurfaces, Scene.Surfaces);
     // 📝 Construct all replacement snapshots before changing the retained domain, so allocation failures are atomic.
     std::vector<PathReplayFacet> CurrentSurfaces(Scene.Surfaces.size());
     std::vector<PathReplayReceiver> CurrentReceivers(Scene.Receivers.size());
@@ -336,7 +390,8 @@ PathReplayHistoryDecision PathReplayHistoryDomain::Resolve(const PathReplayScene
     PriorCorners.swap(CurrentCorners);
     PriorMaterialAtlas.swap(CurrentMaterialAtlas);
     PriorAvailable = true;
-    return {Changed, Changed && !FullHistoryForAudit ? 1u : 64u, CameraOnly};
+    const uint32_t MaximumHistory = Specification.SceneSeedHistory || (Changed && !FullHistoryForAudit) ? 1u : 64u;
+    return {Changed, MaximumHistory, CameraOnly, SeedSceneCompatible, std::move(RejectedSurfaceTokens)};
 }
 
 void PathReplayHistoryDomain::Invalidate() noexcept

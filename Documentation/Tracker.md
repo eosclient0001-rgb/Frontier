@@ -4,6 +4,30 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Changed surface-token seed history — 2026-10-28
+
+- Added a third opt-in replay bit, `PathReplaySceneSeedHistory`. `PathReplayHistoryDomain` now compares complete
+  facet groups by surface token, independent of facet order, and returns the sorted unique changed tokens with a
+  `SeedSceneCompatible` decision. The caller uploads that list through `Grid.x`/`Grid.y`; the recorder rejects
+  camera or source span overlap, excess counts, unsupported reuse policies and unsafe 32-bit ranges. Reservoir
+  history remains capped at one.
+- Gather and temporal reuse skip a changed token; spatial resolve still retraces each neighbour's current
+  candidate. Changed receivers, material atlas, previous camera, motion metadata or sampling policy still reset
+  both histories.
+- In a 32x32 SwiftShader fixture with a 0.1 blocker translation and 0.03125 camera shift, one token changed; 750
+  seed banks were retained, 198 changed-token pixels stayed fresh-only, 76 retained-token pixels had no bank, and
+  750 temporal with 3,968 spatial links were used. Every retained bank matched its reprojected donor exactly, a
+  second revision isolated its own token, and disabling the bit reset both histories.
+- Rejected groups are verified structurally (no gathered bank, one local candidate, fresh seed stored), not by a
+  per-pixel radiance oracle: near moving silhouettes SwiftShader direction rounding and the analytic rectangle
+  oracle disagree on a few edge samples.
+- Release and host ASan/UBSan runs pass 6/6 CTests with identical numerical rows, and all three captured PNGs are
+  byte-identical to the previous checkpoint. Prior-shader default-off parity passes with 20 readbacks, eight
+  histories and zero differing float bits across 655,360 components.
+  [Contract, tables and limits](../Exhibits/LightCompute/ReplaySeedCandidates.md).
+- Limits: single-bounce untextured fixture only. No quality, equal-time or general unbiasedness claim; arbitrary
+  deforming geometry, animated receivers, hardware RT, physical GPU, Windows and editor integration remain open.
+
 ## Seed candidates with temporal/spatial replay — 2026-10-28
 
 - Added an opt-in mode that retraces up to three previously unselected seeds as current-surface reservoir

@@ -18,7 +18,8 @@ inline constexpr std::uint32_t PathReplayRoughOpaque = 64u, PathReplaySampleFace
     PathReplayTexturedDiffuse = 2048u, PathReplayImportanceRough = 4096u, PathReplayPowerWeightedFacets = 8192u,
     PathReplayUniformFacetMixture = 16384u, PathReplayReconstruct = 32768u, PathReplayResetReconstruction = 65536u,
     PathReplayDiffuseCameraReprojection = 131072u, PathReplaySampleHistory = 262144u,
-    PathReplayResetSampleHistory = 524288u, PathReplaySampleHistoryCandidates = 1048576u;
+    PathReplayResetSampleHistory = 524288u, PathReplaySampleHistoryCandidates = 1048576u,
+    PathReplaySceneSeedHistory = 2097152u;
 
 inline constexpr std::uint32_t PathReplayCounterWords = 23, PathReplayReconstructionCounterWords = 24;
 inline constexpr std::uint32_t PathReplayCameraFloats = 48;
@@ -82,9 +83,13 @@ struct PathReplayVulkanBuffers
 //    temporal/spatial reservoir reuse. Every seed is retraced at the current surface; overlapping seed/reservoir
 //    histories may be correlated and incur extra path evaluations. Both modes exclude colour reconstruction.
 //    Reset sample history on first use, allocation or reuse-policy changes, and all scene revisions except a
-//    validated camera-only transition; never use this contract for animated scene reuse. The caller validates the
-//    same diffuse camera domain and previous projection as above and invalidates snapshots after failed submission.
-//    Neither mode establishes independence, general unbiasedness, a speedup or complete ReSTIR GI.
+//    validated camera-only transition. Opt-in PathReplaySceneSeedHistory also permits bounded scene revisions with
+//    untextured diffuse seed candidates: Grid[0] and Grid[1] identify a sorted, unique list of changed current
+//    surface tokens in the angle buffer. The list must come from PathReplayHistoryDomain; changed receiver tokens
+//    reject both seed and temporal history, while spatial reuse retraces current candidates. Reservoir cap is one.
+//    Reset both histories whenever SeedSceneCompatible is false; the caller validates the scene, projection and
+//    sorted-list contents, and invalidates snapshots after failed submission. General deforming-surface reuse is
+//    not supported. These modes establish neither independence, general unbiasedness, speedup nor complete GI.
 //    Bindings 0–7 must match LightInfluence.slang; the pipeline layout must expose a 128-byte compute push
 //    constant range at offset zero. The caller validates the scene and material atlas, keeps descriptor ranges
 //    and objects alive, and supplies all input/output barriers, queue ownership, submission and history lifecycle.

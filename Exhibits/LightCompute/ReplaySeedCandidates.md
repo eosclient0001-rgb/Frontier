@@ -9,7 +9,8 @@ physical-GPU performance result.
 ## Contract
 
 - **Enablement:** set both `PathReplaySampleHistory` and `PathReplaySampleHistoryCandidates`. The original
-  sample-history-only mode is unchanged and still excludes reservoir reuse.
+  sample-history-only mode is unchanged and still excludes reservoir reuse. The separate
+  `PathReplaySceneSeedHistory` bit adds changed-token filtering for bounded scene revisions (see below).
 - **Domain:** validated static, untextured, opaque diffuse scene; one fresh initial candidate; up to eight replay
   bounces. Primary visibility and the existing diffuse camera-domain validation are required.
 - **Revisions:** reset the seed bank on first use, reallocation, enabling/disabling, sampling/reuse-policy changes
@@ -17,8 +18,8 @@ physical-GPU performance result.
   `PathReplayHistorySpecification::SampleHistoryCandidates` to match the dispatch flag so a toggle also caps the
   reservoir's represented history. Reset/invalidate after failed submission.
 - **Reprojection:** the previous projection must identify the last completed camera. Position, token, normal and
-  seed-bank guards apply. Matching a token/position does not prove general disocclusion safety. Geometry, lighting
-  or material changes reset the seed bank.
+  seed-bank guards apply. Matching a token/position does not prove general disocclusion safety. Without the
+  opt-in scene mode below, any geometry, lighting or material revision resets the seed bank.
 - **Exclusions:** no colour reconstruction, rough/textured replay, audit double-counting, multiple fresh
   candidates, general deforming motion or concurrent reuse of the same history storage.
 - **Storage:** `PathReplayRequiredSampleHistoryOutputRecords(N)` float4 records, 24 counter words and the two
@@ -63,6 +64,41 @@ excluded. The oracle reads previous reservoir weights and mirrors the PRNG, so i
 not independent randomness. Corrupt-bank rejection, mode/policy changes, caps, moving-blocker reset and a paired
 forced-reset control also pass. When the emitter is turned off, the result is black and the seed bank resets;
 relighting resets it again.
+
+### Changed surface-token history
+
+`PathReplaySceneSeedHistory` is a second opt-in bit on top of the seed-candidate mode. Instead of resetting the whole
+bank when geometry changes, `PathReplayHistoryDomain` compares complete facet groups by surface token and returns a
+sorted, unique list of the tokens whose triangles, normals, materials or emissive radiance changed, were added or
+removed.
+Facet order inside a group is irrelevant. The caller uploads that list through `Grid.x`/`Grid.y` into the angle
+buffer; the recorder rejects lists that overlap the camera or source spans, exceed the facet count, use an
+unsupported reuse policy or exceed the 32-bit shader address range. Reservoir history stays capped at one.
+
+Gather and temporal reuse skip a changed token; spatial resolve still retraces each neighbour's current candidate at
+the current surface. Changed receivers, a changed material atlas, a mismatched previous camera, changed motion
+metadata or a sampling-policy change still clear `SeedSceneCompatible` and force a reset. The fixture below moves
+the blocker by `0.1` while the camera shifts by `0.03125`:
+
+| Observation | Value |
+| --- | ---: |
+| Changed tokens reported / rejected | `1` / token `2` |
+| Pixels retaining a seed bank | `750` |
+| Pixels on the changed token | `198` |
+| Changed-token pixels with one fresh candidate | `198` |
+| Unchanged-token pixels with a fresh-only reservoir | `76` |
+| Temporal histories accepted | `750` |
+| Spatial links used | `3,968` |
+
+Every retained bank matched its reprojected donor exactly, every changed-token pixel stored only its fresh draw and
+had a single-candidate local reservoir, and a second blocker revision isolated its own token instead of resetting.
+Disabling the bit on a scene revision resets both histories again.
+
+The checks for rejected groups are structural — no gathered bank, one local candidate, fresh seed stored — rather
+than a per-pixel radiance oracle: near the moving silhouette, SwiftShader direction rounding and the analytic
+rectangle oracle disagree on a handful of edge samples. This fixture is `32 × 32`, single-bounce and untextured; it
+does not establish quality, equal-time cost, arbitrary deforming geometry, animated receivers, or correct reuse for
+any token whose *unselected* seeds might later diverge.
 
 ### Four bounces
 
@@ -123,14 +159,20 @@ temporal histories and `32,414` spatial links. These are not production-editor i
 
 ## Regression checks
 
-Both release and host ASan/UBSan runs passed all six CTests and the new Vulkan checks. Their reported numerical
-rows and all three PNG byte streams matched. The original sample-history suite was run before and after the change:
-its numerical output and all four captured PNG byte streams matched exactly. The existing candidate suite passed,
-and its default-off comparison to checkpoint `b0cf5c9` yielded 20 matching readbacks, eight matching histories
-and zero differing float bits across 655,360 components. The strict camera-reconstruction suite also passed with
-numerical rows matching the latest prior regression and three PNGs identical to the recorded captures. Those
-comparisons cover the tested cases, not every possible material, scene or device.
+Both release and host ASan/UBSan runs passed all six CTests and every Vulkan check, including the changed-token
+fixture; their numerical rows matched and all three PNG byte streams were identical. Those three captures also
+hash identically to the previous checkpoint, so the added shader branch does not alter the default-off images.
+The whole candidate suite was re-run against the pre-change reservoir shader from `b0cf5c9`: 20 readbacks and
+eight histories matched with zero differing float bits across 655,360 components.
 
+Earlier regressions remain recorded: the original sample-history suite before and after this work matched its
+numerical output and all four PNGs, the existing candidate suite matched 20 readbacks with zero differing bits,
+and the strict camera-reconstruction suite matched its numerical rows and three recorded captures. Those
+comparisons cover the tested cases, not every material, scene or device.
+
+[Release](Results/ReplaySeedCandidates-release.txt) ·
+[Host sanitizer](Results/ReplaySeedCandidates-sanitized.txt) ·
+[Default-off shader parity](Results/ReplaySeedCandidates-default-off-parity.txt) ·
 [Original suite before](Results/ReplaySeedCandidates-original-before.txt) ·
 [Original suite after](Results/ReplaySeedCandidates-original-after.txt) ·
 [Existing reservoir and shader parity](Results/ReplaySeedCandidates-existing-replay.txt) ·
@@ -147,6 +189,9 @@ external Vulkan driver or generated shader code.
 CAPTURE=1 BUILD_JOBS=1 bash Exhibits/LightCompute/RunReplaySeedCandidates.sh
 SANITIZE=1 CAPTURE=1 BUILD_JOBS=1 bash Exhibits/LightCompute/RunReplaySeedCandidates.sh
 ```
+
+The changed-token fixture can be run alone with
+`LightComputeValidation <driver> <shader directory> --replay-seed-scene`.
 
 [Release results](Results/ReplaySeedCandidates-release.txt) ·
 [Host sanitizer results](Results/ReplaySeedCandidates-sanitized.txt) ·

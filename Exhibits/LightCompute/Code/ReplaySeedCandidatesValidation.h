@@ -19,10 +19,12 @@ std::vector<std::array<float, 4>> ExecuteReplaySeedCandidates(LightComputeSubmis
                                                                bool                        Reset,
                                                                uint32_t                    Bounces = 1,
                                                                const std::array<float, 3>& Environment = {0, 0, 0},
-                                                               bool                        SampleFacets = false)
+                                                               bool                        SampleFacets = false,
+                                                               bool                        SceneSeedHistory = false)
 {
     return ExecuteReplaySampleHistory(Compute, Scene, Seed, Reset, true, Bounces, Environment, 1,
-                                      Temporal, Spatial, false, false, false, true, SampleFacets, true);
+                                      Temporal, Spatial, false, false, false, true, SampleFacets, true,
+                                      SceneSeedHistory);
 }
 
 float ReplaySeedUnit(uint32_t& Bits)
@@ -472,6 +474,98 @@ void ValidateReplaySeedCandidateMultibounce(const char* Driver, const std::strin
 }
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                        CHANGED SURFACE-TOKEN HISTORY
+//------------------------------------------------------------------------------------------------------------------------
+
+void ValidateReplaySeedSceneHistory(const char* Driver, const std::string& Shaders)
+{
+    const auto Previous = ReplayCameraPlane(0, 0);
+    const auto Moved = ReplayCameraPlane(.03125f, 0, .1f);
+    LightComputeSubmission Compute(Driver);
+    Compute.Prepare(Previous, Shaders, false, false, false, false, true);
+    for (uint32_t Frame = 0; Frame < 3; ++Frame)
+        (void)ExecuteReplaySeedCandidates(Compute, Previous, 810001u + Frame * 7919u, true, true, Frame == 0,
+                                          1, {0,0,0}, false, true);
+    Require(Compute.ReplayLastSeedSceneCompatible && Compute.ReplayLastRejectedTokenCount == 0,
+            "Warm unchanged scene was not eligible for surface-token history");
+    const auto OldGuides = Compute.PrimaryReceivers();
+    std::vector<std::array<float, 4>> OldFirst, OldSecond;
+    for (uint32_t Pixel = 0; Pixel < OldGuides.size(); ++Pixel)
+    {
+        OldFirst.push_back(ReplaySampleSlot(Compute, 11, Pixel));
+        OldSecond.push_back(ReplaySampleSlot(Compute, 12, Pixel));
+    }
+    constexpr uint32_t FrameSeed = 830003;
+    (void)ExecuteReplaySeedCandidates(Compute, Moved, FrameSeed, true, true, false, 1, {0,0,0}, false, true);
+    const auto Guides = Compute.PrimaryReceivers();
+    const auto Counts = Compute.ExtendedStatistics();
+    Require(!Compute.ReplayLastSampleHistoryReset && Compute.ReplayLastSeedSceneCompatible &&
+                Compute.ReplayLastRejectedTokenCount == 1 && Compute.ReplayLastHistoryCap == 1,
+            "Moved blocker did not isolate one changed token while retaining compatible history");
+    uint32_t Retained = 0, Rejected = 0, Background = 0, Local = 0;
+    for (uint32_t Pixel = 0; Pixel < Guides.size(); ++Pixel)
+    {
+        const auto& R = Guides[Pixel];
+        const auto First = ReplaySampleSlot(Compute, 13, Pixel);
+        const auto Second = ReplaySampleSlot(Compute, 14, Pixel);
+        const uint32_t BankCount = uint32_t(Second[2]);
+        if (R.PositionHit[3] == 0 || R.MotionPositionToken[3] <= 0)
+        {
+            ++Background;
+            Require(BankCount == 0, "Background pixel gathered a seed bank");
+            continue;
+        }
+        const auto Stored = ReplaySampleSlot(Compute, 11, Pixel);
+        if (R.MotionPositionToken[3] == 2)
+        {
+            ++Rejected;
+            Require(BankCount == 0, "Changed surface token gathered previous seeds");
+            Require(ReplaySampleSlot(Compute, 2, Pixel)[3] == 1,
+                    "Changed surface token accepted temporal history into its local reservoir");
+            Require(ReplaySampleSeed(Stored[0], Stored[1]) == ReplayFreshSeed(FrameSeed, Pixel),
+                    "Changed surface token failed to store only its fresh draw");
+            continue;
+        }
+        Require(R.MotionPositionToken[3] == 1 || R.MotionPositionToken[3] == 3, "Unexpected retained surface token");
+        if (BankCount == 0)
+        {
+            Require(ReplaySampleSlot(Compute, 2, Pixel)[3] == 1 &&
+                        ReplaySampleSeed(Stored[0], Stored[1]) == ReplayFreshSeed(FrameSeed, Pixel),
+                    "Empty seed bank still contributed temporal history");
+            Require(ReplaySampleSlot(Compute, 3, Pixel)[3] > 0,
+                    "Fresh-only local reservoir has no stored target");
+            ++Local;
+            continue;
+        }
+        ++Retained;
+        const int32_t X = int32_t(std::floor(R.MotionPixel[0] + .5f));
+        const int32_t Y = int32_t(std::floor(R.MotionPixel[1] + .5f));
+        Require(X >= 0 && Y >= 0 && X < int32_t(Moved.Width) && Y < int32_t(Moved.Height),
+                "Retained seed bank lies outside the previous image");
+        const uint32_t Donor = uint32_t(Y) * Moved.Width + uint32_t(X);
+        Require(OldGuides[Donor].MotionPositionToken[3] == R.MotionPositionToken[3] &&
+                    First == OldFirst[Donor] && Second == OldSecond[Donor],
+                "Retained seed bank did not come from an unchanged surface group");
+    }
+    Require(Retained > 100 && Rejected > 5 && Local > 40 &&
+                Counts[23] == Retained && Counts[20] > 100 && Counts[22] > 100,
+            "Surface-token fixture did not exercise retained and rejected groups");
+    const auto Restored = ReplayCameraPlane(0, .03125f);
+    (void)ExecuteReplaySeedCandidates(Compute, Restored, FrameSeed + 1, true, true, false, 1, {0,0,0}, false, true);
+    Require(!Compute.ReplayLastSampleHistoryReset && Compute.ReplayLastSeedSceneCompatible &&
+                Compute.ReplayLastRejectedTokenCount == 1,
+            "Second blocker revision did not isolate its changed token");
+    (void)ExecuteReplaySeedCandidates(Compute, Moved, FrameSeed + 2, true, true, false, 1, {0,0,0}, false, false);
+    Require(Compute.ReplayLastSampleHistoryReset && Compute.ExtendedStatistics()[23] == 0 &&
+                !Compute.ReplayLastSeedSceneCompatible,
+            "Disabling surface-token history retained seeds across a scene revision");
+    std::printf("SEED_CANDIDATES_SCENE retained=%u rejected=%u background=%u fresh_only=%u temporal=%u "
+                "spatial=%u changed_tokens=1 gather_exact=1 revision_resume=1 toggle_reset=1\n",
+                Retained, Rejected, Background, Local, Counts[20], Counts[22]);
+    std::fflush(stdout);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                              ROOM READBACKS
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -534,6 +628,7 @@ void ValidateReplaySeedCandidates(const char* Driver, const std::string& Shaders
     ValidateReplaySeedCandidateGuards(Driver, Shaders);
     ValidateReplaySeedCandidateFacets(Driver, Shaders);
     ValidateReplaySeedCandidateMultibounce(Driver, Shaders);
+    ValidateReplaySeedSceneHistory(Driver, Shaders);
     std::printf("PASS bounded seed candidates with temporal/spatial replay and independent CPU checks\n");
 }
 } // namespace
