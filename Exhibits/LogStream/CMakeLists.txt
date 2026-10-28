@@ -36,7 +36,18 @@ target_link_libraries(LogStreamValidation PRIVATE FrontierEnginePortable)
 find_package(Threads REQUIRED)
 target_link_libraries(LogStreamValidation PRIVATE Threads::Threads)
 
-add_executable(Frontier ${FRONTIER_ROOT}/Applications/Editor/FrontierMain.cpp)
+add_executable(Frontier ${FRONTIER_ROOT}/Applications/Editor/FrontierMain.cpp
+    ${FRONTIER_ROOT}/Engine/Interface/SceneInspectorPanel.cpp
+    ${FRONTIER_ROOT}/Engine/Interface/SceneDirectoryPanel.cpp
+    ${FRONTIER_ROOT}/Engine/Scene/RecordStore.cpp
+    ${FRONTIER_ROOT}/Engine/Scene/RecordEntry.cpp
+    ${FRONTIER_ROOT}/Engine/Scene/SceneDirectory.cpp
+    ${FRONTIER_ROOT}/Engine/Scene/EnvironmentRecords.cpp
+    ${FRONTIER_ROOT}/Engine/Rendering/AtmosphereModel.cpp
+    ${FRONTIER_ROOT}/Engine/Rendering/CloudField.cpp
+    ${FRONTIER_ROOT}/Engine/Rendering/FogMedium.cpp
+    ${FRONTIER_ROOT}/Engine/Rendering/CelestialModel.cpp
+    ${FRONTIER_ROOT}/Engine/Rendering/ClusterNesting.cpp)
 target_link_libraries(Frontier PRIVATE FrontierEnginePortable)
 
 enable_testing()

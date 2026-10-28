@@ -1,7 +1,12 @@
 # Deferred scene inspection and render controls
 
-Status: **plan only**. Implement after the current ReSTIR GI work; do not change the existing editor for this plan now.
-Vehicle dynamics and Jolt remain deferred. This plan does not establish renderer or UI parity.
+Status: **partially implemented (2026-10-28)**. Steps 1–4 are implemented for the environment slice
+(Sun, atmosphere, clouds, fog, wind): editor-profile record descriptions, HTML outliner groups/counts,
+inspector host with pinned CSS metrics, session-owned records in `FrontierMain`. The retained scene
+frame is a host CPU render, not the viewport (step 6), and no ReSTIR/reflection controls (step 5),
+transforms/gizmos (step 7), ImGui runtime capture or Windows run exist yet. Vehicle dynamics and Jolt
+remain deferred. Evidence: `Exhibits/EnvironmentScene/README.md`. This plan does not establish
+renderer or UI parity.
 
 ## Verified starting point
 

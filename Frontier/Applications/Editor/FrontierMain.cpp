@@ -240,6 +240,8 @@ int RunBrowserListing(const std::filesystem::path& FromExecutable)
 #include "Engine/Interface/LogStreamPanelRegistration.h"
 #include "Engine/Interface/SceneDirectoryPanel.h"
 #include "Engine/Interface/SceneDirectoryPanelRegistration.h"
+#include "Engine/Interface/SceneInspectorPanel.h"
+#include "Engine/Scene/EnvironmentRecords.h"
 #include "Engine/Scene/SceneDirectory.h"
 #include "Engine/Scene/SceneRecord.h"
 #include "Engine/Interface/WindowsApplication.h"
@@ -272,6 +274,13 @@ struct WorkspaceSession
     PanelDockspace                     Panels;           // Viewport | (Outliner over Log Stream), columns 50/50
     LogStreamPanel                     LogPanel;
     SceneDirectoryPanel                OutlinerPanel;
+    // 📝 Ported environment records: construction registers them in the Outliner; in the editor
+    //    profile each also builds its own Inspector description (Sun/sky/clouds/fog/wind scene).
+    SunRecord                          Sun;
+    AtmosphereRecord                   Atmosphere;
+    CloudRecord                        Clouds;
+    FogRecord                          Fog;
+    WindRecord                         Wind;
     std::vector<std::unique_ptr<SceneRecord>> SpawnedRecords;   // Editor-spawned records live with the session
     std::string                        ProjectName;
     std::string                        ProjectLocation;  // [utf8]
@@ -384,6 +393,17 @@ int RunProjectWindow(const ProjectDescriptor& Descriptor, const std::filesystem:
         (void)Session.Panels.Register(ViewportPanel);
         (void)Session.Panels.Register(MakeLogStreamPanelSpecification(Session.LogPanel));
         (void)Session.Panels.Register(MakeSceneDirectoryPanelSpecification(Session.OutlinerPanel));
+        DockPanelSpecification InspectorPanel;
+        InspectorPanel.Key              = "Inspector";
+        InspectorPanel.Caption          = "Inspector";
+        InspectorPanel.ConstructContent = [&Session]() { ConstructSceneInspectorInterface(Session.OutlinerPanel); };
+        InspectorPanel.Open             = true;
+        (void)Session.Panels.Register(InspectorPanel);
+        (void)SceneDirectory::Instance().ConfigureName(Session.Sun.Token(), "Sun");
+        (void)SceneDirectory::Instance().ConfigureName(Session.Atmosphere.Token(), "Atmosphere");
+        (void)SceneDirectory::Instance().ConfigureName(Session.Clouds.Token(), "Clouds");
+        (void)SceneDirectory::Instance().ConfigureName(Session.Fog.Token(), "Fog");
+        (void)SceneDirectory::Instance().ConfigureName(Session.Wind.Token(), "Wind");
         Session.Panels.ConfigureWorkspaceInsets(79.0f, 0.0f);   // [px] - Top band for the notch tab (TextureStudio)
         Session.Panels.ConfigureTabExtent(140.0f, 26.0f);       // [px]
         // Outliner stacked over the Log Stream in the right column; columns stay 50/50.

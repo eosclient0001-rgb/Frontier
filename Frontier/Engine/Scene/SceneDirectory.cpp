@@ -12,6 +12,7 @@
 #include "Engine/Scene/RecordEntry.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace Frontier
 {
@@ -67,6 +68,32 @@ void SceneDirectory::Unregister(RecordToken Token)
         }
     }
 }
+
+
+#if defined(FRONTIER_EDITOR_PROFILE)
+void SceneDirectory::ConfigureEditorDescription(RecordToken Token, RecordEditorDescription Description)
+{
+    std::lock_guard<std::mutex> Guard(Mutex);
+    const auto                  It = Entries.find(Token.Value);
+    if (It == Entries.end())
+    {
+        return;   // Registration precedes description construction; an unknown token owns nothing.
+    }
+    It->second.EditorDescription    = std::move(Description);
+    It->second.HasEditorDescription = true;
+}
+
+const RecordEditorDescription* SceneDirectory::QueryEditorDescription(RecordToken Token) const
+{
+    std::lock_guard<std::mutex> Guard(Mutex);
+    const auto                  It = Entries.find(Token.Value);
+    if (It == Entries.end() || !It->second.HasEditorDescription)
+    {
+        return nullptr;
+    }
+    return &It->second.EditorDescription;
+}
+#endif
 
 bool SceneDirectory::ConfigureName(RecordToken Token, std::string Name)
 {

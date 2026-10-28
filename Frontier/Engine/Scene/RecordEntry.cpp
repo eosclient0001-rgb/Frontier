@@ -6,6 +6,8 @@
 #include "Engine/Scene/RecordStore.h"
 #include "Engine/Scene/SceneDirectory.h"
 
+#include <utility>
+
 namespace Frontier
 {
 
@@ -18,6 +20,13 @@ RecordEntry::RecordEntry(RecordClassification Classification)
     SceneDirectory::Instance().Register(*this);   // 📝 Outliner visibility only; Shipping contains no directory
 #endif
 }
+
+#if defined(FRONTIER_EDITOR_PROFILE)
+void RecordEntry::RegisterEditorDescription(RecordEditorDescription Description)
+{
+    SceneDirectory::Instance().ConfigureEditorDescription(IssuedToken, std::move(Description));
+}
+#endif
 
 RecordEntry::~RecordEntry()
 {

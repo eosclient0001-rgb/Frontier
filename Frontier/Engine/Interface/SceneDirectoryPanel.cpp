@@ -28,6 +28,18 @@ void AppendSubtree(const SceneDirectory& Directory, RecordToken Token, uint32_t 
     Row.Token          = Token;
     Row.Name           = Directory.QueryName(Token);
     Row.Classification = Directory.QueryClassification(Token);
+#if defined(FRONTIER_EDITOR_PROFILE)
+    if (const RecordEditorDescription* Description = Directory.QueryEditorDescription(Token))
+    {
+        Row.Group    = Description->Group;
+        Row.Colour   = Description->Colour;
+        Row.StableId = Description->StableId;
+        if (Description->DisplayName[0] != '\0' && Directory.QueryName(Token).find(" (spawned)") == std::string::npos)
+        {
+            // Directory names win once configured; the description name is the construction default.
+        }
+    }
+#endif
     Row.DepthTier      = DepthTier;
     Row.ChildCount     = Directory.QueryChildCount(Token);
     Row.Visible        = Directory.QueryVisible(Token);
@@ -115,6 +127,91 @@ void SceneDirectoryPanel::Synchronize(const SceneDirectory& Directory)
     {
         Selected = RecordToken{};
     }
+
+    // 📝 HTML group sections (EditorShell.js GroupOrder at 6afb6f0). Rows without an editor
+    //    description fall back to their classification's group so development builds still group.
+    static const char* const GroupOrder[] = {"Render", "Environment", "Forcefield", "Objects",
+                                             "Vehicle", "Effects", "Destruction", "Level"};
+    const auto FallbackGroup = [](RecordClassification Classification) {
+        switch (Classification)
+        {
+            case RecordClassification::Illumination:
+            case RecordClassification::Camera:
+            case RecordClassification::Interface:    return "Render";
+            case RecordClassification::Environment:  return "Environment";
+            case RecordClassification::Physics:      return "Forcefield";
+            case RecordClassification::Vehicle:
+            case RecordClassification::Tyre:         return "Vehicle";
+            case RecordClassification::Content:      return "Level";
+            case RecordClassification::Geometry:
+            case RecordClassification::Unclassified:
+            case RecordClassification::Count:        break;
+        }
+        return "Objects";
+    };
+    Groups.clear();
+    EnabledCounts = SceneDirectoryEnabledCounts{};
+    for (SceneDirectoryRow& Row : Rows)
+    {
+        if (Row.Group.empty())
+        {
+            Row.Group = FallbackGroup(Row.Classification);
+        }
+        bool Enabled = Row.Visible;
+#if defined(FRONTIER_EDITOR_PROFILE)
+        if (const RecordEditorDescription* Description = Directory.QueryEditorDescription(Row.Token))
+        {
+            Enabled = Description->Enabled == nullptr || *Description->Enabled;
+        }
+#endif
+        if (Enabled) { EnabledCounts.Enabled += 1; } else { EnabledCounts.Disabled += 1; }
+        SceneDirectoryGroupSection* Section = nullptr;
+        for (SceneDirectoryGroupSection& Candidate : Groups)
+        {
+            if (Candidate.Group == Row.Group) { Section = &Candidate; break; }
+        }
+        if (Section == nullptr)
+        {
+            Groups.push_back(SceneDirectoryGroupSection{Row.Group, 0, {}});
+            Section = &Groups.back();
+        }
+        Section->Count += 1;
+        Section->Rows.push_back(Row);
+    }
+    std::stable_sort(Groups.begin(), Groups.end(), [&](const SceneDirectoryGroupSection& A,
+                                                       const SceneDirectoryGroupSection& B) {
+        const auto Rank = [&](const std::string& Group) {
+            for (size_t Index = 0; Index < std::size(GroupOrder); ++Index)
+                if (Group == GroupOrder[Index]) return Index;
+            return std::size(GroupOrder);
+        };
+        return Rank(A.Group) < Rank(B.Group);
+    });
+
+    InspectorModel = SceneInspectorModel{};
+#if defined(FRONTIER_EDITOR_PROFILE)
+    if (Selected.IsValid())
+    {
+        if (const RecordEditorDescription* Description = Directory.QueryEditorDescription(Selected))
+        {
+            InspectorModel.HasSelection = true;
+            InspectorModel.Group        = Description->Group;
+            InspectorModel.Category     = Description->Category;
+            InspectorModel.Name         = Directory.QueryName(Selected);
+            const std::string DefaultName = std::string(RecordClassificationName(Inspector.Classification)) +
+                                            " " + std::to_string(Selected.Value);
+            if (InspectorModel.Name == DefaultName)
+            {
+                InspectorModel.Name = Description->DisplayName;   // Unconfigured name: use the record's own
+            }
+            InspectorModel.Description  = Description->Description;
+            InspectorModel.HasEnabled   = Description->Enabled != nullptr;
+            InspectorModel.Enabled      = Description->Enabled == nullptr || *Description->Enabled;
+            InspectorModel.ScalarFields = Description->ScalarFields;
+            InspectorModel.Switches     = Description->Switches;
+        }
+    }
+#endif
 
     RebuildVisible();
 }

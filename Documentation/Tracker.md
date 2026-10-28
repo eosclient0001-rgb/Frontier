@@ -4,6 +4,22 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
+
+- Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,
+  built by each record's own constructor and registered through `RecordEntry`; `SunRecord`,
+  `AtmosphereRecord`, `CloudRecord`, `FogRecord` and `WindRecord` bind inspector fields to live Engine
+  settings with pinned HTML (`6afb6f0`) ranges. The Outliner model now projects HTML group sections,
+  Enabled/Disabled tiles and a per-selection inspector model; an Inspector panel using the pinned CSS
+  metrics is registered in `FrontierMain` beside Outliner and Log Stream, owning those records.
+- `EnvironmentSceneValidation` passes 13/13 release and ASan/UBSan: groups, counts, inspector
+  construction, live field edit, search, and rendered-frame changes for cloud/fog/Sun. Retained frame
+  (Sun, sky, clouds, ground cloud shadow, height fog; no analytic lights) is a host CPU render from
+  Engine models, **not** the editor viewport. SceneDirectory passes Development 45 / Editor 45 /
+  Shipping 17; LogStream 2/2; the `FrontierMain` SDK path syntax-compiles. No ImGui window, Vulkan
+  viewport, physical GPU or Windows run in this sandbox; vehicle/Jolt, gizmos and ReSTIR controls
+  remain deferred. [Evidence and boundaries](../Exhibits/EnvironmentScene/README.md).
+
 ## Subpixel seed retracing combined with reservoir reuse — 2026-10-28
 
 - The default-off seed-bank mode now combines with temporal and/or spatial reservoir reuse: gathered
