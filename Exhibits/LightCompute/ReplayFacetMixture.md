@@ -77,6 +77,12 @@ recorded tolerances. Across twelve GPU batches, each transition has 61,440 tempo
 The numerical tests include mixture/BSDF balance weighting; that is independent of the second-moment
 bound above.
 
+A subsequent [moving-primary mixture validation](ReplayFacetMixtureMotion.md) compares two textured
+object/floor probes against six independently seeded four-hit CPU references as camera, rigid pose,
+material, emissive-triangle positions/powers and blocker change. Release and sanitized-host runs pass;
+the fresh mixture reduced floor batch SD in this fixture but increased object-green batch SD. This
+extends the tested cases, not a general variance, convergence or unbiasedness guarantee.
+
 Default-off readbacks compare with the actual preceding shader checkpoint `0d5af89`. Uniform and
 pure-power modes, each with cosine and GGX proposals, produce 20 float4 images: 655,360 components
 are bit-identical and eight recorded history outcomes match. Existing uniform-emitter, pure-power

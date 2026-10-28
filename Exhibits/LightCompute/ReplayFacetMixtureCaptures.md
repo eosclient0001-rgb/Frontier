@@ -57,8 +57,10 @@ Independent area and four-hit references for the mixture are documented in
 [ReplayFacetMixture.md](ReplayFacetMixture.md). Those fixed-receiver numerical fixtures do **not**
 validate every pixel or this larger camera/object motion. Earlier moving-primary two-probe references
 and the previous gallery are documented in [RoughTextureMotion.md](RoughTextureMotion.md) and
-[RoughTextureReplayCaptures.md](RoughTextureReplayCaptures.md). Preview filtering is not used by
-numerical tests.
+[RoughTextureReplayCaptures.md](RoughTextureReplayCaptures.md). A later
+[moving-primary mixture test](ReplayFacetMixtureMotion.md) checks two probes in a smaller related
+scene with translated emissive triangles; it does not validate every pixel in this gallery. Preview
+filtering is not used by numerical tests.
 
 ## Reproduce
 

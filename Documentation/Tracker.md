@@ -2,6 +2,19 @@
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
 
+## Moving emissive-mixture GI reference — 2026-10-28
+
+- Independent primary-ray and four-hit CPU-path checks now exercise the optional facet mixture through camera,
+  rigid-texture/material, translated emissive-triangle, source-power, blocker and reopening changes. Both
+  selected primary pixels pass all 30 RGB comparisons over 96 SwiftShader CPU Vulkan batches against six
+  separately seeded 240,000-path CPU references. Cap-one transitions retain temporal and spatial reuse.
+  Full release and ASan/UBSan host runs pass; shaders and the external driver are not sanitizer-instrumented.
+- The mixture/uniform fresh batch-SD ratio is `0.671–0.799` across floor channels, but `1.515` in object green.
+  These two-probe measurements do not establish universal variance improvement or general unbiasedness.
+  Physical-GPU/editor integration and general deforming-motion coverage remain open; the pre-existing
+  rendered gallery depicts a related scene without translated sources.
+  [Fixture, uncertainties, results and reproduction](../Exhibits/LightCompute/ReplayFacetMixtureMotion.md).
+
 ## Exhibit ownership audit and lighting extraction — 2026-10-27
 
 - Reviewed all 27 top-level exhibit directories against both Engine trees and production UI ownership. Existing
