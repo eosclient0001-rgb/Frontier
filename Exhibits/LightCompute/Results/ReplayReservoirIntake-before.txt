@@ -1,0 +1,4 @@
+Prior 3de9061 shader; expected failure with ten malformed histories
+RESERVOIR_INTAKE invalid=10 fresh_exact=2 accepted=1022 rejected=2
+Corrupt temporal reservoir history must be rejected without affecting fresh output
+EXIT=1 (expected 1)

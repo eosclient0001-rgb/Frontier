@@ -1742,6 +1742,11 @@ int main(int Count, char** Arguments)
             ValidateReplayDynamicCamera(Arguments[1], Arguments[2]);
             return 0;
         }
+        if (Count == 4 && std::string(Arguments[3]) == "--replay-reservoir-intake")
+        {
+            ValidateReplayReservoirIntake(Arguments[1], Arguments[2]);
+            return 0;
+        }
         if (Count == 4 && std::string(Arguments[3]) == "--replay-sample-history")
         {
             ValidateReplaySampleHistory(Arguments[1], Arguments[2]);

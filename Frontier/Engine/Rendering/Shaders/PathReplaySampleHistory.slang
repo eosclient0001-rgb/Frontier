@@ -9,11 +9,6 @@
 //                                                SEED BANK INTAKE
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 Every half is an exactly representable uint16, avoiding float-to-uint conversion of corrupt history.
-bool ReplaySeedHalfValid(float Value)
-{
-    return isfinite(Value) && Value >= 0 && Value <= 65535 && floor(Value) == Value;
-}
 bool ReplaySeedBankValid(float4 First, float4 Second)
 {
     float Count = Second.z;

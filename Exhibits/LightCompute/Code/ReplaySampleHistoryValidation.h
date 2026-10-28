@@ -510,6 +510,58 @@ void ValidateReplaySampleGuards(const char* Driver, const std::string& Shaders)
 //                                              DIAGNOSTIC READBACKS
 //------------------------------------------------------------------------------------------------------------------------
 
+void ValidateReplayReservoirIntake(const char* Driver, const std::string& Shaders)
+{
+    const auto Scene = ReplayCameraPlane(0, 0);
+    LightComputeSubmission Fresh(Driver), Reused(Driver);
+    Fresh.Prepare(Scene, Shaders, false, false, false, false, true);
+    Reused.Prepare(Scene, Shaders, false, false, false, false, true);
+    const std::array<float,3> Environment{256,256,256};
+    (void)Fresh.ExecuteReplay(Scene, 1, 310001, false, false, true, Environment, .01f, true);
+    const auto Warm = Reused.ExecuteReplay(Scene, 1, 310001, true, false, true, Environment, .01f, true);
+    const auto Guides = Reused.PrimaryReceivers();
+    std::vector<uint32_t> Pixels;
+    for (uint32_t Pixel = 0; Pixel < Guides.size() && Pixels.size() < 9; ++Pixel)
+        if (Guides[Pixel].MotionPositionToken[3] == 1) Pixels.push_back(Pixel);
+    Require(Pixels.size() == 9, "Reservoir corruption test needs nine diffuse receivers");
+    for (uint32_t Pixel = Pixels.back() + 1; Pixel < Guides.size(); ++Pixel)
+        if (Guides[Pixel].MotionPositionToken[3] == 1 && Warm[Pixel][0] > 10)
+        {
+            Pixels.push_back(Pixel);
+            break;
+        }
+    Require(Pixels.size() == 10, "Reservoir overflow test needs a bright retraced path");
+    for (uint32_t I = 0; I < Pixels.size(); ++I)
+    {
+        auto Source = ReplaySampleSlot(Reused, 0, Pixels[I]);
+        if (I == 0) Source[0] = std::numeric_limits<float>::quiet_NaN();
+        if (I == 1) Source[0] = -1;
+        if (I == 2) Source[1] = 65536;
+        if (I == 3) Source[1] = .5f;
+        if (I == 4) Source[2] = std::numeric_limits<float>::infinity();
+        if (I == 5) Source[2] = std::numeric_limits<float>::quiet_NaN();
+        if (I == 6) Source[3] = std::numeric_limits<float>::infinity();
+        if (I == 7) Source[3] = .5f;
+        if (I == 8) Source[3] = std::numeric_limits<float>::quiet_NaN();
+        if (I == 9) Source[2] = std::numeric_limits<float>::max();
+        SetReplaySampleSlot(Reused, 0, Pixels[I], Source);
+    }
+    const auto Raw = Fresh.ExecuteReplay(Scene, 1, 310003, false, false, false, Environment, .01f, true);
+    const auto Image = Reused.ExecuteReplay(Scene, 1, 310003, true, false, false, Environment, .01f, true);
+    uint32_t Rejected = 0;
+    for (uint32_t Pixel : Pixels)
+    {
+        const auto Current = ReplaySampleSlot(Reused, 0, Pixel);
+        if (Current[3] == 1 && Raw[Pixel] == Image[Pixel]) ++Rejected;
+    }
+    const auto Counts = Reused.ExtendedStatistics();
+    std::printf("RESERVOIR_INTAKE invalid=%zu fresh_exact=%u accepted=%u rejected=%u\n",
+                Pixels.size(), Rejected, Counts[20], Counts[21]);
+    Require(Rejected == Pixels.size() && Counts[20] > 100 && Counts[21] >= Pixels.size(),
+            "Corrupt temporal reservoir history must be rejected without affecting fresh output");
+    std::printf("PASS bounded reservoir history intake\n");
+}
+
 void CaptureReplaySampleHistory(const char* Driver, const std::string& Shaders, const std::string& Directory)
 {
     constexpr uint32_t Size = 64, WarmFrames = 3, Bounces = 4;

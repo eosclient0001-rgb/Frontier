@@ -1,0 +1,31 @@
+Temporal reservoir intake: release; external driver and shader are not sanitizer-instrumented
+Base 3de9061, plus working changes; source hashes below
+Linux 6.1.158+ x86_64
+c++ (Debian 12.2.0-14+deb12u1) 12.2.0
+2026.14.1
+0e3f723aa18668af0308e12ac11aee4ae6e39d7b1902d97043aee03c2d884d8a  Frontier/Engine/Rendering/Shaders/PathReplayReservoir.slang
+aa242a2113a86137fca8951dc00a519357a5a069c073fc296c4ccd7b0b7a5ff0  Frontier/Engine/Rendering/Shaders/PathReplaySampleHistory.slang
+c37f3d8f1eedadfe37c3a50166d14edcfcf7dca44aafb2e45d12c202f3a4a9cd  Exhibits/LightCompute/Code/LightComputeValidation.cpp
+23eb945866729ebd7a0c310563ba03bcd532559ae4bf4415d9332f6c9289f982  Exhibits/LightCompute/Code/ReplaySampleHistoryValidation.h
+b607210468690525aa5683e2c5892cc7c87b60fd69a841543db4ae78e2243ccc  Exhibits/LightCompute/RunReplayReservoirIntake.sh
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/replay-intake-release
+Test project /home/user/Frontier/_ClaudeScratch/build/replay-intake-release
+    Start 1: PathReplayDomainValidation
+1/5 Test #1: PathReplayDomainValidation .......   Passed    0.00 sec
+    Start 2: PathReplayVulkanValidation
+2/5 Test #2: PathReplayVulkanValidation .......   Passed    0.00 sec
+    Start 3: RadiantFacetValidation
+3/5 Test #3: RadiantFacetValidation ...........   Passed    0.00 sec
+    Start 4: MediumRadianceValidation
+4/5 Test #4: MediumRadianceValidation .........   Passed    0.00 sec
+    Start 5: PathReplayArchiveValidation
+5/5 Test #5: PathReplayArchiveValidation ......   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =   0.01 sec
+RESERVOIR_INTAKE invalid=10 fresh_exact=10 accepted=1014 rejected=10
+PASS bounded reservoir history intake
+Prior shader: 3de9061; valid-history parity:
+MIXTURE_PARITY images=20 components=655360 differing_float_bits=0 histories=8 uniform_and_power=1 cosine_and_ggx=1
+PASS bit-identical uniform/power and cosine/GGX readbacks with mixture disabled

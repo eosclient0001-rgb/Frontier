@@ -1,0 +1,17 @@
+VehicleHMI source WGSL: upstream 6afb6f00b5f25c45f7cda92c7da65b64845768f3; controlled fixture
+Host source files verified as Git blobs; WebGPU through wgpu-native on Vulkan
+Python 3.11.2
+Linux 6.1.158+ x86_64
+2214821a04e21d992f856e8245a76a94b855e203930561d05d59bb571c9317e2  Exhibits/LightCompute/Code/SpatialSourceValidation.py
+Forcing backend: Vulkan (6)
+ADAPTER <GPUAdapterInfo dict with vendor='SwiftShader driver', architecture='', device='SwiftShader Device (Subzero)', description='', stackgroup_min_size=4, stackgroup_max_size=128, vendor_id=6880, device_id=49374, adapter_type='CPU', backend_type='Vulkan'>
+original p=0.5 outputs=[0.0, 1.0, 2.0, 2.0] weighted_mean=1.25 reference=1
+original p=0.125 outputs=[0.0, 4.0, 8.0, 8.0] weighted_mean=1.4375 reference=1
+original p=0.0625 outputs=[0.0, 8.0, 16.0, 16.0] weighted_mean=1.46875 reference=1
+retained-domain counterfactual p=0.5 outputs=[0.0, 1.0, 1.0, 2.0] weighted_mean=1 reference=1
+retained-domain counterfactual p=0.125 outputs=[0.0, 4.0, 4.0, 8.0] weighted_mean=1 reference=1
+retained-domain counterfactual p=0.0625 outputs=[0.0, 8.0, 8.0, 16.0] weighted_mean=1 reference=1
+PackingCodec.wgsl 5c8219d71725ad45bc89fb508264cc4e665942f8f66e383be40bf2400193d544
+ReservoirRecords.wgsl 0bd41e6a6fd3f748d5455de346dbfa915a7b85ba2c7b1ec46fb10816bbe2c231
+ReservoirSpatial.wgsl 35056eb326c250e5ea9466b126d0f112174b7bcfd45047ce8261adb581c23f1d
+PASS finite-domain WGSL execution; not a full browser scene, native GI parity or timing comparison

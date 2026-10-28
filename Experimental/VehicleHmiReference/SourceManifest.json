@@ -126,6 +126,10 @@
     {
       "path": "Shader/DistanceTraversal.wgsl",
       "git_blob": "fdda8728de49a2c7ffc445f337f351a2338d18c0"
+    },
+    {
+      "path": "Shader/PackingCodec.wgsl",
+      "git_blob": "d8f6d426cbaccd94e782f424f89a354266232a04"
     }
   ]
 }

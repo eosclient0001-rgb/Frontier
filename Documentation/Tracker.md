@@ -4,6 +4,22 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## VehicleHMI spatial WGSL and replay history intake — 2026-10-28
+
+- Restored the `3de9061` continuation onto this session branch. The original upstream Node ReSTIR suite passes
+  5/5, but does not render a browser frame. The unchanged original spatial WGSL now executes in a controlled
+  two-receiver SwiftShader WebGPU/Vulkan fixture: its sparse-event means `1.25`, `1.4375` and `1.46875` versus
+  the exact `1`; a test-only retained-domain counterfactual gives `1` in this fixture. This is not a general fix,
+  a complete original application run or an equal-time native/browser comparison.
+- Engine temporal replay now validates encoded seed halves, normalized weight and count and rejects nonfinite
+  merged weights. In injected tests the prior shader returned fresh on 2/10 corrupt histories, versus 10/10
+  after the guard; 1,014 other histories remained accepted. Release and host ASan/UBSan checks pass. Twenty
+  valid-history images are bit-identical to
+  `3de9061`, and the existing sample-history suite passes after the shared predicate move. More details and
+  limitations: [source comparison and intake](../Exhibits/LightCompute/ReplaySourceComparison.md).
+- ReSTIR GI, production rendering, equal-time/quality browser comparisons, physical-GPU and Windows execution
+  remain open. No performance gain or general correctness is claimed.
+
 ## Subpixel diffuse path-seed retracing — 2026-10-28
 
 - Added a default-off, one-candidate mode which retains up to three unselected fresh seeds and retraces them at

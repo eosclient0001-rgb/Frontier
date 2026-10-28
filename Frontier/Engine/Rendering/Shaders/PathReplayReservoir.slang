@@ -9,6 +9,17 @@ uint ReplayHistoryStart() { return Extent.Dimensions.x * 25u + 13889u + SolarSou
 uint ReplaySlot(uint Slot, uint Pixel) { return ReplayHistoryStart() + Slot * Extent.Dimensions.x + Pixel; }
 float2 EncodeReplaySeed(uint Seed) { return float2(float(Seed & 65535u), float(Seed >> 16u)); }
 uint DecodeReplaySeed(float2 Packed) { return uint(Packed.x) | (uint(Packed.y) << 16u); }
+// 📝 Reject corrupt floating-point history before converting its packed 16-bit seed halves.
+bool ReplaySeedHalfValid(float Value)
+{
+    return isfinite(Value) && Value >= 0 && Value <= 65535 && floor(Value) == Value;
+}
+bool ReplayReservoirHistoryValid(float4 Source)
+{
+    return ReplaySeedHalfValid(Source.x) && ReplaySeedHalfValid(Source.y) &&
+        isfinite(Source.z) && Source.z > 0 && isfinite(Source.w) && Source.w >= 1 && floor(Source.w) == Source.w;
+}
+
 // 📝 Keep float-to-int conversion defined even for extreme or non-finite reprojected coordinates.
 bool ReplayMotionConvertible(float2 Pixel)
 {
@@ -318,7 +329,7 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                     MatchingPosition = dot(Delta, Delta) <= Radius * Radius &&
                                        dot(PriorNormal, MotionNormal) >= .9 * sqrt(PriorLength * MotionLength);
                 }
-                bool Compatible = Source.w > 0 && Source.z > 0 && Guide.w == R.MotionPositionToken.w &&
+                bool Compatible = ReplayReservoirHistoryValid(Source) && Guide.w == R.MotionPositionToken.w &&
                                   MatchingPosition;
                 if (Compatible)
                 {
@@ -328,12 +339,16 @@ float ReplayTarget(float3 Radiance) { return max(0, Power(Radiance)) + Extent.Ma
                     float ReplayedTarget = ReplayTarget(Replayed);
                     float Retained = min(Source.w, float(max(1u, Extent.Reconstruction.w)));
                     float Weight = ReplayedTarget * Source.z * Retained;
-                    Sum += Weight; Count += Retained;
-                    if (RandomUnit(SelectionBits) * Sum < Weight)
+                    if (isfinite(Weight) && isfinite(Sum + Weight))
                     {
-                        Selected = Candidate; Radiance = Replayed; Target = ReplayedTarget;
+                        Sum += Weight; Count += Retained;
+                        if (RandomUnit(SelectionBits) * Sum < Weight)
+                        {
+                            Selected = Candidate; Radiance = Replayed; Target = ReplayedTarget;
+                        }
+                        InterlockedAdd(Counters[20], 1);
                     }
-                    InterlockedAdd(Counters[20], 1);
+                    else InterlockedAdd(Counters[21], 1);
                 }
                 else InterlockedAdd(Counters[21], 1);
             }
