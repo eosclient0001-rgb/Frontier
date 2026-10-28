@@ -50,7 +50,7 @@ done
     "$SLANG" -version 2>&1
     sha256sum Frontier/Engine/Rendering/Shaders/{LightInfluence,PathReplayReservoir,PathReplayReconstruction,MaterialRayScattering}.slang \
         Frontier/Engine/Rendering/{LightComputeFootprint.h,PathReplayFootprint.h,PathReplayDomain.h,PathReplayDomain.cpp,PathReplayVulkan.h,PathReplayVulkan.cpp} \
-        Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomainValidation.cpp,PathReplayVulkanValidation.cpp,ReplayCameraReprojectionValidation.h,ReplayCandidateValidation.h,ReplayReconstructionValidation.h,PathReplayCapture.h} \
+        Exhibits/LightCompute/Code/{LightComputeValidation.cpp,PathReplayDomainValidation.cpp,PathReplayVulkanValidation.cpp,ReplayCameraReprojectionValidation.h,ReplayCandidateValidation.h,ReplayReconstructionValidation.h,ReplayRoomReference.h,PathReplayGpuValidation.h,PathReplayCapture.h} \
         Exhibits/LightCompute/RunReplayCameraReprojection.sh
     "$BUILD/PathReplayDomainValidation"
     "$BUILD/PathReplayVulkanValidation"

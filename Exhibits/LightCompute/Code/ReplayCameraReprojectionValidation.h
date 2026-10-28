@@ -64,10 +64,11 @@ LightComputeArchive ReplayCameraPlane(float Shift, float PreviousShift, float Bl
 
 std::vector<std::array<float,4>> ExecuteReplayCameraPlane(LightComputeSubmission& Compute,
     const LightComputeArchive& Scene, uint32_t Seed, bool Temporal, bool Spatial, bool Reset,
-    bool Reconstruct, bool CameraReprojection, uint32_t Candidates = 1)
+    bool Reconstruct, bool CameraReprojection, uint32_t Candidates = 1, uint32_t Bounces = 1,
+    std::array<float,3> Environment = {0,0,0}, bool SampleFacets = true)
 {
-    return Compute.ExecuteReplay(Scene, 1, Seed, Temporal, Spatial, Reset, {0,0,0}, .01f, true,
-                                 false, false, true, false, false, 64, false, false, false,
+    return Compute.ExecuteReplay(Scene, Bounces, Seed, Temporal, Spatial, Reset, Environment, .01f, true,
+                                 false, false, SampleFacets, false, false, 64, false, false, false,
                                  false, false, false, false, Reconstruct, Candidates, false, CameraReprojection);
 }
 
@@ -193,6 +194,169 @@ void ValidateReplayCameraReprojection(const char* Driver, const std::string& Sha
                 "disoccluded=%u changed_view_components=%u recurrence_error=%.9g reservoir=%u spatial_links=%u\n",
                 Candidates, Temporal ? 1u : 0u, Spatial ? 1u : 0u, Accepted, Rejected, Disoccluded, ChangedView,
                 MaximumRecurrenceError, Counts[20], Counts[22]);
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                      INDEPENDENT MULTIBOUNCE CAMERA REFERENCE
+//------------------------------------------------------------------------------------------------------------------------
+
+void ValidateReplayCameraMultibounce(const char* Driver, const std::string& Shaders)
+{
+    constexpr uint32_t SamplesPerPoint = 4096, Frames = 8, Bounces = 4;
+    const auto Previous = ReplayCameraPlane(0, 0), Current = ReplayCameraPlane(.0625f, 0);
+    const std::array<float,3> Environment{.025f,.025f,.025f};
+    LightComputeSubmission Fresh(Driver), Filtered(Driver), OneBounce(Driver);
+    Fresh.Prepare(Previous, Shaders, false, false, false, false, true);
+    Filtered.Prepare(Previous, Shaders, false, false, false, false, true);
+    OneBounce.Prepare(Current, Shaders, false, false, false, false, true);
+    const auto Render = [&](LightComputeSubmission& Compute, const LightComputeArchive& Scene, uint32_t Seed,
+                            bool Reset, bool Reconstruct, bool Camera, uint32_t Count)
+    {
+        return ExecuteReplayCameraPlane(Compute, Scene, Seed, false, false, Reset, Reconstruct, Camera,
+                                        1, Count, Environment, false);
+    };
+    std::vector<std::array<float,4>> PriorColour, PriorHistory;
+    for (uint32_t Frame = 0; Frame < Frames; ++Frame)
+    {
+        const uint32_t Seed = 910001 + 7919u * Frame;
+        (void)Render(Fresh, Previous, Seed, Frame == 0, false, false, Bounces);
+        PriorColour = Render(Filtered, Previous, Seed, Frame == 0, true, true, Bounces);
+    }
+    const auto PreviousGuides = Filtered.PrimaryReceivers();
+    for (uint32_t Pixel = 0; Pixel < PriorColour.size(); ++Pixel)
+        PriorHistory.push_back(ReplayTailSlot(Filtered, 5, Pixel));
+    const auto Raw = Render(Fresh, Current, 990001, false, false, false, Bounces);
+    const auto Result = Render(Filtered, Current, 990001, false, true, true, Bounces);
+    const auto RawOneBounce = Render(OneBounce, Current, 990001, true, false, false, 1);
+    const auto Guides = Filtered.PrimaryReceivers();
+    uint32_t Accepted = 0, Rejected = 0, FloorAccepted = 0, AdditionalBouncePixels = 0;
+    double RawSquared = 0, FilteredSquared = 0, ReferenceVariance = 0, RecurrenceError = 0;
+    double ReferenceSum = 0, RawSum = 0, FilteredSum = 0, MaximumAdditional = 0;
+    std::vector<double> ReferencePoint(Guides.size(), -1);
+    for (uint32_t Pixel = 0; Pixel < Guides.size(); ++Pixel)
+    {
+        const double Additional = double(Raw[Pixel][0]) - RawOneBounce[Pixel][0];
+        Require(Additional >= -1e-6, "Additional diffuse bounces decreased the paired raw sample");
+        if (Additional > 1e-6) ++AdditionalBouncePixels;
+        MaximumAdditional = std::max(MaximumAdditional, Additional);
+        const auto& Receiver = Guides[Pixel];
+        if (ReplayTailSlot(Filtered, 6, Pixel)[3] < 1)
+        {
+            ++Rejected;
+            Require(Raw[Pixel] == Result[Pixel], "Rejected multibounce history differed from raw");
+            continue;
+        }
+        ++Accepted;
+        const int32_t X = int32_t(std::floor(Receiver.MotionPixel[0] + .5f));
+        const int32_t Y = int32_t(std::floor(Receiver.MotionPixel[1] + .5f));
+        Require(X >= 0 && Y >= 0 && X < int32_t(Current.Width) && Y < int32_t(Current.Height),
+                "Accepted multibounce history was outside the previous frame");
+        const uint32_t Donor = uint32_t(Y) * Current.Width + uint32_t(X);
+        const auto& Old = PreviousGuides[Donor];
+        Require(Old.MotionPositionToken[3] == Receiver.MotionPositionToken[3], "Multibounce history crossed a token");
+        for (uint32_t Axis = 0; Axis < 3; ++Axis)
+        {
+            Require(Old.PositionHit[Axis] == Receiver.PositionHit[Axis] &&
+                        Old.NormalRoughness[Axis] == Receiver.NormalRoughness[Axis],
+                    "Multibounce history crossed a different position or normal");
+            const float Length = std::min(PriorHistory[Donor][3] + 1, 16.f);
+            const float Expected = PriorColour[Donor][Axis] + (Raw[Pixel][Axis] - PriorColour[Donor][Axis]) / Length;
+            RecurrenceError = std::max(RecurrenceError, std::abs(double(Result[Pixel][Axis]) - Expected));
+        }
+        if (Receiver.MotionPositionToken[3] != 1) continue;
+        std::mt19937_64 Random(0x91f42a7bull + uint64_t(Pixel) * 0x9e3779b97f4a7c15ull);
+        DirectGpuMoments Reference;
+        for (uint32_t Sample = 0; Sample < SamplesPerPoint; ++Sample)
+            Reference.Accumulate(ReplayReferencePath(Current, Receiver, Bounces, Random)[0]);
+        const double Mean = Reference.Mean();
+        const double CorrectedSe = Reference.StandardError() * std::sqrt(double(SamplesPerPoint) / (SamplesPerPoint - 1));
+        ReferencePoint[Pixel] = Mean;
+        RawSquared += std::pow(double(Raw[Pixel][0]) - Mean, 2);
+        FilteredSquared += std::pow(double(Result[Pixel][0]) - Mean, 2);
+        ReferenceVariance += CorrectedSe * CorrectedSe;
+        ReferenceSum += Mean; RawSum += Raw[Pixel][0]; FilteredSum += Result[Pixel][0];
+        ++FloorAccepted;
+    }
+    Require(FloorAccepted > 100 && Accepted == Filtered.ExtendedStatistics()[23] && Rejected > 100 &&
+                !Filtered.ReplayLastReconstructionReset && RecurrenceError < 2e-6 && AdditionalBouncePixels > 5,
+            "Four-bounce camera fixture did not exercise retained, rejected and indirect samples");
+    const double RawRmse = std::sqrt(RawSquared / FloorAccepted);
+    const double FilteredRmse = std::sqrt(FilteredSquared / FloorAccepted);
+    const double ReferenceRmsSe = std::sqrt(ReferenceVariance / FloorAccepted);
+    std::printf("CAMERA_MULTIBOUNCE bounces=%u cpu_paths=%u points=%u accepted=%u rejected=%u extra_pixels=%u "
+                "max_extra=%.9g reference_mean=%.9g raw_mean=%.9g filtered_mean=%.9g "
+                "raw_rmse=%.9g filtered_rmse=%.9g ratio=%.9g cpu_rms_se=%.9g recurrence_error=%.9g\n",
+                Bounces, FloorAccepted * SamplesPerPoint, FloorAccepted, Accepted, Rejected, AdditionalBouncePixels,
+                MaximumAdditional, ReferenceSum / FloorAccepted, RawSum / FloorAccepted, FilteredSum / FloorAccepted,
+                RawRmse, FilteredRmse, FilteredRmse / RawRmse, ReferenceRmsSe, RecurrenceError);
+    Require(FilteredRmse < .8 * RawRmse && ReferenceRmsSe < .02,
+            "Four-bounce camera reference did not show bounded reconstruction agreement");
+    constexpr uint32_t Batches = 16;
+    std::mt19937_64 BatchSeeds(0x7f2b8a51ull);
+    DirectGpuMoments BatchRaw, BatchFiltered;
+    double BatchRawSquared = 0, BatchFilteredSquared = 0;
+    for (uint32_t Batch = 0; Batch < Batches; ++Batch)
+    {
+        for (uint32_t Frame = 0; Frame < Frames; ++Frame)
+        {
+            const uint32_t Seed = uint32_t(BatchSeeds());
+            (void)Render(Fresh, Previous, Seed, Frame == 0, false, false, Bounces);
+            (void)Render(Filtered, Previous, Seed, Frame == 0, true, true, Bounces);
+        }
+        const uint32_t Seed = uint32_t(BatchSeeds());
+        const auto BatchRawImage = Render(Fresh, Current, Seed, false, false, false, Bounces);
+        const auto BatchFilteredImage = Render(Filtered, Current, Seed, false, true, true, Bounces);
+        Require(Filtered.ExtendedStatistics()[23] == Accepted, "Multibounce camera acceptance changed across batches");
+        double RawMean = 0, FilteredMean = 0;
+        uint32_t Points = 0;
+        for (uint32_t Pixel = 0; Pixel < ReferencePoint.size(); ++Pixel)
+        {
+            if (ReferencePoint[Pixel] < 0) continue;
+            Require(ReplayTailSlot(Filtered, 6, Pixel)[3] >= 1, "Multibounce batch lost an exact donor");
+            RawMean += BatchRawImage[Pixel][0];
+            FilteredMean += BatchFilteredImage[Pixel][0];
+            BatchRawSquared += std::pow(double(BatchRawImage[Pixel][0]) - ReferencePoint[Pixel], 2);
+            BatchFilteredSquared += std::pow(double(BatchFilteredImage[Pixel][0]) - ReferencePoint[Pixel], 2);
+            ++Points;
+        }
+        Require(Points == FloorAccepted, "Multibounce reference point count changed");
+        BatchRaw.Accumulate(RawMean / Points);
+        BatchFiltered.Accumulate(FilteredMean / Points);
+    }
+    const double FiniteBatchCorrection = std::sqrt(double(Batches) / (Batches - 1));
+    const double RawBatchSe = BatchRaw.StandardError() * FiniteBatchCorrection;
+    const double FilteredBatchSe = BatchFiltered.StandardError() * FiniteBatchCorrection;
+    const double ReferenceMeanSe = std::sqrt(ReferenceVariance) / FloorAccepted;
+    const double BatchRawRmse = std::sqrt(BatchRawSquared / (FloorAccepted * Batches));
+    const double BatchFilteredRmse = std::sqrt(BatchFilteredSquared / (FloorAccepted * Batches));
+    std::printf("CAMERA_MULTIBOUNCE_REPEAT batches=%u samples=%u reference=%.9g cpu_mean_se=%.9g "
+                "raw=%.9g batch_se=%.9g filtered=%.9g batch_se=%.9g raw_rmse=%.9g filtered_rmse=%.9g ratio=%.9g\n",
+                Batches, FloorAccepted * Batches, ReferenceSum / FloorAccepted, ReferenceMeanSe,
+                BatchRaw.Mean(), RawBatchSe, BatchFiltered.Mean(), FilteredBatchSe,
+                BatchRawRmse, BatchFilteredRmse, BatchFilteredRmse / BatchRawRmse);
+    Require(std::abs(BatchRaw.Mean() - ReferenceSum / FloorAccepted) < 6 * std::hypot(RawBatchSe, ReferenceMeanSe) + .002 &&
+                std::abs(BatchFiltered.Mean() - ReferenceSum / FloorAccepted) <
+                    6 * std::hypot(FilteredBatchSe, ReferenceMeanSe) + .002 &&
+                BatchFilteredRmse < .8 * BatchRawRmse,
+            "Repeated four-bounce camera batches disagreed with the independent reference");
+    for (uint32_t Frame = 0; Frame < 3; ++Frame)
+    {
+        (void)Render(Fresh, Previous, 995000 + Frame, Frame == 0, false, false, Bounces);
+        (void)Render(Filtered, Previous, 995000 + Frame, Frame == 0, true, true, Bounces);
+    }
+    const auto Blocked = ReplayCameraPlane(.0625f, 0, .1f);
+    const auto BlockedRaw = Render(Fresh, Blocked, 995100, false, false, false, Bounces);
+    const auto BlockedResult = Render(Filtered, Blocked, 995100, false, true, true, Bounces);
+    Require(Filtered.ReplayLastReconstructionReset && Filtered.ExtendedStatistics()[23] == 0 &&
+                ReplayCandidateImagesEqual(BlockedRaw, BlockedResult),
+            "Moving camera and blocker retained multibounce colour");
+    const auto Reopened = ReplayCameraPlane(.0625f, .0625f);
+    const auto ReopenedRaw = Render(Fresh, Reopened, 995101, false, false, false, Bounces);
+    const auto ReopenedResult = Render(Filtered, Reopened, 995101, false, true, true, Bounces);
+    Require(Filtered.ReplayLastReconstructionReset && Filtered.ExtendedStatistics()[23] == 0 &&
+                ReplayCandidateImagesEqual(ReopenedRaw, ReopenedResult),
+            "Reopening multibounce visibility retained colour from the blocked scene");
+    std::printf("CAMERA_MULTIBOUNCE_MOTION blocker_and_camera_reset=1 reopen_reset=1 both_raw_exact=1\n");
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -343,6 +507,7 @@ void ValidateReplayCameraReprojectionAll(const char* Driver, const std::string& 
 {
     ValidateReplayCameraReprojection(Driver, Shaders, false, false, 1);
     ValidateReplayCameraReprojection(Driver, Shaders, true, true, 4);
+    ValidateReplayCameraMultibounce(Driver, Shaders);
     ValidateReplayCameraExactGuides(Driver, Shaders);
     ValidateReplayCameraReprojectionChanges(Driver, Shaders);
     std::printf("PASS strict diffuse camera reprojection, independent area integral and change guards\n");

@@ -4,6 +4,16 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Four-bounce diffuse camera reference — 2026-10-28
+
+- The strict camera-only mode now also has a four-bounce SwiftShader CPU-Vulkan check against 1,187,840
+  independent brute-force CPU paths at 290 exact points. Across 16 seed batches, raw/reprojected red RMSE
+  against the per-point CPU means is `0.2986/0.1012`; the latter uses eight prior frames and is not equal-time.
+- A paired one-bounce control exposes 35 pixels with additional indirect contributions; a simultaneously moving
+  blocker and camera and a reopening both reset colour to the corresponding raw output. These are bounded
+  fixture checks, not general dynamic reconstruction or a proof of unbiasedness.
+  [Reference, uncertainty and results](../Exhibits/LightCompute/ReplayCameraReprojection.md#four-bounce-reference-and-repeated-camera-transitions).
+
 ## Strict diffuse camera reprojection — 2026-10-28
 
 - Added a default-off colour-history path for certified camera-only transitions in static, untextured diffuse

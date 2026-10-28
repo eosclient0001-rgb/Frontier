@@ -77,6 +77,32 @@ images match the older replay shader, 14 separate mixture-on moving-radiant PPMs
 five CTests pass. The longer regressions preceded a portable, same-size camera-snapshot expression change;
 final camera checks and CTests were rerun after it, as recorded in the regression log.
 
+## Four-bounce reference and repeated camera transitions
+
+A second scene uses the same plane, emitter and blocker with four diffuse bounces, a `0.025` uniform
+three-channel environment, one fresh candidate and **no** temporal/spatial reservoir reuse or explicit facet
+sampling. An independent double-precision CPU tracer uses brute-force triangle intersections, a different
+orthonormal sampling frame and `mt19937_64` rather than the shader's PRNG/BVH. It models the same bounded
+Lambertian transport and ray offsets, so it is an independent numerical implementation, not measured physical
+truth. For each of the 290 exactly matched floor points it traces 4,096 CPU paths: 1,187,840 total. The RMS
+of the corrected per-point CPU standard errors is `0.004736`.
+
+Sixteen additional seed batches each contain eight stationary history updates and one translated frame. The
+sample-corrected batch standard errors below are **nominal**: correlations in the finite GPU PRNG streams
+remain an open concern. The same CPU point references are used for all 16 batches.
+
+| Quantity, red channel | CPU reference | Current raw | Reprojected colour |
+|---|---:|---:|---:|
+| Mean over 290 points × 16 batches | `0.116197 ± 0.000278` nominal CPU mean SE | `0.112494 ± 0.004548` batch SE | `0.117898 ± 0.001816` batch SE |
+| RMSE against per-point CPU means | — | `0.298553` | `0.101150` |
+
+The filtered output uses eight extra frames, so the `0.339` RMSE ratio is not an equal-time speedup. A paired
+one-bounce control confirms that 35 pixels in the first four-bounce raw frame receive additional indirect
+contributions. Its retained-colour recurrence agrees with the host within `1.87e-9`. Moving the blocker while
+moving the camera resets all four-bounce colour, and reopening resets it again; both match the corresponding
+unfiltered replay output bit-for-bit. This is a conservative transition control, **not** dynamic colour reuse.
+The finite reference and repeated batches do not prove general unbiasedness, independence or temporal safety.
+
 ## Diagnostic readbacks
 
 These direct `64 × 64` readbacks use 12 stationary prior frames, one one-pixel camera translation, one fresh
@@ -95,11 +121,17 @@ Requires the prepared Slang/SwiftShader tools, Vulkan headers, CMake and a C++20
 for captures. The external Vulkan driver and shaders are not sanitizer-instrumented.
 
 ```bash
-CAPTURE=1 IMAGES="$PWD/Exhibits/LightCompute/Images" bash Exhibits/LightCompute/RunReplayCameraReprojection.sh
-CAPTURE=1 SANITIZE=1 BUILD_JOBS=1 bash Exhibits/LightCompute/RunReplayCameraReprojection.sh
+RESULTS="$PWD/Exhibits/LightCompute/Results/ReplayCameraMultibounce-release.txt" \
+  bash Exhibits/LightCompute/RunReplayCameraReprojection.sh
+RESULTS="$PWD/Exhibits/LightCompute/Results/ReplayCameraMultibounce-sanitized.txt" \
+  SANITIZE=1 BUILD_JOBS=1 bash Exhibits/LightCompute/RunReplayCameraReprojection.sh
+# Optional: set CAPTURE=1 and IMAGES to a destination directory for the one-bounce diagnostic PNGs.
 ```
 
-[Release results](Results/ReplayCameraReprojection-release.txt) ·
-[Host ASan/UBSan results](Results/ReplayCameraReprojection-sanitized.txt) ·
-[Reconstruction, candidate, image-parity and CTest regressions](Results/ReplayCameraReprojection-regression.txt) ·
+[Original camera release](Results/ReplayCameraReprojection-release.txt) ·
+[Original camera host ASan/UBSan](Results/ReplayCameraReprojection-sanitized.txt) ·
+[Four-bounce release](Results/ReplayCameraMultibounce-release.txt) ·
+[Four-bounce host ASan/UBSan](Results/ReplayCameraMultibounce-sanitized.txt) ·
+[Four-bounce regressions](Results/ReplayCameraMultibounce-regression.txt) ·
+[Earlier reconstruction, candidate, image-parity and CTest regressions](Results/ReplayCameraReprojection-regression.txt) ·
 [Existing bounded reconstruction](ReplayReconstruction.md) · [Candidate tests](ReplayCandidates.md).
