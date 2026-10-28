@@ -55,6 +55,14 @@ spatial-only and full temporal+spatial+bank modes stay unbiased at every pixel (
 12 pixel/mode pairs, inside multiple-comparison noise): the spatial merge does not reintroduce the
 correlation bias, because a pixel's banked seeds never competed in a neighbour's reservoir.
 
+## Multiple fresh candidates (Sampling.y > 1)
+
+The unused draw sits after `max(Sampling.y, 1)` generator draws; the harness now also runs
+`Sampling.y ∈ {2, 4}` for bank-only and temporal+bank modes: all unbiased (|z| ≤ 0.91). A negative
+control with an off-by-one skip (banking an already-used draw) fails as predicted in the temporal
+modes (−9.9%, z −20.6 at 2 candidates; −4.7%, z −12.5 at 4) while bank-only stays clean, so the
+check has teeth exactly where the correlation mechanism operates.
+
 ## Verification
 
 | Check | Result |

@@ -1218,3 +1218,8 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
 - ReSTIR continuation: cross-pixel (spatial) reservoir correlation now also measured in the mirror harness
   (six-pixel strip, drifting integrand). Spatial-only and temporal+spatial+bank both unbiased at every pixel
   (worst |z| 1.82). LightCompute 6/6 release + ASan/UBSan.
+- ReSTIR continuation: multi-candidate generation (Sampling.y = 2, 4) verified in the mirror for
+  bank-only and temporal+bank modes (|z| <= 0.91); an off-by-one bank-skip negative control fails in
+  the temporal modes (-9.9% / -4.7%), confirming the harness detects the correlation it guards against.
+  LightCompute 6/6 release + ASan/UBSan. GitHub Actions: user enabled "Allow all actions" in repo
+  Settings; PR #4 merge into main is the remaining step before WindowsWorkspaces can be dispatched.

@@ -1,4 +1,4 @@
-ReplaySeedCorrelation host release, base 03029e6 plus working changes
+ReplaySeedCorrelation host release, base 21fa337 plus working changes
 Reference expectations: state0 0.24127054 state1 0.41015991
 Stationary mode 0: mean 0.242007 ref 0.241271 bias +0.30505% sd 0.1239 z +0.38 | frame0 0.2463 frame3 0.2463 frame12 0.2262
 Stationary mode 1: mean 0.242633 ref 0.241271 bias +0.56451% sd 0.0956 z +0.91 | frame0 0.2463 frame3 0.2401 frame12 0.2352
@@ -20,9 +20,12 @@ Spatial mode 2 pixel 2: mean 0.241650 ref 0.241271 bias +0.15740% z +0.29
 Spatial mode 2 pixel 3: mean 0.254756 ref 0.253334 bias +0.56116% z +1.04
 Spatial mode 2 pixel 4: mean 0.265785 ref 0.265398 bias +0.14599% z +0.27
 Spatial mode 2 pixel 5: mean 0.280077 ref 0.277461 bias +0.94278% z +1.53
+Candidates=2 mode 1: mean 0.240767 ref 0.241271 bias -0.20880% z -0.40
+Candidates=2 mode 2: mean 0.240329 ref 0.241271 bias -0.39011% z -0.91
+Candidates=4 mode 1: mean 0.241748 ref 0.241271 bias +0.19774% z +0.48
+Candidates=4 mode 2: mean 0.241381 ref 0.241271 bias +0.04560% z +0.13
 Path evaluations: fresh 262144 combined 999424 combined-temporal 770048 (per equal frame count; combined modes trace retained paths, so this is cost accounting, not a speedup claim)
 ReplaySeedCorrelationValidation PASS
 
---- pre-fix semantics (fresh-draw banking, all bank ages entered with temporal reuse), same harness:
-Stationary combined-temporal: mean 0.179621 ref 0.241271 bias -25.55% z -46.25 (FAIL measured during development)
-Fresh-draw banking, newest only: bias -14.82% z -24.09; next-draw banking, all ages: bias -14.34% z -29.52; temporal only (cap 1/8/64): bias +0.58/+0.41/+0.33% (clean); bank only: +0.75% z +0.97 (clean)
+Negative control (off-by-one bank skip, scratch build): Candidates=2 temporal bias -9.90% z -20.61 FAIL; Candidates=4 temporal bias -4.68% z -12.49 FAIL; bank-only unaffected, as predicted.
+Pre-fix semantics (fresh-draw banking, all ages): stationary combined-temporal bias -25.55% z -46.25 FAIL.

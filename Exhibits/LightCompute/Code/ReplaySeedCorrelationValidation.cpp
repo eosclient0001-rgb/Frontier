@@ -90,10 +90,10 @@ struct PixelState
 
 struct LocalReservoir { uint32_t Seed; double Radiance, Target, Sum, Count; };
 
-// 📝 One GenerateReplayReservoirs dispatch for one pixel (Sampling.y == 1) followed by the
-//    FinalizeReplaySampleHistory combined bank shift; returns the pre-spatial Local reservoir.
+// 📝 One GenerateReplayReservoirs dispatch for one pixel, followed by the FinalizeReplaySampleHistory
+//    combined bank shift; returns the pre-spatial Local reservoir. Candidates mirrors Extent.Sampling.y.
 static LocalReservoir GenerateLocal(PixelState &Pixel, uint32_t Sampling, uint32_t PixelIndex,
-                                    double Peak, double Scale, Mode M, long &PathEvals)
+                                    double Peak, double Scale, Mode M, long &PathEvals, int Candidates = 1)
 {
     uint32_t SeedBits = Sampling ^ (PixelIndex * 747796405u + 2891336453u);
     uint32_t SelectionBits = (Sampling * 277803737u + 1597334677u) ^ (PixelIndex * 2891336453u + 1u);
@@ -101,6 +101,14 @@ static LocalReservoir GenerateLocal(PixelState &Pixel, uint32_t Sampling, uint32
     double Radiance = EvaluateFixturePeak(FreshSeed, Peak, Scale); ++PathEvals;
     double Target = FixtureTarget(Radiance), Sum = Target, Count = 1;
     uint32_t Selected = FreshSeed;
+    for (int CandidateIndex = 1; CandidateIndex < Candidates; ++CandidateIndex)
+    {
+        uint32_t Candidate = NextRandom(SeedBits);
+        double CandidateRadiance = EvaluateFixturePeak(Candidate, Peak, Scale); ++PathEvals;
+        double CandidateTarget = FixtureTarget(CandidateRadiance);
+        Sum += CandidateTarget; Count += 1;
+        if (RandomUnit(SelectionBits) * Sum < CandidateTarget) { Selected = Candidate; Radiance = CandidateRadiance; Target = CandidateTarget; }
+    }
     bool TemporalEntered = false;
     if (M == Mode::CombinedTemporal && Pixel.TemporalValid)
     {
@@ -131,10 +139,10 @@ static LocalReservoir GenerateLocal(PixelState &Pixel, uint32_t Sampling, uint32
     Pixel.TemporalValid = true;
     if (M != Mode::Fresh)
     {
-        // 📝 Bank the generator stream's next unused draw (draw two with one fresh candidate), never a seed
-        //    that entered this frame's reservoir.
+        // 📝 Bank the generator stream's next unused draw: skip the max(Candidates,1) draws generation
+        //    consumed, exactly as FinalizeReplaySampleHistory skips max(Extent.Sampling.y, 1).
         uint32_t BankBits = Sampling ^ (PixelIndex * 747796405u + 2891336453u);
-        NextRandom(BankBits);
+        for (int Draw = 0; Draw < (Candidates > 0 ? Candidates : 1); ++Draw) NextRandom(BankBits);
         uint32_t BankSeed = NextRandom(BankBits);
         Pixel.Bank[2] = Pixel.BankCount > 1 ? Pixel.Bank[1] : Pixel.Bank[2];
         Pixel.Bank[1] = Pixel.BankCount > 0 ? Pixel.Bank[0] : Pixel.Bank[1];
@@ -295,6 +303,31 @@ int main()
             if (std::fabs(WorstZ) > 5) { std::printf("FAIL: spatial bias beyond 5 sigma\n"); Pass = false; }
         }
     }
+
+    // 📝 Multiple fresh candidates: the banked unused draw sits after max(Sampling.y,1) generator draws,
+    //    so the skip in FinalizeReplaySampleHistory must stay exact for Sampling.y > 1 as well.
+    for (int Candidates : {2, 4})
+        for (Mode M : {Mode::Combined, Mode::CombinedTemporal})
+        {
+            std::vector<double> ChainMeans;
+            long Dummy = 0;
+            for (int R = 0; R < Replicates; ++R)
+            {
+                PixelState Pixel; double Acc = 0;
+                for (int F = 0; F < Frames; ++F)
+                {
+                    uint32_t Sampling = 987123u + (uint32_t)R * 389u + (uint32_t)F * 2654435761u;
+                    const LocalReservoir Local = GenerateLocal(Pixel, Sampling, 23u, 0.30, 1.0, M, Dummy, Candidates);
+                    if (F >= Warmup) Acc += Local.Radiance * (Local.Sum / (Local.Count * Local.Target));
+                }
+                ChainMeans.push_back(Acc / (Frames - Warmup));
+            }
+            const Summary S = Summarize(ChainMeans);
+            const double Z = (S.Mean - Ref0) / (S.Sd / std::sqrt((double)Replicates));
+            std::printf("Candidates=%d mode %d: mean %.6f ref %.6f bias %+.5f%% z %+.2f\n",
+                        Candidates, (int)M, S.Mean, Ref0, 100.0 * (S.Mean - Ref0) / Ref0, Z);
+            if (std::fabs(Z) > 5) { std::printf("FAIL: multi-candidate bias beyond 5 sigma\n"); Pass = false; }
+        }
 
     std::printf("Path evaluations: fresh %ld combined %ld combined-temporal %ld (per equal frame count; combined modes trace retained paths, so this is cost accounting, not a speedup claim)\n",
                 Evals[0], Evals[1], Evals[2]);
