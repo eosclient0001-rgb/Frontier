@@ -32,3 +32,13 @@ if(MSVC)
 else()
     target_compile_options(FrontierPathReplayDomain PRIVATE -Wall -Wextra -Werror)
 endif()
+
+# 📝 Typed plume input footprints and validation, without a renderer or GPU submission.
+add_library(FrontierPlumeLatticeFootprint STATIC PlumeLatticeFootprint.cpp)
+target_compile_features(FrontierPlumeLatticeFootprint PUBLIC cxx_std_17)
+target_include_directories(FrontierPlumeLatticeFootprint PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+if(MSVC)
+    target_compile_options(FrontierPlumeLatticeFootprint PRIVATE /utf-8 /W4)
+else()
+    target_compile_options(FrontierPlumeLatticeFootprint PRIVATE -Wall -Wextra -Werror)
+endif()

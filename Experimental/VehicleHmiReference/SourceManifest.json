@@ -114,6 +114,18 @@
     {
       "path": "Shader/PlumeVorticity.wgsl",
       "git_blob": "3fa7354077e5b8f239099289dd2d4702253cafd7"
+    },
+    {
+      "path": "Shader/SceneRecords.wgsl",
+      "git_blob": "e49e8f269ab8c46ea6ef35136e1092edbc0dc6da"
+    },
+    {
+      "path": "Shader/DistanceRecords.wgsl",
+      "git_blob": "0bee46f9ba11725592d21521533891aa6b8e36fd"
+    },
+    {
+      "path": "Shader/DistanceTraversal.wgsl",
+      "git_blob": "fdda8728de49a2c7ffc445f337f351a2338d18c0"
     }
   ]
 }

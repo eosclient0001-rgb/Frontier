@@ -37,7 +37,7 @@ converters, viewer pages and fixed scene data remain in Exhibits rather than bei
 | `Diagnostics` | Retained telemetry reports/CSV, not a reusable implementation. |
 | `Docking` | `Engine/Interface/PanelDockspace*`, monitor/layout code and `UI/Editor`; exhibit validates workspace behavior. |
 | `EnvironmentPipeline` | CMake compiles Engine atmosphere, celestial, cloud, fog and weather sources directly. Its declarations do not by themselves provide GPU execution. |
-| `FluidReference` | Retained demo WGSL/JS under `Experimental/VehicleHmiReference`; exhibit runs pressure only. No native full gas/liquid solver port. |
+| `FluidReference` | Retained demo WGSL/JS under `Experimental/VehicleHmiReference`; Engine owns checked lattice/source footprints, and the exhibit runs a bounded reference transport step plus analytic cases on SwiftShader. Pressure stencil, native GPU submission, full gas renderer and liquid solver remain open. |
 | `GeometryPipeline` | CMake compiles `ClusterNesting.cpp` and `VisibilityCull.cpp` from `Frontier/Engine/Rendering`; generated geometry and assertions stay in the exhibit. |
 | `IlluminationChain` | CMake compiles shared `DiscrepancySequence`, `ReservoirSampling`, `VarianceFiltering` and unit declarations. Statistical tests do not establish complete GPU ReSTIR. |
 | `IndirectIllumination` | Shared `DistanceField`, `SurfaceCards` and illumination declarations; the exhibit is CPU validation, not a full GPU GI integration. |

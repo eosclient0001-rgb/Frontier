@@ -1,6 +1,19 @@
 # Project Tracker
 
 Single progress and violation tracker. Detailed evidence belongs in Exhibits, not competing progress reports.
+The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
+hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
+
+## Plume footprints and reference transport — 2026-10-28
+
+- Engine owns validated 256-byte lattice and 48-byte source footprints; four unchanged demo JavaScript grade
+  records round-trip exactly. Restored the original scene/distance shader dependencies. A 15-dispatch demo
+  transport step and independent source, buoyancy, vorticity, moving-SDF and light checks pass on SwiftShader
+  CPU Vulkan; release and ASan/UBSan-host readback digests match.
+- The chained pressure fixture is zero-divergence only. The nonzero high-frequency pressure defect remains;
+  simulation shaders and scheduling remain reference/exhibit-owned, not connected to the production editor.
+  No physical GPU, long-term fluid validation or liquid solver is claimed.
+  [Footprints, numerical checks and limitations](../Exhibits/FluidReference/PlumeTransport.md).
 
 ## Standalone GPU tyre projection — 2026-10-28
 

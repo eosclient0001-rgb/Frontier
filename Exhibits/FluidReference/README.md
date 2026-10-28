@@ -1,8 +1,9 @@
 # Gas and smoke reference audit
 
-The requested gas/fluid simulation is **not yet ported or integrated in this checkout**. This exhibit preserves
-and checks the full VehicleHMI demo's source, exercises source-side contracts and runs its pressure WGSL on
-SwiftShader CPU Vulkan. It does not execute the full plume, simulate smoke/fire over time, or verify a liquid solver.
+The requested gas/fluid simulation is **not yet fully ported or integrated**. Engine now owns checked lattice
+and source footprints, while this exhibit executes the retained demo's advection, vorticity, pressure and light
+WGSL on SwiftShader CPU Vulkan in small analytic fixtures. A one-step chain is tested, but there is no native
+production plume scheduler, renderer/editor integration, long-term simulation or verified liquid solver.
 
 ## Source provenance and scope
 
@@ -16,9 +17,9 @@ Both exact full-demo files are now retained; the import closure for the JavaScri
 | Component       | Present in the demo                        | Port status                |
 | --------------- | ------------------------------------------ | -------------------------- |
 | Smoke/fire      | Tyre sources, onset, telemetry and lights  | Reference-side tests only  |
-| Gas lattice     | Fine thermo, coarse velocity; moving XY    | No native integration      |
-| Flow            | Advection, buoyancy, curl and pressure     | Pressure WGSL tested only  |
-| Appearance      | Volume march, depth, light and self-shadow | Not wired to editor        |
+| Gas lattice     | Fine thermo, coarse velocity; moving XY    | Checked Engine footprints; no production allocation/scheduler |
+| Flow            | Advection, buoyancy, curl and pressure     | Retained WGSL executes in bounded SwiftShader tests; pressure mismatch remains |
+| Appearance      | Volume march, depth, light and self-shadow | Sun/zenith transmission tested; march not wired to editor |
 | Liquid fluid    | Not established by this plume reference    | Scope/reference needed     |
 
 The upstream source comments mention an older Frontier CPU smoke solver. Those comments are provenance claims,
@@ -32,6 +33,11 @@ It checks negative-coordinate grid wrapping and recentering; onset/release hyste
 momentum; burning seats and a fire light; transient source expiry and capacity; shredded-tyre suppression; and
 residency/record scheduling. The fake queue records writes but does not run a GPU solver. All six checks pass.
 These are implementation-contract checks, not measured vehicle or smoke data.
+
+The later [transport investigation](PlumeTransport.md) executes an ordered one-step GPU reference chain,
+including advection, vorticity, eight pressure sweeps, thermo and light. It also tests analytic source,
+buoyancy and a sampled moving-solid SDF. Its zero-divergence chain does not resolve the pressure defect or
+establish production integration, long-duration fluid stability, physical-GPU execution or real-world accuracy.
 
 ## Pressure-stencil caution
 
