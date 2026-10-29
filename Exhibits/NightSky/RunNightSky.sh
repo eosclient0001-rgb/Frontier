@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reproduce the night-sky exhibit: build the native CPU renderer, run its 16 checks, convert captures to PNG.
+# Reproduce the night-sky exhibit: build the native CPU renderer, run its 19 checks, convert captures to PNG.
 # PNG conversion needs Pillow (PyPI). Set PYTHON to a Python with Pillow installed, e.g. a virtualenv.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

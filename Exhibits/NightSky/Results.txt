@@ -1,18 +1,33 @@
+PASS Hipparcos catalogue loaded (stars) = 41359
 PASS sun elevation vs CelestialModel (deg) = 1.68569e-13
-INFO sun elevation at 16:30 local = 23.453 deg, azimuth 267.073 deg
+INFO sun at 16:30 SAST: elevation 23.453 deg, azimuth 267.073 deg
 PASS equatorial round trip (rad) = 1.66533e-16
-INFO phase 0 geometric 0.0086 raster 0.0089 mean-age 0.0000
+PASS transmittance LUT baked = 1
+PASS zenith sky is blue (B over R) = 3.92967
+PASS sky brighter toward the sun than away = 2.98952
+INFO phase 0 geometric 0.0086 raster 0.0087 mean-age 0.0000
 INFO phase 1 geometric 0.5099 raster 0.5099 mean-age 0.5000
-INFO phase 2 geometric 0.9980 raster 0.9979 mean-age 1.0000
-INFO phase 3 geometric 0.4340 raster 0.4338 mean-age 0.5000
-PASS moon raster lit fraction vs geometry = 0.00029213
-INFO moon geometry vs mean-age phase model, worst gap 0.0660 (model difference, not a render check)
+INFO phase 2 geometric 0.9980 raster 0.9980 mean-age 1.0000
+INFO phase 3 geometric 0.4340 raster 0.4339 mean-age 0.5000
+PASS moon raster lit fraction vs geometry = 9.53632e-05
+INFO moon geometry vs mean-age model, worst gap 0.0660 (model difference, not a render check)
 PASS phase strip runs new (0) to full (2) = 0.998045
-INFO moon outside night frame (area check not applicable)
-INFO night aim azimuth/altitude -50.0 / 25.0 deg, moon alt 19.86 deg
-PASS night Milky Way aim above 25 deg = 0.999927
-INFO sun NDC in day flare frame (0.535, 0.281)
+INFO moon at 20:30 SAST: altitude 19.86 deg, illuminated 0.995
+PASS moon close-up disc area vs pi r^2 = 0.999981
+PASS night field stars drawn (Milky Way aim) = 3505
+PASS moon field stars drawn = 3034
+PASS sun disc fades monotonically (core > mid > far) = 0.129123
+PASS anamorphic streak present beside the sun = 0.470664
+PASS halo ring present above the sun = 0.320068
 PASS zero visibility removes every ghost = 0
-PASS ghost chain visible when unoccluded = 1.05011
+PASS ghost centres collinear with sun and frame centre = 1.38778e-17
+INFO ghost 0 expected (586.5, 428.1) px, isolated centroid error 0.00 px
+INFO ghost 1 expected (522.3, 461.8) px, isolated centroid error 0.00 px
+INFO ghost 2 expected (447.4, 501.1) px, isolated centroid error 0.00 px
+INFO ghost 3 expected (372.5, 540.4) px, isolated centroid error 0.00 px
+INFO ghost 4 expected (276.2, 590.9) px, isolated centroid error 0.00 px
+INFO ghost 5 expected (147.8, 658.3) px, isolated centroid error 0.00 px
+PASS rendered ghost centroids within 2 px = 0.000456967
+PASS sunset horizon is warm (R over B) at -2 deg = 381.648
 PASS PPM outputs written = 1
-SUMMARY passed 8 failed 0
+SUMMARY passed 19 failed 0

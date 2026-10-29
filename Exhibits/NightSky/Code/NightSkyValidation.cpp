@@ -574,7 +574,7 @@ Canvas RenderMoonPhases(double JulianDay, int TileSize, std::vector<double>& Geo
 // OnlyGhost >= 0 keeps a single ghost, so its contribution can be isolated for the rendering-level centroid check.
 Canvas RenderSunFlare(SkyVector Aim, SkyVector Sun, double Visibility, const Frontier::AtmosphereParameters& Atmosphere,
                       const Frontier::TransmittanceLut& Lut, std::array<Frontier::FlareGhost, 6>* GhostsOut,
-                      int OnlyGhost = -1)
+                      int OnlyGhost = -1, bool SunElements = true)
 {
     const int Width = 1280, Height = 800;
     Canvas Image(Width, Height);
@@ -591,10 +591,28 @@ Canvas RenderSunFlare(SkyVector Aim, SkyVector Sun, double Visibility, const Fro
             const SkyVector D = PixelDirection(Camera, X + 0.5, Y + 0.5);
             Radiance Value = ScatteredSky(Atmosphere, Lut, D, Sun);
             const double Theta = std::acos(std::clamp(Dot(D, Sun), -1.0, 1.0));
-            if (Theta < SunAngularRadius)
-                Value = Radiance{60.0, 58.0, 52.0};
             double Px = 0.0, Py = 0.0;
             ScreenCoordinates(Camera, D, Px, Py);
+            // Sun disc with a soft limb (fade over +/-15 % of the radius) and a bloom that falls off with angle.
+            const double Disc = Smoothstep(SunAngularRadius * 1.15, SunAngularRadius * 0.85, Theta);
+            Value = Value + Radiance{60.0, 58.0, 52.0} * Disc;
+            Value = Value + Radiance{1.0, 0.95, 0.85} * (2.5 * std::exp(-std::pow(Theta / 0.020, 2.0)) +
+                                                          0.0040 / (Theta * Theta + 0.0005));
+            if (SunElements)
+            {
+                const double Dx = Px - SunX, Dy = Py - SunY;
+                const double Radius = std::hypot(Dx, Dy);
+                // Anamorphic horizontal streak: thin band through the sun, fading with distance.
+                const double Streak = std::exp(-std::pow(Dy / 0.0045, 2.0)) * std::exp(-std::fabs(Dx) / 0.45);
+                Value = Value + Radiance{0.55, 0.72, 1.0} * (0.9 * Streak);
+                // Starburst: six thin spikes from the sun, fading with radius.
+                const double Angle = std::atan2(Dy, Dx);
+                const double Spikes = std::pow(std::fabs(std::cos(3.0 * Angle)), 80.0);
+                Value = Value + Radiance{1.0, 0.92, 0.80} * (0.30 * Spikes * std::exp(-Radius / 0.22));
+                // Halo ring at 0.32 frame half-heights with a faint chromatic edge.
+                const double Ring = std::exp(-std::pow((Radius - 0.32) / 0.012, 2.0));
+                Value = Value + Radiance{1.0, 0.85, 0.95} * (0.10 * Ring);
+            }
             for (size_t Index = 0; Index < Ghosts.size(); ++Index)
             {
                 if (OnlyGhost >= 0 && static_cast<int>(Index) != OnlyGhost) continue;
@@ -743,6 +761,21 @@ int main(int ArgumentCount, char** Arguments)
     const Canvas Flare = RenderSunFlare(DayAim, DaySun, 1.0, Atmosphere, Lut, &Ghosts);
     std::array<Frontier::FlareGhost, 6> HiddenGhosts{};
     const Canvas FlareHidden = RenderSunFlare(DayAim, DaySun, 0.0, Atmosphere, Lut, &HiddenGhosts);
+    // Element checks on the full flare: sun-disc fade, horizontal streak and halo ring, measured in pixels.
+    const SkyCamera DayCamera = MakeSkyCamera(DayAim, 1280, 800, StandardHalfTangent);
+    double SunScreenX = 0.0, SunScreenY = 0.0;
+    ScreenCoordinates(DayCamera, DaySun, SunScreenX, SunScreenY);
+    const int SunPx = static_cast<int>(640.0 + SunScreenX * 400.0);
+    const int SunPy = static_cast<int>(400.0 - SunScreenY * 400.0);
+    const double DiscRadiusPx = SunAngularRadius / StandardHalfTangent * 400.0;
+    const Radiance Core = Flare.At(SunPx, SunPy);
+    const Radiance Mid = Flare.At(SunPx + static_cast<int>(DiscRadiusPx * 1.5), SunPy - static_cast<int>(DiscRadiusPx * 1.5));
+    const Radiance Far = Flare.At(SunPx + static_cast<int>(DiscRadiusPx * 4.0), SunPy - static_cast<int>(DiscRadiusPx * 4.0));
+    Check.Check("sun disc fades monotonically (core > mid > far)", Core.R > Mid.R && Mid.R > Far.R, Mid.R / Core.R);
+    const double StreakAbove = Flare.At(SunPx + 150, SunPy).B - Flare.At(SunPx + 150, SunPy - 40).B;
+    Check.Check("anamorphic streak present beside the sun", StreakAbove > 0.05, StreakAbove);
+    const double RingContrast = Flare.At(SunPx, SunPy - 128).G - Flare.At(SunPx, SunPy - 170).G;
+    Check.Check("halo ring present above the sun", RingContrast > 0.02, RingContrast);
     double HiddenStrength = 0.0;
     for (const Frontier::FlareGhost& Ghost : HiddenGhosts) HiddenStrength = std::max(HiddenStrength, Ghost.Strength);
     Check.Check("zero visibility removes every ghost", HiddenStrength == 0.0, HiddenStrength);
