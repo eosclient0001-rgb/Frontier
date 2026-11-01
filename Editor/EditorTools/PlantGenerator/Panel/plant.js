@@ -635,130 +635,129 @@ export const FERN_VARIANTS = {
  *   'oval'   — entire ovate (Calathea, Alocasia 'Amazonica' style is heart+veins)
  */
 function genAroid(P, rnd, mb, V = AROID_VARIANTS.elephant) {
-  const C = { ...PALETTE.aroid, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06;
-  const sides = 10, crownRings = 4; const cr = P.stemRadius;
+  const C = { ...PALETTE.aroid, ...(V.palette || {}) }; const hue = (P.hue || 0) * .06; const det = P.detail;
+  const sides = 12; const cr = P.stemRadius;
+  /* ── crown / corm / trunk: ringed with leaf scars, swollen base */
   mb.part('crown');
   const trunkH = P.trunk || 0;
-  const prof = [[-.03, 0], [0, .9], [trunkH * .5 + .04, 1]];
-  const n = Math.max(3, Math.round(trunkH / .15)); for (let k = 1; k <= n; k++) prof.push([trunkH * .5 + .04 + (trunkH * .5) * k / n, 1 - .1 * k / n]);
-  prof.push([trunkH + .07, .9], [trunkH + .1, .65], [trunkH + .12, 0]);
+  const prof = [[-.03, 0], [0, .95], [.04, 1.05]];
+  const n = Math.max(3, Math.round(trunkH / .12)); for (let k = 1; k <= n; k++) { const t = k / n; prof.push([.04 + trunkH * t, (1 - .12 * t) * (k % 2 ? .96 : 1.04)]); }
+  prof.push([trunkH + .07, .95], [trunkH + .1, .7], [trunkH + .12, 0]);
   const nTr = prof.length - 6;
-  const crown = mb.tube(prof.map(([y, r]) => ({ p: V3(0, y, 0), r: cr * r })), { sides, color: hex(C.crown) });
-  const used = new Set();
-  const pickFace = (ring, slot) => { let cnt = 0; for (let k = 0; k < sides; k++) if (used.has(ring * 64 + k)) cnt++; if (cnt >= sides - 2) return null; for (let k = 0; k < sides; k++) { const s = (slot + (k % 2 ? -(k + 1) / 2 : k / 2) + sides * 3) % sides; const key = ring * 64 + s; if (!used.has(key)) { used.add(key); return s; } } return null; };
+  const crown = mb.tube(prof.map(([y, r], j) => ({ p: V3(0, y, 0), r: cr * r, rf: (th) => 1 + .03 * Math.sin(th * 5 + j) })), { sides, colorAt: (j) => shade(hex(C.crown), 0, 1, j > 2 && j % 2 ? .85 : 1) });
+  const pick = facePicker(sides);
+  /* aerial roots from the trunk down to the ground (monstera / selloum) */
+  if (V.aerialRoots && trunkH > .3) { const nr = Math.round(lerp(2, 5, det)); for (let k = 0; k < nr; k++) { const ring = 2 + Math.floor(rnd() * (nTr - 1)); const slot = pick(ring, Math.round(k * sides / nr + 2)); if (slot == null) continue; let rf; try { rf = crown.face(ring, slot); } catch { continue; } const out = rf.normal.clone(); out.y = 0; out.normalize(); const y0 = rf.center.y; const pts = []; for (let q = 1; q <= 6; q++) { const t = q / 6; pts.push({ p: rf.center.clone().addScaledVector(out, (.05 + .25 * cr / .08) * Math.sin(t * Math.PI * .6)).addScaledVector(UP, -(y0 + .01) * t + .0 * t), r: cr * .08 * (1 - .4 * t) + .003 }); } pts[pts.length - 1].p.y = 0; pts.push({ p: pts[pts.length - 1].p.clone().addScaledVector(UP, -.01), r: 0 }); mb.tube(pts, { sides: 5, start: { ring: rf.ring, center: rf.center }, color: hex(C.root || '#8a7a5a') }); } }
+
   const N = Math.round(P.leaves); const perRing = Math.ceil(N / 3);
-  const rings = Math.round(lerp(10, 18, P.detail)), spokes = Math.round(lerp(18, 34, P.detail));
+  const splits = V.splits || 0, holes = V.holes || 0;
+  const rows = Math.max(Math.round(lerp(22, 40, det)), splits * 7), across = det > .55 ? 13 : 9;
   for (let i = 0; i < N; i++) {
-    const age = i / Math.max(1, N - 1);
+    const age = i / Math.max(1, N - 1);                            // 0 = oldest/outer, 1 = newest/central
     const ring = nTr + 1 + Math.min(2, Math.floor(i / perRing));
     const az = i * GOLD + rnd.range(-.2, .2);
-    const slot = pickFace(ring, Math.round(az / (2 * Math.PI / sides))); if (slot === null) continue;
-    const f = crown.face(ring, slot);
+    const slot = pick(ring, Math.round(az / (2 * Math.PI / sides))); if (slot === null) continue;
+    let f; try { f = crown.face(ring, slot); } catch { continue; }
     const faceAz = Math.atan2(f.normal.z, f.normal.x);
     const el = lerp(V.elMin ?? 20, V.elMax ?? 75, Math.pow(age, .9)) * D2R + rnd.range(-6, 6) * D2R;
     const d = dirFrom(faceAz + rnd.range(-.2, .2), el);
     const petL = P.petiole * rnd.range(.85, 1.1) * (age > .9 ? .7 : 1);
-    const nPet = 8; const pts = arcPath(f.center, d, petL, P.droop * .9, nPet);
-    const st = pts.slice(1).map((p, k) => ({ p, r: cr * .22 * (1 - .45 * k / nPet) + .004 }));
+    /* petiole: sheathed & wide at the base, grooved (flattened top), tapering; gentle S-curve */
+    const nPet = 10; const pts = arcPath(f.center, d, petL, P.droop * .9, nPet);
+    const st = pts.slice(1).map((p, k) => { const t = k / nPet; return { p, r: cr * (.3 * (1 - .5 * t) + .12 * Math.exp(-t * 6)) + .004, rf: (th) => 1 - .18 * Math.max(0, Math.cos(th)) ** 2 }; });
     const colPet = shade(hex(V.darkPetiole ? C.petioleDark : C.petiole), hue, 1, rnd.range(.92, 1.06));
     mb.part('leaf');
-    const pet = mb.tube(st, { sides: 4, start: { ring: f.ring, center: f.center }, color: colPet });
+    const pet = mb.tube(st, { sides: 7, start: { ring: f.ring, center: f.center }, colorAt: (k) => k < 2 ? shade(colPet, 0, .8, .85) : colPet });
     const fr = pet.frames[pet.length - 1];
-    // leaf frame: forward = petiole tangent flattened toward horizontal then tilted by 'hang'
+    /* blade frame */
     const hang = lerp(V.hangMin ?? 10, V.hangMax ?? 55, P.droop) * D2R * lerp(.6, 1.2, age);
-    const flat = fr.T.clone().addScaledVector(UP, -fr.T.dot(UP)).normalize();
+    const flat = fr.T.clone().addScaledVector(UP, -fr.T.dot(UP)); if (flat.lengthSq() < 1e-4) flat.set(Math.cos(faceAz), 0, Math.sin(faceAz)); flat.normalize();
     const fwd = flat.clone().multiplyScalar(Math.cos(hang)).addScaledVector(UP, -Math.sin(hang)).normalize();
     const right = fwd.clone().cross(UP).normalize(); if (right.lengthSq() < .5) right.set(1, 0, 0);
     const nrm = right.clone().cross(fwd).normalize();
     const L = P.leafLength * rnd.range(.85, 1.1) * (age > .9 ? .6 : 1), W = L * P.leafWidth;
-    const colLeaf = shade(age > .85 ? hex(C.leafYoung) : hex(C.leaf), hue + rnd.range(-.01, .01), 1, rnd.range(.93, 1.07));
-    const colVein = shade(hex(C.vein), hue, 1, 1);
-    const peltate = V.peltate ?? 0;                      // attachment point moved inside the blade (elephant ear)
-    const lobe = V.lobe ?? .35;                           // basal lobe depth (fraction of L behind the attachment)
-    const splits = V.splits || 0, splitDepth = V.splitDepth ?? .55, holes = V.holes || 0;
-    // outline r(θ): θ=0 forward tip, ±π backward (basal lobes / sinus)
-    const outline = (th) => {
-      const a = Math.abs(th);
-      let r;
-      if (V.shape === 'oval') r = (L * .5) / Math.sqrt(Math.pow(Math.cos(th) / 1, 2) + Math.pow(Math.sin(th) / (W / L), 2)) * (1 + .1 * Math.cos(th));
-      else {
-        // cordate / sagittate: pointed (acuminate) tip, widest ~35% back, two rounded basal lobes with a sinus at θ=±π
-        const Lf = L * (1 - lobe), hw = W * .5;
-        // superellipse-ish front half with exponent < 2 → pointed tip
-        const cA = Math.cos(th), sA = Math.abs(Math.sin(th));
-        const pE = 1.55, front = 1 / Math.pow(Math.pow(Math.abs(cA) / Lf, pE) + Math.pow(sA / hw, pE), 1 / pE);
-        // basal lobes: circles of radius hw*.55 centred at (−lobe·L·.35, ±hw·.5)
-        const lr = hw * .55, lcx = -L * lobe * .35, lcy = hw * .5;
-        const ux = Math.cos(th), uy = Math.sin(th); const cy = uy > 0 ? lcy : -lcy;
-        const bq = -2 * (ux * lcx + uy * cy), cq = lcx * lcx + cy * cy - lr * lr; const disc = bq * bq - 4 * cq;
-        const lobeR = disc > 0 ? (-bq + Math.sqrt(disc)) / 2 : 0;
-        const sinusR = W * .06 * (1 - (V.sinus ?? .8)) + W * .05;
-        r = a < Math.PI * .5 ? front : Math.max(lobeR, sinusR, a < Math.PI * .62 ? front * (1 - (a - Math.PI * .5) / (Math.PI * .12)) : 0);
-        if (a >= Math.PI * .5) r = Math.max(r, front * Math.max(0, 1 - (a - Math.PI * .5) / (Math.PI * .2)));
-      }
-      if (splits) { const k = Math.abs(Math.sin(th * splits)); const cut = Math.pow(k, 8) * splitDepth * (a > .25 && a < Math.PI * .85 ? 1 : 0); r *= 1 - cut; }
-      return Math.max(r, .01);
+    const young = age > .85;
+    const colLeaf = shade(young ? hex(C.leafYoung) : hex(C.leaf), hue + rnd.range(-.01, .01), 1, rnd.range(.92, 1.08));
+    const colVein = shade(hex(C.vein), hue, 1, 1); const colMid = [lerp(colLeaf[0], colVein[0], .6), lerp(colLeaf[1], colVein[1], .6), lerp(colLeaf[2], colVein[2], .6)];
+    const peltate = V.peltate ?? 0, lobe = V.lobe ?? .35, sinus = V.sinus ?? .8, cup = V.cup ?? .25, ripple = V.ripple ?? 0, tipDroop = V.tipDroop ?? .35;
+    const lobeL = L * lobe;                                       // how far the basal lobes reach behind the attachment
+    const sinusD = lobeL * (peltate ? (1 - peltate * 2.5) : sinus); // sinus depth from the back edge toward the attachment
+    /* half-width of the outline at axial position x ∈ [−lobeL, L] (x=0 at the petiole) */
+    const hwAt = (x) => {
+      if (V.shape === 'oval') { const u = (x + lobeL) / (L + lobeL) * 2 - 1; return W * .5 * Math.pow(Math.max(0, 1 - u * u), V.ovalP ?? .55); }
+      if (V.shape === 'lance') { const u = (x + lobeL) / (L + lobeL); return W * .5 * Math.sin(Math.PI * Math.pow(u, .7)) * Math.pow(1 - u, .15); }
+      if (x >= 0) { const u = x / L; const pE = V.tipP ?? 1.7; return W * .5 * Math.pow(Math.max(0, 1 - Math.pow(u, pE)), 1 / pE) * (1 - .08 * u); }
+      const u = -x / Math.max(1e-3, lobeL); return W * .5 * (V.lobeW ?? .92) * Math.sqrt(Math.max(0, 1 - u * u * u * u));
     };
-    const origin = fr.p.clone().addScaledVector(fwd, peltate * L);
-    const cup = V.cup ?? .25, ripple = V.ripple ?? 0;
-    const pointAt = (th, s) => {
-      const r = outline(th) * s;
-      const x = Math.cos(th) * r, y = Math.sin(th) * r;
-      // blade droops away from the midrib (cup) and along the tip
-      const sag = cup * Math.abs(y) * Math.abs(y) / (W * .5) + .35 * cup * Math.max(0, x) * Math.max(0, x) / L;
-      const rip = ripple ? Math.sin(th * spokes * .5) * .015 * L * s : 0;
-      return origin.clone().addScaledVector(fwd, x).addScaledVector(right, y).addScaledVector(nrm, -sag + rip);
-    };
-    const hubIdx = pet.rings[pet.length - 1]; const hubCenter = mb.v(origin, colVein);
-    const rowsR = [];
-    for (let q = 1; q <= rings; q++) {
-      const sr = q / rings; const row = [];
-      for (let k = 0; k <= spokes; k++) {
-        const th = -Math.PI + 2 * Math.PI * k / spokes;
-        let col = colLeaf;
-        const nearVein = Math.abs(Math.sin(th)) < .06 || (V.veins && Math.abs(Math.sin(th * V.veins)) < .05);
-        if (nearVein && sr < .9) col = colVein;
-        if (holes && sr > .35 && sr < .8) { const hk = Math.sin(th * holes * 2) * Math.sin(sr * Math.PI * 3); if (hk > .93) col = null; }
-        row.push(col ? mb.v(pointAt(th, sr), col) : null);
+    /* pinnatifid cuts: depth 0..1 removed from the margin, following the lateral veins (periodic along x) */
+    const cutAt = (x, side, a = 1) => { if (!splits) return 0; const u = (x + lobeL) / (L + lobeL); if (u < .06 || u > .97) return 0; const ph = x / (L + lobeL) * splits * Math.PI + (side > 0 ? 0 : .35); const k = Math.pow(Math.abs(Math.sin(ph)), V.splitSharp ?? 10); return (V.splitDepth ?? .55) * k * Math.sin(Math.PI * Math.min(1, u * 1.1)) ** .4; };
+    /* fenestrations: elliptical windows between the veins, inner half of each side */
+    const holeAt = (x, t) => { if (!holes) return false; const u = (x + lobeL) / (L + lobeL); if (u < .15 || u > .9) return false; const a = Math.abs(t); if (a < .14 || a > .48) return false; const ph = x / (L + lobeL) * splits * Math.PI + (t > 0 ? 0 : .35); const k = Math.abs(Math.cos(ph)); const band = Math.sin((a - .14) / .34 * Math.PI); return k > (1 - .22 * band) && (Math.floor(x / (L + lobeL) * splits + (t > 0 ? 0 : .35) / Math.PI) % holes) === 0; };
+    const slantShift = splits ? Math.min(W * .5 * (V.cutSlant ?? .5), (L + lobeL) / (splits * 2.5)) : W * .12;
+    const origin = fr.p.clone();
+    const grid = []; let hubRow = 0, hubDist = 1e9;
+    for (let q = 0; q < rows; q++) {
+      const v = q / (rows - 1); const x = -lobeL + (L + lobeL) * Math.pow(v, 1) ; const hw = hwAt(x); const row = [];
+      if (Math.abs(x) < hubDist) { hubDist = Math.abs(x); hubRow = q; }
+      const inSinus = x < -lobeL + sinusD && x < 0;             // rows inside the basal notch: remove the middle columns
+      const sinusHW = inSinus ? W * .5 * (V.lobeW ?? .92) * .18 + W * .08 * (1 - (x + lobeL) / Math.max(1e-3, sinusD)) : 0;
+      for (let k = 0; k < across; k++) {
+        const t = (k / (across - 1)) * 2 - 1; const a = Math.abs(t); const sd = t >= 0 ? 1 : -1;
+        const xv = x + a * slantShift * (x > -lobeL * .5 ? 1 : 0); const hwv = xv < L * .8 ? hw : hw * Math.max(0, 1 - (xv - L * .8) / (L * .22)); if (hwv <= 0 && q < rows - 1) { row.push(null); continue; }
+        const c = cutAt(x, sd, a); const reach = hwv * (1 - c * Math.max(0, a - .15) / .85);  // cuts only bite outside the central 15 %
+        if (inSinus && Math.abs(t) * hw < sinusHW && q < rows - 1) { row.push(null); continue; }
+        if (holeAt(x, t)) { row.push(null); continue; }
+        const y = t * (c > 0 ? reach : hwv);
+        // surface: cup across the midrib, droop along the tip, margin undulation, midrib ridge
+        const u = Math.max(0, xv) / L;
+        const sag = cup * (y * y) / (W * .5) + tipDroop * L * u * u * u + (x < 0 ? cup * .4 * (x * x) / Math.max(1e-3, lobeL) : 0);
+        const rip = ripple ? Math.sin(q * 1.9 + t * 4) * ripple * .02 * L * a * a : 0;
+        const ridge = a < .01 ? -.006 * L : 0;
+        const isMid = a < .01 && x >= -lobeL * .2; const vph = ((x + lobeL) / (L + lobeL) * (V.veins || 0) - a * (V.veinSlant ?? .45)) % 1; const isVein = V.veins && Math.abs(vph - .5) < .07 && a > .08 && a < .92 && !splits;
+        row.push(mb.v(origin.clone().addScaledVector(fwd, xv).addScaledVector(right, y).addScaledVector(nrm, -sag + rip + ridge), isMid ? colMid : isVein ? [lerp(colLeaf[0], colVein[0], .55), lerp(colLeaf[1], colVein[1], .55), lerp(colLeaf[2], colVein[2], .55)] : colLeaf));
       }
-      rowsR.push(row);
+      grid.push(row);
     }
-    // stitch: hub → ring 1 (petiole tip ring vertices are part of the hub fan → single shell)
-    for (let k = 0; k < spokes; k++) { const a = rowsR[0][k], b = rowsR[0][k + 1]; if (a != null && b != null) mb.tri(hubCenter, a, b); }
-    for (let h = 0; h < hubIdx.length; h++) mb.tri(hubCenter, hubIdx[(h + 1) % hubIdx.length], hubIdx[h]);
-    // bridge the petiole ring to the hub centre + first-row point nearest to each ring vertex
-    for (let h = 0; h < hubIdx.length; h++) { const pv = mb.p(hubIdx[h]); let best = 0, bd = 1e9; for (let k = 0; k < spokes; k++) { const idx = rowsR[0][k]; if (idx == null) continue; const dd = mb.p(idx).distanceToSquared(pv); if (dd < bd) { bd = dd; best = idx; } } mb.tri(hubIdx[h], hubCenter, best); }
-    for (let q = 0; q < rings - 1; q++) for (let k = 0; k < spokes; k++) {
-      const a = rowsR[q][k], b = rowsR[q][k + 1], c = rowsR[q + 1][k], d2 = rowsR[q + 1][k + 1];
+    // join the petiole ring to the blade's attachment vertex (midrib at x≈0) → single shell
+    const hubIdx = grid[hubRow][(across - 1) / 2] ?? grid[hubRow].find(v => v != null); const pr = pet.rings[pet.length - 1];
+    for (let h = 0; h < pr.length; h++) mb.tri(hubIdx, pr[(h + 1) % pr.length], pr[h]);
+    for (let q = 0; q < rows - 1; q++) for (let k = 0; k < across - 1; k++) {
+      const a = grid[q][k], b = grid[q][k + 1], c = grid[q + 1][k], d2 = grid[q + 1][k + 1];
       if (a != null && b != null && c != null) mb.tri(a, b, c); if (b != null && d2 != null && c != null) mb.tri(b, d2, c);
+      else if (a != null && b != null && d2 != null && c == null) mb.tri(a, b, d2); else if (a != null && c != null && d2 != null && b == null) mb.tri(a, d2, c);
     }
+    // tip point: close the last row to a single vertex
+    const last = grid[rows - 1].filter(v => v != null); if (last.length > 1) { const tip = mb.v(origin.clone().addScaledVector(fwd, L * 1.01).addScaledVector(nrm, -tipDroop * L), colLeaf); for (let k = 0; k < last.length - 1; k++) mb.tri(last[k], last[k + 1], tip); }
   }
-  // spathe + spadix (peace-lily style inflorescence) for some
+  /* inflorescence: spathe (hooded bract) + spadix, peace-lily style; several on older plants */
   if (V.flower && P.flower > .5) {
-    const slot = pickFace(nTr + 3, rnd.int(0, sides - 1));
-    if (slot !== null) {
-      const f = crown.face(nTr + 3, slot); mb.part('flower');
-      const d = f.normal.clone().addScaledVector(UP, 2).normalize(); const h = P.petiole * .9;
-      const stalk = mb.tube([1, 2, 3, 4, 5].map(k => ({ p: f.center.clone().addScaledVector(d, h * k / 5), r: cr * .12 })), { sides: 4, start: { ring: f.ring, center: f.center }, color: hex(C.petiole) });
+    const nF = Math.round(lerp(1, 3, det));
+    for (let q = 0; q < nF; q++) {
+      const slot = pick(nTr + 3, rnd.int(0, sides - 1)); if (slot === null) continue;
+      let f; try { f = crown.face(nTr + 3, slot); } catch { continue; } mb.part('flower');
+      const d = f.normal.clone().multiplyScalar(.35).addScaledVector(UP, 1).normalize(); const h = P.petiole * rnd.range(1, 1.3);
+      const stalk = mb.tube([1, 2, 3, 4, 5, 6].map(k => ({ p: f.center.clone().addScaledVector(d, h * k / 6).addScaledVector(f.normal, .03 * Math.sin(k)), r: cr * .14 * (1 - .3 * k / 6) })), { sides: 6, start: { ring: f.ring, center: f.center }, color: hex(C.petiole) });
       const top = stalk.frames[stalk.length - 1].p, tr = stalk.rings[stalk.length - 1];
-      const spadix = [[.3, 1.6], [.7, 1.4], [1, 0]].map(([t, r]) => ({ p: top.clone().addScaledVector(UP, .22 * t), r: cr * .12 * r }));
-      mb.tube(spadix, { sides: 6, start: { ring: tr, center: top }, color: hex(C.spadix) });
-      // spathe: a single cupped blade from a stalk face
-      let ff; try { ff = stalk.face(stalk.length - 3, 1); } catch { ff = null; }
-      if (ff) { const rows = [ff.ring.slice(0, 2)]; const back = ff.normal.clone(); for (let q = 1; q <= 5; q++) { const t = q / 5; const w = .11 * Math.sin(Math.PI * Math.pow(t, .7)) + .001; const c = ff.center.clone().addScaledVector(UP, .34 * t).addScaledVector(back, .06 * Math.sin(Math.PI * t)); const side = back.clone().cross(UP).normalize(); rows.push(q === 5 ? [mb.v(c, hex(C.flower))] : [mb.v(c.clone().addScaledVector(side, -w), hex(C.flower)), mb.v(c.clone().addScaledVector(back, -w * .5), hex(C.flower)), mb.v(c.clone().addScaledVector(side, w), hex(C.flower))]); } mb.strip(rows); }
+      // spadix: knobbly club
+      const spL = .07 + .07 * P.leafLength; mb.tube([[.1, 1.2], [.3, 1.8], [.6, 1.9], [.85, 1.5], [1, 0]].map(([t, r]) => ({ p: top.clone().addScaledVector(d, spL * t), r: cr * .1 * r, rf: (th) => 1 + .12 * Math.sin(th * 6) })), { sides: 10, start: { ring: tr, center: top }, color: hex(C.spadix) });
+      // spathe: wide hooded bract cupping behind the spadix, pointed tip curling back
+      let ff; try { ff = stalk.face(stalk.length - 2, 1); } catch { ff = null; }
+      if (ff) { const back = ff.normal.clone().addScaledVector(d, -.2).normalize(); const side = back.clone().cross(d).normalize(); const rowsS = [ff.ring.slice(0, 2)]; const nS = 9; const sL = spL * 1.7, sW = spL * .95;
+        for (let r = 1; r <= nS; r++) { const t = r / nS; const w = sW * Math.sin(Math.PI * Math.pow(t, .6)) * (r === nS ? 0 : 1) + .001; const c = ff.center.clone().addScaledVector(d, sL * t).addScaledVector(back, sW * .35 * Math.sin(Math.PI * t) + (t > .7 ? sW * .6 * (t - .7) ** 2 * 8 : 0)); const row = []; if (r === nS) { row.push(mb.v(c, hex(C.flower))); } else for (let k = 0; k < 7; k++) { const u = (k / 6) * 2 - 1; row.push(mb.v(c.clone().addScaledVector(side, u * w).addScaledVector(back, -w * .55 * (1 - u * u)), k === 3 ? shade(hex(C.flower), 0, 1, .9) : hex(C.flower))); } rowsS.push(row); }
+        mb.strip(rowsS); }
     }
   }
   return { latin: V.latin, common: V.common };
 }
 export const AROID_VARIANTS = {
-  elephant: { label: 'Elephant ear', latin: 'Colocasia esculenta', common: 'Taro / elephant ear', shape: 'heart', peltate: .2, lobe: .3, sinus: .5, cup: .3, veins: 4, hangMin: 25, hangMax: 65, over: { leaves: [6, 10], leafLength: [.7, 1.2] } },
-  giant: { label: 'Giant taro', latin: 'Alocasia macrorrhizos', common: 'Giant upright elephant ear', shape: 'heart', peltate: .05, lobe: .3, sinus: .9, cup: .15, veins: 5, elMin: 40, elMax: 80, hangMin: -25, hangMax: 10, palette: { leaf: '#3a8a30', vein: '#78b85a' }, over: { trunk: [.3, 1], leafLength: [1, 1.6], leafWidth: [.75, .95], petiole: [1, 1.8], leaves: [5, 8] } },
-  monstera: { label: 'Monstera', latin: 'Monstera deliciosa', common: 'Swiss-cheese plant', shape: 'heart', lobe: .25, sinus: .95, cup: .12, splits: 7, splitDepth: .5, holes: 3, veins: 7, elMin: 30, elMax: 80, hangMin: -5, hangMax: 30, palette: { leaf: '#2c6f2a', leafYoung: '#4f9a3a', petiole: '#4c7a36' }, over: { trunk: [.2, .8], leafLength: [.7, 1.1], leafWidth: [.8, 1], petiole: [.7, 1.2], leaves: [6, 10] } },
-  selloum: { label: 'Split-leaf philodendron', latin: 'Thaumatophyllum bipinnatifidum', common: 'Tree philodendron', shape: 'heart', lobe: .3, sinus: .7, cup: .2, splits: 11, splitDepth: .7, veins: 11, elMin: 10, elMax: 70, hangMin: 5, hangMax: 45, palette: { leaf: '#33802e', vein: '#7dbb60' }, over: { trunk: [.2, 1.2], leafLength: [.8, 1.3], leafWidth: [.75, .95], petiole: [.8, 1.4], leaves: [8, 14] } },
-  calathea: { label: 'Calathea', latin: 'Calathea orbifolia', common: 'Prayer plant', shape: 'oval', cup: .18, ripple: 1, veins: 12, elMin: 30, elMax: 85, hangMin: 5, hangMax: 35, palette: { leaf: '#4f9a4a', vein: '#c5dcc3', petiole: '#6f8a4a', crown: '#4a3a2a' }, over: { trunk: [0, 0], stemRadius: [.03, .05], leafLength: [.3, .45], leafWidth: [.8, 1], petiole: [.3, .5], leaves: [8, 14], droop: [.1, .4] } },
-  peacelily: { label: 'Peace lily', latin: 'Spathiphyllum wallisii', common: 'Peace lily', shape: 'oval', cup: .2, veins: 0, flower: true, elMin: 25, elMax: 80, hangMin: 0, hangMax: 30, palette: { leaf: '#2d6f2c', leafYoung: '#4f9a3a', petiole: '#3f6a30' }, over: { trunk: [0, 0], stemRadius: [.03, .05], leafLength: [.35, .55], leafWidth: [.35, .5], petiole: [.35, .6], leaves: [10, 16], droop: [.1, .4], flower: [1, 1] } },
-  xanadu: { label: 'Philodendron Xanadu', latin: 'Thaumatophyllum xanadu', common: 'Xanadu', shape: 'heart', lobe: .2, sinus: .6, cup: .15, splits: 9, splitDepth: .55, veins: 9, elMin: 15, elMax: 75, hangMin: 0, hangMax: 35, palette: { leaf: '#3c8a34', vein: '#88c26a' }, over: { trunk: [0, .2], stemRadius: [.05, .08], leafLength: [.35, .55], leafWidth: [.6, .8], petiole: [.4, .7], leaves: [10, 16] } },
-  blackmagic: { label: 'Black taro', latin: 'Colocasia "Black Magic"', common: 'Black elephant ear', shape: 'heart', peltate: .28, lobe: .32, sinus: .5, cup: .35, veins: 4, darkPetiole: true, palette: { leaf: '#2c2233', leafYoung: '#4a3550', vein: '#3d2f45', petioleDark: '#2a1e2f' }, over: { leafLength: [.6, .9] } },
+  elephant: { label: 'Elephant ear', latin: 'Colocasia esculenta', common: 'Taro / elephant ear', shape: 'heart', peltate: .2, lobe: .32, lobeW: .9, cup: .3, tipDroop: .3, ripple: .6, veins: 5, hangMin: 30, hangMax: 70, elMin: 25, elMax: 75, palette: { leaf: '#3f8f3a', leafYoung: '#62ad4e', vein: '#79b562', petiole: '#5f8f48' }, over: { leaves: [6, 10], leafLength: [.7, 1.2], leafWidth: [.75, .9], petiole: [.8, 1.3] } },
+  giant: { label: 'Giant taro', latin: 'Alocasia macrorrhizos', common: 'Giant upright elephant ear', shape: 'heart', peltate: 0, lobe: .32, lobeW: .85, sinus: .8, cup: .18, tipDroop: .25, ripple: .8, veins: 6, tipP: 1.5, elMin: 40, elMax: 82, hangMin: -35, hangMax: -5, palette: { leaf: '#3a8a30', leafYoung: '#5aa848', vein: '#8ac470', petiole: '#5a8a40' }, over: { trunk: [.3, 1], leafLength: [1, 1.6], leafWidth: [.75, .9], petiole: [1, 1.8], leaves: [5, 8] } },
+  monstera: { label: 'Monstera', latin: 'Monstera deliciosa', common: 'Swiss-cheese plant', shape: 'heart', lobe: .28, lobeW: .95, sinus: .95, cup: .12, tipDroop: .2, splits: 7, splitDepth: .6, splitSharp: 20, holes: 2, cutSlant: .3, veins: 8, aerialRoots: true, elMin: 30, elMax: 80, hangMin: -5, hangMax: 35, palette: { leaf: '#2c6f2a', leafYoung: '#4f9a3a', vein: '#3f8a3a', petiole: '#4c7a36' }, over: { trunk: [.2, .8], leafLength: [.7, 1.1], leafWidth: [.85, 1], petiole: [.7, 1.2], leaves: [6, 10] } },
+  selloum: { label: 'Split-leaf philodendron', latin: 'Thaumatophyllum bipinnatifidum', common: 'Tree philodendron', shape: 'heart', lobe: .3, lobeW: .95, sinus: .8, cup: .15, tipDroop: .3, splits: 9, splitDepth: .8, splitSharp: 5, cutSlant: .5, veins: 11, aerialRoots: true, elMin: 10, elMax: 70, hangMin: 5, hangMax: 45, palette: { leaf: '#33802e', leafYoung: '#58a845', vein: '#7dbb60' }, over: { trunk: [.2, 1.2], leafLength: [.8, 1.3], leafWidth: [.8, .95], petiole: [.8, 1.4], leaves: [8, 14] } },
+  calathea: { label: 'Calathea', latin: 'Calathea orbifolia', common: 'Prayer plant', shape: 'oval', ovalP: .5, lobe: .45, cup: .15, tipDroop: .15, ripple: 1.2, veins: 14, veinSlant: .4, elMin: 30, elMax: 85, hangMin: 5, hangMax: 35, palette: { leaf: '#4f9a4a', leafYoung: '#6fb860', vein: '#c5dcc3', petiole: '#6f8a4a', crown: '#4a3a2a' }, over: { trunk: [0, 0], stemRadius: [.03, .05], leafLength: [.3, .45], leafWidth: [.85, 1], petiole: [.3, .5], leaves: [8, 14], droop: [.3, .6] } },
+  peacelily: { label: 'Peace lily', latin: 'Spathiphyllum wallisii', common: 'Peace lily', shape: 'lance', lobe: .05, cup: .22, tipDroop: .3, ripple: .7, veins: 0, flower: true, elMin: 25, elMax: 80, hangMin: 0, hangMax: 30, palette: { leaf: '#2d6f2c', leafYoung: '#4f9a3a', vein: '#3f8a3a', petiole: '#3f6a30', flower: '#f4f1e4', spadix: '#e8d27a' }, over: { trunk: [0, 0], stemRadius: [.03, .05], leafLength: [.35, .55], leafWidth: [.35, .45], petiole: [.35, .6], leaves: [10, 16], droop: [.1, .5], flower: [1, 1] } },
+  xanadu: { label: 'Philodendron Xanadu', latin: 'Thaumatophyllum xanadu', common: 'Xanadu', shape: 'heart', lobe: .22, lobeW: .9, sinus: .6, cup: .15, tipDroop: .25, splits: 8, splitDepth: .6, splitSharp: 5, cutSlant: .5, veins: 9, elMin: 15, elMax: 75, hangMin: 0, hangMax: 35, palette: { leaf: '#3c8a34', leafYoung: '#5aa848', vein: '#88c26a' }, over: { trunk: [0, .2], stemRadius: [.05, .08], leafLength: [.35, .55], leafWidth: [.6, .8], petiole: [.4, .7], leaves: [10, 16] } },
+  blackmagic: { label: 'Black taro', latin: 'Colocasia "Black Magic"', common: 'Black elephant ear', shape: 'heart', peltate: .28, lobe: .34, lobeW: .9, cup: .38, tipDroop: .5, ripple: .6, veins: 5, darkPetiole: true, hangMin: 35, hangMax: 75, palette: { leaf: '#2c2233', leafYoung: '#4a3550', vein: '#3d2f45', petioleDark: '#2a1e2f' }, over: { leafLength: [.6, .9], leafWidth: [.75, .9], petiole: [.7, 1.1] } },
 };
 
 /* ───────────────────────── shared leaf helper ─────────────────────────
