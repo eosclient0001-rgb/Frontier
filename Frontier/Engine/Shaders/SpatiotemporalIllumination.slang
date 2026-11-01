@@ -59,6 +59,13 @@
 [[vk::binding(17, 0), vk::image_format("rgba16f")]] RWTexture2DArray<float4> OutputImage;
 [[vk::binding(18, 0), vk::image_format("rgba8")]]   RWTexture2D<float4>      ViewportDisplayTarget;
 
+// ReSTIR GI reservoirs alternate by frame parity. Two uint4 records per pixel preserve the reference's exact
+// 32-byte layout: position + packed normal, packed half radiance + identity, contribution weight W, and tally M.
+[[vk::binding(19, 0)]] RWStructuredBuffer<uint4> GiReservoirCurr;
+[[vk::binding(20, 0)]] RWStructuredBuffer<uint4> GiReservoirPrev;
+[[vk::binding(21, 0), vk::image_format("rgba16f")]] RWTexture2DArray<float4> PlanetaryEnvironmentFrame;
+[[vk::binding(22, 0)]] Sampler2DArray<float4> PhysicalAtmosphereSkyView;
+
 struct SpatiotemporalPush
 {
     uint4  Counts; // {Width, Height, FrameOrParity, FinalIterFlag}
@@ -172,6 +179,33 @@ float HashNoise3D(float3 P)
     return lerp(D.x, D.y, F.x);
 }
 
+float2 DirectionToPhysicalSkyUv(float3 ViewDirection, float3 SolarDirection)
+{
+    const float GroundRadiusKm   = 6360.0f;
+    const float ObserverRadiusKm = 6360.05f;
+    float ThetaLimb = -asin(clamp(GroundRadiusKm / ObserverRadiusKm, 0.0f, 1.0f));
+    float ThetaView = asin(clamp(ViewDirection.y, -1.0f, 1.0f));
+    float CoordV;
+    if (ThetaView < ThetaLimb)
+    {
+        float Ratio = (ThetaView - ThetaLimb) / max(-1.57079632679f - ThetaLimb, -1.0e-4f);
+        CoordV = 0.5f - 0.5f * sqrt(saturate(Ratio));
+    }
+    else
+    {
+        float Ratio = (ThetaView - ThetaLimb) / max(1.57079632679f - ThetaLimb, 1.0e-4f);
+        CoordV = 0.5f + 0.5f * sqrt(saturate(Ratio));
+    }
+    float2 ViewHorizontal = ViewDirection.xz;
+    float2 SunHorizontal  = SolarDirection.xz;
+    float  Azimuth = 0.0f;
+    if (length(ViewHorizontal) > 1.0e-5f && length(SunHorizontal) > 1.0e-5f)
+    {
+        Azimuth = acos(clamp(dot(normalize(ViewHorizontal), normalize(SunHorizontal)), -1.0f, 1.0f));
+    }
+    return saturate(float2(Azimuth / 3.14159265359f, CoordV));
+}
+
 float3 EvaluateCoupledEnvironmentSky(float3 RayDir)
 {
     float3 Zenith     = FrameHeader[4].xyz;
@@ -183,6 +217,7 @@ float3 EvaluateCoupledEnvironmentSky(float3 RayDir)
     float3 Sky = (RayDir.y >= 0.0f)
                      ? lerp(Horizon, Zenith, pow(saturate(RayDir.y), 0.58f))
                      : lerp(Horizon * 0.45f, GroundTint, saturate(-RayDir.y * 2.5f));
+    float3 FallbackSky = Sky;
 
     float3 PrimarySunDir = float3(0.35f, 0.85f, 0.38f);
     float3 PrimarySunRad = float3(0.0f);
@@ -202,6 +237,18 @@ float3 EvaluateCoupledEnvironmentSky(float3 RayDir)
             {
                 Sky += SunEm * 3.5f;
             }
+        }
+    }
+
+    // The primary Hybrid/Full-RT environment comes from the existing physical AtmosphereProjection LUT.
+    // Keep the analytical ground hemisphere and explicit solar disc as stable fallbacks/ornaments.
+    if (RayDir.y > -0.015f)
+    {
+        float3 PhysicalSky = PhysicalAtmosphereSkyView.SampleLevel(
+            float3(DirectionToPhysicalSkyUv(RayDir, PrimarySunDir), 0.0f), 0.0f).rgb;
+        if (Luminance709(PhysicalSky) > 1.0e-6f)
+        {
+            Sky = PhysicalSky + max(Sky - FallbackSky, float3(0.0f));
         }
     }
 
@@ -825,15 +872,17 @@ void EvaluateDirectRadianceMain(uint3 DispatchId : SV_DispatchThreadID)
 
     // Option 2 (Full Raytracing Mode, or compute-only fallback without ShadowRaster):
     // Raytraced Beer-Lambert shadow transmittance across solar + area softboxes + luminous facets
-    uint   Rng          = SeedPixelStream(Px, Push.Counts.z, 1u);
     uint   LumCount     = uint(FrameHeader[3].w + 0.5f);
     float3 RayDirectSum = float3(0.0f);
     float  PrimaryVis   = 1.0f;
 
     for (uint L = 0u; L < LumCount; ++L)
     {
-        float2            Xi   = SampleR2Sequence(Px, Push.Counts.z, L + 1u);
-        LuminaireProposal Prop = SampleAnalyticLuminaire(L, WorldPos, Xi);
+        // Full-RT visibility must not turn otherwise deterministic analytical lighting into a one-sample
+        // path-tracing firefly field.  Use the analytical emitter centre, exactly as secondary shading and
+        // the Hybrid path do, then ray trace its Beer-Lambert visibility.  Temporal filtering is retained for
+        // genuine visibility changes, not relied upon to hide a fresh area-light lottery every frame.
+        LuminaireProposal Prop = SampleAnalyticLuminaire(L, WorldPos, float2(0.5f, 0.5f));
         float             NdL  = max(0.0f, dot(N, Prop.LightDir));
         if (Prop.Valid && NdL > 0.0f)
         {
@@ -845,26 +894,10 @@ void EvaluateDirectRadianceMain(uint3 DispatchId : SV_DispatchThreadID)
         }
     }
 
-    uint FacetCount = uint(FrameHeader[12].z + 0.5f);
-    if (FacetCount > 0u)
-    {
-        GpuLuminousFacetSample S = SampleGpuLuminousFacet(
-            LuminousFacets, FacetCount, WorldPos, SampleUniform01(Rng), SampleUniform01(Rng), SampleUniform01(Rng));
-        if (S.Valid && S.SolidAnglePdf > 1.0e-5f)
-        {
-            float3 ToF  = S.WorldPoint - WorldPos;
-            float  Dist = max(1.0e-3f, length(ToF));
-            float3 LDir = ToF / Dist;
-            float  NdL  = max(0.0f, dot(N, LDir));
-            if (NdL > 0.0f)
-            {
-                float3 Vis = TraceSceneShadowTransmittance(WorldPos + N * 0.012f, LDir, max(1.0e-3f, Dist - 0.02f));
-                float3 DiffB, SpecB;
-                EvaluateSurfaceSplitBrdf(Mat, N, T, B, ViewDir, LDir, DiffB, SpecB);
-                RayDirectSum += min((DiffB + SpecB) * S.SelfRadiance * Vis * (NdL / S.SolidAnglePdf), float3(6.0f));
-            }
-        }
-    }
+    // Emissive mesh facets are already represented by the solved Surface Card radiance sampled by ReSTIR GI.
+    // Sampling one of those same facets again here both double-counted authored softboxes and was the dominant
+    // source of isolated white pixels in Full RT.  Keep direct lighting analytical and deterministic; arbitrary
+    // emissive geometry reaches the receiver through the dedicated GI reservoir instead.
 
     // Temporal accumulation of Full-RT Direct Radiance in DirectReservoirPrev/Curr
     uint   ResIdx = Px.y * Width + Px.x;
@@ -892,10 +925,248 @@ void EvaluateDirectRadianceMain(uint3 DispatchId : SV_DispatchThreadID)
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-// KERNEL 4: DIFFUSE GLOBAL ILLUMINATION
-//   - Hybrid Mode (default): Half-Res (TraceScale = 2, 1/4 pixels) + 1 cosine ray/px marching Hardware Sampler3D SDF ONLY + SurfaceCards
-//   - Option 2 (Full Raytracing): Full-Res (TraceScale = 1) cosine rays/px traced against Two-Level 8-Wide CWBVH + SurfaceCards
+// KERNEL 4A + 4B: ReSTIR GI TEMPORAL CANDIDATE/REUSE, THEN SPATIAL RECONNECTION/RESOLVE
+//   Faithful to ReservoirTemporal.wgsl and ReservoirSpatial.wgsl: 32-byte records, temporal reprojection,
+//   radiance refresh, rotating visibility validation, reconnection Jacobians, 1/Z correction, and adopted-sample visibility.
 //------------------------------------------------------------------------------------------------------------------------
+
+static const uint  GiSkyIdentity = 2045u;
+static const float GiSkyReachM   = 10000.0f;
+static const float GiPi          = 3.14159265359f;
+
+struct GiReservoirSample
+{
+    float3 Position;
+    float3 Normal;
+    float3 Radiance;
+    uint   Identity;
+};
+
+struct GiReservoir
+{
+    GiReservoirSample Sample;
+    float WeightSum;
+    float Tally;
+    float Weight;
+    bool  Adopted;
+};
+
+uint FloatToHalfBitsPositive(float Value)
+{
+    uint Bits     = asuint(clamp(Value, 0.0f, 65504.0f));
+    uint Exponent = (Bits >> 23u) & 0xFFu;
+    uint Mantissa = Bits & 0x7FFFFFu;
+    int  HalfExp  = int(Exponent) - 127 + 15;
+    if (HalfExp <= 0)
+    {
+        if (HalfExp < -10) return 0u;
+        Mantissa = (Mantissa | 0x800000u) >> uint(1 - HalfExp);
+        return (Mantissa + 0x1000u) >> 13u;
+    }
+    if (HalfExp >= 31) return 0x7BFFu;
+    return (uint(HalfExp) << 10u) | ((Mantissa + 0x1000u) >> 13u);
+}
+
+float HalfBitsToFloatPositive(uint Half)
+{
+    uint Exponent = (Half >> 10u) & 0x1Fu;
+    uint Mantissa = Half & 0x3FFu;
+    if (Exponent == 0u)
+    {
+        if (Mantissa == 0u) return 0.0f;
+        return float(Mantissa) * 5.960464477539063e-8f;
+    }
+    return asfloat(((Exponent + 112u) << 23u) | (Mantissa << 13u));
+}
+
+uint PackHalfPairPositive(float2 Value)
+{
+    return FloatToHalfBitsPositive(Value.x) | (FloatToHalfBitsPositive(Value.y) << 16u);
+}
+
+float2 UnpackHalfPairPositive(uint Packed)
+{
+    return float2(HalfBitsToFloatPositive(Packed & 0xFFFFu), HalfBitsToFloatPositive(Packed >> 16u));
+}
+
+uint PackGiNormal(float3 Normal)
+{
+    float2 Oct = EncodeOctahedral(normalize(Normal));
+    uint2  Q   = uint2(round(saturate(Oct * 0.5f + 0.5f) * 65535.0f));
+    return Q.x | (Q.y << 16u);
+}
+
+float3 UnpackGiNormal(uint Packed)
+{
+    float2 Oct = (float2(Packed & 0xFFFFu, Packed >> 16u) * (1.0f / 65535.0f)) * 2.0f - 1.0f;
+    return DecodeOctahedral(Oct);
+}
+
+GiReservoir ConstructEmptyGiReservoir()
+{
+    GiReservoir Empty;
+    Empty.Sample.Position = float3(0.0f);
+    Empty.Sample.Normal   = float3(0.0f, 0.0f, 1.0f);
+    Empty.Sample.Radiance = float3(0.0f);
+    Empty.Sample.Identity = GiSkyIdentity;
+    Empty.WeightSum       = 0.0f;
+    Empty.Tally           = 0.0f;
+    Empty.Weight          = 0.0f;
+    Empty.Adopted         = false;
+    return Empty;
+}
+
+GiReservoir UnpackGiReservoirRecords(uint4 Record0, uint4 Record1)
+{
+    GiReservoir Result   = ConstructEmptyGiReservoir();
+    float2      RadianceRg = UnpackHalfPairPositive(Record1.x);
+    float2      RadianceBi = UnpackHalfPairPositive(Record1.y);
+    Result.Sample.Position = float3(asfloat(Record0.x), asfloat(Record0.y), asfloat(Record0.z));
+    Result.Sample.Normal   = UnpackGiNormal(Record0.w);
+    Result.Sample.Radiance = float3(RadianceRg, RadianceBi.x);
+    Result.Sample.Identity = uint(RadianceBi.y + 0.5f);
+    Result.Weight          = asfloat(Record1.z);
+    Result.Tally           = asfloat(Record1.w);
+    return Result;
+}
+
+GiReservoir LoadPreviousGiReservoir(uint Index)
+{
+    return UnpackGiReservoirRecords(GiReservoirPrev[Index * 2u], GiReservoirPrev[Index * 2u + 1u]);
+}
+
+GiReservoir LoadCurrentGiReservoir(uint Index)
+{
+    return UnpackGiReservoirRecords(GiReservoirCurr[Index * 2u], GiReservoirCurr[Index * 2u + 1u]);
+}
+
+void StoreCurrentGiReservoir(uint Index, GiReservoir Reservoir)
+{
+    float3 Radiance = min(max(Reservoir.Sample.Radiance, float3(0.0f)), float3(60000.0f));
+    GiReservoirCurr[Index * 2u] = uint4(asuint(Reservoir.Sample.Position.x),
+                                              asuint(Reservoir.Sample.Position.y),
+                                              asuint(Reservoir.Sample.Position.z),
+                                              PackGiNormal(Reservoir.Sample.Normal));
+    GiReservoirCurr[Index * 2u + 1u] = uint4(PackHalfPairPositive(Radiance.rg),
+                                                   PackHalfPairPositive(float2(Radiance.b, float(Reservoir.Sample.Identity))),
+                                                   asuint(Reservoir.Weight),
+                                                   asuint(Reservoir.Tally));
+}
+
+bool MergeGiReservoir(inout GiReservoir Target,
+                      GiReservoirSample Candidate,
+                      float Weight,
+                      float Tally,
+                      float Random)
+{
+    Target.WeightSum += Weight;
+    Target.Tally     += Tally;
+    if (Weight > 0.0f && Random * Target.WeightSum < Weight)
+    {
+        Target.Sample = Candidate;
+        return true;
+    }
+    return false;
+}
+
+float3 ResolveGiSampleDirection(GiReservoirSample Sample, float3 ReceiverPosition)
+{
+    return normalize(Sample.Position - ReceiverPosition);
+}
+
+float ResolveGiTarget(GiReservoirSample Sample, float3 ReceiverPosition, float3 ReceiverNormal)
+{
+    float Cosine = dot(ReceiverNormal, ResolveGiSampleDirection(Sample, ReceiverPosition));
+    return (Cosine > 0.0f) ? (Luminance709(Sample.Radiance) * Cosine) : 0.0f;
+}
+
+float ResolvePreviousViewDepth(float3 WorldPosition)
+{
+    return dot(FrameHeader[10].xyz, WorldPosition) + FrameHeader[10].w;
+}
+
+float3 RefreshGiSampleRadiance(GiReservoirSample Sample)
+{
+    if (Sample.Identity == GiSkyIdentity)
+    {
+        return EvaluateCoupledEnvironmentSky(-Sample.Normal) * FrameHeader[13].w;
+    }
+
+    uint   PatchCount = uint(FrameHeader[12].w + 0.5f);
+    float3 Radiance   = (PatchCount > 0u)
+                            ? SampleGpuCombinedSurfaceRadiosity(SurfaceCardPack, PatchCount, Sample.Position, Sample.Normal) * FrameHeader[13].z
+                            : Sample.Radiance;
+    uint LumCount = uint(FrameHeader[3].w + 0.5f);
+    if (LumCount > 0u)
+    {
+        uint   LumBase = ResolveLuminaireBaseSlot();
+        float4 Sun0    = FrameHeader[LumBase];
+        if (uint(Sun0.w + 0.5f) == 0u)
+        {
+            float3 SunDir = normalize(Sun0.xyz);
+            float  NdL    = max(0.0f, dot(Sample.Normal, SunDir));
+            if (NdL > 0.0f)
+            {
+                float CamDistance = length(Sample.Position - FrameHeader[0].xyz);
+                float Visibility  = IsFullRaytracingEnabled()
+                                        ? Luminance709(TraceSceneShadowTransmittance(Sample.Position + Sample.Normal * 0.012f, SunDir, 500.0f))
+                                        : ResolveDeterministicSolarVisibility(ShadowDepthArray, FrameHeader, Sample.Position, Sample.Normal, CamDistance);
+                Radiance += FrameHeader[LumBase + 3u].xyz * (0.24f * Visibility * NdL);
+            }
+        }
+    }
+    return max(Radiance, float3(0.0f));
+}
+
+float ValidateGiVisibility(float3 ReceiverPosition, float3 ReceiverNormal, GiReservoirSample Sample)
+{
+    float3 Toward = Sample.Position - ReceiverPosition;
+    float  Length = length(Toward);
+    if (Length <= 1.0e-3f) return 0.0f;
+    float3 Direction = Toward / Length;
+    float  Reach     = (Sample.Identity == GiSkyIdentity) ? 300.0f : max(0.02f, Length - 0.06f);
+
+    if (!IsFullRaytracingEnabled() && FrameHeader[7].z > 0.5f)
+    {
+        HardwareSdfHit Occluder = TraverseHardwareSdfClipmap(SdfClipmapVolume,
+                                                              DistanceOrRangeTable,
+                                                              FrameHeader[12].y > 0.5f,
+                                                              FrameHeader[19].z,
+                                                              ReceiverPosition,
+                                                              ReceiverNormal,
+                                                              Direction,
+                                                              Reach);
+        return Occluder.Hit ? 0.0f : 1.0f;
+    }
+    return saturate(Luminance709(TraceSceneShadowTransmittance(
+        ReceiverPosition + ReceiverNormal * 0.012f, Direction, Reach)));
+}
+
+void ResolveGiTraceSurface(uint2 TracePixel,
+                           uint TraceScale,
+                           uint FullWidth,
+                           uint FullHeight,
+                           out uint2 ScreenPixel,
+                           out float4 SurfacePositionDepth)
+{
+    ScreenPixel          = min(TracePixel * TraceScale, uint2(FullWidth - 1u, FullHeight - 1u));
+    SurfacePositionDepth = SurfaceAndWorkAtlas[uint3(ScreenPixel, 0u)];
+    if (SurfacePositionDepth.w <= 0.0f && TraceScale > 1u)
+    {
+        for (uint Sub = 1u; Sub < 4u; ++Sub)
+        {
+            uint2 CandidatePixel = min(TracePixel * TraceScale + uint2(Sub & 1u, Sub >> 1u),
+                                       uint2(FullWidth - 1u, FullHeight - 1u));
+            float4 CandidateG0 = SurfaceAndWorkAtlas[uint3(CandidatePixel, 0u)];
+            if (CandidateG0.w > 0.0f)
+            {
+                ScreenPixel          = CandidatePixel;
+                SurfacePositionDepth = CandidateG0;
+                return;
+            }
+        }
+    }
+}
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -906,183 +1177,435 @@ void TraceIndirectDiffuseMain(uint3 DispatchId : SV_DispatchThreadID)
     uint TraceScale = ResolveGiTraceScale();
     uint TraceW     = (FullW + TraceScale - 1u) / TraceScale;
     uint TraceH     = (FullH + TraceScale - 1u) / TraceScale;
+    if (DispatchId.x >= TraceW || DispatchId.y >= TraceH) return;
 
-    if (DispatchId.x >= TraceW || DispatchId.y >= TraceH)
-    {
-        return;
-    }
-
-    uint2 TracePx  = DispatchId.xy;
-    uint2 ScreenPx = min(TracePx * TraceScale, uint2(FullW - 1u, FullH - 1u));
-    float4 G0      = SurfaceAndWorkAtlas[uint3(ScreenPx, 0u)];
-
-    // On half-res silhouette quads, pick the first valid opaque sub-pixel if top-left corner hit sky/glass
-    if (G0.w <= 0.0f && TraceScale > 1u)
-    {
-        for (uint Sub = 1u; Sub < 4u; ++Sub)
-        {
-            uint2 CandPx = min(TracePx * TraceScale + uint2(Sub & 1u, Sub >> 1u), uint2(FullW - 1u, FullH - 1u));
-            float4 CG0   = SurfaceAndWorkAtlas[uint3(CandPx, 0u)];
-            if (CG0.w > 0.0f)
-            {
-                ScreenPx = CandPx;
-                G0       = CG0;
-                break;
-            }
-        }
-    }
-
+    uint2 TracePx = DispatchId.xy;
+    uint  Index   = TracePx.y * TraceW + TracePx.x;
+    uint2 ScreenPx;
+    float4 G0;
+    ResolveGiTraceSurface(TracePx, TraceScale, FullW, FullH, ScreenPx, G0);
     if (G0.w <= 0.0f)
     {
-        SurfaceAndWorkAtlas[uint3(TracePx, 7u)]  = float4(0.0f, 0.0f, 0.0f, 1.0f);
         SurfaceAndWorkAtlas[uint3(TracePx, 13u)] = float4(0.0f);
+        StoreCurrentGiReservoir(Index, ConstructEmptyGiReservoir());
         return;
     }
 
     float3 WorldPos = G0.xyz;
-    float  HitT     = G0.w;
     float3 N, T, B;
     UnpackedSurfaceMaterial Mat = ReconstructGbufferMaterial(ScreenPx, N, T, B);
-    uint ClassId                = uint(max(0.0f, SurfaceAndWorkAtlas[uint3(ScreenPx, 2u)].w) + 0.5f);
+    float ExpectedPriorDepth = max(0.0f, ResolvePreviousViewDepth(WorldPos));
+    SurfaceAndWorkAtlas[uint3(TracePx, 13u)] = float4(EncodeOctahedral(N), G0.w, 1.0f + ExpectedPriorDepth);
 
-    SurfaceAndWorkAtlas[uint3(TracePx, 13u)] = float4(EncodeOctahedral(N), HitT, float(ClassId + 1u));
+    if (FrameHeader[7].w < 0.5f)
+    {
+        StoreCurrentGiReservoir(Index, ConstructEmptyGiReservoir());
+        return;
+    }
 
-    float SceneAo = EvaluateSceneDistanceAO(WorldPos, N) * Mat.AmbientOcclusion;
+    uint Rng = SeedPixelStream(TracePx, Push.Counts.z, 11u);
+    float2 Xi = SampleR2Sequence(TracePx, Push.Counts.z, 3u);
+    float3 Direction = SampleCosineHemisphere(N, T, B, Xi);
+
+    GiReservoirSample Candidate;
+    Candidate.Position = WorldPos + Direction * GiSkyReachM;
+    Candidate.Normal   = -Direction;
+    Candidate.Radiance = float3(0.0f);
+    Candidate.Identity = GiSkyIdentity;
+    bool FullRt = IsFullRaytracingEnabled();
+    bool HasSdf = FrameHeader[7].z > 0.5f;
+    if (!FullRt && HasSdf)
+    {
+        HardwareSdfHit Hit = TraverseHardwareSdfClipmap(SdfClipmapVolume,
+                                                         DistanceOrRangeTable,
+                                                         FrameHeader[12].y > 0.5f,
+                                                         FrameHeader[19].z,
+                                                         WorldPos,
+                                                         N,
+                                                         Direction,
+                                                         300.0f);
+        if (Hit.Hit)
+        {
+            Candidate.Position = Hit.WorldPos;
+            Candidate.Normal   = Hit.Normal;
+            Candidate.Identity = 1u;
+            Candidate.Radiance = RefreshGiSampleRadiance(Candidate);
+        }
+        else
+        {
+            Candidate.Position = WorldPos + Direction * GiSkyReachM;
+            Candidate.Normal   = -Direction;
+            Candidate.Identity = GiSkyIdentity;
+            Candidate.Radiance = EvaluateCoupledEnvironmentSky(Direction) * FrameHeader[13].w;
+        }
+    }
+    else
+    {
+        UnifiedOpaqueHit Hit = TraceSceneOpaque(WorldPos + N * 0.015f, Direction, 1.0e-3f, 300.0f);
+        if (Hit.Hit)
+        {
+            Candidate.Position = Hit.WorldPos;
+            Candidate.Normal   = Hit.GeoNormal;
+            Candidate.Identity = min(Hit.ClassId + 1u, GiSkyIdentity - 1u);
+            Candidate.Radiance = ShadeSecondarySurface(Hit.WorldPos,
+                                                        Hit.TexCoord,
+                                                        Hit.DistanceM,
+                                                        Hit.GeoNormal,
+                                                        Hit.ClassId,
+                                                        -Direction,
+                                                        Hit.InstanceTint,
+                                                        Hit.InstanceSelfRadiance,
+                                                        FullRt);
+        }
+        else
+        {
+            Candidate.Position = WorldPos + Direction * GiSkyReachM;
+            Candidate.Normal   = -Direction;
+            Candidate.Identity = GiSkyIdentity;
+            Candidate.Radiance = EvaluateCoupledEnvironmentSky(Direction) * FrameHeader[13].w;
+        }
+    }
+
+    float Cosine    = max(dot(N, Direction), 0.0f);
+    float SourcePdf = Cosine / GiPi;
+    float InitialWeight = (SourcePdf > 1.0e-6f) ? (Luminance709(Candidate.Radiance) * Cosine / SourcePdf) : 0.0f;
+    GiReservoir Current = ConstructEmptyGiReservoir();
+    MergeGiReservoir(Current, Candidate, InitialWeight, 1.0f, SampleUniform01(Rng));
+
+    if (Push.Params.w > 0.5f)
+    {
+        float2 PriorScreenPosition;
+        float2 MotionUv;
+        if (ProjectToPreviousScreenPosition(WorldPos, FullW, FullH, PriorScreenPosition, MotionUv, int2(ScreenPx)))
+        {
+            int2 PriorTrace = int2(floor((PriorScreenPosition - 0.5f) / float(TraceScale) + 0.5f));
+            if (PriorTrace.x >= 0 && PriorTrace.y >= 0 && PriorTrace.x < int(TraceW) && PriorTrace.y < int(TraceH))
+            {
+                float4 PriorGuide = TemporalHistoryPrev[uint3(uint2(PriorTrace), 2u)];
+                bool Similar = PriorGuide.w > 0.5f &&
+                               dot(DecodeOctahedral(PriorGuide.xy), N) > 0.85f &&
+                               abs(PriorGuide.z - ExpectedPriorDepth) <= (0.10f * max(G0.w, ExpectedPriorDepth) + 0.05f);
+                if (Similar)
+                {
+                    GiReservoir Prior = LoadPreviousGiReservoir(uint(PriorTrace.y) * TraceW + uint(PriorTrace.x));
+                    if (Prior.Tally > 0.0f && Prior.Weight > 0.0f)
+                    {
+                        GiReservoirSample Reused = Prior.Sample;
+                        Reused.Radiance = RefreshGiSampleRadiance(Reused);
+                        float Target = ResolveGiTarget(Reused, WorldPos, N);
+                        bool Validate = ((TracePx.x + TracePx.y * 3u + Push.Counts.z) & 3u) == 0u;
+                        if (Validate && Target > 0.0f)
+                        {
+                            Target *= ValidateGiVisibility(WorldPos, N, Reused);
+                        }
+                        float PriorTally = min(Prior.Tally, clamp(FrameHeader[13].y, 1.0f, 64.0f));
+                        MergeGiReservoir(Current,
+                                         Reused,
+                                         Target * Prior.Weight * PriorTally,
+                                         PriorTally,
+                                         SampleUniform01(Rng));
+                    }
+                }
+            }
+        }
+    }
+
+    float SelectedTarget = ResolveGiTarget(Current.Sample, WorldPos, N);
+    Current.Weight = (SelectedTarget > 0.0f && Current.Tally > 0.0f)
+                         ? (Current.WeightSum / (Current.Tally * SelectedTarget))
+                         : 0.0f;
+    StoreCurrentGiReservoir(Index, Current);
+}
+
+float ResolveGiReconnectionJacobian(GiReservoirSample Sample, float3 Receiver, float3 Donor)
+{
+    if (Sample.Identity == GiSkyIdentity) return 1.0f;
+    float3 ToDonor    = Donor - Sample.Position;
+    float3 ToReceiver = Receiver - Sample.Position;
+    float  DonorSquared    = max(dot(ToDonor, ToDonor), 1.0e-6f);
+    float  ReceiverSquared = max(dot(ToReceiver, ToReceiver), 1.0e-6f);
+    float  CosineDonor     = abs(dot(Sample.Normal, ToDonor)) * rsqrt(DonorSquared);
+    float  CosineReceiver  = abs(dot(Sample.Normal, ToReceiver)) * rsqrt(ReceiverSquared);
+    return (CosineReceiver / max(CosineDonor, 1.0e-4f)) * (DonorSquared / ReceiverSquared);
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void ReuseIndirectDiffuseSpatialMain(uint3 DispatchId : SV_DispatchThreadID)
+{
+    uint FullW      = Push.Counts.x;
+    uint FullH      = Push.Counts.y;
+    uint TraceScale = ResolveGiTraceScale();
+    uint TraceW     = (FullW + TraceScale - 1u) / TraceScale;
+    uint TraceH     = (FullH + TraceScale - 1u) / TraceScale;
+    if (DispatchId.x >= TraceW || DispatchId.y >= TraceH) return;
+
+    uint2 TracePx = DispatchId.xy;
+    uint  Index   = TracePx.y * TraceW + TracePx.x;
+    float4 Guide  = SurfaceAndWorkAtlas[uint3(TracePx, 13u)];
+    if (Guide.w < 0.5f)
+    {
+        SurfaceAndWorkAtlas[uint3(TracePx, 7u)] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        return;
+    }
+
+    uint2 ScreenPx;
+    float4 G0;
+    ResolveGiTraceSurface(TracePx, TraceScale, FullW, FullH, ScreenPx, G0);
+    if (G0.w <= 0.0f)
+    {
+        SurfaceAndWorkAtlas[uint3(TracePx, 7u)] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        return;
+    }
+
+    float3 Position = G0.xyz;
+    float3 N, T, B;
+    UnpackedSurfaceMaterial Mat = ReconstructGbufferMaterial(ScreenPx, N, T, B);
+    float SceneAo = EvaluateSceneDistanceAO(Position, N) * Mat.AmbientOcclusion;
     if (FrameHeader[7].w < 0.5f)
     {
         SurfaceAndWorkAtlas[uint3(TracePx, 7u)] = float4(0.0f, 0.0f, 0.0f, SceneAo);
         return;
     }
 
-    // Coat Beer-Lambert attenuation & metallic diffuse suppression (albedo-demodulated irradiance!)
-    float3 ViewDir   = normalize(FrameHeader[0].xyz - WorldPos);
-    float  NdotV     = max(0.05f, dot(N, ViewDir));
-    float3 CoatTrans = float3(1.0f);
+    GiReservoir Own     = LoadCurrentGiReservoir(Index);
+    GiReservoir Spatial = ConstructEmptyGiReservoir();
+    uint Rng = SeedPixelStream(TracePx, Push.Counts.z, 23u);
+    MergeGiReservoir(Spatial,
+                     Own.Sample,
+                     ResolveGiTarget(Own.Sample, Position, N) * Own.Weight * Own.Tally,
+                     Own.Tally,
+                     SampleUniform01(Rng));
+
+    float3 DonorPositions[8];
+    float3 DonorNormals[8];
+    float  DonorTallies[8];
+    [unroll]
+    for (uint InitDonor = 0u; InitDonor < 8u; ++InitDonor)
+    {
+        DonorPositions[InitDonor] = Position;
+        DonorNormals[InitDonor]   = N;
+        DonorTallies[InitDonor]   = 0.0f;
+    }
+    uint DonorCount = 0u;
+    if (FrameHeader[7].y > 0.5f)
+    {
+        uint ProposalCount = min(uint(FrameHeader[5].w + 0.5f), 8u);
+        for (uint Proposal = 0u; Proposal < ProposalCount; ++Proposal)
+        {
+            float Radius = sqrt(SampleUniform01(Rng)) * 8.0f;
+            float Angle  = SampleUniform01(Rng) * (2.0f * GiPi);
+            int2 Offset  = int2(round(float2(cos(Angle), sin(Angle)) * Radius));
+            int2 DonorPx = clamp(int2(TracePx) + Offset, int2(0), int2(int(TraceW) - 1, int(TraceH) - 1));
+            if (all(DonorPx == int2(TracePx))) continue;
+
+            float4 DonorGuide = SurfaceAndWorkAtlas[uint3(uint2(DonorPx), 13u)];
+            float3 DonorNormal = DecodeOctahedral(DonorGuide.xy);
+            if (DonorGuide.w < 0.5f || dot(DonorNormal, N) < 0.90f ||
+                abs(DonorGuide.z - Guide.z) > 0.10f * max(Guide.z, 0.05f))
+            {
+                continue;
+            }
+
+            GiReservoir DonorReservoir = LoadCurrentGiReservoir(uint(DonorPx.y) * TraceW + uint(DonorPx.x));
+            if (DonorReservoir.Tally <= 0.0f || DonorReservoir.Weight <= 0.0f) continue;
+
+            uint2 DonorScreenPx;
+            float4 DonorG0;
+            ResolveGiTraceSurface(uint2(DonorPx), TraceScale, FullW, FullH, DonorScreenPx, DonorG0);
+            if (DonorG0.w <= 0.0f) continue;
+
+            float Jacobian = ResolveGiReconnectionJacobian(DonorReservoir.Sample, Position, DonorG0.xyz);
+            if (isnan(Jacobian) || Jacobian < 0.125f || Jacobian > 8.0f) continue;
+
+            float Target = ResolveGiTarget(DonorReservoir.Sample, Position, N);
+            if (MergeGiReservoir(Spatial,
+                                 DonorReservoir.Sample,
+                                 Target * DonorReservoir.Weight * DonorReservoir.Tally * Jacobian,
+                                 DonorReservoir.Tally,
+                                 SampleUniform01(Rng)))
+            {
+                Spatial.Adopted = true;
+            }
+            DonorPositions[DonorCount] = DonorG0.xyz;
+            DonorNormals[DonorCount]   = DonorNormal;
+            DonorTallies[DonorCount]   = DonorReservoir.Tally;
+            ++DonorCount;
+        }
+    }
+
+    if (Spatial.Adopted && ValidateGiVisibility(Position, N, Spatial.Sample) < 0.5f)
+    {
+        Spatial           = Own;
+        Spatial.WeightSum = ResolveGiTarget(Own.Sample, Position, N) * Own.Weight * Own.Tally;
+        Spatial.Adopted   = false;
+        DonorCount        = 0u;
+    }
+
+    GiReservoirSample Chosen = Spatial.Sample;
+    float Z = (ResolveGiTarget(Chosen, Position, N) > 0.0f) ? Own.Tally : 0.0f;
+    for (uint Donor = 0u; Donor < DonorCount; ++Donor)
+    {
+        if (ResolveGiTarget(Chosen, DonorPositions[Donor], DonorNormals[Donor]) > 0.0f)
+        {
+            Z += DonorTallies[Donor];
+        }
+    }
+    float Target = ResolveGiTarget(Chosen, Position, N);
+    float Weight = (Target > 0.0f && Z > 0.0f) ? (Spatial.WeightSum / (Z * Target)) : 0.0f;
+    float Cosine = max(dot(N, ResolveGiSampleDirection(Chosen, Position)), 0.0f);
+    float3 Irradiance = Chosen.Radiance * (Cosine * Weight);
+
+    uint LumCount = uint(FrameHeader[3].w + 0.5f);
+    float Limit = 20.0f;
+    if (LumCount > 0u)
+    {
+        Limit = 40.0f * max(Luminance709(FrameHeader[ResolveLuminaireBaseSlot() + 3u].xyz), 0.5f);
+    }
+    float IrradianceLuma = Luminance709(Irradiance);
+    if (IrradianceLuma > Limit) Irradiance *= Limit / IrradianceLuma;
+
+    float3 ViewDir = normalize(FrameHeader[0].xyz - Position);
+    float  NdotV   = max(0.05f, dot(N, ViewDir));
+    float3 CoatTransmission = float3(1.0f);
     if (Mat.CoatCoverage > 0.01f)
     {
         float CoatF = EvaluateDielectricFresnelUnpolarized(NdotV, 1.0f, Mat.CoatIor);
-        CoatTrans   = lerp(float3(1.0f), (1.0f - CoatF) * exp(-Mat.CoatOpticalDepth * (1.0f / NdotV)), Mat.CoatCoverage);
+        CoatTransmission = lerp(float3(1.0f),
+                                (1.0f - CoatF) * exp(-Mat.CoatOpticalDepth * (1.0f / NdotV)),
+                                Mat.CoatCoverage);
     }
-    float3 DiffModulation = (1.0f - Mat.Metallic) * CoatTrans;
-
-    bool   FullRt        = IsFullRaytracingEnabled();
-    bool   HasSdf        = (FrameHeader[7].z > 0.5f);
-    bool   ClipmapActive = (FrameHeader[12].y > 0.5f);
-    float  GroundHeightM = FrameHeader[19].z;
-    uint   PatchCount    = uint(FrameHeader[12].w + 0.5f);
-    float  CardGain      = FrameHeader[13].z;
-    float  SkyWeight     = FrameHeader[13].w;
-
-    // Default Hybrid Mode: strictly 1 cosine-weighted hemisphere ray/px marching Hardware Sampler3D SDF clipmaps ONLY + SurfaceCards!
-    if (!FullRt && HasSdf)
-    {
-        float2 Xi     = SampleR2Sequence(TracePx, Push.Counts.z, 5u);
-        float3 RayDir = SampleCosineHemisphere(N, T, B, Xi);
-
-        HardwareSdfHit SdfHit = TraverseHardwareSdfClipmap(
-            SdfClipmapVolume, DistanceOrRangeTable, ClipmapActive, GroundHeightM, WorldPos, N, RayDir, 180.0f);
-
-        float3 IncomingLi = float3(0.0f);
-        if (SdfHit.Hit)
-        {
-            if (PatchCount > 0u && CardGain > 0.0f)
-            {
-                IncomingLi = SampleGpuCombinedSurfaceRadiosity(SurfaceCardPack, PatchCount, SdfHit.WorldPos, SdfHit.Normal) * CardGain;
-            }
-            // Add direct sun bounce at SDF hit gated by deterministic solar cascade visibility
-            uint LumCount = uint(FrameHeader[3].w + 0.5f);
-            if (LumCount > 0u)
-            {
-                uint   LumBase = ResolveLuminaireBaseSlot();
-                float4 Sun0    = FrameHeader[LumBase + 0u];
-                if (uint(Sun0.w + 0.5f) == 0u)
-                {
-                    float3 SunDir = normalize(Sun0.xyz);
-                    float  SunNdL = max(0.0f, dot(SdfHit.Normal, SunDir));
-                    if (SunNdL > 0.0f)
-                    {
-                        float CamDist = length(SdfHit.WorldPos - FrameHeader[0].xyz);
-                        float SunVis  = ResolveDeterministicSolarVisibility(ShadowDepthArray, FrameHeader, SdfHit.WorldPos, SdfHit.Normal, CamDist);
-                        IncomingLi   += FrameHeader[LumBase + 3u].xyz * (0.24f * SunVis * SunNdL);
-                    }
-                }
-            }
-        }
-        else
-        {
-            IncomingLi = EvaluateCoupledEnvironmentSky(RayDir) * SkyWeight;
-        }
-
-        // Cosine hemisphere PDF = cos(theta)/pi cancels Lambertian cos(theta)/pi -> estimator is IncomingLi!
-        float3 GiFactor = min(IncomingLi * DiffModulation * SceneAo, float3(8.0f));
-        SurfaceAndWorkAtlas[uint3(TracePx, 7u)] = float4(GiFactor, SceneAo);
-        return;
-    }
-
-    // Option 2 (Full Raytracing Mode): Cosine hemisphere rays traced against Two-Level 8-Wide CWBVH triangles + SurfaceCards
-    uint   RayBudget = clamp(uint(FrameHeader[6].w + 0.5f), 1u, 4u);
-    float3 SumGi     = float3(0.0f);
-    for (uint R = 0u; R < RayBudget; ++R)
-    {
-        float2           Xi     = SampleR2Sequence(TracePx, Push.Counts.z, 11u + R * 7u);
-        float3           RayDir = SampleCosineHemisphere(N, T, B, Xi);
-        UnifiedOpaqueHit Hit    = TraceSceneOpaque(WorldPos + N * 0.015f, RayDir, 1.0e-3f, 220.0f);
-        float3           Li     = Hit.Hit
-                                      ? ShadeSecondarySurface(Hit.WorldPos, Hit.TexCoord, Hit.DistanceM, Hit.GeoNormal, Hit.ClassId, -RayDir, Hit.InstanceTint, Hit.InstanceSelfRadiance, true)
-                                      : (EvaluateCoupledEnvironmentSky(RayDir) * SkyWeight);
-        SumGi += min(Li, float3(8.0f));
-    }
-    float3 FullRtGi = (SumGi / float(RayBudget)) * DiffModulation * SceneAo;
-    SurfaceAndWorkAtlas[uint3(TracePx, 7u)] = float4(FullRtGi, SceneAo);
+    float3 DiffuseModulation = (1.0f - Mat.Metallic) * CoatTransmission;
+    SurfaceAndWorkAtlas[uint3(TracePx, 7u)] = float4(max(Irradiance * DiffuseModulation * SceneAo, float3(0.0f)), SceneAo);
 }
 
 //------------------------------------------------------------------------------------------------------------------------
-// KERNEL 5: RAYTRACED REFLECTION TRAVERSAL (HEITZ 2018 VNDF CWBVH RAYTRACE + SURFACECARDS)
+// KERNEL 5: TRACE-EXTENT REFLECTIONS (SCREEN DEPTH FIRST, THEN CWBVH WORLD FALLBACK)
 //------------------------------------------------------------------------------------------------------------------------
+
+struct ScreenReflectionStrike
+{
+    bool   Hit;
+    float  ResumeDistance;
+    float3 Radiance;
+};
+
+bool ProjectCurrentWorldToPixel(float3 WorldPosition, uint Width, uint Height, out float2 PixelPosition, out float ViewDepth)
+{
+    float3 Relative = WorldPosition - FrameHeader[0].xyz;
+    ViewDepth = dot(Relative, FrameHeader[3].xyz);
+    if (ViewDepth <= 0.05f)
+    {
+        PixelPosition = float2(0.0f);
+        return false;
+    }
+    float NdcX = dot(Relative, FrameHeader[1].xyz) / max(1.0e-5f, ViewDepth * FrameHeader[1].w);
+    float NdcY = dot(Relative, FrameHeader[2].xyz) / max(1.0e-5f, ViewDepth * FrameHeader[0].w);
+    float2 Uv  = float2(0.5f * (NdcX + 1.0f), 0.5f * (1.0f - NdcY));
+    PixelPosition = Uv * float2(float(Width), float(Height));
+    return all(Uv >= float2(0.0f)) && all(Uv < float2(1.0f));
+}
+
+float3 ResolveScreenStrikeRadiance(uint2 Pixel)
+{
+    float4 G0 = SurfaceAndWorkAtlas[uint3(Pixel, 0u)];
+    float4 G1 = SurfaceAndWorkAtlas[uint3(Pixel, 1u)];
+    float4 G2 = SurfaceAndWorkAtlas[uint3(Pixel, 2u)];
+    float4 G5 = SurfaceAndWorkAtlas[uint3(Pixel, 5u)];
+    float3 Radiance = G2.xyz + SurfaceAndWorkAtlas[uint3(Pixel, 6u)].xyz;
+    uint PatchCount = uint(FrameHeader[12].w + 0.5f);
+    if (PatchCount > 0u)
+    {
+        Radiance += G5.xyz * SampleGpuCombinedSurfaceRadiosity(
+            SurfaceCardPack, PatchCount, G0.xyz, normalize(G1.xyz)) * FrameHeader[13].z;
+    }
+    return max(Radiance, float3(0.0f));
+}
+
+ScreenReflectionStrike TraverseScreenReflection(float3 Origin, float3 Direction, uint Width, uint Height)
+{
+    ScreenReflectionStrike Result;
+    Result.Hit            = false;
+    Result.ResumeDistance = 0.15f;
+    Result.Radiance       = float3(0.0f);
+
+    float Travel = 0.15f;
+    float PreviousDelta = -1.0f;
+    for (uint Step = 0u; Step < 32u; ++Step)
+    {
+        float3 Probe = Origin + Direction * Travel;
+        float2 PixelPosition;
+        float ProbeDepth;
+        if (!ProjectCurrentWorldToPixel(Probe, Width, Height, PixelPosition, ProbeDepth))
+        {
+            Result.ResumeDistance = Travel;
+            return Result;
+        }
+
+        uint2 Pixel = uint2(clamp(int2(PixelPosition), int2(0), int2(int(Width) - 1, int(Height) - 1)));
+        float4 SceneG0 = SurfaceAndWorkAtlas[uint3(Pixel, 0u)];
+        if (SceneG0.w > 0.0f && length(SceneG0.xyz - Origin) > 0.08f)
+        {
+            float SceneDepth = dot(SceneG0.xyz - FrameHeader[0].xyz, FrameHeader[3].xyz);
+            float Delta      = SceneDepth - ProbeDepth;
+            float Thickness  = 0.045f + 0.0025f * max(SceneDepth, 0.0f);
+            if (abs(Delta) <= Thickness || (PreviousDelta > 0.0f && Delta < 0.0f))
+            {
+                Result.Hit            = true;
+                Result.ResumeDistance = Travel;
+                Result.Radiance       = ResolveScreenStrikeRadiance(Pixel);
+                return Result;
+            }
+            PreviousDelta = Delta;
+        }
+        Travel += max(0.16f, Travel * 0.18f);
+    }
+    Result.ResumeDistance = Travel;
+    return Result;
+}
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void TraceSpecularReflectionsMain(uint3 DispatchId : SV_DispatchThreadID)
 {
-    uint Width  = Push.Counts.x;
-    uint Height = Push.Counts.y;
-    if (DispatchId.x >= Width || DispatchId.y >= Height)
-    {
-        return;
-    }
+    uint Width      = Push.Counts.x;
+    uint Height     = Push.Counts.y;
+    uint TraceScale = ResolveGiTraceScale();
+    uint TraceW     = (Width + TraceScale - 1u) / TraceScale;
+    uint TraceH     = (Height + TraceScale - 1u) / TraceScale;
+    if (DispatchId.x >= TraceW || DispatchId.y >= TraceH) return;
 
-    uint2  Px = DispatchId.xy;
-    float4 G0 = SurfaceAndWorkAtlas[uint3(Px, 0u)];
+    uint2 TracePx = DispatchId.xy;
+    uint2 ScreenPx;
+    float4 G0;
+    ResolveGiTraceSurface(TracePx, TraceScale, Width, Height, ScreenPx, G0);
 
-    // Sky miss or resolved curved glazing passes straight into Specular layer 8
     if (G0.w <= 0.0f)
     {
         float3 SkyOrGlass = (G0.w == 0.0f)
-                                ? EvaluateCoupledEnvironmentSky(ReconstructPrimaryRayDirection(Px, Width, Height))
-                                : SurfaceAndWorkAtlas[uint3(Px, 2u)].xyz;
-        SurfaceAndWorkAtlas[uint3(Px, 8u)] = float4(SkyOrGlass, 0.0f);
+                                ? EvaluateCoupledEnvironmentSky(ReconstructPrimaryRayDirection(ScreenPx, Width, Height))
+                                : SurfaceAndWorkAtlas[uint3(ScreenPx, 2u)].xyz;
+        SurfaceAndWorkAtlas[uint3(TracePx, 8u)] = float4(SkyOrGlass, 0.0f);
         return;
     }
 
     if (FrameHeader[7].x < 0.5f)
     {
-        SurfaceAndWorkAtlas[uint3(Px, 8u)] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        SurfaceAndWorkAtlas[uint3(TracePx, 8u)] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     }
 
     float3 WorldPos = G0.xyz;
     float3 ViewDir  = normalize(FrameHeader[0].xyz - WorldPos);
     float3 N, T, B;
-    UnpackedSurfaceMaterial Mat = ReconstructGbufferMaterial(Px, N, T, B);
-
+    UnpackedSurfaceMaterial Mat = ReconstructGbufferMaterial(ScreenPx, N, T, B);
     bool  FullRt       = IsFullRaytracingEnabled();
     float EffRoughness = (Mat.CoatCoverage > 0.25f) ? min(Mat.BaseRoughness, Mat.CoatRoughness) : Mat.BaseRoughness;
 
-    // Hybrid Mode rough-surface optimization (matches ReflectionTraversal.wgsl):
-    // Rough matte surfaces (> 0.52 without clearcoat) reuse upsampled diffuse irradiance * EnvBRDF in the resolve pass!
-    if (!FullRt && Mat.CoatCoverage < 0.02f && Mat.BaseRoughness > 0.52f)
+    // Reference roughness cutoff: surfaces above 0.5 reuse diffuse irradiance through the environment BRDF.
+    if (EffRoughness > 0.50f)
     {
-        SurfaceAndWorkAtlas[uint3(Px, 8u)] = float4(0.0f, 0.0f, 0.0f, -1.0f);
+        SurfaceAndWorkAtlas[uint3(TracePx, 8u)] = float4(0.0f, 0.0f, 0.0f, -1.0f);
         return;
     }
 
@@ -1091,37 +1614,67 @@ void TraceSpecularReflectionsMain(uint3 DispatchId : SV_DispatchThreadID)
     float3 BaseF0     = lerp(float3(DielecF0), Mat.BaseAlbedo, Mat.Metallic);
     float  CoatFres   = Mat.CoatCoverage * EvaluateDielectricFresnelUnpolarized(NdotV, 1.0f, Mat.CoatIor);
     float  BaseWeight = (1.0f - CoatFres) * max(0.08f, Luminance709(BaseF0));
-    float  CoatProb   = (Mat.CoatCoverage > 0.01f) ? clamp(CoatFres / max(1.0e-4f, CoatFres + BaseWeight), 0.15f, 0.90f) : 0.0f;
+    float  CoatProb   = (Mat.CoatCoverage > 0.01f)
+                            ? clamp(CoatFres / max(1.0e-4f, CoatFres + BaseWeight), 0.15f, 0.90f)
+                            : 0.0f;
 
-    uint   Rng        = SeedPixelStream(Px, Push.Counts.z, 19u);
-    bool   SampleCoat = (SampleUniform01(Rng) < CoatProb);
-    float  LobeRough  = SampleCoat ? Mat.CoatRoughness : Mat.BaseRoughness;
-
+    // A near-mirror clearcoat must not randomly alternate between the coat and rough metallic base from frame
+    // to frame: that estimator produced the conspicuous white "paint flakes" and shimmer during camera motion.
+    // Trace the coherent coated direction once and evaluate both layers along it.  Uncoated/rough surfaces retain
+    // the reference GGX-VNDF estimator and its temporal/wavelet reconstruction.
+    bool StableCoatedReflection = Mat.CoatCoverage > 0.25f && Mat.CoatRoughness < 0.10f;
+    uint Rng = SeedPixelStream(TracePx, Push.Counts.z, 19u);
+    bool SampleCoat = StableCoatedReflection || (SampleUniform01(Rng) < CoatProb);
+    float LobeRough = SampleCoat ? Mat.CoatRoughness : Mat.BaseRoughness;
     float3 ReflDir;
-    if (LobeRough < 0.055f)
+    if (StableCoatedReflection || LobeRough < 0.055f)
     {
         ReflDir = reflect(-ViewDir, N);
     }
     else
     {
-        float2 Xi        = SampleR2Sequence(Px, Push.Counts.z, 23u);
-        float3 HalfWorld = SampleGgxVndfHalfVector(ViewDir, T, B, N, LobeRough, SampleCoat ? 0.0f : Mat.Anisotropy, Xi);
-        ReflDir          = reflect(-ViewDir, HalfWorld);
+        float2 Xi        = SampleR2Sequence(TracePx, Push.Counts.z, 23u);
+        float3 HalfWorld = SampleGgxVndfHalfVector(ViewDir, T, B, N, LobeRough,
+                                                    SampleCoat ? 0.0f : Mat.Anisotropy, Xi);
+        ReflDir = reflect(-ViewDir, HalfWorld);
     }
 
     if (dot(N, ReflDir) <= 1.0e-4f)
     {
-        SurfaceAndWorkAtlas[uint3(Px, 8u)] = float4(0.0f, 0.0f, 0.0f, 1.0f);
+        SurfaceAndWorkAtlas[uint3(TracePx, 8u)] = float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     }
 
-    // Raytraced reflection against Two-Level 8-Wide CWBVH triangles (OctetVolumeSearch)
-    UnifiedOpaqueHit ReflHit = TraceSceneOpaque(WorldPos + N * 0.014f, ReflDir, 1.0e-3f, 500.0f);
-    float3           ReflLi  = ReflHit.Hit
-                                   ? ApplyCoupledHeightFog(
-                                         ShadeSecondarySurface(ReflHit.WorldPos, ReflHit.TexCoord, ReflHit.DistanceM, ReflHit.GeoNormal, ReflHit.ClassId, -ReflDir, ReflHit.InstanceTint, ReflHit.InstanceSelfRadiance, FullRt),
-                                         WorldPos, ReflDir, ReflHit.DistanceM)
-                                   : EvaluateCoupledEnvironmentSky(ReflDir);
+    float3 RayOrigin = WorldPos + N * 0.014f;
+    ScreenReflectionStrike ScreenStrike = TraverseScreenReflection(RayOrigin, ReflDir, Width, Height);
+    float3 ReflLi;
+    float  HitDistance;
+    if (ScreenStrike.Hit)
+    {
+        ReflLi      = ScreenStrike.Radiance;
+        HitDistance = ScreenStrike.ResumeDistance;
+    }
+    else
+    {
+        UnifiedOpaqueHit ReflHit = TraceSceneOpaque(
+            RayOrigin, ReflDir, max(1.0e-3f, ScreenStrike.ResumeDistance - 0.20f), 500.0f);
+        ReflLi = ReflHit.Hit
+                     ? ApplyCoupledHeightFog(
+                           ShadeSecondarySurface(ReflHit.WorldPos,
+                                                 ReflHit.TexCoord,
+                                                 ReflHit.DistanceM,
+                                                 ReflHit.GeoNormal,
+                                                 ReflHit.ClassId,
+                                                 -ReflDir,
+                                                 ReflHit.InstanceTint,
+                                                 ReflHit.InstanceSelfRadiance,
+                                                 FullRt),
+                           WorldPos,
+                           ReflDir,
+                           ReflHit.DistanceM)
+                     : EvaluateCoupledEnvironmentSky(ReflDir);
+        HitDistance = ReflHit.Hit ? ReflHit.DistanceM : 200.0f;
+    }
 
     float3 HalfR = normalize(ViewDir + ReflDir);
     float  VdotH = saturate(dot(ViewDir, HalfR));
@@ -1129,29 +1682,49 @@ void TraceSpecularReflectionsMain(uint3 DispatchId : SV_DispatchThreadID)
     float3 Throughput;
     if (SampleCoat)
     {
-        float Fc   = Mat.CoatCoverage * EvaluateDielectricFresnelUnpolarized(VdotH, 1.0f, Mat.CoatIor);
-        float G1L  = 2.0f * NdotL / max(1.0e-4f, NdotL + sqrt(Mat.CoatRoughness * Mat.CoatRoughness + (1.0f - Mat.CoatRoughness * Mat.CoatRoughness) * NdotL * NdotL));
-        Throughput = float3(Fc * G1L / max(0.15f, CoatProb));
+        float Fc  = Mat.CoatCoverage * EvaluateDielectricFresnelUnpolarized(VdotH, 1.0f, Mat.CoatIor);
+        float G1L = 2.0f * NdotL / max(1.0e-4f,
+            NdotL + sqrt(Mat.CoatRoughness * Mat.CoatRoughness +
+                         (1.0f - Mat.CoatRoughness * Mat.CoatRoughness) * NdotL * NdotL));
+        if (StableCoatedReflection)
+        {
+            // Deterministic layered evaluation: coherent dielectric coat plus its attenuated metallic base.
+            float3 Fb    = BaseF0 + (1.0f - BaseF0) * pow(1.0f - VdotH, 5.0f);
+            float  AttV  = 1.0f - CoatFres;
+            float  AttL  = 1.0f - Mat.CoatCoverage * EvaluateDielectricFresnelUnpolarized(NdotL, 1.0f, Mat.CoatIor);
+            float3 Beer  = lerp(float3(1.0f),
+                                exp(-Mat.CoatOpticalDepth * (1.0f / NdotV + 1.0f / max(0.08f, NdotL))),
+                                Mat.CoatCoverage);
+            float BaseG1L = 2.0f * NdotL / max(1.0e-4f,
+                NdotL + sqrt(Mat.BaseRoughness * Mat.BaseRoughness +
+                             (1.0f - Mat.BaseRoughness * Mat.BaseRoughness) * NdotL * NdotL));
+            Throughput = float3(Fc * G1L) + Fb * Beer * (AttV * AttL * BaseG1L);
+        }
+        else
+        {
+            Throughput = float3(Fc * G1L / max(0.15f, CoatProb));
+        }
     }
     else
     {
-        float3 Fb   = BaseF0 + (1.0f - BaseF0) * pow(1.0f - VdotH, 5.0f);
-        float  G1L  = 2.0f * NdotL / max(1.0e-4f, NdotL + sqrt(Mat.BaseRoughness * Mat.BaseRoughness + (1.0f - Mat.BaseRoughness * Mat.BaseRoughness) * NdotL * NdotL));
-        float  AttV = 1.0f - CoatFres;
-        float  AttL = 1.0f - Mat.CoatCoverage * EvaluateDielectricFresnelUnpolarized(NdotL, 1.0f, Mat.CoatIor);
+        float3 Fb  = BaseF0 + (1.0f - BaseF0) * pow(1.0f - VdotH, 5.0f);
+        float G1L  = 2.0f * NdotL / max(1.0e-4f,
+            NdotL + sqrt(Mat.BaseRoughness * Mat.BaseRoughness +
+                         (1.0f - Mat.BaseRoughness * Mat.BaseRoughness) * NdotL * NdotL));
+        float AttV = 1.0f - CoatFres;
+        float AttL = 1.0f - Mat.CoatCoverage * EvaluateDielectricFresnelUnpolarized(NdotL, 1.0f, Mat.CoatIor);
         float3 Beer = (Mat.CoatCoverage > 0.01f)
-                          ? lerp(float3(1.0f), exp(-Mat.CoatOpticalDepth * (1.0f / NdotV + 1.0f / max(0.08f, NdotL))), Mat.CoatCoverage)
+                          ? lerp(float3(1.0f),
+                                 exp(-Mat.CoatOpticalDepth * (1.0f / NdotV + 1.0f / max(0.08f, NdotL))),
+                                 Mat.CoatCoverage)
                           : float3(1.0f);
-        Throughput  = Fb * Beer * (AttV * AttL * G1L / max(0.10f, 1.0f - CoatProb));
+        Throughput = Fb * Beer * (AttV * AttL * G1L / max(0.10f, 1.0f - CoatProb));
     }
 
     float3 SpecRad  = ReflLi * Throughput * (0.45f + 0.55f * Mat.AmbientOcclusion);
     float  SpecLuma = Luminance709(SpecRad);
-    if (SpecLuma > 14.0f)
-    {
-        SpecRad *= (14.0f / SpecLuma);
-    }
-    SurfaceAndWorkAtlas[uint3(Px, 8u)] = float4(SpecRad, max(0.05f, ReflHit.Hit ? ReflHit.DistanceM : 200.0f));
+    if (SpecLuma > 14.0f) SpecRad *= 14.0f / SpecLuma;
+    SurfaceAndWorkAtlas[uint3(TracePx, 8u)] = float4(SpecRad, max(0.05f, HitDistance));
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -1302,21 +1875,28 @@ void IntegrateTemporalVarianceMain(uint3 DispatchId : SV_DispatchThreadID)
         }
     }
 
-    // 2. Integrate Full-Res Specular Reflections + Moments across ScreenExtent
-    float4 G0   = SurfaceAndWorkAtlas[uint3(Px, 0u)];
+    // 2. Integrate trace-extent specular reflections and moments. Reflection traversal, history, and
+    //    wavelets all stay at Frame.TraceExtent; only the final joint-bilateral projection is full resolution.
+    if (Px.x >= TraceW || Px.y >= TraceH)
+    {
+        return;
+    }
+
+    uint2 SpecScreenPx;
+    float4 G0;
+    ResolveGiTraceSurface(Px, TraceScale, Width, Height, SpecScreenPx, G0);
     float4 RawS = SurfaceAndWorkAtlas[uint3(Px, 8u)];
     if (G0.w <= 0.0f || RawS.w < 0.0f)
     {
-        // Sky, glazing, or rough-fallback marker passes through cleanly
         SurfaceAndWorkAtlas[uint3(Px, 11u)] = RawS;
-        TemporalHistoryCurr[uint3(Px, 3u)]  = float4(RawS.xyz, 0.0f);
+        TemporalHistoryCurr[uint3(Px, 3u)]  = float4(RawS.xyz, RawS.w < 0.0f ? -1.0f : 0.0f);
         TemporalHistoryCurr[uint3(Px, 4u)]  = float4(0.0f, 0.0f, 0.0f, 1.0f);
         TemporalHistoryCurr[uint3(Px, 5u)]  = float4(0.0f);
         return;
     }
 
-    float4 G1           = SurfaceAndWorkAtlas[uint3(Px, 1u)];
-    float4 G3           = SurfaceAndWorkAtlas[uint3(Px, 3u)];
+    float4 G1 = SurfaceAndWorkAtlas[uint3(SpecScreenPx, 1u)];
+    float4 G3 = SurfaceAndWorkAtlas[uint3(SpecScreenPx, 3u)];
     float3 CurrN        = normalize(G1.xyz);
     float  CurrZ        = G0.w;
     float  EffRoughness = (G3.y > 0.25f) ? min(G1.w, G3.z) : G1.w;
@@ -1324,40 +1904,35 @@ void IntegrateTemporalVarianceMain(uint3 DispatchId : SV_DispatchThreadID)
     float3 SpecSignal   = RawS.xyz;
     float  SpecLuma     = Luminance709(SpecSignal);
 
-    float2 PrevScreenPos = float2(Px) + 0.5f;
+    float2 PrevScreenPos = float2(SpecScreenPx) + 0.5f;
     float2 MotionUv      = float2(0.0f);
-    bool   InBounds      = UseTemporal && ProjectToPreviousScreenPosition(G0.xyz, Width, Height, PrevScreenPos, MotionUv, int2(Px));
+    bool InBounds = UseTemporal && ProjectToPreviousScreenPosition(
+        G0.xyz, Width, Height, PrevScreenPos, MotionUv, int2(SpecScreenPx));
     float3 PriorSpec = float3(0.0f);
     float3 PriorSMom = float3(0.0f);
     float  SpecWTot  = 0.0f;
 
-    // Limit mirror history on fast camera/object motion so curved car reflections never ghost
     float MotionPx     = length(MotionUv * float2(float(Width), float(Height)));
     float SpecMaxTally = lerp(min(MaxHistoryM, 6.0f), MaxHistoryM, saturate(EffRoughness * 3.5f));
-    if (EffRoughness < 0.12f && MotionPx > 1.5f)
-    {
-        SpecMaxTally = min(SpecMaxTally, 3.0f);
-    }
+    if (EffRoughness < 0.12f && MotionPx > 1.5f) SpecMaxTally = min(SpecMaxTally, 3.0f);
 
     if (InBounds)
     {
-        float2 PriorPos = PrevScreenPos - 0.5f;
-        int2   Corner   = int2(floor(PriorPos));
-        float2 Frac     = PriorPos - float2(Corner);
-
+        float2 PriorTracePos = PrevScreenPos / float(TraceScale) - 0.5f;
+        int2 Corner = int2(floor(PriorTracePos));
+        float2 Frac = PriorTracePos - float2(Corner);
         for (uint Tap = 0u; Tap < 4u; ++Tap)
         {
             int2 Offset = int2(int(Tap & 1u), int(Tap >> 1u));
             int2 Texel  = Corner + Offset;
-            if (Texel.x < 0 || Texel.y < 0 || Texel.x >= int(Width) || Texel.y >= int(Height)) continue;
+            if (Texel.x < 0 || Texel.y < 0 || Texel.x >= int(TraceW) || Texel.y >= int(TraceH)) continue;
             float4 PGuide = TemporalHistoryPrev[uint3(uint2(Texel), 5u)];
-            bool   BadTap = (PGuide.w < 0.5f) || (dot(DecodeOctahedral(PGuide.xy), CurrN) < 0.92f) ||
-                            (abs(PGuide.z - CurrZ) > (0.07f * CurrZ + 0.03f));
-            if (BadTap)
-            {
-                continue;
-            }
-            float W    = ((Offset.x == 1) ? Frac.x : (1.0f - Frac.x)) * ((Offset.y == 1) ? Frac.y : (1.0f - Frac.y));
+            bool BadTap = (PGuide.w < 0.5f) ||
+                          (dot(DecodeOctahedral(PGuide.xy), CurrN) < 0.92f) ||
+                          (abs(PGuide.z - CurrZ) > (0.07f * CurrZ + 0.03f));
+            if (BadTap) continue;
+            float W = ((Offset.x == 1) ? Frac.x : (1.0f - Frac.x)) *
+                      ((Offset.y == 1) ? Frac.y : (1.0f - Frac.y));
             PriorSpec += TemporalHistoryPrev[uint3(uint2(Texel), 3u)].xyz * W;
             PriorSMom += TemporalHistoryPrev[uint3(uint2(Texel), 4u)].xyz * W;
             SpecWTot  += W;
@@ -1369,14 +1944,15 @@ void IntegrateTemporalVarianceMain(uint3 DispatchId : SV_DispatchThreadID)
     float2 SpecMoments = float2(SpecLuma, SpecLuma * SpecLuma);
     if (SpecWTot > 0.01f)
     {
-        PriorSpec  /= SpecWTot;
-        PriorSMom  /= SpecWTot;
-        SpecTally   = min(PriorSMom.z + 1.0f, SpecMaxTally);
+        PriorSpec /= SpecWTot;
+        PriorSMom /= SpecWTot;
+        SpecTally = min(PriorSMom.z + 1.0f, SpecMaxTally);
         float Alpha = max(1.0f / SpecTally, 0.06f);
         SpecColour  = lerp(PriorSpec, SpecSignal, Alpha);
         SpecMoments = lerp(PriorSMom.xy, SpecMoments, max(Alpha, 0.25f));
     }
-    float SpecSpread = max(0.0f, SpecMoments.y - SpecMoments.x * SpecMoments.x) * (4.0f / min(SpecTally, 4.0f));
+    float SpecSpread = max(0.0f, SpecMoments.y - SpecMoments.x * SpecMoments.x) *
+                       (4.0f / min(SpecTally, 4.0f));
 
     SurfaceAndWorkAtlas[uint3(Px, 11u)] = float4(SpecColour, SpecSpread);
     TemporalHistoryCurr[uint3(Px, 3u)]  = float4(SpecColour, SpecSpread);
@@ -1407,7 +1983,7 @@ float3 UpsampleHalfResDiffuseGi(uint2 ScreenPx, float3 FullNormal, float FullHit
         return SurfaceAndWorkAtlas[uint3(ScreenPx, DiffLayer)].xyz;
     }
 
-    float2 Pos          = float2(ScreenPx) / float(TraceScale);
+    float2 Pos          = (float2(ScreenPx) + 0.5f) / float(TraceScale) - 0.5f;
     int2   Corner       = int2(floor(Pos));
     float2 Frac         = Pos - float2(Corner);
     float3 Sum          = float3(0.0f);
@@ -1460,6 +2036,50 @@ float3 UpsampleHalfResDiffuseGi(uint2 ScreenPx, float3 FullNormal, float FullHit
     OutAo        = NearestAo;
     OutNormTally = saturate(NearestTally / MaxHist);
     return Nearest;
+}
+
+float3 UpsampleTraceSpecular(uint2 ScreenPx,
+                             float3 FullNormal,
+                             float FullHitT,
+                             uint TraceScale,
+                             uint TraceW,
+                             uint TraceH,
+                             uint SpecLayer)
+{
+    if (TraceScale <= 1u)
+    {
+        return SurfaceAndWorkAtlas[uint3(ScreenPx, SpecLayer)].xyz;
+    }
+
+    float2 Position = (float2(ScreenPx) + 0.5f) / float(TraceScale) - 0.5f;
+    int2   Corner   = int2(floor(Position));
+    float2 Fraction = Position - float2(Corner);
+    float3 Sum      = float3(0.0f);
+    float  WeightSum = 0.0f;
+    float3 Nearest   = float3(0.0f);
+    float  NearestScore = 1.0e30f;
+    for (uint Tap = 0u; Tap < 4u; ++Tap)
+    {
+        int2 Offset = int2(int(Tap & 1u), int(Tap >> 1u));
+        uint2 Texel = uint2(clamp(Corner + Offset, int2(0), int2(int(TraceW) - 1, int(TraceH) - 1)));
+        float4 Guide = SurfaceAndWorkAtlas[uint3(Texel, 13u)];
+        if (Guide.w < 0.5f || SurfaceAndWorkAtlas[uint3(Texel, 8u)].w < 0.0f) continue;
+        float3 Signal = SurfaceAndWorkAtlas[uint3(Texel, SpecLayer)].xyz;
+        float DepthRelative = abs(Guide.z - FullHitT) / max(FullHitT, 1.0e-3f);
+        float Facing = max(0.0f, dot(DecodeOctahedral(Guide.xy), FullNormal));
+        float Bilinear = ((Offset.x == 1) ? Fraction.x : (1.0f - Fraction.x)) *
+                         ((Offset.y == 1) ? Fraction.y : (1.0f - Fraction.y));
+        float Weight = (Bilinear + 1.0e-3f) * exp(-DepthRelative * 48.0f) * pow(Facing, 24.0f);
+        Sum       += Signal * Weight;
+        WeightSum += Weight;
+        float Score = DepthRelative + (1.0f - Facing);
+        if (Score < NearestScore)
+        {
+            NearestScore = Score;
+            Nearest      = Signal;
+        }
+    }
+    return (WeightSum > 1.0e-4f) ? (Sum / WeightSum) : Nearest;
 }
 
 float3 ResolveInspectionOutput(uint2  Px,
@@ -1618,53 +2238,63 @@ void FilterSpatiotemporalAtrousMain(uint3 DispatchId : SV_DispatchThreadID)
             }
         }
 
-        // Roughness-gated VarianceWavelet on Full-Res Specular Reflections (mirror clearcoat < 0.07 bypasses blur!)
-        float4 G0      = SurfaceAndWorkAtlas[uint3(Px, 0u)];
+        // Roughness-gated B3-spline wavelet at reflection trace extent.
+        if (Px.x >= TraceW || Px.y >= TraceH)
+        {
+            return;
+        }
+
+        uint2 SpecScreenPx;
+        float4 SpecG0;
+        ResolveGiTraceSurface(Px, TraceScale, Width, Height, SpecScreenPx, SpecG0);
         float4 CentreS = SurfaceAndWorkAtlas[uint3(Px, SpecSrcLayer)];
-        if (G0.w <= 0.0f || SurfaceAndWorkAtlas[uint3(Px, 8u)].w < 0.0f)
+        float4 CentreGuide = SurfaceAndWorkAtlas[uint3(Px, 13u)];
+        if (SpecG0.w <= 0.0f || CentreGuide.w < 0.5f || SurfaceAndWorkAtlas[uint3(Px, 8u)].w < 0.0f)
         {
             SurfaceAndWorkAtlas[uint3(Px, SpecDstLayer)] = CentreS;
             return;
         }
-        float4 G1           = SurfaceAndWorkAtlas[uint3(Px, 1u)];
-        float4 G3           = SurfaceAndWorkAtlas[uint3(Px, 3u)];
-        float  EffRoughness = (G3.y > 0.25f) ? min(G1.w, G3.z) : G1.w;
-        float  SpecGate     = smoothstep(0.065f, 0.34f, EffRoughness);
+
+        float4 SpecG1       = SurfaceAndWorkAtlas[uint3(SpecScreenPx, 1u)];
+        float4 SpecG3       = SurfaceAndWorkAtlas[uint3(SpecScreenPx, 3u)];
+        float EffRoughness  = (SpecG3.y > 0.25f) ? min(SpecG1.w, SpecG3.z) : SpecG1.w;
+        float SpecGate      = smoothstep(0.065f, 0.34f, EffRoughness);
         if (SpecGate <= 1.0e-3f)
         {
             SurfaceAndWorkAtlas[uint3(Px, SpecDstLayer)] = CentreS;
             return;
         }
 
-        float3 NormalS   = normalize(G1.xyz);
-        float  LumaS     = Luminance709(CentreS.xyz);
-        float  DevS      = sqrt(max(0.0f, CentreS.w));
-        float3 SumSpec   = float3(0.0f);
-        float  WSpecSum  = 0.0f;
-        float  VarSpec   = 0.0f;
-
+        float3 NormalS  = DecodeOctahedral(CentreGuide.xy);
+        float  LumaS    = Luminance709(CentreS.xyz);
+        float  DevS     = sqrt(max(0.0f, CentreS.w));
+        float3 SumSpec  = float3(0.0f);
+        float  WSpecSum = 0.0f;
+        float  VarSpec  = 0.0f;
         for (int Ky = -2; Ky <= 2; ++Ky)
         {
             for (int Kx = -2; Kx <= 2; ++Kx)
             {
                 int2 TapPx = int2(Px) + int2(Kx * StepSize, Ky * StepSize);
-                if (TapPx.x < 0 || TapPx.y < 0 || TapPx.x >= int(Width) || TapPx.y >= int(Height)) continue;
-                float4 TapG0 = SurfaceAndWorkAtlas[uint3(uint2(TapPx), 0u)];
-                if (TapG0.w <= 0.0f || SurfaceAndWorkAtlas[uint3(uint2(TapPx), 8u)].w < 0.0f) continue;
-                float4 TapG1  = SurfaceAndWorkAtlas[uint3(uint2(TapPx), 1u)];
+                if (TapPx.x < 0 || TapPx.y < 0 || TapPx.x >= int(TraceW) || TapPx.y >= int(TraceH)) continue;
+                float4 TapGuide = SurfaceAndWorkAtlas[uint3(uint2(TapPx), 13u)];
+                if (TapGuide.w < 0.5f || SurfaceAndWorkAtlas[uint3(uint2(TapPx), 8u)].w < 0.0f) continue;
                 float4 TapS   = SurfaceAndWorkAtlas[uint3(uint2(TapPx), SpecSrcLayer)];
-                float  Kernel = B3Spline[abs(Kx)] * B3Spline[abs(Ky)];
-                float  W      = Kernel;
+                float Kernel  = B3Spline[abs(Kx)] * B3Spline[abs(Ky)];
+                float Weight  = Kernel;
                 if (Kx != 0 || Ky != 0)
                 {
-                    float WDepth = exp(-abs(TapG0.w - G0.w) / (0.015f * float(StepSize) * G0.w + 1.0e-3f));
-                    float WNorm  = pow(max(0.0f, dot(normalize(TapG1.xyz), NormalS)), lerp(256.0f, 64.0f, SpecGate));
-                    float WLuma  = exp(-abs(Luminance709(TapS.xyz) - LumaS) / (ColourSigma * 0.75f * DevS + 2.0e-2f));
-                    W            = Kernel * SpecGate * WDepth * WNorm * WLuma;
+                    float WDepth = exp(-abs(TapGuide.z - CentreGuide.z) /
+                                       (0.015f * float(StepSize) * CentreGuide.z + 1.0e-3f));
+                    float WNorm = pow(max(0.0f, dot(DecodeOctahedral(TapGuide.xy), NormalS)),
+                                      lerp(256.0f, 64.0f, SpecGate));
+                    float WLuma = exp(-abs(Luminance709(TapS.xyz) - LumaS) /
+                                      (ColourSigma * 0.75f * DevS + 2.0e-2f));
+                    Weight = Kernel * SpecGate * WDepth * WNorm * WLuma;
                 }
-                SumSpec  += TapS.xyz * W;
-                VarSpec  += W * W * TapS.w;
-                WSpecSum += W;
+                SumSpec  += TapS.xyz * Weight;
+                VarSpec  += Weight * Weight * TapS.w;
+                WSpecSum += Weight;
             }
         }
         SurfaceAndWorkAtlas[uint3(Px, SpecDstLayer)] =
@@ -1678,9 +2308,11 @@ void FilterSpatiotemporalAtrousMain(uint3 DispatchId : SV_DispatchThreadID)
 
     if (G0.w <= 0.0f)
     {
-        float3 SkyOrGlass = SurfaceAndWorkAtlas[uint3(Px, SpecSrcLayer)].xyz;
         float4 G1         = SurfaceAndWorkAtlas[uint3(Px, 1u)];
         float4 G2         = SurfaceAndWorkAtlas[uint3(Px, 2u)];
+        float3 SkyOrGlass = (G0.w == 0.0f)
+                                ? PlanetaryEnvironmentFrame[uint3(Px, 0u)].xyz
+                                : G2.xyz;
         float4 G3         = SurfaceAndWorkAtlas[uint3(Px, 3u)];
         float4 G4         = SurfaceAndWorkAtlas[uint3(Px, 4u)];
         float4 G5         = SurfaceAndWorkAtlas[uint3(Px, 5u)];
@@ -1702,14 +2334,15 @@ void FilterSpatiotemporalAtrousMain(uint3 DispatchId : SV_DispatchThreadID)
     float  NormHistoryM = 0.0f;
     float3 UpsampledGi  = UpsampleHalfResDiffuseGi(Px, FullN, G0.w, TraceScale, TraceW, TraceH, DiffSrcLayer, SceneAo, NormHistoryM);
 
-    float3 ResolvedSpec = SurfaceAndWorkAtlas[uint3(Px, SpecSrcLayer)].xyz;
-    // Rough matte surface reflection substitution (Lumen / ReflectionTraversal.wgsl rough-reflection reuse)
-    if (SurfaceAndWorkAtlas[uint3(Px, 8u)].w < 0.0f && FrameHeader[7].x > 0.5f)
+    float3 ResolvedSpec = UpsampleTraceSpecular(Px, FullN, G0.w, TraceScale, TraceW, TraceH, SpecSrcLayer);
+    // Roughness > 0.5 follows the reference cutoff and reuses reconstructed diffuse irradiance through EnvBRDF.
+    float EffectiveRoughness = (G3.y > 0.25f) ? min(G1.w, G3.z) : G1.w;
+    if (EffectiveRoughness > 0.50f && FrameHeader[7].x > 0.5f)
     {
         float3 ViewDir = normalize(FrameHeader[0].xyz - G0.xyz);
         float  NdotV   = max(0.05f, dot(FullN, ViewDir));
         float3 F0      = lerp(float3(0.04f), G5.xyz, saturate(G3.x));
-        ResolvedSpec   = EvaluateEnvBrdfApprox(F0, clamp(G1.w, 0.045f, 1.0f), NdotV) * UpsampledGi;
+        ResolvedSpec   = EvaluateEnvBrdfApprox(F0, clamp(EffectiveRoughness, 0.045f, 1.0f), NdotV) * UpsampledGi;
     }
 
     float3 Final = ResolveInspectionOutput(

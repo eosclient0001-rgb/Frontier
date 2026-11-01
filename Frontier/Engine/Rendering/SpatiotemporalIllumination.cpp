@@ -15,6 +15,7 @@
 #include <bit>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <utility>
 
 namespace Frontier
@@ -199,8 +200,9 @@ void BuildFrameHeaderVector(const SpatiotemporalCamera&             Camera,
 
     const uint32_t LumCount     = static_cast<uint32_t>(std::min<size_t>(Luminaires.size(), 32u));
     const auto&    Env          = Config.Environment;
-    // Use half-res (TraceScale=2 -> 1/4 pixels) in Hybrid mode whenever a 4-cascade clipmap is active (or >= 320x240)
-    const uint32_t GiTraceScale = (!Config.FullRaytracingMode && HasSdfVolume && Width >= 160u && Height >= 120u) ? 2u : 1u;
+    // The reference traces GI and reflections at Frame.TraceExtent in every quality mode. Keeping Full-RT at
+    // full screen resolution quadrupled secondary-ray work and was the principal native performance mismatch.
+    const uint32_t GiTraceScale = (Width >= 160u && Height >= 120u) ? 2u : 1u;
 
     OutHeader.clear();
     OutHeader.reserve(kLuminaireHeaderOffset + std::max(1u, LumCount) * 4u);
@@ -349,7 +351,121 @@ void BuildPerFrameRasterItems(bool                                         TwoLe
     }
 }
 
+void BuildIntegratedEnvironmentInput(const SpatiotemporalCamera&             Camera,
+                                     const std::vector<AnalyticalLuminaire>& Luminaires,
+                                     const SpatiotemporalRenderConfig&       Config,
+                                     uint32_t                                FrameIndex,
+                                     PlanetaryRealmEnsemble&                 OutEnsemble,
+                                     PlanetaryCameraView&                    OutView)
+{
+    PlanetaryRealm Realm{};
+    Realm.Name               = "EverestVehicleRealm";
+    Realm.AtmosphereRevision = 1u;
+    Realm.ObserverAltitudeKm = 0.05f;
+    Realm.GroundPlaneY       = Config.GroundPlaneHeightMeters;
+    Realm.GroundAlbedoRgb    = Config.GroundBounceTintRgb;
+    Realm.CloudWindSeconds   = static_cast<float>(FrameIndex) * (1.0f / 60.0f);
+    Realm.HeightFog = Config.Environment.FogEnabled
+                         ? FogParameters{Config.Environment.FogDensity,
+                                         0.0,
+                                         1.0 / std::max(1.0e-4, static_cast<double>(Config.Environment.FogHeightFalloff)),
+                                         {Config.Environment.FogInscatteringRgb[0],
+                                          Config.Environment.FogInscatteringRgb[1],
+                                          Config.Environment.FogInscatteringRgb[2]}}
+                         : FogParameters{0.0, 0.0, 120.0, {0.0, 0.0, 0.0}};
+
+    uint64_t SkyRevision = 1469598103934665603ull;
+    auto FoldRevision = [&SkyRevision](float Value)
+    {
+        SkyRevision ^= static_cast<uint64_t>(std::bit_cast<uint32_t>(Value));
+        SkyRevision *= 1099511628211ull;
+    };
+    for (const AnalyticalLuminaire& Luminaire : Luminaires)
+    {
+        if (Luminaire.Kind != AnalyticalLuminaireKind::DirectionalSolar)
+        {
+            continue;
+        }
+        RealmSolarSource Sun{};
+        Sun.DirectionUnit  = Luminaire.DirectionOrPosition;
+        Sun.DiscIrradiance = Luminaire.EmittedRadianceRgb;
+        Sun.Disc.AngularRadiusRad = std::max(0.001, static_cast<double>(Luminaire.AxisU[0]));
+        Realm.Suns.push_back(Sun);
+        FoldRevision(Luminaire.DirectionOrPosition[0]);
+        FoldRevision(Luminaire.DirectionOrPosition[1]);
+        FoldRevision(Luminaire.DirectionOrPosition[2]);
+        FoldRevision(Luminaire.EmittedRadianceRgb[0]);
+        FoldRevision(Luminaire.EmittedRadianceRgb[1]);
+        FoldRevision(Luminaire.EmittedRadianceRgb[2]);
+    }
+    if (Realm.Suns.empty())
+    {
+        RealmSolarSource Sun{};
+        Sun.DirectionUnit  = {0.42f, 0.76f, 0.50f};
+        Sun.DiscIrradiance = {3.2f, 3.0f, 2.8f};
+        Realm.Suns.push_back(Sun);
+    }
+    Realm.SkyViewRevision = std::max<uint64_t>(1u, SkyRevision);
+
+    if (Config.Environment.CloudsEnabled)
+    {
+        CloudVolumeProfile Clouds{};
+        Clouds.Domain                   = CloudVolumeDomain::PlanetarySlab;
+        Clouds.Slab.LowerHeightM        = Config.Environment.CloudBottomMeters;
+        Clouds.Slab.TopHeightM          = Config.Environment.CloudBottomMeters + 1400.0;
+        Clouds.Slab.Coverage            = std::clamp(static_cast<double>(Config.Environment.CloudCoverage), 0.0, 1.0);
+        Clouds.Slab.DensityScale        = std::max(0.0, static_cast<double>(Config.Environment.CloudDensity));
+        Clouds.Slab.ExtinctionPerM      = 0.04;
+        Clouds.Slab.WindTimeS           = Realm.CloudWindSeconds;
+        Clouds.Slab.AmbientRadiance     = {Config.ZenithSkyRgb[0], Config.ZenithSkyRgb[1], Config.ZenithSkyRgb[2]};
+        Realm.CloudVolumes.push_back(Clouds);
+    }
+
+    if (Config.Environment.LunarEnabled)
+    {
+        LunarBodyDescriptor PrimaryMoon{};
+        PrimaryMoon.DirectionUnit = {Config.Environment.PrimaryMoonDir[0],
+                                     Config.Environment.PrimaryMoonDir[1],
+                                     Config.Environment.PrimaryMoonDir[2]};
+        PrimaryMoon.AngularRadiusRad = Config.Environment.PrimaryMoonRadius;
+        Realm.Moons.push_back(PrimaryMoon);
+
+        LunarBodyDescriptor SecondaryMoon{};
+        SecondaryMoon.Preset = LunarBodyPreset::Ember;
+        SecondaryMoon.DirectionUnit = {Config.Environment.SecondaryMoonDir[0],
+                                       Config.Environment.SecondaryMoonDir[1],
+                                       Config.Environment.SecondaryMoonDir[2]};
+        SecondaryMoon.AngularRadiusRad = Config.Environment.SecondaryMoonRadius;
+        Realm.Moons.push_back(SecondaryMoon);
+    }
+
+    OutEnsemble.Realms.clear();
+    OutEnsemble.Portals.clear();
+    OutEnsemble.Realms.push_back(std::move(Realm));
+
+    const auto Forward = NormVec(SubVec(Camera.TargetMeters, Camera.OriginMeters));
+    const auto RefUp   = (std::abs(DotVec(Forward, Camera.UpUnit)) > 0.98f)
+                             ? std::array<float, 3>{0.0f, 0.0f, 1.0f}
+                             : Camera.UpUnit;
+    const auto Right = NormVec(CrossVec(Forward, RefUp));
+    const auto Up    = NormVec(CrossVec(Right, Forward));
+    OutView.ActiveRealmIndex = 0u;
+    OutView.PositionMeters   = Camera.OriginMeters;
+    OutView.RightUnit        = Right;
+    OutView.UpUnit           = Up;
+    OutView.ForwardUnit      = Forward;
+    OutView.VerticalFovRad   = Camera.VerticalFovRad;
+    OutView.ExposureScale    = Config.ExposureScale;
+    OutView.ElapsedSeconds   = static_cast<float>(FrameIndex) * (1.0f / 60.0f);
+    OutView.FrameIndex       = FrameIndex;
+    OutView.ViewportWidth    = std::max(1u, Camera.WidthPx);
+    OutView.ViewportHeight   = std::max(1u, Camera.HeightPx);
+}
+
 } // namespace
+
+SpatiotemporalIllumination::SpatiotemporalIllumination() = default;
+SpatiotemporalIllumination::~SpatiotemporalIllumination() = default;
 
 bool SpatiotemporalIllumination::Initialize(VulkanComputeExchange& Exchange,
                                             const std::string&     ShaderBinaryDirectory,
@@ -357,7 +473,7 @@ bool SpatiotemporalIllumination::Initialize(VulkanComputeExchange& Exchange,
 {
     Shutdown(Exchange);
 
-    const std::array<VkDescriptorType, 19> ComputeBindings{{
+    const std::array<VkDescriptorType, 23> ComputeBindings{{
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 0:  FrameHeader
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 1:  BvhOrTopCells
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 2:  BvhTriangles
@@ -377,6 +493,10 @@ bool SpatiotemporalIllumination::Initialize(VulkanComputeExchange& Exchange,
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          // 16: SurfaceAndWorkAtlas (14 layers rgba16f)
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          // 17: OutputImage (1 layer rgba16f)
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          // 18: ViewportDisplayTarget (2D rgba8)
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 19: GiReservoirCurr (2 uint4 / trace pixel = 32 B)
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 20: GiReservoirPrev
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          // 21: integrated physical planetary HDR environment
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, // 22: physical atmosphere sky-view LUT
     }};
 
     auto RecordStats = [&](const ComputeProgramSlot& Slot)
@@ -415,6 +535,12 @@ bool SpatiotemporalIllumination::Initialize(VulkanComputeExchange& Exchange,
                                      sizeof(SpatiotemporalPushConstants),
                                      IndirectGiProgram_,
                                      OutDiagnostic) ||
+        !Exchange.LoadComputeProgram(ShaderBinaryDirectory + "/ReuseIndirectDiffuseSpatial.spv",
+                                     "ReuseIndirectDiffuseSpatialMain",
+                                     ComputeBindings,
+                                     sizeof(SpatiotemporalPushConstants),
+                                     IndirectGiSpatialProgram_,
+                                     OutDiagnostic) ||
         !Exchange.LoadComputeProgram(ShaderBinaryDirectory + "/TraceSpecularReflections.spv",
                                      "TraceSpecularReflectionsMain",
                                      ComputeBindings,
@@ -437,10 +563,31 @@ bool SpatiotemporalIllumination::Initialize(VulkanComputeExchange& Exchange,
         return false;
     }
 
+    // Reuse the repository's physical atmosphere, celestial dome, volumetric clouds/fog, and optical flare stack.
+    // Installed projects stage shaders at Content/ShaderArchives/Environment and celestial assets at the sibling
+    // Content/EnvironmentArchives tree. Headless/source-tree tests retain the EngineContent fallback.
+    const std::filesystem::path ShaderDirectory(ShaderBinaryDirectory);
+    const std::filesystem::path StagedContentRoot = ShaderDirectory.parent_path().parent_path();
+    const std::filesystem::path StagedCelestial = StagedContentRoot / "EnvironmentArchives" / "CelestialMaps";
+    const std::filesystem::path SourceCelestial = std::filesystem::path("EngineContent") / "EnvironmentArchives" / "CelestialMaps";
+    const std::filesystem::path Celestial = std::filesystem::exists(StagedCelestial / "Hipparcos8.csv")
+                                                ? StagedCelestial
+                                                : SourceCelestial;
+    EnvironmentSequence_ = std::make_unique<PlanetarySubmissionSequence>();
+    if (!EnvironmentSequence_->Initialize(Exchange,
+                                          ShaderBinaryDirectory,
+                                          (Celestial / "MoonAlbedoSource2048.jpg").string(),
+                                          (Celestial / "Hipparcos8.csv").string(),
+                                          OutDiagnostic))
+    {
+        return false;
+    }
+
     RecordStats(RadiosityProgram_);
     RecordStats(PrimaryProgram_);
     RecordStats(DirectRadianceProgram_);
     RecordStats(IndirectGiProgram_);
+    RecordStats(IndirectGiSpatialProgram_);
     RecordStats(SpecularReflectProgram_);
     RecordStats(TemporalVarianceProgram_);
     RecordStats(AtrousProgram_);
@@ -449,7 +596,7 @@ bool SpatiotemporalIllumination::Initialize(VulkanComputeExchange& Exchange,
     HardwareRasterReady_ = false;
     if (Exchange.GraphicsSupported())
     {
-        const std::array<VkDescriptorType, 7> RasterBindings{{
+        const std::array<VkDescriptorType, 8> RasterBindings{{
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 0: FrameHeader
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 1: BvhOrTopCells
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 2: BvhTriangles
@@ -457,6 +604,7 @@ bool SpatiotemporalIllumination::Initialize(VulkanComputeExchange& Exchange,
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 4: OctetInstances
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         // 5: OctetBlocks
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, // 6: MaterialMaps
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, // 7: physical atmosphere sky-view LUT
         }};
 
         if (Exchange.CreateShadowProcedureOnly(ShadowRenderProcedure_) &&
@@ -560,6 +708,11 @@ bool SpatiotemporalIllumination::Initialize(VulkanComputeExchange& Exchange,
 
 void SpatiotemporalIllumination::Shutdown(VulkanComputeExchange& Exchange) noexcept
 {
+    if (EnvironmentSequence_)
+    {
+        EnvironmentSequence_->Shutdown(Exchange);
+        EnvironmentSequence_.reset();
+    }
     Exchange.ReleaseSurfaceFramebufferSet(SurfaceTargets_);
     Exchange.ReleaseShadowFramebufferSet(ShadowTargets_);
     Exchange.ReleaseGraphicsProgram(ForwardGlazingProgram_);
@@ -579,6 +732,8 @@ void SpatiotemporalIllumination::Shutdown(VulkanComputeExchange& Exchange) noexc
     Exchange.ReleaseVolume3D(SdfClipmapVolume_);
     Exchange.ReleaseImage(MaterialTextureArray_);
 
+    Exchange.ReleaseMemorySpan(GiReservoirB_);
+    Exchange.ReleaseMemorySpan(GiReservoirA_);
     Exchange.ReleaseMemorySpan(DirectReservoirB_);
     Exchange.ReleaseMemorySpan(DirectReservoirA_);
     Exchange.ReleaseMemorySpan(SurfaceCardSpan_);
@@ -598,6 +753,7 @@ void SpatiotemporalIllumination::Shutdown(VulkanComputeExchange& Exchange) noexc
     Exchange.ReleaseProgram(AtrousProgram_);
     Exchange.ReleaseProgram(TemporalVarianceProgram_);
     Exchange.ReleaseProgram(SpecularReflectProgram_);
+    Exchange.ReleaseProgram(IndirectGiSpatialProgram_);
     Exchange.ReleaseProgram(IndirectGiProgram_);
     Exchange.ReleaseProgram(DirectRadianceProgram_);
     Exchange.ReleaseProgram(PrimaryProgram_);
@@ -756,11 +912,9 @@ bool SpatiotemporalIllumination::UploadTwoLevelScene(VulkanComputeExchange&     
         uint32_t           VolW = 0u, VolH = 0u, VolD = 0u;
         std::vector<float> ScalarVolume;
         RangeClipmap->PackVolume3DForGpu(VolW, VolH, VolD, ScalarVolume);
+        // Preserve all four float4 records for every cascade. RangeDistanceSampling.slang addresses
+        // slots 0..15 (four cascades × four records); truncating this table corrupts high-cascade SDF reads.
         RangeClipmap->PackForGpu(RangeMetaTable);
-        if (RangeMetaTable.size() > 10u)
-        {
-            RangeMetaTable.resize(10u);
-        }
         if (SdfClipmapVolume_.Width != VolW || SdfClipmapVolume_.Height != VolH || SdfClipmapVolume_.Depth != VolD)
         {
             if (!Exchange.AllocateR16fVolume3D(VolW, VolH, VolD, SdfClipmapVolume_))
@@ -872,10 +1026,6 @@ bool SpatiotemporalIllumination::UpdateRangeClipmap(VulkanComputeExchange&    Ex
     std::vector<std::array<float, 4>> RangeMetaTable;
     RangeClipmap.PackVolume3DForGpu(VolW, VolH, VolD, ScalarVolume);
     RangeClipmap.PackForGpu(RangeMetaTable);
-    if (RangeMetaTable.size() > 10u)
-    {
-        RangeMetaTable.resize(10u);
-    }
 
     if (SdfClipmapVolume_.Width != VolW || SdfClipmapVolume_.Height != VolH || SdfClipmapVolume_.Depth != VolD)
     {
@@ -965,6 +1115,21 @@ bool SpatiotemporalIllumination::RenderFrame(VulkanComputeExchange&             
         HistoryValid_ = false;
     }
 
+    const uint32_t ReservoirTraceScale = (W >= 160u && H >= 120u) ? 2u : 1u;
+    const uint32_t ReservoirTraceW     = (W + ReservoirTraceScale - 1u) / ReservoirTraceScale;
+    const uint32_t ReservoirTraceH     = (H + ReservoirTraceScale - 1u) / ReservoirTraceScale;
+    const size_t   GiReservoirBytes    = static_cast<size_t>(ReservoirTraceW) * ReservoirTraceH * 32u;
+    if (GiReservoirA_.Capacity < GiReservoirBytes || GiReservoirB_.Capacity < GiReservoirBytes)
+    {
+        std::vector<uint8_t> ZeroGi(GiReservoirBytes, 0u);
+        if (!Exchange.UploadMemorySpan(GiReservoirA_, ZeroGi.data(), GiReservoirBytes) ||
+            !Exchange.UploadMemorySpan(GiReservoirB_, ZeroGi.data(), GiReservoirBytes))
+        {
+            return false;
+        }
+        HistoryValid_ = false;
+    }
+
     const auto                   CamFwd   = NormVec(SubVec(Camera.TargetMeters, Camera.OriginMeters));
     const std::array<float, 16>  PrevRows = HistoryValid_ ? PreviousViewProjRows_ : PreviousViewProjRows_;
     const SolarCascadeHeaderPack Cascades = BuildSolarShadowCascades(
@@ -1000,14 +1165,24 @@ bool SpatiotemporalIllumination::RenderFrame(VulkanComputeExchange&             
         return false;
     }
 
+    PlanetaryRealmEnsemble IntegratedEnvironment{};
+    PlanetaryCameraView    EnvironmentView{};
+    BuildIntegratedEnvironmentInput(Camera, Luminaires, Config, FrameCounter_, IntegratedEnvironment, EnvironmentView);
+    if (!EnvironmentSequence_->ExecuteFrame(Exchange, IntegratedEnvironment, EnvironmentView))
+    {
+        return false;
+    }
+
     const bool                  EvenFrame   = ((FrameCounter_ & 1u) == 0u);
     const DeviceImageArraySlot& HistPrev    = EvenFrame ? TemporalHistoryA_ : TemporalHistoryB_;
     const DeviceImageArraySlot& HistCurr    = EvenFrame ? TemporalHistoryB_ : TemporalHistoryA_;
     const DeviceMemorySpan&     DirResPrev  = EvenFrame ? DirectReservoirA_ : DirectReservoirB_;
     const DeviceMemorySpan&     DirResCurr  = EvenFrame ? DirectReservoirB_ : DirectReservoirA_;
+    const DeviceMemorySpan&     GiResPrev   = EvenFrame ? GiReservoirA_ : GiReservoirB_;
+    const DeviceMemorySpan&     GiResCurr   = EvenFrame ? GiReservoirB_ : GiReservoirA_;
     const bool                  UseTemporal = Config.EnableTemporalReuse && HistoryValid_;
 
-    const std::array<ComputeDescriptorArgument, 19> ComputeArgs{{
+    const std::array<ComputeDescriptorArgument, 23> ComputeArgs{{
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &FrameHeaderSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &BvhOrTopCellSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &BvhTriangleSpan_, nullptr, nullptr, nullptr, nullptr},
@@ -1027,9 +1202,13 @@ bool SpatiotemporalIllumination::RenderFrame(VulkanComputeExchange&             
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &SurfaceAndWorkAtlas_, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &OutputImage_, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, nullptr, ViewportSlot, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &GiResCurr, nullptr, nullptr, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &GiResPrev, nullptr, nullptr, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &EnvironmentSequence_->HdrFrameTarget(), nullptr, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, &EnvironmentSequence_->AtmosphereLuts().SkyViewArray(), nullptr, nullptr, nullptr},
     }};
 
-    const std::array<ComputeDescriptorArgument, 7> RasterArgs{{
+    const std::array<ComputeDescriptorArgument, 8> RasterArgs{{
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &FrameHeaderSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &BvhOrTopCellSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &BvhTriangleSpan_, nullptr, nullptr, nullptr, nullptr},
@@ -1037,6 +1216,7 @@ bool SpatiotemporalIllumination::RenderFrame(VulkanComputeExchange&             
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &OctetInstanceSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &OctetBlockSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, &MaterialTextureArray_, nullptr, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, &EnvironmentSequence_->AtmosphereLuts().SkyViewArray(), nullptr, nullptr, nullptr},
     }};
 
     const uint32_t GroupsX      = (W + 7u) / 8u;
@@ -1124,9 +1304,14 @@ bool SpatiotemporalIllumination::RenderFrame(VulkanComputeExchange&             
     {
         return false;
     }
-    const float IndirectGiMs = Exchange.QueryLastDispatchGpuMilliseconds();
+    float IndirectGiMs = Exchange.QueryLastDispatchGpuMilliseconds();
+    if (!Exchange.DispatchCompute(IndirectGiSpatialProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GiGroupsX, GiGroupsY, 1u))
+    {
+        return false;
+    }
+    IndirectGiMs += Exchange.QueryLastDispatchGpuMilliseconds();
 
-    if (!Exchange.DispatchCompute(SpecularReflectProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GroupsX, GroupsY, 1u))
+    if (!Exchange.DispatchCompute(SpecularReflectProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GiGroupsX, GiGroupsY, 1u))
     {
         return false;
     }
@@ -1271,6 +1456,21 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
         HistoryValid_ = false;
     }
 
+    const uint32_t ReservoirTraceScale = (W >= 160u && H >= 120u) ? 2u : 1u;
+    const uint32_t ReservoirTraceW     = (W + ReservoirTraceScale - 1u) / ReservoirTraceScale;
+    const uint32_t ReservoirTraceH     = (H + ReservoirTraceScale - 1u) / ReservoirTraceScale;
+    const size_t   GiReservoirBytes    = static_cast<size_t>(ReservoirTraceW) * ReservoirTraceH * 32u;
+    if (GiReservoirA_.Capacity < GiReservoirBytes || GiReservoirB_.Capacity < GiReservoirBytes)
+    {
+        std::vector<uint8_t> ZeroGi(GiReservoirBytes, 0u);
+        if (!Exchange.UploadMemorySpan(GiReservoirA_, ZeroGi.data(), GiReservoirBytes) ||
+            !Exchange.UploadMemorySpan(GiReservoirB_, ZeroGi.data(), GiReservoirBytes))
+        {
+            return false;
+        }
+        HistoryValid_ = false;
+    }
+
     const auto                   CamFwd   = NormVec(SubVec(Camera.TargetMeters, Camera.OriginMeters));
     const SolarCascadeHeaderPack Cascades = BuildSolarShadowCascades(
         Camera.OriginMeters, CamFwd, Luminaires, ShadowMapResolution, HardwareRasterReady_ && !Config.FullRaytracingMode);
@@ -1311,9 +1511,11 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
     const DeviceImageArraySlot& HistCurr    = EvenFrame ? TemporalHistoryB_ : TemporalHistoryA_;
     const DeviceMemorySpan&     DirResPrev  = EvenFrame ? DirectReservoirA_ : DirectReservoirB_;
     const DeviceMemorySpan&     DirResCurr  = EvenFrame ? DirectReservoirB_ : DirectReservoirA_;
+    const DeviceMemorySpan&     GiResPrev   = EvenFrame ? GiReservoirA_ : GiReservoirB_;
+    const DeviceMemorySpan&     GiResCurr   = EvenFrame ? GiReservoirB_ : GiReservoirA_;
     const bool                  UseTemporal = Config.EnableTemporalReuse && HistoryValid_;
 
-    const std::array<ComputeDescriptorArgument, 19> ComputeArgs{{
+    const std::array<ComputeDescriptorArgument, 23> ComputeArgs{{
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &RingHeaderSpan, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &BvhOrTopCellSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &BvhTriangleSpan_, nullptr, nullptr, nullptr, nullptr},
@@ -1333,9 +1535,13 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &SurfaceAndWorkAtlas_, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &OutputImage_, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, nullptr, &ViewportTarget, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &GiResCurr, nullptr, nullptr, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &GiResPrev, nullptr, nullptr, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &EnvironmentSequence_->HdrFrameTarget(), nullptr, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, &EnvironmentSequence_->AtmosphereLuts().SkyViewArray(), nullptr, nullptr, nullptr},
     }};
 
-    const std::array<ComputeDescriptorArgument, 7> RasterArgs{{
+    const std::array<ComputeDescriptorArgument, 8> RasterArgs{{
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &RingHeaderSpan, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &BvhOrTopCellSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &BvhTriangleSpan_, nullptr, nullptr, nullptr, nullptr},
@@ -1343,6 +1549,7 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &OctetInstanceSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &OctetBlockSpan_, nullptr, nullptr, nullptr, nullptr},
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, &MaterialTextureArray_, nullptr, nullptr, nullptr},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, nullptr, &EnvironmentSequence_->AtmosphereLuts().SkyViewArray(), nullptr, nullptr, nullptr},
     }};
 
     const uint32_t GroupsX      = (W + 7u) / 8u;
@@ -1356,9 +1563,22 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
         {Config.ExposureScale, 1.0f, 3.8f, UseTemporal ? 1.0f : 0.0f},
     };
 
+    PlanetaryRealmEnsemble IntegratedEnvironment{};
+    PlanetaryCameraView    EnvironmentView{};
+    BuildIntegratedEnvironmentInput(Camera, Luminaires, Config, FrameCounter_, IntegratedEnvironment, EnvironmentView);
+
     RecordedSlotCounts CurrCounts{};
     Exchange.BeginExternalCommandStream(ExternalCommandBuffer, SlotIdx);
     (void)Exchange.PrepareViewportImageForCompute(ViewportTarget);
+    if (!EnvironmentSequence_->ExecuteFrame(Exchange, IntegratedEnvironment, EnvironmentView))
+    {
+        Exchange.EndExternalCommandStream();
+        return false;
+    }
+    CurrCounts.EnvironmentDispatches =
+        EnvironmentSequence_->AtmosphereLuts().LastAtmosphereBakedCount() * 2u +
+        EnvironmentSequence_->AtmosphereLuts().LastSkyViewBakedCount() +
+        6u + (EnvironmentSequence_->LastPackedPayload().FlareCandidates.empty() ? 0u : 2u);
 
     if (UploadedSurfacePatches_ > 0u)
     {
@@ -1411,7 +1631,8 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
 
     (void)Exchange.DispatchCompute(DirectRadianceProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GroupsX, GroupsY, 1u);
     (void)Exchange.DispatchCompute(IndirectGiProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GiGroupsX, GiGroupsY, 1u);
-    (void)Exchange.DispatchCompute(SpecularReflectProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GroupsX, GroupsY, 1u);
+    (void)Exchange.DispatchCompute(IndirectGiSpatialProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GiGroupsX, GiGroupsY, 1u);
+    (void)Exchange.DispatchCompute(SpecularReflectProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GiGroupsX, GiGroupsY, 1u);
     (void)Exchange.DispatchCompute(TemporalVarianceProgram_, ComputeArgs, &BasePush, sizeof(BasePush), GroupsX, GroupsY, 1u);
 
     const uint32_t WaveletPasses = Config.EnableSpatialReuse ? std::clamp(Config.AtrousIterations, 1u, 4u) : 0u;
@@ -1443,10 +1664,14 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
 
     if (OutTelemetry)
     {
-        float RadMs = 0.0f, ShdMs = 0.0f, PrimMs = 0.0f, DirMs = 0.0f, IndMs = 0.0f, SpecMs = 0.0f, AtrMs = 0.0f;
+        float EnvMs = 0.0f, RadMs = 0.0f, ShdMs = 0.0f, PrimMs = 0.0f, DirMs = 0.0f, IndMs = 0.0f, SpecMs = 0.0f, AtrMs = 0.0f;
         if (HasPrevTimings)
         {
             size_t Cursor = 0u;
+            for (uint32_t I = 0u; I < PrevCounts.EnvironmentDispatches && Cursor < PrevTimings.size(); ++I)
+            {
+                EnvMs += PrevTimings[Cursor++];
+            }
             for (uint32_t I = 0u; I < PrevCounts.RadiosityDispatches && Cursor < PrevTimings.size(); ++I)
             {
                 RadMs += PrevTimings[Cursor++];
@@ -1459,8 +1684,9 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
             {
                 PrimMs += PrevTimings[Cursor++];
             }
-            if (Cursor < PrevTimings.size()) DirMs  = ShdMs + PrevTimings[Cursor++];
-            if (Cursor < PrevTimings.size()) IndMs  = PrevTimings[Cursor++];
+            if (Cursor < PrevTimings.size()) DirMs = ShdMs + PrevTimings[Cursor++];
+            if (Cursor < PrevTimings.size()) IndMs += PrevTimings[Cursor++]; // temporal candidate/reuse
+            if (Cursor < PrevTimings.size()) IndMs += PrevTimings[Cursor++]; // spatial reconnection/resolve
             if (Cursor < PrevTimings.size()) SpecMs = PrevTimings[Cursor++];
             while (Cursor < PrevTimings.size())
             {
@@ -1490,7 +1716,7 @@ bool SpatiotemporalIllumination::RecordFrameIntoExternalStream(
         OutTelemetry->IndirectGiGpuMs       = IndMs;
         OutTelemetry->SpatialReflectGpuMs   = SpecMs;
         OutTelemetry->AtrousResolveGpuMs    = AtrMs;
-        OutTelemetry->TotalGpuMs            = RadMs + PrimMs + DirMs + IndMs + SpecMs + AtrMs;
+        OutTelemetry->TotalGpuMs            = EnvMs + RadMs + PrimMs + DirMs + IndMs + SpecMs + AtrMs;
         OutTelemetry->CpuSubmissionMs       = CpuSubmitMs;
     }
     return true;

@@ -136,29 +136,12 @@ void ResolveAuthoredMaterialAtHit(inout UnpackedSurfaceMaterial Mat,
         B               = cross(N, T);
     }
 
-    // Distance-filtered Voronoi micro-flake normal for secondary/compute fallback hits
-    if (Tier == 0u && Mat.FlakeCoverage > 0.01f)
+    // Stable band-limited automotive flake model for secondary/compute hits. Discrete per-cell normal
+    // impulses alias into moving white glitter under camera motion; represent their unresolved NDF variance instead.
+    if (Mat.FlakeCoverage > 0.01f)
     {
-        float CellsPerCone = HitDistanceM * 0.0022f * Mat.FlakeFrequency;
-        float FlakeResolve = 1.0f - smoothstep(0.45f, 2.25f, CellsPerCone);
-        if (FlakeResolve > 0.02f)
-        {
-            int3  FlakeCell = int3(floor(WorldPos * Mat.FlakeFrequency));
-            uint  H         = uint(FlakeCell.x * 73856093) ^ uint(FlakeCell.y * 19349663) ^ uint(FlakeCell.z * 83492791);
-            H               = (H ^ (H >> 13u)) * 1274126177u;
-            float Sparkle   = float(H & 0xFFFFu) / 65535.0f;
-            Mat.BaseAlbedo *= lerp(1.0f, lerp(0.96f, 1.06f, smoothstep(1.0f - Mat.FlakeCoverage, 1.0f, Sparkle)), FlakeResolve);
-
-            if (Mat.FlakeTiltSpread > 1.0e-3f)
-            {
-                float2 Jitter = (float2(float((H >> 8u) & 0xFFu), float((H >> 16u) & 0xFFu)) / 255.0f) * 2.0f - 1.0f;
-                N             = normalize(N + (T * Jitter.x + B * Jitter.y) * (Mat.FlakeTiltSpread * FlakeResolve));
-                T             = normalize(T - N * dot(N, T));
-                B             = cross(N, T);
-            }
-        }
-        float UnresolvedVar = (1.0f - FlakeResolve) * 0.65f * Mat.FlakeTiltSpread * Mat.FlakeTiltSpread;
-        Mat.BaseRoughness   = clamp(sqrt(Mat.BaseRoughness * Mat.BaseRoughness + UnresolvedVar), 0.045f, 1.0f);
+        float FlakeVariance = 0.65f * Mat.FlakeCoverage * Mat.FlakeTiltSpread * Mat.FlakeTiltSpread;
+        Mat.BaseRoughness = clamp(sqrt(Mat.BaseRoughness * Mat.BaseRoughness + FlakeVariance), 0.045f, 1.0f);
     }
     else if (Tier == 2u)
     {
@@ -239,31 +222,15 @@ void ResolveAuthoredMaterialHardwareDerivatives(inout UnpackedSurfaceMaterial Ma
         Mat.BaseRoughness         = clamp(sqrt(Mat.BaseRoughness * Mat.BaseRoughness + UnresolvedNormalVar), 0.045f, 1.0f);
     }
 
-    // Hardware ddx(WorldPos)/ddy(WorldPos) pixel-extent filtering for discrete Voronoi automotive paint micro-flakes
+    // Hardware-derivative band limiting for metallic paint. Keep the mean flake energy but fold the
+    // entire sub-pixel normal distribution into roughness; never select a stochastic cell normal per fragment.
     if (Mat.FlakeCoverage > 0.01f)
     {
-        float PixelExtentM  = max(length(WorldPosDdx), length(WorldPosDdy));
-        float CellsPerPixel = PixelExtentM * Mat.FlakeFrequency;
-        float FlakeResolve  = (Tier == 0u) ? (1.0f - smoothstep(0.42f, 2.15f, CellsPerPixel)) : 0.0f;
-
-        if (FlakeResolve > 0.02f)
-        {
-            int3  FlakeCell = int3(floor(WorldPos * Mat.FlakeFrequency));
-            uint  H         = uint(FlakeCell.x * 73856093) ^ uint(FlakeCell.y * 19349663) ^ uint(FlakeCell.z * 83492791);
-            H               = (H ^ (H >> 13u)) * 1274126177u;
-            float Sparkle   = float(H & 0xFFFFu) / 65535.0f;
-            Mat.BaseAlbedo *= lerp(1.0f, lerp(0.96f, 1.06f, smoothstep(1.0f - Mat.FlakeCoverage, 1.0f, Sparkle)), FlakeResolve);
-
-            if (Mat.FlakeTiltSpread > 1.0e-3f)
-            {
-                float2 Jitter = (float2(float((H >> 8u) & 0xFFu), float((H >> 16u) & 0xFFu)) / 255.0f) * 2.0f - 1.0f;
-                N             = normalize(N + (T * Jitter.x + B * Jitter.y) * (Mat.FlakeTiltSpread * FlakeResolve));
-                T             = normalize(T - N * dot(N, T));
-                B             = cross(N, T);
-            }
-        }
-        float UnresolvedFlakeVar = (1.0f - FlakeResolve) * 0.65f * Mat.FlakeTiltSpread * Mat.FlakeTiltSpread;
-        Mat.BaseRoughness        = clamp(sqrt(Mat.BaseRoughness * Mat.BaseRoughness + UnresolvedFlakeVar), 0.045f, 1.0f);
+        float PixelExtentM = max(length(WorldPosDdx), length(WorldPosDdy));
+        float FootprintCoverage = saturate(PixelExtentM * Mat.FlakeFrequency * 2.0f);
+        float FlakeVariance = 0.65f * Mat.FlakeCoverage * Mat.FlakeTiltSpread * Mat.FlakeTiltSpread *
+                              lerp(0.72f, 1.0f, FootprintCoverage);
+        Mat.BaseRoughness = clamp(sqrt(Mat.BaseRoughness * Mat.BaseRoughness + FlakeVariance), 0.045f, 1.0f);
     }
 
     // Kaplanyan-Antonov 2016 geometric normal screen-space derivative specular anti-aliasing
@@ -536,13 +503,10 @@ float3 EvaluateSurfaceScatteringBrdf(UnpackedSurfaceMaterial Mat,
                                      float3                  ViewDirToEye,
                                      float3                  LightDirToSource)
 {
-    if (Mat.FlakeCoverage > 0.01f && Mat.MaterialLodTier == 0u)
+    if (Mat.FlakeCoverage > 0.01f)
     {
-        int3  FlakeCell = int3(floor(WorldPos * Mat.FlakeFrequency));
-        uint  H         = uint(FlakeCell.x * 73856093) ^ uint(FlakeCell.y * 19349663) ^ uint(FlakeCell.z * 83492791);
-        H               = (H ^ (H >> 13u)) * 1274126177u;
-        float Sparkle   = float(H & 0xFFFFu) / 65535.0f;
-        Mat.BaseAlbedo *= lerp(0.88f, 1.24f, smoothstep(1.0f - Mat.FlakeCoverage, 1.0f, Sparkle));
+        float FlakeVariance = 0.65f * Mat.FlakeCoverage * Mat.FlakeTiltSpread * Mat.FlakeTiltSpread;
+        Mat.BaseRoughness = clamp(sqrt(Mat.BaseRoughness * Mat.BaseRoughness + FlakeVariance), 0.045f, 1.0f);
     }
     float3 T = normalize(cross(abs(Normal.y) < 0.99f ? float3(0.0f, 1.0f, 0.0f) : float3(1.0f, 0.0f, 0.0f), Normal));
     float3 B = cross(Normal, T);

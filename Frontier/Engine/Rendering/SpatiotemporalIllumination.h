@@ -26,11 +26,14 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace Frontier
 {
+
+class PlanetarySubmissionSequence;
 
 enum class AnalyticalLuminaireKind : uint32_t
 {
@@ -143,6 +146,9 @@ class SpatiotemporalIllumination
     static constexpr uint32_t ShadowMapResolution = 1024u;
     static constexpr uint32_t ShadowCascadeCount  = 3u;
 
+    SpatiotemporalIllumination();
+    ~SpatiotemporalIllumination();
+
     bool Initialize(VulkanComputeExchange& Exchange,
                     const std::string&     ShaderBinaryDirectory,
                     std::string*           OutDiagnostic = nullptr);
@@ -206,7 +212,8 @@ class SpatiotemporalIllumination
   private:
     struct RecordedSlotCounts
     {
-        uint32_t RadiosityDispatches = 0u;
+        uint32_t EnvironmentDispatches = 0u;
+        uint32_t RadiosityDispatches   = 0u;
         uint32_t ShadowPasses        = 0u;
         uint32_t PrimaryPasses       = 0u;
     };
@@ -219,9 +226,11 @@ class SpatiotemporalIllumination
     ComputeProgramSlot        PrimaryProgram_{};
     ComputeProgramSlot        DirectRadianceProgram_{};
     ComputeProgramSlot        IndirectGiProgram_{};
+    ComputeProgramSlot        IndirectGiSpatialProgram_{};
     ComputeProgramSlot        SpecularReflectProgram_{};
     ComputeProgramSlot        TemporalVarianceProgram_{};
     ComputeProgramSlot        AtrousProgram_{};
+    std::unique_ptr<PlanetarySubmissionSequence> EnvironmentSequence_{};
 
     VkRenderPass              SurfaceRenderProcedure_ = VK_NULL_HANDLE;
     VkRenderPass              ShadowRenderProcedure_  = VK_NULL_HANDLE;
@@ -244,6 +253,8 @@ class SpatiotemporalIllumination
     DeviceMemorySpan                SurfaceCardSpan_{};
     DeviceMemorySpan                DirectReservoirA_{};
     DeviceMemorySpan                DirectReservoirB_{};
+    DeviceMemorySpan                GiReservoirA_{}; // 32-byte ReSTIR GI records at trace extent
+    DeviceMemorySpan                GiReservoirB_{};
 
     DeviceImageArraySlot            MaterialTextureArray_{};
     DeviceVolumeTextureSlot         SdfClipmapVolume_{};    // 3D R16_SFLOAT hardware trilinear volume texture

@@ -18,6 +18,7 @@
 [[vk::binding(4, 0)]] StructuredBuffer<float4> OctetInstances;
 [[vk::binding(5, 0)]] StructuredBuffer<float4> OctetBlocks;
 [[vk::binding(6, 0)]] Sampler2DArray           MaterialMaps;
+[[vk::binding(7, 0)]] Sampler2DArray<float4>   PhysicalAtmosphereSkyView;
 
 struct RasterPushData
 {
@@ -243,6 +244,31 @@ SurfaceFragmentTargets EvaluateSurfaceFragmentMain(SurfaceVarying In)
 //                          FORWARD GLAZING RASTER (CURVED DIELECTRIC SNELL REFRACTION + FRESNEL)
 //------------------------------------------------------------------------------------------------------------------------
 
+float2 ResolveForwardAtmosphereUv(float3 ViewDirection, float3 SolarDirection)
+{
+    float ThetaLimb = -asin(clamp(6360.0f / 6360.05f, 0.0f, 1.0f));
+    float ThetaView = asin(clamp(ViewDirection.y, -1.0f, 1.0f));
+    float CoordV;
+    if (ThetaView < ThetaLimb)
+    {
+        float Ratio = (ThetaView - ThetaLimb) / max(-1.57079632679f - ThetaLimb, -1.0e-4f);
+        CoordV = 0.5f - 0.5f * sqrt(saturate(Ratio));
+    }
+    else
+    {
+        float Ratio = (ThetaView - ThetaLimb) / max(1.57079632679f - ThetaLimb, 1.0e-4f);
+        CoordV = 0.5f + 0.5f * sqrt(saturate(Ratio));
+    }
+    float2 ViewHorizontal = ViewDirection.xz;
+    float2 SunHorizontal  = SolarDirection.xz;
+    float Azimuth = 0.0f;
+    if (length(ViewHorizontal) > 1.0e-5f && length(SunHorizontal) > 1.0e-5f)
+    {
+        Azimuth = acos(clamp(dot(normalize(ViewHorizontal), normalize(SunHorizontal)), -1.0f, 1.0f));
+    }
+    return saturate(float2(Azimuth / 3.14159265359f, CoordV));
+}
+
 float3 EvaluateForwardCoupledSky(float3 Dir)
 {
     float3 Zenith  = FrameHeader[4].xyz;
@@ -254,13 +280,23 @@ float3 EvaluateForwardCoupledSky(float3 Dir)
 
     uint LumCnt  = uint(FrameHeader[3].w + 0.5f);
     uint LumBase = max(20u, uint(FrameHeader[19].w + 0.5f));
+    float3 SunDir = float3(0.42f, 0.76f, 0.50f);
     if (LumCnt > 0u && FrameHeader[LumBase].w < 0.5f)
     {
-        float3 SunDir  = normalize(FrameHeader[LumBase].xyz);
-        float  CosSun  = dot(Dir, SunDir);
-        float  MieHalo = pow( max(0.0f, CosSun), 96.0f) * 0.35f;
-        float  Disk    = smoothstep(0.99955f, 0.99985f, CosSun) * 6.0f;
-        Sky           += FrameHeader[LumBase + 3u].xyz * (MieHalo + Disk);
+        SunDir = normalize(FrameHeader[LumBase].xyz);
+        if (Dir.y > -0.015f)
+        {
+            float3 PhysicalSky = PhysicalAtmosphereSkyView.SampleLevel(
+                float3(ResolveForwardAtmosphereUv(Dir, SunDir), 0.0f), 0.0f).rgb;
+            if (dot(PhysicalSky, float3(0.2126f, 0.7152f, 0.0722f)) > 1.0e-6f)
+            {
+                Sky = PhysicalSky;
+            }
+        }
+        float CosSun  = dot(Dir, SunDir);
+        float MieHalo = pow(max(0.0f, CosSun), 96.0f) * 0.35f;
+        float Disk    = smoothstep(0.99955f, 0.99985f, CosSun) * 6.0f;
+        Sky          += FrameHeader[LumBase + 3u].xyz * (MieHalo + Disk);
     }
     return Sky;
 }

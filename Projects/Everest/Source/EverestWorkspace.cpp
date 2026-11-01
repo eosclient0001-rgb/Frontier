@@ -937,20 +937,28 @@ void EverestWorkspace::ConstructGpuCommands(VkCommandBuffer CommandBuffer,
         Backdrop.ShadowMode         = static_cast<Frontier::PreviewShadowMode>(std::clamp(PreviewShadowIndex_, 0, 4));
 
         Frontier::PreviewFrameExecution Exec{};
-        if (FastPreview.RenderView(Exchange,
-                                   ClusterRefinement,
-                                   ClusterCam,
-                                   static_cast<Frontier::PreviewViewMode>(std::clamp(PreviewViewIndex_, 0, 9)),
-                                   Backdrop,
-                                   &Exec))
+        const uint32_t RingSlot = static_cast<uint32_t>(UpcomingSerial % Frontier::VulkanComputeExchange::ExternalRingCount);
+        std::array<float, Frontier::VulkanComputeExchange::MaxTimedDispatchesSlot> CompletedTimings{};
+        const bool HasCompletedTimings = Exchange.HarvestExternalSlotTimings(RingSlot, CompletedTimings);
+        if (FastPreview.RecordViewIntoExternalStream(
+                Exchange,
+                CommandBuffer,
+                RingSlot,
+                Slot,
+                ClusterRefinement,
+                ClusterCam,
+                static_cast<Frontier::PreviewViewMode>(std::clamp(PreviewViewIndex_, 0, 9)),
+                Backdrop,
+                &Exec))
         {
-            std::vector<uint8_t> PreviewBytes;
-            if (FastPreview.ReadbackTonemappedSrgb8(Exchange, Config.ExposureScale, PreviewBytes))
+            LatestTelemetry = {};
+            if (HasCompletedTimings)
             {
-                Exchange.UploadViewportImageRgba8(Slot, PreviewBytes);
+                for (float Milliseconds : CompletedTimings)
+                {
+                    LatestTelemetry.TotalGpuMs += Milliseconds;
+                }
             }
-            LatestTelemetry                 = {};
-            LatestTelemetry.TotalGpuMs      = Exchange.QueryLastDispatchGpuMilliseconds();
             LatestTelemetry.PrimaryGpuMs    = LatestTelemetry.TotalGpuMs;
             LatestTelemetry.CpuSubmissionMs = Exchange.QueryLastDispatchCpuMilliseconds();
         }

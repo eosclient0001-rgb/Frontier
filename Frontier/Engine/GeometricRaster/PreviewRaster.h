@@ -90,6 +90,18 @@ class PreviewRaster
                     const PreviewAtmosphereBackdrop&    Backdrop,
                     PreviewFrameExecution*              OutExecution = nullptr);
 
+    // Records the complete preview and ACES/sRGB display resolve into the caller's frame command stream.
+    // This is the interactive path: no GPU readback, CPU tonemapping, upload, queue wait, or device-idle stall.
+    bool RecordViewIntoExternalStream(VulkanComputeExchange&              Exchange,
+                                      VkCommandBuffer                     ExternalStream,
+                                      uint32_t                            RingSlot,
+                                      DeviceViewportImageSlot&            ViewportTarget,
+                                      const ScreenSpaceClusterRefinement& Refinement,
+                                      const ClusterCameraView&            Camera,
+                                      PreviewViewMode                     ViewMode,
+                                      const PreviewAtmosphereBackdrop&    Backdrop,
+                                      PreviewFrameExecution*              OutExecution = nullptr);
+
     bool ReadbackLinearRgba(VulkanComputeExchange& Exchange, std::vector<float>& OutLinearRgbaFloats);
     bool ReadbackTonemappedSrgb8(VulkanComputeExchange& Exchange,
                                  float                  ExposureScale,
@@ -102,6 +114,7 @@ class PreviewRaster
     ComputeProgramSlot   ProjectShadowProgram_{};
     ComputeProgramSlot   TileBinProgram_{};
     ComputeProgramSlot   ResolveProgram_{};
+    ComputeProgramSlot   DisplayResolveProgram_{};
     DeviceMemorySpan     SceneHeaderSpan_{};
     DeviceMemorySpan     TriangleSpan_{};
     DeviceMemorySpan     TileBinsSpan_{};

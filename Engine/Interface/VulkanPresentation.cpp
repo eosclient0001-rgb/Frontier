@@ -202,14 +202,16 @@ struct VulkanPresentation::PresentationAllocation
         constexpr VkFormat Formats[] = {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM};
         Main.SurfaceFormat           = ImGui_ImplVulkanH_SelectSurfaceFormat(PhysicalDevice, Main.Surface, Formats, 2,
                                                                              VK_COLORSPACE_SRGB_NONLINEAR_KHR);
-        constexpr VkPresentModeKHR Modes[] = {VK_PRESENT_MODE_FIFO_KHR};
-        Main.PresentMode = ImGui_ImplVulkanH_SelectPresentMode(PhysicalDevice, Main.Surface, Modes, 1);
+        // Match browser/WebGPU pacing: low-latency mailbox when the surface supports it, with FIFO as the
+        // required no-tearing fallback. Triple buffering prevents a single missed refresh from halving cadence.
+        constexpr VkPresentModeKHR Modes[] = {VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_FIFO_KHR};
+        Main.PresentMode = ImGui_ImplVulkanH_SelectPresentMode(PhysicalDevice, Main.Surface, Modes, 2);
         int Width, Height;
         glfwGetFramebufferSize(Window, &Width, &Height);
         if (Width <= 0 || Height <= 0)
             throw std::runtime_error("Cannot initialize Vulkan presentation with a zero-size window.");
         ImGui_ImplVulkanH_CreateOrResizeWindow(Instance, PhysicalDevice, Device, &Main, QueueFamily, nullptr, Width,
-                                               Height, 2, 0);
+                                               Height, 3, 0);
         ImGui_ImplVulkan_InitInfo Initialization{};
         Initialization.ApiVersion                   = Application.apiVersion;
         Initialization.Instance                     = Instance;
@@ -221,7 +223,9 @@ struct VulkanPresentation::PresentationAllocation
         // preview + frame-lagged retirements, pattern atlas, ≤9 coverage slots, icon atlas + 1 retired)
         // and reclaim them; 512 leaves generous headroom while still failing loudly on a real leak.
         Initialization.DescriptorPoolSize           = 512;
-        Initialization.MinImageCount                = 2;
+        // The helper clamps the requested triple buffer to the surface's maxImageCount. Mirror that actual
+        // count here so constrained two-image surfaces still satisfy ImGui's ImageCount >= MinImageCount rule.
+        Initialization.MinImageCount                = std::min<uint32_t>(3u, Main.ImageCount);
         Initialization.ImageCount                   = Main.ImageCount;
         Initialization.PipelineInfoMain.RenderPass  = Main.RenderPass;
         Initialization.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
@@ -305,9 +309,9 @@ bool VulkanPresentation::Reconfigure(int Width, int Height)
     if (Display.Rebuild || Width != Display.Main.Width || Height != Display.Main.Height)
     {
         RequireSuccess(Display.DeviceWaitIdle(Display.Device));
-        ImGui_ImplVulkan_SetMinImageCount(2);
         ImGui_ImplVulkanH_CreateOrResizeWindow(Display.Instance, Display.PhysicalDevice, Display.Device, &Display.Main,
-                                               Display.QueueFamily, nullptr, Width, Height, 2, 0);
+                                               Display.QueueFamily, nullptr, Width, Height, 3, 0);
+        ImGui_ImplVulkan_SetMinImageCount(std::min<uint32_t>(3u, Display.Main.ImageCount));
         Display.Main.FrameIndex = 0;
         Display.Rebuild         = false;
     }

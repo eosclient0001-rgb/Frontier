@@ -80,6 +80,20 @@ bool PreviewRaster::Initialize(VulkanComputeExchange& Exchange,
         return false;
     }
 
+    const std::array<VkDescriptorType, 2> DisplayBindings{{
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, // 0: PreviewTarget (rgba16f)
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, // 1: interactive viewport (rgba8)
+    }};
+    if (!Exchange.LoadComputeProgram(ShaderBinaryDirectory + "/ResolvePreviewDisplay.spv",
+                                     "ResolvePreviewDisplayMain",
+                                     DisplayBindings,
+                                     sizeof(PreviewPushConstants),
+                                     DisplayResolveProgram_,
+                                     OutDiagnostic))
+    {
+        return false;
+    }
+
     const size_t          ShadowWords = static_cast<size_t>(kShadowMapResolution) * kShadowMapResolution;
     std::vector<uint32_t> InitialShadow(ShadowWords, 0xFFFFFFFFu);
     if (!Exchange.UploadMemorySpan(ShadowDepthSpan_, InitialShadow.data(), ShadowWords * sizeof(uint32_t)))
@@ -103,6 +117,7 @@ void PreviewRaster::Shutdown(VulkanComputeExchange& Exchange) noexcept
     Exchange.ReleaseMemorySpan(TileBinsSpan_);
     Exchange.ReleaseMemorySpan(TriangleSpan_);
     Exchange.ReleaseMemorySpan(SceneHeaderSpan_);
+    Exchange.ReleaseProgram(DisplayResolveProgram_);
     Exchange.ReleaseProgram(ResolveProgram_);
     Exchange.ReleaseProgram(TileBinProgram_);
     Exchange.ReleaseProgram(ProjectShadowProgram_);
@@ -401,6 +416,49 @@ bool PreviewRaster::RenderView(VulkanComputeExchange&              Exchange,
         OutExecution->ActiveShadowMode            = EffectiveShadow;
     }
     return true;
+}
+
+bool PreviewRaster::RecordViewIntoExternalStream(VulkanComputeExchange&              Exchange,
+                                                 VkCommandBuffer                     ExternalStream,
+                                                 uint32_t                            RingSlot,
+                                                 DeviceViewportImageSlot&            ViewportTarget,
+                                                 const ScreenSpaceClusterRefinement& Refinement,
+                                                 const ClusterCameraView&            Camera,
+                                                 PreviewViewMode                     ViewMode,
+                                                 const PreviewAtmosphereBackdrop&    Backdrop,
+                                                 PreviewFrameExecution*              OutExecution)
+{
+    const uint32_t Width  = std::max(1u, Camera.ViewportWidthPx);
+    const uint32_t Height = std::max(1u, Camera.ViewportHeightPx);
+    if (ExternalStream == VK_NULL_HANDLE || ViewportTarget.Width != Width || ViewportTarget.Height != Height)
+    {
+        return false;
+    }
+
+    Exchange.BeginExternalCommandStream(ExternalStream, RingSlot);
+    bool Ok = Exchange.PrepareViewportImageForCompute(ViewportTarget) &&
+              RenderView(Exchange, Refinement, Camera, ViewMode, Backdrop, OutExecution);
+    if (Ok)
+    {
+        const std::array<ComputeDescriptorArgument, 2> DisplayArguments{{
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, &TargetImage_, nullptr},
+            {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, nullptr, nullptr, &ViewportTarget},
+        }};
+        const PreviewPushConstants DisplayPush{
+            {Width, Height, 0u, 0u},
+            {Backdrop.ExposureScale, 0.0f, 0.0f, 0.0f},
+        };
+        Ok = Exchange.DispatchCompute(DisplayResolveProgram_,
+                                      DisplayArguments,
+                                      &DisplayPush,
+                                      sizeof(DisplayPush),
+                                      (Width + 7u) / 8u,
+                                      (Height + 7u) / 8u,
+                                      1u) &&
+             Exchange.PrepareViewportImageForSampling(ViewportTarget);
+    }
+    Exchange.EndExternalCommandStream();
+    return Ok;
 }
 
 bool PreviewRaster::ReadbackLinearRgba(VulkanComputeExchange& Exchange, std::vector<float>& OutLinearRgbaFloats)

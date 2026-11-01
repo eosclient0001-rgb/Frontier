@@ -133,6 +133,7 @@ set(FRONTIER_ENV_SHADER_SPECS
     "PreviewRaster:ProjectPreviewShadowMain:ProjectPreviewShadow:"
     "PreviewRaster:BinPreviewTilesMain:BinPreviewTiles:"
     "PreviewRaster:ResolvePreviewViewMain:ResolvePreviewView:"
+    "PreviewDisplayRasterization:ResolvePreviewDisplayMain:ResolvePreviewDisplay:"
     "ShadowRaster:ProjectShadowCascadeVertexMain:ProjectShadowCascadeVertex::vertex"
     "SurfaceRaster:ProjectSurfaceVertexMain:ProjectSurfaceVertex::vertex"
     "SurfaceRaster:EvaluateSurfaceFragmentMain:EvaluateSurfaceFragment::fragment"
@@ -142,6 +143,7 @@ set(FRONTIER_ENV_SHADER_SPECS
     "SpatiotemporalIllumination:TracePrimarySurfaceMain:TracePrimarySurface:"
     "SpatiotemporalIllumination:EvaluateDirectRadianceMain:EvaluateDirectRadiance:"
     "SpatiotemporalIllumination:TraceIndirectDiffuseMain:TraceIndirectDiffuse:"
+    "SpatiotemporalIllumination:ReuseIndirectDiffuseSpatialMain:ReuseIndirectDiffuseSpatial:"
     "SpatiotemporalIllumination:TraceSpecularReflectionsMain:TraceSpecularReflections:"
     "SpatiotemporalIllumination:IntegrateTemporalVarianceMain:IntegrateTemporalVariance:"
     "SpatiotemporalIllumination:FilterSpatiotemporalAtrousMain:FilterSpatiotemporalAtrous:")

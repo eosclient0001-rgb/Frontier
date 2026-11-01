@@ -229,6 +229,7 @@ class PlanetarySubmissionSequence
     [[nodiscard]] OpticalLensFlare&                LensFlare() noexcept { return LensFlare_; }
     [[nodiscard]] const OpticalLensFlare&          LensFlare() const noexcept { return LensFlare_; }
     [[nodiscard]] const PackedEnsemblePayload&     LastPackedPayload() const noexcept { return LastPayload_; }
+    [[nodiscard]] const DeviceImageArraySlot&      HdrFrameTarget() const noexcept { return HdrFrameTarget_; }
 
   private:
     DeviceMemorySpan          EnsembleSpan_{};

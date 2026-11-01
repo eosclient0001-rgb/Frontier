@@ -174,7 +174,7 @@ class VulkanComputeExchange
 {
   public:
     static constexpr uint32_t ExternalRingCount      = 4u;
-    static constexpr uint32_t MaxTimedDispatchesSlot = 16u;
+    static constexpr uint32_t MaxTimedDispatchesSlot = 32u;
 
     VulkanComputeExchange() = default;
     ~VulkanComputeExchange();

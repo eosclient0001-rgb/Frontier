@@ -459,8 +459,8 @@ int main(int Argc, char** Argv)
             REQUIRE_STI(Renderer.RenderFrame(Exchange, HeroCam, {Sun, LeftSoftbox, RightSoftbox}, FullRtCfg, &FullRtTel, &LiveViewport),
                         "Option 2 Full Raytracing RenderFrame must succeed");
         }
-        REQUIRE_STI(FullRtTel.FullRaytracingActive && FullRtTel.GiTraceScale == 1u,
-                    "Option 2 Full Raytracing telemetry must report FullRaytracingActive and GiTraceScale == 1");
+        REQUIRE_STI(FullRtTel.FullRaytracingActive && FullRtTel.GiTraceScale == 2u,
+                    "Option 2 Full Raytracing must retain the reference TraceExtent (TraceScale=2) for secondary GI/reflection rays");
 
         std::vector<float> FullRtLinear;
         REQUIRE_STI(Renderer.ReadbackLinearRgba(Exchange, FullRtLinear) && !FullRtLinear.empty(),
