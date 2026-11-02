@@ -8,8 +8,8 @@
 | Photometric integration and IES format tests | 7/7 passed |
 | Profile-cookie intensity/cutoff test | 1/1 passed |
 | JavaScript syntax checks | Passed |
-| Portal and both editor routes, shared dependencies/assets | 35/35 routes returned HTTP 200 |
-| Headless Chromium desktop smoke check | Both canvases rendered; no console or request errors |
+| Eight-link browser-tools hub, all standalone editor pages, runtime dependencies/assets | All checked routes returned HTTP 200 |
+| Headless Chromium desktop smoke check | Photometric Editor viewport and canvas rendered; no console or request errors |
 
 Tests cover absolute Type C IES import/export, candela multiplier decoding, malformed/asymmetric input rejection,
 `4πI` point-source flux, smooth spot distributions, and generated IES-cookie attenuation. DOM checks cover seven

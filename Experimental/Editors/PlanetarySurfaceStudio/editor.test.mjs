@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { Bodies, Catalog, MoonProfiles } from "./planet-data.mjs";
 
 const Html = await readFile(fileURLToPath(new URL("./index.html", import.meta.url)), "utf8");
@@ -57,24 +58,43 @@ test("sourced maps keep baked shading while AI textures use natural dynamic ligh
   assert.match(App, /const NoDynamicLight = CurrentMode === "surface"/);
 });
 
-test("the Frontier portal links to every runnable editor directory", async () => {
+test("the Frontier hub exposes every standalone editor and additional browser tool", async () => {
   const EditorsRoot = fileURLToPath(new URL("../", import.meta.url));
   const Directories = await readdir(EditorsRoot, { withFileTypes: true });
-  const ExpectedRoutes = [];
+  const CoreRoutes = [];
   for (const Entry of Directories) {
     if (!Entry.isDirectory()) continue;
     try {
       await stat(new URL(`../${Entry.name}/index.html`, import.meta.url));
-      ExpectedRoutes.push(`/Experimental/Editors/${Entry.name}/`);
+      CoreRoutes.push(`/Experimental/Editors/${Entry.name}/`);
     } catch {
       // Non-editor folders do not have a launch page.
     }
   }
+  const ToolRoutes = [
+    "/Experimental/TextureStudio/site/",
+    "/Experimental/Project%20browser/",
+    "/Experimental/SlateReference/A/Exhibits/VehicleProvingGrounds/",
+    "/Experimental/SlateReference/B/Exhibits/IlluminationHost/",
+  ];
+  const AllRoutes = [...CoreRoutes, ...ToolRoutes].sort();
   const CardRoutes = [...Portal.matchAll(/class="editor-card" href="([^"]+)"/g)].map((Match) => Match[1]);
+  const ToolCards = [...Portal.matchAll(/class="tool-card" href="([^"]+)"/g)].map((Match) => Match[1]);
   const QuickLinks = [...Portal.matchAll(/<nav class="editor-quick-links"[\s\S]*?<\/nav>/g)].flatMap((Match) => [...Match[0].matchAll(/href="([^"]+)"/g)].map((Link) => Link[1]));
-  assert.deepEqual(CardRoutes.sort(), ExpectedRoutes.sort());
-  assert.deepEqual(QuickLinks.sort(), ExpectedRoutes.sort());
-  assert.match(Portal, /02 AVAILABLE/);
+  assert.deepEqual(CardRoutes.sort(), CoreRoutes.sort());
+  assert.deepEqual(ToolCards.sort(), ToolRoutes.sort());
+  assert.deepEqual(QuickLinks.sort(), AllRoutes);
+  assert.match(Portal, /ALL 8 BROWSER TOOLS/);
+  assert.match(Portal, /04 ACTIVE/);
+  assert.match(Portal, /04 MORE/);
+  assert.match(Portal, /<h2>Light Studio<\/h2>/);
+  assert.match(Portal, /<h2>Fracture Editor<\/h2>/);
+  assert.match(Portal, /npm ci --prefix Experimental\/Editors\/LightStudio/);
+  assert.match(Portal, /not yet connected to project scene objects/i);
+  const RepositoryRoot = fileURLToPath(new URL("../../../", import.meta.url));
+  for (const Route of AllRoutes) {
+    await stat(join(RepositoryRoot, decodeURIComponent(Route.slice(1)), "index.html"));
+  }
   assert.match(Portal, /<span class="editor-mark" aria-hidden="true">IES<\/span>/);
   assert.match(Portal, /<span class="editor-mark" aria-hidden="true">3D<\/span>/);
 });
