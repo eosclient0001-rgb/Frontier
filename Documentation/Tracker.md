@@ -4,6 +4,20 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Procedural candy town prototype — 2026-11-02
+
+- Requested prototype in `Experimental/CandyCity/`: a seed-deterministic candy city with bent
+  liquorice roads and candy-cane kerbs, jelly-bean crosswalks, eight candy house styles, seven candy
+  tree/bush builders, street furniture, a layer-cake plaza, marshmallow clouds and a painted candy
+  texture library (16 surface maps plus Sobel normal maps), all generated at load time. Vendored
+  three.js r170; no external assets. Not wired into the editor, `EngineContent` or the C++ renderer.
+- `node test/city.test.mjs` passes 20/20 generator checks and `node test/seed-sweep.mjs` passes 12/12
+  seeds on the seed `20260101` build (36 blocks → 32 houses + 3 parks, 342 trees, 64 lamps, 1 402
+  instanced jelly beans, 9 832 instanced sprinkles, 29 merged meshes, 1.12 M triangles).
+- Rendering was verified only in headless Chromium on **SwiftShader CPU**; no hardware-GPU, Windows
+  or editor run, and the HUD frame rate is not a performance claim.
+  [Evidence](../Experimental/CandyCity/evidence/README.md).
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,

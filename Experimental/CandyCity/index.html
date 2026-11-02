@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Candy City — procedural sugar town</title>
+<style>
+  :root {
+    --ink: #45233a;
+    --ink-soft: #7a4d68;
+    --cream: #fff7ef;
+    --glass: rgba(255, 246, 250, 0.72);
+    --glass-edge: rgba(255, 255, 255, 0.85);
+    --pink: #ff6f9e;
+    --berry: #b3306a;
+    --mint: #45c9a4;
+    --font: "Trebuchet MS", "Segoe UI", "Avenir Next", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: radial-gradient(120% 90% at 50% 0%, #ffd9e8 0%, #ffc0d8 35%, #c6b7ff 100%);
+    color: var(--ink);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+  #CandyViewport { display: block; width: 100vw; height: 100vh; }
+
+  /* ---------- loading ---------- */
+  #Loading {
+    position: fixed; inset: 0; z-index: 40;
+    display: grid; place-content: center; gap: 18px; justify-items: center;
+    background:
+      radial-gradient(70% 60% at 50% 40%, #fff6fb 0%, #ffd6e9 45%, #d9c7ff 100%);
+    transition: opacity 0.8s ease, visibility 0.8s;
+    text-align: center;
+  }
+  #Loading.is-gone { opacity: 0; visibility: hidden; }
+  .Lollipop {
+    width: 96px; height: 96px; border-radius: 50%;
+    background: repeating-conic-gradient(from 0deg, #ff6f9e 0deg 26deg, #fff6f4 26deg 52deg);
+    box-shadow: inset 0 0 0 8px #fff8f4, 0 14px 30px rgba(179, 48, 106, 0.25);
+    animation: spin 3.4s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #Loading h2 { margin: 0; font-size: 26px; letter-spacing: 0.02em; }
+  #LoadingText { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); }
+  .Bar { width: 240px; height: 10px; border-radius: 99px; background: rgba(255,255,255,0.7); overflow: hidden; box-shadow: inset 0 1px 3px rgba(90, 40, 70, 0.18); }
+  #LoadingBar { height: 100%; width: 0%; border-radius: 99px; background: linear-gradient(90deg, #ff9dc0, #ff6f9e 45%, #ffd166); transition: width 0.4s ease; }
+
+  /* ---------- hud ---------- */
+  .Hud { position: fixed; inset: 0; z-index: 20; pointer-events: none; }
+  .Hud > * { pointer-events: auto; }
+  body.ui-hidden .Hud { opacity: 0; pointer-events: none; }
+  body.ui-hidden .Hud > * { pointer-events: none; }
+  .Hud { transition: opacity 0.4s ease; }
+
+  .Brand {
+    position: absolute; top: 26px; left: 30px;
+    padding: 16px 22px 16px 20px;
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    border-radius: 22px 22px 22px 6px;
+    box-shadow: 0 18px 40px rgba(120, 50, 90, 0.18), inset 0 1px 0 #fff;
+    backdrop-filter: blur(14px) saturate(1.2);
+    max-width: 360px;
+  }
+  .Brand .Eyebrow {
+    font-size: 10px; letter-spacing: 0.32em; text-transform: uppercase;
+    color: var(--berry); opacity: 0.85;
+  }
+  .Brand h1 {
+    margin: 6px 0 4px; font-size: 30px; line-height: 1; letter-spacing: -0.02em;
+    background: linear-gradient(96deg, #ff5d8f, #b3306a 45%, #7a5cff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+  .Brand p { margin: 0; font-size: 12px; color: var(--ink-soft); line-height: 1.5; max-width: 300px; }
+  .Brand .SeedNote { margin-top: 8px; font-size: 11px; letter-spacing: 0.08em; color: var(--berry); }
+
+  .Panel {
+    position: absolute; right: 26px; top: 26px; width: 246px;
+    padding: 16px;
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    border-radius: 22px 22px 6px 22px;
+    box-shadow: 0 18px 40px rgba(120, 50, 90, 0.18), inset 0 1px 0 #fff;
+    backdrop-filter: blur(14px) saturate(1.2);
+    display: grid; gap: 12px;
+  }
+  .Panel .Group { display: grid; gap: 7px; }
+  .Panel .Label {
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-soft);
+  }
+  .Row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 12px; color: var(--ink);
+    padding: 9px 12px; border-radius: 999px;
+    border: 1px solid rgba(179, 48, 106, 0.22);
+    background: linear-gradient(180deg, #fffdfd, #ffeaf2);
+    box-shadow: 0 3px 0 rgba(179, 48, 106, 0.14), inset 0 1px 0 #fff;
+    cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.2s;
+  }
+  button:hover { transform: translateY(-1px); box-shadow: 0 5px 0 rgba(179, 48, 106, 0.16), inset 0 1px 0 #fff; }
+  button:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(179, 48, 106, 0.18); }
+  button.is-on {
+    background: linear-gradient(180deg, #ff89ae, #ff5d8f);
+    color: #fff; border-color: #e04a7c;
+    box-shadow: 0 3px 0 #c93d6b, inset 0 1px 0 rgba(255,255,255,0.45);
+  }
+  .Wide { width: 100%; }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 22px;
+    background: transparent; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 10px; border-radius: 99px;
+    background: linear-gradient(90deg, #ffe9a8, #ffb6cc 45%, #b39bff 78%, #3b2a58);
+    box-shadow: inset 0 1px 2px rgba(90, 40, 70, 0.25);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 20px; height: 20px; margin-top: -5px;
+    border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, #ff6f9e 60%, #c93d6b);
+    border: 2px solid #fff; box-shadow: 0 2px 6px rgba(90, 40, 70, 0.35);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 10px; border-radius: 99px;
+    background: linear-gradient(90deg, #ffe9a8, #ffb6cc 45%, #b39bff 78%, #3b2a58);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff;
+    background: radial-gradient(circle at 35% 30%, #fff, #ff6f9e 60%, #c93d6b);
+  }
+  #TodLabel { font-size: 11px; color: var(--berry); letter-spacing: 0.06em; }
+
+  .Footer {
+    position: absolute; left: 30px; bottom: 24px; right: 30px;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 18px;
+    pointer-events: none;
+  }
+  .Footer > * { pointer-events: auto; }
+  .Stats {
+    padding: 12px 16px; border-radius: 16px 16px 16px 4px;
+    background: rgba(255, 247, 250, 0.62);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    font-size: 12px; color: var(--ink-soft); line-height: 1.6;
+    box-shadow: 0 12px 28px rgba(120, 50, 90, 0.14);
+  }
+  .Stats span { color: var(--berry); font-weight: 700; }
+  .Stats .Fps { display: block; margin-top: 4px; font-size: 11px; letter-spacing: 0.08em; color: #8a6a80; }
+  .Note {
+    font-size: 11px; color: rgba(69, 35, 58, 0.72); text-align: right; line-height: 1.6;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+  .Note b { color: var(--berry); }
+
+  @media (max-width: 760px) {
+    .Brand { max-width: calc(100vw - 40px); left: 20px; right: 20px; top: 18px; }
+    .Brand h1 { font-size: 22px; }
+    .Panel { top: auto; bottom: 84px; right: 16px; width: 210px; }
+    .Footer { left: 16px; right: 16px; bottom: 14px; }
+    .Note { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="CandyViewport"></canvas>
+
+<div id="Loading">
+  <div class="Lollipop"></div>
+  <h2>Spinning up Candy City</h2>
+  <div class="Bar"><div id="LoadingBar"></div></div>
+  <div id="LoadingText">preheating the sugar</div>
+</div>
+
+<div class="Hud">
+  <header class="Brand">
+    <div class="Eyebrow">Procedural candy city</div>
+    <h1>Candy City</h1>
+    <p>Every street, cottage, lollipop tree and jelly bean is generated at load time —
+       sugar textures painted in the browser, no models or images loaded.</p>
+    <div class="SeedNote" id="SeedLabel">seed 20260101</div>
+  </header>
+
+  <aside class="Panel">
+    <div class="Group">
+      <div class="Label">Camera</div>
+      <div class="Row">
+        <button data-view="overview">Overview</button>
+        <button data-view="street">Street</button>
+        <button data-view="plaza">Plaza</button>
+        <button data-view="aerial">Aerial</button>
+        <button data-view="homes">Homes</button>
+      </div>
+    </div>
+    <div class="Group">
+      <div class="Label">Sugar light</div>
+      <input id="TodInput" type="range" min="0" max="1" step="0.01" value="0.06" aria-label="Time of day">
+      <div id="TodLabel">Candy noon</div>
+    </div>
+    <div class="Group">
+      <div class="Label">Town</div>
+      <div class="Row">
+        <button id="SeedBtn">New city</button>
+        <button id="RotateBtn">Orbit</button>
+      </div>
+      <div class="Row">
+        <button id="ShotBtn">Save picture</button>
+        <button id="UiBtn">Hide UI</button>
+      </div>
+    </div>
+  </aside>
+
+  <footer class="Footer">
+    <div class="Stats">
+      <div id="SceneStats">growing the town…</div>
+      <span class="Fps" id="FpsLabel">— fps</span>
+    </div>
+    <div class="Note">
+      Drag to orbit · scroll to zoom · <b>space</b> orbits · <b>H</b> hides the panels
+    </div>
+  </footer>
+</div>
+
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
