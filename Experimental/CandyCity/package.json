@@ -1,0 +1,13 @@
+{
+  "name": "candy-city",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Procedural candy city — every texture, building, road and tree generated at runtime with three.js.",
+  "scripts": {
+    "serve": "python3 -m http.server 8099",
+    "test": "node test/city.test.mjs",
+    "capture": "node test/capture.mjs"
+  },
+  "license": "SEE LICENSE IN ../../Documentation/Notices"
+}

@@ -1,0 +1,38 @@
+--- Candy City generator checks ---
+{
+  "seed": 20260101,
+  "blocks": 36,
+  "houses": 32,
+  "parks": 3,
+  "trees": 342,
+  "lamps": 64,
+  "beans": 1402,
+  "sprinkles": 9832,
+  "cars": 20,
+  "meshes": 29,
+  "pieces": 10006,
+  "triangles": 1117706,
+  "lots": 35,
+  "instancedBeanCount": 1402
+}
+PASS  grid blocks generated  blocks=36
+PASS  houses placed  houses=32
+PASS  every block lots accounted for  houses+parks=35 lots=35
+PASS  parks placed  parks=3
+PASS  every open block is built on  lots=35 buildable blocks=35 (one block is the plaza)
+PASS  candy trees placed  trees=342
+PASS  street lamps placed  lamps=64
+PASS  jelly-bean crosswalks  beans=1402
+PASS  bean bookkeeping matches instancing  crosswalk beans=1402 instanced=1402
+PASS  ground sprinkles  sprinkles=9832
+PASS  candy cars  cars=20
+PASS  triangles budget  triangles=1117706
+PASS  merged draw buckets  meshes=29
+PASS  deterministic statistics
+PASS  a different seed changes the town
+PASS  every mesh has finite geometry  meshes=45 bad=0
+PASS  instanced detail layers present  instanced=2
+PASS  candy materials resolved  materials=45 bad=0
+PASS  animation hook runs
+
+All generator checks passed.
