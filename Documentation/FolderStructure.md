@@ -33,6 +33,7 @@ Frontier/
 │   │   └── Results/
 │   └── EditorMirror/           # Comparison mirror of the C++ editor
 ├── Experimental/              # Prototypes and experimental HTML
+│   └── Editors/               # Editor demo launcher and related browser editors
 ├── EngineDocs/AgenticInstuctions/  # Four retained authoritative skills
 └── _ClaudeScratch/            # Ignored logs/, build/, tmp/
 ```

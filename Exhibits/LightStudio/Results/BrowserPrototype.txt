@@ -1,0 +1,12 @@
+Light Studio browser prototype verification
+Platform: Linux sandbox, Node.js 22; tested against the current uncommitted workspace.
+
+node --test Experimental/Editors/LightEditor/photometry.test.mjs
+  PASS: 5 tests (flux integration, narrow cone, IES round trip, multiplier and rejection).
+HTTP requests to the editor, stylesheet, module and general-editor link: 200.
+A Happy DOM smoke check exercised mode changes, spotlight edits, new light creation and sample insertion. It does not render a browser frame.
+Actual browser rendering and interactions: NOT RUN. The sandbox Chromium executable cannot load libnspr4.so/libnss3.so.
+
+Limitations: The illustration is not a photometric renderer. Only symmetric Type C profiles with one C-plane are supported. Scene light integration is not implemented.
+
+3D scene update: Node photometry tests remain 5/5; HTML, scene module, Three.js and OrbitControls return HTTP 200. A Happy DOM control smoke test passed; its mocked DOM has no WebGL context. Actual 3D rendering, camera interaction, shader compilation and appearance remain NOT VERIFIED because the sandbox browser lacks system libraries. Reproduce after `npm ci --prefix Experimental/Editors/LightEditor` and `python3 Experimental/Editors/EditorDemos/Serve.py` in a WebGL-capable browser.

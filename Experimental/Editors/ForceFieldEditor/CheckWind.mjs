@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { EvaluateWind } from './WindSpecification.js';
+const f = { Components: [{ Type:'Directional', Enabled:true, Strength:10, Bearing:90, X:0, Z:0, Radius:100, Frequency:0 }] };
+let [x,z] = EvaluateWind(f, 0, 0, 0);
+assert.ok(Math.abs(x - 10) < 1e-8 && Math.abs(z) < 1e-8);
+f.Components[0].Type='Radial';
+[x,z] = EvaluateWind(f, 200, 0, 0);
+assert.equal(x, 0); assert.equal(z, 0);
+[x,z] = EvaluateWind(f, 50, 0, 0);
+assert.ok(x > 0 && Math.abs(z) < 1e-8);
+console.log('Wind reference: directional, bounded radial and direction checks passed');
