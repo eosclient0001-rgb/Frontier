@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#161719" />
+    <title>Photometric Editor · Frontier</title>
+    <link
+      rel="stylesheet"
+      href="/Experimental/Editors/PhotometricEditor/style.css"
+    />
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="brand-mark" aria-label="Frontier">F</span>
+      <div class="brand-title">Frontier <span>/</span> Photometric Editor</div>
+      <div class="top-actions">
+        <span class="persistence-status" id="saved">Saved in this browser</span>
+        <button class="button button-quiet" id="importButton">
+          Import IES
+        </button>
+        <input id="file" type="file" accept=".ies,text/plain" hidden />
+        <button class="button button-primary" id="export">Export IES</button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="library-panel" aria-label="Light library">
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">AUTHORING</span>
+            <h2>Light library</h2>
+          </div>
+          <button
+            class="icon-button"
+            id="add"
+            title="Create a light"
+            aria-label="Create a light"
+          >
+            +
+          </button>
+        </div>
+        <p class="muted">Local photometric assets</p>
+        <div id="library" class="library-list"></div>
+        <div class="library-footer">
+          <b>Studio environment</b>
+          <p>
+            Viewport uses Frontier’s bundled Studio Softbox environment and a
+            physically based direct-light scene.
+          </p>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <div class="page-heading">
+          <div>
+            <div class="breadcrumb">
+              LIGHTING <span>/</span> <span id="crumb">IES PHOTOMETRY</span>
+            </div>
+            <h1>Photometric Editor</h1>
+            <p>
+              Author measured distributions and inspect direct illumination in a
+              material-lit scene.
+            </p>
+          </div>
+          <div
+            class="source-tabs"
+            id="sourceTabs"
+            role="group"
+            aria-label="Source type"
+          >
+            <button data-source-type="ies" aria-pressed="false">IES</button>
+            <button data-source-type="spot" aria-pressed="false">Spot</button>
+            <button data-source-type="point" aria-pressed="false">Point</button>
+            <button data-source-type="area" aria-pressed="false">Area</button>
+            <button data-source-type="directional" aria-pressed="false">
+              Directional
+            </button>
+            <button data-source-type="ambient" aria-pressed="false">Ambient</button>
+            <button data-source-type="hemisphere" aria-pressed="false">Hemisphere</button>
+          </div>
+        </div>
+
+        <div class="content-grid">
+          <section class="viewport-column">
+            <section class="card viewport-card">
+              <div class="card-heading">
+                <div>
+                  <span class="eyebrow">INTERACTIVE VIEWPORT</span>
+                  <h2>Material and shadow response</h2>
+                  <p>Drag to orbit · scroll to zoom · right-drag to pan</p>
+                </div>
+                <span class="live-badge"><i></i> LIVE</span>
+              </div>
+              <div class="viewport-render-area">
+                <canvas
+                  id="scene"
+                  aria-label="Interactive physically based lighting viewport"
+                ></canvas>
+                <div id="sceneStatus" class="viewport-status">
+                  Loading WebGL renderer and studio environment…
+                </div>
+                <button id="resetView" class="view-reset">Reset view</button>
+              </div>
+              <div class="viewport-footer">
+                <span id="previewMode"
+                  >IES profile · direct lighting · shadow mapped</span
+                >
+                <span>ACES tone mapping · Studio Softbox IBL</span>
+              </div>
+            </section>
+
+            <section class="card property-card environment-card">
+              <div class="section-heading">
+                <div><span class="eyebrow">IMAGE-BASED LIGHTING</span><h2>Environment</h2></div>
+                <span class="live-badge"><i></i> SCENE FILL</span>
+              </div>
+              <div class="environment-grid">
+                <label class="environment-field">Environment map
+                  <select id="environmentMap">
+                    <option value="StudioSoftbox">Studio Softbox</option>
+                    <option value="StudioStrip">Studio Strip</option>
+                    <option value="WindowLight">Window Light</option>
+                    <option value="Overcast">Overcast</option>
+                    <option value="DarkStudio">Dark Studio</option>
+                    <option value="none">Off</option>
+                  </select>
+                </label>
+                <label class="environment-field">Environment intensity <span id="environmentIntensityValue">1.00</span>
+                  <input id="environmentIntensity" type="range" min="0" max="3" step="0.05" value="1" />
+                </label>
+                <label class="environment-field">Rotation <span id="environmentRotationValue">0°</span>
+                  <input id="environmentRotation" type="range" min="0" max="359" step="1" value="0" />
+                </label>
+              </div>
+              <p class="field-note">Image-based reflections and material fill; a distinct direct-light source is still needed for cast shadows.</p>
+            </section>
+
+            <section class="card curve-card" id="curveCard">
+              <div class="card-heading compact-heading">
+                <div>
+                  <span class="eyebrow">PHOTOMETRIC DISTRIBUTION</span>
+                  <h2 id="curveHeading">Candela by vertical angle</h2>
+                  <p>
+                    IES values remain absolute. The profile preview preserves
+                    the authored Type C samples.
+                  </p>
+                </div>
+                <span id="curveMaximum" class="curve-maximum"></span>
+              </div>
+              <div class="curve-render-area">
+                <canvas
+                  id="curve"
+                  aria-label="Candela distribution curve"
+                ></canvas>
+              </div>
+              <div class="curve-axis">
+                <span>0° · nadir</span><span>90° · horizontal</span
+                ><span>180° · uplight</span>
+              </div>
+            </section>
+          </section>
+
+          <aside class="inspector-column" aria-label="Photometric properties">
+            <div class="inspector-heading">
+              <span>SELECTED LIGHT</span><span id="typeLabel">IES profile</span>
+            </div>
+            <section class="card property-card">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">IDENTITY</span>
+                  <h2>Asset properties</h2>
+                </div>
+                <button
+                  id="delete"
+                  class="text-button"
+                  title="Remove this light"
+                >
+                  Remove
+                </button>
+              </div>
+              <label class="field-label" for="name">Name</label>
+              <input class="text-input" id="name" type="text" maxlength="70" />
+              <label class="field-label color-row" for="color"
+                >Source colour
+                <input
+                  id="color"
+                  type="color"
+                  value="#fff2dc"
+                  aria-label="Source colour"
+              /></label>
+              <label class="field-label color-row" id="groundColorRow" for="groundColor" hidden
+                >Ground colour
+                <input id="groundColor" type="color" value="#48433b" aria-label="Hemisphere ground colour"
+              /></label>
+            </section>
+
+            <section class="card property-card">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">OUTPUT</span>
+                  <h2 id="outputHeading">Photometric output</h2>
+                </div>
+              </div>
+              <div id="iesControls" class="control-group">
+                <div class="metric-pair">
+                  <div><span>Peak intensity</span><b id="peakStat">—</b></div>
+                  <div><span>Flux</span><b id="fluxStat">—</b></div>
+                </div>
+                <div class="subheading">Candela samples</div>
+                <div class="sample-toolbar">
+                  <span>Vertical angle / candela</span
+                  ><button class="small-button" id="addSample">
+                    + Add sample
+                  </button>
+                </div>
+                <div id="sampleList" class="sample-list"></div>
+                <div class="field-note">
+                  LM-63 Type C · rotationally symmetric · 0° to 180°
+                </div>
+              </div>
+              <div id="spotControls" class="control-group" hidden>
+                <div class="numeric-control">
+                  <label for="intensity">Peak intensity</label>
+                  <div>
+                    <input
+                      id="intensity"
+                      type="number"
+                      min="0"
+                      max="1000000"
+                      step="10"
+                    /><span>cd</span>
+                  </div>
+                </div>
+                <div class="numeric-control">
+                  <label for="inner">Inner half-angle</label>
+                  <div>
+                    <input
+                      id="inner"
+                      type="number"
+                      min="0"
+                      max="179"
+                      step="1"
+                    /><span>°</span>
+                  </div>
+                </div>
+                <div class="numeric-control">
+                  <label for="outer">Outer half-angle</label>
+                  <div>
+                    <input
+                      id="outer"
+                      type="number"
+                      min="1"
+                      max="180"
+                      step="1"
+                    /><span>°</span>
+                  </div>
+                </div>
+                <div class="metric-row">
+                  <span>Integrated luminous flux</span><b id="spotFlux">—</b>
+                </div>
+              </div>
+              <div id="pointControls" class="control-group" hidden>
+                <div class="numeric-control">
+                  <label for="pointIntensity">Luminous intensity</label>
+                  <div>
+                    <input
+                      id="pointIntensity"
+                      type="number"
+                      min="0"
+                      max="1000000"
+                      step="10"
+                    /><span>cd</span>
+                  </div>
+                </div>
+                <div class="metric-row">
+                  <span>Isotropic flux · 4πI</span><b id="pointFlux">—</b>
+                </div>
+              </div>
+              <div id="areaControls" class="control-group" hidden>
+                <div class="numeric-control">
+                  <label for="areaIntensity">Luminance</label>
+                  <div>
+                    <input
+                      id="areaIntensity"
+                      type="number"
+                      min="0"
+                      max="100000"
+                      step="10"
+                    /><span>cd/m²</span>
+                  </div>
+                </div>
+                <div class="dimensions">
+                  <label
+                    >Width
+                    <input
+                      id="areaWidth"
+                      type="number"
+                      min="0.05"
+                      max="10"
+                      step="0.05"
+                    />
+                    m</label
+                  ><label
+                    >Height
+                    <input
+                      id="areaHeight"
+                      type="number"
+                      min="0.05"
+                      max="10"
+                      step="0.05"
+                    />
+                    m</label
+                  >
+                </div>
+                <div class="field-note">
+                  Rectangular emitter · no shadow-map support in this preview.
+                </div>
+              </div>
+              <div id="directionalControls" class="control-group" hidden>
+                <div class="numeric-control">
+                  <label for="directionalIntensity">Illuminance</label>
+                  <div>
+                    <input
+                      id="directionalIntensity"
+                      type="number"
+                      min="0"
+                      max="100000"
+                      step="10"
+                    /><span>lux</span>
+                  </div>
+                </div>
+                <div class="field-note">
+                  Parallel rays · shadow mapped · no finite source distance.
+                </div>
+              </div>
+              <div id="ambientControls" class="control-group" hidden>
+                <div class="numeric-control">
+                  <label for="ambientIntensity">Fill intensity</label>
+                  <div><input id="ambientIntensity" type="number" min="0" max="10" step="0.05" /><span>relative</span></div>
+                </div>
+                <p class="field-note">Uniform non-directional fill. This is a renderer intensity, not calibrated lux or lumens.</p>
+              </div>
+              <div id="hemisphereControls" class="control-group" hidden>
+                <div class="numeric-control">
+                  <label for="hemisphereIntensity">Sky-ground intensity</label>
+                  <div><input id="hemisphereIntensity" type="number" min="0" max="10" step="0.05" /><span>relative</span></div>
+                </div>
+                <p class="field-note">Gradient fill from sky colour to the configured ground colour.</p>
+              </div>
+            </section>
+
+            <section class="card property-card transform-card">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">TRANSFORM</span>
+                  <h2>Position and aim</h2>
+                </div>
+              </div>
+              <div class="vector-heading">
+                <span>Position · metres</span
+                ><span>X&nbsp;&nbsp; Y&nbsp;&nbsp; Z</span>
+              </div>
+              <div class="vector-fields" data-vector="position">
+                <input aria-label="Position X" type="number" step="0.1" /><input
+                  aria-label="Position Y"
+                  type="number"
+                  step="0.1"
+                /><input aria-label="Position Z" type="number" step="0.1" />
+              </div>
+              <div class="vector-heading target-heading">
+                <span>Target · metres</span
+                ><span>X&nbsp;&nbsp; Y&nbsp;&nbsp; Z</span>
+              </div>
+              <div class="vector-fields" data-vector="target">
+                <input aria-label="Target X" type="number" step="0.1" /><input
+                  aria-label="Target Y"
+                  type="number"
+                  step="0.1"
+                /><input aria-label="Target Z" type="number" step="0.1" />
+              </div>
+            </section>
+
+            <section class="card property-card preset-card" id="presetCard">
+              <div class="section-heading">
+                <div>
+                  <span class="eyebrow">STARTING POINTS</span>
+                  <h2>Profile presets</h2>
+                </div>
+              </div>
+              <div class="preset-list">
+                <button data-preset="narrow">Narrow beam</button
+                ><button data-preset="wide">Wide beam</button
+                ><button data-preset="wall">Wall wash</button>
+              </div>
+            </section>
+
+            <p id="previewNote" class="preview-note">
+              IES export preserves candela samples. Preview is limited to direct
+              lighting; indirect bounce transport is not calculated.
+            </p>
+          </aside>
+        </div>
+      </main>
+    </div>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/Experimental/Editors/PhotometricEditor/node_modules/three/build/three.module.js",
+          "three/addons/": "/Experimental/Editors/PhotometricEditor/node_modules/three/examples/jsm/"
+        }
+      }
+    </script>
+    <script
+      type="module"
+      src="/Experimental/Editors/PhotometricEditor/app.mjs"
+    ></script>
+  </body>
+</html>

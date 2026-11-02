@@ -4,6 +4,23 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Photometric Editor — 2026-11-02
+
+- Renamed from Photometry Studio; retains editable Type C IES, spot, point, rectangular-area, and directional lights,
+  and adds renderer-relative ambient and hemisphere fills plus five bundled image-based environment maps with
+  intensity and rotation controls. Three.js preview uses standard materials, profile-cookie projection, direct lights
+  and supported shadow maps. IES >89.5° preview clipping, missing indirect transport, no area-light shadows, and
+  uncalibrated 8-bit IBL are disclosed; this is not a path tracer. Focused tests: 11/11.
+- The experimental editor portal and shared launcher remain. A current headless Chromium smoke check loads the Photometric Editor desktop page and its canvases without console or request errors; the Photometric Editor source files remain untouched. See
+  [Photometric Editor verification](../Exhibits/PhotometricEditor/README.md).
+
+## Planetary Surface Studio — 2026-11-02
+
+- Reworked the UI to follow the supplied segmented charcoal/gold reference: compact object cards, short data chips and collapsed source details. It keeps source-backed maps/elevation for Earth, Mars, Mercury, Venus, Ceres, Pluto and Luna; Vesta remains excluded because its published int16 payload clips elevations.
+- Added ten rectangular, approximately 2:1 AI-generated equirectangular moon textures (Luna, Io, Europa, Ganymede, Callisto, Titan, Enceladus, Triton, Phobos and Deimos) and wrapped them onto interactive, dynamically lit 3D bodies; their longitude seams are placed at the smoothest available edges and their prime meridians are explicitly arbitrary. Retired the earlier portrait assets and overlay; the day/night terminator now comes from directional lighting. Textures are labelled illustrative, not spacecraft imagery, measured albedo or terrain. Luna’s LOLA elevation remains a separate mode. Ceres/Pluto remain sourced dwarf worlds.
+- Source maps remain lossy 4,096 × 2,048 derivatives with baked DEM hillshade; the 1,024 × 512 int16 height grids have no retained NoData mask. Readouts are approximate. The atmosphere uses a subdued shader fade; no cloud map/time series or ring optical-depth data is bundled or synthesized. Responsive type/layout and concise object cards were enlarged after the reported cramped screenshot. Product limits/citations remain in the inspector and `Experimental/Editors/PlanetarySurfaceStudio/README.md`.
+- Planetary tests: 11/11; Photometric Editor tests: 11/11. JavaScript/Python syntax checks, `git diff --check`, and 35/35 HTTP routes pass. Headless Chromium verified the portal and both editor pages without console/request errors; the portal exposes both runnable editor links on desktop/mobile, and layout widths 320–1,440 px have no horizontal overflow. See [verification](../Exhibits/PlanetarySurfaceStudio/README.md). Photometric Editor remains untouched; Vector Field Studio remains absent.
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,

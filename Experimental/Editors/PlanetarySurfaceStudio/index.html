@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#141516" />
+    <meta name="description" content="Source-cited planetary terrain with clearly labelled AI-generated moon UV textures." />
+    <title>Planetary Surface Studio · Frontier</title>
+    <link rel="stylesheet" href="/Experimental/Editors/PlanetarySurfaceStudio/style.css" />
+    <script type="importmap">
+      {"imports":{"three":"/Experimental/Editors/PhotometricEditor/node_modules/three/build/three.module.js","three/addons/":"/Experimental/Editors/PhotometricEditor/node_modules/three/examples/jsm/"}}
+    </script>
+    <script type="module" src="/Experimental/Editors/PlanetarySurfaceStudio/app.mjs"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Frontier editor portal"><span class="brand-mark">F</span><span class="brand-name">FRONTIER <i>/</i> CELESTIAL</span></a>
+      <div class="project-title"><span class="project-kicker">SURFACE STUDIO</span><b>Planetary Explorer</b></div>
+      <div class="top-actions">
+        <div class="eos-segment"><span>MODE</span><b>LOCAL DATA</b></div>
+        <button class="top-button" id="resetView" type="button">RESET</button>
+        <button class="top-button top-button-gold" id="exportView" type="button">EXPORT VIEW</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="left-pane" aria-label="Celestial object library">
+        <div class="pane-heading"><div><span class="overline">LIBRARY</span><h2>Celestial bodies</h2></div><span class="count" id="bodyCount">16</span></div>
+        <div class="library-filters" id="libraryFilters" role="group" aria-label="Filter celestial objects">
+          <button type="button" data-filter="all" aria-pressed="true">ALL <span>16</span></button>
+          <button type="button" data-filter="planet" aria-pressed="false">PLANETS <span>4</span></button>
+          <button type="button" data-filter="moon" aria-pressed="false">MOONS <span>10</span></button>
+          <button type="button" data-filter="dwarf" aria-pressed="false">DWARFS <span>2</span></button>
+        </div>
+        <div class="object-list" id="bodyList" role="listbox" aria-label="Select an object"></div>
+        <div class="library-footer">
+          <div class="mini-stat"><b>10</b><span>MOON UV MAPS</span></div>
+          <div class="mini-stat"><b>6</b><span>SOURCE MAPS</span></div>
+          <div class="mini-stat"><b>AI</b><span>ART LABELLED</span></div>
+        </div>
+      </aside>
+
+      <section class="main-pane">
+        <div class="page-heading">
+          <div><div class="breadcrumb">CELESTIAL <span>/</span> <span id="selectedClass">TERRESTRIAL PLANET</span></div><h1 id="bodyTitle">Earth</h1><p id="bodySubtitle">Mapped imagery · terrain data</p></div>
+          <div class="view-modes" id="viewModes" role="group" aria-label="Display mode">
+            <button type="button" data-mode="surface" id="surfaceMode" aria-pressed="true">SOURCE MAP</button>
+            <button type="button" data-mode="elevation" id="elevationMode" aria-pressed="false">ELEVATION</button>
+            <button type="button" data-mode="illustration" id="illustrationMode" aria-pressed="false">AI UV</button>
+          </div>
+        </div>
+
+        <section class="viewport-card">
+          <div class="viewport-head"><div><span class="overline">VIEWPORT</span><h2 id="viewportTitle">Earth · source map</h2></div><div class="view-badge" id="viewBadge"><i></i><span>SOURCE DATA</span></div></div>
+          <div class="viewport-wrap" id="viewportWrap">
+            <canvas id="scene" aria-label="Interactive source-data globe"></canvas>
+            <div class="canvas-grid"></div>
+            <div class="scene-status" id="sceneStatus">Loading local surface data…</div>
+            <div class="coordinate-card" id="coordinateCard"><span class="card-label">CURSOR SAMPLE</span><div><span>LAT</span><b id="latitudeValue">—</b><span>LON</span><b id="longitudeValue">—</b><span>HEIGHT</span><b id="heightValue">—</b></div></div>
+            <div class="illustration-stamp" id="illustrationStamp" hidden><span>AI GENERATED</span><b>2:1 UV MAP · NOT DATA</b></div>
+            <div class="view-help" id="viewHelp">DRAG · ORBIT &nbsp; / &nbsp; SCROLL · ZOOM</div>
+          </div>
+          <div class="viewport-foot"><span id="layerCaption">NASA imagery · DEM shaded</span><span id="gridCaption">4,096 × 2,048 MAP</span></div>
+        </section>
+
+        <div class="control-grid">
+          <section class="info-card terrain-controls">
+            <div class="info-card-head"><span class="overline">TERRAIN</span><span class="accent-tag" id="terrainModeTag">DATA VIEW</span></div>
+            <div class="control-line"><label for="exaggeration">Vertical scale</label><b id="exaggerationValue">1.0×</b></div>
+            <input id="exaggeration" type="range" min="0" max="30" value="10" step="1" />
+            <div class="control-line light-controls"><label for="sunAzimuth">Sun azimuth</label><b id="sunAzimuthValue">315°</b></div>
+            <input class="light-controls" id="sunAzimuth" type="range" min="0" max="359" value="315" step="1" />
+            <div class="control-line light-controls"><label for="sunAltitude">Sun height</label><b id="sunAltitudeValue">35°</b></div>
+            <input class="light-controls" id="sunAltitude" type="range" min="5" max="85" value="35" step="1" />
+            <div class="control-foot" id="lightingNote">1× = source relief · image view keeps original shading</div>
+          </section>
+
+          <section class="info-card atmosphere-card">
+            <div class="info-card-head"><span class="overline">ATMOSPHERE</span><span class="accent-tag" id="atmosphereType">—</span></div>
+            <div class="control-line"><label for="atmosphereStrength">Intensity</label><b id="atmosphereStrengthValue">0.40</b></div>
+            <input id="atmosphereStrength" type="range" min="0" max="100" value="40" step="1" />
+            <div class="atmosphere-preview"><span class="fade-icon" id="fadeIcon"></span><span id="atmosphereStatus">Soft limb fade · visual preview</span></div>
+            <div class="compact-status"><span>CLOUD LAYER</span><b id="cloudStatus">NONE</b></div>
+          </section>
+        </div>
+      </section>
+
+      <aside class="right-pane" aria-label="Selected object information">
+        <div class="pane-heading inspector-heading"><div><span class="overline">INSPECTOR</span><h2>Object card</h2></div><span class="eos-small">INFO</span></div>
+        <div class="inspector-scroll">
+          <section class="object-identity">
+            <div class="identity-top"><span id="bodyGlyph" class="body-glyph">E</span><div><span class="card-label" id="bodyParent">SOLAR SYSTEM</span><h2 id="inspectorBody">Earth</h2></div><span id="objectKind" class="kind-tag">PLANET</span></div>
+            <div class="quick-stats">
+              <div><span>RADIUS</span><b id="radiusValue">6,371 km</b></div>
+              <div><span>CLASS</span><b id="bodyType">Planet</b></div>
+              <div><span>ATMOSPHERE</span><b id="atmosphereValue">N₂ / O₂</b></div>
+              <div><span>CLOUDS</span><b id="cloudValue">NO LAYER</b></div>
+            </div>
+          </section>
+
+          <section class="dataset-card" id="surfaceCard">
+            <div class="dataset-head"><span class="overline">SURFACE</span><span id="surfaceQuality" class="quality-tag">MAPPED</span></div>
+            <h3 id="surfaceProduct">Blue Marble: Next Generation</h3>
+            <div class="data-pair"><span>DISPLAY GRID</span><b id="surfaceAsset">4,096 × 2,048</b></div>
+            <div class="data-pair"><span>RESOLUTION</span><b id="surfaceResolution">~9.8 km / px</b></div>
+            <details class="source-details" id="surfaceDetails"><summary>Source &amp; limits</summary><p id="surfaceCaveat" class="detail-copy"></p><p id="surfaceTerms" class="detail-copy"></p><a id="surfaceSourceLink" class="source-link" target="_blank" rel="noreferrer">OPEN PRODUCT ↗</a></details>
+          </section>
+
+          <section class="dataset-card" id="heightCard">
+            <div class="dataset-head"><span class="overline">ELEVATION</span><span class="quality-tag quality-data">METRIC SOURCE</span></div>
+            <h3 id="heightProduct">ETOPO 2022 v1</h3>
+            <div class="data-pair"><span>DERIVED GRID</span><b id="heightGrid">1,024 × 512 · int16</b></div>
+            <div class="data-pair"><span>RANGE</span><b id="heightRange">−9,131 / +6,010 m</b></div>
+            <details class="source-details" id="heightDetails"><summary>Source &amp; limits</summary><p id="heightInstrument" class="detail-copy"></p><p id="sourceResolution" class="detail-copy"></p><p id="heightCaveat" class="detail-copy"></p><p id="heightTerms" class="detail-copy"></p><a id="heightSourceLink" class="source-link" target="_blank" rel="noreferrer">OPEN PRODUCT ↗</a></details>
+          </section>
+
+          <section class="dataset-card ai-card" id="aiCard" hidden>
+            <div class="dataset-head"><span class="overline">TEXTURE SOURCE</span><span class="quality-tag quality-ai">AI GENERATED</span></div>
+            <h3>Equirectangular UV texture</h3>
+            <div class="data-pair"><span>SURFACE CUE</span><b id="surfaceCue">—</b></div>
+            <p class="ai-limit">Illustrative only · not spacecraft imagery, measured terrain or albedo</p>
+          </section>
+          <details class="limits-details" id="limitsDetails"><summary>Accuracy &amp; attribution</summary><ul id="bodyNotes" class="notes-list"></ul><div class="data-warning">Preview samples are not authoritative measurements. Bodies are normalized to viewport size.</div></details>
+          <div class="inspector-footer"><span class="status-led"></span><span id="statusText">OFFLINE · SOURCE FILES LOCAL</span></div>
+        </div>
+      </aside>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

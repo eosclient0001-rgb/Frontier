@@ -1,0 +1,11 @@
+{
+  "name": "frontier-photometric-editor",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.mjs"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  }
+}
