@@ -4,6 +4,33 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Vehicle inspector, tyre records and editable curves — 2026-11-03
+
+- First slice of the vehicle request, in the agreed order: **the inspector in HTML, before any engine-side editor work**.
+  `Experimental/VehicleInspector/` is a self-contained page (relative module scripts, local DM Sans, no CDN) with eight
+  vehicle cards and a tyre card. Cards follow the `SourceImages/General UI` language: dark floating cards, one large light
+  metric with a small dimmed unit, colour-coded icons and units per quantity, lime CTAs. Every number carries its unit and
+  imperial equivalents are derived from the metric value, never authored twice.
+- Vehicle is added **without additional geometry** — the existing chassis primitives only — with **four tyres parented to it**.
+  Tyres are detachable: the tyre card removes a corner, keeps the used tyre in an eight-slot pit bay, and refits the most
+  recently removed tyre for that corner (or a fresh tyre at the axle's cold pressure). Curves (engine torque, tread
+  temperature, plus the other authored tables) are editable in the page with a key list and a plot, so the same inspector can
+  define a custom vehicle; the DefaultGTR table (18 keys, 800–8500 rpm, peak 520 Nm @ 4800 rpm) is the default.
+- Native layer: `Frontier/Engine/Scene/VehicleRecords.{h,cpp}` add `VehicleRecord : RecordEntry` (classification `Vehicle`,
+  owning `Vehicle::VehicleGeometry`, `EngineParameters`, `TurbochargerParameters`, four `TyreSheet`s and its curves) and
+  `TyreRecord : RecordEntry` (a per-corner view onto the vehicle's sheet, registered under the vehicle in the
+  `SceneDirectory`). Both build a `RecordEditorDescription`, so the existing `SceneInspectorPanel` can draw them;
+  `RecordEditorScalarField` gained a `FloatTarget` so float engine geometry binds directly instead of being copied into the
+  inspector model. Record sheets store what the inspector shows (°C, percent) and derive the solver's K / 0..1 forms.
+- Evidence: `Exhibits/VehicleInspector/` — 45/45 DOM checks, 24/24 model checks, and a native program whose checks all pass
+  (geometry from sockets, torque interpolation at the redline, power banded at the redline 344.82 kW against the 393.4 kW a
+  full-table integration would claim, tyre parenting, bound-field edits, the full pit-stop lifecycle, the grip rule, the
+  powertrain alignment, the outliner projection, and a plan-view frame that changes when a tyre comes off). Five figures are
+  **reconstructions** (prototype drawing code → SVG → PNG), **not screenshots**: no headless browser is obtainable here.
+  No GPU renderer, editor viewport, ImGui window or Jolt body was run.
+- Open: `RecordEditorDescription` has no curve field yet, so curves are HTML-only; the records are not yet registered by
+  `FrontierMain.cpp`; `Draw`/`Spawn` and the control-table `Get`/`Set` keys need renaming before a port.
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,

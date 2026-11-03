@@ -1,0 +1,50 @@
+Vehicle inspector prototype — headless DOM validation
+Node v22.22.3, jsdom, generated 2026-11-03T06:04:36.963Z
+Canvas is stubbed: drawing code is exercised, pixels are not validated here.
+
+PASS the prototype boots in a headless DOM
+PASS no runtime errors while building the interface — none
+PASS outliner renders the HTML group sections — 8 groups
+PASS vehicle row is selected on boot
+PASS outliner lists every scene row — 14 rows
+PASS tyres and marks are nested under the vehicle — 5 nested rows
+PASS nested tyre row reports pressure with its unit — 220 kPa
+PASS vehicle inspector builds eight cards — 8 cards
+PASS cards cover identity, body, powertrain, performance, tyres, suspension, curve, audit — Identity & body · Body & mass · Powertrain · Performance (derived) · Tyre set · Suspension · Curve · Torque · Audit & pit log
+PASS stat cells print a unit beside every value — 25 units
+PASS unit colour classes are applied across the cards — unit-length, unit-mass, unit-fraction, unit-torque, unit-rate, unit-thermal, unit-pressure
+PASS four property switches above the cards
+PASS slider rails are built for the bound settings — 24 sliders
+PASS tyre set card shows all four corners
+PASS torque curve loads the engine default table — 18 keys
+PASS curve instrument mounts on the plot canvas
+PASS clicking empty plot space adds a key — 19 keys, index 13
+PASS a key too close to an existing one is refused
+PASS dragging a key rewrites its x and y — 5960, 505
+PASS y and x are clamped to the field bounds — 6190, 700
+PASS delete removes the selected key — 18 keys
+PASS reset restores the chosen preset
+PASS curve readout prints peak with its unit — 520Nm
+PASS the plot paints its axis captions with units — 232 text calls
+PASS selecting a tyre opens its own inspector
+PASS the tyre inspector offers a pit-stop removal
+PASS the corner starts inflated — 220 kPa
+PASS removal takes the tyre off the vehicle
+PASS the removed tyre is kept in the pit bay — 1 in the bay
+PASS a corner with no tyre reads zero pressure
+PASS the removed corner reads Removed
+PASS the outliner row dims an unfitted tyre
+PASS refitting returns the used tyre with its own pressure — 220 kPa
+PASS refitting keeps the used wear — 0.38
+PASS the pit bay empties when the tyre is returned
+PASS with an empty bay, fitting builds a new tyre at ambient
+PASS SI presentation shows kg
+PASS imperial presentation re-labels to lb / ft / psi — 11.14ft
+PASS wheelbase converts to feet — 11.14ft
+PASS the stored value stays SI when the label switches
+PASS the mass slider writes the specification
+PASS the numeric field writes the specification
+PASS the panel rebuilds after an edit without losing controls
+PASS the stage paints the vehicle from the bound geometry — 46 draw calls
+PASS the stage readout prints bound and derived values
+45/45 checks passed

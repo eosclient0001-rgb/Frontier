@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="280"
+            viewBox="0 0 384 280">
+            <defs><linearGradient id="tyreFitted" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#222222"/><stop offset="1" stop-color="#1f1f1f"/></linearGradient><clipPath id="figureCrop"><rect x="0" y="0" width="384" height="280"/></clipPath></defs>
+            <rect width="384" height="280" fill="#101010"/>
+            <g clip-path="url(#figureCrop)">
+<rect x="0.00" y="0.00" width="384.00" height="470.00"
+            rx="0" fill="#171717"/>
+<text x="16.00" y="27.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#898989" text-anchor="start" letter-spacing="1.7">TYRE · REAR AXLE · CORNER RL</text>
+<text x="16.00" y="51.00" font-family="DM Sans" font-size="19"
+            font-weight="400" fill="#dcdcdc" text-anchor="start" letter-spacing="-0.5">Rear left</text>
+<rect x="305.85" y="37.00" width="62.15" height="28.00"
+            rx="25" fill="#252525" stroke="#3a3a3a" stroke-width="1"/>
+<circle cx="317.85" cy="51.00" r="2.5" fill="#3ec46d"/>
+<text x="327.85" y="55.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#b2b2b2" text-anchor="start">Fitted</text>
+<rect x="16.00" y="76.00" width="352.00"
+            height="196.00" rx="18" fill="url(#tyreFitted)" stroke="#2f2f2f" stroke-width="1"/>
+<g transform="translate(34 83) scale(0.625)" fill="none" stroke="#d9c46a"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="12" cy="12" r="1"/> <circle cx="12" cy="12" r="10"/>
+</g>
+<text x="58.00" y="96.00" font-family="DM Sans" font-size="12"
+            font-weight="400" fill="#c9c9c9" text-anchor="start">Fitting</text>
+<text x="350.00" y="96.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#4f4f4f" text-anchor="end" letter-spacing="1">01</text>
+<text x="34.00" y="114.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#737373" text-anchor="start" letter-spacing="1.4">PARENTED TO THE VEHICLE · REMOVABLE</text>
+<text x="34.00" y="160.00" font-family="DM Sans" font-size="38"
+            font-weight="300" fill="#dfdfdf" text-anchor="start" letter-spacing="-1.8">242</text>
+<text x="103.84" y="160.00" font-family="DM Sans" font-size="14"
+            font-weight="300" fill="#7d7d7d" text-anchor="start">kPa cold</text>
+<rect x="262.83" y="142.00" width="87.17" height="22.00"
+            rx="20" fill="#1d2c22" stroke="#2f6d45" stroke-width="1"/>
+<text x="306.42" y="157.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#9be3b5" text-anchor="middle">Semi-slick fitted</text>
+<text x="34.00" y="185.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Tread</text>
+<text x="34.00" y="206.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#e0a24a" text-anchor="start">93</text>
+<text x="58.04" y="206.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">°C</text>
+<text x="143.33" y="185.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Wear</text>
+<text x="143.33" y="206.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9a4e8" text-anchor="start">18</text>
+<text x="167.37" y="206.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">%</text>
+<text x="252.67" y="185.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Grip</text>
+<text x="252.67" y="206.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9a4e8" text-anchor="start">87.2</text>
+<text x="290.31" y="206.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">%</text>
+<rect x="34.00" y="220.00" width="154.00" height="34.00"
+            rx="10" fill="#262626" stroke="#383838" stroke-width="1"/>
+<text x="111.00" y="242.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#5f5f5f" text-anchor="middle">Fit tyre</text>
+<rect x="196.00" y="220.00" width="154.00" height="34.00"
+            rx="10" fill="#262626" stroke="#5a3434" stroke-width="1"/>
+<text x="273.00" y="242.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#f0b0ab" text-anchor="middle">Remove (pit stop)</text>
+</g>
+        </svg>

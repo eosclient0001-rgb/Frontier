@@ -1,0 +1,30 @@
+Vehicle inspector prototype — model validation (node --test)
+Node v22.22.3, Linux 6.1.158+ x86_64, 2026-11-03T06:00:15Z, base 96f31ec plus working changes
+
+ok 1 - the torque curve is the engine default table
+ok 2 - curve lookup matches linear interpolation between keys
+ok 3 - peak power is integrated from the torque table, inside the redline
+ok 4 - mean of a monotone ramp is the mid value
+ok 5 - adding a key keeps the curve sorted and bounded
+ok 6 - a key closer than the minimum separation is refused
+ok 7 - moving a key cannot cross its neighbours
+ok 8 - a curve never drops below two keys
+ok 9 - sorting restores a monotone x axis after an external edit
+ok 10 - every curve field declares bounds, units and a source
+ok 11 - loading a preset replaces the keys without sharing the array
+ok 12 - a removed tyre is kept in the pit bay with its own state
+ok 13 - refitting returns the same used tyre
+ok 14 - an empty bay fits a new tyre at the set cold pressure and ambient
+ok 15 - a fitted corner cannot be fitted twice or removed twice
+ok 16 - removing one tyre leaves the other three on the vehicle
+ok 17 - grip fades from the optimum to the floor and follows pressure
+ok 18 - every tyre compound names a cold pressure and a note
+ok 19 - static loads, inertia and rollover limit follow the engine formulas
+ok 20 - wheel torque in first gear comes from the edited curve
+ok 21 - refitting every corner restores a full set
+ok 22 - SI presentation leaves values and units untouched
+ok 23 - imperial presentation converts mass, length, pressure, torque and temperature
+ok 24 - units map to their colour class and unknown units fall back to the fraction class
+# tests 24
+# pass 24
+# fail 0

@@ -53,3 +53,6 @@ _AgentScratch/
 **/Saved/
 
 Delivery/
+
+# Pinned local tooling dependencies (restore with npm ci in the owning Tools/ folder).
+node_modules/

@@ -1,0 +1,569 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="2008"
+            viewBox="0 0 384 2008">
+            <defs><clipPath id="inspectorClip00"><rect x="0" y="0" width="384" height="2060"/></clipPath><linearGradient id="card0100" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#222222"/><stop offset="1" stop-color="#1f1f1f"/></linearGradient><linearGradient id="card0200" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#222222"/><stop offset="1" stop-color="#1f1f1f"/></linearGradient><linearGradient id="card0300" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#222222"/><stop offset="1" stop-color="#1f1f1f"/></linearGradient><linearGradient id="card0400" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#222222"/><stop offset="1" stop-color="#1f1f1f"/></linearGradient><linearGradient id="card0500" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#222222"/><stop offset="1" stop-color="#1f1f1f"/></linearGradient><linearGradient id="curveFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#e1d34a" stop-opacity="0.22"/><stop offset="1" stop-color="#e1d34a" stop-opacity="0"/>
+        </linearGradient><linearGradient id="card0700" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#222222"/><stop offset="1" stop-color="#1f1f1f"/></linearGradient><clipPath id="figureCrop"><rect x="0" y="0" width="384" height="2008"/></clipPath></defs>
+            <rect width="384" height="2008" fill="#101010"/>
+            <g clip-path="url(#figureCrop)">
+<g clip-path="url(#inspectorClip00)">
+<rect x="0.00" y="0.00" width="384.00" height="2060.00"
+            rx="0" fill="#171717"/>
+<text x="16.00" y="27.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#898989" text-anchor="start" letter-spacing="1.7">VEHICLE · PROTO-X WEDGE COUPE</text>
+<text x="16.00" y="53.00" font-family="DM Sans" font-size="19"
+            font-weight="400" fill="#dcdcdc" text-anchor="start" letter-spacing="-0.5">ControlVehicle</text>
+<text x="368.00" y="52.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#8a8a8a" text-anchor="end">Refit tyres</text>
+<text x="16.00" y="70.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#7d7d7d" text-anchor="start">ControlVehicle.blend — sockets, mass and powertrain read</text>
+<text x="16.00" y="84.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#7d7d7d" text-anchor="start">from the engine sources, editable here.</text>
+<rect x="16.00" y="96.00" width="82.00" height="78.00"
+            rx="16" fill="#202020" stroke="#323232" stroke-width="1"/>
+<rect x="42.00" y="108.00" width="30.00" height="30.00"
+            rx="10" fill="#2f6d45"/>
+<g transform="translate(49 115) scale(0.6666666666666666)" fill="none" stroke="#d9f5e3"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/> <circle cx="7" cy="17" r="2"/> <path d="M9 17h6"/> <circle cx="17" cy="17" r="2"/>
+</g>
+<text x="57.00" y="154.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#cfcfcf" text-anchor="middle">Body</text>
+<text x="57.00" y="166.00" font-family="DM Sans" font-size="8"
+            font-weight="400" fill="#7fd39d" text-anchor="middle" letter-spacing="1.2">ON</text>
+<rect x="106.00" y="96.00" width="82.00" height="78.00"
+            rx="16" fill="#202020" stroke="#323232" stroke-width="1"/>
+<rect x="132.00" y="108.00" width="30.00" height="30.00"
+            rx="10" fill="#2f6d45"/>
+<g transform="translate(139 115) scale(0.6666666666666666)" fill="none" stroke="#d9f5e3"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<path d="m12 14 4-4"/> <path d="M3.34 19a10 10 0 1 1 17.32 0"/>
+</g>
+<text x="147.00" y="154.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#cfcfcf" text-anchor="middle">Powertrain</text>
+<text x="147.00" y="166.00" font-family="DM Sans" font-size="8"
+            font-weight="400" fill="#7fd39d" text-anchor="middle" letter-spacing="1.2">ON</text>
+<rect x="196.00" y="96.00" width="82.00" height="78.00"
+            rx="16" fill="#202020" stroke="#323232" stroke-width="1"/>
+<rect x="222.00" y="108.00" width="30.00" height="30.00"
+            rx="10" fill="#2f6d45"/>
+<g transform="translate(229 115) scale(0.6666666666666666)" fill="none" stroke="#d9f5e3"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="12" cy="12" r="1"/> <circle cx="12" cy="12" r="10"/>
+</g>
+<text x="237.00" y="154.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#cfcfcf" text-anchor="middle">Tyre set</text>
+<text x="237.00" y="166.00" font-family="DM Sans" font-size="8"
+            font-weight="400" fill="#7fd39d" text-anchor="middle" letter-spacing="1.2">ON</text>
+<rect x="286.00" y="96.00" width="82.00" height="78.00"
+            rx="16" fill="#202020" stroke="#323232" stroke-width="1"/>
+<rect x="312.00" y="108.00" width="30.00" height="30.00"
+            rx="10" fill="#2f6d45"/>
+<g transform="translate(319 115) scale(0.6666666666666666)" fill="none" stroke="#d9f5e3"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>
+</g>
+<text x="327.00" y="154.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#cfcfcf" text-anchor="middle">Suspension</text>
+<text x="327.00" y="166.00" font-family="DM Sans" font-size="8"
+            font-weight="400" fill="#7fd39d" text-anchor="middle" letter-spacing="1.2">ON</text>
+<rect x="16.00" y="186.00" width="352.00" height="34.00"
+            rx="11" fill="#121212" stroke="#262626" stroke-width="1"/>
+<rect x="20.00" y="190.00" width="172.00" height="26.00"
+            rx="8" fill="#2e2e2e"/>
+<text x="106.00" y="207.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#f0f0f0" text-anchor="middle">SI · Nm · kg · kPa</text>
+<text x="278.00" y="207.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#8b8b8b" text-anchor="middle">Imperial · lb-ft · lb · psi</text>
+<rect x="16.00" y="232.00" width="352.00"
+            height="176.00" rx="18" fill="url(#card0100)" stroke="#2f2f2f" stroke-width="1"/>
+<g transform="translate(34 239) scale(0.625)" fill="none" stroke="#e1d34a"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/> <circle cx="7" cy="17" r="2"/> <path d="M9 17h6"/> <circle cx="17" cy="17" r="2"/>
+</g>
+<text x="58.00" y="252.00" font-family="DM Sans" font-size="12"
+            font-weight="400" fill="#c9c9c9" text-anchor="start">Identity &amp; body</text>
+<text x="350.00" y="252.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#4f4f4f" text-anchor="end" letter-spacing="1">01</text>
+<text x="34.00" y="270.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#737373" text-anchor="start" letter-spacing="1.4">AUTHORED ASSET · MEASURED SOCKETS</text>
+<text x="34.00" y="316.00" font-family="DM Sans" font-size="38"
+            font-weight="300" fill="#dfdfdf" text-anchor="start" letter-spacing="-1.8">1300</text>
+<text x="125.12" y="316.00" font-family="DM Sans" font-size="14"
+            font-weight="300" fill="#7d7d7d" text-anchor="start">kg</text>
+<rect x="264.10" y="298.00" width="85.90" height="22.00"
+            rx="20" fill="#1d2c22" stroke="#2f6d45" stroke-width="1"/>
+<text x="307.05" y="313.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#9be3b5" text-anchor="middle">4/4 tyres fitted</text>
+<text x="34.00" y="341.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Wheelbase</text>
+<text x="34.00" y="362.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#8fb2e8" text-anchor="start">3.396</text>
+<text x="81.16" y="362.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">m</text>
+<text x="143.33" y="341.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Track front</text>
+<text x="143.33" y="362.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#8fb2e8" text-anchor="start">2.095</text>
+<text x="190.49" y="362.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">m</text>
+<text x="252.67" y="341.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Overall length</text>
+<text x="252.67" y="362.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#8fb2e8" text-anchor="start">5.975</text>
+<text x="299.83" y="362.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">m</text>
+<text x="34.00" y="378.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#7d7d7d" text-anchor="start">VehicleGeometry.h (ControlVehicleSockets). Sockets are read from the</text>
+<text x="34.00" y="393.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#7d7d7d" text-anchor="start">authored asset, not estimated; a tyre can be taken off</text>
+<rect x="16.00" y="420.00" width="352.00"
+            height="334.00" rx="18" fill="url(#card0200)" stroke="#2f2f2f" stroke-width="1"/>
+<g transform="translate(34 427) scale(0.625)" fill="none" stroke="#e1d34a"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/> <path d="m3.3 7 8.7 5 8.7-5"/> <path d="M12 22V12"/>
+</g>
+<text x="58.00" y="440.00" font-family="DM Sans" font-size="12"
+            font-weight="400" fill="#c9c9c9" text-anchor="start">Body &amp; mass</text>
+<text x="350.00" y="440.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#4f4f4f" text-anchor="end" letter-spacing="1">02</text>
+<text x="34.00" y="458.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#737373" text-anchor="start" letter-spacing="1.4">BOUND TO VEHICLEGEOMETRY</text>
+<text x="34.00" y="484.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Mass</text>
+<rect x="254.00" y="474.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="322.73" y="490.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">1300</text>
+<text x="341.00" y="490.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#b9c3d4" text-anchor="end">kg</text>
+<rect x="34.00" y="503.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="503.50" width="138.25" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="172.25" cy="505.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<text x="34.00" y="536.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Centre of mass height</text>
+<rect x="254.00" y="526.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="324.80" y="542.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">0.53</text>
+<text x="341.00" y="542.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8fb2e8" text-anchor="end">m</text>
+<rect x="34.00" y="555.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="555.50" width="130.35" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="164.35" cy="557.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<text x="34.00" y="588.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Wheelbase</text>
+<rect x="254.00" y="578.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="324.80" y="594.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">3.396</text>
+<text x="341.00" y="594.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8fb2e8" text-anchor="end">m</text>
+<rect x="34.00" y="607.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="607.50" width="171.18" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="205.18" cy="609.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<text x="34.00" y="640.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Front weight</text>
+<rect x="254.00" y="630.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="327.37" y="646.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">49.1</text>
+<text x="341.00" y="646.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#b9a4e8" text-anchor="end">%</text>
+<rect x="34.00" y="659.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="659.50" width="151.21" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="185.21" cy="661.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<line x1="34.00" y1="698.00" x2="350.00" y2="698.00"
+            stroke="#ffffff0b" stroke-width="1"/>
+<text x="34.00" y="721.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Sprung mass</text>
+<text x="34.00" y="742.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9c3d4" text-anchor="start">1220</text>
+<text x="77.08" y="742.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">kg</text>
+<text x="116.00" y="721.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Unsprung</text>
+<text x="116.00" y="742.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9c3d4" text-anchor="start">80</text>
+<text x="140.04" y="742.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">kg</text>
+<text x="198.00" y="721.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Front load</text>
+<text x="198.00" y="742.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9c3d4" text-anchor="start">639</text>
+<text x="231.56" y="742.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">kg</text>
+<text x="280.00" y="721.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Rollover</text>
+<text x="280.00" y="742.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9a4e8" text-anchor="start">1.98</text>
+<text x="317.64" y="742.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">g</text>
+<rect x="16.00" y="766.00" width="352.00"
+            height="282.00" rx="18" fill="url(#card0300)" stroke="#2f2f2f" stroke-width="1"/>
+<g transform="translate(34 773) scale(0.625)" fill="none" stroke="#e1d34a"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<path d="m12 14 4-4"/> <path d="M3.34 19a10 10 0 1 1 17.32 0"/>
+</g>
+<text x="58.00" y="786.00" font-family="DM Sans" font-size="12"
+            font-weight="400" fill="#c9c9c9" text-anchor="start">Powertrain</text>
+<text x="350.00" y="786.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#4f4f4f" text-anchor="end" letter-spacing="1">03</text>
+<text x="34.00" y="804.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#737373" text-anchor="start" letter-spacing="1.4">DRIVETRAIN.H · DEFAULTGTR</text>
+<text x="34.00" y="830.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Idle speed</text>
+<rect x="254.00" y="820.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="315.53" y="836.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">700</text>
+<text x="341.00" y="836.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7fd0d0" text-anchor="end">rpm</text>
+<rect x="34.00" y="849.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="849.50" width="86.18" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="120.18" cy="851.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<text x="34.00" y="882.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Redline</text>
+<rect x="254.00" y="872.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="315.53" y="888.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">7200</text>
+<text x="341.00" y="888.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7fd0d0" text-anchor="end">rpm</text>
+<rect x="34.00" y="901.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="901.50" width="189.60" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="223.60" cy="903.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<text x="34.00" y="934.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Wastegate ceiling</text>
+<rect x="254.00" y="924.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="318.10" y="940.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">1.20</text>
+<text x="341.00" y="940.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7fd0d0" text-anchor="end">bar</text>
+<rect x="34.00" y="953.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="953.50" width="137.39" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="171.39" cy="955.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<line x1="34.00" y1="992.00" x2="350.00" y2="992.00"
+            stroke="#ffffff0b" stroke-width="1"/>
+<text x="34.00" y="1015.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Peak torque</text>
+<text x="34.00" y="1036.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#e1d34a" text-anchor="start">520</text>
+<text x="67.56" y="1036.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">Nm</text>
+<text x="143.33" y="1015.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">at</text>
+<text x="143.33" y="1036.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#7fd0d0" text-anchor="start">4800</text>
+<text x="186.41" y="1036.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">rpm</text>
+<text x="252.67" y="1015.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Peak power</text>
+<text x="252.67" y="1036.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#e1d34a" text-anchor="start">345</text>
+<text x="286.23" y="1036.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">kW</text>
+<rect x="16.00" y="1060.00" width="352.00"
+            height="142.00" rx="18" fill="url(#card0400)" stroke="#2f2f2f" stroke-width="1"/>
+<g transform="translate(34 1067) scale(0.625)" fill="none" stroke="#e1d34a"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<path d="M16 7h6v6"/> <path d="m22 7-8.5 8.5-5-5L2 17"/>
+</g>
+<text x="58.00" y="1080.00" font-family="DM Sans" font-size="12"
+            font-weight="400" fill="#c9c9c9" text-anchor="start">Performance (derived)</text>
+<text x="350.00" y="1080.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#4f4f4f" text-anchor="end" letter-spacing="1">04</text>
+<text x="34.00" y="1098.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#737373" text-anchor="start" letter-spacing="1.4">COMPUTED FROM THE CURVE AND THE MASS</text>
+<text x="34.00" y="1144.00" font-family="DM Sans" font-size="38"
+            font-weight="300" fill="#dfdfdf" text-anchor="start" letter-spacing="-1.8">7753</text>
+<text x="125.12" y="1144.00" font-family="DM Sans" font-size="14"
+            font-weight="300" fill="#7d7d7d" text-anchor="start">Nm at the wheel</text>
+<rect x="238.81" y="1126.00" width="111.20" height="22.00"
+            rx="20" fill="#2c2416" stroke="#6a5124" stroke-width="1"/>
+<text x="294.40" y="1141.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#f0c27a" text-anchor="middle">1st gear · peak torque</text>
+<text x="34.00" y="1169.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Specific power</text>
+<text x="34.00" y="1190.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#e1d34a" text-anchor="start">265</text>
+<text x="67.56" y="1190.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">kW</text>
+<text x="143.33" y="1169.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Yaw inertia</text>
+<text x="143.33" y="1190.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9c3d4" text-anchor="start">3123</text>
+<text x="186.41" y="1190.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">kg·m²</text>
+<text x="252.67" y="1169.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Rollover limit</text>
+<text x="252.67" y="1190.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9a4e8" text-anchor="start">1.98</text>
+<text x="290.31" y="1190.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">g</text>
+<rect x="16.00" y="1214.00" width="352.00"
+            height="396.00" rx="18" fill="url(#card0500)" stroke="#2f2f2f" stroke-width="1"/>
+<g transform="translate(34 1221) scale(0.625)" fill="none" stroke="#e1d34a"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="12" cy="12" r="1"/> <circle cx="12" cy="12" r="10"/>
+</g>
+<text x="58.00" y="1234.00" font-family="DM Sans" font-size="12"
+            font-weight="400" fill="#c9c9c9" text-anchor="start">Tyre set</text>
+<text x="350.00" y="1234.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#4f4f4f" text-anchor="end" letter-spacing="1">05</text>
+<text x="34.00" y="1252.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#737373" text-anchor="start" letter-spacing="1.4">VOLUMETRIC TYRE PHYSICS · PRESSURE · WEAR · FAILURE</text>
+<rect x="34.00" y="1268.00" width="73.00" height="92.00"
+            rx="12" fill="#191919" stroke="#2c2c2c" stroke-width="1"/>
+<text x="43.00" y="1286.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start" letter-spacing="1.2">FL</text>
+<circle cx="94.00" cy="1283.00" r="3.5" fill="#3ec46d"/>
+<text x="43.00" y="1310.00" font-family="DM Sans" font-size="15"
+            font-weight="300" fill="#dedede" text-anchor="start">220</text>
+<text x="72.20" y="1310.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="start">kPa</text>
+<text x="43.00" y="1328.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">20 °C</text>
+<text x="43.00" y="1344.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">2% worn</text>
+<rect x="115.00" y="1268.00" width="73.00" height="92.00"
+            rx="12" fill="#191919" stroke="#2c2c2c" stroke-width="1"/>
+<text x="124.00" y="1286.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start" letter-spacing="1.2">FR</text>
+<circle cx="175.00" cy="1283.00" r="3.5" fill="#3ec46d"/>
+<text x="124.00" y="1310.00" font-family="DM Sans" font-size="15"
+            font-weight="300" fill="#dedede" text-anchor="start">220</text>
+<text x="153.20" y="1310.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="start">kPa</text>
+<text x="124.00" y="1328.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">20 °C</text>
+<text x="124.00" y="1344.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">2% worn</text>
+<rect x="196.00" y="1268.00" width="73.00" height="92.00"
+            rx="12" fill="#191919" stroke="#2c2c2c" stroke-width="1"/>
+<text x="205.00" y="1286.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start" letter-spacing="1.2">RL</text>
+<circle cx="256.00" cy="1283.00" r="3.5" fill="#3ec46d"/>
+<text x="205.00" y="1310.00" font-family="DM Sans" font-size="15"
+            font-weight="300" fill="#dedede" text-anchor="start">220</text>
+<text x="234.20" y="1310.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="start">kPa</text>
+<text x="205.00" y="1328.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">20 °C</text>
+<text x="205.00" y="1344.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">3% worn</text>
+<rect x="277.00" y="1268.00" width="73.00" height="92.00"
+            rx="12" fill="#191919" stroke="#2c2c2c" stroke-width="1"/>
+<text x="286.00" y="1286.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start" letter-spacing="1.2">RR</text>
+<circle cx="337.00" cy="1283.00" r="3.5" fill="#3ec46d"/>
+<text x="286.00" y="1310.00" font-family="DM Sans" font-size="15"
+            font-weight="300" fill="#dedede" text-anchor="start">220</text>
+<text x="315.20" y="1310.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="start">kPa</text>
+<text x="286.00" y="1328.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">20 °C</text>
+<text x="286.00" y="1344.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">3% worn</text>
+<text x="34.00" y="1382.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Front cold pressure</text>
+<rect x="254.00" y="1372.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="318.10" y="1388.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">220</text>
+<text x="341.00" y="1388.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#6fd08c" text-anchor="end">kPa</text>
+<rect x="34.00" y="1401.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="1401.50" width="138.25" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="172.25" cy="1403.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<text x="34.00" y="1434.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#a3a3a3" text-anchor="start">Rear cold pressure</text>
+<rect x="254.00" y="1424.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="318.10" y="1440.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">220</text>
+<text x="341.00" y="1440.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#6fd08c" text-anchor="end">kPa</text>
+<rect x="34.00" y="1453.50" width="316.00" height="3.00"
+            rx="10" fill="#444444"/>
+<rect x="34.00" y="1453.50" width="138.25" height="3.00"
+            rx="10" fill="#c5c5c5"/>
+<circle cx="172.25" cy="1455.00" r="5.5" fill="#e5e5e5" stroke="#222222" stroke-width="4"/>
+<text x="34.00" y="1485.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#c4c4c4" text-anchor="start">Tread wear</text>
+<text x="34.00" y="1498.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#727272" text-anchor="start">Sliding work abrades the tread, faster when hot</text>
+<rect x="310.00" y="1476.00" width="40.00" height="23.00"
+            rx="23" fill="#3ec46d" stroke="#53d684" stroke-width="1"/>
+<circle cx="336.00" cy="1487.50" r="8.5" fill="#f4f4f4"/>
+<text x="34.00" y="1521.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#c4c4c4" text-anchor="start">Failure</text>
+<text x="34.00" y="1534.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#727272" text-anchor="start">Worn through, cooked or over-pressured tyres burst</text>
+<rect x="310.00" y="1512.00" width="40.00" height="23.00"
+            rx="23" fill="#3ec46d" stroke="#53d684" stroke-width="1"/>
+<circle cx="336.00" cy="1523.50" r="8.5" fill="#f4f4f4"/>
+<line x1="34.00" y1="1554.00" x2="350.00" y2="1554.00"
+            stroke="#ffffff0b" stroke-width="1"/>
+<text x="34.00" y="1577.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Optimum tread</text>
+<text x="34.00" y="1598.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#ef8f52" text-anchor="start">80</text>
+<text x="58.04" y="1598.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">°C</text>
+<text x="143.33" y="1577.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Grip floor at</text>
+<text x="143.33" y="1598.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#ef8f52" text-anchor="start">200</text>
+<text x="176.89" y="1598.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">°C</text>
+<text x="252.67" y="1577.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Minimum grip</text>
+<text x="252.67" y="1598.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9a4e8" text-anchor="start">60</text>
+<text x="276.71" y="1598.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">%</text>
+<rect x="16.00" y="1622.00" width="352.00"
+            height="360.00" rx="18" fill="url(#card0700)" stroke="#2f2f2f" stroke-width="1"/>
+<g transform="translate(34 1629) scale(0.625)" fill="none" stroke="#e1d34a"
+        stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+<path d="m12 14 4-4"/> <path d="M3.34 19a10 10 0 1 1 17.32 0"/>
+</g>
+<text x="58.00" y="1642.00" font-family="DM Sans" font-size="12"
+            font-weight="400" fill="#c9c9c9" text-anchor="start">Curve · Torque</text>
+<text x="350.00" y="1642.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#4f4f4f" text-anchor="end" letter-spacing="1">07</text>
+<text x="34.00" y="1660.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#737373" text-anchor="start" letter-spacing="1.4">DRIVETRAIN.H · DEFAULTGTR, 18 KEYS</text>
+<rect x="34.00" y="1676.00" width="160.16" height="32.00"
+            rx="9" fill="#191919" stroke="#393939" stroke-width="1"/>
+<text x="42.00" y="1697.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#c8c8c8" text-anchor="start">Engine torque</text>
+<rect x="202.16" y="1676.00" width="147.84" height="32.00"
+            rx="9" fill="#191919" stroke="#393939" stroke-width="1"/>
+<text x="210.16" y="1697.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#c8c8c8" text-anchor="start">GTR preset-1</text>
+<rect x="34.00" y="1720.00" width="316.00" height="168.00"
+            rx="12" fill="#141414" stroke="#262626" stroke-width="1"/>
+<line x1="78.00" y1="1766.00" x2="336.00" y2="1766.00"
+            stroke="#242424" stroke-width="1"/>
+<line x1="78.00" y1="1798.00" x2="336.00" y2="1798.00"
+            stroke="#242424" stroke-width="1"/>
+<line x1="78.00" y1="1830.00" x2="336.00" y2="1830.00"
+            stroke="#242424" stroke-width="1"/>
+<line x1="121.00" y1="1734.00" x2="121.00" y2="1862.00"
+            stroke="#242424" stroke-width="1"/>
+<line x1="164.00" y1="1734.00" x2="164.00" y2="1862.00"
+            stroke="#242424" stroke-width="1"/>
+<line x1="207.00" y1="1734.00" x2="207.00" y2="1862.00"
+            stroke="#242424" stroke-width="1"/>
+<line x1="250.00" y1="1734.00" x2="250.00" y2="1862.00"
+            stroke="#242424" stroke-width="1"/>
+<line x1="293.00" y1="1734.00" x2="293.00" y2="1862.00"
+            stroke="#242424" stroke-width="1"/>
+<path d="M 87.11 1862.00 L 87.11 1819.21 L 99.25 1807.14 L 111.39 1797.63 L 123.53 1790.32 L 135.67 1783.74 L 147.81 1777.89 L 159.95 1773.13 L 172.09 1769.84 L 184.24 1768.01 L 196.38 1767.28 L 208.52 1766.91 L 220.66 1766.91 L 238.87 1766.91 L 251.01 1769.47 L 263.15 1773.13 L 275.29 1777.52 L 293.51 1780.08 L 320.82 1781.18 L 320.82 1862.00 Z" fill="url(#curveFill)" stroke="none" stroke-width="0"
+            stroke-linejoin="round" stroke-linecap="round" opacity="1"/>
+<path d="M 87.11 1819.21 L 99.25 1807.14 L 111.39 1797.63 L 123.53 1790.32 L 135.67 1783.74 L 147.81 1777.89 L 159.95 1773.13 L 172.09 1769.84 L 184.24 1768.01 L 196.38 1767.28 L 208.52 1766.91 L 220.66 1766.91 L 238.87 1766.91 L 251.01 1769.47 L 263.15 1773.13 L 275.29 1777.52 L 293.51 1780.08 L 320.82 1781.18" fill="none" stroke="#e1d34a" stroke-width="1.8"
+            stroke-linejoin="round" stroke-linecap="round" opacity="1"/>
+<circle cx="87.11" cy="1819.21" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="99.25" cy="1807.14" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="111.39" cy="1797.63" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="123.53" cy="1790.32" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="135.67" cy="1783.74" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="147.81" cy="1777.89" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="159.95" cy="1773.13" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="172.09" cy="1769.84" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="184.24" cy="1768.01" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="196.38" cy="1767.28" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="208.52" cy="1766.91" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="220.66" cy="1766.91" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="238.87" cy="1766.91" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="251.01" cy="1769.47" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="263.15" cy="1773.13" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="275.29" cy="1777.52" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="293.51" cy="1780.08" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<circle cx="320.82" cy="1781.18" r="4.6" fill="#e8e8e8" stroke="#1f1f1f" stroke-width="2"/>
+<text x="38.00" y="1715.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#e1d34a" text-anchor="start">Crank torque · Nm</text>
+<text x="336.00" y="1885.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#e1d34a" text-anchor="end">Engine speed · rpm</text>
+<text x="70.00" y="1737.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="end">700</text>
+<text x="70.00" y="1769.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="end">525</text>
+<text x="70.00" y="1801.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="end">350</text>
+<text x="70.00" y="1833.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="end">175</text>
+<text x="70.00" y="1865.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="end">0</text>
+<text x="78.00" y="1877.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="start">500</text>
+<text x="164.00" y="1877.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="middle">3333</text>
+<text x="250.00" y="1877.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="middle">6167</text>
+<text x="336.00" y="1877.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7c7c7c" text-anchor="end">9000</text>
+<line x1="232.80" y1="1734.00" x2="232.80" y2="1862.00"
+            stroke="#4a4a4a" stroke-width="1"/>
+<circle cx="232.80" cy="1766.91" r="3" fill="#e1d34a" stroke="#1f1f1f" stroke-width="2"/>
+<rect x="222.60" y="1742.00" width="107.40" height="22.00"
+            rx="8" fill="#141414" stroke="#2f2f2f" stroke-width="1"/>
+<text x="230.60" y="1757.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#d6d6d6" text-anchor="start">5600 rpm  ·  520 Nm</text>
+<rect x="34.00" y="1900.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="95.00" y="1916.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">4800</text>
+<text x="120.00" y="1916.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#7fd0d0" text-anchor="end">rpm</text>
+<rect x="138.00" y="1900.00" width="96.00" height="24.00"
+            rx="8" fill="#151515" stroke="#333333" stroke-width="1"/>
+<text x="203.00" y="1916.00" font-family="DM Sans" font-size="11"
+            font-weight="400" fill="#e2e2e2" text-anchor="end">520</text>
+<text x="224.00" y="1916.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#e1d34a" text-anchor="end">Nm</text>
+<text x="34.00" y="1949.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Peak</text>
+<text x="34.00" y="1970.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#e1d34a" text-anchor="start">520</text>
+<text x="67.56" y="1970.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">Nm</text>
+<text x="143.33" y="1949.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">at</text>
+<text x="143.33" y="1970.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#7fd0d0" text-anchor="start">4800</text>
+<text x="186.41" y="1970.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start">rpm</text>
+<text x="252.67" y="1949.00" font-family="DM Sans" font-size="9"
+            font-weight="400" fill="#8a8a8a" text-anchor="start">Keys</text>
+<text x="252.67" y="1970.00" font-family="DM Sans" font-size="17"
+            font-weight="300" fill="#b9a4e8" text-anchor="start">18</text>
+<text x="276.71" y="1970.00" font-family="DM Sans" font-size="10"
+            font-weight="400" fill="#858585" text-anchor="start"></text>
+</g>
+</g>
+        </svg>

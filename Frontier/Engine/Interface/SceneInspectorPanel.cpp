@@ -87,7 +87,13 @@ void ConstructSceneInspectorInterface(SceneDirectoryPanel &Panel)
     for (size_t Index = 0; Index < Model.ScalarFields.size(); ++Index)
     {
         const RecordEditorScalarField &Field = Model.ScalarFields[Index];
-        if (Field.Target == nullptr) continue;
+        const bool HasDouble = Field.Target != nullptr;
+        const bool HasFloat  = Field.FloatTarget != nullptr;
+        if (!HasDouble && !HasFloat) continue;
+        // 📝 One write path for both storage kinds: read through whichever member is bound, write back the same way, so a
+        //    float engine setting is not silently widened into a double copy the solver never sees.
+        auto ReadField  = [&]() { return HasDouble ? *Field.Target : static_cast<double>(*Field.FloatTarget); };
+        auto WriteField = [&](double Value) { if (HasDouble) *Field.Target = Value; else *Field.FloatTarget = static_cast<float>(Value); };
         char NumberId[96] = {};
         char SliderId[96] = {};
         std::snprintf(NumberId, sizeof(NumberId), "##InspectorValue%zu", Index);
@@ -95,10 +101,10 @@ void ConstructSceneInspectorInterface(SceneDirectoryPanel &Panel)
         ImGui::TextUnformatted(Field.Label);             // .control-line label (10 px reference)
         ImGui::SameLine(ImGui::GetWindowWidth() - 120.0f);
         ImGui::SetNextItemWidth(76.0f);                  // .number-field minimum width
-        double Value = *Field.Target;
+        double Value = ReadField();
         if (ImGui::InputDouble(NumberId, &Value, Field.Step, Field.Step * 10.0, "%.*f", ImGuiInputTextFlags_EnterReturnsTrue))
         {
-            *Field.Target = Value < Field.Minimum ? Field.Minimum : (Value > Field.Maximum ? Field.Maximum : Value);
+            WriteField(Value < Field.Minimum ? Field.Minimum : (Value > Field.Maximum ? Field.Maximum : Value));
         }
         if (Field.Unit[0] != '\0')
         {
@@ -106,11 +112,11 @@ void ConstructSceneInspectorInterface(SceneDirectoryPanel &Panel)
             ImGui::TextDisabled("%s", Field.Unit);
         }
         ImGui::SetNextItemWidth(-1.0f);
-        float SliderValue = static_cast<float>(*Field.Target);
+        float SliderValue = static_cast<float>(ReadField());
         if (ImGui::SliderFloat(SliderId, &SliderValue, static_cast<float>(Field.Minimum),
                                static_cast<float>(Field.Maximum), ""))
         {
-            *Field.Target = SliderValue;
+            WriteField(SliderValue);
         }
     }
     ImGui::EndChild();

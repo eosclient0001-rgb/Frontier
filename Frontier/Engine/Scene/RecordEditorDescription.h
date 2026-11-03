@@ -23,6 +23,9 @@ namespace Frontier
 // 📝 One numeric inspector field, bound directly to a live setting in the owning record. The bounds
 //    and units for the environment records are transcribed from the pinned VehicleHMI inspector
 //    ranges (CloudRanges / EnvironmentDefaults at 6afb6f0); editing through Target edits the scene.
+// 📝 Either target may be bound, never both. Engine data is stored as float (VehicleGeometry, Drivetrain), while settings
+//    authored for the editor are double, so the field carries both kinds instead of forcing one storage type into the other:
+//    the inspector edits the record's own member, in the record's own precision.
 struct RecordEditorScalarField
 {
     const char *Label  = "";       // [text] - Inspector row label
@@ -31,7 +34,8 @@ struct RecordEditorScalarField
     double      Maximum = 0.0;     // [-] - Slider upper bound, in the field's unit
     double      Step    = 0.0;     // [-] - Slider / input step, in the field's unit
     int32_t     Digits  = 2;       // [digits] - Fractional digits in the number field
-    double     *Target  = nullptr; // [-] - Live setting in the owning record; never owned here
+    double     *Target  = nullptr; // [-] - Live double setting in the owning record; never owned here
+    float      *FloatTarget = nullptr; // [-] - Live float setting (engine data); used only when Target is null
 };
 
 // 📝 One inspector property switch, bound directly to a live setting in the owning record.

@@ -1,0 +1,110 @@
+VehicleInspectorValidation — vehicle/tyre records, editor descriptions, pit stop, plan-view stage (native C++)
+g++ (Debian 12.2.0-14+deb12u1) 12.2.0, Linux, 2026-11-03T06:04:04Z, base 96f31ec plus working changes
+built: g++ -std=c++20 -DFRONTIER_EDITOR_PROFILE=1 -Wall -Wextra -Werror -IFrontier -I. (no warnings)
+
+Vehicle and tyre records, editor descriptions, pit-stop lifecycle and the plan-view stage
+
+-- records --
+PASS vehicle record is classified Vehicle
+PASS construction registers the vehicle in the directory
+PASS the vehicle starts with four fitted tyres
+PASS wheelbase is the authored socket span — 3.396 m
+PASS overall length comes from the id-plate sockets — 5.9748 m
+PASS overall width comes from the side-skirt sockets — 2.1490 m
+PASS rollover limit is half-track over CoM height — 1.976 g
+PASS peak torque is the DefaultGTR table peak — 520 Nm
+PASS peak torque speed is the first 520 Nm key — 4800 rpm
+PASS the torque curve interpolates at the redline — 457.333 Nm
+PASS peak power stops at the redline, not at the last key — 344.82 kW
+
+-- tyre records --
+PASS tyre record is parented to the vehicle — FL under 2
+PASS tyre record is parented to the vehicle — FR under 2
+PASS tyre record is parented to the vehicle — RL under 2
+PASS tyre record is parented to the vehicle — RR under 2
+PASS the vehicle reports four nested tyre records — 4 children
+PASS tyre records carry their own corner labels
+PASS a tyre record reaches its own vehicle, and owns nothing
+
+-- editor descriptions --
+PASS the vehicle registered an editor description
+PASS vehicle description uses the pinned HTML stable id
+PASS vehicle description sits in the Vehicle group
+PASS vehicle description binds eight scalar fields — 8
+PASS vehicle description exposes two property switches
+PASS the enabled setting is the record's own
+PASS every vehicle field is bound to a live setting
+PASS engine geometry fields bind their float members directly — 6 float-bound
+PASS editing a bound field edits the record's geometry — 1450 kg
+PASS front weight percent aligns onto the engine fraction — 0.475
+PASS the tyre record registered an editor description
+PASS tyre description uses the pinned per-corner id
+PASS tyre description is categorised Tyre
+PASS tyre description binds pressure, temperature and wear
+PASS the tyre's enabled setting is its fitted state
+PASS editing the tyre's field edits that corner only — 186 kPa
+PASS the neighbouring corner is untouched — 220 kPa
+
+-- pit stop --
+PASS removing the front-left tyre succeeds
+PASS the corner is no longer fitted
+PASS a hub with no tyre holds no pressure
+PASS a removed tyre cools to ambient — 20.0 °C
+PASS the removed tyre is kept in the pit bay
+PASS three tyres remain on the vehicle
+PASS removing a corner that has no tyre is refused
+PASS refitting the corner succeeds
+PASS the corner is fitted again
+PASS refitting returns the used tyre's pressure — 238 kPa
+PASS refitting returns the used tyre's temperature — 96.0 °C
+PASS refitting returns the used tyre's wear — 41.0 %
+PASS the pit bay slot is emptied by the refit
+PASS fitting a corner that already has a tyre is refused
+PASS removing a rear tyre succeeds
+PASS refitting with an empty bay succeeds
+PASS a fresh tyre takes the axle's cold pressure — 215 kPa
+PASS a fresh tyre starts with no wear
+PASS a full pit bay refuses further removals
+PASS the refused removal left the tyre on the vehicle
+PASS refit-all restores a full set and empties the bay
+
+-- grip rule --
+PASS optimum tread and cold pressure give full grip — 1.000
+PASS the fade temperature reaches the minimum factor — 0.600
+PASS 20 % over-pressure costs 6 % grip — 0.940
+PASS the compound scale multiplies the thermal rule — 0.720
+
+-- compounds --
+PASS four tyre compounds are offered — 4 compounds
+PASS every compound's cold pressure is a plausible road/race value
+PASS the authored default compound is the semi-slick
+
+-- powertrain sheet --
+PASS the sheet's redline lands on the engine — 6800 rpm
+PASS the sheet's idle speed lands on the engine — 850 rpm
+PASS the sheet's wastegate ceiling lands on the turbo — 1.60 bar
+PASS the inverse inertia is recomputed, not copied — 2.3810
+PASS the power band follows the edited redline — 337.53 kW
+PASS peak torque is unchanged by the redline
+
+-- outliner projection --
+PASS the outliner projects one vehicle row — 1 rows
+PASS the outliner projects four tyre rows — 4 rows
+PASS selecting a tyre selects it in the inspector model
+PASS the inspector model names the selected tyre — Tyre · FL
+PASS the tyre's inspector group is the Vehicle group — Vehicle
+PASS the inspector model carries the tyre's three fields — 3 fields
+PASS the tyre's enabled pill mirrors its fitted state
+
+-- stage render --
+PASS four fitted tyres cover a plausible number of pixels — 9004 tyre px
+PASS a fully fitted vehicle draws no socket rings
+PASS removed tyres leave dashed socket rings — 369 socket px
+PASS removing tyres paints fewer tyre pixels — 9004 -> 4502
+PASS the frame changes when a tyre comes off
+PASS a geometry edit changes the drawn frame
+PASS refitting every tyre restores the original frame exactly
+      frame written to /tmp/stage.ppm (640x400, host CPU plan view)
+      hash 7dccc36c103bc466 fitted / 3bf83f52b1adb45f removed
+
+ALL CHECKS PASSED (0 failures)

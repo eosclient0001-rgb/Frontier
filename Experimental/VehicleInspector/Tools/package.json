@@ -1,0 +1,17 @@
+{
+  "name": "frontier-vehicle-inspector-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local validation and figure tooling for the vehicle inspector prototype. Dependencies are pinned and ignored (node_modules/); they are not part of the editor.",
+  "scripts": {
+    "test": "node --test ModelValidation.test.mjs",
+    "validate": "node InspectorValidation.mjs",
+    "figure": "node RenderFigures.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "jsdom": "25.0.1",
+    "wawoff2": "2.0.1"
+  }
+}

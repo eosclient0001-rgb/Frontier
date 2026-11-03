@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<!--
+==============================================================================================================================================
+                                                                  INDEX.HTML
+==============================================================================================================================================
+ 🧩 Vehicle inspector prototype: outliner, schematic stage, and the vehicle/tyre inspector cards with units, colour and editable curves.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontier · Vehicle inspector — cards, units, curves</title>
+<link rel="stylesheet" href="Style/VehicleInspector.css">
+</head>
+<body>
+    <div id="shell">
+        <aside id="outliner" class="column">
+            <div class="column-tabs">
+                <div class="column-tab">Outliner</div>
+                <div class="tab-fill"></div>
+            </div>
+            <div class="outliner-body" id="outliner-body">
+                <div class="brand">
+                    <span class="brand-symbol">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                            <path d="M4 4h7l9 9-7 7-9-9z"/><path d="M9 9h6v6"/>
+                        </svg>
+                    </span>
+                    Frontier<span class="version">0.4 · VEHICLE</span>
+                </div>
+                <div class="scene-label">SCENE <span class="status-dot"></span></div>
+                <div class="scene-title">Proving Grounds<span class="scene-extension">.fscene</span></div>
+                <div class="count-tiles">
+                    <div class="count-tile">
+                        <span class="count-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>
+                        </span>
+                        <span class="count-caption">Enabled</span>
+                        <span class="count-value" id="enabled-count">7</span>
+                    </div>
+                    <div class="count-tile hidden-count">
+                        <span class="count-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </span>
+                        <span class="count-caption">No tyre</span>
+                        <span class="count-value" id="disabled-count">0</span>
+                    </div>
+                </div>
+                <div class="search">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.34-4.34"/></svg>
+                    <input id="outliner-search" type="text" placeholder="Search name or type">
+                </div>
+                <div id="outliner-tree"></div>
+                <div class="outliner-bottom">
+                    <div class="world-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg>
+                    </div>
+                    <div>
+                        <strong>Proving Grounds</strong>
+                        <span>43 m · dry asphalt · 18 °C</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <section id="viewport-column" class="column">
+            <div class="column-tabs viewport-tabs">
+                <div class="column-tab">Viewport</div>
+                <div class="scene-pill">Proving Grounds</div>
+                <div class="tab-fill"></div>
+            </div>
+            <div class="viewport-bar">
+                <div class="scene-heading">
+                    <strong>ControlVehicle</strong>
+                    <span>plan view · drawn from the bound geometry</span>
+                </div>
+                <span class="live-pill">LIVE</span>
+                <div class="bar-fill"></div>
+                <span class="small-pill">schematic · no renderer</span>
+            </div>
+            <div class="stage">
+                <canvas id="vehicle-stage" class="vehicle-stage"></canvas>
+                <div class="hud"><pre id="hud-text">starting…</pre></div>
+                <div class="stage-legend">
+                    <span><span class="legend-dot" style="background:#e1d34a"></span>centre of mass</span>
+                    <span><span class="legend-dot" style="background:#3ec46d"></span>tread fresh</span>
+                    <span><span class="legend-dot" style="background:#e0a24a"></span>tread worn</span>
+                    <span><span class="legend-dot" style="background:#4a4a4a"></span>socket, no tyre</span>
+                </div>
+            </div>
+        </section>
+
+        <aside id="inspector" class="column">
+            <div class="column-tabs">
+                <div class="column-tab">Inspector</div>
+                <div class="tab-fill"></div>
+            </div>
+            <div class="inspector-top" id="inspector-top"></div>
+            <div class="inspector-content" id="inspector-content"></div>
+        </aside>
+
+        <footer id="status">
+            <span>Frontier · vehicle inspector prototype</span>
+            <span id="status-selection">selection: vehicle</span>
+            <span class="status-fill"></span>
+            <span id="status-notice">values in stored SI units; the unit switch re-labels the presentation only</span>
+            <span id="status-clock">session 00:00</span>
+        </footer>
+    </div>
+    <script type="module" src="Source/VehicleInspector.js"></script>
+</body>
+</html>
