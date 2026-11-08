@@ -22,10 +22,10 @@ node InspectorValidation.mjs  # 45 DOM checks (jsdom)
 node RenderFigures.mjs        # rewrites Exhibits/VehicleInspector/Images/*
 ```
 
-Then serve the parent folder and open `Experimental/VehicleInspector/index.html`:
+Then serve it — the page needs an HTTP origin, because ES modules do not load from `file://`:
 
 ```bash
-cd Experimental/VehicleInspector && python3 -m http.server 8080 --bind 0.0.0.0
+cd Experimental/VehicleInspector && python3 Tools/Serve.py      # 0.0.0.0:8080, no-store
 ```
 
 The page is self-contained: relative module scripts, local `Style/Fonts/*.woff2`, no network fonts or CDNs, so it also runs

@@ -1,5 +1,5 @@
 Vehicle inspector prototype — headless DOM validation
-Node v22.22.3, jsdom, generated 2026-11-03T06:04:36.963Z
+Node v22.22.3, jsdom, generated 2026-11-08T17:09:15.287Z
 Canvas is stubbed: drawing code is exercised, pixels are not validated here.
 
 PASS the prototype boots in a headless DOM
@@ -25,7 +25,7 @@ PASS y and x are clamped to the field bounds — 6190, 700
 PASS delete removes the selected key — 18 keys
 PASS reset restores the chosen preset
 PASS curve readout prints peak with its unit — 520Nm
-PASS the plot paints its axis captions with units — 232 text calls
+PASS the plot paints its axis captions with units — 236 text calls
 PASS selecting a tyre opens its own inspector
 PASS the tyre inspector offers a pit-stop removal
 PASS the corner starts inflated — 220 kPa
