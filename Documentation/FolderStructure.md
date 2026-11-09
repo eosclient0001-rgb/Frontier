@@ -33,6 +33,7 @@ Frontier/
 │   │   └── Results/
 │   └── EditorMirror/           # Comparison mirror of the C++ editor
 ├── Experimental/              # Prototypes and experimental HTML
+│   └── Experimental Remastered/  # SDF Terrain Studio + SDF Sculpt Studio (zero-build JS)
 ├── EngineDocs/AgenticInstuctions/  # Four retained authoritative skills
 └── _ClaudeScratch/            # Ignored logs/, build/, tmp/
 ```

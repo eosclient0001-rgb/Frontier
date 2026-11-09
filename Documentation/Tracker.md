@@ -4,6 +4,11 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## SDF Terrain Studio workspace ported (pre-erosion state) — 2026-11-09
+
+- Ported `Experimental Remastered/` verbatim from `unassignedinbox/Frontier` at `9331bf3` (the pre-erosion state; newer erosion commits `63351d9` and later are intentionally excluded for now). The workspace is the Open-World SDF Terrain Studio (`TerrainWorldEditor/`): infinite sparse-tile 2D world mask, independent toggleable Terrain Bounds Boxes, multi-terrain 3D Ocean landscape, Thin-Slab SDF, composable landform layer stack with per-layer Boundary Falloffs, splines, sculpting, and `.OBJ` / binary `.STL` triangle export, shipping 3 demonstration masks and terrains. The SDF Sculpt Studio (`SdfSculptEditor/`) is ported with it because the Terrain Studio CSS and fonts inherit from it.
+- Terrain Studio validation passes 7/7 and SDF Sculpt Studio 9/9 headless in Node. CPU heightmaps for the 3 demo terrains are retained as evidence. Erosion, rock / cliff studio, seasonal climate, and Gaea texturing are deferred to the next step after this workspace is committed. [Evidence](../Exhibits/TerrainStudio/README.md).
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,

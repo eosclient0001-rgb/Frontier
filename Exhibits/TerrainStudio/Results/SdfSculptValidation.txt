@@ -1,0 +1,12 @@
+=== Frontier SDF Sculpt Studio Validation Suite ===
+  [PASS] 1. IEEE-754 Float16 encode/decode round-trip precision
+  [PASS] 2. All 12 analytical SDF primitives & 5 boolean operators evaluate cleanly
+  [PASS] 3. Falloff curves & mirror/radial symmetry expansion
+  [PASS] 4. Starter scenes, RGBA16F dirty sub-brick packer, and hybrid CPU raycast
+  [PASS] 5. All 10 volumetric sculpting brushes + Undo/Redo + CSG bake + Eikonal solver
+  [PASS] 6. Dual Surface Nets watertight mesh extraction + OBJ & Binary STL codecs
+  [PASS] 7. Frontier SDF1 (.sdfspace) 68-byte binary archive round-trip & .toml spec
+  [PASS] 8. DOM ID parity, self-hosted fonts/licenses, and zero external CDN links
+  [PASS] 9. Out-of-bounds Elastic Auto-Expand, Soft Cushion Cap closure & grazing raymarch safety
+
+All 9/9 validation suites passed.

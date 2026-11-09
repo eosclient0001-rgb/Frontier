@@ -1,0 +1,11 @@
+Running Frontier Open-World SDF Terrain Studio Validation...
+
+  [PASS] 1. Infinite sparse 2D world mask allocates tiles on demand across arbitrary kilometer coordinates
+  [PASS] 2. Meijster 2D Euclidean Signed Distance Field computes exact metric inland/offshore distances
+  [PASS] 3. Per-Layer Boundary Falloff supports Soft Edge -> Strong Center AND None (Full Cliff Edge)
+  [PASS] 4. Ships with 3 distinct Demo Masks & independent toggleable Terrain Bounds Regions
+  [PASS] 5. Thin-Slab SDF wastes zero deep-ocean space and extracts clean culled triangle meshes (.OBJ & .STL)
+  [PASS] 6. Supports real-time SDF sculpting, 3D overhang arches, spline landforms, and JSON round-trip
+  [PASS] 7. Moving 3D Spline Knots UP and DOWN on Y-axis shapes terrain elevation & builds 3D SDF Arch Bridges
+
+All 7/7 Open-World SDF Terrain Studio validation suites passed!
