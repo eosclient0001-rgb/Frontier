@@ -4,6 +4,14 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Terrain Studio pinned prototype — 2026-11-09
+
+- Imported the standalone browser prototype from `unassignedinbox/Frontier@9331bf3`, without later erosion commits.
+  Its sparse 2D masks, independent bounds, layer falloffs, thin-slab landscape and three demo terrains are the
+  existing baseline, not a native Vulkan editor integration. The baseline also includes spline/sculpt tools.
+- Terrain headless validation passes 7/7; Clay validation passes 9/9. Browser rendering and performance remain
+  unverified. [Details and limitations](../Exhibits/TerrainStudio/README.md).
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,
