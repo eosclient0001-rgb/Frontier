@@ -911,7 +911,6 @@ export class WorldMask2D
             shorelineBevel: Spec.shorelineBevel ?? 18.0,
             maxRelief: Spec.maxRelief ?? 280.0,
             stack: Spec.stack || [],
-            sdf3DOps: Spec.sdf3DOps || [],
             dirty: true,
             meshDirty: true,
             runtime: null

@@ -1,8 +1,16 @@
 /*==========================================================================================================================================
                                                         TERRAINLAYERSTACK.JS
 ==========================================================================================================================================*/
-// Fast Composable SDF Terrain Layer Stack, Boundary Falloff Evaluators, Catmull-Rom Spline Landforms,
-// Real-Time SDF Sculpting (2.5D + True 3D Overhang/Cave SDF), Thin-Slab Triangle Mesher, and 3 Demo Open-World Masks.
+// Composable Non-Destructive Terrain Layer Stack, Procedural Landform Generators, Configurable Boundary Falloffs,
+// Thin-Base-Surface Triangle Mesher, Multi-Terrain Batch Editing, and Three Demonstration Terrain Masks for Frontier Terrain Studio.
+//
+// Reuses & adapts geological landform math from c7egoist/Frontier (INIT_TERRAIN_FRAG & STACK_OP_FRAG) for Stage 1:
+// - 2D Terrain Workspace + 3D Landscape Workspace ONLY (no erosion simulation, Rock Studio, or Cliff Studio)
+// - Generators: Fractal Noise (fBm), Hybrid Multifractal, Ridge Noise, Voronoi / Cellular, Billow Hills,
+//   Aeolian Dune Fields, Tectonic Fault Escarpment, Volcanic Cone & Caldera, Dipping Terrace Strata, Spline Landforms, & Relief Brush
+// - Boundary Falloffs: Soft Influence / Noise Falloff (edge -> centre with optional fractal noise feather),
+//   Hard Influence / No Falloff (100% right to coastline edge), Continental, Plateau, Coastal Rim, Bounds Feather, & Custom Curve
+// - Space-Efficient Thin Base Surface -> coarse-decimated underside + contour-snapped coastal skirt triangle conversion
 
 import { ComputeRegionMaskSdf2D, MakeTerrainUid } from './WorldMask2D.js';
 
@@ -16,7 +24,7 @@ export const Smoothstep = (E0, E1, X) =>
 };
 
 /*==========================================================================================================================================
-                                            DETERMINISTIC SPATIAL NOISE & FRACTALS
+                                            DETERMINISTIC SPATIAL NOISE & GEOLOGICAL GENERATORS
 ==========================================================================================================================================*/
 function Hash2(Ix, Iz, Seed)
 {
@@ -25,7 +33,7 @@ function Hash2(Ix, Iz, Seed)
     return ((H ^ (H >>> 16)) >>> 0) / 4294967295.0;
 }
 
-function GradNoise2D(X, Z, Seed = 4029)
+export function GradNoise2D(X, Z, Seed = 4029)
 {
     const X0 = Math.floor(X), Z0 = Math.floor(Z);
     const Fx = X - X0, Fz = Z - Z0;
@@ -46,6 +54,9 @@ function GradNoise2D(X, Z, Seed = 4029)
     return Mix(Mix(N00, N10, Ux), Mix(N01, N11, Ux), Uz) * 0.7071 + 0.5;
 }
 
+/**
+ * Classic Multi-Octave Fractal Noise (fBm).
+ */
 export function Fbm2D(X, Z, Octaves = 5, Gain = 0.5, Lacunarity = 2.02, Seed = 4029)
 {
     let Sum = 0.0, Amp = 0.5, Freq = 1.0, Norm = 0.0;
@@ -60,7 +71,7 @@ export function Fbm2D(X, Z, Octaves = 5, Gain = 0.5, Lacunarity = 2.02, Seed = 4
 }
 
 /**
- * Musgrave-inspired Hybrid Multifractal: smooth alluvial valleys with crisp craggy high peaks.
+ * Musgrave-inspired Hybrid Multifractal: smooth coastal/alluvial valleys rising into craggy interior massifs.
  */
 export function HybridMultifractal2D(X, Z, Octaves = 6, Gain = 0.52, Offset = 0.25, Seed = 4029)
 {
@@ -85,7 +96,7 @@ export function HybridMultifractal2D(X, Z, Octaves = 6, Gain = 0.52, Offset = 0.
 }
 
 /**
- * Ridged Multifractal: sharp tectonic arête ridges & hogback crests.
+ * Ridged Multifractal Noise: sharp tectonic arête ridges & anisotropic mountain chains.
  */
 export function RidgedMultifractal2D(X, Z, Octaves = 6, Gain = 0.55, Sharpness = 0.68, Seed = 4029)
 {
@@ -107,7 +118,7 @@ export function RidgedMultifractal2D(X, Z, Octaves = 6, Gain = 0.55, Sharpness =
 }
 
 /**
- * Voronoi / Cellular Landform: supports 0=Plateaus/Blocks, 1=Fracture Ridges (F2-F1), 2=Volcanic Craters, 3=Domes (1-F1).
+ * Voronoi / Cellular Landform: 0=Mesa/Tableland Blocks, 1=Fracture Ridges (F2-F1), 2=Caldera/Crater Bowls, 3=Cellular Domes (1-F1).
  */
 export function VoronoiCellular2D(X, Z, Variant = 0, Jitter = 0.82, Sharpness = 0.65, Seed = 4029)
 {
@@ -139,18 +150,15 @@ export function VoronoiCellular2D(X, Z, Variant = 0, Jitter = 0.82, Sharpness = 
     const Edge = Clamp(D2 - D1, 0.0, 1.0);
     if (Variant === 0)
     {
-        // Stepped Basalt / Sedimentary Mesa Blocks with clean rim bevel
         const Rim = Smoothstep(0.02, Mix(0.28, 0.05, Sharpness), Edge);
         return (0.35 + 0.65 * CellVal) * Rim;
     }
     if (Variant === 1)
     {
-        // Tectonic Polygonal Ridges (F2 - F1)
         return Math.pow(Clamp(1.0 - Edge * 1.45, 0.0, 1.0), Mix(1.0, 2.6, Sharpness));
     }
     if (Variant === 2)
     {
-        // Caldera / Impact Crater Bowls
         const R = D1 * 1.65;
         const Bowl = -(1.0 - Smoothstep(0.0, 0.72, R)) * (1.0 - R * R * 0.75) * 0.65;
         const Rim = Math.exp(-Math.pow((R - 0.74) * 5.0, 2.0)) * 0.55;
@@ -160,47 +168,94 @@ export function VoronoiCellular2D(X, Z, Variant = 0, Jitter = 0.82, Sharpness = 
 }
 
 /**
- * Billow / Folded Hills & Directional Dunes.
+ * Billow / Anticlinal Folded Hills.
  */
-export function BillowFolded2D(X, Z, Octaves = 5, DuneMix = 0.0, AzimuthRad = 0.4, Seed = 4029)
+export function BillowFolded2D(X, Z, Octaves = 5, AzimuthRad = 0.4, Seed = 4029)
 {
+    const Rx = X * Math.cos(AzimuthRad) + Z * Math.sin(AzimuthRad);
+    const Rz = -X * Math.sin(AzimuthRad) + Z * Math.cos(AzimuthRad);
     let Sum = 0.0, Amp = 0.5, Freq = 1.0, Norm = 0.0;
     for (let I = 0; I < Octaves; ++I)
     {
-        const N = Math.abs(GradNoise2D(X * Freq, Z * Freq, Seed + I * 89) * 2.0 - 1.0);
+        const N = Math.abs(GradNoise2D(Rx * Freq, Rz * Freq, Seed + I * 89) * 2.0 - 1.0);
         Sum += N * Amp;
         Norm += Amp;
         Freq *= 2.02;
         Amp *= 0.5;
     }
-    const Billow = Sum / Math.max(1e-5, Norm);
-    if (DuneMix <= 0.01) return Billow;
+    return Sum / Math.max(1e-5, Norm);
+}
 
-    const Warp = GradNoise2D(X * 0.7, Z * 0.7, Seed + 503) - 0.5;
-    const Phase = (((X * Math.cos(AzimuthRad) + Z * Math.sin(AzimuthRad)) * 1.8 + Warp * 0.9) % 1.0 + 1.0) % 1.0;
-    const Dune = Smoothstep(0.0, 0.72, Phase) * (1.0 - Smoothstep(0.72, 0.97, Phase));
-    return Mix(Billow, Dune, Clamp(DuneMix, 0.0, 1.0));
+/**
+ * Aeolian Dune Field (adapted from c7egoist/Frontier asymmetric stoss/lee dune generator).
+ */
+export function AeolianDuneField2D(X, Z, AzimuthRad = 0.9, Asymmetry = 0.74, Sinuosity = 0.42, Seed = 4029)
+{
+    const Dx = Math.cos(AzimuthRad), Dz = Math.sin(AzimuthRad);
+    const Px = -Dz, Pz = Dx;
+    const Across = X * Px + Z * Pz;
+    const Bend = Math.sin(Across * 2.6 + (Seed % 97) * 0.1) * Sinuosity * 0.35;
+    const Raw = (X * Dx + Z * Dz) * 1.65 + Bend;
+    const Phase = ((Raw % 1.0) + 1.0) % 1.0;
+    const Asym = Clamp(Asymmetry, 0.52, 0.92);
+    const Stoss = Smoothstep(0.0, Asym, Phase);
+    const Lee = 1.0 - Smoothstep(Asym, Math.min(0.99, Asym + 0.22), Phase);
+    return Stoss * Lee;
+}
+
+/**
+ * Tectonic Fault Escarpment & Tilted Cuesta Dip-Slope (adapted from c7egoist/Frontier).
+ */
+export function FaultEscarpment2D(RelX, RelZ, AzimuthRad = 0.5, Sharpness = 0.78, Offset = 0.0, Warp = 0.34, Seed = 4029)
+{
+    const PerpX = -Math.sin(AzimuthRad), PerpZ = Math.cos(AzimuthRad);
+    const W = Warp > 0.005 ? (Fbm2D(RelX * 2.2, RelZ * 2.2, 3, 0.5, 2.02, Seed + 409) - 0.5) * 0.45 * Warp : 0.0;
+    const Coord = RelX * PerpX + RelZ * PerpZ - Offset + W;
+    const Trans = Mix(0.45, 0.035, Clamp(Sharpness, 0.05, 0.98));
+    const Scarp = Smoothstep(-Trans, Trans, Coord);
+    const DipSlope = Clamp(1.0 - Math.max(0.0, Coord) * 0.36, 0.25, 1.0);
+    return Scarp * DipSlope;
+}
+
+/**
+ * Volcanic Stratocone & Summit Caldera Rim (adapted from c7egoist/Frontier).
+ */
+export function VolcanicCaldera2D(RelX, RelZ, RadiusFrac = 0.76, CraterDepth = 0.56, RimSharpness = 0.65, Warp = 0.28, Seed = 4029)
+{
+    let Qx = RelX, Qz = RelZ;
+    if (Warp > 0.005)
+    {
+        Qx += (Fbm2D(RelX * 2.1, RelZ * 2.1, 3, 0.5, 2.02, Seed + 521) - 0.5) * 0.28 * Warp;
+        Qz += (Fbm2D(RelX * 2.1 + 9.4, RelZ * 2.1 + 9.4, 3, 0.5, 2.02, Seed + 613) - 0.5) * 0.28 * Warp;
+    }
+    const R = Math.hypot(Qx, Qz) / Math.max(0.18, RadiusFrac);
+    const Cone = Math.exp(-R * R * 1.85) * 1.12;
+    const CraterW = Mix(18.0, 7.5, Clamp(RimSharpness, 0.0, 1.0));
+    const Crater = Math.exp(-R * R * CraterW) * Clamp(CraterDepth, 0.0, 1.2);
+    const Gullies = RidgedMultifractal2D(Qx * 2.8, Qz * 2.8, 4, 0.52, 0.65, Seed + 77) * 0.16 * Smoothstep(0.08, 0.65, R);
+    return Math.max(0.0, Cone - Crater + Gullies);
 }
 
 /*==========================================================================================================================================
-                                      PER-LAYER EDGE -> CENTER BOUNDARY FALLOFF SYSTEM
+                                      PER-LAYER CONFIGURABLE BOUNDARY FALLOFF & INFLUENCE SYSTEM
 ==========================================================================================================================================*/
 export const BOUNDARY_FALLOFF_MODES = [
-    ['Soft Edge → Strong Center (Smooth)', 'soft'],
-    ['None — Full Cliff at Edge', 'none'],
-    ['Continental Power (Wide Plain → Peak)', 'continental'],
-    ['Plateau Rim (Steep Escarpment)', 'plateau'],
-    ['Coastal Rim Ring (Strong at Shore)', 'rim'],
-    ['Bounds Box Feather (Rect Frame)', 'bounds'],
-    ['Custom Curve Profile', 'custom']
+    ['Soft Influence / Noise Falloff (Edge → Centre)', 'soft'],
+    ['Hard Influence / No Falloff (Full Strength to Edge)', 'none'],
+    ['Continental Power (Wide Coastal Plain → Interior Peak)', 'continental'],
+    ['Plateau Escarpment (Steep Perimeter Rise)', 'plateau'],
+    ['Coastal Rim Ring (Strong Perimeter → Calm Basin)', 'rim'],
+    ['Terrain Bounds Box Feather (Domain Edge Ramp)', 'bounds'],
+    ['Custom Curve Profile (Interactive Knots)', 'custom']
 ];
 
 export const COMBINE_MODES = [
-    ['Add (Uplift)', 'add'],
-    ['Subtract (Carve)', 'sub'],
-    ['Max (Union)', 'max'],
-    ['Min (Clip)', 'min'],
-    ['Blend (Lerp)', 'lerp']
+    ['Add (Uplift +)', 'add'],
+    ['Subtract (Carve −)', 'sub'],
+    ['Max (Highest Union)', 'max'],
+    ['Min (Clip Ceiling)', 'min'],
+    ['Blend (Replace / Lerp)', 'lerp'],
+    ['Multiply (Modulate Relief)', 'multiply']
 ];
 
 export const FALLOFF_CURVE_DEFAULT_POINTS = [
@@ -210,24 +265,41 @@ export const FALLOFF_CURVE_DEFAULT_POINTS = [
     [1.0, 1.0]
 ];
 
-/**
- * Evaluates a layer's Boundary Falloff weight in [0..1] at a point given:
- * - `InlandDistM`: exact metric distance inland from the 2D mask coastline (`max(0, -sdf2D)`)
- * - `BoxEdgeDistM`: exact metric distance inward from the Terrain Bounds Box edges
- * - `FalloffSpec`: `{ mode, distance, edgeFloor, points }`
- */
-export function EvaluateBoundaryFalloff(InlandDistM, BoxEdgeDistM, FalloffSpec)
+export function IsHardBoundaryFalloff(FalloffSpec)
 {
-    if (!FalloffSpec || FalloffSpec.mode === 'none')
+    if (!FalloffSpec) return true;
+    return FalloffSpec.mode === 'none' || FalloffSpec.mode === 'hard';
+}
+
+/**
+ * Evaluates a layer's Boundary Falloff weight in [0..1] at a world point given:
+ * - `InlandDistM`: exact metric distance inland from the 2D mask coastline (`max(0, -sdf2D)`)
+ * - `BoxEdgeDistM`: exact metric distance inward from the Terrain Bounds Layer edges
+ * - `FalloffSpec`: `{ mode, distance, edgeFloor, noiseAmount, noiseScale, points }`
+ * - Optional `(Wx, Wz, Seed)` for organic noise-modulated coastal falloff!
+ */
+export function EvaluateBoundaryFalloff(InlandDistM, BoxEdgeDistM, FalloffSpec, Wx = 0.0, Wz = 0.0, Seed = 4029)
+{
+    if (IsHardBoundaryFalloff(FalloffSpec))
     {
-        return 1.0; // Full strength right to the cliff/coastline edge!
+        return 1.0; // Hard influence / no falloff: 100% full influence right up to the terrain boundary!
     }
 
     const Mode = FalloffSpec.mode || 'soft';
     const DistSpan = Math.max(4.0, Number(FalloffSpec.distance) || 260.0);
     const EdgeFloor = Clamp(Number(FalloffSpec.edgeFloor) || 0.0, 0.0, 1.0);
     const Metric = Mode === 'bounds' ? Math.max(0.0, BoxEdgeDistM) : Math.max(0.0, InlandDistM);
-    const T = Clamp(Metric / DistSpan, 0.0, 1.0);
+    let T = Clamp(Metric / DistSpan, 0.0, 1.0);
+
+    // Optional organic fractal noise modulation along the soft boundary transition ("soft influence / noise falloff")
+    const NoiseAmt = Clamp(Number(FalloffSpec.noiseAmount) || 0.0, 0.0, 1.0);
+    if (NoiseAmt > 0.005 && T > 0.001 && T < 0.999)
+    {
+        const Ns = Math.max(0.2, Number(FalloffSpec.noiseScale) || 1.0) * 0.0045;
+        const N = Fbm2D(Wx * Ns, Wz * Ns, 3, 0.5, 2.02, (Seed | 0) + 911) - 0.5;
+        const Envelope = 4.0 * T * (1.0 - T); // Zero perturbation at exact shoreline (T=0) and deep centre (T=1)
+        T = Clamp(T + N * NoiseAmt * 0.65 * Envelope, 0.0, 1.0);
+    }
 
     let Shape = 1.0;
     switch (Mode)
@@ -244,7 +316,6 @@ export function EvaluateBoundaryFalloff(InlandDistM, BoxEdgeDistM, FalloffSpec)
             break;
         case 'rim':
         {
-            // Rises quickly from shore to a coastal ridge crest at ~30% of falloff distance, then relaxes inland
             const Rise = Smoothstep(0.0, 0.28, T);
             const Decay = 1.0 - 0.72 * Smoothstep(0.32, 1.0, T);
             Shape = Rise * Decay;
@@ -279,118 +350,190 @@ export function EvaluateBoundaryFalloff(InlandDistM, BoxEdgeDistM, FalloffSpec)
                                         COMPOSABLE LAYER STACK SPECIFICATION & FACTORY
 ==========================================================================================================================================*/
 export const LAYER_TYPE_META = {
-    multifractal: { label: 'Hybrid Multifractal', badge: 'FRACTAL', glyph: 'Mountain', accent: '#e8c27a' },
-    ridged:       { label: 'Ridged Mountain Noise', badge: 'RIDGE', glyph: 'Activity', accent: '#f0935b' },
-    voronoi:      { label: 'Voronoi / Mesa Blocks', badge: 'CELLULAR', glyph: 'Boxes', accent: '#5ac8fa' },
-    billow:       { label: 'Billow Hills & Dunes', badge: 'FOLDED', glyph: 'Wind', accent: '#a3d977' },
-    terrace:      { label: 'Terrace & Strata', badge: 'STRATA', glyph: 'Layers', accent: '#d6a2e8' },
-    spline:       { label: 'Spline Landform', badge: 'SPLINE', glyph: 'Spline', accent: '#3ec46d' },
-    sculpt:       { label: 'SDF Sculpt Layer', badge: 'SCULPT', glyph: 'Brush', accent: '#ff7b7b' }
+    fractal:      { label: 'Fractal Noise (fBm)',     badge: 'FBM',        glyph: 'Mountain', accent: '#d8b46a', category: 'generator' },
+    multifractal: { label: 'Hybrid Multifractal',     badge: 'MULTIFRACT', glyph: 'Mountain', accent: '#e8c27a', category: 'generator' },
+    ridged:       { label: 'Ridge Noise (Arête)',     badge: 'RIDGE',      glyph: 'Activity', accent: '#f0935b', category: 'generator' },
+    voronoi:      { label: 'Voronoi / Cellular',      badge: 'VORONOI',    glyph: 'Boxes',    accent: '#5ac8fa', category: 'generator' },
+    billow:       { label: 'Billow & Folded Hills',   badge: 'BILLOW',     glyph: 'Layers',   accent: '#a3d977', category: 'generator' },
+    dunes:        { label: 'Aeolian Dune Field',      badge: 'DUNES',      glyph: 'Water',    accent: '#eab676', category: 'generator' },
+    escarpment:   { label: 'Fault Escarpment',        badge: 'FAULT',      glyph: 'Scan',     accent: '#f4a261', category: 'generator' },
+    caldera:      { label: 'Volcanic Caldera',        badge: 'CALDERA',    glyph: 'Sparkles', accent: '#fb7185', category: 'generator' },
+    terrace:      { label: 'Dipping Terrace Strata',  badge: 'STRATA',     glyph: 'Layers',   accent: '#d6a2e8', category: 'modifier'  },
+    spline:       { label: 'Spline Landform',         badge: 'SPLINE',     glyph: 'Spline',   accent: '#3ec46d', category: 'modifier'  },
+    sculpt:       { label: 'Relief Sculpt Layer',     badge: 'BRUSH',      glyph: 'Brush',    accent: '#7ec8ff', category: 'modifier'  }
 };
 
 export function CreateTerrainLayer(Type = 'multifractal', Overrides = {})
 {
     const Meta = LAYER_TYPE_META[Type] || LAYER_TYPE_META.multifractal;
+    const RawFallMode = Overrides.falloff?.mode === 'hard' ? 'none' : (Overrides.falloff?.mode ?? 'soft');
     const Base = {
         id: Overrides.id || MakeTerrainUid('lyr'),
-        type: Type,
+        type: Type in LAYER_TYPE_META ? Type : 'multifractal',
         name: Overrides.name || Meta.label,
         enabled: Overrides.enabled !== false,
+        locked: !!Overrides.locked,
         opacity: Overrides.opacity ?? 1.0,
         combine: Overrides.combine || 'add',
         seed: Overrides.seed ?? 4029,
         falloff: {
-            mode: Overrides.falloff?.mode ?? 'soft',
+            mode: RawFallMode,
             distance: Overrides.falloff?.distance ?? 280.0,
             edgeFloor: Overrides.falloff?.edgeFloor ?? 0.0,
+            noiseAmount: Overrides.falloff?.noiseAmount ?? 0.18,
+            noiseScale: Overrides.falloff?.noiseScale ?? 1.0,
             points: (Overrides.falloff?.points || FALLOFF_CURVE_DEFAULT_POINTS).map(P => P.slice())
         },
-        // Optional elevation/slope range filter
         heightMask: {
             enabled: !!Overrides.heightMask?.enabled,
             minElev: Overrides.heightMask?.minElev ?? 0.0,
-            maxElev: Overrides.heightMask?.maxElev ?? 300.0,
+            maxElev: Overrides.heightMask?.maxElev ?? 340.0,
             minSlope: Overrides.heightMask?.minSlope ?? 0.0,
             maxSlope: Overrides.heightMask?.maxSlope ?? 90.0
         }
     };
 
-    if (Type === 'multifractal')
+    switch (Base.type)
     {
-        return {
-            ...Base,
-            amplitude: Overrides.amplitude ?? 185.0,
-            scale: Overrides.scale ?? 2.2,
-            octaves: Overrides.octaves ?? 6,
-            gain: Overrides.gain ?? 0.52,
-            warp: Overrides.warp ?? 0.32,
-            valleyOffset: Overrides.valleyOffset ?? 0.24
-        };
+        case 'fractal':
+            return {
+                ...Base,
+                amplitude: Overrides.amplitude ?? 140.0,
+                scale: Overrides.scale ?? 2.4,
+                octaves: Overrides.octaves ?? 6,
+                lacunarity: Overrides.lacunarity ?? 2.02,
+                gain: Overrides.gain ?? 0.50,
+                warp: Overrides.warp ?? 0.28
+            };
+        case 'multifractal':
+            return {
+                ...Base,
+                amplitude: Overrides.amplitude ?? 185.0,
+                scale: Overrides.scale ?? 2.2,
+                octaves: Overrides.octaves ?? 6,
+                gain: Overrides.gain ?? 0.52,
+                warp: Overrides.warp ?? 0.32,
+                valleyOffset: Overrides.valleyOffset ?? 0.24
+            };
+        case 'ridged':
+            return {
+                ...Base,
+                amplitude: Overrides.amplitude ?? 135.0,
+                scale: Overrides.scale ?? 2.6,
+                octaves: Overrides.octaves ?? 6,
+                sharpness: Overrides.sharpness ?? 0.72,
+                azimuth: Overrides.azimuth ?? 32.0,
+                anisotropy: Overrides.anisotropy ?? 1.28,
+                warp: Overrides.warp ?? 0.38
+            };
+        case 'voronoi':
+            return {
+                ...Base,
+                variant: Overrides.variant ?? 0,
+                amplitude: Overrides.amplitude ?? 140.0,
+                scale: Overrides.scale ?? 3.1,
+                jitter: Overrides.jitter ?? 0.82,
+                sharpness: Overrides.sharpness ?? 0.74,
+                warp: Overrides.warp ?? 0.22
+            };
+        case 'billow':
+            return {
+                ...Base,
+                amplitude: Overrides.amplitude ?? 68.0,
+                scale: Overrides.scale ?? 3.4,
+                octaves: Overrides.octaves ?? 5,
+                azimuth: Overrides.azimuth ?? 45.0,
+                warp: Overrides.warp ?? 0.20
+            };
+        case 'dunes':
+            return {
+                ...Base,
+                amplitude: Overrides.amplitude ?? 44.0,
+                scale: Overrides.scale ?? 4.2,
+                azimuth: Overrides.azimuth ?? 55.0,
+                asymmetry: Overrides.asymmetry ?? 0.74,
+                sinuosity: Overrides.sinuosity ?? 0.42,
+                warp: Overrides.warp ?? 0.18
+            };
+        case 'escarpment':
+            return {
+                ...Base,
+                amplitude: Overrides.amplitude ?? 130.0,
+                azimuth: Overrides.azimuth ?? 28.0,
+                sharpness: Overrides.sharpness ?? 0.78,
+                offset: Overrides.offset ?? 0.0,
+                warp: Overrides.warp ?? 0.34
+            };
+        case 'caldera':
+            return {
+                ...Base,
+                amplitude: Overrides.amplitude ?? 190.0,
+                radiusFrac: Overrides.radiusFrac ?? 0.76,
+                craterDepth: Overrides.craterDepth ?? 0.56,
+                rimSharpness: Overrides.rimSharpness ?? 0.65,
+                warp: Overrides.warp ?? 0.28
+            };
+        case 'terrace':
+            return {
+                ...Base,
+                bedCount: Overrides.bedCount ?? 9,
+                strength: Overrides.strength ?? 0.76,
+                dipDeg: Overrides.dipDeg ?? 4.0,
+                strikeDeg: Overrides.strikeDeg ?? 25.0,
+                warp: Overrides.warp ?? 0.22
+            };
+        case 'spline':
+            return {
+                ...Base,
+                splineMode: Overrides.splineMode === 'arch3d' ? 'ridge' : (Overrides.splineMode ?? 'grade'),
+                width: Overrides.width ?? 105.0,
+                amount: Overrides.amount ?? 32.0,
+                bankSmooth: Overrides.bankSmooth ?? 0.62,
+                meander: Overrides.meander ?? 0.14,
+                points: (Overrides.points || []).map(P => P.slice())
+            };
+        default:
+            return {
+                ...Base,
+                deltaRes: Overrides.deltaRes || 0,
+                deltas: Overrides.deltas || null,
+                strokeCount: Overrides.strokeCount || 0
+            };
     }
-    if (Type === 'ridged')
+}
+
+export function MoveTerrainLayer(Region, LayerId, DeltaIndex)
+{
+    if (!Region || !Array.isArray(Region.stack)) return false;
+    const Idx = Region.stack.findIndex(L => L.id === LayerId);
+    if (Idx < 0) return false;
+    const Target = Clamp(Idx + DeltaIndex, 0, Region.stack.length - 1);
+    if (Target === Idx) return false;
+    const [Moved] = Region.stack.splice(Idx, 1);
+    Region.stack.splice(Target, 0, Moved);
+    Region.dirty = true;
+    Region.meshDirty = true;
+    return true;
+}
+
+export function DuplicateTerrainLayer(Region, LayerId)
+{
+    if (!Region || !Array.isArray(Region.stack)) return null;
+    const Idx = Region.stack.findIndex(L => L.id === LayerId);
+    if (Idx < 0) return null;
+    const Src = Region.stack[Idx];
+    const Copy = JSON.parse(JSON.stringify({ ...Src, deltas: undefined }));
+    Copy.id = MakeTerrainUid('lyr');
+    Copy.name = `${Src.name} Copy`;
+    Copy.locked = false;
+    if (Src.deltas instanceof Float32Array)
     {
-        return {
-            ...Base,
-            amplitude: Overrides.amplitude ?? 135.0,
-            scale: Overrides.scale ?? 2.6,
-            octaves: Overrides.octaves ?? 6,
-            sharpness: Overrides.sharpness ?? 0.72,
-            azimuth: Overrides.azimuth ?? 32.0,
-            warp: Overrides.warp ?? 0.38
-        };
+        Copy.deltas = new Float32Array(Src.deltas);
     }
-    if (Type === 'voronoi')
-    {
-        return {
-            ...Base,
-            variant: Overrides.variant ?? 0, // 0=Mesa Blocks, 1=Polygonal Ridges, 2=Caldera Craters, 3=Domes
-            amplitude: Overrides.amplitude ?? 140.0,
-            scale: Overrides.scale ?? 3.1,
-            jitter: Overrides.jitter ?? 0.82,
-            sharpness: Overrides.sharpness ?? 0.74,
-            warp: Overrides.warp ?? 0.22
-        };
-    }
-    if (Type === 'billow')
-    {
-        return {
-            ...Base,
-            amplitude: Overrides.amplitude ?? 68.0,
-            scale: Overrides.scale ?? 3.4,
-            octaves: Overrides.octaves ?? 5,
-            duneMix: Overrides.duneMix ?? 0.25,
-            azimuth: Overrides.azimuth ?? 45.0
-        };
-    }
-    if (Type === 'terrace')
-    {
-        return {
-            ...Base,
-            bedCount: Overrides.bedCount ?? 9,
-            strength: Overrides.strength ?? 0.76,
-            dipDeg: Overrides.dipDeg ?? 4.0,
-            strikeDeg: Overrides.strikeDeg ?? 25.0
-        };
-    }
-    if (Type === 'spline')
-    {
-        return {
-            ...Base,
-            splineMode: Overrides.splineMode ?? 'grade', // 'grade' | 'arch3d' | 'ridge' | 'canyon' | 'river' | 'lake'
-            width: Overrides.width ?? 105.0,
-            amount: Overrides.amount ?? 32.0, // Vertical offset or arch tube thickness (m)
-            bankSmooth: Overrides.bankSmooth ?? 0.62,
-            meander: Overrides.meander ?? 0.14,
-            points: (Overrides.points || []).map(P => P.slice())
-        };
-    }
-    // 'sculpt'
-    return {
-        ...Base,
-        deltaRes: Overrides.deltaRes || 0,
-        deltas: Overrides.deltas || null, // Float32Array(Nx * Nz)
-        strokeCount: Overrides.strokeCount || 0
-    };
+    Region.stack.splice(Idx + 1, 0, Copy);
+    Region.dirty = true;
+    Region.meshDirty = true;
+    return Copy;
 }
 
 /*==========================================================================================================================================
@@ -470,16 +613,17 @@ function PointToPolylineDist(Wx, Wz, Poly)
 }
 
 /*==========================================================================================================================================
-                                    TERRAIN REGION LAYER-STACK & THIN-SLAB SDF EVALUATOR
+                                    TERRAIN REGION LAYER-STACK & THIN-BASE-SURFACE EVALUATOR
 ==========================================================================================================================================*/
 /**
- * Evaluates a Terrain Region's 2D Mask SDF + Thin Base Slab + Composable Layer Stack + Falloff Heatmap!
- * Stores results in `Region.runtime` and marks `Region.dirty = false`.
+ * Evaluates a Terrain Region's 2D Mask SDF + Thin Base Surface + Composable Layer Stack + Falloff Map.
+ * Automatically accelerates pure procedural generator prefixes on `GpuPipeline` (WebGL2 RGBA32F FBOs) when provided,
+ * and falls back seamlessly to the exact matching deterministic CPU evaluator.
  */
-export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = null)
+export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = null, GpuPipeline = null)
 {
     const B = Region.bounds;
-    const BaseRes = Clamp(Region.resolution | 0, 48, 256);
+    const BaseRes = Clamp(Region.resolution | 0, 48, 320);
     const Aspect = B.width / Math.max(1.0, B.depth);
     const Nx = Aspect >= 1.0 ? BaseRes : Math.max(32, Math.round(BaseRes * Aspect));
     const Nz = Aspect >= 1.0 ? Math.max(32, Math.round(BaseRes / Aspect)) : BaseRes;
@@ -487,17 +631,18 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
     const StepX = B.width / Math.max(1, Nx - 1);
     const StepZ = B.depth / Math.max(1, Nz - 1);
 
-    // 1. Exact O(N) 2D Euclidean Signed Distance Field from the 2D Mask
+    // 1. Exact O(N) 2D Euclidean Signed Distance Field from the 2D Terrain Mask
     const { coverage: MaskCov, sdf2D: Sdf2D, hasLand: HasLand } = ComputeRegionMaskSdf2D(World, Region, Nx, Nz);
 
-    const Heights = new Float32Array(Count);
-    const FalloffPreview = new Float32Array(Count);
-    const WaterChannel = new Float32Array(Count); // River/lake spline water tint mask
+    let Heights = new Float32Array(Count);
+    let FalloffPreview = new Float32Array(Count);
+    const WaterChannel = new Float32Array(Count);
 
     const SeaLevel = World.seaLevel ?? 0.0;
-    const SlabBottom = SeaLevel - Math.max(1.5, Number(Region.slabThickness) || 6.5);
-    const BaseTop = SeaLevel + (Number(Region.baseElevation) ?? 3.0);
+    const SlabBottom = SeaLevel - Math.max(1.5, Number(Region.slabThickness) || 5.0);
+    const BaseTop = SeaLevel + (Number(Region.baseElevation) ?? 2.5);
     const ShoreBevel = Math.max(0.0, Number(Region.shorelineBevel) ?? 16.0);
+    const ReliefScale = Number.isFinite(Number(Region.reliefScale)) ? Number(Region.reliefScale) : 1.0;
 
     if (!HasLand)
     {
@@ -507,50 +652,108 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
             slabBottom: SlabBottom, baseTop: BaseTop,
             coverage: MaskCov, sdf2D: Sdf2D, heights: Heights,
             falloffMap: FalloffPreview, waterChannel: WaterChannel,
-            hasLand: false, maxHeight: SlabBottom, landAreaKm2: 0
+            hasLand: false, hasHardCoastLayer: false,
+            maxHeight: SlabBottom, landCells: 0, culledCells: Count, landAreaKm2: 0
         };
         Region.dirty = false;
         return Region.runtime;
     }
 
-    // 2. Initialize Thin Flat SDF Base Surface inside 2D Mask (zero wasted deep-underground bulk!)
     let LandCells = 0;
     for (let I = 0; I < Count; ++I)
     {
-        const D2 = Sdf2D[I];
-        if (D2 <= 0.0)
+        if (Sdf2D[I] <= 0.0) LandCells++;
+    }
+
+    // Track whether any active shape layer uses Hard Influence / No Falloff right to the coastline
+    let HasHardCoastLayer = ShoreBevel <= 1.0;
+    for (const Lyr of Region.stack)
+    {
+        if (Lyr && Lyr.enabled !== false && Lyr.type !== 'spline' && Lyr.type !== 'sculpt' && IsHardBoundaryFalloff(Lyr.falloff))
         {
-            LandCells++;
-            if (ShoreBevel > 0.5)
-            {
-                const ShoreT = Clamp(-D2 / ShoreBevel, 0.0, 1.0);
-                const SmoothShore = ShoreT * ShoreT * (3.0 - 2.0 * ShoreT);
-                Heights[I] = Mix(SeaLevel - 0.35, BaseTop, SmoothShore);
-            }
-            else
-            {
-                Heights[I] = BaseTop;
-            }
-        }
-        else if (D2 <= Math.max(StepX, StepZ) * 1.6)
-        {
-            // Narrow coastal skirt tapering cleanly down to the thin slab floor
-            const SkirtT = Clamp(D2 / (Math.max(StepX, StepZ) * 1.6), 0.0, 1.0);
-            Heights[I] = Mix(SeaLevel - 0.35, SlabBottom, SkirtT);
-        }
-        else
-        {
-            Heights[I] = SlabBottom;
+            HasHardCoastLayer = true;
+            break;
         }
     }
 
-    // 3. Evaluate Composable Layer Stack bottom-to-top!
+    // Determine longest leading prefix of GPU-acceleratable procedural generator layers
+    let StartLayerIdx = 0;
+    if (GpuPipeline && GpuPipeline.supported)
+    {
+        let GpuPrefixLen = 0;
+        while (GpuPrefixLen < Region.stack.length)
+        {
+            const L = Region.stack[GpuPrefixLen];
+            if (L && L.enabled !== false && (L.type === 'spline' || L.type === 'sculpt')) break;
+            GpuPrefixLen++;
+        }
+        if (GpuPrefixLen > 0)
+        {
+            const GpuRes = GpuPipeline.evaluatePrefixOnGpu(
+                World, Region, Sdf2D, Nx, Nz, StepX, StepZ,
+                SlabBottom, BaseTop, ShoreBevel,
+                Region.stack.slice(0, GpuPrefixLen),
+                PreviewLayerIdForFalloff
+            );
+            if (GpuRes)
+            {
+                Heights = GpuRes.heights;
+                FalloffPreview = GpuRes.falloffMap;
+                StartLayerIdx = GpuPrefixLen;
+            }
+        }
+    }
+
+    // 2. Initialize Thin Base Surface on CPU if GPU prefix was not used
+    if (StartLayerIdx === 0)
+    {
+        const MaxStep = Math.max(StepX, StepZ);
+        for (let I = 0; I < Count; ++I)
+        {
+            const D2 = Sdf2D[I];
+            if (D2 <= 0.0)
+            {
+                if (ShoreBevel > 0.5)
+                {
+                    const ShoreT = Clamp(-D2 / ShoreBevel, 0.0, 1.0);
+                    const SmoothShore = ShoreT * ShoreT * (3.0 - 2.0 * ShoreT);
+                    Heights[I] = Mix(SeaLevel - 0.25, BaseTop, SmoothShore);
+                }
+                else
+                {
+                    Heights[I] = BaseTop;
+                }
+            }
+            else if (D2 <= MaxStep * 1.55)
+            {
+                const SkirtT = Clamp(D2 / (MaxStep * 1.55), 0.0, 1.0);
+                Heights[I] = Mix(SeaLevel - 0.25, SlabBottom, SkirtT);
+            }
+            else
+            {
+                Heights[I] = SlabBottom;
+            }
+        }
+    }
+
+    // 3. Evaluate remaining layers in the Composable Layer Stack bottom-to-top
     const RefSpan = Math.max(400.0, Math.min(B.width, B.depth));
-    for (let LIdx = 0; LIdx < Region.stack.length; ++LIdx)
+    const CenterX = B.x + B.width * 0.5;
+    const CenterZ = B.z + B.depth * 0.5;
+    const MaxStep = Math.max(StepX, StepZ);
+
+    for (let LIdx = StartLayerIdx; LIdx < Region.stack.length; ++LIdx)
     {
         const Layer = Region.stack[LIdx];
-        const RecordFalloff = (Layer.id === PreviewLayerIdForFalloff) || (!PreviewLayerIdForFalloff && LIdx === Region.stack.length - 1);
-        if (!Layer || Layer.enabled === false) continue;
+        const RecordFalloff = (Layer?.id === PreviewLayerIdForFalloff) || (!PreviewLayerIdForFalloff && LIdx === Region.stack.length - 1);
+        if (!Layer || Layer.enabled === false)
+        {
+            if (Layer && RecordFalloff)
+            {
+                PopulateLayerFalloffPreview(B, Nx, Nz, StepX, StepZ, Sdf2D, Layer, FalloffPreview);
+            }
+            continue;
+        }
 
         const Opacity = Clamp(Number(Layer.opacity) ?? 1.0, 0.0, 1.0);
         if (Opacity <= 1e-4 && !RecordFalloff) continue;
@@ -559,13 +762,11 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
         const Seed = (Layer.seed | 0) || 4029;
         const Combine = Layer.combine || 'add';
 
-        // Precompute spline polyline & bounding box when evaluating a Spline Landform layer
         let Poly = null;
         let PolyBounds = null;
         if (Type === 'spline')
         {
             if (!Layer.points || Layer.points.length < 2) continue;
-            // Ensure every spline control knot has an explicit 3D elevation Y [wx, wz, wy] so the 3D Gizmo can move it Up/Down!
             for (const Pt of Layer.points)
             {
                 if (!Number.isFinite(Pt[2]))
@@ -575,8 +776,6 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
                     Pt[2] = Math.round(Heights[Gz * Nx + Gx] * 10) / 10;
                 }
             }
-            if (Layer.splineMode === 'arch3d') continue; // 3D Arch Tube is extracted as true volumetric 3D overhang geometry!
-
             Poly = SampleCatmullRomPolyline(Layer.points, 8);
             const MaxReach = (Number(Layer.width) || 90.0) * 2.5 + 45.0;
             let PMinX = 1e9, PMinZ = 1e9, PMaxX = -1e9, PMaxZ = -1e9;
@@ -590,7 +789,6 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
             PolyBounds = [PMinX - MaxReach, PMinZ - MaxReach, PMaxX + MaxReach, PMaxZ + MaxReach];
         }
 
-        // Ensure sculpt layer buffer matches grid resolution (bilinearly resampling if resolution changed)
         if (Type === 'sculpt')
         {
             EnsureSculptBufferMatches(Layer, Nx, Nz);
@@ -598,6 +796,7 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
 
         const AzRad = ((Number(Layer.azimuth) || 0.0) * Math.PI) / 180.0;
         const CosAz = Math.cos(AzRad), SinAz = Math.sin(AzRad);
+        const Aniso = Math.max(0.5, Number(Layer.anisotropy) || 1.28);
         const DipRad = ((Number(Layer.dipDeg) || 0.0) * Math.PI) / 180.0;
         const StrikeRad = ((Number(Layer.strikeDeg) || 0.0) * Math.PI) / 180.0;
         const TanDip = Math.tan(DipRad);
@@ -613,13 +812,13 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
             {
                 const Idx = Row + X;
                 const D2 = Sdf2D[Idx];
-                if (D2 > StepX * 1.1) continue; // Outside 2D mask — zero wasted computation or ocean contamination!
+                if (D2 > MaxStep * 1.1) continue;
 
                 const Wx = B.x + X * StepX;
                 const BoxEdgeDist = Math.min(BoxDz, Wx - B.x, B.x + B.width - Wx);
                 const InlandDist = Math.max(0.0, -D2);
 
-                const FallW = EvaluateBoundaryFalloff(InlandDist, BoxEdgeDist, Layer.falloff);
+                const FallW = EvaluateBoundaryFalloff(InlandDist, BoxEdgeDist, Layer.falloff, Wx, Wz, Seed);
                 if (RecordFalloff) FalloffPreview[Idx] = FallW;
 
                 let MaskW = FallW * Opacity;
@@ -632,6 +831,15 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
                     const EWeight = Smoothstep(Hm.minElev - 15.0, Hm.minElev + 5.0, CurH) *
                                     (1.0 - Smoothstep(Hm.maxElev - 5.0, Hm.maxElev + 15.0, CurH));
                     MaskW *= EWeight;
+                    if (Hm.minSlope > 0.5)
+                    {
+                        const Xm = Math.max(0, X - 1), Xp = Math.min(Nx - 1, X + 1);
+                        const Zm = Math.max(0, Z - 1), Zp = Math.min(Nz - 1, Z + 1);
+                        const Dhx = (Heights[Row + Xp] - Heights[Row + Xm]) / ((Xp - Xm || 1) * StepX);
+                        const Dhz = (Heights[Zp * Nx + X] - Heights[Zm * Nx + X]) / ((Zp - Zm || 1) * StepZ);
+                        const SlopeDeg = Math.atan(Math.hypot(Dhx, Dhz)) * 57.2957795;
+                        MaskW *= Smoothstep(Hm.minSlope - 4.0, Hm.minSlope + 2.0, SlopeDeg);
+                    }
                     if (MaskW <= 1e-4) continue;
                 }
 
@@ -645,13 +853,16 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
                 {
                     const Beds = Math.max(2.0, Number(Layer.bedCount) || 8.0);
                     const ReliefRef = Math.max(40.0, Number(Region.maxRelief) || 240.0);
-                    const StratM = CurH + (Wx * DipDirX + Wz * DipDirZ) * TanDip;
+                    const WarpAmt = Number(Layer.warp) || 0.0;
+                    const Wp = WarpAmt > 0.005 ? (Fbm2D(Wx * 0.006, Wz * 0.006, 3, 0.5, 2.02, Seed + 307) - 0.5) * 28.0 * WarpAmt : 0.0;
+                    const StratM = CurH + (Wx * DipDirX + Wz * DipDirZ) * TanDip + Wp;
                     const Ph = (StratM / ReliefRef) * Beds;
                     const Fl = Math.floor(Ph);
                     const Fr = Ph - Fl;
-                    const SteppedFr = Mix(Fr, Smoothstep(0.16, 0.84, Fr), Clamp(Number(Layer.strength) || 0.75, 0.0, 0.98));
-                    const TargetH = ((Fl + SteppedFr) / Beds) * ReliefRef - (Wx * DipDirX + Wz * DipDirZ) * TanDip;
-                    Heights[Idx] = Math.max(SlabBottom + 0.5, Mix(CurH, TargetH, MaskW * Clamp(Number(Layer.strength) || 0.75, 0.0, 1.0)));
+                    const Str = Clamp(Number(Layer.strength) || 0.75, 0.0, 0.98);
+                    const SteppedFr = Mix(Fr, Smoothstep(0.16, 0.84, Fr), Str);
+                    const TargetH = ((Fl + SteppedFr) / Beds) * ReliefRef - (Wx * DipDirX + Wz * DipDirZ) * TanDip - Wp;
+                    Heights[Idx] = Math.max(SlabBottom + 0.5, Mix(CurH, TargetH, MaskW * Str));
                     continue;
                 }
 
@@ -681,7 +892,6 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
 
                     if (Mode === 'grade' || Mode === 'road')
                     {
-                        // Direct 3D Elevation Cut & Fill: raising/lowering any knot on the Y-axis Gizmo pulls or carves the terrain right to KnotElevY!
                         const TargetY = Has3DElev ? KnotElevY : Mix(BaseTop + Amt * 0.8, BaseTop + 8.0, AlongT);
                         const FlatCore = 1.0 - Smoothstep(0.32, 1.0, NormD);
                         const BlendW = Clamp(Mix(Profile, FlatCore, 0.55) * MaskW, 0.0, 1.0);
@@ -714,22 +924,32 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
                     continue;
                 }
 
-                // Procedural Landform Generators (Multifractal, Ridged, Voronoi, Billow)
+                // Procedural Landform Generators
                 const Scale = Math.max(0.2, Number(Layer.scale) || 2.2);
                 let NxCoord = (Wx / RefSpan) * Scale;
                 let NzCoord = (Wz / RefSpan) * Scale;
 
                 const WarpAmt = Number(Layer.warp) || 0.0;
-                if (WarpAmt > 0.005)
+                if (WarpAmt > 0.005 && Type !== 'escarpment' && Type !== 'caldera')
                 {
-                    const WpX = Fbm2D(NxCoord * 1.35 + 7.1, NzCoord * 1.35 + 3.4, 3, 0.5, 2.0, Seed + 701) - 0.5;
-                    const WpZ = Fbm2D(NxCoord * 1.35 + 19.8, NzCoord * 1.35 + 11.2, 3, 0.5, 2.0, Seed + 809) - 0.5;
+                    const WpX = Fbm2D(NxCoord * 1.35 + 7.1, NzCoord * 1.35 + 3.4, 3, 0.5, 2.02, Seed + 701) - 0.5;
+                    const WpZ = Fbm2D(NxCoord * 1.35 + 19.8, NzCoord * 1.35 + 11.2, 3, 0.5, 2.02, Seed + 809) - 0.5;
                     NxCoord += WpX * WarpAmt * 0.85;
                     NzCoord += WpZ * WarpAmt * 0.85;
                 }
 
                 let Signal = 0.0;
-                if (Type === 'multifractal')
+                if (Type === 'fractal')
+                {
+                    Signal = Fbm2D(
+                        NxCoord, NzCoord,
+                        Clamp(Layer.octaves | 0, 2, 8),
+                        Clamp(Number(Layer.gain) || 0.50, 0.2, 0.85),
+                        Math.max(1.4, Number(Layer.lacunarity) || 2.02),
+                        Seed
+                    );
+                }
+                else if (Type === 'multifractal')
                 {
                     Signal = HybridMultifractal2D(
                         NxCoord, NzCoord,
@@ -741,9 +961,8 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
                 }
                 else if (Type === 'ridged')
                 {
-                    // Rotate coordinates slightly along strike azimuth for anisotropic mountain chains
                     const Rx = NxCoord * CosAz + NzCoord * SinAz;
-                    const Rz = (-NxCoord * SinAz + NzCoord * CosAz) * 1.28;
+                    const Rz = (-NxCoord * SinAz + NzCoord * CosAz) * Aniso;
                     Signal = RidgedMultifractal2D(
                         Rx, Rz,
                         Clamp(Layer.octaves | 0, 2, 8),
@@ -767,21 +986,56 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
                     Signal = BillowFolded2D(
                         NxCoord, NzCoord,
                         Clamp(Layer.octaves | 0, 2, 7),
-                        Clamp(Number(Layer.duneMix) ?? 0.2, 0.0, 1.0),
                         AzRad,
                         Seed
                     );
                 }
+                else if (Type === 'dunes')
+                {
+                    Signal = AeolianDuneField2D(
+                        NxCoord, NzCoord,
+                        AzRad,
+                        Number(Layer.asymmetry) ?? 0.74,
+                        Number(Layer.sinuosity) ?? 0.42,
+                        Seed
+                    );
+                }
+                else if (Type === 'escarpment')
+                {
+                    const RelX = (Wx - CenterX) / (0.5 * RefSpan);
+                    const RelZ = (Wz - CenterZ) / (0.5 * RefSpan);
+                    Signal = FaultEscarpment2D(
+                        RelX, RelZ,
+                        AzRad,
+                        Number(Layer.sharpness) ?? 0.78,
+                        Number(Layer.offset) ?? 0.0,
+                        WarpAmt,
+                        Seed
+                    );
+                }
+                else if (Type === 'caldera')
+                {
+                    const RelX = (Wx - CenterX) / (0.5 * RefSpan);
+                    const RelZ = (Wz - CenterZ) / (0.5 * RefSpan);
+                    Signal = VolcanicCaldera2D(
+                        RelX, RelZ,
+                        Number(Layer.radiusFrac) ?? 0.76,
+                        Number(Layer.craterDepth) ?? 0.56,
+                        Number(Layer.rimSharpness) ?? 0.65,
+                        WarpAmt,
+                        Seed
+                    );
+                }
 
-                const Delta = Signal * (Number(Layer.amplitude) || 120.0);
+                const Delta = Signal * (Number(Layer.amplitude) || 120.0) * ReliefScale;
                 let TargetH = CurH + Delta;
                 if (Combine === 'sub') TargetH = Math.max(SlabBottom + 0.5, CurH - Math.abs(Delta));
                 else if (Combine === 'max') TargetH = Math.max(CurH, BaseTop + Delta);
                 else if (Combine === 'min') TargetH = Math.min(CurH, BaseTop + Delta);
                 else if (Combine === 'lerp') TargetH = BaseTop + Delta;
+                else if (Combine === 'multiply') TargetH = BaseTop + (CurH - BaseTop) * Clamp(Signal * 1.35, 0.0, 2.0);
 
-                // When Falloff == 'none' (Full Cliff Edge), maintain sharp vertical cliff wall right up to D2 == 0!
-                const ShoreProtect = (Layer.falloff?.mode === 'none')
+                const ShoreProtect = IsHardBoundaryFalloff(Layer.falloff)
                     ? (D2 <= 0.0 ? 1.0 : 0.0)
                     : (ShoreBevel > 0.5 ? Smoothstep(0.0, Math.min(ShoreBevel, 22.0), InlandDist) : 1.0);
 
@@ -790,7 +1044,6 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
         }
     }
 
-    // Compute peak height & land area telemetry
     let MaxHeight = SlabBottom;
     for (let I = 0; I < Count; ++I)
     {
@@ -804,10 +1057,33 @@ export function EvaluateTerrainRegion(World, Region, PreviewLayerIdForFalloff = 
         slabBottom: SlabBottom, baseTop: BaseTop,
         coverage: MaskCov, sdf2D: Sdf2D, heights: Heights,
         falloffMap: FalloffPreview, waterChannel: WaterChannel,
-        hasLand: true, maxHeight: MaxHeight, landAreaKm2: LandAreaKm2
+        hasLand: true,
+        hasHardCoastLayer: HasHardCoastLayer,
+        maxHeight: MaxHeight,
+        landCells: LandCells,
+        culledCells: Count - LandCells,
+        landAreaKm2: LandAreaKm2
     };
     Region.dirty = false;
     return Region.runtime;
+}
+
+function PopulateLayerFalloffPreview(B, Nx, Nz, StepX, StepZ, Sdf2D, Layer, OutPreview)
+{
+    const Seed = (Layer.seed | 0) || 4029;
+    for (let Z = 0; Z < Nz; ++Z)
+    {
+        const Wz = B.z + Z * StepZ;
+        const BoxDz = Math.min(Wz - B.z, B.z + B.depth - Wz);
+        for (let X = 0; X < Nx; ++X)
+        {
+            const Idx = Z * Nx + X;
+            if (Sdf2D[Idx] > Math.max(StepX, StepZ)) continue;
+            const Wx = B.x + X * StepX;
+            const BoxEdge = Math.min(BoxDz, Wx - B.x, B.x + B.width - Wx);
+            OutPreview[Idx] = EvaluateBoundaryFalloff(Math.max(0.0, -Sdf2D[Idx]), BoxEdge, Layer.falloff, Wx, Wz, Seed);
+        }
+    }
 }
 
 function EnsureSculptBufferMatches(Layer, Nx, Nz)
@@ -841,13 +1117,8 @@ function EnsureSculptBufferMatches(Layer, Nx, Nz)
 }
 
 /*==========================================================================================================================================
-                                     REAL-TIME TERRAIN SDF SCULPT BRUSH KERNEL
+                              REAL-TIME TERRAIN SCULPT BRUSH & MULTI-TERRAIN BATCH OPERATIONS
 ==========================================================================================================================================*/
-/**
- * Applies a 3D terrain sculpt dab at world point (Wx, Wy, Wz) on `Region`:
- * - Automatically finds or creates the top `SDF Sculpt Layer` in `Region.stack`
- * - Supports `'raise'`, `'lower'`, `'smooth'`, `'flatten'`, `'pinch'`, plus true 3D SDF `'overhang'` & `'cave'`!
- */
 export function ApplyTerrainSculptDab(World, Region, HitPos, Mode = 'raise', Settings = {})
 {
     if (!Region || Region.locked) return false;
@@ -855,34 +1126,16 @@ export function ApplyTerrainSculptDab(World, Region, HitPos, Mode = 'raise', Set
     const Rt = Region.runtime;
     if (!Rt || !Rt.hasLand) return false;
 
-    const Radius = Clamp(Number(Settings.radius) || 85.0, 8.0, 900.0);
+    const Radius = Clamp(Number(Settings.radius) || 85.0, 8.0, 1200.0);
     const Strength = Clamp(Number(Settings.strength) ?? 0.65, 0.04, 1.0);
     const Invert = !!Settings.invert;
 
-    // True 3D Volumetric SDF Overhang / Cave Carve operation (stored as analytical 3D SDF capsules above the thin slab!)
-    if (Mode === 'overhang' || Mode === 'cave')
-    {
-        const IsCave = (Mode === 'cave') !== Invert;
-        const PrevPos = Settings.prevPos || HitPos;
-        Region.sdf3DOps.push({
-            ax: PrevPos[0], ay: PrevPos[1], az: PrevPos[2],
-            bx: HitPos[0], by: HitPos[1], bz: HitPos[2],
-            radius: Radius * 0.42,
-            blend: Radius * 0.16,
-            op: IsCave ? 'cave' : 'overhang'
-        });
-        if (Region.sdf3DOps.length > 96) Region.sdf3DOps.shift();
-        Region.meshDirty = true;
-        return true;
-    }
-
-    // Find active sculpt layer or create one at top of stack
     let SculptLayer = Region.stack.find(L => L.id === Settings.targetLayerId && L.type === 'sculpt');
     if (!SculptLayer)
     {
         for (let I = Region.stack.length - 1; I >= 0; --I)
         {
-            if (Region.stack[I].type === 'sculpt' && Region.stack[I].enabled !== false)
+            if (Region.stack[I].type === 'sculpt' && Region.stack[I].enabled !== false && !Region.stack[I].locked)
             {
                 SculptLayer = Region.stack[I];
                 break;
@@ -892,7 +1145,7 @@ export function ApplyTerrainSculptDab(World, Region, HitPos, Mode = 'raise', Set
     if (!SculptLayer)
     {
         SculptLayer = CreateTerrainLayer('sculpt', {
-            name: 'SDF Sculpt Edits',
+            name: 'Relief Brush Edits',
             falloff: { mode: 'none', distance: 100 }
         });
         Region.stack.push(SculptLayer);
@@ -913,7 +1166,6 @@ export function ApplyTerrainSculptDab(World, Region, HitPos, Mode = 'raise', Set
     const Deltas = SculptLayer.deltas;
     const Heights = Rt.heights;
 
-    // Copy sub-window of current composite heights for smooth/pinch
     let CopyH = null;
     const SubW = X1 - X0 + 1, SubD = Z1 - Z0 + 1;
     if (EffectiveMode === 'smooth' || EffectiveMode === 'pinch')
@@ -928,6 +1180,7 @@ export function ApplyTerrainSculptDab(World, Region, HitPos, Mode = 'raise', Set
         }
     }
 
+    let Touched = false;
     for (let Z = Z0; Z <= Z1; ++Z)
     {
         const Wz = B.z + Z * StepZ;
@@ -942,6 +1195,7 @@ export function ApplyTerrainSculptDab(World, Region, HitPos, Mode = 'raise', Set
 
             const U = 1.0 - (Dist / Radius) * (Dist / Radius);
             const W = U * U * Strength;
+            Touched = true;
 
             if (EffectiveMode === 'raise')
             {
@@ -971,33 +1225,101 @@ export function ApplyTerrainSculptDab(World, Region, HitPos, Mode = 'raise', Set
         }
     }
 
-    SculptLayer.strokeCount = (SculptLayer.strokeCount || 0) + 1;
-    Region.dirty = true;
-    return true;
+    if (Touched)
+    {
+        SculptLayer.strokeCount = (SculptLayer.strokeCount || 0) + 1;
+        Region.dirty = true;
+    }
+    return Touched;
+}
+
+/**
+ * Applies a 3D brush dab across ALL overlapping terrains in `TargetRegions` simultaneously (Section 4.3).
+ */
+export function ApplyMultiTerrainSculptDab(World, TargetRegions, HitPos, Mode = 'raise', Settings = {})
+{
+    const Radius = Clamp(Number(Settings.radius) || 85.0, 8.0, 1200.0);
+    const Modified = [];
+    for (const Reg of TargetRegions)
+    {
+        if (!Reg || !Reg.enabled || Reg.locked) continue;
+        const B = Reg.bounds;
+        if (HitPos[0] + Radius < B.x || HitPos[0] - Radius > B.x + B.width ||
+            HitPos[2] + Radius < B.z || HitPos[2] - Radius > B.z + B.depth)
+        {
+            continue;
+        }
+        if (ApplyTerrainSculptDab(World, Reg, HitPos, Mode, Settings))
+        {
+            Modified.push(Reg);
+        }
+    }
+    return Modified;
+}
+
+/**
+ * Synchronizes shared procedural parameters of `SourceLayer` onto matching-type layers across `TargetRegions` (Section 4.3).
+ */
+export function SyncLayerAcrossSelectedRegions(TargetRegions, SourceRegionId, SourceLayer)
+{
+    if (!SourceLayer || SourceLayer.type === 'spline' || SourceLayer.type === 'sculpt') return [];
+    const Synced = [];
+    const SkipKeys = new Set(['id', 'name', 'deltas', 'points', 'nx', 'nz', 'strokeCount']);
+    for (const Reg of TargetRegions)
+    {
+        if (!Reg || Reg.id === SourceRegionId || Reg.locked) continue;
+        // Match active layer of same type from top of stack
+        let Match = null;
+        for (let I = Reg.stack.length - 1; I >= 0; --I)
+        {
+            if (Reg.stack[I].type === SourceLayer.type && !Reg.stack[I].locked)
+            {
+                Match = Reg.stack[I];
+                break;
+            }
+        }
+        if (!Match) continue;
+        for (const [K, V] of Object.entries(SourceLayer))
+        {
+            if (SkipKeys.has(K)) continue;
+            Match[K] = JSON.parse(JSON.stringify(V));
+        }
+        Reg.dirty = true;
+        Reg.meshDirty = true;
+        Synced.push(Reg);
+    }
+    return Synced;
 }
 
 /*==========================================================================================================================================
-                     SPACE-EFFICIENT THIN-SLAB SDF -> WATERTIGHT TRIANGLE MESH EXTRACTOR (.OBJ / .STL / GPU)
+               SPACE-EFFICIENT THIN-BASE-SURFACE -> COARSE-DECIMATED WATERTIGHT TRIANGLE MESHER
 ==========================================================================================================================================*/
 /**
- * Converts an evaluated Terrain Region's Thin-Slab SDF + 3D Overhang/Cave SDF into an indexed triangle mesh!
- * - Skips 100% of empty ocean cells outside the 2D mask (`sdf2D > skirtWidth`) -> zero wasted vertices!
- * - Builds both the top geological surface AND the thin flat underside slab (`y = slabBottom`) + watertight perimeter cliff skirt
- *   so toggling Ocean OFF reveals the exact thin flat SDF body requested!
+ * Converts an evaluated Terrain Region's Thin Base Surface + Procedural Landforms into an indexed triangle mesh:
+ * - Emits ZERO vertices and ZERO triangles for ocean cells outside the 2D mask (`sdf2D > skirtMaxD`)
+ * - Snaps outer coastal skirt vertices tightly toward the `sdf2D = 0` shoreline contour when hard cliff falloffs are active
+ * - Coarsely decimates interior flat base-surface underside blocks (`4x4` cells -> 1 quad) so the thin base surface wastes
+ *   almost no underside geometry while staying closed & clean when inspecting below sea level!
  */
 export function ExtractRegionTriangleMesh(World, Region, Options = {})
 {
-    const Rt = Region.dirty || !Region.runtime ? EvaluateTerrainRegion(World, Region, Options.previewFalloffLayerId) : Region.runtime;
+    const Rt = Region.dirty || !Region.runtime
+        ? EvaluateTerrainRegion(World, Region, Options.previewFalloffLayerId, Options.gpuPipeline)
+        : Region.runtime;
+
     if (!Rt || !Rt.hasLand)
     {
         return {
             positions: new Float32Array(0),
             normals: new Float32Array(0),
             colors: new Float32Array(0),
-            aux: new Float32Array(0), // [falloffWeight, slopeDegNorm]
+            aux: new Float32Array(0),
             indices: new Uint32Array(0),
             vertexCount: 0,
-            triangleCount: 0
+            triangleCount: 0,
+            topTriangleCount: 0,
+            baseTriangleCount: 0,
+            culledOceanRatio: 1.0
         };
     }
 
@@ -1006,10 +1328,11 @@ export function ExtractRegionTriangleMesh(World, Region, Options = {})
     const StepX = Rt.stepX, StepZ = Rt.stepZ;
     const SlabBottom = Rt.slabBottom;
     const SeaLevel = World.seaLevel ?? 0.0;
-    const SkirtMaxD = Math.max(StepX, StepZ) * 1.55;
+    const MaxStep = Math.max(StepX, StepZ);
+    const SkirtMaxD = MaxStep * 1.55;
+    const SnapCliffSkirt = !!Rt.hasHardCoastLayer;
     const IncludeUnderside = Options.includeUnderside !== false;
 
-    // Determine active vertices inside mask + skirt
     const TopVertIdx = new Int32Array(Nx * Nz);
     TopVertIdx.fill(-1);
 
@@ -1021,7 +1344,7 @@ export function ExtractRegionTriangleMesh(World, Region, Options = {})
 
     for (let Z = 0; Z < Nz; ++Z)
     {
-        const Wz = B.z + Z * StepZ;
+        const RawWz = B.z + Z * StepZ;
         const Zm = Math.max(0, Z - 1), Zp = Math.min(Nz - 1, Z + 1);
         for (let X = 0; X < Nx; ++X)
         {
@@ -1029,10 +1352,25 @@ export function ExtractRegionTriangleMesh(World, Region, Options = {})
             const D2 = Rt.sdf2D[Cell];
             if (D2 > SkirtMaxD) continue;
 
-            const Wx = B.x + X * StepX;
+            let Wx = B.x + X * StepX;
+            let Wz = RawWz;
             const H = Rt.heights[Cell];
 
             const Xm = Math.max(0, X - 1), Xp = Math.min(Nx - 1, X + 1);
+            // Tightly pull outer coastal skirt vertices toward the exact coastline contour for sheer cliff edges
+            if (SnapCliffSkirt && D2 > 0.0)
+            {
+                const SdfDx = (Rt.sdf2D[Z * Nx + Xp] - Rt.sdf2D[Z * Nx + Xm]) / ((Xp - Xm || 1) * StepX);
+                const SdfDz = (Rt.sdf2D[Zp * Nx + X] - Rt.sdf2D[Zm * Nx + X]) / ((Zp - Zm || 1) * StepZ);
+                const GradLen = Math.hypot(SdfDx, SdfDz);
+                if (GradLen > 1e-4)
+                {
+                    const Pull = Math.min(D2 * 0.88, MaxStep * 1.35);
+                    Wx -= (SdfDx / GradLen) * Pull;
+                    Wz -= (SdfDz / GradLen) * Pull;
+                }
+            }
+
             const DhDx = (Rt.heights[Z * Nx + Xp] - Rt.heights[Z * Nx + Xm]) / ((Xp - Xm || 1) * StepX);
             const DhDz = (Rt.heights[Zp * Nx + X] - Rt.heights[Zm * Nx + X]) / ((Zp - Zm || 1) * StepZ);
             const InvLen = 1.0 / Math.hypot(DhDx, 1.0, DhDz);
@@ -1050,11 +1388,11 @@ export function ExtractRegionTriangleMesh(World, Region, Options = {})
         }
     }
 
-    // Emit top terrain triangles for active cells
-    const CellActive = new Uint8Array((Nx - 1) * (Nz - 1));
-    for (let Z = 0; Z < Nz - 1; ++Z)
+    const CellW = Nx - 1, CellD = Nz - 1;
+    const CellActive = new Uint8Array(CellW * CellD);
+    for (let Z = 0; Z < CellD; ++Z)
     {
-        for (let X = 0; X < Nx - 1; ++X)
+        for (let X = 0; X < CellW; ++X)
         {
             const I00 = TopVertIdx[Z * Nx + X];
             const I10 = TopVertIdx[Z * Nx + (X + 1)];
@@ -1062,13 +1400,14 @@ export function ExtractRegionTriangleMesh(World, Region, Options = {})
             const I11 = TopVertIdx[(Z + 1) * Nx + (X + 1)];
             if (I00 < 0 || I10 < 0 || I01 < 0 || I11 < 0) continue;
 
-            CellActive[Z * (Nx - 1) + X] = 1;
-            // Counter-clockwise upward-facing winding (+Y when X right, Z forward/south -> (00, 01, 11) & (00, 11, 10))
+            CellActive[Z * CellW + X] = 1;
             IdxList.push(I00, I01, I11, I00, I11, I10);
         }
     }
 
-    // Build thin flat underside slab & perimeter sidewall skirt so the SDF body is a clean thin closed wafer!
+    const TopTriCount = IdxList.length / 3;
+
+    // Coarse-decimated flat underside wafer + perimeter sidewall skirt (lightweight closed thin base surface)
     if (IncludeUnderside && PosList.length > 0)
     {
         const BotVertIdx = new Int32Array(Nx * Nz);
@@ -1082,7 +1421,7 @@ export function ExtractRegionTriangleMesh(World, Region, Options = {})
             BotVertIdx[GridCell] = BId;
             PosList.push(Wx, SlabBottom, Wz);
             NormList.push(0, -1, 0);
-            ColList.push(0.055, 0.058, 0.064); // Clean dark basalt slab underside
+            ColList.push(0.055, 0.058, 0.064);
             AuxList.push(0.0, 0.0);
             return BId;
         };
@@ -1109,39 +1448,65 @@ export function ExtractRegionTriangleMesh(World, Region, Options = {})
             IdxList.push(BaseV, BaseV + 3, BaseV + 2, BaseV, BaseV + 2, BaseV + 1);
         };
 
-        for (let Z = 0; Z < Nz - 1; ++Z)
+        // Mark coarse 4x4 interior underside blocks where every cell + 1-cell ring is active (safe from T-junctions on perimeter)
+        const BLOCK = 4;
+        const Covered = new Uint8Array(CellW * CellD);
+        for (let Bz = 1; Bz + BLOCK < CellD - 1; Bz += BLOCK)
         {
-            for (let X = 0; X < Nx - 1; ++X)
+            for (let Bx = 1; Bx + BLOCK < CellW - 1; Bx += BLOCK)
             {
-                if (!CellActive[Z * (Nx - 1) + X]) continue;
+                let AllActive = true;
+                for (let Dz = -1; Dz <= BLOCK && AllActive; ++Dz)
+                {
+                    for (let Dx = -1; Dx <= BLOCK; ++Dx)
+                    {
+                        if (!CellActive[(Bz + Dz) * CellW + (Bx + Dx)]) { AllActive = false; break; }
+                    }
+                }
+                if (!AllActive) continue;
+
+                for (let Dz = 0; Dz < BLOCK; ++Dz)
+                {
+                    for (let Dx = 0; Dx < BLOCK; ++Dx)
+                    {
+                        Covered[(Bz + Dz) * CellW + (Bx + Dx)] = 1;
+                    }
+                }
+                const B00 = GetBotVert(Bz * Nx + Bx);
+                const B10 = GetBotVert(Bz * Nx + (Bx + BLOCK));
+                const B01 = GetBotVert((Bz + BLOCK) * Nx + Bx);
+                const B11 = GetBotVert((Bz + BLOCK) * Nx + (Bx + BLOCK));
+                IdxList.push(B00, B11, B01, B00, B10, B11);
+            }
+        }
+
+        for (let Z = 0; Z < CellD; ++Z)
+        {
+            for (let X = 0; X < CellW; ++X)
+            {
+                const CIdx = Z * CellW + X;
+                if (!CellActive[CIdx]) continue;
                 const C00 = Z * Nx + X;
                 const C10 = Z * Nx + (X + 1);
                 const C01 = (Z + 1) * Nx + X;
                 const C11 = (Z + 1) * Nx + (X + 1);
 
-                // Underside floor triangles (stride 2 interior decimation keeps thin underside featherlight!)
-                const B00 = GetBotVert(C00), B10 = GetBotVert(C10);
-                const B01 = GetBotVert(C01), B11 = GetBotVert(C11);
-                IdxList.push(B00, B11, B01, B00, B10, B11);
+                if (!Covered[CIdx])
+                {
+                    const B00 = GetBotVert(C00), B10 = GetBotVert(C10);
+                    const B01 = GetBotVert(C01), B11 = GetBotVert(C11);
+                    IdxList.push(B00, B11, B01, B00, B10, B11);
+                }
 
-                // Perimeter cliff walls wherever an active mask cell borders empty ocean or region edge
-                if (Z === 0 || !CellActive[(Z - 1) * (Nx - 1) + X]) EmitSkirtQuad(C10, C00, 0, -1);
-                if (Z === Nz - 2 || !CellActive[(Z + 1) * (Nx - 1) + X]) EmitSkirtQuad(C01, C11, 0, 1);
-                if (X === 0 || !CellActive[Z * (Nx - 1) + (X - 1)]) EmitSkirtQuad(C00, C01, -1, 0);
-                if (X === Nx - 2 || !CellActive[Z * (Nx - 1) + (X + 1)]) EmitSkirtQuad(C11, C10, 1, 0);
+                if (Z === 0 || !CellActive[(Z - 1) * CellW + X]) EmitSkirtQuad(C10, C00, 0, -1);
+                if (Z === CellD - 1 || !CellActive[(Z + 1) * CellW + X]) EmitSkirtQuad(C01, C11, 0, 1);
+                if (X === 0 || !CellActive[Z * CellW + (X - 1)]) EmitSkirtQuad(C00, C01, -1, 0);
+                if (X === CellW - 1 || !CellActive[Z * CellW + (X + 1)]) EmitSkirtQuad(C11, C10, 1, 0);
             }
         }
     }
 
-    // Extract true 3D SDF Overhangs / Arches if authored on this terrain
-    if (Region.sdf3DOps && Region.sdf3DOps.length > 0)
-    {
-        Append3DOverhangCapsulesMesh(Region, PosList, NormList, ColList, AuxList, IdxList);
-    }
-
-    // Extract 3D Volumetric Spline Rock Bridges / Overhang Tubes ('arch3d' spline layers!)
-    Append3DSplineTubeMeshes(Region, PosList, NormList, ColList, AuxList, IdxList);
-
+    const TotalTris = IdxList.length / 3;
     return {
         positions: new Float32Array(PosList),
         normals: new Float32Array(NormList),
@@ -1149,33 +1514,33 @@ export function ExtractRegionTriangleMesh(World, Region, Options = {})
         aux: new Float32Array(AuxList),
         indices: new Uint32Array(IdxList),
         vertexCount: PosList.length / 3,
-        triangleCount: IdxList.length / 3
+        triangleCount: TotalTris,
+        topTriangleCount: TopTriCount,
+        baseTriangleCount: TotalTris - TopTriCount,
+        culledOceanRatio: Rt.culledCells / Math.max(1, Nx * Nz)
     };
 }
 
 /**
- * Calibrated linear-space dark-studio geological lithology palette (rich, grounded, non-blinding!).
+ * Calibrated linear-space dark-studio geological elevation & slope palette (Stage 1 preview shading, non-texturing studio).
  */
 function ComputeFlatLithologyColor(HeightM, SeaLevelM, SlopeDeg, RiverWeight, Sdf2D, SlabBottom)
 {
     const RelH = HeightM - SeaLevelM;
     if (HeightM <= SlabBottom + 0.4) return [0.065, 0.070, 0.078];
 
-    // River / Lake bed tint
     if (RiverWeight > 0.12)
     {
         const T = Clamp(RiverWeight, 0.0, 1.0);
         return [Mix(0.11, 0.045, T), Mix(0.14, 0.145, T), Mix(0.12, 0.175, T)];
     }
 
-    // Submerged shallow shelf / coastal sandbar
-    if (RelH < 4.5 && SlopeDeg < 25.0)
+    if (RelH < 4.5 && SlopeDeg < 24.0)
     {
         const BeachT = Smoothstep(-3.0, 4.5, RelH);
         return [Mix(0.09, 0.24, BeachT), Mix(0.13, 0.21, BeachT), Mix(0.13, 0.15, BeachT)];
     }
 
-    // Grounded linear-space elevation zones: deep pine/moss lowland -> olive/ochre highland -> slate -> crisp granite summit
     let R, G, B;
     if (RelH < 58.0)
     {
@@ -1206,7 +1571,6 @@ function ComputeFlatLithologyColor(HeightM, SeaLevelM, SlopeDeg, RiverWeight, Sd
         B = Mix(0.212, 0.47, T);
     }
 
-    // Steep cliff bedrock exposure (> 28 deg transitions cleanly to dark basalt/warm cliff stone)
     const CliffT = Smoothstep(26.0, 45.0, SlopeDeg);
     const RockR = Sdf2D > -18.0 ? 0.135 : 0.168;
     const RockG = Sdf2D > -18.0 ? 0.125 : 0.148;
@@ -1218,132 +1582,13 @@ function ComputeFlatLithologyColor(HeightM, SeaLevelM, SlopeDeg, RiverWeight, Sd
     return [R, G, B];
 }
 
-function Append3DSplineTubeMeshes(Region, PosList, NormList, ColList, AuxList, IdxList)
-{
-    for (const Layer of Region.stack)
-    {
-        if (!Layer.enabled || Layer.type !== 'spline' || Layer.splineMode !== 'arch3d') continue;
-        if (!Layer.points || Layer.points.length < 2) continue;
-
-        const Poly = SampleCatmullRomPolyline(Layer.points, 10);
-        if (Poly.length < 2) continue;
-
-        const HalfW = Math.max(6.0, (Number(Layer.width) || 68.0) * 0.5);
-        const HalfH = Math.max(4.0, (Number(Layer.amount) || 26.0) * 0.5);
-        const Sides = 12;
-        const Rings = Poly.length;
-        const BaseV = PosList.length / 3;
-
-        for (let I = 0; I < Rings; ++I)
-        {
-            const Cur = Poly[I];
-            const Prev = Poly[Math.max(0, I - 1)];
-            const Next = Poly[Math.min(Rings - 1, I + 1)];
-            let Tx = Next[0] - Prev[0];
-            let Ty = (Next[2] ?? 40) - (Prev[2] ?? 40);
-            let Tz = Next[1] - Prev[1];
-            const Tl = Math.hypot(Tx, Ty, Tz) || 1.0;
-            Tx /= Tl; Ty /= Tl; Tz /= Tl;
-
-            // Horizontal side vector = normalize(cross(WorldUp, Tangent))
-            let Sx = Tz, Sy = 0.0, Sz = -Tx;
-            const Sl = Math.hypot(Sx, Sz) || 1.0;
-            Sx /= Sl; Sz /= Sl;
-
-            // Local binormal up = cross(Tangent, Side)
-            const Ux = Ty * Sz - Tz * Sy;
-            const Uy = Tz * Sx - Tx * Sz;
-            const Uz = Tx * Sy - Ty * Sx;
-
-            const Taper = 0.72 + 0.28 * Math.sin((I / Math.max(1, Rings - 1)) * Math.PI);
-            const Rx = HalfW * Taper;
-            const Ry = HalfH * Taper;
-            const Cy = Cur[2] ?? 45.0;
-
-            for (let S = 0; S <= Sides; ++S)
-            {
-                const Ang = (S / Sides) * Math.PI * 2.0;
-                const Ca = Math.cos(Ang), Sa = Math.sin(Ang);
-                // Flat-topped bridge deck feel: slightly flatten top of arch rock
-                const DeckSa = Sa > 0 ? Math.pow(Sa, 0.72) : Sa;
-                const Px = Cur[0] + Sx * Ca * Rx + Ux * DeckSa * Ry;
-                const Py = Cy     + Sy * Ca * Rx + Uy * DeckSa * Ry;
-                const Pz = Cur[1] + Sz * Ca * Rx + Uz * DeckSa * Ry;
-
-                let Nx = Sx * (Ca / Rx) + Ux * (Sa / Ry);
-                let Ny = Sy * (Ca / Rx) + Uy * (Sa / Ry);
-                let Nz = Sz * (Ca / Rx) + Uz * (Sa / Ry);
-                const Nl = Math.hypot(Nx, Ny, Nz) || 1.0;
-                Nx /= Nl; Ny /= Nl; Nz /= Nl;
-
-                PosList.push(Px, Py, Pz);
-                NormList.push(Nx, Ny, Nz);
-                const TopTint = Clamp(Ny * 0.5 + 0.5, 0.0, 1.0);
-                ColList.push(Mix(0.13, 0.18, TopTint), Mix(0.12, 0.17, TopTint), Mix(0.11, 0.14, TopTint));
-                AuxList.push(1.0, Math.acos(Clamp(Ny, -1, 1)) / (Math.PI * 0.5));
-            }
-        }
-
-        const Stride = Sides + 1;
-        for (let I = 0; I < Rings - 1; ++I)
-        {
-            for (let S = 0; S < Sides; ++S)
-            {
-                const A = BaseV + I * Stride + S;
-                const B = A + Stride;
-                IdxList.push(A, B, B + 1, A, B + 1, A + 1);
-            }
-        }
-    }
-}
-
-function Append3DOverhangCapsulesMesh(Region, PosList, NormList, ColList, AuxList, IdxList)
-{
-    for (const Op of Region.sdf3DOps)
-    {
-        if (Op.op !== 'overhang') continue;
-        const Cx = 0.5 * (Op.ax + Op.bx), Cy = 0.5 * (Op.ay + Op.by), Cz = 0.5 * (Op.az + Op.bz);
-        const R = Math.max(4.0, Op.radius);
-        const Rings = 8, Segs = 12;
-        const BaseIdx = PosList.length / 3;
-
-        for (let I = 0; I <= Rings; ++I)
-        {
-            const Phi = (I / Rings) * Math.PI;
-            const SinP = Math.sin(Phi), CosP = Math.cos(Phi);
-            for (let J = 0; J <= Segs; ++J)
-            {
-                const Theta = (J / Segs) * Math.PI * 2.0;
-                const Nx = SinP * Math.cos(Theta);
-                const Ny = CosP * 0.65;
-                const Nz = SinP * Math.sin(Theta);
-                PosList.push(Cx + Nx * R * 1.25, Cy + Ny * R, Cz + Nz * R * 1.25);
-                const L = Math.hypot(Nx, Ny, Nz) || 1;
-                NormList.push(Nx / L, Ny / L, Nz / L);
-                ColList.push(0.38, 0.34, 0.31);
-                AuxList.push(1.0, 0.85);
-            }
-        }
-        const RowStride = Segs + 1;
-        for (let I = 0; I < Rings; ++I)
-        {
-            for (let J = 0; J < Segs; ++J)
-            {
-                const A = BaseIdx + I * RowStride + J;
-                const B = A + RowStride;
-                IdxList.push(A, B, B + 1, A, B + 1, A + 1);
-            }
-        }
-    }
-}
-
 /*==========================================================================================================================================
                                          TRIANGLE MESH EXPORTERS (.OBJ & BINARY .STL)
 ==========================================================================================================================================*/
 export function ExportWorldTerrainsObj(World, TargetRegions)
 {
     const Lines = [
-        `# Frontier · Open-World Thin-Slab SDF Terrain Export (.obj)`,
+        `# Frontier · Terrain Studio Thin-Base-Surface Triangle Export (.obj)`,
         `# Regions: ${TargetRegions.length} | Sea Level: ${(World.seaLevel ?? 0).toFixed(2)} m`
     ];
     let VertOffset = 1;
@@ -1391,7 +1636,7 @@ export function ExportWorldTerrainsBinaryStl(World, TargetRegions)
 
     const Buffer = new ArrayBuffer(84 + TotalTris * 50);
     const View = new DataView(Buffer);
-    const Header = 'Frontier Open-World SDF Terrain Studio Binary STL';
+    const Header = 'Frontier Terrain Studio Thin-Base Triangle Mesh STL';
     for (let I = 0; I < 80; ++I) View.setUint8(I, I < Header.length ? Header.charCodeAt(I) : 0x20);
     View.setUint32(80, TotalTris, true);
 
@@ -1427,13 +1672,13 @@ export function ExportWorldTerrainsBinaryStl(World, TargetRegions)
 }
 
 /*==========================================================================================================================================
-                              3 DEMONSTRATION 2D MASKS + INDEPENDENT TERRAIN BOUNDS REGIONS
+                       THREE EXAMPLE TERRAIN MASKS + SEPARATE BOUNDS LAYERS (SECTION 3.6 DEMONSTRATION)
 ==========================================================================================================================================*/
 /**
- * Populates the studio with 3 contrasting Demonstration Masks & Independent Terrain Bounds Boxes:
- * 1. "Highland Massif" (NW Peninsula) — Soft Edge -> Strong Center Multifractal + Continental Ridges + River Spline
- * 2. "Basalt Sea Cliffs" (East Headland) — NONE (Full Cliff Edge) Falloff Voronoi Mesa + Stepped Terraces (sheer ocean cliffs!)
- * 3. "Caldera Atoll" (South Crescent) — Coastal Rim Ring Falloff + Folded Foothills + Canyon Breach Spline
+ * Populates Terrain Studio with 3 contrasting Example Terrain Masks & Independent Terrain Bounds Layers:
+ * 1. "Terrain 01 · Alpine Peninsula" (NW) — Soft Influence / Noise Falloff (gentle coastal foothills -> towering interior massif)
+ * 2. "Terrain 02 · Basalt Headland"  (NE) — Hard Influence / No Falloff (Voronoi mesa + fault uplift right up to sheer coastal edges)
+ * 3. "Terrain 03 · Caldera Archipelago" (S) — Mixed Falloff Profiles (Caldera Rim Ring + Soft Dune Foothills + Hard Tidal Breach)
  */
 export function SeedThreeDemoTerrains(World)
 {
@@ -1441,68 +1686,85 @@ export function SeedThreeDemoTerrains(World)
     World.regions = [];
     World.seaLevel = 0.0;
     World.oceanVisible = true;
+    World.boundsLayerVisible = true;
 
-    // --- DEMO MASK 1: North-West Highland Peninsula ---
+    // --- EXAMPLE TERRAIN MASK 01: North-West Fjord Peninsula (Soft Influence / Noise Falloff) ---
     const Mask1 = World.addMaskLayer({
         id: 'mask-highland',
-        name: 'Mask 01 · Highland Peninsula',
+        name: 'Mask 01 · Alpine Peninsula',
         color: '#58b982'
     });
     World.paintPolygonMeters(Mask1, [
-        [-1520, -980],
-        [-780, -1140],
-        [-210, -890],
-        [-90, -420],
+        [-1560, -990],
+        [-780, -1160],
+        [-200, -900],
+        [-80, -420],
         [-380, -160],
-        [-240, 180],
-        [-680, 340],
-        [-1320, 190],
-        [-1640, -340]
+        [-220, 190],
+        [-690, 350],
+        [-1340, 200],
+        [-1660, -350]
     ], false, 0.34, 4029);
-    // Carve an organic fjord bay on the eastern coast
-    World.paintCapsuleMeters(Mask1, [-120, -250], [-490, -290], 135, 'erase', 1.0, 0.25, 4091);
+    World.paintCapsuleMeters(Mask1, [-110, -255], [-500, -295], 138, 'erase', 1.0, 0.26, 4091);
 
     const Bounds1 = World.computeLayerPaintedBounds(Mask1, 95.0);
     const Region1 = World.addTerrainRegion({
         id: 'terrain-highland',
-        name: 'Terrain 01 · Highland Massif',
+        name: 'Terrain 01 · Alpine Peninsula',
         maskLayerId: Mask1.id,
         color: '#e8c27a',
         bounds: Bounds1,
-        resolution: 148,
-        baseElevation: 3.0,
-        slabThickness: 6.5,
-        shorelineBevel: 22.0,
-        maxRelief: 280.0,
+        boundsLayer: {
+            id: 'bounds-highland',
+            name: 'Terrain 01 · Bounds',
+            visible: true,
+            autoSyncMask: true,
+            paddingMeters: 95.0
+        },
+        resolution: 164,
+        baseElevation: 2.5,
+        slabThickness: 4.5,
+        shorelineBevel: 24.0,
+        maxRelief: 290.0,
         stack: [
+            CreateTerrainLayer('fractal', {
+                name: 'Coastal Foothill Fractal (fBm)',
+                amplitude: 72.0,
+                scale: 2.5,
+                octaves: 6,
+                gain: 0.50,
+                warp: 0.30,
+                seed: 3917,
+                falloff: { mode: 'soft', distance: 260.0, edgeFloor: 0.02, noiseAmount: 0.32, noiseScale: 1.2 }
+            }),
             CreateTerrainLayer('multifractal', {
-                name: 'Continental Multifractal Base',
-                amplitude: 195.0,
+                name: 'Continental Multifractal Massif',
+                amplitude: 185.0,
                 scale: 2.1,
                 octaves: 6,
                 gain: 0.54,
                 warp: 0.35,
                 seed: 4029,
-                falloff: { mode: 'soft', distance: 340.0, edgeFloor: 0.04 }
+                falloff: { mode: 'soft', distance: 420.0, edgeFloor: 0.0, noiseAmount: 0.24, noiseScale: 1.0 }
             }),
             CreateTerrainLayer('ridged', {
-                name: 'Alpine Arête Spine',
-                amplitude: 145.0,
+                name: 'Interior Ridge Spine',
+                amplitude: 142.0,
                 scale: 2.45,
                 octaves: 6,
                 sharpness: 0.76,
                 azimuth: 34.0,
                 warp: 0.36,
                 seed: 5113,
-                falloff: { mode: 'continental', distance: 430.0, edgeFloor: 0.0 }
+                falloff: { mode: 'continental', distance: 480.0, edgeFloor: 0.0, noiseAmount: 0.15 }
             }),
             CreateTerrainLayer('spline', {
-                name: 'Glacial River Valley',
+                name: 'Fjord Valley Corridor',
                 splineMode: 'river',
                 width: 115.0,
-                amount: 45.0,
+                amount: 42.0,
                 bankSmooth: 0.65,
-                meander: 0.28,
+                meander: 0.26,
                 seed: 6007,
                 falloff: { mode: 'none', distance: 120.0, edgeFloor: 1.0 },
                 points: [
@@ -1515,7 +1777,7 @@ export function SeedThreeDemoTerrains(World)
         ]
     });
 
-    // --- DEMO MASK 2: East Sheer Basalt Sea-Cliff Plateau (Falloff = NONE for sheer vertical coastal cliffs!) ---
+    // --- EXAMPLE TERRAIN MASK 02: North-East Basalt Mesa Headland (Hard Influence / No Falloff) ---
     const Mask2 = World.addMaskLayer({
         id: 'mask-cliffs',
         name: 'Mask 02 · Basalt Headland',
@@ -1530,104 +1792,142 @@ export function SeedThreeDemoTerrains(World)
         [290, -260],
         [420, -620]
     ], false, 0.22, 7331);
-    // Add two sea-stack satellite islets off the western cape!
     World.paintCapsuleMeters(Mask2, [175, -450], [205, -420], 58, 'paint', 1.0, 0.25, 7399);
     World.paintCapsuleMeters(Mask2, [215, -120], [235, -95], 45, 'paint', 1.0, 0.20, 7411);
 
-    const Bounds2 = World.computeLayerPaintedBounds(Mask2, 90.0);
+    const Bounds2 = World.computeLayerPaintedBounds(Mask2, 135.0);
     const Region2 = World.addTerrainRegion({
         id: 'terrain-cliffs',
-        name: 'Terrain 02 · Basalt Sea Cliffs',
+        name: 'Terrain 02 · Basalt Headland',
         maskLayerId: Mask2.id,
         color: '#5ac8fa',
         bounds: Bounds2,
-        resolution: 140,
-        baseElevation: 8.0,
-        slabThickness: 6.5,
-        shorelineBevel: 0.0, // Zero shore bevel -> sheer cliffs rising straight from ocean!
-        maxRelief: 240.0,
+        boundsLayer: {
+            id: 'bounds-cliffs',
+            name: 'Terrain 02 · Bounds',
+            visible: true,
+            autoSyncMask: false, // Independently padded bounds domain!
+            paddingMeters: 135.0
+        },
+        resolution: 160,
+        baseElevation: 6.0,
+        slabThickness: 4.5,
+        shorelineBevel: 0.0, // Zero coastal bevel -> crisp boundary transition!
+        maxRelief: 250.0,
         stack: [
             CreateTerrainLayer('voronoi', {
-                name: 'Basalt Mesa Blocks (No Falloff)',
+                name: 'Voronoi Basalt Tableland (Hard Edge)',
                 variant: 0,
-                amplitude: 148.0,
+                amplitude: 146.0,
                 scale: 2.9,
                 jitter: 0.78,
-                sharpness: 0.82,
+                sharpness: 0.84,
                 warp: 0.20,
                 seed: 8191,
                 falloff: { mode: 'none', distance: 160.0, edgeFloor: 1.0 }
             }),
-            CreateTerrainLayer('multifractal', {
-                name: 'Caprock Crown Relief',
-                amplitude: 62.0,
-                scale: 3.1,
+            CreateTerrainLayer('escarpment', {
+                name: 'Northern Fault Uplift (Hard Edge)',
+                amplitude: 54.0,
+                azimuth: 22.0,
+                sharpness: 0.80,
+                offset: -0.08,
+                warp: 0.28,
+                seed: 8209,
+                falloff: { mode: 'none', distance: 140.0, edgeFloor: 1.0 }
+            }),
+            CreateTerrainLayer('fractal', {
+                name: 'Interior Plateau Crown (Soft Falloff)',
+                amplitude: 52.0,
+                scale: 3.2,
                 octaves: 5,
                 gain: 0.50,
-                warp: 0.25,
+                warp: 0.24,
                 seed: 8223,
-                falloff: { mode: 'plateau', distance: 95.0, edgeFloor: 0.45 }
+                falloff: { mode: 'soft', distance: 150.0, edgeFloor: 0.0, noiseAmount: 0.25 }
             }),
             CreateTerrainLayer('terrace', {
-                name: 'Columnar Stratigraphic Benches',
+                name: 'Stepped Sedimentary Strata',
                 bedCount: 8,
                 strength: 0.82,
                 dipDeg: 3.5,
                 strikeDeg: 18.0,
+                warp: 0.18,
+                seed: 8297,
                 falloff: { mode: 'none', distance: 100.0, edgeFloor: 1.0 }
             })
         ]
     });
 
-    // --- DEMO MASK 3: South Volcanic Caldera Atoll ---
+    // --- EXAMPLE TERRAIN MASK 03: South Caldera Archipelago (Mixed Rim + Soft Noise + Hard Channel Falloffs) ---
     const Mask3 = World.addMaskLayer({
         id: 'mask-atoll',
-        name: 'Mask 03 · Caldera Crescent',
+        name: 'Mask 03 · Caldera Archipelago',
         color: '#a3d977'
     });
     World.paintCapsuleMeters(Mask3, [-380, 740], [340, 780], 490, 'paint', 1.0, 0.32, 9103);
-    // Carve central lagoon opening to the north-east
     World.paintCapsuleMeters(Mask3, [-20, 730], [260, 560], 225, 'erase', 1.0, 0.24, 9209);
+    // Satellite volcanic islet to the south-east
+    World.paintStampMeters(Mask3, [560, 960], 165, 'island', false, 0.30, 9311);
 
-    const Bounds3 = World.computeLayerPaintedBounds(Mask3, 90.0);
+    const Bounds3 = World.computeLayerPaintedBounds(Mask3, 95.0);
     const Region3 = World.addTerrainRegion({
         id: 'terrain-atoll',
-        name: 'Terrain 03 · Caldera Atoll',
+        name: 'Terrain 03 · Caldera Archipelago',
         maskLayerId: Mask3.id,
         color: '#3ec46d',
         bounds: Bounds3,
-        resolution: 136,
-        baseElevation: 2.5,
-        slabThickness: 6.5,
-        shorelineBevel: 24.0,
-        maxRelief: 220.0,
+        boundsLayer: {
+            id: 'bounds-atoll',
+            name: 'Terrain 03 · Bounds',
+            visible: true,
+            autoSyncMask: true,
+            paddingMeters: 95.0
+        },
+        resolution: 156,
+        baseElevation: 2.0,
+        slabThickness: 4.5,
+        shorelineBevel: 22.0,
+        maxRelief: 230.0,
         stack: [
-            CreateTerrainLayer('multifractal', {
-                name: 'Volcanic Rim Ring',
-                amplitude: 165.0,
-                scale: 2.4,
-                octaves: 6,
-                gain: 0.54,
-                warp: 0.30,
+            CreateTerrainLayer('caldera', {
+                name: 'Volcanic Caldera Rim Ring',
+                amplitude: 168.0,
+                radiusFrac: 0.78,
+                craterDepth: 0.52,
+                rimSharpness: 0.68,
+                warp: 0.28,
                 seed: 9413,
-                falloff: { mode: 'rim', distance: 290.0, edgeFloor: 0.05 }
+                falloff: { mode: 'rim', distance: 310.0, edgeFloor: 0.04, noiseAmount: 0.22 }
             }),
-            CreateTerrainLayer('billow', {
-                name: 'Coastal Folded Foothills',
-                amplitude: 58.0,
-                scale: 3.6,
-                octaves: 5,
-                duneMix: 0.30,
-                azimuth: 52.0,
+            CreateTerrainLayer('dunes', {
+                name: 'Windward Coastal Dunes',
+                amplitude: 34.0,
+                scale: 4.4,
+                azimuth: 58.0,
+                asymmetry: 0.76,
+                sinuosity: 0.45,
+                warp: 0.16,
                 seed: 9521,
-                falloff: { mode: 'soft', distance: 170.0, edgeFloor: 0.0 }
+                falloff: { mode: 'soft', distance: 175.0, edgeFloor: 0.0, noiseAmount: 0.35 }
+            }),
+            CreateTerrainLayer('voronoi', {
+                name: 'Radial Fracture Dikes (F2−F1)',
+                variant: 1,
+                amplitude: 56.0,
+                scale: 3.4,
+                jitter: 0.84,
+                sharpness: 0.72,
+                warp: 0.22,
+                seed: 9587,
+                falloff: { mode: 'continental', distance: 260.0, edgeFloor: 0.0 }
             }),
             CreateTerrainLayer('spline', {
-                name: 'Caldera Canyon Breach',
+                name: 'Lagoon Tidal Breach',
                 splineMode: 'canyon',
                 width: 88.0,
-                amount: 64.0,
-                bankSmooth: 0.42,
+                amount: 62.0,
+                bankSmooth: 0.44,
                 meander: 0.18,
                 seed: 9619,
                 falloff: { mode: 'none', distance: 100.0, edgeFloor: 1.0 },
