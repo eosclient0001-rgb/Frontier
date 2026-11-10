@@ -1,13 +1,22 @@
 /*==========================================================================================================================================
                                                       TERRAINOCEANVIEWPORT.JS
 ==========================================================================================================================================*/
-// Zero-Dependency WebGL2 Multi-Terrain Thin-Slab SDF Triangle Renderer:
-// - Calibrated Dark-Studio Atmosphere & ACES Filmic Tonemapping (zero blinding glare!)
-// - Animated Deep-Sapphire Fresnel/Gerstner Ocean (toggleable ON/OFF to inspect thin SDF slab underside)
-// - Interactive 3D Spline Authoring + 3D XYZ (Up/Down Y-Axis + X/Z/XZ) Transform Gizmo Overlay
-// - Real-Time 3D Terrain SDF Sculpting & Diagnostic Lenses
+// WebGL2 Multi-Terrain Thin-Base-Surface Landscape & Ocean Viewport for Frontier Terrain Studio (Stage 1):
+// - Calibrated Dark-Studio Atmosphere & ACES Filmic Tonemapping
+// - Horizon-to-Horizon Animated Fresnel Ocean establishing sea level & spatial context (toggleable ON/OFF to inspect thin base surface)
+// - Integrated WebGL2 GpuTerrainStackPipeline for real-time GPU procedural generator evaluation
+// - Single-Terrain, Multi-Selected Simultaneous Editing & Sculpting, and All-Terrains-Together composition
+// - Separate toggleable 3D Bounds Layer cages & optional 3D Spline Corridor Gizmo
 
-import { ExtractRegionTriangleMesh, ApplyTerrainSculptDab, Clamp, SampleCatmullRomPolyline, CreateTerrainLayer } from './TerrainLayerStack.js';
+import {
+    ExtractRegionTriangleMesh,
+    ApplyTerrainSculptDab,
+    ApplyMultiTerrainSculptDab,
+    Clamp,
+    SampleCatmullRomPolyline,
+    CreateTerrainLayer
+} from './TerrainLayerStack.js';
+import { GpuTerrainStackPipeline } from './GpuTerrainStackPipeline.js';
 
 /*==========================================================================================================================================
                                                       MINIMAL 4x4 MATRIX HELPERS
@@ -88,18 +97,15 @@ function DistPointToSegment2D(Px, Py, Ax, Ay, Bx, By)
     return Math.hypot(Px - (Ax + Ex * T), Py - (Ay + Ey * T));
 }
 
-/**
- * Closest parameter `s` along world line `AxisOrigin + s * AxisDir` to a 3D camera ray `RayOrigin + r * RayDir`.
- */
 function ClosestAxisParamToRay(AxisOrigin, AxisDir, RayOrigin, RayDir)
 {
     const Wx = AxisOrigin[0] - RayOrigin[0];
     const Wy = AxisOrigin[1] - RayOrigin[1];
     const Wz = AxisOrigin[2] - RayOrigin[2];
 
-    const A = AxisDir[0] * AxisDir[0] + AxisDir[1] * AxisDir[1] + AxisDir[2] * AxisDir[2]; // 1
+    const A = AxisDir[0] * AxisDir[0] + AxisDir[1] * AxisDir[1] + AxisDir[2] * AxisDir[2];
     const B = AxisDir[0] * RayDir[0]  + AxisDir[1] * RayDir[1]  + AxisDir[2] * RayDir[2];
-    const C = RayDir[0]  * RayDir[0]  + RayDir[1]  * RayDir[1]  + RayDir[2]  * RayDir[2];  // 1
+    const C = RayDir[0]  * RayDir[0]  + RayDir[1]  * RayDir[1]  + RayDir[2]  * RayDir[2];
     const D = AxisDir[0] * Wx + AxisDir[1] * Wy + AxisDir[2] * Wz;
     const E = RayDir[0]  * Wx + RayDir[1]  * Wy + RayDir[2]  * Wz;
 
@@ -140,17 +146,14 @@ vec3 acesFilm(vec3 x) {
 void main() {
     vec3 rd = normalize(uCamFwd + vNdc.x * uAspect * uTanHalfFov * uCamRight + vNdc.y * uTanHalfFov * uCamUp);
 
-    // Calibrated Dark Studio palette matching 3D Clay Studio (#0b0b0b / #121212) — comfortable, high-contrast, zero glare!
     vec3 zenith  = vec3(0.012, 0.018, 0.028);
     vec3 horizon = vec3(0.038, 0.056, 0.078);
     vec3 nadir   = vec3(0.008, 0.011, 0.016);
 
     if (uAtmosMode == 1) {
-        // Warm Coastal Dusk
         zenith  = vec3(0.018, 0.026, 0.048);
         horizon = vec3(0.095, 0.072, 0.068);
     } else if (uAtmosMode == 2) {
-        // Crisp Twilight Daylight (still controlled, non-blinding)
         zenith  = vec3(0.032, 0.065, 0.125);
         horizon = vec3(0.115, 0.158, 0.210);
     }
@@ -243,7 +246,6 @@ void main() {
         baseAlbedo = mix(vec3(0.06, 0.24, 0.16), vec3(0.58, 0.16, 0.08), smoothstep(18.0, 50.0, slopeDeg));
     }
 
-    // Crisp Studio Key + Rim + Deep Valley Shadow Contrast
     float ndl = max(dot(N, uSunDir), 0.0);
     vec3 backDir = normalize(vec3(-uSunDir.x, 0.25, -uSunDir.z));
     float rim = max(dot(N, backDir), 0.0) * 0.16;
@@ -251,7 +253,6 @@ void main() {
     vec3 skyAmb = mix(vec3(0.065, 0.075, 0.095), vec3(0.18, 0.22, 0.28), N.y * 0.5 + 0.5);
     vec3 sunCol = uAtmosMode == 1 ? vec3(1.42, 1.05, 0.76) : vec3(1.28, 1.18, 1.04);
 
-    // Subtle cavity/slope darkening for rich sculptural depth
     float slopeAO = mix(0.76, 1.0, clamp(N.y * 0.65 + 0.35, 0.0, 1.0));
     vec3 lit = baseAlbedo * (skyAmb + sunCol * ndl + vec3(0.35, 0.45, 0.58) * rim) * slopeAO;
 
@@ -260,13 +261,11 @@ void main() {
     float spec = pow(max(dot(N, H), 0.0), 36.0) * 0.035;
     lit += sunCol * spec;
 
-    // Damp shoreline band right at sea level
     if (uLensMode == 0 && relH > -2.5 && relH < 3.4 && N.y > -0.2) {
         float wet = 1.0 - smoothstep(-0.4, 3.0, relH);
         lit *= mix(1.0, 0.62, wet);
     }
 
-    // Metric elevation contours
     if (uShowContours == 1 || uLensMode == 2) {
         float c25 = abs(fract(relH / 25.0 + 0.5) - 0.5) / max(fwidth(relH / 25.0), 1e-4);
         float c100 = abs(fract(relH / 100.0 + 0.5) - 0.5) / max(fwidth(relH / 100.0), 1e-4);
@@ -274,7 +273,6 @@ void main() {
         lit = mix(lit, lit * 0.32 + vec3(0.025), line);
     }
 
-    // Metric 25m grid overlay
     if (uShowWireGrid == 1 || uLensMode == 4) {
         vec2 g = abs(fract(vWorldPos.xz / 25.0 + 0.5) - 0.5) / max(fwidth(vWorldPos.xz / 25.0), vec2(1e-4));
         float gridLine = 1.0 - smoothstep(0.0, 1.25, min(g.x, g.y));
@@ -285,7 +283,6 @@ void main() {
         lit *= 0.80;
     }
 
-    // 3D Sculpt Brush Ring Projection
     if (uBrushRing.w > 0.0) {
         float d = length(vWorldPos.xz - uBrushRing.xz);
         float ring = 1.0 - smoothstep(0.0, max(2.2, uBrushRing.w * 0.035), abs(d - uBrushRing.w));
@@ -293,9 +290,8 @@ void main() {
         lit = mix(lit, vec3(0.78, 0.84, 0.52), clamp(ring * 0.9 + centerDot * 0.5, 0.0, 1.0));
     }
 
-    // Subtle dark-studio horizon depth beyond 2.8 km (NEVER milky white!)
     float camDist = length(uCamPos - vWorldPos);
-    float fog = 1.0 - exp(-max(0.0, camDist - 2600.0) * 0.000075);
+    float fog = 1.0 - exp(-max(0.0, camDist - 2600.0) * 0.000055);
     vec3 fogCol = uAtmosMode == 1 ? vec3(0.085, 0.068, 0.065) : (uAtmosMode == 2 ? vec3(0.10, 0.14, 0.19) : vec3(0.035, 0.052, 0.072));
     lit = mix(lit, fogCol, clamp(fog, 0.0, 0.42));
 
@@ -382,7 +378,6 @@ void main() {
     vec3 V = normalize(uCamPos - vWorldPos);
     float fresnel = pow(1.0 - max(dot(N, V), 0.0), 4.5);
 
-    // Rich dark abyssal sapphire & coastal emerald — zero milky washout!
     vec3 deepSea = vec3(0.006, 0.022, 0.038);
     vec3 midTeal = vec3(0.014, 0.052, 0.072);
     vec3 skyRefl = uAtmosMode == 1 ? vec3(0.095, 0.075, 0.072) : (uAtmosMode == 2 ? vec3(0.09, 0.13, 0.18) : vec3(0.042, 0.068, 0.098));
@@ -391,7 +386,6 @@ void main() {
     vec3 waterBody = mix(deepSea, midTeal, crest * 0.75);
     vec3 col = mix(waterBody, skyRefl, clamp(0.08 + fresnel * 0.72, 0.0, 0.85));
 
-    // Tight controlled sun glint
     vec3 H = normalize(uSunDir + V);
     float specTight = pow(max(dot(N, H), 0.0), 340.0);
     float specBroad = pow(max(dot(N, H), 0.0), 36.0);
@@ -400,7 +394,7 @@ void main() {
     float whitecap = smoothstep(0.82, 0.99, crest) * atten * 0.10;
     col = mix(col, vec3(0.28, 0.34, 0.38), whitecap);
 
-    float fog = 1.0 - exp(-max(0.0, camDist - 2200.0) * 0.00010);
+    float fog = 1.0 - exp(-max(0.0, camDist - 2200.0) * 0.000075);
     vec3 fogCol = uAtmosMode == 1 ? vec3(0.085, 0.068, 0.065) : (uAtmosMode == 2 ? vec3(0.10, 0.14, 0.19) : vec3(0.035, 0.052, 0.072));
     col = mix(col, fogCol, clamp(fog, 0.0, 0.75));
 
@@ -472,50 +466,46 @@ export class TerrainOceanViewport
         this.cb = Callbacks;
 
         const Gl = Canvas.getContext('webgl2', { antialias: true, alpha: false, depth: true, preserveDrawingBuffer: true });
-        if (!Gl) throw new Error('WebGL2 is required for the 3D SDF Terrain + Ocean Viewport.');
+        if (!Gl) throw new Error('WebGL2 is required for the Terrain Studio 3D Landscape Viewport.');
         this.gl = Gl;
+        this.gpuPipeline = new GpuTerrainStackPipeline(Gl);
 
-        // Camera spherical orbit
         this.target = [-120.0, 35.0, -80.0];
         this.yaw = 0.68;
         this.pitch = 0.50;
         this.distance = 2450.0;
         this.fovDeg = 45.0;
 
-        // Calibrated Dark-Studio Lighting & Ocean parameters
         this.sunAzimuthDeg = 134.0;
         this.sunElevationDeg = 34.0;
         this.exposure = 0.94;
-        this.atmosphereMode = 0; // 0 = Dark Obsidian Studio, 1 = Coastal Dusk, 2 = Soft Daylight
+        this.atmosphereMode = 0;
         this.waveAmplitude = 1.25;
         this.animateWaves = true;
 
-        // Multi-Terrain Visibility Scope: 'all' | 'selected' | 'solo'
+        // Multi-Terrain Scope: 'all' | 'selected' | 'solo'
         this.viewScope = 'all';
         this.activeRegionId = World.regions[0]?.id || null;
         this.selectedRegionIds = new Set(World.regions[0] ? [World.regions[0].id] : []);
 
-        // Diagnostic & Overlay toggles
         this.lensMode = 0;
         this.showContours = false;
         this.showWireGrid = false;
         this.showBounds3D = true;
-        this.showGizmo = true;
+        this.showGizmo = false; // Shown automatically when editing a Spline layer or toggled ON
 
-        // 3D Interaction mode: 'navigate' | 'spline' | 'spline-add' | 'raise' | 'lower' | 'smooth' | 'flatten' | 'pinch' | 'overhang'
-        this.tool3D = 'spline'; // Start ready to click/drag 3D Spline Gizmos AND orbit cleanly!
-        this.sculptRadiusM = 110.0;
+        // Stage-1 3D tools: 'navigate' | 'raise' | 'lower' | 'smooth' | 'flatten' | 'spline' | 'spline-add'
+        this.tool3D = 'navigate';
+        this.sculptRadiusM = 115.0;
         this.sculptStrength = 0.62;
         this.hoverHit = null;
 
-        // Active 3D Spline + Gizmo State
         this.activeSplineLayerId = null;
         this.selectedKnotIndex = 0;
-        this.hoverGizmoAxis = null; // 'x' | 'y' | 'z' | 'xz' | null
+        this.hoverGizmoAxis = null;
         this.hoverKnotIndex = -1;
         this._lastViewProj = null;
 
-        // GPU Programs & Mesh Caches
         this.skyProg = CreateGlProgram(Gl, SKY_VS, SKY_FS);
         this.terrainProg = CreateGlProgram(Gl, TERRAIN_VS, TERRAIN_FS);
         this.oceanProg = CreateGlProgram(Gl, OCEAN_VS, OCEAN_FS);
@@ -593,9 +583,6 @@ export class TerrainOceanViewport
         Gl.bindVertexArray(null);
     }
 
-    /*======================================================================================================================================
-                                            CAMERA, SPLINE HELPERS & RAYCASTING
-    ======================================================================================================================================*/
     getCameraBasis()
     {
         const CosP = Math.cos(this.pitch), SinP = Math.sin(this.pitch);
@@ -785,12 +772,9 @@ export class TerrainOceanViewport
         return BestHit;
     }
 
-    /*======================================================================================================================================
-                                      3D SPLINE KNOT & XYZ (UP/DOWN) GIZMO HIT-TESTING
-    ======================================================================================================================================*/
     _computeGizmoGeometry(Ctx3D, Width, Height)
     {
-        if (!this.showGizmo || !this._lastViewProj || !Ctx3D) return null;
+        if (!this._isSplineOverlayActive() || !this._lastViewProj || !Ctx3D) return null;
         const { region: Reg, layer: Lyr } = Ctx3D;
         const Knot = Lyr.points[this.selectedKnotIndex];
         if (!Knot) return null;
@@ -812,21 +796,24 @@ export class TerrainOceanViewport
         return { origin: Origin, scaleM: ScaleM, p0: P0, px: Px, pyUp: PyUp, pyDn: PyDn, pz: Pz, pxz: Pxz };
     }
 
+    _isSplineOverlayActive()
+    {
+        return this.showGizmo || this.tool3D === 'spline' || this.tool3D === 'spline-add';
+    }
+
     _hitTestSplineGizmoAndKnots(Sx, Sy, Width, Height)
     {
+        if (!this._isSplineOverlayActive()) return null;
         const Ctx = this.getActiveSplineContext();
         if (!Ctx || !this._lastViewProj) return null;
 
-        // 1. First test the 3D XYZ Translation Gizmo on the selected knot!
         const Giz = this._computeGizmoGeometry(Ctx, Width, Height);
         if (Giz)
         {
-            // XZ planar square handle
             if (Giz.pxz && Math.hypot(Sx - Giz.pxz[0], Sy - Giz.pxz[1]) <= 12.0)
             {
                 return { kind: 'gizmo', axis: 'xz', ...Ctx, origin: Giz.origin };
             }
-            // Y Axis (Green UP / DOWN vertical shaft + both arrowheads) — highest priority for vertical elevation!
             if (Giz.pyUp)
             {
                 const EndDn = Giz.pyDn || Giz.p0;
@@ -843,7 +830,6 @@ export class TerrainOceanViewport
             }
         }
 
-        // 2. Test clicking any Spline Knot sphere along any enabled spline in the active region!
         const Reg = Ctx.region;
         for (const Layer of Reg.stack)
         {
@@ -861,9 +847,15 @@ export class TerrainOceanViewport
         return null;
     }
 
-    /*======================================================================================================================================
-                                                3D VIEWPORT POINTER INTERACTION
-    ======================================================================================================================================*/
+    _getBrushTargetRegions(HitRegion)
+    {
+        if (this.selectedRegionIds.size > 1 && this.selectedRegionIds.has(HitRegion.id))
+        {
+            return Array.from(this.selectedRegionIds).map(Id => this.world.getRegion(Id)).filter(Boolean);
+        }
+        return [HitRegion];
+    }
+
     _bindEvents()
     {
         const El = this.canvas;
@@ -874,7 +866,6 @@ export class TerrainOceanViewport
             const Rect = El.getBoundingClientRect();
             const Sx = E.clientX - Rect.left, Sy = E.clientY - Rect.top;
 
-            // Pan: Middle Mouse or Shift+Right
             if (E.button === 1 || (E.button === 2 && E.shiftKey))
             {
                 El.setPointerCapture(E.pointerId);
@@ -882,8 +873,7 @@ export class TerrainOceanViewport
                 return;
             }
 
-            // 1. Check 3D Spline Gizmo & Knot Handles on Left-Click (whenever Gizmo is visible and Alt is not held)
-            if (E.button === 0 && !E.altKey && this.showGizmo)
+            if (E.button === 0 && !E.altKey && this._isSplineOverlayActive())
             {
                 const GizHit = this._hitTestSplineGizmoAndKnots(Sx, Sy, Rect.width, Rect.height);
                 if (GizHit)
@@ -894,11 +884,9 @@ export class TerrainOceanViewport
                     {
                         this.selectedKnotIndex = GizHit.knotIndex;
                         this.cb.onSplineKnotSelected?.(GizHit.region, GizHit.layer, GizHit.knotIndex);
-                        // Also start Y-drag immediately if user drags the knot vertically with Ctrl, or XZ drag? Let's allow selecting cleanly, or dragging XZ!
                         return;
                     }
 
-                    // Gizmo axis drag ('x' | 'y' | 'z' | 'xz')!
                     this.cb.onBeforeSplineGizmoEdit?.(GizHit.region, GizHit.layer);
                     const Knot = GizHit.layer.points[this.selectedKnotIndex];
                     const OrigKnot = [Knot[0], Knot[1], GizHit.origin[1]];
@@ -912,7 +900,6 @@ export class TerrainOceanViewport
                         ? 0
                         : ClosestAxisParamToRay(GizHit.origin, AxisVec, Ray.origin, Ray.dir);
 
-                    // For XZ plane drag, intersect ray with horizontal plane y = origin[1]
                     let StartPlaneXZ = [OrigKnot[0], OrigKnot[1]];
                     if (GizHit.axis === 'xz' && Math.abs(Ray.dir[1]) > 1e-4)
                     {
@@ -940,7 +927,6 @@ export class TerrainOceanViewport
                 }
             }
 
-            // 2. Add 3D Spline Knot by clicking directly on the terrain ('spline-add' tool OR Shift+Click in 'spline' tool!)
             if (E.button === 0 && !E.altKey && (this.tool3D === 'spline-add' || (this.tool3D === 'spline' && E.shiftKey)))
             {
                 const Hit = this.raycastVisibleTerrains(E.clientX, E.clientY);
@@ -951,9 +937,8 @@ export class TerrainOceanViewport
                 }
             }
 
-            const IsSculptBrush = ['raise', 'lower', 'smooth', 'flatten', 'pinch', 'overhang'].includes(this.tool3D);
+            const IsSculptBrush = ['raise', 'lower', 'smooth', 'flatten', 'pinch'].includes(this.tool3D);
 
-            // 3. Orbit: Alt+Left, Right Mouse, or Left Mouse in 'navigate' / 'spline' mode (when not hitting gizmo)
             if (E.altKey || E.button === 2 || (!IsSculptBrush && E.button === 0))
             {
                 El.setPointerCapture(E.pointerId);
@@ -968,7 +953,6 @@ export class TerrainOceanViewport
                 return;
             }
 
-            // 4. 3D Terrain SDF Sculpting!
             if (IsSculptBrush && E.button === 0)
             {
                 const Hit = this.raycastVisibleTerrains(E.clientX, E.clientY);
@@ -980,20 +964,29 @@ export class TerrainOceanViewport
                 }
 
                 El.setPointerCapture(E.pointerId);
-                this.cb.onBeforeSculpt3D?.(Hit.region);
-                ApplyTerrainSculptDab(this.world, Hit.region, Hit.point, this.tool3D, {
-                    radius: this.sculptRadiusM,
-                    strength: this.sculptStrength,
-                    invert: E.ctrlKey,
-                    flattenHeight: Hit.point[1]
-                });
-                Hit.region.meshDirty = true;
-                this.cb.onSculptLive3D?.(Hit.region);
+                const Targets = this._getBrushTargetRegions(Hit.region);
+                this.cb.onBeforeSculpt3D?.(Targets);
+                const Modified = Targets.length > 1
+                    ? ApplyMultiTerrainSculptDab(this.world, Targets, Hit.point, this.tool3D, {
+                        radius: this.sculptRadiusM,
+                        strength: this.sculptStrength,
+                        invert: E.ctrlKey,
+                        flattenHeight: Hit.point[1]
+                    })
+                    : (ApplyTerrainSculptDab(this.world, Hit.region, Hit.point, this.tool3D, {
+                        radius: this.sculptRadiusM,
+                        strength: this.sculptStrength,
+                        invert: E.ctrlKey,
+                        flattenHeight: Hit.point[1]
+                    }) ? [Hit.region] : []);
+
+                for (const M of Modified) M.meshDirty = true;
+                this.cb.onSculptLive3D?.(Modified.length ? Modified : [Hit.region]);
 
                 this.dragState = {
                     kind: 'sculpt',
                     pointerId: E.pointerId,
-                    region: Hit.region,
+                    targets: Targets,
                     lastHitPos: Hit.point,
                     flattenHeight: Hit.point[1]
                 };
@@ -1004,12 +997,11 @@ export class TerrainOceanViewport
         {
             const Rect = El.getBoundingClientRect();
             const Sx = E.clientX - Rect.left, Sy = E.clientY - Rect.top;
-            const IsSculptBrush = ['raise', 'lower', 'smooth', 'flatten', 'pinch', 'overhang'].includes(this.tool3D);
+            const IsSculptBrush = ['raise', 'lower', 'smooth', 'flatten', 'pinch'].includes(this.tool3D);
 
             if (!this.dragState)
             {
-                // Hover feedback for 3D Gizmo axes & knots
-                const GizHit = this.showGizmo ? this._hitTestSplineGizmoAndKnots(Sx, Sy, Rect.width, Rect.height) : null;
+                const GizHit = this._isSplineOverlayActive() ? this._hitTestSplineGizmoAndKnots(Sx, Sy, Rect.width, Rect.height) : null;
                 this.hoverGizmoAxis = GizHit?.kind === 'gizmo' ? GizHit.axis : null;
                 this.hoverKnotIndex = GizHit?.kind === 'knot' ? GizHit.knotIndex : -1;
                 El.style.cursor = GizHit ? 'grab' : (this.tool3D === 'spline-add' ? 'crosshair' : 'default');
@@ -1051,19 +1043,9 @@ export class TerrainOceanViewport
                 {
                     const CurParam = ClosestAxisParamToRay(D.gizmoOrigin, D.axisVec, Ray.origin, Ray.dir);
                     const Delta = CurParam - D.startParam;
-                    if (D.axis === 'y')
-                    {
-                        // Move Spline Knot UP or DOWN smoothly in meters!
-                        Knot[2] = Math.round(Clamp(D.origKnot[2] + Delta, -65.0, 950.0) * 10.0) / 10.0;
-                    }
-                    else if (D.axis === 'x')
-                    {
-                        Knot[0] = Math.round(D.origKnot[0] + Delta);
-                    }
-                    else if (D.axis === 'z')
-                    {
-                        Knot[1] = Math.round(D.origKnot[1] + Delta);
-                    }
+                    if (D.axis === 'y') Knot[2] = Math.round(Clamp(D.origKnot[2] + Delta, -65.0, 950.0) * 10.0) / 10.0;
+                    else if (D.axis === 'x') Knot[0] = Math.round(D.origKnot[0] + Delta);
+                    else if (D.axis === 'z') Knot[1] = Math.round(D.origKnot[1] + Delta);
                 }
 
                 D.region.dirty = true;
@@ -1102,16 +1084,23 @@ export class TerrainOceanViewport
                     const StepDist = Math.hypot(Hit.point[0] - D.lastHitPos[0], Hit.point[2] - D.lastHitPos[2]);
                     if (StepDist >= Math.max(6.0, this.sculptRadiusM * 0.18))
                     {
-                        ApplyTerrainSculptDab(this.world, Hit.region, Hit.point, this.tool3D, {
-                            radius: this.sculptRadiusM,
-                            strength: this.sculptStrength,
-                            invert: E.ctrlKey,
-                            prevPos: D.lastHitPos,
-                            flattenHeight: D.flattenHeight
-                        });
-                        Hit.region.meshDirty = true;
+                        const Targets = this._getBrushTargetRegions(Hit.region);
+                        const Modified = Targets.length > 1
+                            ? ApplyMultiTerrainSculptDab(this.world, Targets, Hit.point, this.tool3D, {
+                                radius: this.sculptRadiusM,
+                                strength: this.sculptStrength,
+                                invert: E.ctrlKey,
+                                flattenHeight: D.flattenHeight
+                            })
+                            : (ApplyTerrainSculptDab(this.world, Hit.region, Hit.point, this.tool3D, {
+                                radius: this.sculptRadiusM,
+                                strength: this.sculptStrength,
+                                invert: E.ctrlKey,
+                                flattenHeight: D.flattenHeight
+                            }) ? [Hit.region] : []);
+                        for (const M of Modified) M.meshDirty = true;
                         D.lastHitPos = Hit.point;
-                        this.cb.onSculptLive3D?.(Hit.region);
+                        this.cb.onSculptLive3D?.(Modified.length ? Modified : [Hit.region]);
                     }
                 }
             }
@@ -1136,7 +1125,7 @@ export class TerrainOceanViewport
             }
             else if (D.kind === 'sculpt')
             {
-                this.cb.onSculptStrokeFinished3D?.(D.region);
+                this.cb.onSculptStrokeFinished3D?.(D.targets);
             }
         };
 
@@ -1148,7 +1137,7 @@ export class TerrainOceanViewport
         {
             E.preventDefault();
             const Factor = Math.exp(E.deltaY * 0.0012);
-            this.distance = Clamp(this.distance * Factor, 60.0, 15000.0);
+            this.distance = Clamp(this.distance * Factor, 50.0, 80000.0);
         }, { passive: false });
     }
 
@@ -1166,7 +1155,7 @@ export class TerrainOceanViewport
         if (!Lyr)
         {
             Lyr = CreateTerrainLayer('spline', {
-                name: '3D Graded Spline Landform',
+                name: 'Graded Spline Landform',
                 splineMode: 'grade',
                 width: 105.0,
                 amount: 32.0,
@@ -1185,9 +1174,6 @@ export class TerrainOceanViewport
         this.cb.onSplineKnotAdded3D?.(Reg, Lyr, this.selectedKnotIndex);
     }
 
-    /*======================================================================================================================================
-                                                GPU MESH SYNCHRONIZATION & RENDER LOOP
-    ======================================================================================================================================*/
     markRegionMeshDirty(RegionId = null)
     {
         if (RegionId)
@@ -1247,7 +1233,8 @@ export class TerrainOceanViewport
         {
             const Mesh = ExtractRegionTriangleMesh(this.world, Region, {
                 includeUnderside: true,
-                previewFalloffLayerId: PreviewLayerId
+                previewFalloffLayerId: PreviewLayerId,
+                gpuPipeline: this.gpuPipeline
             });
 
             Gl.bindBuffer(Gl.ARRAY_BUFFER, Entry.vboPos);
@@ -1299,7 +1286,8 @@ export class TerrainOceanViewport
         const { eye: Eye, fwd: Fwd, right: Right, up: Up } = this.getCameraBasis();
         const SunDir = this.getSunDirection();
 
-        const Proj = Mat4Perspective(FovRad, Aspect, 4.0, 32000.0);
+        const FarClip = Math.max(45000.0, this.distance * 8.0);
+        const Proj = Mat4Perspective(FovRad, Aspect, 4.0, FarClip);
         const View = Mat4LookAt(Eye, this.target, [0, 1, 0]);
         const ViewProj = Mat4Multiply(Proj, View);
         this._lastViewProj = ViewProj;
@@ -1319,7 +1307,7 @@ export class TerrainOceanViewport
         Gl.bindVertexArray(this.emptyVao);
         Gl.drawArrays(Gl.TRIANGLES, 0, 3);
 
-        // 2. Thin-Slab Multi-Terrain Triangle Mesh Pass
+        // 2. Thin-Base-Surface Multi-Terrain Triangle Mesh Pass
         Gl.enable(Gl.DEPTH_TEST);
         Gl.depthFunc(Gl.LEQUAL);
         Gl.enable(Gl.CULL_FACE);
@@ -1363,8 +1351,8 @@ export class TerrainOceanViewport
         this.totalVisibleTriangles = TotalTris;
         this.totalVisibleVertices = TotalVerts;
 
-        // 3. 3D Terrain Bounds Cages
-        if (this.showBounds3D && VisibleRegions.length > 0)
+        // 3. Separate Toggleable 3D Terrain Bounds Layer Cages
+        if (this.showBounds3D && this.world.boundsLayerVisible && VisibleRegions.length > 0)
         {
             this._renderBounds3D(ViewProj, VisibleRegions);
         }
@@ -1378,10 +1366,11 @@ export class TerrainOceanViewport
             Gl.depthMask(false);
 
             const Elapsed = this.animateWaves ? (performance.now() - this.startTime) * 0.001 : 1.25;
+            const OceanSpan = Math.max(6400.0, this.distance * 3.2);
             Gl.useProgram(this.oceanProg);
             Gl.uniformMatrix4fv(Gl.getUniformLocation(this.oceanProg, 'uViewProj'), false, ViewProj);
             Gl.uniform2f(Gl.getUniformLocation(this.oceanProg, 'uOceanCenter'), this.target[0], this.target[2]);
-            Gl.uniform1f(Gl.getUniformLocation(this.oceanProg, 'uOceanSpan'), 5400.0);
+            Gl.uniform1f(Gl.getUniformLocation(this.oceanProg, 'uOceanSpan'), OceanSpan);
             Gl.uniform1f(Gl.getUniformLocation(this.oceanProg, 'uSeaLevel'), this.world.seaLevel ?? 0.0);
             Gl.uniform1f(Gl.getUniformLocation(this.oceanProg, 'uTime'), Elapsed);
             Gl.uniform1f(Gl.getUniformLocation(this.oceanProg, 'uWaveAmp'), this.waveAmplitude);
@@ -1398,8 +1387,6 @@ export class TerrainOceanViewport
         }
 
         Gl.bindVertexArray(null);
-
-        // 5. Crisp 2D Projected Overlay: 3D Spline Curves, Knot Handles, Elevation Stalks & XYZ Up/Down Gizmo!
         this._renderSplineAndGizmoOverlay(Rect.width, Rect.height, Dpr, ViewProj);
     }
 
@@ -1415,6 +1402,7 @@ export class TerrainOceanViewport
         const Sea = this.world.seaLevel ?? 0.0;
         for (const Region of VisibleRegions)
         {
+            if (!this.world.isRegionBoundsVisible(Region)) continue;
             const B = Region.bounds;
             const IsPrimary = Region.id === this.activeRegionId;
             const IsSelected = this.selectedRegionIds.has(Region.id);
@@ -1422,7 +1410,7 @@ export class TerrainOceanViewport
 
             const X0 = B.x, X1 = B.x + B.width;
             const Z0 = B.z, Z1 = B.z + B.depth;
-            const Y0 = (Region.runtime?.slabBottom ?? (Sea - 6.5));
+            const Y0 = (Region.runtime?.slabBottom ?? (Sea - 4.5));
             const Y1 = Math.max(Sea + 75.0, (Region.runtime?.maxHeight ?? 140.0) + 18.0);
 
             PushSeg(X0, Sea + 1.2, Z0, X1, Sea + 1.2, Z0, ...Col);
@@ -1459,9 +1447,6 @@ export class TerrainOceanViewport
         Gl.disable(Gl.BLEND);
     }
 
-    /*======================================================================================================================================
-                           2D OVERLAY CANVAS: 3D SPLINE CURVES, ELEVATION STALKS & XYZ UP/DOWN GIZMO
-    ======================================================================================================================================*/
     _renderSplineAndGizmoOverlay(Width, Height, Dpr, ViewProj)
     {
         const Ov = this.overlayCanvas;
@@ -1480,7 +1465,7 @@ export class TerrainOceanViewport
         Ctx.setTransform(Dpr, 0, 0, Dpr, 0, 0);
         Ctx.clearRect(0, 0, Width, Height);
 
-        if (!this.showGizmo)
+        if (!this._isSplineOverlayActive())
         {
             Ctx.restore();
             return;
@@ -1495,13 +1480,11 @@ export class TerrainOceanViewport
 
         const { region: Reg, layer: ActiveSpline } = SplineCtx;
 
-        // Draw all enabled splines on the active region; highlight ActiveSpline with knots + XYZ Gizmo
         for (const Layer of Reg.stack)
         {
             if (Layer.type !== 'spline' || !Layer.enabled || !Layer.points || Layer.points.length === 0) continue;
             const IsActiveLyr = Layer.id === ActiveSpline.id;
 
-            // 1. Draw smooth 3D Catmull-Rom curve
             if (Layer.points.length >= 2)
             {
                 const Poly = SampleCatmullRomPolyline(Layer.points, 8);
@@ -1522,7 +1505,6 @@ export class TerrainOceanViewport
 
             if (!IsActiveLyr) continue;
 
-            // 2. Draw vertical elevation drop-stalks & numbered 3D Knot handles
             for (let I = 0; I < Layer.points.length; ++I)
             {
                 const Knot = Layer.points[I];
@@ -1532,7 +1514,6 @@ export class TerrainOceanViewport
                 const ScrGround = ProjectWorldToScreen(ViewProj, [Knot[0], GroundY, Knot[1]], Width, Height);
                 if (!ScrKnot) continue;
 
-                // Elevation stalk showing exact vertical separation from ground!
                 if (ScrGround && Math.hypot(ScrKnot[0] - ScrGround[0], ScrKnot[1] - ScrGround[1]) > 4)
                 {
                     Ctx.save();
@@ -1562,7 +1543,6 @@ export class TerrainOceanViewport
                 Ctx.strokeStyle = IsSelKnot ? '#14160c' : '#eff4cf';
                 Ctx.stroke();
 
-                // Knot index label
                 Ctx.font = '600 9.5px "DM Sans", sans-serif';
                 Ctx.fillStyle = IsSelKnot ? '#14160c' : '#eff4cf';
                 Ctx.textAlign = 'center';
@@ -1571,7 +1551,6 @@ export class TerrainOceanViewport
             }
         }
 
-        // 3. Draw 3D XYZ Translation Gizmo (with prominent Green Up/Down Y Arrow!) on Selected Knot
         const Giz = this._computeGizmoGeometry(SplineCtx, Width, Height);
         if (Giz)
         {
@@ -1596,7 +1575,6 @@ export class TerrainOceanViewport
                 Ctx.lineTo(To[0] - Ux * 10, To[1] - Uy * 10);
                 Ctx.stroke();
 
-                // Cone arrowhead
                 Ctx.beginPath();
                 Ctx.moveTo(To[0], To[1]);
                 Ctx.lineTo(To[0] - Ux * 12 + Px * 5.2, To[1] - Uy * 12 + Py * 5.2);
@@ -1613,7 +1591,6 @@ export class TerrainOceanViewport
                 }
             };
 
-            // XZ Plane Handle
             if (Giz.pxz && Giz.px && Giz.pz)
             {
                 const Hx = Giz.p0[0] + (Giz.px[0] - Giz.p0[0]) * 0.28;
@@ -1633,13 +1610,11 @@ export class TerrainOceanViewport
                 Ctx.stroke();
             }
 
-            // Red X Axis, Blue Z Axis, and Double-Ended Green Y (UP / DOWN) Axis!
             DrawArrow(Giz.p0, Giz.px, '#ff6464', ActiveAxis === 'x', 'X');
             DrawArrow(Giz.p0, Giz.pz, '#5cb4ff', ActiveAxis === 'z', 'Z');
             if (Giz.pyDn) DrawArrow(Giz.p0, Giz.pyDn, '#3ec46d', ActiveAxis === 'y', '');
             DrawArrow(Giz.p0, Giz.pyUp, '#49e67c', ActiveAxis === 'y', 'Y ↕');
 
-            // Live Elevation Tag next to Selected Knot
             const KnotElev = Giz.origin[1];
             const ElevText = `Knot #${this.selectedKnotIndex + 1} · Y ${(KnotElev >= 0 ? '+' : '') + KnotElev.toFixed(1)} m`;
             Ctx.font = '500 11px "DM Sans", sans-serif';

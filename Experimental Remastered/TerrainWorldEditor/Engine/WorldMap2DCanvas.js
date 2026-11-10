@@ -1,11 +1,13 @@
 /*==========================================================================================================================================
                                                         WORLDMAP2DCANVAS.JS
 ==========================================================================================================================================*/
-// Infinite Sparse-Tile 2D World Mask & Independent Terrain Bounds Box Editor
-// Supports: Infinite Pan/Zoom, Multi-Scale Metric Grid, Cached 256x256 Sparse Mask Tiles, Shaded Topographic Relief Preview,
-// Brush / Erase / Smooth / Polygon Landmass Drawing, Interactive Draw/Move/8-Handle Resize Terrain Bounds Boxes, Multi-Select, & 2D Splines.
+// Infinite Sparse-Tile 2D Terrain Mask & Separate Toggleable Terrain Bounds Layer Canvas for Frontier Terrain Studio:
+// - Effectively infinite pan/zoom across arbitrary kilometer coordinates (O(visible) sparse tile culling, zero world-size cap)
+// - Multi-scale metric cartographic grid (50 m -> 100 km), live shaded topographic relief & boundary-falloff heatmap preview
+// - Tools: Brush Landmass, Erase Bay/Fjord, Smooth Coast, Polygon Continent, Stamp Island/Archipelago, Draw Bounds,
+//   Select / Multi-Select Marquee / Simultaneous Multi-Terrain Bounds Move & 8-Handle Independent Bounds Resize, and 2D Splines
 
-import { MASK_TILE_RES, TILE_WORLD_METERS } from './WorldMask2D.js';
+import { MASK_TILE_RES, TILE_WORLD_METERS, ParseTileKey } from './WorldMask2D.js';
 import { SampleCatmullRomPolyline, CreateTerrainLayer } from './TerrainLayerStack.js';
 
 const HANDLE_NAMES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -26,13 +28,14 @@ export class WorldMap2DCanvas
         this.world = World;
         this.cb = Callbacks;
 
-        // Infinite world camera: center in world meters (camX, camZ) & zoom in CSS pixels per meter
+        // Unbounded world camera: center in world meters (camX, camZ) & zoom in CSS pixels per meter
         this.camX = -120.0;
         this.camZ = -80.0;
-        this.pxPerMeter = 0.27; // ~3.7 km across a 1000px viewport
+        this.pxPerMeter = 0.27;
 
-        // Active 2D tool: 'brush' | 'erase' | 'smooth' | 'polygon' | 'bounds' | 'select' | 'spline' | 'pan'
+        // Active 2D tool: 'brush' | 'erase' | 'smooth' | 'polygon' | 'stamp' | 'bounds' | 'select' | 'spline' | 'pan'
         this.tool = 'brush';
+        this.stampKind = 'island'; // 'island' | 'archipelago' | 'atoll' | 'rect'
         this.brushRadiusM = 145.0;
         this.brushStrength = 1.0;
         this.coastRoughness = 0.28;
@@ -46,18 +49,15 @@ export class WorldMap2DCanvas
         this.activeRegionId = World.regions[0]?.id || null;
         this.activeSplineLayerId = null;
 
-        // Cached offscreen tile bitmaps: key = `${layerId}:${tileKey}`
         this.tileCanvases = new Map();
-        // Cached offscreen relief bitmaps per region
         this.regionCanvases = new Map();
 
-        // Pointer & gesture state
         this.pointerWorld = [0, 0];
         this.pointerScreen = [0, 0];
         this.pointerInside = false;
         this.spaceDown = false;
         this.dragState = null;
-        this.polygonDraft = []; // [[wx, wz], ...]
+        this.polygonDraft = [];
         this.hoverHandle = null;
         this.needsRedraw = true;
 
@@ -94,7 +94,7 @@ export class WorldMap2DCanvas
         this.camZ = Bounds.z + Bounds.depth * 0.5;
         const ZoomX = W / Math.max(80.0, Bounds.width * PaddingFactor);
         const ZoomZ = H / Math.max(80.0, Bounds.depth * PaddingFactor);
-        this.pxPerMeter = Math.max(0.03, Math.min(5.0, Math.min(ZoomX, ZoomZ)));
+        this.pxPerMeter = Math.max(0.004, Math.min(8.0, Math.min(ZoomX, ZoomZ)));
         this.requestRedraw();
     }
 
@@ -170,7 +170,7 @@ export class WorldMap2DCanvas
                 return;
             }
 
-            // Polygon tool: click adds vertex; right-click or close-to-start finishes!
+            // Polygon tool: click adds vertex; right-click or close-to-start commits
             if (this.tool === 'polygon')
             {
                 if (E.button === 2)
@@ -194,6 +194,28 @@ export class WorldMap2DCanvas
                 return;
             }
 
+            // Landform Silhouette Stamp tool ('island' | 'archipelago' | 'atoll' | 'rect')
+            if (this.tool === 'stamp')
+            {
+                const MaskLayer = this._getEditableMaskLayer();
+                if (!MaskLayer || MaskLayer.locked) return;
+                this.brushSeed = ((this.brushSeed * 1664525 + 1013904223) >>> 0) & 0x7fffffff;
+                this.cb.onBeforeMaskEdit?.();
+                const Erase = E.button === 2 || E.shiftKey;
+                const StampR = Math.max(90, this.brushRadiusM * 2.2);
+                this.world.paintStampMeters(MaskLayer, [Wx, Wz], StampR, this.stampKind, Erase, this.coastRoughness, this.brushSeed);
+                const Spawned = !Erase ? this.world.onMaskEdited(MaskLayer, {
+                    x: Wx - StampR * 1.25,
+                    z: Wz - StampR * 1.25,
+                    width: StampR * 2.5,
+                    depth: StampR * 2.5
+                }) : null;
+                this.regionCanvases.clear();
+                this.cb.onMaskStrokeFinished?.(Spawned);
+                this.requestRedraw();
+                return;
+            }
+
             // Spline Landform editing in 2D
             if (this.tool === 'spline')
             {
@@ -202,7 +224,7 @@ export class WorldMap2DCanvas
                 return;
             }
 
-            // Draw New Terrain Bounds Box
+            // Draw New Terrain Bounds Layer Box
             if (this.tool === 'bounds')
             {
                 El.setPointerCapture(E.pointerId);
@@ -216,7 +238,7 @@ export class WorldMap2DCanvas
                 return;
             }
 
-            // Select / Move / Resize Terrain Bounds Box (also allow grabbing handles directly when in 'select' mode)
+            // Select / Multi-Select / Move / 8-Handle Resize Terrain Bounds Layer
             if (this.tool === 'select')
             {
                 const HandleHit = this._hitTestBoundsHandles(Sx, Sy);
@@ -224,12 +246,18 @@ export class WorldMap2DCanvas
                 {
                     El.setPointerCapture(E.pointerId);
                     this._selectRegion(HandleHit.region.id, false);
+                    this.cb.onBeforeBoundsEdit?.();
                     this.dragState = {
                         kind: 'resize-bounds',
                         pointerId: E.pointerId,
                         region: HandleHit.region,
                         handle: HandleHit.handle,
-                        origBounds: { ...HandleHit.region.bounds },
+                        origBounds: {
+                            x: HandleHit.region.bounds.x,
+                            z: HandleHit.region.bounds.z,
+                            width: HandleHit.region.bounds.width,
+                            depth: HandleHit.region.bounds.depth
+                        },
                         startWx: Wx, startWz: Wz
                     };
                     return;
@@ -239,25 +267,59 @@ export class WorldMap2DCanvas
                 if (RegionHit)
                 {
                     El.setPointerCapture(E.pointerId);
-                    this._selectRegion(RegionHit.id, E.shiftKey || E.ctrlKey || E.metaKey);
+                    const MultiMod = E.shiftKey || E.ctrlKey || E.metaKey;
+                    if (MultiMod || !this.selectedRegionIds.has(RegionHit.id))
+                    {
+                        this._selectRegion(RegionHit.id, MultiMod);
+                    }
+                    else
+                    {
+                        this.activeRegionId = RegionHit.id;
+                        this.cb.onRegionSelectionChanged?.(this.activeRegionId, Array.from(this.selectedRegionIds));
+                    }
+
+                    // Capture original bounds of ALL currently selected unlocked regions for simultaneous multi-terrain bounds translation!
+                    const OrigMap = new Map();
+                    for (const Id of this.selectedRegionIds)
+                    {
+                        const R = this.world.getRegion(Id);
+                        if (R && !R.locked && !R.boundsLayer?.locked)
+                        {
+                            OrigMap.set(Id, { x: R.bounds.x, z: R.bounds.z, width: R.bounds.width, depth: R.bounds.depth });
+                        }
+                    }
+                    this.cb.onBeforeBoundsEdit?.();
                     this.dragState = {
                         kind: 'move-bounds',
                         pointerId: E.pointerId,
                         region: RegionHit,
-                        origBounds: { ...RegionHit.bounds },
-                        startWx: Wx, startWz: Wz
+                        origMap: OrigMap,
+                        startWx: Wx, startWz: Wz,
+                        moved: false
                     };
                     return;
                 }
 
-                // Clicked empty ocean in select mode -> pan
+                // Shift+Drag on empty ocean -> Multi-Select Marquee Box! Otherwise -> Pan
                 El.setPointerCapture(E.pointerId);
-                this.dragState = {
-                    kind: 'pan',
-                    pointerId: E.pointerId,
-                    startSx: Sx, startSy: Sy,
-                    startCamX: this.camX, startCamZ: this.camZ
-                };
+                if (E.shiftKey)
+                {
+                    this.dragState = {
+                        kind: 'marquee-select',
+                        pointerId: E.pointerId,
+                        startWx: Wx, startWz: Wz,
+                        curWx: Wx, curWz: Wz
+                    };
+                }
+                else
+                {
+                    this.dragState = {
+                        kind: 'pan',
+                        pointerId: E.pointerId,
+                        startSx: Sx, startSy: Sy,
+                        startCamX: this.camX, startCamZ: this.camZ
+                    };
+                }
                 return;
             }
 
@@ -280,7 +342,12 @@ export class WorldMap2DCanvas
                     kind: 'paint-mask',
                     pointerId: E.pointerId,
                     mode: PaintMode,
-                    lastW: [Wx, Wz]
+                    layer: MaskLayer,
+                    lastW: [Wx, Wz],
+                    minX: Wx - this.brushRadiusM,
+                    maxX: Wx + this.brushRadiusM,
+                    minZ: Wz - this.brushRadiusM,
+                    maxZ: Wz + this.brushRadiusM
                 };
             }
         });
@@ -324,30 +391,44 @@ export class WorldMap2DCanvas
                 {
                     this._applyMaskCapsule(D.lastW, [Wx, Wz], D.mode);
                     D.lastW = [Wx, Wz];
+                    D.minX = Math.min(D.minX, Wx - this.brushRadiusM);
+                    D.maxX = Math.max(D.maxX, Wx + this.brushRadiusM);
+                    D.minZ = Math.min(D.minZ, Wz - this.brushRadiusM);
+                    D.maxZ = Math.max(D.maxZ, Wz + this.brushRadiusM);
                 }
                 this.requestRedraw();
             }
-            else if (D.kind === 'create-bounds')
+            else if (D.kind === 'create-bounds' || D.kind === 'marquee-select')
             {
                 D.curWx = Wx;
                 D.curWz = Wz;
                 this.requestRedraw();
             }
-            else if (D.kind === 'move-bounds' && !D.region.locked)
+            else if (D.kind === 'move-bounds' && D.origMap.size > 0)
             {
                 const Dx = Wx - D.startWx, Dz = Wz - D.startWz;
-                D.region.bounds.x = Math.round(D.origBounds.x + Dx);
-                D.region.bounds.z = Math.round(D.origBounds.z + Dz);
-                D.region.dirty = true;
-                this.invalidateRegionPreview(D.region.id);
-                this.cb.onRegionBoundsEdited?.(D.region, false);
+                if (Math.hypot(Dx, Dz) > 2.0) D.moved = true;
+                const Edited = [];
+                for (const [Id, Orig] of D.origMap.entries())
+                {
+                    const Reg = this.world.getRegion(Id);
+                    if (!Reg) continue;
+                    this.world.setRegionBounds(Reg, {
+                        x: Orig.x + Dx,
+                        z: Orig.z + Dz,
+                        width: Orig.width,
+                        depth: Orig.depth
+                    }, { manualEdit: true });
+                    this.invalidateRegionPreview(Reg.id);
+                    Edited.push(Reg);
+                }
+                if (Edited.length > 0) this.cb.onRegionBoundsEdited?.(Edited, false);
             }
-            else if (D.kind === 'resize-bounds' && !D.region.locked)
+            else if (D.kind === 'resize-bounds' && !D.region.locked && !D.region.boundsLayer?.locked)
             {
                 this._applyBoundsResize(D.region, D.origBounds, D.handle, Wx - D.startWx, Wz - D.startWz);
-                D.region.dirty = true;
                 this.invalidateRegionPreview(D.region.id);
-                this.cb.onRegionBoundsEdited?.(D.region, false);
+                this.cb.onRegionBoundsEdited?.([D.region], false);
             }
             else if (D.kind === 'drag-spline')
             {
@@ -368,7 +449,15 @@ export class WorldMap2DCanvas
 
             if (D.kind === 'paint-mask')
             {
-                this.cb.onMaskStrokeFinished?.();
+                const Spawned = (D.mode === 'paint' && D.layer)
+                    ? this.world.onMaskEdited(D.layer, {
+                        x: D.minX,
+                        z: D.minZ,
+                        width: Math.max(60, D.maxX - D.minX),
+                        depth: Math.max(60, D.maxZ - D.minZ)
+                    })
+                    : null;
+                this.cb.onMaskStrokeFinished?.(Spawned);
             }
             else if (D.kind === 'create-bounds')
             {
@@ -386,9 +475,33 @@ export class WorldMap2DCanvas
                     });
                 }
             }
-            else if (D.kind === 'move-bounds' || D.kind === 'resize-bounds')
+            else if (D.kind === 'marquee-select')
             {
-                this.cb.onRegionBoundsEdited?.(D.region, true);
+                const MinX = Math.min(D.startWx, D.curWx), MaxX = Math.max(D.startWx, D.curWx);
+                const MinZ = Math.min(D.startWz, D.curWz), MaxZ = Math.max(D.startWz, D.curWz);
+                const Hits = this.world.regions.filter(R =>
+                {
+                    const B = R.bounds;
+                    return B.x + B.width >= MinX && B.x <= MaxX && B.z + B.depth >= MinZ && B.z <= MaxZ;
+                });
+                if (Hits.length > 0)
+                {
+                    this.selectedRegionIds = new Set(Hits.map(R => R.id));
+                    this.activeRegionId = Hits[0].id;
+                    this.cb.onRegionSelectionChanged?.(this.activeRegionId, Array.from(this.selectedRegionIds));
+                }
+            }
+            else if (D.kind === 'move-bounds')
+            {
+                if (D.moved)
+                {
+                    const Edited = Array.from(D.origMap.keys()).map(Id => this.world.getRegion(Id)).filter(Boolean);
+                    this.cb.onRegionBoundsEdited?.(Edited, true);
+                }
+            }
+            else if (D.kind === 'resize-bounds')
+            {
+                this.cb.onRegionBoundsEdited?.([D.region], true);
             }
             else if (D.kind === 'drag-spline')
             {
@@ -430,7 +543,8 @@ export class WorldMap2DCanvas
             const [BeforeWx, BeforeWz] = this.screenToWorld(Sx, Sy);
 
             const Factor = Math.exp(-E.deltaY * 0.0014);
-            this.pxPerMeter = Math.max(0.025, Math.min(6.5, this.pxPerMeter * Factor));
+            // Unbounded zoom range from continent scale (~250 km across screen) down to shoreline detail (~120 m)
+            this.pxPerMeter = Math.max(0.004, Math.min(8.0, this.pxPerMeter * Factor));
 
             const [AfterWx, AfterWz] = this.screenToWorld(Sx, Sy);
             this.camX += BeforeWx - AfterWx;
@@ -445,12 +559,26 @@ export class WorldMap2DCanvas
         if (Layer && !Layer.locked && this.polygonDraft.length >= 3)
         {
             this.cb.onBeforeMaskEdit?.();
+            let MinX = Infinity, MaxX = -Infinity, MinZ = Infinity, MaxZ = -Infinity;
+            for (const [Px, Pz] of this.polygonDraft)
+            {
+                if (Px < MinX) MinX = Px;
+                if (Px > MaxX) MaxX = Px;
+                if (Pz < MinZ) MinZ = Pz;
+                if (Pz > MaxZ) MaxZ = Pz;
+            }
             const Changed = this.world.paintPolygonMeters(Layer, this.polygonDraft, Erase, this.coastRoughness, this.brushSeed);
             this.polygonDraft = [];
             if (Changed.length > 0)
             {
+                const Spawned = !Erase ? this.world.onMaskEdited(Layer, {
+                    x: MinX,
+                    z: MinZ,
+                    width: Math.max(60, MaxX - MinX),
+                    depth: Math.max(60, MaxZ - MinZ)
+                }) : null;
                 this.regionCanvases.clear();
-                this.cb.onMaskStrokeFinished?.();
+                this.cb.onMaskStrokeFinished?.(Spawned);
             }
         }
         else
@@ -479,8 +607,7 @@ export class WorldMap2DCanvas
             this.coastRoughness,
             this.brushSeed
         );
-        // Invalidate relief previews for overlapping regions
-        const Pad = this.brushRadiusM + 40.0;
+        const Pad = this.brushRadiusM + 60.0;
         const MinX = Math.min(P0[0], P1[0]) - Pad, MaxX = Math.max(P0[0], P1[0]) + Pad;
         const MinZ = Math.min(P0[1], P1[1]) - Pad, MaxZ = Math.max(P0[1], P1[1]) + Pad;
         for (const R of this.world.regions)
@@ -528,6 +655,7 @@ export class WorldMap2DCanvas
         for (let I = this.world.regions.length - 1; I >= 0; --I)
         {
             const R = this.world.regions[I];
+            if (!this.world.isRegionBoundsVisible(R) && this.tool === 'select') continue;
             const B = R.bounds;
             if (Wx >= B.x && Wx <= B.x + B.width && Wz >= B.z && Wz <= B.z + B.depth)
             {
@@ -555,7 +683,7 @@ export class WorldMap2DCanvas
         for (let I = this.world.regions.length - 1; I >= 0; --I)
         {
             const R = this.world.regions[I];
-            if (R.locked) continue;
+            if (R.locked || R.boundsLayer?.locked || !this.world.isRegionBoundsVisible(R)) continue;
             const Pts = this._getRegionHandleScreenPoints(R);
             for (const H of HANDLE_NAMES)
             {
@@ -572,15 +700,17 @@ export class WorldMap2DCanvas
     _applyBoundsResize(Region, Orig, Handle, Dx, Dz)
     {
         let X0 = Orig.x, Z0 = Orig.z, X1 = Orig.x + Orig.width, Z1 = Orig.z + Orig.depth;
-        const MinSpan = 160.0;
+        const MinSpan = 140.0;
         if (Handle.includes('w')) X0 = Math.min(X1 - MinSpan, X0 + Dx);
         if (Handle.includes('e')) X1 = Math.max(X0 + MinSpan, X1 + Dx);
         if (Handle.includes('n')) Z0 = Math.min(Z1 - MinSpan, Z0 + Dz);
         if (Handle.includes('s')) Z1 = Math.max(Z0 + MinSpan, Z1 + Dz);
-        Region.bounds.x = Math.round(X0);
-        Region.bounds.z = Math.round(Z0);
-        Region.bounds.width = Math.round(X1 - X0);
-        Region.bounds.depth = Math.round(Z1 - Z0);
+        this.world.setRegionBounds(Region, {
+            x: X0,
+            z: Z0,
+            width: X1 - X0,
+            depth: Z1 - Z0
+        }, { manualEdit: true });
     }
 
     _handleSplinePointerDown(Wx, Wz, Sx, Sy, Event)
@@ -589,13 +719,12 @@ export class WorldMap2DCanvas
         if (!Region || Region.locked) return;
         if (Region.id !== this.activeRegionId) this._selectRegion(Region.id, false);
 
-        // Find active spline layer or create one
         let SplineLayer = Region.stack.find(L => L.id === this.activeSplineLayerId && L.type === 'spline')
                        || Region.stack.find(L => L.type === 'spline');
         if (!SplineLayer)
         {
             SplineLayer = CreateTerrainLayer('spline', {
-                name: '3D Graded Spline Landform',
+                name: 'Graded Spline Landform',
                 splineMode: 'grade',
                 width: 105.0,
                 amount: 32.0,
@@ -607,7 +736,6 @@ export class WorldMap2DCanvas
             this.cb.onLayerStackChanged?.(Region, SplineLayer.id);
         }
 
-        // Check if clicking an existing control point
         for (let I = 0; I < SplineLayer.points.length; ++I)
         {
             const [Px, Py] = this.worldToScreen(SplineLayer.points[I][0], SplineLayer.points[I][1]);
@@ -633,7 +761,6 @@ export class WorldMap2DCanvas
             }
         }
 
-        // Append new control point with sampled 3D elevation wy
         if (Event.button === 0)
         {
             let SampledY = (this.world.seaLevel ?? 0) + 18.0;
@@ -752,7 +879,6 @@ export class WorldMap2DCanvas
                 const D2 = Rt.sdf2D[I];
                 if (D2 > 0.0)
                 {
-                    // Subtle shallow coastal bathymetry halo right around shoreline
                     if (D2 < 55.0)
                     {
                         const Halo = (1.0 - D2 / 55.0) * 0.36;
@@ -775,7 +901,6 @@ export class WorldMap2DCanvas
 
                 if (this.showFalloffIn2D)
                 {
-                    // Heatmap of active layer's Boundary Falloff: cool cyan at soft edge -> warm gold/coral at strong center!
                     const W = Rt.falloffMap[I];
                     Dst[P] = Math.round((38 + 212 * W) * (0.72 + 0.35 * Shade));
                     Dst[P + 1] = Math.round((95 + 105 * Math.sin(W * Math.PI)) * (0.72 + 0.35 * Shade));
@@ -789,11 +914,7 @@ export class WorldMap2DCanvas
                 const Lit = (0.58 + 0.52 * Shade) * Contour;
 
                 let R, G, B;
-                if (Rt.waterChannel[I] > 0.16)
-                {
-                    R = 46; G = 128; B = 152;
-                }
-                else if (H < 8.0)
+                if (H < 8.0)
                 {
                     R = 148; G = 138; B = 104;
                 }
@@ -814,7 +935,6 @@ export class WorldMap2DCanvas
                     R = 205; G = 208; B = 214;
                 }
 
-                // Crisp bright coastline pixel
                 if (D2 > -Math.max(Rt.stepX, Rt.stepZ) * 1.15)
                 {
                     R = 232; G = 212; B = 158;
@@ -859,7 +979,7 @@ export class WorldMap2DCanvas
 
         const W = Rect.width, H = Rect.height;
 
-        // 1. Bathymetric Obsidian Ocean Backdrop (matches 3D Clay Studio dark shell)
+        // 1. Bathymetric Obsidian Ocean Backdrop
         const Grad = Ctx.createRadialGradient(W * 0.5, H * 0.45, 20, W * 0.5, H * 0.5, Math.max(W, H) * 0.78);
         Grad.addColorStop(0.0, '#0e161d');
         Grad.addColorStop(0.65, '#0a0f14');
@@ -870,46 +990,39 @@ export class WorldMap2DCanvas
         const [ViewMinX, ViewMinZ] = this.screenToWorld(0, 0);
         const [ViewMaxX, ViewMaxZ] = this.screenToWorld(W, H);
 
-        // 2. Infinite Multi-Scale Metric World Grid (100m / 500m / 1km / 5km)
+        // 2. Infinite Multi-Scale Metric World Grid
         if (this.showGrid)
         {
             this._drawMetricGrid(Ctx, W, H, ViewMinX, ViewMinZ, ViewMaxX, ViewMaxZ);
         }
 
-        // 3. Sparse 2D Mask Tiles across the visible infinite viewport
-        const MinTx = Math.floor(ViewMinX / TILE_WORLD_METERS);
-        const MaxTx = Math.floor(ViewMaxX / TILE_WORLD_METERS);
-        const MinTz = Math.floor(ViewMinZ / TILE_WORLD_METERS);
-        const MaxTz = Math.floor(ViewMaxZ / TILE_WORLD_METERS);
-
+        // 3. O(visible) Sparse 2D Mask Tiles across the infinite viewport
         Ctx.imageSmoothingEnabled = this.pxPerMeter < 1.2;
         for (const Layer of this.world.maskLayers)
         {
             if (!Layer.visible) continue;
+            const VisKeys = this.world.visibleTileKeysForLayer(Layer, ViewMinX, ViewMinZ, ViewMaxX, ViewMaxZ);
+            if (!VisKeys.length) continue;
             Ctx.globalAlpha = Layer.opacity ?? 1.0;
-            for (let Tz = MinTz; Tz <= MaxTz; ++Tz)
+            for (const Key of VisKeys)
             {
-                for (let Tx = MinTx; Tx <= MaxTx; ++Tx)
-                {
-                    const Key = `${Tx},${Tz}`;
-                    const Tile = Layer.tiles.get(Key);
-                    if (!Tile) continue;
-
-                    const Bitmap = this._getTileBitmap(Layer, Key, Tile);
-                    const [Sx0, Sy0] = this.worldToScreen(Tx * TILE_WORLD_METERS, Tz * TILE_WORLD_METERS);
-                    const SpanPx = TILE_WORLD_METERS * this.pxPerMeter;
-                    Ctx.drawImage(Bitmap, Sx0, Sy0, SpanPx + 0.4, SpanPx + 0.4);
-                }
+                const Tile = Layer.tiles.get(Key);
+                if (!Tile) continue;
+                const [Tx, Tz] = ParseTileKey(Key);
+                const Bitmap = this._getTileBitmap(Layer, Key, Tile);
+                const [Sx0, Sy0] = this.worldToScreen(Tx * TILE_WORLD_METERS, Tz * TILE_WORLD_METERS);
+                const SpanPx = TILE_WORLD_METERS * this.pxPerMeter;
+                Ctx.drawImage(Bitmap, Sx0, Sy0, SpanPx + 0.5, SpanPx + 0.5);
             }
         }
         Ctx.globalAlpha = 1.0;
 
-        // 4. Live Shaded Topographic Relief / Falloff Heatmap inside Enabled Terrain Bounds Boxes
+        // 4. Live Shaded Topographic Relief / Falloff Heatmap inside Enabled Terrain Regions
         if (this.showReliefIn2D || this.showFalloffIn2D)
         {
             for (const Region of this.world.regions)
             {
-                if (!Region.enabled) continue;
+                if (!Region.enabled || Region.maskLayerVisible === false) continue;
                 const B = Region.bounds;
                 if (B.x + B.width < ViewMinX || B.x > ViewMaxX || B.z + B.depth < ViewMinZ || B.z > ViewMaxZ) continue;
 
@@ -926,21 +1039,26 @@ export class WorldMap2DCanvas
             }
         }
 
-        // 5. Terrain Bounds Boxes, Selection Badges, Spline Curves & Resize Handles
+        // 5. Spline Overlays & Separate Toggleable Terrain Bounds Layer
         for (const Region of this.world.regions)
         {
-            this._drawRegionBoundsOverlay(Ctx, Region);
+            this._drawRegionSplines(Ctx, Region);
+            if (this.world.isRegionBoundsVisible(Region))
+            {
+                this._drawRegionBoundsOverlay(Ctx, Region);
+            }
         }
 
-        // 6. Active Bounds Creation Marquee
-        if (this.dragState?.kind === 'create-bounds')
+        // 6. Active Bounds Creation or Multi-Select Marquee
+        if (this.dragState?.kind === 'create-bounds' || this.dragState?.kind === 'marquee-select')
         {
             const D = this.dragState;
+            const IsMarquee = D.kind === 'marquee-select';
             const [Ax, Ay] = this.worldToScreen(Math.min(D.startWx, D.curWx), Math.min(D.startWz, D.curWz));
             const [Bx, By] = this.worldToScreen(Math.max(D.startWx, D.curWx), Math.max(D.startWz, D.curWz));
             Ctx.save();
-            Ctx.fillStyle = 'rgba(232, 194, 122, 0.12)';
-            Ctx.strokeStyle = '#e8c27a';
+            Ctx.fillStyle = IsMarquee ? 'rgba(90, 200, 250, 0.10)' : 'rgba(232, 194, 122, 0.12)';
+            Ctx.strokeStyle = IsMarquee ? '#5ac8fa' : '#e8c27a';
             Ctx.lineWidth = 1.75;
             Ctx.setLineDash([6, 4]);
             Ctx.fillRect(Ax, Ay, Bx - Ax, By - Ay);
@@ -949,8 +1067,13 @@ export class WorldMap2DCanvas
 
             const Wm = Math.abs(D.curWx - D.startWx), Dm = Math.abs(D.curWz - D.startWz);
             Ctx.font = '600 11px "DM Sans", sans-serif';
-            Ctx.fillStyle = '#e8c27a';
-            Ctx.fillText(`New Terrain Bounds · ${(Wm / 1000).toFixed(2)} × ${(Dm / 1000).toFixed(2)} km`, Ax + 8, Ay - 7);
+            Ctx.fillStyle = IsMarquee ? '#5ac8fa' : '#e8c27a';
+            Ctx.fillText(
+                IsMarquee
+                    ? `Multi-Select Terrains · ${(Wm / 1000).toFixed(2)} × ${(Dm / 1000).toFixed(2)} km`
+                    : `New Terrain Bounds · ${(Wm / 1000).toFixed(2)} × ${(Dm / 1000).toFixed(2)} km`,
+                Ax + 8, Ay - 7
+            );
             Ctx.restore();
         }
 
@@ -960,20 +1083,23 @@ export class WorldMap2DCanvas
             this._drawPolygonDraft(Ctx);
         }
 
-        // 8. Live Metric Brush Cursor Ring
-        if (this.pointerInside && (this.tool === 'brush' || this.tool === 'erase' || this.tool === 'smooth'))
+        // 8. Live Metric Brush / Stamp Cursor Ring
+        if (this.pointerInside && (this.tool === 'brush' || this.tool === 'erase' || this.tool === 'smooth' || this.tool === 'stamp'))
         {
             const [Cx, Cy] = this.pointerScreen;
-            const RadPx = Math.max(3.0, this.brushRadiusM * this.pxPerMeter);
+            const EffMeters = this.tool === 'stamp' ? Math.max(90, this.brushRadiusM * 2.2) : this.brushRadiusM;
+            const RadPx = Math.max(3.0, EffMeters * this.pxPerMeter);
             Ctx.save();
             Ctx.beginPath();
             Ctx.arc(Cx, Cy, RadPx, 0, Math.PI * 2);
-            Ctx.strokeStyle = this.tool === 'erase' ? '#ff7b7b' : (this.tool === 'smooth' ? '#5ac8fa' : '#e8c27a');
+            Ctx.strokeStyle = this.tool === 'erase' ? '#ff7b7b' : (this.tool === 'smooth' ? '#5ac8fa' : (this.tool === 'stamp' ? '#eff4cf' : '#e8c27a'));
             Ctx.lineWidth = 1.6;
+            if (this.tool === 'stamp') Ctx.setLineDash([5, 4]);
             Ctx.stroke();
+            Ctx.setLineDash([]);
 
             Ctx.beginPath();
-            Ctx.arc(Cx, Cy, RadPx * 0.25, 0, Math.PI * 2);
+            Ctx.arc(Cx, Cy, RadPx * 0.22, 0, Math.PI * 2);
             Ctx.strokeStyle = 'rgba(255,255,255,0.28)';
             Ctx.lineWidth = 1.0;
             Ctx.stroke();
@@ -988,9 +1114,8 @@ export class WorldMap2DCanvas
 
     _drawMetricGrid(Ctx, W, H, ViewMinX, ViewMinZ, ViewMaxX, ViewMaxZ)
     {
-        // Choose crisp major step in meters so major lines sit ~90..240 px apart
-        const Candidates = [100, 250, 500, 1000, 2000, 5000, 10000, 25000];
-        let MajorM = 1000;
+        const Candidates = [50, 100, 250, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000, 250000];
+        let MajorM = 100000;
         for (const Step of Candidates)
         {
             if (Step * this.pxPerMeter >= 95) { MajorM = Step; break; }
@@ -998,7 +1123,6 @@ export class WorldMap2DCanvas
         const MinorM = MajorM / 5;
 
         Ctx.save();
-        // Minor grid
         if (MinorM * this.pxPerMeter >= 16)
         {
             Ctx.strokeStyle = 'rgba(135, 185, 210, 0.055)';
@@ -1019,7 +1143,6 @@ export class WorldMap2DCanvas
             Ctx.stroke();
         }
 
-        // Major kilometer grid + coordinate labels
         Ctx.strokeStyle = 'rgba(145, 198, 224, 0.13)';
         Ctx.lineWidth = 1;
         Ctx.font = '500 10px "DM Sans", sans-serif';
@@ -1043,7 +1166,6 @@ export class WorldMap2DCanvas
         }
         Ctx.stroke();
 
-        // World Origin Axes (0, 0)
         const [Ox, Oy] = this.worldToScreen(0, 0);
         Ctx.strokeStyle = 'rgba(232, 194, 122, 0.24)';
         Ctx.beginPath();
@@ -1053,58 +1175,11 @@ export class WorldMap2DCanvas
         Ctx.restore();
     }
 
-    _drawRegionBoundsOverlay(Ctx, Region)
+    _drawRegionSplines(Ctx, Region)
     {
-        const B = Region.bounds;
-        const [X0, Y0] = this.worldToScreen(B.x, B.z);
-        const [X1, Y1] = this.worldToScreen(B.x + B.width, B.z + B.depth);
-        const Rw = X1 - X0, Rh = Y1 - Y0;
-
+        if (!Region.enabled) return;
         const IsPrimary = Region.id === this.activeRegionId;
-        const IsSelected = this.selectedRegionIds.has(Region.id);
-        const Accent = Region.color || '#e8c27a';
-
         Ctx.save();
-
-        // Subtle tint for disabled vs selected region
-        if (!Region.enabled)
-        {
-            Ctx.fillStyle = 'rgba(12, 18, 24, 0.45)';
-            Ctx.fillRect(X0, Y0, Rw, Rh);
-        }
-        else if (IsSelected)
-        {
-            Ctx.fillStyle = 'rgba(232, 194, 122, 0.045)';
-            Ctx.fillRect(X0, Y0, Rw, Rh);
-        }
-
-        // Frame border
-        Ctx.strokeStyle = !Region.enabled ? 'rgba(160, 170, 182, 0.38)' : (IsPrimary ? '#e8c27a' : (IsSelected ? '#5ac8fa' : Accent));
-        Ctx.lineWidth = IsPrimary ? 2.1 : (IsSelected ? 1.7 : 1.25);
-        if (!Region.enabled) Ctx.setLineDash([6, 5]);
-        else if (!IsSelected) Ctx.setLineDash([8, 4]);
-        Ctx.strokeRect(X0, Y0, Rw, Rh);
-        Ctx.setLineDash([]);
-
-        // Corner L-brackets on primary/selected bounds
-        const CornerLen = Math.min(14, Math.min(Rw, Rh) * 0.2);
-        if (IsSelected && CornerLen > 4)
-        {
-            Ctx.strokeStyle = IsPrimary ? '#fff1d0' : '#9be1ff';
-            Ctx.lineWidth = 2.4;
-            Ctx.beginPath();
-            // NW
-            Ctx.moveTo(X0, Y0 + CornerLen); Ctx.lineTo(X0, Y0); Ctx.lineTo(X0 + CornerLen, Y0);
-            // NE
-            Ctx.moveTo(X1 - CornerLen, Y0); Ctx.lineTo(X1, Y0); Ctx.lineTo(X1, Y0 + CornerLen);
-            // SE
-            Ctx.moveTo(X1, Y1 - CornerLen); Ctx.lineTo(X1, Y1); Ctx.lineTo(X1 - CornerLen, Y1);
-            // SW
-            Ctx.moveTo(X0 + CornerLen, Y1); Ctx.lineTo(X0, Y1); Ctx.lineTo(X0, Y1 - CornerLen);
-            Ctx.stroke();
-        }
-
-        // Draw Spline Landform overlays inside this region
         for (const Layer of Region.stack)
         {
             if (Layer.type !== 'spline' || !Layer.enabled || !Layer.points || Layer.points.length === 0) continue;
@@ -1138,29 +1213,75 @@ export class WorldMap2DCanvas
                 }
             }
         }
+        Ctx.restore();
+    }
 
-        // Header pill label on top-left of Terrain Bounds Box
+    _drawRegionBoundsOverlay(Ctx, Region)
+    {
+        const B = Region.bounds;
+        const [X0, Y0] = this.worldToScreen(B.x, B.z);
+        const [X1, Y1] = this.worldToScreen(B.x + B.width, B.z + B.depth);
+        const Rw = X1 - X0, Rh = Y1 - Y0;
+
+        const IsPrimary = Region.id === this.activeRegionId;
+        const IsSelected = this.selectedRegionIds.has(Region.id);
+        const Accent = Region.color || '#e8c27a';
+
+        Ctx.save();
+
+        if (!Region.enabled)
+        {
+            Ctx.fillStyle = 'rgba(12, 18, 24, 0.45)';
+            Ctx.fillRect(X0, Y0, Rw, Rh);
+        }
+        else if (IsSelected)
+        {
+            Ctx.fillStyle = IsPrimary ? 'rgba(232, 194, 122, 0.045)' : 'rgba(90, 200, 250, 0.045)';
+            Ctx.fillRect(X0, Y0, Rw, Rh);
+        }
+
+        Ctx.strokeStyle = !Region.enabled ? 'rgba(160, 170, 182, 0.38)' : (IsPrimary ? '#e8c27a' : (IsSelected ? '#5ac8fa' : Accent));
+        Ctx.lineWidth = IsPrimary ? 2.1 : (IsSelected ? 1.7 : 1.25);
+        if (!Region.enabled) Ctx.setLineDash([6, 5]);
+        else if (!IsSelected) Ctx.setLineDash([8, 4]);
+        Ctx.strokeRect(X0, Y0, Rw, Rh);
+        Ctx.setLineDash([]);
+
+        const CornerLen = Math.min(14, Math.min(Rw, Rh) * 0.2);
+        if (IsSelected && CornerLen > 4)
+        {
+            Ctx.strokeStyle = IsPrimary ? '#fff1d0' : '#9be1ff';
+            Ctx.lineWidth = 2.4;
+            Ctx.beginPath();
+            Ctx.moveTo(X0, Y0 + CornerLen); Ctx.lineTo(X0, Y0); Ctx.lineTo(X0 + CornerLen, Y0);
+            Ctx.moveTo(X1 - CornerLen, Y0); Ctx.lineTo(X1, Y0); Ctx.lineTo(X1, Y0 + CornerLen);
+            Ctx.moveTo(X1, Y1 - CornerLen); Ctx.lineTo(X1, Y1); Ctx.lineTo(X1 - CornerLen, Y1);
+            Ctx.moveTo(X0 + CornerLen, Y1); Ctx.lineTo(X0, Y1); Ctx.lineTo(X0, Y1 - CornerLen);
+            Ctx.stroke();
+        }
+
         const DimText = `${(B.width / 1000).toFixed(2)}×${(B.depth / 1000).toFixed(2)} km`;
+        const SyncBadge = Region.boundsLayer?.autoSyncMask ? ' · SYNC' : '';
+        const LockBadge = (Region.locked || Region.boundsLayer?.locked) ? ' · LOCKED' : '';
         const StatusPrefix = Region.enabled ? '● ' : '○ OFF · ';
-        const Label = `${StatusPrefix}${Region.name}  (${DimText})`;
+        const Label = `${StatusPrefix}${Region.name}  (${DimText}${SyncBadge}${LockBadge})`;
         Ctx.font = '600 11px "DM Sans", sans-serif';
         const TextW = Ctx.measureText(Label).width;
         const PillH = 20;
         const PillY = Math.max(22, Y0) - PillH - 3;
 
         Ctx.fillStyle = IsPrimary ? 'rgba(32, 27, 18, 0.92)' : 'rgba(14, 20, 26, 0.86)';
-        Ctx.strokeStyle = IsPrimary ? 'rgba(232, 194, 122, 0.65)' : 'rgba(255, 255, 255, 0.14)';
+        Ctx.strokeStyle = IsPrimary ? 'rgba(232, 194, 122, 0.65)' : (IsSelected ? 'rgba(90, 200, 250, 0.55)' : 'rgba(255, 255, 255, 0.14)');
         Ctx.lineWidth = 1;
         Ctx.beginPath();
         Ctx.roundRect(X0, PillY, TextW + 16, PillH, 5);
         Ctx.fill();
         Ctx.stroke();
 
-        Ctx.fillStyle = !Region.enabled ? '#86919c' : (IsPrimary ? '#f3d497' : '#d8dee6');
+        Ctx.fillStyle = !Region.enabled ? '#86919c' : (IsPrimary ? '#f3d497' : (IsSelected ? '#b3e7ff' : '#d8dee6'));
         Ctx.fillText(Label, X0 + 8, PillY + 14);
 
-        // 8 Resize Handles when in Select/Bounds mode and selected
-        if (this.tool === 'select' && IsSelected && !Region.locked)
+        if (this.tool === 'select' && IsSelected && !Region.locked && !Region.boundsLayer?.locked)
         {
             const Handles = this._getRegionHandleScreenPoints(Region);
             for (const H of HANDLE_NAMES)
@@ -1168,7 +1289,7 @@ export class WorldMap2DCanvas
                 const [Hx, Hy] = Handles[H];
                 const Hovered = this.hoverHandle === `${Region.id}:${H}`;
                 Ctx.fillStyle = Hovered ? '#fff4d6' : '#161c22';
-                Ctx.strokeStyle = '#e8c27a';
+                Ctx.strokeStyle = IsPrimary ? '#e8c27a' : '#5ac8fa';
                 Ctx.lineWidth = 1.6;
                 Ctx.beginPath();
                 Ctx.rect(Hx - 4.2, Hy - 4.2, 8.4, 8.4);
@@ -1213,11 +1334,11 @@ export class WorldMap2DCanvas
 
     _drawScaleBar(Ctx, W, H)
     {
-        const Steps = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
-        let BarM = 500;
+        const Steps = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 25000, 50000, 100000];
+        let BarM = 50000;
         for (const S of Steps)
         {
-            if (S * this.pxPerMeter >= 70 && S * this.pxPerMeter <= 190) { BarM = S; break; }
+            if (S * this.pxPerMeter >= 70 && S * this.pxPerMeter <= 195) { BarM = S; break; }
         }
         const BarPx = BarM * this.pxPerMeter;
         const X1 = W - 18, X0 = X1 - BarPx, Y = H - 16;
