@@ -1254,6 +1254,8 @@ export class TerrainOceanViewport
 
             Entry.indexCount = Mesh.indices.length;
             Entry.triCount = Mesh.triangleCount;
+            Entry.topTriCount = Mesh.topTriangleCount || 0;
+            Entry.baseTriCount = Mesh.baseTriangleCount || 0;
             Entry.vertCount = Mesh.vertexCount;
             Region.meshDirty = false;
         }

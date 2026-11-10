@@ -124,6 +124,8 @@ export class WorldMask2D
         this.oceanVisible = true;
         // Global visibility toggle for the separate Terrain Bounds layer across the 2D & 3D workspaces
         this.boundsLayerVisible = true;
+        // Optional workflow convenience: automatically create a Terrain Region + Bounds Layer when painting on open ocean
+        this.autoCreateTerrainOnNewMask = false;
     }
 
     /*--------------------------------------------------------------------------------------------------------------------------------------
@@ -543,6 +545,37 @@ export class WorldMask2D
             }
         }
         this.markRegionsDirtyInRect(MinX, MinZ, MaxX, MaxZ, Layer.id);
+    }
+
+    onMaskEdited(Layer, StrokeBounds)
+    {
+        if (!Layer || !StrokeBounds || !this.autoCreateTerrainOnNewMask) return null;
+        const MinX = StrokeBounds.x, MinZ = StrokeBounds.z;
+        const MaxX = MinX + StrokeBounds.width, MaxZ = MinZ + StrokeBounds.depth;
+        for (const R of this.regions)
+        {
+            const B = R.bounds;
+            if (MaxX >= B.x && MinX <= B.x + B.width && MaxZ >= B.z && MinZ <= B.z + B.depth)
+            {
+                return null;
+            }
+        }
+        const Pad = 110.0;
+        return this.addTerrainRegion({
+            maskLayerId: Layer.id,
+            bounds: {
+                x: Math.round(MinX - Pad),
+                z: Math.round(MinZ - Pad),
+                width: Math.max(260, Math.round(StrokeBounds.width + Pad * 2.0)),
+                depth: Math.max(260, Math.round(StrokeBounds.depth + Pad * 2.0))
+            },
+            boundsLayer: {
+                visible: true,
+                locked: false,
+                autoSyncMask: true,
+                paddingMeters: Pad
+            }
+        });
     }
 
     /**

@@ -4,6 +4,9 @@
 // Comprehensive Headless Validation Suite for Frontier Terrain Studio (Stage 1: 2D Terrain Workspace & 3D Landscape Workspace)
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WorldMask2D, ComputeRegionMaskSdf2D } from './Engine/WorldMask2D.js';
 import {
     LAYER_TYPE_META,
@@ -285,4 +288,53 @@ Suite('9. Supports simultaneous multi-terrain bounds editing, layer sync, multi-
     assert.equal(Restored.totalAllocatedTiles(), World.totalAllocatedTiles());
 });
 
-console.log(`\nAll ${Passed}/9 Frontier Terrain Studio validation suites passed!`);
+// 10. Studio DOM ID Parity, GLSL ES 3.00 Integrity, Stage-1 Scope Purity & Self-Hosted Fonts
+Suite('10. Studio DOM ID parity, GLSL ES 3.00 shader integrity, Stage-1 scope purity & zero external CDNs', () =>
+{
+    const Dir = path.dirname(fileURLToPath(import.meta.url));
+    const Html = fs.readFileSync(path.join(Dir, 'index.html'), 'utf8');
+    const Css = fs.readFileSync(path.join(Dir, 'TerrainWorldEditor.css'), 'utf8');
+    const EditorJs = fs.readFileSync(path.join(Dir, 'TerrainWorldEditor.js'), 'utf8');
+    const ViewportJs = fs.readFileSync(path.join(Dir, 'Engine', 'TerrainOceanViewport.js'), 'utf8');
+    const GpuPipeJs = fs.readFileSync(path.join(Dir, 'Engine', 'GpuTerrainStackPipeline.js'), 'utf8');
+
+    // Every $('...') lookup in TerrainWorldEditor.js must exist as id="..." in index.html
+    const HtmlIds = new Set(Array.from(Html.matchAll(/\bid="([^"]+)"/g), M => M[1]));
+    const ReferencedIds = new Set(Array.from(EditorJs.matchAll(/\$\('([^']+)'\)/g), M => M[1]));
+    assert.ok(ReferencedIds.size >= 30, 'Expected at least 30 DOM ID bindings in TerrainWorldEditor.js');
+    for (const Id of ReferencedIds)
+    {
+        assert.ok(HtmlIds.has(Id), `DOM ID #${Id} referenced in TerrainWorldEditor.js is missing from index.html`);
+    }
+
+    // Zero external http/https CDN dependencies in index.html (excluding SVG xmlns) or TerrainWorldEditor.css
+    const HtmlStripped = Html.replace(/http:\/\/www\.w3\.org\/2000\/svg/g, '');
+    assert.ok(!/https?:\/\//i.test(HtmlStripped), 'index.html must not depend on external CDNs');
+    assert.ok(!/https?:\/\//i.test(Css), 'TerrainWorldEditor.css must not depend on external CDNs');
+
+    // Self-hosted DM Sans & Font Awesome 6 Free WOFF2 fonts exist
+    assert.ok(fs.existsSync(path.join(Dir, '..', 'SdfSculptEditor', 'Fonts', 'dm-sans-latin-400-normal.woff2')));
+    assert.ok(fs.existsSync(path.join(Dir, '..', 'SdfSculptEditor', 'Fonts', 'fa-solid-900.woff2')));
+
+    // 4-Workspace bar includes 2D Terrain, 3D Landscape, Split, and disabled Stage-2 Erosion & Texturing roadmap pills
+    assert.ok(Html.includes('data-ws="2d"') && Html.includes('data-ws="3d"') && Html.includes('data-ws="split"'));
+    assert.ok(Html.includes('Erosion') && Html.includes('Texturing') && Html.includes('stage-planned'));
+
+    // Stage-1 purity: zero Rock/Overhang/Arch studio systems in UI or viewport
+    assert.ok(!EditorJs.includes('arch3d') && !EditorJs.includes('sdf3DOps') && !ViewportJs.includes('arch3d'));
+
+    // Every GLSL ES 3.00 shader template in GpuTerrainStackPipeline.js & TerrainOceanViewport.js has balanced braces
+    for (const SrcFile of [GpuPipeJs, ViewportJs])
+    {
+        const Shaders = Array.from(SrcFile.matchAll(/`(#version 300 es[\s\S]*?)`/g), M => M[1]);
+        assert.ok(Shaders.length >= 2);
+        for (const Glsl of Shaders)
+        {
+            const Opens = (Glsl.match(/\{/g) || []).length;
+            const Closes = (Glsl.match(/\}/g) || []).length;
+            assert.equal(Opens, Closes, 'Unbalanced braces in GLSL ES 3.00 shader');
+        }
+    }
+});
+
+console.log(`\nAll ${Passed}/10 Frontier Terrain Studio validation suites passed!`);
