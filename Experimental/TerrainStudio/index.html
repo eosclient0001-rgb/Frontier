@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Frontier Terrain Studio — realtime GPU SDF landform authoring: infinite 2D world, region bounds, spline and sculpt layers, 3D ray-marched preview.">
+    <title>Frontier — Terrain Studio</title>
+    <link rel="stylesheet" href="TerrainStudio.css">
+</head>
+<body>
+    <div id="WorkspaceHost">
+        <div class="Notch"><i class="Glyph">&#xf6fc;</i>Terrain Studio</div>
+
+        <section class="DockPanel" id="OutlinerPanel">
+            <header class="DockTabs">
+                <div class="DockTab">Outliner <span class="TabClose Glyph">&#xf00d;</span></div>
+                <button class="TabAdd" id="AddLayerTab" title="Add layer"><i class="Glyph">&#x2b;</i></button>
+            </header>
+            <div class="PanelBody">
+                <div class="PanelTitle"><h1>Outliner</h1><small id="OutlinerSummary">World</small></div>
+                <div class="SummaryCards">
+                    <div class="SummaryCard"><i class="Glyph" style="color:#f0a83a">&#xf5cb;</i><span>Regions</span><strong id="RegionCount">0</strong></div>
+                    <div class="SummaryCard"><i class="Glyph" style="color:#8fcf72">&#xf5fd;</i><span>Layers</span><strong id="LayerCount">0</strong></div>
+                </div>
+                <div class="SearchRow"><input id="OutlinerSearch" type="text" placeholder="Search  Ctrl+F" aria-label="Search outliner"></div>
+                <div id="OutlinerTree"></div>
+            </div>
+            <footer class="PanelFooter" id="OutlinerFooter"></footer>
+        </section>
+
+        <section class="DockPanel" id="ViewportPanel">
+            <header class="DockTabs">
+                <div class="DockTab">Viewport <span class="TabClose Glyph">&#xf00d;</span></div>
+            </header>
+            <div class="PanelBody">
+                <div class="ViewportHeader">
+                    <div class="SceneTitle">
+                        <i class="Glyph">&#xf6fc;</i>
+                        <div><b id="SceneTitle">Region</b><small id="SceneSubtitle"></small></div>
+                    </div>
+                    <span class="Badge" id="RealtimeBadge">REALTIME · GPU</span>
+                    <div class="Segmented" role="tablist" aria-label="Workspace">
+                        <button data-workspace="Planar" title="Infinite 2D world (1)"><i class="Glyph">&#xf279;</i>2D World</button>
+                        <button data-workspace="Terrain" title="3D landform (2)"><i class="Glyph">&#xf1b2;</i>3D Landform</button>
+                        <button data-workspace="Split" title="Split 2D + 3D (3)"><i class="Glyph">&#xf0db;</i>Split</button>
+                    </div>
+                </div>
+                <div class="ToolRow" id="ToolRow"></div>
+                <div class="ViewportArea" id="ViewportArea" data-workspace="Split">
+                    <div class="ViewportPane" id="PlanarPane">
+                        <canvas id="PlanarCanvas" tabindex="0" aria-label="2D world canvas"></canvas>
+                        <div class="PaneLabel">2D WORLD</div>
+                        <div class="ViewportHud">
+                            <button class="HudToggle Active" id="HillshadeToggle" title="Show GPU hillshade of the active region">Hillshade</button>
+                            <button class="HudToggle" id="FocusPlanar" title="Focus active region (F)"><i class="Glyph">&#xf065;</i></button>
+                        </div>
+                        <div class="PaneHint" id="PlanarHint"></div>
+                    </div>
+                    <div class="ViewportPane" id="TerrainPane">
+                        <canvas id="TerrainCanvas" tabindex="0" aria-label="3D landform viewport"></canvas>
+                        <div class="PaneLabel" id="TerrainLabel">3D LANDFORM</div>
+                        <div class="ViewportHud">
+                            <select id="LensSelect" aria-label="Lens">
+                                <option value="0">Shaded</option>
+                                <option value="1">Slope</option>
+                                <option value="2">Elevation</option>
+                                <option value="3">Normals</option>
+                                <option value="4">March cost</option>
+                            </select>
+                            <button class="HudToggle" id="ContourToggle" title="Contour lines">Contours</button>
+                            <button class="HudToggle Active" id="ShadowToggle" title="Sun shadows">Shadows</button>
+                            <button class="HudToggle Active" id="WaterToggle" title="Sea level plane">Water</button>
+                            <button class="HudToggle" id="FocusTerrain" title="Focus active region (F)"><i class="Glyph">&#xf065;</i></button>
+                        </div>
+                        <div class="PaneHint" id="TerrainHint"></div>
+                    </div>
+                </div>
+            </div>
+            <footer class="PanelFooter" id="StatusBar"></footer>
+        </section>
+
+        <section class="DockPanel" id="InspectorPanel">
+            <header class="DockTabs">
+                <div class="DockTab">Inspector <span class="TabClose Glyph">&#xf00d;</span></div>
+            </header>
+            <div class="PanelBody" id="InspectorBody"></div>
+            <footer class="PanelFooter">
+                <button id="UndoButton" title="Undo (Ctrl+Z)" style="min-height:22px;height:22px;padding:0 8px"><i class="Glyph">&#xf2ea;</i></button>
+                <button id="RedoButton" title="Redo (Ctrl+Y)" style="min-height:22px;height:22px;padding:0 8px"><i class="Glyph">&#xf2f9;</i></button>
+                <button id="SaveButton" title="Save to browser storage (Ctrl+S)" style="min-height:22px;height:22px;padding:0 8px"><i class="Glyph">&#xf0c7;</i>Save</button>
+                <span id="SaveStatus"></span>
+            </footer>
+        </section>
+
+        <button class="DrawerTab" id="ShortcutTab"><i class="Glyph">&#xf11c;</i>Shortcuts</button>
+        <div id="ShortcutOverlay"></div>
+    </div>
+    <script type="module" src="TerrainStudio.js"></script>
+</body>
+</html>

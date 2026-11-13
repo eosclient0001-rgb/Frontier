@@ -4,6 +4,23 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Terrain Studio prototype — 2D world authoring + GPU-sculpted landform — 2026-11-13
+
+- New zero-build prototype in `Experimental/TerrainStudio/` (ProjectZero editor UI, self-hosted fonts/icons):
+  infinite 2D world canvas (Lasso/Polygon/Stroke landmasses, snap-to-shape region boxes as world-partition
+  simulation bounds, road/river/canyon/ridge/tunnel splines) plus a ray-marched 3D landform with height sculpt
+  (7 brush modes) and volume sculpt (Add/Carve/Restore) for overhangs and caves. Sculpt layers are fixed-size
+  world-anchored GPU textures per region — unlimited strokes, no "sculpt limit", no mesh rebake; undo/redo swaps
+  GPU snapshots; non-destructive spline layers re-evaluate only from the dirty layer upward.
+- `Validation/TerrainStudio.Validation.mjs` (headless Chromium, SwiftShader CPU-emulated Vulkan — timings
+  pessimistic) passes: 0 console/page errors; height-brush batches ≤6.2 ms CPU submit for 25 dabs; volume carve
+  ≤1.0 ms; undo/redo of a GPU carve verified by stack depth and pixel revert; 2D run created shapes 4 / regions 2 /
+  splines 6 and auto-activated "Region 02"; six live canyon edits each re-evaluated (revision delta +1) at
+  1.8–17.6 ms blocking. First-load GPU evaluate is 3052 ms and includes one-time shader compilation on the
+  software rasterizer.
+- Not run: on a hardware GPU (sandbox is SwiftShader only), erosion/simulation (explicitly out of scope for this
+  slice), Rock Studio (later). [Evidence](../Exhibits/TerrainStudio/README.md).
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,

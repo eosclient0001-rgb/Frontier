@@ -1,0 +1,185 @@
+/*====================================================================================================================================
+                                                       TERRAINSTUDIO.CSS
+====================================================================================================================================*/
+/* 🧩 Project-Zero editor visual language: charcoal docks, trapezoidal tabs, notch, rounded cards and pill controls */
+
+@font-face { font-family: "DM Sans"; font-weight: 300; src: url("Fonts/dm-sans-latin-300-normal.woff2") format("woff2"); }
+@font-face { font-family: "DM Sans"; font-weight: 400; src: url("Fonts/dm-sans-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "DM Sans"; font-weight: 500; src: url("Fonts/dm-sans-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Font Awesome Solid"; font-weight: 900; src: url("Fonts/fa-solid-900.woff2") format("woff2"); }
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { background: #090909; color: #f0f0f0; font-family: "DM Sans", sans-serif; font-size: 13px; font-weight: 300; user-select: none; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; border: 1px solid #ffffff0d; background: #222; border-radius: 16px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 28px; padding: 5px 12px; }
+button:hover { background: #2e2e2e; }
+button:active { background: #383838; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 1px solid #adb2c4; outline-offset: 2px; }
+button.Primary { background: #e8e8e8; color: #111; font-weight: 500; }
+button.Primary:hover { background: #fff; }
+button.Danger { color: #ff8f7d; }
+input, select { min-width: 0; background: #000; border: 1px solid #ffffff0d; outline: none; }
+input[type="number"], input[type="text"] { border-radius: 12px; height: 28px; padding: 3px 10px; }
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; width: 72px; text-align: right; }
+input::-webkit-inner-spin-button { appearance: none; }
+input[type="range"] { appearance: none; -webkit-appearance: none; border: 0; height: 26px; border-radius: 30px; background: linear-gradient(90deg, #454545 0 var(--fill, 50%), #242424 var(--fill, 50%) 100%); cursor: ew-resize; flex: 1; margin: 0; }
+input[type="range"]::-webkit-slider-thumb { appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #e0e0e0; box-shadow: 0 1px 2px #0008; }
+input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border: 0; border-radius: 50%; background: #e0e0e0; }
+select { height: 30px; border-radius: 16px; padding: 4px 12px; color: #ccc; }
+option { background: #1a1a1a; }
+small { font-size: 10px; color: #888; font-weight: 400; }
+h1, h2, h3 { font-weight: 300; margin: 0; }
+.Glyph { font-family: "Font Awesome Solid"; font-weight: 900; font-style: normal; line-height: 1; display: inline-block; width: 1.15em; text-align: center; }
+
+/*------------------------------------------------------------------------------------------------------------------------
+                                                    WORKSPACE HOST
+------------------------------------------------------------------------------------------------------------------------*/
+
+#WorkspaceHost { position: relative; display: grid; grid-template-columns: 300px minmax(0, 1fr) 330px; gap: 6px; height: 100%; padding: 6px; }
+.DockPanel { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.DockTabs { display: flex; align-items: flex-end; gap: 8px; height: 30px; flex: none; }
+.DockTab { position: relative; height: 28px; padding: 0 30px 0 22px; display: flex; align-items: center; gap: 10px; background: #131313; font-size: 11px; font-weight: 500; clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 100%, 0 100%); }
+.DockTab .TabClose { position: absolute; right: 12px; font-size: 9px; color: #9a9a9a; }
+.TabAdd { width: 24px; height: 24px; min-height: 24px; padding: 0; border-radius: 50%; margin-bottom: 3px; font-size: 13px; }
+.PanelBody { flex: 1; min-height: 0; background: #131313; border-radius: 0 12px 0 0; padding: 16px 14px; overflow: auto; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+.PanelFooter { flex: none; height: 30px; background: #0f0f0f; display: flex; align-items: center; gap: 16px; padding: 0 14px; font-size: 10px; color: #8a8a8a; border-radius: 0 0 12px 12px; white-space: nowrap; overflow: hidden; }
+.PanelFooter b { color: #e4e4e4; font-weight: 500; }
+.PanelFooter .Good { color: #5fd38a; }
+.Notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 20; height: 26px; padding: 0 56px; display: flex; align-items: center; gap: 8px; background: #1b1b1b; color: #cfcfcf; font-size: 11px; font-weight: 500; clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 100%, 16px 100%); }
+.Notch .Glyph { color: #f0a83a; }
+.DrawerTab { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); z-index: 20; height: 24px; padding: 0 44px; display: flex; align-items: center; gap: 8px; background: #1b1b1b; color: #cfcfcf; font-size: 11px; font-weight: 500; clip-path: polygon(16px 0, calc(100% - 16px) 0, 100% 100%, 0 100%); cursor: pointer; border: 0; border-radius: 0; min-height: 0; }
+
+/*------------------------------------------------------------------------------------------------------------------------
+                                                       OUTLINER
+------------------------------------------------------------------------------------------------------------------------*/
+
+.PanelTitle { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.PanelTitle h1 { font-size: 21px; }
+.SummaryCards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.SummaryCard { background: #1a1a1a; border: 1px solid #ffffff0a; border-radius: 16px; padding: 10px 12px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; align-items: center; column-gap: 8px; }
+.SummaryCard .Glyph { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: #2b2b2b; grid-row: span 2; }
+.SummaryCard strong { font-size: 22px; font-weight: 300; justify-self: end; grid-row: span 2; grid-column: 2; }
+.SummaryCard span { font-size: 10px; color: #9a9a9a; }
+.SearchRow { display: flex; gap: 8px; margin-bottom: 12px; }
+.SearchRow input { flex: 1; height: 32px; border-radius: 16px; padding: 4px 14px; background: #1a1a1a; }
+.TreeGroup { margin-bottom: 8px; }
+.TreeGroupHeader { display: flex; align-items: center; gap: 8px; padding: 6px 4px; color: #d0d0d0; }
+.TreeGroupHeader .Glyph { color: #8a8a8a; font-size: 11px; }
+.TreeGroupHeader small { margin-left: 2px; white-space: nowrap; }
+.TreeGroupHeader > span { white-space: nowrap; }
+.TreeGroupHeader button { margin-left: auto; min-height: 22px; height: 22px; padding: 0 9px; font-size: 10px; }
+.TreeRow { position: relative; display: flex; align-items: center; gap: 9px; padding: 6px 8px 6px calc(10px + var(--indent, 0) * 16px); border-radius: 10px; border: 1px solid transparent; cursor: pointer; }
+.TreeRow:hover { background: #1b1b1b; }
+.TreeRow.Selected { background: #1f1f1f; border-color: #ffffff1a; }
+.TreeRow.Selected::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: #f0a83a; }
+.TreeRow .RowIcon { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 10px; background: #262626; flex: none; }
+.TreeRow .RowText { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.TreeRow .RowText span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.TreeRow .RowText small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #7d7d7d; }
+.TreeRow .RowActions { display: none; gap: 3px; }
+.TreeRow:hover .RowActions { display: flex; }
+.TreeRow .RowActions button { width: 20px; height: 20px; min-height: 20px; padding: 0; font-size: 9px; border-radius: 50%; }
+.TreeRow .Visibility { width: 18px; height: 18px; min-height: 18px; padding: 0; border-radius: 50%; font-size: 8px; background: #2fbf6a; color: #08200f; border: 0; flex: none; }
+.TreeRow .Visibility.Hidden { background: #2a2a2a; color: #777; }
+.Chip { font-size: 9px; font-weight: 500; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 9px; background: #f0a83a; color: #111; }
+.Chip.Muted { background: #2a2a2a; color: #9a9a9a; }
+
+/*------------------------------------------------------------------------------------------------------------------------
+                                                    VIEWPORT PANEL
+------------------------------------------------------------------------------------------------------------------------*/
+
+#ViewportPanel .PanelBody { padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; border-radius: 0 12px 0 0; }
+.ViewportHeader { display: flex; align-items: center; gap: 12px; flex: none; }
+.SceneTitle { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.SceneTitle .Glyph { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: #222; color: #f0a83a; }
+.SceneTitle div { display: flex; flex-direction: column; min-width: 0; }
+.SceneTitle b { font-weight: 500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.Badge { font-size: 9px; font-weight: 500; letter-spacing: 0.08em; color: #5fd38a; border: 1px solid #5fd38a55; padding: 3px 8px; border-radius: 8px; }
+.Segmented { margin-left: auto; display: inline-flex; background: #1a1a1a; border-radius: 18px; padding: 3px; gap: 2px; }
+.Segmented button { background: transparent; border: 0; min-height: 26px; padding: 4px 12px; font-size: 11px; }
+.Segmented button.Active { background: #e8e8e8; color: #111; font-weight: 500; }
+.ToolRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; }
+.ToolGroup { display: inline-flex; align-items: center; gap: 4px; background: #1a1a1a; border-radius: 18px; padding: 3px; }
+.ToolGroup .GroupLabel { font-size: 9px; color: #7a7a7a; font-weight: 500; letter-spacing: 0.08em; padding: 0 6px 0 8px; }
+.ToolGroup button { background: transparent; border: 0; min-height: 26px; padding: 4px 10px; font-size: 11px; }
+.ToolGroup button.Active { background: #e8e8e8; color: #111; font-weight: 500; }
+.ToolGroup button kbd { font-family: inherit; font-size: 9px; color: #777; }
+.ToolGroup button.Active kbd { color: #555; }
+.ToolGroup .Swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.ToolGroup input[type="range"] { width: 90px; height: 22px; flex: none; }
+.ToolGroup .ToolValue { font-size: 10px; color: #bbb; min-width: 44px; padding-right: 8px; }
+.ViewportArea { position: relative; flex: 1; min-height: 0; display: grid; gap: 8px; }
+.ViewportArea[data-workspace="Planar"] { grid-template-columns: 1fr; }
+.ViewportArea[data-workspace="Terrain"] { grid-template-columns: 1fr; }
+.ViewportArea[data-workspace="Split"] { grid-template-columns: 1fr 1fr; }
+.ViewportArea[data-workspace="Planar"] #TerrainPane, .ViewportArea[data-workspace="Terrain"] #PlanarPane { display: none; }
+.ViewportPane { position: relative; min-width: 0; min-height: 0; border-radius: 12px; overflow: hidden; background: #0b0b0b; border: 1px solid #ffffff0a; }
+.ViewportPane.Focused { border-color: #ffffff24; }
+.ViewportPane canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.PaneLabel { position: absolute; left: 12px; top: 10px; font-size: 9px; letter-spacing: 0.1em; font-weight: 500; color: #9a9a9a; background: #000a; padding: 4px 8px; border-radius: 8px; pointer-events: none; }
+.ViewportHud { position: absolute; right: 10px; top: 8px; display: flex; gap: 6px; align-items: center; }
+.ViewportHud select { height: 28px; font-size: 11px; background: #111d; }
+.HudToggle { min-height: 28px; height: 28px; padding: 0 10px; font-size: 11px; background: #111d; }
+.HudToggle.Active { background: #e8e8e8; color: #111; }
+.PaneHint { position: absolute; left: 12px; bottom: 10px; font-size: 10px; color: #8f8f8f; background: #000a; padding: 5px 9px; border-radius: 8px; pointer-events: none; max-width: calc(100% - 24px); }
+.ErrorBanner { position: absolute; inset: 40px; display: grid; place-items: center; text-align: center; color: #ff8f7d; font-size: 13px; }
+
+/*------------------------------------------------------------------------------------------------------------------------
+                                                       INSPECTOR
+------------------------------------------------------------------------------------------------------------------------*/
+
+.InspectorPath { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #8a8a8a; margin-bottom: 14px; }
+.InspectorTitle { font-size: 24px; font-weight: 300; margin-bottom: 4px; }
+.InspectorTitle input { font-size: 22px; font-weight: 300; background: transparent; border: 0; border-bottom: 1px solid transparent; border-radius: 0; height: auto; padding: 0; width: 100%; }
+.InspectorTitle input:focus { border-bottom-color: #444; }
+.InspectorSubtitle { font-size: 11px; color: #6fa8ff; margin-bottom: 16px; }
+.HeroBanner { height: 96px; border-radius: 16px; margin-bottom: 12px; position: relative; overflow: hidden; border: 1px solid #ffffff12; background: linear-gradient(180deg, #2b4a6b, #8aa0a8 70%, #3d3a30 71%, #2b281f); }
+.HeroBanner span { position: absolute; left: 12px; bottom: 10px; font-size: 15px; font-weight: 500; text-shadow: 0 1px 3px #000; }
+.HeroBanner small { position: absolute; right: 12px; bottom: 12px; color: #ddd; text-shadow: 0 1px 3px #000; }
+.MetricGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.MetricCard { background: #1a1a1a; border: 1px solid #ffffff0a; border-radius: 14px; padding: 10px 12px; }
+.MetricCard strong { display: block; font-size: 17px; font-weight: 400; }
+.MetricCard strong small { font-size: 10px; margin-left: 2px; }
+.MetricCard span { font-size: 9px; color: #7c7c7c; letter-spacing: 0.08em; text-transform: uppercase; }
+.SectionTitle { display: flex; justify-content: space-between; align-items: center; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #bdbdbd; margin: 16px 0 8px; }
+.SectionTitle small { text-transform: none; letter-spacing: 0; color: #7a7a7a; }
+.Card { background: #171717; border: 1px solid #ffffff0a; border-radius: 16px; padding: 12px; margin-bottom: 10px; }
+.TileGrid { display: grid; grid-template-columns: repeat(var(--columns, 3), 1fr); gap: 6px; margin-bottom: 10px; }
+.Tile { flex-direction: column; gap: 6px; min-height: 64px; border-radius: 14px; background: #1a1a1a; border: 1px solid #ffffff0d; font-size: 10px; padding: 8px 4px; }
+.Tile .Glyph { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; background: #262626; font-size: 12px; }
+.Tile.Active { border-color: #ffffff40; background: #232323; }
+.Tile.Active .Glyph { background: #e8e8e8; color: #111; }
+.ControlRow { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.ControlRow .ControlLabel { display: flex; justify-content: space-between; font-size: 11px; color: #c8c8c8; }
+.ControlRow .ControlLabel small { color: #6f6f6f; }
+.ControlRow .ControlInputs { display: flex; gap: 8px; align-items: center; }
+.ControlRow .Unit { font-size: 10px; color: #777; width: 18px; }
+.PillRow { display: flex; gap: 4px; flex-wrap: wrap; }
+.PillRow button { min-height: 26px; padding: 3px 11px; font-size: 11px; }
+.PillRow button.Active { background: #e8e8e8; color: #111; font-weight: 500; }
+.ToggleRow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 11px; color: #c8c8c8; }
+.Switch { width: 38px; height: 22px; min-height: 22px; padding: 0; border-radius: 11px; background: #2a2a2a; position: relative; }
+.Switch::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #888; transition: left 0.12s; }
+.Switch.On { background: #2fbf6a; }
+.Switch.On::after { left: 19px; background: #fff; }
+.ButtonRow { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.Note { font-size: 11px; color: #8d8d8d; line-height: 1.5; margin: 8px 0; }
+.Note b { color: #d8d8d8; font-weight: 500; }
+.KeyGrid { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 11px; color: #b0b0b0; }
+.KeyGrid kbd { font-family: inherit; font-size: 10px; background: #262626; border-radius: 6px; padding: 2px 6px; color: #e0e0e0; justify-self: start; }
+.PointList { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.PointList button { min-height: 22px; padding: 2px 8px; font-size: 10px; }
+.PointList button.Active { background: #ffd84d; color: #111; }
+
+#ShortcutOverlay { position: absolute; left: 50%; bottom: 38px; transform: translateX(-50%); z-index: 30; width: 520px; background: #151515f2; border: 1px solid #ffffff1a; border-radius: 18px; padding: 16px 18px; display: none; }
+#ShortcutOverlay.Open { display: block; }
+
+@media (max-width: 1100px)
+{
+    #WorkspaceHost { grid-template-columns: 240px minmax(0, 1fr) 280px; }
+}
+@media (max-width: 860px)
+{
+    #WorkspaceHost { grid-template-columns: 1fr; grid-template-rows: 220px minmax(420px, 1fr) 320px; overflow: auto; }
+}
