@@ -1,0 +1,180 @@
+name: Native UV Windows build and validation
+
+on:
+  push:
+    branches: ['arena/52270d91-frontier']
+    paths:
+      - '.github/workflows/windows-uv-build.yml'
+      - 'CMakeLists.txt'
+      - 'Automation/**'
+      - 'Engine/**'
+      - 'EngineContent/**'
+      - 'Exhibits/UVWorkspaceRepair/Code/**'
+      - 'Exhibits/UVInput/Code/**'
+      - 'Exhibits/*Validation.cpp'
+      - 'Experimental/UVEditor/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-uv-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  Windows:
+    name: Windows x64 editor and standalone package
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Recover pinned dependencies, continued fonts and Slang
+        run: |
+          New-Item -ItemType Directory -Force Build/UVWindows/Diagnostics | Out-Null
+          python -m pip install -r Automation/FontRequirements.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python Automation/PrepareDependencies.py 2>&1 | Tee-Object Build/UVWindows/Diagnostics/Dependencies.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python Automation/PrepareUVFonts.py 2>&1 | Tee-Object Build/UVWindows/Diagnostics/Fonts.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python Automation/PrepareShaderToolchain.py 2>&1 | Tee-Object Build/UVWindows/Diagnostics/Shaders.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Configure the continued native UV application, not the older UI-only build
+        run: |
+          cmake -S . -B Build/UVWindows -G "Visual Studio 17 2022" -A x64 `
+            -DFRONTIER_BUILD_UV_WORKSPACE=ON -DFRONTIER_PROFILE=Editor -DBUILD_TESTING=ON `
+            '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded$<$<CONFIG:Debug>:Debug>' `
+            2>&1 | Tee-Object Build/UVWindows/Diagnostics/Configure.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build both applications and all validation executables with MSVC
+        run: |
+          cmake --build Build/UVWindows --config Release --parallel 4 `
+            2>&1 | Tee-Object Build/UVWindows/Diagnostics/Build.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Run Windows CPU, platform-window and boundary checks
+        run: |
+          # Hosted Windows has no guaranteed Vulkan device. Actual Vulkan interaction runs below on SwiftShader.
+          ctest --test-dir Build/UVWindows -C Release --output-on-failure `
+            --output-junit "$pwd/Build/UVWindows/Diagnostics/Windows.xml" `
+            -R '^(InputValidation|WindowValidation|DockingValidation|ControlCentreValidation|WorkspacePanesValidation|LifecycleValidation|WorkspaceRevisionValidation|ContentBrowserValidation|GeometryNetworkValidation|UVBoundaryValidation)$' `
+            2>&1 | Tee-Object Build/UVWindows/Diagnostics/Tests.txt
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Assemble Windows portable folder and digest
+        run: |
+          $Payload = Join-Path $env:RUNNER_TEMP 'Frontier-UV-Windows-x64'
+          New-Item -ItemType Directory -Force "$Payload/CompiledShaders", "$Payload/EngineContent" | Out-Null
+          Copy-Item Build/UVWindows/Release/FrontierUV.exe, Build/UVWindows/Release/FrontierEditor.exe "$Payload/"
+          Copy-Item Automation/WindowsWorkspaceLaunch.cmd "$Payload/FrontierUV.cmd"
+          Copy-Item Automation/WindowsWorkspaceLaunch.cmd "$Payload/FrontierEditor.cmd"
+          Copy-Item Build/UVWindows/CompiledShaders/* "$Payload/CompiledShaders/" -Recurse -Force
+          Copy-Item EngineContent/Geometry, EngineContent/MatCaps, EngineContent/FontsArchives "$Payload/EngineContent/" -Recurse
+          @"
+          Frontier native UV workspace - Windows x64 - $env:GITHUB_SHA
+
+          Run FrontierUV.exe (standalone) or FrontierEditor.exe (full editor).
+          Keep EngineContent and CompiledShaders beside both executables.
+          A Vulkan 1.2 graphics driver is required. No runtime DLL or third-party driver is installed by this package.
+          This package is unsigned. MSVC build and hosted CPU checks are not physical-device acceptance.
+          Native input/Vulkan regression results are in the separate validation artifacts.
+          "@ | Set-Content "$Payload/README.txt" -Encoding utf8
+          Compress-Archive -Path "$Payload/*" -DestinationPath Build/Frontier-UV-Windows-x64.zip -CompressionLevel Optimal
+          Get-FileHash Build/Frontier-UV-Windows-x64.zip -Algorithm SHA256 |
+            Format-List | Out-File Build/UVWindows/Diagnostics/PackageSha256.txt -Encoding utf8
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frontier-UV-Windows-x64
+          path: Build/Frontier-UV-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload Windows build and test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Native-UV-Windows-diagnostics
+          path: Build/UVWindows/Diagnostics/
+          if-no-files-found: warn
+          retention-days: 14
+
+  NativeValidation:
+    name: Native Vulkan replay (${{ matrix.profile }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [Development, Editor]
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Recover pinned dependencies, fonts, Slang and SwiftShader
+        run: |
+          set -euo pipefail
+          mkdir -p Build/UVValidation/Diagnostics
+          python -m pip install -r Automation/FontRequirements.txt
+          python Automation/PrepareDependencies.py 2>&1 | tee Build/UVValidation/Diagnostics/Dependencies.txt
+          python Automation/PrepareUVFonts.py 2>&1 | tee Build/UVValidation/Diagnostics/Fonts.txt
+          python Automation/PrepareShaderToolchain.py 2>&1 | tee Build/UVValidation/Diagnostics/Shaders.txt
+      - name: Configure native null-platform verification
+        run: |
+          set -euo pipefail
+          Instrumentation=()
+          if [ '${{ matrix.profile }}' = Editor ]; then
+            Instrumentation+=('-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer')
+            Instrumentation+=('-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer')
+          fi
+          cmake -S . -B Build/UVValidation -G Ninja \
+            -DFRONTIER_BUILD_UV_WORKSPACE=ON -DFRONTIER_PROFILE='${{ matrix.profile }}' \
+            -DGLFW_BUILD_X11=OFF -DGLFW_BUILD_WAYLAND=OFF -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Debug \
+            "${Instrumentation[@]}" 2>&1 | tee Build/UVValidation/Diagnostics/Configure.txt
+      - name: Build native validation applications
+        run: |
+          set -euo pipefail
+          cmake --build Build/UVValidation --parallel 3 2>&1 | tee Build/UVValidation/Diagnostics/Build.txt
+      - name: Run full native suite and retain complete focused results
+        run: |
+          set -euo pipefail
+          ctest --test-dir Build/UVValidation --output-on-failure \
+            --output-junit "$PWD/Build/UVValidation/Diagnostics/Native.xml" \
+            2>&1 | tee Build/UVValidation/Diagnostics/Tests.txt
+          Build/UVValidation/WheelInputValidation 2>&1 | tee Build/UVValidation/Diagnostics/Wheel.txt
+          Build/UVValidation/WorkspaceRepairValidation 2>&1 | tee Build/UVValidation/Diagnostics/Rendering.txt
+          Build/UVValidation/WorkspaceInteractionValidation 2>&1 | tee Build/UVValidation/Diagnostics/Interaction.txt
+          node Experimental/UVEditor/UVValidation.mjs 2>&1 | tee Build/UVValidation/Diagnostics/HTML.txt
+      - name: Upload native validation evidence, not a Linux product package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Native-UV-${{ matrix.profile }}-validation
+          path: |
+            Build/UVValidation/Diagnostics/
+            Exhibits/UVWorkspaceRepair/Images/After/
+            Exhibits/UVWorkspaceRepair/Images/WheelRegression/
+            Exhibits/Images/UV/
+          if-no-files-found: warn
+          retention-days: 14

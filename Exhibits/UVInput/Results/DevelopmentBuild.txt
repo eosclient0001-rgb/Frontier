@@ -1,0 +1,23 @@
+[0/1] Re-running CMake...
+-- Frontier active profile: Development
+[ImGui]    PatchA-TrapezoidalTabs.patch verified
+[ImGui]    PatchB-TabOverlapZOrder.patch verified
+[ImGui]    PatchC-RoundTabButtons.patch verified
+[ImGui]    PatchD-TabAddButton.patch verified
+[ImGui]    PatchE-NoTabScrollButtons.patch verified
+[ImGui]    PatchF-TabContentInsets.patch verified
+[ImGui]    PatchG-AdjacentTabAddButton.patch verified
+[ImGui]    PatchH-SmoothOverscroll.patch verified
+[Pinned]   imgui (3bae66c735)
+[Pinned]   thorvg (6715f99ac1)
+[Pinned]   tomlpp (1e8829b793)
+[Pinned]   glfw (a74efa0d56)
+[Pinned]   vulkan-headers (v1.4.321)
+[Pinned]   volk (a8da8ef336)
+[Pinned]   stb (2c980bb598)
+[Pinned]   JoltPhysics (e77f175595)
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Frontier/_ClaudeScratch/build/UV
+[1/3] Building CXX object CMakeFiles/WheelInputValidation.dir/Exhibits/UVInput/Code/WheelInputValidation.cpp.o
+[2/3] Linking CXX executable WheelInputValidation

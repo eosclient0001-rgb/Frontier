@@ -1,0 +1,43 @@
+Test project /home/user/Frontier/_ClaudeScratch/build/UVEditorSanitized
+      Start  1: InputValidation
+ 1/19 Test  #1: InputValidation ....................   Passed    0.52 sec
+      Start  2: WindowValidation
+ 2/19 Test  #2: WindowValidation ...................   Passed    0.64 sec
+      Start  3: DockingValidation
+ 3/19 Test  #3: DockingValidation ..................   Passed    3.67 sec
+      Start  4: ControlCentreValidation
+ 4/19 Test  #4: ControlCentreValidation ............   Passed   29.15 sec
+      Start  5: WorkspacePanesValidation
+ 5/19 Test  #5: WorkspacePanesValidation ...........   Passed   14.95 sec
+      Start  6: LifecycleValidation
+ 6/19 Test  #6: LifecycleValidation ................   Passed    3.33 sec
+      Start  7: WorkspaceRevisionValidation
+ 7/19 Test  #7: WorkspaceRevisionValidation ........   Passed    2.75 sec
+      Start  8: ContentBrowserValidation
+ 8/19 Test  #8: ContentBrowserValidation ...........   Passed   18.58 sec
+      Start  9: GeometryNetworkValidation
+ 9/19 Test  #9: GeometryNetworkValidation ..........   Passed    2.90 sec
+      Start 10: UVRasterPickingGizmoValidation
+10/19 Test #10: UVRasterPickingGizmoValidation .....   Passed   19.08 sec
+      Start 11: UVWorkspaceUIValidation
+11/19 Test #11: UVWorkspaceUIValidation ............   Passed    9.51 sec
+      Start 12: UVParameterizationValidation
+12/19 Test #12: UVParameterizationValidation .......   Passed    4.65 sec
+      Start 13: UVInteractiveAuthoringValidation
+13/19 Test #13: UVInteractiveAuthoringValidation ...   Passed    2.37 sec
+      Start 14: UVBoundaryValidation
+14/19 Test #14: UVBoundaryValidation ...............   Passed   30.65 sec
+      Start 15: WheelInputValidation
+15/19 Test #15: WheelInputValidation ...............   Passed   16.71 sec
+      Start 16: WorkspaceRepairValidation
+16/19 Test #16: WorkspaceRepairValidation ..........   Passed    2.35 sec
+      Start 17: WorkspaceInteractionValidation
+17/19 Test #17: WorkspaceInteractionValidation .....   Passed  126.20 sec
+      Start 18: FrontierUVExecutableSmoke
+18/19 Test #18: FrontierUVExecutableSmoke ..........   Passed    2.44 sec
+      Start 19: FrontierEditorExecutableSmoke
+19/19 Test #19: FrontierEditorExecutableSmoke ......   Passed    2.46 sec
+
+100% tests passed out of 19
+
+Total Test time (real) = 292.93 sec

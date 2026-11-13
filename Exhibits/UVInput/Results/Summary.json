@@ -1,0 +1,66 @@
+{
+  "DateUtc": "2026-11-12T23:49:18.367836+00:00",
+  "Environment": {
+    "OperatingPlatform": "Linux-6.1.158+-x86_64-with-glibc2.36",
+    "Compiler": "c++ (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "Python": "3.11.2",
+    "WindowPlatform": "GLFW 3.4 null platform; installed scroll callback replay",
+    "Rendering": "production Vulkan UV rasterizer on bundled SwiftShader; ImGui exhibit composite",
+    "SanitizerOptions": "ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1",
+    "SanitizerLimit": "leak detection disabled globally because of external Vulkan-driver allocations"
+  },
+  "Profiles": [
+    {
+      "Profile": "Development / Debug",
+      "TestCount": 17,
+      "FailedTests": [],
+      "SkippedTests": [],
+      "WheelAssertionsPassed": 36,
+      "WheelAssertionCount": 36,
+      "WheelOutput": "../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427\n../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427\n../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427\n[PASS] desktop window installed its real GLFW scroll callback\n[PASS] desktop loop drains the existing exchange before snapshot and minimized-window branch\n[PASS] REPRODUCED original defect: callback packet queued, wheel snapshot remains zero without TickExchange\n[PASS] existing InputExtension::TickExchange alone restores the missing wheel delta\n[PASS] attach production Vulkan UV rasterizer\n[PASS] initialize native docked UV workspace\n[PASS] all three real docked panes rendered\n[PASS] Before.png\n[PASS] GLFW wheel delta reaches ImGui through both existing exchanges\n[PASS] Inspector wheel-down moves content by 84 pixels\n[PASS] Inspector scrolling does not scroll Outliner\n[PASS] Inspector scrolling does not zoom either viewport\n[PASS] idle tick clears the wheel delta and does not repeat scrolling\n[PASS] Inspector wheel-up reverses scrolling\n[PASS] Inspector clamps at its content bottom\n[PASS] Inspector can scroll all the way back to the top\n[PASS] Outliner wheel-down moves layer content by 56 pixels\n[PASS] Outliner scrolling does not scroll Inspector\n[PASS] Outliner wheel-up reverses scrolling\n[PASS] Outliner clamps at its layer-list bottom\n[PASS] Outliner can scroll all the way back to the top\n[PASS] Outliner scrolling does not zoom either viewport\n[PASS] 2D viewport wheel-up zooms in through the native pane\n[PASS] 2D zoom changes the actual Vulkan framebuffer pixels\n[PASS] 2D zoom does not move the 3D camera\n[PASS] 2D viewport wheel-down reverses zoom\n[PASS] 3D viewport wheel-up dollies the camera closer\n[PASS] 3D zoom changes the actual Vulkan framebuffer pixels\n[PASS] 3D wheel zoom does not rotate the camera\n[PASS] 3D zoom does not zoom the 2D viewport\n[PASS] 3D viewport wheel-down reverses the dolly\n[PASS] wheel over viewport header does not leak into cameras or side panels\n[PASS] 1920 fractional GLFW callbacks accumulate both axes correctly across 40 ticks\n[PASS] continued input does not fill or overflow the existing input ring\n[PASS] horizontal and vertical deltas both reset on an idle tick\n[PASS] After.png\nMEASUREMENTS InspectorDown=84.000 OutlinerBottom=446.000 PlanarZoom=1.000000->1.140000 SpatialDistance=9.879589->8.088723 PlanarChangedChannels=582682 SpatialChangedChannels=196069\nCAPTURE InspectorScroll=168.000 OutlinerScroll=224.000 PlanarZoom=1.299600 SpatialDistance=6.622487 DroppedSignals=0\nRESULT 36/36 assertions passed\n",
+      "Result": "PASS"
+    },
+    {
+      "Profile": "Editor / Debug / AddressSanitizer + UndefinedBehaviorSanitizer",
+      "TestCount": 17,
+      "FailedTests": [],
+      "SkippedTests": [],
+      "WheelAssertionsPassed": 36,
+      "WheelAssertionCount": 36,
+      "WheelOutput": "../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427\n../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427\n../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427\n[PASS] desktop window installed its real GLFW scroll callback\n[PASS] desktop loop drains the existing exchange before snapshot and minimized-window branch\n[PASS] REPRODUCED original defect: callback packet queued, wheel snapshot remains zero without TickExchange\n[PASS] existing InputExtension::TickExchange alone restores the missing wheel delta\n[PASS] attach production Vulkan UV rasterizer\n[PASS] initialize native docked UV workspace\n[PASS] all three real docked panes rendered\n[PASS] Before.png\n[PASS] GLFW wheel delta reaches ImGui through both existing exchanges\n[PASS] Inspector wheel-down moves content by 84 pixels\n[PASS] Inspector scrolling does not scroll Outliner\n[PASS] Inspector scrolling does not zoom either viewport\n[PASS] idle tick clears the wheel delta and does not repeat scrolling\n[PASS] Inspector wheel-up reverses scrolling\n[PASS] Inspector clamps at its content bottom\n[PASS] Inspector can scroll all the way back to the top\n[PASS] Outliner wheel-down moves layer content by 56 pixels\n[PASS] Outliner scrolling does not scroll Inspector\n[PASS] Outliner wheel-up reverses scrolling\n[PASS] Outliner clamps at its layer-list bottom\n[PASS] Outliner can scroll all the way back to the top\n[PASS] Outliner scrolling does not zoom either viewport\n[PASS] 2D viewport wheel-up zooms in through the native pane\n[PASS] 2D zoom changes the actual Vulkan framebuffer pixels\n[PASS] 2D zoom does not move the 3D camera\n[PASS] 2D viewport wheel-down reverses zoom\n[PASS] 3D viewport wheel-up dollies the camera closer\n[PASS] 3D zoom changes the actual Vulkan framebuffer pixels\n[PASS] 3D wheel zoom does not rotate the camera\n[PASS] 3D zoom does not zoom the 2D viewport\n[PASS] 3D viewport wheel-down reverses the dolly\n[PASS] wheel over viewport header does not leak into cameras or side panels\n[PASS] 1920 fractional GLFW callbacks accumulate both axes correctly across 40 ticks\n[PASS] continued input does not fill or overflow the existing input ring\n[PASS] horizontal and vertical deltas both reset on an idle tick\n[PASS] After.png\nMEASUREMENTS InspectorDown=84.000 OutlinerBottom=446.000 PlanarZoom=1.000000->1.140000 SpatialDistance=9.879589->8.088723 PlanarChangedChannels=582682 SpatialChangedChannels=196069\nCAPTURE InspectorScroll=168.000 OutlinerScroll=224.000 PlanarZoom=1.299600 SpatialDistance=6.622487 DroppedSignals=0\nRESULT 36/36 assertions passed\n",
+      "Result": "PASS"
+    }
+  ],
+  "Captures": [
+    {
+      "Path": "Exhibits/UVInput/Images/Before.png",
+      "Width": 1600,
+      "Height": 800,
+      "DecodedRgbaSha256": "47c35051d56c36cca18bc97c481672d0715b7443e99d5967156ecdc72780aa7a",
+      "PngSha256": "968c0ce6ae1ceba14cdc388ab738b100d65d3741bbf75e5692d55efeb5e11041"
+    },
+    {
+      "Path": "Exhibits/UVInput/Images/After.png",
+      "Width": 1600,
+      "Height": 800,
+      "DecodedRgbaSha256": "1b2394855ebab9795f30d0b38ebe26ed9745230d3a0070ef39c1a4adc7d2dbef",
+      "PngSha256": "20d77bd17facb2750101c89b2154f59dce972fec69b1bc469bab1a359b95c7a6"
+    },
+    {
+      "Path": "Exhibits/UVInput/Images/NativeApplication.png",
+      "Width": 1840,
+      "Height": 980,
+      "DecodedRgbaSha256": "41dee5da589c450307e115bf47d1eea169237171820639a1b8dafe8e2ecf8ad5",
+      "PngSha256": "16bc08e09986828da89312c0b79b9d05fe85caeeb8ee1a7b4ce2c9e3dec3089b"
+    }
+  ],
+  "WindowsRuntimeVerified": false,
+  "PhysicalMouseVerified": false,
+  "GitHubActionsRun": false,
+  "WorkingSourceDigests": {
+    "Engine/Lifecycle/DesktopWorkspaceLaunch.cpp": "e28853c592281a639d196f335e0a22a6df1b0acc622e5ecaa1f56b27da14603b",
+    "Exhibits/UVInput/Code/WheelInputValidation.cpp": "c7e954d5c5d4f902234043bce45d921549f3c283c45618ebe749ac2b9cc991d4",
+    "Automation/UVWorkspace.cmake": "f8f41bcfc5fd2e23a05c4167788662d94cc680c92309ae5c89cd00c889312f47",
+    "CMakeLists.txt": "a46bef2778817cae9342704e70e723fe78c070908ada641a84031d62dbb491bf"
+  }
+}

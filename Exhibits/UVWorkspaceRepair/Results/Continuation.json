@@ -1,0 +1,1724 @@
+{
+  "Scope": "Broader native UV rendering, UI, input and resize repair; supersedes the five-change wheel-only scope",
+  "SourceRevision": "624883b66512daed348c33fcb164b616c9691d46",
+  "HistoricalOrientationRevision": "3cc230f69c62b9c592f14c4e2ea4ac81983c258d",
+  "SessionBranch": "arena/52270d91-frontier",
+  "SessionBaseRevision": "96f31ecaef529d383e195013f5f00d163392f71a",
+  "HistoricalWheelEvidence": "Exhibits/UVInput/Results/Continuation.json (retained unchanged)",
+  "ImportedPathCount": 267,
+  "IdenticalPathCount": 229,
+  "ModifiedPaths": [
+    "Engine/Components/ContentBrowser/ContentBrowserPanel.cpp",
+    "Engine/Components/ControlCentre/ControlCentrePanel.cpp",
+    "Engine/Components/Controls/ConfirmationDialogue.cpp",
+    "Engine/Components/Panes/ViewportProjectionPane.cpp",
+    "Engine/Components/Panes/ViewportProjectionPane.h",
+    "Engine/Components/Panes/WorkspaceAppearance.cpp",
+    "Engine/Components/Panes/WorkspaceAppearance.h",
+    "Engine/Components/PixelSpace.cpp",
+    "Engine/Editor/Viewports/ViewportProjection.cpp",
+    "Engine/Editor/Viewports/ViewportProjection.h",
+    "Engine/GeometricRaster/Rasterization/ImGuiOverlayRasterization.cpp",
+    "Engine/GeometricRaster/Rasterization/ImGuiOverlayRasterization.h",
+    "Engine/GeometricRaster/Shaders/MatCapEvaluation.slang",
+    "Engine/GeometricRaster/Shaders/SurfaceShading.slang",
+    "Engine/GeometricRaster/UV/UVWorkspaceRasterizer.cpp",
+    "Engine/GeometricRaster/UV/UVWorkspaceRasterizer.h",
+    "Engine/Input/InputExchange.h",
+    "Engine/Input/InputExtension.cpp",
+    "Engine/Input/InputExtension.h",
+    "Engine/Lifecycle/DesktopWorkspaceLaunch.cpp",
+    "Engine/Lifecycle/EditorLifecycle.cpp",
+    "Engine/Lifecycle/EditorLifecycle.h",
+    "Engine/Lifecycle/RuntimeLifecycle.cpp",
+    "Engine/Lifecycle/RuntimeLifecycle.h",
+    "Engine/Windowing/PlatformWindow.h",
+    "Engine/Windowing/PlatformWindowDesktop.cpp",
+    "Engine/Workspaces/UV/UVInspectorPanel.cpp",
+    "Engine/Workspaces/UV/UVInspectorPanel.h",
+    "Engine/Workspaces/UV/UVOutlinerPanel.cpp",
+    "Engine/Workspaces/UV/UVOutlinerPanel.h",
+    "Engine/Workspaces/UV/UVViewportHost.cpp",
+    "Engine/Workspaces/UV/UVViewportHost.h",
+    "Engine/Workspaces/UV/UVViewportInteractor.cpp",
+    "Engine/Workspaces/UV/UVWorkspaceHost.cpp",
+    "Engine/Workspaces/UV/UVWorkspaceSession.cpp",
+    "Engine/Workspaces/UV/UVWorkspaceSession.h",
+    "Exhibits/UVInteractiveAuthoringValidation.cpp",
+    "Exhibits/UVRasterPickingGizmoValidation.cpp"
+  ],
+  "ProtectedPaths": [
+    "Engine/Codecs/ColourCodec.cpp",
+    "Engine/Codecs/ColourCodec.h",
+    "Engine/Codecs/FontCodec.cpp",
+    "Engine/Codecs/FontCodec.h",
+    "Engine/Codecs/ImageCodec.cpp",
+    "Engine/Codecs/ImageCodec.h",
+    "Engine/Codecs/MaterialCodec.cpp",
+    "Engine/Codecs/MaterialCodec.h",
+    "Engine/Codecs/ProjectCodec.cpp",
+    "Engine/Codecs/ProjectCodec.h",
+    "Engine/Codecs/RevisionCodec.cpp",
+    "Engine/Codecs/RevisionCodec.h",
+    "Engine/Codecs/SpaceContainerCodec.cpp",
+    "Engine/Codecs/SpaceContainerCodec.h",
+    "Engine/Codecs/TextureCodec.cpp",
+    "Engine/Codecs/TextureCodec.h",
+    "Engine/Codecs/UVCodec.cpp",
+    "Engine/Codecs/UVCodec.h",
+    "Engine/Codecs/VectorCodec.cpp",
+    "Engine/Codecs/VectorCodec.h",
+    "Engine/GeometrySpace/Network/FacePartitionRegister.cpp",
+    "Engine/GeometrySpace/Network/FacePartitionRegister.h",
+    "Engine/GeometrySpace/Network/GeometryInstance.cpp",
+    "Engine/GeometrySpace/Network/GeometryInstance.h",
+    "Engine/GeometrySpace/Network/PolygonNetwork.cpp",
+    "Engine/GeometrySpace/Network/PolygonNetwork.h",
+    "Engine/GeometrySpace/Primitives/AnalyticPrimitives.cpp",
+    "Engine/GeometrySpace/Primitives/AnalyticPrimitives.h",
+    "Engine/GeometrySpace/Selection/ComponentSelectionMask.cpp",
+    "Engine/GeometrySpace/Selection/ComponentSelectionMask.h",
+    "Engine/GeometrySpace/Selection/GeometrySelection.cpp",
+    "Engine/GeometrySpace/Selection/GeometrySelection.h",
+    "Engine/Mathematics/AxisCoordinates.h",
+    "EngineContent/Geometry/ControlledIntegrator.GeometrySpace",
+    "EngineContent/MatCaps/MatCapStudioAtlas.png",
+    "EngineContent/MatCaps/MatCapStudioAtlas.rgba",
+    "EngineContent/MatCaps/MatCapStudioCatalog.json",
+    "EngineContent/MatCaps/README.md",
+    "Experimental/Shared/UvTextureBridge.js",
+    "Experimental/UVEditor/Assets/ControlVehicleBody.facet",
+    "Experimental/UVEditor/Assets/ControlVehicleRim.facet",
+    "Experimental/UVEditor/Assets/ControlVehicleTyre.facet",
+    "Experimental/UVEditor/Engine/ControlledIntegratorLoader.js",
+    "Experimental/UVEditor/Engine/EngineeringMatcaps.js",
+    "Experimental/UVEditor/Engine/ImportancePackingSolver.js",
+    "Experimental/UVEditor/Engine/SampleAssets.js",
+    "Experimental/UVEditor/Engine/TopologySurface.js",
+    "Experimental/UVEditor/Engine/UVCanvas2D.js",
+    "Experimental/UVEditor/Engine/UVViewport3D.js",
+    "Experimental/UVEditor/Engine/UnwrapSolver.js",
+    "Experimental/UVEditor/Fonts/LICENSE-Font-Awesome.txt",
+    "Experimental/UVEditor/Fonts/OFL.txt",
+    "Experimental/UVEditor/Fonts/dm-sans-latin-300-normal.woff2",
+    "Experimental/UVEditor/Fonts/dm-sans-latin-400-normal.woff2",
+    "Experimental/UVEditor/Fonts/dm-sans-latin-500-normal.woff2",
+    "Experimental/UVEditor/Fonts/fa-solid-900.woff2",
+    "Experimental/UVEditor/README.md",
+    "Experimental/UVEditor/Serve.py",
+    "Experimental/UVEditor/StudioControls.js",
+    "Experimental/UVEditor/UVEditor.css",
+    "Experimental/UVEditor/UVEditor.js",
+    "Experimental/UVEditor/UVValidation.mjs",
+    "Experimental/UVEditor/Vendor/orbit-controls.esm.min.js",
+    "Experimental/UVEditor/Vendor/three.esm.min.js",
+    "Experimental/UVEditor/index.html"
+  ],
+  "UDIMFilterConstructionIdentical": true,
+  "HistoricalVehicleIdentical": true,
+  "RejectedWheelWrapperAbsent": true,
+  "ImportedPaths": [
+    {
+      "Path": "Automation/ApplyImGuiPatches.py",
+      "SourceSha256": "5fade45c0b90afddacb7d1ff73c8aa26fe6244bfaca777ae7c54f270108ca99c",
+      "CurrentSha256": "5fade45c0b90afddacb7d1ff73c8aa26fe6244bfaca777ae7c54f270108ca99c",
+      "Identical": true
+    },
+    {
+      "Path": "Automation/Dependencies.json",
+      "SourceSha256": "2564b6262124887bca806f7b2e118423f4fcc39f79e36aa698920f26fcae3e1b",
+      "CurrentSha256": "2564b6262124887bca806f7b2e118423f4fcc39f79e36aa698920f26fcae3e1b",
+      "Identical": true
+    },
+    {
+      "Path": "Automation/Patches/PatchH-SmoothOverscroll.patch",
+      "SourceSha256": "379e971cacfdd7ccaec786191f791338ace877086212e6c8dca3555545e6e3e8",
+      "CurrentSha256": "379e971cacfdd7ccaec786191f791338ace877086212e6c8dca3555545e6e3e8",
+      "Identical": true
+    },
+    {
+      "Path": "Automation/PrepareDependencies.py",
+      "SourceSha256": "b83e69fad1d76e67fe7b796f685d8d4eb7ffd377322eeeefc83fabaeec4d2e85",
+      "CurrentSha256": "b83e69fad1d76e67fe7b796f685d8d4eb7ffd377322eeeefc83fabaeec4d2e85",
+      "Identical": true
+    },
+    {
+      "Path": "Automation/PrepareShaderToolchain.py",
+      "SourceSha256": "9787b2aa4768d13ecfd7e76acd24c7c8628b427beb6d0bc3e2a06c8b9a38cd95",
+      "CurrentSha256": "9787b2aa4768d13ecfd7e76acd24c7c8628b427beb6d0bc3e2a06c8b9a38cd95",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/ColourCodec.cpp",
+      "SourceSha256": "9fe505e65ffbc1ce4934060a4d7c3c9ea2a7bd62b0c58ad23ebe6b93b32f6fe1",
+      "CurrentSha256": "9fe505e65ffbc1ce4934060a4d7c3c9ea2a7bd62b0c58ad23ebe6b93b32f6fe1",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/ColourCodec.h",
+      "SourceSha256": "a8329c5f4d1cc54e973bedb448fbc16f1669ba18bb75977c4fd79fa7241a7109",
+      "CurrentSha256": "a8329c5f4d1cc54e973bedb448fbc16f1669ba18bb75977c4fd79fa7241a7109",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/FontCodec.cpp",
+      "SourceSha256": "086e516234b234a4fbe08bedfad67c81ac86ca3bfe2987a83b87dbf4aba7193b",
+      "CurrentSha256": "086e516234b234a4fbe08bedfad67c81ac86ca3bfe2987a83b87dbf4aba7193b",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/FontCodec.h",
+      "SourceSha256": "29c5cec49137060bf02b2fa11ad0b005c5217e57c2d88ad2de0057ff192401a6",
+      "CurrentSha256": "29c5cec49137060bf02b2fa11ad0b005c5217e57c2d88ad2de0057ff192401a6",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/ImageCodec.cpp",
+      "SourceSha256": "80ff57377857e4d9ccb4cc4a8dc508ec7d189316ebbd401933ae8703c44fa540",
+      "CurrentSha256": "80ff57377857e4d9ccb4cc4a8dc508ec7d189316ebbd401933ae8703c44fa540",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/ImageCodec.h",
+      "SourceSha256": "69d6e405ec77a4fbb275faba6bf6466c90d50c6515eb72ebfda4e4187b4955c0",
+      "CurrentSha256": "69d6e405ec77a4fbb275faba6bf6466c90d50c6515eb72ebfda4e4187b4955c0",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/MaterialCodec.cpp",
+      "SourceSha256": "2d24392c92ee23183cca97a06cc03dfe6e6613eabbe787a142c162668f02f4d3",
+      "CurrentSha256": "2d24392c92ee23183cca97a06cc03dfe6e6613eabbe787a142c162668f02f4d3",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/MaterialCodec.h",
+      "SourceSha256": "2afaa7f588e4fd586b572064c6e31e57b48324fab6120e51f97254cd8c690253",
+      "CurrentSha256": "2afaa7f588e4fd586b572064c6e31e57b48324fab6120e51f97254cd8c690253",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/ProjectCodec.cpp",
+      "SourceSha256": "7ec7b2aed1233e65c06a37b9a351582da82381c1032f77bf2569788f77c2da80",
+      "CurrentSha256": "7ec7b2aed1233e65c06a37b9a351582da82381c1032f77bf2569788f77c2da80",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/ProjectCodec.h",
+      "SourceSha256": "eaed12091b4c1f669bc2dbc7159850ab4f3a0abf0c363d84bb2b1c3de4e3c1b2",
+      "CurrentSha256": "eaed12091b4c1f669bc2dbc7159850ab4f3a0abf0c363d84bb2b1c3de4e3c1b2",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/RevisionCodec.cpp",
+      "SourceSha256": "f80216911dd40b0342177524901e9e7eb378032b91586a6d32717a23ce42a057",
+      "CurrentSha256": "f80216911dd40b0342177524901e9e7eb378032b91586a6d32717a23ce42a057",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/RevisionCodec.h",
+      "SourceSha256": "4328640314cd6954ff877f06e00a1b427f8f17f9f53b582bcbb1972fa39c5f0f",
+      "CurrentSha256": "4328640314cd6954ff877f06e00a1b427f8f17f9f53b582bcbb1972fa39c5f0f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/SpaceContainerCodec.cpp",
+      "SourceSha256": "884362a4c617af726cc7d1cd7405d4e4ca4454f26ba3c1f5aaaafd9cb9e777f6",
+      "CurrentSha256": "884362a4c617af726cc7d1cd7405d4e4ca4454f26ba3c1f5aaaafd9cb9e777f6",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/SpaceContainerCodec.h",
+      "SourceSha256": "734d73614375417581078644ab9cc8234495bb8a63ebc8a778d92b9d0033ff0b",
+      "CurrentSha256": "734d73614375417581078644ab9cc8234495bb8a63ebc8a778d92b9d0033ff0b",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/TextureCodec.cpp",
+      "SourceSha256": "9ec540ce4645732ce8d59673b69fa822c002191d32e00e6c959b7fe22c6e29c9",
+      "CurrentSha256": "9ec540ce4645732ce8d59673b69fa822c002191d32e00e6c959b7fe22c6e29c9",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/TextureCodec.h",
+      "SourceSha256": "a048cc8728fcd5386d014f5ca39c4ee1ed543269849085e49bbff132739acc05",
+      "CurrentSha256": "a048cc8728fcd5386d014f5ca39c4ee1ed543269849085e49bbff132739acc05",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/UVCodec.cpp",
+      "SourceSha256": "ee86cf5ab875b0c93e030b795fb6bfd264ca11497631deca8faeb58705015f1a",
+      "CurrentSha256": "ee86cf5ab875b0c93e030b795fb6bfd264ca11497631deca8faeb58705015f1a",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/UVCodec.h",
+      "SourceSha256": "475b6745bb4d99a6307fb90e52e2c7d336153d97126432ac17e86daa90641b09",
+      "CurrentSha256": "475b6745bb4d99a6307fb90e52e2c7d336153d97126432ac17e86daa90641b09",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/VectorCodec.cpp",
+      "SourceSha256": "bd4f51dbd00150f7d991479c5d785d57a3fbec61597aa771286a9b581b9e6d91",
+      "CurrentSha256": "bd4f51dbd00150f7d991479c5d785d57a3fbec61597aa771286a9b581b9e6d91",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Codecs/VectorCodec.h",
+      "SourceSha256": "db445d9b23e257a48f1d5ee00dfdfff5f7e5f7cd332742b27322a8015cdedc8a",
+      "CurrentSha256": "db445d9b23e257a48f1d5ee00dfdfff5f7e5f7cd332742b27322a8015cdedc8a",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Appearance/ThemeRepository.cpp",
+      "SourceSha256": "b97f052b8b0b5df12a4430eb972414a95e062400de477d4d1c38d2aa22be0746",
+      "CurrentSha256": "b97f052b8b0b5df12a4430eb972414a95e062400de477d4d1c38d2aa22be0746",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Appearance/ThemeRepository.h",
+      "SourceSha256": "a241f1aa8d99a25a6b4da16e7e3a69cccf9b5a745c4234d73583f70742039247",
+      "CurrentSha256": "a241f1aa8d99a25a6b4da16e7e3a69cccf9b5a745c4234d73583f70742039247",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Appearance/TypographyRepository.cpp",
+      "SourceSha256": "c48dd0e2c280391378da70a29b48ed01dff513da1a948dfcc42f32e6fda766b5",
+      "CurrentSha256": "c48dd0e2c280391378da70a29b48ed01dff513da1a948dfcc42f32e6fda766b5",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Appearance/TypographyRepository.h",
+      "SourceSha256": "55da4f4271acf485ffad5c28a07e4e94fe25de4fdd241c685995b5944387e653",
+      "CurrentSha256": "55da4f4271acf485ffad5c28a07e4e94fe25de4fdd241c685995b5944387e653",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/ContentBrowser/ColourCodex.cpp",
+      "SourceSha256": "af9cb8bda4ee24542beb419999e44087b8529d052b9f08166688818d5aad500e",
+      "CurrentSha256": "af9cb8bda4ee24542beb419999e44087b8529d052b9f08166688818d5aad500e",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/ContentBrowser/ColourCodex.h",
+      "SourceSha256": "f0264f4e05da693dd33a4e08bbe38decbf78991276432aacefc45f555a05dd7f",
+      "CurrentSha256": "f0264f4e05da693dd33a4e08bbe38decbf78991276432aacefc45f555a05dd7f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/ContentBrowser/ContentBrowserPanel.cpp",
+      "SourceSha256": "d2b379a5b67fd67023a41d6a3f34cf7d224bf774cde23daef5bf72cf6837bdfe",
+      "CurrentSha256": "15e5cfc44864ec219ebd9a547dc702cb728bca8386557358cae37a31e4166a05",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Components/ContentBrowser/ContentBrowserPanel.h",
+      "SourceSha256": "861ab1436175666af1d868b091610ee443239dc0badedc1549bc279fb8c92c3d",
+      "CurrentSha256": "861ab1436175666af1d868b091610ee443239dc0badedc1549bc279fb8c92c3d",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/ContentBrowser/ThumbnailSheetRepository.cpp",
+      "SourceSha256": "e61ba6cf679c0f2e56bb4564235de9590ee4a91bea71db3458cb76559a70f2ba",
+      "CurrentSha256": "e61ba6cf679c0f2e56bb4564235de9590ee4a91bea71db3458cb76559a70f2ba",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/ContentBrowser/ThumbnailSheetRepository.h",
+      "SourceSha256": "82a0aac16aa28607a7f39c84db5cb8b815392e72ed16890c0e1d9be88955ee09",
+      "CurrentSha256": "82a0aac16aa28607a7f39c84db5cb8b815392e72ed16890c0e1d9be88955ee09",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/ControlCentre/ControlCentrePanel.cpp",
+      "SourceSha256": "6646610782fc31060113ce3ba575b0bab91a5c9a274ef1fc1459343db8541c72",
+      "CurrentSha256": "3c6e4e098d5bd411e39f309343b2a992a220759353489162b937897804b0a74a",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Components/ControlCentre/ControlCentrePanel.h",
+      "SourceSha256": "320e5a38904a16273b27c28ba8b5536b8ae32887e4a78ffc9ce8f50426e83efe",
+      "CurrentSha256": "320e5a38904a16273b27c28ba8b5536b8ae32887e4a78ffc9ce8f50426e83efe",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/CapsuleButton.cpp",
+      "SourceSha256": "be53f3f51c6a4cf0a185c2f3cd9008e8329c198624cc63d460c913c90d3c2194",
+      "CurrentSha256": "be53f3f51c6a4cf0a185c2f3cd9008e8329c198624cc63d460c913c90d3c2194",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/CapsuleButton.h",
+      "SourceSha256": "2508adb5c59ace1327159108434b7c865f5555c171d66d746d6c39eb4c3fccfb",
+      "CurrentSha256": "2508adb5c59ace1327159108434b7c865f5555c171d66d746d6c39eb4c3fccfb",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ConfirmationDialogue.cpp",
+      "SourceSha256": "a2a821342c24e99c648c0310fdb1599ea24e9323ccd89e3b9008b24e179cf5ef",
+      "CurrentSha256": "ca445634af68d6d450b2b62994194e35ad5525481ee47734cd48216450b63770",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Components/Controls/ConfirmationDialogue.h",
+      "SourceSha256": "630b050fcabecf4874a09885b74dd8c69a042b8dd4d90fd283db880fd9f5d411",
+      "CurrentSha256": "630b050fcabecf4874a09885b74dd8c69a042b8dd4d90fd283db880fd9f5d411",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ControlAppearance.cpp",
+      "SourceSha256": "8117ddd72d1e7c7452a30ce6b1248dc49939f50fd63667556c03f9874fa351ca",
+      "CurrentSha256": "8117ddd72d1e7c7452a30ce6b1248dc49939f50fd63667556c03f9874fa351ca",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ControlAppearance.h",
+      "SourceSha256": "0a8fbe74d3e13566c6d52f891e6fca375e2490ce88dccebca132886bf5352f59",
+      "CurrentSha256": "0a8fbe74d3e13566c6d52f891e6fca375e2490ce88dccebca132886bf5352f59",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ControlTooltip.cpp",
+      "SourceSha256": "0fb816681624a991e472aeea8416f0c2e3dc9266f33f4e8e272d6977dc0d947f",
+      "CurrentSha256": "0fb816681624a991e472aeea8416f0c2e3dc9266f33f4e8e272d6977dc0d947f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ControlTooltip.h",
+      "SourceSha256": "1f9834672189ed4b2314fc55775478b21f3ccbf9603ce7441bb92f066629843c",
+      "CurrentSha256": "1f9834672189ed4b2314fc55775478b21f3ccbf9603ce7441bb92f066629843c",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/DropdownSelector.cpp",
+      "SourceSha256": "7e8baf27302a3e457fbb50a01c5ab94ca4ca1589db6f95eae477a00487d1def7",
+      "CurrentSha256": "7e8baf27302a3e457fbb50a01c5ab94ca4ca1589db6f95eae477a00487d1def7",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/DropdownSelector.h",
+      "SourceSha256": "66c31ed663bd32b4891fe40dfdadd2a721d17f025a60b76b6fefc8a91556aac7",
+      "CurrentSha256": "66c31ed663bd32b4891fe40dfdadd2a721d17f025a60b76b6fefc8a91556aac7",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ExclusiveSelector.cpp",
+      "SourceSha256": "265ad4b194ce7cb654fb22ea1576634e5b09ecffb782bb4af16798f261fc3970",
+      "CurrentSha256": "265ad4b194ce7cb654fb22ea1576634e5b09ecffb782bb4af16798f261fc3970",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ExclusiveSelector.h",
+      "SourceSha256": "89102660f650bc3ca73b6524df7b4e1ea71046d0b062fb8a1b9f3e1bc248b33d",
+      "CurrentSha256": "89102660f650bc3ca73b6524df7b4e1ea71046d0b062fb8a1b9f3e1bc248b33d",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/NotificationSequence.cpp",
+      "SourceSha256": "1f9c9d089ad7779fe8478f70895c27fead9ec92cd3dd9ac067ffc46cfcb04c88",
+      "CurrentSha256": "1f9c9d089ad7779fe8478f70895c27fead9ec92cd3dd9ac067ffc46cfcb04c88",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/NotificationSequence.h",
+      "SourceSha256": "5739e4b159aeb0d85bafe670054fc28f6b8f800f3afb0c1877e5c8a2a81c4783",
+      "CurrentSha256": "5739e4b159aeb0d85bafe670054fc28f6b8f800f3afb0c1877e5c8a2a81c4783",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ScalarSlider.cpp",
+      "SourceSha256": "9a5f61c37bfdc19fac23e9085975f607e17ae3995bf1fb0a2b2f668d0f11a708",
+      "CurrentSha256": "9a5f61c37bfdc19fac23e9085975f607e17ae3995bf1fb0a2b2f668d0f11a708",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ScalarSlider.h",
+      "SourceSha256": "6e5e15ebf93f2c0958bf2551cd9565cc4b4b7b6e486cbd5da9732b35e8b535e7",
+      "CurrentSha256": "6e5e15ebf93f2c0958bf2551cd9565cc4b4b7b6e486cbd5da9732b35e8b535e7",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/TextInputField.cpp",
+      "SourceSha256": "e5eec15950077985a0bd7b769cf03208d6fcfd1f8260eae7256272a746cdf0ff",
+      "CurrentSha256": "e5eec15950077985a0bd7b769cf03208d6fcfd1f8260eae7256272a746cdf0ff",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/TextInputField.h",
+      "SourceSha256": "a45f8233927802690a642d6f3708ff56f2c59db72ef7abff1c761480c56a2e2d",
+      "CurrentSha256": "a45f8233927802690a642d6f3708ff56f2c59db72ef7abff1c761480c56a2e2d",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ThemePreviewTile.cpp",
+      "SourceSha256": "eac885e878c1b48c939fa7d7da3f55787fddbd8f0faba61824bae7ab76259b67",
+      "CurrentSha256": "eac885e878c1b48c939fa7d7da3f55787fddbd8f0faba61824bae7ab76259b67",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Controls/ThemePreviewTile.h",
+      "SourceSha256": "5a18794a13c1a746cfe189015d48e86aa900064e51bd7a42435b7d57e7fc2621",
+      "CurrentSha256": "5a18794a13c1a746cfe189015d48e86aa900064e51bd7a42435b7d57e7fc2621",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Docking/WorkspaceDockContainer.cpp",
+      "SourceSha256": "95489d30cf5065c65692928be3b9071b37fa2b1a04bbe95a20876935103c14f9",
+      "CurrentSha256": "95489d30cf5065c65692928be3b9071b37fa2b1a04bbe95a20876935103c14f9",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Docking/WorkspaceDockContainer.h",
+      "SourceSha256": "d8cefcc78fcea7b581ad53cfcf4dfd144cb71a4bf09e0d9804dbcb91d80cfb14",
+      "CurrentSha256": "d8cefcc78fcea7b581ad53cfcf4dfd144cb71a4bf09e0d9804dbcb91d80cfb14",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Docking/WorkspaceTabStrip.cpp",
+      "SourceSha256": "4e244446616afbc9d93b41cd9311e244e290353cf3a20bdeb8f52d95dfeaf4c1",
+      "CurrentSha256": "4e244446616afbc9d93b41cd9311e244e290353cf3a20bdeb8f52d95dfeaf4c1",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Docking/WorkspaceTabStrip.h",
+      "SourceSha256": "46842a2a38519913e46441c2402dd16599e6a42708f1088bd57e9e04b0558520",
+      "CurrentSha256": "46842a2a38519913e46441c2402dd16599e6a42708f1088bd57e9e04b0558520",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Motion/SpringIntegrator.cpp",
+      "SourceSha256": "39fbe0c04a49092fc22ebf6d27af4f5cbcfe88fe70b381ec3ac1c7919e2a7d2b",
+      "CurrentSha256": "39fbe0c04a49092fc22ebf6d27af4f5cbcfe88fe70b381ec3ac1c7919e2a7d2b",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Motion/SpringIntegrator.h",
+      "SourceSha256": "032b84e0a8e1f063433911291151cd1ac13ff7a19291af9bee0e3ae0fd285273",
+      "CurrentSha256": "032b84e0a8e1f063433911291151cd1ac13ff7a19291af9bee0e3ae0fd285273",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Notch/PanelExpansionTab.cpp",
+      "SourceSha256": "39f445f131c2ad8cbdcebf99a64a9997cdbeea00e21b44f729183346d5a5dc18",
+      "CurrentSha256": "39f445f131c2ad8cbdcebf99a64a9997cdbeea00e21b44f729183346d5a5dc18",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Notch/PanelExpansionTab.h",
+      "SourceSha256": "fd921c0070b4e13a0b3ab8cab017592804b2e6bf75f4c4f3d95bd52fb9c1f026",
+      "CurrentSha256": "fd921c0070b4e13a0b3ab8cab017592804b2e6bf75f4c4f3d95bd52fb9c1f026",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Panes/InspectorPanel.cpp",
+      "SourceSha256": "35bb325992faf7457b8cc7d17310d57aeb998e59b9ab83d93e1f07fc68fd2691",
+      "CurrentSha256": "35bb325992faf7457b8cc7d17310d57aeb998e59b9ab83d93e1f07fc68fd2691",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Panes/InspectorPanel.h",
+      "SourceSha256": "9cb4790716bea5eb7b1e6986e983dac15388dfb5461871ca01afc98be4b62d00",
+      "CurrentSha256": "9cb4790716bea5eb7b1e6986e983dac15388dfb5461871ca01afc98be4b62d00",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Panes/OutlinerPanel.cpp",
+      "SourceSha256": "602b53d0d0986e98825f0f8e30e98ca042ae9747c34b0d1cf388be55a467ca51",
+      "CurrentSha256": "602b53d0d0986e98825f0f8e30e98ca042ae9747c34b0d1cf388be55a467ca51",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Panes/OutlinerPanel.h",
+      "SourceSha256": "e3556b6301110ec8a796c8fab3021f7853f9ccd8f0b0a8be9a0ed6a8c5e6f026",
+      "CurrentSha256": "e3556b6301110ec8a796c8fab3021f7853f9ccd8f0b0a8be9a0ed6a8c5e6f026",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Panes/ViewportPanel.cpp",
+      "SourceSha256": "ec57da0c9e66f66e920484b0c38e3932ecafbee5632bca4db6226a2c1b98bba8",
+      "CurrentSha256": "ec57da0c9e66f66e920484b0c38e3932ecafbee5632bca4db6226a2c1b98bba8",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Panes/ViewportPanel.h",
+      "SourceSha256": "a70c174e2c32f9da9270c69da07a5562c6fb17db3f0b551098673ed05ab09d44",
+      "CurrentSha256": "a70c174e2c32f9da9270c69da07a5562c6fb17db3f0b551098673ed05ab09d44",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/Panes/ViewportProjectionPane.cpp",
+      "SourceSha256": "618cb039cefbdf4e474e23fc4cac86093387146c88913d4b2cc0728f1f8619c3",
+      "CurrentSha256": "bca0c89da67ee84fafa0957ce0f877823c7e8dbc68ac6a420ef3bf0be46d3bcf",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Components/Panes/ViewportProjectionPane.h",
+      "SourceSha256": "6c6c457776591dde134064c7b9353ff40d92ca1968cfe207234d68a67f564dd5",
+      "CurrentSha256": "cb06738fd2f5bb9c6ffe2b0e057ac5afefc6b59f7a6980c7e3825c8d96f80ac5",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Components/Panes/WorkspaceAppearance.cpp",
+      "SourceSha256": "1aa888fe4a7fa0770376f0a17072c8541664e83996630a4579ddeac09764adef",
+      "CurrentSha256": "ade55bb0633488dbdf0f892cdb3af7c95a2e19bf7718e39354bb4bc668133c99",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Components/Panes/WorkspaceAppearance.h",
+      "SourceSha256": "7601b34e496ca31922f2c9068232656f9c615ac1433cb1c4b5fc9d3396579116",
+      "CurrentSha256": "744018aa69f71ea949f39a7935359960ea1d19e6c6559f92827a2d1c0565334a",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Components/PixelSpace.cpp",
+      "SourceSha256": "1dff24ad166837521f00d0ea61ac04e565d51524ce0a7a8791c0e40086fc4c54",
+      "CurrentSha256": "b78e77b025eccddc6e111fec755d958061deed029ee5d3e0e96d874488a84d54",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Components/PixelSpace.h",
+      "SourceSha256": "166f839d8553324405484209e1c530e98dac055e251b39f77c6095521d26a866",
+      "CurrentSha256": "166f839d8553324405484209e1c530e98dac055e251b39f77c6095521d26a866",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/VectorIcons/VectorIconRepository.cpp",
+      "SourceSha256": "2cd29e87f81a80a2029c2410b165cc92196396590bf384aaf5b025befa6d2419",
+      "CurrentSha256": "2cd29e87f81a80a2029c2410b165cc92196396590bf384aaf5b025befa6d2419",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Components/VectorIcons/VectorIconRepository.h",
+      "SourceSha256": "80e5db8c96fd9b37c6d63e81462ceac93f17016abc186664237dde11720162f9",
+      "CurrentSha256": "80e5db8c96fd9b37c6d63e81462ceac93f17016abc186664237dde11720162f9",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/BuildConfiguration.h",
+      "SourceSha256": "9719a55b77aacb3d75f90d210df22a3cf801b4ef64832b8e79c54de2757e7c77",
+      "CurrentSha256": "9719a55b77aacb3d75f90d210df22a3cf801b4ef64832b8e79c54de2757e7c77",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/EngineConfiguration.cpp",
+      "SourceSha256": "c0f297b90559b4c8f92446bdb9ac475e110548c9199911a89b10fe6b247bd906",
+      "CurrentSha256": "c0f297b90559b4c8f92446bdb9ac475e110548c9199911a89b10fe6b247bd906",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/EngineConfiguration.h",
+      "SourceSha256": "265047b9964258a43f52d8e048059f0a3675d42828fd06ba99e2c55310ac207f",
+      "CurrentSha256": "265047b9964258a43f52d8e048059f0a3675d42828fd06ba99e2c55310ac207f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/InputSettings.cpp",
+      "SourceSha256": "4141a98e43a1562769f4fa7b6af37e61995efeaf9e09de71b4872ca7f2223d01",
+      "CurrentSha256": "4141a98e43a1562769f4fa7b6af37e61995efeaf9e09de71b4872ca7f2223d01",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/InputSettings.h",
+      "SourceSha256": "3c87bbdf904ddf7ca258d4dccb4baf6bbf5466903059911cca3f27d119f167f7",
+      "CurrentSha256": "3c87bbdf904ddf7ca258d4dccb4baf6bbf5466903059911cca3f27d119f167f7",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/ProjectSpaceRepository.cpp",
+      "SourceSha256": "be8e158244e13dd3721eb2688b571477071edbbdce7171079b983051b03ef1dc",
+      "CurrentSha256": "be8e158244e13dd3721eb2688b571477071edbbdce7171079b983051b03ef1dc",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/ProjectSpaceRepository.h",
+      "SourceSha256": "8fe53574cf33aaa049eb1751a548f77ff0f309cb62dc68d9f8fd98ecade37261",
+      "CurrentSha256": "8fe53574cf33aaa049eb1751a548f77ff0f309cb62dc68d9f8fd98ecade37261",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/WorkspaceConfiguration.cpp",
+      "SourceSha256": "90fd824adce5f30cb74238adfa4d4a21c19b9df32ee143f9874450edd80825dd",
+      "CurrentSha256": "90fd824adce5f30cb74238adfa4d4a21c19b9df32ee143f9874450edd80825dd",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Configuration/WorkspaceConfiguration.h",
+      "SourceSha256": "a460c15d2c212cca5a5157d4149267d4d39b192f82c9df3825f514ad04aebf78",
+      "CurrentSha256": "a460c15d2c212cca5a5157d4149267d4d39b192f82c9df3825f514ad04aebf78",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Constants/EngineConstants.h",
+      "SourceSha256": "0b4c6cc0c454ae7496abfbe933247777f22b4e03755ce093f11e2d434fb9c6a6",
+      "CurrentSha256": "0b4c6cc0c454ae7496abfbe933247777f22b4e03755ce093f11e2d434fb9c6a6",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Constants/MathConstants.h",
+      "SourceSha256": "5dd6f7285e4da51f57bec463b082bd26f43f1b6fa25e7019d98b2bb77a3ed0a5",
+      "CurrentSha256": "5dd6f7285e4da51f57bec463b082bd26f43f1b6fa25e7019d98b2bb77a3ed0a5",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Constants/PhysicsConstants.h",
+      "SourceSha256": "38f205ee716d2799b3552e7fcceab41fea5b5a742b429febbf0b3940446a6cb9",
+      "CurrentSha256": "38f205ee716d2799b3552e7fcceab41fea5b5a742b429febbf0b3940446a6cb9",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Constants/TimeConstants.h",
+      "SourceSha256": "7d0124535dfa986ca5a4cca0ae8a4b2459f9dc4711bc88187551fc429e98dcab",
+      "CurrentSha256": "7d0124535dfa986ca5a4cca0ae8a4b2459f9dc4711bc88187551fc429e98dcab",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Editor/Explorer/ContentBrowser.cpp",
+      "SourceSha256": "8f40725e365515f5798993121d2bd2a32b18486ec511f10535bc5bcc2ecb5e6f",
+      "CurrentSha256": "8f40725e365515f5798993121d2bd2a32b18486ec511f10535bc5bcc2ecb5e6f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Editor/Explorer/ContentBrowser.h",
+      "SourceSha256": "f092875b3e03897e765e167d0859c7aac5feaf970c5bc467d8dfc660cd36eafb",
+      "CurrentSha256": "f092875b3e03897e765e167d0859c7aac5feaf970c5bc467d8dfc660cd36eafb",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Editor/Viewports/TransformGizmo.cpp",
+      "SourceSha256": "a4a2cae6984300041be93aa1fd768da7362c23a4527a43cc4d1c7ca9575e5fed",
+      "CurrentSha256": "a4a2cae6984300041be93aa1fd768da7362c23a4527a43cc4d1c7ca9575e5fed",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Editor/Viewports/TransformGizmo.h",
+      "SourceSha256": "55308e3ce24aaea06e017511b4d1c50a129126625f4cfde512a345b7d5167a6d",
+      "CurrentSha256": "55308e3ce24aaea06e017511b4d1c50a129126625f4cfde512a345b7d5167a6d",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Editor/Viewports/ViewportProjection.cpp",
+      "SourceSha256": "5940ec8f423cb69006897403397b0dcb89baef2d5b72e436c350f322d222ac09",
+      "CurrentSha256": "f4264ccf1f4aa8444c60675126ac62b8d6e12adc94ffe0c342f1bc962534a143",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Editor/Viewports/ViewportProjection.h",
+      "SourceSha256": "9d5dce97625b40917026e3673af4c3bc214761b46bef0716fea2e57b48d97aea",
+      "CurrentSha256": "0fb0771f9e51773aadcf088a143a7883169d9bb95dffb410d0b59bd964e93174",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/GeometricRaster/Compute/ComputeDispatchEncoder.cpp",
+      "SourceSha256": "1c0225f30d089cd185898c420f2516f3f371ac5422fd389ddc2ec224b40fe74e",
+      "CurrentSha256": "1c0225f30d089cd185898c420f2516f3f371ac5422fd389ddc2ec224b40fe74e",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Compute/ComputeDispatchEncoder.h",
+      "SourceSha256": "347ff1d7a569bb3071e37c2ac6b0c635705c0c539dc0a6444ed308fdd5a0aa3f",
+      "CurrentSha256": "347ff1d7a569bb3071e37c2ac6b0c635705c0c539dc0a6444ed308fdd5a0aa3f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Compute/TimelineTransferRegister.cpp",
+      "SourceSha256": "acaf592c5436ee533572f985ce8b1472634572effecede8e7ba77f2862a907ba",
+      "CurrentSha256": "acaf592c5436ee533572f985ce8b1472634572effecede8e7ba77f2862a907ba",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Compute/TimelineTransferRegister.h",
+      "SourceSha256": "b7568dae37f4756c15af01305346b0f7328050dc34ce5285d930c202bb167116",
+      "CurrentSha256": "b7568dae37f4756c15af01305346b0f7328050dc34ce5285d930c202bb167116",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Picking/ViewportPickQuery.cpp",
+      "SourceSha256": "dc923964d58ca096cc619b75f588da35ab996f7b7089b24945a630ea76661988",
+      "CurrentSha256": "dc923964d58ca096cc619b75f588da35ab996f7b7089b24945a630ea76661988",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Picking/ViewportPickQuery.h",
+      "SourceSha256": "0ab2521468d4148934dcd54dd415bc51b60f9f85cac5138e354c07683fff6466",
+      "CurrentSha256": "0ab2521468d4148934dcd54dd415bc51b60f9f85cac5138e354c07683fff6466",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Rasterization/ImGuiOverlayRasterization.cpp",
+      "SourceSha256": "3cc754343656573aa1aa5a7dec6b3e2ba702e4b0cfa503a6044ae0776c477a43",
+      "CurrentSha256": "2fca14450ae1323672f1e0c4b4cb984e9c53340f0c365e4844ca20063e484001",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/GeometricRaster/Rasterization/ImGuiOverlayRasterization.h",
+      "SourceSha256": "933c0bae39a1a51db484df500ce279d1e1dc4faac4c7e26a179036e64dde1147",
+      "CurrentSha256": "6048742ea259773deb0634fb580f14519b0a1831943c396a8ef13487e35dcf62",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/ConcaveSkylineCompute.slang",
+      "SourceSha256": "348480ba9ec3c4510bc1ba3021bf2e1696ff3e3aa32fa653bf8cd76258ad0e30",
+      "CurrentSha256": "348480ba9ec3c4510bc1ba3021bf2e1696ff3e3aa32fa653bf8cd76258ad0e30",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/GizmoRasterization.slang",
+      "SourceSha256": "2a0524cf5cfc27a5ef3734a5f1ac1bb6f213bb06fcd1cd4fed442cf5f82370b5",
+      "CurrentSha256": "2a0524cf5cfc27a5ef3734a5f1ac1bb6f213bb06fcd1cd4fed442cf5f82370b5",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/ImGuiOverlayRasterization.slang",
+      "SourceSha256": "2e8ae5f63f44768585fcfe463bbf7298e5165ec0757c833a17b54db1a8feedb0",
+      "CurrentSha256": "2e8ae5f63f44768585fcfe463bbf7298e5165ec0757c833a17b54db1a8feedb0",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/MatCapEvaluation.slang",
+      "SourceSha256": "efdb74992c527b5beb507092349b8a3bf6445468be9ee61b6afdc95a908765dd",
+      "CurrentSha256": "5d02c91784c36e05fdff162e3fb8995304c277de75a31c50a44b254f8dd6c68f",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/SelectionMaskCompute.slang",
+      "SourceSha256": "5755b5402548c5eb8268e69ac5678abb650fd76720a1b17c37ba09a25e626185",
+      "CurrentSha256": "5755b5402548c5eb8268e69ac5678abb650fd76720a1b17c37ba09a25e626185",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/StretchRelaxCompute.slang",
+      "SourceSha256": "814d51442dafbed44a1be20493adcc9507fc0c16d51fb9d24014d9f5a65f3c19",
+      "CurrentSha256": "814d51442dafbed44a1be20493adcc9507fc0c16d51fb9d24014d9f5a65f3c19",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/SurfaceShading.slang",
+      "SourceSha256": "c6697b2bcc196b8f588ecc271ef863bee2bfe24738c686280bbac616e23c032f",
+      "CurrentSha256": "bdfc1eb7195bc8e8f512246650f172de45843a6889157722db059784f2546cd8",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/UVDistortionInspection.slang",
+      "SourceSha256": "4d7553b709a2f91afcf6d88bc7714b1715329dadd735a569e093c599f1f6b8b4",
+      "CurrentSha256": "4d7553b709a2f91afcf6d88bc7714b1715329dadd735a569e093c599f1f6b8b4",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/UVTileRasterization.slang",
+      "SourceSha256": "21d49a15e67860d7bfbaa233e8c4b8a3c9e8f3f026141499b9c5cba4539dbdf9",
+      "CurrentSha256": "21d49a15e67860d7bfbaa233e8c4b8a3c9e8f3f026141499b9c5cba4539dbdf9",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/Shaders/ViewportPickReduction.slang",
+      "SourceSha256": "c933d650d3a06592cca23c86d333d7a44cf73887761ea4834c82257d992f98ac",
+      "CurrentSha256": "c933d650d3a06592cca23c86d333d7a44cf73887761ea4834c82257d992f98ac",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/UV/UVWorkspaceRasterizer.cpp",
+      "SourceSha256": "1c8364797ab797ae18d6c60bf643ebd1d9bb432067d5216acffb718986e0d5f5",
+      "CurrentSha256": "09872f0e1c0530c068fbe9688a21a295c16784510d3c6ccacf83198f903f1570",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/GeometricRaster/UV/UVWorkspaceRasterizer.h",
+      "SourceSha256": "58416ee200536e284900f360cf48a9517aaa564661ce02c9333604e53891b33f",
+      "CurrentSha256": "c94068a44ffd15789822a8a830cc36ab5c94775fe3e6858f0ffa6f1ca483dc58",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/GeometricRaster/VulkanInterchange.cpp",
+      "SourceSha256": "d686d131192e3162f7ab6dcc4a68020cbd6c28135e41a4e7eebbe2957720cb9a",
+      "CurrentSha256": "d686d131192e3162f7ab6dcc4a68020cbd6c28135e41a4e7eebbe2957720cb9a",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometricRaster/VulkanInterchange.h",
+      "SourceSha256": "33e6cca9750e7b1c4c414428ecb6261a29545de99483611e219d268b38f82633",
+      "CurrentSha256": "33e6cca9750e7b1c4c414428ecb6261a29545de99483611e219d268b38f82633",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Network/FacePartitionRegister.cpp",
+      "SourceSha256": "96c9d3d0df4a8aba4d0acb9e97c34e8a55d62fd6bb082471f23df192e5eb740e",
+      "CurrentSha256": "96c9d3d0df4a8aba4d0acb9e97c34e8a55d62fd6bb082471f23df192e5eb740e",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Network/FacePartitionRegister.h",
+      "SourceSha256": "afb221977ace396ee804730c95fdb1f0b6ad329f7453ba1eac2ea45638e5411f",
+      "CurrentSha256": "afb221977ace396ee804730c95fdb1f0b6ad329f7453ba1eac2ea45638e5411f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Network/GeometryInstance.cpp",
+      "SourceSha256": "abf8a4e99cfd6cf1b1238c8b0e9d96bfa783e46ada2bc31d9af1cfdd56cfc61d",
+      "CurrentSha256": "abf8a4e99cfd6cf1b1238c8b0e9d96bfa783e46ada2bc31d9af1cfdd56cfc61d",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Network/GeometryInstance.h",
+      "SourceSha256": "d176f11679167a719feb8aea7b25bc09f26a236e7027e7cc751b3241d9994701",
+      "CurrentSha256": "d176f11679167a719feb8aea7b25bc09f26a236e7027e7cc751b3241d9994701",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Network/PolygonNetwork.cpp",
+      "SourceSha256": "8f0ff0043c97964aa25d4ad6fcc89b98b2d2e3eda32e775770a0b14d13073295",
+      "CurrentSha256": "8f0ff0043c97964aa25d4ad6fcc89b98b2d2e3eda32e775770a0b14d13073295",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Network/PolygonNetwork.h",
+      "SourceSha256": "f18046c75e4641747161f87519afadd60a47deb75f8b0e7c3524bf5d0860b506",
+      "CurrentSha256": "f18046c75e4641747161f87519afadd60a47deb75f8b0e7c3524bf5d0860b506",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Primitives/AnalyticPrimitives.cpp",
+      "SourceSha256": "9d6595bbadc2d3dd5c261dab914e8d7604b8d6ac554e66713ac28d6406825ecc",
+      "CurrentSha256": "9d6595bbadc2d3dd5c261dab914e8d7604b8d6ac554e66713ac28d6406825ecc",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Primitives/AnalyticPrimitives.h",
+      "SourceSha256": "23edb62622581389056561d61bc3964dfc420e9ce95498a8f32818746e8095ed",
+      "CurrentSha256": "23edb62622581389056561d61bc3964dfc420e9ce95498a8f32818746e8095ed",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Selection/ComponentSelectionMask.cpp",
+      "SourceSha256": "ce2057adfbc82233dece201195af0ef3636cb1b2bf3ef67b47d0e9249c354fd7",
+      "CurrentSha256": "ce2057adfbc82233dece201195af0ef3636cb1b2bf3ef67b47d0e9249c354fd7",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Selection/ComponentSelectionMask.h",
+      "SourceSha256": "114ee497130520cbd15bca22ae0a060196c82f7e45c36d22d6933ffeb72a5778",
+      "CurrentSha256": "114ee497130520cbd15bca22ae0a060196c82f7e45c36d22d6933ffeb72a5778",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Selection/GeometrySelection.cpp",
+      "SourceSha256": "3af0d59cc90c1527d3f8c9a07cf297d2fb40c2faf0a3aeb61584481444ec0719",
+      "CurrentSha256": "3af0d59cc90c1527d3f8c9a07cf297d2fb40c2faf0a3aeb61584481444ec0719",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/GeometrySpace/Selection/GeometrySelection.h",
+      "SourceSha256": "529e77081b9b761fd077b89f474b95328d911ba0a71f9bf3d4b9829cce5660da",
+      "CurrentSha256": "529e77081b9b761fd077b89f474b95328d911ba0a71f9bf3d4b9829cce5660da",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Input/InputExchange.cpp",
+      "SourceSha256": "49ffe169dbaf0970714a82e7e558fa47f4152159901bc63001e6c94de2bed963",
+      "CurrentSha256": "49ffe169dbaf0970714a82e7e558fa47f4152159901bc63001e6c94de2bed963",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Input/InputExchange.h",
+      "SourceSha256": "5f56c26fdba3c41ec7c475aa5367b7f4942f7dedeac5df7a9f302c9e82fdb73d",
+      "CurrentSha256": "82e1eb2aa192e5a016035dc905179c4b4d532402e45182c1185aaf83ce876650",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Input/InputExtension.cpp",
+      "SourceSha256": "93778ca7f9dfa6bad38c8f0c92c67c3892c8ef5d9c0b60d8f9d31407ffaceef2",
+      "CurrentSha256": "a49237874e020633535dd2379ff750b335763c19634ad379b8d977f96371b32a",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Input/InputExtension.h",
+      "SourceSha256": "a1c6ace917caf2a171c3856656e9f9556c95544bf9637faee86eaddd5a975c8e",
+      "CurrentSha256": "17b1b4c9758d81a57339d82e65dc9c1d9bddbdc0c38d85e7d085625d54641aa3",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Interchange/GeometryInterchange.cpp",
+      "SourceSha256": "7b83266cd8dbef7523b256743a53d09d6db767c93501ea02e49e855c4344ffb0",
+      "CurrentSha256": "7b83266cd8dbef7523b256743a53d09d6db767c93501ea02e49e855c4344ffb0",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Interchange/GeometryInterchange.h",
+      "SourceSha256": "90abafe9507857e80242c76962944451e7251fb81f33dbcdfb0531e256e687dc",
+      "CurrentSha256": "90abafe9507857e80242c76962944451e7251fb81f33dbcdfb0531e256e687dc",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Lifecycle/DesktopWorkspaceLaunch.cpp",
+      "SourceSha256": "6a5b6202c209cdf6675208a602ebc2f5fc4d2b36b10c25497044b4a510156bfc",
+      "CurrentSha256": "5bb77f18d64abfe78cfbe026def359af3b743da89fa0e3800058337c264b418a",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Lifecycle/DesktopWorkspaceLaunch.h",
+      "SourceSha256": "f99ae9d33b1e26bf7b28f82eabf65cbe0d31a7c11a25780df505375bc82e1a28",
+      "CurrentSha256": "f99ae9d33b1e26bf7b28f82eabf65cbe0d31a7c11a25780df505375bc82e1a28",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Lifecycle/EditorLifecycle.cpp",
+      "SourceSha256": "381faf7214f7ca305250b0172045431bc2edd864779fb0eee7128719ddba3fa9",
+      "CurrentSha256": "b5cac61c466faef163ad850a593e996d964057a6a3b4010779cceaa217a4fef0",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Lifecycle/EditorLifecycle.h",
+      "SourceSha256": "ed1dc6df5578b936dd7135efafe6e09d9b897f567c7d7ccf22a0f4c516b49c61",
+      "CurrentSha256": "46874e2f13a8b8eb748416af9c6a90b7f9f56b7ee3ed7af0d815c6d9f1ecf685",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Lifecycle/FrontierEditorLaunch.cpp",
+      "SourceSha256": "f74bc8212c903434259045103dbf055cf5fd1e31f1d4c995a6b46873a7b6d956",
+      "CurrentSha256": "f74bc8212c903434259045103dbf055cf5fd1e31f1d4c995a6b46873a7b6d956",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Lifecycle/FrontierUVLaunch.cpp",
+      "SourceSha256": "e16ecd71d76b820fe7234de5f8bcbc85127724f786ff544a2fe991db181a7cbc",
+      "CurrentSha256": "e16ecd71d76b820fe7234de5f8bcbc85127724f786ff544a2fe991db181a7cbc",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Lifecycle/LifecycleSequence.h",
+      "SourceSha256": "da18f71ba1e2207c1d5a19d2da99f26b37f98b50708228283d817570750a3e45",
+      "CurrentSha256": "da18f71ba1e2207c1d5a19d2da99f26b37f98b50708228283d817570750a3e45",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Lifecycle/RuntimeLifecycle.cpp",
+      "SourceSha256": "1f12f5b946ec438cf11da3336165c065046573de6263471b128d9ea90a6ac699",
+      "CurrentSha256": "885bf76a182c9050c96c3539d056348c73f3bedbb84ea77acbbb887dfc196461",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Lifecycle/RuntimeLifecycle.h",
+      "SourceSha256": "42629c6b73b20500f989d00582ed29091b919c01a5ddeb7ccbd92412f202f349",
+      "CurrentSha256": "3ea8a6ba969e53ed6367afc9fa11ffabf52f4b058e815e8fbef9c5e6bdc361ed",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Lifecycle/WorkspaceLifecycle.cpp",
+      "SourceSha256": "0a7fd33c66fadf965fbb4d7891796a00f352b93c1e465d44512910604a784942",
+      "CurrentSha256": "0a7fd33c66fadf965fbb4d7891796a00f352b93c1e465d44512910604a784942",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Lifecycle/WorkspaceLifecycle.h",
+      "SourceSha256": "6b877aceb6ef4cdbbb593ec82b85ada3157c3d1e97c977cd92a157df9e11e8b3",
+      "CurrentSha256": "6b877aceb6ef4cdbbb593ec82b85ada3157c3d1e97c977cd92a157df9e11e8b3",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Mathematics/AxisCoordinates.h",
+      "SourceSha256": "a74bd6177f7d7d7f4802fd79723a070442187cd2e3124930c790ad9f165fdc72",
+      "CurrentSha256": "a74bd6177f7d7d7f4802fd79723a070442187cd2e3124930c790ad9f165fdc72",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Sync/AtomicQueue.h",
+      "SourceSha256": "6913a4b004d177dd9718ffcf1e3d32a3a11ebf976c040460e560d49ab8e40812",
+      "CurrentSha256": "6913a4b004d177dd9718ffcf1e3d32a3a11ebf976c040460e560d49ab8e40812",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Sync/CompletionCounter.h",
+      "SourceSha256": "459146db635634fdebc21db0fee087234300911c22dccffc43e1e5e896675996",
+      "CurrentSha256": "459146db635634fdebc21db0fee087234300911c22dccffc43e1e5e896675996",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Sync/CriticalSection.h",
+      "SourceSha256": "00fd9fa415a37a25e0501258debcc79a5e9319c25ed64f59aab22d9145de0276",
+      "CurrentSha256": "00fd9fa415a37a25e0501258debcc79a5e9319c25ed64f59aab22d9145de0276",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Sync/SpinLock.h",
+      "SourceSha256": "ba917a630001804ac5a845af4bca01a6b88d94cb20ebfc178a54e564440b2ad5",
+      "CurrentSha256": "ba917a630001804ac5a845af4bca01a6b88d94cb20ebfc178a54e564440b2ad5",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Sync/ThreadProgressionTracker.cpp",
+      "SourceSha256": "36f43f6db921d3abe5df29cc3639eee07ac98c5e4bdc454e2f709b896fc0806e",
+      "CurrentSha256": "36f43f6db921d3abe5df29cc3639eee07ac98c5e4bdc454e2f709b896fc0806e",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Sync/ThreadProgressionTracker.h",
+      "SourceSha256": "1fa9c5562d9835c7c24a7d43d5b8fd62b19a20c8a47e092faac91d5e892b32bb",
+      "CurrentSha256": "1fa9c5562d9835c7c24a7d43d5b8fd62b19a20c8a47e092faac91d5e892b32bb",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Tasks/ExecutionChannels.cpp",
+      "SourceSha256": "37507c5fc8e8490564000e5864c76b62fa75c9c05debc2f940499d1c0cc6a969",
+      "CurrentSha256": "37507c5fc8e8490564000e5864c76b62fa75c9c05debc2f940499d1c0cc6a969",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Tasks/ExecutionChannels.h",
+      "SourceSha256": "d473a13addefae712cb9bb2b18903c12bdacf4bec7ce51cca4e3df7cf1dcefda",
+      "CurrentSha256": "d473a13addefae712cb9bb2b18903c12bdacf4bec7ce51cca4e3df7cf1dcefda",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Tasks/TaskChannel.cpp",
+      "SourceSha256": "6af6dca02d074451bf3e66a3e508bfefddc8c8f326a8a2c7a25e678243e57ce2",
+      "CurrentSha256": "6af6dca02d074451bf3e66a3e508bfefddc8c8f326a8a2c7a25e678243e57ce2",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Tasks/TaskChannel.h",
+      "SourceSha256": "2ecc31e51496615862a6a7bed28692c68166ad4161be231a805f2d54e7424434",
+      "CurrentSha256": "2ecc31e51496615862a6a7bed28692c68166ad4161be231a805f2d54e7424434",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Tasks/TaskQueue.h",
+      "SourceSha256": "2471d1fa90d4fe0b540e19b24bf08d2af2b8b8fb1350de8b06b779b8edcae9a3",
+      "CurrentSha256": "2471d1fa90d4fe0b540e19b24bf08d2af2b8b8fb1350de8b06b779b8edcae9a3",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Tasks/TaskScheduler.cpp",
+      "SourceSha256": "8b734b869420d4aa05220bfd06360d291fc232fb4f3af4da8b20a7a4ab28f82a",
+      "CurrentSha256": "8b734b869420d4aa05220bfd06360d291fc232fb4f3af4da8b20a7a4ab28f82a",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Tasks/TaskScheduler.h",
+      "SourceSha256": "251002624979fb7c05959de65cabf4efc972338a21e92a3cc7fb782c9b9a04ff",
+      "CurrentSha256": "251002624979fb7c05959de65cabf4efc972338a21e92a3cc7fb782c9b9a04ff",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Threads/Streaming/AssetStreamThread.cpp",
+      "SourceSha256": "9d95ab11cd7bd513a3a2072617a823fd70969ba12600361970bb361d5c0d55b8",
+      "CurrentSha256": "9d95ab11cd7bd513a3a2072617a823fd70969ba12600361970bb361d5c0d55b8",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Threads/Streaming/AssetStreamThread.h",
+      "SourceSha256": "aab239cc3fdf0aabe4d72cccff59265e7c5e1c8980b094cb2b82c7bfa6eca122",
+      "CurrentSha256": "aab239cc3fdf0aabe4d72cccff59265e7c5e1c8980b094cb2b82c7bfa6eca122",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Threads/Workspace/WorkspaceThread.cpp",
+      "SourceSha256": "947be1f6312827a4346d919854eb81090ca5f3ee978293c973b4e96cb8ab9fd8",
+      "CurrentSha256": "947be1f6312827a4346d919854eb81090ca5f3ee978293c973b4e96cb8ab9fd8",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Threading/Threads/Workspace/WorkspaceThread.h",
+      "SourceSha256": "1f139b1668f3a32815f8273b7165c343ecb174d10c7f5831a5056ba47a8fa06f",
+      "CurrentSha256": "1f139b1668f3a32815f8273b7165c343ecb174d10c7f5831a5056ba47a8fa06f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Windowing/PlatformWindow.h",
+      "SourceSha256": "4e7c31a684e838865d8d936145e2352f10341a2a0b374c521deca35abce44a6c",
+      "CurrentSha256": "e2a9e59b1aa0514102339b68026e1368f3caedd31dd036347566220b56e1a83a",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Windowing/PlatformWindowDesktop.cpp",
+      "SourceSha256": "aeda3e6d6fed44d3bd2a182833308f4379dc772dfd5a7792659f1c1a0cc9dbb9",
+      "CurrentSha256": "602df10b5232148e433a51c0f8d18e05b5ad2631c1fa3286ea64fc6641c99fd1",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Windowing/PlatformWindowStub.cpp",
+      "SourceSha256": "c9dd9fcbb17901326336feabd261aed77e4aa806c02d880cd170b66d4e3837a7",
+      "CurrentSha256": "c9dd9fcbb17901326336feabd261aed77e4aa806c02d880cd170b66d4e3837a7",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/ContentRegion.cpp",
+      "SourceSha256": "651bd14263a5e707e4f910b4fa2b6ef8661c468c861c20222877b39b8cbb8e12",
+      "CurrentSha256": "651bd14263a5e707e4f910b4fa2b6ef8661c468c861c20222877b39b8cbb8e12",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/ContentRegion.h",
+      "SourceSha256": "64d5950897127201d4caf8f5a2f1c0fd026db2dfe35636993efbdafcd42910b6",
+      "CurrentSha256": "64d5950897127201d4caf8f5a2f1c0fd026db2dfe35636993efbdafcd42910b6",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/CursorResolution.cpp",
+      "SourceSha256": "3e048e0176b3a89551f33235d78180b0733b5ce409644842adbb06b9ede1aa31",
+      "CurrentSha256": "3e048e0176b3a89551f33235d78180b0733b5ce409644842adbb06b9ede1aa31",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/CursorResolution.h",
+      "SourceSha256": "02cad99192ba8d1dc61109055071ecba693f4fae4b62d54893eb94e470233ffa",
+      "CurrentSha256": "02cad99192ba8d1dc61109055071ecba693f4fae4b62d54893eb94e470233ffa",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/NonLinearHistory.cpp",
+      "SourceSha256": "b25708675dba44a925bb2657762ceb2031a814caaf3567769cf639ca277d1fb2",
+      "CurrentSha256": "b25708675dba44a925bb2657762ceb2031a814caaf3567769cf639ca277d1fb2",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/NonLinearHistory.h",
+      "SourceSha256": "d338b45004f50e9bb6beee0fe57032f281626b4a3c4bebedac4439f8c637637f",
+      "CurrentSha256": "d338b45004f50e9bb6beee0fe57032f281626b4a3c4bebedac4439f8c637637f",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/OperationRecorder.cpp",
+      "SourceSha256": "a63878a3cb8a44514e1fd20b0a6fd37aedcc2193dd310b0ceb2993fbf5dd9a85",
+      "CurrentSha256": "a63878a3cb8a44514e1fd20b0a6fd37aedcc2193dd310b0ceb2993fbf5dd9a85",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/OperationRecorder.h",
+      "SourceSha256": "3e9383a7d78332266ded9df95a03df97a611305f917c8a859e24fc76738374b6",
+      "CurrentSha256": "3e9383a7d78332266ded9df95a03df97a611305f917c8a859e24fc76738374b6",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/RevisionExtension.cpp",
+      "SourceSha256": "18211430c33323743ff7a373c387e7ae994f7f1f55f12910fbe2b1cfec8345a6",
+      "CurrentSha256": "18211430c33323743ff7a373c387e7ae994f7f1f55f12910fbe2b1cfec8345a6",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/RevisionExtension.h",
+      "SourceSha256": "2882aa0934cfeb9f4903ff835d896d9d75813a21d5fefab7d65be9609ef9a2a8",
+      "CurrentSha256": "2882aa0934cfeb9f4903ff835d896d9d75813a21d5fefab7d65be9609ef9a2a8",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/RevisionTracker.cpp",
+      "SourceSha256": "a05d95bbb604bf0053cc789af38f7b8dee987c9afe6307f6620fed7ca03f0354",
+      "CurrentSha256": "a05d95bbb604bf0053cc789af38f7b8dee987c9afe6307f6620fed7ca03f0354",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/Revision/RevisionTracker.h",
+      "SourceSha256": "64199064069177ff88d7cae2fdfa85983cd5a0ec7460853072200e0dde17226c",
+      "CurrentSha256": "64199064069177ff88d7cae2fdfa85983cd5a0ec7460853072200e0dde17226c",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Operations/UVAuthoringOperations.cpp",
+      "SourceSha256": "db86de8f63ed37c328865f38537d53672091167cb58291900accd45f777fb8b2",
+      "CurrentSha256": "db86de8f63ed37c328865f38537d53672091167cb58291900accd45f777fb8b2",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Operations/UVAuthoringOperations.h",
+      "SourceSha256": "1f7678e52931e33debf0b16e12541d6563a0d85c54c7e3ce96dadf907e562626",
+      "CurrentSha256": "1f7678e52931e33debf0b16e12541d6563a0d85c54c7e3ce96dadf907e562626",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/ConcaveSkylinePacker.cpp",
+      "SourceSha256": "6c9168526267d6f348eec01a67ccb6f2b4cbacd627c468fbd9ddc92c3cf00a41",
+      "CurrentSha256": "6c9168526267d6f348eec01a67ccb6f2b4cbacd627c468fbd9ddc92c3cf00a41",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/ConcaveSkylinePacker.h",
+      "SourceSha256": "8e6a74dfc9871965faa202812fd9cb0ab8b6277adda94c78be4714d497b4107a",
+      "CurrentSha256": "8e6a74dfc9871965faa202812fd9cb0ab8b6277adda94c78be4714d497b4107a",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/ConformalUnwrapSolver.cpp",
+      "SourceSha256": "6c7a4c0b188b87eb0f7663665b8eceab8663080a18cb51f48640a491ef08b03e",
+      "CurrentSha256": "6c7a4c0b188b87eb0f7663665b8eceab8663080a18cb51f48640a491ef08b03e",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/ConformalUnwrapSolver.h",
+      "SourceSha256": "f9dc803926cb677a95143b12c62245ce5d23ac956c1d028c9d70dea4a81c95fb",
+      "CurrentSha256": "f9dc803926cb677a95143b12c62245ce5d23ac956c1d028c9d70dea4a81c95fb",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/ProgressiveStretchRelaxer.cpp",
+      "SourceSha256": "5b2fef4bd180508053c6e1bc5fb66358fc2e95f341c96828dc59e7be9423c4e7",
+      "CurrentSha256": "5b2fef4bd180508053c6e1bc5fb66358fc2e95f341c96828dc59e7be9423c4e7",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/ProgressiveStretchRelaxer.h",
+      "SourceSha256": "98f48a3a729faaeb823fa41f5614eefb774bed072f8ef4781a1066abf3507817",
+      "CurrentSha256": "98f48a3a729faaeb823fa41f5614eefb774bed072f8ef4781a1066abf3507817",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/SeamCutGenerator.cpp",
+      "SourceSha256": "3ea586b915d49ee2da510c11ea769dfc0659914a12adcf9db112c5dca66b7396",
+      "CurrentSha256": "3ea586b915d49ee2da510c11ea769dfc0659914a12adcf9db112c5dca66b7396",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/SeamCutGenerator.h",
+      "SourceSha256": "973649d425a514a676474baaf1c0df6eb8461047c9359ba9a8e3f4a426f61551",
+      "CurrentSha256": "973649d425a514a676474baaf1c0df6eb8461047c9359ba9a8e3f4a426f61551",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/TexelDensityEqualizer.cpp",
+      "SourceSha256": "b3f6b10960d21a90681ad33c2a6c92b55b475673ba4ff817fa011d5f09cfdde0",
+      "CurrentSha256": "b3f6b10960d21a90681ad33c2a6c92b55b475673ba4ff817fa011d5f09cfdde0",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/TexelDensityEqualizer.h",
+      "SourceSha256": "fcd3f00f553964bc852ff68cf150dd25e483b6407e8ab660d86842bc46e8a900",
+      "CurrentSha256": "fcd3f00f553964bc852ff68cf150dd25e483b6407e8ab660d86842bc46e8a900",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/UVIslandLayoutOperations.cpp",
+      "SourceSha256": "dbaaf72f2e19dbd66282972851e61505bbafcf6d03aad4de23276050aafeb700",
+      "CurrentSha256": "dbaaf72f2e19dbd66282972851e61505bbafcf6d03aad4de23276050aafeb700",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/UVIslandLayoutOperations.h",
+      "SourceSha256": "5e90764b66136140e6dffe9622954700b17c7668a4f1a6ae9809306514296080",
+      "CurrentSha256": "5e90764b66136140e6dffe9622954700b17c7668a4f1a6ae9809306514296080",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/UVProjectionSolvers.cpp",
+      "SourceSha256": "fe6d0ab70cf8c2d5ee42dbcc316209fe4267ac12b7245906872b581d4210baa2",
+      "CurrentSha256": "fe6d0ab70cf8c2d5ee42dbcc316209fe4267ac12b7245906872b581d4210baa2",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/Solvers/UVProjectionSolvers.h",
+      "SourceSha256": "b3e4953fd975ea789ead357c378b22895bbbeab94ce33f77997ea799a5742ba8",
+      "CurrentSha256": "b3e4953fd975ea789ead357c378b22895bbbeab94ce33f77997ea799a5742ba8",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVInspectorPanel.cpp",
+      "SourceSha256": "39ec778ffdcae4d1eebdaf1d80a6f703b05e76d1fd5e74cbcf81f513af11c82e",
+      "CurrentSha256": "ca4eeb97afcbf024512cfcb0dde3e19711a3cabf2c81d0a2d53d10b4a0ef4b6b",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVInspectorPanel.h",
+      "SourceSha256": "817801ded5bee7e7da9b965be27ddc8e8ed140f1491d76a1207f3b6ebb0d1328",
+      "CurrentSha256": "76d84ba539db9ea2a021eaf2128f488550c9fea9ff0e34d5e4068116cf0b75b5",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVOutlinerPanel.cpp",
+      "SourceSha256": "4b2a99c5f45fabf90dfefca46855c7bda373dba75323d82674801db7aa2f150b",
+      "CurrentSha256": "1eb779a7f851c96fa48330f524e5e187544c5f242c617ca12d6b81fc3e796199",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVOutlinerPanel.h",
+      "SourceSha256": "35b636c7b0ae3a42deecdf383f1d9867718048b16d426f33ec1fc6fc2d939dbd",
+      "CurrentSha256": "0d973dcefbc7902826ea450f262b544a49e4d2e2224700beef7dacd9ab8cb3f0",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVPaneAppearance.h",
+      "SourceSha256": "2a1146f5b052ae46a4938aed02f63b57183250c6836e2568ce62e62c6522bdf3",
+      "CurrentSha256": "2a1146f5b052ae46a4938aed02f63b57183250c6836e2568ce62e62c6522bdf3",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVViewportHost.cpp",
+      "SourceSha256": "367d07092eb6ae85cba7127167e657572bd1c471238c99e18760f9bef8409933",
+      "CurrentSha256": "1e5e3e0041f98565ad2d982e9fab867d81968349ac777ee2d8c155051b549ebb",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVViewportHost.h",
+      "SourceSha256": "0ed259b0b6cc5b596effd13aabdf3f04d5604789aed4804bbafe360db3b2e5fe",
+      "CurrentSha256": "066cecb84689bbf348c199387ba5cea1c9778f6a0d99e89907f051b1444d8077",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVViewportInteractor.cpp",
+      "SourceSha256": "4ddc557debd788dfa3d9a4d7f2b9b3857c4b5d983476e5ff3ab7978e7b6a8934",
+      "CurrentSha256": "54c96e043fa282f036c4c3cf3ffb4b00aee38f1a2c0bb8f832d0c51250757fed",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVViewportInteractor.h",
+      "SourceSha256": "e895c2d33571b2eb9182d0c569f6613ac5741b594351be8029180d039813f5da",
+      "CurrentSha256": "e895c2d33571b2eb9182d0c569f6613ac5741b594351be8029180d039813f5da",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVWorkspaceHost.cpp",
+      "SourceSha256": "f32680029e8d7c62a2cd36ff1d35ce3a4857939c3601f578a9d092b83c7799f2",
+      "CurrentSha256": "614debe138da1d5e6097b9ca6b21a76553e2d7ae9ad744ed3b4f7d139a1bc692",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVWorkspaceHost.h",
+      "SourceSha256": "ed7a6b7ee38e2158e9b8072e25c929bf9ae6f9664a74ac2c70b046fb544cfdbc",
+      "CurrentSha256": "ed7a6b7ee38e2158e9b8072e25c929bf9ae6f9664a74ac2c70b046fb544cfdbc",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVWorkspaceSession.cpp",
+      "SourceSha256": "a38205cc71d1908de141ee8336c931e6f92430cb9f44177b09040546a73c3c01",
+      "CurrentSha256": "da7e184f4ec232d9717134e6bc574822b6e94c53eecbdf599bce99bd26ef05c1",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/UV/UVWorkspaceSession.h",
+      "SourceSha256": "813eee0fcfb57d13cdbffd97a4c6d3de878d373a3d208c654691caa5d3a7d441",
+      "CurrentSha256": "45562ad26134e2f0e63e9f1ea7abe09219cc01a6d17af5e23e2b821fa25702ee",
+      "Identical": false
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceDocument.cpp",
+      "SourceSha256": "b8d5d57036aa386fa9c54affc78fbdfeeeba760772cfa58d78f76fa1390fccfb",
+      "CurrentSha256": "b8d5d57036aa386fa9c54affc78fbdfeeeba760772cfa58d78f76fa1390fccfb",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceDocument.h",
+      "SourceSha256": "d3776b1b4d82868487dab9b0e35c2f3158ab74c38803ecd77c7c94fec6dc9312",
+      "CurrentSha256": "d3776b1b4d82868487dab9b0e35c2f3158ab74c38803ecd77c7c94fec6dc9312",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceExchange.cpp",
+      "SourceSha256": "c2001670398e894b988f403424b1e598e8685b412d7dce8f9941a8b02e95e41d",
+      "CurrentSha256": "c2001670398e894b988f403424b1e598e8685b412d7dce8f9941a8b02e95e41d",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceExchange.h",
+      "SourceSha256": "b367ea7a4cd32f10ed1aa57c17e0b81060bc3617916adaf390279dc8c755aaa4",
+      "CurrentSha256": "b367ea7a4cd32f10ed1aa57c17e0b81060bc3617916adaf390279dc8c755aaa4",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceExtension.cpp",
+      "SourceSha256": "e442f729978c84e610d0d8cfbe4561b2f64ac4b26d3093020c5bfbd11705a4cb",
+      "CurrentSha256": "e442f729978c84e610d0d8cfbe4561b2f64ac4b26d3093020c5bfbd11705a4cb",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceExtension.h",
+      "SourceSha256": "c3f6af5d8a980889fb778731d8ecf9ff85336b59a801798647b6f13643976acf",
+      "CurrentSha256": "c3f6af5d8a980889fb778731d8ecf9ff85336b59a801798647b6f13643976acf",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceRegistry.cpp",
+      "SourceSha256": "46943d275fac2ce4134968fa755e0ab31448375f6aaf4bda34a6499ddc6c70b3",
+      "CurrentSha256": "46943d275fac2ce4134968fa755e0ab31448375f6aaf4bda34a6499ddc6c70b3",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceRegistry.h",
+      "SourceSha256": "cd776f2e972b57db3b23bb86816c000c80a79f9a8b9483e08d14cbfc139bdee2",
+      "CurrentSha256": "cd776f2e972b57db3b23bb86816c000c80a79f9a8b9483e08d14cbfc139bdee2",
+      "Identical": true
+    },
+    {
+      "Path": "Engine/Workspaces/WorkspaceToken.h",
+      "SourceSha256": "322cb08c4c90f9b54bec62bdd977463e395b7462d86cc9f60bbdf221b028fe64",
+      "CurrentSha256": "322cb08c4c90f9b54bec62bdd977463e395b7462d86cc9f60bbdf221b028fe64",
+      "Identical": true
+    },
+    {
+      "Path": "EngineContent/Geometry/ControlledIntegrator.GeometrySpace",
+      "SourceSha256": "531d42fc71b61b0027ce397f6cb78877304640f2d58233c1d2a13b4c09dfbffe",
+      "CurrentSha256": "531d42fc71b61b0027ce397f6cb78877304640f2d58233c1d2a13b4c09dfbffe",
+      "Identical": true
+    },
+    {
+      "Path": "EngineContent/MatCaps/MatCapStudioAtlas.png",
+      "SourceSha256": "f7c08147f121b5f131299d89f2438a29e0ade6d18cf50304a74d95e64787c267",
+      "CurrentSha256": "f7c08147f121b5f131299d89f2438a29e0ade6d18cf50304a74d95e64787c267",
+      "Identical": true
+    },
+    {
+      "Path": "EngineContent/MatCaps/MatCapStudioAtlas.rgba",
+      "SourceSha256": "62ea208b0d3ddd6a1825ed3e5121817f392cbf82da27a81c7d45f670587c61c0",
+      "CurrentSha256": "62ea208b0d3ddd6a1825ed3e5121817f392cbf82da27a81c7d45f670587c61c0",
+      "Identical": true
+    },
+    {
+      "Path": "EngineContent/MatCaps/MatCapStudioCatalog.json",
+      "SourceSha256": "e88385c8a58aeadddf9f0e1669c8e9a5d7c4216e44e6a94a09afa017f36da7d9",
+      "CurrentSha256": "e88385c8a58aeadddf9f0e1669c8e9a5d7c4216e44e6a94a09afa017f36da7d9",
+      "Identical": true
+    },
+    {
+      "Path": "EngineContent/MatCaps/README.md",
+      "SourceSha256": "9b9a513c620832849929e0bb0cb036f8e36d076e74da426cef8b7536d470d0fe",
+      "CurrentSha256": "9b9a513c620832849929e0bb0cb036f8e36d076e74da426cef8b7536d470d0fe",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/ContentBrowserValidation.cpp",
+      "SourceSha256": "7a1a29110d6930cc31b76ffc665abfc2e96759812f9ef4340c2b745ab0252246",
+      "CurrentSha256": "7a1a29110d6930cc31b76ffc665abfc2e96759812f9ef4340c2b745ab0252246",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/ControlCentreValidation.cpp",
+      "SourceSha256": "27163c84ad89247fe01f1c3fb4125e2605221b5d56e4ae5946c9090633f20670",
+      "CurrentSha256": "27163c84ad89247fe01f1c3fb4125e2605221b5d56e4ae5946c9090633f20670",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/DockingValidation.cpp",
+      "SourceSha256": "1161f44982162f93bcb292fe7cd8fbec3d9f0f4a71b3e67e7eb6c68368404b6d",
+      "CurrentSha256": "1161f44982162f93bcb292fe7cd8fbec3d9f0f4a71b3e67e7eb6c68368404b6d",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/GeometryNetworkValidation.cpp",
+      "SourceSha256": "0f323a9fcba9887c42c96635edb7b4fe62d474bdf5f28e3015565cfc06312276",
+      "CurrentSha256": "0f323a9fcba9887c42c96635edb7b4fe62d474bdf5f28e3015565cfc06312276",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/InputValidation.cpp",
+      "SourceSha256": "9fcd145aa0b368e7f788b10a60b2abd89d1ee2404b50997db2d7c35c4886fb78",
+      "CurrentSha256": "9fcd145aa0b368e7f788b10a60b2abd89d1ee2404b50997db2d7c35c4886fb78",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/LifecycleValidation.cpp",
+      "SourceSha256": "cc9454bc903125a6c4718fd60e75f98744ebe0a1119c83cf8e95319aaf93e149",
+      "CurrentSha256": "cc9454bc903125a6c4718fd60e75f98744ebe0a1119c83cf8e95319aaf93e149",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/SoftwareCanvasRasterizer.h",
+      "SourceSha256": "100ac71198de4cfe51c691b0a256b580ce049410cb99843f362a9e06d8cf9a85",
+      "CurrentSha256": "100ac71198de4cfe51c691b0a256b580ce049410cb99843f362a9e06d8cf9a85",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/UVBoundaryValidation.cpp",
+      "SourceSha256": "c8da65dd634e16c097c9d50e1ca594256247e0b949ce7c3412db745e05fd2496",
+      "CurrentSha256": "c8da65dd634e16c097c9d50e1ca594256247e0b949ce7c3412db745e05fd2496",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/UVInteractiveAuthoringValidation.cpp",
+      "SourceSha256": "cc20dc621ee6893fcb9a2d578a251662a7f866943b456127f31079bdc144b909",
+      "CurrentSha256": "d1a8b4b5e6771579441f584bccf6632c57e3b8b35bb0d1cda19b81216f4e7078",
+      "Identical": false
+    },
+    {
+      "Path": "Exhibits/UVParameterizationValidation.cpp",
+      "SourceSha256": "3f5b3adcf4dcb134e400131522bd6cde8d18b6634077c1e61eee64fcfd84a2dc",
+      "CurrentSha256": "3f5b3adcf4dcb134e400131522bd6cde8d18b6634077c1e61eee64fcfd84a2dc",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/UVRasterPickingGizmoValidation.cpp",
+      "SourceSha256": "4269fc47e6e4206f49e009ea3e561a7eca590197da57ae37e8478ad99fa5acc8",
+      "CurrentSha256": "edaead116b6e49dcad09fd21bf4d8cb7a89fd0f9a1715b9f3007a629e7ed51b7",
+      "Identical": false
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceUIValidation.cpp",
+      "SourceSha256": "fdc6c6f2eca6ec03b3ddd3f9eb5dc16322a9fbc97d6e08a2790dd72f6f1191c4",
+      "CurrentSha256": "fdc6c6f2eca6ec03b3ddd3f9eb5dc16322a9fbc97d6e08a2790dd72f6f1191c4",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/WindowValidation.cpp",
+      "SourceSha256": "6e9f7a4bb42e935a221bb60f6f7710aca1fc3aef6937bca667d6ce2a6ba05e1e",
+      "CurrentSha256": "6e9f7a4bb42e935a221bb60f6f7710aca1fc3aef6937bca667d6ce2a6ba05e1e",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/WorkspacePanesValidation.cpp",
+      "SourceSha256": "44cf27ecc80b91d2c51d362b8bc97229791068da65b59e9b047bc05fb9f0d69d",
+      "CurrentSha256": "44cf27ecc80b91d2c51d362b8bc97229791068da65b59e9b047bc05fb9f0d69d",
+      "Identical": true
+    },
+    {
+      "Path": "Exhibits/WorkspaceRevisionValidation.cpp",
+      "SourceSha256": "045af7befedcafe9e75aac42ef24d2d67b7a557cac2a7342baea98bb97574711",
+      "CurrentSha256": "045af7befedcafe9e75aac42ef24d2d67b7a557cac2a7342baea98bb97574711",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/Shared/UvTextureBridge.js",
+      "SourceSha256": "88a0ed5f63f6df14ed92e182854c08aa5dff532d37014ad5a07d25f61fc1c081",
+      "CurrentSha256": "88a0ed5f63f6df14ed92e182854c08aa5dff532d37014ad5a07d25f61fc1c081",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Assets/ControlVehicleBody.facet",
+      "SourceSha256": "d8a7516018ba536555bca5933fabfbd1681167ad3908a87be95ad3cfd912134a",
+      "CurrentSha256": "d8a7516018ba536555bca5933fabfbd1681167ad3908a87be95ad3cfd912134a",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Assets/ControlVehicleRim.facet",
+      "SourceSha256": "44b50dd7d80c12f68d92b2dbdbd3d911d73334fa1ef10fbc16e07ff1812a8de5",
+      "CurrentSha256": "44b50dd7d80c12f68d92b2dbdbd3d911d73334fa1ef10fbc16e07ff1812a8de5",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Assets/ControlVehicleTyre.facet",
+      "SourceSha256": "1cf021cd3f7ef4cbc984bf677247e0ac6722e90f542191a4ca13391fb144387d",
+      "CurrentSha256": "1cf021cd3f7ef4cbc984bf677247e0ac6722e90f542191a4ca13391fb144387d",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Engine/ControlledIntegratorLoader.js",
+      "SourceSha256": "d7a7401c162b1aeecbec32a6096ec7e91302b7546628ef320656341ab6e0e4a6",
+      "CurrentSha256": "d7a7401c162b1aeecbec32a6096ec7e91302b7546628ef320656341ab6e0e4a6",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Engine/EngineeringMatcaps.js",
+      "SourceSha256": "3f053fb97f4b896267401b49665f891300776c2540d19e26c3a4ef3cae68aa73",
+      "CurrentSha256": "3f053fb97f4b896267401b49665f891300776c2540d19e26c3a4ef3cae68aa73",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Engine/ImportancePackingSolver.js",
+      "SourceSha256": "c5ae441f560f387d591b22b2f0394a10caf55437e54b7e893384bbe085b4785b",
+      "CurrentSha256": "c5ae441f560f387d591b22b2f0394a10caf55437e54b7e893384bbe085b4785b",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Engine/SampleAssets.js",
+      "SourceSha256": "2b27c0c823ca2e24c26c7df2fba47962fc5a00893c84ca7d44452bfe7bd96748",
+      "CurrentSha256": "2b27c0c823ca2e24c26c7df2fba47962fc5a00893c84ca7d44452bfe7bd96748",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Engine/TopologySurface.js",
+      "SourceSha256": "3ab1ff32a56f088edb0e368acf523388a41af0f87bbf7019bc5a9c2e8c1163e8",
+      "CurrentSha256": "3ab1ff32a56f088edb0e368acf523388a41af0f87bbf7019bc5a9c2e8c1163e8",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Engine/UVCanvas2D.js",
+      "SourceSha256": "b46989002064bee2bac21d43e6dce4f70906cd6cc16f9a5e2451dc85f6a128f5",
+      "CurrentSha256": "b46989002064bee2bac21d43e6dce4f70906cd6cc16f9a5e2451dc85f6a128f5",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Engine/UVViewport3D.js",
+      "SourceSha256": "3dbcaf51d52534837f7f77a2df37d9bcbd4011a0eb26f80d507c6d0f877fedf5",
+      "CurrentSha256": "3dbcaf51d52534837f7f77a2df37d9bcbd4011a0eb26f80d507c6d0f877fedf5",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Engine/UnwrapSolver.js",
+      "SourceSha256": "91dbb1df3232c46fe4c1a8c41818072999b1df6f5a2ebe766ce5eef7f3223912",
+      "CurrentSha256": "91dbb1df3232c46fe4c1a8c41818072999b1df6f5a2ebe766ce5eef7f3223912",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Fonts/LICENSE-Font-Awesome.txt",
+      "SourceSha256": "9b914eae88817d63b576eab5aafde7068c7a1abae125d7cdfb034f1da43a9afc",
+      "CurrentSha256": "9b914eae88817d63b576eab5aafde7068c7a1abae125d7cdfb034f1da43a9afc",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Fonts/OFL.txt",
+      "SourceSha256": "7ec15e79c59bc14b86436a17e5eb7926b46cbcaeb08e1a7e6c110b415e6eb2a2",
+      "CurrentSha256": "7ec15e79c59bc14b86436a17e5eb7926b46cbcaeb08e1a7e6c110b415e6eb2a2",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Fonts/dm-sans-latin-300-normal.woff2",
+      "SourceSha256": "80f13c410ec41f210a5553e7f420f8a51f459180019274df0b3faea314916f90",
+      "CurrentSha256": "80f13c410ec41f210a5553e7f420f8a51f459180019274df0b3faea314916f90",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Fonts/dm-sans-latin-400-normal.woff2",
+      "SourceSha256": "4ab51eb2cd7305d177187908d6397474d4520663f6c6e572feb0a64f4fa80006",
+      "CurrentSha256": "4ab51eb2cd7305d177187908d6397474d4520663f6c6e572feb0a64f4fa80006",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Fonts/dm-sans-latin-500-normal.woff2",
+      "SourceSha256": "19bf1984956517c35c2bd35b6cdedac12a21d6fcd3596c614ecdfb88b648909d",
+      "CurrentSha256": "19bf1984956517c35c2bd35b6cdedac12a21d6fcd3596c614ecdfb88b648909d",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Fonts/fa-solid-900.woff2",
+      "SourceSha256": "aa75998623a391e61c6901794ace832e3ecdd288b56d608f21bea0411acc0b8e",
+      "CurrentSha256": "aa75998623a391e61c6901794ace832e3ecdd288b56d608f21bea0411acc0b8e",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/README.md",
+      "SourceSha256": "7fb936be1f855effa78deabbe0adaa804580d101cc179515e494c0ab9f136281",
+      "CurrentSha256": "7fb936be1f855effa78deabbe0adaa804580d101cc179515e494c0ab9f136281",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Serve.py",
+      "SourceSha256": "354da3f6c6489a119b60cc752930395e59f8ca8f8ad0e74d554d03d644b59836",
+      "CurrentSha256": "354da3f6c6489a119b60cc752930395e59f8ca8f8ad0e74d554d03d644b59836",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/StudioControls.js",
+      "SourceSha256": "84def7186c2cbfde65abf9c2b00a5eae055b90bf53eac554dde7d4df8837a6e2",
+      "CurrentSha256": "84def7186c2cbfde65abf9c2b00a5eae055b90bf53eac554dde7d4df8837a6e2",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/UVEditor.css",
+      "SourceSha256": "20e3cf88eb395440e4c4d84aac5be7bb24643c8383e0ea9a8d495842bf4625e0",
+      "CurrentSha256": "20e3cf88eb395440e4c4d84aac5be7bb24643c8383e0ea9a8d495842bf4625e0",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/UVEditor.js",
+      "SourceSha256": "3885c11e950eb222cd452e5f62771811f3d3acdf253ab0f9eb1fbe170b553abc",
+      "CurrentSha256": "3885c11e950eb222cd452e5f62771811f3d3acdf253ab0f9eb1fbe170b553abc",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/UVValidation.mjs",
+      "SourceSha256": "37f96188cb055c911a89074d17093585a1a397f77f4ab7682237954b9a3a75c9",
+      "CurrentSha256": "37f96188cb055c911a89074d17093585a1a397f77f4ab7682237954b9a3a75c9",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Vendor/orbit-controls.esm.min.js",
+      "SourceSha256": "049afe5ade97b21e25c727127ce84bfabc0f8e1694d34e9b5453fb014e6ac3e4",
+      "CurrentSha256": "049afe5ade97b21e25c727127ce84bfabc0f8e1694d34e9b5453fb014e6ac3e4",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/Vendor/three.esm.min.js",
+      "SourceSha256": "0db51f5fa32c178e8fc20e45cd73067b22de2061261efac10ca60b94bf966975",
+      "CurrentSha256": "0db51f5fa32c178e8fc20e45cd73067b22de2061261efac10ca60b94bf966975",
+      "Identical": true
+    },
+    {
+      "Path": "Experimental/UVEditor/index.html",
+      "SourceSha256": "84569beb56196c644c5182e79c2631cded6e3baa2e2a67534b06f187486c8007",
+      "CurrentSha256": "84569beb56196c644c5182e79c2631cded6e3baa2e2a67534b06f187486c8007",
+      "Identical": true
+    }
+  ]
+}

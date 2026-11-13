@@ -1,0 +1,107 @@
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+[PASS] actual desktop and full editor share one authoring exchange with one consolidation per tick
+[PASS] desktop UI contains no polled device intake or supplemental text/drop bypass
+[PASS] actual desktop refreshes dock extent and framebuffer scale before presenting the native frame
+[PASS] initialize native Vulkan interaction device
+[PASS] initialize production viewport rasterizer
+[PASS] initialize GLFW platform window
+[PASS] platform installed pointer, button, key, text, wheel, focus and drop callbacks
+[PASS] attach actual UV session to Vulkan rasterizer
+[PASS] initialize native dock container
+[PASS] initialize actual Vulkan ImGui presenter
+MEASURE InitialFraming viewport=476x784 distance=17.563421 maxNdc=(0.764489,0.244025)
+[PASS] initial split framing contains every original vehicle vertex after the native dock layout settles
+[PASS] native Outliner uses HTML reference 10px card inset, 70px KPI cards, 7px gaps, 64px diagnostics and 8px gap
+[PASS] UDIM Filter retains its original native 14px inset and 31px control height
+[PASS] clicking the native Remaining card selects the real remainder consistently for GPU highlighting and CPU operations
+MEASURE Outliner KPI=89.667x70.000 Diagnostics=137.500x64.000 Layer=283.000x40.000 UDIMFilter=275.000x31.000
+[PASS] read back actual native Vulkan presentation
+[PASS] NativeInitial.png
+[PASS] physical scancode, logical key and modifiers survive both existing exchanges
+[PASS] Ctrl+Z reaches UI as a key command without relying on a GLFW character callback
+[PASS] BMP and supplementary Unicode text are preserved exactly once and kept separate from shortcuts
+[PASS] absolute pointer coordinates are captured by callbacks, not polled by editor UI
+[PASS] pointer buttons consolidate into the existing input snapshot
+[PASS] focus loss releases held keys and buttons in both InputExtension and ImGui
+[PASS] first motion after focus recovery establishes origin; subsequent motion accumulates a finite delta
+[PASS] idle ticks clear transient pointer and wheel deltas
+[PASS] multiple file-drop payloads retain order and owned path lifetime through InputExchange
+[PASS] initialize a separate runtime lifecycle
+[PASS] game exchange is distinct and cannot consume or overwrite editor input
+[PASS] editor callback replay drops no signals
+MEASURE SurfaceDropdown requested=5 selected=5
+[PASS] 3D dropdown selects the requested non-adjacent mode directly
+MEASURE SurfaceDropdown requested=0 selected=0
+[PASS] 3D dropdown selects the requested non-adjacent mode directly
+MEASURE SurfaceDropdown requested=4 selected=4
+[PASS] 3D dropdown selects the requested non-adjacent mode directly
+MEASURE SurfaceDropdown requested=2 selected=2
+[PASS] 3D dropdown selects the requested non-adjacent mode directly
+MEASURE SurfaceDropdown requested=3 selected=3
+[PASS] 3D dropdown selects the requested non-adjacent mode directly
+MEASURE SurfaceDropdown requested=1 selected=1
+[PASS] 3D dropdown selects the requested non-adjacent mode directly
+[PASS] debug dropdown selects the requested diagnostic channel directly
+[PASS] debug dropdown selects the requested diagnostic channel directly
+[PASS] debug dropdown selects the requested diagnostic channel directly
+[PASS] read back actual native Vulkan presentation
+[PASS] SurfaceDropdown.png
+[PASS] Escape closes the open dropdown without changing its selected mode
+[PASS] divider drag changes both viewport widths and persists on subsequent host renders
+[PASS] divider capture does not pick geometry or navigate the camera underneath
+[PASS] read back actual native Vulkan presentation
+[PASS] ResizedDivider.png
+[PASS] native wheel zoom has observable multi-frame lag rather than an immediate camera jump
+[PASS] displayed camera and rendered Vulkan camera converge to the target while idle
+[PASS] damped native zoom changes the actual framebuffer pixels
+[PASS] shift-middle pointer movement pans through the exchange and retains camera movement lag
+[PASS] damped camera movement settles without continued input
+MEASURE DividerRatio=0.500000->0.610294 CameraDistance=17.563421->14.379713 First=17.197882 Second=16.877237
+MEASURE Slider=metallic Requested=0.820 Actual=0.820 ChangedChannels=126066
+[PASS] actual Inspector pointer input changes the requested per-face finish component
+[PASS] finish control changes visible pixels in the production Vulkan viewport
+MEASURE Slider=roughness Requested=0.820 Actual=0.820 ChangedChannels=115210
+[PASS] actual Inspector pointer input changes the requested per-face finish component
+[PASS] finish control changes visible pixels in the production Vulkan viewport
+MEASURE Slider=specular Requested=0.820 Actual=0.820 ChangedChannels=126167
+[PASS] actual Inspector pointer input changes the requested per-face finish component
+[PASS] finish control changes visible pixels in the production Vulkan viewport
+MEASURE Slider=MatCap blend Requested=0.320 Actual=0.320 ChangedChannels=124437
+[PASS] actual Inspector pointer input changes the requested per-face finish component
+[PASS] finish control changes visible pixels in the production Vulkan viewport
+[PASS] editing a finish in pure MatCap preview switches to the material-responsive blended mode
+[PASS] read back actual native Vulkan presentation
+[PASS] FinishControls.png
+[PASS] REPRODUCED stale extent: larger OS/ImGui surface alone leaves the native dock and panels small
+[PASS] synchronizing the real extent grows docked panels and GPU attachments after maximize-sized resize
+[PASS] read back actual native Vulkan presentation
+[PASS] NativeApplication.png
+[PASS] compact native panes wrap shading/debug/projection controls instead of hiding or overlapping them
+[PASS] read back actual native Vulkan presentation
+[PASS] CompactWorkspace.png
+[PASS] 2x framebuffer scale doubles raster attachments without doubling UI bounds or pointer coordinates
+[PASS] Vulkan presenter resizes target and retires previous viewport texture allocations before recreating them
+[PASS] repeated shrink/grow/DPI changes remain presentable with no stale texture assertion
+MEASURE Resize small=482x720 stale=482x720 grown=982x980 TextureRecreations=12
+MEASURE Region=Box Pane=2D FramebufferScale=1 ExpectedHitPixels=1446 SelectedFaces=45
+[PASS] native region input matches exact GPU selection and CPU finish/operation selection at the requested framebuffer scale
+MEASURE Region=Circle Pane=2D FramebufferScale=1 ExpectedHitPixels=1130 SelectedFaces=29
+[PASS] native region input matches exact GPU selection and CPU finish/operation selection at the requested framebuffer scale
+MEASURE Region=Box Pane=3D FramebufferScale=1 ExpectedHitPixels=2025 SelectedFaces=41
+[PASS] native region input matches exact GPU selection and CPU finish/operation selection at the requested framebuffer scale
+MEASURE Region=Circle Pane=3D FramebufferScale=1 ExpectedHitPixels=1517 SelectedFaces=40
+[PASS] native region input matches exact GPU selection and CPU finish/operation selection at the requested framebuffer scale
+MEASURE Region=Box Pane=2D FramebufferScale=2 ExpectedHitPixels=5707 SelectedFaces=63
+[PASS] native region input matches exact GPU selection and CPU finish/operation selection at the requested framebuffer scale
+MEASURE Region=Circle Pane=2D FramebufferScale=2 ExpectedHitPixels=4559 SelectedFaces=34
+[PASS] native region input matches exact GPU selection and CPU finish/operation selection at the requested framebuffer scale
+MEASURE Region=Box Pane=3D FramebufferScale=2 ExpectedHitPixels=7921 SelectedFaces=41
+[PASS] native region input matches exact GPU selection and CPU finish/operation selection at the requested framebuffer scale
+MEASURE Region=Circle Pane=3D FramebufferScale=2 ExpectedHitPixels=6077 SelectedFaces=40
+[PASS] native region input matches exact GPU selection and CPU finish/operation selection at the requested framebuffer scale
+[PASS] every native interaction frame was presented successfully
+WorkspaceInteractionValidation: 79/79 assertions passed

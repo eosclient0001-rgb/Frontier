@@ -1,0 +1,128 @@
+{
+  "Errors": [],
+  "Metrics": {
+    ".pz-left-kpi-trio": [
+      {
+        "Text": "UTILIZATION\n42.5%\nUDIM 1001 · 152 isl\nSELECTED\n0 / 152\nTotal islands\nREMAINING\n30%\n139 / 152 isl",
+        "X": 10,
+        "Y": 174,
+        "Width": 280,
+        "Height": 69.96875,
+        "Radius": "0px",
+        "Background": "rgba(0, 0, 0, 0)",
+        "Padding": "0px"
+      }
+    ],
+    ".pz-kpi-btn": [
+      {
+        "Text": "UTILIZATION\n42.5%\nUDIM 1001 · 152 isl",
+        "X": 10,
+        "Y": 174,
+        "Width": 88.65625,
+        "Height": 69.96875,
+        "Radius": "16px",
+        "Background": "rgb(239, 244, 207)",
+        "Padding": "10px 10px 9px"
+      },
+      {
+        "Text": "SELECTED\n0 / 152\nTotal islands",
+        "X": 105.65625,
+        "Y": 174,
+        "Width": 88.671875,
+        "Height": 69.96875,
+        "Radius": "16px",
+        "Background": "rgb(26, 26, 26)",
+        "Padding": "10px 10px 9px"
+      },
+      {
+        "Text": "REMAINING\n30%\n139 / 152 isl",
+        "X": 201.328125,
+        "Y": 174,
+        "Width": 88.65625,
+        "Height": 69.96875,
+        "Radius": "16px",
+        "Background": "rgb(26, 26, 26)",
+        "Padding": "10px 10px 9px"
+      }
+    ],
+    ".pz-bento-stat": [
+      {
+        "Text": "α\nStretch Caution\n6",
+        "X": 10,
+        "Y": 251.96875,
+        "Width": 136,
+        "Height": 64,
+        "Radius": "20px",
+        "Background": "rgb(25, 25, 25)",
+        "Padding": "11px 12px"
+      },
+      {
+        "Text": "!\nOverlaps\n0",
+        "X": 154,
+        "Y": 251.96875,
+        "Width": 136,
+        "Height": 64,
+        "Radius": "20px",
+        "Background": "rgb(25, 25, 25)",
+        "Padding": "11px 12px"
+      }
+    ],
+    ".pz-frontier-layer-box": [
+      {
+        "Text": "Body Coat Hero\nUDIM 1001 · 778 faces\n55%",
+        "X": 10,
+        "Y": 368.96875,
+        "Width": 280,
+        "Height": 39.59375,
+        "Radius": "0px",
+        "Background": "rgb(38, 38, 38)",
+        "Padding": "6px 8px 6px 10px"
+      },
+      {
+        "Text": "Optics & Glass\nUDIM 1001 · 116 faces\n15%",
+        "X": 10,
+        "Y": 410.5625,
+        "Width": 280,
+        "Height": 39.59375,
+        "Radius": "0px",
+        "Background": "rgb(23, 23, 23)",
+        "Padding": "6px 8px 6px 10px"
+      },
+      {
+        "Text": "Unassigned Remainder\n24,174 faces\n30%",
+        "X": 10,
+        "Y": 452.15625,
+        "Width": 280,
+        "Height": 39.59375,
+        "Radius": "0px",
+        "Background": "rgb(20, 20, 20)",
+        "Padding": "6px 8px 6px 10px"
+      }
+    ],
+    "#left-panel": [
+      {
+        "Text": "UV Space\n×\n+\nUV Space\n152 total islands · 1 UDIM\n+\nCtrl+F\nAll UDIMs\nUDIM 1001\nUTILIZATION\n42.5%\nUDIM 1001 · 152 isl\nSELECTED\n0 / 152\nTotal islands\nREMAINING\n30%\n139 / 152 isl\nα\nStretch Caution\n6\n!\nOverlaps\n0\nLAYERS (02)\nBody Coat Hero\nUDIM 1001 · 778 faces\n55%\nOptics & Glass\nUDIM 1001 · 116 faces\n15%\nUnassigned Remainder\n24,174 faces\n30%\nUDIM 1001 Space Budget\n42.5% filled · STRICT",
+        "X": 0,
+        "Y": 0,
+        "Width": 300,
+        "Height": 980,
+        "Radius": "0px",
+        "Background": "rgb(18, 18, 18)",
+        "Padding": "0px"
+      }
+    ],
+    "#center-panel": [
+      {
+        "Text": "Viewport\n×\n+\nFrontier\nControlled Integrator\nUV WORKSPACE · FAST LIT + MULTI-MATCAP\nUV\nSplit\n2D UV\n3D Surface\n+\nUnwrap\nU\nPack\n⇧P\n1\n2\n3\n4\nSurface Material\nMatCap (Per-Face)\nMaterial + MatCap\nStudio Clay\nFlat · UV Charts\nFlat · Face Slots\nFlat · UV Checker\nFlat · Priority\nFlat · UV Stretch\nFlat · Density\nFlat · Overlaps\nDebug: Priority\nDebug: Clean UV\nDebug: Angle Stretch\nDebug: Area Stretch\nDebug: Texel Density\nDebug: Overlaps\nView: Perspective\nView: Top\nView: Bottom\nView: Front\nView: Back\nView: Right\nView: Left\nView: Frame UV (F)\nWire\nSeams\nMore ▾\n12572 verts · 25068 faces · 152 charts\nSample Assets\nFrontier UV Studio initialized (5 assets, Controlled Integrator active) · Avg Texel: 2.18 px/cm · Pack: Ready",
+        "X": 302,
+        "Y": 0,
+        "Width": 928,
+        "Height": 980,
+        "Radius": "0px",
+        "Background": "rgb(18, 18, 18)",
+        "Padding": "0px"
+      }
+    ],
+    "#right-panel": []
+  }
+}

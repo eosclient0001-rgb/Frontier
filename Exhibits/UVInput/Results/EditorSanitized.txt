@@ -1,0 +1,39 @@
+Test project /home/user/Frontier/_ClaudeScratch/build/UVEditorSanitized
+      Start  1: InputValidation
+ 1/17 Test  #1: InputValidation ....................   Passed    0.53 sec
+      Start  2: WindowValidation
+ 2/17 Test  #2: WindowValidation ...................   Passed    0.62 sec
+      Start  3: DockingValidation
+ 3/17 Test  #3: DockingValidation ..................   Passed    3.38 sec
+      Start  4: ControlCentreValidation
+ 4/17 Test  #4: ControlCentreValidation ............   Passed   29.77 sec
+      Start  5: WorkspacePanesValidation
+ 5/17 Test  #5: WorkspacePanesValidation ...........   Passed   15.97 sec
+      Start  6: LifecycleValidation
+ 6/17 Test  #6: LifecycleValidation ................   Passed    3.09 sec
+      Start  7: WorkspaceRevisionValidation
+ 7/17 Test  #7: WorkspaceRevisionValidation ........   Passed    2.90 sec
+      Start  8: ContentBrowserValidation
+ 8/17 Test  #8: ContentBrowserValidation ...........   Passed   18.88 sec
+      Start  9: GeometryNetworkValidation
+ 9/17 Test  #9: GeometryNetworkValidation ..........   Passed    3.11 sec
+      Start 10: UVRasterPickingGizmoValidation
+10/17 Test #10: UVRasterPickingGizmoValidation .....   Passed   14.35 sec
+      Start 11: UVWorkspaceUIValidation
+11/17 Test #11: UVWorkspaceUIValidation ............   Passed    9.47 sec
+      Start 12: UVParameterizationValidation
+12/17 Test #12: UVParameterizationValidation .......   Passed    4.68 sec
+      Start 13: UVInteractiveAuthoringValidation
+13/17 Test #13: UVInteractiveAuthoringValidation ...   Passed    2.10 sec
+      Start 14: UVBoundaryValidation
+14/17 Test #14: UVBoundaryValidation ...............   Passed   32.32 sec
+      Start 15: WheelInputValidation
+15/17 Test #15: WheelInputValidation ...............   Passed   12.20 sec
+      Start 16: FrontierUVExecutableSmoke
+16/17 Test #16: FrontierUVExecutableSmoke ..........   Passed    2.32 sec
+      Start 17: FrontierEditorExecutableSmoke
+17/17 Test #17: FrontierEditorExecutableSmoke ......   Passed    2.36 sec
+
+100% tests passed out of 17
+
+Total Test time (real) = 158.05 sec

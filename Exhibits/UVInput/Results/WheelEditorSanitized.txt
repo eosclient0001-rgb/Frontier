@@ -1,0 +1,42 @@
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+[PASS] desktop window installed its real GLFW scroll callback
+[PASS] desktop loop drains the existing exchange before snapshot and minimized-window branch
+[PASS] REPRODUCED original defect: callback packet queued, wheel snapshot remains zero without TickExchange
+[PASS] existing InputExtension::TickExchange alone restores the missing wheel delta
+[PASS] attach production Vulkan UV rasterizer
+[PASS] initialize native docked UV workspace
+[PASS] all three real docked panes rendered
+[PASS] Before.png
+[PASS] GLFW wheel delta reaches ImGui through both existing exchanges
+[PASS] Inspector wheel-down moves content by 84 pixels
+[PASS] Inspector scrolling does not scroll Outliner
+[PASS] Inspector scrolling does not zoom either viewport
+[PASS] idle tick clears the wheel delta and does not repeat scrolling
+[PASS] Inspector wheel-up reverses scrolling
+[PASS] Inspector clamps at its content bottom
+[PASS] Inspector can scroll all the way back to the top
+[PASS] Outliner wheel-down moves layer content by 56 pixels
+[PASS] Outliner scrolling does not scroll Inspector
+[PASS] Outliner wheel-up reverses scrolling
+[PASS] Outliner clamps at its layer-list bottom
+[PASS] Outliner can scroll all the way back to the top
+[PASS] Outliner scrolling does not zoom either viewport
+[PASS] 2D viewport wheel-up zooms in through the native pane
+[PASS] 2D zoom changes the actual Vulkan framebuffer pixels
+[PASS] 2D zoom does not move the 3D camera
+[PASS] 2D viewport wheel-down reverses zoom
+[PASS] 3D viewport wheel-up dollies the camera closer
+[PASS] 3D zoom changes the actual Vulkan framebuffer pixels
+[PASS] 3D wheel zoom does not rotate the camera
+[PASS] 3D zoom does not zoom the 2D viewport
+[PASS] 3D viewport wheel-down reverses the dolly
+[PASS] wheel over viewport header does not leak into cameras or side panels
+[PASS] 1920 fractional GLFW callbacks accumulate both axes correctly across 40 ticks
+[PASS] continued input does not fill or overflow the existing input ring
+[PASS] horizontal and vertical deltas both reset on an idle tick
+[PASS] After.png
+MEASUREMENTS InspectorDown=84.000 OutlinerBottom=446.000 PlanarZoom=1.000000->1.140000 SpatialDistance=9.879589->8.088723 PlanarChangedChannels=582682 SpatialChangedChannels=196069
+CAPTURE InspectorScroll=168.000 OutlinerScroll=224.000 PlanarZoom=1.299600 SpatialDistance=6.622487 DroppedSignals=0
+RESULT 36/36 assertions passed

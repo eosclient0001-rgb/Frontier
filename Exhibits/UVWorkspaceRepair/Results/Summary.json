@@ -1,0 +1,341 @@
+{
+  "TaskDateUtc": "2026-11-12",
+  "SessionBranch": "arena/52270d91-frontier",
+  "LocalBuildBaseRevision": "96f31ecaef529d383e195013f5f00d163392f71a",
+  "LocalTestedContents": "Session base plus the source digests below; local tests ran before committing the repair",
+  "SourceDigest": "0cfd7ebe9c6833bb8f01968debf87ca8e031cdd8a07f8ab3740e27677394297e",
+  "Environment": {
+    "Platform": "Linux-6.1.158+-x86_64-with-glibc2.36",
+    "Compiler": "c++ (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "Windowing": "GLFW 3.4 null platform, installed production callback replay",
+    "Rendering": "Production Vulkan UV rasterizer and ImGui presenter on bundled SwiftShader CPU device",
+    "Sanitizers": "ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1",
+    "SanitizerLimit": "Leak checking disabled; address and undefined-behavior checking enabled"
+  },
+  "Profiles": [
+    {
+      "Profile": "Development / Debug",
+      "CTestCount": 19,
+      "FailedTests": [],
+      "SkippedTests": [],
+      "Wheel": {
+        "Passed": 36,
+        "Total": 36,
+        "Log": "WheelDevelopment.txt"
+      },
+      "Rendering": {
+        "Passed": 48,
+        "Total": 48,
+        "Log": "RenderingDevelopment.txt"
+      },
+      "Interaction": {
+        "Passed": 79,
+        "Total": 79,
+        "Log": "InteractionDevelopment.txt"
+      },
+      "FullEditorInputOwnershipExecuted": false
+    },
+    {
+      "Profile": "Editor / Debug / ASan + UBSan",
+      "CTestCount": 19,
+      "FailedTests": [],
+      "SkippedTests": [],
+      "Wheel": {
+        "Passed": 36,
+        "Total": 36,
+        "Log": "WheelEditorSanitized.txt"
+      },
+      "Rendering": {
+        "Passed": 48,
+        "Total": 48,
+        "Log": "RenderingEditorSanitized.txt"
+      },
+      "Interaction": {
+        "Passed": 81,
+        "Total": 81,
+        "Log": "InteractionEditorSanitized.txt"
+      },
+      "FullEditorInputOwnershipExecuted": true
+    }
+  ],
+  "HTMLValidationGroups": 11,
+  "HTMLContentionControl": "HTMLContended.txt retains the unchanged 50ms performance gate failing at 69.12ms during simultaneous builds",
+  "ImportedPathCount": 267,
+  "UnchangedImportedPaths": 229,
+  "ProtectedPathCount": 65,
+  "UDIMFilterConstructionIdentical": true,
+  "HistoricalVehicleIdentical": true,
+  "PhysicalWindowsInputVerified": false,
+  "PhysicalMonitorDpiVerified": false,
+  "PhysicalGpuVerified": false,
+  "FramebufferScaleTest": "Programmatically requested 1x/2x framebuffer scale, not physical monitor switching",
+  "CaptureProfile": "Final Editor / Debug / ASan + UBSan focused runs; HTML reference captured independently in Chromium",
+  "HistoricalWheelEvidence": "Exhibits/UVInput retained separately; five-change audit is historical, not the broader repair scope",
+  "GitHubActionsEvidence": "See Actions.json when the authorized remote run has completed",
+  "WorkingSourceDigests": {
+    ".github/workflows/windows-uv-build.yml": "7f7ac2d7e62c40520c829118a15a6bed277a78b2b7fe0eda6191a6c514d4f7f3",
+    "Automation/UVWorkspace.cmake": "dcc7b47a6465b520a0c6600f7de8bc3d2c8d06c390c4508ac775d33c798449c8",
+    "CMakeLists.txt": "a46bef2778817cae9342704e70e723fe78c070908ada641a84031d62dbb491bf",
+    "Engine/Components/ContentBrowser/ContentBrowserPanel.cpp": "15e5cfc44864ec219ebd9a547dc702cb728bca8386557358cae37a31e4166a05",
+    "Engine/Components/ControlCentre/ControlCentrePanel.cpp": "3c6e4e098d5bd411e39f309343b2a992a220759353489162b937897804b0a74a",
+    "Engine/Components/Controls/ConfirmationDialogue.cpp": "ca445634af68d6d450b2b62994194e35ad5525481ee47734cd48216450b63770",
+    "Engine/Components/Panes/ViewportProjectionPane.cpp": "bca0c89da67ee84fafa0957ce0f877823c7e8dbc68ac6a420ef3bf0be46d3bcf",
+    "Engine/Components/Panes/ViewportProjectionPane.h": "cb06738fd2f5bb9c6ffe2b0e057ac5afefc6b59f7a6980c7e3825c8d96f80ac5",
+    "Engine/Components/Panes/WorkspaceAppearance.cpp": "ade55bb0633488dbdf0f892cdb3af7c95a2e19bf7718e39354bb4bc668133c99",
+    "Engine/Components/Panes/WorkspaceAppearance.h": "744018aa69f71ea949f39a7935359960ea1d19e6c6559f92827a2d1c0565334a",
+    "Engine/Components/PixelSpace.cpp": "b78e77b025eccddc6e111fec755d958061deed029ee5d3e0e96d874488a84d54",
+    "Engine/Editor/Viewports/ViewportProjection.cpp": "f4264ccf1f4aa8444c60675126ac62b8d6e12adc94ffe0c342f1bc962534a143",
+    "Engine/Editor/Viewports/ViewportProjection.h": "0fb0771f9e51773aadcf088a143a7883169d9bb95dffb410d0b59bd964e93174",
+    "Engine/GeometricRaster/Rasterization/ImGuiOverlayRasterization.cpp": "2fca14450ae1323672f1e0c4b4cb984e9c53340f0c365e4844ca20063e484001",
+    "Engine/GeometricRaster/Rasterization/ImGuiOverlayRasterization.h": "6048742ea259773deb0634fb580f14519b0a1831943c396a8ef13487e35dcf62",
+    "Engine/GeometricRaster/Shaders/MatCapEvaluation.slang": "5d02c91784c36e05fdff162e3fb8995304c277de75a31c50a44b254f8dd6c68f",
+    "Engine/GeometricRaster/Shaders/SurfaceShading.slang": "bdfc1eb7195bc8e8f512246650f172de45843a6889157722db059784f2546cd8",
+    "Engine/GeometricRaster/UV/UVWorkspaceRasterizer.cpp": "09872f0e1c0530c068fbe9688a21a295c16784510d3c6ccacf83198f903f1570",
+    "Engine/GeometricRaster/UV/UVWorkspaceRasterizer.h": "c94068a44ffd15789822a8a830cc36ab5c94775fe3e6858f0ffa6f1ca483dc58",
+    "Engine/Input/InputExchange.h": "82e1eb2aa192e5a016035dc905179c4b4d532402e45182c1185aaf83ce876650",
+    "Engine/Input/InputExtension.cpp": "a49237874e020633535dd2379ff750b335763c19634ad379b8d977f96371b32a",
+    "Engine/Input/InputExtension.h": "17b1b4c9758d81a57339d82e65dc9c1d9bddbdc0c38d85e7d085625d54641aa3",
+    "Engine/Lifecycle/DesktopWorkspaceLaunch.cpp": "5bb77f18d64abfe78cfbe026def359af3b743da89fa0e3800058337c264b418a",
+    "Engine/Lifecycle/EditorLifecycle.cpp": "b5cac61c466faef163ad850a593e996d964057a6a3b4010779cceaa217a4fef0",
+    "Engine/Lifecycle/EditorLifecycle.h": "46874e2f13a8b8eb748416af9c6a90b7f9f56b7ee3ed7af0d815c6d9f1ecf685",
+    "Engine/Lifecycle/RuntimeLifecycle.cpp": "885bf76a182c9050c96c3539d056348c73f3bedbb84ea77acbbb887dfc196461",
+    "Engine/Lifecycle/RuntimeLifecycle.h": "3ea8a6ba969e53ed6367afc9fa11ffabf52f4b058e815e8fbef9c5e6bdc361ed",
+    "Engine/Windowing/PlatformWindow.h": "e2a9e59b1aa0514102339b68026e1368f3caedd31dd036347566220b56e1a83a",
+    "Engine/Windowing/PlatformWindowDesktop.cpp": "602df10b5232148e433a51c0f8d18e05b5ad2631c1fa3286ea64fc6641c99fd1",
+    "Engine/Workspaces/UV/UVInspectorPanel.cpp": "ca4eeb97afcbf024512cfcb0dde3e19711a3cabf2c81d0a2d53d10b4a0ef4b6b",
+    "Engine/Workspaces/UV/UVInspectorPanel.h": "76d84ba539db9ea2a021eaf2128f488550c9fea9ff0e34d5e4068116cf0b75b5",
+    "Engine/Workspaces/UV/UVOutlinerPanel.cpp": "1eb779a7f851c96fa48330f524e5e187544c5f242c617ca12d6b81fc3e796199",
+    "Engine/Workspaces/UV/UVOutlinerPanel.h": "0d973dcefbc7902826ea450f262b544a49e4d2e2224700beef7dacd9ab8cb3f0",
+    "Engine/Workspaces/UV/UVViewportHost.cpp": "1e5e3e0041f98565ad2d982e9fab867d81968349ac777ee2d8c155051b549ebb",
+    "Engine/Workspaces/UV/UVViewportHost.h": "066cecb84689bbf348c199387ba5cea1c9778f6a0d99e89907f051b1444d8077",
+    "Engine/Workspaces/UV/UVViewportInteractor.cpp": "54c96e043fa282f036c4c3cf3ffb4b00aee38f1a2c0bb8f832d0c51250757fed",
+    "Engine/Workspaces/UV/UVWorkspaceHost.cpp": "614debe138da1d5e6097b9ca6b21a76553e2d7ae9ad744ed3b4f7d139a1bc692",
+    "Engine/Workspaces/UV/UVWorkspaceSession.cpp": "da7e184f4ec232d9717134e6bc574822b6e94c53eecbdf599bce99bd26ef05c1",
+    "Engine/Workspaces/UV/UVWorkspaceSession.h": "45562ad26134e2f0e63e9f1ea7abe09219cc01a6d17af5e23e2b821fa25702ee",
+    "EngineContent/Geometry/ControlledIntegrator.GeometrySpace": "531d42fc71b61b0027ce397f6cb78877304640f2d58233c1d2a13b4c09dfbffe",
+    "Exhibits/UVInput/Code/WheelInputValidation.cpp": "8bdf97b0ef8ec836d02cd5958017f675bb34044511a16b035d67f89137a5d8e4",
+    "Exhibits/UVInteractiveAuthoringValidation.cpp": "d1a8b4b5e6771579441f584bccf6632c57e3b8b35bb0d1cda19b81216f4e7078",
+    "Exhibits/UVRasterPickingGizmoValidation.cpp": "edaead116b6e49dcad09fd21bf4d8cb7a89fd0f9a1715b9f3007a629e7ed51b7",
+    "Exhibits/UVWorkspaceRepair/Code/WorkspaceInteractionValidation.cpp": "a884e38d971175aa498709ffc6251050ad9ff2a0ebb0ed49e32c8c7a2e6b5cdc",
+    "Exhibits/UVWorkspaceRepair/Code/WorkspaceRepairValidation.cpp": "ee8111162640a25d04e25ce596d947001bb1367bdcc8287f4cacefb7b6d82bc4"
+  },
+  "Captures": [
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/CompactWorkspace.png",
+      "Width": 1100,
+      "Height": 720,
+      "DecodedRgbaSha256": "c74f726aed6cfe96ba1c8e56426b4ce7a48f926f804a41da7b682f8658147156",
+      "PngSha256": "5895eef6c9aa419a067634ddba9796b3933c6d2be45ca5dc12bd19eaac02dcca"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/FinishControls.png",
+      "Width": 1600,
+      "Height": 980,
+      "DecodedRgbaSha256": "751d3f533a36879300eb5ff5692e8dee212c5cbd51dc5a9c53673a312d9caeba",
+      "PngSha256": "5f0a25767974d418491cfd9c6ad84a6f7ab35bc0475ab95b191925d9fbaa074a"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/FullEditorApplication.png",
+      "Width": 1840,
+      "Height": 980,
+      "DecodedRgbaSha256": "be587ad89d76a0667682d9f7c856dd033aee447e51c2b85c5c04192f70631882",
+      "PngSha256": "57eef9046a5fd1b2f47aa1bef8625806adc78eb12b9fb10805c03e9f7b329668"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/Gizmo.png",
+      "Width": 480,
+      "Height": 480,
+      "DecodedRgbaSha256": "ecfbcab9983ad32f9f743df945f7edd0b076122a844c6febe510c1556bb85256",
+      "PngSha256": "c4e595278bf1675092573a319fffdbe36739f350df777ff07d776917c69e7ca9"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/MatCap10.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "70de33f368e70654feb77524be8d7fe25609b205f92100850e69bc685895b73b",
+      "PngSha256": "26b4a408b7e876b8890ca32c4e7c7932afad5f1eef7a9b1b502a54cbb9583884"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/MatCap11.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "3bf8661e19c1ccfb767dbd20f561bbf5a9587dc294fe9a195ff6872d73d1ca4b",
+      "PngSha256": "455306aefcbc2f2f07fcb1f7e748a33f100f43b55d6c8331a33b6cf4d49bde80"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/MatCap12.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "6c9570a368d329c45b5352b1479fe49a5d721d31728b3a00fcc094871654d74c",
+      "PngSha256": "bb2f7f836efdec436f0745c5f1ec2e128e485111a357ece0927dd194897808d2"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/MatCap13.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "38312634e8711940204f5b24af44b8ce5e4ed7de3e3223b98f0916b4d10b7844",
+      "PngSha256": "f01a1e088fb1dbd8efee0fff64bade58686ae9622865d502dae787b510084d18"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/MatCap7.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "42aa221dd2b9fb6badca6c0db6d3f4810906777612fe20697a24f8fd4b32072f",
+      "PngSha256": "8c2a800fdaac57f515164c65c5ee55106664127e58d8b242c90353a76ae6081d"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/Material0High.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "6e07de3dcd1011ee6e588133466fab8ad27f710e9a991abdf8fc71cfe6a75078",
+      "PngSha256": "f3503112f79ed0b215d9d2ca6f448f64aba9748378111915b9be06fc49826aa3"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/Material0Low.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "3cae7e1f0751765bc216122b5f1784f8b97ea1c42d62ad1b48e9569efd78a762",
+      "PngSha256": "b544ac7e26020996edc2fb3402628195d16457bc7e825dd15e6cca1f9d4a9eff"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/Material1High.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "263dcfd7c395a3a52c1003d1b81b79fea125d6b4fcef97404c0bfa66cd483b6f",
+      "PngSha256": "c77565a9244d57ef484b46b9ff97636f496fb65061f885fe708faa7136474e5c"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/Material1Low.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "b0b2d3b4ed5c30f98265c5ea5b5e2be50f911ed2dc0e95bdd1e5dffd4eae7aa4",
+      "PngSha256": "a696140fd5d01a7344565fd020d3dbec159be4030cf234a979ad759694cfa3bc"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/Material2High.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "5e2b29bdf67fbb45725fd741fc340896a0ae8bf69236452bc173ef914c2c4faf",
+      "PngSha256": "42f837e5c8ffde88552483a5c89cd6b75c208e2f1be0b3797461166b2e0390c3"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/Material2Low.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "ea0935fc1ddc7cca81b5a2b0b1d36a56723428fde29a6fc7d9eccc4c7dcb7041",
+      "PngSha256": "e9b22ff03a249fa9cf882b8d84167c78360486c2f898ded122efc4ecfd7447f3"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/NativeApplication.png",
+      "Width": 1600,
+      "Height": 980,
+      "DecodedRgbaSha256": "ef475ba50068697dc59bd0ee48c7ef30f32c8b71819ff3e6ee176a7e3b0f5fb8",
+      "PngSha256": "343ed7c9b7052e493b67b7109db9357aaea4c961d1539e14058204022b0f8d49"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/NativeInitial.png",
+      "Width": 1600,
+      "Height": 980,
+      "DecodedRgbaSha256": "9f3f39e770dfd8dcd633746378ad4a5a4e4d5046733e55e24d9e04b4f18b4993",
+      "PngSha256": "bb1163e0062d26d9e23d5e00db04a705997bd55039faafa55473e6038be0e929"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/ResizedDivider.png",
+      "Width": 1600,
+      "Height": 980,
+      "DecodedRgbaSha256": "5be2a7d532cc97bf29cdd6cb067e1d9db8be23f45cdb89f1439286ae9db07aaf",
+      "PngSha256": "ceae491bc634d17b876ba4542a4d4ca094cfde86225dd1c5eb269f90015207bd"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/StandaloneApplication.png",
+      "Width": 1840,
+      "Height": 980,
+      "DecodedRgbaSha256": "76546e0cdd342047bce1bf49eeca96134e5e89e1a1ce5e599f81cde4fd4955e1",
+      "PngSha256": "87e109d738b582c9ecbc98d453c665557a58c52eac3cefe3eba01dd65385144a"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/After/SurfaceDropdown.png",
+      "Width": 1600,
+      "Height": 980,
+      "DecodedRgbaSha256": "b0285192d4dff22e0526a77ed5614b65b2b51c2b47d515dd7744b24c1047f208",
+      "PngSha256": "c165fd5878a6d00a02843ee5f80b5efbce9d28c0fe523246cd2a1433558f7d53"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/Before/Gizmo.png",
+      "Width": 480,
+      "Height": 480,
+      "DecodedRgbaSha256": "17b1fe09ba8f6e3126a96ac5dd64884cd5f9d1b2aea16381e0a81c39aa4c42ff",
+      "PngSha256": "7fa510666707b6f28809aa1945e253a56905c016c584cca07c760a15e611ea39"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/Before/MatCap10.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "02130002e9e84d6dace45c0bc4491887c3d1a1b92175550b73fd7440598ccf49",
+      "PngSha256": "eee1d53b15bae98dd86216ffbe1d8f1cb3bc8a4ab17ae3c2f620cb9e26c2445f"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/Before/MatCap11.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "0e4227bc61825d5b80db51701cf436e5e4a6dc6d94e0a3fbcc3adf7a0ebe1190",
+      "PngSha256": "e227dc30250089e1bc364e5e3784103f0b3ea4217f211595dee34520fe8eaee8"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/Before/MatCap12.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "c1057bc5ff0e551d8e0af66ce29c396a2d0a655801a56bae96883dc2befe7f95",
+      "PngSha256": "fd4d59a1b24cc3d735c2a9f29f5b1efacc1e4695b348b3b3b85c0dd21c9be64f"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/Before/MatCap13.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "c3a2ee07fe67b32b398c3b1366ab4916b2f3d12a886824b5cc16de47ef1d2d81",
+      "PngSha256": "1c3f96c23dc44cefa0922bf40dde12c92a9f8e33d35c40525be6935825e58018"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/Before/MatCap7.png",
+      "Width": 320,
+      "Height": 320,
+      "DecodedRgbaSha256": "36bbf2068b8110ff03dd06832be164a604d730e0b48a4dfe8fc6dc4f27b75b81",
+      "PngSha256": "0c5cbd60cdf7868e4f2e6eca39ebe0f45241dd5db0520de4591a406fa6667d85"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/Before/NativeApplication.png",
+      "Width": 1840,
+      "Height": 980,
+      "DecodedRgbaSha256": "41dee5da589c450307e115bf47d1eea169237171820639a1b8dafe8e2ecf8ad5",
+      "PngSha256": "16bc08e09986828da89312c0b79b9d05fe85caeeb8ee1a7b4ce2c9e3dec3089b"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/HTMLReference.png",
+      "Width": 1600,
+      "Height": 980,
+      "DecodedRgbaSha256": "500883f9a71ef9da833da206196b52c5c0e01a6950e0e44f21bc0bd9622ddd75",
+      "PngSha256": "cd74199eea3df7aa433db3423c9ef83875089f5eec7332e7b2e89558d43a84ec"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/MatCapComparison.png",
+      "Width": 1230,
+      "Height": 626,
+      "DecodedRgbaSha256": "2c579a2c509b134e39d62adb2c29199799bf8044ecef4ccd5e3d82f973f5d80c",
+      "PngSha256": "8fd669fb808e60befa7848b3445beb2a26b82eccc5f17d7f038a6781a32d9ae5"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/WheelRegression/After.png",
+      "Width": 1600,
+      "Height": 800,
+      "DecodedRgbaSha256": "d2ea934fdf2d29b9d00cf1171a55b8599582bd9727e7a9e54ffa6c8bc9278c70",
+      "PngSha256": "6b80d5d25ce0834cfc4a08b3ecb1dd281736a29f8d26d63cc5f0531888668c3e"
+    },
+    {
+      "Path": "Exhibits/UVWorkspaceRepair/Images/WheelRegression/Before.png",
+      "Width": 1600,
+      "Height": 800,
+      "DecodedRgbaSha256": "02be61a2dd9ae7aa52b9420699b59b6708b3583bf997e6aeb6a380dea1db92e8",
+      "PngSha256": "d7f93f300652a962ed95a9c3b0cb56e1d8ee5f0f796715bc7550688b44e8a6d5"
+    }
+  ]
+}

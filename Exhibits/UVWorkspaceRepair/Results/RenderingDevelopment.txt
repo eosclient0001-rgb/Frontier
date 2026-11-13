@@ -1,0 +1,64 @@
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+[PASS] initialize production Vulkan device
+[PASS] initialize production rasterizer
+[PASS] upload gizmo visibility fixture
+MEASURE GizmoShadedTriangles=432 InvertedTriangles=0
+[PASS] gizmo winding agrees with outward shading normals
+[PASS] rasterize actual 3D gizmo
+[PASS] Gizmo.png
+MEASURE GizmoNearestSamples=481 MatchingSamples=477
+[PASS] visible solid gizmo pixels use the nearest facet, not the last submitted rear facet
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=7 DistinctFlatSurfaceColors=701
+[PASS] MatCap finish has visible variation on a flat panel
+[PASS] MatCap7.png
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=10 DistinctFlatSurfaceColors=7678
+[PASS] MatCap finish has visible variation on a flat panel
+[PASS] MatCap10.png
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=11 DistinctFlatSurfaceColors=7778
+[PASS] MatCap finish has visible variation on a flat panel
+[PASS] MatCap11.png
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=12 DistinctFlatSurfaceColors=2780
+[PASS] MatCap finish has visible variation on a flat panel
+[PASS] MatCap12.png
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=13 DistinctFlatSurfaceColors=1684
+[PASS] MatCap finish has visible variation on a flat panel
+[PASS] MatCap13.png
+[PASS] Y-up camera basis is orthonormal and right-handed
+[PASS] Top preset looks exactly down negative Y, not a tilted Z-up view
+[PASS] Front preset looks down negative Z
+[PASS] Right preset looks down negative X
+[PASS] orthographic CPU rays are parallel with distinct origins
+[PASS] perspective CPU rays share an eye and diverge across the image
+[PASS] exponential camera lag is invariant between 60 Hz and 120 Hz at equal elapsed time
+[PASS] non-finite frame duration cannot corrupt or advance the camera
+[PASS] framing accounts for horizontal FOV in tall split viewports
+[PASS] render actual orthographic picking fixture
+MEASURE OrthographicRayPickAgreement=81/81
+[PASS] editor/rasterizer orthographic rays and actual Vulkan visibility agree at every sampled pixel
+MEASURE MaterialComponent=0 MeanCentralChannelDifference=37.827976 ChangedChannels=58733
+[PASS] roughness, metallic and dielectric specular each produce a measurable visible material response
+[PASS] Material0Low.png
+[PASS] Material0High.png
+MEASURE MaterialComponent=1 MeanCentralChannelDifference=1.386361 ChangedChannels=58800
+[PASS] roughness, metallic and dielectric specular each produce a measurable visible material response
+[PASS] Material1Low.png
+[PASS] Material1High.png
+MEASURE MaterialComponent=2 MeanCentralChannelDifference=8.748078 ChangedChannels=58800
+[PASS] roughness, metallic and dielectric specular each produce a measurable visible material response
+[PASS] Material2Low.png
+[PASS] Material2High.png
+[PASS] all sixteen per-face MatCap assignments render distinct production images
+WorkspaceRepairValidation: 48/48 assertions passed

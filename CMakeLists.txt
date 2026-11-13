@@ -1,4 +1,16 @@
 cmake_minimum_required(VERSION 3.21)
+
+# A supplied UV profile selects the linked continuation; an explicit OFF preserves the earlier UI-only targets.
+set(FRONTIER_UV_WORKSPACE_DEFAULT OFF)
+if(DEFINED FRONTIER_PROFILE)
+    set(FRONTIER_UV_WORKSPACE_DEFAULT ON)
+endif()
+option(FRONTIER_BUILD_UV_WORKSPACE "Build the continued native FrontierUV workspace" ${FRONTIER_UV_WORKSPACE_DEFAULT})
+if(FRONTIER_BUILD_UV_WORKSPACE)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/Automation/UVWorkspace.cmake")
+    return()
+endif()
+
 project(FrontierUIFoundation LANGUAGES C CXX)
 
 find_package(Git QUIET)

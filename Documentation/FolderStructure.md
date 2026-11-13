@@ -96,6 +96,36 @@ The font catalogue has a native TOML form; JSON remains only an automation/repor
   `Exhibits/LightCompute/` retains fixture generation, an isolated Vulkan submission host and verification.
 - The root editor target does not yet submit this shader; the shared location is not a production-integration claim.
 
+## Native UV continuation ownership — 2026-11-12
+
+The user-requested UV continuation is pinned to `SultanAladin/Frontier` at `624883b66512`.
+It is an additional build surface; the earlier port and its evidence remain in their existing locations.
+
+| Location                                  | Responsibility                                           |
+| ----------------------------------------- | -------------------------------------------------------- |
+| `Engine/Input/`, `Engine/Windowing/`        | Existing continued hardware exchange and GLFW windows    |
+| `Engine/Components/`, `Engine/Workspaces/`  | Continued reusable controls, panes, and native UV session |
+| `Engine/Editor/`, `Engine/GeometricRaster/` | Continued projection, Vulkan UV rendering, GPU picking   |
+| `Engine/GeometrySpace/`, `Engine/Codecs/`   | Continued geometry and native space formats               |
+| `Engine/Configuration/`, `Engine/Threading/`| Continued configuration and authoring execution           |
+| `Engine/Constants/`, `Engine/Mathematics/`  | Continued mathematical definitions                       |
+| `Engine/Lifecycle/`                        | Continued standalone/editor loops beside older contract  |
+| `EngineContent/Geometry/`, `MatCaps/`       | Bundled vehicle and MatCap archives                       |
+| `EngineContent/FontsArchives/`             | Ignored continued font catalogue; older `FontArchives` kept |
+| `Automation/UVWorkspace.cmake`             | UV build selected by `FRONTIER_BUILD_UV_WORKSPACE`         |
+| `Automation/PrepareDependencies.py`         | Pinned continued dependencies and eight ImGui patches     |
+| `Automation/PrepareUVFonts.py`              | Separate continued font recovery                         |
+| `Experimental/UVEditor/`, `Shared/`        | Immutable linked HTML/JS reference and texture exchange   |
+| `Exhibits/*Validation.cpp`                 | Continued native regression programs                     |
+| `Exhibits/UVInput/`                        | Historical wheel-only acceptance and current wheel fixture |
+| `Exhibits/UVWorkspaceRepair/`              | Broader native repair fixtures, captures, logs and audit  |
+| `.github/workflows/windows-uv-build.yml`   | Authorized native UV Windows package and Vulkan CI checks |
+| `Exhibits/Images/`                         | Ignored regenerated outputs from continued suites        |
+
+See the [historical wheel audit](../Exhibits/UVInput/README.md) and
+[broader repair scope](../Exhibits/UVWorkspaceRepair/README.md).
+No older source directory was relocated. Runtime libraries remain in ignored `ExternalPackages/`.
+
 ## Shared radiant-facet distribution — 2026-10-27
 
 - `Frontier/Engine/Rendering/RadiantFacetDistribution.{h,cpp}` and CMake target

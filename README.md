@@ -3,7 +3,21 @@
 General-purpose, cross-platform editor with reusable engine code.
 EngineUpdate establishes documentation, audits inherited violations, and repairs code in reviewed batches.
 
-## Current VehicleHMI continuation
+## Current native UV continuation
+
+The requested `SultanAladin/Frontier` branch `arena/4c9015d5-frontier` is pinned at `624883b66512`.
+Its missing UV build/runtime sources are recovered alongside the earlier port on this session branch.
+Native UV input follows GLFW capture → the existing editor `InputExchange` → one ImGui intake.
+The editor and game own separate exchanges; no additional wheel-input class is used.
+The broader repair covers Vulkan gizmo visibility, historical Y-up presentation, real shading/debug dropdowns,
+material/specular/MatCap response, reference cards, the split divider, camera lag, and resize/DPI attachments.
+See [native UV repair and validation](Exhibits/UVWorkspaceRepair/README.md) for evidence and Windows build steps.
+The [original wheel-only acceptance](Exhibits/UVInput/README.md) remains historical evidence, not the current scope.
+
+Select the UV build with `-DFRONTIER_BUILD_UV_WORKSPACE=ON -DFRONTIER_PROFILE=Editor` and run `FrontierUV`.
+The older UI-only build is retained with `-DFRONTIER_BUILD_UV_WORKSPACE=OFF`.
+
+## Earlier VehicleHMI continuation
 
 The earlier branch `arena/2ac8ddab-frontier` is continued on `arena/672a179a-frontier`.
 See the [continuation report](Exhibits/ContinuationReport.md) and the detailed
@@ -27,7 +41,7 @@ Approved source baseline: `SultanAladin/Frontier-` at `338293863d7df4e585dec0c4a
 This checkout is `SultanAladin/Frontier`, initially at `4a77bfd17f23536e32781718553ec6a171e39021`.
 A selective UI foundation and Control Centre port is now present; the rest of the linked engine has not been imported or merged.
 See [port evidence and Windows build steps](Exhibits/UIFoundation/README.md).
-That selective-port baseline predates the current VehicleHMI continuation above.
+That selective-port baseline predates the current native UV and VehicleHMI continuations above.
 
 ## Builds and binaries
 
@@ -36,8 +50,8 @@ Do not build or package Linux binaries unless asked. Preserve cross-platform sou
 MSVC is the current user toolchain; supported GCC, MinGW-w64, and Clang configurations are also permitted.
 No macOS setup or binary downloads are currently in scope. No Android application exists in this scope.
 
-The new root CMake target builds only the selected UI foundations and Windows UI exhibit, not the old engine.
-Six local checks passed in Debug and with sanitizers. Windows x64 cross-compilation succeeded.
+The retained UI-foundation build selects only its foundations and Windows UI exhibit, not the old engine.
+Its earlier six local checks passed in Debug and with sanitizers. Windows x64 cross-compilation succeeded for that port.
 Windows runtime/GPU execution and native MSVC verification remain outstanding.
 Do not mix inherited build instructions with this selective target.
 Local verification is automatic; GitHub Actions require explicit permission.

@@ -4,6 +4,41 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Native UV rendering, UI, input and resize repair — 2026-11-12
+
+- Continued the same `624883b66512` native UV source; this user-authorized broader scope supersedes the historical
+  five-change wheel-only scope below. Its original logs, images and digests remain separate and unchanged.
+- Fixed gizmo rear-facet overwrite with 3D depth-tested self-occlusion; restored historical `3cc230f6` Y-up camera,
+  XZ ground and orthographic Vulkan projection/rays without rotating geometry or changing import/export or physics.
+  Restored spatial MatCap patterns, material roughness/metallic response, dielectric specular and Inspector controls.
+- Added real shading/debug dropdowns, HTML-reference card geometry without changing UDIM Filter, a persistent split
+  divider, frame-rate-independent camera lag, settled-layout initial framing, dock extent refresh and physical-pixel
+  viewport/selection conversion. Native grow-failure negative control is retained in interaction validation.
+- Native editor input now uses one packet-to-ImGui intake after the existing exchange drain; text, logical keys,
+  focus and owned drop paths use that same path. Editor and game exchanges are distinct; no wheel wrapper or UI
+  device polling was added. Initial pointer sampling remains platform-window initialization only.
+- Development / Debug passes 19/19 CTests, 48/48 rendering, 79/79 interaction and 36/36 wheel assertions; the unchanged
+  HTML reference passes all 11 groups. The sanitized Editor run is in progress. Windows Actions and packaging are
+  explicitly authorized for this task, superseding earlier no-Actions notes; remote execution is still pending.
+  [Current evidence and limitations](../Exhibits/UVWorkspaceRepair/README.md).
+
+## Native UV wheel input continuation — 2026-11-12
+
+- Continued the user-linked `SultanAladin/Frontier` UV source at `624883b66512` on this session branch.
+  The older checkout lacked that app; recovered its required native runtime, build dependencies, content,
+  and reference alongside the older port, without deleting the older engine/UI trees.
+- Reproduced the common wheel failure: the desktop host polled hardware packets but never invoked the existing
+  `InputExtension::TickExchange()`, leaving both wheel snapshot axes zero and eventually filling its ring.
+  Added that call immediately after polling, before minimized-window handling. `InputExchange` and
+  `InputExtension` are unchanged; the unnecessary proposed `PointerWheelExchange` files were removed.
+- Focused callback-to-native-pane validation passes 36/36: Inspector/Outliner scrolling in both directions,
+  boundaries, independent pane ownership, both viewport zooms with actual Vulkan pixel changes, idle reset,
+  and 1,920 fractional callbacks without dropped packets. Development/Debug CTest passes 17/17; HTML validation
+  passes all 11 groups. Editor/Debug with AddressSanitizer and UBSan also passes 17/17, including all 36 wheel
+  assertions. Leak detection was disabled for the Vulkan-driver runs; no memory-leak acceptance is claimed.
+- This is GLFW callback replay and SwiftShader host verification, not physical Windows/GPU acceptance.
+  No Windows binary or GitHub Actions run. [Evidence, source audit, and build commands](../Exhibits/UVInput/README.md).
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,

@@ -1,0 +1,38 @@
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+../../../third_party/swiftshader/src/Pipeline/SpirvShader.cpp:441 WARNING: UNSUPPORTED: Unsupported capability 4427
+[PASS] initialize production Vulkan device
+[PASS] initialize production rasterizer
+[PASS] upload gizmo visibility fixture
+MEASURE GizmoShadedTriangles=432 InvertedTriangles=0
+[PASS] gizmo winding agrees with outward shading normals
+[PASS] rasterize actual 3D gizmo
+[PASS] Gizmo.png
+MEASURE GizmoNearestSamples=478 MatchingSamples=77
+[FAIL] visible solid gizmo pixels use the nearest facet, not the last submitted rear facet
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=7 DistinctFlatSurfaceColors=1
+[FAIL] MatCap finish has visible variation on a flat panel
+[PASS] MatCap7.png
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=10 DistinctFlatSurfaceColors=1
+[FAIL] MatCap finish has visible variation on a flat panel
+[PASS] MatCap10.png
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=11 DistinctFlatSurfaceColors=1
+[FAIL] MatCap finish has visible variation on a flat panel
+[PASS] MatCap11.png
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=12 DistinctFlatSurfaceColors=1
+[FAIL] MatCap finish has visible variation on a flat panel
+[PASS] MatCap12.png
+[PASS] upload MatCap assignment
+[PASS] render MatCap finish fixture
+MEASURE MatCapSlot=13 DistinctFlatSurfaceColors=1
+[FAIL] MatCap finish has visible variation on a flat panel
+[PASS] MatCap13.png
+WorkspaceRepairValidation: 21/27 assertions passed (negative-control baseline)
