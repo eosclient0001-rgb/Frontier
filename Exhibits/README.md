@@ -17,5 +17,6 @@ See `Documentation/Rules/Evidence.md` at repository root.
 
 ## Current validation
 
+- `DeterministicPathTracer/`: WebGPU deterministic path tracer — quadrature, analytic, bit-exact repeat, captures.
 - `ControlCentre/`: typography/theme interactions, downloaded font inventory, Windows package inspection.
 - `UIFoundation/`: historical first-batch foundation, lifecycle, glyph, and CPU raster evidence.

@@ -108,3 +108,9 @@ The font catalogue has a native TOML form; JSON remains only an automation/repor
 - `Experimental/VehicleHmiReference/`: selected immutable full-demo sources, blob manifest and original tyre tests.
 - `EngineContent/CelestialMaps/`: retained demo lunar JPEG and provenance; generated runtime PPM stays ignored.
 - `Exhibits/VehiclePhysics/Continuation.md`: source audit, renderer comparison, validation and remaining scope.
+
+## Deterministic path tracer prototype — 2026-11-13
+
+- `Experimental/DeterministicPathTracer/`: WebGPU compute path tracer prototype (no RNG, lobe/Fresnel splitting),
+  its WGSL, launcher and a copy of the three ControlVehicle FCT1 archives (blob-identical to `SlateReference/`).
+- `Exhibits/DeterministicPathTracer/`: headless Chromium/SwiftShader validation runner, results and captures.

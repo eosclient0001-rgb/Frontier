@@ -4,6 +4,18 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Deterministic path tracer WebGPU prototype — 2026-11-13
+
+- Added `Experimental/DeterministicPathTracer/`: a WebGPU compute path tracer with no random numbers, Russian
+  roulette or coin-flip lobe selection. Fixed-key Owen-permuted Sobol' (0,m,2)-net quadrature per decision; all lobes
+  and every light evaluated per vertex with MIS, exact reflection/refraction splitting on an explicit
+  transport stack, software bounds tree (no hardware RT, so GTX and RTX use the same path). Scene: the
+  ControlVehicle facets plus 7 material spheres in a softbox studio, with an interactive inspector.
+- Exhibit passes on SwiftShader: 0 GPU-vs-host quadrature mismatches; analytic softbox RMS 0.034 % at
+  1024 spp (after fixing a Schlick F90 grazing bias the test exposed); 1 digest over 5 runs; ≈N^-0.76 on
+  the full scene. **No physical GTX/RTX run and no GPU timing**; Slang/Vulkan integration not started.
+  [Evidence and limits](../Exhibits/DeterministicPathTracer/README.md).
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,
