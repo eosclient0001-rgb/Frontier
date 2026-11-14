@@ -73,10 +73,13 @@ const Interface = {
     DisplayStale:          true,
     ConfigurationRevision: 0,
     FrameStamps:           [],     // 📝 performance.now() of recent traced frames (last FrameRateWindow ms, at least 2)
-    FrameMilliseconds:     0,      // 📝 Smoothed trace + present time of one frame [ms]
-    FrameRateRefreshed:    0
+    FrameMilliseconds:     0,      // 📝 Smoothed interval between completed frames [ms]
+    FrameRateRefreshed:    0,
+    FramesInFlight:        [],     // 📝 onSubmittedWorkDone promises of submitted, unfinished frames
+    LastCompletion:        0
 };
 const FrameRateWindow = 1000;      // [ms] - Sliding window of the FPS counter
+const FramesInFlightLimit = 2;     // [-]  - CPU may run this many frames ahead of the GPU (no per-frame stall)
 
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -315,7 +318,7 @@ function RefreshReadout(DispatchMilliseconds)
     Locate('StatusNet').textContent = Samples > 0 ? `2^${NetExponent} = ${2 ** NetExponent} (every pair a (0,${NetExponent},2)-net)` : '—';
 }
 
-// 📝 FPS counts traced frames (each SampleBatch samples) in the last second; idle frames are not counted.
+// 📝 FPS counts completed traced frames (each SampleBatch samples) in the last second; idle frames are not counted.
 function RefreshFrameRate(FrameEnd, FrameMilliseconds)
 {
     if (FrameMilliseconds !== undefined)
@@ -324,7 +327,7 @@ function RefreshFrameRate(FrameEnd, FrameMilliseconds)
         Interface.FrameMilliseconds = Interface.FrameMilliseconds > 0 ? 0.9 * Interface.FrameMilliseconds + 0.1 * FrameMilliseconds : FrameMilliseconds;
     }
     while (Interface.FrameStamps.length > 2 && Interface.FrameStamps[0] < FrameEnd - FrameRateWindow) Interface.FrameStamps.shift();
-    if (FrameMilliseconds === undefined) Interface.FrameStamps.length = 0;
+    if (FrameMilliseconds === undefined && !Interface.FramesInFlight.length) Interface.FrameStamps.length = 0;
     if (FrameEnd - Interface.FrameRateRefreshed < 250) return;
     Interface.FrameRateRefreshed = FrameEnd;
 
@@ -335,8 +338,23 @@ function RefreshFrameRate(FrameEnd, FrameMilliseconds)
     Locate('FrameRateDetail').textContent = Tracing
         ? `${Interface.FrameMilliseconds.toFixed(1)} ms/frame · ${Configuration.SampleBatch} spp/frame`
         : (Interface.Paused ? 'paused' : 'idle · target reached');
+    RefreshStageTiming();
 }
 
+// 📝 GPU time per stage from timestamp queries (smoothed). Shows why a frame costs what it costs.
+function RefreshStageTiming()
+{
+    const Timing = Division.Timing;
+    if (!Timing.Enabled) { Locate('StatusGpu').textContent = 'timestamp-query unavailable (adapter or timing=0)'; return; }
+    const Averages = Timing.Averages;
+    const Labels = { Reprojection: 'reproject', Features: 'guides', Integration: 'trace', Reconstruction: 'denoise', Display: 'display' };
+    const Parts = Object.entries(Averages).filter(([, Milliseconds]) => Milliseconds >= 0.05).map(([Stage, Milliseconds]) => `${Labels[Stage]} ${Milliseconds.toFixed(1)}`);
+    const Total = Object.values(Averages).reduce((Sum, Milliseconds) => Sum + Milliseconds, 0);
+    Locate('StatusGpu').textContent = Parts.length ? `${Total.toFixed(1)} ms = ${Parts.join(' · ')}` : '—';
+}
+
+// 📝 No per-frame stall: up to FramesInFlightLimit frames are queued; the CPU waits only when it is that far ahead.
+//    Frame time = interval between GPU completions, so it measures throughput, not CPU latency.
 async function AdvanceAccumulationLoop()
 {
     for (;;)
@@ -345,26 +363,35 @@ async function AdvanceAccumulationLoop()
         if (Interface.VerifyActive) continue;
         if (!Interface.Paused && Division.SampleCount < Configuration.TargetSamples)
         {
+            while (Interface.FramesInFlight.length >= FramesInFlightLimit) await Interface.FramesInFlight[0];
             const Revision = Interface.ConfigurationRevision;
             const Batch = Math.min(Configuration.SampleBatch, Configuration.TargetSamples - Division.SampleCount);
-            const Start = performance.now();
+            const Submitted = performance.now();
             Division.AdvanceSamples(Batch);
             await Division.PresentDisplay(ExposureMultiplier());
-            await Division.Device.queue.onSubmittedWorkDone();
-            const Elapsed = performance.now() - Start;
-            if (Revision === Interface.ConfigurationRevision) Interface.AccumulatedTime += Elapsed;
-            RefreshReadout(Elapsed);
-            RefreshFrameRate(performance.now(), Elapsed);
+            const Completion = Division.Device.queue.onSubmittedWorkDone().then(() =>
+            {
+                const Finished = performance.now();
+                const Interval = Interface.LastCompletion > 0 && Finished - Interface.LastCompletion < 2000 ? Finished - Interface.LastCompletion : Finished - Submitted;
+                Interface.LastCompletion = Finished;
+                if (Revision === Interface.ConfigurationRevision) Interface.AccumulatedTime += Interval;
+                Interface.FramesInFlight.shift();
+                RefreshReadout(Interval);
+                RefreshFrameRate(Finished, Interval);
+            });
+            Interface.FramesInFlight.push(Completion);
             Interface.DisplayStale = false;
         }
         else if (Interface.DisplayStale)
         {
             await Division.PresentDisplay(ExposureMultiplier());
             Interface.DisplayStale = false;
+            Interface.LastCompletion = 0;
             RefreshReadout();
         }
         else
         {
+            Interface.LastCompletion = 0;
             RefreshFrameRate(performance.now());
         }
     }

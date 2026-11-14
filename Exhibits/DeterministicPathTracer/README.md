@@ -156,27 +156,38 @@ after an orbit; the denoised shared-pattern frame keeps the low-spp shapes (blot
 ## Vehicle count (FPS impact)
 
 Phase `fleet` (320×180, one sample per dispatch as the interactive loop runs, 1 warm-up + 4 timed samples). Extra
-vehicles are baked copies of the ControlVehicle in a parking grid (`vehicles=N`): 5 rows × 10 bays, row pitch
-9.7 m, bay pitch 3.6 m for a 6.22 m × 2.50 m body, so the closest two cars are 1.10 m apart (the first layout
-assumed a 4.4 m body and overlapped). Alternate rows face each other.
+vehicles are **instances** of the one ControlVehicle in a parking grid (`vehicles=N`): 5 rows × 10 bays, row pitch
+9.7 m, bay pitch 3.6 m for a 6.22 m × 2.50 m body, so the closest two cars are 1.10 m apart. Alternate rows face
+each other. One 4-wide vehicle tree is shared by all bays; a 4-wide instance tree (one bay per leaf) sits on top.
 
 ![Fleet comparison](Images/FleetComparison.png)
 
-| Vehicles | Triangles | Tree entries | Depth | Tree build (JS) | Hero s/spp | Fleet s/spp | Hero cost | Fleet cost |
-|---|---|---|---|---|---|---|---|---|
-| 1 | 25,068 | 15,991 | 20 | 0.14 s | 1.61 | 0.58 | 1.00× | 1.00× |
-| 2 | 50,136 | 31,983 | 21 | 0.22 s | 1.75 | 0.60 | 1.08× | 1.04× |
-| 4 | 100,272 | 63,967 | 23 | 0.43 s | 2.09 | 0.72 | 1.29× | 1.25× |
-| 8 | 200,544 | 127,935 | 24 | 1.09 s | 2.37 | 0.85 | 1.47× | 1.47× |
-| 16 | 401,088 | 255,871 | 25 | 1.59 s | 2.68 | 1.24 | 1.66× | 2.16× |
-| 32 | 802,176 | 511,743 | 26 | 3.24 s | 2.79 | 1.61 | 1.73× | 2.81× |
-| 50 | **1,253,400** | 799,599 | 27 | 5.36 s | 2.85 | 1.94 | 1.77× | 3.37× |
+| Vehicles | Triangles | Tree nodes (vehicle + instance) | Depth | Tree build (JS) | Hero s/spp | Fleet s/spp | Hero cost | Fleet cost | Fleet rays / box tests / triangle tests per pixel-sample |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 25,068 | 3,895 + 1 | 12 | 0.169 s (vehicle tree, once) | 1.82 | 0.75 | 1.00× | 1.00× | 4.95 / 10.5 / 0.9 |
+| 2 | 50,136 | 3,895 + 1 | 12 | 0.001 s | 2.23 | 0.78 | 1.22× | 1.04× | 4.99 / 18.6 / 1.4 |
+| 4 | 100,272 | 3,895 + 1 | 12 | 0.001 s | 2.58 | 0.96 | 1.42× | 1.28× | 5.10 / 37.5 / 2.9 |
+| 8 | 200,544 | 3,895 + 4 | 13 | 0.001 s | 3.00 | 1.11 | 1.64× | 1.49× | 5.23 / 51.3 / 4.8 |
+| 16 | 401,088 | 3,895 + 7 | 14 | 0.002 s | 3.33 | 1.46 | 1.83× | 1.96× | 5.53 / 82.2 / 9.1 |
+| 32 | 802,176 | 3,895 + 15 | 14 | 0.001 s | 3.53 | 1.92 | 1.94× | 2.58× | 5.90 / 123.3 / 14.3 |
+| 50 | **1,253,400** | 3,895 + 25 | 15 | 0.002 s | 3.56 | 2.40 | 1.95× | 3.22× | 6.14 / 150.5 / 17.6 |
 
-- 50× the triangles (1.25 M) costs 1.8× (Hero) to 3.4× (Fleet, whole lot on screen) per sample: traversal grows
-  with log(triangles); the Fleet camera also fills more of the frame with glossy geometry.
-- FPS at one sample per frame is 1 / (s/spp): it falls by the same factors. SwiftShader seconds are not GPU timings.
-- ⚠️ Copies are baked into one tree, rebuilt from scratch (5.4 s at 50 vehicles, in JS). Moving vehicles need
-  instancing (one tree per vehicle model plus a small per-frame top-level tree) — not implemented.
+- **Instancing:** the GPU tree is 257 KB at 50 vehicles (baked: 799,599 entries ≈ 25.6 MB, plus 120 MB of
+  copied triangles). Changing the count takes ≈ 1 ms instead of 5.36 s, so vehicles could move per frame.
+- 50× the triangles costs 1.95× (Hero) to 3.22× (Fleet, whole lot on screen; baked tree: 3.37×) per sample.
+- **Bit-exactness:** one vehicle renders bit-identical to the old binary tree (`a0ca494d`, 320×180, 16 spp, and
+  equal Hero/Rear digests at 160×90). Fleets now use object-space rays, so their digests changed once; each
+  repeats exactly (50 vehicles: batch 1 = batch 4, `3237779d`).
+- ⚠️ **SwiftShader penalty.** Same-run A/B against the binary baked tree (160×90, 4 spp, min of 2):
+  1 vehicle 550 vs 434 ms/spp (Hero), 457 vs 360 (Rear); 50 vehicles 940 vs 784, 933 vs 789: ≈ 1.2× slower.
+  The work is the same (Hero 1 car: 8.3 rays, 11 triangle tests, 81 vs 75 box tests per pixel-sample), but
+  SwiftShader inlines every call and keeps the whole tree in CPU cache: it charges for shader size and gives
+  nothing for smaller nodes. Removing all traversal code made even the vehicle-free scene 1.24× faster than
+  the old build, and folding both tree levels into one loop per query cut the penalty from 2.3× to 1.2×.
+  Real GPUs are usually limited by memory latency in traversal, where 4-wide 64-byte nodes and a ≈ 50× smaller
+  fleet footprint (2.7 MB vs 145 MB) are the usual win. That is **not measured here**; the inspector's GPU-per-frame row is the
+  way to check it on hardware.
+- FPS at one sample per frame is 1 / (s/spp). SwiftShader seconds are not GPU timings.
 
 ### 🐞 Bias found and fixed by claim 3
 

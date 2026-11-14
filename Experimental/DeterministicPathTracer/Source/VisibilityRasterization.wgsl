@@ -17,7 +17,7 @@ struct RasterUniforms
     CameraForward     : vec4f,   // xyz unit forward
     CameraRight       : vec4f,   // xyz right × tan(fov/2) × aspect
     CameraUp          : vec4f,   // xyz up × tan(fov/2)
-    Sampling          : vec4u,   // width, height, sample index, unused
+    Sampling          : vec4u,   // width, height, sample index, first instance record [vec4u]
 }
 
 struct RasterVarying
@@ -27,7 +27,8 @@ struct RasterVarying
 }
 
 @group(0) @binding(0) var<uniform>       Raster            : RasterUniforms;
-@group(0) @binding(1) var<storage, read> TrianglePositions : array<vec4f>;   // per triangle: corner, edge A, edge B
+@group(0) @binding(1) var<storage, read> TrianglePositions : array<vec4f>;   // per triangle: corner, edge A, edge B (object space)
+@group(0) @binding(2) var<storage, read> BoundsEntries     : array<vec4u>;   // instance records from Raster.Sampling.w (8 vec4u each)
 
 const NearPlane : f32 = 0.02;    // [m]
 const FarPlane  : f32 = 500.0;   // [m]
@@ -38,12 +39,18 @@ const FarPlane  : f32 = 500.0;   // [m]
 //------------------------------------------------------------------------------------------------------------------------
 
 @vertex
-fn ProjectTriangleCorner(@builtin(vertex_index) VertexIndex: u32) -> RasterVarying
+fn ProjectTriangleCorner(@builtin(vertex_index) VertexIndex: u32, @builtin(instance_index) Instance: u32) -> RasterVarying
 {
     let TriangleIndex = VertexIndex / 3u;
     let CornerIndex   = VertexIndex % 3u;
-    var Position      = TrianglePositions[TriangleIndex * 3u].xyz;
-    if (CornerIndex > 0u) { Position += TrianglePositions[TriangleIndex * 3u + CornerIndex].xyz; }
+    var Local         = TrianglePositions[TriangleIndex * 3u].xyz;
+    if (CornerIndex > 0u) { Local += TrianglePositions[TriangleIndex * 3u + CornerIndex].xyz; }
+    // 📝 Object → world rows 3–5 of the instance record (rigid bay transform).
+    let Record   = Raster.Sampling.w + Instance * 8u;
+    let RowX     = bitcast<vec4f>(BoundsEntries[Record + 3u]);
+    let RowY     = bitcast<vec4f>(BoundsEntries[Record + 4u]);
+    let RowZ     = bitcast<vec4f>(BoundsEntries[Record + 5u]);
+    let Position = vec3f(dot(RowX.xyz, Local) + RowX.w, dot(RowY.xyz, Local) + RowY.w, dot(RowZ.xyz, Local) + RowZ.w);
 
     // 📝 Ray direction = Forward + NdcX·Right − NdcY·Up, so a point Offset = c·Forward + a·Right + b·Up has
     //    NdcX = a/c and image-up = b/c. The subpixel term moves pixel centres onto this sample's ray.
@@ -56,7 +63,7 @@ fn ProjectTriangleCorner(@builtin(vertex_index) VertexIndex: u32) -> RasterVaryi
 
     var Varying : RasterVarying;
     Varying.Position   = vec4f(Across + Shift.x * Depth, Upward + Shift.y * Depth, (Depth - NearPlane) * FarPlane / (FarPlane - NearPlane), Depth);
-    Varying.Identifier = TriangleIndex + 1u;
+    Varying.Identifier = ((Instance << 20u) | TriangleIndex) + 1u;
     return Varying;
 }
 

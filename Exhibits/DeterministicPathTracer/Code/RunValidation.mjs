@@ -809,8 +809,13 @@ async function ValidateFleet(Browser, Server)
                 await Tracing.RenderFromZero(TimedSamples, 1);
                 Timing[Camera] = (performance.now() - Start) / 1000 / TimedSamples;
             }
+            // 📝 Work per pixel-sample from the Fleet camera (ray-statistics pipeline: counters instead of radiance).
+            const Work = await Tracing.Division.MeasureRayStatistics(1);
             return { VehicleCount, Triangles: Summary.TriangleCount, BoundsEntries: Summary.BoundsEntryCount, BoundsDepth: Summary.BoundsDepthTier,
-                     ConstructionSeconds: Summary.ConstructionMilliseconds / 1000, HeroSecondsPerSample: Timing.Hero, FleetSecondsPerSample: Timing.Fleet };
+                     VehicleNodes: Summary.VehicleNodes, InstanceNodes: Summary.InstanceNodes, BoundsBytes: Summary.BoundsBytes,
+                     ConstructionSeconds: Summary.ConstructionMilliseconds / 1000, HeroSecondsPerSample: Timing.Hero, FleetSecondsPerSample: Timing.Fleet,
+                     FleetRaysPerSample: +(Work.ClosestRays + Work.ShadowRays).toFixed(2), FleetBoxTestsPerSample: +Work.BoxTests.toFixed(1),
+                     FleetTriangleTestsPerSample: +Work.TriangleTests.toFixed(1) };
         }, VehicleCount, Presets, TimedSamples);
         Rows.push(Row);
         console.log(`[fleet] ${JSON.stringify(Row)}`);
@@ -826,7 +831,8 @@ async function ValidateFleet(Browser, Server)
         Summary: Rows.map(Row => ({ Vehicles: Row.VehicleCount, Triangles: Row.Triangles, Depth: Row.BoundsDepth, BuildSeconds: Row.ConstructionSeconds,
                                     HeroRelative: +Row.HeroRelative.toFixed(2), FleetRelative: +Row.FleetRelative.toFixed(2) })),
         Width, Height, TimedSamples, Rows,
-        Note: 'SwiftShader (CPU WebGPU), so absolute seconds are not GPU timings; FPS at 1 sample per frame = 1 / seconds per sample.'
+        Note: 'SwiftShader (CPU WebGPU), so absolute seconds are not GPU timings; FPS at 1 sample per frame = 1 / seconds per sample. '
+            + 'Geometry is instanced: one 4-wide vehicle tree shared by every bay plus a 4-wide instance tree, so BuildSeconds after the first count is the instance tree only.'
     });
     await RetainFleetImages(Browser, Server);
 }

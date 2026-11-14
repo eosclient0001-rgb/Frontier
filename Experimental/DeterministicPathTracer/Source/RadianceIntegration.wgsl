@@ -22,7 +22,12 @@
 const π                       : f32 = 3.14159265358979;
 const InvalidMedium           : u32 = 0xFFFFFFFFu;
 const TransportStackCapacity  : u32 = 16u;
-const BoundsStackCapacity     : u32 = 40u;
+const SceneStackCapacity      : u32 = 56u;        // [-]  - Instance levels + return marker + vehicle levels (3 per level + 4)
+const ReturnMarker            : u32 = 0xFFFFFFFFu;  // [-]  - Stack entry that restores the world-space ray
+const EmptyLink               : u32 = 0xFFFFFFFFu;
+const InstanceShift           : u32 = 20u;        // [-]  - SurfaceHit.PrimitiveIndex = instance << 20 | triangle
+const TriangleMask            : u32 = 0xFFFFFu;
+const InstanceStride          : u32 = 8u;         // [vec4u] per instance record
 const DeltaRoughnessAlpha     : f32 = 0.0025;     // [-]  - α below this traces the exact mirror / refraction direction
 const RayOffsetScale          : f32 = 2.0e-4;     // [m]  - Self-intersection offset along the geometric normal
 const UnboundedDistance       : f32 = 1.0e30;     // [m]
@@ -68,14 +73,24 @@ struct TracingUniforms
     PreviousUp        : vec4f,
     Realtime          : vec4u,   // per-pixel decorrelation (0/1), visibility raster (0/1), history read / write offset [px]
     HistoryTuning     : vec4f,   // history capacity [samples], history active (0/1), unused, unused
+    Geometry          : vec4u,   // instance tree root node, first instance record [vec4u], instance count, trace scale [px]
+    Shading           : vec4f,   // light cutoff (0 = off), analytic area lights (0/1), unused, unused
 }
 
-struct BoundsEntry
+// 📝 One 4-wide node = 4 vec4u (BoundingVolumeConstruction.js EncodeWideNode): origin + exponents, 8-bit child bounds,
+//    16-bit child primitive counts (0 = inner), child links. Decoded child boxes contain the exact ones.
+struct WideVisit
 {
-    MinimumBound      : vec3f,
-    LeftOrFirst       : u32,     // inner: first of two adjacent entries; leaf: first triangle
-    MaximumBound      : vec3f,
-    PrimitiveCount    : u32,     // 0 = inner entry
+    Distances         : vec4f,   // entry distance per child, UnboundedDistance = missed or empty
+    Counts            : vec4u,   // primitives per leaf child, 0 = inner child
+    Links             : vec4u,   // inner: node index; leaf: first primitive
+}
+
+// 📝 Closest-hit stack entry: x = link << 4 | primitive count (0 = inner node; leaves hold ≤ 15), y = entry distance bits.
+struct SortedChildren
+{
+    Distances         : vec4f,
+    Entries           : vec4u,
 }
 
 struct SurfaceMaterial
@@ -141,7 +156,7 @@ struct LobeEvaluation
 //------------------------------------------------------------------------------------------------------------------------
 
 @group(0) @binding(0) var<uniform>             Tracing           : TracingUniforms;
-@group(0) @binding(1) var<storage, read>       BoundsEntries     : array<BoundsEntry>;
+@group(0) @binding(1) var<storage, read>       BoundsEntries     : array<vec4u>;   // vehicle tree nodes, instance tree nodes, instance records
 @group(0) @binding(2) var<storage, read>       TrianglePositions : array<vec4f>;
 @group(0) @binding(3) var<storage, read>       TriangleNormals   : array<vec4f>;
 @group(0) @binding(4) var<storage, read>       Materials         : array<SurfaceMaterial>;
@@ -157,6 +172,12 @@ var<private> TransportStackSize : u32;
 var<private> PixelScramble      : u32;
 var<private> BlueNoiseOrigin    : vec2u;   // pixel coordinate when the blue-noise pattern is active
 var<private> BlueNoiseActive    : bool;
+
+// 📝 Ray statistics (profiling pipeline only): closest rays, shadow rays, child box tests, triangle tests per sample.
+//    A pipeline-overridable constant, so the normal pipeline compiles these counters away.
+override RayStatisticsEnabled   : bool = false;
+var<private> RayStatistics      : vec4u;
+var<private> ImagePosition      : vec2f;   // display-pixel position of the current sample (trace scale)
 
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -200,20 +221,66 @@ fn SafeReciprocal(Direction: vec3f) -> vec3f
     return select(vec3f(1.0), vec3f(-1.0), Direction < vec3f(0.0)) / Magnitude;
 }
 
-fn IntersectBounds(Origin: vec3f, Reciprocal: vec3f, Entry: BoundsEntry, MaximumDistance: f32) -> f32
+fn ExtractBytes(Word: u32) -> vec4f
 {
-    let Lower   = (Entry.MinimumBound - Origin) * Reciprocal;
-    let Upper   = (Entry.MaximumBound - Origin) * Reciprocal;
-    let Near    = min(Lower, Upper);
-    let Far     = max(Lower, Upper);
-    let Entered = max(max(Near.x, Near.y), max(Near.z, 0.0));
-    let Exited  = min(min(Far.x, Far.y), min(Far.z, MaximumDistance));
-    return select(UnboundedDistance, Entered, Entered <= Exited);
+    return vec4f(vec4u(Word, Word >> 8u, Word >> 16u, Word >> 24u) & vec4u(255u));
+}
+
+fn IntersectWideNode(NodeIndex: u32, Origin: vec3f, Reciprocal: vec3f, MaximumDistance: f32) -> WideVisit
+{
+    let Base       = NodeIndex * 4u;
+    let Header     = BoundsEntries[Base];
+    let BoundsXY   = BoundsEntries[Base + 1u];
+    let BoundsZ    = BoundsEntries[Base + 2u];
+    let Links      = BoundsEntries[Base + 3u];
+    let NodeOrigin = bitcast<vec3f>(Header.xyz);
+    // 📝 Biased exponent byte E → 2^(E − 127) built directly from its float bits (exact, no transcendental).
+    let Scale      = bitcast<vec3f>(vec3u(Header.w & 255u, (Header.w >> 8u) & 255u, (Header.w >> 16u) & 255u) << vec3u(23u));
+    let NearX = (NodeOrigin.x + ExtractBytes(BoundsXY.x) * Scale.x - Origin.x) * Reciprocal.x;
+    let FarX  = (NodeOrigin.x + ExtractBytes(BoundsXY.y) * Scale.x - Origin.x) * Reciprocal.x;
+    let NearY = (NodeOrigin.y + ExtractBytes(BoundsXY.z) * Scale.y - Origin.y) * Reciprocal.y;
+    let FarY  = (NodeOrigin.y + ExtractBytes(BoundsXY.w) * Scale.y - Origin.y) * Reciprocal.y;
+    let NearZ = (NodeOrigin.z + ExtractBytes(BoundsZ.x) * Scale.z - Origin.z) * Reciprocal.z;
+    let FarZ  = (NodeOrigin.z + ExtractBytes(BoundsZ.y) * Scale.z - Origin.z) * Reciprocal.z;
+    let Entered = max(max(min(NearX, FarX), min(NearY, FarY)), max(min(NearZ, FarZ), vec4f(0.0)));
+    let Exited  = min(min(max(NearX, FarX), max(NearY, FarY)), min(max(NearZ, FarZ), vec4f(MaximumDistance)));
+    let Present = Links != vec4u(EmptyLink);
+    if (RayStatisticsEnabled) { RayStatistics.z += u32(Present.x) + u32(Present.y) + u32(Present.z) + u32(Present.w); }
+    let Counts = vec4u(BoundsZ.z & 0xFFFFu, BoundsZ.z >> 16u, BoundsZ.w & 0xFFFFu, BoundsZ.w >> 16u);
+    return WideVisit(select(vec4f(UnboundedDistance), Entered, Present & (Entered <= Exited)), Counts, Links);
+}
+
+// 📝 Instance record (8 vec4u): rows 0–2 world→object (xyz linear, w translation), rows 3–5 object→world, row 6 =
+//    vehicle tree root, paint slot to replace, replacement slot (EmptyLink = keep). Transforms are rigid.
+fn InstanceRow(Instance: u32, Row: u32) -> vec4f
+{
+    return bitcast<vec4f>(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + Row]);
+}
+
+fn TransformPoint(Instance: u32, FirstRow: u32, Point: vec3f) -> vec3f
+{
+    let RowX = InstanceRow(Instance, FirstRow);
+    let RowY = InstanceRow(Instance, FirstRow + 1u);
+    let RowZ = InstanceRow(Instance, FirstRow + 2u);
+    return vec3f(dot(RowX.xyz, Point) + RowX.w, dot(RowY.xyz, Point) + RowY.w, dot(RowZ.xyz, Point) + RowZ.w);
+}
+
+fn TransformVector(Instance: u32, FirstRow: u32, Vector: vec3f) -> vec3f
+{
+    return vec3f(dot(InstanceRow(Instance, FirstRow).xyz, Vector), dot(InstanceRow(Instance, FirstRow + 1u).xyz, Vector),
+                 dot(InstanceRow(Instance, FirstRow + 2u).xyz, Vector));
+}
+
+fn InstanceMaterialSlot(Instance: u32, TriangleSlot: u32) -> u32
+{
+    let Paint = BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u];
+    return select(TriangleSlot, Paint.z, Paint.z != EmptyLink && TriangleSlot == Paint.y);
 }
 
 // 📝 Möller–Trumbore against precomputed edges. Returns (t, u, v) with t < 0 on miss.
 fn IntersectTriangle(Origin: vec3f, Direction: vec3f, TriangleIndex: u32) -> vec3f
 {
+    if (RayStatisticsEnabled) { RayStatistics.w += 1u; }
     let Corner = TrianglePositions[TriangleIndex * 3u].xyz;
     let EdgeA  = TrianglePositions[TriangleIndex * 3u + 1u].xyz;
     let EdgeB  = TrianglePositions[TriangleIndex * 3u + 2u].xyz;
@@ -291,53 +358,87 @@ fn TraceAnalyticHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Sur
     return Hit;
 }
 
+// 📝 Orders the 4 children by entry distance with a fixed 5-exchange network written on vector lanes (no dynamic
+//    indexing). Strict comparisons keep the child order on ties, so the order is a fixed function of the ray.
+fn SortChildren(Visit: WideVisit) -> SortedChildren
+{
+    var D = Visit.Distances;
+    var E = (Visit.Links << vec4u(4u)) | Visit.Counts;
+    var Swap = vec2<bool>(D.y < D.x, D.w < D.z);                                       // (0,1) (2,3)
+    D = vec4f(select(D.x, D.y, Swap.x), select(D.y, D.x, Swap.x), select(D.z, D.w, Swap.y), select(D.w, D.z, Swap.y));
+    E = vec4u(select(E.x, E.y, Swap.x), select(E.y, E.x, Swap.x), select(E.z, E.w, Swap.y), select(E.w, E.z, Swap.y));
+    Swap = vec2<bool>(D.z < D.x, D.w < D.y);                                           // (0,2) (1,3)
+    D = vec4f(select(D.x, D.z, Swap.x), select(D.y, D.w, Swap.y), select(D.z, D.x, Swap.x), select(D.w, D.y, Swap.y));
+    E = vec4u(select(E.x, E.z, Swap.x), select(E.y, E.w, Swap.y), select(E.z, E.x, Swap.x), select(E.w, E.y, Swap.y));
+    let Middle = D.z < D.y;                                                            // (1,2)
+    D = vec4f(D.x, select(D.y, D.z, Middle), select(D.z, D.y, Middle), D.w);
+    E = vec4u(E.x, select(E.y, E.z, Middle), select(E.z, E.y, Middle), E.w);
+    return SortedChildren(D, E);
+}
+
+// 📝 Two-level closest-hit query in ONE loop (SwiftShader and GPUs alike pay for every inlined copy of a traversal).
+//    The stack starts at the instance tree root (world space). An instance leaf transforms the ray into that vehicle's
+//    object space (direction not renormalized, so distances stay world distances), pushes a return marker and the
+//    shared vehicle-tree root; popping the marker restores the world ray. Children — leaves and inner nodes alike —
+//    are pushed farthest first, so the nearest is popped next; entries beyond the current hit are skipped on pop.
 fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> SurfaceHit
 {
+    if (RayStatisticsEnabled) { RayStatistics.x += 1u; }
     var Hit = TraceAnalyticHit(Origin, Direction, LightsVisible);
-    if (Tracing.SceneLayout.w == 0u) { return Hit; }
-    let Reciprocal = SafeReciprocal(Direction);
-    var BoundsStack : array<u32, BoundsStackCapacity>;
-    var StackSize   = 0u;
-    var EntryIndex  = 0u;
-    if (IntersectBounds(Origin, Reciprocal, BoundsEntries[0], Hit.Distance) >= UnboundedDistance) { return Hit; }
+    if (Tracing.SceneLayout.w == 0u || Tracing.Geometry.z == 0u) { return Hit; }
+    let WorldReciprocal = SafeReciprocal(Direction);
+    var RayOrigin    = Origin;
+    var RayDirection = Direction;
+    var Reciprocal   = WorldReciprocal;
+    var Instance     = 0u;
+    var ObjectLevel  = false;
+    var Stack        : array<vec2u, SceneStackCapacity>;
+    Stack[0]         = vec2u(Tracing.Geometry.x << 4u, 0u);
+    var StackSize = 1u;
     loop
     {
-        let Entry = BoundsEntries[EntryIndex];
-        if (Entry.PrimitiveCount > 0u)
+        if (StackSize == 0u) { break; }
+        StackSize -= 1u;
+        let Entry = Stack[StackSize];
+        if (Entry.x == ReturnMarker)
         {
-            for (var Offset = 0u; Offset < Entry.PrimitiveCount; Offset++)
+            ObjectLevel = false; RayOrigin = Origin; RayDirection = Direction; Reciprocal = WorldReciprocal;
+            continue;
+        }
+        if (bitcast<f32>(Entry.y) >= Hit.Distance) { continue; }
+        let Count = Entry.x & 15u;
+        let Link  = Entry.x >> 4u;
+        if (Count > 0u && !ObjectLevel)
+        {
+            // 📝 Instance leaf (exactly one instance per leaf, see ConstructInstanceTree).
+            Instance     = Link;
+            ObjectLevel  = true;
+            RayOrigin    = TransformPoint(Instance, 0u, Origin);
+            RayDirection = TransformVector(Instance, 0u, Direction);
+            Reciprocal   = SafeReciprocal(RayDirection);
+            Stack[StackSize]      = vec2u(ReturnMarker, 0u);
+            Stack[StackSize + 1u] = vec2u(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u].x << 4u, 0u);
+            StackSize += 2u;
+            continue;
+        }
+        if (Count > 0u)
+        {
+            for (var Offset = 0u; Offset < Count; Offset++)
             {
-                let Candidate = IntersectTriangle(Origin, Direction, Entry.LeftOrFirst + Offset);
+                let Candidate = IntersectTriangle(RayOrigin, RayDirection, Link + Offset);
                 if (Candidate.x > RayOffsetScale && Candidate.x < Hit.Distance)
                 {
-                    Hit = SurfaceHit(Candidate.x, HitTriangle, Entry.LeftOrFirst + Offset, Candidate.yz);
+                    Hit = SurfaceHit(Candidate.x, HitTriangle, (Instance << InstanceShift) | (Link + Offset), Candidate.yz);
                 }
             }
-            if (StackSize == 0u) { break; }
-            StackSize -= 1u;
-            EntryIndex = BoundsStack[StackSize];
             continue;
         }
-        let LowerIndex    = Entry.LeftOrFirst;
-        let LowerDistance = IntersectBounds(Origin, Reciprocal, BoundsEntries[LowerIndex], Hit.Distance);
-        let UpperDistance = IntersectBounds(Origin, Reciprocal, BoundsEntries[LowerIndex + 1u], Hit.Distance);
-        let NearerIndex   = select(LowerIndex + 1u, LowerIndex, LowerDistance <= UpperDistance);
-        let FartherIndex  = select(LowerIndex, LowerIndex + 1u, LowerDistance <= UpperDistance);
-        let NearerDistance  = min(LowerDistance, UpperDistance);
-        let FartherDistance = max(LowerDistance, UpperDistance);
-        if (NearerDistance >= UnboundedDistance)
-        {
-            if (StackSize == 0u) { break; }
-            StackSize -= 1u;
-            EntryIndex = BoundsStack[StackSize];
-            continue;
-        }
-        EntryIndex = NearerIndex;
-        if (FartherDistance < UnboundedDistance && StackSize < BoundsStackCapacity)
-        {
-            BoundsStack[StackSize] = FartherIndex;
-            StackSize += 1u;
-        }
+        let Sorted = SortChildren(IntersectWideNode(Link, RayOrigin, Reciprocal, Hit.Distance));
+        let Room   = StackSize + 4u <= SceneStackCapacity;
+        if (Room && Sorted.Distances.w < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.w, bitcast<u32>(Sorted.Distances.w)); StackSize += 1u; }
+        if (Room && Sorted.Distances.z < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.z, bitcast<u32>(Sorted.Distances.z)); StackSize += 1u; }
+        if (Room && Sorted.Distances.y < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.y, bitcast<u32>(Sorted.Distances.y)); StackSize += 1u; }
+        if (Room && Sorted.Distances.x < UnboundedDistance) { Stack[StackSize] = vec2u(Sorted.Entries.x, bitcast<u32>(Sorted.Distances.x)); StackSize += 1u; }
     }
     return Hit;
 }
@@ -350,10 +451,12 @@ fn ThinSheetTransmittance(CosineIncidence: f32, Material: SurfaceMaterial) -> ve
     return Material.AlbedoRoughness.rgb * Transmitted;
 }
 
-// 📝 Visibility of a light point. Thin sheets (glazing) attenuate and the walk continues; anything else occludes.
-//    The product is order-independent, so the result is deterministic regardless of traversal order.
+// 📝 Visibility of a light point, same two-level single loop. Thin sheets (glazing) attenuate and the walk continues;
+//    anything else occludes (returns 0). Children are visited in fixed child order (no sort: every crossing within the
+//    distance counts), so the transmittance product is bit-repeatable.
 fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> vec3f
 {
+    if (RayStatisticsEnabled) { RayStatistics.y += 1u; }
     for (var SphereIndex = 0u; SphereIndex < Tracing.DepthLimits.w; SphereIndex++)
     {
         let SphereDistance = IntersectSphere(Origin, Direction, Spheres[SphereIndex * 2u]);
@@ -361,47 +464,64 @@ fn TraceShadowTransmittance(Origin: vec3f, Direction: vec3f, Distance: f32) -> v
     }
 
     var Transmittance = vec3f(1.0);
-    if (Tracing.SceneLayout.w == 0u) { return Transmittance; }
-    let Reciprocal  = SafeReciprocal(Direction);
-    var BoundsStack : array<u32, BoundsStackCapacity>;
-    var StackSize   = 0u;
-    var EntryIndex  = 0u;
-    if (IntersectBounds(Origin, Reciprocal, BoundsEntries[0], Distance) >= UnboundedDistance) { return Transmittance; }
+    if (Tracing.SceneLayout.w == 0u || Tracing.Geometry.z == 0u) { return Transmittance; }
+    let WorldReciprocal = SafeReciprocal(Direction);
+    var RayOrigin    = Origin;
+    var RayDirection = Direction;
+    var Reciprocal   = WorldReciprocal;
+    var Instance     = 0u;
+    var ObjectLevel  = false;
+    var Stack        : array<u32, SceneStackCapacity>;
+    Stack[0]         = Tracing.Geometry.x << 4u;
+    var StackSize = 1u;
     loop
     {
-        let Entry = BoundsEntries[EntryIndex];
-        if (Entry.PrimitiveCount > 0u)
-        {
-            for (var Offset = 0u; Offset < Entry.PrimitiveCount; Offset++)
-            {
-                let TriangleIndex = Entry.LeftOrFirst + Offset;
-                let Candidate = IntersectTriangle(Origin, Direction, TriangleIndex);
-                if (Candidate.x > RayOffsetScale && Candidate.x < Distance)
-                {
-                    let Material = Materials[bitcast<u32>(TrianglePositions[TriangleIndex * 3u].w)];
-                    if (u32(Material.EtaCategory.w) != SurfaceThinDielectric) { return vec3f(0.0); }
-                    let EdgeNormal = normalize(cross(TrianglePositions[TriangleIndex * 3u + 1u].xyz, TrianglePositions[TriangleIndex * 3u + 2u].xyz));
-                    Transmittance *= ThinSheetTransmittance(dot(EdgeNormal, Direction), Material);
-                }
-            }
-        }
-        else
-        {
-            let LowerIndex = Entry.LeftOrFirst;
-            if (IntersectBounds(Origin, Reciprocal, BoundsEntries[LowerIndex], Distance) < UnboundedDistance && StackSize < BoundsStackCapacity)
-            {
-                BoundsStack[StackSize] = LowerIndex;
-                StackSize += 1u;
-            }
-            if (IntersectBounds(Origin, Reciprocal, BoundsEntries[LowerIndex + 1u], Distance) < UnboundedDistance && StackSize < BoundsStackCapacity)
-            {
-                BoundsStack[StackSize] = LowerIndex + 1u;
-                StackSize += 1u;
-            }
-        }
         if (StackSize == 0u) { break; }
         StackSize -= 1u;
-        EntryIndex = BoundsStack[StackSize];
+        let Entry = Stack[StackSize];
+        if (Entry == ReturnMarker)
+        {
+            ObjectLevel = false; RayOrigin = Origin; RayDirection = Direction; Reciprocal = WorldReciprocal;
+            continue;
+        }
+        let Count = Entry & 15u;
+        let Link  = Entry >> 4u;
+        if (Count > 0u && !ObjectLevel)
+        {
+            Instance     = Link;
+            ObjectLevel  = true;
+            RayOrigin    = TransformPoint(Instance, 0u, Origin);
+            RayDirection = TransformVector(Instance, 0u, Direction);
+            Reciprocal   = SafeReciprocal(RayDirection);
+            Stack[StackSize]      = ReturnMarker;
+            Stack[StackSize + 1u] = BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u].x << 4u;
+            StackSize += 2u;
+            continue;
+        }
+        if (Count > 0u)
+        {
+            for (var Offset = 0u; Offset < Count; Offset++)
+            {
+                let TriangleIndex = Link + Offset;
+                let Candidate = IntersectTriangle(RayOrigin, RayDirection, TriangleIndex);
+                if (Candidate.x > RayOffsetScale && Candidate.x < Distance)
+                {
+                    let Material = Materials[InstanceMaterialSlot(Instance, bitcast<u32>(TrianglePositions[TriangleIndex * 3u].w))];
+                    if (u32(Material.EtaCategory.w) != SurfaceThinDielectric) { return vec3f(0.0); }
+                    // 📝 Rigid transform: the object-space cosine equals the world-space one.
+                    let EdgeNormal = normalize(cross(TrianglePositions[TriangleIndex * 3u + 1u].xyz, TrianglePositions[TriangleIndex * 3u + 2u].xyz));
+                    Transmittance *= ThinSheetTransmittance(dot(EdgeNormal, RayDirection), Material);
+                }
+            }
+            continue;
+        }
+        let Visit   = IntersectWideNode(Link, RayOrigin, Reciprocal, Distance);
+        let Entries = (Visit.Links << vec4u(4u)) | Visit.Counts;
+        let Room    = StackSize + 4u <= SceneStackCapacity;
+        if (Room && Visit.Distances.w < UnboundedDistance) { Stack[StackSize] = Entries.w; StackSize += 1u; }
+        if (Room && Visit.Distances.z < UnboundedDistance) { Stack[StackSize] = Entries.z; StackSize += 1u; }
+        if (Room && Visit.Distances.y < UnboundedDistance) { Stack[StackSize] = Entries.y; StackSize += 1u; }
+        if (Room && Visit.Distances.x < UnboundedDistance) { Stack[StackSize] = Entries.x; StackSize += 1u; }
     }
     return Transmittance;
 }
@@ -415,12 +535,13 @@ fn ResolveSurface(Origin: vec3f, Direction: vec3f, Hit: SurfaceHit) -> SurfaceSa
 
     if (Hit.Category == HitTriangle)
     {
-        let CornerOffset = Hit.PrimitiveIndex * 3u;
-        GeometricNormal = normalize(cross(TrianglePositions[CornerOffset + 1u].xyz, TrianglePositions[CornerOffset + 2u].xyz));
+        let Instance     = Hit.PrimitiveIndex >> InstanceShift;
+        let CornerOffset = (Hit.PrimitiveIndex & TriangleMask) * 3u;
+        GeometricNormal = normalize(TransformVector(Instance, 3u, cross(TrianglePositions[CornerOffset + 1u].xyz, TrianglePositions[CornerOffset + 2u].xyz)));
         let FirstCornerWeight = 1.0 - Hit.Barycentric.x - Hit.Barycentric.y;
-        ShadingNormal = normalize(TriangleNormals[CornerOffset].xyz * FirstCornerWeight + TriangleNormals[CornerOffset + 1u].xyz * Hit.Barycentric.x
-                                + TriangleNormals[CornerOffset + 2u].xyz * Hit.Barycentric.y);
-        MaterialSlot = bitcast<u32>(TrianglePositions[CornerOffset].w);
+        ShadingNormal = normalize(TransformVector(Instance, 3u, TriangleNormals[CornerOffset].xyz * FirstCornerWeight + TriangleNormals[CornerOffset + 1u].xyz * Hit.Barycentric.x
+                                + TriangleNormals[CornerOffset + 2u].xyz * Hit.Barycentric.y));
+        MaterialSlot = InstanceMaterialSlot(Instance, bitcast<u32>(TrianglePositions[CornerOffset].w));
     }
     else if (Hit.Category == HitSphere)
     {
@@ -843,7 +964,8 @@ fn ResolveRasterizedPrimary(Origin: vec3f, Direction: vec3f, PixelCoordinate: ve
     var Hit = TraceAnalyticHit(Origin, Direction, Tracing.Tuning.z > 0.5);
     let Identifier = textureLoad(VisibilityIds, vec2i(PixelCoordinate), 0).x;
     if (Identifier == 0u) { return Hit; }
-    let Candidate = IntersectTriangle(Origin, Direction, Identifier - 1u);
+    let Instance  = (Identifier - 1u) >> InstanceShift;
+    let Candidate = IntersectTriangle(TransformPoint(Instance, 0u, Origin), TransformVector(Instance, 0u, Direction), (Identifier - 1u) & TriangleMask);
     if (Candidate.x <= RayOffsetScale) { return SurfaceHit(0.0, HitAbsent, 0u, vec2f(0.0)); }
     if (Candidate.x < Hit.Distance) { Hit = SurfaceHit(Candidate.x, HitTriangle, Identifier - 1u, Candidate.yz); }
     return Hit;
@@ -856,14 +978,19 @@ fn ResolvePixelScramble(PixelCoordinate: vec2u) -> u32
     return AvalancheKey((PixelCoordinate.x * 0x8da6b343u) ^ (PixelCoordinate.y * 0xd8163841u) ^ 0x2545f491u) | 1u;
 }
 
+// 📝 PixelCoordinate is the traced tile (one per invocation). With trace scale S > 1 a tile covers S × S display pixels:
+//    the subpixel point spans the whole tile and the sample lands in the display pixel it falls in (ImagePosition).
+//    S = 1 is the original per-pixel integration, bit for bit.
 fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
 {
     PixelScramble   = ResolvePixelScramble(PixelCoordinate);
     BlueNoiseActive = Tracing.Realtime.x == 2u;
     BlueNoiseOrigin = PixelCoordinate;
     let Extent   = vec2f(f32(Tracing.Extent.x), f32(Tracing.Extent.y));
+    let Scale    = f32(max(Tracing.Geometry.w, 1u));
     let Subpixel = QuadraturePair(SampleIndex, PairSubpixel);
-    let Ndc      = ((vec2f(PixelCoordinate) + Subpixel) / Extent) * 2.0 - vec2f(1.0);
+    ImagePosition = vec2f(PixelCoordinate) * Scale + Subpixel * Scale;
+    let Ndc      = (ImagePosition / Extent) * 2.0 - vec2f(1.0);
     var Origin   = Tracing.CameraOrigin.xyz;
     var Direction = normalize(Tracing.CameraForward.xyz + Ndc.x * Tracing.CameraRight.xyz - Ndc.y * Tracing.CameraUp.xyz);
 
@@ -941,27 +1068,57 @@ fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
 //                                                    ENTRY POINTS
 //------------------------------------------------------------------------------------------------------------------------
 
+fn AcceptSample(Radiance: vec3f) -> vec3f
+{
+    // 📝 Guard against non-finite samples so one degenerate triangle can never poison the accumulation.
+    let Finite = all(Radiance == Radiance) && all(abs(Radiance) < vec3f(1.0e20));
+    return select(vec3f(0.0), Radiance, Finite);
+}
+
+// 📝 Full resolution (scale 1): one pixel per invocation, sums kept in registers — the reference digests.
+//    Reduced trace (scale > 1) or ray statistics: each sample lands in the display pixel its subpixel point falls in;
+//    one invocation owns all pixels of its tile, so writes never race and stay in sample order.
+//    IntegrateSample has ONE call site: every inlined copy of the transport loop costs compile size and speed.
 @compute @workgroup_size(8, 8, 1)
 fn IntegrateRadiance(@builtin(global_invocation_id) InvocationId: vec3u)
 {
-    if (InvocationId.x >= Tracing.Extent.x || InvocationId.y >= Tracing.Extent.y) { return; }
-    let PixelIndex = InvocationId.y * Tracing.Extent.x + InvocationId.x;
-    let MomentIndex = 3u * Tracing.Extent.x * Tracing.Extent.y + PixelIndex;
-    var Sum     = Accumulation[PixelIndex];
-    var Moments = Accumulation[MomentIndex];
+    let Scale      = max(Tracing.Geometry.w, 1u);
+    let Tiles      = (Tracing.Extent.xy + vec2u(Scale - 1u)) / Scale;
+    if (InvocationId.x >= Tiles.x || InvocationId.y >= Tiles.y) { return; }
+    let PixelCount = Tracing.Extent.x * Tracing.Extent.y;
+    let Direct     = Scale == 1u && !RayStatisticsEnabled;
+    let TileIndex  = InvocationId.y * Tracing.Extent.x + InvocationId.x;
+    var Sum        = vec4f(0.0);
+    var Moments    = vec4f(0.0);
+    if (Direct) { Sum = Accumulation[TileIndex]; Moments = Accumulation[3u * PixelCount + TileIndex]; }
     for (var Offset = 0u; Offset < Tracing.Extent.w; Offset++)
     {
-        let Radiance = IntegrateSample(InvocationId.xy, Tracing.Extent.z + Offset);
-        // 📝 Guard against non-finite samples so one degenerate triangle can never poison the accumulation.
-        let Finite   = all(Radiance == Radiance) && all(abs(Radiance) < vec3f(1.0e20));
-        let Accepted = select(vec3f(0.0), Radiance, Finite);
-        Sum = Sum + vec4f(Accepted, 1.0);
+        RayStatistics = vec4u(0u);
+        let Accepted  = AcceptSample(IntegrateSample(InvocationId.xy, Tracing.Extent.z + Offset));
         // 📝 Second moment of luminance, for the denoiser's per-pixel variance. Never feeds back into the sums.
         let Luminance = dot(Accepted, vec3f(0.2126, 0.7152, 0.0722));
-        Moments = Moments + vec4f(Luminance * Luminance, 0.0, 0.0, 0.0);
+        if (Direct)
+        {
+            Sum     = Sum + vec4f(Accepted, 1.0);
+            Moments = Moments + vec4f(Luminance * Luminance, 0.0, 0.0, 0.0);
+            continue;
+        }
+        let Pixel = min(vec2u(ImagePosition), InvocationId.xy * Scale + vec2u(Scale - 1u));
+        if (Pixel.x >= Tracing.Extent.x || Pixel.y >= Tracing.Extent.y) { continue; }
+        let PixelIndex  = Pixel.y * Tracing.Extent.x + Pixel.x;
+        let MomentIndex = 3u * PixelCount + PixelIndex;
+        if (RayStatisticsEnabled)
+        {
+            Accumulation[PixelIndex]  = Accumulation[PixelIndex] + vec4f(vec3f(RayStatistics.xyw), 1.0);
+            Accumulation[MomentIndex] = Accumulation[MomentIndex] + vec4f(f32(RayStatistics.z), 0.0, 0.0, 0.0);
+        }
+        else
+        {
+            Accumulation[PixelIndex]  = Accumulation[PixelIndex] + vec4f(Accepted, 1.0);
+            Accumulation[MomentIndex] = Accumulation[MomentIndex] + vec4f(Luminance * Luminance, 0.0, 0.0, 0.0);
+        }
     }
-    Accumulation[PixelIndex]  = Sum;
-    Accumulation[MomentIndex] = Moments;
+    if (Direct) { Accumulation[TileIndex] = Sum; Accumulation[3u * PixelCount + TileIndex] = Moments; }
 }
 
 // 📝 Camera-centre ray of a pixel for an arbitrary camera (no subpixel offset, no lens).

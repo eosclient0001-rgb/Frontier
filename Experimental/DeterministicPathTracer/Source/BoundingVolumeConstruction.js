@@ -1,7 +1,7 @@
 /*====================================================================================================================================
                                                   BOUNDINGVOLUMECONSTRUCTION.JS
 ====================================================================================================================================*/
-// 🧩 Binned surface-area-heuristic bounding-volume tree over triangles, flattened into 32-byte GPU bounds entries
+// 🧩 Binned SAH bounding-volume trees (triangles and instances), collapsed to 4-wide nodes with 8-bit child bounds
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    CONSTANTS
@@ -9,8 +9,12 @@
 
 const BinCount            = 16;     // [-]  - SAH split candidates per axis
 const LeafTriangleLimit   = 4;      // [-]  - Ranges at or below this size always terminate
+export const LeafPrimitiveCeiling = 15;   // [-]  - Larger SAH leaves are split at the median (stack packs counts in 4 bits)
 const TraversalCostRatio  = 1.0;    // [-]  - Cost of one bounds test relative to one triangle test
-const BoundsEntryStride   = 8;      // [-]  - 32-bit words per entry: min.xyz, LeftOrFirst, max.xyz, PrimitiveCount
+const BoundsEntryStride   = 8;      // [-]  - 32-bit words per binary entry: min.xyz, LeftOrFirst, max.xyz, PrimitiveCount
+export const WideNodeWords = 16;    // [-]  - 32-bit words per 4-wide node (64 B), see EncodeWideNode
+export const EmptyLink     = 0xFFFFFFFF;
+const QuantizationSteps    = 255;   // [-]  - 8-bit child bounds
 
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -28,9 +32,9 @@ function SurfaceArea(MinX, MinY, MinZ, MaxX, MaxY, MaxZ)
 //                                                    PUBLIC FUNCTIONS
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 Positions holds 9 floats per triangle (three world-space corners). Returns the triangle permutation the GPU arrays
-//    must follow and the flattened entries. Inner entries store the first of two adjacent down-link entries; leaves store
-//    the first triangle of their contiguous range. Construction is fully deterministic (no randomized splits).
+// 📝 Positions holds 9 floats per triangle (three corners). Returns the triangle permutation the GPU arrays must follow
+//    and the flattened binary entries. Inner entries store the first of two adjacent down-link entries; leaves store the
+//    first triangle of their contiguous range. Construction is fully deterministic (no randomized splits).
 export function ConstructBoundingVolumes(Positions, TriangleCount)
 {
     const Centroids = new Float32Array(TriangleCount * 3);
@@ -46,6 +50,12 @@ export function ConstructBoundingVolumes(Positions, TriangleCount)
             Centroids[Triangle * 3 + Axis]  = (A + B + C) / 3.0;
         }
     }
+    return ConstructBinaryTree(Bounds, Centroids, TriangleCount, LeafTriangleLimit);
+}
+
+// 📝 Same SAH build over arbitrary boxes (6 floats: min.xyz, max.xyz). Used for the instance tree (one box per vehicle).
+export function ConstructBinaryTree(Bounds, Centroids, TriangleCount, LeafLimit, LeafCeiling = LeafPrimitiveCeiling)
+{
 
     const Order   = new Uint32Array(TriangleCount);
     for (let Triangle = 0; Triangle < TriangleCount; Triangle++) Order[Triangle] = Triangle;
@@ -84,7 +94,7 @@ export function ConstructBoundingVolumes(Positions, TriangleCount)
         // 📝 Evaluate SAH over BinCount uniform centroid bins on each axis; keep the cheapest strict split.
         let BestCost = Count * SurfaceArea(MinX, MinY, MinZ, MaxX, MaxY, MaxZ), BestAxis = -1, BestBin = 0;
         const CentroidMinimum = [CMinX, CMinY, CMinZ], CentroidMaximum = [CMaxX, CMaxY, CMaxZ];
-        if (Count > LeafTriangleLimit)
+        if (Count > LeafLimit)
         {
             for (let Axis = 0; Axis < 3; Axis++)
             {
@@ -133,23 +143,35 @@ export function ConstructBoundingVolumes(Positions, TriangleCount)
             }
         }
 
-        if (BestAxis < 0)
+        if (BestAxis < 0 && Count <= LeafCeiling)
         {
             EntryWords[Word + 3] = First;
             EntryWords[Word + 7] = Count;
             continue;
         }
 
-        // 📝 Deterministic in-place partition by bin index on the chosen axis.
-        const Extent   = CentroidMaximum[BestAxis] - CentroidMinimum[BestAxis];
-        const BinScale = BinCount / Extent;
-        let   Lower = First, Upper = First + Count - 1;
-        while (Lower <= Upper)
+        let Lower = First;
+        if (BestAxis < 0)
         {
-            const Triangle = Order[Lower];
-            const Bin = Math.min(BinCount - 1, Math.floor((Centroids[Triangle * 3 + BestAxis] - CentroidMinimum[BestAxis]) * BinScale));
-            if (Bin < BestBin) { Lower++; }
-            else { Order[Lower] = Order[Upper]; Order[Upper] = Triangle; Upper--; }
+            // 📝 Oversized leaf: split at the median of the widest centroid axis (stable sort keeps ties in order).
+            const Axis = [0, 1, 2].reduce((Best, Candidate) => (CentroidMaximum[Candidate] - CentroidMinimum[Candidate]) > (CentroidMaximum[Best] - CentroidMinimum[Best]) ? Candidate : Best, 0);
+            const Range = Array.from(Order.subarray(First, First + Count)).sort((Left, Right) => Centroids[Left * 3 + Axis] - Centroids[Right * 3 + Axis]);
+            Order.set(Range, First);
+            Lower = First + (Count >> 1);
+        }
+        else
+        {
+            // 📝 Deterministic in-place partition by bin index on the chosen axis.
+            const Extent   = CentroidMaximum[BestAxis] - CentroidMinimum[BestAxis];
+            const BinScale = BinCount / Extent;
+            let   Upper = First + Count - 1;
+            while (Lower <= Upper)
+            {
+                const Triangle = Order[Lower];
+                const Bin = Math.min(BinCount - 1, Math.floor((Centroids[Triangle * 3 + BestAxis] - CentroidMinimum[BestAxis]) * BinScale));
+                if (Bin < BestBin) { Lower++; }
+                else { Order[Lower] = Order[Upper]; Order[Upper] = Triangle; Upper--; }
+            }
         }
         const LowerCount = Lower - First;
 
@@ -176,4 +198,104 @@ export function ConstructBoundingVolumes(Positions, TriangleCount)
         MaximumDepthTier,
         EntryWords: EntryWords.slice(0, EntryCount * BoundsEntryStride)
     };
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    4-WIDE COLLAPSE
+//------------------------------------------------------------------------------------------------------------------------
+
+// 📝 Rounds Value to a float32 the way the GPU will hold it (for the conservative quantization check).
+const Single = Math.fround;
+
+// 📝 Node layout (16 words): [0..2] origin xyz (f32), [3] biased exponents x | y << 8 | z << 16 | child count << 24,
+//    [4..9] quantized child bounds as 4 bytes each (min x, max x, min y, max y, min z, max z; byte k = child k),
+//    [10..11] primitive counts (16 bits per child, 0 = inner child), [12..15] child links (inner: absolute node index;
+//    leaf: first primitive; EmptyLink = no child). Child box = origin + q × 2^e per axis, rounded outward so the
+//    decoded float box always contains the exact one (verified with float32 arithmetic below).
+function EncodeWideNode(Words, NodeIndex, Children, Bounds)
+{
+    const Base = NodeIndex * WideNodeWords;
+    const Floats = new Float32Array(Words.buffer, Words.byteOffset, Words.length);
+    const Lower = [Infinity, Infinity, Infinity], Upper = [-Infinity, -Infinity, -Infinity];
+    for (const Child of Children)
+    {
+        for (let Axis = 0; Axis < 3; Axis++) { Lower[Axis] = Math.min(Lower[Axis], Child.Box[Axis]); Upper[Axis] = Math.max(Upper[Axis], Child.Box[3 + Axis]); }
+    }
+    const Exponents = [0, 0, 0];
+    for (let Axis = 0; Axis < 3; Axis++)
+    {
+        Floats[Base + Axis] = Single(Lower[Axis]);
+        const Span = Math.max(Upper[Axis] - Single(Lower[Axis]), 1e-30);
+        Exponents[Axis] = Math.max(-100, Math.ceil(Math.log2(Span / (QuantizationSteps - 2))));
+    }
+    Words[Base + 3] = ((Exponents[0] + 127) & 255) | (((Exponents[1] + 127) & 255) << 8) | (((Exponents[2] + 127) & 255) << 16) | (Children.length << 24);
+    const Quantized = new Uint8Array(24);   // [axis-major: min x ×4, max x ×4, min y ×4, …]
+    Children.forEach((Child, Slot) =>
+    {
+        for (let Axis = 0; Axis < 3; Axis++)
+        {
+            const Origin = Floats[Base + Axis], Scale = 2 ** Exponents[Axis];
+            let Minimum = Math.max(0, Math.min(QuantizationSteps, Math.floor((Child.Box[Axis] - Origin) / Scale)));
+            let Maximum = Math.max(0, Math.min(QuantizationSteps, Math.ceil((Child.Box[3 + Axis] - Origin) / Scale)));
+            while (Minimum > 0 && Single(Origin + Minimum * Scale) > Child.Box[Axis]) Minimum--;
+            while (Maximum < QuantizationSteps && Single(Origin + Maximum * Scale) < Child.Box[3 + Axis]) Maximum++;
+            if (Single(Origin + Minimum * Scale) > Child.Box[Axis] || Single(Origin + Maximum * Scale) < Child.Box[3 + Axis])
+            {
+                throw new Error('Wide node quantization could not contain a child box');
+            }
+            Quantized[Axis * 8 + Slot]     = Minimum;
+            Quantized[Axis * 8 + 4 + Slot] = Maximum;
+        }
+    });
+    for (let Word = 0; Word < 6; Word++)
+    {
+        Words[Base + 4 + Word] = Quantized[Word * 4] | (Quantized[Word * 4 + 1] << 8) | (Quantized[Word * 4 + 2] << 16) | (Quantized[Word * 4 + 3] << 24);
+    }
+    const Counts = [0, 0, 0, 0], Links = [EmptyLink, EmptyLink, EmptyLink, EmptyLink];
+    Children.forEach((Child, Slot) => { Counts[Slot] = Child.Count; Links[Slot] = Child.Link; });
+    if (Counts.some(Count => Count > LeafPrimitiveCeiling)) throw new Error(`Wide node leaf exceeds ${LeafPrimitiveCeiling} primitives`);
+    Words[Base + 10] = Counts[0] | (Counts[1] << 16);
+    Words[Base + 11] = Counts[2] | (Counts[3] << 16);
+    for (let Slot = 0; Slot < 4; Slot++) Words[Base + 12 + Slot] = Links[Slot];
+}
+
+// 📝 Collapses a binary tree into 4-wide nodes: each wide node takes a binary inner entry and repeatedly opens its
+//    largest-area inner child until it holds 4 children (or only leaves remain). NodeBase offsets every inner link, so
+//    several trees can share one GPU buffer. Deterministic: ties in area resolve by binary entry index.
+export function CollapseWideBounds(Binary, NodeBase = 0)
+{
+    const Words  = Binary.EntryWords;
+    const Floats = new Float32Array(Words.buffer, Words.byteOffset, Words.length);
+    const Box    = Entry => Array.from(Floats.subarray(Entry * BoundsEntryStride, Entry * BoundsEntryStride + 7)).filter((_, Index) => Index !== 3);
+    const Area   = Entry => { const B = Box(Entry); return SurfaceArea(B[0], B[1], B[2], B[3], B[4], B[5]); };
+    const Leaf   = Entry => Words[Entry * BoundsEntryStride + 7] > 0;
+
+    const WideWords = new Uint32Array(Math.max(1, Binary.EntryCount) * WideNodeWords);
+    let NodeCount = 1, MaximumDepth = 1;
+    const Pending = [{ Entry: 0, Node: 0, Depth: 1 }];
+    // 📝 A root that is itself a leaf becomes one wide node with a single leaf child.
+    while (Pending.length)
+    {
+        const { Entry, Node, Depth } = Pending.pop();
+        MaximumDepth = Math.max(MaximumDepth, Depth);
+        let Members = Leaf(Entry) ? [Entry] : [Words[Entry * BoundsEntryStride + 3], Words[Entry * BoundsEntryStride + 3] + 1];
+        while (Members.length < 4)
+        {
+            let Widest = -1, WidestArea = -1;
+            Members.forEach((Member, Index) => { if (!Leaf(Member) && Area(Member) > WidestArea) { Widest = Index; WidestArea = Area(Member); } });
+            if (Widest < 0) break;
+            const Opened = Members[Widest], First = Words[Opened * BoundsEntryStride + 3];
+            Members.splice(Widest, 1, First, First + 1);
+        }
+        const Children = Members.map(Member =>
+        {
+            if (Leaf(Member)) return { Box: Box(Member), Count: Words[Member * BoundsEntryStride + 7], Link: Words[Member * BoundsEntryStride + 3] };
+            const ChildNode = NodeCount++;
+            Pending.push({ Entry: Member, Node: ChildNode, Depth: Depth + 1 });
+            return { Box: Box(Member), Count: 0, Link: NodeBase + ChildNode };
+        });
+        EncodeWideNode(WideWords, Node, Children);
+    }
+    return { Words: WideWords.slice(0, NodeCount * WideNodeWords), NodeCount, MaximumDepth };
 }

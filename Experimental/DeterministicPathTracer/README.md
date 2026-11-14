@@ -30,10 +30,19 @@ WebGPU needs a secure context: `localhost` qualifies, a plain-http LAN address d
 | `span=8`               | Exact samples until reprojected history is gone (default 8)   |
 | `clamp=1.5`            | Clamp history to mean ± γσ of current 3×3 (default 0 = off)   |
 | `sigma=4`              | Denoiser luminance tolerance at 1 spp (÷ n after that)        |
+| `timing=0`             | Do not request GPU timestamp queries (no "GPU per frame" row) |
 
 The top-right counter shows traced frames per second, smoothed ms per frame and samples per frame
 ("Samples per dispatch" selector). It reads "idle" once the target is reached. The loop is paced by
-`requestAnimationFrame`, so FPS cannot exceed the display refresh rate.
+`requestAnimationFrame`, so FPS cannot exceed the display refresh rate. It no longer waits for the GPU after
+every frame: up to 2 frames are in flight, and the frame time is the interval between GPU completions.
+
+**GPU per frame** (inspector status) is measured with WebGPU `timestamp-query` on every pass, e.g.
+`41.2 ms = guides 0.4 · trace 38.1 · denoise 2.7`. Stages: reproject (camera-move history), guides (denoiser
+feature buffers), trace (all integration dispatches of the frame), denoise, display. Values are moving averages
+(weight 0.15) read back through a 3-buffer ring without stalling the loop. If the adapter lacks
+`timestamp-query` (or with `timing=0`) the row says so. Browsers may quantize timestamps, so very short
+stages can read as 0 and are hidden below 0.05 ms.
 
 ## Real-time options (inspector → Real-time)
 
@@ -46,7 +55,7 @@ All are deterministic: no RNG, same camera path → same pixels. Defaults keep t
 | Camera motion       | Reproject history: one compute pass traces the new and previous centre rays, keeps the previous displayed colour where the surface matches (category, position, material, normal). Mirror-like surfaces (sharpest lobe ≤ 0.05) follow the reflected object's virtual image (hit distance + mirror-ray length) and must reflect the same object. |
 | History             | Sample-equivalents of history kept (8–64): half on mirrors, 0 on glossy 0.05–0.4 lobes, full at ≥ 0.4. Weight × (1 − n/span)², span 8: gone after 8 exact samples, so it never drags and the converged image is history-free. |
 | Denoiser            | `DisplayReconstruction.wgsl`: 5 à-trous steps (1–16 px) stopped at normal, plane-distance, material and variance-scaled luminance edges (σ/n). Mirrors use only the 2 finest steps. Strength 1 to 4 spp, fades to 0 at 64 spp. Pairs best with the blue-noise pattern (decorrelated error filters out; shared-pattern error is the same in neighbouring pixels). |
-| Vehicles in scene   | Bakes 1–50 copies into the bounds tree (5 rows × 10 bays, 9.7 m × 3.6 m pitch, ≥ 1.1 m clearance, cycling paints). Rebuilds the tree on change. |
+| Vehicles in scene   | 1–50 instances of one vehicle (5 rows × 10 bays, 9.7 m × 3.6 m pitch, ≥ 1.1 m clearance, cycling paints). One vehicle tree is shared; changing the count rebuilds only the instance tree (≈ 1 ms instead of 5.4 s for 50). |
 
 Measured results and the comparison image: [`Exhibits/DeterministicPathTracer/`](../../Exhibits/DeterministicPathTracer/README.md#real-time-options).
 
@@ -90,8 +99,9 @@ a clear-coated slot, rim family 9 a satin aluminium slot.
 | `Source/VisibilityRasterization.wgsl` | Triangle-ID raster for camera hits                                 |
 | `Source/DisplayReconstruction.wgsl`   | History blend + edge-aware à-trous denoiser (display only)         |
 | `Source/DisplayExposure.wgsl`         | Exposure, ACES fitted tone curve, sRGB                             |
-| `Source/TracingDivision.js`           | WebGPU device, buffers, dispatch, readback, FNV-1a digest          |
-| `Source/BoundingVolumeConstruction.js`| Binned SAH tree (16 bins), 32-byte GPU entries                     |
+| `Source/TracingDivision.js`           | WebGPU device, buffers, instance records, dispatch, readback, digest |
+| `Source/BoundingVolumeConstruction.js`| Binned SAH (16 bins) collapsed to 4-wide nodes, 8-bit child bounds  |
+| `Source/StageTiming.js`               | Per-pass GPU timestamps, non-blocking readback ring, averages       |
 | `Source/VehicleAssembly.js`           | FCT1 decode, creased body normals, 4 mirrored wheel instances      |
 | `Source/StudioSceneAssembly.js`       | Material table, spheres, aimed softboxes, presets                  |
 | `Source/WorkspaceInterface.js`        | Inspector, orbit input, accumulation loop, verification, PNG       |
@@ -100,6 +110,25 @@ a clear-coated slot, rim family 9 a satin aluminium slot.
 | `Assets/ControlVehicle*.facet`        | Blob-identical copies of the SlateReference archives               |
 
 Validation, measurements and captures: [`Exhibits/DeterministicPathTracer/`](../../Exhibits/DeterministicPathTracer/README.md).
+
+## Scene tree and instancing
+
+| Piece             | Layout                                                                                          |
+|-------------------|-------------------------------------------------------------------------------------------------|
+| Vehicle tree      | Binary binned SAH, then collapsed: each node opens its largest-area inner child until it holds 4 children. 3,895 nodes, depth 11 (binary: 15,991 entries, depth 20). |
+| Node (64 bytes)   | Origin (3 × f32), per-axis power-of-two scale, 8-bit min/max per child and axis, 16-bit leaf counts, 4 links. Child boxes are rounded outward and verified in float32 on the host, so no hit is ever culled. Leaves hold ≤ 15 triangles (larger SAH leaves are median-split). |
+| Instance tree     | Same build over one box per bay, 1 instance per leaf. Instance record: world→object and object→world rows, tree root, paint-slot swap (BodyCoat → FleetPaint0–3). |
+| Closest hit       | One loop, one stack for both levels. Children are sorted by entry distance (fixed 5-exchange network on vector lanes, ties keep child order) and pushed farthest first; an instance leaf transforms the ray (not renormalized, so `t` stays a world distance) and pushes a return marker. |
+| Shadow rays       | Same loop without sorting: every crossing counts, glazing attenuates, the product is order-fixed. |
+| Visibility raster | Instanced draw (`instance_index` → record); IDs are `instance << 20 | triangle`. |
+
+The one-vehicle output is **bit-identical** to the binary tree (digest `a0ca494d`, 320×180, 16 spp): same
+triangles, same intersection arithmetic, identity transform. Fleets use object-space rays instead of
+host-transformed triangles, so their digests changed once, and repeat exactly (batch 1 = batch 4).
+
+`Division.MeasureRayStatistics(n)` runs the integrator with a pipeline-override constant that counts closest
+rays, shadow rays, child-box tests and triangle tests per pixel-sample (the normal pipeline compiles the
+counters away).
 
 ## Limits
 
@@ -115,6 +144,9 @@ Validation, measurements and captures: [`Exhibits/DeterministicPathTracer/`](../
 - Bit-exactness is per device and driver. WGSL leaves transcendental precision implementation-defined, so a
   GTX and an RTX need not produce identical bits; each repeats itself exactly.
 - Tested only on SwiftShader (CPU WebGPU) in headless Chromium. No physical GTX/RTX run or timing is claimed.
+  SwiftShader inlines every function and keeps the whole tree in CPU cache, so it rewards small shader code and
+  does not reward compressed nodes or instancing; there the 4-wide instanced build is ≈ 1.2× slower per sample
+  than the binary baked tree. Use the GPU-per-frame row to compare on real hardware.
 - Default display is a WebGPU canvas swap chain. It is **untested**: headless SwiftShader cannot allocate one
   (device lost on first present), so the interface capture uses `present=readback`.
 - Rasterized visibility is not bit-identical to traced visibility: subpixel vertex snapping and coplanar ties

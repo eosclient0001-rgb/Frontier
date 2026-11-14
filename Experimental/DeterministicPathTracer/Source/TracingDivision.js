@@ -4,17 +4,20 @@
 // 🧩 WebGPU lifecycle owner: scene upload, deterministic accumulation dispatch, display resolve, readback and digest
 
 import { RetrieveVehicleArchives } from './VehicleAssembly.js';
-import { ConstructBoundingVolumes } from './BoundingVolumeConstruction.js';
+import { ConstructBoundingVolumes, ConstructBinaryTree, CollapseWideBounds, WideNodeWords, EmptyLink } from './BoundingVolumeConstruction.js';
+import { StageTiming } from './StageTiming.js';
 import { ConstructMaterialTable, PackMaterialTable, ConstructShowcaseSpheres, ConstructSoftboxLights, ResolveParkingBays } from './StudioSceneAssembly.js';
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    CONSTANTS
 //------------------------------------------------------------------------------------------------------------------------
 
-const TracingUniformBytes  = 240;   // [B] - 15 × vec4
+const TracingUniformBytes  = 272;   // [B] - 17 × vec4
 const PointPatternCodes    = Object.freeze({ shared: 0, pixel: 1, bluenoise: 2 });   // 📝 Tracing.Realtime.x
 const DisplayUniformBytes  = 32;    // [B] - 2 × vec4
 const RasterUniformBytes   = 80;    // [B] - 5 × vec4
+const InstanceRecordWords  = 32;    // [-]  - 8 × vec4u per instance (RadianceIntegration.wgsl InstanceRow)
+const InstanceLeafLimit    = 1;     // [-]  - Exactly one instance per instance-tree leaf (the traversal relies on it)
 const AccumulationRegions  = 4;     // [-]  - Exact sums, two ping-pong history regions, luminance moments
 const ReconstructionRegions = 4;    // [-]  - Estimate, two à-trous ping-pong regions, display radiance
 const ReconstructionSlotBytes = 256; // [B] - One uniform block per reconstruction dispatch (offset alignment)
@@ -139,10 +142,13 @@ export class TracingDivision
         const Adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
         if (!Adapter) throw new Error('No WebGPU adapter was granted.');
         this.AdapterDescription = [Adapter.info?.vendor, Adapter.info?.architecture, Adapter.info?.description].filter(Boolean).join(' · ') || 'WebGPU adapter';
+        const TimestampsAvailable = Adapter.features.has('timestamp-query') && new URLSearchParams(location.search).get('timing') !== '0';
         this.Device = await Adapter.requestDevice({
+            requiredFeatures: TimestampsAvailable ? ['timestamp-query'] : [],
             requiredLimits: { maxStorageBuffersPerShaderStage: 8, maxStorageBufferBindingSize: Math.min(Adapter.limits.maxStorageBufferBindingSize, 256 * 1024 * 1024) }
         });
         this.Device.lost.then(Loss => console.error(`WebGPU device lost: ${Loss.message}`));
+        this.Timing = new StageTiming(this.Device, TimestampsAvailable);
 
         this.CanvasFormat = navigator.gpu.getPreferredCanvasFormat();
         if (ReadbackPresentationEnabled)
@@ -215,7 +221,8 @@ export class TracingDivision
 
         this.RasterLayout = Device.createBindGroupLayout({ entries: [
             { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-            { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: ReadOnly }
+            { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: ReadOnly },
+            { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: ReadOnly }
         ] });
         this.RasterPipeline = Device.createRenderPipeline({
             layout:       Device.createPipelineLayout({ bindGroupLayouts: [this.RasterLayout] }),
@@ -256,32 +263,56 @@ export class TracingDivision
         if (!this.TrianglePositionBuffer || this.GeometryVehicleCount !== VehicleCount)
         {
             const ConstructionStart = performance.now();
-            const Vehicle   = TracingDivision.ArrangeFleet(this.Vehicle, ResolveParkingBays(VehicleCount));
-            const BoundingVolumes = ConstructBoundingVolumes(Vehicle.Positions, Vehicle.TriangleCount);
-            const Positions = new Float32Array(Vehicle.TriangleCount * 12);
-            const PositionWords = new Uint32Array(Positions.buffer);
-            const Normals   = new Float32Array(Vehicle.TriangleCount * 12);
-            for (let Slot = 0; Slot < Vehicle.TriangleCount; Slot++)
+            // 📝 One vehicle tree (object space, built once) shared by every parked copy through the instance tree.
+            if (!this.VehicleTree)
             {
-                const Source = BoundingVolumes.Order[Slot], P = Source * 9, O = Slot * 12;
-                const Ax = Vehicle.Positions[P], Ay = Vehicle.Positions[P + 1], Az = Vehicle.Positions[P + 2];
-                Positions.set([Ax, Ay, Az, 0,
-                               Vehicle.Positions[P + 3] - Ax, Vehicle.Positions[P + 4] - Ay, Vehicle.Positions[P + 5] - Az, 0,
-                               Vehicle.Positions[P + 6] - Ax, Vehicle.Positions[P + 7] - Ay, Vehicle.Positions[P + 8] - Az, 0], O);
-                PositionWords[O + 3] = MaterialTable.SlotIndex[Vehicle.Slots[Source]];
-                Normals.set([Vehicle.Normals[P], Vehicle.Normals[P + 1], Vehicle.Normals[P + 2], 0,
-                             Vehicle.Normals[P + 3], Vehicle.Normals[P + 4], Vehicle.Normals[P + 5], 0,
-                             Vehicle.Normals[P + 6], Vehicle.Normals[P + 7], Vehicle.Normals[P + 8], 0], O);
+                const Vehicle = this.Vehicle;
+                const Binary  = ConstructBoundingVolumes(Vehicle.Positions, Vehicle.TriangleCount);
+                const Wide    = CollapseWideBounds(Binary, 0);
+                const Positions = new Float32Array(Vehicle.TriangleCount * 12);
+                const PositionWords = new Uint32Array(Positions.buffer);
+                const Normals   = new Float32Array(Vehicle.TriangleCount * 12);
+                for (let Slot = 0; Slot < Vehicle.TriangleCount; Slot++)
+                {
+                    const Source = Binary.Order[Slot], P = Source * 9, O = Slot * 12;
+                    const Ax = Vehicle.Positions[P], Ay = Vehicle.Positions[P + 1], Az = Vehicle.Positions[P + 2];
+                    Positions.set([Ax, Ay, Az, 0,
+                                   Vehicle.Positions[P + 3] - Ax, Vehicle.Positions[P + 4] - Ay, Vehicle.Positions[P + 5] - Az, 0,
+                                   Vehicle.Positions[P + 6] - Ax, Vehicle.Positions[P + 7] - Ay, Vehicle.Positions[P + 8] - Az, 0], O);
+                    PositionWords[O + 3] = MaterialTable.SlotIndex[Vehicle.Slots[Source]];
+                    Normals.set([Vehicle.Normals[P], Vehicle.Normals[P + 1], Vehicle.Normals[P + 2], 0,
+                                 Vehicle.Normals[P + 3], Vehicle.Normals[P + 4], Vehicle.Normals[P + 5], 0,
+                                 Vehicle.Normals[P + 6], Vehicle.Normals[P + 7], Vehicle.Normals[P + 8], 0], O);
+                }
+                const Bounds = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+                for (let Corner = 0; Corner < Vehicle.Positions.length; Corner += 3)
+                {
+                    for (let Axis = 0; Axis < 3; Axis++)
+                    {
+                        Bounds[Axis] = Math.min(Bounds[Axis], Vehicle.Positions[Corner + Axis]);
+                        Bounds[3 + Axis] = Math.max(Bounds[3 + Axis], Vehicle.Positions[Corner + Axis]);
+                    }
+                }
+                this.TrianglePositionBuffer = this.CreateStorage(Positions, 'TrianglePositions');
+                this.TriangleNormalBuffer   = this.CreateStorage(Normals, 'TriangleNormals');
+                this.VehicleTree = { Wide, BinaryEntries: Binary.EntryCount, BinaryDepth: Binary.MaximumDepthTier, Bounds,
+                                     Milliseconds: Math.round(performance.now() - ConstructionStart) };
             }
-            this.BoundsBuffer?.destroy(); this.TrianglePositionBuffer?.destroy(); this.TriangleNormalBuffer?.destroy();
-            this.BoundsBuffer           = this.CreateStorage(BoundingVolumes.EntryWords, 'BoundsEntries');
-            this.TrianglePositionBuffer = this.CreateStorage(Positions, 'TrianglePositions');
-            this.TriangleNormalBuffer   = this.CreateStorage(Normals, 'TriangleNormals');
+            const Instances = TracingDivision.ConstructInstanceTree(this.VehicleTree, ResolveParkingBays(VehicleCount), MaterialTable.SlotIndex);
+            this.BoundsBuffer?.destroy();
+            this.BoundsBuffer = this.CreateStorage(Instances.Words, 'BoundsEntries');
+            this.GeometryLayout = Instances.Layout;
             this.SceneSummary = {
-                TriangleCount:    Vehicle.TriangleCount,
-                ArchiveFacets:    Vehicle.ArchiveFacets,
-                BoundsEntryCount: BoundingVolumes.EntryCount,
-                BoundsDepthTier:  BoundingVolumes.MaximumDepthTier,
+                TriangleCount:        this.Vehicle.TriangleCount * VehicleCount,
+                VehicleTriangleCount: this.Vehicle.TriangleCount,
+                ArchiveFacets:        this.Vehicle.ArchiveFacets,
+                BoundsEntryCount:     this.VehicleTree.Wide.NodeCount + Instances.NodeCount,
+                BoundsDepthTier:      this.VehicleTree.Wide.MaximumDepth + Instances.MaximumDepth,
+                VehicleNodes:         this.VehicleTree.Wide.NodeCount,
+                InstanceNodes:        Instances.NodeCount,
+                BinaryEntries:        this.VehicleTree.BinaryEntries,
+                BinaryDepth:          this.VehicleTree.BinaryDepth,
+                BoundsBytes:          Instances.Words.byteLength,
                 VehicleCount,
                 ConstructionMilliseconds: Math.round(performance.now() - ConstructionStart)
             };
@@ -349,7 +380,8 @@ export class TracingDivision
         this.FeaturesStale = true;
         this.RasterGroup = this.Device.createBindGroup({ layout: this.RasterLayout, entries: [
             { binding: 0, resource: { buffer: this.RasterUniformBuffer } },
-            { binding: 1, resource: { buffer: this.TrianglePositionBuffer } }
+            { binding: 1, resource: { buffer: this.TrianglePositionBuffer } },
+            { binding: 2, resource: { buffer: this.BoundsBuffer } }
         ] });
         this.DisplayGroup = this.Device.createBindGroup({ layout: this.DisplayLayout, entries: [
             { binding: 0, resource: { buffer: this.DisplayUniformBuffer } },
@@ -378,26 +410,54 @@ export class TracingDivision
         this.Device.queue.submit([Encoder.finish()]);
     }
 
-    // 📝 Copies the assembled vehicle into each parking bay (rotation about +Y, then translation). Bay 0 is the identity,
-    //    so a single vehicle keeps its original float bits.
-    static ArrangeFleet(Vehicle, Bays)
+    // 📝 Instance tree over the parking bays plus one record per instance (instance-tree order). Buffer layout in vec4u:
+    //    [vehicle nodes][instance nodes][instance records]. Each bay is a rotation about +Y then a translation; bay 0 of
+    //    a single vehicle is the exact identity, so its rays keep their float bits. The paint slot swap replaces
+    //    BodyCoat with the bay's fleet paint (what ArrangeFleet baked into copied triangles before instancing).
+    static ConstructInstanceTree(VehicleTree, Bays, SlotIndex)
     {
-        if (Bays.length === 1 && Bays[0].X === 0 && Bays[0].Z === 0 && Bays[0].Yaw === 0) return Vehicle;
-        const Stride = Vehicle.TriangleCount * 9;
-        const Positions = new Float32Array(Stride * Bays.length), Normals = new Float32Array(Stride * Bays.length), Slots = [];
-        Bays.forEach((Bay, BayIndex) =>
+        const Count = Bays.length;
+        const Bounds = new Float32Array(Count * 6), Centroids = new Float32Array(Count * 3);
+        const Transforms = Bays.map(Bay =>
         {
-            const Cosine = Math.cos(Bay.Yaw), Sine = Math.sin(Bay.Yaw), Base = BayIndex * Stride;
-            for (let Corner = 0; Corner < Stride; Corner += 3)
-            {
-                const X = Vehicle.Positions[Corner], Y = Vehicle.Positions[Corner + 1], Z = Vehicle.Positions[Corner + 2];
-                Positions.set([Cosine * X + Sine * Z + Bay.X, Y, -Sine * X + Cosine * Z + Bay.Z], Base + Corner);
-                const NormalX = Vehicle.Normals[Corner], NormalY = Vehicle.Normals[Corner + 1], NormalZ = Vehicle.Normals[Corner + 2];
-                Normals.set([Cosine * NormalX + Sine * NormalZ, NormalY, -Sine * NormalX + Cosine * NormalZ], Base + Corner);
-            }
-            for (const Slot of Vehicle.Slots) Slots.push(Bay.PaintSlot && Slot === 'BodyCoat' ? Bay.PaintSlot : Slot);
+            const Cosine = Bay.Yaw === 0 ? 1 : Math.cos(Bay.Yaw), Sine = Bay.Yaw === 0 ? 0 : Math.sin(Bay.Yaw);
+            return { Cosine, Sine, X: Bay.X, Z: Bay.Z };
         });
-        return { ...Vehicle, TriangleCount: Vehicle.TriangleCount * Bays.length, Positions, Normals, Slots };
+        Transforms.forEach((Transform, Index) =>
+        {
+            const B = VehicleTree.Bounds, Lower = [Infinity, Infinity, Infinity], Upper = [-Infinity, -Infinity, -Infinity];
+            for (let Corner = 0; Corner < 8; Corner++)
+            {
+                const X = B[(Corner & 1) ? 3 : 0], Y = B[(Corner & 2) ? 4 : 1], Z = B[(Corner & 4) ? 5 : 2];
+                const World = [Transform.Cosine * X + Transform.Sine * Z + Transform.X, Y, -Transform.Sine * X + Transform.Cosine * Z + Transform.Z];
+                for (let Axis = 0; Axis < 3; Axis++) { Lower[Axis] = Math.min(Lower[Axis], World[Axis]); Upper[Axis] = Math.max(Upper[Axis], World[Axis]); }
+            }
+            // 📝 Pad by a float32 ulp-scale margin: the vehicle rays are transformed on the GPU in float32.
+            for (let Axis = 0; Axis < 3; Axis++)
+            {
+                const Margin = 1e-5 * Math.max(1, Math.abs(Lower[Axis]), Math.abs(Upper[Axis]));
+                Bounds[Index * 6 + Axis] = Lower[Axis] - Margin; Bounds[Index * 6 + 3 + Axis] = Upper[Axis] + Margin;
+                Centroids[Index * 3 + Axis] = (Lower[Axis] + Upper[Axis]) / 2;
+            }
+        });
+        const VehicleNodes = VehicleTree.Wide.NodeCount;
+        const Binary = ConstructBinaryTree(Bounds, Centroids, Count, InstanceLeafLimit, InstanceLeafLimit);
+        const Wide   = CollapseWideBounds(Binary, VehicleNodes);
+        const RecordBase = (VehicleNodes + Wide.NodeCount) * WideNodeWords;
+        const Words  = new Uint32Array(RecordBase + Count * InstanceRecordWords);
+        const Floats = new Float32Array(Words.buffer);
+        Words.set(VehicleTree.Wide.Words, 0);
+        Words.set(Wide.Words, VehicleNodes * WideNodeWords);
+        for (let Slot = 0; Slot < Count; Slot++)
+        {
+            const Bay = Bays[Binary.Order[Slot]], T = Transforms[Binary.Order[Slot]], O = RecordBase + Slot * InstanceRecordWords;
+            const C = T.Cosine, S = T.Sine;
+            Floats.set([C, 0, -S, -(C * T.X - S * T.Z),  0, 1, 0, 0,  S, 0, C, -(S * T.X + C * T.Z),   // world → object
+                        C, 0, S, T.X,                     0, 1, 0, 0,  -S, 0, C, T.Z], O);               // object → world
+            Words.set([0, SlotIndex.BodyCoat ?? EmptyLink, Bay.PaintSlot ? SlotIndex[Bay.PaintSlot] : EmptyLink, 0], O + 24);
+        }
+        return { Words, NodeCount: Wide.NodeCount, MaximumDepth: Wide.MaximumDepth,
+                 Layout: { InstanceRoot: VehicleNodes, RecordBase: RecordBase / 4, InstanceCount: Count } };
     }
 
     ResolveCurrentCamera()
@@ -413,7 +473,7 @@ export class TracingDivision
         const TargetRegion = 3 - this.HistoryRegion;
         this.WriteTracingUniforms(0, 1, this.AccumulatedCamera, this.HistoryRegion * PixelCount, TargetRegion * PixelCount);
         const Encoder = this.Device.createCommandEncoder();
-        const Compute = Encoder.beginComputePass();
+        const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Reprojection') });
         Compute.setPipeline(this.ReprojectionPipeline);
         Compute.setBindGroup(0, this.IntegrationGroup);
         Compute.dispatchWorkgroups(Math.ceil(this.AccumulationWidth / WorkgroupEdge), Math.ceil(this.AccumulationHeight / WorkgroupEdge));
@@ -457,7 +517,7 @@ export class TracingDivision
         if (this.FeaturesStale)
         {
             this.WriteTracingUniforms(this.SampleCount, 0);
-            const Compute = Encoder.beginComputePass();
+            const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Features') });
             Compute.setPipeline(this.FeaturePipeline);
             Compute.setBindGroup(0, this.IntegrationGroup);
             Compute.dispatchWorkgroups(...Workgroups);
@@ -488,7 +548,7 @@ export class TracingDivision
             ReadRegion = WriteRegion;
         });
         this.Device.queue.writeBuffer(this.ReconstructionUniformBuffer, 0, Bytes);
-        const Compute = Encoder.beginComputePass();
+        const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Reconstruction') });
         Compute.setPipeline(this.GatherPipeline);
         Compute.setBindGroup(0, this.ReconstructionGroups[0]);
         Compute.dispatchWorkgroups(...Workgroups);
@@ -502,10 +562,19 @@ export class TracingDivision
     async RetrieveDisplayRadiance()
     {
         this.FlushPendingReprojection();
-        if (!this.ReconstructionActive()) return this.RetrieveAccumulation();
+        if (!this.ReconstructionActive())
+        {
+            const Encoder = this.Device.createCommandEncoder();
+            const Pending = this.Timing.Encode(Encoder);
+            this.Device.queue.submit([Encoder.finish()]);
+            this.Timing.Collect(Pending);
+            return this.RetrieveAccumulation();
+        }
         const Encoder = this.Device.createCommandEncoder();
         this.EncodeReconstruction(Encoder);
+        const Pending = this.Timing.Encode(Encoder);
         this.Device.queue.submit([Encoder.finish()]);
+        this.Timing.Collect(Pending);
         const RegionBytes = this.AccumulationWidth * this.AccumulationHeight * 16;
         return this.RetrieveBuffer(this.ReconstructionBuffer, RegionBytes, 3 * RegionBytes);
     }
@@ -546,6 +615,9 @@ export class TracingDivision
         Floats.set([...Previous.Origin, 0, ...Previous.Forward, 0, ...Previous.Right, 0, ...Previous.Up, 0], 36);
         Words.set([PointPatternCodes[Configuration.PointPattern] ?? 0, this.RasterizedVisibilityActive() ? 1 : 0, HistoryReadOffset, HistoryWriteOffset], 52);
         Floats.set([Configuration.HistoryCapacity ?? 32, this.HistoryActive ? 1 : 0, 0, 0], 56);
+        const Layout = this.GeometryLayout;
+        Words.set([Layout.InstanceRoot, Layout.RecordBase, Layout.InstanceCount, 1], 60);
+        Floats.set([0, 0, 0, 0], 64);
         this.Device.queue.writeBuffer(this.TracingUniformBuffer, 0, Bytes);
     }
 
@@ -564,7 +636,7 @@ export class TracingDivision
             this.WriteTracingUniforms(FirstSample, Count);
             const Encoder = this.Device.createCommandEncoder();
             if (Rasterized) this.EncodeVisibilityRasterization(Encoder, FirstSample);
-            const Compute = Encoder.beginComputePass();
+            const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Integration', Submitted === 0, Submitted + Count >= SampleBatch) });
             Compute.setPipeline(this.IntegrationPipeline);
             Compute.setBindGroup(0, this.IntegrationGroup);
             Compute.dispatchWorkgroups(Math.ceil(this.AccumulationWidth / WorkgroupEdge), Math.ceil(this.AccumulationHeight / WorkgroupEdge));
@@ -586,7 +658,7 @@ export class TracingDivision
         const Camera = this.ResolveCurrentCamera();
         const Bytes  = new ArrayBuffer(RasterUniformBytes);
         new Float32Array(Bytes).set([...Camera.Origin, 0, ...Camera.Forward, 0, ...Camera.Right, 0, ...Camera.Up, 0], 0);
-        new Uint32Array(Bytes).set([this.AccumulationWidth, this.AccumulationHeight, SampleIndex, 0], 16);
+        new Uint32Array(Bytes).set([this.AccumulationWidth, this.AccumulationHeight, SampleIndex, this.GeometryLayout.RecordBase], 16);
         this.Device.queue.writeBuffer(this.RasterUniformBuffer, 0, Bytes);
         const Raster = Encoder.beginRenderPass({
             colorAttachments: [{ view: this.VisibilityTexture.createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 0 } }],
@@ -594,7 +666,7 @@ export class TracingDivision
         });
         Raster.setPipeline(this.RasterPipeline);
         Raster.setBindGroup(0, this.RasterGroup);
-        Raster.draw(this.SceneSummary.TriangleCount * 3);
+        Raster.draw(this.SceneSummary.VehicleTriangleCount * 3, this.GeometryLayout.InstanceCount);
         Raster.end();
     }
 
@@ -612,12 +684,14 @@ export class TracingDivision
         if (Reconstructed) this.EncodeReconstruction(Encoder);
         const Raster  = Encoder.beginRenderPass({ colorAttachments: [{
             view: this.CanvasContext.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 }
-        }] });
+        }], timestampWrites: this.Timing.PassWrites('Display') });
         Raster.setPipeline(this.DisplayPipeline);
         Raster.setBindGroup(0, this.DisplayGroup);
         Raster.draw(3);
         Raster.end();
+        const Pending = this.Timing.Encode(Encoder);
         this.Device.queue.submit([Encoder.finish()]);
+        this.Timing.Collect(Pending);
     }
 
     async PresentThroughReadback(Exposure)
@@ -650,6 +724,40 @@ export class TracingDivision
     {
         const RegionBytes = this.AccumulationWidth * this.AccumulationHeight * 16;
         return this.RetrieveBuffer(this.AccumulationBuffer, RegionBytes, this.HistoryRegion * RegionBytes);
+    }
+
+    // 📝 Profiling: integrates samples [0, SampleTotal) with the ray-statistics pipeline (counters instead of radiance)
+    //    and returns per pixel-sample means of closest rays, shadow rays, child box tests and triangle tests, plus the
+    //    worst pixel. Clears the accumulation afterwards; the caller re-renders.
+    async MeasureRayStatistics(SampleTotal = 1)
+    {
+        this.FlushPendingReprojection();
+        this.StatisticsPipeline ??= this.Device.createComputePipeline({ layout: this.Device.createPipelineLayout({ bindGroupLayouts: [this.IntegrationLayout] }),
+            compute: { module: this.IntegrationUnit, entryPoint: 'IntegrateRadiance', constants: { RayStatisticsEnabled: 1 } } });
+        this.ResetAccumulation();
+        this.WriteTracingUniforms(0, SampleTotal);
+        const Encoder = this.Device.createCommandEncoder();
+        if (this.RasterizedVisibilityActive()) this.EncodeVisibilityRasterization(Encoder, 0);
+        const Compute = Encoder.beginComputePass();
+        Compute.setPipeline(this.StatisticsPipeline);
+        Compute.setBindGroup(0, this.IntegrationGroup);
+        Compute.dispatchWorkgroups(Math.ceil(this.AccumulationWidth / WorkgroupEdge), Math.ceil(this.AccumulationHeight / WorkgroupEdge));
+        Compute.end();
+        this.Device.queue.submit([Encoder.finish()]);
+        const PixelCount = this.AccumulationWidth * this.AccumulationHeight, RegionBytes = PixelCount * 16;
+        const Counts  = await this.RetrieveBuffer(this.AccumulationBuffer, RegionBytes);
+        const Moments = await this.RetrieveBuffer(this.AccumulationBuffer, RegionBytes, 3 * RegionBytes);
+        const Totals = [0, 0, 0, 0];
+        let Samples = 0, WorstRays = 0;
+        for (let Pixel = 0; Pixel < PixelCount; Pixel++)
+        {
+            Totals[0] += Counts[Pixel * 4]; Totals[1] += Counts[Pixel * 4 + 1]; Totals[2] += Moments[Pixel * 4]; Totals[3] += Counts[Pixel * 4 + 2];
+            Samples += Counts[Pixel * 4 + 3];
+            WorstRays = Math.max(WorstRays, (Counts[Pixel * 4] + Counts[Pixel * 4 + 1]) / Math.max(1, Counts[Pixel * 4 + 3]));
+        }
+        this.ResetAccumulation();
+        const Mean = Value => Value / Math.max(1, Samples);
+        return { ClosestRays: Mean(Totals[0]), ShadowRays: Mean(Totals[1]), BoxTests: Mean(Totals[2]), TriangleTests: Mean(Totals[3]), WorstPixelRays: WorstRays, Samples };
     }
 
     async ComputeAccumulationDigest()

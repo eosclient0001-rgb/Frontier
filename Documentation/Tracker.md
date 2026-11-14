@@ -33,6 +33,15 @@ hardware RT, non-ray paths, reflections, PBR and the statistical limits of the r
   exact; never worse than exact at 1–64 spp. History: reflection motion via the virtual image, fades over 8 samples:
   orbit 1 spp RMS 0.358 → 0.208 (with denoiser), equal to restart from 8 spp (drag gone). Not yet a clean 1 spp
   frame (mirror-floor dither). [Denoiser](../Exhibits/DeterministicPathTracer/README.md#denoiser-and-temporal-reuse).
+- Performance round, steps 1 and 4–5 of 7 (HTML/WebGPU only). ① GPU per-pass timestamps (`StageTiming.js`, inspector
+  "GPU per frame": reproject · guides · trace · denoise · display), loop keeps ≤ 2 frames in flight instead of
+  stalling every frame. ④ 4-wide tree with 8-bit quantized child bounds (64-byte nodes, depth 20 → 11, conservative
+  float32-verified rounding), nearest-first by a fixed sorting network. ⑤ Instancing: one shared vehicle tree +
+  instance tree, paint swap per instance, instanced visibility raster; 50 vehicles rebuild in ≈ 1 ms (was 5.4 s),
+  257 KB of tree (was ≈ 145 MB of tree + copied triangles). One vehicle stays bit-identical (`a0ca494d`); fleets
+  changed digest once and repeat exactly. On SwiftShader it is ≈ 1.2× slower per sample (shader size, not work);
+  real-GPU effect unmeasured. `MeasureRayStatistics` counts rays/box/triangle tests per pixel-sample.
+  [Vehicle count](../Exhibits/DeterministicPathTracer/README.md#vehicle-count-fps-impact).
 
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
