@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frontier · Nanite Virtual Geometry Studio (Project Zero GPU)</title>
+  <link rel="stylesheet" href="./ProjectZero.css" />
+</head>
+<body>
+  <div id="Editor">
+    <!-- Trapezoidal Project Zero Tab Strip -->
+    <header class="tab-strip" id="TabStrip">
+      <div id="ScenarioTabs" style="display:flex; align-items:flex-end; overflow:hidden;">
+        <div class="tab-item active" data-tab="nanite">
+          <span>Nanite Studio</span>
+          <span class="close-tab">×</span>
+        </div>
+        <div class="tab-item" data-tab="hierarchy">
+          <span>Cluster Hierarchy</span>
+          <span class="close-tab">×</span>
+        </div>
+        <div class="tab-item" data-tab="benchmark">
+          <span>LOD Benchmark</span>
+          <span class="close-tab">×</span>
+        </div>
+        <div class="tab-item" data-tab="instancing">
+          <span>Multi-Instance Grid</span>
+          <span class="close-tab">×</span>
+        </div>
+      </div>
+      <button type="button" class="tab-add" id="BtnTabAdd" title="Construct New Virtual Mesh (Ctrl+A)">+</button>
+      <div class="tab-strip-right">
+        <button type="button" class="tab-chip-btn" id="BtnToggleNotch" title="Toggle Command Notch">Controls ▾</button>
+        <button type="button" class="tab-chip-btn" id="BtnFreezeCulling" title="Freeze Culling Camera (F)">Freeze Frustum (F)</button>
+        <button type="button" class="tab-chip-btn" id="BtnResetCamera" title="Reset Camera View (R)">Reset View</button>
+        <label class="tab-chip-btn" style="cursor:pointer;" title="Upload custom Wavefront OBJ">
+          <span>Upload OBJ…</span>
+          <input type="file" id="FileInputOBJ" accept=".obj" style="display:none;" />
+        </label>
+      </div>
+    </header>
+
+    <!-- Collapsible Project Zero Control Notch -->
+    <section class="control-dashboard hidden" id="ControlNotch">
+      <div class="notch-group">
+        <span class="notch-label">Quick Presets</span>
+        <button type="button" class="tab-chip-btn" data-preset="bunny">Stanford Bunny</button>
+        <button type="button" class="tab-chip-btn" data-preset="dragon">Stanford Dragon</button>
+        <button type="button" class="tab-chip-btn" data-preset="mountain">Fractal Canyon</button>
+        <button type="button" class="tab-chip-btn" data-preset="sphere">Geodesic Sphere</button>
+        <button type="button" class="tab-chip-btn" data-preset="column">Gothic Column</button>
+        <button type="button" class="tab-chip-btn" data-preset="suzanne">Suzanne Monkey</button>
+        <button type="button" class="tab-chip-btn" data-preset="instances">25x Instanced Grid</button>
+      </div>
+      <div class="notch-group">
+        <span class="notch-label">Quick View</span>
+        <button type="button" class="tab-chip-btn" data-view-mode="SHADED">Shaded (1)</button>
+        <button type="button" class="tab-chip-btn" data-view-mode="CLUSTER_ID">Cluster ID (2)</button>
+        <button type="button" class="tab-chip-btn" data-view-mode="LOD_LEVEL">LOD Levels (3)</button>
+        <button type="button" class="tab-chip-btn" data-view-mode="WIREFRAME">Wireframe (4)</button>
+        <button type="button" class="tab-chip-btn" data-view-mode="NORMALS">Normals (5)</button>
+        <button type="button" class="tab-chip-btn" data-view-mode="HEATMAP">Heatmap (6)</button>
+      </div>
+    </section>
+
+    <!-- Three-Dock Project Zero Workspace -->
+    <main class="workspace">
+      <!-- LEFT DOCK: SCENE OUTLINER -->
+      <aside class="dock left">
+        <div class="outliner-heading">
+          <h1>OUTLINER</h1>
+          <small>VIRTUAL GEOMETRY</small>
+        </div>
+
+        <div class="stats-pills">
+          <div class="stats-pill"><small>ACTIVE</small><strong id="OutlinerActiveBadge">0</strong></div>
+          <div class="stats-pill"><small>CULLED</small><strong id="OutlinerCulledBadge">0</strong></div>
+          <div class="stats-pill"><small>TOTAL</small><strong id="OutlinerTotalBadge">0</strong></div>
+        </div>
+
+        <div class="outliner-search">
+          <label>
+            <span>⌕</span>
+            <input type="search" id="OutlinerSearchInput" placeholder="Filter clusters or LODs..." />
+          </label>
+        </div>
+
+        <div class="outliner-rows" id="OutlinerRows"></div>
+
+        <footer class="outliner-footer">
+          <span><small>RENDERER</small><br/><b id="FooterFps">60 FPS · 1.2 ms</b></span>
+          <span><small>CLUSTERS</small><br/><b id="FooterClusters">0 / 0</b></span>
+          <span><small>ACTIVE TRIS</small><br/><b id="FooterTris">0 (0% saved)</b></span>
+        </footer>
+      </aside>
+
+      <!-- CENTER DOCK: VIEWPORT -->
+      <section class="dock center">
+        <div class="viewport-toolbar">
+          <div class="viewport-heading-row">
+            <div class="viewport-identity">
+              <h2 id="ViewportMeshTitle">Stanford Bunny (High-Poly)</h2>
+              <span class="viewport-preview-badge" id="ViewportBadge">WebGL2 GPU · Cluster DAG</span>
+            </div>
+            <div class="viewport-modes" id="ViewportModes">
+              <button type="button" class="active" data-view-mode="SHADED" title="PBR Shaded Model with Sun/Ambient Lighting (1)">SHADED</button>
+              <button type="button" data-view-mode="CLUSTER_ID" title="Cluster ID Coloring (2)">CLUSTER ID</button>
+              <button type="button" data-view-mode="LOD_LEVEL" title="LOD Hierarchy Level Color Ramp (3)">LOD LEVEL</button>
+              <button type="button" data-view-mode="WIREFRAME" title="Barycentric Antialiased Wireframe (4)">WIREFRAME</button>
+              <button type="button" data-view-mode="NORMALS" title="Surface Normal Vectors RGB (5)">NORMALS</button>
+              <button type="button" data-view-mode="HEATMAP" title="Screen-Space Pixel Error Heatmap (6)">HEATMAP</button>
+            </div>
+          </div>
+
+          <div class="viewport-action-row">
+            <button type="button" class="viewport-construct" id="BtnConstructOpen" onclick="document.getElementById('ContentDrawer').classList.toggle('open');">
+              <span>+ Construct</span>
+              <kbd>Ctrl+A</kbd>
+            </button>
+
+            <select class="viewport-projection" id="SelectViewProjection" aria-label="Camera Projection">
+              <option value="perspective">3D Perspective (50°)</option>
+              <option value="ortho">Orthographic</option>
+            </select>
+
+            <div class="viewport-chip-group">
+              <button type="button" class="tab-chip-btn active" id="BtnToggleBounds" onclick="document.getElementById('CheckShowBoundingSpheres').click();">Bounds</button>
+              <button type="button" class="tab-chip-btn active" id="BtnToggleBorders" onclick="document.getElementById('CheckHighlightClusterBorders').click();">Seams</button>
+              <button type="button" class="tab-chip-btn" id="BtnToggleWireOverlay" onclick="document.getElementById('CheckWireframeOverlay').click();">Wire Overlay</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="scene-image" id="SceneImageFrame">
+          <div class="gpu-mount" id="GpuViewportMount">
+            <canvas id="GpuCanvas"></canvas>
+          </div>
+
+          <!-- Viewport HUD Overlays -->
+          <div class="viewport-hud">
+            <div class="hud-pill"><span style="color:#589979;">●</span> <span id="HudActiveClusters">0 clusters</span></div>
+            <div class="hud-pill"><span style="color:#30b0c7;">▲</span> <span id="HudRenderedTris">0 tris</span></div>
+            <div class="hud-pill"><span style="color:#ffd60a;">◎</span> <span id="HudScreenError">Err: 0.0px / 1.0px</span></div>
+            <div class="hud-pill frozen hidden" id="HudFreezePill">⚠️ CULLING CAMERA FROZEN · ORBIT TO INSPECT CULLED GEOMETRY</div>
+          </div>
+
+          <div style="position:absolute; top:12px; right:12px; pointer-events:none;">
+            <div class="hud-pill" id="HudFpsPill" style="font-weight:500; color:#589979;">60 FPS</div>
+          </div>
+
+          <!-- LOD Color Ramp Legend -->
+          <div class="hud-legend" id="HudLegend">
+            <span style="font-size:10px; text-transform:uppercase; color:#727684; font-weight:500;">LOD Depth:</span>
+            <div class="legend-item"><span class="legend-swatch" style="background:#34c759;"></span> LOD 0 (Leaf)</div>
+            <div class="legend-item"><span class="legend-swatch" style="background:#30b0c7;"></span> LOD 1</div>
+            <div class="legend-item"><span class="legend-swatch" style="background:#ffd60a;"></span> LOD 2</div>
+            <div class="legend-item"><span class="legend-swatch" style="background:#ff9f0a;"></span> LOD 3</div>
+            <div class="legend-item"><span class="legend-swatch" style="background:#ff375f;"></span> LOD 4+ (Root)</div>
+          </div>
+
+          <!-- Drag and Drop Overlay -->
+          <div class="drop-zone" id="ViewportDropZone">
+            <span style="font-size:42px;">📥</span>
+            <h3>Drop Wavefront .OBJ File Here</h3>
+            <p style="font-size:12px; color:#c4c7d4;">Auto-clusters geometry and builds hierarchical Nanite DAG instantly</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT DOCK: PROPERTY INSPECTOR -->
+      <aside class="dock right">
+        <div class="inspector-header">
+          <h1>INSPECTOR</h1>
+          <small>NANITE VIRTUAL GEOMETRY</small>
+        </div>
+
+        <div class="stats">
+          <div class="stats-card">
+            <small>Active Clusters</small>
+            <strong id="StatActiveClusters">0</strong>
+            <span class="subtext" id="StatTotalClusters">of 0 total</span>
+          </div>
+          <div class="stats-card">
+            <small>Rendered Tris</small>
+            <strong id="StatRenderedTris">0</strong>
+            <span class="subtext" id="StatReductionPct">-0% saved</span>
+          </div>
+          <div class="stats-card">
+            <small>Max Screen Error</small>
+            <strong id="StatScreenErrorMax">0.00 px</strong>
+            <span class="subtext">Tol: <span id="StatTargetTolerance">1.0 px</span></span>
+          </div>
+          <div class="stats-card">
+            <small>Performance</small>
+            <strong id="StatFps">60 FPS</strong>
+            <span class="subtext" id="StatFrameTime">1.2 ms</span>
+          </div>
+        </div>
+
+        <div class="inspector-scroll">
+          <!-- CARD 1: NANITE VIRTUAL GEOMETRY / LOD -->
+          <div class="property-card">
+            <div class="card-head">
+              <h3>Virtual Geometry &amp; LOD Heuristic</h3>
+            </div>
+            <div class="card-body">
+              <div class="field-row">
+                <label for="SliderPixelTolerance" title="Maximum allowed geometric deviation in screen pixels before selecting child cluster">Error Tolerance</label>
+                <div class="field-split">
+                  <input type="range" id="SliderPixelTolerance" min="0.2" max="10.0" step="0.1" value="1.0" />
+                  <input type="number" id="NumPixelTolerance" min="0.2" max="10.0" step="0.1" value="1.0" />
+                </div>
+              </div>
+
+              <div class="field-row">
+                <label for="SliderLodBias" title="Biases continuous LOD selection shallower or deeper">LOD Bias</label>
+                <div class="field-split">
+                  <input type="range" id="SliderLodBias" min="-3.0" max="3.0" step="0.1" value="0.0" />
+                  <input type="number" id="NumLodBias" min="-3.0" max="3.0" step="0.1" value="0.0" />
+                </div>
+              </div>
+
+              <div class="field-row">
+                <label for="SelectForcedLod" title="Force a specific hierarchy LOD level across the whole mesh instead of continuous cut">LOD Override</label>
+                <select id="SelectForcedLod" style="flex:1.5;">
+                  <option value="-1">Continuous Nanite Cut</option>
+                  <option value="0">Force LOD 0 (Leaf)</option>
+                  <option value="1">Force LOD 1</option>
+                  <option value="2">Force LOD 2</option>
+                  <option value="3">Force LOD 3</option>
+                </select>
+              </div>
+
+              <div class="field-row" style="margin-top:4px;">
+                <label>Target Cluster Size</label>
+                <span style="font-size:11px; color:#eff4cf; font-weight:500;">~64 triangles / cluster</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD 2: CULLING SYSTEMS -->
+          <div class="property-card">
+            <div class="card-head">
+              <h3>Cluster Culling Systems</h3>
+            </div>
+            <div class="card-body">
+              <div class="field-row">
+                <label for="CheckFrustumCulling" title="6-plane view frustum culling on cluster bounding spheres">View Frustum Culling</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="CheckFrustumCulling" checked />
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label for="CheckConeCulling" title="Backface culling based on cluster normal cone">Backface Normal Cone</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="CheckConeCulling" checked />
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label for="CheckFreezeCulling" title="Freeze culling viewpoint so you can orbit freely to inspect culled geometry">Freeze Culling Camera (F)</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="CheckFreezeCulling" />
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label for="CheckShowFrustumWireframe">Draw Frozen Frustum 3D</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="CheckShowFrustumWireframe" checked />
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label for="CheckShowBoundingSpheres">Draw Bounding Spheres</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="CheckShowBoundingSpheres" />
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD 3: RENDER & DEBUG MODES -->
+          <div class="property-card">
+            <div class="card-head">
+              <h3>Render &amp; Debug Overlays</h3>
+            </div>
+            <div class="card-body">
+              <div class="field-row">
+                <label for="CheckHighlightClusterBorders">Highlight Cluster Borders</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="CheckHighlightClusterBorders" checked />
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label for="CheckWireframeOverlay">Wireframe Overlay (W)</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="CheckWireframeOverlay" />
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label for="SliderWireframeOpacity">Wireframe Opacity</label>
+                <div class="field-split">
+                  <input type="range" id="SliderWireframeOpacity" min="0.1" max="1.0" step="0.05" value="0.65" />
+                  <input type="number" id="NumWireframeOpacity" min="0.1" max="1.0" step="0.05" value="0.65" />
+                </div>
+              </div>
+
+              <div class="field-row">
+                <label for="CheckShowGroundGrid">Show Ground Grid</label>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="CheckShowGroundGrid" checked />
+                  <span class="slider-toggle"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD 4: MULTI-INSTANCE VIRTUAL FIELD -->
+          <div class="property-card">
+            <div class="card-head">
+              <h3>Multi-Instance Virtual Field</h3>
+            </div>
+            <div class="card-body">
+              <div class="field-row">
+                <label for="SliderInstances">Instance Grid Count</label>
+                <div class="field-split">
+                  <input type="range" id="SliderInstances" min="1" max="100" step="1" value="1" />
+                  <input type="number" id="NumInstances" min="1" max="100" step="1" value="1" />
+                </div>
+              </div>
+              <small style="color:#727684; line-height:1.4;">Stresses primitive &amp; cluster-level instancing. Hundreds of instances can be virtualized simultaneously with sub-pixel cluster culling.</small>
+            </div>
+          </div>
+
+          <!-- CARD 5: CLUSTER DAG INSPECTOR -->
+          <div class="property-card">
+            <div class="card-head">
+              <h3>Cluster DAG Inspector</h3>
+            </div>
+            <div class="card-body" id="ClusterInspectorBody">
+              <p class="empty-note">Click a cluster in the viewport or outliner to inspect.</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- BOTTOM DRAWER: CONTENT BROWSER -->
+    <section class="content-drawer" id="ContentDrawer">
+      <div class="drawer-notch-handle" id="BtnToggleDrawer">
+        <span>▲</span>
+        <span>CONTENT BROWSER · MESH ASSETS &amp; PRESETS</span>
+        <span>▲</span>
+      </div>
+      <div class="drawer-content">
+        <div class="asset-card" data-preset="bunny">
+          <div class="asset-thumb">🐰</div>
+          <strong>Stanford Bunny</strong>
+          <small style="color:#7b7f8c; font-size:10px;">Organic High-Poly</small>
+        </div>
+        <div class="asset-card" data-preset="dragon">
+          <div class="asset-thumb">🐉</div>
+          <strong>Stanford Dragon</strong>
+          <small style="color:#7b7f8c; font-size:10px;">Serpentine Coils</small>
+        </div>
+        <div class="asset-card" data-preset="mountain">
+          <div class="asset-thumb">🏔️</div>
+          <strong>Fractal Canyon</strong>
+          <small style="color:#7b7f8c; font-size:10px;">Heightfield Relief</small>
+        </div>
+        <div class="asset-card" data-preset="sphere">
+          <div class="asset-thumb">🌐</div>
+          <strong>Geodesic Sphere</strong>
+          <small style="color:#7b7f8c; font-size:10px;">20k Triangle Dome</small>
+        </div>
+        <div class="asset-card" data-preset="column">
+          <div class="asset-thumb">🏛️</div>
+          <strong>Gothic Column</strong>
+          <small style="color:#7b7f8c; font-size:10px;">Fluted Classical</small>
+        </div>
+        <div class="asset-card" data-preset="suzanne">
+          <div class="asset-thumb">🐵</div>
+          <strong>Suzanne Monkey</strong>
+          <small style="color:#7b7f8c; font-size:10px;">Curved Facial Mesh</small>
+        </div>
+        <div class="asset-card" data-preset="instances">
+          <div class="asset-thumb">🏙️</div>
+          <strong>25x Instanced Grid</strong>
+          <small style="color:#7b7f8c; font-size:10px;">Multi-Mesh Field</small>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module">
+    import { NaniteStudioController } from './Engine/NaniteStudioController.js';
+    window.addEventListener('DOMContentLoaded', () => {
+      window.naniteStudio = new NaniteStudioController();
+    });
+  </script>
+</body>
+</html>
