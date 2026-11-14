@@ -189,6 +189,56 @@ each other. One 4-wide vehicle tree is shared by all bays; a 4-wide instance tre
   way to check it on hardware.
 - FPS at one sample per frame is 1 / (s/spp). SwiftShader seconds are not GPU timings.
 
+## Trace resolution (render fewer rays, upsample)
+
+Phase `tracescale` (160×90 Hero, one sample index per frame as the loop runs at batch 1). `trace=2` traces one ray per
+2×2 tile, `trace=4` one per 4×4; the shared subpixel point spans the tile, so every 4 (16) frames put exactly one
+sample in every pixel. Pixels without their own sample are filled from sampled neighbours (tent × material × normal ×
+plane guides). Without the denoiser, sparse pixels also take the guided neighbourhood mean as a prior worth
+3·(1 − n/16)² samples; with the denoiser on, that prior is scaled by (1 − strength), because stacking both measured
+worse. Error = mean |Δ| in 8-bit display levels vs the 256-spp **full-resolution** reference, upsampled / denoised:
+
+![Trace resolution comparison](Images/TraceScaleComparison.png)
+
+| Frames | Full · 593 ms/frame | ½ · 181 ms/frame (3.3× faster) | ¼ · 48 ms/frame (12× faster) |
+|---|---|---|---|
+| 1 | 6.29 / 5.03 | 6.08 / 5.89 | 7.79 / 7.57 |
+| 2 | 5.04 / 4.44 | 6.06 / 5.83 | 7.79 / 7.39 |
+| 4 | 3.18 / 3.08 | 4.82 / 4.23 | 6.81 / 6.32 |
+| 8 | 2.12 / 2.10 | 3.81 / 3.04 | 6.28 / 5.35 |
+| 16 | 1.67 / 1.68 | 3.07 / 3.12 | 5.75 / 3.78 |
+| 64 | 0.71 / 0.71 | 1.98 / 1.96 | 3.60 / 3.11 |
+
+- **Per frame** ½ is 3.3× cheaper and its first frame is as good as a full one (6.08 vs 6.29 upsampled). **At equal
+  time** it is about even with full resolution (½ at 8 frames ≈ 1.45 s: 3.04 denoised; full at 2 frames ≈ 1.19 s: 4.44,
+  at 4 frames ≈ 2.37 s: 3.08). The gain is frame rate and responsiveness, not a better still.
+- **Converged:** the same number of samples per pixel is slightly worse than full resolution (½ at 64 frames = 16 spp:
+  1.98 vs 1.67), because each pixel gets one sample per block of 4 indices instead of all of them. It keeps converging.
+- **Deterministic:** ½ after 8 frames, batch 1 = batch 8 for the sums (`0fabd869`) and the denoised display
+  (`1bf04933`). Full resolution is untouched: `a0ca494d` (320×180, 16 spp) and denoised `c153d6c4`.
+- ⚠️ At ½ the four pixels of a tile hold different sample indices, so the mirror-like floor shows a 2-pixel dither
+  (different softbox points) where full resolution shows coherent bands. The denoiser leaves mirrors mostly alone
+  (only its two finest steps). ¼ is for previews: at 1–4 frames most pixels are filled, i.e. soft.
+- Rasterized visibility is off at reduced resolution (one ray per tile has no raster pixel to match).
+
+## Measured on hardware (user report, 2026-11-13)
+
+NVIDIA Turing, Chrome WebGPU, 421 × 444 px canvas (0.19 MP), **50 vehicles** (1,253,400 triangles, instanced),
+1 sample per frame. Before the tree and instancing work, the same machine reported 12 FPS (80 ms) at 50 vehicles
+(canvas size then unknown).
+
+| Setting | FPS | GPU per frame |
+|---|---|---|
+| Defaults (shared pattern, traced visibility, no denoiser) | ≈ 40 | 25.0 ms = trace 25.0 |
+| Denoiser + reprojection + blue-noise | ≈ 30 | 32.2 ms = trace 32.0 · denoise 0.1 · display 0.1 |
+| Pattern: shared / per-pixel / blue-noise | 38–40 / 33–34 / 32–33 | — |
+| Visibility: traced / rasterized | 34 / 33–34 | — |
+
+- The frame is all trace; the denoiser and display cost 0.1 ms each.
+- Decorrelated patterns cost ≈ 15 %: with the shared pattern, neighbouring pixels send their bounce and shadow rays in
+  the same directions, so GPU threads stay coherent. Per-pixel and blue-noise break that coherence.
+- Rasterized visibility saves nothing: it replaces only the camera ray (≈ 1 of 8 rays per sample).
+
 ### 🐞 Bias found and fixed by claim 3
 
 | | Before | After |
@@ -205,7 +255,7 @@ diffuse energy. Clamping F90 by F0 is the standard fix; F0 ≥ 0.02 materials ar
 ```sh
 cd Exhibits/DeterministicPathTracer/Code
 npm install                      # puppeteer-core + @sparticuz/chromium (unpacked to ChromiumRuntime/)
-node RunValidation.mjs all       # or: quadrature | analytic | determinism | convergence | chart | captures | interface | realtime | patterns | fleet | reconstruction
+node RunValidation.mjs all       # or: quadrature | analytic | determinism | convergence | chart | captures | interface | realtime | patterns | fleet | reconstruction | tracescale
 ANALYTIC_SAMPLES=256 node RunValidation.mjs analytic   # shorter analytic run
 ```
 

@@ -983,13 +983,17 @@ fn ResolvePixelScramble(PixelCoordinate: vec2u) -> u32
 //    S = 1 is the original per-pixel integration, bit for bit.
 fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
 {
-    PixelScramble   = ResolvePixelScramble(PixelCoordinate);
-    BlueNoiseActive = Tracing.Realtime.x == 2u;
-    BlueNoiseOrigin = PixelCoordinate;
+    // 📝 The subpixel pair is never pixel-keyed, so it can be drawn first; the pixel keys then follow the display pixel
+    //    the sample lands in (scale 1: the invocation's own pixel, bit for bit as before).
     let Extent   = vec2f(f32(Tracing.Extent.x), f32(Tracing.Extent.y));
-    let Scale    = f32(max(Tracing.Geometry.w, 1u));
+    let ScaleInt = max(Tracing.Geometry.w, 1u);
+    let Scale    = f32(ScaleInt);
     let Subpixel = QuadraturePair(SampleIndex, PairSubpixel);
     ImagePosition = vec2f(PixelCoordinate) * Scale + Subpixel * Scale;
+    let KeyPixel = select(min(vec2u(ImagePosition), PixelCoordinate * ScaleInt + vec2u(ScaleInt - 1u)), PixelCoordinate, ScaleInt == 1u);
+    PixelScramble   = ResolvePixelScramble(KeyPixel);
+    BlueNoiseActive = Tracing.Realtime.x == 2u;
+    BlueNoiseOrigin = KeyPixel;
     let Ndc      = (ImagePosition / Extent) * 2.0 - vec2f(1.0);
     var Origin   = Tracing.CameraOrigin.xyz;
     var Direction = normalize(Tracing.CameraForward.xyz + Ndc.x * Tracing.CameraRight.xyz - Ndc.y * Tracing.CameraUp.xyz);

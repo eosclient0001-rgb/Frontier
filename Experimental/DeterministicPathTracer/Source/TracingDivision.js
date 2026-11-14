@@ -499,12 +499,33 @@ export class TracingDivision
     //    otherwise it shows the exact sums directly.
     DenoiseStrength()
     {
-        return this.Configuration?.DenoiseEnabled ? ResolveDenoiseStrength(this.SampleCount) : 0;
+        return this.Configuration?.DenoiseEnabled ? ResolveDenoiseStrength(this.PixelSamples()) : 0;
     }
 
+    // 📝 A reduced trace always reconstructs: until every pixel has a sample, holes are upsampled from neighbours.
     ReconstructionActive()
     {
-        return this.HistoryActive || this.DenoiseStrength() > 0;
+        return this.HistoryActive || this.DenoiseStrength() > 0 || this.TraceScale() > 1;
+    }
+
+    // 📝 Trace resolution: 1 = one invocation per pixel (reference), 2 = per 2 × 2 tile, 4 = per 4 × 4 tile. The shared
+    //    subpixel pair is a (0,2)-sequence, so every scale² consecutive samples land once in each pixel of every tile.
+    TraceScale()
+    {
+        const Scale = this.Configuration?.TraceScale ?? 1;
+        return Scale === 2 || Scale === 4 ? Scale : 1;
+    }
+
+    // 📝 Samples per display pixel (SampleCount counts dispatched sample indices).
+    PixelSamples()
+    {
+        return this.SampleCount / (this.TraceScale() * this.TraceScale());
+    }
+
+    TraceWorkgroups()
+    {
+        const Scale = this.TraceScale();
+        return [Math.ceil(Math.ceil(this.AccumulationWidth / Scale) / WorkgroupEdge), Math.ceil(Math.ceil(this.AccumulationHeight / Scale) / WorkgroupEdge)];
     }
 
     // 📝 ① Guide buffers when the camera or scene changed, ② gather (history clamp + fade), ③ à-trous steps when the
@@ -534,8 +555,8 @@ export class TracingDivision
             const Base = Slot * ReconstructionSlotBytes / 4;
             new Uint32Array(Bytes).set([Width, Height, Step, Mode, ReadOffset, WriteOffset, HistoryOffset, this.SampleCount], Base);
             new Float32Array(Bytes).set([Configuration.HistoryClamp ?? 0, Configuration.HistorySpan ?? 8, Strength,
-                                         (Configuration.DenoiseLuminanceSigma ?? 4) / Math.max(this.SampleCount, 1),
-                                         Footprint, 64, 2, 0], Base + 8);
+                                         (Configuration.DenoiseLuminanceSigma ?? 4) / Math.max(this.PixelSamples(), 1),
+                                         Footprint, 64, 2, this.TraceScale()], Base + 8);
         };
         const HistoryMode = this.HistoryActive ? 1 : 0;
         WriteSlot(0, 0, HistoryMode | 4 | (Steps.length ? 0 : 2), 0, Steps.length ? 0 : 3 * PixelCount);
@@ -616,7 +637,7 @@ export class TracingDivision
         Words.set([PointPatternCodes[Configuration.PointPattern] ?? 0, this.RasterizedVisibilityActive() ? 1 : 0, HistoryReadOffset, HistoryWriteOffset], 52);
         Floats.set([Configuration.HistoryCapacity ?? 32, this.HistoryActive ? 1 : 0, 0, 0], 56);
         const Layout = this.GeometryLayout;
-        Words.set([Layout.InstanceRoot, Layout.RecordBase, Layout.InstanceCount, 1], 60);
+        Words.set([Layout.InstanceRoot, Layout.RecordBase, Layout.InstanceCount, this.TraceScale()], 60);
         Floats.set([0, 0, 0, 0], 64);
         this.Device.queue.writeBuffer(this.TracingUniformBuffer, 0, Bytes);
     }
@@ -639,18 +660,20 @@ export class TracingDivision
             const Compute = Encoder.beginComputePass({ timestampWrites: this.Timing.PassWrites('Integration', Submitted === 0, Submitted + Count >= SampleBatch) });
             Compute.setPipeline(this.IntegrationPipeline);
             Compute.setBindGroup(0, this.IntegrationGroup);
-            Compute.dispatchWorkgroups(Math.ceil(this.AccumulationWidth / WorkgroupEdge), Math.ceil(this.AccumulationHeight / WorkgroupEdge));
+            Compute.dispatchWorkgroups(...this.TraceWorkgroups());
             Compute.end();
             this.Device.queue.submit([Encoder.finish()]);
         }
         this.SampleCount += SampleBatch;
     }
 
-    // 📝 Raster replaces only pinhole camera rays to the vehicle; a thick lens or a hidden vehicle uses the traced path.
+    // 📝 Raster replaces only pinhole camera rays to the vehicle; a thick lens, a hidden vehicle or a reduced trace
+    //    resolution (one ray per tile) uses the traced path.
     RasterizedVisibilityActive()
     {
         const Configuration = this.Configuration;
-        return Boolean(Configuration?.VisibilityRasterEnabled) && Configuration.ApertureRadius <= 0 && Configuration.VehicleEnabled !== false;
+        return Boolean(Configuration?.VisibilityRasterEnabled) && Configuration.ApertureRadius <= 0 && Configuration.VehicleEnabled !== false
+            && this.TraceScale() === 1;
     }
 
     EncodeVisibilityRasterization(Encoder, SampleIndex)
@@ -741,7 +764,7 @@ export class TracingDivision
         const Compute = Encoder.beginComputePass();
         Compute.setPipeline(this.StatisticsPipeline);
         Compute.setBindGroup(0, this.IntegrationGroup);
-        Compute.dispatchWorkgroups(Math.ceil(this.AccumulationWidth / WorkgroupEdge), Math.ceil(this.AccumulationHeight / WorkgroupEdge));
+        Compute.dispatchWorkgroups(...this.TraceWorkgroups());
         Compute.end();
         this.Device.queue.submit([Encoder.finish()]);
         const PixelCount = this.AccumulationWidth * this.AccumulationHeight, RegionBytes = PixelCount * 16;

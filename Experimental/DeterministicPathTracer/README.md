@@ -17,6 +17,7 @@ WebGPU needs a secure context: `localhost` qualifies, a plain-http LAN address d
 | `camera=Hero`          | `Hero`, `Profile`, `Front`, `Spheres`, `Rear`, `Fleet`        |
 | `paint=Racing`         | `Authored`, `Racing`, `Midnight`, `Pearl`, `Graphite`         |
 | `scale=0.5`            | Render scale relative to the viewport (default 0.75)          |
+| `trace=2`              | Trace resolution: 1 ray per 2×2 (`2`) or 4×4 (`4`) pixels     |
 | `target=4096`          | Samples per pixel before the loop idles (default 1024)        |
 | `width=…&height=…`     | Fixed accumulation size (validation)                          |
 | `validation=1`         | No render loop; exposes `window.DeterministicTracing`         |
@@ -55,6 +56,7 @@ All are deterministic: no RNG, same camera path → same pixels. Defaults keep t
 | Camera motion       | Reproject history: one compute pass traces the new and previous centre rays, keeps the previous displayed colour where the surface matches (category, position, material, normal). Mirror-like surfaces (sharpest lobe ≤ 0.05) follow the reflected object's virtual image (hit distance + mirror-ray length) and must reflect the same object. |
 | History             | Sample-equivalents of history kept (8–64): half on mirrors, 0 on glossy 0.05–0.4 lobes, full at ≥ 0.4. Weight × (1 − n/span)², span 8: gone after 8 exact samples, so it never drags and the converged image is history-free. |
 | Denoiser            | `DisplayReconstruction.wgsl`: 5 à-trous steps (1–16 px) stopped at normal, plane-distance, material and variance-scaled luminance edges (σ/n). Mirrors use only the 2 finest steps. Strength 1 to 4 spp, fades to 0 at 64 spp. Pairs best with the blue-noise pattern (decorrelated error filters out; shared-pattern error is the same in neighbouring pixels). |
+| Trace resolution    | ½ or ¼: each invocation traces one 2×2 / 4×4 tile; the shared subpixel point spans the tile and the sample lands in the pixel it falls in. The subpixel pair is a (0,2)-sequence, so every 4 (16) consecutive frames put exactly one sample in each pixel of every tile — no pixel is skipped or doubled, and all tiles stay coherent. Until a pixel has its own sample, the gather pass fills it with a tent-weighted mean of sampled neighbours within ±scale, weighted by the full-resolution guides (material, normal, plane distance); valid reprojected history outweighs the fill. The counter and target count samples **per pixel** (a ½ frame = 0.25 spp). Full resolution is untouched (`a0ca494d`). Rasterized visibility is off at reduced resolution. |
 | Vehicles in scene   | 1–50 instances of one vehicle (5 rows × 10 bays, 9.7 m × 3.6 m pitch, ≥ 1.1 m clearance, cycling paints). One vehicle tree is shared; changing the count rebuilds only the instance tree (≈ 1 ms instead of 5.4 s for 50). |
 
 Measured results and the comparison image: [`Exhibits/DeterministicPathTracer/`](../../Exhibits/DeterministicPathTracer/README.md#real-time-options).

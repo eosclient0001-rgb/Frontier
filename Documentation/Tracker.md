@@ -40,8 +40,14 @@ hardware RT, non-ray paths, reflections, PBR and the statistical limits of the r
   instance tree, paint swap per instance, instanced visibility raster; 50 vehicles rebuild in ≈ 1 ms (was 5.4 s),
   257 KB of tree (was ≈ 145 MB of tree + copied triangles). One vehicle stays bit-identical (`a0ca494d`); fleets
   changed digest once and repeat exactly. On SwiftShader it is ≈ 1.2× slower per sample (shader size, not work);
-  real-GPU effect unmeasured. `MeasureRayStatistics` counts rays/box/triangle tests per pixel-sample.
+  user's Turing GPU: 50 vehicles 12 → ≈ 40 FPS (trace 25 ms, 0.19 MP). `MeasureRayStatistics` counts rays/box/triangle tests per pixel-sample.
   [Vehicle count](../Exhibits/DeterministicPathTracer/README.md#vehicle-count-fps-impact).
+- Step 2, trace resolution (`trace=2|4`): one ray per 2×2 / 4×4 tile; the (0,2)-sequence subpixel point gives every
+  pixel exactly one sample per 4 / 16 frames. Holes and sparse pixels are upsampled from sampled neighbours with the
+  full-resolution guides (fades out by 16 spp; yields to the denoiser). ½: 3.3× cheaper frames, first frame as good as
+  full (6.08 vs 6.29 levels), even with full at equal time; converged slightly worse per spp (1.98 vs 1.67 at 16 spp).
+  Deterministic (batch 1 = 8); full resolution unchanged (`a0ca494d`, `c153d6c4`). Mirror floor shows a 2-px dither.
+  [Trace resolution](../Exhibits/DeterministicPathTracer/README.md#trace-resolution-render-fewer-rays-upsample).
 
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 

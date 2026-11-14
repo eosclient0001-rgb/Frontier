@@ -1080,6 +1080,131 @@ async function RetainReconstructionImages(Browser, Server, Hero, PriorSamples)
 
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                    TRACE RESOLUTION
+//------------------------------------------------------------------------------------------------------------------------
+
+const TraceScales      = [1, 2, 4];
+const TraceFrameCounts = [1, 2, 4, 8, 16, 64];   // [dispatches] - one sample index per frame, as the loop runs at batch 1
+
+// 📝 Reduced trace resolution (`trace=2|4`): one ray per scale² tile per frame, holes upsampled from sampled neighbours.
+//    Compares frames, not samples: the same number of displayed frames at each scale against the 256-spp full-resolution
+//    reference, plus the time per frame — so "same frame rate, worse image" and "same image, faster" are both visible.
+async function ValidateTraceScale(Browser, Server)
+{
+    const Width = 160, Height = 90, ReferenceSamples = 256;
+    const Page = await OpenPrototype(Browser, Server, `width=${Width}&height=${Height}&camera=Hero`);
+    await Page.evaluate(async ReferenceSamples =>
+    {
+        const Tracing = window.DeterministicTracing;
+        Tracing.ApplyConfiguration({ TraceScale: 1, DenoiseEnabled: false });
+        await Tracing.RenderFromZero(ReferenceSamples, 16);
+    }, ReferenceSamples);
+    const Reference = await RetrieveDisplayedTexels(Page, false);
+
+    const Scales = {};
+    for (const TraceScale of TraceScales)
+    {
+        // Time per frame: median of 5 single-index dispatches after a warm-up.
+        const FrameMilliseconds = await Page.evaluate(async TraceScale =>
+        {
+            const Tracing = window.DeterministicTracing, Division = Tracing.Division;
+            Tracing.ApplyConfiguration({ TraceScale, DenoiseEnabled: false });
+            await Tracing.RenderFromZero(1, 1);
+            const Timings = [];
+            for (let Frame = 0; Frame < 5; Frame++)
+            {
+                const Start = performance.now();
+                Division.AdvanceSamples(1);
+                await Division.Device.queue.onSubmittedWorkDone();
+                Timings.push(performance.now() - Start);
+            }
+            return Timings.sort((A, B) => A - B)[2];
+        }, TraceScale);
+        const Curve = [];
+        await Page.evaluate(() => window.DeterministicTracing.Division.ResetAccumulation());
+        for (const Frames of TraceFrameCounts)
+        {
+            await Page.evaluate(async Frames => window.DeterministicTracing.ContinueSamples(Frames), Frames);
+            const PixelSamples = await Page.evaluate(() => window.DeterministicTracing.Division.PixelSamples());
+            Curve.push({ Frames, PixelSamples,
+                         Upsampled: MeasureDisplayedError(await RetrieveDisplayedTexels(Page, false), Reference, Width, Height),
+                         Denoised:  MeasureDisplayedError(await RetrieveDisplayedTexels(Page, true),  Reference, Width, Height) });
+            console.log(`[tracescale] ${TraceScale} ${JSON.stringify(Curve.at(-1))}`);
+        }
+        Scales[TraceScale] = { FrameMilliseconds: +FrameMilliseconds.toFixed(1), Curve };
+    }
+
+    // Determinism at scale 2: sums and denoised display after 8 frames, batch 1 vs batch 8; scale 1 keeps the reference.
+    const Repeat = await Page.evaluate(async () =>
+    {
+        const Tracing = window.DeterministicTracing, Division = Tracing.Division;
+        const Rounds = [];
+        for (const Batch of [1, 8])
+        {
+            Tracing.ApplyConfiguration({ TraceScale: 2, DenoiseEnabled: true });
+            await Tracing.RenderFromZero(8, Batch);
+            Rounds.push({ Sums: await Tracing.ComputeDigest(), Display: Array.from(await Division.RetrieveDisplayRadiance()) });
+        }
+        Tracing.ApplyConfiguration({ TraceScale: 1, DenoiseEnabled: false });
+        await Tracing.RenderFromZero(4, 1);
+        return { Rounds, FullDigest4: await Tracing.ComputeDigest() };
+    });
+    const Determinism = {
+        Scale2SumDigests:    Repeat.Rounds.map(Round => Round.Sums),
+        Scale2DisplayDigests: Repeat.Rounds.map(Round => DigestFloatBuffer(Float32Array.from(Round.Display))),
+        FullResolutionDigest4: Repeat.FullDigest4
+    };
+    Determinism.BitIdentical = Determinism.Scale2SumDigests[0] === Determinism.Scale2SumDigests[1]
+                            && Determinism.Scale2DisplayDigests[0] === Determinism.Scale2DisplayDigests[1];
+    console.log(`[tracescale] ${JSON.stringify(Determinism)}`);
+    await Page.close();
+    WriteResult('TraceScale', {
+        Summary: Object.fromEntries(Object.entries(Scales).map(([Scale, Entry]) => [Scale, {
+            FrameMilliseconds: Entry.FrameMilliseconds,
+            Frames: Object.fromEntries(Entry.Curve.map(Point => [Point.Frames, `${Point.Upsampled.MeanAbsoluteLevels} / ${Point.Denoised.MeanAbsoluteLevels}`])) }])),
+        Width, Height, ReferenceSamples, Scales, Determinism,
+        Note: 'Errors are vs the full-resolution 256-spp reference: mean |Δ| in 8-bit display levels (upsampled / denoised). SwiftShader timings.'
+    });
+    await RetainTraceScaleImages(Browser, Server);
+}
+
+async function RetainTraceScaleImages(Browser, Server)
+{
+    const Panels = [];
+    const Page = await OpenPrototype(Browser, Server, 'width=320&height=180&camera=Hero');
+    for (const TraceScale of TraceScales)
+    {
+        for (const Frames of [4, 16])
+        {
+            await Page.evaluate(async (TraceScale, Frames) =>
+            {
+                const Tracing = window.DeterministicTracing;
+                Tracing.ApplyConfiguration({ TraceScale, DenoiseEnabled: true });
+                await Tracing.RenderFromZero(Frames, 4);
+            }, TraceScale, Frames);
+            const Png = await Page.evaluate(() => window.DeterministicTracing.EncodeDisplayPng());
+            const Name = `TraceScale_${TraceScale}_${String(Frames).padStart(2, '0')}Frames.png`;
+            WritePng(Name, Png);
+            const Label = TraceScale === 1 ? 'Full' : (TraceScale === 2 ? '½ (2×2)' : '¼ (4×4)');
+            Panels.push({ Label: `${Label} · ${Frames} frames = ${Frames / TraceScale ** 2} spp · denoised`, Png });
+        }
+    }
+    await Page.close();
+    const Montage = await Browser.newPage();
+    await Montage.setViewport({ width: 3 * 640 + 4 * 12, height: 2 * 360 + 2 * 34 + 3 * 12 });
+    const Cells = [0, 2, 4, 1, 3, 5].map(Index => `<figure><figcaption>${Panels[Index].Label}</figcaption><img src="${Panels[Index].Png}"></figure>`).join('');
+    await Montage.setContent(`<html><body style="margin:0;background:#0f1114;font-family:system-ui,sans-serif">
+        <style>main{display:grid;grid-template-columns:repeat(3,640px);gap:12px;padding:12px}figure{margin:0}
+        figcaption{color:#e7e9ec;font-size:16px;height:34px;line-height:28px}img{width:640px;height:360px;image-rendering:pixelated;display:block}</style>
+        <main>${Cells}</main></body></html>`);
+    await Montage.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(Image => Image.decode())); });
+    await Montage.screenshot({ path: path.join(ImagesFolder, 'TraceScaleComparison.png') });
+    await Montage.close();
+    console.log('[tracescale] Images/TraceScaleComparison.png');
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    MAIN
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -1100,6 +1225,7 @@ try
     if (Phase === 'patterns'    || Phase === 'all') await ValidatePatterns(Browser, Server);
     if (Phase === 'fleet'       || Phase === 'all') await ValidateFleet(Browser, Server);
     if (Phase === 'reconstruction' || Phase === 'all') await ValidateReconstruction(Browser, Server);
+    if (Phase === 'tracescale'  || Phase === 'all') await ValidateTraceScale(Browser, Server);
     if (Phase === 'reconstructionimages')           await RetainReconstructionImages(Browser, Server, null, 32);
     if (Phase === 'patternimages')                  await RetainPatternImages(Browser, Server);
     if (Phase === 'realtimeimages')                 await RetainRealtimeImages(Browser, Server, null, 32);

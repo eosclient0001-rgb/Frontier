@@ -44,6 +44,7 @@ const Configuration = {
     ThroughputCutoff:     0.002,
     SampleBatch:          1,
     RenderScale:          Number(QueryParameters.get('scale') || 0.75),
+    TraceScale:           Number(QueryParameters.get('trace') || 1),
     TargetSamples:        Number(QueryParameters.get('target') || 1024),
     VehicleEnabled:       true,
     VehicleCount:         VehicleCountOptions.includes(Number(QueryParameters.get('vehicles'))) ? Number(QueryParameters.get('vehicles')) : 1,
@@ -190,6 +191,8 @@ function ConstructInspector()
         Key => { Configuration.DepthLimit = Number(Key); InvalidateAccumulation(); });
     PopulateSelect('BatchSelect', [[1, '1'], [2, '2'], [4, '4'], [8, '8']], Configuration.SampleBatch,
         Key => { Configuration.SampleBatch = Number(Key); });
+    PopulateSelect('TraceSelect', [[1, 'Full (every pixel)'], [2, '½ (one ray per 2×2)'], [4, '¼ (one ray per 4×4)']], Configuration.TraceScale,
+        Key => { Configuration.TraceScale = Number(Key); InvalidateAccumulation(); });
     PopulateSelect('ScaleSelect', [[0.25, '25 %'], [0.5, '50 %'], [0.75, '75 %'], [1, '100 %']], Configuration.RenderScale,
         Key => { Configuration.RenderScale = Number(Key); ResizeViewport(); });
     PopulateSelect('PatternSelect', [['shared', 'Shared (structured)'], ['pixel', 'Per-pixel (dithered)'], ['bluenoise', 'Blue-noise (even dither)']], Configuration.PointPattern,
@@ -300,11 +303,12 @@ function ExposureMultiplier()
 
 function RefreshReadout(DispatchMilliseconds)
 {
-    const Samples = Division.SampleCount;
-    Locate('ReadoutSamples').textContent = Samples.toLocaleString('en-US');
+    const Samples = Division.PixelSamples();
+    Locate('ReadoutSamples').textContent = Number.isInteger(Samples) ? Samples.toLocaleString('en-US') : Samples.toFixed(2);
     const Seconds = Interface.AccumulatedTime / 1000;
     const Rate = Seconds > 0 ? Samples / Seconds : 0;
-    const NetExponent = Samples > 0 ? Math.floor(Math.log2(Samples)) : 0;
+    const Indices = Division.SampleCount;   // 📝 the net property is about sample indices (all pixels together)
+    const NetExponent = Indices > 0 ? Math.floor(Math.log2(Indices)) : 0;
     Locate('ReadoutSecondary').textContent = Samples >= Configuration.TargetSamples
         ? `Converged to target · ${Seconds.toFixed(1)} s`
         : `${Rate.toFixed(1)} samples/s · target ${Configuration.TargetSamples.toLocaleString('en-US')}`;
@@ -315,7 +319,7 @@ function RefreshReadout(DispatchMilliseconds)
         Locate('StatusRate').textContent = `${Rate.toFixed(2)} spp/s · ${(RaySamples / 1e6).toFixed(1)} M px-samples/s`;
     }
     Locate('StatusElapsed').textContent = `${Seconds.toFixed(1)} s`;
-    Locate('StatusNet').textContent = Samples > 0 ? `2^${NetExponent} = ${2 ** NetExponent} (every pair a (0,${NetExponent},2)-net)` : '—';
+    Locate('StatusNet').textContent = Indices > 0 ? `2^${NetExponent} = ${2 ** NetExponent} (every pair a (0,${NetExponent},2)-net)` : '—';
 }
 
 // 📝 FPS counts completed traced frames (each SampleBatch samples) in the last second; idle frames are not counted.
@@ -331,12 +335,12 @@ function RefreshFrameRate(FrameEnd, FrameMilliseconds)
     if (FrameEnd - Interface.FrameRateRefreshed < 250) return;
     Interface.FrameRateRefreshed = FrameEnd;
 
-    const Tracing = !Interface.Paused && Division.SampleCount < Configuration.TargetSamples;
+    const Tracing = !Interface.Paused && Division.PixelSamples() < Configuration.TargetSamples;
     const Stamps  = Interface.FrameStamps;
     const FramesPerSecond = Stamps.length > 1 ? 1000 * (Stamps.length - 1) / (Stamps[Stamps.length - 1] - Stamps[0]) : 0;
     Locate('FrameRateValue').textContent  = Tracing && Stamps.length > 1 ? FramesPerSecond.toFixed(FramesPerSecond < 10 ? 1 : 0) : '—';
     Locate('FrameRateDetail').textContent = Tracing
-        ? `${Interface.FrameMilliseconds.toFixed(1)} ms/frame · ${Configuration.SampleBatch} spp/frame`
+        ? `${Interface.FrameMilliseconds.toFixed(1)} ms/frame · ${+(Configuration.SampleBatch / Division.TraceScale() ** 2).toFixed(2)} spp/frame`
         : (Interface.Paused ? 'paused' : 'idle · target reached');
     RefreshStageTiming();
 }
@@ -361,11 +365,12 @@ async function AdvanceAccumulationLoop()
     {
         await new Promise(requestAnimationFrame);
         if (Interface.VerifyActive) continue;
-        if (!Interface.Paused && Division.SampleCount < Configuration.TargetSamples)
+        const TargetIndices = Configuration.TargetSamples * Division.TraceScale() ** 2;   // 📝 target is per pixel
+        if (!Interface.Paused && Division.SampleCount < TargetIndices)
         {
             while (Interface.FramesInFlight.length >= FramesInFlightLimit) await Interface.FramesInFlight[0];
             const Revision = Interface.ConfigurationRevision;
-            const Batch = Math.min(Configuration.SampleBatch, Configuration.TargetSamples - Division.SampleCount);
+            const Batch = Math.min(Configuration.SampleBatch, TargetIndices - Division.SampleCount);
             const Submitted = performance.now();
             Division.AdvanceSamples(Batch);
             await Division.PresentDisplay(ExposureMultiplier());
@@ -417,7 +422,7 @@ async function SaveDisplayImage()
 {
     const Link = document.createElement('a');
     Link.href = await EncodeDisplayPng();
-    Link.download = `DeterministicPathTracer_${Division.SampleCount}spp.png`;
+    Link.download = `DeterministicPathTracer_${Division.PixelSamples()}spp.png`;
     Link.click();
 }
 
