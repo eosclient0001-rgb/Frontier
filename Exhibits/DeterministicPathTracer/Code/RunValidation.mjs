@@ -1205,6 +1205,158 @@ async function RetainTraceScaleImages(Browser, Server)
 
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                    MANY LIGHTS
+//------------------------------------------------------------------------------------------------------------------------
+
+const LampFrameCounts = [1, 4, 16, 64, 256];
+const LampScenarios = [
+    { Label: 'Studio, no lamps',               VehicleCount: 1,  PracticalMode: 'off' },
+    { Label: '1 car, 4 lamps',                 VehicleCount: 1,  PracticalMode: 'vehicles' },
+    { Label: '8 cars + downlights, 60 lamps',  VehicleCount: 8,  PracticalMode: 'carpark' },
+    { Label: '50 cars + downlights, 228 lamps', VehicleCount: 50, PracticalMode: 'carpark' }
+];
+
+async function MeasureFrameMilliseconds(Page, Partial)
+{
+    return Page.evaluate(async Partial =>
+    {
+        const Tracing = window.DeterministicTracing, Division = Tracing.Division;
+        Tracing.ApplyConfiguration(Partial);
+        await Tracing.RenderFromZero(1, 1);
+        const Timings = [];
+        for (let Frame = 0; Frame < 3; Frame++)
+        {
+            const Start = performance.now();
+            Division.AdvanceSamples(1);
+            await Division.Device.queue.onSubmittedWorkDone();
+            Timings.push(performance.now() - Start);
+        }
+        return +Timings.sort((A, B) => A - B)[1].toFixed(1);
+    }, Partial);
+}
+
+// 📝 Practical lamps: (1) the light tree is unbiased — at night with 8 cars and the car-park downlights (60 lamps) its
+//    image converges to the every-lamp reference; (2) error per frame and time per frame of both rules; (3) cost against
+//    lamp count; (4) determinism (batch 1 = batch 8).
+async function ValidateManyLights(Browser, Server)
+{
+    const Width = 96, Height = 54, ReferenceSamples = 256;
+    const Night = { VehicleCount: 8, PracticalMode: 'carpark', NightMode: true, DenoiseEnabled: false };
+    const Page = await OpenPrototype(Browser, Server, `width=${Width}&height=${Height}&camera=Hero`);
+    await Page.evaluate(async (Night, ReferenceSamples) =>
+    {
+        const Tracing = window.DeterministicTracing;
+        Tracing.ApplyConfiguration({ ...Night, LampSampling: 'all' });
+        await Tracing.RenderFromZero(ReferenceSamples, 16);
+    }, Night, ReferenceSamples);
+    const Reference = await RetrieveDisplayedTexels(Page, false);
+    console.log('[manylights] reference done');
+
+    const Rules = {};
+    for (const LampSampling of ['tree', 'split8', 'all'])
+    {
+        const FrameMilliseconds = await MeasureFrameMilliseconds(Page, { ...Night, LampSampling });
+        await Page.evaluate(() => window.DeterministicTracing.Division.ResetAccumulation());
+        const Curve = [];
+        for (const Frames of LampFrameCounts.filter(Frames => LampSampling !== 'all' || Frames <= 64))
+        {
+            await Page.evaluate(async Frames => window.DeterministicTracing.ContinueSamples(Frames), Frames);
+            Curve.push({ Frames, Exact: MeasureDisplayedError(await RetrieveDisplayedTexels(Page, false), Reference, Width, Height),
+                                 Denoised: MeasureDisplayedError(await RetrieveDisplayedTexels(Page, true), Reference, Width, Height) });
+            console.log(`[manylights] ${LampSampling} ${JSON.stringify(Curve.at(-1))}`);
+        }
+        Rules[LampSampling] = { FrameMilliseconds, Curve };
+    }
+
+    const Repeat = await Page.evaluate(async Night =>
+    {
+        const Tracing = window.DeterministicTracing;
+        const Digests = [];
+        for (const Batch of [1, 8])
+        {
+            Tracing.ApplyConfiguration({ ...Night, LampSampling: 'split8' });
+            await Tracing.RenderFromZero(8, Batch);
+            Digests.push(await Tracing.ComputeDigest());
+        }
+        return Digests;
+    }, Night);
+    await Page.close();
+
+    // Cost against lamp count: studio rig on, Hero camera, 160 × 90, one sample per frame.
+    const Scaling = [];
+    const Timed = await OpenPrototype(Browser, Server, 'width=160&height=90&camera=Hero');
+    for (const Scenario of LampScenarios)
+    {
+        const Base = { VehicleCount: Scenario.VehicleCount, PracticalMode: Scenario.PracticalMode, NightMode: false, DenoiseEnabled: false };
+        const Tree = await MeasureFrameMilliseconds(Timed, { ...Base, LampSampling: 'tree' });
+        const Summary = await Timed.evaluate(() => ({ ...window.DeterministicTracing.Division.SceneSummary }));
+        const Split = Scenario.PracticalMode === 'off' ? Tree : await MeasureFrameMilliseconds(Timed, { ...Base, LampSampling: 'split8' });
+        const All = Scenario.PracticalMode === 'off' ? Tree : await MeasureFrameMilliseconds(Timed, { ...Base, LampSampling: 'all' });
+        Scaling.push({ Label: Scenario.Label, Lamps: Summary.LampCount, TreeNodes: Summary.LightTreeNodes, TreeDepth: Summary.LightTreeDepth,
+                       BuildMilliseconds: Summary.LightTreeMilliseconds, TreeFrameMilliseconds: Tree, Split8FrameMilliseconds: Split, AllLampsFrameMilliseconds: All });
+        console.log(`[manylights] ${JSON.stringify(Scaling.at(-1))}`);
+    }
+    const HeroDigest = await Timed.evaluate(async () =>
+    {
+        const Tracing = window.DeterministicTracing;
+        Tracing.ApplyConfiguration({ VehicleCount: 1, PracticalMode: 'off', LampSampling: 'split8' });
+        await Tracing.RenderFromZero(4, 1);
+        return Tracing.ComputeDigest();
+    });
+    await Timed.close();
+
+    const Determinism = { Split8Digests: Repeat, BitIdentical: Repeat[0] === Repeat[1], LampsOffHeroDigest4: HeroDigest };
+    WriteResult('ManyLights', {
+        Summary: { Tree: Object.fromEntries(Rules.tree.Curve.map(Point => [Point.Frames, `${Point.Exact.MeanAbsoluteLevels} / ${Point.Denoised.MeanAbsoluteLevels}`])),
+                   Split8: Object.fromEntries(Rules.split8.Curve.map(Point => [Point.Frames, `${Point.Exact.MeanAbsoluteLevels} / ${Point.Denoised.MeanAbsoluteLevels}`])),
+                   Split8FrameMilliseconds: Rules.split8.FrameMilliseconds,
+                   All:  Object.fromEntries(Rules.all.Curve.map(Point => [Point.Frames, `${Point.Exact.MeanAbsoluteLevels} / ${Point.Denoised.MeanAbsoluteLevels}`])),
+                   TreeFrameMilliseconds: Rules.tree.FrameMilliseconds, AllFrameMilliseconds: Rules.all.FrameMilliseconds,
+                   Scaling: Scaling.map(Row => `${Row.Lamps}: ${Row.TreeFrameMilliseconds} / ${Row.Split8FrameMilliseconds} / ${Row.AllLampsFrameMilliseconds} ms`), Determinism },
+        Width, Height, ReferenceSamples, Scene: Night, Rules, Scaling, Determinism,
+        Note: 'Night, Hero camera, 8 cars + 28 downlights (60 IES lamps). Errors are mean |Δ| in 8-bit levels (exact / denoised) vs the every-lamp 256-spp reference. Scaling: studio rig on, 160 × 90. SwiftShader timings.'
+    });
+    await RetainManyLightImages(Browser, Server);
+}
+
+async function RetainManyLightImages(Browser, Server)
+{
+    const Shots = [
+        { Name: 'Lamps_Night_Fleet50_64spp.png', Label: 'Night · 50 cars · 228 IES lamps · tree split ≤ 8 · 64 spp', Camera: 'Fleet', Samples: 64, Denoise: false,
+          Partial: { VehicleCount: 50, PracticalMode: 'carpark', NightMode: true } },
+        { Name: 'Lamps_Night_Hero8_16spp.png', Label: 'Night · 8 cars · 60 lamps · tree split ≤ 8 · 16 spp · denoised', Camera: 'Hero', Samples: 16, Denoise: true,
+          Partial: { VehicleCount: 8, PracticalMode: 'carpark', NightMode: true } },
+        { Name: 'Lamps_Studio_Hero8_64spp.png', Label: 'Studio rig + car lamps · 8 cars, own finishes · 64 spp', Camera: 'Hero', Samples: 64, Denoise: false,
+          Partial: { VehicleCount: 8, PracticalMode: 'vehicles', NightMode: false } }
+    ];
+    const Page = await OpenPrototype(Browser, Server, 'width=320&height=180&camera=Hero');
+    const Presets = await Page.evaluate(() => window.DeterministicTracing.CameraPresets);
+    for (const Shot of Shots)
+    {
+        await Page.evaluate(async (Shot, Preset) =>
+        {
+            const Tracing = window.DeterministicTracing;
+            Tracing.ApplyConfiguration({ ...Shot.Partial, LampSampling: 'split8', DenoiseEnabled: Shot.Denoise, Camera: { ...Preset, Target: [...Preset.Target] } });
+            await Tracing.RenderFromZero(Shot.Samples, 8);
+        }, Shot, Presets[Shot.Camera]);
+        Shot.Png = await Page.evaluate(() => window.DeterministicTracing.EncodeDisplayPng());
+        WritePng(Shot.Name, Shot.Png);
+        console.log(`[manylights] Images/${Shot.Name}`);
+    }
+    await Page.close();
+    const Montage = await Browser.newPage();
+    await Montage.setViewport({ width: 3 * 652 + 12, height: 360 + 46 });
+    await Montage.setContent(`<html><body style="margin:0;background:#0f1114;color:#e7e9ec;font:15px system-ui,sans-serif">
+        <div style="display:flex;gap:12px;padding:6px">${Shots.map(Shot => `<figure style="margin:0"><figcaption style="height:28px">${Shot.Label}</figcaption>
+        <img src="${Shot.Png}" style="width:640px;height:360px;image-rendering:pixelated;display:block"></figure>`).join('')}</div></body></html>`);
+    await Montage.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(Image => Image.decode())); });
+    await Montage.screenshot({ path: path.join(ImagesFolder, 'ManyLightsComparison.png') });
+    await Montage.close();
+    console.log('[manylights] Images/ManyLightsComparison.png');
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    MAIN
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -1226,6 +1378,8 @@ try
     if (Phase === 'fleet'       || Phase === 'all') await ValidateFleet(Browser, Server);
     if (Phase === 'reconstruction' || Phase === 'all') await ValidateReconstruction(Browser, Server);
     if (Phase === 'tracescale'  || Phase === 'all') await ValidateTraceScale(Browser, Server);
+    if (Phase === 'manylights'  || Phase === 'all') await ValidateManyLights(Browser, Server);
+    if (Phase === 'manylightimages')                await RetainManyLightImages(Browser, Server);
     if (Phase === 'reconstructionimages')           await RetainReconstructionImages(Browser, Server, null, 32);
     if (Phase === 'patternimages')                  await RetainPatternImages(Browser, Server);
     if (Phase === 'realtimeimages')                 await RetainRealtimeImages(Browser, Server, null, 32);

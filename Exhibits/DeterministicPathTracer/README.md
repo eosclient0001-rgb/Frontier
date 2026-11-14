@@ -164,20 +164,22 @@ each other. One 4-wide vehicle tree is shared by all bays; a 4-wide instance tre
 
 | Vehicles | Triangles | Tree nodes (vehicle + instance) | Depth | Tree build (JS) | Hero s/spp | Fleet s/spp | Hero cost | Fleet cost | Fleet rays / box tests / triangle tests per pixel-sample |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | 25,068 | 3,895 + 1 | 12 | 0.169 s (vehicle tree, once) | 1.82 | 0.75 | 1.00× | 1.00× | 4.95 / 10.5 / 0.9 |
-| 2 | 50,136 | 3,895 + 1 | 12 | 0.001 s | 2.23 | 0.78 | 1.22× | 1.04× | 4.99 / 18.6 / 1.4 |
-| 4 | 100,272 | 3,895 + 1 | 12 | 0.001 s | 2.58 | 0.96 | 1.42× | 1.28× | 5.10 / 37.5 / 2.9 |
-| 8 | 200,544 | 3,895 + 4 | 13 | 0.001 s | 3.00 | 1.11 | 1.64× | 1.49× | 5.23 / 51.3 / 4.8 |
-| 16 | 401,088 | 3,895 + 7 | 14 | 0.002 s | 3.33 | 1.46 | 1.83× | 1.96× | 5.53 / 82.2 / 9.1 |
-| 32 | 802,176 | 3,895 + 15 | 14 | 0.001 s | 3.53 | 1.92 | 1.94× | 2.58× | 5.90 / 123.3 / 14.3 |
-| 50 | **1,253,400** | 3,895 + 25 | 15 | 0.002 s | 3.56 | 2.40 | 1.95× | 3.22× | 6.14 / 150.5 / 17.6 |
+| 1 | 25,068 | 3,895 + 1 | 12 | 0.178 s (vehicle tree, once) | 2.18 | 0.98 | 1.00× | 1.00× | 4.95 / 10.5 / 0.9 |
+| 2 | 50,136 | 3,895 + 1 | 12 | 0.001 s | 2.99 | 1.31 | 1.38× | 1.33× | 4.99 / 18.6 / 1.4 |
+| 4 | 100,272 | 3,895 + 1 | 12 | 0.002 s | 3.25 | 1.20 | 1.49× | 1.22× | 5.09 / 37.4 / 2.9 |
+| 8 | 200,544 | 3,895 + 4 | 13 | 0.001 s | 3.45 | 1.40 | 1.59× | 1.43× | 5.22 / 50.9 / 4.8 |
+| 16 | 401,088 | 3,895 + 7 | 14 | 0.001 s | 3.75 | 1.73 | 1.72× | 1.76× | 5.48 / 80.9 / 9.0 |
+| 32 | 802,176 | 3,895 + 15 | 14 | 0.001 s | 3.96 | 2.18 | 1.82× | 2.22× | 5.81 / 120.6 / 14.1 |
+| 50 | **1,253,400** | 3,895 + 25 | 15 | 0.002 s | 4.00 | 2.65 | 1.84× | 2.70× | 6.02 / 146.8 / 17.3 |
 
 - **Instancing:** the GPU tree is 257 KB at 50 vehicles (baked: 799,599 entries ≈ 25.6 MB, plus 120 MB of
   copied triangles). Changing the count takes ≈ 1 ms instead of 5.36 s, so vehicles could move per frame.
-- 50× the triangles costs 1.95× (Hero) to 3.22× (Fleet, whole lot on screen; baked tree: 3.37×) per sample.
+- 50× the triangles costs 1.84× (Hero) to 2.70× (Fleet, whole lot on screen; baked tree: 3.37×) per sample.
+  Re-run after the per-car finishes: every parked car now has its own material, and this 2-core box's timings
+  vary by ± 15 % between runs (previous run: 1.95× / 3.22×).
 - **Bit-exactness:** one vehicle renders bit-identical to the old binary tree (`a0ca494d`, 320×180, 16 spp, and
-  equal Hero/Rear digests at 160×90). Fleets now use object-space rays, so their digests changed once; each
-  repeats exactly (50 vehicles: batch 1 = batch 4, `3237779d`).
+  equal Hero/Rear digests at 160×90). Fleets use object-space rays and per-car finishes, so their digests
+  differ from the baked build; each repeats exactly (batch 1 = batch 8).
 - ⚠️ **SwiftShader penalty.** Same-run A/B against the binary baked tree (160×90, 4 spp, min of 2):
   1 vehicle 550 vs 434 ms/spp (Hero), 457 vs 360 (Rear); 50 vehicles 940 vs 784, 933 vs 789: ≈ 1.2× slower.
   The work is the same (Hero 1 car: 8.3 rays, 11 triangle tests, 81 vs 75 box tests per pixel-sample), but
@@ -221,6 +223,47 @@ worse. Error = mean |Δ| in 8-bit display levels vs the 256-spp **full-resolutio
   (only its two finest steps). ¼ is for previews: at 1–4 frames most pixels are filled, i.e. soft.
 - Rasterized visibility is off at reduced resolution (one ray per tile has no raster pixel to match).
 
+## Many lights: IES lamps and the light tree
+
+Phase `manylights`. Lamps are IES point emitters (LM-63 files in the prototype's `Assets/Photometry`): 2 low-beam
+headlamps + 2 tail lamps per car, plus 28 car-park downlights (`lamps=carpark`), so 228 lamps at 50 cars. Each
+parked car also has its own body finish (gloss, metallic, matte, satin metal, pearl, candy chrome) and one of four
+wheel finishes.
+
+![Many lights](Images/ManyLightsComparison.png)
+
+**Accuracy.** Night (softboxes off), Hero camera, 8 cars + downlights = 60 lamps, 96×54. The reference is the
+every-lamp rule at 256 spp. Values are mean |Δ| in 8-bit levels (exact), with time per frame:
+
+| Frames | Light tree, 1 lamp · 259 ms | Tree split ≤ 8 · 649 ms | Every lamp (60 shadow rays) · 2,981 ms |
+|---|---|---|---|
+| 1 | 30.2 | 15.1 | 9.6 |
+| 4 | 19.2 | 6.9 | 4.0 |
+| 16 | 11.8 | 4.0 | 2.7 |
+| 64 | 6.2 | 2.3 | 1.4 |
+| 256 | 2.8 | **0.87** | — |
+
+- **Unbiased.** Both tree rules converge on the every-lamp image: split ≤ 8 is 0.87 levels away after 256 frames,
+  and its error keeps falling with frame count, so it is not settling on a wrong image.
+- **At equal time** split ≤ 8 wins: 10.4 s gives 4.0 (every lamp: 4.0 in 11.9 s); 41.5 s gives 2.3 (every lamp:
+  2.7 in 47.7 s); 166 s gives 0.87 (every lamp: 1.4 in 191 s). The plain 1-lamp tree is the cheapest frame
+  but the noisiest: its draw ignores the surface's gloss, and the cars block many lamps.
+- **Determinism:** split ≤ 8 after 8 frames, batch 1 = batch 8 (`eb29805c`). With lamps off, output is unchanged
+  (`af302d24` at 160×90 / 4 spp, `a0ca494d` at 320×180 / 16 spp).
+
+**Cost vs lamp count** (studio rig on, Hero, 160×90, ms per frame; SwiftShader):
+
+| Scene | Lamps | Tree nodes / depth | Light tree | Split ≤ 8 | Every lamp |
+|---|---|---|---|---|---|
+| 1 car, no lamps | 0 | — | 664 | 664 | 664 |
+| 1 car | 4 | 7 / 3 | 706 | 799 | 807 |
+| 8 cars + downlights | 60 | 119 / 7 | 1,205 | 2,232 | 7,756 |
+| 50 cars + downlights | 228 | 455 / 9 | 1,398 | 2,851 | 28,001 |
+
+- Going from 60 to 228 lamps (3.8×) costs the tree +16 % and split ≤ 8 +28 %, but the every-lamp rule 3.6×.
+  The tree is built on the host in 1–5 ms.
+- Split ≤ 8 traces up to 8 shadow rays per hit, so with lamps on it costs about 2× the plain tree. `split4` sits between the two.
+
 ## Measured on hardware (user report, 2026-11-13)
 
 NVIDIA Turing, Chrome WebGPU, 421 × 444 px canvas (0.19 MP), **50 vehicles** (1,253,400 triangles, instanced),
@@ -255,12 +298,12 @@ diffuse energy. Clamping F90 by F0 is the standard fix; F0 ≥ 0.02 materials ar
 ```sh
 cd Exhibits/DeterministicPathTracer/Code
 npm install                      # puppeteer-core + @sparticuz/chromium (unpacked to ChromiumRuntime/)
-node RunValidation.mjs all       # or: quadrature | analytic | determinism | convergence | chart | captures | interface | realtime | patterns | fleet | reconstruction | tracescale
+node RunValidation.mjs all       # or: quadrature | analytic | determinism | convergence | chart | captures | interface | realtime | patterns | fleet | reconstruction | tracescale | manylights
 ANALYTIC_SAMPLES=256 node RunValidation.mjs analytic   # shorter analytic run
 ```
 
-`all` takes about 70 min on 2 CPU cores (SwiftShader; `realtime` ≈ 8 min, `patterns` ≈ 13 min, `fleet` ≈ 3.5 min,
-`reconstruction` ≈ 11 min). Writes `Results/` and `Images/`.
+`all` takes about 110 min on 2 CPU cores (SwiftShader; `realtime` ≈ 8 min, `patterns` ≈ 13 min, `fleet` ≈ 3.5 min,
+`reconstruction` ≈ 11 min, `manylights` ≈ 35 min). Writes `Results/` and `Images/`.
 
 ## Environment
 

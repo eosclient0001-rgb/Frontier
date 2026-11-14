@@ -50,6 +50,14 @@ const PairLight               : u32 = 0u;
 const PairDiffuse             : u32 = 1u;
 const PairSpecular            : u32 = 2u;
 const PairCoat                : u32 = 3u;
+const PairPracticalBase       : u32 = 66u;         // [-]  - Lamp selection at depth d uses pair 66 + d (after the 2 + 16 × 4 above)
+const LampLeafFlag            : u32 = 0x80000000u; // [-]  - Light-tree link bit: leaf, low bits = lamp index
+const ProfileVerticalSamples  : u32 = 128u;        // [-]  - PhotometricProfile.js grid: θ ∈ [0, π] endpoints included …
+const ProfileHorizontalSamples : u32 = 32u;        // [-]  - … φ ∈ [0, 2π) wrapping
+const SelectionCeiling        : f32 = 0.99999994;  // [-]  - Largest float below 1
+const LampCutCapacity         : u32 = 8u;          // [-]  - Most light-tree subtrees sampled at one vertex (adaptive splitting)
+const LampSplitRatio          : f32 = 0.05;        // [-]  - Split a node while its radius² exceeds this share of its distance²
+const GoldenFraction          : f32 = 0.618034;    // [-]  - Fixed rotation decorrelating the steering value between cut nodes
 
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -74,7 +82,8 @@ struct TracingUniforms
     Realtime          : vec4u,   // per-pixel decorrelation (0/1), visibility raster (0/1), history read / write offset [px]
     HistoryTuning     : vec4f,   // history capacity [samples], history active (0/1), unused, unused
     Geometry          : vec4u,   // instance tree root node, first instance record [vec4u], instance count, trace scale [px]
-    Shading           : vec4f,   // light cutoff (0 = off), analytic area lights (0/1), unused, unused
+    Shading           : vec4f,   // light cutoff (0 = off), analytic area lights (0/1), practical lamps: all (1) or tree (0), tree cut limit
+    Practical         : vec4u,   // lamp count (0 = none), tree node base, lamp record base, profile base [vec4f in LightRecords]
 }
 
 // 📝 One 4-wide node = 4 vec4u (BoundingVolumeConstruction.js EncodeWideNode): origin + exponents, 8-bit child bounds,
@@ -160,7 +169,7 @@ struct LobeEvaluation
 @group(0) @binding(2) var<storage, read>       TrianglePositions : array<vec4f>;
 @group(0) @binding(3) var<storage, read>       TriangleNormals   : array<vec4f>;
 @group(0) @binding(4) var<storage, read>       Materials         : array<SurfaceMaterial>;
-@group(0) @binding(5) var<storage, read>       AreaLights        : array<AreaLight>;
+@group(0) @binding(5) var<storage, read>       LightRecords      : array<vec4f>;   // area lights, lamps, light tree, IES tables (PracticalLighting.js)
 @group(0) @binding(6) var<storage, read>       Spheres           : array<vec4f>;
 @group(0) @binding(7) var<storage, read_write> Accumulation      : array<vec4f>;   // [0,N) sums, [N,3N) two history regions, [3N,4N) luminance moments
 @group(0) @binding(8) var                      VisibilityIds     : texture_2d<u32>; // triangle index + 1 per pixel, 0 = none
@@ -178,6 +187,7 @@ var<private> BlueNoiseActive    : bool;
 override RayStatisticsEnabled   : bool = false;
 var<private> RayStatistics      : vec4u;
 var<private> ImagePosition      : vec2f;   // display-pixel position of the current sample (trace scale)
+var<private> LampCut            : array<u32, LampCutCapacity>;   // light-tree cut of the current vertex
 
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -251,7 +261,8 @@ fn IntersectWideNode(NodeIndex: u32, Origin: vec3f, Reciprocal: vec3f, MaximumDi
 }
 
 // 📝 Instance record (8 vec4u): rows 0–2 world→object (xyz linear, w translation), rows 3–5 object→world, row 6 =
-//    vehicle tree root, paint slot to replace, replacement slot (EmptyLink = keep). Transforms are rigid.
+//    vehicle tree root, paint slot to replace, replacement slot (EmptyLink = keep), rim replacement; row 7 x = rim
+//    slot. Transforms are rigid.
 fn InstanceRow(Instance: u32, Row: u32) -> vec4f
 {
     return bitcast<vec4f>(BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + Row]);
@@ -273,8 +284,12 @@ fn TransformVector(Instance: u32, FirstRow: u32, Vector: vec3f) -> vec3f
 
 fn InstanceMaterialSlot(Instance: u32, TriangleSlot: u32) -> u32
 {
-    let Paint = BoundsEntries[Tracing.Geometry.y + Instance * InstanceStride + 6u];
-    return select(TriangleSlot, Paint.z, Paint.z != EmptyLink && TriangleSlot == Paint.y);
+    let Record = Tracing.Geometry.y + Instance * InstanceStride;
+    let Paint  = BoundsEntries[Record + 6u];
+    var Slot   = select(TriangleSlot, Paint.z, Paint.z != EmptyLink && TriangleSlot == Paint.y);
+    // 📝 Per-car wheel finish: row 6 w replaces the rim slot named in row 7 x (EmptyLink = keep, e.g. the hero car).
+    if (Paint.w != EmptyLink && TriangleSlot == BoundsEntries[Record + 7u].x) { Slot = Paint.w; }
+    return Slot;
 }
 
 // 📝 Möller–Trumbore against precomputed edges. Returns (t, u, v) with t < 0 on miss.
@@ -309,6 +324,12 @@ fn IntersectSphere(Origin: vec3f, Direction: vec3f, Sphere: vec4f) -> f32
     if (Near > RayOffsetScale) { return Near; }
     let Far = -HalfB + Root;
     return select(-1.0, Far, Far > RayOffsetScale);
+}
+
+fn FetchAreaLight(LightIndex: u32) -> AreaLight
+{
+    let Base = LightIndex * 4u;
+    return AreaLight(LightRecords[Base], LightRecords[Base + 1u], LightRecords[Base + 2u], LightRecords[Base + 3u]);
 }
 
 fn LightNormal(Light: AreaLight) -> vec3f
@@ -352,7 +373,7 @@ fn TraceAnalyticHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Sur
 
     for (var LightIndex = 0u; LightIndex < select(0u, Tracing.DepthLimits.z, LightsVisible); LightIndex++)
     {
-        let Distance = IntersectLight(Origin, Direction, AreaLights[LightIndex]);
+        let Distance = IntersectLight(Origin, Direction, FetchAreaLight(LightIndex));
         if (Distance > 0.0 && Distance < Hit.Distance) { Hit = SurfaceHit(Distance, HitLight, LightIndex, vec2f(0.0)); }
     }
     return Hit;
@@ -791,35 +812,197 @@ fn OffsetOrigin(Position: vec3f, Normal: vec3f, Direction: vec3f) -> vec3f
     return Position + Normal * select(-Scale, Scale, dot(Normal, Direction) > 0.0);
 }
 
-// 📝 Light quadrature at a non-delta vertex: one shared Sobol' point per light per sample, combined with the BSDF-lobe
-//    rule through the power heuristic per lobe.
+// 📝 Practical lamps (PracticalLighting.js). Light-tree importance of node Node seen from Position with shading normal
+//    Normal (Conty Estevez & Kulla 2018): power × cos θ' / d² × cos θi', where θ' and θi' are the emission and incidence
+//    angles widened by the node's angular radius (and θ' by its axis cone θo). Zero only where every lamp of the node is
+//    provably dark or below the surface (θ' ≥ θe, θi' ≥ 90°), so the tree never culls a contributing lamp. Leaves use the
+//    lamp's exact beam instead.
+fn LightNodeImportance(Position: vec3f, Normal: vec3f, Node: u32) -> f32
+{
+    let Base      = Tracing.Practical.y + Node * 4u;
+    let Lower     = LightRecords[Base];
+    let Upper     = LightRecords[Base + 1u];
+    // 📝 A leaf is one lamp: its exact unshadowed irradiance I(ω) cosθi / d² (beam shape included) replaces the bound.
+    let Link      = bitcast<u32>(Upper.w);
+    if ((Link & LampLeafFlag) != 0u)
+    {
+        let Lamp       = Tracing.Practical.z + (Link & ~LampLeafFlag) * 4u;
+        let Placement  = LightRecords[Lamp];
+        let Separation = Placement.xyz - Position;
+        let Distance2  = max(dot(Separation, Separation), 1.0e-12);
+        let ωi         = Separation * inverseSqrt(Distance2);
+        let Incidence  = dot(Normal, ωi);
+        if (Incidence <= 0.0) { return 0.0; }
+        let Relative   = EvaluateProfile(u32(Placement.w), -ωi, LightRecords[Lamp + 1u].xyz, LightRecords[Lamp + 2u].xyz);
+        return Relative * dot(LightRecords[Lamp + 3u].rgb, vec3f(0.2126, 0.7152, 0.0722)) * Incidence / Distance2;
+    }
+    let Cone      = LightRecords[Base + 2u];
+    let Angles    = LightRecords[Base + 3u];
+    let Diagonal  = Upper.xyz - Lower.xyz;
+    let Radius2   = 0.25 * dot(Diagonal, Diagonal);
+    let Offset    = Position - 0.5 * (Lower.xyz + Upper.xyz);
+    let Distance2 = dot(Offset, Offset);
+    let Toward    = Offset * inverseSqrt(max(Distance2, 1.0e-12));
+    let Bounding  = select(π, asin(sqrt(Radius2 / max(Distance2, 1.0e-12))), Distance2 > Radius2);
+    let Outer     = max(acos(clamp(dot(Cone.xyz, Toward), -1.0, 1.0)) - Angles.x - Bounding, 0.0);
+    let Inner     = max(acos(clamp(-dot(Normal, Toward), -1.0, 1.0)) - Bounding, 0.0);
+    if (Outer >= Angles.y || Inner >= 0.5 * π) { return 0.0; }
+    return Lower.w * max(cos(Outer), 1.0e-3) * cos(Inner) / max(Distance2, Radius2);
+}
+
+struct LampDraw
+{
+    Lamp              : u32,
+    Pdf               : f32,     // probability of having drawn this lamp; 0 = nothing drawn
+}
+
+// 📝 Adaptive tree splitting (Conty Estevez & Kulla 2018): starting from the root, repeatedly replace the cut node with
+//    the largest power × radius² / distance⁴ (bright, near and spread out — where one draw would be poorest) by its two
+//    children, while its radius² exceeds LampSplitRatio × distance², up to Shading.w nodes. The cut partitions the
+//    lamps, so sampling one lamp under every cut node and summing stays unbiased. Pure function of position, no RNG.
+fn ResolveLampCut(Position: vec3f) -> u32
+{
+    let Limit = clamp(u32(Tracing.Shading.w), 1u, LampCutCapacity);
+    LampCut[0] = 0u;
+    var Count = 1u;
+    for (var Round = 1u; Round < Limit; Round++)
+    {
+        var Chosen = LampCutCapacity;
+        var Score  = 0.0;
+        for (var Entry = 0u; Entry < Count; Entry++)
+        {
+            let Base  = Tracing.Practical.y + LampCut[Entry] * 4u;
+            let Lower = LightRecords[Base];
+            let Upper = LightRecords[Base + 1u];
+            if ((bitcast<u32>(Upper.w) & LampLeafFlag) != 0u) { continue; }
+            let Diagonal  = Upper.xyz - Lower.xyz;
+            let Radius2   = 0.25 * dot(Diagonal, Diagonal);
+            let Offset    = Position - 0.5 * (Lower.xyz + Upper.xyz);
+            let Distance2 = max(dot(Offset, Offset), 1.0e-6);
+            let Spread    = Lower.w * Radius2 / (Distance2 * Distance2);
+            if (Radius2 > LampSplitRatio * Distance2 && Spread > Score) { Score = Spread; Chosen = Entry; }
+        }
+        if (Chosen == LampCutCapacity) { break; }
+        let Link = bitcast<u32>(LightRecords[Tracing.Practical.y + LampCut[Chosen] * 4u + 1u].w);
+        LampCut[Chosen] = Link;
+        LampCut[Count]  = Link + 1u;
+        Count += 1u;
+    }
+    return Count;
+}
+
+// 📝 One lamp under cut node Entry: descend choosing each child with probability ∝ importance, steered by the fixed
+//    quadrature coordinate Selection (rotated per cut node, rescaled at every level, so one number decides the whole
+//    path). With the all-lamps rule (Shading.z = 1) entry Entry is simply lamp Entry with probability 1.
+fn DrawPracticalLamp(Position: vec3f, Normal: vec3f, Entry: u32, Selection: f32) -> LampDraw
+{
+    if (Tracing.Shading.z > 0.5) { return LampDraw(Entry, 1.0); }
+    var Node  = LampCut[min(Entry, LampCutCapacity - 1u)];
+    var Pdf   = 1.0;
+    var Steer = fract(Selection + f32(Entry) * GoldenFraction);
+    for (var Level = 0u; Level < 32u; Level++)
+    {
+        let Link = bitcast<u32>(LightRecords[Tracing.Practical.y + Node * 4u + 1u].w);
+        if ((Link & LampLeafFlag) != 0u) { return LampDraw(Link & ~LampLeafFlag, Pdf); }
+        let Left  = LightNodeImportance(Position, Normal, Link);
+        let Right = LightNodeImportance(Position, Normal, Link + 1u);
+        let Total = Left + Right;
+        if (!(Total > 0.0)) { break; }
+        let LeftShare  = Left / Total;
+        let RightShare = Right / Total;
+        if (Steer < LeftShare) { Node = Link;      Pdf *= LeftShare;  Steer = min(Steer / LeftShare, SelectionCeiling); }
+        else                   { Node = Link + 1u; Pdf *= RightShare; Steer = min((Steer - LeftShare) / RightShare, SelectionCeiling); }
+    }
+    return LampDraw(0u, 0.0);
+}
+
+// 📝 Relative intensity (peak = 1) of IES profile Profile toward unit direction Toward (lamp → receiver): θ from the
+//    photometric axis, φ from Reference toward Axis × Reference, bilinear on the PhotometricProfile.js grid.
+fn EvaluateProfile(Profile: u32, Toward: vec3f, Axis: vec3f, Reference: vec3f) -> f32
+{
+    let Vertical   = acos(clamp(dot(Axis, Toward), -1.0, 1.0)) * (f32(ProfileVerticalSamples - 1u) / π);
+    var Horizontal = atan2(dot(Toward, cross(Axis, Reference)), dot(Toward, Reference)) * (f32(ProfileHorizontalSamples) / (2.0 * π));
+    if (Horizontal < 0.0) { Horizontal += f32(ProfileHorizontalSamples); }
+    let V0 = min(u32(Vertical), ProfileVerticalSamples - 2u);
+    let Vt = Vertical - f32(V0);
+    let H0 = min(u32(Horizontal), ProfileHorizontalSamples - 1u);
+    let Ht = clamp(Horizontal - f32(H0), 0.0, 1.0);
+    let H1 = (H0 + 1u) % ProfileHorizontalSamples;
+    let Base = Tracing.Practical.w + Profile * (ProfileVerticalSamples * ProfileHorizontalSamples / 4u);
+    let I00 = H0 * ProfileVerticalSamples + V0;
+    let I10 = H1 * ProfileVerticalSamples + V0;
+    let Near = mix(LightRecords[Base + (I00 >> 2u)][I00 & 3u], LightRecords[Base + ((I00 + 1u) >> 2u)][(I00 + 1u) & 3u], Vt);
+    let Far  = mix(LightRecords[Base + (I10 >> 2u)][I10 & 3u], LightRecords[Base + ((I10 + 1u) >> 2u)][(I10 + 1u) & 3u], Vt);
+    return mix(Near, Far, Ht);
+}
+
+// 📝 Light quadrature at a non-delta vertex: one shared Sobol' point per softbox per sample, combined with the
+//    BSDF-lobe rule through the power heuristic per lobe; then the practical lamps — one drawn from the light tree, or
+//    every lamp with the all-lamps rule. Lamps are points (delta lights: no lobe ray can hit them, so no MIS weight).
+//    One loop and one EvaluateLobes / shadow-ray call site for both kinds (shader size matters on software adapters).
 fn IntegrateLightQuadrature(Surface: SurfaceSample, Material: SurfaceMaterial, ωo: vec3f, SampleIndex: u32, Depth: u32, LobesContinue: bool) -> vec3f
 {
     var Radiance = vec3f(0.0);
     let Point = DepthPair(SampleIndex, Depth, PairLight);
-    for (var LightIndex = 0u; LightIndex < Tracing.DepthLimits.z; LightIndex++)
+    let AreaCount = Tracing.DepthLimits.z;
+    let AllLamps  = Tracing.Shading.z > 0.5;
+    var LampDraws = select(min(Tracing.Practical.x, 1u), Tracing.Practical.x, AllLamps);
+    var Selection = 0.0;
+    if (LampDraws > 0u && !AllLamps)
     {
-        let Light       = AreaLights[LightIndex];
-        let LightPoint  = Light.Centre.xyz + (Point.x - 0.5) * Light.EdgeU.xyz + (Point.y - 0.5) * Light.EdgeV.xyz;
-        let Separation  = LightPoint - Surface.Position;
-        let Distance2   = dot(Separation, Separation);
-        let Distance    = sqrt(Distance2);
-        let ωi          = Separation / Distance;
-        let CosineLight = -dot(ωi, LightNormal(Light));
-        if (CosineLight <= 0.0) { continue; }
-        let LightPdf = Distance2 / (CosineLight * Light.Centre.w);
+        Selection = QuadraturePair(SampleIndex, PairPracticalBase + min(Depth, 15u)).x;
+        LampDraws = ResolveLampCut(Surface.Position);
+    }
+    for (var EntryIndex = 0u; EntryIndex < AreaCount + LampDraws; EntryIndex++)
+    {
+        var ωi       = vec3f(0.0);
+        var Distance = 0.0;
+        var LightPdf = 0.0;
+        var Emitted  = vec3f(0.0);
+        var Delta    = false;
+        if (EntryIndex < AreaCount)
+        {
+            let Light       = FetchAreaLight(EntryIndex);
+            let LightPoint  = Light.Centre.xyz + (Point.x - 0.5) * Light.EdgeU.xyz + (Point.y - 0.5) * Light.EdgeV.xyz;
+            let Separation  = LightPoint - Surface.Position;
+            let Distance2   = dot(Separation, Separation);
+            Distance        = sqrt(Distance2);
+            ωi              = Separation / Distance;
+            let CosineLight = -dot(ωi, LightNormal(Light));
+            if (CosineLight <= 0.0) { continue; }
+            LightPdf = Distance2 / (CosineLight * Light.Centre.w);
+            Emitted  = Light.Radiance.rgb;
+        }
+        else
+        {
+            let Draw = DrawPracticalLamp(Surface.Position, Surface.ShadingNormal, EntryIndex - AreaCount, Selection);
+            if (Draw.Pdf <= 0.0) { continue; }
+            let Base       = Tracing.Practical.z + Draw.Lamp * 4u;
+            let Placement  = LightRecords[Base];
+            let Separation = Placement.xyz - Surface.Position;
+            let Distance2  = dot(Separation, Separation);
+            Distance       = sqrt(Distance2);
+            ωi             = Separation / Distance;
+            let Relative   = EvaluateProfile(u32(Placement.w), -ωi, LightRecords[Base + 1u].xyz, LightRecords[Base + 2u].xyz);
+            if (Relative <= 0.0) { continue; }
+            // 📝 Point lamp: E = I(ω) cosθ / d², divided by the draw probability (LightPdf carries d² × pdf).
+            LightPdf = Distance2 * Draw.Pdf;
+            Emitted  = LightRecords[Base + 3u].rgb * Relative;
+            Delta    = true;
+        }
 
         // 📝 At a terminal vertex no lobe ray continues, so the light rule carries the full weight.
         let Lobes = EvaluateLobes(Material, Surface.ShadingNormal, Surface.GeometricNormal, ωo, ωi);
         let ContinuedPdf = select(vec3f(0.0), vec3f(Lobes.DiffusePdf, Lobes.SpecularPdf, Lobes.CoatPdf), LobesContinue);
-        let Weighted = Lobes.Diffuse  * PowerHeuristic(LightPdf, ContinuedPdf.x)
+        let Combined = Lobes.Diffuse  * PowerHeuristic(LightPdf, ContinuedPdf.x)
                      + Lobes.Specular * PowerHeuristic(LightPdf, ContinuedPdf.y)
                      + Lobes.Coat     * PowerHeuristic(LightPdf, ContinuedPdf.z);
+        let Weighted = select(Combined, Lobes.Diffuse + Lobes.Specular + Lobes.Coat, Delta);
         if (max(max(Weighted.x, Weighted.y), Weighted.z) <= 0.0) { continue; }
 
         let Origin = OffsetOrigin(Surface.Position, Surface.GeometricNormal, ωi);
         let Visibility = TraceShadowTransmittance(Origin, ωi, Distance * (1.0 - 1.0e-4));
-        Radiance += Visibility * Light.Radiance.rgb * Weighted / LightPdf;
+        Radiance += Visibility * Emitted * Weighted / LightPdf;
     }
     return Radiance;
 }
@@ -1044,7 +1227,7 @@ fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
 
         if (Hit.Category == HitLight)
         {
-            let Light       = AreaLights[Hit.PrimitiveIndex];
+            let Light       = FetchAreaLight(Hit.PrimitiveIndex);
             let CosineLight = -dot(Ray.Direction, LightNormal(Light));
             if (CosineLight > 0.0)
             {

@@ -5,6 +5,7 @@
 
 import { TracingDivision, ResolveDisplayPixels } from './TracingDivision.js';
 import { PaintPresets, FloorPresets, EnvironmentPresets } from './StudioSceneAssembly.js';
+import { PracticalModes } from './PracticalLighting.js';
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    CONSTANTS
@@ -37,6 +38,12 @@ const Configuration = {
     RimIntensity:         12.0,
     FillIntensity:        3.0,
     LampExitance:         0.2,
+    // 📝 Practical lamps (PracticalLighting.js): IES point emitters on every car and over the car park, one drawn per
+    //    vertex from the light tree ('tree') or all of them ('all', the reference rule).
+    PracticalMode:        Object.hasOwn(PracticalModes, QueryParameters.get('lamps') ?? '') ? QueryParameters.get('lamps') : 'off',
+    PracticalIntensity:   Number(QueryParameters.get('lampscale') ?? 1),
+    LampSampling:         ['tree', 'split4', 'split8', 'all'].includes(QueryParameters.get('lampsampling')) ? QueryParameters.get('lampsampling') : 'split8',
+    NightMode:            QueryParameters.get('night') === '1',
     ExposureStops:        0.0,
     LightsVisibleToCamera: false,
     BounceLimit:          2,
@@ -95,7 +102,8 @@ function Locate(Identifier)
 function DescribeGeometry()
 {
     const Summary = Division.SceneSummary;
-    Locate('StatusGeometry').textContent = `${Summary.TriangleCount.toLocaleString('en-US')} tris · ${Summary.BoundsEntryCount.toLocaleString('en-US')} bounds · ${Summary.SphereCount} spheres · ${Summary.LightCount} softboxes`;
+    const Lamps = Summary.LampCount ? ` · ${Summary.LampCount} lamps (tree depth ${Summary.LightTreeDepth})` : '';
+    Locate('StatusGeometry').textContent = `${Summary.TriangleCount.toLocaleString('en-US')} tris · ${Summary.BoundsEntryCount.toLocaleString('en-US')} bounds · ${Summary.SphereCount} spheres · ${Summary.LightCount} softboxes${Lamps}`;
 }
 
 function PopulateSelect(Identifier, Options, Current, OnSelect)
@@ -182,6 +190,11 @@ function ConstructInspector()
     PopulateSelect('LightVisibilitySelect', [['hidden', 'Hidden (reflections only)'], ['visible', 'Visible']], Configuration.LightsVisibleToCamera ? 'visible' : 'hidden',
         Key => { Configuration.LightsVisibleToCamera = Key === 'visible'; InvalidateAccumulation(); });
     AttachSlider('LampSlider', Configuration.LampExitance, Fixed(2), Amount => { Configuration.LampExitance = Amount; InvalidateAccumulation(true); });
+    PopulateSelect('PracticalSelect', Object.entries(PracticalModes).map(([Key, Mode]) => [Key, Mode.Label]), Configuration.PracticalMode,
+        Key => { Configuration.PracticalMode = Key; InvalidateAccumulation(true); DescribeGeometry(); });
+    AttachSlider('PracticalSlider', Configuration.PracticalIntensity, Fixed(2), Amount => { Configuration.PracticalIntensity = Amount; InvalidateAccumulation(true); });
+    PopulateSelect('RigSelect', [['day', 'Studio rig + sky'], ['night', 'Night (rig off, sky 2 %)']], Configuration.NightMode ? 'night' : 'day',
+        Key => { Configuration.NightMode = Key === 'night'; InvalidateAccumulation(true); DescribeGeometry(); });
     AttachSlider('ExposureSlider', Configuration.ExposureStops, Amount => `${Amount >= 0 ? '+' : ''}${Amount.toFixed(1)}`,
         Amount => { Configuration.ExposureStops = Amount; Interface.DisplayStale = true; });
 
@@ -191,6 +204,8 @@ function ConstructInspector()
         Key => { Configuration.DepthLimit = Number(Key); InvalidateAccumulation(); });
     PopulateSelect('BatchSelect', [[1, '1'], [2, '2'], [4, '4'], [8, '8']], Configuration.SampleBatch,
         Key => { Configuration.SampleBatch = Number(Key); });
+    PopulateSelect('LampSamplingSelect', [['tree', 'Light tree, 1 lamp per hit'], ['split4', 'Light tree, split ≤ 4'], ['split8', 'Light tree, split ≤ 8'], ['all', 'Every lamp (reference)']], Configuration.LampSampling,
+        Key => { Configuration.LampSampling = Key; InvalidateAccumulation(); });
     PopulateSelect('TraceSelect', [[1, 'Full (every pixel)'], [2, '½ (one ray per 2×2)'], [4, '¼ (one ray per 4×4)']], Configuration.TraceScale,
         Key => { Configuration.TraceScale = Number(Key); InvalidateAccumulation(); });
     PopulateSelect('ScaleSelect', [[0.25, '25 %'], [0.5, '50 %'], [0.75, '75 %'], [1, '100 %']], Configuration.RenderScale,

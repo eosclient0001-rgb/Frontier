@@ -7,12 +7,14 @@ import { RetrieveVehicleArchives } from './VehicleAssembly.js';
 import { ConstructBoundingVolumes, ConstructBinaryTree, CollapseWideBounds, WideNodeWords, EmptyLink } from './BoundingVolumeConstruction.js';
 import { StageTiming } from './StageTiming.js';
 import { ConstructMaterialTable, PackMaterialTable, ConstructShowcaseSpheres, ConstructSoftboxLights, ResolveParkingBays } from './StudioSceneAssembly.js';
+import { ParseIesProfile, ResampleProfile } from './PhotometricProfile.js';
+import { PhotometryFiles, ConstructPracticalLamps, ConstructLightTree, PackLightRecords } from './PracticalLighting.js';
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    CONSTANTS
 //------------------------------------------------------------------------------------------------------------------------
 
-const TracingUniformBytes  = 272;   // [B] - 17 × vec4
+const TracingUniformBytes  = 288;   // [B] - 18 × vec4
 const PointPatternCodes    = Object.freeze({ shared: 0, pixel: 1, bluenoise: 2 });   // 📝 Tracing.Realtime.x
 const DisplayUniformBytes  = 32;    // [B] - 2 × vec4
 const RasterUniformBytes   = 80;    // [B] - 5 × vec4
@@ -26,6 +28,8 @@ const DenoiseFullUntil     = 4;     // [spp] - Full filter strength up to here �
 const DenoiseFadedAt       = 64;    // [spp] - … fading (log₂) to the exact image here
 const FloorRadius          = 60.0;  // [m]
 const WorkgroupEdge        = 8;     // [px]
+const LampCutLimits        = Object.freeze({ tree: 1, split4: 4, split8: 8, all: 1 });   // 📝 Tracing.Shading.w
+const NightSkyFraction     = 0.02;  // [-]  - Environment left on at night so unlit geometry stays readable
 
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -47,6 +51,17 @@ async function RetrieveBlueNoiseRanks(AssetRoot)
     const Ranks = new Uint32Array(await Response.arrayBuffer());
     if (Ranks.length !== 4096) throw new Error(`BlueNoiseRanks.bin: expected 4096 texels, found ${Ranks.length}`);
     return Ranks;
+}
+
+// 📝 IES files (Assets/Photometry, written by Tools/PhotometryConstruction.mjs) parsed and resampled once.
+async function RetrievePhotometry(AssetRoot)
+{
+    return Promise.all(PhotometryFiles.map(async Name =>
+    {
+        const Response = await fetch(new URL(`Photometry/${Name}`, AssetRoot));
+        if (!Response.ok) throw new Error(`${Name}: HTTP ${Response.status}`);
+        return ResampleProfile(ParseIesProfile(await Response.text(), Name));
+    }));
 }
 
 async function ValidateShaderCompilation(ShaderUnit, Label)
@@ -161,15 +176,17 @@ export class TracingDivision
             this.CanvasContext.configure({ device: this.Device, format: this.CanvasFormat, alphaMode: 'opaque' });
         }
 
-        const [QuadratureSource, IntegrationSource, DisplaySource, RasterSource, ReconstructionSource, Vehicle, BlueNoiseRanks] = await Promise.all([
+        const [QuadratureSource, IntegrationSource, DisplaySource, RasterSource, ReconstructionSource, Vehicle, BlueNoiseRanks, Photometry] = await Promise.all([
             RetrieveShaderSource('QuadratureSequence.wgsl'),
             RetrieveShaderSource('RadianceIntegration.wgsl'),
             RetrieveShaderSource('DisplayExposure.wgsl'),
             RetrieveShaderSource('VisibilityRasterization.wgsl'),
             RetrieveShaderSource('DisplayReconstruction.wgsl'),
             RetrieveVehicleArchives(AssetRoot),
-            RetrieveBlueNoiseRanks(AssetRoot)
+            RetrieveBlueNoiseRanks(AssetRoot),
+            RetrievePhotometry(AssetRoot)
         ]);
+        this.Photometry = Photometry;
         this.ConstructPipelines(QuadratureSource + IntegrationSource, DisplaySource, QuadratureSource + RasterSource, ReconstructionSource);
         await Promise.all([
             ValidateShaderCompilation(this.ReconstructionUnit, 'DisplayReconstruction.wgsl'),
@@ -257,7 +274,8 @@ export class TracingDivision
     {
         const MaterialTable = ConstructMaterialTable(Configuration);
         const Spheres       = ConstructShowcaseSpheres(MaterialTable.SlotIndex);
-        const Lights        = ConstructSoftboxLights(Configuration);
+        // 📝 Night: the three softboxes are removed (and the sky dimmed in WriteTracingUniforms); only lamps remain.
+        const Lights        = ConstructSoftboxLights(Configuration.NightMode ? { KeyIntensity: 0, RimIntensity: 0, FillIntensity: 0 } : Configuration);
 
         const VehicleCount = Configuration.VehicleCount ?? 1;
         if (!this.TrianglePositionBuffer || this.GeometryVehicleCount !== VehicleCount)
@@ -319,12 +337,25 @@ export class TracingDivision
             this.GeometryVehicleCount = VehicleCount;
         }
 
+        // 📝 Practical lamps ride on the parked cars (and the car-park ceiling); rebuilt with the light tree whenever the
+        //    lamp mode, intensity or vehicle count changes (≈ 1 ms for 228 lamps).
+        const LampStart = performance.now();
+        const Bays  = Configuration.VehicleEnabled === false ? [] : ResolveParkingBays(VehicleCount);
+        const Lamps = ConstructPracticalLamps(Configuration.PracticalMode, Bays, this.Photometry, Configuration.PracticalIntensity ?? 1);
+        const LightTree = ConstructLightTree(Lamps);
+        const Records = PackLightRecords(Lights.Packed, Lights.Count, Lamps, LightTree, this.Photometry);
+        this.PracticalLayout = Records.Layout;
+
         this.MaterialBuffer?.destroy(); this.LightBuffer?.destroy(); this.SphereBuffer?.destroy();
         this.MaterialBuffer = this.CreateStorage(PackMaterialTable(MaterialTable), 'Materials');
-        this.LightBuffer    = this.CreateStorage(Lights.Packed, 'AreaLights');
+        this.LightBuffer    = this.CreateStorage(Records.Floats, 'LightRecords');
         this.SphereBuffer   = this.CreateStorage(Spheres.Packed, 'Spheres');
         this.SceneSummary.SphereCount = Spheres.Count;
         this.SceneSummary.LightCount  = Lights.Count;
+        this.SceneSummary.LampCount   = Lamps.length;
+        this.SceneSummary.LightTreeNodes = LightTree.Nodes.length;
+        this.SceneSummary.LightTreeDepth = LightTree.Depth;
+        this.SceneSummary.LightTreeMilliseconds = Math.round((performance.now() - LampStart) * 10) / 10;
         this.SceneSummary.MaterialCount = MaterialTable.Slots.length;
         this.FloorSlot  = MaterialTable.SlotIndex.StudioFloor;
         this.Configuration = { ...Configuration };
@@ -413,7 +444,7 @@ export class TracingDivision
     // 📝 Instance tree over the parking bays plus one record per instance (instance-tree order). Buffer layout in vec4u:
     //    [vehicle nodes][instance nodes][instance records]. Each bay is a rotation about +Y then a translation; bay 0 of
     //    a single vehicle is the exact identity, so its rays keep their float bits. The paint slot swap replaces
-    //    BodyCoat with the bay's fleet paint (what ArrangeFleet baked into copied triangles before instancing).
+    //    BodyCoat with the bay's own finish and RimAlloy with its wheel finish (row 6 z / w, row 7 x = rim slot).
     static ConstructInstanceTree(VehicleTree, Bays, SlotIndex)
     {
         const Count = Bays.length;
@@ -454,7 +485,9 @@ export class TracingDivision
             const C = T.Cosine, S = T.Sine;
             Floats.set([C, 0, -S, -(C * T.X - S * T.Z),  0, 1, 0, 0,  S, 0, C, -(S * T.X + C * T.Z),   // world → object
                         C, 0, S, T.X,                     0, 1, 0, 0,  -S, 0, C, T.Z], O);               // object → world
-            Words.set([0, SlotIndex.BodyCoat ?? EmptyLink, Bay.PaintSlot ? SlotIndex[Bay.PaintSlot] : EmptyLink, 0], O + 24);
+            Words.set([0, SlotIndex.BodyCoat ?? EmptyLink, Bay.PaintSlot ? SlotIndex[Bay.PaintSlot] : EmptyLink,
+                       Bay.RimSlot ? SlotIndex[Bay.RimSlot] : EmptyLink], O + 24);
+            Words.set([SlotIndex.RimAlloy ?? EmptyLink, 0, 0, 0], O + 28);
         }
         return { Words, NodeCount: Wide.NodeCount, MaximumDepth: Wide.MaximumDepth,
                  Layout: { InstanceRoot: VehicleNodes, RecordBase: RecordBase / 4, InstanceCount: Count } };
@@ -627,7 +660,7 @@ export class TracingDivision
         Floats.set([...Camera.Forward, FocusDistance], 4);
         Floats.set([...Camera.Right, 0], 8);
         Floats.set([...Camera.Up, 0], 12);
-        Floats.set([1, 1, 1, Configuration.EnvironmentIntensity], 16);
+        Floats.set([1, 1, 1, Configuration.EnvironmentIntensity * (Configuration.NightMode ? NightSkyFraction : 1)], 16);
         Words.set([this.AccumulationWidth, this.AccumulationHeight, FirstSample, SampleBatch], 20);
         Words.set([Configuration.BounceLimit, Configuration.DepthLimit, this.SceneSummary.LightCount, Configuration.ShowcaseEnabled === false ? 0 : this.SceneSummary.SphereCount], 24);
         Words.set([this.FloorSlot, Configuration.EnvironmentCategory, this.SceneSummary.BoundsEntryCount, Configuration.VehicleEnabled === false ? 0 : 1], 28);
@@ -638,7 +671,9 @@ export class TracingDivision
         Floats.set([Configuration.HistoryCapacity ?? 32, this.HistoryActive ? 1 : 0, 0, 0], 56);
         const Layout = this.GeometryLayout;
         Words.set([Layout.InstanceRoot, Layout.RecordBase, Layout.InstanceCount, this.TraceScale()], 60);
-        Floats.set([0, 0, 0, 0], 64);
+        Floats.set([0, 0, Configuration.LampSampling === 'all' ? 1 : 0, LampCutLimits[Configuration.LampSampling] ?? 1], 64);
+        const Practical = this.PracticalLayout;
+        Words.set([Practical.LampCount, Practical.NodeBase, Practical.LampBase, Practical.ProfileBase], 68);
         this.Device.queue.writeBuffer(this.TracingUniformBuffer, 0, Bytes);
     }
 

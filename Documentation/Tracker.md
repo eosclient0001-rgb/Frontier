@@ -48,6 +48,13 @@ hardware RT, non-ray paths, reflections, PBR and the statistical limits of the r
   full (6.08 vs 6.29 levels), even with full at equal time; converged slightly worse per spp (1.98 vs 1.67 at 16 spp).
   Deterministic (batch 1 = 8); full resolution unchanged (`a0ca494d`, `c153d6c4`). Mirror floor shows a 2-px dither.
   [Trace resolution](../Exhibits/DeterministicPathTracer/README.md#trace-resolution-render-fewer-rays-upsample).
+- Many lights: IES point lamps (LM-63 parser, Type C, all symmetries; 3 authored .ies files) — 2 head + 2 tail per
+  car, 28 car-park downlights (228 lamps at 50 cars) — sampled through a light tree (Conty Estevez & Kulla: box +
+  power + emission cone, exact beam at leaves) with adaptive splitting (≤ 4 / 8 subtrees), steered by one fixed
+  quadrature coordinate. Unbiased (split ≤ 8 is 0.87 levels from the every-lamp reference at 256 frames), better
+  than every-lamp at equal time, and 60 → 228 lamps adds 16–28 % per frame vs 3.6× for every-lamp. Night rig,
+  per-car body + wheel finishes (49 unique, fixed rule). Lamps off: unchanged (`a0ca494d`).
+  [Many lights](../Exhibits/DeterministicPathTracer/README.md#many-lights-ies-lamps-and-the-light-tree).
 
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 

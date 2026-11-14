@@ -107,18 +107,68 @@ export function ConstructMaterialTable(Options)
         ['GlazedCeramic',  LayeredSurface([0.72, 0.07, 0.05], 0.35, 1.0, 0.02)],
         ['MatteChalk',     LayeredSurface([0.82, 0.82, 0.80], 0.90)],
         ['CanopyGloss',    LayeredSurface([0.03741, 0.03741, 0.03741], 0.35, 1.0, 0.03)],
-        // 📝 Extra parked vehicles cycle through these so the copies stay distinguishable.
-        ...FleetPaintKeys.map((Key, Index) => [`FleetPaint${Index}`, LayeredSurface(PaintPresets[Key].Albedo, Options.PaintRoughness, 1.0, 0.03)])
+        // 📝 Every parked vehicle gets its own body finish and one of four wheel finishes (ResolveParkingBays).
+        ...ConstructFleetFinishes(ParkingCapacity - 1).map((Surface, Index) => [`FleetFinish${Index}`, Surface]),
+        ['FleetRim0',      ConductorSurface(MeasuredConductors.Chromium, 0.06)],
+        ['FleetRim1',      LayeredSurface([0.02, 0.02, 0.022], 0.30, 1.0, 0.04)],
+        ['FleetRim2',      ConductorSurface(MeasuredConductors.Gold, 0.24)],
+        ['FleetRim3',      ConductorSurface(MeasuredConductors.Aluminium, 0.45)]
     ];
     const SlotIndex = Object.fromEntries(Slots.map(([Label], Index) => [Label, Index]));
     return { Slots, SlotIndex };
+}
+
+// 📝 Artist-friendly metallic Fresnel (Gulbrandsen 2014): reflectivity r (normal-incidence colour) and edge tint g
+//    → per-channel complex IOR (η, κ) for the exact conductor Fresnel.
+function TintedConductor(Reflectivity, EdgeTint)
+{
+    const Eta = [], Kappa = [];
+    for (let Channel = 0; Channel < 3; Channel++)
+    {
+        const R = Math.min(Math.max(Reflectivity[Channel], 0.001), 0.99), G = EdgeTint[Channel];
+        const Minimum = (1 - R) / (1 + R), Maximum = (1 + Math.sqrt(R)) / (1 - Math.sqrt(R));
+        const N = G * Minimum + (1 - G) * Maximum;
+        Eta.push(N);
+        Kappa.push(Math.sqrt(Math.max(0, (R * (N + 1) ** 2 - (N - 1) ** 2) / (1 - R))));
+    }
+    return { Eta, Kappa };
+}
+
+function HueColour(Hue, Saturation, Value)
+{
+    const Channel = Offset => { const K = (Offset + Hue * 6) % 6; return Value * (1 - Saturation * Math.max(0, Math.min(K, 4 - K, 1))); };
+    return [Channel(5), Channel(3), Channel(1)];
+}
+
+// 📝 Fixed rule, no RNG: hues step by the golden ratio (never repeating), finishes cycle with a coprime stride through
+//    six real paint families so neighbours differ in both colour and finish.
+const FleetFinishFamilies = ['Gloss', 'Metallic', 'Matte', 'Satin metal', 'Pearl', 'Candy chrome'];
+export function ConstructFleetFinishes(Count)
+{
+    const Finishes = [];
+    for (let Index = 0; Index < Count; Index++)
+    {
+        const Hue = (0.08 + Index * 0.6180339887) % 1;
+        const Family = FleetFinishFamilies[(Index * 5) % FleetFinishFamilies.length];
+        const Dark = Index % 7 === 3, Light = Index % 7 === 5;
+        const Colour = Light ? HueColour(Hue, 0.12, 0.80) : HueColour(Hue, Dark ? 0.55 : 0.88, Dark ? 0.07 : 0.55);
+        let Surface;
+        if (Family === 'Gloss')        Surface = LayeredSurface(Colour, 0.30, 1.0, 0.025);
+        else if (Family === 'Metallic') Surface = { ...LayeredSurface(Colour.map(C => C * 0.6), 0.16, 1.0, 0.03), SpecularF0: 0.22 };
+        else if (Family === 'Matte')   Surface = LayeredSurface(Colour, 0.62);
+        else if (Family === 'Satin metal') Surface = ConductorSurface(TintedConductor(Colour.map(C => 0.25 + 0.7 * C), Colour.map(C => 0.5 + 0.5 * C)), 0.32);
+        else if (Family === 'Pearl')   Surface = { ...LayeredSurface(HueColour(Hue, 0.10, 0.82), 0.22, 1.0, 0.02), SpecularF0: 0.07 };
+        else                           Surface = ConductorSurface(TintedConductor(Colour.map(C => 0.15 + 0.8 * C), [0.9, 0.9, 0.9]), 0.07);
+        Finishes.push({ ...Surface, Family });
+    }
+    return Finishes;
 }
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    VEHICLE PARKING
 //------------------------------------------------------------------------------------------------------------------------
 
-const FleetPaintKeys  = ['Racing', 'Pearl', 'Midnight', 'Graphite'];
+const FleetRimCount   = 4;
 // 📝 Assembled vehicle bounds: X ±3.11 m (length 6.22), Z ±1.25 m (width 2.5), height 1.77 m. Cars park side by side
 //    along Z with a 1.1 m door gap; rows along X are separated by a 3.5 m aisle. Bays extend to −Z, away from the
 //    material spheres on the +Z side. 5 rows × 10 bays = 50 vehicles (1,253,400 triangles).
@@ -129,7 +179,7 @@ const ParkingBays     = 10;
 export const ParkingCapacity = ParkingRows.length * ParkingBays;
 
 // 📝 Bay 0 is the hero vehicle at the origin. Further bays fill outward by distance; alternate rows face the other
-//    way (nose to the aisle). Returns { X, Z, Yaw, PaintSlot }; PaintSlot null keeps the paint preset's BodyCoat.
+//    way (nose to the aisle). Returns { X, Z, Yaw, PaintSlot, RimSlot }; null keeps the hero's BodyCoat / RimAlloy.
 export function ResolveParkingBays(VehicleCount)
 {
     const Bays = [];
@@ -139,7 +189,8 @@ export function ResolveParkingBays(VehicleCount)
     }
     Bays.sort((Left, Right) => (Math.hypot(Left.X, Left.Z * 2.0) - Math.hypot(Right.X, Right.Z * 2.0)) || (Left.X - Right.X) || (Right.Z - Left.Z));
     return Bays.slice(0, Math.max(1, Math.min(VehicleCount, Bays.length)))
-               .map((Bay, Index) => ({ ...Bay, PaintSlot: Index === 0 ? null : `FleetPaint${(Index - 1) % FleetPaintKeys.length}` }));
+               .map((Bay, Index) => ({ ...Bay, PaintSlot: Index === 0 ? null : `FleetFinish${Index - 1}`,
+                                       RimSlot: Index === 0 ? null : `FleetRim${(Index * 3) % FleetRimCount}` }));
 }
 
 export function PackMaterialTable(MaterialTable)

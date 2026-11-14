@@ -32,6 +32,10 @@ WebGPU needs a secure context: `localhost` qualifies, a plain-http LAN address d
 | `clamp=1.5`            | Clamp history to mean ± γσ of current 3×3 (default 0 = off)   |
 | `sigma=4`              | Denoiser luminance tolerance at 1 spp (÷ n after that)        |
 | `timing=0`             | Do not request GPU timestamp queries (no "GPU per frame" row) |
+| `lamps=vehicles`       | IES lamps: `vehicles` (2 head + 2 tail per car), `carpark` (+ 28 downlights) |
+| `lampsampling=split8`  | Lamp rule: `tree` (1 lamp per hit), `split4`, `split8` (default), `all` (reference) |
+| `lampscale=2`          | Lamp intensity multiplier (default 1)                          |
+| `night=1`              | Softboxes off, sky at 2 %: only the lamps light the scene      |
 
 The top-right counter shows traced frames per second, smoothed ms per frame and samples per frame
 ("Samples per dispatch" selector). It reads "idle" once the target is reached. The loop is paced by
@@ -105,7 +109,11 @@ a clear-coated slot, rim family 9 a satin aluminium slot.
 | `Source/BoundingVolumeConstruction.js`| Binned SAH (16 bins) collapsed to 4-wide nodes, 8-bit child bounds  |
 | `Source/StageTiming.js`               | Per-pass GPU timestamps, non-blocking readback ring, averages       |
 | `Source/VehicleAssembly.js`           | FCT1 decode, creased body normals, 4 mirrored wheel instances      |
-| `Source/StudioSceneAssembly.js`       | Material table, spheres, aimed softboxes, presets                  |
+| `Source/StudioSceneAssembly.js`       | Material table, per-car finishes, spheres, aimed softboxes, presets |
+| `Source/PhotometricProfile.js`        | LM-63 (.ies) parser (Type C, all symmetries, TILT), 128 × 32 resampled table |
+| `Source/PracticalLighting.js`         | Lamp placement per bay, light tree build, packed light records     |
+| `Assets/Photometry/*.ies`             | Low-beam headlamp, tail lamp, car-park downlight (authored, LM-63-2002) |
+| `Tools/PhotometryConstruction.mjs`    | Writes those three .ies files from closed-form distributions       |
 | `Source/WorkspaceInterface.js`        | Inspector, orbit input, accumulation loop, verification, PNG       |
 | `Assets/BlueNoiseRanks.bin`           | Two 64² void-and-cluster rank masks (16 KiB), committed            |
 | `Tools/BlueNoiseConstruction.mjs`     | Rebuilds the masks: fixed integer seed, lowest-index tie-break     |
@@ -119,7 +127,7 @@ Validation, measurements and captures: [`Exhibits/DeterministicPathTracer/`](../
 |-------------------|-------------------------------------------------------------------------------------------------|
 | Vehicle tree      | Binary binned SAH, then collapsed: each node opens its largest-area inner child until it holds 4 children. 3,895 nodes, depth 11 (binary: 15,991 entries, depth 20). |
 | Node (64 bytes)   | Origin (3 × f32), per-axis power-of-two scale, 8-bit min/max per child and axis, 16-bit leaf counts, 4 links. Child boxes are rounded outward and verified in float32 on the host, so no hit is ever culled. Leaves hold ≤ 15 triangles (larger SAH leaves are median-split). |
-| Instance tree     | Same build over one box per bay, 1 instance per leaf. Instance record: world→object and object→world rows, tree root, paint-slot swap (BodyCoat → FleetPaint0–3). |
+| Instance tree     | Same build over one box per bay, 1 instance per leaf. Instance record: world→object and object→world rows, tree root, slot swaps (BodyCoat → the bay's own `FleetFinish`, RimAlloy → one of four `FleetRim` finishes). |
 | Closest hit       | One loop, one stack for both levels. Children are sorted by entry distance (fixed 5-exchange network on vector lanes, ties keep child order) and pushed farthest first; an instance leaf transforms the ray (not renormalized, so `t` stays a world distance) and pushes a return marker. |
 | Shadow rays       | Same loop without sorting: every crossing counts, glazing attenuates, the product is order-fixed. |
 | Visibility raster | Instanced draw (`instance_index` → record); IDs are `instance << 20 | triangle`. |
@@ -131,6 +139,41 @@ host-transformed triangles, so their digests changed once, and repeat exactly (b
 `Division.MeasureRayStatistics(n)` runs the integrator with a pipeline-override constant that counts closest
 rays, shadow rays, child-box tests and triangle tests per pixel-sample (the normal pipeline compiles the
 counters away).
+
+## Per-car finishes
+
+Every parked car (bays 1–49) gets its own body material and one of four wheel finishes. A fixed rule, no RNG:
+hues step by the golden ratio, and the finish cycles with stride 5 through six families: gloss solid (clear coat),
+metallic (coat + raised F0), matte wrap (no coat, roughness 0.62), satin metal and candy chrome (tinted conductors
+through the Gulbrandsen 2014 reflectivity / edge-tint → η, κ mapping), and pearl. Every 7th car is near-black,
+every 7th (offset) near-white. The hero car keeps the inspector paint. Swapping is per instance (two slot
+replacements in the instance record), so it costs no geometry.
+
+## Practical lamps and the light tree
+
+Lamps are IES point emitters: 2 low-beam headlamps and 2 tail lamps per car (5 cm in front of the lens strips,
+moved with the bay transform), plus 28 batwing downlights 5 m above the four aisles (`lamps=carpark`). At 50 cars
+that is 228 lamps.
+
+| Piece            | What it does                                                                                  |
+|------------------|-----------------------------------------------------------------------------------------------|
+| Photometry       | `.ies` files are parsed (LM-63, Type C) and resampled to 128 θ × 32 φ, normalized to their peak; the lamp record carries peak candela × colour × 1/40 (scene units). The shader reads the table bilinearly. |
+| Light tree       | Binary tree over lamp positions (Conty Estevez & Kulla 2018). Each node stores its box, total power, the cone of emission axes (θo) and the emission extent (θe). Split: longest axis, cut at the most even power balance. Built on the host in ≈ 2 ms for 228 lamps (depth 9). |
+| Importance       | power × cos θ′ / d² × cos θi′, with θ′ and θi′ widened by the node's angular size. It is zero only when every lamp in the node is provably dark toward the point or below its surface, so no contributing lamp is ever skipped. A leaf (one lamp) uses its exact beam: I(ω) cos θi / d². |
+| Selection        | Descend from a node, picking each child with probability ∝ importance, steered by one fixed quadrature coordinate (pair 66 + depth), rescaled at each level. Contribution ÷ product of the probabilities, so the result is **unbiased** (it converges to the every-lamp image). |
+| Adaptive split   | `split4` / `split8` (default): before drawing, the root is split into up to 4 / 8 subtrees (Conty Estevez & Kulla's adaptive splitting). Each round splits the node with the largest power × radius² / distance⁴ while its radius² > 0.05 × distance², so nearby, bright, spread-out clusters get their own draw and far clusters share one. One lamp is drawn under each subtree. The subtrees partition the lamps, so it stays unbiased. |
+| Every-lamp rule  | `lampsampling=all`: one shadow ray per lamp per hit. The reference for the light tree; its cost grows with the lamp count. |
+
+Lamps are points, so lobe rays can never hit them and no MIS weight is needed; the lit lens strips are the
+existing emissive triangles (the visible part, reached by lobe rays). On mirror-like surfaces a point lamp gives
+a single-pixel highlight, not a reflection of the lens. Softboxes and lamps share one light loop and one
+shadow-ray call site. With lamps off, output is bit-identical to before (`a0ca494d`).
+
+**Why a light tree and not clustered lighting:** clustered (froxel) lighting bins lights by screen-space tiles
+and depth slices, which only covers points the camera sees directly. Path-traced reflections and bounces shade
+points anywhere in the world. A world-space light grid would cover them, but it gives every light in a cell the same
+weight and has to cap lights per cell. The light tree weights each lamp by its actual contribution (distance,
+orientation, beam shape) at the shading point, costs log₂(N) node visits, and stays unbiased.
 
 ## Limits
 
@@ -154,7 +197,11 @@ counters away).
 - Rasterized visibility is not bit-identical to traced visibility: subpixel vertex snapping and coplanar ties
   resolve ≈ 0.2 % of pixels differently (relative RMS 1e-4). It also depends on the GPU's rasterizer.
 - Reprojection carries colour by surface position, so moving reflections lag on glossy-but-not-mirror surfaces.
-- Lamp lenses are not light-sampled; their exitance defaults to 20 % of the authored 48.7.
+- Lamp lenses are not light-sampled; their exitance defaults to 20 % of the authored 48.7. The IES lamps are
+  separate point emitters, so the light from a lamp is its beam plus its glowing lens.
+- Downlights have no visible fixture (no ceiling geometry); only their pools and highlights show.
+- One lamp per hit means many-lamp scenes start noisier than the studio rig; the denoiser and more frames take
+  it from there.
 
 ## Integration path (later)
 
