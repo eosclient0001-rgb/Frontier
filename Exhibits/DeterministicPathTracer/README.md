@@ -41,6 +41,143 @@ Hero `b19096e3`, Spheres `938371a7`, Rear `fba37cb8`.
 |---|---|---|---|---|---|---|---|---|---|---|
 | RMS | 2.4e-1 | 3.7e-2 | 5.7e-2 | 1.3e-2 | 1.1e-2 | 3.6e-3 | 1.8e-3 | 1.1e-3 | 7.2e-4 | 3.4e-4 |
 
+## Real-time options
+
+Phase `realtime` (Hero, 160×90, errors vs 256 spp; orbit = 0.05 rad yaw after 32 spp). Timings are from one run on
+2-core SwiftShader, so read them as ratios; the second run gave +7 % / +1 % instead of +15 % / +5 %.
+
+![Real-time comparison](Images/RealtimeComparison.png)
+
+| Mode | s / spp | RMS @1 | RMS @16 | Digest @16 | Verdict |
+|---|---|---|---|---|---|
+| Shared pattern, traced (default) | 0.407 | 0.347 | 0.0359 | `b12c0517` | Bit-identical to before (`2dc6f6ca` determinism, `a0ca494d` smoke) |
+| Per-pixel pattern | 0.469 (+15 %) | 0.364 | 0.0383 | `762d9b16` | Same error, banding → grain; slower (SIMD divergence) |
+| Shared, rasterized visibility | 0.428 (+5 %) | 0.347 | 0.0359 | `016d3087` | **No gain**: camera rays are ~1 of 8.5 rays and already coherent |
+
+Raster vs traced at 16 spp: 28 of 14,400 pixels differ, relative RMS 1.2e-4 (sliver triangles under subpixel
+snapping, coplanar ties). 🔍 A 3×3 neighbourhood re-test was tried and made it worse (17 vs 14 pixels at 320×180).
+
+| After orbit, spp | 1 | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| Restart (default) | 0.358 | 0.157 | 0.080 | 0.054 | 0.030 |
+| Reprojected, capacity by base roughness (v1) | 0.330 | 0.285 | 0.236 | 0.154 | 0.043 |
+| Reprojected, coat-aware, mirrors keep none (kept) | **0.263** | 0.157 | 0.095 | 0.068 | 0.043 |
+
+| Displayed 320×180 frame after orbit (8-bit vs 64 spp) | Mean abs. levels | Pixels off > 8 levels |
+|---|---|---|
+| Restart, 1 spp | 5.63 | 16.2 % |
+| Reprojected v1, 1 spp | 4.59 | 10.5 % (but smeared floor reflection) |
+| Reprojected v2, 1 spp | 5.27 | 14.3 % |
+
+- Reprojection pass: 24 ms at 160×90 (≈ 6 % of one sample); 40 % of pixels keep history (v1: 84 %).
+- 🚩 v1 carried the epoxy floor's mirror reflection by surface position, so it lagged and slowed convergence 2–4×.
+  v2 fixes that by giving mirror-like lobes no history; the floor then shows raw 1-spp structure.
+- From 4 spp on, v2 history still cost accuracy (0.043 vs 0.030 at 16). Fixed in v3, see
+  [Denoiser and temporal reuse](#denoiser-and-temporal-reuse) (the tables above are the v1/v2 runs).
+
+## Sample patterns: shared, per-pixel, blue-noise
+
+Phase `patterns` (Hero, 160×90, reference = shared at 1024 spp). "Blurred" applies a σ = 1 px Gaussian to image and
+reference: a proxy for viewing, since the eye averages fine dither but not bands or clumps.
+
+![Pattern progression](Images/PatternProgression.png)
+
+| Blurred RMS (perceived) | 1 | 2 | 4 | 8 | 16 | 32 | 64 |
+|---|---|---|---|---|---|---|---|
+| Shared | 0.172 | 0.080 | 0.042 | 0.020 | 0.015 | 0.011 | 0.0053 |
+| Per-pixel | 0.174 | 0.060 | 0.026 | 0.020 | 0.012 | 0.008 | 0.0043 |
+| **Blue-noise** | **0.169** | **0.057** | **0.023** | **0.019** | **0.011** | **0.008** | **0.0041** |
+
+| Plain RMS | 1 | 4 | 16 | 64 | s / spp | Digest @64 |
+|---|---|---|---|---|---|---|
+| Shared | 0.347 | 0.082 | 0.036 | 0.0151 | 0.391 | `81a50a32` |
+| Per-pixel | 0.364 | 0.083 | 0.038 | 0.0149 | 0.447 (+14 %) | `260dfe67` |
+| Blue-noise | 0.360 | 0.079 | 0.037 | 0.0146 | 0.454 (+16 %) | `d3fbac0b` |
+
+- Same plain error for all three (same estimator, same convergence). Only where the error sits on screen changes.
+- Blue-noise is deterministic: `d3fbac0b` from batch 1 (phase run), batch 8 and batch 64 (fresh browser).
+- The cost is divergence between neighbouring pixels, not the table: one lookup per pixel instead of per pair was
+  no faster (+24 % vs +21 % at 320×180, 4 spp).
+- 🔍 Bright, small features (the floor's softbox reflection) still sparkle at ≤ 16 spp in both dithered modes.
+
+![Blue-noise mask](Images/BlueNoiseMask.png)
+
+Mask check (`Results/BlueNoiseMask.json`): power in frequency bands 1–4 is 3.2e-6 for the blue-noise mask vs 6.4e-2
+for the per-pixel hash; bands 24–31: 0.115 vs 0.079. Masks A and B correlate at 0.02.
+
+## Denoiser and temporal reuse
+
+Phase `reconstruction` (Hero, 160×90, errors vs exact 256 spp; display error = 8-bit ACES/sRGB levels).
+`DisplayReconstruction.wgsl` reads the exact sums and writes only a display buffer, so sums, digests and
+convergence are unchanged (smoke digest still `a0ca494d`). No RNG anywhere: weights are fixed functions of the
+sums and a guide buffer (centre-ray position, normal, material, roughness).
+
+![Denoiser and temporal reuse](Images/ReconstructionComparison.png)
+
+| Still frame | RMS @1 | Levels @1 | RMS @2 | Levels @2 | RMS @4 | Levels @4 | RMS @8 | Levels @8 |
+|---|---|---|---|---|---|---|---|---|
+| Shared, exact | 0.347 | 6.29 | 0.159 | 5.04 | 0.082 | 3.18 | 0.056 | 2.12 |
+| Shared, denoised | **0.222** | 5.03 | 0.125 | 4.44 | 0.081 | 3.08 | 0.055 | 2.10 |
+| Blue-noise, exact | 0.359 | 7.06 | 0.160 | 4.52 | 0.079 | 3.23 | 0.058 | 2.33 |
+| Blue-noise, denoised | 0.234 | **4.06** | **0.112** | **2.84** | **0.074** | **2.54** | 0.057 | 2.16 |
+
+- Blue-noise + denoiser at 1 spp has lower display error (4.06) than exact shared at 2 spp (5.04); at 2 spp
+  (2.84) it beats exact at 4 spp (3.18). The 64 spp image equals the exact one (strength 0).
+- Shared pattern gains less: every pixel uses the same point set, so neighbours share the same error and
+  averaging them cannot remove it. Decorrelated (blue-noise) error is what a spatial filter removes.
+- 🔍 First version (fixed σ = 4) was worse than exact from 4 spp (RMS 0.124 vs 0.082): it smeared highlights.
+  A sweep (σ 1/2/4 × 1–8 spp) showed the best σ halves per doubling, so σ is now 4/n.
+- Determinism: denoised display after 4 spp, batch 1 vs batch 4: `c153d6c4` = `c153d6c4`.
+- Cost: 58 ms per reconstruction at 160×90 = 0.15 of one sample (SwiftShader, run once per displayed frame).
+
+| After orbit (0.05 rad from 32 spp), RMS / levels | 1 spp | 2 spp | 4 spp | 8 spp | 16 spp |
+|---|---|---|---|---|---|
+| Restart | 0.358 / 6.59 | 0.157 / 5.31 | 0.080 / 3.33 | 0.054 / 2.18 | 0.030 / 1.71 |
+| v2 history (previous run, RMS only) | 0.263 | 0.157 | 0.095 | 0.068 | 0.043 |
+| v3 history, span 16 | 0.235 / 4.75 | 0.138 / 3.98 | 0.094 / 3.12 | 0.059 / 2.19 | 0.030 / 1.71 |
+| **v3 history, span 8 (default)** | 0.235 / 4.74 | 0.137 / 3.96 | 0.084 / 3.02 | 0.054 / 2.18 | 0.030 / 1.71 |
+| v3 span 8 + clamp γ 1.5 | 0.233 / 4.93 | 0.136 / 4.27 | 0.082 / 2.90 | 0.054 / 2.18 | 0.030 / 1.71 |
+| Restart + denoised | 0.241 / 5.19 | 0.134 / 4.64 | 0.083 / 3.23 | 0.054 / 2.16 | 0.030 / 1.72 |
+| v3 history + denoised | **0.208** / 4.00 | 0.133 / 3.72 | 0.090 / 3.03 | 0.054 / 2.16 | 0.030 / 1.72 |
+| v3 history + denoised + blue-noise | 0.215 / **3.82** | **0.126** / **3.09** | 0.086 / **2.55** | 0.056 / 2.22 | 0.031 / 1.71 |
+
+- v3 = reflections get their own motion and history fades by (1 − n/span)². Mirror-like surfaces (coated
+  floor) are reprojected through the reflected object's virtual image (hit distance + mirror-ray length) and
+  accepted only if the previous pixel reflects the same object. 1 spp RMS: v2 0.263 → v3 0.235.
+- Drag fixed: span 8 equals restart from 8 spp on (v2: 0.068 vs 0.054 at 8, 0.043 vs 0.030 at 16).
+- The neighbourhood clamp is kept as an option (`clamp=`) but off: with the shared pattern the 1 spp
+  neighbourhood carries the same structured error, so clamping pulls history towards it (levels 4.74 → 4.93).
+
+⚠️ Not yet a clean 1 spp frame. Remaining artefacts (visible above): dither on the mirror floor, where only the
+two finest filter steps apply to keep reflection detail (🔍 allowing 4 steps there was worse at every count:
+blue-noise 1 spp 4.06 → 4.28 levels, 4 spp 2.54 → 2.84); scattered bright pixels around the softbox reflection
+after an orbit; the denoised shared-pattern frame keeps the low-spp shapes (blotchy reflections) of the exact one.
+
+## Vehicle count (FPS impact)
+
+Phase `fleet` (320×180, one sample per dispatch as the interactive loop runs, 1 warm-up + 4 timed samples). Extra
+vehicles are baked copies of the ControlVehicle in a parking grid (`vehicles=N`): 5 rows × 10 bays, row pitch
+9.7 m, bay pitch 3.6 m for a 6.22 m × 2.50 m body, so the closest two cars are 1.10 m apart (the first layout
+assumed a 4.4 m body and overlapped). Alternate rows face each other.
+
+![Fleet comparison](Images/FleetComparison.png)
+
+| Vehicles | Triangles | Tree entries | Depth | Tree build (JS) | Hero s/spp | Fleet s/spp | Hero cost | Fleet cost |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 25,068 | 15,991 | 20 | 0.14 s | 1.61 | 0.58 | 1.00× | 1.00× |
+| 2 | 50,136 | 31,983 | 21 | 0.22 s | 1.75 | 0.60 | 1.08× | 1.04× |
+| 4 | 100,272 | 63,967 | 23 | 0.43 s | 2.09 | 0.72 | 1.29× | 1.25× |
+| 8 | 200,544 | 127,935 | 24 | 1.09 s | 2.37 | 0.85 | 1.47× | 1.47× |
+| 16 | 401,088 | 255,871 | 25 | 1.59 s | 2.68 | 1.24 | 1.66× | 2.16× |
+| 32 | 802,176 | 511,743 | 26 | 3.24 s | 2.79 | 1.61 | 1.73× | 2.81× |
+| 50 | **1,253,400** | 799,599 | 27 | 5.36 s | 2.85 | 1.94 | 1.77× | 3.37× |
+
+- 50× the triangles (1.25 M) costs 1.8× (Hero) to 3.4× (Fleet, whole lot on screen) per sample: traversal grows
+  with log(triangles); the Fleet camera also fills more of the frame with glossy geometry.
+- FPS at one sample per frame is 1 / (s/spp): it falls by the same factors. SwiftShader seconds are not GPU timings.
+- ⚠️ Copies are baked into one tree, rebuilt from scratch (5.4 s at 50 vehicles, in JS). Moving vehicles need
+  instancing (one tree per vehicle model plus a small per-frame top-level tree) — not implemented.
+
 ### 🐞 Bias found and fixed by claim 3
 
 | | Before | After |
@@ -57,11 +194,12 @@ diffuse energy. Clamping F90 by F0 is the standard fix; F0 ≥ 0.02 materials ar
 ```sh
 cd Exhibits/DeterministicPathTracer/Code
 npm install                      # puppeteer-core + @sparticuz/chromium (unpacked to ChromiumRuntime/)
-node RunValidation.mjs all       # or: quadrature | analytic | determinism | convergence | chart | captures | interface
+node RunValidation.mjs all       # or: quadrature | analytic | determinism | convergence | chart | captures | interface | realtime | patterns | fleet | reconstruction
 ANALYTIC_SAMPLES=256 node RunValidation.mjs analytic   # shorter analytic run
 ```
 
-`all` takes about 35 min on 2 CPU cores (SwiftShader). Writes `Results/` and `Images/`.
+`all` takes about 70 min on 2 CPU cores (SwiftShader; `realtime` ≈ 8 min, `patterns` ≈ 13 min, `fleet` ≈ 3.5 min,
+`reconstruction` ≈ 11 min). Writes `Results/` and `Images/`.
 
 ## Environment
 

@@ -106,10 +106,40 @@ export function ConstructMaterialTable(Options)
         ['EmeraldGlass',   SolidDielectricSurface(1.57, [2.6, 0.35, 1.9])],
         ['GlazedCeramic',  LayeredSurface([0.72, 0.07, 0.05], 0.35, 1.0, 0.02)],
         ['MatteChalk',     LayeredSurface([0.82, 0.82, 0.80], 0.90)],
-        ['CanopyGloss',    LayeredSurface([0.03741, 0.03741, 0.03741], 0.35, 1.0, 0.03)]
+        ['CanopyGloss',    LayeredSurface([0.03741, 0.03741, 0.03741], 0.35, 1.0, 0.03)],
+        // 📝 Extra parked vehicles cycle through these so the copies stay distinguishable.
+        ...FleetPaintKeys.map((Key, Index) => [`FleetPaint${Index}`, LayeredSurface(PaintPresets[Key].Albedo, Options.PaintRoughness, 1.0, 0.03)])
     ];
     const SlotIndex = Object.fromEntries(Slots.map(([Label], Index) => [Label, Index]));
     return { Slots, SlotIndex };
+}
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    VEHICLE PARKING
+//------------------------------------------------------------------------------------------------------------------------
+
+const FleetPaintKeys  = ['Racing', 'Pearl', 'Midnight', 'Graphite'];
+// 📝 Assembled vehicle bounds: X ±3.11 m (length 6.22), Z ±1.25 m (width 2.5), height 1.77 m. Cars park side by side
+//    along Z with a 1.1 m door gap; rows along X are separated by a 3.5 m aisle. Bays extend to −Z, away from the
+//    material spheres on the +Z side. 5 rows × 10 bays = 50 vehicles (1,253,400 triangles).
+const ParkingRowPitch = 9.7;    // [m] - X: 6.22 m body + 3.5 m aisle
+const ParkingBayPitch = 3.6;    // [m] - Z: 2.5 m body + 1.1 m gap
+const ParkingRows     = [0, -1, 1, -2, 2];
+const ParkingBays     = 10;
+export const ParkingCapacity = ParkingRows.length * ParkingBays;
+
+// 📝 Bay 0 is the hero vehicle at the origin. Further bays fill outward by distance; alternate rows face the other
+//    way (nose to the aisle). Returns { X, Z, Yaw, PaintSlot }; PaintSlot null keeps the paint preset's BodyCoat.
+export function ResolveParkingBays(VehicleCount)
+{
+    const Bays = [];
+    for (const Row of ParkingRows)
+    {
+        for (let Bay = 0; Bay < ParkingBays; Bay++) Bays.push({ X: Row * ParkingRowPitch, Z: -Bay * ParkingBayPitch, Yaw: Math.abs(Row) % 2 ? Math.PI : 0 });
+    }
+    Bays.sort((Left, Right) => (Math.hypot(Left.X, Left.Z * 2.0) - Math.hypot(Right.X, Right.Z * 2.0)) || (Left.X - Right.X) || (Right.Z - Left.Z));
+    return Bays.slice(0, Math.max(1, Math.min(VehicleCount, Bays.length)))
+               .map((Bay, Index) => ({ ...Bay, PaintSlot: Index === 0 ? null : `FleetPaint${(Index - 1) % FleetPaintKeys.length}` }));
 }
 
 export function PackMaterialTable(MaterialTable)

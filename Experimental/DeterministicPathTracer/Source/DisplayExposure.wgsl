@@ -9,12 +9,13 @@
 
 struct DisplayUniforms
 {
-    Extent        : vec4u,   // accumulation width, height, tone curve (0 ACES fitted, 1 linear clamp), unused
-    Exposure      : vec4f,   // x exposure multiplier (2^EV), yzw unused
+    Extent        : vec4u,   // accumulation width, height, tone curve (0 ACES fitted, 1 linear clamp), history / reconstruction offset [px]
+    Exposure      : vec4f,   // x exposure multiplier (2^EV), y history active (0/1), z reconstructed (0/1), w unused
 }
 
 @group(0) @binding(0) var<uniform>       Display      : DisplayUniforms;
 @group(0) @binding(1) var<storage, read> Accumulation : array<vec4f>;
+@group(0) @binding(2) var<storage, read> Reconstructed : array<vec4f>;   // DisplayReconstruction.wgsl output (rgb, 1)
 
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -64,9 +65,16 @@ fn ProjectScreenTriangle(@builtin(vertex_index) VertexIndex: u32) -> ScreenVaryi
 fn ResolveDisplay(Varying: ScreenVarying) -> @location(0) vec4f
 {
     let Pixel = min(vec2u(Varying.Texel), vec2u(Display.Extent.x - 1u, Display.Extent.y - 1u));
-    let Sum   = Accumulation[Pixel.y * Display.Extent.x + Pixel.x];
-    if (Sum.w <= 0.0) { return vec4f(0.02, 0.02, 0.025, 1.0); }
-    let Radiance = Sum.rgb / Sum.w * Display.Exposure.x;
+    let PixelIndex = Pixel.y * Display.Extent.x + Pixel.x;
+    var Sum        = Accumulation[PixelIndex];
+    if (Display.Exposure.z > 0.5) { Sum = Reconstructed[Display.Extent.w + PixelIndex]; }
+    // 📝 Reprojected history (average rgb, weight w) stands in for missing samples and fades out linearly: once the
+    //    exact sum holds w samples it contributes nothing, so a converged image is the exact accumulation.
+    let History       = select(vec4f(0.0), Accumulation[Display.Extent.w + PixelIndex], Display.Exposure.y > 0.5);
+    let HistoryWeight = max(History.w - Sum.w, 0.0);
+    let Weight        = Sum.w + HistoryWeight;
+    if (Weight <= 0.0) { return vec4f(0.02, 0.02, 0.025, 1.0); }
+    let Radiance = (Sum.rgb + History.rgb * HistoryWeight) / Weight * Display.Exposure.x;
     let Mapped   = select(ToneCurveAces(Radiance), clamp(Radiance, vec3f(0.0), vec3f(1.0)), Display.Extent.z == 1u);
     return vec4f(EncodeSrgb(Mapped), 1.0);
 }

@@ -19,6 +19,10 @@
                 <div class="ReadoutSecondary" id="ReadoutSecondary">Initializing WebGPU…</div>
                 <div class="ConvergenceTrack"><div class="ConvergenceFill" id="ConvergenceFill"></div></div>
             </div>
+            <div class="FrameRateReadout" id="FrameRateReadout">
+                <div class="ReadoutPrimary"><span id="FrameRateValue">—</span><span class="ReadoutUnit"> FPS</span></div>
+                <div class="ReadoutSecondary" id="FrameRateDetail">waiting for first frame</div>
+            </div>
             <div class="ViewportHint">Drag to orbit · Shift/right-drag to pan · Wheel to dolly</div>
             <div class="FailureNotice" id="FailureNotice" hidden></div>
         </section>
@@ -78,6 +82,20 @@
             </section>
 
             <section class="InspectorSection">
+                <h2>Real-time</h2>
+                <label class="SelectField"><span>Sample pattern</span><select id="PatternSelect"></select></label>
+                <label class="SelectField"><span>Primary visibility</span><select id="VisibilitySelect"></select></label>
+                <label class="SelectField"><span>Camera motion</span><select id="MotionSelect"></select></label>
+                <label class="SelectField"><span>History samples</span><select id="HistorySelect"></select></label>
+                <label class="SelectField"><span>Denoiser</span><select id="DenoiseSelect"></select></label>
+                <label class="SelectField"><span>Vehicles in scene</span><select id="VehicleCountSelect"></select></label>
+                <p class="SectionNote">Per-pixel gives each pixel its own fixed scramble of the same point set (no RNG). Rasterized
+                    finds camera hits with a raster pass. Reproject keeps the image while the camera moves and fades it out as
+                    exact samples arrive (clamped to the current neighbourhood). The denoiser smooths 1–4 spp along normal, depth and
+                    material edges and fades out by 64 spp, so the converged image stays exact. Vehicles parks extra copies behind the hero car (Fleet camera shows all).</p>
+            </section>
+
+            <section class="InspectorSection">
                 <h2>Determinism</h2>
                 <p class="SectionNote">Re-renders the current sample count from zero with a different dispatch batching and compares the
                     FNV-1a digest of the raw float accumulation.</p>
@@ -88,7 +106,7 @@
             <section class="InspectorSection MethodSection">
                 <h2>Method</h2>
                 <ul>
-                    <li>One fixed Sobol' (0,2) point set shared by every pixel — no RNG, no per-pixel noise.</li>
+                    <li>One fixed Sobol' (0,2) point set, shared by every pixel by default — no RNG at any setting.</li>
                     <li>Every lobe traced: coat, specular and diffuse; glass splits into reflection <em>and</em> refraction.</li>
                     <li>No Russian roulette: fixed depth limits and a fixed throughput cutoff.</li>
                     <li>Softboxes integrated by light quadrature + BSDF quadrature, power-heuristic MIS.</li>

@@ -1,0 +1,143 @@
+{
+  "Summary": [
+    {
+      "Vehicles": 1,
+      "Triangles": 25068,
+      "Depth": 20,
+      "BuildSeconds": 0.141,
+      "HeroRelative": 1,
+      "FleetRelative": 1
+    },
+    {
+      "Vehicles": 2,
+      "Triangles": 50136,
+      "Depth": 21,
+      "BuildSeconds": 0.219,
+      "HeroRelative": 1.08,
+      "FleetRelative": 1.04
+    },
+    {
+      "Vehicles": 4,
+      "Triangles": 100272,
+      "Depth": 23,
+      "BuildSeconds": 0.427,
+      "HeroRelative": 1.29,
+      "FleetRelative": 1.25
+    },
+    {
+      "Vehicles": 8,
+      "Triangles": 200544,
+      "Depth": 24,
+      "BuildSeconds": 1.091,
+      "HeroRelative": 1.47,
+      "FleetRelative": 1.47
+    },
+    {
+      "Vehicles": 16,
+      "Triangles": 401088,
+      "Depth": 25,
+      "BuildSeconds": 1.59,
+      "HeroRelative": 1.66,
+      "FleetRelative": 2.16
+    },
+    {
+      "Vehicles": 32,
+      "Triangles": 802176,
+      "Depth": 26,
+      "BuildSeconds": 3.24,
+      "HeroRelative": 1.73,
+      "FleetRelative": 2.81
+    },
+    {
+      "Vehicles": 50,
+      "Triangles": 1253400,
+      "Depth": 27,
+      "BuildSeconds": 5.358,
+      "HeroRelative": 1.77,
+      "FleetRelative": 3.37
+    }
+  ],
+  "Width": 320,
+  "Height": 180,
+  "TimedSamples": 4,
+  "Rows": [
+    {
+      "VehicleCount": 1,
+      "Triangles": 25068,
+      "BoundsEntries": 15991,
+      "BoundsDepth": 20,
+      "ConstructionSeconds": 0.141,
+      "HeroSecondsPerSample": 1.6138250000001864,
+      "FleetSecondsPerSample": 0.5750750000001863,
+      "HeroRelative": 1,
+      "FleetRelative": 1
+    },
+    {
+      "VehicleCount": 2,
+      "Triangles": 50136,
+      "BoundsEntries": 31983,
+      "BoundsDepth": 21,
+      "ConstructionSeconds": 0.219,
+      "HeroSecondsPerSample": 1.7492249999996274,
+      "FleetSecondsPerSample": 0.599824999999255,
+      "HeroRelative": 1.0839000511204284,
+      "FleetRelative": 1.0430378646247196
+    },
+    {
+      "VehicleCount": 4,
+      "Triangles": 100272,
+      "BoundsEntries": 63967,
+      "BoundsDepth": 23,
+      "ConstructionSeconds": 0.427,
+      "HeroSecondsPerSample": 2.08975,
+      "FleetSecondsPerSample": 0.719675000000745,
+      "HeroRelative": 1.2949049618141735,
+      "FleetRelative": 1.2514454636360681
+    },
+    {
+      "VehicleCount": 8,
+      "Triangles": 200544,
+      "BoundsEntries": 127935,
+      "BoundsDepth": 24,
+      "ConstructionSeconds": 1.091,
+      "HeroSecondsPerSample": 2.372549999999814,
+      "FleetSecondsPerSample": 0.846625,
+      "HeroRelative": 1.470140814524214,
+      "FleetRelative": 1.4721992783545201
+    },
+    {
+      "VehicleCount": 16,
+      "Triangles": 401088,
+      "BoundsEntries": 255871,
+      "BoundsDepth": 25,
+      "ConstructionSeconds": 1.59,
+      "HeroSecondsPerSample": 2.676375,
+      "FleetSecondsPerSample": 1.243300000000745,
+      "HeroRelative": 1.6584047217013562,
+      "FleetRelative": 2.1619788723215967
+    },
+    {
+      "VehicleCount": 32,
+      "Triangles": 802176,
+      "BoundsEntries": 511743,
+      "BoundsDepth": 26,
+      "ConstructionSeconds": 3.24,
+      "HeroSecondsPerSample": 2.7941500000003727,
+      "FleetSecondsPerSample": 1.6135,
+      "HeroRelative": 1.7313835143215963,
+      "FleetRelative": 2.805720992913059
+    },
+    {
+      "VehicleCount": 50,
+      "Triangles": 1253400,
+      "BoundsEntries": 799599,
+      "BoundsDepth": 27,
+      "ConstructionSeconds": 5.358,
+      "HeroSecondsPerSample": 2.8505,
+      "FleetSecondsPerSample": 1.9400750000001863,
+      "HeroRelative": 1.7663005592301957,
+      "FleetRelative": 3.373603443028401
+    }
+  ],
+  "Note": "SwiftShader (CPU WebGPU), so absolute seconds are not GPU timings; FPS at 1 sample per frame = 1 / seconds per sample."
+}

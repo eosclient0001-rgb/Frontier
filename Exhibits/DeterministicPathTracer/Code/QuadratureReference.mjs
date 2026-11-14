@@ -17,7 +17,7 @@ function ReverseBits(Input)
     return ((Bits >>> 16) | (Bits << 16)) >>> 0;
 }
 
-function AvalancheKey(Input)
+export function AvalancheKey(Input)
 {
     let Mixed = Input >>> 0;
     Mixed = (Mixed ^ (Mixed >>> 16)) >>> 0;

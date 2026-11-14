@@ -3,7 +3,7 @@
 ====================================================================================================================================*/
 // 🧩 Drives the actual prototype page in headless Chromium (SwiftShader WebGPU) and retains measurements and captures
 
-// Usage:  npm install && node RunValidation.mjs [quadrature|analytic|determinism|convergence|chart|captures|interface|all]
+// Usage:  npm install && node RunValidation.mjs [quadrature|analytic|determinism|convergence|chart|captures|interface|realtime|patterns|fleet|reconstruction|all]
 // 📝 Phases write Results/<Phase>.json; captures write Images/*.png. The chart phase reads the JSON results.
 
 import fs from 'node:fs';
@@ -13,9 +13,9 @@ import zlib from 'node:zlib';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { QuadraturePair, MeasureNetExponent, MeasureCrossPairStratification } from './QuadratureReference.mjs';
+import { AvalancheKey, QuadraturePair, MeasureNetExponent, MeasureCrossPairStratification } from './QuadratureReference.mjs';
 import { ConstructSoftboxLights } from '../../../Experimental/DeterministicPathTracer/Source/StudioSceneAssembly.js';
-import { TracingDivision } from '../../../Experimental/DeterministicPathTracer/Source/TracingDivision.js';
+import { TracingDivision, ResolveDisplayPixels, DigestFloatBuffer } from '../../../Experimental/DeterministicPathTracer/Source/TracingDivision.js';
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    CONSTANTS
@@ -414,6 +414,666 @@ async function RetainChart(Browser)
 
 
 //------------------------------------------------------------------------------------------------------------------------
+//                                                    REAL-TIME OPTIONS
+//------------------------------------------------------------------------------------------------------------------------
+
+const RealtimeCheckpoints = [1, 2, 4, 8, 16];
+const OrbitStep           = 0.05;   // [rad] - yaw change between the converged view and the moved view (≈ 8 px drag)
+
+// 📝 Displayed linear radiance: sums, blended with reprojected history exactly as DisplayExposure.wgsl does.
+function ResolveDisplayedMean(Accumulation, History)
+{
+    const Mean = new Float32Array(Accumulation.length / 4 * 3);
+    for (let Pixel = 0; Pixel < Accumulation.length / 4; Pixel++)
+    {
+        const SampleWeight  = Accumulation[Pixel * 4 + 3];
+        const HistoryWeight = History ? Math.max(History[Pixel * 4 + 3] - SampleWeight, 0) : 0;
+        for (let Channel = 0; Channel < 3; Channel++)
+        {
+            const Blended = Accumulation[Pixel * 4 + Channel] + (HistoryWeight > 0 ? History[Pixel * 4 + Channel] * HistoryWeight : 0);
+            Mean[Pixel * 3 + Channel] = Blended / (SampleWeight + HistoryWeight);
+        }
+    }
+    return Mean;
+}
+
+// 📝 What the display shows (DisplayReconstruction.wgsl output when active), plus the raw history region.
+async function RetrieveDisplayed(Page)
+{
+    const [Radiance, History] = await Page.evaluate(async () =>
+    {
+        const Tracing = window.DeterministicTracing;
+        const Radiance = await Tracing.RetrieveDisplayRadiance();
+        const History = await Tracing.RetrieveHistory();
+        return [Array.from(Radiance), History ? Array.from(History) : null];
+    });
+    return { Mean: ResolveDisplayedMean(Radiance, null), History };
+}
+
+async function RenderModeCurve(Page, Partial, Reference)
+{
+    await Page.evaluate(Partial => window.DeterministicTracing.ApplyConfiguration(Partial), Partial);
+    const Retained = await RenderCheckpoints(Page, RealtimeCheckpoints.at(-1), 1, RealtimeCheckpoints, false);
+    const Digest = await Page.evaluate(() => window.DeterministicTracing.ComputeDigest());
+    return { Curve: Retained.map(Entry => ({ Samples: Entry.Samples, Seconds: Entry.Seconds, RelativeRms: RelativeRootMeanSquare(Entry.Mean, Reference) })),
+             SecondsPerSample: Retained.at(-1).Seconds / Retained.at(-1).Samples, Digest, Final: Retained.at(-1).Mean };
+}
+
+// 📝 Converges at Hero, orbits by OrbitStep, then measures the displayed image after k new samples. The reprojection
+//    pass is timed on its own (explicit flush between camera change and first sample).
+async function RenderReprojectedCurve(Page, Camera, Reference, PriorSamples)
+{
+    await Page.evaluate(async (Camera, PriorSamples) =>
+    {
+        const Tracing = window.DeterministicTracing;
+        Tracing.ApplyConfiguration({ ReprojectionEnabled: true, Camera: { ...Camera, Target: [...Camera.Target] } });
+        await Tracing.RenderFromZero(PriorSamples, 4);
+    }, Camera, PriorSamples);
+    const ReprojectionSeconds = await Page.evaluate(async OrbitStep =>
+    {
+        const Tracing = window.DeterministicTracing;
+        Tracing.MoveCamera({ Yaw: Tracing.Configuration.Camera.Yaw + OrbitStep });
+        const Start = performance.now();
+        Tracing.Division.FlushPendingReprojection();
+        await Tracing.Division.Device.queue.onSubmittedWorkDone();
+        return (performance.now() - Start) / 1000;
+    }, OrbitStep);
+    const Curve = [];
+    let Accepted = null, Displayed0 = null;
+    const Start = Date.now();
+    for (const Samples of [0, ...RealtimeCheckpoints])
+    {
+        await Page.evaluate(async Samples => window.DeterministicTracing.ContinueSamples(Samples), Samples);
+        const Elapsed = (Date.now() - Start) / 1000;
+        const { Mean, History } = await RetrieveDisplayed(Page);
+        if (Samples === 0)
+        {
+            let Count = 0;
+            for (let Pixel = 0; Pixel < History.length / 4; Pixel++) if (History[Pixel * 4 + 3] > 0) Count++;
+            Accepted = Count / (History.length / 4);
+            Displayed0 = RelativeRootMeanSquare(Mean.map(Entry => (Number.isFinite(Entry) ? Entry : 0)), Reference);
+            continue;
+        }
+        Curve.push({ Samples, Seconds: Elapsed, RelativeRms: RelativeRootMeanSquare(Mean, Reference) });
+    }
+    await Page.evaluate(() => window.DeterministicTracing.ApplyConfiguration({ ReprojectionEnabled: false }));
+    return { Curve, ReprojectionSeconds, AcceptedFraction: Accepted, RelativeRmsBeforeFirstSample: Displayed0 };
+}
+
+async function ValidateRealtime(Browser, Server)
+{
+    const Width = 160, Height = 90, ReferenceSamples = 256, PriorSamples = 32;
+    const Page = await OpenPrototype(Browser, Server, `width=${Width}&height=${Height}&camera=Hero`);
+    const Hero = await Page.evaluate(() => ({ ...window.DeterministicTracing.CameraPresets.Hero }));
+    const Moved = { ...Hero, Target: [...Hero.Target], Yaw: Hero.Yaw + OrbitStep };
+
+    const ReferenceAt = async Camera =>
+    {
+        await Page.evaluate(Camera => window.DeterministicTracing.ApplyConfiguration({ Camera: { ...Camera, Target: [...Camera.Target] } }), Camera);
+        return (await RenderCheckpoints(Page, ReferenceSamples, 16, [ReferenceSamples], false))[0].Mean;
+    };
+    const HeroReference = await ReferenceAt(Hero);
+    const Modes = {};
+    Modes.SharedTraced = await RenderModeCurve(Page, { PointPattern: 'shared', VisibilityRasterEnabled: false }, HeroReference);
+    Modes.PixelTraced  = await RenderModeCurve(Page, { PointPattern: 'pixel',  VisibilityRasterEnabled: false }, HeroReference);
+    Modes.SharedRaster = await RenderModeCurve(Page, { PointPattern: 'shared', VisibilityRasterEnabled: true  }, HeroReference);
+    await Page.evaluate(() => window.DeterministicTracing.ApplyConfiguration({ PointPattern: 'shared', VisibilityRasterEnabled: false }));
+
+    // 📝 Raster vs traced visibility at 16 spp: how many pixels resolve differently at all.
+    let DifferingPixels = 0;
+    for (let Pixel = 0; Pixel < Width * Height; Pixel++)
+    {
+        for (let Channel = 0; Channel < 3; Channel++)
+        {
+            if (Modes.SharedRaster.Final[Pixel * 3 + Channel] !== Modes.SharedTraced.Final[Pixel * 3 + Channel]) { DifferingPixels++; break; }
+        }
+    }
+    const RasterAgreement = { DifferingPixels, Pixels: Width * Height, RelativeRmsRasterVsTraced: RelativeRootMeanSquare(Modes.SharedRaster.Final, Modes.SharedTraced.Final) };
+
+    const MovedReference = await ReferenceAt(Moved);
+    const Restart = await RenderModeCurve(Page, {}, MovedReference);
+    const Reprojected = await RenderReprojectedCurve(Page, Hero, MovedReference, PriorSamples);
+    await Page.close();
+
+    const Strip = Mode => ({ Curve: Mode.Curve, SecondsPerSample: Mode.SecondsPerSample, Digest: Mode.Digest });
+    WriteResult('Realtime', {
+        Summary: {
+            Width, Height, ReferenceSamples,
+            SecondsPerSample: { SharedTraced: Modes.SharedTraced.SecondsPerSample, PixelTraced: Modes.PixelTraced.SecondsPerSample, SharedRaster: Modes.SharedRaster.SecondsPerSample },
+            RelativeRmsAt1:   { SharedTraced: Modes.SharedTraced.Curve[0].RelativeRms, PixelTraced: Modes.PixelTraced.Curve[0].RelativeRms },
+            RelativeRmsAt16:  { SharedTraced: Modes.SharedTraced.Curve.at(-1).RelativeRms, PixelTraced: Modes.PixelTraced.Curve.at(-1).RelativeRms },
+            RasterAgreement,
+            AfterOrbit: { RestartRmsAt1: Restart.Curve[0].RelativeRms, ReprojectedRmsAt1: Reprojected.Curve[0].RelativeRms,
+                          AcceptedFraction: Reprojected.AcceptedFraction, ReprojectionSeconds: Reprojected.ReprojectionSeconds }
+        },
+        Modes: { SharedTraced: Strip(Modes.SharedTraced), PixelTraced: Strip(Modes.PixelTraced), SharedRaster: Strip(Modes.SharedRaster) },
+        Orbit: { Step: OrbitStep, PriorSamples, Restart: Restart.Curve, Reprojected },
+        Note: 'Hero view. Pattern/visibility curves against shared-traced at 256 spp; orbit curves against 256 spp at the moved view. Seconds include checkpoint readbacks.'
+    });
+    await RetainRealtimeImages(Browser, Server, Hero, PriorSamples);
+}
+
+// 📝 Side-by-side evidence at 320 × 180: dither vs structure at 4 spp, and the first frame after an orbit.
+async function RetainRealtimeImages(Browser, Server, Hero, PriorSamples)
+{
+    const Page = await OpenPrototype(Browser, Server, 'width=320&height=180&camera=Hero');
+    Hero ??= await Page.evaluate(() => ({ ...window.DeterministicTracing.CameraPresets.Hero }));
+    const Panels = [];
+    const Capture = async (Label, Name) => { const Png = await Page.evaluate(() => window.DeterministicTracing.EncodeDisplayPng()); WritePng(Name, Png); Panels.push({ Label, Png }); };
+    for (const [Pixel, Label, Name] of [[false, 'Shared pattern · 4 spp', 'Realtime_PatternShared_4spp.png'], [true, 'Per-pixel pattern · 4 spp', 'Realtime_PatternPixel_4spp.png']])
+    {
+        await Page.evaluate(async Pixel => { const Tracing = window.DeterministicTracing; Tracing.ApplyConfiguration({ PointPattern: Pixel ? 'pixel' : 'shared' }); await Tracing.RenderFromZero(4, 1); }, Pixel);
+        await Capture(Label, Name);
+    }
+    const MoveAndSample = async Reproject => Page.evaluate(async (Hero, Reproject, PriorSamples, OrbitStep) =>
+    {
+        const Tracing = window.DeterministicTracing;
+        Tracing.ApplyConfiguration({ PointPattern: 'shared', ReprojectionEnabled: Reproject, Camera: { ...Hero, Target: [...Hero.Target] } });
+        await Tracing.RenderFromZero(PriorSamples, 4);
+        Tracing.MoveCamera({ Yaw: Hero.Yaw + OrbitStep });
+        await Tracing.ContinueSamples(1);
+    }, Hero, Reproject, PriorSamples, OrbitStep);
+    await MoveAndSample(false); await Capture('After orbit · restart · 1 spp', 'Realtime_OrbitRestart_1spp.png');
+    await MoveAndSample(true);  await Capture('After orbit · reprojected · 1 spp', 'Realtime_OrbitReprojected_1spp.png');
+    await Page.evaluate(async () => { const Tracing = window.DeterministicTracing; Tracing.ApplyConfiguration({ ReprojectionEnabled: false }); await Tracing.ContinueSamples(64); });
+    await Capture('After orbit · reference · 64 spp', 'Realtime_OrbitReference_64spp.png');
+    await Page.close();
+
+    const Montage = await Browser.newPage();
+    await Montage.setViewport({ width: 3 * 640 + 4 * 12, height: 2 * 360 + 2 * 34 + 3 * 12 });
+    const Cells = [Panels[0], Panels[1], null, Panels[2], Panels[3], Panels[4]].map(Panel => Panel
+        ? `<figure><figcaption>${Panel.Label}</figcaption><img src="${Panel.Png}"></figure>` : '<figure></figure>').join('');
+    await Montage.setContent(`<html><body style="margin:0;background:#0f1114;font-family:system-ui,sans-serif">
+        <style>main{display:grid;grid-template-columns:repeat(3,640px);gap:12px;padding:12px}figure{margin:0}
+        figcaption{color:#e7e9ec;font-size:16px;height:34px;line-height:28px}img{width:640px;height:360px;image-rendering:pixelated;display:block}</style>
+        <main>${Cells}</main></body></html>`);
+    await Montage.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(Image => Image.decode())); });
+    await Montage.screenshot({ path: path.join(ImagesFolder, 'RealtimeComparison.png') });
+    // 📝 Display-space error (8-bit sRGB after tone mapping) of each orbit panel against the 64 spp reference — what the
+    //    viewer sees; linear RMS is dominated by the few very bright reflection pixels.
+    const DisplayError = await Montage.evaluate(() =>
+    {
+        const Decode = Image => { const Surface = document.createElement('canvas'); Surface.width = Image.naturalWidth; Surface.height = Image.naturalHeight;
+                                  const Context = Surface.getContext('2d'); Context.drawImage(Image, 0, 0); return Context.getImageData(0, 0, Surface.width, Surface.height).data; };
+        const Images = [...document.images].map(Decode);
+        const Reference = Images[4];
+        return [2, 3].map(Index =>
+        {
+            let Absolute = 0, Visible = 0;
+            for (let Pixel = 0; Pixel < Reference.length / 4; Pixel++)
+            {
+                let Largest = 0;
+                for (let Channel = 0; Channel < 3; Channel++) { const Difference = Math.abs(Images[Index][Pixel * 4 + Channel] - Reference[Pixel * 4 + Channel]); Absolute += Difference; Largest = Math.max(Largest, Difference); }
+                if (Largest > 8) Visible++;
+            }
+            return { MeanAbsoluteLevels: Absolute / (Reference.length / 4 * 3), PixelsOffByMoreThan8Levels: Visible / (Reference.length / 4) };
+        });
+    });
+    WriteResult('RealtimeDisplay', {
+        Summary: { RestartAt1: DisplayError[0], ReprojectedAt1: DisplayError[1] },
+        Note: '320 x 180 Hero after a 0.05 rad orbit from 32 spp; 8-bit display levels vs 64 spp at the moved view.'
+    });
+    await Montage.close();
+    console.log('[realtime] Images/RealtimeComparison.png');
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    SAMPLE PATTERNS
+//------------------------------------------------------------------------------------------------------------------------
+
+const PatternNames = { shared: 'Shared', pixel: 'Per-pixel', bluenoise: 'Blue-noise' };
+
+// 📝 Perceptual proxy: the eye integrates over roughly a pixel, so error is also measured after a σ = 1 px Gaussian
+//    applied to image and reference alike (fine dither cancels, banding and clumps survive).
+function ApplyGaussianBlur(Image, Width, Height)
+{
+    const Weights = [-3, -2, -1, 0, 1, 2, 3].map(Offset => Math.exp(-Offset * Offset / 2));
+    const Total = Weights.reduce((Sum, Weight) => Sum + Weight, 0);
+    const BlurAlong = (Source, StepX, StepY) =>
+    {
+        const Target = new Float32Array(Source.length);
+        for (let Row = 0; Row < Height; Row++)
+        {
+            for (let Column = 0; Column < Width; Column++)
+            {
+                for (let Channel = 0; Channel < 3; Channel++)
+                {
+                    let Sum = 0;
+                    for (let Tap = -3; Tap <= 3; Tap++)
+                    {
+                        const X = Math.min(Width - 1, Math.max(0, Column + Tap * StepX)), Y = Math.min(Height - 1, Math.max(0, Row + Tap * StepY));
+                        Sum += Source[(Y * Width + X) * 3 + Channel] * Weights[Tap + 3];
+                    }
+                    Target[(Row * Width + Column) * 3 + Channel] = Sum / Total;
+                }
+            }
+        }
+        return Target;
+    };
+    return BlurAlong(BlurAlong(Image, 1, 0), 0, 1);
+}
+
+// 📝 Power of a 64² mask (mean removed) and its radial average in bands of integer frequency radius.
+function MeasureRadialSpectrum(Mask)
+{
+    const Edge = 64, Mean = Mask.reduce((Sum, Entry) => Sum + Entry, 0) / Mask.length;
+    const Power = new Float64Array(Edge * Edge), Bands = new Float64Array(46), Counts = new Float64Array(46);
+    for (let U = 0; U < Edge; U++)
+    {
+        for (let V = 0; V < Edge; V++)
+        {
+            let Real = 0, Imaginary = 0;
+            for (let Y = 0; Y < Edge; Y++)
+            {
+                for (let X = 0; X < Edge; X++)
+                {
+                    const Phase = -2 * Math.PI * (U * X + V * Y) / Edge, Centred = Mask[Y * Edge + X] - Mean;
+                    Real += Centred * Math.cos(Phase); Imaginary += Centred * Math.sin(Phase);
+                }
+            }
+            Power[V * Edge + U] = (Real * Real + Imaginary * Imaginary) / (Edge * Edge);
+            const Radius = Math.round(Math.hypot(Math.min(U, Edge - U), Math.min(V, Edge - V)));
+            if (U || V) { Bands[Radius] += Power[V * Edge + U]; Counts[Radius]++; }
+        }
+    }
+    return { Power: Array.from(Power), Radial: Array.from(Bands, (Sum, Radius) => (Counts[Radius] ? Sum / Counts[Radius] : 0)) };
+}
+
+async function ValidatePatterns(Browser, Server)
+{
+    const Width = 160, Height = 90, ReferenceSamples = 1024, Checkpoints = PowersOfTwo(64);
+    const Page = await OpenPrototype(Browser, Server, `width=${Width}&height=${Height}&camera=Hero`);
+    const Reference = (await RenderCheckpoints(Page, ReferenceSamples, 16, [ReferenceSamples], false))[0].Mean;
+    const BlurredReference = ApplyGaussianBlur(Reference, Width, Height);
+    const Curves = {};
+    for (const Pattern of Object.keys(PatternNames))
+    {
+        await Page.evaluate(Pattern => window.DeterministicTracing.ApplyConfiguration({ PointPattern: Pattern }), Pattern);
+        const Retained = await RenderCheckpoints(Page, 64, 1, Checkpoints, false);
+        Curves[Pattern] = {
+            SecondsPerSample: Retained.at(-1).Seconds / 64,
+            Digest: await Page.evaluate(() => window.DeterministicTracing.ComputeDigest()),
+            Curve: Retained.map(Entry => ({ Samples: Entry.Samples, RelativeRms: RelativeRootMeanSquare(Entry.Mean, Reference),
+                                            BlurredRelativeRms: RelativeRootMeanSquare(ApplyGaussianBlur(Entry.Mean, Width, Height), BlurredReference) }))
+        };
+    }
+    await Page.close();
+    WriteResult('Patterns', {
+        Summary: Object.fromEntries(Object.entries(Curves).map(([Pattern, Entry]) => [Pattern, {
+            SecondsPerSample: +Entry.SecondsPerSample.toFixed(3), Digest64: Entry.Digest,
+            Rms: Object.fromEntries(Entry.Curve.map(Point => [Point.Samples, +Point.RelativeRms.toFixed(4)])),
+            BlurredRms: Object.fromEntries(Entry.Curve.map(Point => [Point.Samples, +Point.BlurredRelativeRms.toFixed(4)])) }])),
+        Width, Height, ReferenceSamples, Curves,
+        Note: 'Hero view. Reference: shared pattern at 1024 spp (its own prefixes are slightly favoured). Blurred = σ 1 px Gaussian on both.'
+    });
+    await RetainPatternImages(Browser, Server);
+}
+
+// 📝 Progression grid (rows = pattern, columns = spp) and the mask / spectrum proof of the blue-noise table.
+async function RetainPatternImages(Browser, Server)
+{
+    const Columns = [1, 4, 16, 64], Rows = [];
+    const Page = await OpenPrototype(Browser, Server, 'width=320&height=180&camera=Hero');
+    for (const Pattern of Object.keys(PatternNames))
+    {
+        await Page.evaluate(Pattern => window.DeterministicTracing.ApplyConfiguration({ PointPattern: Pattern }), Pattern);
+        const Strip = await RenderCheckpoints(Page, 64, 4, Columns, true);
+        Strip.forEach(Entry => WritePng(`Pattern_${PatternNames[Pattern].replace('-', '')}_${String(Entry.Samples).padStart(3, '0')}spp.png`, Entry.Png));
+        Rows.push({ Label: PatternNames[Pattern], Pngs: Strip.map(Entry => Entry.Png) });
+    }
+    await Page.close();
+
+    const Grid = await Browser.newPage();
+    await Grid.setViewport({ width: 110 + 4 * 492 + 16, height: 44 + 3 * 282 });
+    await Grid.setContent(`<html><body style="margin:0;background:#0f1114;color:#e7e9ec;font:15px system-ui,sans-serif">
+        <div style="display:grid;grid-template-columns:110px repeat(4,480px);gap:12px;padding:8px">
+        <div></div>${Columns.map(Samples => `<div style="text-align:center">${Samples} spp</div>`).join('')}
+        ${Rows.map(Row => `<div style="align-self:center">${Row.Label}</div>` + Row.Pngs.map(Png => `<img src="${Png}" style="width:480px;height:270px;image-rendering:pixelated">`).join('')).join('')}
+        </div></body></html>`);
+    await Grid.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(Image => Image.decode())); });
+    await Grid.screenshot({ path: path.join(ImagesFolder, 'PatternProgression.png') });
+    await Grid.close();
+
+    // 📝 Hash mask = the per-pixel pattern's key (ResolvePixelScramble in RadianceIntegration.wgsl) over a 64² tile.
+    const Packed = new Uint32Array(fs.readFileSync(path.join(PrototypeFolder, 'Assets/BlueNoiseRanks.bin')).buffer.slice(0));
+    const BlueMask = Array.from(Packed, Entry => (Entry & 0xfff) / 4096);
+    const HashMask = Array.from(Packed, (_, Pixel) =>
+        AvalancheKey((Math.imul(Pixel % 64, 0x8da6b343) ^ Math.imul(Math.floor(Pixel / 64), 0xd8163841) ^ 0x2545f491) >>> 0) / 4294967296);
+    const Spectra = [MeasureRadialSpectrum(BlueMask), MeasureRadialSpectrum(HashMask)];
+    const BandMean = (Radial, First, Last) => +(Radial.slice(First, Last + 1).reduce((Sum, Band) => Sum + Band, 0) / (Last - First + 1)).toExponential(2);
+    WriteResult('BlueNoiseMask', {
+        Summary: { LowBandPower: Spectra.map(Entry => BandMean(Entry.Radial, 1, 4)), HighBandPower: Spectra.map(Entry => BandMean(Entry.Radial, 24, 31)) },
+        Order: ['blue-noise mask A', 'per-pixel hash'], Radial: Spectra.map(Entry => Entry.Radial),
+        Note: 'Radially averaged power of the 64² mask; bands 1–4 = low frequency, 24–31 = high.'
+    });
+    const Proof = await Browser.newPage();
+    await Proof.setViewport({ width: 4 * 268 + 12, height: 300 });
+    await Proof.setContent(`<html><body style="margin:0;background:#0f1114;color:#e7e9ec;font:14px system-ui,sans-serif">
+        <div id="Row" style="display:flex;gap:12px;padding:6px"></div></body></html>`);
+    await Proof.evaluate(Panels =>
+    {
+        for (const Panel of Panels)
+        {
+            const Figure = document.createElement('div');
+            Figure.innerHTML = `<div style="height:22px">${Panel.Label}</div>`;
+            const Surface = document.createElement('canvas'); Surface.width = 64; Surface.height = 64;
+            Surface.style.cssText = 'width:256px;height:256px;image-rendering:pixelated';
+            const Context = Surface.getContext('2d'), Pixels = Context.createImageData(64, 64);
+            const Largest = Math.max(...Panel.Values);
+            Panel.Values.forEach((Entry, Pixel) =>
+            {
+                const Centred = Panel.Values[((Math.floor(Pixel / 64) + 32) % 64) * 64 + (Pixel % 64 + 32) % 64];
+                const Level = Panel.Spectrum ? Math.max(0, 1 + Math.log10(Centred / Largest + 1e-9) / 4) : Entry;
+                Pixels.data.set([Level * 255, Level * 255, Level * 255, 255], Pixel * 4);
+            });
+            Context.putImageData(Pixels, 0, 0);
+            Figure.appendChild(Surface);
+            document.getElementById('Row').appendChild(Figure);
+        }
+    }, [{ Label: 'Blue-noise mask A (64²)', Values: BlueMask }, { Label: 'Its power spectrum (log, DC centred)', Values: Spectra[0].Power, Spectrum: true },
+        { Label: 'Per-pixel hash (64²)', Values: HashMask }, { Label: 'Its power spectrum', Values: Spectra[1].Power, Spectrum: true }]);
+    await Proof.screenshot({ path: path.join(ImagesFolder, 'BlueNoiseMask.png') });
+    await Proof.close();
+    console.log('[patterns] Images/PatternProgression.png, Images/BlueNoiseMask.png');
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    VEHICLE COUNT
+//------------------------------------------------------------------------------------------------------------------------
+
+const FleetCounts = [1, 2, 4, 8, 16, 32, 50];
+
+// 📝 Cost of N parked ControlVehicles: tree construction on the host, then seconds per sample (one sample per
+//    dispatch, as the interactive loop runs it) from the Hero and Fleet cameras. One warm-up sample is discarded.
+async function ValidateFleet(Browser, Server)
+{
+    const Width = 320, Height = 180, TimedSamples = 4;
+    const Page = await OpenPrototype(Browser, Server, `width=${Width}&height=${Height}&camera=Hero`);
+    const Presets = await Page.evaluate(() => window.DeterministicTracing.CameraPresets);
+    const Rows = [];
+    for (const VehicleCount of FleetCounts)
+    {
+        const Row = await Page.evaluate(async (VehicleCount, Presets, TimedSamples) =>
+        {
+            const Tracing = window.DeterministicTracing;
+            Tracing.ApplyConfiguration({ VehicleCount });
+            const Summary = { ...Tracing.Division.SceneSummary };
+            const Timing = {};
+            for (const Camera of ['Hero', 'Fleet'])
+            {
+                Tracing.ApplyConfiguration({ Camera: { ...Presets[Camera], Target: [...Presets[Camera].Target] } }, false);
+                await Tracing.RenderFromZero(1, 1);
+                const Start = performance.now();
+                await Tracing.RenderFromZero(TimedSamples, 1);
+                Timing[Camera] = (performance.now() - Start) / 1000 / TimedSamples;
+            }
+            return { VehicleCount, Triangles: Summary.TriangleCount, BoundsEntries: Summary.BoundsEntryCount, BoundsDepth: Summary.BoundsDepthTier,
+                     ConstructionSeconds: Summary.ConstructionMilliseconds / 1000, HeroSecondsPerSample: Timing.Hero, FleetSecondsPerSample: Timing.Fleet };
+        }, VehicleCount, Presets, TimedSamples);
+        Rows.push(Row);
+        console.log(`[fleet] ${JSON.stringify(Row)}`);
+    }
+    const Baseline = Rows[0];
+    for (const Row of Rows)
+    {
+        Row.HeroRelative  = Row.HeroSecondsPerSample / Baseline.HeroSecondsPerSample;
+        Row.FleetRelative = Row.FleetSecondsPerSample / Baseline.FleetSecondsPerSample;
+    }
+    await Page.close();
+    WriteResult('Fleet', {
+        Summary: Rows.map(Row => ({ Vehicles: Row.VehicleCount, Triangles: Row.Triangles, Depth: Row.BoundsDepth, BuildSeconds: Row.ConstructionSeconds,
+                                    HeroRelative: +Row.HeroRelative.toFixed(2), FleetRelative: +Row.FleetRelative.toFixed(2) })),
+        Width, Height, TimedSamples, Rows,
+        Note: 'SwiftShader (CPU WebGPU), so absolute seconds are not GPU timings; FPS at 1 sample per frame = 1 / seconds per sample.'
+    });
+    await RetainFleetImages(Browser, Server);
+}
+
+async function RetainFleetImages(Browser, Server)
+{
+    const Panels = [];
+    const Page = await OpenPrototype(Browser, Server, 'width=320&height=180&camera=Fleet');
+    for (const VehicleCount of [1, 16, 50])
+    {
+        await Page.evaluate(async VehicleCount => { const Tracing = window.DeterministicTracing; Tracing.ApplyConfiguration({ VehicleCount }); await Tracing.RenderFromZero(16, 4); }, VehicleCount);
+        const Png = await Page.evaluate(() => window.DeterministicTracing.EncodeDisplayPng());
+        WritePng(`Fleet_${String(VehicleCount).padStart(2, '0')}Vehicles_16spp.png`, Png);
+        Panels.push({ Label: `${VehicleCount} vehicle${VehicleCount > 1 ? 's' : ''} · ${(25068 * VehicleCount).toLocaleString('en-US')} triangles · 16 spp`, Png });
+    }
+    await Page.close();
+    const Montage = await Browser.newPage();
+    await Montage.setViewport({ width: 3 * 652 + 12, height: 360 + 46 });
+    await Montage.setContent(`<html><body style="margin:0;background:#0f1114;color:#e7e9ec;font:15px system-ui,sans-serif">
+        <div style="display:flex;gap:12px;padding:6px">${Panels.map(Panel => `<figure style="margin:0"><figcaption style="height:28px">${Panel.Label}</figcaption>
+        <img src="${Panel.Png}" style="width:640px;height:360px;image-rendering:pixelated;display:block"></figure>`).join('')}</div></body></html>`);
+    await Montage.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(Image => Image.decode())); });
+    await Montage.screenshot({ path: path.join(ImagesFolder, 'FleetComparison.png') });
+    await Montage.close();
+    console.log('[fleet] Images/FleetComparison.png');
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                    DISPLAY RECONSTRUCTION
+//------------------------------------------------------------------------------------------------------------------------
+
+const ReconstructionCheckpoints = [1, 2, 4, 8, 16, 64];
+const OrbitCheckpoints          = [1, 2, 4, 8, 16];
+const ReconstructionExposure    = 1.0;
+
+// 📝 Linear (rgb, w) texels → 8-bit display pixels through the prototype's own host tone map.
+function EncodeDisplayLevels(Texels, Width, Height)
+{
+    return ResolveDisplayPixels(Float32Array.from(Texels), Width, Height, ReconstructionExposure);
+}
+
+// 📝 Both error measures: relative linear RMS, and display-space error (mean |Δ| in 8-bit levels, share of pixels off by
+//    more than 8 levels in any channel) — the second is what a viewer sees.
+function MeasureDisplayedError(Texels, ReferenceTexels, Width, Height)
+{
+    const Mean = ResolveDisplayedMean(Texels, null), Reference = ResolveDisplayedMean(ReferenceTexels, null);
+    const Levels = EncodeDisplayLevels(Texels, Width, Height), ReferenceLevels = EncodeDisplayLevels(ReferenceTexels, Width, Height);
+    let Absolute = 0, Visible = 0;
+    for (let Pixel = 0; Pixel < Width * Height; Pixel++)
+    {
+        let Largest = 0;
+        for (let Channel = 0; Channel < 3; Channel++)
+        {
+            const Difference = Math.abs(Levels[Pixel * 4 + Channel] - ReferenceLevels[Pixel * 4 + Channel]);
+            Absolute += Difference; Largest = Math.max(Largest, Difference);
+        }
+        if (Largest > 8) Visible++;
+    }
+    return { RelativeRms: +RelativeRootMeanSquare(Mean, Reference).toFixed(5), MeanAbsoluteLevels: +(Absolute / (Width * Height * 3)).toFixed(3),
+             PixelsOffBy8: +(Visible / (Width * Height)).toFixed(4) };
+}
+
+// 📝 Toggles the denoiser on the live division without touching the sums (no reset), then reads the displayed radiance.
+async function RetrieveDisplayedTexels(Page, DenoiseEnabled)
+{
+    return Page.evaluate(async DenoiseEnabled =>
+    {
+        const Division = window.DeterministicTracing.Division;
+        Division.Configuration = { ...Division.Configuration, DenoiseEnabled };
+        return Array.from(await Division.RetrieveDisplayRadiance());
+    }, DenoiseEnabled);
+}
+
+// 📝 Converges PriorSamples at Hero, orbits by OrbitStep (as the mouse does), then reads the display after k samples.
+async function RenderOrbitVariant(Page, Hero, Variant, ReferenceTexels, Width, Height, PriorSamples)
+{
+    await Page.evaluate(async (Hero, Variant, PriorSamples) =>
+    {
+        const Tracing = window.DeterministicTracing;
+        Tracing.ApplyConfiguration({ ...Variant, Camera: { ...Hero, Target: [...Hero.Target] } });
+        await Tracing.RenderFromZero(PriorSamples, 4);
+        Tracing.MoveCamera({ Yaw: Hero.Yaw + 0.05 });
+    }, Hero, Variant, PriorSamples);
+    const Curve = [];
+    for (const Samples of OrbitCheckpoints)
+    {
+        await Page.evaluate(async Samples => window.DeterministicTracing.ContinueSamples(Samples), Samples);
+        Curve.push({ Samples, ...MeasureDisplayedError(await RetrieveDisplayedTexels(Page, Boolean(Variant.DenoiseEnabled)), ReferenceTexels, Width, Height) });
+    }
+    return Curve;
+}
+
+async function ValidateReconstruction(Browser, Server)
+{
+    const Width = 160, Height = 90, ReferenceSamples = 256, PriorSamples = 32;
+    const Page = await OpenPrototype(Browser, Server, `width=${Width}&height=${Height}&camera=Hero`);
+    const Hero  = await Page.evaluate(() => ({ ...window.DeterministicTracing.CameraPresets.Hero }));
+    const Moved = { ...Hero, Target: [...Hero.Target], Yaw: Hero.Yaw + 0.05 };
+    const ReferenceAt = async Camera =>
+    {
+        await Page.evaluate(async (Camera, ReferenceSamples) =>
+        {
+            const Tracing = window.DeterministicTracing;
+            Tracing.ApplyConfiguration({ DenoiseEnabled: false, ReprojectionEnabled: false, Camera: { ...Camera, Target: [...Camera.Target] } });
+            await Tracing.RenderFromZero(ReferenceSamples, 16);
+        }, Camera, ReferenceSamples);
+        return RetrieveDisplayedTexels(Page, false);
+    };
+
+    // ① Still frame: exact vs denoised display from the same sums, for the shared and the blue-noise pattern.
+    const HeroReference = await ReferenceAt(Hero);
+    const Still = {};
+    for (const PointPattern of ['shared', 'bluenoise'])
+    {
+        Still[PointPattern] = [];
+        await Page.evaluate(PointPattern => { const Tracing = window.DeterministicTracing; Tracing.ApplyConfiguration({ PointPattern }); Tracing.Division.ResetAccumulation(); }, PointPattern);
+        for (const Samples of ReconstructionCheckpoints)
+        {
+            await Page.evaluate(async Samples => window.DeterministicTracing.ContinueSamples(Samples), Samples);
+            const Strength = await Page.evaluate(() => { const Division = window.DeterministicTracing.Division; Division.Configuration = { ...Division.Configuration, DenoiseEnabled: true }; return Division.DenoiseStrength(); });
+            Still[PointPattern].push({ Samples, Strength: +Strength.toFixed(3),
+                                       Exact:    MeasureDisplayedError(await RetrieveDisplayedTexels(Page, false), HeroReference, Width, Height),
+                                       Denoised: MeasureDisplayedError(await RetrieveDisplayedTexels(Page, true),  HeroReference, Width, Height) });
+            console.log(`[reconstruction] still ${PointPattern} ${JSON.stringify(Still[PointPattern].at(-1))}`);
+        }
+    }
+    await Page.evaluate(() => window.DeterministicTracing.ApplyConfiguration({ PointPattern: 'shared' }));
+
+    // ② Determinism and cost: denoised display after 4 spp, batch 1 vs batch 4; reconstruction timed on its own.
+    const Repeat = await Page.evaluate(async () =>
+    {
+        const Tracing = window.DeterministicTracing, Division = Tracing.Division;
+        const Rounds = [];
+        for (const Batch of [1, 4])
+        {
+            Division.Configuration = { ...Division.Configuration, DenoiseEnabled: true };
+            await Tracing.RenderFromZero(4, Batch);
+            Rounds.push(Array.from(await Division.RetrieveDisplayRadiance()));
+        }
+        const Timings = [];
+        for (let Round = 0; Round < 6; Round++)
+        {
+            const Start = performance.now();
+            const Encoder = Division.Device.createCommandEncoder();
+            Division.EncodeReconstruction(Encoder);
+            Division.Device.queue.submit([Encoder.finish()]);
+            await Division.Device.queue.onSubmittedWorkDone();
+            Timings.push(performance.now() - Start);
+        }
+        const SampleStart = performance.now();
+        await Tracing.ContinueSamples(Division.SampleCount + 2);
+        const SampleMilliseconds = (performance.now() - SampleStart) / 2;
+        return { Rounds, ReconstructionMilliseconds: Timings.slice(1).sort((A, B) => A - B)[2], SampleMilliseconds };
+    });
+    const Digests = Repeat.Rounds.map(Round => DigestFloatBuffer(Float32Array.from(Round)));
+    const Determinism = { DigestBatch1: Digests[0], DigestBatch4: Digests[1], BitIdentical: Digests[0] === Digests[1] };
+    const Cost = { ReconstructionMilliseconds: +Repeat.ReconstructionMilliseconds.toFixed(1), SampleMilliseconds: +Repeat.SampleMilliseconds.toFixed(1),
+                   RelativeToOneSample: +(Repeat.ReconstructionMilliseconds / Repeat.SampleMilliseconds).toFixed(3) };
+    console.log(`[reconstruction] ${JSON.stringify({ Determinism, Cost })}`);
+
+    // ③ Orbit: restart vs history variants (span = samples until history is gone, clamp γ) vs denoised.
+    const MovedReference = await ReferenceAt(Moved);
+    const Variants = {
+        Restart:                   { ReprojectionEnabled: false, DenoiseEnabled: false },
+        HistorySpan16:             { ReprojectionEnabled: true,  DenoiseEnabled: false, HistoryClamp: 0,   HistorySpan: 16 },
+        HistorySpan8:              { ReprojectionEnabled: true,  DenoiseEnabled: false, HistoryClamp: 0,   HistorySpan: 8 },
+        HistorySpan8Clamped:       { ReprojectionEnabled: true,  DenoiseEnabled: false, HistoryClamp: 1.5, HistorySpan: 8 },
+        RestartDenoised:           { ReprojectionEnabled: false, DenoiseEnabled: true },
+        HistoryDenoised:           { ReprojectionEnabled: true,  DenoiseEnabled: true,  HistoryClamp: 0,   HistorySpan: 8 },
+        HistoryDenoisedBlueNoise:  { ReprojectionEnabled: true,  DenoiseEnabled: true,  HistoryClamp: 0,   HistorySpan: 8, PointPattern: 'bluenoise' }
+    };
+    const Orbit = {};
+    for (const [Name, Variant] of Object.entries(Variants))
+    {
+        Orbit[Name] = await RenderOrbitVariant(Page, Hero, Variant, MovedReference, Width, Height, PriorSamples);
+        console.log(`[reconstruction] orbit ${Name} ${Orbit[Name].map(Entry => `${Entry.Samples}:${Entry.RelativeRms}/${Entry.MeanAbsoluteLevels}`).join(' ')}`);
+    }
+    await Page.evaluate(() => window.DeterministicTracing.ApplyConfiguration({ ReprojectionEnabled: false, DenoiseEnabled: false, HistoryClamp: 0, HistorySpan: 8, PointPattern: 'shared' }));
+    await Page.close();
+
+    WriteResult('Reconstruction', {
+        Summary: {
+            Width, Height, ReferenceSamples,
+            StillAt1: { Exact: Still.shared[0].Exact, Denoised: Still.shared[0].Denoised, BlueNoiseDenoised: Still.bluenoise[0].Denoised },
+            StillAt4: { Exact: Still.shared[2].Exact, Denoised: Still.shared[2].Denoised, BlueNoiseDenoised: Still.bluenoise[2].Denoised },
+            Determinism, Cost
+        },
+        Still, Orbit: { Step: 0.05, PriorSamples, Variants, Curves: Orbit },
+        Note: 'Hero view, SwiftShader. Errors against the exact 256 spp image (still) or at the moved view (orbit). Display levels: ACES + sRGB, exposure 1.'
+    });
+    await RetainReconstructionImages(Browser, Server, Hero, PriorSamples);
+}
+
+// 📝 320 × 180 evidence: still frame exact vs denoised at 1 and 4 spp with the reference, and the first frame after an orbit.
+async function RetainReconstructionImages(Browser, Server, Hero, PriorSamples)
+{
+    const Page = await OpenPrototype(Browser, Server, 'width=320&height=180&camera=Hero');
+    Hero ??= await Page.evaluate(() => ({ ...window.DeterministicTracing.CameraPresets.Hero }));
+    const Panels = [];
+    const Capture = async (Label, Name, DenoiseEnabled) =>
+    {
+        const Png = await Page.evaluate(async DenoiseEnabled =>
+        {
+            const Division = window.DeterministicTracing.Division;
+            Division.Configuration = { ...Division.Configuration, DenoiseEnabled };
+            return window.DeterministicTracing.EncodeDisplayPng();
+        }, DenoiseEnabled);
+        WritePng(Name, Png); Panels.push({ Label, Png });
+    };
+    await Page.evaluate(async () => { const Tracing = window.DeterministicTracing; Tracing.ApplyConfiguration({ DenoiseEnabled: false }); await Tracing.RenderFromZero(1, 1); });
+    await Capture('Exact · 1 spp', 'Reconstruction_Exact_1spp.png', false);
+    await Capture('Denoised · 1 spp', 'Reconstruction_Denoised_1spp.png', true);
+    await Page.evaluate(async () => window.DeterministicTracing.ContinueSamples(4));
+    await Capture('Exact · 4 spp', 'Reconstruction_Exact_4spp.png', false);
+    await Page.evaluate(async () => window.DeterministicTracing.ContinueSamples(128));
+    await Capture('Reference · 128 spp (exact)', 'Reconstruction_Reference_128spp.png', false);
+    await Page.evaluate(async () => { const Tracing = window.DeterministicTracing; Tracing.ApplyConfiguration({ PointPattern: 'bluenoise' }); await Tracing.RenderFromZero(1, 1); });
+    await Capture('Blue-noise pattern + denoised · 1 spp', 'Reconstruction_BlueNoiseDenoised_1spp.png', true);
+    const MoveAndSample = async Variant => Page.evaluate(async (Hero, Variant, PriorSamples) =>
+    {
+        const Tracing = window.DeterministicTracing;
+        Tracing.ApplyConfiguration({ ...Variant, Camera: { ...Hero, Target: [...Hero.Target] } });
+        await Tracing.RenderFromZero(PriorSamples, 4);
+        Tracing.MoveCamera({ Yaw: Hero.Yaw + 0.05 });
+        await Tracing.ContinueSamples(1);
+    }, Hero, Variant, PriorSamples);
+    await MoveAndSample({ ReprojectionEnabled: true, DenoiseEnabled: false, HistoryClamp: 0, HistorySpan: 8, PointPattern: 'bluenoise' });
+    await Capture('After orbit · history + blue-noise + denoised · 1 spp', 'Reconstruction_OrbitHistoryDenoised_1spp.png', true);
+    await Page.close();
+
+    const Montage = await Browser.newPage();
+    await Montage.setViewport({ width: 3 * 640 + 4 * 12, height: 2 * 360 + 2 * 34 + 3 * 12 });
+    const Cells = [Panels[0], Panels[2], Panels[3], Panels[1], Panels[4], Panels[5]]
+        .map(Panel => `<figure><figcaption>${Panel.Label}</figcaption><img src="${Panel.Png}"></figure>`).join('');
+    await Montage.setContent(`<html><body style="margin:0;background:#0f1114;font-family:system-ui,sans-serif">
+        <style>main{display:grid;grid-template-columns:repeat(3,640px);gap:12px;padding:12px}figure{margin:0}
+        figcaption{color:#e7e9ec;font-size:16px;height:34px;line-height:28px}img{width:640px;height:360px;image-rendering:pixelated;display:block}</style>
+        <main>${Cells}</main></body></html>`);
+    await Montage.evaluate(async () => { await document.fonts.ready; await Promise.all([...document.images].map(Image => Image.decode())); });
+    await Montage.screenshot({ path: path.join(ImagesFolder, 'ReconstructionComparison.png') });
+    await Montage.close();
+    console.log('[reconstruction] Images/ReconstructionComparison.png');
+}
+
+
+//------------------------------------------------------------------------------------------------------------------------
 //                                                    MAIN
 //------------------------------------------------------------------------------------------------------------------------
 
@@ -430,6 +1090,13 @@ try
     if (Phase === 'chart'       || Phase === 'all') await RetainChart(Browser);
     if (Phase === 'captures'    || Phase === 'all') await RetainCaptures(Browser, Server);
     if (Phase === 'interface'   || Phase === 'all') await RetainInterfaceCapture(Browser, Server);
+    if (Phase === 'realtime'    || Phase === 'all') await ValidateRealtime(Browser, Server);
+    if (Phase === 'patterns'    || Phase === 'all') await ValidatePatterns(Browser, Server);
+    if (Phase === 'fleet'       || Phase === 'all') await ValidateFleet(Browser, Server);
+    if (Phase === 'reconstruction' || Phase === 'all') await ValidateReconstruction(Browser, Server);
+    if (Phase === 'reconstructionimages')           await RetainReconstructionImages(Browser, Server, null, 32);
+    if (Phase === 'patternimages')                  await RetainPatternImages(Browser, Server);
+    if (Phase === 'realtimeimages')                 await RetainRealtimeImages(Browser, Server, null, 32);
     console.log(`[${Phase}] finished in ${((Date.now() - Started) / 1000).toFixed(1)} s`);
 }
 finally

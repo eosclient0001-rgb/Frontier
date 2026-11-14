@@ -15,6 +15,24 @@ hardware RT, non-ray paths, reflections, PBR and the statistical limits of the r
   1024 spp (after fixing a Schlick F90 grazing bias the test exposed); 1 digest over 5 runs; ≈N^-0.76 on
   the full scene. **No physical GTX/RTX run and no GPU timing**; Slang/Vulkan integration not started.
   [Evidence and limits](../Exhibits/DeterministicPathTracer/README.md).
+- Real-time options (same date, uncommitted): FPS counter; per-pixel pattern toggle; rasterized camera visibility;
+  camera-motion history reprojection. Default stays bit-identical. Measured: per-pixel = same error, grain
+  instead of banding, +7–15 % time; raster = no gain (+1–5 %), 0.2 % pixels differ; reprojection = first frame
+  after an orbit 0.36 → 0.26 RMS, but 0.043 vs 0.030 at 16 spp. [Real-time options](../Exhibits/DeterministicPathTracer/README.md#real-time-options).
+- Blue-noise sample pattern (`pattern=bluenoise`): per-pixel digital shift from two committed 64² void-and-cluster
+  masks, so each pixel keeps a full (0,m,2)-net and output stays bit-repeatable. Lowest blurred (perceived) error of
+  the three patterns at every count 1–64 spp (0.023 vs 0.042 shared at 4 spp), +16 % time.
+  [Sample patterns](../Exhibits/DeterministicPathTracer/README.md#sample-patterns-shared-per-pixel-blue-noise).
+- Vehicle count option (`vehicles=1…50`, Fleet camera): parking grid re-spaced (no overlap, ≥ 1.10 m between
+  cars). 50 vehicles = 1,253,400 triangles, tree depth 27, built in 5.4 s; cost per sample 1.77× (Hero) / 3.37×
+  (Fleet) of one vehicle. Copies are baked; no instancing yet.
+  [Vehicle count](../Exhibits/DeterministicPathTracer/README.md#vehicle-count-fps-impact).
+- Denoiser and temporal reuse v3 (`denoise=1`, `reproject=1`): display-only edge-aware à-trous filter (normal,
+  plane, material, variance-scaled luminance; σ/n; fades out by 64 spp) — sums and digests unchanged, denoised
+  display bit-repeatable (`c153d6c4` ×2), 0.15 of a sample. Blue-noise + denoised 1 spp: 4.06 display levels vs 6.29
+  exact; never worse than exact at 1–64 spp. History: reflection motion via the virtual image, fades over 8 samples:
+  orbit 1 spp RMS 0.358 → 0.208 (with denoiser), equal to restart from 8 spp (drag gone). Not yet a clean 1 spp
+  frame (mirror-floor dither). [Denoiser](../Exhibits/DeterministicPathTracer/README.md#denoiser-and-temporal-reuse).
 
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 

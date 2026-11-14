@@ -6,8 +6,9 @@
 // 📝 Determinism contract
 //    ① No random number generator exists in this file. Every integral (pixel footprint, lens, light area, BSDF lobe)
 //       is evaluated with one fixed, shared low-discrepancy point set: base-2 Sobol' (0,2)-sequence pairs, each pair
-//       decorrelated by a FIXED nested-uniform digit permutation keyed only by the pair index. Every pixel uses the
-//       same points; sample k is identical on every run.
+//       decorrelated by a FIXED nested-uniform digit permutation keyed by the pair index. By default every pixel uses
+//       the same points; the optional per-pixel mode adds a fixed key derived from the pixel coordinate. Either way
+//       sample k is identical on every run.
 //    ② No Russian roulette and no stochastic lobe or Fresnel selection. At each surface vertex every lobe is traced
 //       (coat, specular, diffuse; reflection AND refraction for glass), each carrying its exact weight.
 //    ③ Paths end only at fixed depth limits or below a fixed throughput cutoff — deterministic, documented bias.
@@ -61,6 +62,12 @@ struct TracingUniforms
     DepthLimits       : vec4u,   // non-delta bounce limit, total depth limit, light count, sphere count
     SceneLayout       : vec4u,   // floor material slot, environment category, entry count, vehicle enabled (0/1)
     Tuning            : vec4f,   // throughput cutoff, floor radius [m], softboxes visible to camera (0/1), unused
+    PreviousOrigin    : vec4f,   // xyz [m] camera of the accumulation being reprojected
+    PreviousForward   : vec4f,
+    PreviousRight     : vec4f,
+    PreviousUp        : vec4f,
+    Realtime          : vec4u,   // per-pixel decorrelation (0/1), visibility raster (0/1), history read / write offset [px]
+    HistoryTuning     : vec4f,   // history capacity [samples], history active (0/1), unused, unused
 }
 
 struct BoundsEntry
@@ -140,72 +147,41 @@ struct LobeEvaluation
 @group(0) @binding(4) var<storage, read>       Materials         : array<SurfaceMaterial>;
 @group(0) @binding(5) var<storage, read>       AreaLights        : array<AreaLight>;
 @group(0) @binding(6) var<storage, read>       Spheres           : array<vec4f>;
-@group(0) @binding(7) var<storage, read_write> Accumulation      : array<vec4f>;
+@group(0) @binding(7) var<storage, read_write> Accumulation      : array<vec4f>;   // [0,N) sums, [N,3N) two history regions, [3N,4N) luminance moments
+@group(0) @binding(8) var                      VisibilityIds     : texture_2d<u32>; // triangle index + 1 per pixel, 0 = none
+@group(0) @binding(9) var                      BlueNoiseRanks    : texture_2d<u32>; // 64² r32uint: rank A | rank B << 16
+@group(0) @binding(10) var<storage, read_write> SurfaceFeatures  : array<vec4f>;   // ResolveSurfaceFeatures only: [0,N) position + distance, [N,2N) normal + slot/roughness
 
 var<private> TransportStack     : array<TransportRay, TransportStackCapacity>;
 var<private> TransportStackSize : u32;
+var<private> PixelScramble      : u32;
+var<private> BlueNoiseOrigin    : vec2u;   // pixel coordinate when the blue-noise pattern is active
+var<private> BlueNoiseActive    : bool;
 
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                    QUADRATURE SEQUENCE
 //------------------------------------------------------------------------------------------------------------------------
 
-// 📝 Fixed integer avalanche (lowbias32). Used ONLY to derive constant per-pair permutation keys from the pair index;
-//    it never sees the pixel coordinate, so the point set is identical for every pixel and every run.
-fn AvalancheKey(Input: u32) -> u32
+// 📝 Blue-noise pattern: each pair reads the two 64² void-and-cluster masks at a fixed per-pair tile offset (integer R₂
+//    steps), so neighbouring pixels get shifts far apart in value and different pairs see uncorrelated tiles. The 12
+//    rank bits become the top digits of a digital shift — a fixed XOR, so each pixel still owns a full (0,m,2)-net.
+fn ResolveBlueNoiseShift(PairIndex: u32) -> vec2u
 {
-    var Mixed = Input;
-    Mixed ^= Mixed >> 16u;
-    Mixed *= 0x7feb352du;
-    Mixed ^= Mixed >> 15u;
-    Mixed *= 0x846ca68bu;
-    Mixed ^= Mixed >> 16u;
-    return Mixed;
+    let Offset = vec2u((PairIndex * 3242174890u) >> 26u, (PairIndex * 2447445413u) >> 26u);
+    let Texel  = vec2i(vec2u(BlueNoiseOrigin + Offset) & vec2u(63u));
+    let Ranks  = textureLoad(BlueNoiseRanks, Texel, 0).x;
+    return vec2u((Ranks & 0xfffu) << 20u, ((Ranks >> 16u) & 0xfffu) << 20u);
 }
 
-// 📝 Laine–Karras digit permutation: a bijection on 32-bit integers in which each bit depends only on less-significant
-//    bits. Applied in bit-reversed order it is a nested uniform (Owen) digit permutation, which preserves the
-//    (0,m,2)-net property of every power-of-two prefix of the Sobol' pair.
-fn LaineKarrasPermutation(Input: u32, Key: u32) -> u32
-{
-    var Permuted = Input + Key;
-    Permuted ^= Permuted * 0x6c50b47cu;
-    Permuted ^= Permuted * 0xb82f1e52u;
-    Permuted ^= Permuted * 0xc7afe638u;
-    Permuted ^= Permuted * 0x8d22f6e6u;
-    return Permuted;
-}
-
-fn NestedDigitPermutation(Input: u32, Key: u32) -> u32
-{
-    return reverseBits(LaineKarrasPermutation(reverseBits(Input), Key));
-}
-
-// 📝 Second Sobol' dimension (primitive polynomial x + 1): direction numbers v₁ = 2³¹, vⱼ = vⱼ₋₁ ⊕ (vⱼ₋₁ >> 1).
-fn SobolSecondDimension(Index: u32) -> u32
-{
-    var Result    = 0u;
-    var Direction = 0x80000000u;
-    var Bits      = Index;
-    loop
-    {
-        if (Bits == 0u) { break; }
-        if ((Bits & 1u) != 0u) { Result ^= Direction; }
-        Bits      = Bits >> 1u;
-        Direction = Direction ^ (Direction >> 1u);
-    }
-    return Result;
-}
-
-// 📝 Point SampleIndex of quadrature pair PairIndex in [0,1)². The index permutation decorrelates pairs from each other;
-//    the two coordinate permutations keep each pair a (0,2)-sequence.
+// 📝 QuadratureSequence.wgsl is prepended to this source. PixelScramble is 0 (shared point set) unless the per-pixel
+//    pattern is selected; the subpixel pair always stays shared so the visibility raster can match it.
 fn QuadraturePair(SampleIndex: u32, PairIndex: u32) -> vec2f
 {
-    let PairKey        = AvalancheKey(PairIndex * 0x9e3779b9u + 0x85ebca6bu);
-    let ShuffledIndex  = NestedDigitPermutation(SampleIndex, PairKey);
-    let FirstDigits    = NestedDigitPermutation(reverseBits(ShuffledIndex), AvalancheKey(PairKey ^ 0xa511e9b3u));
-    let SecondDigits   = NestedDigitPermutation(SobolSecondDimension(ShuffledIndex), AvalancheKey(PairKey ^ 0x63d83595u));
-    return vec2f(f32(FirstDigits >> 8u), f32(SecondDigits >> 8u)) * (1.0 / 16777216.0);
+    let Keyed = PairIndex != PairSubpixel;
+    var Shift = vec2u(0u);
+    if (BlueNoiseActive && Keyed) { Shift = ResolveBlueNoiseShift(PairIndex); }
+    return ScrambledQuadraturePair(SampleIndex, PairIndex, select(0u, PixelScramble, Keyed), Shift);
 }
 
 fn DepthPair(SampleIndex: u32, Depth: u32, Slot: u32) -> vec2f
@@ -286,7 +262,8 @@ fn IntersectLight(Origin: vec3f, Direction: vec3f, Light: AreaLight) -> f32
     return select(-1.0, Distance, abs(U) <= 0.5 && abs(V) <= 0.5);
 }
 
-fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> SurfaceHit
+// 📝 Closed-form primitives only: floor disc, showcase spheres and (optionally) the softbox rectangles.
+fn TraceAnalyticHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> SurfaceHit
 {
     var Hit = SurfaceHit(UnboundedDistance, HitAbsent, 0u, vec2f(0.0));
 
@@ -311,7 +288,12 @@ fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> Surf
         let Distance = IntersectLight(Origin, Direction, AreaLights[LightIndex]);
         if (Distance > 0.0 && Distance < Hit.Distance) { Hit = SurfaceHit(Distance, HitLight, LightIndex, vec2f(0.0)); }
     }
+    return Hit;
+}
 
+fn TraceClosestHit(Origin: vec3f, Direction: vec3f, LightsVisible: bool) -> SurfaceHit
+{
+    var Hit = TraceAnalyticHit(Origin, Direction, LightsVisible);
     if (Tracing.SceneLayout.w == 0u) { return Hit; }
     let Reciprocal = SafeReciprocal(Direction);
     var BoundsStack : array<u32, BoundsStackCapacity>;
@@ -851,8 +833,34 @@ fn ScatterSurface(Surface: SurfaceSample, Ray: TransportRay, SampleIndex: u32) -
     return Radiance;
 }
 
+// 📝 Camera hit from the visibility raster: the rasterized triangle is re-intersected exactly with this sample's ray
+//    (same subpixel point), then the closed-form primitives are tested. Category HitAbsent with Distance 0 means
+//    "not resolved" (the exact ray misses the named triangle — a silhouette edge): the transport loop then runs the full
+//    bounds-tree trace. ⚠️ Not bit-identical to traced visibility: the rasterizer snaps vertices to a subpixel grid, so
+//    sliver triangles thinner than that grid and exact coplanar ties can resolve differently (≈ 1 sample in 10⁴).
+fn ResolveRasterizedPrimary(Origin: vec3f, Direction: vec3f, PixelCoordinate: vec2u) -> SurfaceHit
+{
+    var Hit = TraceAnalyticHit(Origin, Direction, Tracing.Tuning.z > 0.5);
+    let Identifier = textureLoad(VisibilityIds, vec2i(PixelCoordinate), 0).x;
+    if (Identifier == 0u) { return Hit; }
+    let Candidate = IntersectTriangle(Origin, Direction, Identifier - 1u);
+    if (Candidate.x <= RayOffsetScale) { return SurfaceHit(0.0, HitAbsent, 0u, vec2f(0.0)); }
+    if (Candidate.x < Hit.Distance) { Hit = SurfaceHit(Candidate.x, HitTriangle, Identifier - 1u, Candidate.yz); }
+    return Hit;
+}
+
+// 📝 Fixed per-pixel scramble key (0 = shared point set). A pure function of the pixel coordinate.
+fn ResolvePixelScramble(PixelCoordinate: vec2u) -> u32
+{
+    if (Tracing.Realtime.x != 1u) { return 0u; }
+    return AvalancheKey((PixelCoordinate.x * 0x8da6b343u) ^ (PixelCoordinate.y * 0xd8163841u) ^ 0x2545f491u) | 1u;
+}
+
 fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
 {
+    PixelScramble   = ResolvePixelScramble(PixelCoordinate);
+    BlueNoiseActive = Tracing.Realtime.x == 2u;
+    BlueNoiseOrigin = PixelCoordinate;
     let Extent   = vec2f(f32(Tracing.Extent.x), f32(Tracing.Extent.y));
     let Subpixel = QuadraturePair(SampleIndex, PairSubpixel);
     let Ndc      = ((vec2f(PixelCoordinate) + Subpixel) / Extent) * 2.0 - vec2f(1.0);
@@ -872,13 +880,24 @@ fn IntegrateSample(PixelCoordinate: vec2u, SampleIndex: u32) -> vec3f
     TransportStackSize = 1u;
     var Radiance = vec3f(0.0);
 
+    // 📝 Resolved outside the loop: an extra call inside it slowed every ray by ~11 % on SwiftShader even when disabled.
+    var PrimaryHit     = SurfaceHit(0.0, HitAbsent, 0u, vec2f(0.0));
+    var PrimaryPending = false;
+    if (Tracing.Realtime.y == 1u && Tracing.CameraOrigin.w <= 0.0)
+    {
+        PrimaryHit     = ResolveRasterizedPrimary(Origin, Direction, PixelCoordinate);
+        PrimaryPending = PrimaryHit.Distance > 0.0;
+    }
+
     loop
     {
         if (TransportStackSize == 0u) { break; }
         TransportStackSize -= 1u;
         var Ray = TransportStack[TransportStackSize];
         // 📝 Softboxes may be hidden from camera rays (studio practice); reflections and refractions always see them.
-        let Hit = TraceClosestHit(Ray.Origin, Ray.Direction, Ray.Depth > 0u || Tracing.Tuning.z > 0.5);
+        var Hit = PrimaryHit;
+        if (PrimaryPending) { PrimaryPending = false; }
+        else                { Hit = TraceClosestHit(Ray.Origin, Ray.Direction, Ray.Depth > 0u || Tracing.Tuning.z > 0.5); }
 
         if (Ray.Medium != InvalidMedium)
         {
@@ -927,15 +946,194 @@ fn IntegrateRadiance(@builtin(global_invocation_id) InvocationId: vec3u)
 {
     if (InvocationId.x >= Tracing.Extent.x || InvocationId.y >= Tracing.Extent.y) { return; }
     let PixelIndex = InvocationId.y * Tracing.Extent.x + InvocationId.x;
-    var Sum = Accumulation[PixelIndex];
+    let MomentIndex = 3u * Tracing.Extent.x * Tracing.Extent.y + PixelIndex;
+    var Sum     = Accumulation[PixelIndex];
+    var Moments = Accumulation[MomentIndex];
     for (var Offset = 0u; Offset < Tracing.Extent.w; Offset++)
     {
         let Radiance = IntegrateSample(InvocationId.xy, Tracing.Extent.z + Offset);
         // 📝 Guard against non-finite samples so one degenerate triangle can never poison the accumulation.
-        let Finite = all(Radiance == Radiance) && all(abs(Radiance) < vec3f(1.0e20));
-        Sum = Sum + vec4f(select(vec3f(0.0), Radiance, Finite), 1.0);
+        let Finite   = all(Radiance == Radiance) && all(abs(Radiance) < vec3f(1.0e20));
+        let Accepted = select(vec3f(0.0), Radiance, Finite);
+        Sum = Sum + vec4f(Accepted, 1.0);
+        // 📝 Second moment of luminance, for the denoiser's per-pixel variance. Never feeds back into the sums.
+        let Luminance = dot(Accepted, vec3f(0.2126, 0.7152, 0.0722));
+        Moments = Moments + vec4f(Luminance * Luminance, 0.0, 0.0, 0.0);
     }
-    Accumulation[PixelIndex] = Sum;
+    Accumulation[PixelIndex]  = Sum;
+    Accumulation[MomentIndex] = Moments;
+}
+
+// 📝 Camera-centre ray of a pixel for an arbitrary camera (no subpixel offset, no lens).
+fn PixelCentreDirection(Pixel: vec2f, Forward: vec3f, Right: vec3f, Up: vec3f) -> vec3f
+{
+    let Extent = vec2f(f32(Tracing.Extent.x), f32(Tracing.Extent.y));
+    let Ndc    = (Pixel + vec2f(0.5)) / Extent * 2.0 - vec2f(1.0);
+    return normalize(Forward + Ndc.x * Right - Ndc.y * Up);
+}
+
+// 📝 How many samples of history a surface may keep. Reprojection moves shading with the surface, which is right for
+//    diffuse light but wrong for reflections; glossy and glass surfaces therefore keep a shorter history.
+// 📝 History is carried by surface position, which is only right for view-independent shading. The sharpest lobe
+//    decides (a clear coat over a rough base reflects like a mirror): ≤ 0.05 keeps no history, ≥ 0.4 keeps full capacity.
+fn ResolveSharpestRoughness(MaterialSlot: u32) -> f32
+{
+    let Material  = Materials[MaterialSlot];
+    let Category  = u32(Material.EtaCategory.w);
+    var Roughness = select(Material.AlbedoRoughness.w, 0.0, Category == SurfaceSolidDielectric || Category == SurfaceThinDielectric);
+    if (Material.KappaCoat.w > 0.0) { Roughness = min(Roughness, Material.ExitanceCoat.w); }
+    return Roughness;
+}
+
+fn ResolveHistoryCapacity(MaterialSlot: u32) -> f32
+{
+    return Tracing.HistoryTuning.x * smoothstep(0.05, 0.4, ResolveSharpestRoughness(MaterialSlot));
+}
+
+// 📝 Pixel of the PREVIOUS camera whose centre ray passes through Point; x < 0 when Point is behind it or off screen.
+fn ProjectIntoPreviousCamera(Point: vec3f) -> vec2f
+{
+    let Offset  = Point - Tracing.PreviousOrigin.xyz;
+    let Depth   = dot(Offset, Tracing.PreviousForward.xyz);
+    let Across  = dot(Offset, Tracing.PreviousRight.xyz) / dot(Tracing.PreviousRight.xyz, Tracing.PreviousRight.xyz);
+    let Upward  = dot(Offset, Tracing.PreviousUp.xyz) / dot(Tracing.PreviousUp.xyz, Tracing.PreviousUp.xyz);
+    let Extent  = vec2f(f32(Tracing.Extent.x), f32(Tracing.Extent.y));
+    let Landing = (vec2f(Across / Depth, -Upward / Depth) + vec2f(1.0)) * 0.5 * Extent;
+    if (Depth <= 0.0 || any(Landing < vec2f(0.0)) || any(Landing >= Extent)) { return vec2f(-1.0); }
+    return Landing;
+}
+
+// 📝 What a perfect mirror at Surface reflects: category and, for surfaces, the material slot (lights: index + 1000).
+fn ResolveMirrorIdentity(Surface: SurfaceSample, Direction: vec3f) -> vec2f
+{
+    let Reflected = reflect(Direction, Surface.ShadingNormal);
+    let Hit       = TraceClosestHit(OffsetOrigin(Surface.Position, Surface.GeometricNormal, Reflected), Reflected, true);
+    if (Hit.Category == HitAbsent) { return vec2f(0.0, 1.0e4); }
+    var Identity = f32(Hit.Category) * 4096.0 + f32(Hit.PrimitiveIndex % 4096u);
+    if (Hit.Category == HitTriangle || Hit.Category == HitSphere || Hit.Category == HitFloor)
+    {
+        Identity = f32(Hit.Category) * 4096.0 + f32(ResolveSurface(Surface.Position, Reflected, Hit).MaterialSlot);
+    }
+    return vec2f(Identity, Hit.Distance);
+}
+
+// 📝 Camera-motion reprojection, run once when the camera changes and before the sums are cleared. For each pixel of
+//    the NEW camera: ① trace its centre ray, ② find the PREVIOUS pixel that saw the same thing, ③ verify by tracing that
+//    previous pixel's centre ray, ④ carry its displayed radiance with weight min(samples, capacity).
+//    Rough surfaces move with the surface point. Mirror-like surfaces (sharpest lobe ≤ 0.05, e.g. the coated floor)
+//    move with the reflected object's virtual image — the point at the same total path length along the camera ray —
+//    and are accepted only if the previous pixel shows the same surface reflecting the same thing.
+//    Deterministic for a given camera path; the converged image never contains history (DisplayExposure.wgsl).
+@compute @workgroup_size(8, 8, 1)
+fn ReprojectHistory(@builtin(global_invocation_id) InvocationId: vec3u)
+{
+    if (InvocationId.x >= Tracing.Extent.x || InvocationId.y >= Tracing.Extent.y) { return; }
+    let PixelIndex    = InvocationId.y * Tracing.Extent.x + InvocationId.x;
+    let LightsVisible = Tracing.Tuning.z > 0.5;
+    let Extent        = vec2f(f32(Tracing.Extent.x), f32(Tracing.Extent.y));
+    let Footprint     = 2.0 * length(Tracing.CameraUp.xyz) / Extent.y;
+    var Carried       = vec4f(0.0);
+
+    // ① Current surface.
+    let Origin    = Tracing.CameraOrigin.xyz;
+    let Direction = PixelCentreDirection(vec2f(InvocationId.xy), Tracing.CameraForward.xyz, Tracing.CameraRight.xyz, Tracing.CameraUp.xyz);
+    let Hit       = TraceClosestHit(Origin, Direction, LightsVisible);
+    let Travel    = select(Hit.Distance, 1.0e4, Hit.Category == HitAbsent);
+    let Point     = Origin + Direction * Travel;
+    let Material  = Hit.Category != HitAbsent && Hit.Category != HitLight;
+    var Surface   : SurfaceSample;
+    var Sharp     = false;
+    var Mirror    = vec2f(0.0);
+    if (Material)
+    {
+        Surface = ResolveSurface(Origin, Direction, Hit);
+        Sharp   = ResolveSharpestRoughness(Surface.MaterialSlot) <= 0.05;
+        if (Sharp) { Mirror = ResolveMirrorIdentity(Surface, Direction); }
+    }
+
+    // ② Previous pixel: through the surface point, or through the virtual image for mirror-like surfaces.
+    let Landing = ProjectIntoPreviousCamera(select(Point, Origin + Direction * (Travel + Mirror.y), Sharp));
+    if (Landing.x >= 0.0)
+    {
+        // ③ Same surface (and, for mirrors, the same reflected object) seen by the previous pixel?
+        let PreviousPixel     = vec2u(Landing);
+        let PreviousOrigin    = Tracing.PreviousOrigin.xyz;
+        let PreviousDirection = PixelCentreDirection(vec2f(PreviousPixel), Tracing.PreviousForward.xyz, Tracing.PreviousRight.xyz, Tracing.PreviousUp.xyz);
+        let PreviousHit       = TraceClosestHit(PreviousOrigin, PreviousDirection, LightsVisible);
+        var Accepted          = PreviousHit.Category == Hit.Category;
+        var Capacity          = Tracing.HistoryTuning.x;
+        if (Accepted && Material)
+        {
+            let PreviousSurface = ResolveSurface(PreviousOrigin, PreviousDirection, PreviousHit);
+            Accepted = Surface.MaterialSlot == PreviousSurface.MaterialSlot && dot(Surface.GeometricNormal, PreviousSurface.GeometricNormal) > 0.9;
+            if (Sharp)
+            {
+                let PreviousMirror = ResolveMirrorIdentity(PreviousSurface, PreviousDirection);
+                Accepted = Accepted && PreviousMirror.x == Mirror.x && abs(PreviousMirror.y - Mirror.y) < 0.05 * Mirror.y + 0.05;
+                Capacity = 0.5 * Tracing.HistoryTuning.x;
+            }
+            else
+            {
+                let PreviousPoint = PreviousOrigin + PreviousDirection * PreviousHit.Distance;
+                Accepted = Accepted && distance(Point, PreviousPoint) < 2.0 * Footprint * max(Travel, PreviousHit.Distance) + 2.0e-3;
+                Capacity = ResolveHistoryCapacity(Surface.MaterialSlot);
+            }
+        }
+        else if (Accepted && Hit.Category == HitLight)
+        {
+            let PreviousPoint = PreviousOrigin + PreviousDirection * PreviousHit.Distance;
+            Accepted = distance(Point, PreviousPoint) < 2.0 * Footprint * max(Travel, PreviousHit.Distance) + 2.0e-3;
+        }
+
+        // ④ Previous displayed radiance: exact sums plus whatever history was still blended in.
+        if (Accepted)
+        {
+            let PreviousIndex = PreviousPixel.y * Tracing.Extent.x + PreviousPixel.x;
+            let Sum           = Accumulation[PreviousIndex];
+            let History       = select(vec4f(0.0), Accumulation[Tracing.Realtime.z + PreviousIndex], Tracing.HistoryTuning.y > 0.5);
+            let HistoryWeight = max(History.w - Sum.w, 0.0);
+            let Weight        = Sum.w + HistoryWeight;
+            if (Weight > 0.0)
+            {
+                Carried = vec4f((Sum.rgb + History.rgb * HistoryWeight) / Weight, min(Weight, Capacity));
+            }
+        }
+    }
+    Accumulation[Tracing.Realtime.w + PixelIndex] = Carried;
+}
+
+// 📝 Denoiser guide, traced once per camera / scene: centre-ray position and distance, shading normal facing the
+//    camera, material slot (0xffff background, 0xfffe softbox) and sharpest roughness (16-bit) packed into one word.
+@compute @workgroup_size(8, 8, 1)
+fn ResolveSurfaceFeatures(@builtin(global_invocation_id) InvocationId: vec3u)
+{
+    if (InvocationId.x >= Tracing.Extent.x || InvocationId.y >= Tracing.Extent.y) { return; }
+    let PixelCount = Tracing.Extent.x * Tracing.Extent.y;
+    let PixelIndex = InvocationId.y * Tracing.Extent.x + InvocationId.x;
+    let Origin     = Tracing.CameraOrigin.xyz;
+    let Direction  = PixelCentreDirection(vec2f(InvocationId.xy), Tracing.CameraForward.xyz, Tracing.CameraRight.xyz, Tracing.CameraUp.xyz);
+    let Hit        = TraceClosestHit(Origin, Direction, Tracing.Tuning.z > 0.5);
+    var Position   = Origin + Direction * 1.0e4;
+    var Travel     = 0.0;
+    var Normal     = -Direction;
+    var Packed     = 0xffffu;
+    if (Hit.Category == HitLight)
+    {
+        Position = Origin + Direction * Hit.Distance;
+        Travel   = Hit.Distance;
+        Packed   = 0xfffeu;
+    }
+    else if (Hit.Category != HitAbsent)
+    {
+        let Surface   = ResolveSurface(Origin, Direction, Hit);
+        let Roughness = clamp(ResolveSharpestRoughness(Surface.MaterialSlot), 0.0, 1.0);
+        Position = Surface.Position;
+        Travel   = Hit.Distance;
+        Normal   = Surface.ShadingNormal;
+        Packed   = (Surface.MaterialSlot & 0xffffu) | (u32(Roughness * 65535.0) << 16u);
+    }
+    SurfaceFeatures[PixelIndex]              = vec4f(Position, Travel);
+    SurfaceFeatures[PixelCount + PixelIndex] = vec4f(Normal, bitcast<f32>(Packed));
 }
 
 // 📝 Validation entry: writes QuadraturePair(k, p) for k < Extent.x, p < Extent.y so host code can compare bit-for-bit.
