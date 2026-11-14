@@ -1,53 +1,75 @@
 # Frontier
 
-General-purpose, cross-platform editor with reusable engine code.
-EngineUpdate establishes documentation, audits inherited violations, and repairs code in reviewed batches.
+**Frontier** is a cross-platform ISO C++20 engine and multi-document authoring platform targeting **Windows, Linux (X11 & Wayland), and Android**, uniting geometric modeling, surface parameterization, tristimulus color science, **Slang (`.slang`)** GPU rasterization and compute, multiphysics simulation, spatial acoustics, distributed replication, and interactive workspace tooling.
 
-## Current VehicleHMI continuation
+---
 
-The earlier branch `arena/2ac8ddab-frontier` is continued on `arena/672a179a-frontier`.
-See the [continuation report](Exhibits/ContinuationReport.md) and the detailed
-[vehicle source audit and executed checks](Exhibits/VehiclePhysics/Continuation.md).
-The actual demo Moon texture, mixed flares and selectable XPBD/solid tyre shapes are retained and tested.
-Project Drive's vehicle core is separately available, but is not wired into the editor or a Jolt host. Long-impact
-parity and validation against measured tyres, vehicles, sky and lens data remain open.
+## Key Documentation
 
-## Start here
+| Document | Description |
+| :--- | :--- |
+| **[CLAUDE.md](CLAUDE.md)** · **[AGENTS.md](AGENTS.md)** | Session entry point, non-negotiable GPU/`.slang`/cross-platform mandates, and startup sequence. |
+| **[Documentation/FolderStructure.md](Documentation/FolderStructure.md)** | Canonical repository directory tree, file-level module layout, and structural boundaries. |
+| **[Documentation/BannedWordsVocabulary.md](Documentation/BannedWordsVocabulary.md)** | Enforced vocabulary blacklist, restricted terms, approved replacements, and chronological rulings. |
+| **[Documentation/CodingStandards.md](Documentation/CodingStandards.md)** | ISO C++20 baseline, explicit function prototyping, `concept`-constrained templates, and build profiles. |
+| **[Documentation/ImportantNotes.md](Documentation/ImportantNotes.md)** | Hard architectural invariants (GPU-only overlays, ImGui 8-patch stack, `Frontier-OLD` reference rules). |
+| **[Documentation/Tracker.md](Documentation/Tracker.md)** · **[Backlog.md](Documentation/Backlog.md)** | Active milestone roadmap (`Input/` + `Editor/` bringup) and deferred items ledger. |
+| `Documentation/AgenticInstructions/` | Mandatory skill protocols (`SKILL-CompactOutputProtocol`, `SKILL-Emoji`, `SKILL-Naming`, `SKILL-Formatting`). |
+| **[Experimental/README.md](Experimental/README.md)** | Ten staged reference editor UIs and studios (`FrontierEditor`, `ProjectZeroEditor`, `FluidEditor`, `FractureEditor`, `ParticleEditor`, `PhotometricEditor`, `ForceFieldEditor`, `VehicleLab`, `UVEditor`, `TextureStudio`) slated for shared C++20 `Engine/Components/` + `.slang` conversion. |
 
-- Read [agent instructions](CLAUDE.md) and the four mandatory skills before contributing.
-- Follow the [folder map](Documentation/FolderStructure.md) and [workflow](Documentation/Rules/AgentWorkflow.md).
-- Track all progress and findings in the [single tracker](Documentation/Tracker.md).
-- Follow the [active plan](Documentation/Plans/Ongoing/EngineUpdate.md).
-- Retain reproducible evidence under [Exhibits](Exhibits/README.md).
-- Build the [Control Centre, fonts, and themes](Exhibits/ControlCentre/README.md).
+---
 
-## Baseline status
+## Dependency & Toolchain Setup
 
-Approved source baseline: `SultanAladin/Frontier-` at `338293863d7df4e585dec0c4acae45fe9c524ed5`.
-This checkout is `SultanAladin/Frontier`, initially at `4a77bfd17f23536e32781718553ec6a171e39021`.
-A selective UI foundation and Control Centre port is now present; the rest of the linked engine has not been imported or merged.
-See [port evidence and Windows build steps](Exhibits/UIFoundation/README.md).
-That selective-port baseline predates the current VehicleHMI continuation above.
+All third-party libraries are pinned by SHA-256 in `Automation/` and extracted into git-ignored `ExternalPackages/` (including automatic application of the mandatory 8-patch ImGui stack `PatchA`–`PatchH`):
 
-## Builds and binaries
+```bash
+python3 Automation/PrepareDependencies.py
+python3 Automation/PrepareShaderToolchain.py
+python3 Automation/PrepareFonts.py
+```
 
-The user runs Windows; Windows binaries are the default requested binary deliverable.
-Do not build or package Linux binaries unless asked. Preserve cross-platform source portability.
-MSVC is the current user toolchain; supported GCC, MinGW-w64, and Clang configurations are also permitted.
-No macOS setup or binary downloads are currently in scope. No Android application exists in this scope.
+Configure and run verification across any of the three build profiles (`Editor`, `Development`, `Shipping`):
 
-The new root CMake target builds only the selected UI foundations and Windows UI exhibit, not the old engine.
-Six local checks passed in Debug and with sanitizers. Windows x64 cross-compilation succeeded.
-Windows runtime/GPU execution and native MSVC verification remain outstanding.
-Do not mix inherited build instructions with this selective target.
-Local verification is automatic; GitHub Actions require explicit permission.
+```bash
+cmake -S . -B Build/Editor -G Ninja -DFRONTIER_PROFILE=Editor
+cmake --build Build/Editor
+ctest --test-dir Build/Editor --output-on-failure
+```
 
-## Fonts
+---
 
-Run `python -m pip install -r Automation/FontRequirements.txt`, then `python Automation/PrepareFonts.py`.
-This downloads four OFL-licensed families and generates native TOML and tooling JSON font catalogues.
-Downloaded fonts remain ignored; the Windows package includes them and their licences.
-The Control Centre exposes only interface appearance settings, not GI or renderer controls.
+## Build Profiles (`Editor` · `Development` · `Shipping`)
 
-Primary rendering: Vulkan with Slang shaders. GLFW owns windows/input; the isolated ImGui exhibit may use DX11.
-The Control Centre uses the reference trapezoidal notch and upward swipe-to-close drawer.
+| Profile | CMake Flag | `Engine/Editor/` | Diagnostics & Assertions | Binary Packaging / CI |
+| :--- | :--- | :--- | :--- | :--- |
+| **Editor** | `-DFRONTIER_PROFILE=Editor` | Compiled & linked | Enabled | No packaging (runs in-place) |
+| **Development** | `-DFRONTIER_PROFILE=Development` | Excluded | Enabled | No packaging (fast local flags) |
+| **Shipping** | `-DFRONTIER_PROFILE=Shipping` | Excluded | Stripped | Packaged standalone binary + release CI gate |
+
+---
+
+## Engine Architecture (`Engine/`)
+
+| Domain | Responsibilities |
+| :--- | :--- |
+| **`MicroUtils/`** | Monotonic region allocators (`RegionAllocator`), stale-detecting identity tokens (`TokenIssuer`, `TokenAuthentication`), contiguous packed bits (`PackedBits`), preallocated indexed slot recycling (`IndexedSlotRecycler`), and invariant assertions. |
+| **`Configuration/`** | Compile-time profile policy (`BuildConfiguration`), hardware thread group allocation, render swapchain targets, project manifests, and workspace layout defaults. |
+| **`MetricSpace/`** | Coordinate spaces, orthographic/perspective/screen projections, distance metrics, spatial extents, SIMD linear algebra, quaternions, and ray/volume intersection solvers. |
+| **`SpatialAcceleration/`** | Broad-phase spatial structures: SAH BVH, loose octree, dynamic AABB tree, and sparse spatial grid hashing. |
+| **`DistanceFieldSpace/`** | Voxel-backed signed distance fields, fast sweeping & Maurer distance transforms, trilinear evaluation, ray marching, and analytic SDF primitive solvers. |
+| **`GeometryProcessing/`** | Polygon and directional half-edge surface complexes, QEM decimation, Catmull-Clark & Loop subdivision, non-manifold/boundary topology analysis, and discrete curvature calculation. |
+| **`UVSpace/`** | LSCM/ARAP chart parameterization, scanline UV chart packing (`UVChartPacker`), high-distortion seam detection, harmonic conformal projection, and area/angle distortion metrics. |
+| **`ColorSpace/`** | Tristimulus chromaticity spaces (CIE XYZ, Linear sRGB, ACEScg, Rec.2020, Oklab), transfer curves (sRGB, PQ, HLG), Bradford/CAT02 white-point adaptation, spectral distributions, and gamut compression. |
+| **`GeometricRaster/`** | Render lifecycle coordination (`RenderExtension`), dependency-sorted workload scheduling, batched indirect draw encoding (`IndirectDrawEncoder`), GPU hardware device interface (`RenderDeviceInterface`), descriptor slot registration (`DescriptorSlotRegister`), and ordered post-processing (`RadiometricToneStack`, `VeilingGlareFilter`, `AmbientOcclusionFilter`). |
+| **`Shaders/`** | Offline and runtime **Slang (`.slang`)** compilation (`ShaderCompiler`), descriptor/attribute reflection, variant permutation indexing, and microfacet surface, depth pre-raster, compute (`VoxelDistanceSweep`), and image-operation `.slang` shaders. |
+| **`SimulationSpace/`** | Rigid-body mechanics (`PhysicsSpace`: `PhysicsExtension`, Velocity Verlet, PGS constraints, sweep-and-prune, GJK/EPA), GPU/CPU particulate dynamics (`ParticleSimulation`), SPH liquid & Eulerian gas solvers (`FluidSimulation`), and procedural interpolation, easing, spring dynamics, and sequencing (`Motion`). |
+| **`Input/`** | Input lifecycle coordination (`InputExtension`) and bi-directional OS↔Engine signal, cursor-lock, and haptic exchange (`InputExchange`). |
+| **`Windowing/`** | Cross-platform window & surface abstractions across Win32, X11, Wayland, Android (`ANativeWindow`), and headless validation stubs (`PlatformWindow*`). |
+| **`Interchange/`** | Scene tree intake coordination and native format decoders for Wavefront OBJ, glTF 2.0 (JSON/GLB), and Filmbox FBX. |
+| **`Annotation/`** | **100% GPU-rasterized** visual annotations (`AnnotationExtension`), 2D/3D vector callouts, billboarded text markers, spatial debug bounds, and wireframe primitives (`DiagnosticPrimitives`) — never drawn on CPU or ImGui. |
+| **`Workspaces/`** | Multi-document session infrastructure (`WorkspaceExtension`), stale-detecting workspace tokens, domain authoring binders, and branching DAG document revision history (`Workspaces/Revision`). |
+| **`Editor/`** | **Excluded from `Development` and `Shipping` builds.** Concrete authoring workspaces (`Modeling`, `UV`, `Texturing`, `Baking`), scene/project/content browsers & debug console, 3D/2D viewports, GPU `.slang` gizmos/grids (`TransformGizmo`, `NavigationOverlay`), and CPU/GPU/memory diagnostics. |
+| **`Components/`** | Reusable UI controls: reflected property panels, tool ribbons & section blocks, strongly typed numerical/vector/enum controls, analytical unit-square vector icon rasterizers, and viewport overlays. |
+| **`NetworkingSpace/`** | Distributed simulation (`NetworkingExtension`), non-blocking UDP/TCP socket transport, bit-packed packet serialization, authoritative snapshot replication, ordered remote directive routing, and peer session alignment. |
+| **`AudioSpace/`** | Audio lifecycle coordination (`AudioExtension`), native OS audio hardware output (`AudioHardwareOutput`), PCM/WAV/Ogg/FLAC waveform decoding, bus mixing & filtering (`AcousticMixer`), and 3D HRTF spatial acoustics. |
