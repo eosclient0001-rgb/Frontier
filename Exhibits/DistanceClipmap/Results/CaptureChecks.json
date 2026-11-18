@@ -1,0 +1,11 @@
+{
+  "hybrid_exact_float_image_equal": true,
+  "repeated_float_image_equal": true,
+  "sources_off_exact_black": true,
+  "motion_images": 12,
+  "width": 480,
+  "height": 270,
+  "denoisers": false,
+  "radiance_clamps": false,
+  "scattering_model": "Lambertian diagnostic only; vehicle glass and metal are not production materials"
+}

@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "native_captures": 82,
+  "lossless_float_buffers": 35,
+  "source_hashes_verified": 18,
+  "executed_spirv_verified": true,
+  "html_references_verified": 59,
+  "native_ctests_passed": 4,
+  "shader_footprints": 6,
+  "matched_cpu_speed_gate_passed": false,
+  "renderer_accepted": false,
+  "scope": "Integrity, measurement arithmetic, report consistency and viewer links only; not an artifact or full-renderer certificate."
+}

@@ -1,0 +1,115 @@
+BAKED facets=25068 samples=102400 bake_ms=275.611 clip_ms=22.9793
+NUMERIC assertions=27246 nearest_max_m=7.53087e-08 visibility_disagreements=0 ms=330.543
+CAPTURE CombinedDirect
+CAPTURED CombinedDirect ms=5414.33
+CAPTURE HybridDirect
+CAPTURED HybridDirect ms=7425.28
+CAPTURE LocalVoxelPenumbra
+CAPTURED LocalVoxelPenumbra ms=14538
+CAPTURE ClipmapPenumbra
+CAPTURED ClipmapPenumbra ms=24645.3
+CAPTURE CombinedRepeat
+CAPTURED CombinedRepeat ms=5267.14
+CAPTURE SourcesOff
+CAPTURED SourcesOff ms=76.6696
+CAPTURE FacetNormals
+CAPTURED FacetNormals ms=77.4908
+CAPTURE EmissiveOnlyDirect
+CAPTURED EmissiveOnlyDirect ms=2189.94
+CAPTURE EmissiveSurfaceCache
+CAPTURED EmissiveSurfaceCache ms=78.6724
+CAPTURE EmissiveCachedGi
+CAPTURED EmissiveCachedGi ms=11588.3
+CAPTURE EmissiveReferenceGi
+CAPTURED EmissiveReferenceGi ms=13273.4
+CAPTURE PointOnlyDirect
+CAPTURED PointOnlyDirect ms=128.326
+CAPTURE PointSurfaceCache
+CAPTURED PointSurfaceCache ms=81.9799
+CAPTURE PointCachedGi
+CAPTURED PointCachedGi ms=11688.7
+CAPTURE PointReferenceGi
+CAPTURED PointReferenceGi ms=15681.1
+CAPTURE SunOnlyDirect
+CAPTURED SunOnlyDirect ms=1533.52
+CAPTURE SunSurfaceCache
+CAPTURED SunSurfaceCache ms=91.9423
+CAPTURE SunCachedGi
+CAPTURED SunCachedGi ms=11094.7
+CAPTURE SunReferenceGi
+CAPTURED SunReferenceGi ms=21925.3
+CAPTURE AreaOnlyDirect
+CAPTURED AreaOnlyDirect ms=2471.59
+CAPTURE AreaSurfaceCache
+CAPTURED AreaSurfaceCache ms=160.878
+CAPTURE AreaCachedGi
+CAPTURED AreaCachedGi ms=16191.5
+CAPTURE AreaReferenceGi
+CAPTURED AreaReferenceGi ms=13697.2
+CAPTURE CombinedOnlyDirect
+CAPTURED CombinedOnlyDirect ms=5223.2
+CAPTURE CombinedSurfaceCache
+CAPTURED CombinedSurfaceCache ms=74.9005
+CAPTURE CombinedCachedGi
+CAPTURED CombinedCachedGi ms=10726.2
+CAPTURE CombinedReferenceGi
+CAPTURED CombinedReferenceGi ms=27297.4
+CAPTURE PathTrace
+CAPTURE Motion00
+CAPTURED Motion00 ms=3096.55
+CAPTURE MotionLit00
+CAPTURED MotionLit00 ms=7910.77
+CAPTURE Motion01
+CAPTURED Motion01 ms=3088.93
+CAPTURE MotionLit01
+CAPTURED MotionLit01 ms=7745.92
+CAPTURE Motion02
+CAPTURED Motion02 ms=3073.93
+CAPTURE MotionLit02
+CAPTURED MotionLit02 ms=7693.1
+CAPTURE Motion03
+CAPTURED Motion03 ms=3038.37
+CAPTURE MotionLit03
+CAPTURED MotionLit03 ms=9084.99
+CAPTURE Motion04
+CAPTURED Motion04 ms=3537.84
+CAPTURE MotionLit04
+CAPTURED MotionLit04 ms=7674.37
+CAPTURE Motion05
+CAPTURED Motion05 ms=1984.39
+CAPTURE MotionLit05
+CAPTURED MotionLit05 ms=5136.54
+CAPTURE Motion06
+CAPTURED Motion06 ms=2115.15
+CAPTURE MotionLit06
+CAPTURED MotionLit06 ms=5343.02
+CAPTURE Motion07
+CAPTURED Motion07 ms=2163.77
+CAPTURE MotionLit07
+CAPTURED MotionLit07 ms=5549.71
+CAPTURE Motion08
+CAPTURED Motion08 ms=2127.63
+CAPTURE MotionLit08
+CAPTURED MotionLit08 ms=5607.49
+CAPTURE Motion09
+CAPTURED Motion09 ms=2183.87
+CAPTURE MotionLit09
+CAPTURED MotionLit09 ms=5867.98
+CAPTURE Motion10
+CAPTURED Motion10 ms=2140.52
+CAPTURE MotionLit10
+CAPTURED MotionLit10 ms=5827.89
+CAPTURE Motion11
+CAPTURED Motion11 ms=2185.82
+CAPTURE MotionLit11
+CAPTURED MotionLit11 ms=5471.3
+CAPTURE SourcesOffIncludingGi
+CAPTURED SourcesOffIncludingGi ms=744.835
+COMPLETED CPU diagnostic only; no production renderer or real-time acceptance
+BAKED facets=25068 samples=102400 bake_ms=249.276 clip_ms=16.1985
+CONVERGENCE EmissiveReferenceGi512
+CONVERGENCE EmissiveCachedGi512
+CONVERGENCE CombinedReferenceGi512
+CONVERGENCE CombinedCachedGi512
+CONVERGENCE PathTrace512
+COMPLETED CPU diagnostic only; no production renderer or real-time acceptance

@@ -1,0 +1,12 @@
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCpuOnly
+Test project /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCpuOnly
+    Start 1: DistanceClipmapNumeric
+1/3 Test #1: DistanceClipmapNumeric ...........   Passed    0.58 sec
+    Start 2: DistanceClipmapCacheSides
+2/3 Test #2: DistanceClipmapCacheSides ........   Passed    0.07 sec
+    Start 3: DistanceClipmapConsumption
+3/3 Test #3: DistanceClipmapConsumption .......   Passed    0.40 sec
+
+100% tests passed, 0 tests failed out of 3
+
+Total Test time (real) =   1.04 sec

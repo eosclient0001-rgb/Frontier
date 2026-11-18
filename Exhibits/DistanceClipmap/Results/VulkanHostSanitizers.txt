@@ -1,0 +1,2 @@
+VULKAN device=SwiftShader Device (Subzero) type=4
+VULKAN ACCEPTED local_error=0 clip_error=0 cache_error=1.49012e-07 positive_gathers=1976 visibility_mismatches=0

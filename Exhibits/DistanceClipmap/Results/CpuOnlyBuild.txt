@@ -1,0 +1,6 @@
+[1/6] Building CXX object CMakeFiles/CacheSideValidation.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/CacheSideValidation.cpp.o
+[2/6] Linking CXX executable CacheSideValidation
+[3/6] Building CXX object CMakeFiles/RadianceEvaluation.dir/RadianceEvaluation.cpp.o
+[4/6] Linking CXX executable RadianceEvaluation
+[5/6] Building CXX object CMakeFiles/ConsumptionValidation.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/ConsumptionValidation.cpp.o
+[6/6] Linking CXX executable ConsumptionValidation

@@ -1,0 +1,251 @@
+{
+  "source_sha256": "30913524ccd743ae4814837adefc889ec7c668e37a8d441b6dc3a5f052906b91",
+  "entries": [
+    {
+      "entry": "BakeLocalDistance",
+      "executed_spirv_sha256": "f961da37df15096f572e1f9c04b41454270dea03edf52be7971a1196baca55c0",
+      "descriptors": 8,
+      "push_constant_bytes": 128,
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "reflection_binary_matches_executed": true
+    },
+    {
+      "entry": "FillClipmap",
+      "executed_spirv_sha256": "ccb3a5113ef9cdd455d61fd016a69722322069b8d7bdad60f3cc8f89049eea99",
+      "descriptors": 8,
+      "push_constant_bytes": 128,
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "reflection_binary_matches_executed": true
+    },
+    {
+      "entry": "EvaluateDistanceProbes",
+      "executed_spirv_sha256": "b8027e9bcd315ee44a7ddcc8beb49ed6d66ea2ff6179d20b7f69a238714c497d",
+      "descriptors": 8,
+      "push_constant_bytes": 128,
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "reflection_binary_matches_executed": true
+    },
+    {
+      "entry": "RelightVehicleCache",
+      "executed_spirv_sha256": "008183f4a466a9b4cf5618c93b8e2f2f9b92ac16ded895a5f9e51a463455a7ca",
+      "descriptors": 8,
+      "push_constant_bytes": 128,
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "reflection_binary_matches_executed": true
+    },
+    {
+      "entry": "GatherVehicleCache",
+      "executed_spirv_sha256": "916b96cd4d85ee43b04bf21d63155c1ebc60ea4a125e9fb47ae8383ae69d2799",
+      "descriptors": 8,
+      "push_constant_bytes": 128,
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "reflection_binary_matches_executed": true
+    },
+    {
+      "entry": "ClearVehicleCache",
+      "executed_spirv_sha256": "fdb83cc3dcc19ab5f6e86f1307b7d061ec5428f7d0571bff6b968027278d75b4",
+      "descriptors": 8,
+      "push_constant_bytes": 128,
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "reflection_binary_matches_executed": true
+    }
+  ],
+  "footprints": {
+    "Enclosures": [
+      0,
+      48,
+      [
+        [
+          "Minimum",
+          0,
+          16,
+          "float32"
+        ],
+        [
+          "Maximum",
+          16,
+          16,
+          "float32"
+        ],
+        [
+          "Links",
+          32,
+          16,
+          "uint32"
+        ]
+      ]
+    ],
+    "Facets": [
+      1,
+      48,
+      [
+        [
+          "A",
+          0,
+          12,
+          "float32"
+        ],
+        [
+          "Material",
+          12,
+          4,
+          "uint32"
+        ],
+        [
+          "B",
+          16,
+          16,
+          "float32"
+        ],
+        [
+          "C",
+          32,
+          16,
+          "float32"
+        ]
+      ]
+    ],
+    "LocalDistances": [
+      2,
+      4,
+      []
+    ],
+    "ClipDistances": [
+      3,
+      16,
+      []
+    ],
+    "Probes": [
+      4,
+      48,
+      [
+        [
+          "OriginLimit",
+          0,
+          16,
+          "float32"
+        ],
+        [
+          "Direction",
+          16,
+          16,
+          "float32"
+        ],
+        [
+          "Position",
+          32,
+          16,
+          "float32"
+        ]
+      ]
+    ],
+    "Results": [
+      5,
+      16,
+      []
+    ],
+    "Boxes": [
+      6,
+      32,
+      [
+        [
+          "Centre",
+          0,
+          16,
+          "float32"
+        ],
+        [
+          "HalfExtent",
+          16,
+          16,
+          "float32"
+        ]
+      ]
+    ],
+    "SurfaceRadiance": [
+      7,
+      16,
+      []
+    ],
+    "Parameters": [
+      0,
+      128,
+      [
+        [
+          "LocalMinimum",
+          0,
+          16,
+          "float32"
+        ],
+        [
+          "LocalSpacing",
+          16,
+          16,
+          "float32"
+        ],
+        [
+          "ExtentAndCount",
+          32,
+          16,
+          "uint32"
+        ],
+        [
+          "PoseCosineSine",
+          48,
+          16,
+          "float32"
+        ],
+        [
+          "Translation",
+          64,
+          16,
+          "float32"
+        ],
+        [
+          "ClipOrigin0",
+          80,
+          16,
+          "int32"
+        ],
+        [
+          "ClipOrigin1",
+          96,
+          16,
+          "int32"
+        ],
+        [
+          "ClipOrigin2",
+          112,
+          16,
+          "int32"
+        ]
+      ]
+    ]
+  },
+  "misaligned_material_negative_control_rejected": true,
+  "scope": "Slang reflection plus native static assertions and runtime readback; not Vulkan validation-layer coverage."
+}

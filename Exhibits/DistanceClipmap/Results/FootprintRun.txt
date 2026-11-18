@@ -1,0 +1,2 @@
+Six executed shader byte streams match reflection: eight descriptors, typed integer material, Float32 storage,
+128-byte pushes, member offsets and 64x1x1 workgroups. Misaligned-material negative control rejected.

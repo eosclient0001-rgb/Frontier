@@ -1,0 +1,1 @@
+CONSUMPTION bake_changed_texels=21404 clip_changed_queries=2311 positive_cache_receivers=64; visibility unchanged, cleared GI black, restored GI exact

@@ -1,0 +1,13 @@
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Found Vulkan: /home/user/Frontier/ExternalPackages/VulkanCompute/SwiftShader/libvulkan.so.1 (found version "1.4.321")  missing components: glslc glslangValidator
+-- Configuring done (0.8s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCmake

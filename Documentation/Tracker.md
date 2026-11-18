@@ -4,6 +4,30 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Isolated vehicle distance / radiance audit — 2026-11-18
+
+- Added `Experimental/DistanceClipmap` only as a prototype, reusing production triangle bounds and the actual
+  25,068-facet ControlVehicle archives. Linked source pinned at `c205cb698288ccd90bf909e25e28ce28d48d0dfa`;
+  archives match byte-for-byte. Body topology does not justify a signed solid: vehicle distance stays unsigned,
+  closed analytic calibration boxes signed. No production renderer or editor target was changed.
+- Release/native Vulkan CTests pass 4/4; 27,246 numeric assertions, 0/8,192 native and 0/16,396 Vulkan visibility
+  disagreements. Six Slang SPIR-V byte streams match typed layout reflection; actual SwiftShader CPU device 4,
+  not physical-GPU acceptance. Native/host sanitizer runs and exact reproduction are retained in the exhibit.
+- Ablations verify runtime reads: clearing bake changes 21,404 clip texels; clearing clip lower distances changes
+  2,311/4,096 ray step counts without changing triangle-refined visibility; clearing cache RGB blacks all 64
+  positive GI receivers while direct lighting stays identical, and restoring RGB restores GI exactly.
+- Reproduced prototype outward-only cache defect: 4,550 reverse-side failures before, zero after / 25,068 facets;
+  negative control retained. This is not an upstream-engine finding or demonstrated full-image improvement.
+- **Acceptance fails:** raw voxel shadows artifact, GI remains grainy, materials are a matte diagnostic, and the
+  equal-image hybrid median is `5316.622 ms` versus `5133.988 ms` triangles (**3.56% slower**, five pairs).
+  Combined cached-GI RMSE against the finite reference is slightly worse after the logical side correction.
+  No complete SDF/cone GI, DDGI, production PBR/glass, full GPU image, Windows/editor or 60/120 FPS claim.
+- Retained 82 actual 480 × 270 captures, source-isolated GI, native Float32 comparisons, twelve moving poses,
+  RGB-lossless APNGs/GIFs, source audit, manually opened/rejected image list and tested HTML viewer:
+  [evidence and reproduction](../Exhibits/DistanceClipmap/README.md).
+  Motion is prescribed rigid kinematics, not integrated driving/Jolt/cloth. GPU clips still refill fully.
+  No engine integration or GitHub Actions run is authorised by these numerical results.
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,

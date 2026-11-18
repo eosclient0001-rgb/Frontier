@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "browser": "153.0.8010.0",
+  "executable_sha256": "53a15d6c3a3d27dfb54c4ba60278b1683136f70cf1e67e989da7dfbd3d451ef0",
+  "html_sha256": "489b21f252c0703206bf424d1f5975300976fd6fc91be3b141abada565857b4e",
+  "test_source_sha256": "e34a45e822ca6345ed1afcb8a42c63cbfe90c881dc54574d9216e300bc5459ab",
+  "shadow_selections": 3,
+  "source_selections": 5,
+  "matched_motion_pose_selections": 12,
+  "motion_play_pause_exercised": true,
+  "reduced_motion_respected": true,
+  "local_evidence_links_checked": 21,
+  "missing_report_negative_control_rejected": true,
+  "unanticipated_http_errors": [],
+  "javascript_or_request_failures": [],
+  "desktop_viewport": [
+    1440,
+    1050
+  ],
+  "mobile_viewport": [
+    390,
+    844
+  ],
+  "mobile_horizontal_overflow": false,
+  "scope": "Retained HTML evidence viewer only. Screenshots are not the native editor or a GPU-rendered scene."
+}

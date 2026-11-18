@@ -1,0 +1,17 @@
+{
+  "assertions": 27246,
+  "vehicle_facets": 25068,
+  "local_samples": 102400,
+  "nearest_float_double_max_m": 7.53087388006e-08,
+  "local_lower_max_excess_m": 0,
+  "clip_lower_max_excess_m": 0,
+  "hybrid_visibility_disagreements": 0,
+  "tested_hybrid_rays": 8192,
+  "cap_mean_cosine": 0.960530743047,
+  "cap_expected_mean_cosine": 0.960530497001,
+  "four_dimensional_moment": 0.0624984911751,
+  "four_dimensional_expected": 0.0625,
+  "dirty_voxels": [82179, 81003, 88902, 79039],
+  "cold_voxels": 331776,
+  "numeric_ms": 330.53631
+}

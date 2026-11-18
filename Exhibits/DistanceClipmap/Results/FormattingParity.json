@@ -1,0 +1,67 @@
+{
+  "compiler": "GCC 12.2 / Slang 2026.14.1",
+  "formatter": "clang-format 18.1.8",
+  "products": [
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/RadianceEvaluation",
+      "before_sha256": "a73fc7954fea2a589132c54d4ddf1ecee9f260ab3499d0a20d6882386f30dc10",
+      "after_sha256": "a73fc7954fea2a589132c54d4ddf1ecee9f260ab3499d0a20d6882386f30dc10",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/CacheSideValidation",
+      "before_sha256": "31e3d0777db7f4c48ab138d2820802a531df0f7bf78391adc760a51e82f58b82",
+      "after_sha256": "31e3d0777db7f4c48ab138d2820802a531df0f7bf78391adc760a51e82f58b82",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/ConsumptionValidation",
+      "before_sha256": "362854bfe7c45f9966eccac8fea40ea1c440295dc64a44c716ed1b54c07f8d1b",
+      "after_sha256": "362854bfe7c45f9966eccac8fea40ea1c440295dc64a44c716ed1b54c07f8d1b",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/VulkanDistanceEvaluation",
+      "before_sha256": "472d51f12b5eafa97b1b496939ff76eab3e97a032a5a6029c4e16d66f4846d67",
+      "after_sha256": "472d51f12b5eafa97b1b496939ff76eab3e97a032a5a6029c4e16d66f4846d67",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/Shaders/BakeLocalDistance.spv",
+      "before_sha256": "f961da37df15096f572e1f9c04b41454270dea03edf52be7971a1196baca55c0",
+      "after_sha256": "f961da37df15096f572e1f9c04b41454270dea03edf52be7971a1196baca55c0",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/Shaders/FillClipmap.spv",
+      "before_sha256": "ccb3a5113ef9cdd455d61fd016a69722322069b8d7bdad60f3cc8f89049eea99",
+      "after_sha256": "ccb3a5113ef9cdd455d61fd016a69722322069b8d7bdad60f3cc8f89049eea99",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/Shaders/ClearVehicleCache.spv",
+      "before_sha256": "fdb83cc3dcc19ab5f6e86f1307b7d061ec5428f7d0571bff6b968027278d75b4",
+      "after_sha256": "fdb83cc3dcc19ab5f6e86f1307b7d061ec5428f7d0571bff6b968027278d75b4",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/Shaders/EvaluateDistanceProbes.spv",
+      "before_sha256": "b8027e9bcd315ee44a7ddcc8beb49ed6d66ea2ff6179d20b7f69a238714c497d",
+      "after_sha256": "b8027e9bcd315ee44a7ddcc8beb49ed6d66ea2ff6179d20b7f69a238714c497d",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/Shaders/GatherVehicleCache.spv",
+      "before_sha256": "916b96cd4d85ee43b04bf21d63155c1ebc60ea4a125e9fb47ae8383ae69d2799",
+      "after_sha256": "916b96cd4d85ee43b04bf21d63155c1ebc60ea4a125e9fb47ae8383ae69d2799",
+      "binary_identical": true
+    },
+    {
+      "path": "_ClaudeScratch/build/DistanceClipmapCmake/Shaders/RelightVehicleCache.spv",
+      "before_sha256": "008183f4a466a9b4cf5618c93b8e2f2f9b92ac16ded895a5f9e51a463455a7ca",
+      "after_sha256": "008183f4a466a9b4cf5618c93b8e2f2f9b92ac16ded895a5f9e51a463455a7ca",
+      "binary_identical": true
+    }
+  ],
+  "scope": "Whitespace formatting and a local diagnostic-variable rename only; all four native and six shader products are byte-identical. Not image-quality acceptance."
+}

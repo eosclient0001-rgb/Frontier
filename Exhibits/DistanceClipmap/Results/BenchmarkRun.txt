@@ -1,0 +1,12 @@
+BAKED facets=25068 samples=102400 bake_ms=262.63 clip_ms=15.4371
+BENCHMARK mode=0 repeat=0 ms=4995.08
+BENCHMARK mode=1 repeat=0 ms=5287.91
+BENCHMARK mode=1 repeat=1 ms=5290.09
+BENCHMARK mode=0 repeat=1 ms=5173.48
+BENCHMARK mode=0 repeat=2 ms=5153.62
+BENCHMARK mode=1 repeat=2 ms=5342.22
+BENCHMARK mode=1 repeat=3 ms=5316.62
+BENCHMARK mode=0 repeat=3 ms=5126.44
+BENCHMARK mode=0 repeat=4 ms=5133.99
+BENCHMARK mode=1 repeat=4 ms=5556.82
+COMPLETED CPU diagnostic only; no production renderer or real-time acceptance

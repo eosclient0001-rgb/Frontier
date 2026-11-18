@@ -1,0 +1,17 @@
+{
+  "local_bake_ablation_altered_clip_texels": 21404,
+  "visibility_queries": 4096,
+  "original_distance_steps": 28622,
+  "cleared_lower_distance_steps": 4096,
+  "queries_with_altered_step_count": 2311,
+  "both_visibility_selections_equal_triangles": true,
+  "cache_receivers": 64,
+  "gather_samples_per_receiver": 128,
+  "positive_cache_receivers": 64,
+  "original_reflected_rgb_sum": [0.595037162304, 0.33181360364, 0.226385846734],
+  "cleared_cache_indirect_exact_black": true,
+  "direct_unchanged_during_cache_ablation": true,
+  "restored_cache_indirect_bit_equal": true,
+  "mismatched_source_mask_rejected": true,
+  "scope": "Native CPU data-flow ablations; not image quality, speed, cone GI, DDGI or automatic pose/light revision tracking."
+}

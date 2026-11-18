@@ -1,0 +1,76 @@
+Retained 82 actual 480x270 captures; full-float hybrid/repeat equality, finite pixels, black controls and three APNG sequences verified.
+{
+  "reference_scope": "Finite-budget triangle/diffuse numerical reference, not a photograph, real-life truth or a production renderer.",
+  "raw_local_vs_triangle": {
+    "linear_rgb_rmse_full_image": 0.1099810262499716,
+    "linear_rgb_rmse_visible_geometry": 0.13079310114735618,
+    "max_absolute_channel_difference": 1.1210751608014107,
+    "changed_rgb_pixels": 81748
+  },
+  "raw_clipmap_vs_triangle": {
+    "linear_rgb_rmse_full_image": 0.08161464750665105,
+    "linear_rgb_rmse_visible_geometry": 0.09705885833599404,
+    "max_absolute_channel_difference": 0.8568596839904785,
+    "changed_rgb_pixels": 89654
+  },
+  "hybrid_vs_triangle": {
+    "linear_rgb_rmse_full_image": 0.0,
+    "linear_rgb_rmse_visible_geometry": 0.0,
+    "max_absolute_channel_difference": 0.0,
+    "changed_rgb_pixels": 0
+  },
+  "path_128_to_512_delta_not_ground_truth_error": {
+    "linear_rgb_rmse_full_image": 0.01091034919883556,
+    "linear_rgb_rmse_visible_geometry": 0.012974798471688446,
+    "max_absolute_channel_difference": 1.1351127624511719,
+    "changed_rgb_pixels": 91713
+  },
+  "Emissive_cache_corrected_vs_finite_512": {
+    "linear_rgb_rmse_full_image": 0.0008286999635245835,
+    "linear_rgb_rmse_visible_geometry": 0.0009855176101351319,
+    "max_absolute_channel_difference": 0.08550353127066046,
+    "changed_rgb_pixels": 88670
+  },
+  "Emissive_outward_only_vs_finite_512": {
+    "linear_rgb_rmse_full_image": 0.0008286999635245835,
+    "linear_rgb_rmse_visible_geometry": 0.0009855176101351319,
+    "max_absolute_channel_difference": 0.08550353127066046,
+    "changed_rgb_pixels": 88670
+  },
+  "Emissive_corrected_vs_outward_only": {
+    "linear_rgb_rmse_full_image": 0.0,
+    "linear_rgb_rmse_visible_geometry": 0.0,
+    "max_absolute_channel_difference": 0.0,
+    "changed_rgb_pixels": 0
+  },
+  "Emissive_reference_128_to_512_delta": {
+    "linear_rgb_rmse_full_image": 0.0015325924812953208,
+    "linear_rgb_rmse_visible_geometry": 0.0018226100470106156,
+    "max_absolute_channel_difference": 0.2562423571944237,
+    "changed_rgb_pixels": 71717
+  },
+  "Combined_cache_corrected_vs_finite_512": {
+    "linear_rgb_rmse_full_image": 0.004320280317210556,
+    "linear_rgb_rmse_visible_geometry": 0.005137821311373681,
+    "max_absolute_channel_difference": 0.13580532744526863,
+    "changed_rgb_pixels": 89833
+  },
+  "Combined_outward_only_vs_finite_512": {
+    "linear_rgb_rmse_full_image": 0.004318836627505029,
+    "linear_rgb_rmse_visible_geometry": 0.005136104427469986,
+    "max_absolute_channel_difference": 0.13580532744526863,
+    "changed_rgb_pixels": 89833
+  },
+  "Combined_corrected_vs_outward_only": {
+    "linear_rgb_rmse_full_image": 0.00018094165948403872,
+    "linear_rgb_rmse_visible_geometry": 0.00021518185070283852,
+    "max_absolute_channel_difference": 0.009852315604803152,
+    "changed_rgb_pixels": 14879
+  },
+  "Combined_reference_128_to_512_delta": {
+    "linear_rgb_rmse_full_image": 0.003791362902493658,
+    "linear_rgb_rmse_visible_geometry": 0.004508815097479735,
+    "max_absolute_channel_difference": 0.2556818947196007,
+    "changed_rgb_pixels": 89770
+  }
+}

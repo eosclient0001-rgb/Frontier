@@ -1,0 +1,1 @@
+{"tested_reverse_sides":25068,"disagreements":0,"max_vector_radiance_error":0,"outward_only_negative_control_error":1.68507003784}

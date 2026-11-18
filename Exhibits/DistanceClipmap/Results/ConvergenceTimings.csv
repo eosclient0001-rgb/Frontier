@@ -1,0 +1,8 @@
+capture,milliseconds,indirect_or_path_samples
+EmissiveReferenceGi512,53849.2,512
+EmissiveCachedGi512,45679,512
+EmissiveOutwardOnlyGi512,45391.7,512
+CombinedReferenceGi512,87724.6,512
+CombinedCachedGi512,44487.2,512
+CombinedOutwardOnlyGi512,45899.3,512
+PathTrace512,76114.7,512

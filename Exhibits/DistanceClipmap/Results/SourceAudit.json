@@ -1,0 +1,452 @@
+{
+  "reference_repository": "SultanAladin/Frontier-1",
+  "reference_revision": "c205cb698288ccd90bf909e25e28ce28d48d0dfa",
+  "reference_branch": "arena/39c6910b-frontier-1",
+  "working_branch": "arena/f2d37e4b-frontier",
+  "base_revision": "96f31ecaef529d383e195013f5f00d163392f71a",
+  "upstream_sources": [
+    {
+      "path": "Experimental/ShadowAlgorithmLab/FRONTIER_LIGHTING_PLAN.md",
+      "sha256": "4420b30430f24b8dba81558a6dc1249a158790650f37805547aa9c1041bb9df3",
+      "bytes": 19077,
+      "excerpts": [
+        {
+          "anchor": "Remove SDF from Direct Shadows Completely",
+          "occurrences": [
+            {
+              "line": 10,
+              "text": "1. **Remove SDF from Direct Shadows Completely:**"
+            }
+          ]
+        },
+        {
+          "anchor": "6–13 cm",
+          "occurrences": [
+            {
+              "line": 11,
+              "text": "- Pre-baked mesh/clipmap SDF grids (`6–13 cm` voxels) punch light-leak holes through thin car shells, pillars, wheel spokes, and louvers while introducing grazing self-shadow acne."
+            }
+          ]
+        },
+        {
+          "anchor": "GTX 1660 est.",
+          "occurrences": [
+            {
+              "line": 24,
+              "text": "| Tier Enum | Algorithm | Screen-Pass Cost (1080p GTX 1660 est.) | Multi-Light Scaling (1–4 Lights) | Contact & Penumbra Quality | Best Use Case |"
+            }
+          ]
+        }
+      ],
+      "url": "https://github.com/SultanAladin/Frontier-1/blob/c205cb698288ccd90bf909e25e28ce28d48d0dfa/Experimental/ShadowAlgorithmLab/FRONTIER_LIGHTING_PLAN.md"
+    },
+    {
+      "path": "Experimental/SdfLightingDemoCpp/RendererEngines.hpp",
+      "sha256": "973ddd500a136e07c36148a631b1dad8a3a014cbba8a85b89239ab55326fcaeb",
+      "bytes": 45785,
+      "excerpts": [
+        {
+          "anchor": "bool ptDenoise = true",
+          "occurrences": [
+            {
+              "line": 76,
+              "text": "bool ptDenoise = true;"
+            }
+          ]
+        },
+        {
+          "anchor": "bool giBilateral = true",
+          "occurrences": [
+            {
+              "line": 77,
+              "text": "bool giBilateral = true;"
+            }
+          ]
+        },
+        {
+          "anchor": "if (pr.type == PrimType::Triangle) continue",
+          "occurrences": [
+            {
+              "line": 108,
+              "text": "if (pr.type == PrimType::Triangle) continue;"
+            }
+          ]
+        },
+        {
+          "anchor": "radMip0[idx] = clamp3",
+          "occurrences": [
+            {
+              "line": 446,
+              "text": "radMip0[idx] = clamp3(lo, 0.0f, 16.0f);"
+            }
+          ]
+        },
+        {
+          "anchor": "throughput = clamp3",
+          "occurrences": [
+            {
+              "line": 937,
+              "text": "throughput = clamp3(throughput, 0.0f, 4.0f);"
+            }
+          ]
+        },
+        {
+          "anchor": "accum += clamp3",
+          "occurrences": [
+            {
+              "line": 948,
+              "text": "accum += clamp3(rad, 0.0f, 18.0f);"
+            }
+          ]
+        },
+        {
+          "anchor": "* 0.32f",
+          "occurrences": [
+            {
+              "line": 833,
+              "text": "rad += throughput * brdf * (sc.areaLight.radiance / std::max(1e-4f, pdfArea)) * mis * 0.32f;"
+            }
+          ]
+        },
+        {
+          "anchor": "? 1.0f : 0.35f",
+          "occurrences": [
+            {
+              "line": 787,
+              "text": "float mis = (bounce == 0 || prevSpecular) ? 1.0f : 0.35f;"
+            }
+          ]
+        }
+      ],
+      "url": "https://github.com/SultanAladin/Frontier-1/blob/c205cb698288ccd90bf909e25e28ce28d48d0dfa/Experimental/SdfLightingDemoCpp/RendererEngines.hpp"
+    },
+    {
+      "path": "Experimental/SdfLightingDemoCpp/README.md",
+      "sha256": "b6f7ddf32db7c9d701539553b3888a3e928bd7902286de84a3e1aa74e8da6e8c",
+      "bytes": 1081,
+      "excerpts": [
+        {
+          "anchor": "Bilateral Denoise",
+          "occurrences": [
+            {
+              "line": 6,
+              "text": "- **SDF Cone GI & AO + Bilateral Denoise** (`evalSdfConeGi` + edge-preserving `5x5` filter)"
+            }
+          ]
+        }
+      ],
+      "url": "https://github.com/SultanAladin/Frontier-1/blob/c205cb698288ccd90bf909e25e28ce28d48d0dfa/Experimental/SdfLightingDemoCpp/README.md"
+    },
+    {
+      "path": "Experimental/DeterministicPathTracer/README.md",
+      "sha256": "4b6b5430e6a7eb8c82690653f743bad5e1822ae6167f678a357d2811a775c241",
+      "bytes": 20854,
+      "excerpts": [
+        {
+          "anchor": "Deterministic ≠ instant",
+          "occurrences": [
+            {
+              "line": 180,
+              "text": "- Deterministic ≠ instant: every pixel uses the **same** quadrature point for a given sample index, so N samples"
+            }
+          ]
+        },
+        {
+          "anchor": "Fixed limits are a deterministic bias",
+          "occurrences": [
+            {
+              "line": 187,
+              "text": "- Fixed limits are a deterministic bias: default 2 indirect bounces, 10-interaction specular chains, cutoff 0.002."
+            }
+          ]
+        },
+        {
+          "anchor": "Tested only on SwiftShader",
+          "occurrences": [
+            {
+              "line": 191,
+              "text": "- Tested only on SwiftShader (CPU WebGPU) in headless Chromium. No physical GTX/RTX run or timing is claimed."
+            }
+          ]
+        },
+        {
+          "anchor": "not implemented",
+          "occurrences": [
+            {
+              "line": 188,
+              "text": "- Rough glass, textures, subsurface scattering, volumes and a sun/HDRI light are not implemented."
+            }
+          ]
+        },
+        {
+          "anchor": "cutoff 0.002",
+          "occurrences": [
+            {
+              "line": 187,
+              "text": "- Fixed limits are a deterministic bias: default 2 indirect bounces, 10-interaction specular chains, cutoff 0.002."
+            }
+          ]
+        },
+        {
+          "anchor": "Denoiser",
+          "occurrences": [
+            {
+              "line": 33,
+              "text": "| `sigma=4`              | Denoiser luminance tolerance at 1 spp (÷ n after that)        |"
+            },
+            {
+              "line": 62,
+              "text": "| Denoiser            | `DisplayReconstruction.wgsl`: 5 à-trous steps (1–16 px) stopped at normal, plane-distance, material and variance-scaled luminance edges (σ/n). Mirrors use only the 2 finest steps. Strength 1 to 4 spp, fades to 0 at 64 spp. Pairs best with the blue-noise pattern (decorrelated error filters out; shared-pattern error is the same in neighbouring pixels). |"
+            }
+          ]
+        }
+      ],
+      "url": "https://github.com/SultanAladin/Frontier-1/blob/c205cb698288ccd90bf909e25e28ce28d48d0dfa/Experimental/DeterministicPathTracer/README.md"
+    },
+    {
+      "path": "Engine/Shaders/GlobalIllumination/SignedDistanceConeIllumination.slang",
+      "sha256": "0da09daf30217f2b38546105f054ff35f6a75fc5688f2203e035396116c745ba",
+      "bytes": 4545,
+      "excerpts": [
+        {
+          "anchor": "float3 SkyRadiance",
+          "occurrences": [
+            {
+              "line": 18,
+              "text": "float3 SkyRadiance;"
+            }
+          ]
+        },
+        {
+          "anchor": "Accum          += Uniforms.SkyRadiance",
+          "occurrences": [
+            {
+              "line": 107,
+              "text": "Accum          += Uniforms.SkyRadiance * (SkyVis * Cones[K].w);"
+            }
+          ]
+        },
+        {
+          "anchor": "TraceConeSkyVis",
+          "occurrences": [
+            {
+              "line": 48,
+              "text": "float TraceConeSkyVis(float3 Origin, float3 Dir)"
+            },
+            {
+              "line": 106,
+              "text": "float  SkyVis   = TraceConeSkyVis(Origin, WorldDir);"
+            }
+          ]
+        }
+      ],
+      "url": "https://github.com/SultanAladin/Frontier-1/blob/c205cb698288ccd90bf909e25e28ce28d48d0dfa/Engine/Shaders/GlobalIllumination/SignedDistanceConeIllumination.slang"
+    },
+    {
+      "path": "Engine/Shaders/DirectLighting/ContactClipShadow.slang",
+      "sha256": "8fb6c4d4280ae38c7d4dc9edf058ed5fb6c7922ea6b24f9e6ac154323a6d1ee3",
+      "bytes": 5036,
+      "excerpts": [
+        {
+          "anchor": "TraceSdfConePenumbra",
+          "occurrences": [
+            {
+              "line": 34,
+              "text": "float TraceSdfConePenumbra(float3 Origin, float3 SunDir)"
+            },
+            {
+              "line": 84,
+              "text": "float SdfVis = TraceSdfConePenumbra(PosSample.xyz + Nrm * ClipUniforms.SdfVoxelSpacing, SunDir);"
+            }
+          ]
+        },
+        {
+          "anchor": "? 0.75 : 0.0",
+          "occurrences": [
+            {
+              "line": 87,
+              "text": "OutShadowBlocker[DispatchThreadID.xy] = float2(SdfVis, (SdfVis < 0.95) ? 0.75 : 0.0);"
+            }
+          ]
+        },
+        {
+          "anchor": "lerp(ClipVis, min(ClipVis + 0.35, SdfVis)",
+          "occurrences": [
+            {
+              "line": 116,
+              "text": "float FinalVis = lerp(ClipVis, min(ClipVis + 0.35, SdfVis), FarW);"
+            }
+          ]
+        }
+      ],
+      "url": "https://github.com/SultanAladin/Frontier-1/blob/c205cb698288ccd90bf909e25e28ce28d48d0dfa/Engine/Shaders/DirectLighting/ContactClipShadow.slang"
+    },
+    {
+      "path": "Engine/DistanceFieldSpace/SignedDistanceVolume.cpp",
+      "sha256": "adfd6066d79bd85a5c10c0ab223e484816049f127718af19fc56afb9b32ba60d",
+      "bytes": 20346,
+      "excerpts": [
+        {
+          "anchor": "3-direction normal-alignment vote",
+          "occurrences": [
+            {
+              "line": 183,
+              "text": "// 📝 Robust 3-direction normal-alignment vote for inside/outside sign (even when clamped to UpperCutoffDistance!)"
+            }
+          ]
+        },
+        {
+          "anchor": "TraceClosestRay(Ray, false)",
+          "occurrences": [
+            {
+              "line": 198,
+              "text": "const auto Hit = Tree.TraceClosestRay(Ray, false);"
+            }
+          ]
+        },
+        {
+          "anchor": "InsideVotes",
+          "occurrences": [
+            {
+              "line": 190,
+              "text": "uint32_t InsideVotes = 0u;"
+            },
+            {
+              "line": 201,
+              "text": "++InsideVotes;"
+            },
+            {
+              "line": 205,
+              "text": "return (InsideVotes >= 2u) ? -UnsignedDist : UnsignedDist;"
+            }
+          ]
+        }
+      ],
+      "url": "https://github.com/SultanAladin/Frontier-1/blob/c205cb698288ccd90bf909e25e28ce28d48d0dfa/Engine/DistanceFieldSpace/SignedDistanceVolume.cpp"
+    }
+  ],
+  "local_sources": [
+    {
+      "path": "Frontier/Engine/Rendering/DistanceField.h",
+      "sha256": "4cfa30c560d23730ad73e307638765ecb1ca297259445aad5f732b9679bf8396",
+      "excerpts": [
+        {
+          "line": 20,
+          "text": "// Scalar (luminance) radiance throughout, like VarianceFiltering; RGB is the same recurrence per"
+        },
+        {
+          "line": 11,
+          "text": "// This analytic scene is not a verbatim port of the demo's distance-field WGSL; it implements related"
+        }
+      ]
+    },
+    {
+      "path": "Frontier/Engine/Rendering/SurfaceCards.cpp",
+      "sha256": "3a4a1d3926a5628208fd1136b5700e8f06411dc692bf837c5da7cdf68cdbd2c1",
+      "excerpts": [
+        {
+          "line": 65,
+          "text": "FormFactors_.assign(static_cast<size_t>(Count) * Count, 0.0);"
+        },
+        {
+          "line": 97,
+          "text": "const double EffectiveR2 = R2 + (Areas_[I] + Areas_[J]) / Pi;"
+        },
+        {
+          "line": 99,
+          "text": "std::clamp(CosI * CosJ * Areas_[J] / (Pi * EffectiveR2), 0.0, 1.0);"
+        }
+      ]
+    },
+    {
+      "path": "Frontier/Engine/Rendering/TriangleDistanceVolume.h",
+      "sha256": "cc5a4976b12ece6bdf391554065f9e6947c3ef0c8ada7cb699bd75659daa430a",
+      "excerpts": [
+        {
+          "line": 4,
+          "text": "// 🧩 Unsigned sampled triangle distance, Lipschitz-bounded strides and exact surface refinement for open geometry."
+        },
+        {
+          "line": 178,
+          "text": "// Refine the original interval: neither a coarse-grid hit nor stride-budget exhaustion is a surface hit."
+        }
+      ]
+    }
+  ],
+  "vehicle_archives": [
+    {
+      "path": "Experimental/SlateReference/B/Exhibits/IlluminationHost/Archive/ControlVehicleBody.facet",
+      "sha256": "d8a7516018ba536555bca5933fabfbd1681167ad3908a87be95ad3cfd912134a",
+      "vertices": 1492,
+      "facets": 2924,
+      "corner_normals": false,
+      "material_counts": {
+        "8": 1646,
+        "6": 778,
+        "9": 292,
+        "13": 22,
+        "7": 74,
+        "14": 20,
+        "12": 28,
+        "15": 64
+      },
+      "exact_coordinate_welded_boundary_edges": 104,
+      "exact_coordinate_welded_nonmanifold_edges": 98,
+      "two_incident_same_direction_edges": 4,
+      "limitation": "Exact-position incidence only; not a general welding, solidness, intersection or orientation certificate.",
+      "linked_pathtracer_archive_identical": true
+    },
+    {
+      "path": "Experimental/SlateReference/B/Exhibits/IlluminationHost/Archive/ControlVehicleRim.facet",
+      "sha256": "44b50dd7d80c12f68d92b2dbdbd3d911d73334fa1ef10fbc16e07ff1812a8de5",
+      "vertices": 786,
+      "facets": 1568,
+      "corner_normals": true,
+      "material_counts": {
+        "9": 1296,
+        "10": 272
+      },
+      "exact_coordinate_welded_boundary_edges": 0,
+      "exact_coordinate_welded_nonmanifold_edges": 0,
+      "two_incident_same_direction_edges": 0,
+      "limitation": "Exact-position incidence only; not a general welding, solidness, intersection or orientation certificate.",
+      "linked_pathtracer_archive_identical": true
+    },
+    {
+      "path": "Experimental/SlateReference/B/Exhibits/IlluminationHost/Archive/ControlVehicleTyre.facet",
+      "sha256": "1cf021cd3f7ef4cbc984bf677247e0ac6722e90f542191a4ca13391fb144387d",
+      "vertices": 1984,
+      "facets": 3968,
+      "corner_normals": true,
+      "material_counts": {
+        "9": 3968
+      },
+      "exact_coordinate_welded_boundary_edges": 0,
+      "exact_coordinate_welded_nonmanifold_edges": 0,
+      "two_incident_same_direction_edges": 0,
+      "limitation": "Exact-position incidence only; not a general welding, solidness, intersection or orientation certificate.",
+      "linked_pathtracer_archive_identical": true
+    }
+  ],
+  "pinned_tree": {
+    "tree_sha": "c205cb698288ccd90bf909e25e28ce28d48d0dfa",
+    "truncated": false,
+    "payload_sha256": "f02d9906045608ac05c945fc7a3b8e51a7248b4f1dde266a951a13892840c561",
+    "entry_count": 2924,
+    "compared_html_paths": [
+      "Experimental/ShadowAlgorithmLab/index.html",
+      "Experimental/ClothEditor/index.html",
+      "Experimental/DeterministicPathTracer/index.html"
+    ]
+  },
+  "directory_presence": {
+    "linked_shadow_lab": true,
+    "linked_cloth_editor": true,
+    "linked_pathtracer_html": true,
+    "local_shadow_lab_before_this_work": false,
+    "local_cloth_editor_before_this_work": false,
+    "local_pathtracer_html_before_this_work": false,
+    "local_cloth_specimen": false
+  },
+  "scope": "Bounded source audit, not an executed audit of the entire engine or the linked editor."
+}

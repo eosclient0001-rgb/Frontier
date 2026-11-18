@@ -1,0 +1,12 @@
+{
+  "width":480,"height":270,"primary_samples":4,"samples_per_extended_source":32,
+  "repetitions_per_mode":5,"alternating_order":true,"same_float_images":true,
+  "exact_ms":[4995.082161,5173.479457,5153.624546,5126.44013,5133.987718],
+  "hybrid_ms":[5287.908286,5290.092554,5342.219922,5316.622144,5556.819978],
+  "exact_median_ms":5133.987718,
+  "hybrid_median_ms":5316.622144,
+  "exact_over_hybrid_speed_ratio":0.965648409638,
+  "speed_gate_passed":false,
+  "includes":"CPU primary tracing, visibility and shading; excludes bake, relight, image encoding",
+  "scope":"one fixture on a shared two-vCPU host; not a GPU or frame-pacing benchmark"
+}
