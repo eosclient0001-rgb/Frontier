@@ -1,0 +1,16 @@
+[0/1] Re-running CMake...
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+[1/12] Generating Shaders/BounceConeSites.spv, Shaders/BounceConeSites.spv.json
+[2/12] Generating Shaders/BounceProbeRays.spv, Shaders/BounceProbeRays.spv.json
+[3/12] Generating Shaders/ConvolveProbeIrradiance.spv, Shaders/ConvolveProbeIrradiance.spv.json
+[4/12] Generating Shaders/ConvolveProbeMoments.spv, Shaders/ConvolveProbeMoments.spv.json
+[5/12] Generating Shaders/GatherConeImage.spv, Shaders/GatherConeImage.spv.json
+[6/12] Generating Shaders/GatherProbeImage.spv, Shaders/GatherProbeImage.spv.json
+[7/12] Generating Shaders/InjectDirectionalRadiance.spv, Shaders/InjectDirectionalRadiance.spv.json
+[8/12] Generating Shaders/ReduceDirectionalMip.spv, Shaders/ReduceDirectionalMip.spv.json
+[9/12] Building CXX object CMakeFiles/TransportValidation.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/TransportValidation.cpp.o
+[10/12] Linking CXX executable TransportValidation
+[11/12] Building CXX object CMakeFiles/TransportVulkan.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/TransportVulkan.cpp.o
+[12/12] Linking CXX executable TransportVulkan

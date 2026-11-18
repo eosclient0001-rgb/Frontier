@@ -1,0 +1,15 @@
+GI BENCHMARK round=0 method=TriangleCache128 ms=9762.92
+GI BENCHMARK round=0 method=Cone ms=8989.94
+GI BENCHMARK round=0 method=Probe ms=110.641
+GI BENCHMARK round=1 method=Cone ms=8782.91
+GI BENCHMARK round=1 method=TriangleCache128 ms=9552.64
+GI BENCHMARK round=1 method=Probe ms=110.547
+GI BENCHMARK round=2 method=Probe ms=111.09
+GI BENCHMARK round=2 method=TriangleCache128 ms=9838.45
+GI BENCHMARK round=2 method=Cone ms=8888.58
+GI BENCHMARK round=3 method=TriangleCache128 ms=9519.51
+GI BENCHMARK round=3 method=Probe ms=110.285
+GI BENCHMARK round=3 method=Cone ms=8794.48
+GI BENCHMARK round=4 method=Cone ms=8804.89
+GI BENCHMARK round=4 method=Probe ms=110.285
+GI BENCHMARK round=4 method=TriangleCache128 ms=9390.88

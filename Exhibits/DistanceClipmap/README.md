@@ -5,6 +5,11 @@
 
 # Distance clipmap / radiance evidence
 
+**Checkpoint scope:** this report describes commit `502793b` and its original images/tests.
+The subsequent [cone / dynamic-probe transport continuation](Transport.md) has separate implementation,
+measurements and [interactive GI comparisons](Gi.html). Do not read the historical missing-feature list below
+as a description of that later experiment; neither checkpoint is production-accepted.
+
 **The complete replacement is not delivered.** The equal-image CPU hybrid is **3.56% slower** than triangle-only,
 raw voxel shadows fail visibly, and isolated GI remains grainy. Nothing is integrated into the production renderer.
 These are verified numerical experiments and retained failures, not Unreal equivalence or real-time acceptance.

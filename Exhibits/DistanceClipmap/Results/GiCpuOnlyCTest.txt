@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DiffuseTransportCpuOnly
+Test project /home/user/Frontier/_ClaudeScratch/build/DiffuseTransportCpuOnly
+    Start 1: DiffuseTransportNumeric
+1/1 Test #1: DiffuseTransportNumeric ..........   Passed   23.52 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =  23.52 sec

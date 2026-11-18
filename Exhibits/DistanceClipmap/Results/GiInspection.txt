@@ -1,0 +1,1 @@
+{"native_captures": 106, "float_buffers": 58, "source_additivity": {"Direct": 7.047914550639689e-06, "Cone": 3.632158041000366e-08, "Probe": 1.0989606380462646e-07}, "metric_gates": {"Cone": false, "Probe": false}, "renderer_accepted": false}

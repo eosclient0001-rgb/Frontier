@@ -1,0 +1,25 @@
+capture,milliseconds,notes
+GiMotionCone00,8695.29,480x270 Float32 four primary samples no denoiser
+GiMotionProbe00,112.243,480x270 Float32 four primary samples no denoiser
+GiMotionCone01,8754.48,480x270 Float32 four primary samples no denoiser
+GiMotionProbe01,112.397,480x270 Float32 four primary samples no denoiser
+GiMotionCone02,8760.51,480x270 Float32 four primary samples no denoiser
+GiMotionProbe02,112.216,480x270 Float32 four primary samples no denoiser
+GiMotionCone03,8806.66,480x270 Float32 four primary samples no denoiser
+GiMotionProbe03,111.478,480x270 Float32 four primary samples no denoiser
+GiMotionCone04,8842.63,480x270 Float32 four primary samples no denoiser
+GiMotionProbe04,111.82,480x270 Float32 four primary samples no denoiser
+GiMotionCone05,8973.25,480x270 Float32 four primary samples no denoiser
+GiMotionProbe05,118.226,480x270 Float32 four primary samples no denoiser
+GiMotionCone06,8877.27,480x270 Float32 four primary samples no denoiser
+GiMotionProbe06,112.018,480x270 Float32 four primary samples no denoiser
+GiMotionCone07,8914.53,480x270 Float32 four primary samples no denoiser
+GiMotionProbe07,113.128,480x270 Float32 four primary samples no denoiser
+GiMotionCone08,8873.62,480x270 Float32 four primary samples no denoiser
+GiMotionProbe08,110.379,480x270 Float32 four primary samples no denoiser
+GiMotionCone09,8961.98,480x270 Float32 four primary samples no denoiser
+GiMotionProbe09,111.024,480x270 Float32 four primary samples no denoiser
+GiMotionCone10,9274.58,480x270 Float32 four primary samples no denoiser
+GiMotionProbe10,110.716,480x270 Float32 four primary samples no denoiser
+GiMotionCone11,9385.33,480x270 Float32 four primary samples no denoiser
+GiMotionProbe11,109.859,480x270 Float32 four primary samples no denoiser

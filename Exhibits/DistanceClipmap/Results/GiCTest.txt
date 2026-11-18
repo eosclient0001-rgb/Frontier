@@ -1,0 +1,10 @@
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+Test project /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+    Start 1: DiffuseTransportNumeric
+1/2 Test #1: DiffuseTransportNumeric ..........   Passed   23.22 sec
+    Start 2: DiffuseTransportVulkan
+2/2 Test #2: DiffuseTransportVulkan ...........   Passed   60.74 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =  83.96 sec

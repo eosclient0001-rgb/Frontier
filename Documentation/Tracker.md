@@ -4,7 +4,37 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
-## Isolated vehicle distance / radiance audit — 2026-11-18
+## Experimental cone / dynamic diffuse probe GI — 2026-11-18
+
+- Implemented actual reflected-radiance voxel cones, distance-moment diffuse probes and fresh-array Jacobi
+  propagation in `Experimental/DistanceClipmap/Transport`. Earlier triangle-cache GI is unchanged, not renamed.
+  Cones consume baked-distance clip intervals to skip proven-zero reads on unchanged steps; the finite regression
+  has 45 culls and exactly equal cull-on/off RGB. This is not demonstrated SDF acceleration or a signed vehicle.
+- New native Release CTests pass 2/2; separately configured Vulkan-OFF passes 1/1 with the same CPU executable
+  bytes. Both ASan/UBSan hosts finish successfully. Eight executed Slang entries regenerate byte-identically and
+  pass typed layouts, guarded tails, CPU/GPU gather/propagation parity and native 480 × 270 GI readbacks.
+  Final source formatting rebuilds to the same two hosts/eight SPIR-V products. Earlier distance/cache 4/4 CTests
+  and evidence integrity pass again after restoring their explicit Vulkan ICD environment.
+- **Quality/speed acceptance fails for both methods.** Median CPU gather / finite-512 RGB RMSE:
+  triangle-cache128 `9552.64 ms / 0.00558667`, cones `8804.89 ms / 0.01830405`, probes
+  `110.55 ms / 0.00870828`. Five alternating rounds, same primary/direct inputs, cold costs separate;
+  these biased estimators do not produce equal images. Cone energy/detail loss and probe blotches/leaks are
+  visibly rejected. Finite references are grainy, not physical ground truth; no four-site reference is claimed.
+- Retained 106 native 480 × 270 PNGs, 58 lossless static/reference/GPU Float32 archives, raw motion-float hashes,
+  twelve actual poses, four RGB-lossless APNGs/GIFs and source-isolation/multisite comparisons. The 48 motion
+  Float32 payloads are reproducible but omitted from Git for the cumulative artifact budget, with no rendering
+  precision/budget change. Integrity and browser source/depth/GPU/all-pose/play/mobile/missing-report checks pass.
+  [Images, measurements and reproduction](../Exhibits/DistanceClipmap/Transport.md) ·
+  [interactive GI evidence](../Exhibits/DistanceClipmap/Gi.html).
+- **Not production integration or completed GI acceptance:** geometry/source relight/primary work remains CPU;
+  GPU execution is SwiftShader CPU device 4, not physical-GPU timing. Diagnostic matte materials, prescribed
+  rigid motion, no engine scene-revision ownership, device-local staging, Windows/editor or 60/120 Hz pacing
+  verification. Eliminate the rejected artifacts and establish better quality **and** faster total/moving-scene
+  performance before replacing anything. No production target or archived material changed; no Actions run.
+
+## Isolated vehicle distance / radiance checkpoint — 2026-11-18
+
+This entry describes the earlier `502793b` checkpoint; the cone/probe continuation is recorded above.
 
 - Added `Experimental/DistanceClipmap` only as a prototype, reusing production triangle bounds and the actual
   25,068-facet ControlVehicle archives. Linked source pinned at `c205cb698288ccd90bf909e25e28ce28d48d0dfa`;

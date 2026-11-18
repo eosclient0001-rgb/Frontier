@@ -1,0 +1,6 @@
+GI VULKAN device=SwiftShader Device (Subzero) type=4
+GI VULKAN GiEmissive cones
+GI VULKAN GiEmissive probes
+GI VULKAN GiCombined cones
+GI VULKAN GiCombined probes
+GI VULKAN PASS cone_max=5.18486e-05 probe_max=2.23517e-07

@@ -1,0 +1,4 @@
+[1/4] Building CXX object CMakeFiles/TransportValidation.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/TransportValidation.cpp.o
+[2/4] Linking CXX executable TransportValidation
+[3/4] Building CXX object CMakeFiles/TransportVulkan.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/TransportVulkan.cpp.o
+[4/4] Linking CXX executable TransportVulkan

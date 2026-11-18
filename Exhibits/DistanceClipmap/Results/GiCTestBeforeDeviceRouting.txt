@@ -1,0 +1,17 @@
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+Test project /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+    Start 1: DiffuseTransportNumeric
+1/2 Test #1: DiffuseTransportNumeric ..........   Passed   20.78 sec
+    Start 2: DiffuseTransportVulkan
+2/2 Test #2: DiffuseTransportVulkan ...........***Exception: SegFault  3.69 sec
+GI VULKAN device=SwiftShader Device (Subzero) type=4
+GI VULKAN GiCombined cones
+
+
+50% tests passed, 1 tests failed out of 2
+
+Total Test time (real) =  24.47 sec
+
+The following tests FAILED:
+	  2 - DiffuseTransportVulkan (SEGFAULT)
+Errors while running CTest

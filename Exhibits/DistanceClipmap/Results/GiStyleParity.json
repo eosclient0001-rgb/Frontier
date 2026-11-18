@@ -1,0 +1,56 @@
+{
+  "passed": true,
+  "changes": "Allman/4-space/alignment/comments/parameter-line cleanup and build-file headers after full capture/test; no algorithm or numeric budget change.",
+  "products": [
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/TransportValidation",
+      "sha256": "ee498cc56fb476dfa781e780158d789e928a5ec7be20c9c3ff7939e84bde8d1b",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/TransportVulkan",
+      "sha256": "0603ff6c8cdb9cdee40529bd2a5eff099d738b4bbec42a2ac03a5218b2f4edc6",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/Shaders/BounceConeSites.spv",
+      "sha256": "e0c6968e8b432963d983d330f6edb73b9982c12f8241e1efa801fb55673b9d1c",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/Shaders/BounceProbeRays.spv",
+      "sha256": "090f3506ee81179c9cf5988f2e3f5785ddff2fda8f9ce62d8ff08c35794cd65f",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/Shaders/ConvolveProbeIrradiance.spv",
+      "sha256": "d9457a2b06aa8712c6d1a39af3e11a9190c7fb94b4b893c2eeeb3f1be4de7f43",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/Shaders/ConvolveProbeMoments.spv",
+      "sha256": "8ec25f3e879e1cfc0b2452d70220d1dd0328650748f92a11d58c8365dc8bfe34",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/Shaders/GatherConeImage.spv",
+      "sha256": "6373f86be5f189facfbd8f420cb1bc165160e0e3919717bde367a167f8705648",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/Shaders/GatherProbeImage.spv",
+      "sha256": "88ac201cdc5e0c5a0eb330a248e1922b880c96b228664de96aff308476435f54",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/Shaders/InjectDirectionalRadiance.spv",
+      "sha256": "0233166f41da3c56d0f71e409612cfedc7c2677c6eb7f0c5f2328e3bfdd04f85",
+      "byte_identical": true
+    },
+    {
+      "product": "_ClaudeScratch/build/DiffuseTransport/Shaders/ReduceDirectionalMip.spv",
+      "sha256": "2ea12e15b7c3d7b7f2642386a7f64edb371495af3f2a69d0ed02fc94aba77625",
+      "byte_identical": true
+    }
+  ]
+}

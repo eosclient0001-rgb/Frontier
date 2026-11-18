@@ -1,0 +1,1 @@
+{"cone_residuals":[0.059191595763,0.0142790656537,0.00439000874758],"probe_residuals":[0.113588519394,0.023460868746,0.00457220524549],"contraction_bound":0.8,"fixed_point_tail_bound_cone_radiance":0.0219500437379,"fixed_point_tail_bound_probe_radiance":0.0228610262275,"scope":"Discrete approximate operator only, not exact physical GI convergence"}

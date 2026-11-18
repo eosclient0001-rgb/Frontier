@@ -1,0 +1,113 @@
+{
+  "passed": true,
+  "native_captures": 106,
+  "float_buffers": 58,
+  "source_hashes": 24,
+  "new_ctests": 2,
+  "host_sanitizers": 2,
+  "footprints": [
+    {
+      "entry": "InjectDirectionalRadiance",
+      "executed_spirv_sha256": "0233166f41da3c56d0f71e409612cfedc7c2677c6eb7f0c5f2328e3bfdd04f85",
+      "ssbos": 8,
+      "push_bytes": 128,
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "reflection_matches_executed": true
+    },
+    {
+      "entry": "ReduceDirectionalMip",
+      "executed_spirv_sha256": "2ea12e15b7c3d7b7f2642386a7f64edb371495af3f2a69d0ed02fc94aba77625",
+      "ssbos": 8,
+      "push_bytes": 128,
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "reflection_matches_executed": true
+    },
+    {
+      "entry": "GatherConeImage",
+      "executed_spirv_sha256": "6373f86be5f189facfbd8f420cb1bc165160e0e3919717bde367a167f8705648",
+      "ssbos": 8,
+      "push_bytes": 128,
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "reflection_matches_executed": true
+    },
+    {
+      "entry": "BounceConeSites",
+      "executed_spirv_sha256": "e0c6968e8b432963d983d330f6edb73b9982c12f8241e1efa801fb55673b9d1c",
+      "ssbos": 8,
+      "push_bytes": 128,
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "reflection_matches_executed": true
+    },
+    {
+      "entry": "ConvolveProbeIrradiance",
+      "executed_spirv_sha256": "d9457a2b06aa8712c6d1a39af3e11a9190c7fb94b4b893c2eeeb3f1be4de7f43",
+      "ssbos": 8,
+      "push_bytes": 128,
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "reflection_matches_executed": true
+    },
+    {
+      "entry": "ConvolveProbeMoments",
+      "executed_spirv_sha256": "8ec25f3e879e1cfc0b2452d70220d1dd0328650748f92a11d58c8365dc8bfe34",
+      "ssbos": 8,
+      "push_bytes": 128,
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "reflection_matches_executed": true
+    },
+    {
+      "entry": "GatherProbeImage",
+      "executed_spirv_sha256": "88ac201cdc5e0c5a0eb330a248e1922b880c96b228664de96aff308476435f54",
+      "ssbos": 8,
+      "push_bytes": 128,
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "reflection_matches_executed": true
+    },
+    {
+      "entry": "BounceProbeRays",
+      "executed_spirv_sha256": "090f3506ee81179c9cf5988f2e3f5785ddff2fda8f9ce62d8ff08c35794cd65f",
+      "ssbos": 8,
+      "push_bytes": 128,
+      "threads": [
+        64,
+        1,
+        1
+      ],
+      "reflection_matches_executed": true
+    }
+  ],
+  "misaligned_material_control_rejected": true,
+  "combined_quality_and_speed_gates": {
+    "Cone": false,
+    "Probe": false
+  },
+  "renderer_accepted": false,
+  "scope": "Evidence/layout/runtime integrity only; not visual acceptance, exact physical transport, hardware GPU or editor verification."
+}

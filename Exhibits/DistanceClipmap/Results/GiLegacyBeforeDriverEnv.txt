@@ -1,0 +1,20 @@
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCmake
+Test project /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCmake
+    Start 1: DistanceClipmapNumeric
+1/4 Test #1: DistanceClipmapNumeric ...........   Passed    0.61 sec
+    Start 2: DistanceClipmapCacheSides
+2/4 Test #2: DistanceClipmapCacheSides ........   Passed    0.07 sec
+    Start 3: DistanceClipmapConsumption
+3/4 Test #3: DistanceClipmapConsumption .......   Passed    0.43 sec
+    Start 4: DistanceClipmapVulkan
+4/4 Test #4: DistanceClipmapVulkan ............***Failed    0.34 sec
+FAILED: vkCreateInstance failed: -9
+
+
+75% tests passed, 1 tests failed out of 4
+
+Total Test time (real) =   1.45 sec
+
+The following tests FAILED:
+	  4 - DistanceClipmapVulkan (Failed)
+Errors while running CTest

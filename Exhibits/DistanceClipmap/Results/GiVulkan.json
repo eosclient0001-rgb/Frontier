@@ -1,0 +1,28 @@
+{
+  "passed":true,
+  "device":"SwiftShader Device (Subzero)",
+  "device_type":4,
+  "receivers":131,
+  "primary_samples":1,
+  "cone_field_max_error":0,
+  "cone_opacity_max_error":0,
+  "cone_gather_max_error":4.09781932831e-08,
+  "cone_bounce_max_error":4.80329617858e-07,
+  "probe_irradiance_max_error":0,
+  "probe_moments_max_error":0,
+  "probe_gather_max_error":1.49011611938e-08,
+  "probe_bounce_max_error":5.66244125366e-07,
+  "guarded_regions":32,
+  "geometry_and_direct_sources_on_cpu":true,
+  "gpu_scene_renderer":false,
+  "executed_spirv_fnv1a64": {
+    "BounceConeSites":"175434755845390116",
+    "BounceProbeRays":"16382744498206121086",
+    "ConvolveProbeIrradiance":"15587768438909229254",
+    "ConvolveProbeMoments":"12611161339668293318",
+    "GatherConeImage":"1169282033709541630",
+    "GatherProbeImage":"7631701159879350738",
+    "InjectDirectionalRadiance":"8534316098736714349",
+    "ReduceDirectionalMip":"4037563151455356229"
+  }
+}

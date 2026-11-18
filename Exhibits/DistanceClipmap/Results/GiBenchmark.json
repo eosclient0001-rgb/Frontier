@@ -1,0 +1,21 @@
+{
+  "width":480,
+  "height":270,
+  "primary_samples":4,
+  "surface_direct_samples":32,
+  "triangle_cache_directions":128,
+  "rounds":5,
+  "primary_surface_prepass_ms":89.487063,
+  "cold_triangle_cache_ms":1398.918968,
+  "cold_cone_including_direct_cache_ms":1540.924454,
+  "cold_probe_after_cone_cache_ms":1725.587402,
+  "cold_probe_including_current_cone_dependency_ms":3266.511856,
+  "repeat_float_equal_within_each_method":true,
+  "equal_images_across_methods":false,
+  "methods":{
+    "TriangleCache128":{"gather_ms":[9762.919721,9552.64128,9838.445438,9519.512247,9390.875253],"median_gather_ms":9552.64128},
+    "Cone":{"gather_ms":[8989.935111,8782.908008,8888.580483,8794.478168,8804.886264],"median_gather_ms":8804.886264},
+    "Probe":{"gather_ms":[110.641317,110.5472,111.089768,110.284837,110.284772],"median_gather_ms":110.5472}
+  },
+  "scope":"GI-only host measurements, shared Float32 primary samples, same sources/materials; different biased estimators. Gather excludes setup/direct/encoding; cold setup reported separately. No denoiser, hardware-GPU, Windows or editor performance claim."
+}

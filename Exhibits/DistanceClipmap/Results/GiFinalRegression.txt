@@ -1,0 +1,43 @@
+FINAL SOURCE BUILD AND REGRESSION: CPU-only, CPU/Vulkan transport, historical distance/cache.
+[0/1] Re-running CMake...
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Frontier/_ClaudeScratch/build/DiffuseTransportCpuOnly
+[1/2] Building CXX object CMakeFiles/TransportValidation.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/TransportValidation.cpp.o
+[2/2] Linking CXX executable TransportValidation
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DiffuseTransportCpuOnly
+Test project /home/user/Frontier/_ClaudeScratch/build/DiffuseTransportCpuOnly
+    Start 1: DiffuseTransportNumeric
+1/1 Test #1: DiffuseTransportNumeric ..........   Passed   22.94 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =  22.94 sec
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+Test project /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+    Start 1: DiffuseTransportNumeric
+1/2 Test #1: DiffuseTransportNumeric ..........   Passed   23.20 sec
+    Start 2: DiffuseTransportVulkan
+2/2 Test #2: DiffuseTransportVulkan ...........   Passed   60.30 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =  83.50 sec
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCmake
+Test project /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCmake
+    Start 1: DistanceClipmapNumeric
+1/4 Test #1: DistanceClipmapNumeric ...........   Passed    0.58 sec
+    Start 2: DistanceClipmapCacheSides
+2/4 Test #2: DistanceClipmapCacheSides ........   Passed    0.07 sec
+    Start 3: DistanceClipmapConsumption
+3/4 Test #3: DistanceClipmapConsumption .......   Passed    0.40 sec
+    Start 4: DistanceClipmapVulkan
+4/4 Test #4: DistanceClipmapVulkan ............   Passed    4.22 sec
+
+100% tests passed, 0 tests failed out of 4
+
+Total Test time (real) =   5.26 sec
+
+Final CPU-only versus GPU-enabled CPU product:
+ee498cc56fb476dfa781e780158d789e928a5ec7be20c9c3ff7939e84bde8d1b  _ClaudeScratch/build/DiffuseTransport/TransportValidation
+ee498cc56fb476dfa781e780158d789e928a5ec7be20c9c3ff7939e84bde8d1b  _ClaudeScratch/build/DiffuseTransportCpuOnly/TransportValidation
