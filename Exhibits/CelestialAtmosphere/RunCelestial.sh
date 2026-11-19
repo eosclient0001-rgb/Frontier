@@ -17,6 +17,11 @@ RETAIN="${RETAIN:-$ROOT/Exhibits/CelestialAtmosphere}"
 SLANGC="${SLANGC:-$ROOT/ExternalPackages/VulkanCompute/Slang/slangtorch/bin/slangc}"
 VULKAN_DRIVER="${VULKAN_DRIVER:?Set VULKAN_DRIVER to an explicit Vulkan driver library, not an ICD JSON}"
 mkdir -p "$OUTPUT" "$RETAIN/Results"
+REFERENCE_OPTIONS=()
+[[ "${REFERENCE_OFFLINE:-0}" != 1 ]] || REFERENCE_OPTIONS+=(--offline)
+[[ -z "${REFERENCE_SOURCES:-}" ]] || REFERENCE_OPTIONS+=(--sources "$REFERENCE_SOURCES")
+"$PYTHON" Exhibits/CelestialAtmosphere/Code/ReproduceCelestialReference.py --output "$OUTPUT/Upstream" "${REFERENCE_OPTIONS[@]}"
+cp "$OUTPUT/Upstream/ReferenceSourceValidation.json" "$RETAIN/Results/"
 "$PYTHON" Exhibits/CelestialAtmosphere/Code/PrepareCelestial.py "$INPUTS"
 OPTIONS=(-DCMAKE_BUILD_TYPE=Release -DFRONTIER_CELESTIAL_SLANG="$SLANGC"
     -DFRONTIER_CELESTIAL_INPUTS="$INPUTS" -DFRONTIER_CELESTIAL_DRIVER="$VULKAN_DRIVER")

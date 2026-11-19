@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                          CELESTIALVALIDATION.CPP
 ============================================================================================================================================*/
-// 🧩 Independent optical-depth, phase, lunar-map, finite Sun, five-component lens and real-catalogue validation before shader capture.
+// 🧩 Independent optical-depth, phase, lunar-map, finite Sun, six-component lens and real-catalogue validation before shader capture.
 
 #include "CelestialReference.h"
 #include <iostream>
@@ -22,6 +22,7 @@ int main(int Count, char** Arguments)
                 "Actual retained lunar texture is required");
         CelestialScene Scene;
         Scene.LoadCatalogue(Arguments[2]);
+        Scene.LoadAuthoredCatalogue(Inputs / "ReferenceStars.csv");
         unsigned Assertions = 0;
         auto     Assert     = [&](bool Condition, const std::string& Description)
         {
@@ -101,7 +102,7 @@ int main(int Count, char** Arguments)
         double FlareLinearityError = 0;
         auto   Profile             = FlareOpticsProfile{};
         Profile.GlowStrength = Profile.StreakStrength = 0;
-        for (unsigned Component = 0; Component < 5; ++Component)
+        for (unsigned Component = 0; Component < 6; ++Component)
         {
             auto Single               = Profile;
             Single.GhostStrength      = Component == 0 ? 1 : 0;
@@ -109,20 +110,48 @@ int main(int Count, char** Arguments)
             Single.AnamorphicStrength = Component == 2 ? 1 : 0;
             Single.HaloStrength       = Component == 3 ? 1 : 0;
             Single.VeilingStrength    = Component == 4 ? 1 : 0;
-            double Energy             = 0;
+            StarFilterProfile Filter;
+            Filter.Strength = Component == 5;
+            double Energy   = 0;
             for (unsigned Index = 0; Index < 2048; ++Index)
             {
                 const double X = -1.7 + 3.4 * (Index % 64) / 63, Y = -1 + 2. * (Index / 64) / 31;
-                const auto   Full    = EvaluateLensFlareRadiance(X, Y, .46, .21, {1, 1, 1}, 1, Single);
-                const auto   Partial = EvaluateLensFlareRadiance(X, Y, .46, .21, {2, 2, 2}, .25, Single);
+                const auto   Full    = EvaluateExperimentalLens(X, Y, .46, .21, {1, 1, 1}, Single, Filter);
+                const auto   Partial = EvaluateExperimentalLens(X, Y, .46, .21, {.5, .5, .5}, Single, Filter);
                 FlareLinearityError  = std::max(FlareLinearityError, Difference(RgbScale(Full, .5), Partial));
-                Assert(Maximum(EvaluateLensFlareRadiance(X, Y, .46, .21, {1, 1, 1}, 0, Single)) == 0,
+                Assert(Maximum(EvaluateExperimentalLens(X, Y, .46, .21, {0, 0, 0}, Single, Filter)) == 0,
                        "A lens layer survives total source occlusion");
                 Energy += Maximum(Full);
             }
             Assert(Energy > 0, "Requested flare component has no radiance");
         }
         Assert(FlareLinearityError < 1e-12, "Lens radiance is not linear in incident irradiance and source visibility");
+        Assert(Scene.AuthoredCatalogue.size() == 15200, "Authored reference catalogue is not complete");
+        auto Streak               = Profile;
+        Streak.AnamorphicStrength = 1;
+        Assert(Maximum(EvaluateAnamorphicPoint(2 * Streak.AnamorphicLengthNdc, 0, Streak)) == 0,
+               "The repaired anamorphic streak still extends indefinitely");
+        for (double Angle : {0., .37, 1.2})
+        {
+            Streak.AnamorphicAngleRad = Angle;
+            const auto Along          = EvaluateAnamorphicPoint(.35 * std::cos(Angle), .35 * std::sin(Angle), Streak);
+            const auto Across         = EvaluateAnamorphicPoint(-.35 * std::sin(Angle), .35 * std::cos(Angle), Streak);
+            Assert(Along.B > 1e4 * Across.B && Along.B > Along.G && Along.G > Along.R,
+                   "Anamorphic axis or blue coating rotation is incorrect");
+        }
+        StarFilterProfile Filter;
+        Filter.Strength = 1;
+        unsigned Peaks  = 0;
+        for (unsigned Index = 0; Index < 4096; ++Index)
+        {
+            auto Sample = [&](int Offset)
+            {
+                const double Angle = 2 * π * (int(Index) + Offset) / 4096;
+                return EvaluateStarFilterPoint(.3 * std::cos(Angle), .3 * std::sin(Angle), Filter).G;
+            };
+            if (Sample(0) > Sample(-1) && Sample(0) >= Sample(1)) ++Peaks;
+        }
+        Assert(Peaks == 8, "The sixth lens variant is not a distinct eight-point star-filter burst");
         SunDiscProfile Disc;
         Assert(EvaluateSunDiscRadiance(0, Disc, {1, 1, 1}).R >
                    EvaluateSunDiscRadiance(.9 * Disc.AngularRadiusRad, Disc, {1, 1, 1}).R,
@@ -141,7 +170,7 @@ int main(int Count, char** Arguments)
                << ",\n  \"catalogue_unit_error\": " << DirectionError
                << ",\n  \"vertical_optical_depth_error\": " << VerticalError
                << ",\n  \"rayleigh_phase_integral\": " << IntegralR << ",\n  \"aerosol_phase_integral\": " << IntegralM
-               << ",\n  \"five_flare_linearity_error\": " << FlareLinearityError
+               << ",\n  \"six_flare_linearity_error\": " << FlareLinearityError
                << ",\n  \"lunar_exosphere_vertical_blue_optical_depth\": " << ExosphereOpticalDepth
                << ",\n  \"same_moon_texture\": true,\n  \"renderer_accepted\": false\n}\n";
         Enforce(bool(Report), "Cannot retain native celestial validation report");

@@ -1,7 +1,7 @@
 {
   "passed": true,
-  "native_views": 30,
-  "isolated_lens_views": 7,
+  "native_views": 32,
+  "isolated_lens_views": 8,
   "viewpoints": 2,
   "diagnostic_labels": true,
   "keyboard_and_thumbnails": true,

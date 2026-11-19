@@ -1,7 +1,9 @@
 /*============================================================================================================================================
                                                          STELLARRADIANCE.SLANG
 ============================================================================================================================================*/
-// 🧩 Hipparcos photometry, pixel-integrated Gaussian star images and pinned J2000 Milky Way contours behind atmosphere and opaque bodies.
+// 🧩 Hipparcos photometry, pixel-integrated reference Gaussian/Moffat stars and the requested authored galactic bulge behind atmosphere and opaque bodies.
+
+#include "GalacticBulge.slang"
 
 //------------------------------------------------------------------------------------------------------------------------
 //                                                 CATALOGUE COLOUR / VISUAL FLUX
@@ -53,25 +55,52 @@ float3 StellarColour(float ColourIndex)
     Source.ProjectionFlux  = float4((.5 + .5 * Ndc.x) * Extent.History.x,
                                    (.5 - .5 * Ndc.y) * Extent.History.y,
                                    Configuration(30).x * pow(10., -.4 * Source.DirectionMagnitude.w),
-                                   Depth);
+                                   Source.ProjectionFlux.w);
     Source.ColourIndex.xyz = StellarColour(Source.ColourIndex.w);
     if (Depth <= 0 || OccludedGeometry(Configuration(0).xyz, Direction, 1e30)) Source.ProjectionFlux.z = 0;
     Stars[Index] = Source;
-} float3 CataloguePixel(float2 Coordinate)
+}
+
+float StellarPsfDensity(float Radius)
+{
+    float Gaussian = exp(-.5 * Radius * Radius / (.62 * .62)) / (2 * CelestialPi * .62 * .62);
+    float Moffat   = 1.5 / (CelestialPi * 2.4 * 2.4) * pow(1 + Radius * Radius / (2.4 * 2.4), -2.5);
+    return .82 * Gaussian + .18 * Moffat;
+}
+float StellarPixelMass(float2 Delta, bool Revised)
+{
+    float  Sigma = Revised ? .62 : .75;
+    float2 Low   = (Delta - .5) / (1.4142135623730951 * Sigma);
+    float2 High  = (Delta + .5) / (1.4142135623730951 * Sigma);
+    float  Gaussian =
+        max(0, .5 * (SolarErf(High.x) - SolarErf(Low.x))) * max(0, .5 * (SolarErf(High.y) - SolarErf(Low.y)));
+    if (!Revised) return Gaussian;
+    // 📝 Four-node Gauss-Legendre integration per axis resolves the original isotropic Moffat wings.
+    // Finite 25x25 pixel support is declared and its missing tail is measured, never relabelled flux conservation.
+    const float Abscissae[4] = {-.4305681557970263, -.1699905217924281, .1699905217924281, .4305681557970263};
+    const float Weights[4]   = {.1739274225687269, .3260725774312731, .3260725774312731, .1739274225687269};
+    float       Wing         = 0;
+    for (uint Y = 0; Y < 4; ++Y)
+        for (uint X = 0; X < 4; ++X)
+        {
+            float2 Offset = Delta + float2(Abscissae[X], Abscissae[Y]);
+            Wing += Weights[X] * Weights[Y] * 1.5 / (CelestialPi * 2.4 * 2.4) *
+                    pow(1 + dot(Offset, Offset) / (2.4 * 2.4), -2.5);
+        }
+    return .82 * Gaussian + .18 * Wing;
+}
+float3 CataloguePixel(float2 Coordinate)
 {
     if (Configuration(10).w < .5) return 0;
     uint   Columns = (Extent.History.x + 15) / 16;
     uint   Tile    = (uint(Coordinate.y) / 16) * Columns + uint(Coordinate.x) / 16;
     float3 Sum     = 0;
-    float  Sigma   = Configuration(24).y;
+    bool   Revised = Configuration(34).y > .5;
     for (uint Location = StellarBins[Tile]; Location < StellarBins[Tile + 1]; ++Location)
     {
         StellarSource Source = Stars[StellarBins[Location]];
-        float2        Delta  = Coordinate - Source.ProjectionFlux.xy;
-        float2        Low    = (Delta - .5) / (1.4142135623730951 * Sigma);
-        float2        High   = (Delta + .5) / (1.4142135623730951 * Sigma);
-        float         Mass =
-            max(0, .5 * (SolarErf(High.x) - SolarErf(Low.x))) * max(0, .5 * (SolarErf(High.y) - SolarErf(Low.y)));
+        if (Revised && any(abs(floor(Coordinate) - floor(Source.ProjectionFlux.xy)) > 12)) continue;
+        float Mass = StellarPixelMass(Coordinate - Source.ProjectionFlux.xy, Revised);
         Sum += Source.ColourIndex.xyz * Source.ProjectionFlux.z * Mass;
     }
     return Sum / PixelSolidAngle(Coordinate);
@@ -116,9 +145,7 @@ float SampleGalacticContours(float3 Direction)
 float3 GalacticRadiance(float3 Direction)
 {
     if (Configuration(11).x < .5) return 0;
-    float Density = SampleGalacticContours(Direction);
-    // 📝 Authentic contour geometry, assigned (unmeasured) visual surface brightness, not random stars or a fake HDR photograph.
-    float Brightness =
-        Density * Configuration(30).x * pow(10., -.4 * (22.0 - 2.2 * Density)) / pow(CelestialPi / (180 * 3600), 2);
-    return Brightness * float3(1.12, 1, .86);
+    float3 Equatorial = EquatorialDirection(Direction);
+    // 📝 Preserve the requested reference's stellar-to-galaxy calibration in our unit-solar-irradiance convention.
+    return Configuration(30).x / 2.4e-5 * (.0042 * GalacticBulgeRadiance(Equatorial) + ReferenceNebulae(Equatorial));
 }

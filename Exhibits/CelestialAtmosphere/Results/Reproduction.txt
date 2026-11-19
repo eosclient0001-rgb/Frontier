@@ -1,65 +1,90 @@
-Celestial atmosphere verification — 2026-11-18
+Celestial atmosphere / requested galactic revision — 2026-11-18
 
-Scope: isolated Experimental/CelestialAtmosphere prototype and Exhibits/CelestialAtmosphere evidence.
-Native source base: 0cc8ea5515fec28ad537818a15d54ece6a1033f8, plus the uncommitted celestial implementation.
-The exact executed source and compiled SPIR-V identities are recorded in Integrity.json.
-No production engine/editor sources or historical shadow/GI implementations were changed.
+Scope: Experimental/CelestialAtmosphere and Exhibits/CelestialAtmosphere; no production engine/editor changes.
+Native source base: ddb62b08fddc0d251968c660843246c3a3036b70, plus the verified working revision.
+Executed working-source, compiled SPIR-V, executable and retained-file identities are recorded in Integrity.json.
+Requested source: SultanAladin/Frontier arena/a1dad11b-frontier,
+  pinned c519e983110100a9ed1c17bd3ff97a1c27bef3b9.
+Original source blob/SHA identities and original reference image/catalogue identities: Content/ReferenceSource.json
+  under Experimental/CelestialAtmosphere. No new project-wide licence grant is inferred.
 
 Tested environment:
   Linux x86_64, GCC 12.2.0, C++20, CMake 3.31.10, Ninja.
   Slang 2026.14.1, SPIR-V glsl_450, -fp-mode precise -O0.
   GCC Release: -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off.
   SwiftShader Device (Subzero), CPU Vulkan device type 4, explicit libvk_swiftshader.so.
-  Vulkan-Headers 1.4.321; eight guarded coherent-mapped SSBOs, 128-byte pushes.
-  Python 3.11.2, NumPy 2.2.6, Pillow 11.3.0, Astropy 7.1.1, pyerfa 2.0.1.5,
-  jplephem 2.23, skyfield-data 7.0.0, bundled offline IERS.
+  Vulkan-Headers 1.4.321; eight guarded coherent-mapped SSBOs; 128-byte push footprint.
+  Python 3.11.2; NumPy 2.2.6; Pillow 11.3.0; Astropy 7.1.1; pyerfa 2.0.1.5;
+  jplephem 2.23; skyfield-data 7.0.0; bundled offline IERS.
   JPL DE421 SHA-256: a20a7139da04cbc462454634918e9a9ca69127044e2cc9d4f9c16e238d2deedc.
-  Node.js 22.22.3, playwright-core 1.56.1, Chromium 153.0.8010.0; desktop 1440x1080, mobile 390x844.
-  Python image sheets use Pillow's scalable bundled default font when content fonts are unavailable.
+  Node.js 22.22.3; playwright-core 1.56.1; Chromium 153.0.8010.0.
+  Desktop 1440x1080; mobile 390x844; reduced-motion and missing/changed-image rejection exercised.
+  Pillow's scalable bundled font is used when repository fonts are unavailable.
 
-Executed end-to-end reproduction (exit 0):
+Executed complete reproduction (exit 0; source and evidence hashes refreshed after browser checks):
   CMAKE=<repository scratch>/BuildPackages/cmake/data/bin/cmake
   CTEST=<repository scratch>/BuildPackages/cmake/data/bin/ctest
   CMAKE_MAKE_PROGRAM=<repository scratch>/BuildPackages/bin/ninja
   PYTHONPATH=<repository scratch>/CelestialPython:<repository scratch>/PythonPackages
   BUILD=_ClaudeScratch/build/CelestialAtmosphere
-  INPUTS=_ClaudeScratch/tmp/CelestialInputsFinal
-  OUTPUT=_ClaudeScratch/tmp/CelestialReproduction
+  INPUTS=_ClaudeScratch/tmp/CelestialInputsRevision
+  OUTPUT=_ClaudeScratch/tmp/CelestialRevisionFinal
   SLANGC=ExternalPackages/VulkanCompute/Slang/slangtorch/bin/slangc
   VULKAN_DRIVER=ExternalPackages/VulkanCompute/SwiftShader/libvk_swiftshader.so
   VULKAN_INCLUDE_DIR=ExternalPackages/VulkanCompute/Vulkan-Headers-1.4.321/include
   VULKAN_LIBRARY=ExternalPackages/VulkanCompute/SwiftShader/libvulkan.so.1
+  REFERENCE_OFFLINE=1
   bash Exhibits/CelestialAtmosphere/RunCelestial.sh
-  Environment paths were absolute in the actual invocation; the scratch packages are not shipped.
+  Environment paths were absolute in the actual invocation. Scratch/dependency tools are not deliverable binaries.
+  First restore of the original reference used gh api Git blob calls into ignored ExternalPackages/CelestialReference/;
+  the complete reproduction was then run offline. No Actions workflow was invoked.
 
 The launcher executes:
-  PrepareCelestial.py -> isolated CMake Release build -> 2/2 CTests -> 30 complete GPU readbacks ->
-  6,228-case Astropy catalogue comparison -> 960-case JPL ephemeris comparison -> three negative controls ->
-  full-image numeric inspector -> source/evidence integrity validator.
+  Compile actual pinned native reference -> require five byte-identical exports -> prepare Moon/reference inputs ->
+  isolated Release CMake build -> 2/2 CTests -> 32 native captures + 3 optical diagnostics ->
+  6,228-case Astropy catalogue comparison -> 960-case DE421 ephemeris comparison -> six negative controls ->
+  independent full-image inspection / baseline continuity -> source/evidence integrity validation.
 
-Additional verification (exit 0):
-  Debug CMake in _ClaudeScratch/build/CelestialSanitized, -fsanitize=address,undefined
-    -fno-omit-frame-pointer -fno-pie, linker -fsanitize=address,undefined -no-pie.
-  ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ctest --output-on-failure -j 1: 2/2.
-    External-driver leak checking is disabled. CelestialFinalChecks.txt repeats after the final capture-host edit
-    and the whitespace-only Slang declaration-layout cleanup. All ten rebuilt SPIR-V outputs remain byte-identical
-    to the pre-cleanup version and to the independent sanitizer-build shader outputs.
-  Independent Vulkan-OFF Release CMake build, native CTest: 1/1.
-  clang-format --dry-run --Werror: all new C++ headers, implementation and Slang files.
-  Python py_compile, bash -n and node --check: all new executable validation/viewer source.
-  ValidateCelestialPresentation.cjs: all 30 native views, seven isolated flare views, both viewpoints,
-    physical/amplified diagnostic labels, keyboard/thumbnails, five links, mobile/reduced-motion,
-    missing-report and modified-image rejection.
-  Final image inspector refresh: complete unclipped sheet captions, transitive repository-header identities and
-    fresh compiled SPIR-V hashes cross-checked against the hashes actually loaded by the capture host.
-  Final retained-evidence gate: 51 source identities, 65 retained-file identities, 286 assertions.
+Focused results:
+  Original upstream: eight pinned source identities; 156 rounded bright-star entries + 15,200 authored points;
+    517 galactic probes, 119 nebular probes and 121 stellar PSF probes. Original model compiled with GCC,
+    -fno-fast-math -ffp-contract=off, GNU function/data section garbage collection; not an MSVC port.
+  Slang vs original: bulge/dust max abs 4.7683715820312e-7; nebulae 3.427267074585e-7; PSF 8.9406967163086e-8.
+  Updated full field: 3,464/3,464 pinned coordinate/magnitude/B-V/provenance matches; 3,430 authored + 34 bright.
+    Independent eight-node Gaussian/Moffat image reconstruction relative max error 4.4450906402659513e-7;
+    finite-support integrated-flux relative error 2.619822669913674e-8.
+    Declared 25x25 support omits 0.0912176–0.0920949 percent of infinite-profile flux, not hidden normalization.
+  Anamorphic actual before/after at equal exposure: edge/peak 0.2671743929386139 -> 0.0010942911030724645.
+    Rotated axis 0.39999999055726887 vs requested .4 rad; half-pixel integrated radiance error 2.7856201185727514e-6.
+  Sixth starburst: eight rays measured; original diffraction still six rays.
+    Six-component full-image sum max error 5.960464477539063e-8; full occlusion exactly black.
+  Original measured-only view: 8,080/8,080 Hipparcos matches, Astropy max .006133483028297716 deg;
+    original integrated-image flux error 9.511861187583293e-9.
+  13 preserved native PNGs byte-identical to ddb62b0: five Moon views, two solar views, four unchanged optical terms,
+    full occlusion and measured-only catalogue view. CelestialContinuity.json records the immutable baseline/identities.
+  Overall native validation: 53,954 assertions. GPU host: 4,423 physics probes / 38,170,660 numeric/pixel assertions;
+    large pixel counts are not independent measured-physics cases or measured-sky validation.
 
-Observed pre-acceptance failures and repairs are described in README.md and CelestialControls.json.
-The physical lunar gas is representative and invisible; its x1e14 radiance diagnostic is explicitly labelled.
-The galaxy uses authentic outline geometry with assigned photometry, not a calibrated HDR panorama.
-All display exposures are recorded and do not change incident-source or medium-density parameters.
+Additional executed verification (exit 0):
+  Independent Debug CMake build _ClaudeScratch/build/CelestialSanitized:
+    -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie,
+    linker -fsanitize=address,undefined -no-pie.
+    ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ctest: 2/2 (18.11 seconds).
+    External Vulkan-driver leak audit disabled. Ten sanitizer-build shader outputs byte-identical to Release.
+  Independent Vulkan-OFF Release build _ClaudeScratch/build/CelestialNativeOnly, native CTest: 1/1 (.27 seconds).
+  clang-format --dry-run --Werror with the local celestial style; Python py_compile; Bash/Node syntax checks;
+    Markdown width/local-link and git whitespace checks. Final command log: CelestialFinalChecks.txt.
+  Chromium capture viewer: 32 native views, 8 isolated lens planes, both atmospheric viewpoints, clear authored-vs-
+    measured-only warnings, lunar physical/amplified warnings, mobile/keyboard/thumbnails/five links,
+    missing capture-list and changed-image rejection. Screenshot shows the revised night view.
+
+Rejected controls are retained: generic optical trig, rounded planetary ground leak, missing galactic dust,
+  planar contour closure, actual rejected anamorphic image and duplicated six-ray starburst.
+Physical exosphere, original Moon map, Sun/corona, atmosphere and original measured-catalogue gates remain unchanged.
+Galaxy/deep stars/lens appearance is authored. The upstream reference's atmosphere/auto-metering/display were not copied.
 
 Not tested / not claimed:
-  Windows/MSVC execution, physical GPU, production viewport, real-time/asynchronous/device-local performance,
-  measured lens calibration, full lunar exosphere chemistry/kinetics, spectral plasma or converged multiple scattering.
-No Linux application package, replacement Windows binary, Actions run, PR or release is part of this delivery.
+  Windows/MSVC or physical GPU execution; production editor; real-time/asynchronous/device-local performance;
+  measured camera calibration; observed-sky photometric convergence; full lunar collisionless chemistry/kinetics;
+  spectral plasma, converged multiple scattering, proper motion, nutation, refraction or stellar parallax.
+No Linux application package, substitute Windows binary, Actions run, PR or release is part of this delivery.

@@ -64,26 +64,27 @@ struct CelestialExecution
     CelestialCompute           Compute;
     CelestialFootprint         Footprint{};
     LunarAlbedoMap             Map;
-    std::filesystem::path      Destination;
-    std::vector<std::string>   Captures;
+    std::filesystem::path      Destination, PreparedInputs;
+    std::vector<std::string>   Captures, Diagnostics;
     std::vector<StellarSource> Projected;
     unsigned                   Assertions = 0, ProbeCount = 0;
     double                     DensityError = 0, TransmissionError = 0, ScatteringRelativeError = 0, LunarMapError = 0;
     double LunarSurfaceError = 0, SolarProfileError = 0, LensError = 0, GalacticError = 0, CoronaRelativeError = 0;
+    double ReferenceBulgeError = 0, ReferenceNebulaError = 0, ReferencePsfError = 0;
 
     CelestialExecution(const char*                  Driver,
                        const std::string&           Shaders,
                        const std::filesystem::path& Inputs,
                        const std::filesystem::path& Output)
-        : Device(Driver, VK_API_VERSION_1_1), Compute(Device), Destination(Output)
+        : Device(Driver, VK_API_VERSION_1_1), Compute(Device), Destination(Output), PreparedInputs(Inputs)
     {
         std::filesystem::create_directories(Destination / "Renders");
         Enforce(Map.LoadPpm((Inputs / "MoonAlbedo2048.ppm").string().c_str()), "Same retained Moon map could not load");
         const std::array<std::size_t, 8> Bytes{(304 + SolarOpticsPayloadFloats) * sizeof(float),
                                                std::size_t(2048) * 1024 * sizeof(Float4),
                                                std::size_t(1024) * 512 * sizeof(float),
-                                               50000 * sizeof(StellarSource),
-                                               250000 * sizeof(unsigned),
+                                               60000 * sizeof(StellarSource),
+                                               750000 * sizeof(unsigned),
                                                (256 * 64 + 32 * 16) * sizeof(Float4),
                                                (std::size_t(24) * Pixels + 13889 + SolarSourceCount + 128) *
                                                    sizeof(Float4),
@@ -202,6 +203,12 @@ struct CelestialExecution
                  << ']' << ",\"exposure\":" << Scene.Exposure
                  << ",\"exosphere_display_gain\":" << Scene.Configuration[11][2]
                  << ",\"native_render_ms\":" << Milliseconds << ",\"projected_catalogue_stars\":" << Projected.size()
+                 << ",\"authored_projected_stars\":"
+                 << std::count_if(Projected.begin(),
+                                  Projected.end(),
+                                  [](const auto& Source) { return Source.ProjectionFlux[3] > .5f; })
+                 << ",\"revised_stellar_psf\":" << (Scene.Configuration[34][1] > .5 ? "true" : "false")
+                 << ",\"authored_catalogue_enabled\":" << (Scene.Configuration[34][0] > .5 ? "true" : "false")
                  << ",\"float_fnv1a64\":\"" << Digest(Actual.data(), Actual.size() * sizeof(Float4)) << "\"}";
         Captures.push_back(Metadata.str());
         std::cout << "Captured " << Slug << " · " << Milliseconds << " ms · " << Projected.size()
@@ -349,7 +356,7 @@ struct CelestialExecution
                           << Actual[Index][1] << " sigma " << Actual[Index][2] << " erf " << Actual[Index][3] << '\n';
         }
         Assert(SolarProfileError < 2e-5, "GPU solar limb/radial blur does not match double erfc/limb law");
-        for (unsigned Component = 0; Component < 5; ++Component)
+        for (unsigned Component = 0; Component < 6; ++Component)
         {
             Scene.Solar.Flare                    = {};
             Scene.Solar.Flare.GhostStrength      = Component == 0;
@@ -357,6 +364,7 @@ struct CelestialExecution
             Scene.Solar.Flare.AnamorphicStrength = Component == 2;
             Scene.Solar.Flare.HaloStrength       = Component == 3;
             Scene.Solar.Flare.VeilingStrength    = Component == 4;
+            Scene.StarFilter.Strength            = Component == 5;
             Scene.Solar.Flare.GlowStrength = Scene.Solar.Flare.StreakStrength = 0;
             Probes.clear();
             for (unsigned Index = 0; Index < 384; ++Index)
@@ -369,7 +377,7 @@ struct CelestialExecution
             {
                 const auto A = Probes[Index].A, B = Probes[Index].B;
                 const auto Expected =
-                    EvaluateLensFlareRadiance(A[0], A[1], B[0], B[1], {1, 1, 1}, 1, Scene.Solar.Flare);
+                    EvaluateExperimentalLens(A[0], A[1], B[0], B[1], {1, 1, 1}, Scene.Solar.Flare, Scene.StarFilter);
                 const double Error = Difference(Expected, DecodeRgb(Actual[Index]));
                 LensError          = std::max(LensError, Error);
                 if (Error >= 2e-5)
@@ -381,7 +389,7 @@ struct CelestialExecution
             }
             Assert(Energy > 0, "An actual requested Slang flare component is absent");
         }
-        Assert(LensError < 2e-5, "Actual five-component lens shader disagrees with reused CPU optics");
+        Assert(LensError < 2e-5, "Actual six-component lens shader disagrees with native experimental/reused optics");
         Probes.clear();
         std::vector<Vector> Equatorial;
         for (unsigned Index = 0; Index < 144; ++Index)
@@ -441,6 +449,60 @@ struct CelestialExecution
                   << " · scattering relative " << ScatteringRelativeError << " · Moon surface " << LunarSurfaceError
                   << "\n"
                   << std::flush;
+    }
+
+    void VerifyRequestedReference(CelestialScene Scene)
+    {
+        std::ofstream Retained(Destination / "ReferencePortProbes.csv");
+        Retained << std::setprecision(14)
+                 << "selection,coordinate_x,coordinate_y,coordinate_z,gpu_r,gpu_g,gpu_b,reference_r,reference_g,"
+                    "reference_b\n";
+        for (const auto& Fixture :
+             {std::pair{"ReferenceGalaxy.csv", 13u}, {"ReferenceNebulae.csv", 15u}, {"ReferencePsf.csv", 14u}})
+        {
+            std::ifstream Input(PreparedInputs / Fixture.first);
+            Enforce(bool(Input), "Missing actual upstream-native reference export");
+            std::string Line;
+            std::getline(Input, Line);
+            std::vector<PhysicsProbe> Probes;
+            std::vector<Float4>       Expected;
+            while (std::getline(Input, Line))
+            {
+                std::replace(Line.begin(), Line.end(), ',', ' ');
+                std::istringstream Row(Line);
+                double             X = 0, Y = 0, Z = 0, R = 0, G = 0, B = 0;
+                if (Fixture.second == 14)
+                {
+                    Enforce(bool(Row >> X >> R), "Invalid upstream PSF export");
+                }
+                else
+                    Enforce(bool(Row >> X >> Y >> Z >> R >> G >> B), "Invalid upstream galaxy export");
+                Probes.push_back(
+                    {{float(X), Fixture.second == 14 ? 0 : float(Y), float(Z), float(Fixture.second)}, {}});
+                Expected.push_back({float(R), float(G), float(B), 1});
+            }
+            Assert(Probes.size() == (Fixture.second == 13   ? 517
+                                     : Fixture.second == 14 ? 121
+                                                            : 119),
+                   "Incomplete original upstream probe coverage");
+            const auto Actual = Inspect(Scene, Probes);
+            double     Error  = 0;
+            for (unsigned Index = 0; Index < Actual.size(); ++Index)
+            {
+                Error = std::max(Error, Difference(DecodeRgb(Actual[Index]), DecodeRgb(Expected[Index])));
+                Retained << Fixture.second << ',' << Probes[Index].A[0] << ',' << Probes[Index].A[1] << ','
+                         << Probes[Index].A[2] << ',' << Actual[Index][0] << ',' << Actual[Index][1] << ','
+                         << Actual[Index][2] << ',' << Expected[Index][0] << ',' << Expected[Index][1] << ','
+                         << Expected[Index][2] << '\n';
+            }
+            if (Fixture.second == 13) ReferenceBulgeError = Error;
+            if (Fixture.second == 14) ReferencePsfError = Error;
+            if (Fixture.second == 15) ReferenceNebulaError = Error;
+            std::cout << "Actual upstream parity " << Fixture.first << " max abs " << Error << '\n' << std::flush;
+            Assert(Error < (Fixture.second == 13 ? .0004 : .00001),
+                   "Slang port disagrees with the original requested upstream native evaluator: " +
+                       std::string(Fixture.first));
+        }
     }
 
     //------------------------------------------------------------------------------------------------------------------------
@@ -538,6 +600,7 @@ struct CelestialExecution
             }
             Scene.Julian = JulianDate(2026, 11, 18, .5 * (Low + High));
             Scene.LoadCatalogue(CataloguePath);
+            Scene.LoadAuthoredCatalogue(PreparedInputs / "ReferenceStars.csv");
             Scene.Solar.SunDirection = SunDirectionLocal(SunPosition(Scene.Julian, Scene.Latitude, Scene.Longitude));
             const double Elevation   = std::asin(Scene.Solar.SunDirection.Z) / Radians;
             Assert(std::abs(Elevation - Illumination.Elevation) < .01,
@@ -622,16 +685,17 @@ struct CelestialExecution
                                         Scene.Camera.Up * (.21 * Scene.Camera.Tangent));
         Scene.Configuration[21][2] = 0;
         Scene.Exposure             = 24;
-        const std::array<const char*, 5> Names{
-            "ApertureGhosts", "Diffraction", "Anamorphic", "AntipodeHalo", "VeilingGlare"};
+        const std::array<const char*, 6> Names{
+            "ApertureGhosts", "Diffraction", "Anamorphic", "AntipodeHalo", "VeilingGlare", "Starburst"};
         std::vector<Float4> Sum(2 * Pixels);
-        for (unsigned Component = 0; Component < 5; ++Component)
+        for (unsigned Component = 0; Component < 6; ++Component)
         {
             Scene.Solar.Flare.GhostStrength      = Component == 0;
             Scene.Solar.Flare.StarburstStrength  = Component == 1;
             Scene.Solar.Flare.AnamorphicStrength = Component == 2;
             Scene.Solar.Flare.HaloStrength       = Component == 3;
             Scene.Solar.Flare.VeilingStrength    = Component == 4;
+            Scene.StarFilter.Strength            = Component == 5;
             Scene.Solar.Flare.GlowStrength = Scene.Solar.Flare.StreakStrength = 0;
             const auto Actual =
                 Capture(Scene, std::string("Flare") + Names[Component], Names[Component], "RenderLensFlare", 2);
@@ -647,14 +711,15 @@ struct CelestialExecution
         Scene.Solar.Flare.GhostStrength = Scene.Solar.Flare.StarburstStrength = Scene.Solar.Flare.AnamorphicStrength =
             1;
         Scene.Solar.Flare.HaloStrength = Scene.Solar.Flare.VeilingStrength = 1;
+        Scene.StarFilter.Strength                                          = 1;
         auto Combined                                                      = Capture(
-            Scene, "FlareCombined", "All five lens components / additive irradiance response", "RenderLensFlare", 2);
+            Scene, "FlareCombined", "All six lens components / additive irradiance response", "RenderLensFlare", 2);
         double AdditionError = 0;
         for (unsigned Pixel = Pixels; Pixel < 2 * Pixels; ++Pixel)
             for (unsigned Channel = 0; Channel < 3; ++Channel)
                 AdditionError =
                     std::max(AdditionError, double(std::abs(Combined[Pixel][Channel] - Sum[Pixel][Channel])));
-        Assert(AdditionError < 1e-6, "Five flare layers are not simultaneously additive in the rendered output");
+        Assert(AdditionError < 1e-6, "Six flare layers are not simultaneously additive in the rendered output");
         Scene.Solar.DiscIrradiance = {.5, .5, .5};
         Configure(Scene);
         Resolve();
@@ -677,62 +742,122 @@ struct CelestialExecution
         Scene.Configuration[10][1] = 0;
         Scene.Configuration[24][0] = 1;
         const auto Hidden          = Capture(
-            Scene, "FlareOccluded", "All five lens components / completely occluded source", "RenderLensFlare", 2);
+            Scene, "FlareOccluded", "All six lens components / completely occluded source", "RenderLensFlare", 2);
         for (const auto& Pixel : Hidden)
             Assert(Pixel[0] == 0 && Pixel[1] == 0 && Pixel[2] == 0,
                    "Occluded Sun creates a ghost, diffraction, streak, halo or veil");
+        CelestialScene LensDiagnostic    = Origin;
+        LensDiagnostic.Configuration[10] = {0, 0, 1, 0};
+        LensDiagnostic.Configuration[11] = {0, 0, 0, 0};
+        LensDiagnostic.Camera.Orient({1, 0, 0}, 56);
+        LensDiagnostic.Solar.SunDirection =
+            Unit(LensDiagnostic.Camera.Forward + LensDiagnostic.Camera.Right * (.46 * LensDiagnostic.Camera.Tangent) +
+                 LensDiagnostic.Camera.Up * (.21 * LensDiagnostic.Camera.Tangent));
+        LensDiagnostic.Solar.Flare.AnamorphicStrength = 1;
+        LensDiagnostic.Exposure                       = 24;
+        for (unsigned Diagnostic = 0; Diagnostic < 3; ++Diagnostic)
+        {
+            LensDiagnostic.Configuration[33][0]           = Diagnostic == 0;
+            LensDiagnostic.Solar.Flare.AnamorphicAngleRad = Diagnostic == 1 ? .4 : 0;
+            if (Diagnostic == 2)
+                LensDiagnostic.Solar.SunDirection =
+                    Unit(LensDiagnostic.Camera.Forward +
+                         LensDiagnostic.Camera.Right * ((.46 + 1. / CaptureHeight) * LensDiagnostic.Camera.Tangent) +
+                         LensDiagnostic.Camera.Up * ((.21 + 1. / CaptureHeight) * LensDiagnostic.Camera.Tangent));
+            Capture(LensDiagnostic,
+                    Diagnostic == 0   ? "AnamorphicLegacy"
+                    : Diagnostic == 1 ? "AnamorphicRotated"
+                                      : "AnamorphicSubpixel",
+                    Diagnostic == 0   ? "Before / original unbounded streak"
+                    : Diagnostic == 1 ? "Repair / rotated 0.4 radians"
+                                      : "Repair / half-pixel translation",
+                    "RenderLensFlare",
+                    2);
+            Diagnostics.push_back(Captures.back());
+            Captures.pop_back();
+        }
+        auto RetainStellarTable = [&](const char* Name)
+        {
+            const auto*   StellarReadback = static_cast<const StellarSource*>(Compute.Regions[3].Mapped);
+            std::ofstream StellarOutput(Destination / Name);
+            StellarOutput << std::setprecision(14)
+                          << "east,north,up,magnitude,bv,pixel_x,pixel_y,flux,linear_r,linear_g,linear_b,authored\n";
+            for (unsigned Index = 0; Index < Projected.size(); ++Index)
+            {
+                const auto& Source = StellarReadback[Index];
+                StellarOutput << Source.DirectionMagnitude[0] << ',' << Source.DirectionMagnitude[1] << ','
+                              << Source.DirectionMagnitude[2] << ',' << Source.DirectionMagnitude[3] << ','
+                              << Source.ColourIndex[3] << ',' << Source.ProjectionFlux[0] << ','
+                              << Source.ProjectionFlux[1] << ',' << Source.ProjectionFlux[2] << ','
+                              << Source.ColourIndex[0] << ',' << Source.ColourIndex[1] << ',' << Source.ColourIndex[2]
+                              << ',' << Source.ProjectionFlux[3] << '\n';
+            }
+            Enforce(bool(StellarOutput), "Cannot retain measured/authored stellar readback");
+        };
+        Scene                      = Origin;
+        Scene.Configuration[10]    = {0, 0, 0, 1};
+        Scene.Configuration[11]    = {1, 0, 0, 0};
+        Scene.Solar.DiscIrradiance = {0, 0, 0};
+        // 📝 Match the requested reference's -0.46-rad site and 266.4-degree sidereal meridian.
+        // Our engine additionally applies its existing first-order precession; this is not a pixel-identical re-encoding of its PNG.
+        Scene.Latitude        = -.46 / Radians;
+        const double Midnight = JulianDate(2026, 11, 18, 0);
+        const double Meridian =
+            std::fmod((18.697374558 + 24.06570982441908 * (Midnight - 2451545)) * 15 + Scene.Longitude, 360);
+        Scene.Julian = Midnight + std::fmod(266.4 - Meridian + 360, 360) / (24.06570982441908 * 15);
+        Scene.LoadCatalogue(CataloguePath);
+        Scene.LoadAuthoredCatalogue(PreparedInputs / "ReferenceStars.csv");
+        const Vector ReferenceForward{std::cos(42 * Radians) * std::cos(200 * Radians),
+                                      std::cos(42 * Radians) * std::sin(200 * Radians),
+                                      std::sin(42 * Radians)};
+        Scene.Camera.Orient(ReferenceForward, 2 * std::atan(std::tan(55 * Radians) / Scene.Camera.Aspect) / Radians);
+        Scene.Exposure             = 2e7;
+        const auto StarsAndGalaxy  = Capture(Scene,
+                                            "CatalogueGalaxySpace",
+                                            "Reference bulge and dust / 156 bright + 15200 authored stars",
+                                            "RenderCelestialAtmosphere");
+        Scene.Configuration[11][0] = 0;
+        const auto StarsOnly       = Capture(Scene,
+                                       "CatalogueStarsSpace",
+                                       "Reference star catalogue / sharp cores and Moffat halos",
+                                       "RenderCelestialAtmosphere");
+        RetainStellarTable("ProjectedUpdatedStars.csv");
+        unsigned GalaxyChanged = 0;
+        for (unsigned Pixel = 0; Pixel < Pixels; ++Pixel)
+            if (StarsAndGalaxy[Pixel] != StarsOnly[Pixel]) ++GalaxyChanged;
+        Assert(GalaxyChanged > 1000, "Requested galactic bulge and dust are absent from the native field");
+        Scene.Configuration[10][3] = 0;
+        Scene.Configuration[11][0] = 1;
+        Capture(Scene,
+                "GalaxyContoursSpace",
+                "Reference galactic bulge and dust / no point stars",
+                "RenderCelestialAtmosphere");
+        Scene.Camera.Position      = {0, 0, 6361.64};
+        Scene.Solar.SunDirection   = {std::cos(-32 * Radians), 0, std::sin(-32 * Radians)};
+        Scene.Solar.DiscIrradiance = {1, 1, 1};
+        Scene.Configuration[10]    = {1, 0, 1, 1};
+        Scene.Configuration[11]    = {1, 0, 0, 1};
+        Scene.Exposure             = 3e7;
+        Capture(Scene,
+                "CatalogueGalaxySurface",
+                "Reference night composition / stars and dust through atmosphere",
+                "RenderCelestialAtmosphere");
         Scene                       = Origin;
         Scene.Configuration[10]     = {0, 0, 0, 1};
-        Scene.Configuration[11]     = {1, 0, 0, 0};
+        Scene.Configuration[11]     = {0, 0, 0, 0};
+        Scene.Configuration[34]     = {0, 0, 0, 0};
         Scene.Solar.DiscIrradiance  = {0, 0, 0};
         const double RightAscension = 266.4051 * Radians, Declination = -28.936175 * Radians;
         Vector GalacticCentre = Decode(Scene.Configuration[15]) * (std::cos(RightAscension) * std::cos(Declination)) +
                                 Decode(Scene.Configuration[16]) * (std::sin(RightAscension) * std::cos(Declination)) +
                                 Decode(Scene.Configuration[17]) * std::sin(Declination);
         Scene.Camera.Orient(GalacticCentre, 80);
-        Scene.Exposure                = 2e8;
-        const auto    StarsAndGalaxy  = Capture(Scene,
-                                            "CatalogueGalaxySpace",
-                                            "Measured Hipparcos stars / J2000 Milky Way contours / space",
-                                            "RenderCelestialAtmosphere");
-        const auto*   StellarReadback = static_cast<const StellarSource*>(Compute.Regions[3].Mapped);
-        std::ofstream StellarOutput(Destination / "ProjectedStars.csv");
-        StellarOutput << std::setprecision(14)
-                      << "east,north,up,magnitude,bv,pixel_x,pixel_y,flux,linear_r,linear_g,linear_b\n";
-        for (unsigned Index = 0; Index < Projected.size(); ++Index)
-        {
-            const auto& S = StellarReadback[Index];
-            StellarOutput << S.DirectionMagnitude[0] << ',' << S.DirectionMagnitude[1] << ',' << S.DirectionMagnitude[2]
-                          << ',' << S.DirectionMagnitude[3] << ',' << S.ColourIndex[3] << ',' << S.ProjectionFlux[0]
-                          << ',' << S.ProjectionFlux[1] << ',' << S.ProjectionFlux[2] << ',' << S.ColourIndex[0] << ','
-                          << S.ColourIndex[1] << ',' << S.ColourIndex[2] << '\n';
-        }
-        Scene.Configuration[11][0] = 0;
-        const auto StarsOnly       = Capture(
-            Scene, "CatalogueStarsSpace", "Measured catalogue only / no synthetic stars", "RenderCelestialAtmosphere");
-        unsigned GalaxyChanged = 0;
-        for (unsigned Pixel = 0; Pixel < Pixels; ++Pixel)
-            if (StarsAndGalaxy[Pixel] != StarsOnly[Pixel]) ++GalaxyChanged;
-        Assert(GalaxyChanged > 1000, "Authentic galaxy contour radiance is not visible in the native star field");
-        Scene.Configuration[10][3] = 0;
-        Scene.Configuration[11][0] = 1;
+        Scene.Exposure = 2e8;
         Capture(Scene,
-                "GalaxyContoursSpace",
-                "Pinned Milky Way geometry only / assigned surface photometry",
+                "MeasuredCatalogueSpace",
+                "Measured-only validation / unchanged Hipparcos coordinates and flux",
                 "RenderCelestialAtmosphere");
-        Scene                 = Origin;
-        Scene.Camera.Position = {0, 0, 6361.64};
-        Scene.Camera.Orient(Unit(Decode(Scene.Configuration[15]) * std::cos(80 * Radians) +
-                                 Decode(Scene.Configuration[16]) * std::sin(80 * Radians)),
-                            70);
-        Scene.Solar.SunDirection = SunDirectionLocal(SunPosition(Scene.Julian, Scene.Latitude, Scene.Longitude));
-        Scene.Configuration[10]  = {1, 0, 1, 1};
-        Scene.Configuration[11]  = {1, 0, 1, 1};
-        Scene.Exposure           = 2e8;
-        Capture(Scene,
-                "CatalogueGalaxySurface",
-                "Catalogue and galaxy through night atmosphere / Benoni 20 UTC",
-                "RenderCelestialAtmosphere");
+        RetainStellarTable("ProjectedStars.csv");
         CelestialScene Repeat       = Origin;
         Repeat.Configuration[10]    = {0, 1, 0, 0};
         Repeat.Configuration[11]    = {0, 0, 1, 0};
@@ -769,9 +894,12 @@ struct CelestialExecution
                << ",\n  \"moon_map_max_abs_error\": " << LunarMapError
                << ",\n  \"moon_surface_max_abs_error\": " << LunarSurfaceError
                << ",\n  \"solar_profile_max_abs_error\": " << SolarProfileError
-               << ",\n  \"five_flare_max_abs_error\": " << LensError
+               << ",\n  \"six_flare_max_abs_error\": " << LensError
                << ",\n  \"galactic_rotation_max_vector_error\": " << GalacticError
                << ",\n  \"corona_density_max_relative_error\": " << CoronaRelativeError
+               << ",\n  \"reference_bulge_max_abs_error\": " << ReferenceBulgeError
+               << ",\n  \"reference_nebula_max_abs_error\": " << ReferenceNebulaError
+               << ",\n  \"reference_psf_max_abs_error\": " << ReferencePsfError
                << ",\n  \"production_accepted\": false,\n  \"executed_entries\": [";
         for (unsigned Index = 0; Index < Entries.size(); ++Index)
             Output << (Index ? "," : "") << '"' << Entries[Index] << '"';
@@ -782,6 +910,9 @@ struct CelestialExecution
         Output << "},\n  \"captures\": [\n";
         for (Index = 0; Index < Captures.size(); ++Index)
             Output << (Index ? ",\n" : "") << "    " << Captures[Index];
+        Output << "\n  ],\n  \"diagnostics\": [\n";
+        for (Index = 0; Index < Diagnostics.size(); ++Index)
+            Output << (Index ? ",\n" : "") << "    " << Diagnostics[Index];
         Output << "\n  ]\n}\n";
         Enforce(bool(Output), "Cannot retain celestial Vulkan verification report");
         std::cout << "Celestial GPU verification completed: " << Assertions << " assertions, " << Captures.size()
@@ -800,9 +931,11 @@ int main(int Count, char** Arguments)
             "Usage: CelestialVulkan <shaders> <prepared-inputs> <Hipparcos.csv> <output> <driver> <validate|render>");
         CelestialScene Scene;
         Scene.LoadCatalogue(Arguments[3]);
+        Scene.LoadAuthoredCatalogue(std::filesystem::path(Arguments[2]) / "ReferenceStars.csv");
         CelestialExecution Execution(Arguments[5], Arguments[1], Arguments[2], Arguments[4]);
         Execution.Bake(Scene);
         Execution.VerifyPhysics(Scene);
+        Execution.VerifyRequestedReference(Scene);
         Execution.VerifyRenderControls(Scene);
         if (std::string(Arguments[6]) == "render")
             Execution.RetainCaptures(Scene, Arguments[3]);

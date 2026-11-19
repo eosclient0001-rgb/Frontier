@@ -1,10 +1,10 @@
 Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/CelestialAtmosphere
 Test project /home/user/Frontier/_ClaudeScratch/build/CelestialAtmosphere
     Start 1: CelestialNativePhysics
-1/2 Test #1: CelestialNativePhysics ...........   Passed    0.22 sec
+1/2 Test #1: CelestialNativePhysics ...........   Passed    0.27 sec
     Start 2: CelestialShaderReadback
-2/2 Test #2: CelestialShaderReadback ..........   Passed    4.91 sec
+2/2 Test #2: CelestialShaderReadback ..........   Passed    6.82 sec
 
 100% tests passed, 0 tests failed out of 2
 
-Total Test time (real) =   5.12 sec
+Total Test time (real) =   7.09 sec

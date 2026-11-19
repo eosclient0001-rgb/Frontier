@@ -62,11 +62,14 @@
     ],
     "exposure": 650,
     "exosphere_display_gain": 1,
-    "native_render_ms": 1904.666609,
-    "projected_catalogue_stars": 4512,
-    "float_fnv1a64": "7597470909063988991",
-    "native_float_sha256": "e402d7de24cc5c15ebc4e43c50d3895b5bd8a881b00508a4ca25bd7811ee9765",
-    "png_sha256": "1e0adc88609edcf654bfb19c80cfe98b230d13932dc6bba7a6508eb22e68d9d3",
+    "native_render_ms": 2427.869621,
+    "projected_catalogue_stars": 2343,
+    "authored_projected_stars": 2318,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "1037706927711400903",
+    "native_float_sha256": "6eee9e0791457b85255c867bbeae48e39e7c9f1f2301a9cf8c41fdda7d2f39b7",
+    "png_sha256": "b51bedb61de108429e326326cfa79b05950bf1f69a2991e8ca253da01352e99e",
     "image": "Images/SurfaceBeforeSunrise.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
@@ -133,11 +136,14 @@
     ],
     "exposure": 170,
     "exosphere_display_gain": 1,
-    "native_render_ms": 1298.262813,
-    "projected_catalogue_stars": 4050,
-    "float_fnv1a64": "174326023469011528",
-    "native_float_sha256": "6157e9e53e7c0eaef8943d1d1cdb526ee5fa0e8e8c04149beb3aa7410f07cd04",
-    "png_sha256": "4849b4def9e632a8db215ba077ac6078c01499540a46aa942d162c9e96a246ad",
+    "native_render_ms": 1781.300743,
+    "projected_catalogue_stars": 2976,
+    "authored_projected_stars": 2950,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "11658409475290331835",
+    "native_float_sha256": "cd2626e5c23b34a6ea15c05e85f5174a24215512e788beb0d0f5ee8a14fb9dff",
+    "png_sha256": "89a5f5542678534ea4f80df7231382aabe06cce12ef8042c92576504d3937fe7",
     "image": "Images/OrbitBeforeSunrise.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
@@ -204,11 +210,14 @@
     ],
     "exposure": 22,
     "exosphere_display_gain": 1,
-    "native_render_ms": 2093.363144,
-    "projected_catalogue_stars": 4332,
-    "float_fnv1a64": "11643169218310702742",
-    "native_float_sha256": "a8b8039644ac87e733b77f810eae768e0af212cc97bf7db3b2e060e0e1a166ad",
-    "png_sha256": "aad8e8a2e1ba288926302a2a6495b90897cf4bca28fd5ffaf4e9e71598e6a1d3",
+    "native_render_ms": 2651.39497,
+    "projected_catalogue_stars": 2545,
+    "authored_projected_stars": 2518,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "13698670383939284924",
+    "native_float_sha256": "b4112adc1b03091a856644de06a46d7cd1981adbf0a6d733d7ba8b0d313f502d",
+    "png_sha256": "d776116404aa3ea2bc2c2d782dbf1ffde255ce08a72810a5a1dc7c31935b7a38",
     "image": "Images/SurfaceSunrise.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
@@ -275,10 +284,13 @@
     ],
     "exposure": 18,
     "exosphere_display_gain": 1,
-    "native_render_ms": 1307.864768,
-    "projected_catalogue_stars": 4120,
-    "float_fnv1a64": "12646432639048539132",
-    "native_float_sha256": "918c3b31f7f961bd3359a7b5cc8e240b2c134bb7c40a4fe1254ccd9391551e6f",
+    "native_render_ms": 1850.152224,
+    "projected_catalogue_stars": 3114,
+    "authored_projected_stars": 3087,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "17405236994047545123",
+    "native_float_sha256": "5bd2bc8df7f955e7601dd5101d01e6e396e05f22b8f3ce75cadae1e33717bf34",
     "png_sha256": "f9517e28b815f923f3cec4d2a6c9b45accc2d5bd53432e34d1518b7623f0c670",
     "image": "Images/OrbitSunrise.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
@@ -346,11 +358,14 @@
     ],
     "exposure": 140,
     "exosphere_display_gain": 1,
-    "native_render_ms": 2639.966471,
-    "projected_catalogue_stars": 4391,
-    "float_fnv1a64": "16850661921616735895",
-    "native_float_sha256": "fb25c7996e7c1c51c9e887abdf041270f5abde978753b5925fda46ef428d889c",
-    "png_sha256": "841cc16e8e72c6b3fce367a1832cbf6253a2e58b09c45aa7e4c3ba00c9eea55c",
+    "native_render_ms": 2673.310692,
+    "projected_catalogue_stars": 2456,
+    "authored_projected_stars": 2430,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "2603537784982070122",
+    "native_float_sha256": "ed9141aa2628c255bfad73a486df7ec22b38094cf2809ba0778d9697bccc7e92",
+    "png_sha256": "969a182542019b08e4aa9891c3aab4ecb32c0a261fa059f4e2ea12b9c9f1348d",
     "image": "Images/SurfaceDawn.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
@@ -417,11 +432,14 @@
     ],
     "exposure": 18,
     "exosphere_display_gain": 1,
-    "native_render_ms": 2603.247685,
-    "projected_catalogue_stars": 4077,
-    "float_fnv1a64": "1564711587842729932",
-    "native_float_sha256": "89eb7c4b160692c7b428fd76d383d430f77f1c680b33ec1a814c3bf5fe0a078b",
-    "png_sha256": "b97a32c9c99b1ffe56bf382da5f5563b37edef8f06d6234959c96c2e8b2374f8",
+    "native_render_ms": 1836.252788,
+    "projected_catalogue_stars": 3066,
+    "authored_projected_stars": 3042,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "13032529713559712739",
+    "native_float_sha256": "5f511102beff66099023376cb52abd5abf0276fd9cddacaf779727c2993dd66c",
+    "png_sha256": "4aa44f53bfe62123f0ff9638db21996a3262c0cbaef61c2115f42e65b1b82a15",
     "image": "Images/OrbitDawn.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
@@ -488,11 +506,14 @@
     ],
     "exposure": 22,
     "exosphere_display_gain": 1,
-    "native_render_ms": 3430.832195,
-    "projected_catalogue_stars": 3986,
-    "float_fnv1a64": "1619850041717310331",
-    "native_float_sha256": "9d93a9334cc037f741986ab5257f444fb3ede4a54e6389ceea0ab8d61bae56d1",
-    "png_sha256": "c525893a7c1add360a4a4eb266d97eb0cc9e5c9de021587c1b20d7002a42a646",
+    "native_render_ms": 3139.530411,
+    "projected_catalogue_stars": 2863,
+    "authored_projected_stars": 2839,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "17323380292453557675",
+    "native_float_sha256": "b7923bacead6ec80b7eea0319dbc99e029ff624634e173821a82d0831c05ecb7",
+    "png_sha256": "60782ee6f05c821c5a81cef51cfeb04fcafd8a5e9532138a93df01e689a40c46",
     "image": "Images/SurfaceZenith.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
@@ -559,10 +580,13 @@
     ],
     "exposure": 18,
     "exosphere_display_gain": 1,
-    "native_render_ms": 2002.364087,
-    "projected_catalogue_stars": 4872,
-    "float_fnv1a64": "3120537172358876515",
-    "native_float_sha256": "0b6c88c7443f219c42673947d5ca4d35fa137856b374ba0710c7f6e0075f5b8b",
+    "native_render_ms": 1713.027713,
+    "projected_catalogue_stars": 1612,
+    "authored_projected_stars": 1600,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "5723285310825918694",
+    "native_float_sha256": "b630eecc92fa3bdf1dbfd50b39ba25780c9abcf649065af843cee066156f95e1",
     "png_sha256": "c50fb5cd26d1b54e36529c72e765dcb0be8341d22eeeb0358091d572448c92c1",
     "image": "Images/OrbitZenith.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
@@ -630,10 +654,13 @@
     ],
     "exposure": 22,
     "exosphere_display_gain": 1,
-    "native_render_ms": 3262.518455,
-    "projected_catalogue_stars": 4626,
-    "float_fnv1a64": "4333597204472581234",
-    "native_float_sha256": "800ff4a4dc88f5eddebc82970d11b7fcd507259fa291a666ef07390b2b821bef",
+    "native_render_ms": 3019.907386,
+    "projected_catalogue_stars": 3440,
+    "authored_projected_stars": 3411,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "11773449993829699797",
+    "native_float_sha256": "8c672f0cbec8575149d23c3f58ecc1de8d8c98d29d2c8bae9ba9b8b7b889ceb6",
     "png_sha256": "6c0dc4085e5de6634ea424045340f2b4fdb029069e1fb2b918b9331b2fa9c046",
     "image": "Images/SurfaceSunset.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
@@ -701,10 +728,13 @@
     ],
     "exposure": 18,
     "exosphere_display_gain": 1,
-    "native_render_ms": 1998.790936,
-    "projected_catalogue_stars": 3747,
-    "float_fnv1a64": "7191877538182381107",
-    "native_float_sha256": "124f802e021a28977d16c779e8890a0c44db047a03b281a99e5a9b54408ccfa0",
+    "native_render_ms": 1752.977665,
+    "projected_catalogue_stars": 1463,
+    "authored_projected_stars": 1443,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "9625748064755552894",
+    "native_float_sha256": "9c5aaa10c5929fdaac1935f33c069d7dfcb2c96b92960b77df2b51c3240f7fa0",
     "png_sha256": "603e99187e6227ef4208fb855693fab238f9495540cedff490d32948cf4c5149",
     "image": "Images/OrbitSunset.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
@@ -772,11 +802,14 @@
     ],
     "exposure": 650,
     "exosphere_display_gain": 1,
-    "native_render_ms": 2931.624539,
-    "projected_catalogue_stars": 4796,
-    "float_fnv1a64": "13909029265251653172",
-    "native_float_sha256": "60fad4fd9041c32ec358265bc747f465d2aa681aff40eec65c45c15ce6104f3f",
-    "png_sha256": "15b117d6bb7faa32b4c7c12aaa2acd671d2d9c7a8de993e2a235b090c5b118aa",
+    "native_render_ms": 3023.933206,
+    "projected_catalogue_stars": 3717,
+    "authored_projected_stars": 3687,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "17495384429222549406",
+    "native_float_sha256": "8fb13f5ec7c7b0dd71c7024d6539aebd4847e255a26189efb9a022bbf087ee5d",
+    "png_sha256": "9e34f513536ed36704e136dea59321ccd3e00dcaa6546ea0cc8b90197fa7ea67",
     "image": "Images/SurfaceDusk.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
@@ -843,10 +876,13 @@
     ],
     "exposure": 170,
     "exosphere_display_gain": 1,
-    "native_render_ms": 2083.417885,
-    "projected_catalogue_stars": 3850,
-    "float_fnv1a64": "12289731684662072315",
-    "native_float_sha256": "0ead2f908f41ee8eae310d5bd15946201aca2aa6a9267e5e37ddd3cd42efa607",
+    "native_render_ms": 1846.928169,
+    "projected_catalogue_stars": 1776,
+    "authored_projected_stars": 1754,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "5715685089445015259",
+    "native_float_sha256": "1fb7d5f79c6381e815b880967ea457acbeb0a1327e8bffdca2242bcac3428ece",
     "png_sha256": "487d6ca4f8eb99b591e38cc11d4414f2b06f8a3d249513e6c57567f09cf764b2",
     "image": "Images/OrbitDusk.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
@@ -914,8 +950,11 @@
     ],
     "exposure": 3,
     "exosphere_display_gain": 1,
-    "native_render_ms": 224.9169,
-    "projected_catalogue_stars": 5,
+    "native_render_ms": 128.94322,
+    "projected_catalogue_stars": 2,
+    "authored_projected_stars": 2,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "11766371479725480333",
     "native_float_sha256": "bffca2481b4ef46a26740e6c5d06b47be827c24fa22bbe4dd87f8db080fefb13",
     "png_sha256": "37392d06dbf9d501a21455e5a55b039bca317a1b0365480251ae235d5f1e6ce5",
@@ -985,8 +1024,11 @@
     ],
     "exposure": 10,
     "exosphere_display_gain": 1,
-    "native_render_ms": 173.908424,
-    "projected_catalogue_stars": 5,
+    "native_render_ms": 125.241773,
+    "projected_catalogue_stars": 2,
+    "authored_projected_stars": 2,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "6336914810829980276",
     "native_float_sha256": "84f5da3ee61aa062cd2eda15b9e57b1281d2a285e62c6d12926898057afb94b8",
     "png_sha256": "f43be4206632577419a287e5ce42bc0156615af06de225e49a14363b6581fd2f",
@@ -1056,8 +1098,11 @@
     ],
     "exposure": 24,
     "exosphere_display_gain": 1,
-    "native_render_ms": 248.259507,
-    "projected_catalogue_stars": 5,
+    "native_render_ms": 123.59878,
+    "projected_catalogue_stars": 2,
+    "authored_projected_stars": 2,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "16804965193615747365",
     "native_float_sha256": "45c83bddc82999c46909c26ed3284fc3a9bb21d392cc717d5a709577d8aa6146",
     "png_sha256": "a98ff47884da0e11eeb56624cac40e7108320e2b0882df27bdc9793849f73da2",
@@ -1127,8 +1172,11 @@
     ],
     "exposure": 10,
     "exosphere_display_gain": 1,
-    "native_render_ms": 229.568769,
-    "projected_catalogue_stars": 5,
+    "native_render_ms": 123.979657,
+    "projected_catalogue_stars": 2,
+    "authored_projected_stars": 2,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "8798689464482540133",
     "native_float_sha256": "c4feb7266e07e340b05503997bbab1feab4d68b21f6c6b20b0929658227f4aaf",
     "png_sha256": "987a6eadffe4d7f15783572dda5493e1e9b37a80eac1c91a6fab0e8a13d6fdca",
@@ -1198,8 +1246,11 @@
     ],
     "exposure": 10,
     "exosphere_display_gain": 100000000376830.0,
-    "native_render_ms": 261.736962,
-    "projected_catalogue_stars": 5,
+    "native_render_ms": 123.421845,
+    "projected_catalogue_stars": 2,
+    "authored_projected_stars": 2,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "8207485602907592647",
     "native_float_sha256": "e184ef97fa8c8cb3bc657bdb7723bf5524cc50fba23a960049a1b0209d9b39fd",
     "png_sha256": "1068be014b37349892ef71f9d5776a25bcd489f3741cd167782009bb6badce13",
@@ -1269,8 +1320,11 @@
     ],
     "exposure": 5e-05,
     "exosphere_display_gain": 0,
-    "native_render_ms": 266.388114,
-    "projected_catalogue_stars": 3,
+    "native_render_ms": 135.52439,
+    "projected_catalogue_stars": 1,
+    "authored_projected_stars": 1,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "8055737151244932248",
     "native_float_sha256": "fbc525cda3d5bb65bfe13606814aa8e833a228f441ea250bddd51c05028aa028",
     "png_sha256": "66a400322191afeb0e166c71f6418af3ac20655efa0916acd1d0e1a57cc94e1a",
@@ -1340,8 +1394,11 @@
     ],
     "exposure": 250,
     "exosphere_display_gain": 0,
-    "native_render_ms": 176.496335,
-    "projected_catalogue_stars": 22,
+    "native_render_ms": 97.547937,
+    "projected_catalogue_stars": 8,
+    "authored_projected_stars": 8,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "16221814296873547798",
     "native_float_sha256": "a57923978c3fbca7399be77aabe53ea78361b664b64c301444c44c62af72e00b",
     "png_sha256": "cee520af2b3ffa8e460f2d20ce4652098a9dab833815f9c7a2358823a25a1fca",
@@ -1411,8 +1468,11 @@
     ],
     "exposure": 24,
     "exosphere_display_gain": 0,
-    "native_render_ms": 118.107795,
-    "projected_catalogue_stars": 5637,
+    "native_render_ms": 277.820793,
+    "projected_catalogue_stars": 1857,
+    "authored_projected_stars": 1836,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "11998139712371779260",
     "native_float_sha256": "18cbbac53c91df915760e48af1354a5216ec10d7516da47bfa9b421fde44495a",
     "png_sha256": "f3e048f69e421b5f723e9938974904632bac9b78c22d78309a83930c701ad6f1",
@@ -1482,8 +1542,11 @@
     ],
     "exposure": 24,
     "exosphere_display_gain": 0,
-    "native_render_ms": 58.049382,
-    "projected_catalogue_stars": 5637,
+    "native_render_ms": 184.99258,
+    "projected_catalogue_stars": 1857,
+    "authored_projected_stars": 1836,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "621465521863851715",
     "native_float_sha256": "41f792592ba975a12c7b3675f1b6c29f9670e785655d9ad82c4faa00f98c851f",
     "png_sha256": "4e68dac02f5f10725d7cbac53fa8abd2895d37418178538bf55a344521f4e552",
@@ -1553,11 +1616,14 @@
     ],
     "exposure": 24,
     "exosphere_display_gain": 0,
-    "native_render_ms": 64.072115,
-    "projected_catalogue_stars": 5637,
-    "float_fnv1a64": "11769036707539146875",
-    "native_float_sha256": "309d0367619eb268f10683ee21f836850ecbdfbbd9509fa33c79b2cb6ec45a69",
-    "png_sha256": "db30b2eb182732c781cb16fb51e89df10b465349b7ca46aebcfd5c7464a0f94e",
+    "native_render_ms": 175.386179,
+    "projected_catalogue_stars": 1857,
+    "authored_projected_stars": 1836,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "5467328467910882081",
+    "native_float_sha256": "58ddbb2f099a9453c07b834afbab3d42022cdcab2892b98093e46e5023b28f2c",
+    "png_sha256": "d2eff7b39187b9cb7f0707bdcc14c37dc5b36f5149bd5b4d544c4adbb4374b05",
     "image": "Images/FlareAnamorphic.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
@@ -1624,8 +1690,11 @@
     ],
     "exposure": 24,
     "exosphere_display_gain": 0,
-    "native_render_ms": 72.122903,
-    "projected_catalogue_stars": 5637,
+    "native_render_ms": 175.467302,
+    "projected_catalogue_stars": 1857,
+    "authored_projected_stars": 1836,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "18142442125284348724",
     "native_float_sha256": "72346782f66d6755c87ec848f4933e17c3212f13db1ac720fb9790bc1dce317b",
     "png_sha256": "e710e72b5923928a5802a371d1416725d060058c7622fc6398c360de58c54edd",
@@ -1695,8 +1764,11 @@
     ],
     "exposure": 24,
     "exosphere_display_gain": 0,
-    "native_render_ms": 95.551504,
-    "projected_catalogue_stars": 5637,
+    "native_render_ms": 177.203765,
+    "projected_catalogue_stars": 1857,
+    "authored_projected_stars": 1836,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "11363853218978559521",
     "native_float_sha256": "35f8f14c289985c06bd3c98b80e2bae934acab7bfd36c56b00aea9b7c4614a9e",
     "png_sha256": "49b90ac9ee967529d4b2f3589f0a53c115e62d69b71ce6a477d97fa49dfd8de6",
@@ -1704,8 +1776,8 @@
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
   {
-    "slug": "FlareCombined",
-    "title": "All five lens components / additive irradiance response",
+    "slug": "FlareStarburst",
+    "title": "Starburst",
     "shader": "RenderLensFlare",
     "extent": [
       480,
@@ -1766,17 +1838,94 @@
     ],
     "exposure": 24,
     "exosphere_display_gain": 0,
-    "native_render_ms": 157.545825,
-    "projected_catalogue_stars": 5637,
-    "float_fnv1a64": "4499696334372826478",
-    "native_float_sha256": "0ac3fccda69df5490cc19badd16b13d37f95f995e1fd744874e41b137942c5a5",
-    "png_sha256": "1082a6e1d2f26bfcf48579aca49e4a1f59ff1f63a226f3598ef5f023133afddd",
+    "native_render_ms": 331.484521,
+    "projected_catalogue_stars": 1857,
+    "authored_projected_stars": 1836,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "515652626854319010",
+    "native_float_sha256": "c94d9a5519aaf466899904ae665955e26230775d1fb333517d49bb0d7632ff16",
+    "png_sha256": "efe6fb944455467185f690579a3149c04e441b3af457bcceb45ed22aa67662c2",
+    "image": "Images/FlareStarburst.png",
+    "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
+  },
+  {
+    "slug": "FlareCombined",
+    "title": "All six lens components / additive irradiance response",
+    "shader": "RenderLensFlare",
+    "extent": [
+      480,
+      270
+    ],
+    "planes": 2,
+    "julian_utc": 2461363.3333333,
+    "latitude_deg": -26.1885,
+    "longitude_deg": 28.3209,
+    "camera_km": [
+      0,
+      0,
+      6360.1
+    ],
+    "forward": [
+      1,
+      0,
+      0
+    ],
+    "right": [
+      0,
+      -1,
+      0
+    ],
+    "up": [
+      0,
+      0,
+      1
+    ],
+    "tangent": 0.53170943166148,
+    "sun": [
+      0.96570355591341,
+      -0.23619789687937,
+      0.10782947466232
+    ],
+    "moon": [
+      -0.69344946275738,
+      0.22980345916712,
+      0.68287496128964
+    ],
+    "moon_radius_rad": 0.0044959057650143,
+    "equatorial_to_local": [
+      [
+        -0.43603873252869,
+        0.39950361847878,
+        0.80639141798019
+      ],
+      [
+        0.89992719888687,
+        0.19243577122688,
+        0.39127936959267
+      ],
+      [
+        0.0011389671126381,
+        0.89630651473999,
+        -0.44343361258507
+      ]
+    ],
+    "exposure": 24,
+    "exosphere_display_gain": 0,
+    "native_render_ms": 397.435222,
+    "projected_catalogue_stars": 1857,
+    "authored_projected_stars": 1836,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "18019563998551443981",
+    "native_float_sha256": "55ad32c0466f4539384e06f1953bfaf40d962ffaa7054a12668c50fccd117ec5",
+    "png_sha256": "445cd87ab8882c2ef27e83633b15dd18dde5168455c0aa1d4f06eafba3fa931c",
     "image": "Images/FlareCombined.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
   {
     "slug": "FlareOccluded",
-    "title": "All five lens components / completely occluded source",
+    "title": "All six lens components / completely occluded source",
     "shader": "RenderLensFlare",
     "extent": [
       480,
@@ -1837,8 +1986,11 @@
     ],
     "exposure": 24,
     "exosphere_display_gain": 0,
-    "native_render_ms": 139.025562,
-    "projected_catalogue_stars": 5637,
+    "native_render_ms": 343.126802,
+    "projected_catalogue_stars": 1857,
+    "authored_projected_stars": 1836,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
     "float_fnv1a64": "895505431802508069",
     "native_float_sha256": "05cb5673568c6008cc3c9ec975f99ef956c0a414488b80b42e7b8181bb07b11c",
     "png_sha256": "ed09ecdd600c1ac48471ebdd3cec59c05ff5f317a17550bcabd795a994d636f5",
@@ -1847,15 +1999,15 @@
   },
   {
     "slug": "CatalogueGalaxySpace",
-    "title": "Measured Hipparcos stars / J2000 Milky Way contours / space",
+    "title": "Reference bulge and dust / 156 bright + 15200 authored stars",
     "shader": "RenderCelestialAtmosphere",
     "extent": [
       480,
       270
     ],
     "planes": 3,
-    "julian_utc": 2461363.3333333,
-    "latitude_deg": -26.1885,
+    "julian_utc": 2461363.0014755,
+    "latitude_deg": -26.356058576018,
     "longitude_deg": 28.3209,
     "camera_km": [
       0,
@@ -1863,70 +2015,73 @@
       6360.1
     ],
     "forward": [
-      -0.7626537660924,
-      -0.62366738226021,
-      -0.1714591186545
+      -0.69832770867634,
+      -0.25417049972151,
+      0.66913060635886
     ],
     "right": [
-      -0.63304195139717,
-      0.77411748964305,
+      -0.34202014332567,
+      0.93969262078591,
       0
     ],
     "up": [
-      -0.13272950250923,
-      -0.10854081505788,
-      0.98519123556304
+      0.62877709313742,
+      0.22885614589045,
+      0.74314482547739
     ],
-    "tangent": 0.83909963117728,
+    "tangent": 0.80333325379244,
     "sun": [
       0.95782628522115,
       0,
       0.28734788556635
     ],
     "moon": [
-      -0.69344946275738,
-      0.22980345916712,
-      0.68287496128964
+      0.94989515879445,
+      0.012364053439411,
+      0.31232405844158
     ],
-    "moon_radius_rad": 0.0044959057650143,
+    "moon_radius_rad": 0.0044481243983257,
     "equatorial_to_local": [
       [
-        -0.43603873252869,
-        0.39950361847878,
-        0.80639141798019
+        0.99762785434723,
+        -0.028197867795825,
+        -0.062797322869301
       ],
       [
-        0.89992719888687,
-        0.19243577122688,
-        0.39127936959267
+        -0.068788319826126,
+        -0.442896515131,
+        -0.89393001794815
       ],
       [
-        0.0011389671126381,
-        0.89630651473999,
-        -0.44343361258507
+        -0.0026057937648147,
+        0.89612919092178,
+        -0.44378560781479
       ]
     ],
-    "exposure": 200000000,
+    "exposure": 20000000,
     "exosphere_display_gain": 0,
-    "native_render_ms": 367.657103,
-    "projected_catalogue_stars": 8080,
-    "float_fnv1a64": "18374100654885868061",
-    "native_float_sha256": "8dc6599c02483f974c47ae997fcb9ca764483813d80f85190cb1ebed4b409037",
-    "png_sha256": "b571f49701407189560121f7b027297dff3e9a4e9937c9f3eb3b5e8ddffb4422",
+    "native_render_ms": 1041.737186,
+    "projected_catalogue_stars": 3464,
+    "authored_projected_stars": 3430,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "15411831158051890229",
+    "native_float_sha256": "df560560e6351148c9ac4ef8af1709a3721dfce0d4d853578b368532a13dcedc",
+    "png_sha256": "0798c35c30ca819266e71c3a3c5d155360ef9ab783ce20e49689c27a74cea8e6",
     "image": "Images/CatalogueGalaxySpace.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
   {
     "slug": "CatalogueStarsSpace",
-    "title": "Measured catalogue only / no synthetic stars",
+    "title": "Reference star catalogue / sharp cores and Moffat halos",
     "shader": "RenderCelestialAtmosphere",
     "extent": [
       480,
       270
     ],
     "planes": 3,
-    "julian_utc": 2461363.3333333,
-    "latitude_deg": -26.1885,
+    "julian_utc": 2461363.0014755,
+    "latitude_deg": -26.356058576018,
     "longitude_deg": 28.3209,
     "camera_km": [
       0,
@@ -1934,70 +2089,73 @@
       6360.1
     ],
     "forward": [
-      -0.7626537660924,
-      -0.62366738226021,
-      -0.1714591186545
+      -0.69832770867634,
+      -0.25417049972151,
+      0.66913060635886
     ],
     "right": [
-      -0.63304195139717,
-      0.77411748964305,
+      -0.34202014332567,
+      0.93969262078591,
       0
     ],
     "up": [
-      -0.13272950250923,
-      -0.10854081505788,
-      0.98519123556304
+      0.62877709313742,
+      0.22885614589045,
+      0.74314482547739
     ],
-    "tangent": 0.83909963117728,
+    "tangent": 0.80333325379244,
     "sun": [
       0.95782628522115,
       0,
       0.28734788556635
     ],
     "moon": [
-      -0.69344946275738,
-      0.22980345916712,
-      0.68287496128964
+      0.94989515879445,
+      0.012364053439411,
+      0.31232405844158
     ],
-    "moon_radius_rad": 0.0044959057650143,
+    "moon_radius_rad": 0.0044481243983257,
     "equatorial_to_local": [
       [
-        -0.43603873252869,
-        0.39950361847878,
-        0.80639141798019
+        0.99762785434723,
+        -0.028197867795825,
+        -0.062797322869301
       ],
       [
-        0.89992719888687,
-        0.19243577122688,
-        0.39127936959267
+        -0.068788319826126,
+        -0.442896515131,
+        -0.89393001794815
       ],
       [
-        0.0011389671126381,
-        0.89630651473999,
-        -0.44343361258507
+        -0.0026057937648147,
+        0.89612919092178,
+        -0.44378560781479
       ]
     ],
-    "exposure": 200000000,
+    "exposure": 20000000,
     "exosphere_display_gain": 0,
-    "native_render_ms": 358.411938,
-    "projected_catalogue_stars": 8080,
-    "float_fnv1a64": "10371471008781664934",
-    "native_float_sha256": "ab554607b722292e48dd685c7cdac7743b4636b5dce32cc00fb80872ee109ba4",
-    "png_sha256": "b35d49b87bcf2d0457cadb0892501b8f0815899a1b4678637ff5e562bf8d057d",
+    "native_render_ms": 978.957891,
+    "projected_catalogue_stars": 3464,
+    "authored_projected_stars": 3430,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "1617989999653026809",
+    "native_float_sha256": "3333b5d4ffe125c33d59b4049b601de728ef0f42a83d8d9de8207a7f0c8b7dbc",
+    "png_sha256": "c6114092bb997dd28bfc2c6bc048e8f29f330b386bb26615f0691206262e3ff3",
     "image": "Images/CatalogueStarsSpace.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
   {
     "slug": "GalaxyContoursSpace",
-    "title": "Pinned Milky Way geometry only / assigned surface photometry",
+    "title": "Reference galactic bulge and dust / no point stars",
     "shader": "RenderCelestialAtmosphere",
     "extent": [
       480,
       270
     ],
     "planes": 3,
-    "julian_utc": 2461363.3333333,
-    "latitude_deg": -26.1885,
+    "julian_utc": 2461363.0014755,
+    "latitude_deg": -26.356058576018,
     "longitude_deg": 28.3209,
     "camera_km": [
       0,
@@ -2005,70 +2163,73 @@
       6360.1
     ],
     "forward": [
-      -0.7626537660924,
-      -0.62366738226021,
-      -0.1714591186545
+      -0.69832770867634,
+      -0.25417049972151,
+      0.66913060635886
     ],
     "right": [
-      -0.63304195139717,
-      0.77411748964305,
+      -0.34202014332567,
+      0.93969262078591,
       0
     ],
     "up": [
-      -0.13272950250923,
-      -0.10854081505788,
-      0.98519123556304
+      0.62877709313742,
+      0.22885614589045,
+      0.74314482547739
     ],
-    "tangent": 0.83909963117728,
+    "tangent": 0.80333325379244,
     "sun": [
       0.95782628522115,
       0,
       0.28734788556635
     ],
     "moon": [
-      -0.69344946275738,
-      0.22980345916712,
-      0.68287496128964
+      0.94989515879445,
+      0.012364053439411,
+      0.31232405844158
     ],
-    "moon_radius_rad": 0.0044959057650143,
+    "moon_radius_rad": 0.0044481243983257,
     "equatorial_to_local": [
       [
-        -0.43603873252869,
-        0.39950361847878,
-        0.80639141798019
+        0.99762785434723,
+        -0.028197867795825,
+        -0.062797322869301
       ],
       [
-        0.89992719888687,
-        0.19243577122688,
-        0.39127936959267
+        -0.068788319826126,
+        -0.442896515131,
+        -0.89393001794815
       ],
       [
-        0.0011389671126381,
-        0.89630651473999,
-        -0.44343361258507
+        -0.0026057937648147,
+        0.89612919092178,
+        -0.44378560781479
       ]
     ],
-    "exposure": 200000000,
+    "exposure": 20000000,
     "exosphere_display_gain": 0,
-    "native_render_ms": 164.96857,
-    "projected_catalogue_stars": 8080,
-    "float_fnv1a64": "1798229727154781915",
-    "native_float_sha256": "692f2a1cd8f562d44ac9495b9c017217fd1fdf317dea1b4c1c40541aa616da58",
-    "png_sha256": "6ef03593d13b8d925979e3b70d5030f7854758185b5720032d18714b0e280f90",
+    "native_render_ms": 332.328461,
+    "projected_catalogue_stars": 3464,
+    "authored_projected_stars": 3430,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "18191625104941349077",
+    "native_float_sha256": "17dfdc739be5c97089b113446b6ea6484a1a6807b78322ecf22f3047d5d52d02",
+    "png_sha256": "7415bb5eba565498fb198d892db66b5bafb69642d831ee2647f8951030ae4d1f",
     "image": "Images/GalaxyContoursSpace.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   },
   {
     "slug": "CatalogueGalaxySurface",
-    "title": "Catalogue and galaxy through night atmosphere / Benoni 20 UTC",
+    "title": "Reference night composition / stars and dust through atmosphere",
     "shader": "RenderCelestialAtmosphere",
     "extent": [
       480,
       270
     ],
     "planes": 3,
-    "julian_utc": 2461363.3333333,
-    "latitude_deg": -26.1885,
+    "julian_utc": 2461363.0014755,
+    "latitude_deg": -26.356058576018,
     "longitude_deg": 28.3209,
     "camera_km": [
       0,
@@ -2076,25 +2237,99 @@
       6361.64
     ],
     "forward": [
-      0.81053793769939,
-      0.25888531043263,
-      0.52536334816222
+      -0.69832770867634,
+      -0.25417049972151,
+      0.66913060635886
     ],
     "right": [
-      0.30425667808545,
-      -0.95259008699461,
+      -0.34202014332567,
+      0.93969262078591,
       0
     ],
     "up": [
-      -0.50045591752963,
-      -0.15984530709969,
-      0.85087798914285
+      0.62877709313742,
+      0.22885614589045,
+      0.74314482547739
     ],
-    "tangent": 0.70020753820971,
+    "tangent": 0.80333325379244,
     "sun": [
-      -0.44270148127795,
-      -0.66522899951635,
-      -0.60123687235297
+      0.84804809615643,
+      0,
+      -0.5299192642332
+    ],
+    "moon": [
+      0.94989515879445,
+      0.012364053439411,
+      0.31232405844158
+    ],
+    "moon_radius_rad": 0.0044481243983257,
+    "equatorial_to_local": [
+      [
+        0.99762785434723,
+        -0.028197867795825,
+        -0.062797322869301
+      ],
+      [
+        -0.068788319826126,
+        -0.442896515131,
+        -0.89393001794815
+      ],
+      [
+        -0.0026057937648147,
+        0.89612919092178,
+        -0.44378560781479
+      ]
+    ],
+    "exposure": 30000000,
+    "exosphere_display_gain": 0,
+    "native_render_ms": 1962.961125,
+    "projected_catalogue_stars": 3464,
+    "authored_projected_stars": 3430,
+    "revised_stellar_psf": true,
+    "authored_catalogue_enabled": true,
+    "float_fnv1a64": "10511825720475934739",
+    "native_float_sha256": "3bca3f3ff09d330f05c6d9ac6fc0e57e30d5b97c3520d2b5379c54e0427fb028",
+    "png_sha256": "58d03e05e31eeb6a08669045b3b1bc886737324714623ecad00b19963a68d11c",
+    "image": "Images/CatalogueGalaxySurface.png",
+    "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
+  },
+  {
+    "slug": "MeasuredCatalogueSpace",
+    "title": "Measured-only validation / unchanged Hipparcos coordinates and flux",
+    "shader": "RenderCelestialAtmosphere",
+    "extent": [
+      480,
+      270
+    ],
+    "planes": 3,
+    "julian_utc": 2461363.3333333,
+    "latitude_deg": -26.1885,
+    "longitude_deg": 28.3209,
+    "camera_km": [
+      0,
+      0,
+      6360.1
+    ],
+    "forward": [
+      -0.7626537660924,
+      -0.62366738226021,
+      -0.1714591186545
+    ],
+    "right": [
+      -0.63304195139717,
+      0.77411748964305,
+      0
+    ],
+    "up": [
+      -0.13272950250923,
+      -0.10854081505788,
+      0.98519123556304
+    ],
+    "tangent": 0.83909963117728,
+    "sun": [
+      0.95782628522115,
+      0,
+      0.28734788556635
     ],
     "moon": [
       -0.69344946275738,
@@ -2120,13 +2355,16 @@
       ]
     ],
     "exposure": 200000000,
-    "exosphere_display_gain": 1,
-    "native_render_ms": 1387.707609,
-    "projected_catalogue_stars": 7255,
-    "float_fnv1a64": "12721584217219900960",
-    "native_float_sha256": "7cd53fec57fa299968df5f619fb52ca7296f9a0e0c8f3ac0199d7cf66fd3169a",
-    "png_sha256": "27b4be001148ba9a975398893929b1df0db3eee38b05ac3e0698bff30a843de3",
-    "image": "Images/CatalogueGalaxySurface.png",
+    "exosphere_display_gain": 0,
+    "native_render_ms": 424.31579,
+    "projected_catalogue_stars": 8080,
+    "authored_projected_stars": 0,
+    "revised_stellar_psf": false,
+    "authored_catalogue_enabled": false,
+    "float_fnv1a64": "10371471008781664934",
+    "native_float_sha256": "ab554607b722292e48dd685c7cdac7743b4636b5dce32cc00fb80872ee109ba4",
+    "png_sha256": "b35d49b87bcf2d0457cadb0892501b8f0815899a1b4678637ff5e562bf8d057d",
+    "image": "Images/MeasuredCatalogueSpace.png",
     "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"
   }
 ]

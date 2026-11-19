@@ -42,5 +42,8 @@
     }
   ],
   "coordinates": "J2000 equatorial longitude [-180,180], north at row zero",
-  "galaxy_photometry": "Assigned contour surface brightness, 0.60-degree Gaussian smoothing; not a measured HDR panorama"
+  "galaxy_photometry": "Pinned contours retained for astrometric controls; visible galaxy uses the requested authored bulge/dust model",
+  "reference_revision": "c519e983110100a9ed1c17bd3ff97a1c27bef3b9",
+  "reference_authored_stars": 15200,
+  "reference_raw_catalogue_sha256": "3e820e1492be91f1667b013994cfd7afabfff8768da0966b6dfd82d973a3f522"
 }

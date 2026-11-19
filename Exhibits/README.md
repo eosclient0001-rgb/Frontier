@@ -17,7 +17,7 @@ See `Documentation/Rules/Evidence.md` at repository root.
 
 ## Current validation
 
-- [Celestial atmosphere](CelestialAtmosphere/README.md): 30 actual Slang/Vulkan captures, Moon/Sun, five flares,
+- [Celestial atmosphere](CelestialAtmosphere/README.md): 32 actual Slang/Vulkan captures, Moon/Sun, six flares,
   six skies at surface/orbit and independent catalogue/ephemeris checks; experimental SwiftShader CPU scope.
 - `ControlCentre/`: typography/theme interactions, downloaded font inventory, Windows package inspection.
 - `UIFoundation/`: historical first-batch foundation, lifecycle, glyph, and CPU raster evidence.

@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                        CELESTIALATMOSPHERE.SLANG
 ============================================================================================================================================*/
-// 🧩 Executable surface/orbit atmosphere, same-texture Moon/exosphere, finite Sun/corona, catalogue stars and five reused lens components.
+// 🧩 Executable surface/orbit atmosphere, same-texture Moon/exosphere, finite Sun/corona, catalogue stars and six independent lens components.
 
 module CelestialAtmosphere;
 #include "CelestialFootprint.slang"
@@ -96,12 +96,15 @@ module CelestialAtmosphere;
                         SolarPayload(0).w,
                         SolarPayload(1).w,
                         SolarErf((A.x - SolarPayload(0).w) / (1.4142135623730951 * SolarPayload(1).w)));
-    if (Selection == 6) Result = float4(SolarLensFlare(A.xy, B.xy, float3(1)), 1);
+    if (Selection == 6) Result = float4(ExperimentalLensFlare(A.xy, B.xy, float3(1)), 1);
     if (Selection == 7) Result = float4(GalacticDirection(Unit(A.xyz)), SampleGalacticContours(Unit(A.xyz)));
     if (Selection == 8) Result = float4(StellarColour(A.x), Configuration(30).x * pow(10., -.4 * A.y));
     if (Selection == 9) Result = CoronaDensity(A.x);
     if (Selection == 10) Result = float4(LunarExosphere(Unit(A.xyz)), 1);
     if (Selection == 11) Result = float4(SolarAtmosphericRadiance(Unit(A.xyz)), 1);
     if (Selection == 12) Result = float4(SpectralDepth(A.xyz), AerosolPhase(B.x));
+    if (Selection == 13) Result = float4(GalacticBulgeRadiance(A.xyz), 1);
+    if (Selection == 14) Result = float4(StellarPsfDensity(A.x), 0, 0, 1);
+    if (Selection == 15) Result = float4(ReferenceNebulae(A.xyz), 1);
     OutputColour[Index] = Result;
 }

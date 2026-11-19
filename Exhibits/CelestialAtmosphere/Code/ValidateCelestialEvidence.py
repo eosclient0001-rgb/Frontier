@@ -38,22 +38,52 @@ def Execute():
     Gpu = json.loads((Results / "CelestialVulkan.json").read_text())
     Inspection = json.loads((Results / "CelestialInspection.json").read_text())
     Controls = json.loads((Results / "CelestialControls.json").read_text())
-    Assert(Native["passed"] and Native["assertions"] >= 51899, "Native physics checks are incomplete")
-    Assert(Gpu["passed"] and Gpu["physics_probes"] == 3282 and len(Gpu["executed_entries"]) == 10, "Not all shaders were exercised")
+    Assert(Native["passed"] and Native["assertions"] >= 53954, "Native physics checks are incomplete")
+    Assert(Gpu["passed"] and Gpu["physics_probes"] == 4423 and len(Gpu["executed_entries"]) == 10, "Not all shaders were exercised")
     Assert(not Gpu["production_accepted"] and not Inspection["production_accepted"], "Experimental software rendering was relabelled as production acceptance")
     Assert(Gpu["transmission_max_abs_error"] < .007 and Gpu["single_scattering_max_relative_error"] < .04, "Atmospheric gates changed")
     Assert(Gpu["moon_surface_max_abs_error"] < .0001 and Gpu["solar_profile_max_abs_error"] < .00002, "Lunar/solar gates changed")
-    Assert(Controls["passed"] and len(Controls["negative_controls"]) == 3 and all(C["rejected"] for C in Controls["negative_controls"]), "Negative controls did not fail")
-    Assert(Inspection["passed"] and Inspection["capture_count"] == 30, "Full-image independent inspection did not finish")
+    Assert(Controls["passed"] and len(Controls["negative_controls"]) == 6 and all(C["rejected"] for C in Controls["negative_controls"]), "Negative controls did not fail")
+    Assert(Inspection["passed"] and Inspection["capture_count"] == 32, "Full-image independent inspection did not finish")
     Assert(Inspection["moon"]["full_image_texture_sample_max_error"] < .00015, "Retained JPEG parity failed")
     Assert(Inspection["stars"]["catalogue_coordinate_rounding_matches"] == Inspection["stars"]["projected_sources"] == 8080, "Actual rendered catalogue correspondence failed")
     Assert(Inspection["stars"]["astropy_max_deg"] < .03 and Inspection["stars"]["integrated_image_relative_flux_error"] < .00002, "Stellar accuracy/flux gate failed")
     Assert(Inspection["galaxy"]["contour_weighted_abs_galactic_latitude_deg"] < 8 and
            Inspection["galaxy"]["brightness_fraction_above_20deg_galactic_latitude"] < .01, "Authentic Milky Way geometry gate failed")
+    SourceReference = json.loads((Results / "ReferenceSourceValidation.json").read_text())
+    Assert(SourceReference["passed"] and SourceReference["reference_revision"] == "c519e983110100a9ed1c17bd3ff97a1c27bef3b9" and
+           SourceReference["original_source_identities"] == 8 and SourceReference["byte_identical_native_exports"] == 5,
+           "Original upstream native source was not independently recompiled and compared")
+    Pin = json.loads((Root / "Experimental/CelestialAtmosphere/Content/ReferenceSource.json").read_text())
+    for Relative, Expected in Pin["retained_files_sha256"].items():
+        Assert(hashlib.sha256((Root / Relative).read_bytes()).hexdigest() == Expected, f"Requested upstream content changed: {Relative}")
+    Assert(Gpu["reference_bulge_max_abs_error"] < .0004 and Gpu["reference_nebula_max_abs_error"] < .00001 and
+           Gpu["reference_psf_max_abs_error"] < .00001, "Requested upstream bulge, nebulae or PSF port failed")
+    Assert(Native["six_flare_linearity_error"] < 1e-12 and Gpu["six_flare_max_abs_error"] < 2e-5 and
+           Inspection["six_flare_full_image_addition_error"] < 1e-6, "The sixth flare is missing, nonlinear or disagrees with native optics")
+    UpdatedStars = Inspection["updated_stars"]
+    Assert(UpdatedStars["reference_coordinate_photometry_provenance_matches"] == UpdatedStars["projected_sources"] == 3464 and
+           UpdatedStars["projected_authored_sources"] == 3430, "Updated stars lost pinned reference correspondence or provenance")
+    Assert(UpdatedStars["independent_full_image_relative_max_error"] < 2e-5 and
+           UpdatedStars["finite_support_image_relative_flux_error"] < 2e-5 and
+           UpdatedStars["finite_25x25_support_omitted_flux_max"] < .002, "Reference stellar PSF integration failed")
+    Lens = Inspection["lens_revision"]
+    Assert(Lens["reproduced_legacy_edge_to_peak_ratio"] > .1 and Lens["repaired_edge_to_peak_ratio"] < .01,
+           "Retained full-image evidence does not reproduce/fix the anamorphic defect")
+    Assert(abs(Lens["rotation_measured_rad"] - .4) < .01 and Lens["half_pixel_translation_integrated_radiance_error"] < .01,
+           "Anamorphic rotation or subpixel coverage failed")
+    Assert(Lens["sixth_starburst_measured_rays"] == 8 and Lens["original_diffraction_measured_rays"] == 6,
+           "The new starburst is a relabelled diffraction duplicate")
     Inputs = json.loads((Results / "CelestialInputs.json").read_text())
     Assert(Inputs["moon_source_sha256"] == hashlib.sha256((Root / Inputs["moon_source"]).read_bytes()).hexdigest(), "Same lunar texture was replaced")
     Captures = json.loads((Directory / "Captures.json").read_text())
-    Assert(len(Captures) == 30 and len({C["slug"] for C in Captures}) == 30, "Native capture coverage is incomplete")
+    Assert(len(Captures) == 32 and len({C["slug"] for C in Captures}) == 32, "Native capture coverage is incomplete")
+    Continuity = json.loads((Results / "CelestialContinuity.json").read_text())
+    Assert(Continuity["passed"] and Continuity["byte_identical_native_pngs"] == len(Continuity["preserved_views"]) == 13,
+           "Preserved Moon/Sun/optics/measured-catalogue views changed from their delivered baseline")
+    for Slug, Identity in Continuity["preserved_views"].items():
+        Assert(hashlib.sha256((Directory / "Images" / f"{Slug}.png").read_bytes()).hexdigest() == Identity["sha256"],
+               "Preserved PNG no longer matches its original baseline identity")
     Radiance = Numpy.load(Results / "NativeRadiance.npz", allow_pickle=False)
     Moments = {"BeforeSunrise": -10, "Sunrise": 0, "Dawn": -4, "Zenith": 90, "Sunset": 0, "Dusk": -6}
     for C in Captures:
@@ -69,17 +99,28 @@ def Execute():
                 Elevation = Numpy.degrees(Numpy.arcsin(C["sun"][2]))
                 Assert(abs(Elevation - Moments[Slug[len(View):]]) < .01, f"Incorrect actual solar elevation for {Slug}")
                 Assert(abs(C["camera_km"][2] - (6361.64 if View == "Surface" else 6760)) < 1e-6, "Viewpoint altitude changed")
-    for Slug, Plane in [("MoonFull", 0), ("MoonExospherePhysical", 2), ("SunDisc", 1), ("SolarCorona", 0), ("CatalogueStarsSpace", 0)]:
+    for Slug, Plane in [("MoonFull", 0), ("MoonExospherePhysical", 2), ("SunDisc", 1), ("SolarCorona", 0), ("MeasuredCatalogueSpace", 0)]:
         A = Radiance[f"Full{Slug}"]
         Assert(A.shape == (270, 480, 4) and A.dtype == Numpy.dtype("float32"), "Selected full HDR plane is missing")
         Assert(Numpy.array_equal(A.reshape(-1, 4)[Radiance[f"{Slug}Indices"]], Radiance[Slug][Plane]), "Lossless full plane differs from its native probes")
+    Assert(len(Gpu["diagnostics"]) == 3, "Missing anamorphic defect/rotation/subpixel native captures")
+    for C in Gpu["diagnostics"]:
+        A = Radiance[C["slug"]]
+        Assert(A.shape == (2, 1024, 4) and A.dtype == Numpy.dtype("float32") and Numpy.isfinite(A).all(),
+               "Missing exact diagnostic Float32 native samples")
+    Correspondence = Numpy.genfromtxt(Results / "ReferencePortProbes.csv", delimiter=",", names=True)
+    Assert(len(Correspondence) == 757, "Missing actual native/GPU upstream probe pairs")
+    for Selection, Count, Gate in [(13, 517, .0004), (14, 121, .00001), (15, 119, .00001)]:
+        Rows = Correspondence[Correspondence["selection"] == Selection]
+        Error = max(float(Numpy.abs(Rows[f"gpu_{Channel}"] - Rows[f"reference_{Channel}"]).max()) for Channel in ["r", "g", "b"])
+        Assert(len(Rows) == Count and Error < Gate, "Retained upstream/GPU native pairs exceed their original gates")
     Table = Radiance["AtmosphericTables"].reshape(-1, 4)
     Multiple = Table[256 * 64:].reshape(16, 32, 4)
     Assert(Numpy.max(Multiple[:, :5, :3]) == 0 and Numpy.max(Multiple[:, :, 3]) < .98, "Deep-night/energy regression reappeared")
     Reflection = json.loads((Results / "ShaderAbi.json").read_text())
     Assert(len(Reflection) == 10 and all(C["push_bytes"] == 128 and C["storage_slots"] == list(range(8)) for C in Reflection.values()), "Shader ABI evidence changed")
     Report = {"passed": True, "assertions": Assertions, "source_identities": len(Manifest["working_tree_sources"]),
-              "retained_file_identities": len(Manifest["retained_files_sha256"]), "native_captures": 30,
+              "retained_file_identities": len(Manifest["retained_files_sha256"]), "native_captures": 32,
               "float_probes_per_layer": 1024, "full_float_planes": 5, "source_and_evidence_integrity": True,
               "production_accepted": False}
     (Results / "CelestialEvidence.json").write_text(json.dumps(Report, indent=2) + "\n", encoding="utf-8")

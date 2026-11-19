@@ -1,0 +1,62 @@
+{
+  "repository": "SultanAladin/Frontier",
+  "requested_branch": "arena/a1dad11b-frontier",
+  "revision": "c519e983110100a9ed1c17bd3ff97a1c27bef3b9",
+  "provisioned_sources": {
+    "Internal/Graphics/Atmosphere/CelestialFieldSolver.cpp": {
+      "git_blob": "a4c925fd88464127e600e6646b9a814fda67e008",
+      "sha256": "3c91a4973f6520b0b0c51d3b01b82b68bee0a04cb44f93ca1a5597920bbd4538"
+    },
+    "Internal/Graphics/Atmosphere/CelestialFieldSolver.h": {
+      "git_blob": "0f08f4f78fecdd50ce98a57bd9a08c15a0e84360",
+      "sha256": "8ca0c0553da58ea48e6e8af64c5f2f806625921d1d1ba9201e70547da5f68989"
+    },
+    "Internal/Graphics/Atmosphere/AtmosphereProfile.h": {
+      "git_blob": "dfc4a503213953f2935134106ab0d880409de4dd",
+      "sha256": "4d6f3ce28865156c80475abc282b6e12a6812480c99bf2bab2327f7120c4cbff"
+    },
+    "Internal/Graphics/Atmosphere/AtmosphericScatteringSolver.h": {
+      "git_blob": "fc73e079fe4ab693daf34003e9655eca6aa88202",
+      "sha256": "8e50d6406d46e163d539549154488b295fc3e3b0cf54b51b97a14771c600f602"
+    },
+    "Internal/Graphics/Atmosphere/AtmosphericFlowField.h": {
+      "git_blob": "6e5f9c30fc68616d2915feb68f8da264b523f6e1",
+      "sha256": "973f6e3d67d34a627bae21ab1e83e7a7698ccea1cb206ba5222fee468fd8af66"
+    },
+    "Internal/Graphics/Atmosphere/VolumetricCloudSolver.h": {
+      "git_blob": "045a38647605dff005a2f359ce67cb8b5836f438",
+      "sha256": "92faa4d888eda433530e5bd8e91c963e21c02059c0eff7c9f8aedeee32c0b099"
+    },
+    "Internal/Graphics/Atmosphere/VolumetricFogSolver.h": {
+      "git_blob": "dd0175f1c45e8e726b9307e11edc18878382b156",
+      "sha256": "97ac09fbed21898cab319dce79ff9c97295c22939f7c30b608995ace3e63c2e7"
+    },
+    "Internal/EngineContext/Math/LinearAlgebra_Float32.h": {
+      "git_blob": "b26c454aed435e334a17f6c78e7ab6eceac90e25",
+      "sha256": "2cfada20b87429ae2a1ab0659d50b90b2545750f1e01220c777a3bc285b60b5e"
+    }
+  },
+  "retained_files_sha256": {
+    "Experimental/CelestialAtmosphere/Content/ReferenceStars.csv.gz": "b7cfbf69d8dd8460ecca7a74c1a16a54f1b68a9f0871a72a70885602b39cd652",
+    "Exhibits/CelestialAtmosphere/Results/ReferenceGalaxy.csv": "818809de9a525d7d2f6ae2822bee6b73324823e30cd3043ada4e363712a767e7",
+    "Exhibits/CelestialAtmosphere/Results/ReferencePsf.csv": "d3ea4d0dba5b259bbc0337da7a8f6c408feab93536f45b5fa9b4a4fc494992e4",
+    "Exhibits/CelestialAtmosphere/Results/ReferenceBasis.csv": "5c7d679897600c4e051198bfb7ef7aee53a9637e2dbce957f8584f2458e16b97",
+    "Exhibits/CelestialAtmosphere/Images/ReferenceGalacticBulge.png": "1409e371d124467794f3fa7892f5525c1e181711d7bf85acac6bfaf9c24ec2b1",
+    "Exhibits/CelestialAtmosphere/Results/ReferenceNebulae.csv": "30d35b01aa89d8dd7ea1633faf6106421f74d0bb4b2d71869b34f9829d1b465b"
+  },
+  "raw_exports_sha256": {
+    "ReferenceStars.csv": "3e820e1492be91f1667b013994cfd7afabfff8768da0966b6dfd82d973a3f522",
+    "ReferenceGalaxy.csv": "818809de9a525d7d2f6ae2822bee6b73324823e30cd3043ada4e363712a767e7",
+    "ReferencePsf.csv": "d3ea4d0dba5b259bbc0337da7a8f6c408feab93536f45b5fa9b4a4fc494992e4",
+    "ReferenceBasis.csv": "5c7d679897600c4e051198bfb7ef7aee53a9637e2dbce957f8584f2458e16b97",
+    "ReferenceNebulae.csv": "30d35b01aa89d8dd7ea1633faf6106421f74d0bb4b2d71869b34f9829d1b465b"
+  },
+  "catalogue": {
+    "bright_stars": 156,
+    "authored_deep_stars": 15200,
+    "total": 15356,
+    "coordinates": "J2000 equatorial; no proper motion. Authored deep-star positions are not measured astrometry."
+  },
+  "galaxy": "Requested native solver bulge, star clouds, Great Rift and reddened filamentary dust. Authored surface photometry, not a measured HDR map.",
+  "licence": "No project-wide licence grant found at the requested revision; attribution and existing ownership qualifications are preserved."
+}

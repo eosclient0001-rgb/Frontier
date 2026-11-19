@@ -26,7 +26,7 @@ async function Execute()
         }, Slug);
         Assert.equal(await Page.locator('#Failure').isVisible(), false);
         Assert.equal(await Page.locator('#Capture').evaluate(Picture => Picture.naturalHeight), 270);
-        Assert.match(await Page.locator('#Status').innerText(), /30 verified/);
+        Assert.match(await Page.locator('#Status').innerText(), /32 verified/);
         Seen.add(Slug);
     }
     try
@@ -52,6 +52,10 @@ async function Execute()
                 await Page.locator('#Scene').selectOption(Slug); await Ready(Slug);
                 if (Slug === 'MoonExosphereAmplified') Assert.match(await Page.locator('#Warning').innerText(), /NOT a physical-density/);
                 if (Slug === 'MoonExospherePhysical') Assert.match(await Page.locator('#Warning').innerText(), /effectively invisible/);
+                if (Category === 'Night')
+                {
+                    Assert.match(await Page.locator('#Warning').innerText(), Slug === 'MeasuredCatalogueSpace' ? /MEASURED-ONLY/ : /15,200 AUTHORED/);
+                }
                 if (Category === 'Optics')
                 {
                     await Page.locator('#Isolate').check();
@@ -60,7 +64,7 @@ async function Execute()
                 }
             }
         }
-        Assert.equal(Seen.size, 30);
+        Assert.equal(Seen.size, 32);
         await Page.locator('[data-category="Moon"]').click(); await Ready('MoonFull');
         await Page.locator('#Next').click(); await Ready('MoonQuarter');
         await Page.locator('#Previous').click(); await Ready('MoonFull');
@@ -72,7 +76,10 @@ async function Execute()
             const Response = await Page.request.get(Link);
             Assert.equal(Response.ok(), true, `Broken viewer link ${Link}`);
         }
+        await Page.locator('[data-category="Night"]').click(); await Ready('CatalogueGalaxySpace');
+        Assert.match(await Page.locator('.Metric').last().innerText(), /HIPPARCOS VALIDATION/);
         await Page.screenshot({path: Path.join(Destination, 'Images/CelestialViewer.png'), fullPage: true});
+        await Page.locator('[data-category="Moon"]').click(); await Ready('MoonFull');
         await Page.setViewportSize({width: 390, height: 844});
         await Page.emulateMedia({reducedMotion: 'reduce'});
         await Page.locator('#Scene').selectOption('MoonExosphereAmplified'); await Ready('MoonExosphereAmplified');
@@ -87,7 +94,7 @@ async function Execute()
         Assert.match(await Changed.locator('#Failure').innerText(), /identity mismatch/);
         Assert.equal(await Changed.locator('#Capture').isVisible(), false); await Changed.close();
         Assert.deepEqual(Errors, []);
-        const Report = {passed: true, native_views: Seen.size, isolated_lens_views: 7, viewpoints: 2,
+        const Report = {passed: true, native_views: Seen.size, isolated_lens_views: 8, viewpoints: 2,
             diagnostic_labels: true, keyboard_and_thumbnails: true, mobile: [390,844], reduced_motion: true,
             live_links: Links.length, missing_capture_rejected: true, changed_image_rejected: true,
             browser: await Browser.version(), renderer_scope: 'Retained native captures, not browser-generated skies'};

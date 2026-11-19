@@ -37,7 +37,7 @@ footer{border-top:1px solid #233144;margin-top:32px;padding-top:19px;display:fle
 <body>
 <div class="Page">
 <header><div><p class="Eyebrow">FRONTIER / EXPERIMENTAL RENDERING</p><h1>Celestial atmosphere</h1>
-<p class="Subtitle">Six skies. Two viewpoints. One measured star catalogue.<br>Actual C++ / Slang / Vulkan readbacks — not generated artwork or a browser renderer.</p></div>
+<p class="Subtitle">Six skies. Two viewpoints. The requested galactic bulge.<br>Actual C++ / Slang / Vulkan readbacks — not generated artwork or a browser renderer.</p></div>
 <div id="Status" class="Status" role="status">Checking capture identities…</div></header>
 <div id="Failure" class="Failure" role="alert" hidden></div>
 <div class="Layout">
@@ -47,7 +47,7 @@ footer{border-top:1px solid #233144;margin-top:32px;padding-top:19px;display:fle
 <button data-category="Sun" aria-pressed="false"><span class="Number">03</span>Sun</button>
 <button data-category="Optics" aria-pressed="false"><span class="Number">04</span>Lens optics</button>
 <button data-category="Night" aria-pressed="false"><span class="Number">05</span>Stars &amp; galaxy</button>
-<p>30 native views<br>480 × 270 pixels<br>10 executed Slang entries<br><br>SwiftShader CPU Vulkan.<br>Not Windows / physical-GPU / production-editor acceptance.</p>
+<p>32 native views<br>480 × 270 pixels<br>10 executed Slang entries<br><br>SwiftShader CPU Vulkan.<br>Not Windows / physical-GPU / production-editor acceptance.</p>
 </nav>
 <main>
 <div class="Toolbar"><div class="Viewpoints" id="Viewpoints"><button data-view="Surface" aria-pressed="true">Inside atmosphere</button><button data-view="Orbit" aria-pressed="false">400 km orbit</button></div>
@@ -57,11 +57,11 @@ footer{border-top:1px solid #233144;margin-top:32px;padding-top:19px;display:fle
 <div class="Below"><div><h2 id="Title">Loading captures</h2><p class="Description" id="Description">The main capture is displayed only after its SHA-256 matches the retained evidence.</p></div>
 <div class="Arrows"><button id="Previous" aria-label="Previous capture">←</button><button id="Next" aria-label="Next capture">→</button></div></div>
 <p id="Warning" class="Warning" hidden></p>
-<div class="Metrics"><div class="Metric"><span id="MetricLabel0">SOLAR ELEVATION</span><strong id="Metric0">—</strong></div><div class="Metric"><span>OBSERVER ALTITUDE</span><strong id="Metric1">—</strong></div><div class="Metric"><span>DISPLAY EXPOSURE</span><strong id="Metric2">—</strong></div><div class="Metric"><span>RENDERED STELLAR ERROR</span><strong id="Metric3">—</strong></div></div>
+<div class="Metrics"><div class="Metric"><span id="MetricLabel0">SOLAR ELEVATION</span><strong id="Metric0">—</strong></div><div class="Metric"><span>OBSERVER ALTITUDE</span><strong id="Metric1">—</strong></div><div class="Metric"><span>DISPLAY EXPOSURE</span><strong id="Metric2">—</strong></div><div class="Metric"><span>HIPPARCOS VALIDATION ERROR</span><strong id="Metric3">—</strong></div></div>
 <div id="Thumbs" class="Thumbs" aria-label="Native capture choices"></div>
 </main></div>
-<footer><span>Experimental models. Physically faint lunar gas is invisible at nominal scale; x10¹⁴ is a diagnostic only.<br>Milky Way geometry is authentic; assigned surface brightness is not a measured HDR panorama.</span>
-<div class="Links"><a href="README.md">Methods &amp; limits</a><a href="Images/SkyStates.png">Six skies</a><a href="Images/FiveFlares.png">Five flares</a><a href="Results/CelestialInspection.json">Accuracy report</a><a href="Results/NativeRadiance.npz" download>Float32 evidence</a></div></footer>
+<footer><span>Experimental models. Physically faint lunar gas is invisible at nominal scale; x10¹⁴ is a diagnostic only.<br>Reference galaxy and deep stars are authored. A separate measured-only Hipparcos view preserves astrometric validation.</span>
+<div class="Links"><a href="README.md">Methods &amp; limits</a><a href="Images/SkyStates.png">Six skies</a><a href="Images/SixFlares.png">Six flares</a><a href="Results/CelestialInspection.json">Accuracy report</a><a href="Results/NativeRadiance.npz" download>Float32 evidence</a></div></footer>
 </div>
 <script>
 'use strict';
@@ -161,10 +161,11 @@ async function RefreshCapture()
         else if (Capture.slug === 'MoonExospherePhysical') Warning = 'Nominal optically thin lunar gas is effectively invisible. No visible blue atmosphere should appear at this scale. The density profile is representative, not a measured LADEE exosphere model.';
         else if (Capture.slug.includes('Zenith')) Warning = '90° zenith is an ideal subsolar-site calibration, not Benoni at solar noon. Other named sky views use the Benoni ephemeris on 2026-11-18.';
         else if (Capture.slug === 'SolarCorona') Warning = 'Coronal exposure with the photosphere masked by a virtual coronagraph. Quiet-Sun density is unchanged; the chromospheric colour is illustrative.';
-        else if (Category === 'Night') Warning = 'Measured Hipparcos/XHIP stars; authentic Milky Way contour geometry with assigned, smoothed photometry. No measured HDR panorama, proper motion or observed-sky claim.';
-        else if (Category === 'Optics') Warning = 'Unmeasured parametric lens. Five terms are individually rendered, additive and source-occlusion tested; this is not calibration of a physical camera.';
+        else if (Capture.slug === 'MeasuredCatalogueSpace') Warning = 'MEASURED-ONLY VALIDATION — original 41,359-row Hipparcos/XHIP catalogue. No authored additions; original Gaussian photometry gate. Proper motion, nutation, refraction and stellar parallax are not modelled.';
+        else if (Category === 'Night') Warning = 'REQUESTED REFERENCE — c519e983: 156 rounded bright-star entries + 15,200 AUTHORED deep-field stars, with sharp cores and Moffat halos. The bulge, nebulae and dust are procedural photometry, not a measured HDR panorama. Authored stars are not new catalogue measurements.';
+        else if (Category === 'Optics') Warning = 'Unmeasured parametric lens. Six terms are individually rendered, additive and source-occlusion tested. Eight-point star-filter burst is separate from six-ray aperture diffraction. The anamorphic streak has finite tapered reach and pixel-area coverage.';
         Retrieve('Warning').hidden = !Warning; Retrieve('Warning').textContent = Warning;
-        Retrieve('Status').textContent = '30 verified native captures';
+        Retrieve('Status').textContent = `${Captures.length} verified native captures`;
     }
     catch (Failure) {if (Ticket === Serial) Fail(Failure.message);}
 }
@@ -182,7 +183,7 @@ async function Initialize()
         Integrity = await ManifestResponse.json(); const CaptureBytes = await CaptureResponse.arrayBuffer();
         if (await Hash(CaptureBytes) !== Integrity.retained_files_sha256['Captures.json']) throw new Error('Capture list identity mismatch.');
         Captures = JSON.parse(new TextDecoder().decode(CaptureBytes)); Inspection = await InspectionResponse.json();
-        if (Captures.length !== 30 || !Inspection.passed) throw new Error('Full native capture inspection has not passed.');
+        if (Captures.length !== 32 || !Inspection.passed) throw new Error('Full native capture inspection has not passed.');
         document.querySelectorAll('[data-category]').forEach(Button => Button.addEventListener('click',() => SelectCategory(Button.dataset.category)));
         document.querySelectorAll('[data-view]').forEach(Button => Button.addEventListener('click',() => {Current = Current.replace(View,Button.dataset.view); View = Button.dataset.view; RefreshChoices();}));
         Retrieve('Scene').addEventListener('change',Event => {Current = Event.target.value; RefreshCapture();});

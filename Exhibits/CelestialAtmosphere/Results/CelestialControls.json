@@ -7,8 +7,8 @@
       "exit_code": 1,
       "gate": "GPU solar limb/radial blur",
       "actual_stderr": "Solar profile 99 angle 0.00461053 actual 0.433969 expected 0.433992 error 2.3132e-05 radius 0.0046524 sigma 3.5e-05 erf -0.768435\nCelestial Vulkan failure: GPU solar limb/radial blur does not match double erfc/limb law",
-      "modified_source_sha256": "4a586746285d4b75436e51051732ef7c067c152d8eb732f216339b28eda572d3",
-      "modified_spirv_sha256": "fa5c543b6b50b279a69ccf999ba0040b88855fb98278a686c6e9c6dc43d288f1"
+      "modified_source_sha256": "a22c532bbe6298cc01c2261ceda25a4cc931536e1dfd9fef0b46b4a670c59c5f",
+      "modified_spirv_sha256": "ddafb477d67fa0db19d3f562217b33e8779501c6b6fe033a72037597ed756854"
     },
     {
       "category": "RoundedGroundLeak",
@@ -20,10 +20,33 @@
       "modified_spirv_sha256": "719f501cf7a06e2489f566f51487033418d82d2f322683c20d0e83459d040c5f"
     },
     {
+      "category": "MissingGalacticDust",
+      "rejected": true,
+      "exit_code": 1,
+      "gate": "Slang port disagrees with the original requested upstream",
+      "actual_stderr": "Celestial Vulkan failure: Slang port disagrees with the original requested upstream native evaluator: ReferenceGalaxy.csv",
+      "modified_source_sha256": "1f1449d84a86fc56b27bfb0fbfc0d2e88da5530b07a85a1e47dd1d0ccb087f84",
+      "modified_spirv_sha256": "b642905439aff2eff23163c0c61d4f9a6fa0648669fd16a9784af11e09f3127f"
+    },
+    {
       "category": "PlanarContourClosure",
       "rejected": true,
       "gate": "Pinned equatorial contours are mirrored or placed off the real Milky Way",
-      "modified_preparation_sha256": "f6ad16c4c81ba46e7c59048a86bd5374721d512b91b76c06ed107d2172d31096"
+      "modified_preparation_sha256": "fec3fcacee35a4ba47d1bbb48585b0108119ec5d7dbe54a9689b587b6ba5b720"
+    },
+    {
+      "category": "RejectedAnamorphicImage",
+      "rejected": true,
+      "gate": "The reproduced edge-to-edge anamorphic defect was not repaired",
+      "actual_native_replacement": "AnamorphicLegacy",
+      "replacement_float_sha256": "309d0367619eb268f10683ee21f836850ecbdfbbd9509fa33c79b2cb6ec45a69"
+    },
+    {
+      "category": "DuplicatedSixRayStarburst",
+      "rejected": true,
+      "gate": "The sixth burst is not visibly distinct from six-ray diffraction",
+      "actual_native_replacement": "FlareDiffraction",
+      "replacement_float_sha256": "41f792592ba975a12c7b3675f1b6c29f9670e785655d9ad82c4faa00f98c851f"
     }
   ],
   "production_accepted": false

@@ -19,6 +19,7 @@ from astropy.time import Time
 from astropy.utils import iers
 import numpy as Numpy
 from PIL import Image, ImageDraw, ImageFont
+from InspectCelestialRevision import VerifyUpdatedStars, VerifyLensRevision
 
 Root = Path(__file__).resolve().parents[3]
 iers.conf.auto_download = False
@@ -137,7 +138,7 @@ def VerifyMoon(Captures, Raw):
 # ------------------------------------------------------------------------------------------------------------------------
 
 def VerifyStars(Captures, Raw, Directory):
-    C = Captures["CatalogueStarsSpace"]
+    C = Captures["MeasuredCatalogueSpace"]
     Table = Numpy.genfromtxt(Directory / "ProjectedStars.csv", delimiter=",", names=True)
     Direction = Numpy.stack([Table[Name] for Name in ["east", "north", "up"]], axis=-1)
     Depth = Direction @ Numpy.asarray(C["forward"])
@@ -155,7 +156,7 @@ def VerifyStars(Captures, Raw, Directory):
         MassX = .5 * (math.erf((480 - Row["pixel_x"]) / (math.sqrt(2) * .75)) - math.erf(-Row["pixel_x"] / (math.sqrt(2) * .75)))
         MassY = .5 * (math.erf((270 - Row["pixel_y"]) / (math.sqrt(2) * .75)) - math.erf(-Row["pixel_y"] / (math.sqrt(2) * .75)))
         ExpectedFieldFlux += Row["flux"] * MassX * MassY
-    ImageLuminance = Raw["CatalogueStarsSpace"][0, :, :, :3] @ Numpy.array([.2126, .7152, .0722])
+    ImageLuminance = Raw["MeasuredCatalogueSpace"][0, :, :, :3] @ Numpy.array([.2126, .7152, .0722])
     ObservedFieldFlux = float(Numpy.sum(ImageLuminance * SolidAngles(C)))
     FieldFluxError = abs(ObservedFieldFlux / ExpectedFieldFlux - 1)
     Assert(FieldFluxError < 2e-5, "Full-image star PSFs lose flux at bin, pixel or image boundaries")
@@ -217,7 +218,7 @@ def VerifyGalaxy(Directory, Inputs):
     Assert(MeanLatitude < 8 and OffPlane < .01, "Pinned equatorial contours are mirrored or placed off the real Milky Way")
     return {"gpu_rotation_astropy_vector_error": RotationError, "contour_weighted_abs_galactic_latitude_deg": MeanLatitude,
             "brightness_fraction_above_20deg_galactic_latitude": OffPlane,
-            "photometry": "assigned surface brightness on Jose R. Vieira/d3-celestial outlines; not a measured panorama"}
+            "photometry": "Contours are retained for independent orientation controls; the visible galaxy is the requested authored c519e983 bulge/dust port"}
 
 
 # ------------------------------------------------------------------------------------------------------------------------
@@ -232,7 +233,7 @@ def Font(Size):
     return ImageFont.truetype(str(Location), Size) if Location else ImageFont.load_default(size=Size)
 
 
-def Sheet(Location, Captures, Selected, Images, Columns, Heading, Subheading):
+def Sheet(Location, Captures, Selected, Images, Columns, Heading, Subheading, Isolated=False):
     Width, Height, Gap, Top = 400, 225, 16, 100
     Rows = (len(Selected) + Columns - 1) // Columns
     Canvas = Image.new("RGB", (Columns * (Width + Gap) + Gap, Top + Rows * (Height + 57) + 26), "#0a111d")
@@ -241,16 +242,23 @@ def Sheet(Location, Captures, Selected, Images, Columns, Heading, Subheading):
     Pen.text((Gap, 61), Subheading, font=Font(14), fill="#a9bbd2")
     for Index, Slug in enumerate(Selected):
         X, Y = Gap + (Index % Columns) * (Width + Gap), Top + (Index // Columns) * (Height + 57)
-        ImagePath = Images / f"{Slug}.png"
+        ImagePath = Images / (f"{Slug}Isolated.png" if Isolated and Slug.startswith("Flare") else f"{Slug}.png")
         Canvas.paste(Image.open(ImagePath).resize((Width, Height), Image.Resampling.LANCZOS), (X, Y))
         Short = {"MoonFull": "Moon / retained 2K texture", "MoonQuarter": "Quarter / Lommel-Seeliger surface",
                  "MoonCrescent": "Crescent / geometric lunar phase", "MoonExospherePhysical": "Exosphere / nominal density (invisible)",
                  "MoonExosphereAmplified": "Exosphere / x1e14 RADIANCE DIAGNOSTIC", "SunDisc": "Sun / limb darkening and radial falloff",
-                 "SolarCorona": "Corona / occulted disc, no density boost", "CatalogueGalaxySpace": "Hipparcos + authentic Milky Way contours",
+                 "SolarCorona": "Corona / occulted disc, no density boost", "CatalogueGalaxySpace": "Reference bulge, Rift and updated stars",
+                 "CatalogueStarsSpace": "Reference stars / sharp cores, soft wings",
+                 "GalaxyContoursSpace": "Authored galactic bulge and dust / no stars",
+                 "MeasuredCatalogueSpace": "Measured Hipparcos / validation only",
+                 "AnamorphicLegacy": "Before / rejected edge-to-edge line",
+                 "AnamorphicRotated": "After / rotated cylindrical axis",
+                 "AnamorphicSubpixel": "After / half-pixel source movement",
                  "CatalogueGalaxySurface": "Night stars / atmospheric extinction",
-                 "FlareApertureGhosts": "Aperture ghosts", "FlareDiffraction": "Diffraction starburst",
+                 "FlareApertureGhosts": "Aperture ghosts", "FlareDiffraction": "Diffraction / six aperture rays",
+                 "FlareStarburst": "Sixth type / eight-point star-filter burst",
                  "FlareAnamorphic": "Anamorphic streak", "FlareAntipodeHalo": "Antipode halo",
-                 "FlareVeilingGlare": "Veiling glare", "FlareCombined": "Five components / additive irradiance"}
+                 "FlareVeilingGlare": "Veiling glare", "FlareCombined": "Six components / additive irradiance"}
         SkyNames = {"BeforeSunrise": "Before sunrise (nautical twilight)", "Dawn": "Dawn (civil twilight)",
                     "Sunrise": "Sunrise (geometric centre)", "Zenith": "Zenith (subsolar calibration)",
                     "Sunset": "Sunset (geometric centre)", "Dusk": "Dusk (civil twilight)"}
@@ -281,7 +289,7 @@ def Execute():
     Report = json.loads((Directory / "CelestialVulkan.json").read_text())
     Assert(Report["passed"] and len(Report["executed_entries"]) == 10, "Missing actual scoped GPU verification")
     Captures = {Capture["slug"]: Capture for Capture in Report["captures"]}
-    Assert(len(Captures) == 30, "Every requested native scene must be captured")
+    Assert(len(Captures) == 32, "Every requested native scene must be captured")
     Raw, Evidence, ProbeArchive = {}, [], {}
     for Slug, C in Captures.items():
         Location = Directory / "Renders" / f"{Slug}.f32"
@@ -302,38 +310,72 @@ def Execute():
         ProbeArchive[Slug] = A.reshape(C["planes"], -1, 4)[:, Indices, :]
         Evidence.append({**C, "native_float_sha256": Sha(Location), "png_sha256": Sha(ImagePath),
                          "image": f"Images/{Slug}.png", "native_float_retention": "1024 RGBA probes per layer; selected full planes in NativeRadiance.npz"})
+    DiagnosticCaptures, Diagnostics = Report["diagnostics"], {}
+    Assert(len(DiagnosticCaptures) == 3, "Missing focused native anamorphic before/rotation/subpixel captures")
+    for Capture in DiagnosticCaptures:
+        Slug = Capture["slug"]
+        Location = Directory / "Renders" / f"{Slug}.f32"
+        A = Numpy.fromfile(Location, "<f4").reshape(Capture["planes"], 270, 480, 4)
+        Assert(Numpy.isfinite(A).all() and A[:, :, :, :3].min() >= 0, "Invalid optical diagnostic pixels")
+        Diagnostics[Slug] = A
+        Display(A[1, :, :, :3], Capture["exposure"]).save(Images / f"{Slug}.png", optimize=True)
+        Indices = (Numpy.arange(1024, dtype=Numpy.uint32) * 7919 + 36347) % (480 * 270)
+        ProbeArchive[f"{Slug}Indices"] = Indices
+        ProbeArchive[Slug] = A.reshape(Capture["planes"], -1, 4)[:, Indices, :]
     Moon = VerifyMoon(Captures, Raw)
     Stars = VerifyStars(Captures, Raw, Directory)
     Galaxy = VerifyGalaxy(Directory, Arguments.inputs)
+    UpdatedStars = VerifyUpdatedStars(Captures, Raw, Directory, SolidAngles)
+    LensRevision = VerifyLensRevision(Captures, Raw, DiagnosticCaptures, Diagnostics)
     SolarFlux = Numpy.sum(Raw["SunDisc"][1, :, :, :3] * SolidAngles(Captures["SunDisc"])[:, :, None], axis=(0, 1))
     Assert(float(Numpy.max(Numpy.abs(SolarFlux - 1))) < .015, "Complete solar disc does not conserve its declared unit irradiance")
-    FlareNames = ["ApertureGhosts", "Diffraction", "Anamorphic", "AntipodeHalo", "VeilingGlare"]
+    FlareNames = ["ApertureGhosts", "Diffraction", "Anamorphic", "AntipodeHalo", "VeilingGlare", "Starburst"]
     FlareSum = sum(Raw[f"Flare{Name}"][1, :, :, :3] for Name in FlareNames)
     LensError = float(Numpy.max(Numpy.abs(FlareSum - Raw["FlareCombined"][1, :, :, :3])))
     Assert(LensError < 1e-6 and Numpy.max(Raw["FlareOccluded"][:, :, :, :3]) == 0, "Full-image flare additivity/occlusion failed")
-    for Slug, Plane in [("MoonFull", 0), ("MoonExospherePhysical", 2), ("SunDisc", 1), ("SolarCorona", 0), ("CatalogueStarsSpace", 0)]:
+    for Slug, Plane in [("MoonFull", 0), ("MoonExospherePhysical", 2), ("SunDisc", 1), ("SolarCorona", 0), ("MeasuredCatalogueSpace", 0)]:
         ProbeArchive[f"Full{Slug}"] = Raw[Slug][Plane]
     ProbeArchive["AtmosphericTables"] = Numpy.fromfile(Directory / "AtmosphericTables.f32", "<f4").reshape(-1, 4)
     Numpy.savez_compressed(Results / "NativeRadiance.npz", **ProbeArchive)
-    for Name in ["CelestialVulkan.json", "GalaxyProbes.csv", "ScatteringProbes.csv"]:
+    for Name in ["CelestialVulkan.json", "GalaxyProbes.csv", "ScatteringProbes.csv", "ReferencePortProbes.csv"]:
         shutil.copyfile(Directory / Name, Results / Name)
     # Catalogue rows are retained losslessly in a compressed float64 table to avoid a duplicate multi-megabyte CSV.
     StellarTable = Numpy.genfromtxt(Directory / "ProjectedStars.csv", delimiter=",", names=True)
-    Numpy.savez_compressed(Results / "ProjectedStars.npz", rows=StellarTable)
+    UpdatedStellarTable = Numpy.genfromtxt(Directory / "ProjectedUpdatedStars.csv", delimiter=",", names=True)
+    Numpy.savez_compressed(Results / "ProjectedStars.npz", rows=StellarTable, reference_rows=UpdatedStellarTable)
     shutil.copyfile(Arguments.inputs / "CelestialInputs.json", Results / "CelestialInputs.json")
     Summary = {"passed": True, "capture_count": len(Captures), "native_dimensions": [480, 270],
-               "moon": Moon, "stars": Stars, "galaxy": Galaxy, "solar_integrated_irradiance_rgb": SolarFlux.tolist(),
-               "five_flare_full_image_addition_error": LensError, "occluded_flare_rgb_max": 0,
+               "moon": Moon, "stars": Stars, "galaxy": Galaxy, "updated_stars": UpdatedStars, "lens_revision": LensRevision, "solar_integrated_irradiance_rgb": SolarFlux.tolist(),
+               "six_flare_full_image_addition_error": LensError, "occluded_flare_rgb_max": 0,
                "display": "ACES fitted curve then IEC sRGB, with each declared photographic exposure; no AI imagery",
                "production_accepted": False, "windows_physical_gpu_editor_realtime": "not tested"}
     SaveJson(Results / "CelestialInspection.json", Summary)
     SaveJson(Destination / "Captures.json", Evidence)
+    BaselineRevision = "ddb62b08fddc0d251968c660843246c3a3036b70"
+    Unchanged = ["MoonFull", "MoonQuarter", "MoonCrescent", "MoonExospherePhysical", "MoonExosphereAmplified",
+                 "SunDisc", "SolarCorona", "FlareApertureGhosts", "FlareDiffraction", "FlareAntipodeHalo",
+                 "FlareVeilingGlare", "FlareOccluded", "MeasuredCatalogueSpace"]
+    Continuity = {}
+    for Slug in Unchanged:
+        OriginalSlug = "CatalogueStarsSpace" if Slug == "MeasuredCatalogueSpace" else Slug
+        Original = subprocess.check_output(["git", "show", f"{BaselineRevision}:Exhibits/CelestialAtmosphere/Images/{OriginalSlug}.png"], cwd=Root)
+        Assert((Images / f"{Slug}.png").read_bytes() == Original, f"Preserved native image differs from the delivered baseline: {Slug}")
+        Continuity[Slug] = {"baseline_slug": OriginalSlug, "sha256": hashlib.sha256(Original).hexdigest()}
+    SaveJson(Results / "CelestialContinuity.json", {"passed": True, "baseline_revision": BaselineRevision,
+             "byte_identical_native_pngs": len(Continuity), "preserved_views": Continuity,
+             "scope": "Same Moon, solar and unchanged optical views, including original measured-only stellar validation"})
     Sky = [f"{View}{Moment}" for Moment in ["BeforeSunrise", "Dawn", "Sunrise", "Zenith", "Sunset", "Dusk"] for View in ["Surface", "Orbit"]]
     Sheet(Images / "SkyStates.png", Captures, Sky, Images, 2, "Six skies / surface and orbit", "Actual Slang / Vulkan readbacks - Rayleigh, aerosols and ozone - 480 x 270 native - SwiftShader CPU")
     Celestial = ["MoonFull", "MoonQuarter", "MoonCrescent", "MoonExospherePhysical", "MoonExosphereAmplified", "SunDisc", "SolarCorona", "CatalogueGalaxySpace", "CatalogueGalaxySurface"]
     Sheet(Images / "CelestialOverview.png", Captures, Celestial, Images, 3, "Celestial atmosphere / verified renders", "Same Moon texture - nominal lunar gas plus labelled x1e14 diagnostic - finite Sun/corona - measured Hipparcos catalogue")
-    Sheet(Images / "FiveFlares.png", Captures, [f"Flare{Name}" for Name in FlareNames] + ["FlareCombined"], Images, 3,
-          "Five lens-flare types", "Aperture ghosts / diffraction / anamorphic streak / antipode halo / veiling glare - parametric, unmeasured lens")
+    Sheet(Images / "SixFlares.png", Captures, [f"Flare{Name}" for Name in FlareNames], Images, 3,
+          "Six distinct lens-flare types", "Isolated native optical layers - six-ray aperture diffraction is separate from the new eight-point star filter", Isolated=True)
+    Sheet(Images / "UpdatedNightSkies.png", Captures,
+          ["CatalogueGalaxySpace", "CatalogueStarsSpace", "CatalogueGalaxySurface", "GalaxyContoursSpace"], Images, 2,
+          "Updated stars / requested galactic bulge", "Pinned c519e983 reference - 156 bright + 15,200 authored stars - sharp cores, Moffat wings, filamentary dust")
+    Sheet(Images / "AnamorphicRepair.png", {**Captures, **{C["slug"]: C for C in DiagnosticCaptures}},
+          ["AnamorphicLegacy", "FlareAnamorphic", "AnamorphicRotated", "FlareStarburst"], Images, 2,
+          "Anamorphic repair / separate sixth flare", "Actual isolated Slang readbacks - before / finite coating streak / rotation / eight-point star-filter burst", Isolated=True)
     Dependencies = list((Root / "Experimental/CelestialAtmosphere").rglob("*")) + list((Root / "Exhibits/CelestialAtmosphere/Code").glob("*"))
     Dependencies += [Root / "Frontier/Engine/Rendering" / Name for Name in ["AtmosphereModel.h", "AtmosphereModel.cpp", "CelestialModel.h", "CelestialModel.cpp", "LensFlareModel.h", "SolarOpticsPayload.h", "Shaders/SolarOptics.slang"]]
     Dependencies += [Root / "Exhibits/NightSky/Data/Hipparcos8.csv",

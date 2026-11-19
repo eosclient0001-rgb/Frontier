@@ -1,0 +1,60 @@
+{
+  "passed": true,
+  "baseline_revision": "ddb62b08fddc0d251968c660843246c3a3036b70",
+  "byte_identical_native_pngs": 13,
+  "preserved_views": {
+    "MoonFull": {
+      "baseline_slug": "MoonFull",
+      "sha256": "37392d06dbf9d501a21455e5a55b039bca317a1b0365480251ae235d5f1e6ce5"
+    },
+    "MoonQuarter": {
+      "baseline_slug": "MoonQuarter",
+      "sha256": "f43be4206632577419a287e5ce42bc0156615af06de225e49a14363b6581fd2f"
+    },
+    "MoonCrescent": {
+      "baseline_slug": "MoonCrescent",
+      "sha256": "a98ff47884da0e11eeb56624cac40e7108320e2b0882df27bdc9793849f73da2"
+    },
+    "MoonExospherePhysical": {
+      "baseline_slug": "MoonExospherePhysical",
+      "sha256": "987a6eadffe4d7f15783572dda5493e1e9b37a80eac1c91a6fab0e8a13d6fdca"
+    },
+    "MoonExosphereAmplified": {
+      "baseline_slug": "MoonExosphereAmplified",
+      "sha256": "1068be014b37349892ef71f9d5776a25bcd489f3741cd167782009bb6badce13"
+    },
+    "SunDisc": {
+      "baseline_slug": "SunDisc",
+      "sha256": "66a400322191afeb0e166c71f6418af3ac20655efa0916acd1d0e1a57cc94e1a"
+    },
+    "SolarCorona": {
+      "baseline_slug": "SolarCorona",
+      "sha256": "cee520af2b3ffa8e460f2d20ce4652098a9dab833815f9c7a2358823a25a1fca"
+    },
+    "FlareApertureGhosts": {
+      "baseline_slug": "FlareApertureGhosts",
+      "sha256": "f3e048f69e421b5f723e9938974904632bac9b78c22d78309a83930c701ad6f1"
+    },
+    "FlareDiffraction": {
+      "baseline_slug": "FlareDiffraction",
+      "sha256": "4e68dac02f5f10725d7cbac53fa8abd2895d37418178538bf55a344521f4e552"
+    },
+    "FlareAntipodeHalo": {
+      "baseline_slug": "FlareAntipodeHalo",
+      "sha256": "e710e72b5923928a5802a371d1416725d060058c7622fc6398c360de58c54edd"
+    },
+    "FlareVeilingGlare": {
+      "baseline_slug": "FlareVeilingGlare",
+      "sha256": "49b90ac9ee967529d4b2f3589f0a53c115e62d69b71ce6a477d97fa49dfd8de6"
+    },
+    "FlareOccluded": {
+      "baseline_slug": "FlareOccluded",
+      "sha256": "ed09ecdd600c1ac48471ebdd3cec59c05ff5f317a17550bcabd795a994d636f5"
+    },
+    "MeasuredCatalogueSpace": {
+      "baseline_slug": "CatalogueStarsSpace",
+      "sha256": "b35d49b87bcf2d0457cadb0892501b8f0815899a1b4678637ff5e562bf8d057d"
+    }
+  },
+  "scope": "Same Moon, solar and unchanged optical views, including original measured-only stellar validation"
+}

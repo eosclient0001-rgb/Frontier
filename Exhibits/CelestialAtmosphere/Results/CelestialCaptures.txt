@@ -1,32 +1,40 @@
-GPU physics probes: 3282 · transmission 0.00248971 · scattering relative 0.00142076 · Moon surface 4.26954e-06
-Captured SurfaceBeforeSunrise · 1904.67 ms · 4512 projected stars
-Captured OrbitBeforeSunrise · 1298.26 ms · 4050 projected stars
-Captured SurfaceSunrise · 2093.36 ms · 4332 projected stars
-Captured OrbitSunrise · 1307.86 ms · 4120 projected stars
-Captured SurfaceDawn · 2639.97 ms · 4391 projected stars
-Captured OrbitDawn · 2603.25 ms · 4077 projected stars
-Captured SurfaceZenith · 3430.83 ms · 3986 projected stars
-Captured OrbitZenith · 2002.36 ms · 4872 projected stars
-Captured SurfaceSunset · 3262.52 ms · 4626 projected stars
-Captured OrbitSunset · 1998.79 ms · 3747 projected stars
-Captured SurfaceDusk · 2931.62 ms · 4796 projected stars
-Captured OrbitDusk · 2083.42 ms · 3850 projected stars
-Captured MoonFull · 224.917 ms · 5 projected stars
-Captured MoonQuarter · 173.908 ms · 5 projected stars
-Captured MoonCrescent · 248.26 ms · 5 projected stars
-Captured MoonExospherePhysical · 229.569 ms · 5 projected stars
-Captured MoonExosphereAmplified · 261.737 ms · 5 projected stars
-Captured SunDisc · 266.388 ms · 3 projected stars
-Captured SolarCorona · 176.496 ms · 22 projected stars
-Captured FlareApertureGhosts · 118.108 ms · 5637 projected stars
-Captured FlareDiffraction · 58.0494 ms · 5637 projected stars
-Captured FlareAnamorphic · 64.0721 ms · 5637 projected stars
-Captured FlareAntipodeHalo · 72.1229 ms · 5637 projected stars
-Captured FlareVeilingGlare · 95.5515 ms · 5637 projected stars
-Captured FlareCombined · 157.546 ms · 5637 projected stars
-Captured FlareOccluded · 139.026 ms · 5637 projected stars
-Captured CatalogueGalaxySpace · 367.657 ms · 8080 projected stars
-Captured CatalogueStarsSpace · 358.412 ms · 8080 projected stars
-Captured GalaxyContoursSpace · 164.969 ms · 8080 projected stars
-Captured CatalogueGalaxySurface · 1387.71 ms · 7255 projected stars
-Celestial GPU verification completed: 33893852 assertions, 30 captures
+GPU physics probes: 3666 · transmission 0.00248971 · scattering relative 0.00142076 · Moon surface 4.26954e-06
+Actual upstream parity ReferenceGalaxy.csv max abs 4.76837e-07
+Actual upstream parity ReferenceNebulae.csv max abs 3.42727e-07
+Actual upstream parity ReferencePsf.csv max abs 8.9407e-08
+Captured SurfaceBeforeSunrise · 2427.87 ms · 2343 projected stars
+Captured OrbitBeforeSunrise · 1781.3 ms · 2976 projected stars
+Captured SurfaceSunrise · 2651.39 ms · 2545 projected stars
+Captured OrbitSunrise · 1850.15 ms · 3114 projected stars
+Captured SurfaceDawn · 2673.31 ms · 2456 projected stars
+Captured OrbitDawn · 1836.25 ms · 3066 projected stars
+Captured SurfaceZenith · 3139.53 ms · 2863 projected stars
+Captured OrbitZenith · 1713.03 ms · 1612 projected stars
+Captured SurfaceSunset · 3019.91 ms · 3440 projected stars
+Captured OrbitSunset · 1752.98 ms · 1463 projected stars
+Captured SurfaceDusk · 3023.93 ms · 3717 projected stars
+Captured OrbitDusk · 1846.93 ms · 1776 projected stars
+Captured MoonFull · 128.943 ms · 2 projected stars
+Captured MoonQuarter · 125.242 ms · 2 projected stars
+Captured MoonCrescent · 123.599 ms · 2 projected stars
+Captured MoonExospherePhysical · 123.98 ms · 2 projected stars
+Captured MoonExosphereAmplified · 123.422 ms · 2 projected stars
+Captured SunDisc · 135.524 ms · 1 projected stars
+Captured SolarCorona · 97.5479 ms · 8 projected stars
+Captured FlareApertureGhosts · 277.821 ms · 1857 projected stars
+Captured FlareDiffraction · 184.993 ms · 1857 projected stars
+Captured FlareAnamorphic · 175.386 ms · 1857 projected stars
+Captured FlareAntipodeHalo · 175.467 ms · 1857 projected stars
+Captured FlareVeilingGlare · 177.204 ms · 1857 projected stars
+Captured FlareStarburst · 331.485 ms · 1857 projected stars
+Captured FlareCombined · 397.435 ms · 1857 projected stars
+Captured FlareOccluded · 343.127 ms · 1857 projected stars
+Captured AnamorphicLegacy · 60.663 ms · 1857 projected stars
+Captured AnamorphicRotated · 179.165 ms · 1857 projected stars
+Captured AnamorphicSubpixel · 200.801 ms · 1857 projected stars
+Captured CatalogueGalaxySpace · 1041.74 ms · 3464 projected stars
+Captured CatalogueStarsSpace · 978.958 ms · 3464 projected stars
+Captured GalaxyContoursSpace · 332.328 ms · 3464 projected stars
+Captured CatalogueGalaxySurface · 1962.96 ms · 3464 projected stars
+Captured MeasuredCatalogueSpace · 424.316 ms · 8080 projected stars
+Celestial GPU verification completed: 38170660 assertions, 32 captures

@@ -92,3 +92,15 @@ The experiment reuses the already-retained Hipparcos/XHIP CSV and original Vehic
 replaces the Moon map nor resolves the map's pre-existing redistribution-rights qualification. The existing
 `EngineContent/CelestialMaps/MoonAlbedoProvenance.md` remains authoritative. Astropy, ERFA, jplephem and DE421
 are validation-only dependencies, installed outside Git and not bundled with an engine application.
+
+The requested galactic follow-up ports the native Milky Way, noise, nebular and stellar-PSF treatment from
+`SultanAladin/Frontier`, branch `arena/a1dad11b-frontier`, revision
+`c519e983110100a9ed1c17bd3ff97a1c27bef3b9`. `Experimental/CelestialAtmosphere/Content/ReferenceSource.json`
+pins the original source blobs, compressed star-field export and original reference image. The main reference
+field has 156 rounded bright-star entries plus 15,200 **authored**, not measured, deep-field points; the measured
+Hipparcos file is unchanged. Its galaxy is procedural photometry, not calibrated panorama imagery.
+
+No project-wide licence grant was found at this requested revision. Public access and the requested port do not
+establish redistribution/relicensing rights; the existing owner-permission qualification remains in force.
+Original sources are re-provisioned outside Git for native parity verification, not bundled into production.
+The retained upstream reference PNG is explicitly distinguished from newly generated native readback captures.

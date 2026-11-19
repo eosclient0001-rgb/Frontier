@@ -112,6 +112,8 @@ The font catalogue has a native TOML form; JSON remains only an automation/repor
 ## Experimental celestial atmosphere — 2026-11-18
 
 - `Experimental/CelestialAtmosphere/`: isolated Slang shaders, C++ input footprint, CMake and preview launcher.
-- Its `Content/` owns the pinned, attributed Milky Way contour content; no duplicate Moon texture is added.
+- Its `Content/` owns pinned Milky Way contours, the requested reference-field export and source identities.
+  Original reference code is provisioned into ignored `ExternalPackages/CelestialReference/`, not vendored.
+  The same Moon texture is reused; authored deep stars remain separate from measured Hipparcos validation.
 - `Exhibits/CelestialAtmosphere/`: generating validation code, retained native captures, lossless float evidence
   and the capture viewer. Production engine/editor targets and prior shadow scenes are unchanged.

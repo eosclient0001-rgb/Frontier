@@ -1,7 +1,7 @@
 /*============================================================================================================================================
                                                         SOLARATMOSPHERE.SLANG
 ============================================================================================================================================*/
-// 🧩 Reused finite solar disc and five lens components, finite-source extinction, chromosphere and quiet-Sun Thomson corona.
+// 🧩 Finite solar disc, six lens components, finite-source extinction, chromosphere and quiet-Sun Thomson corona.
 
 // 📝 The software ICD's generic sine loses relative accuracy at milliradian disc radii. Preserve the
 // reused solar implementation, but evaluate its small-angle sine with a bounded Float32 polynomial.
@@ -69,6 +69,7 @@ float CelestialArctangent2(float Y, float X)
 #undef atan2
 #undef cos
 #undef sin
+#include "CelestialLens.slang"
 
 groupshared float3 CelestialBeamReduction[64];
 
@@ -147,7 +148,8 @@ float3 LensPixel(float2 Coordinate)
 {
     if (dot(Configuration(4).xyz, Configuration(1).xyz) <= 0) return 0;
     float2 Pixel = float2(2 * Coordinate.x - Extent.History.x, Extent.History.y - 2 * Coordinate.y) / Extent.History.y;
-    return SolarLensFlare(Pixel, SolarScreen(), SolarFlux());
+    return Configuration(33).x > .5 ? SolarLensFlare(Pixel, SolarScreen(), SolarFlux())
+                                    : ExperimentalLensFlare(Pixel, SolarScreen(), SolarFlux());
 }
 
 //------------------------------------------------------------------------------------------------------------------------

@@ -1350,3 +1350,30 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
 - Evidence, limits, hashes, retained Float32 samples and reproduction: `Exhibits/CelestialAtmosphere/README.md`.
   Software SwiftShader CPU only; Windows/MSVC, physical GPU, real-time and production editor acceptance unrun.
   Existing shadow/GI failures and their emissive-sphere-only scenes remain unchanged; no Actions authorized.
+
+
+## Requested galactic bulge, four star views and sixth lens type — 2026-11-18
+
+- Adapted the requested `SultanAladin/Frontier` branch `arena/a1dad11b-frontier`, pinned
+  `c519e983110100a9ed1c17bd3ff97a1c27bef3b9`, into isolated Slang. Actual bulge, star-cloud, Rift/filamentary
+  dust/reddening and nebular models replace the visible contour-only photometry. Original source is restored
+  outside Git; eight source identities and five native exports are independently reproduced.
+- All four night presentations select the reference's 156 rounded bright entries + 15,200 **authored** deep points,
+  with sharp Gaussian cores / Moffat wings. The existing 41,359-row measured Hipparcos catalogue stays unchanged
+  in an additional measured-only validation view; authored positions are not called new measurements.
+- Source-model parity: 517 galactic / 119 nebular / 121 PSF probes, maximum absolute errors 4.77e-7 / 3.43e-7 /
+  8.95e-8. All 3,464 projected reference sources match coordinates/magnitude/B-V/provenance, including 3,430
+  authored points. Eight-node full-image integration relative max error 4.45e-7; finite flux error 2.62e-8.
+  Declared 25x25 PSF support omits at most 0.0921% of infinite-profile flux; no false exact-conservation claim.
+- Reproduced rejected edge-to-edge anamorphic line. Finite tapered blue streak/bloom and pixel-area coverage
+  reduce edge/peak from .267174 to .001094 at equal exposure. Rotation .3999999906 vs .4 rad; half-pixel energy
+  change 2.79e-6. Sixth flare is an independent eight-point star filter, distinct from preserved six-ray diffraction.
+- Full reproduction passes: Release 2/2; independent ASan+UBSan 2/2; Vulkan-OFF 1/1; ten executed/reflected entries;
+  4,423 GPU physics probes / 53,954 native assertions. Six rejected controls include missing dust, rejected old
+  anamorphic image and duplicated diffraction. Chromium checks all 32 views / 8 isolated lens planes and mobile.
+- Thirteen original Moon/Sun/unchanged-optical/measured-only PNGs remain byte-identical to `ddb62b0`. Existing
+  astronomy, physical exosphere, atmosphere and solar gates remain. Requested source image/model/content attribution
+  is retained with unconfirmed project-wide redistribution permissions, not a new licence grant.
+- Evidence: `Exhibits/CelestialAtmosphere/README.md`, `Images/UpdatedNightSkies.png`, `Images/AnamorphicRepair.png`
+  and `Images/SixFlares.png`. SwiftShader CPU only; Windows, physical GPU, editor and realtime acceptance unrun.
+  Historical shadow/GI failures and emissive-sphere-only scene constraints remain unchanged. No Actions authorized.

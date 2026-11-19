@@ -6,6 +6,7 @@
 #pragma once
 #include "Frontier/Engine/Rendering/CelestialModel.h"
 #include "Frontier/Engine/Rendering/SolarOpticsPayload.h"
+#include "CelestialLens.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -121,7 +122,8 @@ struct CelestialScene
     CameraProjection        Camera{};
     SolarOpticsParameters   Solar{};
     std::array<Float4, 64>  Configuration{};
-    std::vector<StarRecord> Catalogue;
+    std::vector<StarRecord> Catalogue, ReferenceBrightCatalogue, AuthoredCatalogue;
+    StarFilterProfile       StarFilter{};
     double                  Julian   = JulianDate(2026, 11, 18, 20);
     double                  Latitude = -26.1885, Longitude = 28.3209;
     Vector                  MoonDirection{.3, .4, .8660254}, MoonNorth{0, 0, 1};
@@ -150,6 +152,42 @@ struct CelestialScene
         Configuration[28] = {.08f, .095f, .11f, 0};
         Configuration[29] = {1, 0, 0, 0};
         Configuration[30] = {float(std::pow(10., -.4 * 26.74)), 0, 0, 0};
+        Configuration[34] = {1, 1, 0, 0};
+    }
+
+    void LoadAuthoredCatalogue(const std::filesystem::path& Location)
+    {
+        std::ifstream Input(Location);
+        Enforce(bool(Input), "Pinned authored reference field is required, not an invented catalogue expansion");
+        std::string Header, Line;
+        std::getline(Input, Header);
+        Enforce(Header == "id,ra_deg,dec_deg,mag,bv,authored", "Unexpected pinned upstream catalogue columns");
+        std::ostringstream Deep, Bright;
+        Deep << "id,ra_deg,dec_deg,mag,bv\n";
+        Bright << "id,ra_deg,dec_deg,mag,bv\n";
+        unsigned BrightCount = 0, DeepCount = 0;
+        while (std::getline(Input, Line))
+        {
+            const auto Classification = Line.rfind(',');
+            Enforce(Classification != std::string::npos, "Authored field row lacks provenance classification");
+            if (Line.substr(Classification + 1) == "1")
+            {
+                Deep << Line.substr(0, Classification) << '\n';
+                ++DeepCount;
+            }
+            else
+            {
+                Bright << Line.substr(0, Classification) << '\n';
+                ++BrightCount;
+            }
+        }
+        std::istringstream Encoded(Deep.str()), EncodedBright(Bright.str());
+        AuthoredCatalogue        = DecodeHipparcosCatalogue(Encoded, Julian, Latitude, Longitude);
+        ReferenceBrightCatalogue = DecodeHipparcosCatalogue(EncodedBright, Julian, Latitude, Longitude);
+        Enforce(BrightCount == 156 && DeepCount == 15200 && AuthoredCatalogue.size() == DeepCount,
+                "Pinned reference star field is incomplete");
+        // 📝 The requested 156 bright + 15,200 authored field is selectable, not stacked over Hipparcos duplicates.
+        // The original 41,359-row measured catalogue remains separate and unmodified for astrometric validation.
     }
 
     void LoadCatalogue(const std::filesystem::path& Location)
@@ -210,7 +248,19 @@ struct CelestialScene
         std::vector<float> Result(304, 0);
         for (unsigned Entry = 0; Entry < C.size(); ++Entry)
             std::copy(C[Entry].begin(), C[Entry].end(), Result.begin() + Entry * 4);
-        const auto Payload = CompileSolarOpticsPayload(Solar);
+        C[31] = {float(Solar.Flare.AnamorphicStrength),
+                 float(StarFilter.Strength),
+                 float(Solar.Flare.AnamorphicAngleRad),
+                 float(Solar.Flare.AnamorphicLengthNdc)};
+        C[32] = {float(Solar.Flare.AnamorphicThicknessNdc),
+                 float(StarFilter.RotationRad),
+                 float(StarFilter.ReachNdc),
+                 float(StarFilter.WidthNdc)};
+        for (unsigned Entry : {31u, 32u})
+            std::copy(C[Entry].begin(), C[Entry].end(), Result.begin() + Entry * 4);
+        auto Optics = Solar;
+        if (Configuration[33][0] < .5) Optics.Flare.AnamorphicStrength = 0;
+        const auto Payload = CompileSolarOpticsPayload(Optics);
         Result.insert(Result.end(), Payload.begin(), Payload.end());
         return Result;
     }
@@ -221,20 +271,27 @@ struct CelestialScene
         const unsigned                     Columns = (Width + 15) / 16, Rows = (Height + 15) / 16;
         std::vector<std::vector<unsigned>> Tiles(Columns * Rows);
         std::vector<StellarSource>         Sources;
-        for (const auto& Star : Catalogue)
+        const bool                         RevisedPsf = Configuration[34][1] > .5;
+        const int                          Reach      = RevisedPsf ? 12 : 6;
+        const auto&       VisibleBrightCatalogue = Configuration[34][0] > .5 ? ReferenceBrightCatalogue : Catalogue;
+        const std::size_t MeasuredCount          = VisibleBrightCatalogue.size();
+        const std::size_t AuthoredCount          = Configuration[34][0] > .5 ? AuthoredCatalogue.size() : 0;
+        for (std::size_t Ordinal = 0; Ordinal < MeasuredCount + AuthoredCount; ++Ordinal)
         {
+            const auto& Star =
+                Ordinal < MeasuredCount ? VisibleBrightCatalogue[Ordinal] : AuthoredCatalogue[Ordinal - MeasuredCount];
             const auto Pixel = Camera.Project(Star.Direction, Width, Height);
-            if (Dot(Star.Direction, Camera.Forward) <= 0 || Pixel[0] < -6 || Pixel[1] < -6 || Pixel[0] > Width + 6 ||
-                Pixel[1] > Height + 6)
+            if (Dot(Star.Direction, Camera.Forward) <= 0 || Pixel[0] < -Reach || Pixel[1] < -Reach ||
+                Pixel[0] > Width + Reach || Pixel[1] > Height + Reach)
                 continue;
             const unsigned Index = unsigned(Sources.size());
             Sources.push_back({Encode(Star.Direction, Star.Magnitude),
                                {0, 0, 0, float(Star.ColourIndex)},
-                               {float(Pixel[0]), float(Pixel[1]), 0, 0}});
-            const int LowX  = std::max(0, int(std::floor((Pixel[0] - 6) / 16)));
-            const int LowY  = std::max(0, int(std::floor((Pixel[1] - 6) / 16)));
-            const int HighX = std::min(int(Columns) - 1, int(std::floor((Pixel[0] + 6) / 16)));
-            const int HighY = std::min(int(Rows) - 1, int(std::floor((Pixel[1] + 6) / 16)));
+                               {float(Pixel[0]), float(Pixel[1]), 0, float(Ordinal >= MeasuredCount)}});
+            const int LowX  = std::max(0, int(std::floor((Pixel[0] - Reach - 1) / 16)));
+            const int LowY  = std::max(0, int(std::floor((Pixel[1] - Reach - 1) / 16)));
+            const int HighX = std::min(int(Columns) - 1, int(std::floor((Pixel[0] + Reach + 1) / 16)));
+            const int HighY = std::min(int(Rows) - 1, int(std::floor((Pixel[1] + Reach + 1) / 16)));
             for (int Y = LowY; Y <= HighY; ++Y)
                 for (int X = LowX; X <= HighX; ++X)
                     Tiles[unsigned(Y) * Columns + unsigned(X)].push_back(Index);

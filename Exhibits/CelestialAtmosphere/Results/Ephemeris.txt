@@ -1,5 +1,5 @@
 Sun and Moon independent ephemeris comparison, release; model comparison, not measured positions.
-Native base 0cc8ea5, plus working changes if any; see committed source for exact test.
+Native base ddb62b0, plus working changes if any; see committed source for exact test.
 g++ (Debian 12.2.0-14+deb12u1) 12.2.0
 Python 3.11.2
 Linux 6.1.158+ x86_64

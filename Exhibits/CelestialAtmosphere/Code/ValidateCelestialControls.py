@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 
+import numpy as Numpy
+
 Root = Path(__file__).resolve().parents[3]
 
 
@@ -30,7 +32,8 @@ def Execute():
         Executable = Executable.with_suffix(".exe")
     Observations = []
     for Category, Entry, Expected in [("GenericOpticalTrig", "InspectCelestialPhysics", "GPU solar limb/radial blur"),
-                                      ("RoundedGroundLeak", "BakeAtmosphereMultiple", "Deep planetary night leaks")]:
+                                      ("RoundedGroundLeak", "BakeAtmosphereMultiple", "Deep planetary night leaks"),
+                                      ("MissingGalacticDust", "InspectCelestialPhysics", "Slang port disagrees with the original requested upstream")]:
         Directory = Arguments.output / Category
         Source = Directory / "Experimental/CelestialAtmosphere"
         Source.mkdir(parents=True, exist_ok=True)
@@ -50,6 +53,12 @@ def Execute():
             for Line in ["#define sin CelestialSine\n", "#define cos CelestialCosine\n", "#define atan2 CelestialArctangent2\n", "#undef sin\n", "#undef cos\n", "#undef atan2\n"]:
                 assert Line in Modified
                 Modified = Modified.replace(Line, "")
+            Location.write_text(Modified)
+        elif Category == "MissingGalacticDust":
+            Location = Source / "GalacticBulge.slang"
+            Original = Location.read_text()
+            assert "return Light * exp(-Dust * float3(.75, 1, 1.32));" in Original
+            Modified = Original.replace("return Light * exp(-Dust * float3(.75, 1, 1.32));", "return Light;")
             Location.write_text(Modified)
         else:
             Location = Source / "CelestialFootprint.slang"
@@ -98,6 +107,26 @@ def Execute():
                              "modified_preparation_sha256": hashlib.sha256(Modified.encode()).hexdigest()})
     else:
         raise AssertionError("The galaxy gate accepts the incorrect circumpolar closure")
+    CaptureReport = json.loads((Arguments.captures / "CelestialVulkan.json").read_text())
+    Captures = {Entry["slug"]: Entry for Entry in CaptureReport["captures"]}
+    Raw = {}
+    for Capture in CaptureReport["captures"] + CaptureReport["diagnostics"]:
+        Location = Arguments.captures / "Renders" / f"{Capture['slug']}.f32"
+        Raw[Capture["slug"]] = Numpy.fromfile(Location, "<f4").reshape(Capture["planes"], 270, 480, 4)
+    for Category, Slug, Replacement, Expected in [
+            ("RejectedAnamorphicImage", "FlareAnamorphic", "AnamorphicLegacy", "edge-to-edge anamorphic defect"),
+            ("DuplicatedSixRayStarburst", "FlareStarburst", "FlareDiffraction", "not visibly distinct")]:
+        Changed = dict(Raw)
+        Changed[Slug] = Raw[Replacement]
+        try:
+            Inspection.VerifyLensRevision(Captures, Changed, CaptureReport["diagnostics"], Raw)
+        except AssertionError as Failure:
+            assert Expected in str(Failure), str(Failure)
+            Observations.append({"category": Category, "rejected": True, "gate": str(Failure),
+                                 "actual_native_replacement": Replacement,
+                                 "replacement_float_sha256": hashlib.sha256((Arguments.captures / "Renders" / f"{Replacement}.f32").read_bytes()).hexdigest()})
+        else:
+            raise AssertionError(f"Revision image gate accepts {Category}")
     Report = {"passed": True, "negative_controls": Observations, "production_accepted": False}
     (Arguments.output / "CelestialControls.json").write_text(json.dumps(Report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(Report, indent=2))

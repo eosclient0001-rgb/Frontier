@@ -6,7 +6,9 @@
 from pathlib import Path
 import argparse
 import hashlib
+import gzip
 import json
+import shutil
 
 import numpy as Numpy
 from PIL import Image, ImageChops, ImageDraw
@@ -65,13 +67,24 @@ def Execute():
     Field = sum(Weight * Padded[Shift:Shift + Height] for Shift, Weight in enumerate(Kernel)).astype(Numpy.float32)
     Field.tofile(Arguments.Destination / "MilkyWay1024x512.f32")
     Image.fromarray(Numpy.rint(Numpy.clip(Field, 0, 1) * 255).astype(Numpy.uint8)).save(Arguments.Destination / "MilkyWayContours.png")
+    Reference = Root / "Experimental/CelestialAtmosphere/Content/ReferenceStars.csv.gz"
+    Pin = json.loads((Reference.parent / "ReferenceSource.json").read_text())
+    assert Digest(Reference) == Pin["retained_files_sha256"][str(Reference.relative_to(Root))]
+    (Arguments.Destination / "ReferenceStars.csv").write_bytes(gzip.decompress(Reference.read_bytes()))
+    assert Digest(Arguments.Destination / "ReferenceStars.csv") == Pin["raw_exports_sha256"]["ReferenceStars.csv"]
+    for Name in ["ReferenceGalaxy.csv", "ReferenceNebulae.csv", "ReferencePsf.csv"]:
+        Fixture = Root / "Exhibits/CelestialAtmosphere/Results" / Name
+        assert Digest(Fixture) == Pin["retained_files_sha256"][str(Fixture.relative_to(Root))]
+        shutil.copyfile(Fixture, Arguments.Destination / Name)
     Manifest = {"moon_source": str(Moon.relative_to(Root)), "moon_source_sha256": Digest(Moon),
                 "moon_extent": list(Source.size), "moon_ppm_sha256": Digest(Arguments.Destination / "MoonAlbedo2048.ppm"),
                 "contours_source": str(Contours.relative_to(Root)), "contours_sha256": Digest(Contours),
                 "contours_revision": "7e720a3de062059d4c5400a379146a601d9010e0", "galaxy_extent": [Width, Height],
                 "galaxy_linear_field_sha256": Digest(Arguments.Destination / "MilkyWay1024x512.f32"),
                 "layers": Coverage, "coordinates": "J2000 equatorial longitude [-180,180], north at row zero",
-                "galaxy_photometry": "Assigned contour surface brightness, 0.60-degree Gaussian smoothing; not a measured HDR panorama"}
+                "galaxy_photometry": "Pinned contours retained for astrometric controls; visible galaxy uses the requested authored bulge/dust model",
+                "reference_revision": Pin["revision"], "reference_authored_stars": 15200,
+                "reference_raw_catalogue_sha256": Pin["raw_exports_sha256"]["ReferenceStars.csv"]}
     (Arguments.Destination / "CelestialInputs.json").write_text(json.dumps(Manifest, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(Manifest))
 

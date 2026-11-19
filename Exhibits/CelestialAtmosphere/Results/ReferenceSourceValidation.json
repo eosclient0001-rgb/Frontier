@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "reference_revision": "c519e983110100a9ed1c17bd3ff97a1c27bef3b9",
+  "original_source_identities": 8,
+  "byte_identical_native_exports": 5,
+  "catalogue_rows": 15356,
+  "measured_bright_stars": 156,
+  "authored_deep_stars": 15200,
+  "galaxy_probes": 517,
+  "psf_probes": 121,
+  "nebular_probes": 119,
+  "compiler": "g++ (Debian 12.2.0-14+deb12u1) 12.2.0",
+  "scope": "Original upstream native evaluator, not production integration or a Windows build"
+}

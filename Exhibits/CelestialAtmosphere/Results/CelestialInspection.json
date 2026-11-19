@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "capture_count": 30,
+  "capture_count": 32,
   "native_dimensions": [
     480,
     270
@@ -39,14 +39,50 @@
     "gpu_rotation_astropy_vector_error": 2.1396859229341555e-07,
     "contour_weighted_abs_galactic_latitude_deg": 5.256090728933795,
     "brightness_fraction_above_20deg_galactic_latitude": 0.0007773736868624031,
-    "photometry": "assigned surface brightness on Jose R. Vieira/d3-celestial outlines; not a measured panorama"
+    "photometry": "Contours are retained for independent orientation controls; the visible galaxy is the requested authored c519e983 bulge/dust port"
+  },
+  "updated_stars": {
+    "reference_total": 15356,
+    "reference_bright_stars": 156,
+    "reference_authored_stars": 15200,
+    "projected_sources": 3464,
+    "reference_coordinate_photometry_provenance_matches": 3464,
+    "projected_authored_sources": 3430,
+    "gpu_projection_max_pixels": 6.0700007963987446e-05,
+    "per_source_relative_flux_error": 7.753564046364403e-07,
+    "independent_full_image_relative_max_error": 4.4450906402659513e-07,
+    "finite_support_image_relative_flux_error": 2.619822669913674e-08,
+    "finite_25x25_support_omitted_flux_min": 0.0009121764741665261,
+    "finite_25x25_support_omitted_flux_max": 0.0009209490124637565,
+    "updated_night_views": [
+      "CatalogueStarsSpace",
+      "CatalogueGalaxySpace",
+      "CatalogueGalaxySurface",
+      "GalaxyContoursSpace"
+    ],
+    "photometry": "Reference 156 rounded bright-star entries plus 15200 authored points; not 15356 measured catalogue additions"
+  },
+  "lens_revision": {
+    "reproduced_legacy_edge_to_peak_ratio": 0.2671743929386139,
+    "repaired_edge_to_peak_ratio": 0.0010942911030724645,
+    "rotation_requested_rad": 0.4,
+    "rotation_measured_rad": 0.39999999055726887,
+    "half_pixel_translation_integrated_radiance_error": 2.7856201185727514e-06,
+    "sixth_starburst_measured_rays": 8,
+    "original_diffraction_measured_rays": 6,
+    "diagnostic_captures": [
+      "AnamorphicLegacy",
+      "AnamorphicRotated",
+      "AnamorphicSubpixel"
+    ],
+    "scope": "Actual isolated native Float32 lens planes; finite parametric coating streak, not measured camera calibration"
   },
   "solar_integrated_irradiance_rgb": [
     0.999932279505166,
     0.999932279505166,
     0.999932279505166
   ],
-  "five_flare_full_image_addition_error": 5.960464477539063e-08,
+  "six_flare_full_image_addition_error": 5.960464477539063e-08,
   "occluded_flare_rgb_max": 0,
   "display": "ACES fitted curve then IEC sRGB, with each declared photographic exposure; no AI imagery",
   "production_accepted": false,
