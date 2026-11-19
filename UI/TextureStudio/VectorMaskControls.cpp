@@ -110,11 +110,19 @@ bool ConstructVectorAuthoringMaskControls(VectorAuthoringLayer &Layer, const std
         Changed |= ConstructVectorAuthoringToggle("Invert vector mask", Layer.MaskInverted);
         Changed |= ConstructVectorAuthoringToggle("Luminance mask", Layer.MaskLuminance);
         auto &Mask = *Layer.Mask;
-        const char *Categories[]{"Rectangle", "Ellipse"}; int Category = int(Mask.Topology[0]);
-        if (DropdownControlSurface::BeginSelection("Shape", Categories[std::clamp(Category, 0, 1)]))
+        // 📝 Topology[0] is the shared retention code the coverage shader reads (1 = ellipse, any other
+        // rectangle-family code = rectangle); the picker must not silently report a shape the record
+        // does not hold, so the caption follows the stored code rather than the raw value.
+        const char *Categories[]{"Rectangle", "Ellipse"};
+        int Category = Mask.Topology[0] == 1 ? 1 : 0;
+        if (DropdownControlSurface::BeginSelection("Mask shape", Categories[Category]))
         {
             for (int Index = 0; Index < 2; ++Index)
-                if (DropdownControlSurface::Option(Categories[Index], Category == Index)) { Mask.Topology[0] = uint32_t(Index); Changed = true; }
+                if (DropdownControlSurface::Option(Categories[Index], Category == Index) && Mask.Topology[0] != uint32_t(Index))
+                {
+                    Mask.Topology[0] = uint32_t(Index);
+                    Changed = true;
+                }
             DropdownControlSurface::EndSelection();
         }
         Changed |= ConstructVectorAuthoringRange("Mask opacity", Mask.Transform[2], 0, 1);
@@ -123,7 +131,11 @@ bool ConstructVectorAuthoringMaskControls(VectorAuthoringLayer &Layer, const std
         Changed |= ConstructVectorAuthoringRange("Mask width", Mask.Bounds[2], 1, 1024);
         Changed |= ConstructVectorAuthoringRange("Mask height", Mask.Bounds[3], 1, 1024);
         if (ImGui::Button("Remove mask")) { Layer.Mask.reset(); Changed = true; }
-        ImGui::TextDisabled("Image masks have not been ported to native GPU residency yet.");
+        // 📝 The editable mask is the retained Topology/Bounds/Transform record the VectorCoverage
+        // rasteriser evaluates on the GPU; mask provenance stays on that record, so the footer states
+        // the live geometry instead of implying an unported feature.
+        ImGui::TextDisabled("Mask coverage: %.0f x %.0f px, %.0f%% opacity, evaluated by the GPU coverage bake.",
+            double(Mask.Bounds[2]), double(Mask.Bounds[3]), double(Mask.Transform[2] * 100));
     }
     ImGui::EndDisabled();
     ImGui::PopID(); return Changed;

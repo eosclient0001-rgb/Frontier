@@ -1004,12 +1004,20 @@ void MaterialLibraryPanel::ConstructInspector()
                 // 📝 Direct controls carry no mapped targets — the control key IS the coefficient.
                 // Requiring targets here disabled every direct slider (detail scale, orange-peel
                 // scale, texture scale, …) behind a false "not ported yet" tooltip.
-                bool Supported = Control.Direct
-                    ? QueryRecipeCoefficient(Definition, Control.Key).has_value()
-                    : !Control.Targets.empty();
+                // 📝 One resolved coefficient read for direct controls: a recipe parameter is either a
+                // stratum scalar or a procedural-pool entry, and both are live values the panel writes
+                // back through ApplyTarget. Reading it once removes the empty-optional dereference that
+                // a supported-but-pool-only control would otherwise hit.
+                const auto QueryDirect = [&](std::string_view Key) -> std::optional<float>
+                {
+                    if (const auto Coefficient = QueryRecipeCoefficient(Definition, Key)) return Coefficient;
+                    if (const auto Pool = QueryRecipePoolLocation(Definition, Key)) return float(Pool->Value);
+                    return {};
+                };
+                bool Supported = Control.Direct ? QueryDirect(Control.Key).has_value() : !Control.Targets.empty();
                 for (const auto &Target : Control.Targets) Supported = QueryRecipeCoefficient(Definition, Target.Key).has_value() && Supported;
                 if (Supported && Control.Direct)
-                    Position = *QueryRecipeCoefficient(Definition, Control.Key);
+                    Position = *QueryDirect(Control.Key);
                 else if (Supported)
                 {
                     const auto &Target = Control.Targets.front();
@@ -1017,13 +1025,13 @@ void MaterialLibraryPanel::ConstructInspector()
                     Position = std::abs(Target.Maximum - Target.Minimum) > .000001f ?
                         std::clamp((Coefficient - Target.Minimum) / (Target.Maximum - Target.Minimum), 0.f, 1.f) : Control.Position;
                 }
-                else if (Control.Direct) Position = QueryRecipeCoefficient(Definition, Control.Key).value_or(Control.Position);
+                else if (Control.Direct) Position = QueryDirect(Control.Key).value_or(Control.Position);
                 // 📝 Extending controls grow their domain to whatever the material currently holds, so a
                 // saved value above the shipped range still displays and edits instead of clamping.
                 float NativeMinimum = Control.Minimum, NativeMaximum = Control.Maximum;
                 if (Control.Extend)
                 {
-                    const float Held = QueryRecipeCoefficient(Definition, Control.Key).value_or(Control.Minimum);
+                    const float Held = QueryDirect(Control.Key).value_or(Control.Minimum);
                     NativeMaximum = std::max(NativeMaximum, Held);
                     if (Held > 0) NativeMinimum = std::min(NativeMinimum, Held);
                 }

@@ -968,20 +968,22 @@ void PatternWorkspacePanel::ConstructHeader()
     Caption(ImVec2(Origin.x + 22 * Scale + ImGui::CalcTextSize(QueryDocument().Name.c_str()).x, Origin.y + 19 * Scale), ".pattern", 7 * Scale, 0x67675b);
     Controls.ControlHeight = 24;
     const float NavigationX = Origin.x + std::max(230 * Scale, Width - 620 * Scale);
-    const char *Workspaces[]{"Material", "Pattern", "Texture", "Stamp", "Baking"};
-    const float Widths[]{64, 58, 54, 52, 64};
+    // 📝 Only the workspaces this binary actually hosts appear in the rail. "Texture" and "Baking"
+    // used to sit here as permanently disabled entries pointing at no host, which read as broken
+    // tabs; the reference dock shows exactly the reachable pages.
+    const char *Workspaces[]{"Material", "Pattern", "Stamp"};
+    const float Widths[]{64, 58, 52};
     float PositionX = NavigationX;
-    for (size_t Index = 0; Index < 5; ++Index)
+    for (size_t Index = 0; Index < std::size(Workspaces); ++Index)
     {
-        const bool Available = Index == 0 || Index == 1 || Index == 3;
         ImGui::SetCursorScreenPos(ImVec2(PositionX, Origin.y + 9 * Scale));
-        ImGui::BeginDisabled(!Available || (Index == 0 && !ActivateMaterial) || (Index == 3 && !ActivateStamp));
+        ImGui::BeginDisabled((Index == 0 && !ActivateMaterial) || (Index == 2 && !ActivateStamp));
         if (Controls.Button(Workspaces[Index], Widths[Index] * Scale, Index == 1, {}, true))
         {
             if (Index == 0 && ActivateMaterial) ActivateMaterial();
-            if (Index == 3 && ActivateStamp) ActivateStamp();
+            if (Index == 2 && ActivateStamp) ActivateStamp();
         }
-        Controls.Tooltip(Workspaces[Index], Available ? "Switch workspace without losing your document." : "This native workspace is not hosted yet.");
+        Controls.Tooltip(Workspaces[Index], "Switch workspace without losing your document.");
         ImGui::EndDisabled();
         PositionX += Widths[Index] * Scale;
     }
@@ -1405,14 +1407,37 @@ void PatternWorkspacePanel::ConstructLayers()
         }
     }
     Controls.ControlHeight = 48;
-    ImGui::BeginDisabled();
-    Controls.Button("Stored groups · 0", ImGui::GetContentRegionAvail().x, false, {}, true);
-    Controls.Tooltip("Stored groups", "Native stored definitions and linked-instance editing are not ported yet.");
-    ImGui::EndDisabled();
+    // 📝 Live count from the document's own enclosure list instead of a hard-coded "· 0": stored
+    // groups are retained definitions with linked instances, and the count is the number this
+    // document currently holds, so an empty stack reads 0 for a real reason.
+    const auto GroupSnapshot = QueryDocument();
+    char StoredGroupsCaption[48];
+    std::snprintf(StoredGroupsCaption, sizeof(StoredGroupsCaption), "Stored groups · %zu", GroupSnapshot.Enclosures.size());
+    if (Controls.Button(StoredGroupsCaption, ImGui::GetContentRegionAvail().x, GroupsOpen, {}, true)) GroupsOpen = !GroupsOpen;
+    Controls.Tooltip("Stored groups", "Retained group definitions in this document; group-wide property edits are applied from the Groups & folders sheet above.");
     Controls.ControlHeight = 30;
     const auto Snapshot = QueryDocument();
     size_t Visible = 0, Locked = 0;
     for (const auto &Layer : Snapshot.Layers) { if (Layer.Visible) ++Visible; if (Layer.Locked) ++Locked; }
+    // 📝 Reference head anatomy: a Layers tile and a Channels tile above the tree. Layers counts from
+    // the same visible/total pair the filter tiles already own; Channels counts how many of the nine
+    // OpenPBR contributions at least one visible layer drives, so it states real authored coverage.
+    {
+        std::array<bool, 9> Painted{};
+        for (const auto &Layer : Snapshot.Layers)
+            if (Layer.Visible)
+                for (size_t Channel = 0; Channel < Painted.size(); ++Channel)
+                    Painted[Channel] = Painted[Channel] || Layer.SurfaceChannels[Channel].Enabled;
+        const size_t PaintedCount = size_t(std::count(Painted.begin(), Painted.end(), true));
+        const float HeadWidth = (ImGui::GetContentRegionAvail().x - 6 * Scale) * .5f;
+        char LayersTile[48], ChannelsTile[48];
+        std::snprintf(LayersTile, sizeof(LayersTile), "LAYERS\n%zu / %zu", Visible, Snapshot.Layers.size());
+        std::snprintf(ChannelsTile, sizeof(ChannelsTile), "CHANNELS\n%zu / 9", PaintedCount);
+        Controls.ControlHeight = 56;
+        Controls.Button(LayersTile, HeadWidth, false, {}, true);
+        ImGui::SameLine(0, 6 * Scale);
+        Controls.Button(ChannelsTile, HeadWidth, false, {}, true);
+    }
     const size_t Counts[]{Visible, Snapshot.Layers.size() - Visible, Locked};
     const char *Captions[]{"Visible", "Hidden", "Locked"};
     const float StatWidth = (ImGui::GetContentRegionAvail().x - 12 * Scale) / 3;
@@ -1450,8 +1475,51 @@ void PatternWorkspacePanel::ConstructLayers()
         const auto &Source = Snapshot.Instructions[Layer.Root];
         Ink->PushClipRect(ImVec2(RowOrigin.x + 32 * Scale, RowOrigin.y), ImVec2(RowOrigin.x + RowWidth - 64 * Scale, RowOrigin.y + 56 * Scale), true);
         Caption(ImVec2(RowOrigin.x + 36 * Scale, RowOrigin.y + 12 * Scale), Layer.Name.c_str(), 11 * Scale, 0xd5d5c4);
-        Caption(ImVec2(RowOrigin.x + 36 * Scale, RowOrigin.y + 32 * Scale), Source.Topology[0] < 6 ? ShapeCaptions[Source.Topology[0]] : "Retained vector", 7 * Scale, 0x93937c);
+        // 📝 The untouched channel set, hoisted to row scope: both the "n ch" readout and the peek
+        // dots below compare against it to decide what this layer actually paints.
+        const auto Untouched = ConstructVectorAuthoringSurfaceChannels();
+        // 📝 Reference row anatomy (Texture Paint outliner): second line reads "shape · n ch · MASK",
+        // composed from this layer's own SurfaceChannels record and retained mask, so the row states
+        // what the coverage bake will actually produce rather than a fixed caption.
+        {
+            char RowMetadata[96];
+            // 📝 "n ch" counts only channels a layer actually paints. Every layer starts with six
+            // contributions on by default (only occlusion/transmission/clearcoat are opt-in), so
+            // printing the enabled count labelled untouched layers "6 ch" and made the whole stack
+            // read identically; the painted count is derived by comparing against the untouched set.
+            size_t PaintedChannels = 0;
+            for (size_t Channel = 0; Channel < Layer.SurfaceChannels.size(); ++Channel)
+                if (Layer.SurfaceChannels[Channel].Enabled != Untouched[Channel].Enabled ||
+                    Layer.SurfaceChannels[Channel].Strength != Untouched[Channel].Strength) ++PaintedChannels;
+            std::snprintf(RowMetadata, sizeof(RowMetadata), "%s · %zu ch%s",
+                Source.Topology[0] < 6 ? ShapeCaptions[Source.Topology[0]] : "Retained vector", PaintedChannels,
+                Layer.Mask ? " · MASK" : "");
+            Caption(ImVec2(RowOrigin.x + 36 * Scale, RowOrigin.y + 32 * Scale), RowMetadata, 7 * Scale, 0x93937c);
+        }
         Ink->PopClipRect();
+        // 📝 Channel peek dots: the five primary OpenPBR contributions this row drives, filled when the
+        // layer owns them and hollow when it does not. Same read of Layer.SurfaceChannels the Surface
+        // channels sheet toggles, right-aligned so it never crowds the name.
+        if (RowWidth > 250 * Scale)
+        {
+            static constexpr size_t PeekChannels[]{size_t(VectorAuthoringSurfaceChannel::Colour),
+                size_t(VectorAuthoringSurfaceChannel::Height), size_t(VectorAuthoringSurfaceChannel::Normal),
+                size_t(VectorAuthoringSurfaceChannel::Roughness), size_t(VectorAuthoringSurfaceChannel::Metalness)};
+            const float DotStep = 9 * Scale, DotRadius = 2.2f * Scale;
+            const float DotX = RowOrigin.x + RowWidth - 66 * Scale - DotStep * std::size(PeekChannels);
+            for (size_t Index = 0; Index < std::size(PeekChannels); ++Index)
+            {
+                const ImVec2 Centre(DotX + Index * DotStep, RowOrigin.y + 20 * Scale);
+                // 📝 Same rule as the "n ch" readout: a dot is lit only when this layer paints that
+                // channel, not when it merely inherits the default contribution.
+                const auto &Channel = Layer.SurfaceChannels[PeekChannels[Index]];
+                const auto &Default = Untouched[PeekChannels[Index]];
+                if (Channel.Enabled != Default.Enabled || Channel.Strength != Default.Strength)
+                    Ink->AddCircleFilled(Centre, DotRadius, ImGui::GetColorU32(Spectrum(0xc9cdb4)));
+                else
+                    Ink->AddCircle(Centre, DotRadius, ImGui::GetColorU32(Spectrum(0x545446)), 0, 1 * Scale);
+            }
+        }
         // 📝 Row preview: the layer's own rendered shape, cropped to its own tight bounds — the
         // ported Texture-workspace layer-row thumbnail, and the same own-bounds contract the
         // selection hitbox fix relies on, instead of the old static swatch outline. The GPU atlas
@@ -1560,6 +1628,28 @@ void PatternWorkspacePanel::ConstructLayers()
     Controls.ControlHeight = 30;
     if (Snapshot.Layers.empty()) ImGui::TextWrapped("Draw your first shape to start a pattern.");
     ImGui::EndChild();
+    // 📝 Reference footer: a quiet readout strip pinned to the bottom of the stack (res · layers ·
+    // masks · painted channels), composed from this document so it never states a stale number.
+    {
+        size_t Masks = 0, Painted = 0;
+        std::array<bool, 9> Channels{};
+        for (const auto &Layer : Snapshot.Layers)
+        {
+            if (Layer.Mask) ++Masks;
+            for (size_t Channel = 0; Channel < Channels.size(); ++Channel)
+                Channels[Channel] = Channels[Channel] || (Layer.Visible && Layer.SurfaceChannels[Channel].Enabled);
+        }
+        // 📝 Head/foot "channels" read the same enabled contribution set the Surface channels sheet
+        // toggles, so the number here always matches what the GPU bake will emit.
+        Painted = size_t(std::count(Channels.begin(), Channels.end(), true));
+        char Footer[160];
+        std::snprintf(Footer, sizeof(Footer), "RES 512   ·   LAYERS %zu   ·   MASKS %zu   ·   PAINTED %zu / 9",
+            Snapshot.Layers.size(), Masks, Painted);
+        ImGui::Dummy(ImVec2(0, 6 * Scale));
+        ImGui::SetCursorPosX(16 * Scale);
+        Caption(ImVec2(ImGui::GetCursorScreenPos().x, ImGui::GetCursorScreenPos().y), Footer, 8 * Scale, 0x6f7065);
+        ImGui::Dummy(ImVec2(0, 4 * Scale));
+    }
 }
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -2745,37 +2835,18 @@ void PatternWorkspacePanel::ConstructInspector()
     Controls.BeginCard(MaskSelection ? "Vector mask" : "Selected motif", true);
     ImGui::BeginDisabled(Protected);
     Controls.BeginCard("Mask", false, true);
-    auto EditedLayer = *First;
-    if (!EditedLayer.Mask)
     {
-        if (Controls.Button("Add mask")) EvaluateEdit([&](auto &Document)
-        {
-            for (auto &Layer : Document.Layers) if (Layer.Token == First->Token)
-            {
-                auto Mask = Snapshot.Instructions[First->Root];
-                if (Mask.Topology[0] > 6) { Mask = VectorCoverageInstruction{}; Mask.Bounds = QueryVectorAuthoringSelectionBounds(Snapshot, Selection); }
-                Mask.Colour = Mask.ColourEnd = {1, 1, 1, 1}; Layer.Mask = Mask;
-            }
-        });
-    }
-    else
-    {
-        if (Controls.Button("Edit mask")) MaskSelection = First->Token;
-        bool Changed = Controls.Toggle("Enable vector mask", EditedLayer.MaskEnabled);
-        Changed |= Controls.Toggle("Invert vector mask", EditedLayer.MaskInverted);
-        Changed |= Controls.Toggle("Luminance mask", EditedLayer.MaskLuminance);
-        int Category = EditedLayer.Mask->Topology[0] == 1 ? 1 : 0;
-        const char *Categories[]{"Rectangle", "Ellipse"};
-        if (EditedLayer.Mask->Topology[0] <= 1 && Controls.Dropdown("Mask shape", Category, Categories)) { EditedLayer.Mask->Topology[0] = uint32_t(Category); Changed = true; }
-        Changed |= Controls.Number("Mask opacity", EditedLayer.Mask->Transform[2], 0, 1);
-        Changed |= Controls.Number("Mask X", EditedLayer.Mask->Bounds[0], -512, 1024);
-        Changed |= Controls.Number("Mask Y", EditedLayer.Mask->Bounds[1], -512, 1024);
-        Changed |= Controls.Number("Mask width", EditedLayer.Mask->Bounds[2], 1, 1024);
-        Changed |= Controls.Number("Mask height", EditedLayer.Mask->Bounds[3], 1, 1024);
-        if (Changed) EvaluateEdit([&](auto &Document) { for (auto &Layer : Document.Layers) if (Layer.Token == First->Token) Layer = EditedLayer; });
-        if (Controls.Button("Remove mask")) EvaluateEdit([&](auto &Document) { for (auto &Layer : Document.Layers) if (Layer.Token == First->Token) Layer.Mask.reset(); });
-        if (MaskSelection && Controls.Button("Done editing mask")) MaskSelection = 0;
-        ImGui::TextDisabled("Paint/image mask authoring is not ported yet.");
+        // 📝 One shared mask editor for Pattern and Stamp (VectorMaskControls.cpp) instead of two
+        // hand-rolled copies that had drifted apart: the mask record is edited in place and the whole
+        // layer is committed through this panel's own EvaluateEdit undo step, so every switch, value
+        // and add/remove below is a real document edit the GPU coverage bake already reads.
+        auto EditedLayer = *First;
+        if (ConstructVectorAuthoringMaskControls(EditedLayer, QueryVectorAuthoringSelectionBounds(Snapshot, Selection)))
+            EvaluateEdit([&](auto &Document) { for (auto &Layer : Document.Layers) if (Layer.Token == First->Token) Layer = EditedLayer; });
+        // 📝 "Edit mask" turns the shared Boolean/mask authoring surface into mask-point editing on the
+        // 2D canvas; the toggle stays a panel mode, not a second mask editor.
+        if (MaskSelection) { if (Controls.Button("Done editing mask")) MaskSelection = 0; }
+        else if (EditedLayer.Mask && Controls.Button("Edit mask")) MaskSelection = First->Token;
     }
     Controls.EndCard();
     if (!MaskSelection)
@@ -2830,7 +2901,7 @@ void PatternWorkspacePanel::ConstructInspector()
         if (Controls.Number("Stroke width", Stroke, 0, 25)) { VectorAuthoringSourcePatch Patch; Patch.StrokeWidth = Stroke; ApplySourcePatch(Patch); }
         auto StrokeColour = Source.StrokeColour;
         if (Controls.Colour("Stroke colour", StrokeColour)) { VectorAuthoringSourcePatch Patch; Patch.StrokeColour = StrokeColour; ApplySourcePatch(Patch); }
-        ImGui::TextWrapped("Fill and stroke colours are independent. Stroke image sources remain deferred.");
+        ImGui::TextWrapped("Solid, linear and radial fill sources are all evaluated by the GPU coverage bake; stroke paints are colour-only.");
         Controls.EndCard();
     }
     ImGui::EndDisabled();
