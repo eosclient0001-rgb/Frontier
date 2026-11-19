@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "negative_controls": [
+    {
+      "category": "GenericOpticalTrig",
+      "rejected": true,
+      "exit_code": 1,
+      "gate": "GPU solar limb/radial blur",
+      "actual_stderr": "Solar profile 99 angle 0.00461053 actual 0.433969 expected 0.433992 error 2.3132e-05 radius 0.0046524 sigma 3.5e-05 erf -0.768435\nCelestial Vulkan failure: GPU solar limb/radial blur does not match double erfc/limb law",
+      "modified_source_sha256": "4a586746285d4b75436e51051732ef7c067c152d8eb732f216339b28eda572d3",
+      "modified_spirv_sha256": "fa5c543b6b50b279a69ccf999ba0040b88855fb98278a686c6e9c6dc43d288f1"
+    },
+    {
+      "category": "RoundedGroundLeak",
+      "rejected": true,
+      "exit_code": 1,
+      "gate": "Deep planetary night leaks",
+      "actual_stderr": "Night closure texel 0,0 radiance 5.70031e-08,1.17192e-08,1.6926e-10\nCelestial Vulkan failure: Deep planetary night leaks direct sunlight into the approximate multiple-scattering table",
+      "modified_source_sha256": "59391a7ad42af35e4e9b27238b4c0e3a6274aae33715036a3f32811ea48d9e1a",
+      "modified_spirv_sha256": "719f501cf7a06e2489f566f51487033418d82d2f322683c20d0e83459d040c5f"
+    },
+    {
+      "category": "PlanarContourClosure",
+      "rejected": true,
+      "gate": "Pinned equatorial contours are mirrored or placed off the real Milky Way",
+      "modified_preparation_sha256": "f6ad16c4c81ba46e7c59048a86bd5374721d512b91b76c06ed107d2172d31096"
+    }
+  ],
+  "production_accepted": false
+}

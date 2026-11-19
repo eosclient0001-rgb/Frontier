@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "assertions": 51899,
+  "catalogue_rows": 41359,
+  "catalogue_unit_error": 3.33066907387547e-16,
+  "vertical_optical_depth_error": 9.35275973334981e-09,
+  "rayleigh_phase_integral": 0.999999999767169,
+  "aerosol_phase_integral": 0.999999757908004,
+  "five_flare_linearity_error": 4.94065645841247e-324,
+  "lunar_exosphere_vertical_blue_optical_depth": 6.09999975213596e-15,
+  "same_moon_texture": true,
+  "renderer_accepted": false
+}

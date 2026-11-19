@@ -1,0 +1,7 @@
+# Validation-only Python dependencies; not engine dependencies or redistributed binaries.
+numpy==2.2.6
+Pillow==11.3.0
+astropy==7.1.1
+pyerfa==2.0.1.5
+jplephem==2.23
+skyfield-data==7.0.0

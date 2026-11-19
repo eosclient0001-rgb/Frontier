@@ -19,6 +19,7 @@ parity and validation against measured tyres, vehicles, sky and lens data remain
 - Track all progress and findings in the [single tracker](Documentation/Tracker.md).
 - Follow the [active plan](Documentation/Plans/Ongoing/EngineUpdate.md).
 - Retain reproducible evidence under [Exhibits](Exhibits/README.md).
+- Inspect [experimental celestial rendering and its 30 native captures](Exhibits/CelestialAtmosphere/README.md).
 - Build the [Control Centre, fonts, and themes](Exhibits/ControlCentre/README.md).
 
 ## Baseline status

@@ -78,3 +78,17 @@ Shared editor line icons under `EngineContent/Icons/Editor` reuse Lucide-compati
 in `Engine/Interface/Lucide.NOTICE`). Texture UV/paint/decal/flake/clearcoat and Fluid water line artwork is authored
 for this integration. Scoped copies of the existing Fluid/smoke/water-folder SVGs and ThorVG compatibility variants
 retain the existing `EngineContent/Icons/Slate-NOTICE.md` provenance. Catalogue separation does not relicense art.
+
+## Experimental celestial sky content
+
+`Experimental/CelestialAtmosphere/Content/MilkyWayContours.json` is the byte-identical `data/mw.json` from
+`ofrohn/d3-celestial` revision `7e720a3de062059d4c5400a379146a601d9010e0`. Its upstream source list credits
+Jose R. Vieira's Milky Way Outline Catalog. Olaf Frohn's original BSD-3-Clause notice is retained beside it
+as `D3Celestial.LICENSE`; file hashes and derived-field treatment are in `Content/Provenance.md` there.
+This is external astronomical content, not vendored rendering or JavaScript code. Brightness is assigned;
+no measured HDR panorama or independent rights grant for underlying compilations is implied.
+
+The experiment reuses the already-retained Hipparcos/XHIP CSV and original VehicleHMI lunar JPEG. It neither
+replaces the Moon map nor resolves the map's pre-existing redistribution-rights qualification. The existing
+`EngineContent/CelestialMaps/MoonAlbedoProvenance.md` remains authoritative. Astropy, ERFA, jplephem and DE421
+are validation-only dependencies, installed outside Git and not bundled with an engine application.

@@ -1,0 +1,199 @@
+<!doctype html>
+<!-- ========================================================================================================================================
+                                                              CELESTIAL.HTML
+============================================================================================================================================= -->
+<!-- 🧩 Browse verified native celestial captures; no browser rendering is substituted for the Slang/Vulkan evidence. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Frontier · Celestial atmosphere</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,Arial,sans-serif;background:#091019;color:#eaf0f8}*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0}button,select,input{font:inherit}button,select{color:inherit;background:#111f30;border:1px solid #2b3c52;border-radius:7px}
+button{padding:11px 15px;cursor:pointer}button:hover,button[aria-pressed=true]{background:#1c3b50;border-color:#82cfe2;color:#bdeeff}
+button:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #a3e6ff;outline-offset:3px}
+a{color:#95cde7;text-decoration:none}a:hover{text-decoration:underline}.Page{max-width:1440px;margin:auto;padding:32px 36px 25px}
+header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;border-bottom:1px solid #233144;padding-bottom:26px}
+.Eyebrow{font-size:11px;letter-spacing:.19em;color:#9fbbd3;margin:0 0 13px}h1{font-size:clamp(29px,4vw,43px);font-weight:500;letter-spacing:-.035em;margin:0 0 12px}
+.Subtitle{color:#93a7bc;font-size:14px;margin:0;max-width:780px;line-height:1.65}.Status{font-size:12px;white-space:nowrap;border:1px solid #345765;color:#a8dde5;padding:10px 13px;border-radius:22px}
+.Layout{display:grid;grid-template-columns:174px minmax(0,1fr);gap:28px;padding-top:28px}nav{display:flex;flex-direction:column;gap:9px}
+nav button{text-align:left;background:transparent;border-color:transparent;padding:13px 10px}.Number{font-size:10px;opacity:.55;margin-right:9px}
+nav p{font-size:11px;line-height:1.7;color:#7e95ac;padding:9px 10px}.Toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:17px}
+.Viewpoints{display:flex;gap:5px}.Viewpoints button{padding:9px 14px;font-size:12px}select{padding:10px;max-width:100%;min-width:240px;font-size:12px}
+.Isolate{font-size:12px;color:#a9bbcc;display:flex;gap:7px;align-items:center}.Viewport{position:relative;aspect-ratio:16/9;background:#000;border:1px solid #223044;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.Viewport img{width:100%;height:100%;object-fit:contain;display:block}.Viewport img[hidden]{display:none}.Placeholder{color:#7890a7;font-size:14px}.CaptionBar{position:absolute;top:16px;left:16px;display:flex;gap:7px;pointer-events:none}
+.Chip{font-size:10px;letter-spacing:.06em;padding:7px 10px;background:#0a111dc9;border:1px solid #344155a0;border-radius:4px;color:#c7d7e6}
+.Below{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin:20px 0 13px}h2{font-size:19px;font-weight:500;margin:0 0 8px}.Description{font-size:12px;line-height:1.7;color:#92a8bd;margin:0;max-width:750px}.Arrows{display:flex;gap:6px;flex-shrink:0}.Arrows button{font-size:16px;padding:7px 13px}
+.Warning{border-left:2px solid #a6bfd5;background:#122033;padding:12px 15px;color:#d1e0ed;font-size:12px;line-height:1.6;margin:16px 0}.Warning[hidden]{display:none}
+.Metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#233144;border:1px solid #233144;border-radius:7px;overflow:hidden;margin:21px 0}
+.Metric{background:#0d1724;padding:16px 15px}.Metric span{display:block;font-size:10px;letter-spacing:.05em;color:#8098ad;margin-bottom:9px}.Metric strong{font-size:16px;font-weight:400;color:#d4e7f6}
+.Thumbs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}.Thumbs button{padding:0;overflow:hidden;text-align:left;background:#0d1724;border:1px solid #213044;font-size:10px;line-height:1.5}.Thumbs button[aria-pressed=true]{border-color:#8cd9e8}.Thumbs img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block}.Thumbs span{display:block;padding:7px 8px;min-height:40px}
+footer{border-top:1px solid #233144;margin-top:32px;padding-top:19px;display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;font-size:11px;line-height:1.7;color:#7e94aa}.Links{display:flex;gap:18px;flex-wrap:wrap}.Failure{color:#ffc7c2;border:1px solid #a25f60;padding:15px;margin-top:20px;line-height:1.6}.Failure[hidden]{display:none}
+@media(max-width:900px){.Page{padding:22px}.Layout{grid-template-columns:1fr;gap:17px}nav{flex-direction:row;flex-wrap:wrap;gap:4px}nav p{display:none}nav button{padding:10px}.Status{white-space:normal;max-width:170px}.Thumbs{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:560px){.Page{padding:18px 13px}header{display:block}.Status{display:inline-block;max-width:none;margin-top:17px}.Subtitle{font-size:12px}.Toolbar{gap:10px}select{width:100%;min-width:0;order:3}.Metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.Thumbs{grid-template-columns:repeat(3,minmax(0,1fr))}.Chip{font-size:8px;padding:5px}.CaptionBar{left:8px;top:8px}.Below{margin-top:17px}h2{font-size:17px}}
+</style>
+</head>
+<body>
+<div class="Page">
+<header><div><p class="Eyebrow">FRONTIER / EXPERIMENTAL RENDERING</p><h1>Celestial atmosphere</h1>
+<p class="Subtitle">Six skies. Two viewpoints. One measured star catalogue.<br>Actual C++ / Slang / Vulkan readbacks — not generated artwork or a browser renderer.</p></div>
+<div id="Status" class="Status" role="status">Checking capture identities…</div></header>
+<div id="Failure" class="Failure" role="alert" hidden></div>
+<div class="Layout">
+<nav aria-label="Capture categories">
+<button data-category="Atmosphere" aria-pressed="true"><span class="Number">01</span>Atmosphere</button>
+<button data-category="Moon" aria-pressed="false"><span class="Number">02</span>Moon</button>
+<button data-category="Sun" aria-pressed="false"><span class="Number">03</span>Sun</button>
+<button data-category="Optics" aria-pressed="false"><span class="Number">04</span>Lens optics</button>
+<button data-category="Night" aria-pressed="false"><span class="Number">05</span>Stars &amp; galaxy</button>
+<p>30 native views<br>480 × 270 pixels<br>10 executed Slang entries<br><br>SwiftShader CPU Vulkan.<br>Not Windows / physical-GPU / production-editor acceptance.</p>
+</nav>
+<main>
+<div class="Toolbar"><div class="Viewpoints" id="Viewpoints"><button data-view="Surface" aria-pressed="true">Inside atmosphere</button><button data-view="Orbit" aria-pressed="false">400 km orbit</button></div>
+<select id="Scene" aria-label="Native capture"></select><label class="Isolate" id="IsolateLabel" hidden><input type="checkbox" id="Isolate">Isolated lens contribution</label></div>
+<div class="Viewport"><span class="Placeholder" id="Placeholder">Verifying native capture…</span><img id="Capture" alt="" hidden>
+<div class="CaptionBar"><span class="Chip">NATIVE SLANG / VULKAN</span><span id="Plane" class="Chip">DISPLAY-MAPPED RGB</span></div></div>
+<div class="Below"><div><h2 id="Title">Loading captures</h2><p class="Description" id="Description">The main capture is displayed only after its SHA-256 matches the retained evidence.</p></div>
+<div class="Arrows"><button id="Previous" aria-label="Previous capture">←</button><button id="Next" aria-label="Next capture">→</button></div></div>
+<p id="Warning" class="Warning" hidden></p>
+<div class="Metrics"><div class="Metric"><span id="MetricLabel0">SOLAR ELEVATION</span><strong id="Metric0">—</strong></div><div class="Metric"><span>OBSERVER ALTITUDE</span><strong id="Metric1">—</strong></div><div class="Metric"><span>DISPLAY EXPOSURE</span><strong id="Metric2">—</strong></div><div class="Metric"><span>RENDERED STELLAR ERROR</span><strong id="Metric3">—</strong></div></div>
+<div id="Thumbs" class="Thumbs" aria-label="Native capture choices"></div>
+</main></div>
+<footer><span>Experimental models. Physically faint lunar gas is invisible at nominal scale; x10¹⁴ is a diagnostic only.<br>Milky Way geometry is authentic; assigned surface brightness is not a measured HDR panorama.</span>
+<div class="Links"><a href="README.md">Methods &amp; limits</a><a href="Images/SkyStates.png">Six skies</a><a href="Images/FiveFlares.png">Five flares</a><a href="Results/CelestialInspection.json">Accuracy report</a><a href="Results/NativeRadiance.npz" download>Float32 evidence</a></div></footer>
+</div>
+<script>
+'use strict';
+let Captures = [], Integrity, Inspection, Category = 'Atmosphere', View = 'Surface', Current = 'SurfaceSunrise', Serial = 0, PreviousBlob;
+const Retrieve = Name => document.getElementById(Name);
+const Moments = ['BeforeSunrise','Dawn','Sunrise','Zenith','Sunset','Dusk'];
+const Labels = {BeforeSunrise:'Before sunrise',Dawn:'Dawn',Sunrise:'Sunrise',Zenith:'Zenith',Sunset:'Sunset',Dusk:'Dusk'};
+const MoonLabels = {MoonFull:'Full Moon',MoonQuarter:'Quarter Moon',MoonCrescent:'Crescent Moon',MoonExospherePhysical:'Nominal exosphere',MoonExosphereAmplified:'Exosphere ×10¹⁴ diagnostic'};
+function CategoryOf(Capture)
+{
+    if (Capture.slug.startsWith('Surface') || Capture.slug.startsWith('Orbit')) return 'Atmosphere';
+    if (Capture.slug.startsWith('Moon')) return 'Moon';
+    if (Capture.slug.startsWith('Flare')) return 'Optics';
+    if (Capture.slug.startsWith('Sun') || Capture.slug === 'SolarCorona') return 'Sun';
+    return 'Night';
+}
+function Label(Capture)
+{
+    if (CategoryOf(Capture) === 'Atmosphere') return Labels[Capture.slug.replace(/^(Surface|Orbit)/,'')];
+    return MoonLabels[Capture.slug] || Capture.title;
+}
+function Available()
+{
+    if (Category === 'Atmosphere') return Moments.map(Moment => Captures.find(Capture => Capture.slug === View + Moment));
+    return Captures.filter(Capture => CategoryOf(Capture) === Category);
+}
+async function Hash(Bytes)
+{
+    return [...new Uint8Array(await crypto.subtle.digest('SHA-256',Bytes))].map(Byte => Byte.toString(16).padStart(2,'0')).join('');
+}
+function Fail(Message)
+{
+    Retrieve('Failure').hidden = false;
+    Retrieve('Failure').textContent = Message;
+    Retrieve('Status').textContent = 'Evidence unavailable';
+    Retrieve('Capture').hidden = true;
+    Retrieve('Placeholder').textContent = 'No unverified image is displayed.';
+    Retrieve('Placeholder').hidden = false;
+}
+function SelectCategory(Selection)
+{
+    Category = Selection;
+    if (!Available().some(Capture => Capture.slug === Current)) Current = Available()[0].slug;
+    RefreshChoices();
+}
+function RefreshChoices()
+{
+    document.querySelectorAll('[data-category]').forEach(Button => Button.setAttribute('aria-pressed',Button.dataset.category === Category));
+    document.querySelectorAll('[data-view]').forEach(Button => Button.setAttribute('aria-pressed',Button.dataset.view === View));
+    Retrieve('Viewpoints').hidden = Category !== 'Atmosphere';
+    Retrieve('IsolateLabel').hidden = Category !== 'Optics';
+    if (Category !== 'Optics') Retrieve('Isolate').checked = false;
+    Retrieve('Scene').replaceChildren(); Retrieve('Thumbs').replaceChildren();
+    for (const Capture of Available())
+    {
+        const Option = document.createElement('option'); Option.value = Capture.slug; Option.textContent = Label(Capture);
+        Retrieve('Scene').append(Option);
+        const Button = document.createElement('button'), Picture = document.createElement('img'), Text = document.createElement('span');
+        Button.type = 'button'; Button.dataset.slug = Capture.slug; Button.setAttribute('aria-pressed',Capture.slug === Current);
+        Picture.src = Capture.image; Picture.alt = ''; Picture.loading = 'lazy'; Text.textContent = Label(Capture);
+        Button.append(Picture,Text); Button.addEventListener('click',() => {Current = Capture.slug; RefreshCapture();});
+        Retrieve('Thumbs').append(Button);
+    }
+    RefreshCapture();
+}
+async function RefreshCapture()
+{
+    const Ticket = ++Serial, Capture = Captures.find(Entry => Entry.slug === Current);
+    Retrieve('Scene').value = Current;
+    document.querySelectorAll('[data-slug]').forEach(Button => Button.setAttribute('aria-pressed',Button.dataset.slug === Current));
+    Retrieve('Capture').hidden = true; Retrieve('Placeholder').hidden = false;
+    Retrieve('Placeholder').textContent = 'Verifying native capture…';
+    try
+    {
+        const Isolated = Category === 'Optics' && Retrieve('Isolate').checked;
+        const Location = Isolated ? `Images/${Capture.slug}Isolated.png` : Capture.image;
+        const Response = await fetch(Location); if (!Response.ok) throw new Error(`Missing native image: ${Location}`);
+        const Bytes = await Response.arrayBuffer();
+        const Expected = Isolated ? Integrity.retained_files_sha256[Location] : Capture.png_sha256;
+        if (await Hash(Bytes) !== Expected) throw new Error(`Native image identity mismatch: ${Location}`);
+        if (Ticket !== Serial) return;
+        const BlobUrl = URL.createObjectURL(new Blob([Bytes],{type:'image/png'}));
+        const Picture = Retrieve('Capture');
+        Picture.onload = () => {if (Ticket === Serial) {Picture.hidden = false; Retrieve('Placeholder').hidden = true;}};
+        if (PreviousBlob) URL.revokeObjectURL(PreviousBlob); PreviousBlob = BlobUrl; Picture.src = BlobUrl;
+        Picture.alt = Capture.title + (Isolated ? ', isolated lens contribution' : ', actual native capture');
+        Picture.dataset.slug = Capture.slug;
+        Retrieve('Title').textContent = Capture.title;
+        Retrieve('Plane').textContent = Isolated ? 'ISOLATED OPTICAL CONTRIBUTION' : 'DISPLAY-MAPPED RGB';
+        Retrieve('Description').textContent = `${Capture.shader} · 480 × 270 · image SHA-256 verified. Display exposure is photographic, not an increased source or atmosphere density.`;
+        Retrieve('Metric0').textContent = `${(Math.asin(Capture.sun[2])*180/Math.PI).toFixed(1)}°`;
+        Retrieve('Metric1').textContent = `${(Capture.camera_km[2]-6360).toFixed(2)} km`;
+        Retrieve('Metric2').textContent = Capture.exposure.toExponential(2);
+        Retrieve('Metric3').textContent = `${Inspection.stars.astropy_max_deg.toFixed(4)}°`;
+        let Warning = '';
+        if (Capture.slug === 'MoonExosphereAmplified') Warning = 'AMPLIFIED DIAGNOSTIC ×10¹⁴ — radiance only. The nominal lunar exosphere is effectively invisible; this blue halo is NOT a physical-density view.';
+        else if (Capture.slug === 'MoonExospherePhysical') Warning = 'Nominal optically thin lunar gas is effectively invisible. No visible blue atmosphere should appear at this scale. The density profile is representative, not a measured LADEE exosphere model.';
+        else if (Capture.slug.includes('Zenith')) Warning = '90° zenith is an ideal subsolar-site calibration, not Benoni at solar noon. Other named sky views use the Benoni ephemeris on 2026-11-18.';
+        else if (Capture.slug === 'SolarCorona') Warning = 'Coronal exposure with the photosphere masked by a virtual coronagraph. Quiet-Sun density is unchanged; the chromospheric colour is illustrative.';
+        else if (Category === 'Night') Warning = 'Measured Hipparcos/XHIP stars; authentic Milky Way contour geometry with assigned, smoothed photometry. No measured HDR panorama, proper motion or observed-sky claim.';
+        else if (Category === 'Optics') Warning = 'Unmeasured parametric lens. Five terms are individually rendered, additive and source-occlusion tested; this is not calibration of a physical camera.';
+        Retrieve('Warning').hidden = !Warning; Retrieve('Warning').textContent = Warning;
+        Retrieve('Status').textContent = '30 verified native captures';
+    }
+    catch (Failure) {if (Ticket === Serial) Fail(Failure.message);}
+}
+function Advance(Offset)
+{
+    const Choices = Available(), Index = Choices.findIndex(Capture => Capture.slug === Current);
+    Current = Choices[(Index + Offset + Choices.length) % Choices.length].slug; RefreshCapture();
+}
+async function Initialize()
+{
+    try
+    {
+        const [ManifestResponse,CaptureResponse,InspectionResponse] = await Promise.all([fetch('Results/Integrity.json'),fetch('Captures.json'),fetch('Results/CelestialInspection.json')]);
+        if (![ManifestResponse,CaptureResponse,InspectionResponse].every(Response => Response.ok)) throw new Error('Missing verification report; run the celestial exhibit first.');
+        Integrity = await ManifestResponse.json(); const CaptureBytes = await CaptureResponse.arrayBuffer();
+        if (await Hash(CaptureBytes) !== Integrity.retained_files_sha256['Captures.json']) throw new Error('Capture list identity mismatch.');
+        Captures = JSON.parse(new TextDecoder().decode(CaptureBytes)); Inspection = await InspectionResponse.json();
+        if (Captures.length !== 30 || !Inspection.passed) throw new Error('Full native capture inspection has not passed.');
+        document.querySelectorAll('[data-category]').forEach(Button => Button.addEventListener('click',() => SelectCategory(Button.dataset.category)));
+        document.querySelectorAll('[data-view]').forEach(Button => Button.addEventListener('click',() => {Current = Current.replace(View,Button.dataset.view); View = Button.dataset.view; RefreshChoices();}));
+        Retrieve('Scene').addEventListener('change',Event => {Current = Event.target.value; RefreshCapture();});
+        Retrieve('Isolate').addEventListener('change',RefreshCapture);
+        Retrieve('Previous').addEventListener('click',() => Advance(-1)); Retrieve('Next').addEventListener('click',() => Advance(1));
+        document.addEventListener('keydown',Event => {if (Event.target.tagName !== 'SELECT' && Event.key === 'ArrowRight') Advance(1); if (Event.target.tagName !== 'SELECT' && Event.key === 'ArrowLeft') Advance(-1);});
+        RefreshChoices();
+    }
+    catch (Failure) {Fail(Failure.message);}
+}
+Initialize();
+</script>
+</body>
+</html>

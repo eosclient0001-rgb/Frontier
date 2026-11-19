@@ -1,0 +1,46 @@
+{
+  "moon_source": "EngineContent/CelestialMaps/MoonAlbedoSource2048.jpg",
+  "moon_source_sha256": "f8c57df90d2a6dce255614e577ef1d846f222fc549e94ba6809e695ab776b5ca",
+  "moon_extent": [
+    2048,
+    1024
+  ],
+  "moon_ppm_sha256": "eba56604f9790991f2082309ec759d2b5d132d5d1ebbccbce578db58fdc2d244",
+  "contours_source": "Experimental/CelestialAtmosphere/Content/MilkyWayContours.json",
+  "contours_sha256": "aee221a7a0e879418e685de00c3e68fbdfac5667c0a8aab74929ef9cf4aab4fb",
+  "contours_revision": "7e720a3de062059d4c5400a379146a601d9010e0",
+  "galaxy_extent": [
+    1024,
+    512
+  ],
+  "galaxy_linear_field_sha256": "98fecaf014648590dfcd6f5bdd93d3a882e834ce532c4d95301bcf62da00bc62",
+  "layers": [
+    {
+      "id": "ol1",
+      "fraction": 0.14843177795410156,
+      "weight": 0.12
+    },
+    {
+      "id": "ol2",
+      "fraction": 0.04161643981933594,
+      "weight": 0.18
+    },
+    {
+      "id": "ol3",
+      "fraction": 0.015913009643554688,
+      "weight": 0.22
+    },
+    {
+      "id": "ol4",
+      "fraction": 0.00429534912109375,
+      "weight": 0.25
+    },
+    {
+      "id": "ol5",
+      "fraction": 0.0011463165283203125,
+      "weight": 0.23
+    }
+  ],
+  "coordinates": "J2000 equatorial longitude [-180,180], north at row zero",
+  "galaxy_photometry": "Assigned contour surface brightness, 0.60-degree Gaussian smoothing; not a measured HDR panorama"
+}

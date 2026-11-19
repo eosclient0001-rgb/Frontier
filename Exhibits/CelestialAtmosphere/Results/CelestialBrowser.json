@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "native_views": 30,
+  "isolated_lens_views": 7,
+  "viewpoints": 2,
+  "diagnostic_labels": true,
+  "keyboard_and_thumbnails": true,
+  "mobile": [
+    390,
+    844
+  ],
+  "reduced_motion": true,
+  "live_links": 5,
+  "missing_capture_rejected": true,
+  "changed_image_rejected": true,
+  "browser": "153.0.8010.0",
+  "renderer_scope": "Retained native captures, not browser-generated skies"
+}

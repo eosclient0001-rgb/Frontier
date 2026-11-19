@@ -1,0 +1,45 @@
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Found Vulkan: /home/user/Frontier/ExternalPackages/VulkanCompute/SwiftShader/libvulkan.so.1 (found version "1.4.321")  missing components: glslc glslangValidator
+-- Configuring done (0.5s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Frontier/_ClaudeScratch/build/CelestialSanitized
+[0/2] Re-checking globbed directories...
+[1/21] Building CXX object CMakeFiles/CelestialValidation.dir/home/user/Frontier/Frontier/Engine/Rendering/CelestialModel.cpp.o
+[2/21] Building CXX object CMakeFiles/CelestialValidation.dir/home/user/Frontier/Frontier/Engine/Rendering/AtmosphereModel.cpp.o
+[3/21] Building CXX object CMakeFiles/CelestialValidation.dir/home/user/Frontier/Exhibits/CelestialAtmosphere/Code/CelestialValidation.cpp.o
+[4/21] Linking CXX executable CelestialValidation
+[5/21] Building CXX object CMakeFiles/CelestialCatalogueProbe.dir/home/user/Frontier/Exhibits/NightSky/Code/StarCatalogueProbe.cpp.o
+[6/21] Generating Shaders/BakeAtmosphereMultiple.spv, Shaders/BakeAtmosphereMultiple.spv.json
+[7/21] Building CXX object CMakeFiles/CelestialCatalogueProbe.dir/home/user/Frontier/Frontier/Engine/Rendering/CelestialModel.cpp.o
+[8/21] Linking CXX executable CelestialCatalogueProbe
+[9/21] Generating Shaders/BakeAtmosphereTransmittance.spv, Shaders/BakeAtmosphereTransmittance.spv.json
+[10/21] Generating Shaders/InspectCelestialPhysics.spv, Shaders/InspectCelestialPhysics.spv.json
+[11/21] Generating Shaders/RenderCelestialAtmosphere.spv, Shaders/RenderCelestialAtmosphere.spv.json
+[12/21] Generating Shaders/RenderLensFlare.spv, Shaders/RenderLensFlare.spv.json
+[13/21] Generating Shaders/RenderLunarSurface.spv, Shaders/RenderLunarSurface.spv.json
+[14/21] Generating Shaders/RenderSolarAtmosphere.spv, Shaders/RenderSolarAtmosphere.spv.json
+[15/21] Generating Shaders/ResolveAtmosphericSolarFlux.spv, Shaders/ResolveAtmosphericSolarFlux.spv.json
+[16/21] Generating Shaders/ResolveCataloguePhotometry.spv, Shaders/ResolveCataloguePhotometry.spv.json
+[17/21] Generating Shaders/ResolveSolarVisibility.spv, Shaders/ResolveSolarVisibility.spv.json
+[18/21] Building CXX object CMakeFiles/CelestialVulkan.dir/home/user/Frontier/Frontier/Engine/Rendering/CelestialModel.cpp.o
+[19/21] Building CXX object CMakeFiles/CelestialVulkan.dir/home/user/Frontier/Frontier/Engine/Rendering/AtmosphereModel.cpp.o
+[20/21] Building CXX object CMakeFiles/CelestialVulkan.dir/home/user/Frontier/Exhibits/CelestialAtmosphere/Code/CelestialVulkan.cpp.o
+[21/21] Linking CXX executable CelestialVulkan
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/CelestialSanitized
+Test project /home/user/Frontier/_ClaudeScratch/build/CelestialSanitized
+    Start 1: CelestialNativePhysics
+1/2 Test #1: CelestialNativePhysics ...........   Passed    0.50 sec
+    Start 2: CelestialShaderReadback
+2/2 Test #2: CelestialShaderReadback ..........   Passed   13.66 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =  14.16 sec

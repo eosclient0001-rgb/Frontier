@@ -1,0 +1,54 @@
+{
+  "passed": true,
+  "capture_count": 30,
+  "native_dimensions": [
+    480,
+    270
+  ],
+  "moon": {
+    "full_image_texture_sample_max_error": 5.519790594599172e-06,
+    "phases": {
+      "MoonFull": {
+        "observed_lit_area": 1.0,
+        "geometric_lit_area": 1.0
+      },
+      "MoonQuarter": {
+        "observed_lit_area": 0.5,
+        "geometric_lit_area": 0.5
+      },
+      "MoonCrescent": {
+        "observed_lit_area": 0.05514847666795218,
+        "geometric_lit_area": 0.054496737905814996
+      }
+    },
+    "nominal_exosphere_max_radiance": 5.543564247917484e-15,
+    "diagnostic_radiance_gain": 100000000376830.0,
+    "diagnostic_reconstruction_error": 0.0
+  },
+  "stars": {
+    "projected_sources": 8080,
+    "catalogue_coordinate_rounding_matches": 8080,
+    "gpu_projection_max_pixels": 7.705945597535901e-05,
+    "per_source_relative_flux_error": 6.842123780881337e-07,
+    "integrated_image_relative_flux_error": 9.511861187583293e-09,
+    "astropy_max_deg": 0.006133483028297716,
+    "astropy_mean_deg": 0.004636399720571454,
+    "proper_motion_refraction_parallax": "not modeled"
+  },
+  "galaxy": {
+    "gpu_rotation_astropy_vector_error": 2.1396859229341555e-07,
+    "contour_weighted_abs_galactic_latitude_deg": 5.256090728933795,
+    "brightness_fraction_above_20deg_galactic_latitude": 0.0007773736868624031,
+    "photometry": "assigned surface brightness on Jose R. Vieira/d3-celestial outlines; not a measured panorama"
+  },
+  "solar_integrated_irradiance_rgb": [
+    0.999932279505166,
+    0.999932279505166,
+    0.999932279505166
+  ],
+  "five_flare_full_image_addition_error": 5.960464477539063e-08,
+  "occluded_flare_rgb_max": 0,
+  "display": "ACES fitted curve then IEC sRGB, with each declared photographic exposure; no AI imagery",
+  "production_accepted": false,
+  "windows_physical_gpu_editor_realtime": "not tested"
+}

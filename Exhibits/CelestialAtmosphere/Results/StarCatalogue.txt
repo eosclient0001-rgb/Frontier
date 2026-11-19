@@ -1,0 +1,15 @@
+2026-01-02T03:00:00 Benoni : mean=0.00494016 deg max=0.00688500 deg
+2026-01-02T03:00:00 Equator: mean=0.00497221 deg max=0.00692088 deg
+2026-01-02T03:00:00 Tromso : mean=0.00493356 deg max=0.00686515 deg
+2026-01-02T03:00:00 Sydney : mean=0.00486737 deg max=0.00677213 deg
+2026-06-15T12:00:00 Benoni : mean=0.00479495 deg max=0.00627341 deg
+2026-06-15T12:00:00 Equator: mean=0.00478258 deg max=0.00626597 deg
+2026-06-15T12:00:00 Tromso : mean=0.00482880 deg max=0.00632040 deg
+2026-06-15T12:00:00 Sydney : mean=0.00490136 deg max=0.00640401 deg
+2026-10-18T13:00:00 Benoni : mean=0.00474498 deg max=0.00706319 deg
+2026-10-18T13:00:00 Equator: mean=0.00472703 deg max=0.00703356 deg
+2026-10-18T13:00:00 Tromso : mean=0.00476918 deg max=0.00708483 deg
+2026-10-18T13:00:00 Sydney : mean=0.00483723 deg max=0.00716973 deg
+Astropy 7.1.1; 6228 comparisons, 519 retained Hipparcos rows, 3 UTC dates, 4 sites; includes near-pole stars, zero pressure
+direction angular difference mean=0.004841616 deg RMS=0.005033953 deg max=0.007169729 deg
+PASS scoped independent Astropy/ERFA coordinate comparison; no proper motion or observed-sky claim

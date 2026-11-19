@@ -1329,3 +1329,24 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
   the temporal modes (-9.9% / -4.7%), confirming the harness detects the correlation it guards against.
   LightCompute 6/6 release + ASan/UBSan. GitHub Actions: user enabled "Allow all actions" in repo
   Settings; PR #4 merge into main is the remaining step before WindowsWorkspaces can be dispatched.
+
+## Experimental celestial atmosphere — 2026-11-18
+
+- Implemented actual Slang/Vulkan rendering in `Experimental/CelestialAtmosphere`, not just requirements.
+  Thirty 480x270 native captures cover six named skies at surface/orbit, the same textured Moon and nominal
+  exosphere, finite Sun/radial falloff/corona, five lens terms and measured Hipparcos / authentic galaxy geometry.
+- Release 2/2, ASan+UBSan 2/2 and Vulkan-OFF 1/1 CTests pass. Ten entries executed, eight guarded SSBOs,
+  128-byte reflected pushes, 3,282 GPU physics probes and 51,899 native assertions. All 30 viewer choices, seven
+  isolated optical views, mobile/keyboard/links and missing/modified-evidence rejection pass Chromium checks.
+- Independent checks: full Moon JPEG/image error 5.52e-6; solar integrated irradiance .99993228; rendered-field
+  stars vs Astropy max .006134 deg / broader 6,228-case max .007170 deg; 960 DE421 Sun/Moon comparisons pass.
+  All 8,080 rendered catalogue sources match retained stars; full-image stellar flux relative error 9.52e-9.
+- Pre-acceptance image review caught a planetary boundary sunlight leak; explicit deep-night controls now pass.
+  Stable optical trig and spherical polar-contour closure also have deliberately broken negative controls.
+  No thresholds for these independent optical/geometry gates were relaxed to accept the images.
+- Lunar gas is nominal and physically invisible, not Earthlike blue atmosphere. The x1e14 image is an explicitly
+  labelled radiance diagnostic. Galaxy surface photometry, lens calibration, lunar reflectance and some solar
+  atmosphere / multiple-scattering terms remain approximations; no measured-sky or calibrated-plasma claim.
+- Evidence, limits, hashes, retained Float32 samples and reproduction: `Exhibits/CelestialAtmosphere/README.md`.
+  Software SwiftShader CPU only; Windows/MSVC, physical GPU, real-time and production editor acceptance unrun.
+  Existing shadow/GI failures and their emissive-sphere-only scenes remain unchanged; no Actions authorized.

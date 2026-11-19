@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "assertions": 286,
+  "source_identities": 51,
+  "retained_file_identities": 65,
+  "native_captures": 30,
+  "float_probes_per_layer": 1024,
+  "full_float_planes": 5,
+  "source_and_evidence_integrity": true,
+  "production_accepted": false
+}

@@ -1,0 +1,65 @@
+Celestial atmosphere verification — 2026-11-18
+
+Scope: isolated Experimental/CelestialAtmosphere prototype and Exhibits/CelestialAtmosphere evidence.
+Native source base: 0cc8ea5515fec28ad537818a15d54ece6a1033f8, plus the uncommitted celestial implementation.
+The exact executed source and compiled SPIR-V identities are recorded in Integrity.json.
+No production engine/editor sources or historical shadow/GI implementations were changed.
+
+Tested environment:
+  Linux x86_64, GCC 12.2.0, C++20, CMake 3.31.10, Ninja.
+  Slang 2026.14.1, SPIR-V glsl_450, -fp-mode precise -O0.
+  GCC Release: -Wall -Wextra -Wpedantic -Werror -fno-fast-math -ffp-contract=off.
+  SwiftShader Device (Subzero), CPU Vulkan device type 4, explicit libvk_swiftshader.so.
+  Vulkan-Headers 1.4.321; eight guarded coherent-mapped SSBOs, 128-byte pushes.
+  Python 3.11.2, NumPy 2.2.6, Pillow 11.3.0, Astropy 7.1.1, pyerfa 2.0.1.5,
+  jplephem 2.23, skyfield-data 7.0.0, bundled offline IERS.
+  JPL DE421 SHA-256: a20a7139da04cbc462454634918e9a9ca69127044e2cc9d4f9c16e238d2deedc.
+  Node.js 22.22.3, playwright-core 1.56.1, Chromium 153.0.8010.0; desktop 1440x1080, mobile 390x844.
+  Python image sheets use Pillow's scalable bundled default font when content fonts are unavailable.
+
+Executed end-to-end reproduction (exit 0):
+  CMAKE=<repository scratch>/BuildPackages/cmake/data/bin/cmake
+  CTEST=<repository scratch>/BuildPackages/cmake/data/bin/ctest
+  CMAKE_MAKE_PROGRAM=<repository scratch>/BuildPackages/bin/ninja
+  PYTHONPATH=<repository scratch>/CelestialPython:<repository scratch>/PythonPackages
+  BUILD=_ClaudeScratch/build/CelestialAtmosphere
+  INPUTS=_ClaudeScratch/tmp/CelestialInputsFinal
+  OUTPUT=_ClaudeScratch/tmp/CelestialReproduction
+  SLANGC=ExternalPackages/VulkanCompute/Slang/slangtorch/bin/slangc
+  VULKAN_DRIVER=ExternalPackages/VulkanCompute/SwiftShader/libvk_swiftshader.so
+  VULKAN_INCLUDE_DIR=ExternalPackages/VulkanCompute/Vulkan-Headers-1.4.321/include
+  VULKAN_LIBRARY=ExternalPackages/VulkanCompute/SwiftShader/libvulkan.so.1
+  bash Exhibits/CelestialAtmosphere/RunCelestial.sh
+  Environment paths were absolute in the actual invocation; the scratch packages are not shipped.
+
+The launcher executes:
+  PrepareCelestial.py -> isolated CMake Release build -> 2/2 CTests -> 30 complete GPU readbacks ->
+  6,228-case Astropy catalogue comparison -> 960-case JPL ephemeris comparison -> three negative controls ->
+  full-image numeric inspector -> source/evidence integrity validator.
+
+Additional verification (exit 0):
+  Debug CMake in _ClaudeScratch/build/CelestialSanitized, -fsanitize=address,undefined
+    -fno-omit-frame-pointer -fno-pie, linker -fsanitize=address,undefined -no-pie.
+  ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 ctest --output-on-failure -j 1: 2/2.
+    External-driver leak checking is disabled. CelestialFinalChecks.txt repeats after the final capture-host edit
+    and the whitespace-only Slang declaration-layout cleanup. All ten rebuilt SPIR-V outputs remain byte-identical
+    to the pre-cleanup version and to the independent sanitizer-build shader outputs.
+  Independent Vulkan-OFF Release CMake build, native CTest: 1/1.
+  clang-format --dry-run --Werror: all new C++ headers, implementation and Slang files.
+  Python py_compile, bash -n and node --check: all new executable validation/viewer source.
+  ValidateCelestialPresentation.cjs: all 30 native views, seven isolated flare views, both viewpoints,
+    physical/amplified diagnostic labels, keyboard/thumbnails, five links, mobile/reduced-motion,
+    missing-report and modified-image rejection.
+  Final image inspector refresh: complete unclipped sheet captions, transitive repository-header identities and
+    fresh compiled SPIR-V hashes cross-checked against the hashes actually loaded by the capture host.
+  Final retained-evidence gate: 51 source identities, 65 retained-file identities, 286 assertions.
+
+Observed pre-acceptance failures and repairs are described in README.md and CelestialControls.json.
+The physical lunar gas is representative and invisible; its x1e14 radiance diagnostic is explicitly labelled.
+The galaxy uses authentic outline geometry with assigned photometry, not a calibrated HDR panorama.
+All display exposures are recorded and do not change incident-source or medium-density parameters.
+
+Not tested / not claimed:
+  Windows/MSVC execution, physical GPU, production viewport, real-time/asynchronous/device-local performance,
+  measured lens calibration, full lunar exosphere chemistry/kinetics, spectral plasma or converged multiple scattering.
+No Linux application package, replacement Windows binary, Actions run, PR or release is part of this delivery.

@@ -1,0 +1,182 @@
+{
+  "BakeAtmosphereMultiple.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "BakeAtmosphereTransmittance.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "InspectCelestialPhysics.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "RenderCelestialAtmosphere.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "RenderLensFlare.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "RenderLunarSurface.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "RenderSolarAtmosphere.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "ResolveAtmosphericSolarFlux.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "ResolveCataloguePhotometry.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  },
+  "ResolveSolarVisibility.spv.json": {
+    "storage_slots": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "push_bytes": 128,
+    "group_size": [
+      64,
+      1,
+      1
+    ]
+  }
+}

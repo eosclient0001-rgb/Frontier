@@ -108,3 +108,10 @@ The font catalogue has a native TOML form; JSON remains only an automation/repor
 - `Experimental/VehicleHmiReference/`: selected immutable full-demo sources, blob manifest and original tyre tests.
 - `EngineContent/CelestialMaps/`: retained demo lunar JPEG and provenance; generated runtime PPM stays ignored.
 - `Exhibits/VehiclePhysics/Continuation.md`: source audit, renderer comparison, validation and remaining scope.
+
+## Experimental celestial atmosphere — 2026-11-18
+
+- `Experimental/CelestialAtmosphere/`: isolated Slang shaders, C++ input footprint, CMake and preview launcher.
+- Its `Content/` owns the pinned, attributed Milky Way contour content; no duplicate Moon texture is added.
+- `Exhibits/CelestialAtmosphere/`: generating validation code, retained native captures, lossless float evidence
+  and the capture viewer. Production engine/editor targets and prior shadow scenes are unchanged.
