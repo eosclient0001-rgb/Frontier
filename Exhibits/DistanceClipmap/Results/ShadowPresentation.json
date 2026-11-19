@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "browser": "153.0.8010.0",
+  "native_views": 5,
+  "native_algorithms_each": 6,
+  "html_sha256": "489217c36c8f879c7e585c77eaf450606d4e3434af784886205c55275625ff03",
+  "test_sha256": "542af6e93fd9ceca5b07614175d4de56279c1e1c31796e319cbb304934737a04",
+  "summary_sha256": "49530dc4e7b2c001caf662c578ee261e6c84f18c2844bdeb6fb979dd54775cf8",
+  "integrity_sha256": "168c0ef86213972bbe3bc5857db50a6a8a0b0ca0eef22d38aa9b79185c48f155",
+  "desktop_screenshot_sha256": "82be29460966208bcd3d651e509edb79b8d804d5d79c25ecf9e8fea5bffcd676",
+  "mobile_screenshot_sha256": "1ccca94ded661568155f429af4fb1863281a79733e077dfeac647329ceeb9c10",
+  "vehicle_poses": 6,
+  "captured_playback": true,
+  "reduced_motion_stops": true,
+  "mobile_extent": [
+    390,
+    844
+  ],
+  "no_horizontal_overflow": true,
+  "verified_links": 13,
+  "missing_report_rejected": true,
+  "http200_failed_report_rejected": true,
+  "unexpected_page_errors": [],
+  "renderer_accepted": false
+}

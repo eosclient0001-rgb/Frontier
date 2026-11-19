@@ -4,7 +4,39 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
-## Six requested SDF shadow paths — 2026-11-18
+## Six implemented SDF paths and complete native renders — 2026-11-18
+
+- Implemented all six requested mechanisms in `Experimental/DistanceClipmap/Shadows`, then rendered all six
+  at native **480 × 270**, one emissive sphere only. Real signed primitive marching/normals and SDF path tracing;
+  no triangle reference relabelled as SDF. Three signed `64³` distance levels, actual voxel penumbrae, coupled
+  reflected-radiance cones, conservative SDF/contact cap integration and **96 total paths per pixel** reference
+  (four shared primary sites × 24 paths, at most four scattering sites). No hidden Sun/area/sky/ambient fill.
+- Direct-only, GI-only, combined, visibility, signed-field/normal diagnostics and refreshed source-off captures
+  are retained. Path 3 direct is bit-identical to path 2; compare its GI against the reference's first indirect
+  bounce, not all three secondary sites. Voxel corner/contact errors, cone detail loss and PT noise remain visible.
+- Current native checks: **18,251** assertions; 7,980 SDF cap segments with no skip-induced differences;
+  80,382 actual voxel skips / 1,815 original-SDF refinements; 256 independent 5 mm contact/grazing/far cases.
+  Four 1,024-direction penumbra profiles widen monotonically. Native source-off: 777,600 room + 129,600 vehicle
+  pixels exactly black. Release CTest **2/2** and numeric/Vulkan-host ASan+UBSan runs finish without findings.
+- Nine executed Slang entries cover all six selections on 288 pixels each plus geometry/path probes. SwiftShader
+  CPU type 4, eight guarded SSBOs / 128 B pushes. Maximum direct/indirect CPU–GPU differences 2.3842e−7 / 5.9605e−8.
+  Actual resident distance/radiance clear/restore, cull-off and moved primitive/source submissions are exercised.
+  A shared Float32 azimuth polynomial fixes the reproduced checker-boundary trig divergence without relaxed gates.
+- Independent Float32/PNG/ZIP/error/timing/source verification and nine exact-SPIR-V reflection checks pass;
+  misaligned-layout and builtin-trig controls are rejected. Browser checks pass all 30 algorithm/view combinations,
+  six actual poses, playback/reduced motion, mobile layout and missing/failed report handling. CPU-only CTest 1/1
+  produces byte-identical native hosts; prior transport 2/2 and distance/cache 4/4 regressions pass again.
+- Actual ControlVehicle companion uses all **25,068 facets**, existing **unsigned 80 × 40 × 32** bake and toroidal
+  clips; triangles still decide vehicle contact. Six actual rigid/source poses match fresh native images exactly;
+  6,144 visibility comparisons, 18,204 bake march steps / 468 marched empty segments, cache-clear/restore and
+  stale-source/pose checks pass. This is not six analytic-vehicle modes, driving physics or editor integration.
+- **Rendering delivered, not production acceptance.** Five-round CPU timing/linear comparison evidence is separate
+  from GPU speed. No physical GPU, Windows/MSVC binary/runtime, full-GPU renderer, asynchronous residence or
+  acceptable 60/120 Hz pacing is verified; earlier failed GI gates stay failed. No production target changed.
+  [Six actual renders, methods and reproduction](../Exhibits/DistanceClipmap/SixRenders.md) ·
+  [interactive comparisons](../Exhibits/DistanceClipmap/Shadows.html).
+
+## Six requested SDF shadow paths — historical scope-only checkpoint, 2026-11-18
 
 - Added the user's six image-labelled targets to the remaining shadow work, preserving IDs 0–5:
   **0** point-sample SDF (no penumbra), **1** analytic SDF cone penumbra,

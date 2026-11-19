@@ -1,0 +1,10 @@
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/SdfShadows
+Test project /home/user/Frontier/_ClaudeScratch/build/SdfShadows
+    Start 1: SixSdfShadowNumeric
+1/2 Test #1: SixSdfShadowNumeric ..............   Passed    2.87 sec
+    Start 2: SixSdfShadowVulkan
+2/2 Test #2: SixSdfShadowVulkan ...............   Passed    6.05 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   8.92 sec

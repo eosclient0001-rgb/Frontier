@@ -1,0 +1,55 @@
+Current native Release build consistency
+ninja: no work to do.
+Independent Vulkan-OFF configuration / native checks
+-- The CXX compiler identification is GNU 12.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/user/Frontier/_ClaudeScratch/build/SdfShadowsCpuOnly
+[1/4] Building CXX object CMakeFiles/SdfShadowValidation.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/SdfShadowValidation.cpp.o
+[2/4] Linking CXX executable SdfShadowValidation
+[3/4] Building CXX object CMakeFiles/SphereVehicleValidation.dir/home/user/Frontier/Exhibits/DistanceClipmap/Code/SphereVehicleValidation.cpp.o
+[4/4] Linking CXX executable SphereVehicleValidation
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/SdfShadowsCpuOnly
+Test project /home/user/Frontier/_ClaudeScratch/build/SdfShadowsCpuOnly
+    Start 1: SixSdfShadowNumeric
+1/1 Test #1: SixSdfShadowNumeric ..............   Passed    2.87 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   2.87 sec
+Both native hosts are byte-identical in Vulkan ON/OFF configurations
+Earlier diffuse-transport regression
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+Test project /home/user/Frontier/_ClaudeScratch/build/DiffuseTransport
+    Start 1: DiffuseTransportNumeric
+1/2 Test #1: DiffuseTransportNumeric ..........   Passed   30.25 sec
+    Start 2: DiffuseTransportVulkan
+2/2 Test #2: DiffuseTransportVulkan ...........   Passed   60.38 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =  90.63 sec
+Earlier distance/cache regression
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCmake
+Test project /home/user/Frontier/_ClaudeScratch/build/DistanceClipmapCmake
+    Start 1: DistanceClipmapNumeric
+1/4 Test #1: DistanceClipmapNumeric ...........   Passed    0.59 sec
+    Start 2: DistanceClipmapCacheSides
+2/4 Test #2: DistanceClipmapCacheSides ........   Passed    0.07 sec
+    Start 3: DistanceClipmapConsumption
+3/4 Test #3: DistanceClipmapConsumption .......   Passed    0.40 sec
+    Start 4: DistanceClipmapVulkan
+4/4 Test #4: DistanceClipmapVulkan ............   Passed    4.37 sec
+
+100% tests passed, 0 tests failed out of 4
+
+Total Test time (real) =   5.44 sec
+SHADOW CONTINUATION REGRESSIONS COMPLETE
