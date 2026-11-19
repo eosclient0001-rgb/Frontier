@@ -1,0 +1,95 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "session_date_utc": "2026-11-18",
+  "tested_head": "e3fe2313711c18b27a9d7ff3824573d0434dbf9c",
+  "branch": "arena/f2d37e4b-frontier",
+  "uncommitted_sources": [
+    "Experimental/PlanetaryClouds/",
+    "Exhibits/PlanetaryClouds/"
+  ],
+  "documentation_changes": [
+    "README.md",
+    "Exhibits/README.md",
+    "Documentation/Tracker.md",
+    "Documentation/FolderStructure.md"
+  ],
+  "execution": {
+    "platform": "Linux x86-64",
+    "compiler": "c++ (Debian 12.2.0-14+deb12u1) 12.2.0",
+    "language": "C++20",
+    "python": "3.11.2",
+    "cmake": "3.31.10",
+    "native_release": "-O3 -DNDEBUG -fno-fast-math -ffp-contract=off -fno-math-errno",
+    "native_sanitized": "RelWithDebInfo; -fsanitize=address,undefined -fno-omit-frame-pointer; links libasan.so.8 and libubsan.so.1",
+    "slang_translation": "2026.14.1; -O0 -fp-mode precise; C++ and SPIR-V 1.3 targets",
+    "optimizer_options": "-O --preserve-bindings",
+    "validator_options": "--target-env vulkan1.1",
+    "vulkan_device": "SwiftShader Device (Subzero)",
+    "vulkan_device_type": 4,
+    "vulkan_api_version": 4206592,
+    "cpu_quota": "two CPUs in the local sandbox; concurrent test load, not a controlled benchmark",
+    "memory": "approximately 3.8 GiB; no swap",
+    "beauty_execution": "22 gallery images use Slang-generated C++, two bounded native threads. A separate 64 by 36 cumulus full-entry SwiftShader image retains native/Vulkan Float32 arrays.",
+    "display": "Float32 linear RGB -> reported exposure -> ACES fitted curve -> IEC sRGB -> RGB8 PNG",
+    "morphology_comparison": "Matched native before/after render pairs; retained gzip density source reconstructs pre-repair numerical identity. No image filtering or temporal colour reuse.",
+    "viewer_cache_repair": "Fresh manifests, digest-versioned image requests and digest-keyed Blobs; preview no-store headers/conditional-request rejection; three real HTTP cache regressions, five revised views per case."
+  },
+  "python_packages": {
+    "numpy": "2.2.6",
+    "Pillow": "11.3.0",
+    "vulkan": "1.3.275.1"
+  },
+  "dependencies": [
+    {
+      "name": "Slang via slangtorch 1.3.22",
+      "url": "https://files.pythonhosted.org/packages/59/db/f58a546564b8992e8e4c66b3e1b99432a87acec4317b10b1b9c7927868b9/slangtorch-1.3.22-py3-none-manylinux_2_27_x86_64.whl",
+      "archive_sha256": "7755f2f53509ebbd65839dcd8a104e7105aeaf3e3600aea9385c2bec9beb2eaa",
+      "executable_sha256": "5cc0134d42cf414f0dcde8c31a813337801a6afdc5443033ef39e28b1262d336"
+    },
+    {
+      "name": "SwiftShader via @sparticuz/chromium 153.0.0",
+      "url": "https://registry.npmjs.org/@sparticuz/chromium/-/chromium-153.0.0.tgz",
+      "archive_sha256": "20e5656fcdcf4118ede85edfb9d6bb9cc1bbb7ffb8b75622fffbcf36a835c3c0",
+      "library_sha256": "2f3ceffaaca7d031bc3943f8eacf398a5d9c42c5fe0d15d8840b9acfa630b58e"
+    },
+    {
+      "name": "Vulkan-Headers v1.4.321",
+      "url": "https://codeload.github.com/KhronosGroup/Vulkan-Headers/tar.gz/refs/tags/v1.4.321",
+      "archive_sha256": "7c1874f9186d9e7d5245e279cdccaa77a66ed8f52871b428630aeb771dc7623c"
+    },
+    {
+      "name": "SPIRV-Tools v2025.1",
+      "revision": "f289d047f49fb60488301ec62bafab85573668cc",
+      "url": "https://codeload.github.com/KhronosGroup/SPIRV-Tools/tar.gz/refs/tags/v2025.1",
+      "archive_sha256": "6a9313fa68e061d463f616357cd24cdf1c3a27d906ea791d7ba67dd1b6666a40",
+      "archive_bytes": 3242384,
+      "source_files_compared": 1691,
+      "existing_source_differences": 0,
+      "optimizer_sha256": "9a77893d35db959415a81611bc5a092b86db0bf70362bffee08e67322d6feb19",
+      "validator_sha256": "9f1ce6f1e29e55053362defa311d95b7a9f8fa19c568b34eb688183b55026cd5",
+      "version_description_caveat": "The binary reports the enclosing Frontier HEAD e3fe231 as its description because the archive has no .git directory. This is not the optimizer source revision. Every source file was compared to the pinned archive above."
+    },
+    {
+      "name": "SPIRV-Headers required by the tools DEPS",
+      "revision": "09913f088a1197aba4aefd300a876b2ebbaa3391",
+      "url": "https://codeload.github.com/KhronosGroup/SPIRV-Headers/tar.gz/09913f088a1197aba4aefd300a876b2ebbaa3391",
+      "archive_sha256": "6d4aad5a86d7d5af144747aee1d616f624897d64d842f282aca7777f84244318",
+      "archive_bytes": 543533,
+      "source_files_compared": 104,
+      "existing_source_differences": 0
+    }
+  ],
+  "native_library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+  "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+  "noise_uint32_count": 2700434,
+  "input_patch": {
+    "path": "01a1f0c7-6890-7d55-bcb9-383d4511b895.patch",
+    "sha256": "2291a37269b76574c86e2dd3aead4913ecdf3c88957003dbc9d3edd95a4ca878",
+    "applied_wholesale": false,
+    "reason": "Apply-check did not match the checkout and five PNG payloads were incomplete. Selected mechanisms were adapted into the isolated prototype."
+  },
+  "archive_policy": "Third-party sources, binary tools, native libraries, baked noise and full gallery HDR captures remain ignored; one small complete native/Vulkan comparison is retained. No Linux or Windows executable is packaged.",
+  "photorealism_accepted": false,
+  "production_accepted": false,
+  "delivery_note": "User requested commit and push after viewer cache repair; tested_head records the parent HEAD with the authored changes present in the working tree."
+}

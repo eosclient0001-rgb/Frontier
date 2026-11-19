@@ -4,6 +4,55 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Experimental planetary clouds — 2026-11-18
+
+- Added isolated shared Slang three-dimensional condensate and spherical view/light transport, with twelve
+  morphological selections, a widening cyclone eye/eyewall/rainbands, altitude-preserving shear/veer and
+  differential cyclonic flow. Three fitted scattering orders and approximate air ordering are not solved
+  three-dimensional multiple scattering. Kinematic motion is not mass-conserving weather prediction.
+- Release CTest **1/1** and ASan/UBSan **1/1** pass **1,475,747 scalar/texel assertions**, not independent cases.
+  Checks cover deterministic 3D mips, independent geometry/phase/wind references, 1,696 density queries,
+  actual matched solar integration, 25 malformed packets and stateless source/shadow/wind render controls.
+- Actual SwiftShader CPU type 4 executes **6,400** guarded density/solar/mip/wind/angular probes, including the
+  revised cirrocumulus, cumulonimbus and cyclone density. A rejected
+  control reproduces generic-trig wind drift up to **91 m**; bounded angular polynomials/radial reprojection
+  reduce it to at most **1 m**, with exact native agreement on the retained wind probes. No physical-GPU claim.
+- Fixed a separate solar transport defect: interpolated endpoint weather changed the condensate along light
+  rays. Matched 32-segment quadrature at 256 cumulus receivers reduces maximum optical-depth disagreement
+  from **1.534573 to 0.000332833**, with **84 to 0** rays exceeding 0.01. The authenticated rejected function,
+  direct density samples and all segment/depth arrays are retained. Actual software-Vulkan solar depth
+  agrees with native within **0.000083924**; this is not a complete Vulkan beauty render.
+- Retained **22 actual native Slang-C++ captures**, all twelve selections and six independent wind pictures;
+  direct radial extinction sections, moving receiver illumination and finite 768-view/64-solar comparisons.
+  Matched world-ray errors from origins 150 km apart stay below 0.001251 at a fixed 1 m footprint; this is
+  not ground/orbit atmospheric-photograph equivalence. Full HDR images regenerate in ignored scratch.
+- A bounded **64×36 cumulus complete-entry Vulkan dispatch/readback** now passes all **2,304 pixels** against
+  native: RGB RMSE **0.00000747124**, maximum RGBA difference **0.000634849**. Both complete Float32 arrays are
+  archived. This is one small software fixture, not all formations or the higher-resolution native gallery.
+- Corrected the requested cirrocumulus tiling and eroded convective edges with unbounded shape displacement,
+  sign-preserving fine erosion and smoother, coherent cyclone tops/ice bands. Matched native before/after
+  renders, reconstructed baseline source and focused repetition/fragment/top-profile checks are retained in
+  [morphology evidence](../Exhibits/PlanetaryClouds/Results/Morphology.json); no image smoothing was added.
+  The other 17 gallery pictures retain byte-identical complete Float32 and PNG output.
+- **Photographic appearance is not accepted:** some relief still looks procedural, thin clouds can look like
+  ribbons and finite-march grain remains. Historical Vulkan beauty failures are retained; the current
+  small success does not establish gallery-resolution, Windows/MSVC, physical-GPU, editor or real-time
+  acceptance. No binary substitute is delivered. Production, previous celestial and shadow/GI scenes are unchanged.
+- Chromium verifies all 22 images across 27 category choices, keyboard/playback/mobile layout and five corrupt
+  or missing-input controls. Float32/PNG/source/readback verification replays native point queries and checks
+  complete generated captures/measurements and six evidence corruptions; gallery HDR is omitted for storage,
+  while the small Vulkan comparison retains full Float32 arrays.
+- Reproduced the reported viewer identity mismatch with warm HTTP caches. Fresh per-selection manifests,
+  digest-versioned PNG URLs, digest-keyed Blob reuse and non-caching preview responses repair it without
+  bypassing SHA-256 checks. All five revised views pass stale-PNG, stale-manifest and already-open revision
+  tests; all 22 images, keyboard/playback/mobile and five rejected-input controls pass again.
+- Refactored `CloudNoiseVolume.h` for readability without changing baked noise bytes. Complete naming and
+  formatting conformance remains open, including parameter alignment/unit comments; no rule exemption.
+  Cyclone upper rotation reverses sign, but explicit divergent inflow/outflow is still not solved.
+- [Captures, measured limitations and reproduction](../Exhibits/PlanetaryClouds/README.md) ·
+  [capture viewer](../Exhibits/PlanetaryClouds/index.html). User requested commit/push after the viewer repair.
+  Workflow filters were inspected; this branch's cloud-only push does not trigger the configured Actions.
+
 ## Six implemented SDF paths and complete native renders — 2026-11-18
 
 - Implemented all six requested mechanisms in `Experimental/DistanceClipmap/Shadows`, then rendered all six

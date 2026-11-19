@@ -1,0 +1,66 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "execution": "actual Slang native C++ target",
+  "tests_passed": true,
+  "photorealism_accepted": false,
+  "production_accepted": false,
+  "measurements": {
+    "noise_texels": 2700434,
+    "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+    "noise_interpolation_max_abs": 4.382728913121525e-07,
+    "sphere_double_max_abs_m": 2.478005743585527,
+    "phase_normalization_max_abs": 0.0001590909271556029,
+    "wind_characteristic_max_abs_m": 1.146375595387038,
+    "cyclone_advected_angles_rad": [
+      [
+        -1.4385497570037842,
+        -0.8685947060585022,
+        -0.23004084825515747,
+        -0.027240246534347534
+      ],
+      [
+        0.0477537102997303,
+        0.028766125440597534,
+        0.007636376190930605,
+        0.0009021424921229482
+      ]
+    ],
+    "rotation_trigonometry_max_abs": 1.5976556025365518e-07,
+    "density_queries": 1696,
+    "formation_occupied_probe_counts": {
+      "cumulus": 15,
+      "stratocumulus": 18,
+      "stratus": 82,
+      "altocumulus": 16,
+      "altostratus": 75,
+      "nimbostratus": 75,
+      "cirrus": 22,
+      "cirrostratus": 55,
+      "cirrocumulus": 21,
+      "towering": 12,
+      "cumulonimbus": 30,
+      "cyclone": 69
+    },
+    "cyclone_eyewall_mean_extinction_per_m": 0.002599999774247408,
+    "vertically_varying_columns": 34,
+    "solar_density_coherence": {
+      "world_receivers": 256,
+      "steps": 32,
+      "density_point_queries": 8192,
+      "max_abs_optical_depth_difference": 0.00033283233642578125,
+      "mean_abs_optical_depth_difference": 4.191824700683355e-06,
+      "rays_over_0_01": 0,
+      "tolerance_optical_depth": 0.01,
+      "scope": "same Float32 segments/footprints; 0.01 permits independent host/shader coordinate roundoff, not alternate weather"
+    },
+    "rejected_input_cases": 25,
+    "wind_image_mean_abs_float": 0.23147590458393097,
+    "self_shadowed_mean_radiance": 0.2084454745054245,
+    "unshadowed_mean_radiance": 0.5531007051467896,
+    "stateless_image_sha256": "0d5fab46f630cf762ffd13a01fd92b580eb4640ec2af7401fb677369bf419023"
+  },
+  "library_sha256": "4b19eaf3573ae7862c6087c8353d9d9021dcffcb555860d1ea52b46e92b97010",
+  "assertion_accounting": "scalar and texel checks, not independent test cases",
+  "assertions": 1475747,
+  "seconds": 58.36813908500335
+}

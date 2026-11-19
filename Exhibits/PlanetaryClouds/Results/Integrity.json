@@ -1,0 +1,394 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "files": {
+    "Documentation/FolderStructure.md": {
+      "bytes": 7875,
+      "sha256": "7a3fe615a6117e9e448bb18cd01e0ccad1e935b14cb1327c3f65c5394a605763"
+    },
+    "Documentation/Tracker.md": {
+      "bytes": 127881,
+      "sha256": "34b07fb0ccbdee6121f67c63cb0bda570cf4db14224bc53cb87b854412421667"
+    },
+    "Exhibits/PlanetaryClouds/Code/BakeCloudNoise.cpp": {
+      "bytes": 1343,
+      "sha256": "4862935494797afefce201bc923122024db37dc841e10ff8d2f9198b04d7dbb0"
+    },
+    "Exhibits/PlanetaryClouds/Code/CaptureCloudExhibit.py": {
+      "bytes": 3818,
+      "sha256": "38cbc1436f1eecd692a46580dcc94a941a529369a3d289e747edb4025c8a2aeb"
+    },
+    "Exhibits/PlanetaryClouds/Code/CloudDensityBefore.slang.gz": {
+      "bytes": 5918,
+      "sha256": "53d3d6d6429e87ca9294ab06f49c34298d76661b5cd510837f2fb820ac11142e"
+    },
+    "Exhibits/PlanetaryClouds/Code/CloudSourceIdentity.py": {
+      "bytes": 1065,
+      "sha256": "4298f729eb2b7900b6aa3d33e94fa7d4b9c6130eee7d6660466564cec25f1fca"
+    },
+    "Exhibits/PlanetaryClouds/Code/MeasureClouds.py": {
+      "bytes": 13903,
+      "sha256": "f5f8e06686b52b32cea0482883772cdd877d697a9c93ff08efad009b884b2eed"
+    },
+    "Exhibits/PlanetaryClouds/Code/RejectedSolarWeather.slang": {
+      "bytes": 2358,
+      "sha256": "981f4988b71425ccb41aeab71638e1f8fe44be594a4801a940f7ea327c1c399b"
+    },
+    "Exhibits/PlanetaryClouds/Code/RejectedWind.slang": {
+      "bytes": 2369,
+      "sha256": "e0c999ad06d14fa1efc0068ffd77c31497042fa7beee23214b781bd2602070ad"
+    },
+    "Exhibits/PlanetaryClouds/Code/RenderClouds.py": {
+      "bytes": 17307,
+      "sha256": "8766727cbf5c322a1210f1d731cb436000a2ed637d700cdc18b2ad46468c256c"
+    },
+    "Exhibits/PlanetaryClouds/Code/RetainCloudEvidence.py": {
+      "bytes": 9421,
+      "sha256": "f12b54e2a32b538a799d19517d4ddb3ecc80da31a5aac14414064555c28bb870"
+    },
+    "Exhibits/PlanetaryClouds/Code/ValidateCloudMorphology.py": {
+      "bytes": 15865,
+      "sha256": "8d5014f2f8a646341c15b8190232f17067d7934d3fbd6c249fea4c2157604126"
+    },
+    "Exhibits/PlanetaryClouds/Code/ValidateCloudViewer.cjs": {
+      "bytes": 18566,
+      "sha256": "12848218bd06af446ad2c97126056e021f8d9eed406173200fe26d7448597ba5"
+    },
+    "Exhibits/PlanetaryClouds/Code/ValidateClouds.py": {
+      "bytes": 25279,
+      "sha256": "7b3363d3e595869e9feacad83cbad9262376de51b9d00c39964833f739cd87d3"
+    },
+    "Exhibits/PlanetaryClouds/Code/ValidateSolarDensity.py": {
+      "bytes": 7879,
+      "sha256": "bbd27b455217c62887da112d196f33f1d68166e7719e0aebfe89598c54077963"
+    },
+    "Exhibits/PlanetaryClouds/Code/ValidateWindPrecision.py": {
+      "bytes": 6342,
+      "sha256": "2f282b7731d5fa852bf88431986fb693efb626d3235ee3dfd6443d86ebe3e79e"
+    },
+    "Exhibits/PlanetaryClouds/Code/VerifyCloudEvidence.py": {
+      "bytes": 40040,
+      "sha256": "626bd8cbd382d16f91db0c0c40b70b4dbcfc86f974e409ad4e9d5d49950d7a68"
+    },
+    "Exhibits/PlanetaryClouds/Code/VulkanClouds.py": {
+      "bytes": 28623,
+      "sha256": "b2a4903581bd2e7581cf884cafef120b535c34a3343779736faa5d7c6da5fde9"
+    },
+    "Exhibits/PlanetaryClouds/Images/AboveCumulus.png": {
+      "bytes": 133814,
+      "sha256": "8bc073fbd9476beb7c546f0deea35d0a09a688c2f558d310109014fe07e7dd95"
+    },
+    "Exhibits/PlanetaryClouds/Images/Altocumulus.png": {
+      "bytes": 43134,
+      "sha256": "a6faa075fd3f8da4d4bac02d457e4743d58bdc6942b9b73777f337517d12fbc8"
+    },
+    "Exhibits/PlanetaryClouds/Images/Altostratus.png": {
+      "bytes": 17013,
+      "sha256": "e3a02d0457c894af51420c751c902bcf04f8233b549ebee46df0f3053dd4b88c"
+    },
+    "Exhibits/PlanetaryClouds/Images/Cirrocumulus.png": {
+      "bytes": 42270,
+      "sha256": "b9566904282ec0e811c746286280d6518078ef4bff5399138ff57a95c10dc2b2"
+    },
+    "Exhibits/PlanetaryClouds/Images/Cirrostratus.png": {
+      "bytes": 25529,
+      "sha256": "1898d5a4b301b0750ad3117045cf25ebce678782584e74e3b38b1223893ac1c2"
+    },
+    "Exhibits/PlanetaryClouds/Images/Cirrus.png": {
+      "bytes": 87805,
+      "sha256": "855bc113450b3b1c770718d6ac33e578b507d7904a248c90900d113cfe90d3d3"
+    },
+    "Exhibits/PlanetaryClouds/Images/CloudShadowReceivers.png": {
+      "bytes": 41049,
+      "sha256": "d5fe2ec5ec8be6d8095282f52ced18ee59caf53d6b0404f92d2b543ba94a726c"
+    },
+    "Exhibits/PlanetaryClouds/Images/Cumulonimbus.png": {
+      "bytes": 51413,
+      "sha256": "f2a8f35eb17de44ab5cb4c178b12fb17a7226e089da117c9c50eaac4cb10763e"
+    },
+    "Exhibits/PlanetaryClouds/Images/Cumulus.png": {
+      "bytes": 131684,
+      "sha256": "0773c738efbb7c0ba00411ddf3a703976d82e62c5fcf6ad450417b337fd85cfe"
+    },
+    "Exhibits/PlanetaryClouds/Images/CycloneEye.png": {
+      "bytes": 75199,
+      "sha256": "cc20039b6a2ad9babd6cd21e6619e6eb30486c6e3cd50cb69fbee10752372b8e"
+    },
+    "Exhibits/PlanetaryClouds/Images/CycloneLimb.png": {
+      "bytes": 50654,
+      "sha256": "c51c434fd46e273f3946d9a14e742e29801a39f039774146cd3ef142199b1d6d"
+    },
+    "Exhibits/PlanetaryClouds/Images/CycloneOrbit.png": {
+      "bytes": 71932,
+      "sha256": "87c6999bb11ccdcf976877f25273313d2593a49f5d5be13cf0b3a1f1d634e061"
+    },
+    "Exhibits/PlanetaryClouds/Images/DensitySections.png": {
+      "bytes": 25909,
+      "sha256": "ac324f3636c9c8771c2cf80a6a6d741e435d397173b5d70cc804fe47ec289285"
+    },
+    "Exhibits/PlanetaryClouds/Images/GoldenHour.png": {
+      "bytes": 48034,
+      "sha256": "5045eff4338f47e671e0dac1548308f3b6e53bf7bf5bb023de829926613d10db"
+    },
+    "Exhibits/PlanetaryClouds/Images/Morphology.jpg": {
+      "bytes": 71438,
+      "sha256": "7793b442bc89c0ceb5b5e4161440b3c7b504ed3d069fa6f5504515cc11f0db01"
+    },
+    "Exhibits/PlanetaryClouds/Images/Nimbostratus.png": {
+      "bytes": 12964,
+      "sha256": "5685c93bb9a73d2cb1d18f1227c942dc12a0bd22263cd445e08492987f1b2539"
+    },
+    "Exhibits/PlanetaryClouds/Images/Sampling.png": {
+      "bytes": 13938,
+      "sha256": "fd3711bd4006ccdcc5f127c798e1508abb49a6e0776365253fc1ed5088cbe763"
+    },
+    "Exhibits/PlanetaryClouds/Images/Stratocumulus.png": {
+      "bytes": 25110,
+      "sha256": "9794008f2603aeb202280617b8e7acf48d830950f806dca82fb63da458b7572b"
+    },
+    "Exhibits/PlanetaryClouds/Images/Stratus.png": {
+      "bytes": 17590,
+      "sha256": "b5bdd3dfdbbde1891a2e2dd17612d5a8486b11284ed5e65114f5966e7e017d67"
+    },
+    "Exhibits/PlanetaryClouds/Images/ToweringCumulus.png": {
+      "bytes": 16491,
+      "sha256": "020a3503695e68c1ca65782086b64cd4e46ca12e2b9b6b6c13654ac99a3d8b26"
+    },
+    "Exhibits/PlanetaryClouds/Images/Viewer.jpg": {
+      "bytes": 77824,
+      "sha256": "182732f651871b18d4377c1877698d57cc7dbf19a52549cce5cbe0bee96f73f7"
+    },
+    "Exhibits/PlanetaryClouds/Images/VulkanCumulus.png": {
+      "bytes": 3087,
+      "sha256": "48c9b178d7c6740465537b8df4aa944254035657be99f1b1718fc73ab4752404"
+    },
+    "Exhibits/PlanetaryClouds/Images/Wind000.png": {
+      "bytes": 44172,
+      "sha256": "35ba1f0f6e6542ebac8eb0024182443d599439e147aba1ce2810004eae36be74"
+    },
+    "Exhibits/PlanetaryClouds/Images/Wind030.png": {
+      "bytes": 44323,
+      "sha256": "6a6a818e4b0e733afa748d32a5fa5a8f01f5702e073f0dccea470268315b5552"
+    },
+    "Exhibits/PlanetaryClouds/Images/Wind060.png": {
+      "bytes": 44409,
+      "sha256": "46081e5102ec5d96391e5ba5764db44b59079db83474fdae8e2121b91f6a49e5"
+    },
+    "Exhibits/PlanetaryClouds/Images/Wind090.png": {
+      "bytes": 44631,
+      "sha256": "53b266f6e8e8c2949291c0155a60c92fc321be62eb6d32d5027aadee903f4b27"
+    },
+    "Exhibits/PlanetaryClouds/Images/Wind120.png": {
+      "bytes": 44972,
+      "sha256": "79cc4539b0ed9bbe0809f9e3885533e5f1d40e8636d7a1364c5074503f559a92"
+    },
+    "Exhibits/PlanetaryClouds/Images/Wind150.png": {
+      "bytes": 44736,
+      "sha256": "dbcc0fe8a707493cb57b01e136a22b50b9e4da9accefc917796b48286631aa57"
+    },
+    "Exhibits/PlanetaryClouds/README.md": {
+      "bytes": 22015,
+      "sha256": "e7c5c0dc037e27ce21cb7de773ec4d0936601437a2b0cfc3e729c49f95e69ae4"
+    },
+    "Exhibits/PlanetaryClouds/Requirements.txt": {
+      "bytes": 46,
+      "sha256": "3e456e0300ef8ebfd1c123829bdc8b7f2b702f8b8746f0e7534801ec5b7cb934"
+    },
+    "Exhibits/PlanetaryClouds/Results/BeforeVulkanBeauty.txt": {
+      "bytes": 1370,
+      "sha256": "7331d43a5b4083bf2419bd4b406eb8ca4f0bb5b10dd11d715f26dc74afd7c475"
+    },
+    "Exhibits/PlanetaryClouds/Results/BlockedOptimized.txt": {
+      "bytes": 164,
+      "sha256": "71cffd40263e59d412c468bc48c142a512998e482d5ec22c70070e50d7845849"
+    },
+    "Exhibits/PlanetaryClouds/Results/BlockedRaw.txt": {
+      "bytes": 136,
+      "sha256": "44d572af86fcc1aa03af7431d4575bf8f58be06b0aa4b3da5e1f56b5254e25d2"
+    },
+    "Exhibits/PlanetaryClouds/Results/BlockedSpecialized.txt": {
+      "bytes": 140,
+      "sha256": "c4ab1ad5cdd8c337a7e70bc61d7939be3b642e71733f0a92c185c0c8ae8d5542"
+    },
+    "Exhibits/PlanetaryClouds/Results/BlockedTextures.txt": {
+      "bytes": 136,
+      "sha256": "44d572af86fcc1aa03af7431d4575bf8f58be06b0aa4b3da5e1f56b5254e25d2"
+    },
+    "Exhibits/PlanetaryClouds/Results/CaptureSequence.txt": {
+      "bytes": 411,
+      "sha256": "1183ab5d138caf10a19dfa2154a2d53b13f9a7da861d81804c4e9f80e693cfbc"
+    },
+    "Exhibits/PlanetaryClouds/Results/Captures.json": {
+      "bytes": 25662,
+      "sha256": "fab40040851f419b0ba863a6ca19238a9f1971336276a640947036ea6ed57da8"
+    },
+    "Exhibits/PlanetaryClouds/Results/CloudMeasurements.json": {
+      "bytes": 7937,
+      "sha256": "03498533f6cc07a8c716883c8c374e471fedec9525838f49558c4a7408705e0c"
+    },
+    "Exhibits/PlanetaryClouds/Results/DensitySections.npz": {
+      "bytes": 30585,
+      "sha256": "ca8dc0b4e19485eb2ae6ea1db935f26d77cf01cc71b5f07563973ff9b2a805a0"
+    },
+    "Exhibits/PlanetaryClouds/Results/ExecutionScope.json": {
+      "bytes": 13703,
+      "sha256": "5ec6324918d5e6cca8d872eb1059416faf7f89e80e956f2e57f3974de9374d15"
+    },
+    "Exhibits/PlanetaryClouds/Results/Morphology.json": {
+      "bytes": 18915,
+      "sha256": "9fdbc5419f61678e56a0756ad39381dd4fa030117b86b8ad89bea3d11ab1242e"
+    },
+    "Exhibits/PlanetaryClouds/Results/Morphology.npz": {
+      "bytes": 20169,
+      "sha256": "bfd44e9a57804fbe52399bcce9a55cb4e4fc2a3fd8b4046d751c15ca9bcf6b1f"
+    },
+    "Exhibits/PlanetaryClouds/Results/NativeValidation.json": {
+      "bytes": 2404,
+      "sha256": "92fdb5b9717fd7352e670064f5b271befbe4d9b0c2d02200fdef7aee75caaa9d"
+    },
+    "Exhibits/PlanetaryClouds/Results/PrecisionScope.json": {
+      "bytes": 1246,
+      "sha256": "6f0d8b19d3c1e563796c54f64439719c225c8e51fc41a863e06cc44a208d8e73"
+    },
+    "Exhibits/PlanetaryClouds/Results/ProbeLayout.json": {
+      "bytes": 7489,
+      "sha256": "371bc85d5e329f882556fae6f28b75f568d2bd5d89c9104469b207a6cbf01625"
+    },
+    "Exhibits/PlanetaryClouds/Results/Provenance.json": {
+      "bytes": 5516,
+      "sha256": "2cb26b412e96a8710232a4f7293c7ec8fef6b89e9074d2e3c940dc9cc2464ae2"
+    },
+    "Exhibits/PlanetaryClouds/Results/RadianceProbes.npz": {
+      "bytes": 95998,
+      "sha256": "f83f6397773c5a7b6d1d39a5a337f3441aa3e975f4804517e416838cb2fdb670"
+    },
+    "Exhibits/PlanetaryClouds/Results/ReceiverProbes.npz": {
+      "bytes": 32815,
+      "sha256": "aebda4b190a3cd0a5234fa79ff291ba072184abd44acb03100e907d4ad9a951f"
+    },
+    "Exhibits/PlanetaryClouds/Results/ReleaseBuild.txt": {
+      "bytes": 548,
+      "sha256": "1c71d730652c93b9fef12901771c4a48d8968d35a95df40c86cf82a95ac879e9"
+    },
+    "Exhibits/PlanetaryClouds/Results/ReleaseTests.txt": {
+      "bytes": 340,
+      "sha256": "dc786edccbef5002e3205228f8d0a6a2822b9b1bd670824d56ad2555fb232265"
+    },
+    "Exhibits/PlanetaryClouds/Results/SamplingProbes.npz": {
+      "bytes": 26139,
+      "sha256": "b4f3dc14fef599ed80168bb9976d1f20ad516e19b75e70eab20c406d8ca0657d"
+    },
+    "Exhibits/PlanetaryClouds/Results/SanitizedBuild.txt": {
+      "bytes": 409,
+      "sha256": "5a26437591d5ac924894fadd5e5943ce2353cac12ece41d269e7e5267ce0b804"
+    },
+    "Exhibits/PlanetaryClouds/Results/SanitizedTests.txt": {
+      "bytes": 348,
+      "sha256": "a11a4f7bc77469ae7fea9c829b1adbb29b1a5c2a3fbba93e3b2273bc7e4e6907"
+    },
+    "Exhibits/PlanetaryClouds/Results/SanitizedValidation.json": {
+      "bytes": 2405,
+      "sha256": "c6d3f8435f84bde28e659daa5858f6edb64d9d6d4961d3d04598089f482e3625"
+    },
+    "Exhibits/PlanetaryClouds/Results/SolarDensity.json": {
+      "bytes": 1512,
+      "sha256": "8af35d4b708f5480e98f676b67634ab3b0b4c6be974be038014be9d6a764692f"
+    },
+    "Exhibits/PlanetaryClouds/Results/SolarDensity.npz": {
+      "bytes": 38269,
+      "sha256": "df025731412f55765d703afc17ca4fced7b8eaf7b4bfdf8b2936e63650cc0359"
+    },
+    "Exhibits/PlanetaryClouds/Results/ViewerValidation.json": {
+      "bytes": 4093,
+      "sha256": "466ce7026eabf2d794621dd4607d17f2fbd30f9144b9f185ed263de68eda1194"
+    },
+    "Exhibits/PlanetaryClouds/Results/VulkanBeauty.json": {
+      "bytes": 2464,
+      "sha256": "5485bdb26bcb3e4096dccf73dc73c4b7510f13c5877cea85ab7cbebe33d5b0d6"
+    },
+    "Exhibits/PlanetaryClouds/Results/VulkanBeauty.npz": {
+      "bytes": 59268,
+      "sha256": "8ec5191b3f321513f3a47a82042cead146c0a80588e6d25a6ee85d9f49592808"
+    },
+    "Exhibits/PlanetaryClouds/Results/VulkanBeauty.txt": {
+      "bytes": 1370,
+      "sha256": "5aa79547894f5a2a9195196add798d8200f8992b7c37b1d555319b3425332d1e"
+    },
+    "Exhibits/PlanetaryClouds/Results/VulkanClouds.json": {
+      "bytes": 7460,
+      "sha256": "70e000edfeb727fd707c4cda11133fbf0679afd0658e206e01f8bd1995fb106f"
+    },
+    "Exhibits/PlanetaryClouds/Results/VulkanProbes.npz": {
+      "bytes": 213923,
+      "sha256": "fe333da53581e0873fffa42b8e8fb6989d9cab10728820dcfe27d6f31977818f"
+    },
+    "Exhibits/PlanetaryClouds/Results/VulkanQueries.txt": {
+      "bytes": 6922,
+      "sha256": "3cc70497123c4f1e87f9cabf14aff28ffd924d4c11953203030a51cffefbde1b"
+    },
+    "Exhibits/PlanetaryClouds/Results/WindPrecision.json": {
+      "bytes": 3521,
+      "sha256": "beb02484eff1ee65b86545c1ef7409785e40127b034cdac0cf3c5a404697f696"
+    },
+    "Exhibits/PlanetaryClouds/Results/WindPrecision.npz": {
+      "bytes": 45335,
+      "sha256": "62d1a5d1282084cd79b6a752b58722a4f93c5270133365c0aa6253a6a8223dfe"
+    },
+    "Exhibits/PlanetaryClouds/Results/WindPrecision.txt": {
+      "bytes": 2138,
+      "sha256": "687c348ffc3fb9020abc7fc4ef9a36e76ebe838f92e586fa1c01ce7c02e5313b"
+    },
+    "Exhibits/PlanetaryClouds/index.html": {
+      "bytes": 19152,
+      "sha256": "3880c50efff2137746b582176e0322d54644ca87b65d53fc201354beffcfbd29"
+    },
+    "Exhibits/README.md": {
+      "bytes": 1492,
+      "sha256": "00be4950ca459c15c5ef2b8a4075887c670a884a8e824b02f5319a1bf50b4b4b"
+    },
+    "Experimental/PlanetaryClouds/CMakeLists.txt": {
+      "bytes": 6433,
+      "sha256": "73687ce13b1296c722b7d51caee29377d0b20b43fc436980c9aa58d63447081d"
+    },
+    "Experimental/PlanetaryClouds/CloudAerialPerspective.slang": {
+      "bytes": 5445,
+      "sha256": "431dfff5c094932b4b66139f28797e26af2e3a71b68bb75043bc860402c3e6ff"
+    },
+    "Experimental/PlanetaryClouds/CloudCompute.slang": {
+      "bytes": 15369,
+      "sha256": "f634d233497b1cd8e22312856b2b95b1bbb12d35a9191382326e1df2461580b4"
+    },
+    "Experimental/PlanetaryClouds/CloudDensity.slang": {
+      "bytes": 26744,
+      "sha256": "4967bd17c893a1ea3d838153685d92e0544437cf8bfe22c80655be058e61e2b9"
+    },
+    "Experimental/PlanetaryClouds/CloudNative.cpp": {
+      "bytes": 7272,
+      "sha256": "d05d1b3edfe35387d3220452c18e8db0b79a91bff8064d5b846d6ae91ceaf75a"
+    },
+    "Experimental/PlanetaryClouds/CloudNoise.slang": {
+      "bytes": 7352,
+      "sha256": "e3539340de45d1a4c28c200afbeb2798dc3097ece69f246bf3bf342cd95921fe"
+    },
+    "Experimental/PlanetaryClouds/CloudNoiseVolume.h": {
+      "bytes": 14438,
+      "sha256": "a93a7b59d0902c9e45a83883a3058c256ee2ad4f6ad75506a77b5012294e432c"
+    },
+    "Experimental/PlanetaryClouds/CloudTransport.slang": {
+      "bytes": 14616,
+      "sha256": "7d0f1bb86b1007f8375e6bb318d5e9487b6a5d6ea55b3272ecd6ae3ddb514611"
+    },
+    "Experimental/PlanetaryClouds/Preview.py": {
+      "bytes": 1955,
+      "sha256": "83623b6ea962f8dccd8aa3b89e1a9fdb01370c1e54a968fe1b999a5a15c43ced"
+    },
+    "Experimental/PlanetaryClouds/README.md": {
+      "bytes": 4431,
+      "sha256": "b77109092ab880077a75ea1c5fe88e4efe4201f7be857aa66b64cb5672b4aac6"
+    },
+    "README.md": {
+      "bytes": 3555,
+      "sha256": "2fa91a955f171b9f728996e4ad8406b9f79890cc21dfbcc6a5eb0a58cde1c042"
+    }
+  },
+  "scope": "byte identities, not a digital signature; excludes this manifest and the verification output"
+}

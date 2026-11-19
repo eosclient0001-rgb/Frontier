@@ -17,6 +17,9 @@ See `Documentation/Rules/Evidence.md` at repository root.
 
 ## Current validation
 
+- [Planetary clouds](PlanetaryClouds/README.md): 22 actual native Slang captures, twelve volumetric selections,
+  wind/receiver motion, matched de-tiling/edge-repair renders, 6,400 software-Vulkan probes and one 64×36
+  full-entry parity image; photographic acceptance remains open, not editor integration.
 - [Celestial atmosphere](CelestialAtmosphere/README.md): 32 actual Slang/Vulkan captures, Moon/Sun, six flares,
   six skies at surface/orbit and independent catalogue/ephemeris checks; experimental SwiftShader CPU scope.
 - `ControlCentre/`: typography/theme interactions, downloaded font inventory, Windows package inspection.

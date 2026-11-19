@@ -1,0 +1,596 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "baseline_source_sha256": "deca94cacadc91707dfb40c928b59e6af266a3256876dca8b2b8637c81ed423e",
+  "baseline_density_archive_sha256": "53d3d6d6429e87ca9294ab06f49c34298d76661b5cd510837f2fb820ac11142e",
+  "baseline_reconstruction": "current numerical sources with only CloudDensity.slang replaced by the retained gzip source",
+  "library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+  "baseline_library_sha256": "3b95e67d9cdc6e62eec8fea919403fad64d577f77e23f23711625bf924bb2d98",
+  "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+  "tests_passed": true,
+  "statistics": {
+    "Before": {
+      "repeat_correlations": [
+        0.9995350547258328,
+        0.9979225392877861
+      ],
+      "repeat_mean_extinction_per_m": 5.359026545193046e-05,
+      "cyclone_crossing_mean_m": 11307.447765827179,
+      "cyclone_crossing_relief_m": 7445.09375,
+      "cyclone_crossing_second_difference_rms_m": 244.47494262200942,
+      "Cumulonimbus": {
+        "cloud": {
+          "regions": 93,
+          "regions_at_most_four_pixels": 78,
+          "occupied_pixels": 25121
+        },
+        "enclosed_clear": {
+          "regions": 45,
+          "regions_at_most_four_pixels": 40,
+          "occupied_pixels": 117
+        }
+      },
+      "CycloneOrbit": {
+        "cloud": {
+          "regions": 107,
+          "regions_at_most_four_pixels": 55,
+          "occupied_pixels": 35699
+        },
+        "enclosed_clear": {
+          "regions": 161,
+          "regions_at_most_four_pixels": 88,
+          "occupied_pixels": 1541
+        }
+      }
+    },
+    "After": {
+      "repeat_correlations": [
+        0.06507309567174173,
+        0.03833767341598209
+      ],
+      "repeat_mean_extinction_per_m": 5.2205941756255925e-05,
+      "cyclone_crossing_mean_m": 11251.150066375732,
+      "cyclone_crossing_relief_m": 6272.60546875,
+      "cyclone_crossing_second_difference_rms_m": 185.00511654400995,
+      "Cumulonimbus": {
+        "cloud": {
+          "regions": 1,
+          "regions_at_most_four_pixels": 0,
+          "occupied_pixels": 22655
+        },
+        "enclosed_clear": {
+          "regions": 0,
+          "regions_at_most_four_pixels": 0,
+          "occupied_pixels": 0
+        }
+      },
+      "CycloneOrbit": {
+        "cloud": {
+          "regions": 7,
+          "regions_at_most_four_pixels": 3,
+          "occupied_pixels": 36176
+        },
+        "enclosed_clear": {
+          "regions": 29,
+          "regions_at_most_four_pixels": 17,
+          "occupied_pixels": 526
+        }
+      }
+    }
+  },
+  "captures": {
+    "Cirrocumulus": {
+      "Before": {
+        "view": {
+          "Name": "Cirrocumulus",
+          "Origin": [
+            0.0,
+            0.0,
+            24.0
+          ],
+          "View": [
+            0.0,
+            26.0
+          ],
+          "Sun": [
+            -60.0,
+            35.0
+          ],
+          "Fov": 42.0,
+          "Coverage": 0.7,
+          "Extinction": 0.63,
+          "Seed": 0.04,
+          "Exposure": 1.0,
+          "Floor": 8200.0,
+          "Depth": 900.0,
+          "Scale": 0.42,
+          "Phase": 0.82,
+          "Formation": 8,
+          "Surface": 0,
+          "Air": [
+            1.0,
+            0.72,
+            1.0
+          ],
+          "Solar": 16.0,
+          "Time": 0.0,
+          "Wind": [
+            12.0,
+            4.0
+          ],
+          "Shear": 0.1,
+          "Veer": 0.1,
+          "Turbulence": 0.3,
+          "Anvil": 0.6,
+          "CycloneSpeed": 58.0,
+          "Eye": 21000.0,
+          "CycloneAxis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Clouds": 1,
+          "Shadows": 1,
+          "UniformExtinction": -1.0
+        },
+        "width": 256,
+        "height": 144,
+        "steps": 160,
+        "light_steps": 12,
+        "samples": 1,
+        "seconds": 5.4209727449997445,
+        "source_sha256": "deca94cacadc91707dfb40c928b59e6af266a3256876dca8b2b8637c81ed423e",
+        "execution": "Slang native C++ target",
+        "library_sha256": "3b95e67d9cdc6e62eec8fea919403fad64d577f77e23f23711625bf924bb2d98",
+        "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+        "float_sha256": "971dfbac2d70c69df22a3f1ae846c63ccee6f975a27e2cc5ca11fc767764eb96",
+        "png_sha256": "79c3ea9578c0fb3d6c9ac6ed22561e6b1b6bfc2deded1b95a52064f4d752f341",
+        "filter": "none; native pixels, ACES fitted display curve and IEC sRGB",
+        "temporal_history": false,
+        "production_accepted": false
+      },
+      "After": {
+        "view": {
+          "Name": "Cirrocumulus",
+          "Origin": [
+            0.0,
+            0.0,
+            24.0
+          ],
+          "View": [
+            0.0,
+            26.0
+          ],
+          "Sun": [
+            -60.0,
+            35.0
+          ],
+          "Fov": 42.0,
+          "Coverage": 0.7,
+          "Extinction": 0.63,
+          "Seed": 0.04,
+          "Exposure": 1.0,
+          "Floor": 8200.0,
+          "Depth": 900.0,
+          "Scale": 0.42,
+          "Phase": 0.82,
+          "Formation": 8,
+          "Surface": 0,
+          "Air": [
+            1.0,
+            0.72,
+            1.0
+          ],
+          "Solar": 16.0,
+          "Time": 0.0,
+          "Wind": [
+            12.0,
+            4.0
+          ],
+          "Shear": 0.1,
+          "Veer": 0.1,
+          "Turbulence": 0.3,
+          "Anvil": 0.6,
+          "CycloneSpeed": 58.0,
+          "Eye": 21000.0,
+          "CycloneAxis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Clouds": 1,
+          "Shadows": 1,
+          "UniformExtinction": -1.0
+        },
+        "width": 256,
+        "height": 144,
+        "steps": 160,
+        "light_steps": 12,
+        "samples": 1,
+        "seconds": 5.920224973997392,
+        "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+        "execution": "Slang native C++ target",
+        "library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+        "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+        "float_sha256": "64c9f2836b795257c1a905aad1861de06b1e3c00ac985f817eebc4b9552fe26d",
+        "png_sha256": "b9566904282ec0e811c746286280d6518078ef4bff5399138ff57a95c10dc2b2",
+        "filter": "none; native pixels, ACES fitted display curve and IEC sRGB",
+        "temporal_history": false,
+        "production_accepted": false
+      }
+    },
+    "Cumulonimbus": {
+      "Before": {
+        "view": {
+          "Name": "Cumulonimbus",
+          "Origin": [
+            -26000.0,
+            -13000.0,
+            100.0
+          ],
+          "View": [
+            27.0,
+            17.0
+          ],
+          "Sun": [
+            -73.0,
+            18.0
+          ],
+          "Fov": 50.0,
+          "Coverage": 0.63,
+          "Extinction": 1.0,
+          "Seed": 0.04,
+          "Exposure": 0.84,
+          "Floor": 1100.0,
+          "Depth": 13300.0,
+          "Scale": 2.4,
+          "Phase": 0.82,
+          "Formation": 10,
+          "Surface": 0,
+          "Air": [
+            0.9,
+            0.4,
+            1.0
+          ],
+          "Solar": 16.0,
+          "Time": 0.0,
+          "Wind": [
+            12.0,
+            4.0
+          ],
+          "Shear": 0.1,
+          "Veer": 0.1,
+          "Turbulence": 0.3,
+          "Anvil": 0.6,
+          "CycloneSpeed": 58.0,
+          "Eye": 21000.0,
+          "CycloneAxis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Clouds": 1,
+          "Shadows": 1,
+          "UniformExtinction": -1.0
+        },
+        "width": 512,
+        "height": 288,
+        "steps": 384,
+        "light_steps": 32,
+        "samples": 2,
+        "seconds": 34.72568359799334,
+        "source_sha256": "deca94cacadc91707dfb40c928b59e6af266a3256876dca8b2b8637c81ed423e",
+        "execution": "Slang native C++ target",
+        "library_sha256": "3b95e67d9cdc6e62eec8fea919403fad64d577f77e23f23711625bf924bb2d98",
+        "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+        "float_sha256": "8e643e5a951981fd0473656b8217138d7d7b4fba12d8916312d8bc53970407b3",
+        "png_sha256": "deef064b96307101aabd0cf5ccd9b0a4d9ee9cea5a334f78df89c036fb070c76",
+        "filter": "none; native pixels, ACES fitted display curve and IEC sRGB",
+        "temporal_history": false,
+        "production_accepted": false
+      },
+      "After": {
+        "view": {
+          "Name": "Cumulonimbus",
+          "Origin": [
+            -26000.0,
+            -13000.0,
+            100.0
+          ],
+          "View": [
+            27.0,
+            17.0
+          ],
+          "Sun": [
+            -73.0,
+            18.0
+          ],
+          "Fov": 50.0,
+          "Coverage": 0.63,
+          "Extinction": 1.0,
+          "Seed": 0.04,
+          "Exposure": 0.84,
+          "Floor": 1100.0,
+          "Depth": 13300.0,
+          "Scale": 2.4,
+          "Phase": 0.82,
+          "Formation": 10,
+          "Surface": 0,
+          "Air": [
+            0.9,
+            0.4,
+            1.0
+          ],
+          "Solar": 16.0,
+          "Time": 0.0,
+          "Wind": [
+            12.0,
+            4.0
+          ],
+          "Shear": 0.1,
+          "Veer": 0.1,
+          "Turbulence": 0.3,
+          "Anvil": 0.6,
+          "CycloneSpeed": 58.0,
+          "Eye": 21000.0,
+          "CycloneAxis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Clouds": 1,
+          "Shadows": 1,
+          "UniformExtinction": -1.0
+        },
+        "width": 512,
+        "height": 288,
+        "steps": 384,
+        "light_steps": 32,
+        "samples": 2,
+        "seconds": 41.00781812999776,
+        "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+        "execution": "Slang native C++ target",
+        "library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+        "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+        "float_sha256": "8d632aed21c76da3f608752d07f4ccfa7e5a9ee116cd4a5e5304b35c21781e38",
+        "png_sha256": "f2a8f35eb17de44ab5cb4c178b12fb17a7226e089da117c9c50eaac4cb10763e",
+        "filter": "none; native pixels, ACES fitted display curve and IEC sRGB",
+        "temporal_history": false,
+        "production_accepted": false
+      }
+    },
+    "CycloneOrbit": {
+      "Before": {
+        "view": {
+          "Name": "CycloneOrbit",
+          "Origin": [
+            0.0,
+            0.0,
+            1000000.0
+          ],
+          "View": [
+            0.0,
+            -89.999
+          ],
+          "Sun": [
+            -44.0,
+            13.0
+          ],
+          "Fov": 44.0,
+          "Coverage": 0.91,
+          "Extinction": 1.0,
+          "Seed": 0.04,
+          "Exposure": 0.64,
+          "Floor": 900.0,
+          "Depth": 14000.0,
+          "Scale": 1.4,
+          "Phase": 0.82,
+          "Formation": 11,
+          "Surface": 0,
+          "Air": [
+            1.0,
+            0.72,
+            1.0
+          ],
+          "Solar": 16.0,
+          "Time": 0.0,
+          "Wind": [
+            0.0,
+            0.0
+          ],
+          "Shear": 0.1,
+          "Veer": 0.1,
+          "Turbulence": 0.3,
+          "Anvil": 0.6,
+          "CycloneSpeed": 58.0,
+          "Eye": 21000.0,
+          "CycloneAxis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Clouds": 1,
+          "Shadows": 1,
+          "UniformExtinction": -1.0
+        },
+        "width": 480,
+        "height": 270,
+        "steps": 384,
+        "light_steps": 32,
+        "samples": 2,
+        "seconds": 159.0571757430007,
+        "source_sha256": "deca94cacadc91707dfb40c928b59e6af266a3256876dca8b2b8637c81ed423e",
+        "execution": "Slang native C++ target",
+        "library_sha256": "3b95e67d9cdc6e62eec8fea919403fad64d577f77e23f23711625bf924bb2d98",
+        "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+        "float_sha256": "25906b6dfa450e969406bf282bb01a12ac3c0e4eb0bfb0eeb189e2313aa60696",
+        "png_sha256": "11d8d3e6dab466387fda814a2ec3c570e0b50d537178e4bfb68ca2ed4f3708e5",
+        "filter": "none; native pixels, ACES fitted display curve and IEC sRGB",
+        "temporal_history": false,
+        "production_accepted": false
+      },
+      "After": {
+        "view": {
+          "Name": "CycloneOrbit",
+          "Origin": [
+            0.0,
+            0.0,
+            1000000.0
+          ],
+          "View": [
+            0.0,
+            -89.999
+          ],
+          "Sun": [
+            -44.0,
+            13.0
+          ],
+          "Fov": 44.0,
+          "Coverage": 0.91,
+          "Extinction": 1.0,
+          "Seed": 0.04,
+          "Exposure": 0.64,
+          "Floor": 900.0,
+          "Depth": 14000.0,
+          "Scale": 1.4,
+          "Phase": 0.82,
+          "Formation": 11,
+          "Surface": 0,
+          "Air": [
+            1.0,
+            0.72,
+            1.0
+          ],
+          "Solar": 16.0,
+          "Time": 0.0,
+          "Wind": [
+            0.0,
+            0.0
+          ],
+          "Shear": 0.1,
+          "Veer": 0.1,
+          "Turbulence": 0.3,
+          "Anvil": 0.6,
+          "CycloneSpeed": 58.0,
+          "Eye": 21000.0,
+          "CycloneAxis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "Clouds": 1,
+          "Shadows": 1,
+          "UniformExtinction": -1.0
+        },
+        "width": 480,
+        "height": 270,
+        "steps": 384,
+        "light_steps": 32,
+        "samples": 2,
+        "seconds": 160.7295890769965,
+        "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+        "execution": "Slang native C++ target",
+        "library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+        "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+        "float_sha256": "ae6689e3a528ea30bddd3a37f2bcdbf88ab936f9155f0c6285993ea6d9c3e3de",
+        "png_sha256": "87c6999bb11ccdcf976877f25273313d2593a49f5d5be13cf0b3a1f1d634e061",
+        "filter": "none; native pixels, ACES fitted display curve and IEC sRGB",
+        "temporal_history": false,
+        "production_accepted": false
+      }
+    }
+  },
+  "unchanged_gallery_captures": [
+    {
+      "name": "Cumulus",
+      "float_sha256": "ae2dc13d402b21c785004df06bf8baa5c3dc6a6ccd982e6dcba933635b86568f",
+      "png_sha256": "0773c738efbb7c0ba00411ddf3a703976d82e62c5fcf6ad450417b337fd85cfe"
+    },
+    {
+      "name": "Cirrus",
+      "float_sha256": "6267c4e5bfc49ceee1d0b66af3b774bf09df227de680c7c3a0911dab76371f92",
+      "png_sha256": "855bc113450b3b1c770718d6ac33e578b507d7904a248c90900d113cfe90d3d3"
+    },
+    {
+      "name": "AboveCumulus",
+      "float_sha256": "5bd5b969813163eaa0944788f25e77c5349ce7e118739ff017ecc285ec78ff35",
+      "png_sha256": "8bc073fbd9476beb7c546f0deea35d0a09a688c2f558d310109014fe07e7dd95"
+    },
+    {
+      "name": "GoldenHour",
+      "float_sha256": "208de4be6f07a4aa2f6add0202cfb688df27821045edecd7028778eaaa892245",
+      "png_sha256": "5045eff4338f47e671e0dac1548308f3b6e53bf7bf5bb023de829926613d10db"
+    },
+    {
+      "name": "Stratocumulus",
+      "float_sha256": "3ea1697e74e3e7b19c8c1e9a51204be7771c03d167fe4441fa41863823913fef",
+      "png_sha256": "9794008f2603aeb202280617b8e7acf48d830950f806dca82fb63da458b7572b"
+    },
+    {
+      "name": "Stratus",
+      "float_sha256": "6f9229dc36c2cce249523edbc9356fd423fd19cb311f24e65d3fdc094b0ea522",
+      "png_sha256": "b5bdd3dfdbbde1891a2e2dd17612d5a8486b11284ed5e65114f5966e7e017d67"
+    },
+    {
+      "name": "Altocumulus",
+      "float_sha256": "3ac09e1ddc9523265172a5619aaa8506ccaecda43f591e5d504d341fd60e523e",
+      "png_sha256": "a6faa075fd3f8da4d4bac02d457e4743d58bdc6942b9b73777f337517d12fbc8"
+    },
+    {
+      "name": "Altostratus",
+      "float_sha256": "7e6ba7e2128340281131372a2b23b15e05ebe4dded331552798eb69b8bfe5275",
+      "png_sha256": "e3a02d0457c894af51420c751c902bcf04f8233b549ebee46df0f3053dd4b88c"
+    },
+    {
+      "name": "Nimbostratus",
+      "float_sha256": "3cd339e57f8dadfd925b8629006deb969c937c76b95e775cb7e09afc2f36dfc7",
+      "png_sha256": "5685c93bb9a73d2cb1d18f1227c942dc12a0bd22263cd445e08492987f1b2539"
+    },
+    {
+      "name": "Cirrostratus",
+      "float_sha256": "bf161b80082c02f8b111276da8ce0d8da204cc95dd19c1ad247472a3c3dc9261",
+      "png_sha256": "1898d5a4b301b0750ad3117045cf25ebce678782584e74e3b38b1223893ac1c2"
+    },
+    {
+      "name": "ToweringCumulus",
+      "float_sha256": "9b62b216aeaabe6ff66f93bc131d525c58ad1fa1bd61afef3c33646349a292fe",
+      "png_sha256": "020a3503695e68c1ca65782086b64cd4e46ca12e2b9b6b6c13654ac99a3d8b26"
+    },
+    {
+      "name": "Wind000",
+      "float_sha256": "553d7e0fd8a5f36623f1e6312a300c388217f3202d8fcf5c22ee1a324a671c36",
+      "png_sha256": "35ba1f0f6e6542ebac8eb0024182443d599439e147aba1ce2810004eae36be74"
+    },
+    {
+      "name": "Wind030",
+      "float_sha256": "8565abb2e80fa8ef8889deaca4cbc5a5cf6f5e759c07a1fe643521bf475f711e",
+      "png_sha256": "6a6a818e4b0e733afa748d32a5fa5a8f01f5702e073f0dccea470268315b5552"
+    },
+    {
+      "name": "Wind060",
+      "float_sha256": "cb81ebcfa6e88ee933289504a05164775d90ce79ab4edcd153aaa0cfec020cdf",
+      "png_sha256": "46081e5102ec5d96391e5ba5764db44b59079db83474fdae8e2121b91f6a49e5"
+    },
+    {
+      "name": "Wind090",
+      "float_sha256": "1ad1fc0ffb6a69b4f9138f629c2be59ce87f197a16507e75370b18ef5c9cfd30",
+      "png_sha256": "53b266f6e8e8c2949291c0155a60c92fc321be62eb6d32d5027aadee903f4b27"
+    },
+    {
+      "name": "Wind120",
+      "float_sha256": "cfd45c315663d0ba46379e9b7047d1f058df7d9cc366a7a8e7b3530ebc546e3b",
+      "png_sha256": "79cc4539b0ed9bbe0809f9e3885533e5f1d40e8636d7a1364c5074503f559a92"
+    },
+    {
+      "name": "Wind150",
+      "float_sha256": "66637de7568dc6e3aa235fb70cdbe0db40a1c4c94976fbfbc8c3cb7b3420d2b7",
+      "png_sha256": "dbcc0fe8a707493cb57b01e136a22b50b9e4da9accefc917796b48286631aa57"
+    }
+  ],
+  "repeat_fixture": "512 seeded points; 24 m footprint; shifts of one/two 3024 m shape periods at constant radial altitude",
+  "crossing_fixture": "4 geodesic transects, 256 positions each, 45-160 km; 128 altitude samples 1-14.92 km then 10 bisections of highest resolved 0.0005/m crossing; 1800 m footprint",
+  "support_fixture": "cloud transmittance below 0.9; four-connected native pixels; tiny means at most four pixels",
+  "scope": "fixed-fixture repetition, silhouette fragmentation and resolved top roughness; not photographic acceptance or global weather topology",
+  "comparison_sha256": "7793b442bc89c0ceb5b5e4161440b3c7b504ed3d069fa6f5504515cc11f0db01",
+  "photorealism_accepted": false,
+  "production_accepted": false
+}

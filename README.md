@@ -20,6 +20,8 @@ parity and validation against measured tyres, vehicles, sky and lens data remain
 - Follow the [active plan](Documentation/Plans/Ongoing/EngineUpdate.md).
 - Retain reproducible evidence under [Exhibits](Exhibits/README.md).
 - Inspect [experimental celestial rendering and its 32 native captures](Exhibits/CelestialAtmosphere/README.md).
+- Review [planetary clouds: 22 captures, de-tiling/edge repairs and volume checks](Exhibits/PlanetaryClouds/README.md);
+  photographic and production acceptance remain open.
 - Build the [Control Centre, fonts, and themes](Exhibits/ControlCentre/README.md).
 
 ## Baseline status

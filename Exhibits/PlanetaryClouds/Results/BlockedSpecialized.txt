@@ -1,0 +1,2 @@
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline

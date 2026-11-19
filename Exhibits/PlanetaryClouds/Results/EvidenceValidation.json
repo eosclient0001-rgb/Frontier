@@ -1,0 +1,47 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "tests_passed": true,
+  "assertion_gates": 960,
+  "assertion_accounting": "Boolean gate evaluations, not independent cases or every array component",
+  "retained_files_identified": 97,
+  "png_probe_pixels": 6866,
+  "vulkan_query_readbacks": 6400,
+  "vulkan_beauty_pixels": 2304,
+  "wind_reference_queries": 1024,
+  "browser_cache_regression_cases": 3,
+  "solar_density_receivers": 256,
+  "solar_density_point_queries": 8192,
+  "morphology_repeat_points_per_revision": 1536,
+  "morphology_resolved_top_crossings_per_revision": 1024,
+  "fresh_native_query_replay": true,
+  "complete_generated_captures_checked": true,
+  "complete_generated_measurements_checked": true,
+  "rejected_controls": [
+    {
+      "control": "altered native PNG",
+      "rejection": "Cumulus PNG identity"
+    },
+    {
+      "control": "altered Float32 probe with matching probe hash",
+      "rejection": "Cumulus exact PNG sample decoding"
+    },
+    {
+      "control": "100 m wind drift with self-consistent hashes/statistics",
+      "rejection": "Formation0Query3 tangent wind"
+    },
+    {
+      "control": "rejected solar weather with self-consistent statistics",
+      "rejection": "corrected solar world-density tolerance"
+    },
+    {
+      "control": "Vulkan image drift with self-consistent hashes/statistics",
+      "rejection": "Vulkan beauty complete-image tolerances"
+    },
+    {
+      "control": "original cloud repetition with self-consistent statistics",
+      "rejection": "cirrocumulus texture-period repetition"
+    }
+  ],
+  "photorealism_accepted": false,
+  "production_accepted": false
+}

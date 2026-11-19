@@ -1,0 +1,187 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "tests_passed": true,
+  "browser": "153.0.8010.0",
+  "selections": [
+    {
+      "category": "sky",
+      "capture": "Cumulus"
+    },
+    {
+      "category": "sky",
+      "capture": "Cirrus"
+    },
+    {
+      "category": "sky",
+      "capture": "Cumulonimbus"
+    },
+    {
+      "category": "sky",
+      "capture": "AboveCumulus"
+    },
+    {
+      "category": "sky",
+      "capture": "GoldenHour"
+    },
+    {
+      "category": "orbit",
+      "capture": "CycloneOrbit"
+    },
+    {
+      "category": "orbit",
+      "capture": "CycloneEye"
+    },
+    {
+      "category": "orbit",
+      "capture": "CycloneLimb"
+    },
+    {
+      "category": "orbit",
+      "capture": "AboveCumulus"
+    },
+    {
+      "category": "formations",
+      "capture": "Cumulus"
+    },
+    {
+      "category": "formations",
+      "capture": "Stratocumulus"
+    },
+    {
+      "category": "formations",
+      "capture": "Stratus"
+    },
+    {
+      "category": "formations",
+      "capture": "Altocumulus"
+    },
+    {
+      "category": "formations",
+      "capture": "Altostratus"
+    },
+    {
+      "category": "formations",
+      "capture": "Nimbostratus"
+    },
+    {
+      "category": "formations",
+      "capture": "Cirrus"
+    },
+    {
+      "category": "formations",
+      "capture": "Cirrostratus"
+    },
+    {
+      "category": "formations",
+      "capture": "Cirrocumulus"
+    },
+    {
+      "category": "formations",
+      "capture": "ToweringCumulus"
+    },
+    {
+      "category": "formations",
+      "capture": "Cumulonimbus"
+    },
+    {
+      "category": "formations",
+      "capture": "CycloneOrbit"
+    },
+    {
+      "category": "wind",
+      "capture": "Wind000"
+    },
+    {
+      "category": "wind",
+      "capture": "Wind030"
+    },
+    {
+      "category": "wind",
+      "capture": "Wind060"
+    },
+    {
+      "category": "wind",
+      "capture": "Wind090"
+    },
+    {
+      "category": "wind",
+      "capture": "Wind120"
+    },
+    {
+      "category": "wind",
+      "capture": "Wind150"
+    }
+  ],
+  "keyboard": true,
+  "playback": true,
+  "reduced_motion_event_pause": true,
+  "synthetic_visibility_event_pause": true,
+  "mobile": true,
+  "links": [
+    "README.md",
+    "Results/NativeValidation.json",
+    "Results/VulkanClouds.json",
+    "Results/VulkanBeauty.json",
+    "Images/Morphology.jpg",
+    "Results/Morphology.json",
+    "Results/SolarDensity.json",
+    "Results/CloudMeasurements.json",
+    "Images/CloudShadowReceivers.png",
+    "Results/ExecutionScope.json",
+    "Results/Integrity.json"
+  ],
+  "rejected_inputs": [
+    "missing capture",
+    "altered PNG byte",
+    "missing manifest",
+    "mixed numerical source identities",
+    "false acceptance claim"
+  ],
+  "cache_revisions": [
+    {
+      "scenario": "stale PNG cache",
+      "fixture": "synthetic prior bytes, real HTTP cache; Blob inspection only, no request routing",
+      "captures": [
+        "Cumulonimbus",
+        "Cirrocumulus",
+        "CycloneOrbit",
+        "CycloneEye",
+        "CycloneLimb"
+      ],
+      "primed_http_cache_entries": 5,
+      "tests_passed": true
+    },
+    {
+      "scenario": "stale manifest cache",
+      "fixture": "synthetic prior bytes, real HTTP cache; Blob inspection only, no request routing",
+      "captures": [
+        "Cumulonimbus",
+        "Cirrocumulus",
+        "CycloneOrbit",
+        "CycloneEye",
+        "CycloneLimb"
+      ],
+      "primed_http_cache_entries": 1,
+      "tests_passed": true
+    },
+    {
+      "scenario": "already-open revision",
+      "fixture": "synthetic prior bytes, real HTTP cache; Blob inspection only, no request routing",
+      "captures": [
+        "Cumulonimbus",
+        "Cirrocumulus",
+        "CycloneOrbit",
+        "CycloneEye",
+        "CycloneLimb"
+      ],
+      "earlier_blob_authenticated": true,
+      "tests_passed": true
+    }
+  ],
+  "page_errors": [],
+  "production_accepted": false,
+  "preview_host_accepted": true,
+  "preview_cache_policy_verified": true,
+  "category_capture_choices": 27,
+  "distinct_capture_images": 22
+}

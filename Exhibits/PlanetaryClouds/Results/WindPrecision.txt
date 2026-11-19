@@ -1,0 +1,14 @@
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.020s
+{'selection': 'Original', 'shear': 0.0, 'veer': 0.0, 'world_points': 256, 'max_abs_native_difference_by_channel': [38.0, 12.75, 41.0, 41.0], 'max_abs_radial_displacement_m': 40.5, 'native_max_abs_radial_displacement_m': 1.0}
+{'selection': 'Original', 'shear': 0.1, 'veer': 0.0, 'world_points': 256, 'max_abs_native_difference_by_channel': [80.0, 27.25, 87.5, 91.0], 'max_abs_radial_displacement_m': 91.0, 'native_max_abs_radial_displacement_m': 1.0}
+{'selection': 'Original', 'shear': 0.0, 'veer': 0.1, 'world_points': 256, 'max_abs_native_difference_by_channel': [35.5, 40.0, 41.5, 41.0], 'max_abs_radial_displacement_m': 41.0, 'native_max_abs_radial_displacement_m': 0.5}
+{'selection': 'Original', 'shear': 0.1, 'veer': 0.1, 'world_points': 256, 'max_abs_native_difference_by_channel': [43.0, 89.0, 87.5, 90.5], 'max_abs_radial_displacement_m': 90.5, 'native_max_abs_radial_displacement_m': 0.5}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.014s
+{'selection': 'Repaired', 'shear': 0.0, 'veer': 0.0, 'world_points': 256, 'max_abs_native_difference_by_channel': [0.0, 0.0, 0.0, 0.0], 'max_abs_radial_displacement_m': 1.0, 'native_max_abs_radial_displacement_m': 1.0}
+{'selection': 'Repaired', 'shear': 0.1, 'veer': 0.0, 'world_points': 256, 'max_abs_native_difference_by_channel': [0.0, 0.0, 0.0, 0.0], 'max_abs_radial_displacement_m': 1.0, 'native_max_abs_radial_displacement_m': 1.0}
+{'selection': 'Repaired', 'shear': 0.0, 'veer': 0.1, 'world_points': 256, 'max_abs_native_difference_by_channel': [0.0, 0.0, 0.0, 0.0], 'max_abs_radial_displacement_m': 0.5, 'native_max_abs_radial_displacement_m': 0.5}
+{'selection': 'Repaired', 'shear': 0.1, 'veer': 0.1, 'world_points': 256, 'max_abs_native_difference_by_channel': [0.0, 0.0, 0.0, 0.0], 'max_abs_radial_displacement_m': 0.5, 'native_max_abs_radial_displacement_m': 0.5}

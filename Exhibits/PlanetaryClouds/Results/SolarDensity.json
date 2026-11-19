@@ -1,0 +1,31 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "tests_passed": true,
+  "corrected": {
+    "world_receivers": 256,
+    "steps": 32,
+    "density_point_queries": 8192,
+    "max_abs_optical_depth_difference": 0.00033283233642578125,
+    "mean_abs_optical_depth_difference": 4.191824700683355e-06,
+    "rays_over_0_01": 0,
+    "tolerance_optical_depth": 0.01,
+    "scope": "same Float32 segments/footprints; 0.01 permits independent host/shader coordinate roundoff, not alternate weather"
+  },
+  "rejected": {
+    "world_receivers": 256,
+    "steps": 32,
+    "density_point_queries": 8192,
+    "max_abs_optical_depth_difference": 1.5345726013183594,
+    "mean_abs_optical_depth_difference": 0.08511978387832642,
+    "rays_over_0_01": 84,
+    "tolerance_optical_depth": 0.01,
+    "scope": "same Float32 segments/footprints; 0.01 permits independent host/shader coordinate roundoff, not alternate weather"
+  },
+  "control_source_sha256": "edeb8673fddce19f351a29fc4c86a7585a7a34f52b29cb35851c8d43213bc838",
+  "control_fragment_sha256": "981f4988b71425ccb41aeab71638e1f8fe44be594a4801a940f7ea327c1c399b",
+  "library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+  "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+  "source_isolation": "temporary copy; replace only the solar integration function, authenticate the resulting variant identity",
+  "photorealism_accepted": false,
+  "production_accepted": false
+}

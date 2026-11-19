@@ -1,0 +1,136 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "tests_passed": true,
+  "original_source_sha256": "e0c999ad06d14fa1efc0068ffd77c31497042fa7beee23214b781bd2602070ad",
+  "original_spirv_sha256": "af30dd96989c86d2bd2b936fbc7a98cc19a52fb6ecfba9318fcb725ab1e9987d",
+  "repaired_spirv_sha256": "b423749ec98cce3cb68fad334d97ffc6e80786186b038d3a4bf021cdcddcb8a4",
+  "library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+  "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+  "native_reference": "repaired native implementation, same positions and wind parameters",
+  "time_seconds": 1200,
+  "cases": [
+    {
+      "selection": "Original",
+      "shear": 0.0,
+      "veer": 0.0,
+      "world_points": 256,
+      "max_abs_native_difference_by_channel": [
+        38.0,
+        12.75,
+        41.0,
+        41.0
+      ],
+      "max_abs_radial_displacement_m": 40.5,
+      "native_max_abs_radial_displacement_m": 1.0
+    },
+    {
+      "selection": "Original",
+      "shear": 0.1,
+      "veer": 0.0,
+      "world_points": 256,
+      "max_abs_native_difference_by_channel": [
+        80.0,
+        27.25,
+        87.5,
+        91.0
+      ],
+      "max_abs_radial_displacement_m": 91.0,
+      "native_max_abs_radial_displacement_m": 1.0
+    },
+    {
+      "selection": "Original",
+      "shear": 0.0,
+      "veer": 0.1,
+      "world_points": 256,
+      "max_abs_native_difference_by_channel": [
+        35.5,
+        40.0,
+        41.5,
+        41.0
+      ],
+      "max_abs_radial_displacement_m": 41.0,
+      "native_max_abs_radial_displacement_m": 0.5
+    },
+    {
+      "selection": "Original",
+      "shear": 0.1,
+      "veer": 0.1,
+      "world_points": 256,
+      "max_abs_native_difference_by_channel": [
+        43.0,
+        89.0,
+        87.5,
+        90.5
+      ],
+      "max_abs_radial_displacement_m": 90.5,
+      "native_max_abs_radial_displacement_m": 0.5
+    },
+    {
+      "selection": "Repaired",
+      "shear": 0.0,
+      "veer": 0.0,
+      "world_points": 256,
+      "max_abs_native_difference_by_channel": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_radial_displacement_m": 1.0,
+      "native_max_abs_radial_displacement_m": 1.0
+    },
+    {
+      "selection": "Repaired",
+      "shear": 0.1,
+      "veer": 0.0,
+      "world_points": 256,
+      "max_abs_native_difference_by_channel": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_radial_displacement_m": 1.0,
+      "native_max_abs_radial_displacement_m": 1.0
+    },
+    {
+      "selection": "Repaired",
+      "shear": 0.0,
+      "veer": 0.1,
+      "world_points": 256,
+      "max_abs_native_difference_by_channel": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_radial_displacement_m": 0.5,
+      "native_max_abs_radial_displacement_m": 0.5
+    },
+    {
+      "selection": "Repaired",
+      "shear": 0.1,
+      "veer": 0.1,
+      "world_points": 256,
+      "max_abs_native_difference_by_channel": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_abs_radial_displacement_m": 0.5,
+      "native_max_abs_radial_displacement_m": 0.5
+    }
+  ],
+  "physical_gpu_verified": false,
+  "production_accepted": false,
+  "device": {
+    "name": "SwiftShader Device (Subzero)",
+    "type": 4,
+    "physical_gpu": false,
+    "api_version": 4206592
+  },
+  "before_max_radial_m": 91.0,
+  "after_max_radial_m": 1.0,
+  "software_defect_reproduced": true
+}

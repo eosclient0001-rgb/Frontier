@@ -1,0 +1,376 @@
+{
+  "Cumulus": {
+    "native_extent": [
+      640,
+      360
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.68,
+    "float_probe_sha256": "e5b997938b2f4ea98400beca416d8f0c7a1ed72f5e5d9ef30b4054f63f7d8f2a"
+  },
+  "Cumulonimbus": {
+    "native_extent": [
+      512,
+      288
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.84,
+    "float_probe_sha256": "62b52048a9a4bda04c0c45e9914eecf8b4d91d303c170e01ebed207efb684480"
+  },
+  "Cirrus": {
+    "native_extent": [
+      512,
+      288
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "91f372c8ce88b3624b79d9f7421aaf05dd4c7296ce52088aa6f2adda2f5518d9"
+  },
+  "AboveCumulus": {
+    "native_extent": [
+      480,
+      270
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "72a715a508be3720968400353debe82c2c5f0bd0b3206dc6bf1c96a50d118877"
+  },
+  "GoldenHour": {
+    "native_extent": [
+      480,
+      270
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.5,
+    "float_probe_sha256": "0b6084634de16305ab85d66762526df05d44cbfe2f6dc1115ced5f9b3eb63979"
+  },
+  "CycloneOrbit": {
+    "native_extent": [
+      480,
+      270
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.64,
+    "float_probe_sha256": "e1beffa43cc6012f9e716c3e598ca084c476a9ab29ca89192cfff7a8d8ebd8aa"
+  },
+  "CycloneEye": {
+    "native_extent": [
+      384,
+      216
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.78,
+    "float_probe_sha256": "46e4b15b9819d80706a98cc9383030b2d0b3c32c0ae4a333a9f7e9fd2b59e987"
+  },
+  "CycloneLimb": {
+    "native_extent": [
+      384,
+      216
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.86,
+    "float_probe_sha256": "7171c60724e03ddfc58bf84b1e70519d0676aae6b04397bccae98f5508d469d6"
+  },
+  "Stratocumulus": {
+    "native_extent": [
+      256,
+      144
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "40d6d01dd855afc4ae16cac3645cb3743749483ee1f2dabfd518332b54249262"
+  },
+  "Stratus": {
+    "native_extent": [
+      256,
+      144
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "721bfd955afd9fd9ccd8249e45a3361bbca35a20094d5fcb03bbf02aa6dcbc79"
+  },
+  "Altocumulus": {
+    "native_extent": [
+      256,
+      144
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "20797f2190c0841cdc30f7dd913a3ff7ddcc2aa654084caf54c6c926fe0f6dfa"
+  },
+  "Altostratus": {
+    "native_extent": [
+      256,
+      144
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "b718371dd268ab7102e02cf089ce54f3d6c491b3adb5e54fe25fb708490d657c"
+  },
+  "Nimbostratus": {
+    "native_extent": [
+      256,
+      144
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "c35570bca91324d8d7eaa0e2e7f41a97a6a212272a42c2901f43980e0acb96ed"
+  },
+  "Cirrostratus": {
+    "native_extent": [
+      256,
+      144
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "028469046500f24400f63356e34c2288066e10d1cfcb52c0ef6889a0795384df"
+  },
+  "Cirrocumulus": {
+    "native_extent": [
+      256,
+      144
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "240b1b0bc65c6e26b15504c0d42695f06a9b707a28f35cabb7f10208cff58bdc"
+  },
+  "ToweringCumulus": {
+    "native_extent": [
+      256,
+      144
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 1.0,
+    "float_probe_sha256": "cd7ba7bef61d77993db53fe4889b528719682f0c5d3453bb7b96aa98c778604a"
+  },
+  "Wind000": {
+    "native_extent": [
+      320,
+      180
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.68,
+    "float_probe_sha256": "1c72879c6ee66f9b7884fb0a06aedf40e300eff5498413d669f2196808b65f01"
+  },
+  "Wind030": {
+    "native_extent": [
+      320,
+      180
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.68,
+    "float_probe_sha256": "18573cb754c3cc871fe1e94de6f303f6395709abb4921f69b83d100ff382e2ca"
+  },
+  "Wind060": {
+    "native_extent": [
+      320,
+      180
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.68,
+    "float_probe_sha256": "ffa8fd1f683c2cbcf302e3140425458601e1e14cbcf83b9ecb0a26c0ad6c85d0"
+  },
+  "Wind090": {
+    "native_extent": [
+      320,
+      180
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.68,
+    "float_probe_sha256": "3f41226b45e0eb9135133fbf72d52c17c5d90fbcc8d8a0c4174e10ecd26db650"
+  },
+  "Wind120": {
+    "native_extent": [
+      320,
+      180
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.68,
+    "float_probe_sha256": "2224ef43780e3be169f6607560ed5d1c96e70d8f55987bb3aab9eaf0282cb955"
+  },
+  "Wind150": {
+    "native_extent": [
+      320,
+      180
+    ],
+    "first_pixel": [
+      0,
+      0
+    ],
+    "pixel_stride": [
+      16,
+      16
+    ],
+    "channels": "linear RGB, cloud transmittance",
+    "display_exposure": 0.68,
+    "float_probe_sha256": "0b68013dc7b994ee36210ce8137104aec3cee179c8b206de53f8f9ff2b2fbe2f"
+  }
+}

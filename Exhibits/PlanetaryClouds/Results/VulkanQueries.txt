@@ -1,0 +1,40 @@
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.334s
+{'formation': 0, 'selection': 4, 'queries': 1024, 'time_seconds': 0.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [1.7345882952213287e-08, 1.7345882952213287e-08, 0.0, 0.015625], 'mean_abs_by_channel': [7.371170340775279e-11, 7.371170340775279e-11, 0.0, 0.0015108585357666016], 'shader_rg_equal': True, 'float_sha256': '47493c20b7e30b21ccd3b9ff3bb678f8fbd6df0af4162892d94cbc91ca632b7c', 'pipeline_seconds': 0.33433920300012687, 'spirv_sha256': 'd6fc979e5c662d1645c37dc4fb5e220863a7e9c0ef559006132b9843bb1d1b53'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.447s
+{'formation': 11, 'selection': 4, 'queries': 1024, 'time_seconds': 0.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [1.4938414096832275e-06, 1.4938414096832275e-06, 0.0, 0.125], 'mean_abs_by_channel': [2.613822047692338e-09, 2.613822047692338e-09, 0.0, 0.013683319091796875], 'shader_rg_equal': True, 'float_sha256': '21dceb3cef76615022481d1582c6a819d73df310d9f7e2eaa70cdd33bb71f5f8', 'pipeline_seconds': 0.44650514100067085, 'spirv_sha256': 'e7cd82fcf56b23aae88459276c74fc9e442948ca80aa87700b74aa36db9a6249'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.369s
+{'formation': 6, 'selection': 4, 'queries': 1024, 'time_seconds': 0.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [0.0, 0.0, 0.0, 0.015625], 'mean_abs_by_channel': [0.0, 0.0, 0.0, 0.001672983169555664], 'shader_rg_equal': True, 'float_sha256': '217b9925e78d62002975f934dc7d21aa10b3fddac934bfb5d1534cfadb37b24f', 'pipeline_seconds': 0.3689351900029578, 'spirv_sha256': '3c09287fa01e1f24e9ce1958bb6fff724e4caaa9441b8b27145278b6947628be'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.396s
+{'formation': 10, 'selection': 4, 'queries': 1024, 'time_seconds': 0.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [2.1187588572502136e-08, 2.1187588572502136e-08, 0.0, 0.00390625], 'mean_abs_by_channel': [3.1944225042934704e-11, 3.1944225042934704e-11, 0.0, 0.0003647804260253906], 'shader_rg_equal': True, 'float_sha256': '384a2f72447e586e569b87cac48fd0c97608300ec8724b891b562c8ab23cad53', 'pipeline_seconds': 0.3964168369930121, 'spirv_sha256': '454fde81aa7c13dabfb699e09e582527b98e1512d77ae84c3a5a322b835141e2'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.156s
+{'formation': 8, 'selection': 4, 'queries': 1024, 'time_seconds': 0.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [7.203198038041592e-10, 7.203198038041592e-10, 0.0, 0.015625], 'mean_abs_by_channel': [2.0729399100027912e-12, 2.0729399100027912e-12, 0.0, 0.0017067193984985352], 'shader_rg_equal': True, 'float_sha256': 'ee211fa063f68b51d2c97b07ffa5e25aa820b2f190a22139edd03d3b4c79014d', 'pipeline_seconds': 0.15552504500374198, 'spirv_sha256': '936bb414b8473b214a2bcbbdb42d291834dc3c28e1508b9d230abacc0af12d21'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.005s
+{'formation': 0, 'selection': 8, 'queries': 256, 'time_seconds': 1200.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [1.1920928955078125e-07, 1.1920928955078125e-07, 0.0, 0.0], 'mean_abs_by_channel': [1.3576936908066273e-08, 1.2223608791828156e-08, 0.0, 0.0], 'shader_rg_equal': None, 'float_sha256': '4cc2662b5051431819c30ceb1ff35b47d52923156d721f58c3ec99d783f0997c', 'pipeline_seconds': 0.004872268000326585, 'spirv_sha256': 'e4a149f3061a073d45db82540212df6b1bcc7cd6e06d5557441ebad8ac3a9fcb'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.005s
+{'formation': 0, 'selection': 9, 'queries': 256, 'time_seconds': 1200.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [1.7881393432617188e-07, 1.6391277313232422e-07, 3.5762786865234375e-07, 2.384185791015625e-07], 'mean_abs_by_channel': [9.145878721028566e-09, 1.0943040251731873e-08, 1.0360963642597198e-08, 1.0943040251731873e-08], 'shader_rg_equal': None, 'float_sha256': '06db40ad4cc3b22914e0fa4f0ef62fedd95ebf5b701712f5e31e55ef4730cfeb', 'pipeline_seconds': 0.004812131999642588, 'spirv_sha256': '74114e6427990f8eba38bc62226c591e8a1faec2331ac4f420bef4c59f893026'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.010s
+{'formation': 0, 'selection': 3, 'queries': 256, 'time_seconds': 1200.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [0.0, 0.0, 0.0, 0.0], 'mean_abs_by_channel': [0.0, 0.0, 0.0, 0.0], 'shader_rg_equal': None, 'float_sha256': 'a90552ec36f1109c0bc0a4037023907dd855c30652d98c7023043721195fc5ca', 'pipeline_seconds': 0.010001691000070423, 'spirv_sha256': 'b423749ec98cce3cb68fad334d97ffc6e80786186b038d3a4bf021cdcddcb8a4'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.004s
+{'formation': 0, 'selection': 10, 'queries': 256, 'time_seconds': 1200.0, 'view_steps': 96, 'light_steps': 12, 'max_abs_by_channel': [0.0, 0.0, 0.0, 0.0], 'mean_abs_by_channel': [0.0, 0.0, 0.0, 0.0], 'shader_rg_equal': None, 'float_sha256': '541dcfc041cf16a3d9692f58be3ced395a0f87aa134f5c8382e7568a54c7aa95', 'pipeline_seconds': 0.004376178003440145, 'spirv_sha256': '85facfcc936384b28bd99c42f10ea374bb9bf2dad24d92c64f177dfdda08dbc1'}
+{'name': 'SwiftShader Device (Subzero)', 'type': 4, 'physical_gpu': False, 'api_version': 4206592}
+Creating selected cloud compute pipeline
+Selected cloud pipeline created in 0.143s
+{'formation': 0, 'selection': 5, 'queries': 256, 'time_seconds': 0.0, 'view_steps': 96, 'light_steps': 32, 'max_abs_by_channel': [5.960464477539063e-08, 1.7881393432617188e-07, 1.7881393432617188e-07, 8.392333984375e-05], 'mean_abs_by_channel': [2.0721927285194397e-08, 9.615905582904816e-08, 8.032657206058502e-08, 3.968430974055082e-06], 'shader_rg_equal': None, 'float_sha256': '03140cf0f9e385f334574e8aee05c7b23d287b0c224d018423d836cde4d70ebe', 'pipeline_seconds': 0.14311885500501376, 'spirv_sha256': '3e14ed97718aa9af64c4b58ac773e7a5c2d44359a30c4811825c0ccfbb69d694'}

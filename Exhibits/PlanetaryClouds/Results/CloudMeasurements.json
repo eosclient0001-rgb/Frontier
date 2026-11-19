@@ -1,0 +1,280 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+  "execution": "actual Slang native C++ target",
+  "photorealism_accepted": false,
+  "production_accepted": false,
+  "measurements_completed": true,
+  "sampling": {
+    "reference": "finite 768 view / 64 solar steps, one pixel sample; not ground truth",
+    "image_extent": [
+      96,
+      54
+    ],
+    "cloud_radiance_only": true,
+    "cases": [
+      {
+        "view": "cumulus",
+        "view_budget": [
+          {
+            "steps": 64,
+            "rgb_rmse": 0.06875278055667877,
+            "transmittance_rmse": 0.04019412398338318,
+            "max_abs": 1.7945812940597534
+          },
+          {
+            "steps": 128,
+            "rgb_rmse": 0.03708851709961891,
+            "transmittance_rmse": 0.010040263645350933,
+            "max_abs": 0.5889251828193665
+          },
+          {
+            "steps": 256,
+            "rgb_rmse": 0.023934433236718178,
+            "transmittance_rmse": 0.002770091174170375,
+            "max_abs": 0.3668367862701416
+          },
+          {
+            "steps": 384,
+            "rgb_rmse": 0.016519295051693916,
+            "transmittance_rmse": 0.0008167572668753564,
+            "max_abs": 0.33882570266723633
+          }
+        ],
+        "light_budget": [
+          {
+            "steps": 8,
+            "rgb_rmse": 0.04616210237145424,
+            "transmittance_rmse": 0.0
+          },
+          {
+            "steps": 16,
+            "rgb_rmse": 0.011975206434726715,
+            "transmittance_rmse": 0.0
+          },
+          {
+            "steps": 32,
+            "rgb_rmse": 0.005105346441268921,
+            "transmittance_rmse": 0.0
+          }
+        ],
+        "view_384_improves_on_64": true
+      },
+      {
+        "view": "cirrus",
+        "view_budget": [
+          {
+            "steps": 64,
+            "rgb_rmse": 0.00012825580779463053,
+            "transmittance_rmse": 2.6403364245197736e-05,
+            "max_abs": 0.002597332000732422
+          },
+          {
+            "steps": 128,
+            "rgb_rmse": 6.005817704135552e-05,
+            "transmittance_rmse": 1.2226912076584995e-05,
+            "max_abs": 0.0011011362075805664
+          },
+          {
+            "steps": 256,
+            "rgb_rmse": 2.5569903300493024e-05,
+            "transmittance_rmse": 5.535377113119466e-06,
+            "max_abs": 0.0005992650985717773
+          },
+          {
+            "steps": 384,
+            "rgb_rmse": 1.558944677526597e-05,
+            "transmittance_rmse": 3.2988170914904913e-06,
+            "max_abs": 0.0003026723861694336
+          }
+        ],
+        "light_budget": [
+          {
+            "steps": 8,
+            "rgb_rmse": 2.9811415515723638e-05,
+            "transmittance_rmse": 0.0
+          },
+          {
+            "steps": 16,
+            "rgb_rmse": 6.391879196598893e-06,
+            "transmittance_rmse": 0.0
+          },
+          {
+            "steps": 32,
+            "rgb_rmse": 1.2209757187520154e-06,
+            "transmittance_rmse": 0.0
+          }
+        ],
+        "view_384_improves_on_64": true
+      },
+      {
+        "view": "cumulonimbus",
+        "view_budget": [
+          {
+            "steps": 64,
+            "rgb_rmse": 0.05005740374326706,
+            "transmittance_rmse": 0.024831628426909447,
+            "max_abs": 0.9928185939788818
+          },
+          {
+            "steps": 128,
+            "rgb_rmse": 0.032483719289302826,
+            "transmittance_rmse": 0.007286998443305492,
+            "max_abs": 0.511570394039154
+          },
+          {
+            "steps": 256,
+            "rgb_rmse": 0.02008885145187378,
+            "transmittance_rmse": 0.0012509544612839818,
+            "max_abs": 0.3093520998954773
+          },
+          {
+            "steps": 384,
+            "rgb_rmse": 0.016691841185092926,
+            "transmittance_rmse": 0.00030323880491778255,
+            "max_abs": 0.27377849817276
+          }
+        ],
+        "light_budget": [
+          {
+            "steps": 8,
+            "rgb_rmse": 0.014637721702456474,
+            "transmittance_rmse": 0.0
+          },
+          {
+            "steps": 16,
+            "rgb_rmse": 0.004397472366690636,
+            "transmittance_rmse": 0.0
+          },
+          {
+            "steps": 32,
+            "rgb_rmse": 0.0012417671969160438,
+            "transmittance_rmse": 0.0
+          }
+        ],
+        "view_384_improves_on_64": true
+      },
+      {
+        "view": "cyclone",
+        "view_budget": [
+          {
+            "steps": 64,
+            "rgb_rmse": 0.04467548057436943,
+            "transmittance_rmse": 0.0039251032285392284,
+            "max_abs": 0.21019744873046875
+          },
+          {
+            "steps": 128,
+            "rgb_rmse": 0.014538172632455826,
+            "transmittance_rmse": 0.001290348474867642,
+            "max_abs": 0.10589167475700378
+          },
+          {
+            "steps": 256,
+            "rgb_rmse": 0.009307286702096462,
+            "transmittance_rmse": 0.0002572550147306174,
+            "max_abs": 0.05164271593093872
+          },
+          {
+            "steps": 384,
+            "rgb_rmse": 0.001964969327673316,
+            "transmittance_rmse": 7.822024781489745e-05,
+            "max_abs": 0.01451575756072998
+          }
+        ],
+        "light_budget": [
+          {
+            "steps": 8,
+            "rgb_rmse": 0.005998157896101475,
+            "transmittance_rmse": 0.0
+          },
+          {
+            "steps": 16,
+            "rgb_rmse": 0.004898670129477978,
+            "transmittance_rmse": 0.0
+          },
+          {
+            "steps": 32,
+            "rgb_rmse": 0.0013598595978692174,
+            "transmittance_rmse": 0.0
+          }
+        ],
+        "view_384_improves_on_64": true
+      }
+    ],
+    "convergence_accepted": false
+  },
+  "orbital_coherence": [
+    {
+      "view": "cumulus",
+      "world_rays": 96,
+      "origin_separation_m": 150000,
+      "fixed_footprint_m": 1,
+      "max_abs": 0.00035881996154785156,
+      "mean_abs": 2.1328582079149783e-05,
+      "within_declared_0_02_max_tolerance": true
+    },
+    {
+      "view": "cyclone",
+      "world_rays": 96,
+      "origin_separation_m": 150000,
+      "fixed_footprint_m": 1,
+      "max_abs": 0.0012501776218414307,
+      "mean_abs": 8.548644836992025e-05,
+      "within_declared_0_02_max_tolerance": true
+    }
+  ],
+  "density_sections": [
+    {
+      "view": "cyclone",
+      "extent_m": [
+        -100000.0,
+        100000.0,
+        0,
+        16000
+      ],
+      "density_queries": 86400,
+      "max_extinction_per_m": 0.0026000000070780516,
+      "display": "square root normalized to measured maximum"
+    },
+    {
+      "view": "cumulonimbus",
+      "extent_m": [
+        -17000.0,
+        17000.0,
+        0,
+        16000
+      ],
+      "density_queries": 86400,
+      "max_extinction_per_m": 0.00419999985024333,
+      "display": "square root normalized to measured maximum"
+    }
+  ],
+  "receiver_illumination": {
+    "projection": "normal grid on curved ground, not a camera capture",
+    "extent_m": [
+      -24000.0,
+      24000.0
+    ],
+    "cases": [
+      {
+        "name": "Wind0",
+        "world_receiver_queries": 16384,
+        "mean_transmittance": 0.47496095299720764,
+        "radiance_sha256": "ec60a83e55c4f760ff1685abed9610f3fb5ce39226feeaf5179ce375303f583e"
+      },
+      {
+        "name": "Wind90",
+        "world_receiver_queries": 16384,
+        "mean_transmittance": 0.4610249996185303,
+        "radiance_sha256": "9244d190d358b1c4874d3cd5966844f9c9b306de5657052b448025153072b5ae"
+      },
+      {
+        "name": "NoCloudShadow",
+        "world_receiver_queries": 16384,
+        "mean_transmittance": 1.0,
+        "radiance_sha256": "599f584620bd43188131a35e538368ba00ff470be07726b8f67663928a7bf279"
+      }
+    ]
+  }
+}

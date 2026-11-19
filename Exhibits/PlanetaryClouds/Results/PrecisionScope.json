@@ -1,0 +1,16 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "radiance_probes": "native pixel [0::16,0::16], RGB radiance plus cloud transmittance",
+  "sampling_probes": "cloud-only arrays at native pixel [0::8,0::8], native extent 96 by 54",
+  "density_sections": "complete two 480 by 180 extinction arrays; projection in CloudMeasurements.json",
+  "receiver_probes": "native grid [0::4,0::4], native extent 128 by 128; solar air RGB and cloud optical depth",
+  "wind_precision": "complete before/after/native point probes; rejected code identified separately",
+  "solar_density": "complete 256 receiver positions, 8192 direct density samples, segment lengths and corrected/rejected depths",
+  "morphology": "complete before/after repeat densities, 1024 resolved top crossings and packed native support masks; comparison JPEG is a preview, baseline source is retained as gzip",
+  "vulkan_beauty": "complete native/software-Vulkan RGBA32F for one 64 by 36 cumulus fixture, not the native gallery",
+  "full_native_gallery_hdr_archived": false,
+  "small_vulkan_beauty_hdr_archived": true,
+  "full_generated_arrays": "reproducible in ignored scratch",
+  "photorealism_accepted": false,
+  "production_accepted": false
+}

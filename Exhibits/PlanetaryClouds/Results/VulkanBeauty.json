@@ -1,0 +1,92 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "tests_passed": true,
+  "full_beauty_entry_executed": true,
+  "guarded_buffer_tails": true,
+  "images": [
+    {
+      "view": "cumulus",
+      "view_specification": {
+        "Name": "Cumulus",
+        "Origin": [
+          -3000.0,
+          4200.0,
+          24.0
+        ],
+        "View": [
+          -42.0,
+          12.0
+        ],
+        "Sun": [
+          -114.0,
+          26.0
+        ],
+        "Fov": 42.0,
+        "Coverage": 0.48,
+        "Extinction": 1.0,
+        "Seed": 0.04,
+        "Exposure": 0.68,
+        "Floor": 1200.0,
+        "Depth": 3900.0,
+        "Scale": 1.0,
+        "Phase": 0.82,
+        "Formation": 0,
+        "Surface": 0,
+        "Air": [
+          1.0,
+          0.72,
+          1.0
+        ],
+        "Solar": 16.0,
+        "Time": 0.0,
+        "Wind": [
+          12.0,
+          4.0
+        ],
+        "Shear": 0.1,
+        "Veer": 0.1,
+        "Turbulence": 0.3,
+        "Anvil": 0.6,
+        "CycloneSpeed": 58.0,
+        "Eye": 21000.0,
+        "CycloneAxis": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "Clouds": 1,
+        "Shadows": 1,
+        "UniformExtinction": -1.0
+      },
+      "width": 64,
+      "height": 36,
+      "steps": 96,
+      "light_steps": 8,
+      "samples": 1,
+      "seconds": 0.8844378710055025,
+      "max_abs": 0.0006348490715026855,
+      "rgb_rmse": 7.471237950085197e-06,
+      "max_abs_tolerance": 0.002,
+      "rgb_rmse_tolerance": 0.0001,
+      "float_sha256": "3d3a95995409e96dd0febe6721f83017e26086d9929ee40c203940f53d029a5b",
+      "native_float_sha256": "4ede1ddc3bb8825ebc17cfefa3f77ae7f756eb1c324a4c3f80e5883f0526ac94",
+      "png_sha256": "48c9b178d7c6740465537b8df4aa944254035657be99f1b1718fc73ab4752404",
+      "pipeline_seconds": 81.98189527399518,
+      "spirv_sha256": "983d81c7e83e3b08060aeceb395977ac8c54fefef91d0ba654ba84d5143d1a50"
+    }
+  ],
+  "queries": [],
+  "library_sha256": "2c5bf7391061ad15ba1a0a6251ceab24e918f6a6633536834998f08aeb1fdc60",
+  "noise_sha256": "0722114446514dd5a30ab6153845ceb505398664a76c1899ecd6f5f3ce4b2abe",
+  "array_archive": "VulkanBeauty.npz",
+  "array_scope": "complete native/Vulkan images",
+  "physical_gpu_verified": false,
+  "photorealism_accepted": false,
+  "production_accepted": false,
+  "device": {
+    "name": "SwiftShader Device (Subzero)",
+    "type": 4,
+    "physical_gpu": false,
+    "api_version": 4206592
+  }
+}

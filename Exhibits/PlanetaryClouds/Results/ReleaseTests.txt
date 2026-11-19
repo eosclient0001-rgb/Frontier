@@ -1,0 +1,8 @@
+Internal ctest changing into directory: /home/user/Frontier/_ClaudeScratch/build/CloudCmake
+Test project /home/user/Frontier/_ClaudeScratch/build/CloudCmake
+    Start 1: CloudVolumeBehavior
+1/1 Test #1: CloudVolumeBehavior ..............   Passed    4.39 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   4.39 sec

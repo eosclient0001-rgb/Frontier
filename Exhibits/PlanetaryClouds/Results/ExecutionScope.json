@@ -1,0 +1,266 @@
+{
+  "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+  "experimental_mechanisms_executed": true,
+  "requested_photographic_completion": false,
+  "photorealism_accepted": false,
+  "production_accepted": false,
+  "current_checks": {
+    "release_ctest": "1/1; 4.39s local wall time; 1,475,747 scalar/texel assertions, not independent cases",
+    "address_undefined_ctest": "1/1; 58.82s local wall time, no findings",
+    "native_capture_inventory": "22 independent pictures: eight principal views, eight additional formations, six wind times",
+    "vulkan_query_count": 6400,
+    "vulkan_query_readbacks_archived": true,
+    "full_vulkan_beauty_dispatch": true,
+    "full_vulkan_beauty_readback": true,
+    "finite_sampling_completed": true,
+    "convergence_accepted": false,
+    "ground_orbit_check": "96 matched rays each for cumulus/cyclone; origins 150 km apart, fixed 1 m footprint; not atmospheric-photograph equivalence",
+    "solar_density_agreement": {
+      "world_receivers": 256,
+      "steps": 32,
+      "density_point_queries": 8192,
+      "max_abs_optical_depth_difference": 0.00033283233642578125,
+      "mean_abs_optical_depth_difference": 4.191824700683355e-06,
+      "rays_over_0_01": 0,
+      "tolerance_optical_depth": 0.01,
+      "scope": "same Float32 segments/footprints; 0.01 permits independent host/shader coordinate roundoff, not alternate weather"
+    },
+    "solar_density_rejected_control": {
+      "world_receivers": 256,
+      "steps": 32,
+      "density_point_queries": 8192,
+      "max_abs_optical_depth_difference": 1.5345726013183594,
+      "mean_abs_optical_depth_difference": 0.08511978387832642,
+      "rays_over_0_01": 84,
+      "tolerance_optical_depth": 0.01,
+      "scope": "same Float32 segments/footprints; 0.01 permits independent host/shader coordinate roundoff, not alternate weather"
+    },
+    "actual_solar_vulkan_max_abs_by_channel": [
+      5.960464477539063e-08,
+      1.7881393432617188e-07,
+      1.7881393432617188e-07,
+      8.392333984375e-05
+    ],
+    "full_vulkan_beauty_fixture": "one 64 by 36 cumulus image; 96 view steps, 8 solar steps, one ray per pixel; not the native gallery or all formations",
+    "vulkan_beauty_max_abs_rgba": 0.0006348490715026855,
+    "vulkan_beauty_rgb_rmse": 7.471237950085197e-06,
+    "vulkan_beauty_pipeline_seconds": 81.98189527399518,
+    "vulkan_beauty_process_bounds": "150 second timeout; 1900 MiB process address-space cap; SwiftShader CPU, not physical GPU",
+    "morphology_artifacts": {
+      "Before": {
+        "repeat_correlations": [
+          0.9995350547258328,
+          0.9979225392877861
+        ],
+        "repeat_mean_extinction_per_m": 5.359026545193046e-05,
+        "cyclone_crossing_mean_m": 11307.447765827179,
+        "cyclone_crossing_relief_m": 7445.09375,
+        "cyclone_crossing_second_difference_rms_m": 244.47494262200942,
+        "Cumulonimbus": {
+          "cloud": {
+            "regions": 93,
+            "regions_at_most_four_pixels": 78,
+            "occupied_pixels": 25121
+          },
+          "enclosed_clear": {
+            "regions": 45,
+            "regions_at_most_four_pixels": 40,
+            "occupied_pixels": 117
+          }
+        },
+        "CycloneOrbit": {
+          "cloud": {
+            "regions": 107,
+            "regions_at_most_four_pixels": 55,
+            "occupied_pixels": 35699
+          },
+          "enclosed_clear": {
+            "regions": 161,
+            "regions_at_most_four_pixels": 88,
+            "occupied_pixels": 1541
+          }
+        }
+      },
+      "After": {
+        "repeat_correlations": [
+          0.06507309567174173,
+          0.03833767341598209
+        ],
+        "repeat_mean_extinction_per_m": 5.2205941756255925e-05,
+        "cyclone_crossing_mean_m": 11251.150066375732,
+        "cyclone_crossing_relief_m": 6272.60546875,
+        "cyclone_crossing_second_difference_rms_m": 185.00511654400995,
+        "Cumulonimbus": {
+          "cloud": {
+            "regions": 1,
+            "regions_at_most_four_pixels": 0,
+            "occupied_pixels": 22655
+          },
+          "enclosed_clear": {
+            "regions": 0,
+            "regions_at_most_four_pixels": 0,
+            "occupied_pixels": 0
+          }
+        },
+        "CycloneOrbit": {
+          "cloud": {
+            "regions": 7,
+            "regions_at_most_four_pixels": 3,
+            "occupied_pixels": 36176
+          },
+          "enclosed_clear": {
+            "regions": 29,
+            "regions_at_most_four_pixels": 17,
+            "occupied_pixels": 526
+          }
+        }
+      }
+    },
+    "unchanged_gallery_captures": 17,
+    "morphology_scope": "fixed-fixture repetition, silhouette fragmentation and resolved top roughness; not photographic acceptance or global weather topology",
+    "viewer_cache_repair": {
+      "original_error_reproduced": "Capture identity mismatch: Cumulonimbus",
+      "primed_stale_png_entries": 5,
+      "passing_cases": [
+        "stale PNG cache",
+        "stale manifest cache",
+        "already-open revision"
+      ],
+      "revised_captures_per_case": 5,
+      "byte_identity_checks_retained": true,
+      "preview_cache_policy_verified": true,
+      "fixture_scope": "Real Chromium HTTP cache, synthetic earlier PNG trailers/manifest; no request routing. Blob inspection preserves CSP."
+    }
+  },
+  "visual_review": {
+    "method": "Opened actual matched native before/after PNGs at their original resolution; no numeric or generated-illustration substitute for visual inspection.",
+    "opened_individually": [
+      "Cirrocumulus",
+      "Cumulonimbus",
+      "CycloneOrbit",
+      "CycloneEye",
+      "CycloneLimb"
+    ],
+    "observed_failures": [
+      "Some convection and cyclone relief still reads as procedural/sculpted; no photographic acceptance.",
+      "Cirrus can read as organized ribbons rather than sufficiently varied fine ice fibres.",
+      "Finite-march grain remains; background water/approximate air are isolated fixtures, not a complete photographic Earth scene."
+    ],
+    "image_blur_or_temporal_colour_history_added": false,
+    "corrected_artifacts": [
+      "Cirrocumulus repeating small patches: unbounded shape-coordinate displacement.",
+      "Detached eroded cumulonimbus flecks: sign-preserving fine erosion and reduced fine displacement.",
+      "Orbital cyclone cellular cutouts and pointed tops: de-tiling, coherent spiral ice and reduced small-scale height amplification."
+    ]
+  },
+  "vulkan_beauty_attempts": [
+    {
+      "configuration": "raw full beauty entry",
+      "observation": "Terminated at pipeline creation, exit 137. No successful dispatch/readback.",
+      "trace": "BlockedRaw.txt",
+      "process_identity": "isolated-vulkan-beauty-pipeline-1effc03c"
+    },
+    {
+      "configuration": "standalone optimized full beauty entry",
+      "observation": "Killed at pipeline creation, exit 137; observed memory around 2.79 GB. No dispatch/readback.",
+      "trace": "BlockedOptimized.txt",
+      "process_identity": "optimized-vulkan-beauty-readback-6fcc5536"
+    },
+    {
+      "configuration": "resident filterable 3D image noise",
+      "observation": "Killed at pipeline creation, exit 137. No dispatch/readback.",
+      "trace": "BlockedTextures.txt",
+      "process_identity": "vulkan-clouds-with-resident-3d-n-7f4d461e"
+    },
+    {
+      "configuration": "optimized formation-specialized cyclone",
+      "observation": "Bounded 180-second pipeline-creation attempt timed out, exit 124. No dispatch/readback.",
+      "trace": "BlockedSpecialized.txt",
+      "process_identity": "specialized-cyclone-vulkan-readb-8c216dfb"
+    },
+    {
+      "configuration": "corrected-source cumulus full radiance entry, 64 by 36",
+      "source_sha256": "deca94cacadc91707dfb40c928b59e6af266a3256876dca8b2b8637c81ed423e",
+      "observation": "Pipeline created, dispatched and read back successfully under 90 s / 1900 MiB bounds; strict max/RGB-RMSE parity gates passed. Not gallery-resolution or all-formation acceptance.",
+      "trace": "BeforeVulkanBeauty.txt",
+      "process_identity": "cloud-vulkan-image-comparison-30ee60b9",
+      "exit_code": 0
+    },
+    {
+      "configuration": "morphology-corrected source, cumulus full radiance entry, 64 by 36",
+      "source_sha256": "55cf319bc99e30f31168b3be7641311c8c525bee6f6f26b9078bf692c5c94e6b",
+      "observation": "Created pipeline, dispatched and read back successfully under 150 s / 1900 MiB bounds during gallery rendering; original strict parity limits passed. Not gallery-resolution or all-formation acceptance.",
+      "trace": "VulkanBeauty.txt",
+      "process_identity": "refined-cloud-vulkan-image-and-p-99ee642c",
+      "exit_code": 0
+    }
+  ],
+  "failure_trace_scope": "The four Blocked*.txt logs stop at pipeline creation and predate the final wind/solar repairs. Their exit/timeout observations came from the execution tool, not invented driver messages. They do not establish final-source failure: the separate current-source 64 by 36 cumulus run succeeds. That success does not validate the older raw/dynamic configurations or other formations.",
+  "rejected_development": [
+    {
+      "revision": "supplied patch baseline and A-H iterations",
+      "result": "Actual native captures were inspected; slab/noise-like morphology and framing were not accepted. Never treated as photographic completion."
+    },
+    {
+      "revision": "J rounded cyclone heads and lower deck",
+      "source_sha256": "7ce59feb491e3814f46894aba1938da5048f86b28418e3c5191800c922648ace",
+      "result": "Rejected flat, pitted/pointed roof; cyclone geometry reverted to I before the bounded-wind repair."
+    },
+    {
+      "revision": "extended I/J generic-trigonometry wind",
+      "result": "Native tests alone missed software-Vulkan radial drift of 40.5-91 m. Final repaired code is tested separately.",
+      "retained_reproduction": "WindPrecision.json and WindPrecision.npz; Code/RejectedWind.slang reconstructs just the rejected wind characteristic alongside current declarations, not the whole original renderer. Its native comparison uses repaired native code."
+    },
+    {
+      "revision": "I endpoint-weather solar transport",
+      "result": "Interpolating endpoint weather substituted a different condensate field along light rays. Actual matched-segment integration reproduced the defect; per-position weather repairs it. Earlier point-density identity did not exercise this integration.",
+      "retained_reproduction": "SolarDensity.json and SolarDensity.npz; Code/RejectedSolarWeather.slang replaces the solar integration function in a temporary source copy with authenticated source identity and identical reference density samples."
+    },
+    {
+      "revision": "pre-repair periodic cirrocumulus and eroded convection/cyclone morphology",
+      "source_sha256": "deca94cacadc91707dfb40c928b59e6af266a3256876dca8b2b8637c81ed423e",
+      "result": "User liked the clouds overall but rejected visible repetition and eroded edges. Matched captures and density/support/top-profile regression checks isolate the targeted changes.",
+      "retained_reproduction": "Code/CloudDensityBefore.slang.gz; Code/ValidateCloudMorphology.py reconstructs/authenticates the original density source and uses identical render inputs."
+    }
+  ],
+  "transport_limits": [
+    "Three fitted attenuated angular orders plus sky/bounce, not a solved three-dimensional multiple-scattering field or calibrated energy conservation.",
+    "Approximate atmosphere and optical-centroid air ordering, not coupled celestial/air/cloud transport.",
+    "One selected radial deck; kinematic spherical advection, not a mass-conserving multi-deck weather simulation.",
+    "Finite 768-view/64-solar comparison is not ground truth or full convergence. Solar-segment footprint changes filtering as well as sample count.",
+    "Float32 planetary positions resolve roughly half-metre increments; no arbitrary-scale precision claim.",
+    "Upper cyclone circulation reverses sign, but explicit divergent storm inflow/outflow is not solved."
+  ],
+  "rule_audit": {
+    "complete_naming_formatting_conformance": false,
+    "noise_header_readability_refactored": true,
+    "baked_noise_bytes_changed": false,
+    "remaining_checks": "Complete naming/formatting audit remains open; one-per-line parameter alignment and unit-comment rules are not fully conformed. Readability refactoring is not a rule exemption."
+  },
+  "not_verified": [
+    "Windows/MSVC runtime",
+    "physical GPU",
+    "gallery-resolution/all-formation Vulkan beauty",
+    "production CloudField replacement",
+    "editor viewport integration",
+    "real-time pacing",
+    "calibrated photographic appearance",
+    "coupling to the earlier celestial implementation"
+  ],
+  "preserved": [
+    "production renderer",
+    "previous celestial source and evidence",
+    "previous shadow/GI source, evidence and failed acceptance gates"
+  ],
+  "validation_repairs": [
+    {
+      "check": "matched solar density quadrature",
+      "fixture_defect": "Initially assumed the first reported spherical interval was valid; receivers inside the inner cavity can instead have only the second interval valid.",
+      "repair": "Require exactly one nonempty upward interval and select it explicitly, without loosening the density-agreement tolerance."
+    }
+  ],
+  "cloud_source_evidence_ceiling_bytes": 2400000,
+  "github_actions_executed_for_this_implementation": false,
+  "user_requested_commit_and_push": true,
+  "delivery_workflow_review": "WindowsWorkspaces push branch allowlist excludes arena/f2d37e4b-frontier; networking-windows path filters exclude these cloud/documentation changes. No dispatch requested."
+}

@@ -1,0 +1,298 @@
+<!doctype html>
+<!-- ========================================================================================================================================
+                                                                  INDEX.HTML
+=============================================================================================================================================
+🧩 Retained native Slang cloud captures, input metadata and discrete wind pictures; no browser cloud simulation.
+-->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'">
+    <title>Planetary clouds · Frontier</title>
+    <style>
+        :root { color-scheme: dark; font: 15px/1.5 "Segoe UI", Arial, sans-serif; color: #dce7f3; background: #0b111b; }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        button, input { font: inherit; }
+        button, a { -webkit-tap-highlight-color: transparent; }
+        button { cursor: pointer; color: #bfccdf; background: #142031; border: 1px solid #283b52; border-radius: 8px; padding: 8px 12px; }
+        button:hover { border-color: #75b5cd; color: white; }
+        button[aria-pressed="true"] { background: #213e50; border-color: #8dd5e9; color: #e3faff; }
+        button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #9ce3f2; outline-offset: 4px; }
+        a { color: #a5dcea; text-underline-offset: 3px; }
+        header, main, footer { max-width: 1320px; margin: 0 auto; padding: 28px 32px; }
+        header { border-bottom: 1px solid #253143; display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+        .eyebrow { font-size: 11px; letter-spacing: .18em; color: #91b7cd; }
+        h1 { font-size: clamp(27px, 4vw, 40px); line-height: 1.2; letter-spacing: -.035em; margin: 8px 0 12px; font-weight: 600; }
+        h2 { font-size: 17px; margin: 0 0 5px; font-weight: 600; }
+        p { margin: 0; }
+        .muted { color: #91a3bb; }
+        .notice { max-width: 400px; font-size: 13px; padding: 12px 16px; border: 1px solid #66563a; border-radius: 10px; background: #231f19; color: #dbccb2; }
+        .modes { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 20px; }
+        .layout { display: grid; grid-template-columns: minmax(0, 1fr) 238px; gap: 24px; align-items: start; }
+        .picture { margin: 0; border: 1px solid #29384d; border-radius: 12px; overflow: hidden; background: #070c13; }
+        .viewport { aspect-ratio: 16/9; display: grid; place-items: center; position: relative; }
+        .viewport img { display: block; width: 100%; height: 100%; object-fit: contain; }
+        .viewport img[hidden] { display: none; }
+        #Feedback { position: absolute; padding: 15px; max-width: 500px; color: #a6b6ca; }
+        figcaption { padding: 17px 20px; border-top: 1px solid #29384d; }
+        #CaptureSettings { font-size: 12px; margin-top: 6px; color: #9db0c6; }
+        .selection { display: grid; gap: 7px; }
+        .selection button { text-align: left; }
+        .aside-title { color: #91a3bb; text-transform: uppercase; font-size: 10px; letter-spacing: .14em; margin: 2px 0 10px; }
+        .aside-note { margin-top: 20px; font-size: 12px; color: #8fa2b9; }
+        .wind { padding: 15px 0 0; }
+        .wind[hidden] { display: none; }
+        .wind-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+        #WindTime { width: 100%; accent-color: #9dddec; }
+        .wind-note { font-size: 12px; color: #91a3bb; }
+        .metrics { margin: 25px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .metric { padding: 16px; border: 1px solid #233348; border-radius: 10px; background: #101a28; }
+        .metric strong { display: block; font-size: 21px; font-weight: 500; margin-bottom: 4px; }
+        .metric span { font-size: 12px; color: #91a3bb; }
+        .diagnostics { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+        .diagnostics figure { margin: 0; background: #101a28; border: 1px solid #233348; border-radius: 10px; overflow: hidden; }
+        .diagnostics img { width: 100%; height: auto; display: block; }
+        .diagnostics figcaption { font-size: 12px; color: #a8b8ca; }
+        footer { border-top: 1px solid #253143; display: flex; flex-wrap: wrap; gap: 18px; font-size: 12px; color: #91a3bb; }
+        @media (max-width: 800px) {
+            header, main, footer { padding: 22px 18px; }
+            header { display: block; }
+            .notice { margin-top: 18px; max-width: none; }
+            .layout { grid-template-columns: 1fr; }
+            .selection { display: flex; flex-wrap: wrap; }
+            .selection button { font-size: 12px; }
+            .metrics { gap: 8px; }
+            .metric { padding: 12px; }
+            .metric strong { font-size: 18px; }
+            .diagnostics { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <div class="eyebrow">FRONTIER / VOLUMETRIC RENDERING STUDY</div>
+            <h1>Planetary clouds</h1>
+            <p class="muted">Three-dimensional density · wind · self-shadowing · ground to orbit</p>
+        </div>
+        <div class="notice">
+            Experimental, not photographically accepted.<br>
+            Native gallery; one 64×36 Vulkan image check passed. Gallery-resolution Vulkan, Windows and editor acceptance are unverified.
+        </div>
+    </header>
+    <main>
+        <nav class="modes" aria-label="Capture category">
+            <button type="button" data-mode="sky" aria-pressed="true">Sky &amp; convection</button>
+            <button type="button" data-mode="orbit" aria-pressed="false">Orbit &amp; cyclone</button>
+            <button type="button" data-mode="formations" aria-pressed="false">Twelve formations</button>
+            <button type="button" data-mode="wind" aria-pressed="false">Wind timelapse</button>
+        </nav>
+        <div class="layout">
+            <section aria-label="Native rendered capture">
+                <figure class="picture">
+                    <div class="viewport">
+                        <img id="CloudPicture" hidden alt="">
+                        <p id="Feedback" role="status">Loading retained capture identities…</p>
+                    </div>
+                    <figcaption>
+                        <h2 id="CaptureTitle">Native cloud integration</h2>
+                        <p class="muted" id="CaptureDescription">No cloud photograph or colour-history input.</p>
+                        <p id="CaptureSettings"></p>
+                    </figcaption>
+                </figure>
+                <div class="wind" id="WindControls" hidden>
+                    <div class="wind-controls">
+                        <button type="button" id="Playback">Play</button>
+                        <input id="WindTime" aria-label="Wind capture time" type="range" min="0" max="5" step="1" value="0">
+                        <output id="TimeLabel" for="WindTime">0 s</output>
+                    </div>
+                    <p class="wind-note">Six independently rendered pictures, 30 simulated seconds apart. No interpolation; not real time.</p>
+                </div>
+            </section>
+            <aside>
+                <p class="aside-title">Retained views</p>
+                <div class="selection" id="Selection"></div>
+                <p class="aside-note">
+                    Actual pixels from the shared Slang density and transport functions, executed through generated C++.
+                    The browser displays captures; it does not run the cloud renderer.
+                </p>
+                <p class="aside-note">
+                    Native resolution and budgets appear below each image. PNG bytes and consistent manifest source identities
+                    are checked on load; the browser does not compile or authenticate source content.
+                </p>
+            </aside>
+        </div>
+        <section class="metrics" aria-label="Verification summary">
+            <div class="metric"><strong>1,475,747</strong><span>Native scalar / texel assertions, not independent cases</span></div>
+            <div class="metric"><strong>6,400</strong><span>Software-Vulkan density, solar, mip, wind and angular probes</span></div>
+            <div class="metric"><strong>Not accepted</strong><span>Photographic / production appearance</span></div>
+        </section>
+        <section class="diagnostics" aria-label="Measured diagnostics">
+            <figure>
+                <img src="Images/DensitySections.png" alt="Actual radial extinction sections through cyclone and cumulonimbus">
+                <figcaption>Direct density queries through the volume. Square-root display; not an inferred height image.</figcaption>
+            </figure>
+            <figure>
+                <img src="Images/Sampling.png" alt="Measured view-budget errors against finite 768-view and 64-light quadrature">
+                <figcaption>Finite sampling comparison, not ground truth. Dense-cloud edge and light-budget errors remain.</figcaption>
+            </figure>
+        </section>
+    </main>
+    <footer>
+        <a href="README.md">Scope &amp; reproduction</a>
+        <a href="Results/NativeValidation.json">Native tests</a>
+        <a href="Results/VulkanClouds.json">Vulkan probes</a>
+        <a href="Results/VulkanBeauty.json">64×36 Vulkan image parity</a>
+        <a href="Images/Morphology.jpg">Before/after tiling &amp; edge repair</a>
+        <a href="Results/Morphology.json">Morphology measurements</a>
+        <a href="Results/SolarDensity.json">Solar density repair</a>
+        <a href="Results/CloudMeasurements.json">Sampling &amp; coherence</a>
+        <a href="Images/CloudShadowReceivers.png">Moving receiver illumination</a>
+        <a href="Results/ExecutionScope.json">Failures &amp; unverified work</a>
+        <a href="Results/Integrity.json">File identities</a>
+        <span>No Windows/editor, physical-GPU or real-time claim.</span>
+    </footer>
+    <script>
+        "use strict";
+        const Names = {
+            Cumulus: "Cumulus", Cumulonimbus: "Cumulonimbus", Cirrus: "Cirrus", AboveCumulus: "Above the cloud deck",
+            GoldenHour: "Low Sun", CycloneOrbit: "Cyclone from orbit", CycloneEye: "Cyclonic eye", CycloneLimb: "Curved planetary limb",
+            Stratocumulus: "Stratocumulus", Stratus: "Stratus", Altocumulus: "Altocumulus", Altostratus: "Altostratus",
+            Nimbostratus: "Nimbostratus", Cirrostratus: "Cirrostratus", Cirrocumulus: "Cirrocumulus", ToweringCumulus: "Towering cumulus"
+        };
+        const Groups = {
+            sky: ["Cumulus", "Cirrus", "Cumulonimbus", "AboveCumulus", "GoldenHour"],
+            orbit: ["CycloneOrbit", "CycloneEye", "CycloneLimb", "AboveCumulus"],
+            formations: ["Cumulus", "Stratocumulus", "Stratus", "Altocumulus", "Altostratus", "Nimbostratus", "Cirrus",
+                         "Cirrostratus", "Cirrocumulus", "ToweringCumulus", "Cumulonimbus", "CycloneOrbit"],
+            wind: ["Wind000", "Wind030", "Wind060", "Wind090", "Wind120", "Wind150"]
+        };
+        const Picture = document.querySelector("#CloudPicture");
+        const Feedback = document.querySelector("#Feedback");
+        const TimeSlider = document.querySelector("#WindTime");
+        const Selection = document.querySelector("#Selection");
+        const Cache = new Map();
+        let CurrentMode = "sky";
+        let CurrentName = "Cumulus";
+        let RequestToken = 0;
+        let PlaybackTimer = null;
+
+        function SuspendPlayback() {
+            if (PlaybackTimer !== null) clearInterval(PlaybackTimer);
+            PlaybackTimer = null;
+            document.querySelector("#Playback").textContent = "Play";
+        }
+
+        async function RetrieveCaptureManifest() {
+            const Response = await fetch("Results/Captures.json", { cache: "no-store" });
+            if (!Response.ok) throw new Error("Capture manifest missing");
+            const Manifest = await Response.json();
+            if (Manifest.production_accepted !== false || Manifest.photorealism_accepted !== false)
+                throw new Error("Unexpected acceptance claims in capture manifest");
+            if (!Manifest.captures.every(Capture => Capture.source_sha256 === Manifest.source_sha256))
+                throw new Error("Mixed source identities in capture manifest");
+            return new Map(Manifest.captures.map(Capture => [Capture.view.Name, Capture]));
+        }
+
+        async function SelectCapture(Name) {
+            const Token = ++RequestToken;
+            CurrentName = Name;
+            Picture.hidden = true;
+            Feedback.hidden = false;
+            Feedback.textContent = "Verifying native capture…";
+            document.querySelector("#CaptureTitle").textContent = Names[Name] || "Wind · " + Number(Name.slice(4)) + " s";
+            document.querySelector("#CaptureDescription").textContent = "Loading current capture metadata and checking PNG identity.";
+            document.querySelector("#CaptureSettings").textContent = "";
+            for (const Button of Selection.querySelectorAll("button"))
+                Button.setAttribute("aria-pressed", String(Button.dataset.capture === Name));
+            if (Name.startsWith("Wind")) {
+                TimeSlider.value = String(Groups.wind.indexOf(Name));
+                document.querySelector("#TimeLabel").textContent = Number(Name.slice(4)) + " s";
+            }
+            try {
+                // 📝 A mounted viewer may outlive a render refresh. Never pair a cached manifest with new PNG bytes.
+                const Captures = await RetrieveCaptureManifest();
+                if (Token !== RequestToken) return;
+                const Capture = Captures.get(Name);
+                if (!Capture) throw new Error("Capture metadata missing: " + Name);
+                const Digests = new Set(Array.from(Captures.values(), Capture => Capture.png_sha256));
+                for (const [Digest, Address] of Cache) {
+                    if (!Digests.has(Digest)) { URL.revokeObjectURL(Address); Cache.delete(Digest); }
+                }
+                if (!Cache.has(Capture.png_sha256)) {
+                    // 📝 The digest changes the HTTP cache key even behind a caching preview proxy.
+                    const Address = new URL("Images/" + Name + ".png", document.baseURI);
+                    Address.searchParams.set("sha256", Capture.png_sha256);
+                    const Response = await fetch(Address, { cache: "no-store" });
+                    if (!Response.ok) throw new Error("Capture file missing: " + Name);
+                    const Bytes = await Response.arrayBuffer();
+                    const Digest = await crypto.subtle.digest("SHA-256", Bytes);
+                    const Hex = Array.from(new Uint8Array(Digest), Byte => Byte.toString(16).padStart(2, "0")).join("");
+                    if (Hex !== Capture.png_sha256) throw new Error("Capture identity mismatch: " + Name);
+                    if (Token !== RequestToken) return;
+                    Cache.set(Capture.png_sha256, URL.createObjectURL(new Blob([Bytes], { type: "image/png" })));
+                }
+                if (Token !== RequestToken) return;
+                Picture.src = Cache.get(Capture.png_sha256);
+                Picture.alt = "Actual native Slang render: " + (Names[Name] || "wind at " + Capture.view.Time + " seconds");
+                Picture.hidden = false;
+                Feedback.hidden = true;
+                document.querySelector("#CaptureTitle").textContent = Names[Name] || "Wind · " + Capture.view.Time + " s";
+                document.querySelector("#CaptureDescription").textContent = Name.startsWith("Cyclone")
+                    ? "Same spherical volume: clear eye, volumetric eyewall and coherent spiral cloud bands."
+                    : "Direct and approximate redistributed solar light; no image blur or colour history.";
+                document.querySelector("#CaptureSettings").textContent = `${Capture.width} × ${Capture.height} native · ` +
+                    `${Capture.steps} view / ${Capture.light_steps} solar steps · ${Capture.samples} rays/pixel · ` +
+                    `Slang C++ · source ${Capture.source_sha256.slice(0, 12)}`;
+                for (const Button of Selection.querySelectorAll("button"))
+                    Button.setAttribute("aria-pressed", String(Button.dataset.capture === Name));
+                if (Name.startsWith("Wind")) {
+                    TimeSlider.value = String(Groups.wind.indexOf(Name));
+                    document.querySelector("#TimeLabel").textContent = Capture.view.Time + " s";
+                }
+            } catch (Failure) {
+                if (Token !== RequestToken) return;
+                SuspendPlayback();
+                Feedback.textContent = Failure.message;
+                Picture.removeAttribute("src");
+            }
+        }
+
+        function SelectMode(Mode) {
+            SuspendPlayback();
+            CurrentMode = Mode;
+            Selection.replaceChildren();
+            for (const Button of document.querySelectorAll("[data-mode]"))
+                Button.setAttribute("aria-pressed", String(Button.dataset.mode === Mode));
+            document.querySelector("#WindControls").hidden = Mode !== "wind";
+            for (const Name of Groups[Mode]) {
+                const Button = document.createElement("button");
+                Button.type = "button";
+                Button.dataset.capture = Name;
+                Button.textContent = Names[Name] || Number(Name.slice(4)) + " simulated seconds";
+                Button.setAttribute("aria-pressed", "false");
+                Button.addEventListener("click", () => { SuspendPlayback(); SelectCapture(Name); });
+                Selection.append(Button);
+            }
+            SelectCapture(Groups[Mode][0]);
+        }
+
+        for (const Button of document.querySelectorAll("[data-mode]"))
+            Button.addEventListener("click", () => SelectMode(Button.dataset.mode));
+        TimeSlider.addEventListener("input", () => { SuspendPlayback(); SelectCapture(Groups.wind[Number(TimeSlider.value)]); });
+        document.querySelector("#Playback").addEventListener("click", () => {
+            if (PlaybackTimer !== null) { SuspendPlayback(); return; }
+            document.querySelector("#Playback").textContent = "Pause";
+            PlaybackTimer = setInterval(() => {
+                const Index = (Groups.wind.indexOf(CurrentName) + 1) % Groups.wind.length;
+                SelectCapture(Groups.wind[Index]);
+            }, 600);
+        });
+        document.addEventListener("visibilitychange", () => { if (document.hidden) SuspendPlayback(); });
+        window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", SuspendPlayback);
+        SelectMode("sky");
+    </script>
+</body>
+</html>
