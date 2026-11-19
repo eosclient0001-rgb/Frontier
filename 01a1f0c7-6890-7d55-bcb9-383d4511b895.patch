@@ -1,0 +1,3308 @@
+diff --git a/.gitattributes b/.gitattributes
+new file mode 100644
+index 0000000..9395a2f
+--- /dev/null
++++ b/.gitattributes
+@@ -0,0 +1,2 @@
++# Blank context lines in a unified diff carry a significant leading space.
++patches/*.patch whitespace=-blank-at-eol
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..4b816eb
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,3 @@
++.cache/
++.venv/
++__pycache__/
+diff --git a/Automation/ApplyFrontierCloudPatch.py b/Automation/ApplyFrontierCloudPatch.py
+new file mode 100644
+index 0000000..32d42bc
+--- /dev/null
++++ b/Automation/ApplyFrontierCloudPatch.py
+@@ -0,0 +1,49 @@
++#!/usr/bin/env python3
++"""Check or apply the cloud integration to an existing Frontier-1 checkout."""
++
++import argparse
++from pathlib import Path
++import subprocess
++
++
++ROOT = Path(__file__).resolve().parents[1]
++PATCH = ROOT / "patches/Frontier1CloudIntegration.patch"
++SHADER = "Engine/Shaders/Atmosphere/"
++MODULES = (
++    SHADER + "CloudAerialPerspective.slang",
++    SHADER + "CloudWeatherField.slang",
++    SHADER + "PlanetaryCloudTransport.slang",
++    "Engine/GeometricRaster/Atmosphere/CloudNoiseVolume.h",
++)
++
++
++def integration_patch():
++    # Generate addition hunks from the same modules the proof renderer builds.
++    # Keeping a second copy in the integration patch would let the two diverge.
++    patch = PATCH.read_bytes()
++    for path in MODULES:
++        data = (ROOT / path).read_bytes()
++        lines = data.splitlines(keepends=True)
++        header = f"diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n"
++        patch += header.encode() + b"".join(b"+" + line for line in lines)
++    return patch
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("checkout", type=Path, help="root of Frontier-1 (reference revision 8d75f4a)")
++    parser.add_argument("--check", action="store_true", help="verify patch applicability without writing files")
++    args = parser.parse_args()
++    checkout = args.checkout.resolve()
++    if not (checkout / "Engine/Shaders/Atmosphere/VolumetricCloudCompute.slang").is_file():
++        parser.error("checkout must point to the root of Frontier-1")
++    patch = integration_patch()
++    command = ["git", "apply", "--whitespace=error"]
++    subprocess.run(command + ["--check", "-"], cwd=checkout, input=patch, check=True)
++    if not args.check:
++        subprocess.run(command + ["-"], cwd=checkout, input=patch, check=True)
++    print("Cloud integration patch " + ("applies cleanly" if args.check else "applied"))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/Automation/RenderCloudProof.py b/Automation/RenderCloudProof.py
+new file mode 100644
+index 0000000..e8e43bf
+--- /dev/null
++++ b/Automation/RenderCloudProof.py
+@@ -0,0 +1,302 @@
++#!/usr/bin/env python3
++"""Render the production Slang cloud medium offscreen on a host or Vulkan device."""
++
++import argparse
++from contextlib import ExitStack
++import ctypes as ct
++from dataclasses import dataclass, replace
++from hashlib import sha256
++import math
++import os
++from pathlib import Path
++import struct
++import subprocess
++import sys
++from tempfile import TemporaryDirectory
++import time
++
++from PIL import Image
++
++ROOT = Path(__file__).resolve().parents[1]
++PROOF = ROOT / "Exhibits/CloudProof"
++CACHE = ROOT / ".cache/cloud-proof"
++ENTRY = "CloudProofEntry"
++EARTH_SHA256 = "cd7712d3e891425d9948ea5ac18d3bb1e7e834ea038188587897e689a7b35d0f"
++
++
++@dataclass(frozen=True)
++class Scene:
++    name: str
++    origin: tuple
++    view: tuple
++    sun: tuple
++    fov: float
++    coverage: float
++    extinction: float
++    seed: float
++    exposure: float
++    floor: float = 930.0
++    depth: float = 2790.0
++    scale: float = 0.46
++    phase: float = 0.84
++    mode: int = 0
++    shafts: int = 0
++    air: tuple = (1.0, 1.0, 1.0)
++    meridian: float = 0.0
++    solar: float = 16.0
++    wind: tuple = (0.0, 0.0)
++
++
++SCENES = {
++    "ground": Scene("01-ocean-cumulus", (-3000, 4200, 23), (-42, 9.5), (-114, 21), 33, 0.34, 1.03, 0.04, 1.05, floor=1110, depth=3550, air=(0.94, 0.78, 1.0)),
++    "gap": Scene("02-silver-lining", (-2480, 2550, 1120), (-25, 18), (-17, 25), 26, 0.31, 0.93, 0.04, 0.74, depth=4720, phase=0.81),
++    "sunset": Scene("03-golden-hour", (-1200, -500, 23), (25, 10), (14, 4.2), 37, 0.35, 0.82, 0.80, 1.22, depth=3770, shafts=0),
++    "dawn": Scene("04-dawn", (-3500, 3250, 61), (-11, 10.2), (-23, -1.78), 34, 0.36, 0.91, 2.1, 2.68, depth=4020),
++    "orbit": Scene("05-orbital-limb", (-210000, -190000, 610000), (17, -36), (-59, 39), 44, 0.52, 1.15, 0.04, 0.94, mode=1, meridian=-0.025, air=(0.85, 0.72, 0.9)),
++    "moon": Scene("06-lunar-vacuum", (0, 0, 18), (2, 13), (0, 21), 32, 1.0, 4.0, 0.04, 1.0, mode=2),
++}
++
++
++def direction(az, el):
++    az, el = math.radians(az), math.radians(el)
++    return math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)
++
++
++def cross(a, b):
++    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
++
++
++def uniform_bytes(scene, width, height, surface, row, rows, steps, light_steps, samples, transmittance):
++    forward = direction(*scene.view)
++    az = math.radians(scene.view[0])
++    right = (math.sin(az), -math.cos(az), 0.0)
++    up = cross(right, forward)
++    tan_y = math.tan(math.radians(scene.fov) / 2)
++    return struct.pack(
++        "<32f12I",
++        *scene.origin, scene.wind[0], *forward, scene.wind[1],
++        *right, tan_y * width / height, *up, tan_y,
++        *direction(*scene.sun), scene.solar,
++        scene.floor, scene.depth, scene.coverage, scene.extinction,
++        scene.scale, scene.seed, scene.phase, scene.exposure,
++        *scene.air, scene.meridian,
++        scene.mode, steps, light_steps, scene.shafts,
++        width, height, *surface,
++        row, rows, samples, int(transmittance),
++    )
++
++
++class VulkanRenderer:
++    def __init__(self, resources, shader, noise, surface, tile_bytes):
++        self.resources = resources
++        self.instance = vk.vkCreateInstance(vk.VkInstanceCreateInfo(
++            pApplicationInfo=vk.VkApplicationInfo(apiVersion=vk.VK_MAKE_VERSION(1, 1, 0))), None)
++        resources.callback(vk.vkDestroyInstance, self.instance, None)
++        devices = vk.vkEnumeratePhysicalDevices(self.instance)
++        physical, family = next((device, index) for device in devices
++                                for index, queue in enumerate(vk.vkGetPhysicalDeviceQueueFamilyProperties(device))
++                                if queue.queueCount and queue.queueFlags & vk.VK_QUEUE_COMPUTE_BIT)
++        name = vk.vkGetPhysicalDeviceProperties(physical).deviceName
++        print(f"Device: {name}", flush=True)
++        self.memory = vk.vkGetPhysicalDeviceMemoryProperties(physical)
++        self.device = device = vk.vkCreateDevice(physical, vk.VkDeviceCreateInfo(pQueueCreateInfos=[
++            vk.VkDeviceQueueCreateInfo(queueFamilyIndex=family, pQueuePriorities=[1.0])]), None)
++        resources.callback(vk.vkDestroyDevice, device, None)
++        self.queue = vk.vkGetDeviceQueue(device, family, 0)
++        storage = vk.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
++        types = [vk.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, storage, storage, storage]
++        layout = vk.vkCreateDescriptorSetLayout(device, vk.VkDescriptorSetLayoutCreateInfo(pBindings=[
++            vk.VkDescriptorSetLayoutBinding(binding=i, descriptorType=t, descriptorCount=1, stageFlags=vk.VK_SHADER_STAGE_COMPUTE_BIT)
++            for i, t in enumerate(types)]), None)
++        resources.callback(vk.vkDestroyDescriptorSetLayout, device, layout, None)
++        self.pipeline_layout = vk.vkCreatePipelineLayout(device, vk.VkPipelineLayoutCreateInfo(pSetLayouts=[layout]), None)
++        resources.callback(vk.vkDestroyPipelineLayout, device, self.pipeline_layout, None)
++        module = vk.vkCreateShaderModule(device, vk.VkShaderModuleCreateInfo(codeSize=len(shader), pCode=shader), None)
++        resources.callback(vk.vkDestroyShaderModule, device, module, None)
++        stage = vk.VkPipelineShaderStageCreateInfo(stage=vk.VK_SHADER_STAGE_COMPUTE_BIT, module=module, pName=ENTRY)
++        self.pipeline = vk.vkCreateComputePipelines(device, vk.VK_NULL_HANDLE, 1, [
++            vk.VkComputePipelineCreateInfo(stage=stage, layout=self.pipeline_layout)], None)[0]
++        resources.callback(vk.vkDestroyPipeline, device, self.pipeline, None)
++        uniform_buf, self.uniform = self.buffer(176, vk.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT)
++        noise_buf, noise_map = self.buffer(len(noise), vk.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
++        out_buf, self.output = self.buffer(tile_bytes, vk.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
++        surface_buf, surface_map = self.buffer(len(surface), vk.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
++        noise_map[:] = noise
++        surface_map[:] = surface
++        pool = vk.vkCreateDescriptorPool(device, vk.VkDescriptorPoolCreateInfo(maxSets=1, pPoolSizes=[
++            vk.VkDescriptorPoolSize(type=types[0], descriptorCount=1),
++            vk.VkDescriptorPoolSize(type=storage, descriptorCount=3)]), None)
++        resources.callback(vk.vkDestroyDescriptorPool, device, pool, None)
++        self.set = vk.vkAllocateDescriptorSets(device, vk.VkDescriptorSetAllocateInfo(descriptorPool=pool, pSetLayouts=[layout]))[0]
++        writes = []
++        for i, (ty, buf, n) in enumerate(zip(types, (uniform_buf, noise_buf, out_buf, surface_buf), (176, len(noise), tile_bytes, len(surface)))):
++            writes.append(vk.VkWriteDescriptorSet(dstSet=self.set, dstBinding=i, descriptorCount=1, descriptorType=ty,
++                                               pBufferInfo=[vk.VkDescriptorBufferInfo(buffer=buf, offset=0, range=n)]))
++        vk.vkUpdateDescriptorSets(device, len(writes), writes, 0, None)
++        self.command_pool = vk.vkCreateCommandPool(device, vk.VkCommandPoolCreateInfo(queueFamilyIndex=family), None)
++        resources.callback(vk.vkDestroyCommandPool, device, self.command_pool, None)
++        self.command = vk.vkAllocateCommandBuffers(device, vk.VkCommandBufferAllocateInfo(
++            commandPool=self.command_pool, level=vk.VK_COMMAND_BUFFER_LEVEL_PRIMARY, commandBufferCount=1))[0]
++
++    def buffer(self, size, usage):
++        device = self.device
++        buf = vk.vkCreateBuffer(device, vk.VkBufferCreateInfo(size=size, usage=usage, sharingMode=vk.VK_SHARING_MODE_EXCLUSIVE), None)
++        try:
++            req = vk.vkGetBufferMemoryRequirements(device, buf)
++            flags = vk.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | vk.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
++            index = next(i for i in range(self.memory.memoryTypeCount) if (req.memoryTypeBits >> i) & 1
++                         and self.memory.memoryTypes[i].propertyFlags & flags == flags)
++            mem = vk.vkAllocateMemory(device, vk.VkMemoryAllocateInfo(allocationSize=req.size, memoryTypeIndex=index), None)
++        except BaseException:
++            vk.vkDestroyBuffer(device, buf, None)
++            raise
++        self.resources.callback(vk.vkFreeMemory, device, mem, None)
++        self.resources.callback(vk.vkDestroyBuffer, device, buf, None)
++        vk.vkBindBufferMemory(device, buf, mem, 0)
++        mapped = vk.vkMapMemory(device, mem, 0, size, 0)
++        self.resources.callback(vk.vkUnmapMemory, device, mem)
++        return buf, mapped
++
++    def dispatch(self, uniform, width, rows):
++        self.uniform[:] = uniform
++        vk.vkResetCommandPool(self.device, self.command_pool, 0)
++        cmd = self.command
++        vk.vkBeginCommandBuffer(cmd, vk.VkCommandBufferBeginInfo(flags=vk.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT))
++        vk.vkCmdBindPipeline(cmd, vk.VK_PIPELINE_BIND_POINT_COMPUTE, self.pipeline)
++        vk.vkCmdBindDescriptorSets(cmd, vk.VK_PIPELINE_BIND_POINT_COMPUTE, self.pipeline_layout, 0, 1, [self.set], 0, None)
++        vk.vkCmdDispatch(cmd, (width + 7) // 8, (rows + 7) // 8, 1)
++        barrier = vk.VkMemoryBarrier(srcAccessMask=vk.VK_ACCESS_SHADER_WRITE_BIT, dstAccessMask=vk.VK_ACCESS_HOST_READ_BIT)
++        vk.vkCmdPipelineBarrier(cmd, vk.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, vk.VK_PIPELINE_STAGE_HOST_BIT,
++                                0, 1, [barrier], 0, None, 0, None)
++        vk.vkEndCommandBuffer(cmd)
++        vk.vkQueueSubmit(self.queue, 1, [vk.VkSubmitInfo(pCommandBuffers=[cmd])], vk.VK_NULL_HANDLE)
++        vk.vkQueueWaitIdle(self.queue)
++        return self.output[:width * rows * 4]
++
++
++class HostRenderer:
++    def __init__(self, library, noise, surface, tile_bytes, workers):
++        self.library = ct.CDLL(str(library))
++        self.render = self.library.RenderCloudTile
++        self.render.restype = None
++        self.render.argtypes = [ct.c_void_p, ct.c_void_p, ct.c_size_t, ct.c_void_p, ct.c_size_t, ct.c_void_p, ct.c_uint32]
++        self.noise = ct.create_string_buffer(noise, len(noise))
++        self.surface = ct.create_string_buffer(surface, len(surface))
++        self.output = ct.create_string_buffer(tile_bytes)
++        self.workers = workers
++        print("Device: native Slang C++ target", flush=True)
++
++    def dispatch(self, uniform, width, rows):
++        self.render(uniform, self.noise, len(self.noise) // 4, self.surface, len(self.surface) // 4, self.output, self.workers)
++        return self.output.raw[:width * rows * 4]
++
++
++def bake(slangc, backend):
++    CACHE.mkdir(parents=True, exist_ok=True)
++    source = PROOF / "CloudProofCompute.slang"
++    shader_sources = sorted((ROOT / "Engine/Shaders/Atmosphere").glob("*.slang"))
++    shader_sources.extend((source, PROOF / "CloudProofHost.cpp"))
++    key = sha256(b"".join(p.read_bytes() for p in shader_sources)).hexdigest()[:16]
++    build = CACHE / key
++    build.mkdir(exist_ok=True)
++    compiler = [slangc, str(source), "-entry", ENTRY, "-O0"]
++    cxx = os.environ.get("CXX", "c++")
++    with TemporaryDirectory(dir=build) as scratch:
++        # Publish by rename. Concurrent captures may have an older shared
++        # object mapped, or build the same revision in parallel.
++        work = Path(scratch)
++        if backend == "vulkan":
++            spv = work / "CloudProofCompute.spv"
++            subprocess.run(compiler + ["-target", "spirv", "-profile", "spirv_1_3",
++                                        "-fvk-use-entrypoint-name", "-o", str(spv)], check=True)
++            shader = spv.read_bytes()
++            spv.replace(build / spv.name)
++        else:
++            cpp = work / "CloudProofGenerated.cpp"
++            library = work / "CloudProofHost.so"
++            subprocess.run(compiler + ["-target", "cpp", "-o", str(cpp)], check=True)
++            subprocess.run([cxx, "-std=c++20", "-O3", "-fno-math-errno", "-march=native", "-pthread", "-shared", "-fPIC",
++                            "-I", str(work), str(PROOF / "CloudProofHost.cpp"), "-o", str(library)], check=True)
++            shader = library.replace(build / library.name)
++    baker_src = PROOF / "BakeCloudNoise.cpp"
++    noise_src = ROOT / "Engine/GeometricRaster/Atmosphere/CloudNoiseVolume.h"
++    fingerprint = sha256(baker_src.read_bytes() + noise_src.read_bytes()).hexdigest()[:16]
++    noise = CACHE / (fingerprint + ".volume")
++    if not noise.exists():
++        with TemporaryDirectory(dir=CACHE) as scratch:
++            baker = Path(scratch) / "BakeCloudNoise"
++            subprocess.run([cxx, "-std=c++20", "-O3", "-I", str(ROOT),
++                            str(baker_src), "-o", str(baker)], check=True)
++            volume = Path(scratch) / "cloud.volume"
++            subprocess.run([str(baker), str(volume)], check=True)
++            volume.replace(noise)
++    return shader, noise.read_bytes()
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("scenes", nargs="*", metavar="SCENE", help=", ".join(SCENES))
++    parser.add_argument("--backend", choices=("host", "vulkan"), default="host")
++    parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 1))
++    parser.add_argument("--slangc", default=os.environ.get("SLANGC", "slangc"))
++    parser.add_argument("--earth", type=Path, help="the pinned, cloud-free Solar System Scope day map (see README)")
++    parser.add_argument("--width", type=int, default=1920)
++    parser.add_argument("--height", type=int, default=1080)
++    parser.add_argument("--steps", type=int, default=144)
++    parser.add_argument("--light-steps", type=int, default=5)
++    parser.add_argument("--samples", type=int, default=1)
++    parser.add_argument("--out", type=Path, default=ROOT / "output")
++    parser.add_argument("--transmittance", action="store_true")
++    parser.add_argument("--coverage", type=float)
++    args = parser.parse_args()
++    names = args.scenes or ["ground", "gap", "sunset", "dawn", "orbit"]
++    if unknown := set(names) - SCENES.keys():
++        parser.error(f"unknown scenes: {', '.join(sorted(unknown))}")
++    if min(args.width, args.height, args.steps, args.light_steps, args.samples, args.workers) < 1:
++        parser.error("dimensions and sample counts must be positive")
++    if args.coverage is not None and not 0.0 <= args.coverage <= 1.0:
++        parser.error("coverage must be in [0, 1]")
++    if "orbit" in names and args.earth is None:
++        parser.error("orbit needs --earth; see the README for the exact asset")
++    args.out.mkdir(parents=True, exist_ok=True)
++    if args.earth:
++        if sha256(args.earth.read_bytes()).hexdigest() != EARTH_SHA256:
++            parser.error("Earth day map SHA-256 did not match")
++        with Image.open(args.earth) as source:
++            surface = source.convert("RGBA")
++    else:
++        surface = Image.new("RGBA", (1, 1))
++    if args.backend == "vulkan":
++        global vk
++        import vulkan as vk
++    shader, noise = bake(args.slangc, args.backend)
++    tile_rows = min(64, args.height)
++    with ExitStack() as resources:
++        tile_bytes = args.width * tile_rows * 4
++        if args.backend == "vulkan":
++            renderer = VulkanRenderer(resources, shader, noise, surface.tobytes(), tile_bytes)
++        else:
++            renderer = HostRenderer(shader, noise, surface.tobytes(), tile_bytes, args.workers)
++        for name in names:
++            scene = SCENES[name]
++            if args.coverage is not None:
++                scene = replace(scene, coverage=args.coverage)
++            started = time.monotonic()
++            rgba = bytearray()
++            for y in range(0, args.height, tile_rows):
++                rows = min(tile_rows, args.height - y)
++                uniform = uniform_bytes(scene, args.width, args.height, surface.size, y, rows, args.steps,
++                                        args.light_steps, args.samples, args.transmittance)
++                rgba.extend(renderer.dispatch(uniform, args.width, rows))
++            frame = Image.frombytes("RGBA", (args.width, args.height), bytes(rgba)).convert("RGB")
++            suffix = "-transmittance" if args.transmittance else ""
++            dest = args.out / (scene.name + suffix + ".png")
++            with TemporaryDirectory(dir=args.out) as scratch:
++                temp = Path(scratch) / dest.name
++                frame.save(temp)
++                temp.replace(dest)
++            print(f"{dest}: {frame.width}x{frame.height} in {time.monotonic() - started:.1f}s", flush=True)
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/Automation/TestCloudProof.py b/Automation/TestCloudProof.py
+new file mode 100644
+index 0000000..9b30fc3
+--- /dev/null
++++ b/Automation/TestCloudProof.py
+@@ -0,0 +1,113 @@
++#!/usr/bin/env python3
++"""Numerical invariants and a deterministic motion smoke test for the Slang cloud path."""
++
++import argparse
++from contextlib import ExitStack
++from dataclasses import replace
++from pathlib import Path
++import os
++import struct
++import subprocess
++import tempfile
++
++import RenderCloudProof as proof
++from ApplyFrontierCloudPatch import MODULES
++
++
++CASES = (
++    "upward ray enters the low shell",
++    "camera inside a shell exits without a discarded near interval",
++    "downward orbital ray is clipped against the planet",
++    "grazing ray sees one connected shell interval",
++    "high ice remains sunlit with low cloud in planetary shadow",
++    "vacuum bypasses cloud radiance and shadows regardless of coverage",
++    "dual-lobe HG integrates to unit spherical energy",
++    "water, mid and ice shells have ordered non-overlapping bounds",
++    "weather-front rotation preserves radius and is invertible",
++)
++
++
++def main():
++    p = argparse.ArgumentParser(description=__doc__)
++    p.add_argument("--slangc", default=os.environ.get("SLANGC", "slangc"))
++    p.add_argument("--vulkan-diagnostics", action="store_true", help="also exercise transport math and volume bindings on Vulkan")
++    p.add_argument("--frontier-checkout", type=Path, help="also exercise the patched viewport cloud entry on the host")
++    args = p.parse_args()
++    # Do not overwrite a running beauty render's build cache.
++    with tempfile.TemporaryDirectory(prefix="cloud-proof-test-") as temp:
++        proof.CACHE = Path(temp)
++        library, noise = proof.bake(args.slangc, "host")
++        run(library, noise)
++        if args.vulkan_diagnostics:
++            run_vulkan(args.slangc, noise, Path(temp))
++        if args.frontier_checkout:
++            run_viewport(args.slangc, args.frontier_checkout.resolve(), Path(temp))
++
++
++def run(library, noise):
++    volume_words = 128**3 + 64**3
++    assert len(noise) == (volume_words + 64**2) * 4, "packed 3D volume layout changed"
++    assert set(struct.unpack_from("<4096I", noise, volume_words * 4)) == set(range(4096)), "blue ranks are not a permutation"
++    w, h = 80, 45
++    renderer = proof.HostRenderer(library, noise, b"\0" * 4, w * h * 4, 2)
++
++    def draw(scene, width=w, height=h, mode=1):
++        uniform = proof.uniform_bytes(scene, width, height, (1, 1), 0, height, 80, 4, 1, mode)
++        return renderer.dispatch(uniform, width, height)
++
++    scene = proof.SCENES["ground"]
++    pixels = draw(scene, len(CASES), 1, 2)
++    for i, case in enumerate(CASES):
++        assert pixels[i * 4 : i * 4 + 4] == b"\x00\xff\x00\xff", case
++        print(f"PASS: {case}")
++    vacuum = draw(proof.SCENES["moon"])
++    assert vacuum == b"\xff" * len(vacuum), "Moon transmittance not exactly clear"
++    empty = draw(replace(scene, coverage=0.0))
++    assert empty == b"\xff" * len(empty), "zero coverage did not bypass global cloud transport"
++    a = draw(scene)
++    moved = draw(replace(scene, wind=(610.0, -340.0)))
++    b = draw(scene)
++    assert min(a[::4]) < 230 and max(a[::4]) == 255, "ground proof missing cloud or clearing"
++    assert sum(abs(x - y) for x, y in zip(a[::4], moved[::4])) / (w * h) > 1.0, "wind did not advect cloud density"
++    assert a == b, "drawing a displaced frame affected the next frame"
++    print("PASS: lunar vacuum, zero coverage, wind displacement, stateless frame replay")
++
++
++def run_vulkan(slangc, noise, temp):
++    import vulkan
++
++    proof.vk = vulkan
++    spv = temp / "CloudDiagnostics.spv"
++    subprocess.run([slangc, str(proof.PROOF / "CloudProofCompute.slang"), "-entry", proof.ENTRY,
++                    "-target", "spirv", "-profile", "spirv_1_3", "-fvk-use-entrypoint-name", "-O0",
++                    "-D", "FRONTIER_CLOUD_GPU_DIAGNOSTICS=1", "-o", str(spv)], check=True)
++    cases = list(CASES)
++    cases[5] = "base, erosion and blue-noise bindings contain distinct, addressable samples"
++    with ExitStack() as resources:
++        width = len(cases)
++        renderer = proof.VulkanRenderer(resources, spv.read_bytes(), noise, b"\0" * 4, width * 4)
++        uniform = proof.uniform_bytes(proof.SCENES["ground"], width, 1, (1, 1), 0, 1, 80, 4, 1, 2)
++        pixels = renderer.dispatch(uniform, width, 1)
++        for i, case in enumerate(cases):
++            assert pixels[i * 4 : i * 4 + 4] == b"\x00\xff\x00\xff", case
++            print(f"PASS (Vulkan diagnostic): {case}")
++
++
++def run_viewport(slangc, checkout, temp):
++    for path in MODULES:
++        target = checkout / path
++        if not target.is_file() or target.read_bytes() != (proof.ROOT / path).read_bytes():
++            raise SystemExit(f"{target}: apply this revision of the Frontier-1 cloud patch first")
++    source = checkout / "Engine/Shaders/GeometricRaster/WorldViewportRadiometricCompute.slang"
++    generated = temp / "ViewportCloudGenerated.cpp"
++    executable = temp / "ViewportCloudSmoke"
++    subprocess.run([slangc, str(source), "-entry", "CloudComputeEntry", "-target", "cpp",
++                    "-matrix-layout-row-major", "-O0", "-o", str(generated)], check=True)
++    subprocess.run([os.environ.get("CXX", "c++"), "-std=c++20", "-O3", "-fno-math-errno",
++                    "-I", str(temp), "-I", str(checkout), str(proof.PROOF / "ViewportCloudSmoke.cpp"),
++                    "-o", str(executable)], check=True)
++    subprocess.run([str(executable)], check=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/Engine/GeometricRaster/Atmosphere/CloudNoiseVolume.h b/Engine/GeometricRaster/Atmosphere/CloudNoiseVolume.h
+new file mode 100644
+index 0000000..ee8d7dc
+--- /dev/null
++++ b/Engine/GeometricRaster/Atmosphere/CloudNoiseVolume.h
+@@ -0,0 +1,214 @@
++/*==========================================================================================================================================
++                                                             CLOUDNOISEVOLUME.H
++==========================================================================================================================================*/
++// 🧩 Deterministic packed Perlin–Worley shape, erosion, and void-and-cluster ranks.
++
++#pragma once
++
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstddef>
++#include <cstdint>
++#include <vector>
++
++namespace Frontier::GeometricRaster::CloudNoiseVolume
++{
++
++inline constexpr int BaseSize = 128;
++inline constexpr int DetailSize = 64;
++inline constexpr int BlueSize = 64;
++inline constexpr uint32_t BaseOffset = 0;
++inline constexpr uint32_t DetailOffset = BaseSize * BaseSize * BaseSize;
++inline constexpr uint32_t BlueOffset = DetailOffset + DetailSize * DetailSize * DetailSize;
++
++namespace Detail
++{
++
++struct Point { float X, Y, Z; };
++
++[[nodiscard]] inline uint32_t Mix(uint32_t V)
++{
++    V = (V ^ (V >> 16u)) * 0x7feb352du;
++    V = (V ^ (V >> 15u)) * 0x846ca68bu;
++    return V ^ (V >> 16u);
++}
++
++[[nodiscard]] inline float Unit(uint32_t V)
++{
++    return float(Mix(V) >> 8u) * (1.0f / 16777216.0f);
++}
++
++[[nodiscard]] inline float Fade(float T)
++{
++    return T * T * T * (T * (T * 6.0f - 15.0f) + 10.0f);
++}
++
++[[nodiscard]] inline std::size_t Index(int X, int Y, int Z, int Size)
++{
++    const int Mask = Size - 1;
++    return static_cast<std::size_t>(((Z & Mask) * Size + (Y & Mask)) * Size + (X & Mask));
++}
++
++// Periodicity is confined to local shape synthesis, never to the coverage field.
++class CellularLattice
++{
++public:
++    CellularLattice(int Cells, uint32_t Seed) : Size(Cells), Features(Cells * Cells * Cells)
++    {
++        for (std::size_t I = 0; I < Features.size(); ++I)
++        {
++            const uint32_t H = Mix(static_cast<uint32_t>(I) ^ Seed);
++            Features[I] = {Unit(H), Unit(H ^ 0x98f81357u), Unit(H ^ 0xda32b819u)};
++        }
++    }
++
++    [[nodiscard]] float Sample(Point Uv) const
++    {
++        const Point P {Uv.X * Size, Uv.Y * Size, Uv.Z * Size};
++        const int X = int(P.X), Y = int(P.Y), Z = int(P.Z);
++        const Point F {P.X - X, P.Y - Y, P.Z - Z};
++        // Jittered features in the enclosing 3^3 cells. The field is clamped at
++        // F1=1, so all cells beyond this neighborhood are out of support.
++        float D = 1.0f;
++        for (int K = -1; K <= 1; ++K)
++        for (int J = -1; J <= 1; ++J)
++        for (int I = -1; I <= 1; ++I)
++        {
++            const auto Q = Features[Index(X + I, Y + J, Z + K, Size)];
++            const float Dx = F.X - float(I) - Q.X;
++            const float Dy = F.Y - float(J) - Q.Y;
++            const float Dz = F.Z - float(K) - Q.Z;
++            D = std::min(D, Dx * Dx + Dy * Dy + Dz * Dz);
++        }
++        return 1.0f - std::sqrt(D);
++    }
++
++private:
++    int Size;
++    std::vector<Point> Features;
++};
++
++[[nodiscard]] inline float Perlin(Point Uv, int Cells, uint32_t Seed)
++{
++    const Point P {Uv.X * Cells, Uv.Y * Cells, Uv.Z * Cells};
++    const int X = int(P.X), Y = int(P.Y), Z = int(P.Z);
++    const float Fx = P.X - X, Fy = P.Y - Y, Fz = P.Z - Z;
++    const float U = Fade(Fx), V = Fade(Fy), W = Fade(Fz);
++    std::array<float, 8> Corners {};
++    for (int I = 0; I < 8; ++I)
++    {
++        const int A = I & 1, B = (I >> 1) & 1, C = (I >> 2) & 1;
++        const uint32_t H = Mix(static_cast<uint32_t>(Index(X + A, Y + B, Z + C, Cells)) ^ Seed);
++        const float Dx = Fx - A, Dy = Fy - B, Dz = Fz - C;
++        const float S = (H & 4u) ? Dx : Dy;
++        const float T = (H & 4u) ? ((H & 8u) ? Dy : Dz) : Dz;
++        Corners[I] = ((H & 1u) ? S : -S) + ((H & 2u) ? T : -T);
++    }
++    return std::lerp(std::lerp(std::lerp(Corners[0], Corners[1], U), std::lerp(Corners[2], Corners[3], U), V),
++                     std::lerp(std::lerp(Corners[4], Corners[5], U), std::lerp(Corners[6], Corners[7], U), V), W);
++}
++
++[[nodiscard]] inline uint32_t Unorm(float V)
++{
++    return static_cast<uint32_t>(std::clamp(V, 0.0f, 1.0f) * 255.0f + 0.5f);
++}
++
++// Void-and-cluster rank tile. Use a truncated toroidal Gaussian so only the
++// neighborhood of an inserted point needs its energy updated. No white/IGN fallback.
++inline void BuildBlueRanks(uint32_t* Ranks)
++{
++    constexpr int Count = BlueSize * BlueSize;
++    constexpr int Initial = Count / 10;
++    constexpr int Reach = 6;
++    std::array<bool, Count> Mask {};
++    std::array<float, Count> Energy {};
++    std::array<float, (2 * Reach + 1) * (2 * Reach + 1)> Kernel {};
++    for (int Y = -Reach; Y <= Reach; ++Y)
++    for (int X = -Reach; X <= Reach; ++X)
++        Kernel[(Y + Reach) * (2 * Reach + 1) + X + Reach] = std::exp(-float(X * X + Y * Y) / 4.5f);
++    auto Put = [&](int I, bool Active)
++    {
++        Mask[I] = Active;
++        const int X = I % BlueSize, Y = I / BlueSize;
++        const float Sign = Active ? 1.0f : -1.0f;
++        for (int J = -Reach; J <= Reach; ++J)
++        for (int K = -Reach; K <= Reach; ++K)
++            Energy[((Y + J) & (BlueSize - 1)) * BlueSize + ((X + K) & (BlueSize - 1))] +=
++                Sign * Kernel[(J + Reach) * (2 * Reach + 1) + K + Reach];
++    };
++    auto Find = [&](bool Active)
++    {
++        int Best = -1;
++        for (int I = 0; I < Count; ++I)
++            if (Mask[I] == Active && (Best < 0 || (Active ? Energy[I] > Energy[Best] : Energy[I] < Energy[Best])))
++                Best = I;
++        return Best;
++    };
++    for (int N = 0, I = 0; N < Initial; ++I)
++    {
++        const int J = int(Mix(uint32_t(I) ^ 0xb489de2fu) & (Count - 1));
++        if (!Mask[J]) { Put(J, true); ++N; }
++    }
++    for (int I = 0; I < Count * 2; ++I)
++    {
++        const int Cluster = Find(true);
++        Put(Cluster, false);
++        const int Void = Find(false);
++        Put(Void, true);
++        if (Void == Cluster) break;
++    }
++    const auto OptimizedMask = Mask;
++    const auto OptimizedEnergy = Energy;
++    for (int N = Initial - 1; N >= 0; --N)
++    {
++        const int I = Find(true);
++        Ranks[I] = uint32_t(N);
++        Put(I, false);
++    }
++    Mask = OptimizedMask;
++    Energy = OptimizedEnergy;
++    for (int N = Initial; N < Count; ++N)
++    {
++        const int I = Find(false);
++        Ranks[I] = uint32_t(N);
++        Put(I, true);
++    }
++}
++
++} // namespace Detail
++
++// Layout shared with CloudWeatherField.slang. One read-only binding, no assets
++// or per-frame bakes: Shape (RG), erosion (RGBA), blue ranks (integer 0..4095).
++[[nodiscard]] inline const std::vector<uint32_t>& QueryTexels()
++{
++    static const auto Texels = []
++    {
++        using namespace Detail;
++        std::vector<uint32_t> Data(BlueOffset + BlueSize * BlueSize);
++        const CellularLattice W0(4, 0x37d42741u), W1(8, 0xd59f8191u), W2(16, 0x7a2e883fu), W3(32, 0xbc3617a9u);
++        for (int Z = 0; Z < BaseSize; ++Z)
++        for (int Y = 0; Y < BaseSize; ++Y)
++        for (int X = 0; X < BaseSize; ++X)
++        {
++            const Point P {float(X) / BaseSize, float(Y) / BaseSize, float(Z) / BaseSize};
++            const float Gradient = 0.71f * Perlin(P, 4, 15u) + 0.22f * Perlin(P, 8, 65u) + 0.07f * Perlin(P, 16, 95u);
++            const float Cell = 0.71f * W0.Sample(P) + 0.21f * W1.Sample(P) + 0.08f * W2.Sample(P);
++            const float Shape = 0.47f + 0.78f * Gradient + 0.72f * (Cell - 0.45f);
++            Data[BaseOffset + Index(X, Y, Z, BaseSize)] = Unorm(Shape) | (Unorm(Cell) << 8u);
++        }
++        for (int Z = 0; Z < DetailSize; ++Z)
++        for (int Y = 0; Y < DetailSize; ++Y)
++        for (int X = 0; X < DetailSize; ++X)
++        {
++            const Point P {float(X) / DetailSize, float(Y) / DetailSize, float(Z) / DetailSize};
++            Data[DetailOffset + Index(X, Y, Z, DetailSize)] =
++                Unorm(W0.Sample(P)) | (Unorm(W1.Sample(P)) << 8u) | (Unorm(W2.Sample(P)) << 16u) | (Unorm(W3.Sample(P)) << 24u);
++        }
++        BuildBlueRanks(Data.data() + BlueOffset);
++        return Data;
++    }();
++    return Texels;
++}
++
++} // namespace Frontier::GeometricRaster::CloudNoiseVolume
+diff --git a/Engine/Shaders/Atmosphere/CloudAerialPerspective.slang b/Engine/Shaders/Atmosphere/CloudAerialPerspective.slang
+new file mode 100644
+index 0000000..635661b
+--- /dev/null
++++ b/Engine/Shaders/Atmosphere/CloudAerialPerspective.slang
+@@ -0,0 +1,83 @@
++/*==========================================================================================================================================
++                                                        CLOUDAERIALPERSPECTIVE.SLANG
++==========================================================================================================================================*/
++// 🧩 Aerial scattering in front of premultiplied cloud radiance.
++
++#ifndef FRONTIER_CLOUD_AERIAL_PERSPECTIVE
++#define FRONTIER_CLOUD_AERIAL_PERSPECTIVE 1
++
++#include "PlanetaryCloudTransport.slang"
++
++struct CloudAirSegment
++{
++    float3 Radiance;
++    float3 Transmittance;
++};
++
++CloudAirSegment IntegrateCloudAir(PlanetaryCloudConfig C, float3 O, float3 D, float MaxM,
++                                  uint Steps, bool CloudShafts)
++{
++    CloudAirSegment Out;
++    Out.Radiance = float3(0.0);
++    Out.Transmittance = float3(1.0);
++    float2 Atmosphere = PlanetCloudSphere(O, D, C.RadiusM + 100000.0);
++    float Enter = max(0.0, Atmosphere.x);
++    float Exit = min(MaxM, Atmosphere.y);
++    if (Exit <= Enter) return Out;
++
++    float CosTheta = dot(D, C.SunDirection);
++    float PhaseR = (3.0 / (16.0 * CloudTransportPi)) * (1.0 + CosTheta * CosTheta);
++    float PhaseM = CloudTransportHG(CosTheta, 0.78);
++    float3 BetaR = PlanetCloudAirBetaRay(C);
++    float3 BetaM = PlanetCloudAirBetaMie(C);
++    float3 BetaO = C.AtmosphereStrengths.z * float3(0.650e-6, 1.881e-6, 0.085e-6);
++
++    // Split at closest approach. Cubic spacing spends samples near the dense
++    // atmosphere whether the ray starts on the ground or comes in from orbit.
++    float Closest = clamp(-dot(O, D), Enter, Exit);
++    for (uint Side = 0u; Side < 2u; ++Side)
++    {
++        float SideLen = (Side == 0u) ? Closest - Enter : Exit - Closest;
++        if (SideLen < 0.1) continue;
++        float Last = (Side == 0u) ? Enter : Closest;
++        for (uint I = 0u; I < Steps; ++I)
++        {
++            float F = float(I + 1u) / float(Steps);
++            float U = (Side == 0u) ? 1.0 - F : F;
++            float T = Closest + SideLen * (0.30 * U + 0.70 * U * U * U) * ((Side == 0u) ? -1.0 : 1.0);
++            float Dt = T - Last;
++            float SampleT = (T + Last) * 0.5;
++            Last = T;
++            float3 P = O + D * SampleT;
++            float Alt = max(0.0, PlanetCloudAltitude(P, C.RadiusM));
++            float3 Ray = BetaR * exp(-Alt / max(400.0, C.AirScaleHeightsM.x));
++            float3 Mie = BetaM * exp(-Alt / max(200.0, C.AirScaleHeightsM.y));
++            float3 Ozone = BetaO * saturate(1.0 - abs(Alt - 25000.0) / 16000.0);
++            float3 Ext = max(float3(1.0e-8), Ray + Mie + Ozone);
++            float3 SegT = exp(-Ext * Dt);
++            float3 SunT = CloudSolarAirTransmittance(C, P);
++            float SunUp = dot(normalize(P), C.SunDirection);
++            float Twilight = smoothstep(-0.21, 0.095, SunUp + Alt * 0.000002);
++            float Visibility = 1.0;
++            if (CloudShafts && CosTheta > 0.69 && Alt < 4300.0 && SampleT < 65000.0 && dot(SunT, SunT) > 0.0005)
++                Visibility = exp(-CloudSolarOpticalDepth(C, P, 4u));
++            float3 Source = SunT * Visibility * (Ray * PhaseR + 0.88 * Mie * PhaseM);
++            Source += (Ray + 0.48 * Mie) * Twilight * float3(0.019, 0.025, 0.034);
++            Out.Radiance += Out.Transmittance * C.SolarIrradiance * Source * (1.0 - SegT) / Ext;
++            Out.Transmittance *= SegT;
++        }
++    }
++    return Out;
++}
++
++// Cloud result is premultiplied. Reinsert the air in front of the cloud which
++// would otherwise be incorrectly darkened with the background. The weighted
++// optical centroid is an approximation for multiple separated opaque layers.
++float3 CloudRadianceThroughAir(PlanetaryCloudConfig C, float3 O, float3 D, PlanetaryCloudResult Cloud, uint AirSteps)
++{
++    if (Cloud.Transmittance >= 0.999999) return Cloud.Radiance;
++    CloudAirSegment Front = IntegrateCloudAir(C, O, D, Cloud.DistanceM, AirSteps, false);
++    return Front.Transmittance * Cloud.Radiance + (1.0 - Cloud.Transmittance) * Front.Radiance;
++}
++
++#endif
+diff --git a/Engine/Shaders/Atmosphere/CloudWeatherField.slang b/Engine/Shaders/Atmosphere/CloudWeatherField.slang
+new file mode 100644
+index 0000000..c907550
+--- /dev/null
++++ b/Engine/Shaders/Atmosphere/CloudWeatherField.slang
+@@ -0,0 +1,146 @@
++/*==========================================================================================================================================
++                                                          CLOUDWEATHERFIELD.SLANG
++==========================================================================================================================================*/
++// 🧩 Packed 3D noise access and seamless planetary weather synthesis.
++
++#ifndef FRONTIER_CLOUD_WEATHER_FIELD
++#define FRONTIER_CLOUD_WEATHER_FIELD 1
++
++// Bind this read-only volume before including the module. The packed layout
++// also works on hardware without filterable 3D formats.
++static const uint CloudDetailOffset = 128u * 128u * 128u;
++static const uint CloudBlueOffset = CloudDetailOffset + 64u * 64u * 64u;
++
++float4 DecodeCloudTexel(uint W)
++{
++    return float4(W & 255u, (W >> 8u) & 255u, (W >> 16u) & 255u, W >> 24u) * (1.0 / 255.0);
++}
++
++uint ReadCloudTexel(int3 P, uint S, uint Offset)
++{
++    uint3 I = uint3(P) & (S - 1u);
++    return PlanetaryCloudNoise[Offset + (I.z * S + I.y) * S + I.x];
++}
++
++float4 SampleCloudVolume(float3 Uv, uint Size, uint Offset)
++{
++    float3 P = frac(Uv) * float(Size);
++    int3 C = int3(P);
++    float3 F = P - float3(C);
++    float4 X00 = lerp(DecodeCloudTexel(ReadCloudTexel(C, Size, Offset)),
++                      DecodeCloudTexel(ReadCloudTexel(C + int3(1, 0, 0), Size, Offset)), F.x);
++    float4 X10 = lerp(DecodeCloudTexel(ReadCloudTexel(C + int3(0, 1, 0), Size, Offset)),
++                      DecodeCloudTexel(ReadCloudTexel(C + int3(1, 1, 0), Size, Offset)), F.x);
++    float4 X01 = lerp(DecodeCloudTexel(ReadCloudTexel(C + int3(0, 0, 1), Size, Offset)),
++                      DecodeCloudTexel(ReadCloudTexel(C + int3(1, 0, 1), Size, Offset)), F.x);
++    float4 X11 = lerp(DecodeCloudTexel(ReadCloudTexel(C + int3(0, 1, 1), Size, Offset)),
++                      DecodeCloudTexel(ReadCloudTexel(C + int3(1, 1, 1), Size, Offset)), F.x);
++    return lerp(lerp(X00, X10, F.y), lerp(X01, X11, F.y), F.z);
++}
++
++float CloudBlueJitter(float2 Pixel)
++{
++    uint2 I = uint2(abs(Pixel)) & 63u;
++    return (float(PlanetaryCloudNoise[CloudBlueOffset + I.y * 64u + I.x]) + 0.5) / 4096.0;
++}
++
++uint StormHash(int3 Cell)
++{
++    uint V = uint(Cell.x) * 0x9e3779b1u ^ uint(Cell.y) * 0x85ebca77u ^ uint(Cell.z) * 0xc2b2ae3du;
++    V = (V ^ (V >> 16u)) * 0x7feb352du;
++    V = (V ^ (V >> 15u)) * 0x846ca68bu;
++    return V ^ (V >> 16u);
++}
++
++float StormCorner(int3 Cell)
++{
++    return float(StormHash(Cell) >> 8u) / 16777216.0;
++}
++
++float3 CloudQuintic(float3 F)
++{
++    return F * F * F * (F * (6.0 * F - 15.0) + 10.0);
++}
++
++// Unbounded integer lattice, evaluated in planetary Cartesian coordinates.
++// It has neither a weather-map repeat interval nor a cubemap/dateline seam.
++float StormNoise(float3 P)
++{
++    int3 I = int3(floor(P));
++    float3 U = CloudQuintic(P - float3(I));
++    float A = lerp(StormCorner(I), StormCorner(I + int3(1, 0, 0)), U.x);
++    float B = lerp(StormCorner(I + int3(0, 1, 0)), StormCorner(I + int3(1, 1, 0)), U.x);
++    float C = lerp(StormCorner(I + int3(0, 0, 1)), StormCorner(I + int3(1, 0, 1)), U.x);
++    float D = lerp(StormCorner(I + int3(0, 1, 1)), StormCorner(I + int3(1, 1, 1)), U.x);
++    return lerp(lerp(A, B, U.y), lerp(C, D, U.y), U.z);
++}
++
++float3 RotateCloudOctave(float3 P)
++{
++    return float3(dot(P, float3(0.80, -0.60, 0.0)),
++                  dot(P, float3(0.48, 0.64, -0.60)),
++                  dot(P, float3(0.36, 0.48, 0.80)));
++}
++
++// Finite-difference curl of a scalar potential in the horizontal plane.
++// Evaluate it only on active density boundaries.
++float2 CloudBoundaryCurl(float3 Q)
++{
++    const float E = 0.063;
++    float Dx = StormNoise(Q + float3(E, 0.0, 0.0)) - StormNoise(Q - float3(E, 0.0, 0.0));
++    float Dy = StormNoise(Q + float3(0.0, E, 0.0)) - StormNoise(Q - float3(0.0, E, 0.0));
++    return float2(Dy, -Dx) / (2.0 * E);
++}
++
++float3 CurveWeatherFront(float3 P, float3 Axis, float Reach, float Spin)
++{
++    float3 V = P - Axis;
++    float Envelope = saturate(1.0 - dot(V, V) / (Reach * Reach));
++    if (Envelope <= 0.0) return P;
++    // Angle depends only on distance to the axis. Azimuth-dependent turns can
++    // fold the field and print multiple copies of one front along a single arc.
++    float Turn = Spin * Envelope * Envelope;
++    float S = sin(Turn), C = cos(Turn);
++    return P * C + cross(Axis, P) * S + Axis * dot(Axis, P) * (1.0 - C);
++}
++
++struct CloudWeatherSample
++{
++    float Moisture;
++    float Type;
++    float Lift;
++    float Rain;
++    float Bands;
++};
++
++CloudWeatherSample EvaluateCloudWeather(float3 N, float Seed)
++{
++    // Seed displaces decorrelated octaves, not the camera or the planet.
++    float3 Q = N * 8.2 + float3(12.8, -7.9, 42.1) + Seed * float3(0.73, -0.46, 1.17);
++    float3 W = float3(StormNoise(Q), StormNoise(Q + float3(9.1, 21.3, -5.4)),
++                      StormNoise(Q + float3(-8.2, 3.7, 17.1))) - 0.5;
++    float3 A = CurveWeatherFront(N + 0.019 * W, normalize(float3(0.18, 0.07, 1.0)), 0.27, 2.55);
++    A = CurveWeatherFront(A, normalize(float3(0.26, -0.36, 0.9)), 0.30, -2.05);
++    A = CurveWeatherFront(A, normalize(float3(-0.8, 0.35, -0.51)), 0.46, 3.9);
++    float3 Eddies = float3(StormNoise(A * 63.0 + Seed - 29.0), StormNoise(A * 64.0 + Seed + 53.0),
++                           StormNoise(A * 62.0 + Seed + 15.3)) - 0.5;
++    A += 0.007 * Eddies;
++    float LatitudeMix = A.y + 0.067 * W.z;
++    float Belt = 1.0 - smoothstep(0.0, 0.19, abs(abs(LatitudeMix) - 0.36));
++    float Fronts = StormNoise(float3(A.x * 22.0, A.y * 58.0, A.z * 27.0) + W * 3.0 + Seed);
++    float Ridged = pow(saturate(1.0 - 2.0 * abs(Fronts - 0.51)), 2.5);
++    float Moist = StormNoise(A * 16.0 + W * 2.0 + Seed + 6.0);
++    float Patch = StormNoise(RotateCloudOctave(A * 140.0) + W * 5.0 + Seed);
++    float Mesoscale = StormNoise(RotateCloudOctave(A * 405.0) + 17.4 + Seed);
++    float Curtains = StormNoise(RotateCloudOctave(A * 245.0) + Eddies * 3.1 + float3(9.2, 63.4, 20.1));
++    float M = 0.34 * Moist + 0.16 * Ridged + 0.19 * Patch + 0.11 * Mesoscale + 0.20 * Curtains + 0.05 * Belt;
++    CloudWeatherSample Out;
++    Out.Moisture = saturate((M - 0.20) * 1.68);
++    Out.Type = saturate(0.26 + 0.74 * Patch - 0.30 * Belt);
++    Out.Lift = saturate(0.68 * Mesoscale + 0.32 * Patch);
++    Out.Rain = smoothstep(0.59, 0.87, Out.Moisture + 0.16 * Out.Lift);
++    Out.Bands = saturate(0.40 * Ridged + 0.27 * Moist + 0.33 * Patch);
++    return Out;
++}
++
++#endif
+diff --git a/Engine/Shaders/Atmosphere/PlanetaryCloudTransport.slang b/Engine/Shaders/Atmosphere/PlanetaryCloudTransport.slang
+new file mode 100644
+index 0000000..a7e5cdb
+--- /dev/null
++++ b/Engine/Shaders/Atmosphere/PlanetaryCloudTransport.slang
+@@ -0,0 +1,607 @@
++/*==========================================================================================================================================
++                                                       PLANETARYCLOUDTRANSPORT.SLANG
++==========================================================================================================================================*/
++// 🧩 Layered cloud extinction, solar optical depth, and spherical view integration.
++
++#ifndef FRONTIER_PLANETARY_CLOUD_TRANSPORT
++#define FRONTIER_PLANETARY_CLOUD_TRANSPORT 1
++
++#include "CloudWeatherField.slang"
++
++static const float CloudTransportPi = 3.14159265359;
++
++struct PlanetaryCloudConfig
++{
++    float RadiusM;
++    float Coverage;
++    float Extinction;
++    float FloorM;
++    float ThicknessM;
++    float FeatureScale;
++    float Anvil;
++    float PhaseG;
++    float Seed;
++    float PixelAngle;
++    float2 WindOffsetM;
++    float Shear;
++    float Veer;
++    float Turbulence;
++    float3 SunDirection;
++    float3 SolarIrradiance; // Top-of-atmosphere, not attenuated at the observer.
++    float3 SkyAmbient;
++    float3 AtmosphereStrengths; // Rayleigh, aerosol, ozone.
++    float2 AirScaleHeightsM;
++    uint Steps;
++    uint LightSteps;
++    uint PrimaryKind; // 0 = water convection, 1 = stratiform water, 2 = ice.
++    uint Formation;
++    bool UseClouds;
++    bool UseCloudShadows;
++};
++
++struct PlanetaryCloudLayer
++{
++    float BottomM;
++    float TopM;
++    float Amount;
++    float Sigma;
++    uint Kind;
++};
++
++struct PlanetaryCloudInterval
++{
++    float NearM;
++    float FarM;
++    uint Layer;
++};
++
++struct PlanetaryCloudResult
++{
++    float3 Radiance;
++    float Transmittance;
++    float DistanceM;
++};
++
++float PlanetCloudAltitude(float3 P, float R)
++{
++    return length(P) - R;
++}
++
++// Stable roots when a camera is centimeters to meters from a sphere with a
++// radius measured in megameters. The sentinel has Far < Near.
++float2 PlanetCloudSphere(float3 P, float3 D, float R)
++{
++    float Rp = length(P);
++    float B = dot(P, D);
++    float C = (Rp - R) * (Rp + R);
++    float Disc = B * B - C;
++    if (Disc < 0.0) return float2(1.0, -1.0);
++    float Q = -B - ((B < 0.0) ? -1.0 : 1.0) * sqrt(Disc);
++    float Other = (abs(Q) > 1.0e-6) ? C / Q : Q;
++    return float2(min(Q, Other), max(Q, Other));
++}
++
++float PlanetCloudGroundDistance(float3 Origin, float3 Direction, float RadiusM)
++{
++    float2 Ground = PlanetCloudSphere(Origin, Direction, RadiusM);
++    if (Ground.x > Ground.y || Ground.y <= 0.0) return 1.0e9;
++    if (Ground.x > 0.0) return Ground.x;
++    return (dot(Origin, Direction) < 0.0) ? 0.0 : 1.0e9;
++}
++
++PlanetaryCloudLayer MakePlanetCloudLayer(float Bottom, float Thickness, float Amount, float Sigma, uint Kind)
++{
++    PlanetaryCloudLayer L;
++    L.BottomM = Bottom;
++    L.TopM = Bottom + max(40.0, Thickness);
++    L.Amount = Amount;
++    L.Sigma = Sigma;
++    L.Kind = Kind;
++    return L;
++}
++
++PlanetaryCloudLayer PlanetCloudLayer(PlanetaryCloudConfig C, uint I)
++{
++    float FloorM = max(60.0, C.FloorM);
++    float DepthM = clamp(C.ThicknessM, 100.0, 8000.0);
++    float LowFloor = (C.PrimaryKind == 0u) ? FloorM : min(1260.0, FloorM * 0.50);
++    float LowDepth = (C.PrimaryKind == 0u) ? DepthM : max(100.0, min(1500.0, FloorM - LowFloor - 200.0));
++    float StratFloor = max(4150.0, LowFloor + LowDepth + 200.0);
++    float StratDepth = 1680.0;
++    if (C.PrimaryKind == 1u)
++    {
++        StratFloor = max(LowFloor + LowDepth + 160.0, FloorM);
++        StratDepth = DepthM;
++    }
++    if (C.PrimaryKind == 2u)
++    {
++        StratFloor = max(LowFloor + LowDepth + 160.0, min(StratFloor, FloorM - 1600.0));
++        StratDepth = clamp(FloorM - StratFloor - 300.0, 100.0, StratDepth);
++    }
++    float IceFloor = max(StratFloor + StratDepth + 300.0, (C.PrimaryKind == 2u) ? FloorM : 8800.0);
++    if (I == 0u)
++        return MakePlanetCloudLayer(LowFloor, LowDepth, (C.PrimaryKind == 0u ? 1.0 : 0.78) * C.Coverage, 0.0056 * C.Extinction, 0u);
++    if (I == 1u)
++        return MakePlanetCloudLayer(StratFloor, StratDepth, (C.PrimaryKind == 1u ? 1.12 : 0.74) * C.Coverage, 0.0025 * C.Extinction, 1u);
++    return MakePlanetCloudLayer(IceFloor, (C.PrimaryKind == 2u) ? DepthM : 1050.0,
++                                (C.PrimaryKind == 2u ? 1.35 : 0.88) * C.Coverage, 0.00155 * C.Extinction, 2u);
++}
++
++// Subtracting the inner sphere from the outer sphere produces up to two
++// intervals. This handles grazing rays, inward watches from orbit and cameras
++// that start inside the condensate; no assumption about world-space ray.z.
++float4 PlanetCloudLayerSpans(float3 O, float3 D, float R, PlanetaryCloudLayer L, float LimitM)
++{
++    float2 Outer = PlanetCloudSphere(O, D, R + L.TopM);
++    Outer = float2(max(0.0, Outer.x), min(LimitM, Outer.y));
++    if (Outer.y <= Outer.x) return float4(0.0);
++    float2 Inner = PlanetCloudSphere(O, D, R + L.BottomM);
++    if (Inner.y <= Outer.x || Inner.x >= Outer.y || Inner.x >= Inner.y)
++        return float4(Outer, 0.0, 0.0);
++    return float4(Outer.x, min(Outer.y, Inner.x), max(Outer.x, Inner.y), Outer.y);
++}
++
++#ifdef FRONTIER_CLOUD_EXTERNAL_FLOW
++float2 PlanetCloudExternalFlow(float2 WorldXY, float AltitudeM);
++#endif
++
++float3 CloudAdvection(PlanetaryCloudConfig C, float3 P, float AltM, uint Kind)
++{
++#ifdef FRONTIER_CLOUD_EXTERNAL_FLOW
++    P.xy = PlanetCloudExternalFlow(P.xy, AltM);
++#endif
++    float Km = max(0.0, AltM - C.FloorM) * 0.001;
++    float Turn = C.Veer * Km;
++    float Cs = cos(Turn), Sn = sin(Turn);
++    float2 Wind = float2(C.WindOffsetM.x * Cs - C.WindOffsetM.y * Sn,
++                         C.WindOffsetM.x * Sn + C.WindOffsetM.y * Cs);
++    Wind *= 1.0 + 0.31 * float(Kind);
++    Wind.x += Km * C.Shear * 55.0;
++    return P - float3(Wind, 0.0);
++}
++
++// Convective cores are not a height-extruded coverage texture. Each cell has
++// its own tilted condensation column, asymmetric shoulders and size. A second
++// octave of nonperiodic weather shapes the gaps between cell groups.
++float CumulusCellEnvelope(float2 M, float H, float Forced, float Seed)
++{
++    float2 Q = M / 4050.0;
++    float Warp = StormNoise(float3(Q * 0.81, 61.3 + Seed));
++    float2 W = Q + float2(Warp - 0.5, 0.5 - StormNoise(float3(Q * 1.05, 13.8 + Seed))) * 0.72;
++    int2 Cell = int2(floor(W));
++    float Best = -1.0;
++    for (int J = -1; J <= 1; ++J)
++    for (int I = -1; I <= 1; ++I)
++    {
++        int2 K = Cell + int2(I, J);
++        uint Hash = StormHash(int3(K, int(floor(Seed * 53.0))));
++        float4 R = DecodeCloudTexel(Hash);
++        float2 Center = float2(K) + 0.5 + 0.86 * (R.xy - 0.5);
++        float Lift = 0.16 + 0.57 * R.z;
++        float2 Tilt = (R.yz - 0.5) * (0.16 * H + 0.08);
++        float2 D = W - Center - Tilt;
++        if (any(abs(D) > 0.90)) continue;
++        float Size = 0.15 + R.w * (0.27 + 0.10 * R.z) + 0.095 * Forced;
++        float Stretch = 0.74 + 0.76 * R.z;
++        float2 Metric = float2(Stretch, rcp(Stretch)) / (Size * Size);
++        float MainH = (H - (0.30 + 0.31 * Lift)) / (0.16 + 0.29 * Lift);
++        float Main = 1.0 - sqrt(dot(D * D, Metric) + MainH * MainH);
++        float2 Offset = 0.50 * Size * (R.yw * 2.0 - 1.0);
++        float2 B = D - Offset;
++        float BudH = (H - (0.37 + 0.43 * Lift)) / (0.11 + 0.17 * Lift);
++        float Bud = 0.78 * (1.0 - sqrt(dot(B * B, Metric * 1.64) + BudH * BudH));
++        float Field = max(Main, Bud) - 0.37 * saturate(R.w - 0.58 * Forced);
++        Best = max(Best, Field);
++    }
++    return saturate(Best);
++}
++
++CloudWeatherSample CloudWeatherAtPoint(PlanetaryCloudConfig C, float3 P, uint Kind)
++{
++    float Radius = length(P);
++    return EvaluateCloudWeather(CloudAdvection(C, P, Radius - C.RadiusM, Kind) / max(1.0, Radius), C.Seed);
++}
++
++CloudWeatherSample LerpCloudWeather(CloudWeatherSample A, CloudWeatherSample B, float X)
++{
++    CloudWeatherSample W;
++    W.Moisture = lerp(A.Moisture, B.Moisture, X);
++    W.Type = lerp(A.Type, B.Type, X);
++    W.Lift = lerp(A.Lift, B.Lift, X);
++    W.Rain = lerp(A.Rain, B.Rain, X);
++    W.Bands = lerp(A.Bands, B.Bands, X);
++    return W;
++}
++
++float SamplePlanetCloudDensity(PlanetaryCloudConfig C, PlanetaryCloudLayer L, float3 P,
++                               CloudWeatherSample W, float FootprintM, bool LightQuery)
++{
++    float Radius = length(P);
++    float Alt = Radius - C.RadiusM;
++    float LayerH = (Alt - L.BottomM) / (L.TopM - L.BottomM);
++    if (LayerH <= 0.0 || LayerH >= 1.0 || L.Amount <= 0.001) return 0.0;
++
++    float3 Adv = CloudAdvection(C, P, Alt, L.Kind);
++    float MoistureGate = smoothstep(0.15, 0.29, W.Moisture);
++    if (MoistureGate <= 0.0) return 0.0;
++
++    float SynopticLod = smoothstep(460.0, 2100.0, FootprintM);
++    float SynopticDensity = 0.0;
++    if (SynopticLod > 0.0)
++    {
++        float3 Nq = RotateCloudOctave(Adv / Radius);
++        Nq += float(L.Kind) * float3(0.018, -0.013, 0.024);
++        float Clouds = StormNoise(Nq * 440.0 + W.Lift * 1.1 + C.Seed);
++        float Tufts = StormNoise(RotateCloudOctave(Nq * 1010.0) + C.Seed * 2.8);
++        float Broad = 0.44 * W.Moisture + 0.15 * W.Bands + 0.06 * W.Lift + 0.26 * Clouds + 0.09 * Tufts;
++        float H = LayerH + (0.53 - Clouds) * 0.32;
++        float Height = smoothstep(0.04, 0.32, H) * (1.0 - smoothstep(0.54, 0.95, H));
++        Height *= smoothstep(0.0, 0.10, LayerH) * (1.0 - smoothstep(0.90, 1.0, LayerH));
++        float Water = max(0.0, Broad - (0.71 - 0.39 * L.Amount));
++        SynopticDensity = L.Sigma * smoothstep(0.0, 0.19, Water * Height) * Height * MoistureGate;
++        if (SynopticLod >= 1.0) return SynopticDensity;
++    }
++
++    float3 N = P / Radius;
++    float3 M = Adv - float3(0.0, 0.0, C.RadiusM);
++    float3 Q = RotateCloudOctave(M);
++    float Local = StormNoise(Q * 0.00018 + float3(16.7, -12.2, C.Seed));
++    Local = lerp(Local, 0.49, smoothstep(480.0, 5000.0, FootprintM));
++    float Cover = saturate(L.Amount * (0.59 + 1.04 * W.Moisture) + (Local - 0.49) * 0.38);
++    float FilteredMass = SynopticDensity * SynopticLod;
++    if (Cover < 0.105) return FilteredMass;
++    float Raw = -1.0;
++    float HeightMask = 0.0;
++    if (L.Kind == 0u)
++    {
++        // Aperiodic condensate cells collect into mesoscale banks and clearings.
++        float3 TerrainFrame = RotateCloudOctave(N * (C.RadiusM / 7200.0));
++        float Patchiness = StormNoise(TerrainFrame + float3(13.1, 72.9, C.Seed));
++        float FrontArc = StormNoise(RotateCloudOctave(TerrainFrame) * 0.32 + float3(-7.8, C.Seed, 32.6));
++        float Cluster = 0.58 * Patchiness + 0.27 * FrontArc + 0.15 * W.Moisture;
++        float ConvectiveGate = smoothstep(0.25, 0.62, Cluster + 0.12 * (L.Amount - 0.3));
++        if (ConvectiveGate <= 0.001) return FilteredMass;
++        float Type = W.Type;
++        if (C.Formation == 0u) Type *= 0.27;
++        if (C.Formation == 1u) Type = lerp(Type, 0.33, 0.65);
++        if (C.Formation == 3u || C.Formation == 11u) Type = lerp(Type, 0.88, 0.70);
++        float Base = 0.018 + 0.17 * Local + 0.078 * (1.0 - W.Lift);
++        float Top = clamp(0.58 + 0.29 * W.Lift + 0.17 * Local + 0.16 * W.Rain, Base + 0.18, 0.99);
++        float H = saturate((LayerH - Base) / (Top - Base));
++        float Root = smoothstep(0.0, lerp(0.17, 0.27, Type), H);
++        float Cap = 1.0 - smoothstep(lerp(0.56, 0.64, Type), 1.0, H);
++        HeightMask = Root * Cap;
++        if (HeightMask < 0.012) return FilteredMass;
++        float Core = 0.0;
++        if (SynopticLod < 0.999)
++        {
++            float3 ConstantAltitude = Adv - N * Alt;
++            float3 Blend = smoothstep(float3(0.43), float3(0.79), abs(N));
++            Blend *= Blend;
++            if (Blend.z > 0.0) Core += Blend.z * CumulusCellEnvelope(ConstantAltitude.xy, LayerH, Cover, C.Seed);
++            if (Blend.x > 0.0) Core += Blend.x * CumulusCellEnvelope(ConstantAltitude.yz, LayerH, Cover, C.Seed + 23.0);
++            if (Blend.y > 0.0) Core += Blend.y * CumulusCellEnvelope(ConstantAltitude.xz, LayerH, Cover, C.Seed + 59.0);
++            Core /= max(0.01, Blend.x + Blend.y + Blend.z);
++        }
++        float Period = 4560.0 * clamp(sqrt(max(0.1, C.FeatureScale) / 0.35), 0.46, 2.45);
++        float3 Bow = float3(C.Anvil * (160.0 * H * H + 420.0 * W.Rain * H * H), 96.0 * H, 0.0);
++        float3 BaseQ = RotateCloudOctave(M - Bow + N * Alt * lerp(0.96, 0.12, Type));
++        float3 Uv = BaseQ / Period + float3(0.143, 0.713, 0.337) + 0.137 * C.Seed;
++        float2 Shape = SampleCloudVolume(Uv, 128u, 0u).rg;
++        float Signal = Shape.x + 0.20 * (Shape.y - 0.47);
++        if (SynopticLod < 0.99)
++        {
++            float B = SampleCloudVolume(RotateCloudOctave(Uv) * 2.37 + float3(0.77, 0.38, 0.12), 128u, 0u).r;
++            Signal = lerp(Signal, B, 0.22 + 0.17 * Local) + 0.09 * (B - 0.44);
++        }
++        float CoreGain = lerp(0.75, 1.06, Type);
++        float Threshold = lerp(0.86, 0.53, saturate(Cover * 1.3)) + 0.41 * (1.0 - HeightMask);
++        Raw = Signal + Core * CoreGain * (0.59 + 0.64 * ConvectiveGate) - Threshold - 0.17 * (1.0 - ConvectiveGate);
++    }
++    else if (L.Kind == 1u)
++    {
++        float Fold = StormNoise(Q * 0.00051 + 37.1);
++        float H = LayerH - (Fold - 0.5) * 0.39;
++        HeightMask = smoothstep(0.06, 0.38, H) * (1.0 - smoothstep(0.58, 0.965, H));
++        if (HeightMask < 0.01) return FilteredMass;
++        float3 Uv = RotateCloudOctave(Adv + N * Alt * 3.1) / 6900.0 + float3(0.861, 0.51, 0.26);
++        float2 Billow = SampleCloudVolume(Uv, 128u, 0u).rg;
++        float Signal = lerp(Billow.x, Billow.y, 0.34) + 0.15 * (Fold - 0.5);
++        Raw = Signal - lerp(0.713, 0.370, saturate(Cover * 1.16)) - 0.32 * (1.0 - HeightMask);
++    }
++    else
++    {
++        float3 Fiber = RotateCloudOctave(Q + N * Alt * 3.5);
++        float Lobe = StormNoise(Fiber * float3(0.000095, 0.00026, 0.00012) + 41.3);
++        float Shear = StormNoise(Fiber * float3(0.00012, 0.00049, 0.00016) - 23.0);
++        float H = LayerH - (Lobe - 0.49) * 0.48;
++        HeightMask = smoothstep(0.08, 0.36, H) * (1.0 - smoothstep(0.52, 0.92, H));
++        if (HeightMask < 0.01) return FilteredMass;
++        // A nonperiodic field stretched along the flow gives strands of
++        // different lengths and curvature, without a repeating comb across
++        // the high deck. Bend each octave before mixing its density.
++        float3 Qice = Fiber * float3(0.000115, 0.00081, 0.00022);
++        Qice.y += (Lobe - 0.50) * 2.55 + 1.34 * (Shear - 0.5) + H * H * 0.50;
++        Qice.z += Lobe * 0.66;
++        float BroadFiber = StormNoise(Qice + float3(3.7, 27.2, 59.1));
++        float FineFiber = StormNoise(RotateCloudOctave(Qice * float3(2.37, 2.78, 2.1)) + 16.9);
++        FineFiber = lerp(FineFiber, 0.50, smoothstep(65.0, 350.0, FootprintM));
++        float Filament = 0.74 * BroadFiber + 0.26 * FineFiber;
++        float Strand = 0.49 * Lobe + 0.18 * Shear + 0.33 * Filament;
++        Raw = Strand - lerp(0.78, 0.395, saturate(Cover * 1.38)) - 0.40 * (1.0 - HeightMask);
++    }
++
++    if (Raw <= (LightQuery ? -0.01 : 0.0)) return FilteredMass;
++
++    if (!LightQuery && L.Kind != 2u && Raw < 0.245 && FootprintM < 360.0)
++    {
++        float Fade = 1.0 - smoothstep(65.0, 360.0, FootprintM);
++        float Edge = 1.0 - smoothstep(0.075, 0.245, Raw);
++        float3 ErosionP = RotateCloudOctave(Q);
++        ErosionP.xy += CloudBoundaryCurl(ErosionP / 680.0 + C.Seed) * (36.0 + 53.0 * C.Turbulence) * Edge * Fade;
++        float4 Detail = SampleCloudVolume(ErosionP / 1280.0 + float3(0.419, 0.673, 0.613), 64u, CloudDetailOffset);
++        float Bills = Detail.r * 0.40 + Detail.g * 0.27 + Detail.b * 0.19 + Detail.a * 0.14;
++        float Ridge = saturate((0.72 - Bills) * 1.45);
++        Raw -= (0.088 + 0.142 * LayerH) * Ridge * Edge * Fade;
++    }
++    // Feather to zero with continuous slope so neither the shell nor a hard
++    // density clamp prints through. Rain modulates the core extinction.
++    float Response = (L.Kind == 2u) ? 0.21 : 0.086;
++    float Density = LightQuery ? smoothstep(-0.010, Response + 0.055, Raw) : smoothstep(0.0, Response, Raw);
++    // One continuous extinction blend; no separate painted orbital mask.
++    float LocalDensity = L.Sigma * Density * HeightMask * MoistureGate * (0.72 + 0.80 * W.Rain);
++    return lerp(LocalDensity, SynopticDensity, SynopticLod);
++}
++
++float3 PlanetCloudAirBetaRay(PlanetaryCloudConfig C)
++{
++    return float3(5.802e-6, 13.558e-6, 33.1e-6) * max(0.0, C.AtmosphereStrengths.x);
++}
++
++float3 PlanetCloudAirBetaMie(PlanetaryCloudConfig C)
++{
++    return float3(4.40e-6) * max(0.0, C.AtmosphereStrengths.y);
++}
++
++float CloudAirColumn(float H, float R, float Alt, float Mu)
++{
++    // Chapman tangent limit blended to the plane-parallel secant. On the
++    // downward half of a grazing ray add the tangent column on the far side.
++    float A = abs(Mu);
++    float Up = 2.0 * H / (A + sqrt(A * A + 8.0 * H / (CloudTransportPi * R)));
++    float D = (R + Alt) * Mu * Mu / (1.0 + sqrt(saturate(1.0 - Mu * Mu)));
++    float Down = sqrt(2.0 * CloudTransportPi * (R + Alt) * H) * exp(min(9.0, D / H)) - Up;
++    return exp(-max(0.0, Alt) / H) * ((Mu < 0.0) ? Down : Up);
++}
++
++float3 CloudSolarAirTransmittance(PlanetaryCloudConfig C, float3 P)
++{
++    float R = length(P);
++    float Alt = max(0.0, R - C.RadiusM);
++    float Mu = dot(P, C.SunDirection) / R;
++    float Horizon = -sqrt(saturate(Alt * (R + C.RadiusM) / (R * R)));
++    // Finite solar disc (~0.53 degrees) across the planetary shadow boundary.
++    float Visible = smoothstep(-0.00465, 0.00465, Mu - Horizon);
++    if (Visible <= 0.0) return float3(0.0);
++    float Ray = CloudAirColumn(max(400.0, C.AirScaleHeightsM.x), C.RadiusM, Alt, Mu);
++    float Mie = CloudAirColumn(max(200.0, C.AirScaleHeightsM.y), C.RadiusM, Alt, Mu);
++    float Ozone = 15000.0 * exp(-max(0.0, Alt - 25000.0) / 8000.0) / max(0.15, abs(Mu));
++    float3 Tau = PlanetCloudAirBetaRay(C) * Ray + PlanetCloudAirBetaMie(C) * Mie +
++                 C.AtmosphereStrengths.z * float3(0.650e-6, 1.881e-6, 0.085e-6) * Ozone;
++    return Visible * exp(-Tau);
++}
++
++float CloudLightSpanTau(PlanetaryCloudConfig C, PlanetaryCloudLayer L, float3 P, float2 Span, uint Steps, float FootprintM)
++{
++    if (Span.y <= Span.x) return 0.0;
++    // Bound the work at shallow solar angles. Distant shadows are filtered
++    // with the footprint, not a second, misaligned weather or noise map.
++    float Length = min(Span.y - Span.x, 12500.0);
++    float Tau = 0.0;
++    float A = 0.0;
++    CloudWeatherSample Wa = CloudWeatherAtPoint(C, P + C.SunDirection * Span.x, L.Kind);
++    CloudWeatherSample Wb = CloudWeatherAtPoint(C, P + C.SunDirection * (Span.x + Length), L.Kind);
++    for (uint I = 0u; I < Steps; ++I)
++    {
++        float F = float(I + 1u) / float(Steps);
++        float B = Length * F * F;
++        float T = Span.x + 0.5 * (A + B);
++        float Ds = B - A;
++        CloudWeatherSample W = LerpCloudWeather(Wa, Wb, (T - Span.x) / Length);
++        float D = SamplePlanetCloudDensity(C, L, P + C.SunDirection * T, W, max(FootprintM, 48.0 + 0.55 * Ds), true);
++        Tau += Ds * D;
++        if (Tau >= 18.0) return 18.0;
++        A = B;
++    }
++    return Tau;
++}
++
++float CloudSolarOpticalDepth(PlanetaryCloudConfig C, float3 P, uint Steps, float FootprintM = 0.0)
++{
++    if (!C.UseClouds || !C.UseCloudShadows || C.Coverage <= 0.001 || C.Extinction <= 0.001) return 0.0;
++    float Limit = min(180000.0, PlanetCloudGroundDistance(P, C.SunDirection, C.RadiusM));
++    float Tau = 0.0;
++    for (uint I = 0u; I < 3u; ++I)
++    {
++        PlanetaryCloudLayer L = PlanetCloudLayer(C, I);
++        float4 Spans = PlanetCloudLayerSpans(P, C.SunDirection, C.RadiusM, L, Limit);
++        Tau += CloudLightSpanTau(C, L, P, Spans.xy, Steps, FootprintM);
++        if (Tau < 18.0)
++            Tau += CloudLightSpanTau(C, L, P, Spans.zw, Steps, FootprintM);
++        if (Tau >= 18.0) break;
++    }
++    return min(18.0, Tau);
++}
++
++float CloudTransportHG(float Mu, float G)
++{
++    float G2 = G * G;
++    float T = max(1.0e-4, 1.0 + G2 - 2.0 * G * Mu);
++    return (1.0 - G2) / (4.0 * CloudTransportPi * T * sqrt(T));
++}
++
++float CloudDualLobe(float Mu, float G, float Scale)
++{
++    return 0.86 * CloudTransportHG(Mu, G * Scale) + 0.14 * CloudTransportHG(Mu, -0.25 * Scale);
++}
++
++float3 CloudScatteringOrderPhases(PlanetaryCloudConfig C, float3 D)
++{
++    float Mu = dot(D, C.SunDirection);
++    float G = clamp(C.PhaseG, 0.40, 0.92);
++    return float3(CloudDualLobe(Mu, G, 1.0), CloudDualLobe(Mu, G, 0.49), CloudDualLobe(Mu, G, 0.19));
++}
++
++float3 PlanetCloudSource(PlanetaryCloudConfig C, PlanetaryCloudLayer L, float3 P,
++                         float Sigma, float3 OrderPhases, float FootprintM)
++{
++    float3 Direct = C.SolarIrradiance * CloudSolarAirTransmittance(C, P);
++    float SunTau = 0.0;
++    if (dot(Direct, Direct) > 1.0e-6)
++        SunTau = CloudSolarOpticalDepth(C, P, C.LightSteps, FootprintM);
++    // Order weights sum to one. Each higher order relaxes anisotropy and
++    // optical depth; powder trades first-order energy into the diffuse orders.
++    float Powder = 1.0 - exp(-2.0 * min(6.0, Sigma * 110.0 + 0.28 * SunTau));
++    float3 Weight = lerp(float3(0.62, 0.24, 0.14), float3(0.45, 0.34, 0.21), Powder);
++    float DirectPhase = dot(Weight * OrderPhases, exp(-SunTau * float3(1.0, 0.41, 0.18)));
++
++    float H = saturate((PlanetCloudAltitude(P, C.RadiusM) - L.BottomM) / (L.TopM - L.BottomM));
++    float SunUp = dot(normalize(P), C.SunDirection);
++    float Day = smoothstep(-0.20, 0.23, SunUp);
++    float Warm = exp(-abs(SunUp - 0.045) * 9.5) * smoothstep(-0.20, -0.025, SunUp);
++    // At positive solar elevations the directional depth is also a useful
++    // local proxy for sky occlusion. Do not use it as a hemispheric estimate
++    // at twilight, where even a clear zenith has a long horizontal path.
++    float SkyVisibility = lerp(1.0, 0.40 + 0.60 * exp(-0.26 * SunTau), smoothstep(0.12, 0.50, SunUp));
++    float3 Sky = C.SkyAmbient * (0.064 + 0.48 * Day) * lerp(0.48, 1.0, H) * SkyVisibility;
++    float3 Bounce = (1.0 - H) * (float3(0.032, 0.048, 0.071) * Day + float3(0.077, 0.029, 0.015) * Warm);
++    return Direct * (1.16 * DirectPhase) + Sky + Bounce;
++}
++
++PlanetaryCloudResult TracePlanetaryClouds(PlanetaryCloudConfig C, float3 O, float3 D, float2 Pixel, float LimitM)
++{
++    PlanetaryCloudResult Result;
++    Result.Radiance = float3(0.0);
++    Result.Transmittance = 1.0;
++    Result.DistanceM = 0.0;
++    if (!C.UseClouds || C.Coverage <= 0.001 || C.Extinction <= 0.001) return Result;
++
++    float ViewAlt = PlanetCloudAltitude(O, C.RadiusM);
++    float NearSurface = 1.0 - smoothstep(9000.0, 49000.0, ViewAlt);
++    LimitM = min(LimitM, PlanetCloudGroundDistance(O, D, C.RadiusM));
++    if (NearSurface > 0.999) LimitM = min(LimitM, 105000.0);
++    PlanetaryCloudInterval Spans[6];
++    uint Count = 0u;
++    for (uint I = 0u; I < 3u; ++I)
++    {
++        PlanetaryCloudLayer L = PlanetCloudLayer(C, I);
++        float4 S = PlanetCloudLayerSpans(O, D, C.RadiusM, L, LimitM);
++        if (S.y > S.x)
++        {
++            Spans[Count].NearM = S.x; Spans[Count].FarM = S.y; Spans[Count++].Layer = I;
++        }
++        if (S.w > S.z)
++        {
++            Spans[Count].NearM = S.z; Spans[Count].FarM = S.w; Spans[Count++].Layer = I;
++        }
++    }
++    if (Count == 0u) return Result;
++    float Jitter = CloudBlueJitter(Pixel);
++    float3 OrderPhases = CloudScatteringOrderPhases(C, D);
++    for (uint I = 0u; I < Count && Result.Transmittance > 0.004; ++I)
++    {
++        // Selection sort over at most six closed, non-overlapping intervals.
++        uint First = I;
++        for (uint J = I + 1u; J < Count; ++J)
++            if (Spans[J].NearM < Spans[First].NearM) First = J;
++        PlanetaryCloudInterval Span = Spans[First];
++        Spans[First] = Spans[I];
++        PlanetaryCloudLayer L = PlanetCloudLayer(C, Span.Layer);
++        float MinStep = (L.Kind == 0u) ? 8.0 : (L.Kind == 1u ? 12.0 : 9.0);
++        float SpanLength = Span.FarM - Span.NearM;
++        float OrbitalFoot = 2350.0 * smoothstep(44000.0, 520000.0, ViewAlt);
++        float FlightLod = smoothstep(9000.0, 35000.0, ViewAlt);
++        float Travel = Span.NearM;
++        float WeatherStep = lerp(870.0, 4800.0, FlightLod);
++        float W0 = Travel;
++        float W1 = min(Travel + WeatherStep, Span.FarM);
++        CloudWeatherSample WNear = CloudWeatherAtPoint(C, O + D * W0, L.Kind);
++        CloudWeatherSample WFar = CloudWeatherAtPoint(C, O + D * W1, L.Kind);
++        bool HaveDensity = false;
++        // The view march is finer than the light march. Cache irradiance only
++        // across nearby occupied samples on this ray, never across frames.
++        float LitAt = -1.0e8;
++        float3 CachedSource = float3(0.0);
++        uint EmptySteps = 0u;
++        uint Budget = C.Steps * 3u;
++        // Reserve far samples with a growing step schedule. A uniform
++        // remaining-distance floor would force horizon-sized steps even at
++        // the camera in the middle of a long, nearly horizontal cloud ray.
++        float GrowthRate = exp(3.35 / float(Budget));
++        float RemainingGrowth = exp(3.35);
++        for (uint S = 0u; S < Budget && Travel < Span.FarM && Result.Transmittance > 0.004; ++S)
++        {
++            float Foot = max(OrbitalFoot, max(MinStep, Travel * C.PixelAngle));
++            float DistanceStep = MinStep + Travel * 0.0016;
++            float QualityStep = SpanLength / float(C.Steps * 2u);
++            float Fine = clamp(DistanceStep, MinStep, max(MinStep, QualityStep * 1.8));
++            Fine = lerp(Fine, max(MinStep, QualityStep * 3.0), FlightLod);
++            float GrowthFloor = (GrowthRate - 1.0) / max(GrowthRate - 1.0, RemainingGrowth - 1.0);
++            Fine = max(Fine, (Span.FarM - Travel) * ((S + 1u < Budget) ? GrowthFloor : 1.0));
++            RemainingGrowth /= GrowthRate;
++            float Coarse = min(Fine * (1.0 + min(2.0, float(EmptySteps) * 0.5)), max(Fine, 40.0 + Travel * 0.0037));
++            bool Probe = !HaveDensity && S + 1u < Budget && Coarse > Fine + 1.0;
++            float Dt = min(Span.FarM - Travel, Probe ? Coarse : Fine);
++            float U = 0.042 + 0.916 * frac(Jitter + float(S) * 0.618033989 + float(I) * 0.381966011);
++            float SampleT = Travel + U * Dt;
++            if (SampleT > W1)
++            {
++                W0 = W1;
++                W1 = min(Span.FarM, max(W1 + WeatherStep, SampleT + 0.25 * WeatherStep));
++                WNear = WFar;
++                WFar = CloudWeatherAtPoint(C, O + D * W1, L.Kind);
++            }
++            CloudWeatherSample W = LerpCloudWeather(WNear, WFar, saturate((SampleT - W0) / max(0.1, W1 - W0)));
++            if (max(WNear.Moisture, WFar.Moisture) <= 0.15)
++            {
++                Travel = W1;
++                continue;
++            }
++            float3 P = O + D * SampleT;
++            float Sigma = SamplePlanetCloudDensity(C, L, P, W, max(Foot, Dt * 0.24), Probe);
++            Sigma *= 1.0 - NearSurface * smoothstep(30000.0, 105000.0, SampleT);
++            if (Probe && Sigma > 1.0e-6)
++            {
++                HaveDensity = true;
++                EmptySteps = 0u;
++                continue;
++            }
++            if (Sigma > 1.0e-6)
++            {
++                float SegT = exp(-Sigma * Dt);
++                float Weight = Result.Transmittance * (1.0 - SegT);
++                float LightStride = clamp(34.0 + Travel * 0.0023, 34.0, 220.0);
++                if (SampleT - LitAt >= LightStride || !HaveDensity)
++                {
++                    CachedSource = PlanetCloudSource(C, L, P, Sigma, OrderPhases, max(Foot, Dt * 0.52));
++                    LitAt = SampleT;
++                }
++                Result.Radiance += Weight * CachedSource;
++                Result.DistanceM += Weight * SampleT;
++                Result.Transmittance *= SegT;
++                HaveDensity = true;
++                EmptySteps = 0u;
++            }
++            else
++            {
++                HaveDensity = false;
++                ++EmptySteps;
++            }
++            Travel += Dt;
++        }
++    }
++    Result.DistanceM /= max(1.0e-6, 1.0 - Result.Transmittance);
++    return Result;
++}
++
++#endif
+diff --git a/Exhibits/CloudProof/BakeCloudNoise.cpp b/Exhibits/CloudProof/BakeCloudNoise.cpp
+new file mode 100644
+index 0000000..77675cb
+--- /dev/null
++++ b/Exhibits/CloudProof/BakeCloudNoise.cpp
+@@ -0,0 +1,17 @@
++/*==========================================================================================================================================
++                                                             BAKECLOUDNOISE.CPP
++==========================================================================================================================================*/
++// 🧩 Write the native engine’s packed cloud volume for the offscreen exhibit.
++
++#include "Engine/GeometricRaster/Atmosphere/CloudNoiseVolume.h"
++
++#include <fstream>
++
++int main(int Count, char** Args)
++{
++    if (Count != 2) return 2;
++    const auto& Texels = Frontier::GeometricRaster::CloudNoiseVolume::QueryTexels();
++    std::ofstream File(Args[1], std::ios::binary);
++    File.write(reinterpret_cast<const char*>(Texels.data()), static_cast<std::streamsize>(Texels.size() * sizeof(uint32_t)));
++    return File ? 0 : 1;
++}
+diff --git a/Exhibits/CloudProof/CloudProofCompute.slang b/Exhibits/CloudProof/CloudProofCompute.slang
+new file mode 100644
+index 0000000..551b5ba
+--- /dev/null
++++ b/Exhibits/CloudProof/CloudProofCompute.slang
+@@ -0,0 +1,288 @@
++/*==========================================================================================================================================
++                                                          CLOUDPROOFCOMPUTE.SLANG
++==========================================================================================================================================*/
++// 🧩 Offscreen cloud and atmosphere views using the native transport functions.
++
++[[vk::binding(1, 0)]] StructuredBuffer<uint> PlanetaryCloudNoise;
++#include "../../Engine/Shaders/Atmosphere/CloudAerialPerspective.slang"
++
++struct CloudProofInputs
++{
++    float4 OriginWindX; // xyz local camera position, w = wind displacement X in meters.
++    float4 ForwardWindY; // xyz camera forward, w = wind displacement Y in meters.
++    float4 RightTanX;
++    float4 UpTanY;
++    float4 SunIntensity;
++    float4 FloorThicknessCoverageExtinction;
++    float4 ScaleSeedPhaseExposure;
++    float4 Air;
++    uint4 Flags; // mode (0=ocean, 1=earth, 2=vacuum), view steps, light steps, sky shafts.
++    uint4 Size;  // width, height, surface width, surface height.
++    uint4 Tile;  // first row, row count, pixel samples, diagnostics selector.
++};
++
++[[vk::binding(0, 0)]] ConstantBuffer<CloudProofInputs> Inputs;
++[[vk::binding(2, 0)]] RWStructuredBuffer<uint> ProofPixels;
++[[vk::binding(3, 0)]] StructuredBuffer<uint> PlanetSurface;
++
++static const float ProofRadius = 6371000.0;
++
++PlanetaryCloudConfig GetProofCloudConfig()
++{
++    PlanetaryCloudConfig C;
++    C.RadiusM = (Inputs.Flags.x == 2u) ? 1737400.0 : ProofRadius;
++    C.FloorM = Inputs.FloorThicknessCoverageExtinction.x;
++    C.ThicknessM = Inputs.FloorThicknessCoverageExtinction.y;
++    C.Coverage = Inputs.FloorThicknessCoverageExtinction.z;
++    C.Extinction = Inputs.FloorThicknessCoverageExtinction.w;
++    C.FeatureScale = Inputs.ScaleSeedPhaseExposure.x;
++    C.Seed = Inputs.ScaleSeedPhaseExposure.y;
++    C.PhaseG = Inputs.ScaleSeedPhaseExposure.z;
++    C.PixelAngle = 2.0 * Inputs.UpTanY.w / float(Inputs.Size.y);
++    C.WindOffsetM = float2(Inputs.OriginWindX.w, Inputs.ForwardWindY.w);
++    C.Shear = 0.45;
++    C.Veer = 0.0;
++    C.Turbulence = 0.28;
++    C.Anvil = 0.24;
++    C.SunDirection = normalize(Inputs.SunIntensity.xyz);
++    C.SolarIrradiance = float3(Inputs.SunIntensity.w);
++    C.SkyAmbient = float3(0.37, 0.46, 0.62) * (Inputs.SunIntensity.w / 15.0);
++    C.AtmosphereStrengths = (Inputs.Flags.x == 2u) ? float3(0.0) : Inputs.Air.xyz;
++    C.AirScaleHeightsM = float2(8000.0, Inputs.Flags.x == 1u ? 1200.0 : 1850.0);
++    C.PrimaryKind = 0u;
++    C.Formation = 2u;
++    C.Steps = Inputs.Flags.y;
++    C.LightSteps = Inputs.Flags.z;
++    C.UseClouds = Inputs.Flags.x != 2u;
++    C.UseCloudShadows = C.UseClouds;
++    return C;
++}
++
++float3 ReadProofSurface(uint2 I)
++{
++    uint V = PlanetSurface[I.y * Inputs.Size.z + I.x];
++    return pow(DecodeCloudTexel(V).rgb, float3(2.2));
++}
++
++float3 OrbitAlbedo(float3 N, float Meridian)
++{
++    float U = frac(atan2(N.x, N.z) / (2.0 * CloudTransportPi) + 0.5 + Meridian);
++    float V = acos(clamp(N.y, -1.0, 1.0)) / CloudTransportPi;
++    float2 P = float2(U, V) * float2(Inputs.Size.zw) - 0.5;
++    int2 I = int2(floor(P));
++    float2 F = frac(P);
++    int W = int(Inputs.Size.z), H = int(Inputs.Size.w);
++    int X = (I.x + W) % W, X1 = (X + 1) % W;
++    int Y = clamp(I.y, 0, H - 1), Y1 = clamp(I.y + 1, 0, H - 1);
++    return lerp(lerp(ReadProofSurface(uint2(X, Y)), ReadProofSurface(uint2(X1, Y)), F.x),
++                lerp(ReadProofSurface(uint2(X, Y1)), ReadProofSurface(uint2(X1, Y1)), F.x), F.y);
++}
++
++float3 ProofGround(PlanetaryCloudConfig C, float3 P, float3 D, float HitM, float CoverageShadow)
++{
++    float3 N = normalize(P);
++    float3 SunT = CloudSolarAirTransmittance(C, P + N * 2.0) * CoverageShadow;
++    float SunUp = saturate(dot(N, C.SunDirection));
++    float3 UnitSun = C.SolarIrradiance / CloudTransportPi;
++    if (Inputs.Flags.x == 1u)
++    {
++        float3 Surface = OrbitAlbedo(N, Inputs.Air.w);
++        float Ocean = smoothstep(0.0, 0.07, Surface.b - Surface.r);
++        float3 H = normalize(C.SunDirection - D);
++        float Spec = Ocean * pow(saturate(dot(N, H)), 345.0) * 0.35;
++        return Surface * UnitSun * (SunUp * SunT + 0.022) + UnitSun * SunT * Spec;
++    }
++    if (Inputs.Flags.x == 2u) return float3(0.16, 0.15, 0.14) * SunUp;
++
++    float2 World = P.xy;
++    float Fp = max(0.01, HitM * C.PixelAngle);
++    float2 Slope = float2(0.0);
++    const float2 WaveDir[5] = {float2(0.87, 0.493), float2(-0.44, 0.898), float2(0.14, 0.99), float2(0.61, -0.79), float2(-0.17, 0.986)};
++    const float Waves[5] = {15.0, 6.7, 2.4, 0.97, 0.36};
++    for (uint I = 0u; I < 5u; ++I)
++    {
++        float L = Waves[I];
++        // Account for grazing projection so tiny wave normals disappear well
++        // before they produce rings in the distant reflection.
++        float Fade = 1.0 - smoothstep(L * 0.065, L * 0.37, Fp / max(0.025, abs(dot(D, N))));
++        if (Fade <= 0.0) continue;
++        float Phase = StormNoise(float3(World * (0.61 / L), 61.9 + float(I) * 3.72));
++        float Angle = dot(World, WaveDir[I]) * (6.2831853 / L) + Phase * 7.2;
++        Slope += WaveDir[I] * cos(Angle) * (0.022 + float(I) * 0.005) * Fade;
++    }
++    float3 WaterN = normalize(N + float3(Slope, 0.0));
++    float3 ReflD = reflect(D, WaterN);
++    float View = abs(dot(D, WaterN));
++    float Fresnel = 0.021 + 0.979 * pow(1.0 - saturate(View), 5.0);
++    float SkyDot = max(0.0, dot(ReflD, N));
++    float3 H = normalize(C.SunDirection - D);
++    float HalfAngle = saturate(dot(H, WaterN));
++    float Glint = pow(HalfAngle, lerp(3800.0, 640.0, smoothstep(0.5, 15.0, Fp))) * 2.4 + 0.1 * pow(HalfAngle, 120.0);
++    float3 DayColor = lerp(float3(0.31, 0.45, 0.57), float3(0.090, 0.23, 0.49), smoothstep(0.0, 0.65, SkyDot));
++    float Day = smoothstep(-0.10, 0.31, SunUp + dot(N, C.SunDirection) * 0.4);
++    float3 Twilight = float3(0.22, 0.098, 0.048) * (0.50 + 0.50 * dot(ReflD, C.SunDirection));
++    float MacroWave = StormNoise(float3(World * 0.018, 76.7)) - 0.5;
++    float3 Sky = lerp(Twilight, DayColor, Day) * (0.25 + 0.34 * Day + 0.11 * MacroWave);
++    float3 Base = float3(0.0105, 0.028, 0.038) * (0.39 + 0.61 * CoverageShadow) * (0.3 + 1.25 * Day);
++    return Base + Fresnel * Sky + Glint * SunT;
++}
++
++float3 TraceProofRay(PlanetaryCloudConfig C, float3 Origin, float3 Direction, float2 Pixel)
++{
++    float GroundM = PlanetCloudGroundDistance(Origin, Direction, C.RadiusM);
++    PlanetaryCloudResult Cloud = TracePlanetaryClouds(C, Origin, Direction, Pixel, GroundM);
++    if (Inputs.Tile.w == 1u) return float3(Cloud.Transmittance);
++    if (Inputs.Flags.x == 2u) return float3(0.0);
++    bool Shafts = Inputs.Flags.w > 0u;
++    CloudAirSegment Air = IntegrateCloudAir(C, Origin, Direction, GroundM, 24u, Shafts);
++    float3 Behind = float3(0.0);
++    if (GroundM < 1.0e8)
++    {
++        float3 Ground = Origin + Direction * GroundM;
++        float Foot = (Inputs.Flags.x == 1u) ? max(GroundM * C.PixelAngle, 2350.0) : 0.0;
++        float Shadow = exp(-CloudSolarOpticalDepth(C, Ground, 6u, Foot));
++        Behind = ProofGround(C, Ground, Direction, GroundM, Shadow);
++    }
++    else
++    {
++        float Cos = dot(Direction, C.SunDirection);
++        float Disc = smoothstep(0.9999863, 0.9999898, Cos);
++        float Aureole = exp(-max(0.0, 1.0 - Cos) * 1870.0);
++        Behind = C.SolarIrradiance * (5.5 * Disc + 0.037 * Aureole);
++    }
++    float3 Under = Air.Radiance + Air.Transmittance * Behind;
++    return Under * Cloud.Transmittance + CloudRadianceThroughAir(C, Origin, Direction, Cloud, 12u);
++}
++
++float3 ProofTonemap(float3 X)
++{
++    X = max(float3(0.0), X * Inputs.ScaleSeedPhaseExposure.w);
++    // Luminance-preserving shoulder to keep dusk colors and white cores from
++    // taking on hard channel-clip edges.
++    float L = dot(X, float3(0.2126, 0.7152, 0.0722));
++    X /= (1.0 + L);
++    float Peak = max(X.r, max(X.g, X.b));
++    X = lerp(X, float3(L / (1.0 + L)), smoothstep(0.79, 1.19, Peak) * 0.85);
++    return select(X <= 0.0031308, X * 12.92, 1.055 * pow(max(float3(1.0e-7), X), float3(1.0 / 2.4)) - 0.055);
++}
++
++// These numerical checks run in the same shader and through the same ABI
++// as the proof images. Green encodes pass; red encodes a failed invariant.
++bool CloudProofInvariant(PlanetaryCloudConfig C, uint Case)
++{
++    float R = C.RadiusM;
++    float3 Up = float3(0.0, 0.0, 1.0);
++    PlanetaryCloudLayer L = MakePlanetCloudLayer(1000.0, 1000.0, 0.5, 0.005, 0u);
++    if (Case == 0u)
++    {
++        float4 Span = PlanetCloudLayerSpans(Up * (R + 90.0), Up, R, L, 1.0e8);
++        return abs(Span.z - 910.0) < 1.0 && abs(Span.w - 1910.0) < 1.0 && Span.y <= Span.x;
++    }
++    if (Case == 1u)
++    {
++        float4 Span = PlanetCloudLayerSpans(Up * (R + 1400.0), Up, R, L, 1.0e8);
++        return abs(Span.x) < 1.0 && abs(Span.y - 600.0) < 1.0 && Span.w <= Span.z;
++    }
++    if (Case == 2u)
++    {
++        float3 O = Up * (R + 800000.0);
++        float End = PlanetCloudGroundDistance(O, -Up, R);
++        float4 S = PlanetCloudLayerSpans(O, -Up, R, L, End);
++        return abs(End - 800000.0) < 1.0 && abs(S.x - 798000.0) < 1.0 &&
++               abs(S.y - 799000.0) < 1.0 && S.w <= S.z;
++    }
++    if (Case == 3u)
++    {
++        // A limb ray that misses the inner shell remains an unbroken segment.
++        float4 S = PlanetCloudLayerSpans(float3(-120000.0, 0.0, R + 1500.0), float3(1.0, 0.0, 0.0), R, L, 500000.0);
++        return S.y > S.x && S.w <= S.z;
++    }
++    if (Case == 4u)
++    {
++        C.SunDirection = normalize(float3(1.0, 0.0, -0.038));
++        float3 Low = CloudSolarAirTransmittance(C, Up * (R + 1200.0));
++        float3 High = CloudSolarAirTransmittance(C, Up * (R + 10100.0));
++        return Low.r == 0.0 && High.r > 0.01 && High.r > High.b;
++    }
++    if (Case == 5u)
++    {
++#ifdef FRONTIER_CLOUD_GPU_DIAGNOSTICS
++        float4 Base = SampleCloudVolume(float3(0.125, 0.25, 0.375), 128u, 0u);
++        float4 Detail = SampleCloudVolume(float3(0.26, 0.14, 0.72), 64u, CloudDetailOffset);
++        float Blue = CloudBlueJitter(float2(17.0, 23.0));
++        return Base.r > 0.0 && abs(Base.r - Base.g) > 0.001 && max(Detail.r, Detail.b) > 0.0 &&
++               Blue > 0.0 && Blue < 1.0 && Blue == CloudBlueJitter(float2(81.0, 23.0));
++#else
++        C.UseClouds = false;
++        C.Coverage = 1.0;
++        C.Extinction = 4.0;
++        PlanetaryCloudResult V = TracePlanetaryClouds(C, Up * (R + 1410.0), Up, float2(0.0), 1.0e8);
++        return V.Transmittance == 1.0 && all(V.Radiance == 0.0) &&
++               CloudSolarOpticalDepth(C, Up * R, 4u) == 0.0;
++#endif
++    }
++    if (Case == 6u)
++    {
++        float Sum = 0.0;
++        for (uint I = 0u; I < 1024u; ++I)
++        {
++            float Mu = (float(I) + 0.5) / 512.0 - 1.0;
++            Sum += CloudDualLobe(Mu, 0.84, 1.0);
++        }
++        return abs(Sum * (4.0 * CloudTransportPi / 1024.0) - 1.0) < 0.004 &&
++               CloudDualLobe(1.0, 0.84, 1.0) > CloudDualLobe(-1.0, 0.84, 1.0);
++    }
++    if (Case == 8u)
++    {
++        float3 Axis = normalize(float3(0.18, 0.07, 1.0));
++        float3 Position = normalize(float3(0.20, -0.12, 1.0));
++        float3 Turned = CurveWeatherFront(Position, Axis, 0.32, 2.55);
++        float3 Restored = CurveWeatherFront(Turned, Axis, 0.32, -2.55);
++        // Allow roundoff from implementation-dependent Vulkan sin/cos.
++        return abs(length(Turned) - 1.0) < 5.0e-5 &&
++               length(Restored - Position) < 5.0e-5 && length(Turned - Position) > 0.02;
++    }
++    for (uint I = 0u; I < 3u; ++I)
++    {
++        C.PrimaryKind = I;
++        PlanetaryCloudLayer Low = PlanetCloudLayer(C, 0u);
++        PlanetaryCloudLayer Mid = PlanetCloudLayer(C, 1u);
++        PlanetaryCloudLayer High = PlanetCloudLayer(C, 2u);
++        if (!(Low.TopM < Mid.BottomM && Mid.TopM < High.BottomM)) return false;
++    }
++    return true;
++}
++
++[shader("compute")]
++[numthreads(8, 8, 1)]
++void CloudProofEntry(uint3 ID : SV_DispatchThreadID)
++{
++    if (ID.x >= Inputs.Size.x || ID.y >= Inputs.Tile.y) return;
++    uint2 Coord = uint2(ID.x, ID.y + Inputs.Tile.x);
++    PlanetaryCloudConfig C = GetProofCloudConfig();
++#ifdef FRONTIER_CLOUD_GPU_DIAGNOSTICS
++    ProofPixels[ID.y * Inputs.Size.x + ID.x] = CloudProofInvariant(C, ID.x) ? 0xff00ff00u : 0xff0000ffu;
++#else
++    if (Inputs.Tile.w == 2u)
++    {
++        ProofPixels[ID.y * Inputs.Size.x + ID.x] = CloudProofInvariant(C, ID.x) ? 0xff00ff00u : 0xff0000ffu;
++        return;
++    }
++    float3 Origin = Inputs.OriginWindX.xyz;
++    Origin.z += C.RadiusM;
++    float3 L = float3(0.0);
++    uint Samples = max(1u, Inputs.Tile.z);
++    for (uint S = 0u; S < Samples; ++S)
++    {
++        float2 Subpixel = (Samples == 1u) ? float2(0.5) : frac(float2(0.5) + (float(S) + 0.5) * float2(0.754877667, 0.569840296));
++        float2 Ndc = ((float2(Coord) + Subpixel) / float2(Inputs.Size.xy) * 2.0 - 1.0) * float2(1.0, -1.0);
++        float3 D = normalize(Inputs.ForwardWindY.xyz + Ndc.x * Inputs.RightTanX.w * Inputs.RightTanX.xyz +
++                                 Ndc.y * Inputs.UpTanY.w * Inputs.UpTanY.xyz);
++        L += TraceProofRay(C, Origin, D, float2(Coord) + float2(11u * S, 29u * S));
++    }
++    float3 Out = (Inputs.Tile.w == 1u) ? L / float(Samples) : ProofTonemap(L / float(Samples));
++    float Dither = (CloudBlueJitter(float2(Coord) + float2(19.0, 31.0)) - 0.5) / 255.0;
++    uint3 Rgb = uint3(round(saturate(Out + Dither) * 255.0));
++    ProofPixels[ID.y * Inputs.Size.x + ID.x] = Rgb.x | (Rgb.y << 8u) | (Rgb.z << 16u) | 0xff000000u;
++#endif
++}
+diff --git a/Exhibits/CloudProof/CloudProofHost.cpp b/Exhibits/CloudProof/CloudProofHost.cpp
+new file mode 100644
+index 0000000..b4f6108
+--- /dev/null
++++ b/Exhibits/CloudProof/CloudProofHost.cpp
+@@ -0,0 +1,45 @@
++/*==========================================================================================================================================
++                                                             CLOUDPROOFHOST.CPP
++==========================================================================================================================================*/
++// 🧩 Run Slang’s native compute target over offscreen image tiles.
++
++// Dispatch the Slang CPU target without a window or a second implementation
++// of the cloud shader. The generated TU supplies the reflected ABI structs.
++#include "CloudProofGenerated.cpp"
++
++#include <algorithm>
++#include <atomic>
++#include <cstring>
++#include <thread>
++#include <vector>
++
++static_assert(sizeof(CloudProofInputs_0) == 176);
++
++extern "C" void RenderCloudTile(const void* UniformBytes, uint32_t* Noise, size_t NoiseCount,
++                                uint32_t* Surface, size_t SurfaceCount, uint32_t* Pixels,
++                                uint32_t WorkerCount)
++{
++    CloudProofInputs_0 Inputs;
++    std::memcpy(&Inputs, UniformBytes, sizeof(Inputs));
++    const uint32_t W = Inputs.Size_0.x, H = Inputs.Tile_0.y;
++    GlobalParams_0 Bindings {};
++    Bindings.PlanetaryCloudNoise_0 = {Noise, NoiseCount};
++    Bindings.Inputs_0 = &Inputs;
++    Bindings.ProofPixels_0 = {Pixels, size_t(W) * H};
++    Bindings.PlanetSurface_0 = {Surface, SurfaceCount};
++    const uint32_t GroupsY = (H + 7) / 8;
++    const uint32_t GroupsX = (W + 7) / 8;
++    std::atomic<uint32_t> Row {0};
++    auto Render = [&]
++    {
++        for (uint32_t Y; (Y = Row.fetch_add(1, std::memory_order_relaxed)) < GroupsY;)
++        {
++            ComputeVaryingInput Range {{0, Y, 0}, {GroupsX, Y + 1, 1}};
++            CloudProofEntry(&Range, nullptr, &Bindings);
++        }
++    };
++    std::vector<std::jthread> Threads;
++    for (uint32_t I = 1; I < std::min(WorkerCount, GroupsY); ++I)
++        Threads.emplace_back(Render);
++    Render();
++}
+diff --git a/Exhibits/CloudProof/ViewportCloudSmoke.cpp b/Exhibits/CloudProof/ViewportCloudSmoke.cpp
+new file mode 100644
+index 0000000..ef5ead5
+--- /dev/null
++++ b/Exhibits/CloudProof/ViewportCloudSmoke.cpp
+@@ -0,0 +1,78 @@
++/*==========================================================================================================================================
++                                                        VIEWPORTCLOUDSMOKE.CPP
++==========================================================================================================================================*/
++// 🧩 Test the patched viewport cloud entry point via Slang's native target.
++
++#include "ViewportCloudGenerated.cpp"
++#include "Engine/GeometricRaster/Atmosphere/CloudNoiseVolume.h"
++
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <cstddef>
++#include <cstdio>
++
++static_assert(sizeof(WorldViewportUniformBlock_0) == 4144);
++static_assert(offsetof(WorldViewportUniformBlock_0, CloudParams_0) == 768);
++static_assert(sizeof(VolumetricCloudUniformBlock_0) == 1248);
++
++int main()
++{
++    constexpr uint32_t Width = 32, Height = 18;
++    WorldViewportUniformBlock_0 Uniform {};
++    Uniform.CameraOriginTanX_0 = {-3000.0f, 4200.0f, 23.0f, 0.526f};
++    Uniform.CameraRightTanY_0 = {0.0f, -1.0f, 0.0f, 0.296f};
++    Uniform.CameraUpWidth_0 = {-0.18f, 0.0f, 0.984f, float(Width)};
++    Uniform.CameraForwardHeight_0 = {0.984f, 0.0f, 0.18f, float(Height)};
++    Uniform.AtmosphereObserver_0 = {0.0f, 0.0f, 60000.0f, 0.78f};
++    Uniform.AtmosphereScaleHeights_0 = {8000.0f, 1200.0f, 60000.0f, 0.0f};
++    Uniform.CelestialParams_0.AtmoMediumPack_0 = {0.94f, 0.78f, 1.0f, 0.0f};
++
++    auto& Cloud = Uniform.CloudParams_0;
++    Cloud.SunAxisToggle_0 = {-0.38f, -0.85f, 0.36f, 1.0f};
++    Cloud.SolarIrradianceExt_0 = {15.0f, 15.0f, 15.0f, 6371000.0f};
++    Cloud.SkyColorWind_0 = {0.37f, 0.46f, 0.62f, 0.0f};
++    Cloud.DeckGeometry_0 = {1110.0f, 3550.0f, 0.38f, 1.03f};
++    Cloud.DeckOptics_0 = {0.35f, 0.24f, 0.68f, 0.45f};
++    Cloud.WindVectorOcclude_0 = {0.0f, 0.0f, 1.0f, 0.0f};
++    Cloud.FormationOptics_0 = {2.0f, 0.0f, 0.28f, 0.0f};
++    Cloud.CloudPassControl_0 = {float(Width), float(Height), 80.0f, 0.0f};
++
++    const auto& Noise = Frontier::GeometricRaster::CloudNoiseVolume::QueryTexels();
++    std::array<Vector<float, 4>, Width * Height> Pixels {};
++    GlobalParams_0 Slots {};
++    Slots.WorldUniforms_0 = &Uniform;
++    Slots.PlanetaryCloudNoise_0 = {const_cast<uint32_t*>(Noise.data()), Noise.size()};
++    Slots.CloudRadiometricBuffer_0 = {Pixels.data(), Pixels.size()};
++    ComputeVaryingInput Groups {{0, 0, 0}, {(Width + 7) / 8, (Height + 7) / 8, 1}};
++
++    Uniform.AtmosphereMaskPad_0 = {0, 256, 128, 16};
++    CloudComputeEntry(&Groups, nullptr, &Slots);
++    if (!std::all_of(Pixels.begin(), Pixels.end(), [](const auto& P)
++        { return P.x == 0.0f && P.y == 0.0f && P.z == 0.0f && P.w == 1.0f; }))
++    {
++        std::fputs("FAIL: airless viewport cloud pass did not return clear transport\n", stderr);
++        return 1;
++    }
++
++    Uniform.AtmosphereMaskPad_0 = {1, 256, 128, 0};
++    CloudComputeEntry(&Groups, nullptr, &Slots);
++    bool Cloudy = false, Clear = false;
++    for (const auto& P : Pixels)
++    {
++        if (!std::isfinite(P.x) || !std::isfinite(P.y) || !std::isfinite(P.z) || !(P.w >= 0.0f && P.w <= 1.0f))
++        {
++            std::fputs("FAIL: viewport cloud pass returned invalid transport\n", stderr);
++            return 1;
++        }
++        Cloudy |= P.w < 0.90f && P.x > 0.001f;
++        Clear |= P.w == 1.0f;
++    }
++    if (!Cloudy || !Clear)
++    {
++        std::fputs("FAIL: viewport cloud pass did not render both clouds and clear pixels\n", stderr);
++        return 1;
++    }
++    std::puts("PASS (viewport Slang host): uniform layout, lunar bypass, and finite cloudy/clear transport");
++    return 0;
++}
+diff --git a/README.md b/README.md
+index d191727..5d71195 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,48 @@
+-# Frontier
++# Frontier — planetary cloud transport
++
++This checkout (`streamlinkinbox/Frontier`) contained only a README. The native engine lives in [SultanAladin/Frontier-1](https://github.com/SultanAladin/Frontier-1). This branch carries the new cloud modules, a patch for the native engine, and reproducible offscreen renders. It does **not** contain a second copy of that engine or modify its remote branch. The integration target is `arena/39c6910b-frontier-1` at `8d75f4af29ffa800ea39ad58c9128673aa000ea1`.
++
++## Apply to the native engine
++
++From this checkout, with a separate Frontier-1 checkout at the reference revision:
++
++```sh
++python3 Automation/ApplyFrontierCloudPatch.py /path/to/Frontier-1 --check
++python3 Automation/ApplyFrontierCloudPatch.py /path/to/Frontier-1
++```
++
++The installer supplies the same four modules used by the proof renderer, along with the edits in `patches/Frontier1CloudIntegration.patch`. It checks the complete patch before writing. Use the target's pinned dependency setup and CMake build after applying. Set `Atmosphere.Medium.AirlessBody = true` for a lunar scene; this overrides authored cloud and atmospheric fog settings. This is a scene configuration flag, not a new editor control.
++
++### What changed
++
++- **Shape:** a nonperiodic, domain-warped planetary moisture, type, uplift and precipitation field. Radius-preserving vortex turns avoid folding storm fronts into repeated rings. Convective cells collect in variable banks with two-lobe rounded profiles. Broken mid-level sheets and sheared, anisotropic high ice use independent profiles. A deterministic 128³ Perlin–Worley base, 64³ Worley erosion volume and boundary curl supply local detail. Only the local noise textures wrap; the weather field does not.
++- **Transport:** cloud shells intersect the actual planet-relative camera ray. Downward and interior rays work, foreground surfaces clip the integration, and a continuous footprint blend replaces the old separate orbital cloud mask. The march uses a void-and-cluster blue-noise tile, short steps near the camera, refinement on re-entry into condensate, dry-interval skipping, and no accumulated cloud frames.
++- **Light:** dual-lobe HG, normalized scattering-order weights with a powder-dependent redistribution, sky and horizon bounce, and directional Beer attenuation across the three decks. The same attenuation query serves orbital ground shading, world surfaces, and the existing god-ray pass. Planetary occlusion is evaluated at the sample, so the upper deck can retain direct light at civil twilight. The aerial composite restores the in-scattered light in front of the cloud instead of dimming all the horizon haze by cloud opacity.
++- **Integration:** full-resolution clouds by default; no extra five-tap cloud-buffer blur. World terrain and authored local volumes keep their original renderer paths, with the new global volume integrated at their boundaries. The Vulkan integration retains the spatial wind probes and sends moving primary-sky clouds to the current-frame composite rather than path-trace history.
++
++### Limits
++
++This is a **renderer candidate, not a photorealism sign-off**. The global change targets the native Vulkan renderer. It leaves Frontier-1's legacy CPU fallback density and the dedicated local-volume density model in place. The specialized global formation presets still control deck geometry, but their old bespoke masks are not reproduced one-for-one. Independent legacy shadow-shape knobs no longer deform the global shadow field separately from visible density. Directional quadrature and the optical-centroid aerial composite are approximations; there is no baked deep shadow map, real weather assimilation, or claimed frame-rate target. There was no physical GPU in the verification environment.
++
++## Reproduce the captures
++
++The exhibit runs the **same Slang cloud functions** as the integration patch. It uses a small procedural ocean and an Earth surface-only texture for framing. Every cloud pixel is rendered by the shader. The checked-in images used Slang 2026.14.1's native C++ compute target, dispatched offscreen on the CPU, with no upscaler or generative images. They are not screenshots of the full Frontier editor.
++
++Requirements: Linux, Python 3.10+, Pillow, a C++20 compiler, and `slangc` 2026.14.1 (the version bundled by Frontier-1's `Automation/PrepareShaderToolchain.py`). The optional `--backend vulkan` and `TestCloudProof.py --vulkan-diagnostics` additionally need the Python `vulkan` package, a Vulkan loader, and a suitable compute device. The diagnostics dispatch the math and the packed volumes without the full beauty-ray pipeline. Add `--frontier-checkout /path/to/patched/Frontier-1` to the test command for a separate host smoke test of the actual viewport cloud entry point and its uniform layout.
++
++```sh
++python3 -m pip install Pillow
++SLANGC=/path/to/slangc
++# Used only as the cloud-free *surface* in the orbit scene.
++gh api repos/mrdoob/three.js/git/blobs/b9410c7bea22e43c368b0757582160d0cf4cff03 \
++  --jq .content | base64 --decode > /tmp/earth-day.jpg
++python3 Automation/TestCloudProof.py --slangc "$SLANGC"
++python3 Automation/RenderCloudProof.py ground sunset dawn orbit --slangc "$SLANGC" \
++  --earth /tmp/earth-day.jpg --width 1600 --height 900 --steps 128 --light-steps 4
++python3 Automation/RenderCloudProof.py gap --slangc "$SLANGC" \
++  --width 1600 --height 900 --steps 128 --light-steps 4 --samples 2
++```
++
++Supply scene names (`ground`, `gap`, `sunset`, `dawn`, `orbit`) to render just those frames. `--transmittance` emits the raw cloud-only transmittance for diagnostics; `moon` with high authored coverage must remain white in that mode. The proof script checks the surface texture against its pinned SHA-256. The Earth day map is by [Solar System Scope](https://www.solarsystemscope.com/textures/) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), redistributed by three.js in `examples/textures/planets/earth_day_4096.jpg`. The asset is not stored in this repo.
++
++See [the capture review](output/README.md) for what the images do and do not establish.
+diff --git a/output/01-ocean-cumulus.png b/output/01-ocean-cumulus.png
+new file mode 100644
+index 0000000..24aa7eb
+Binary files /dev/null and b/output/01-ocean-cumulus.png differ
+diff --git a/output/02-silver-lining.png b/output/02-silver-lining.png
+new file mode 100644
+index 0000000..53b53e7
+Binary files /dev/null and b/output/02-silver-lining.png differ
+diff --git a/output/03-golden-hour.png b/output/03-golden-hour.png
+new file mode 100644
+index 0000000..a65ca9f
+Binary files /dev/null and b/output/03-golden-hour.png differ
+diff --git a/output/04-dawn.png b/output/04-dawn.png
+new file mode 100644
+index 0000000..c1e1603
+Binary files /dev/null and b/output/04-dawn.png differ
+diff --git a/output/05-orbital-limb.png b/output/05-orbital-limb.png
+new file mode 100644
+index 0000000..73acc79
+Binary files /dev/null and b/output/05-orbital-limb.png differ
+diff --git a/output/README.md b/output/README.md
+new file mode 100644
+index 0000000..85633b0
+--- /dev/null
++++ b/output/README.md
+@@ -0,0 +1,20 @@
++# Cloud capture review
++
++**Visual result: candidate, not passed.** These captures exercise the new transport, but they do not meet the requested indistinguishable-from-photography bar. They are direct 1600 × 900 offscreen renders from Slang 2026.14.1’s C++ compute target, not editor screenshots, reference photos, or upscaled previews. Each used 128 requested view steps with adaptive allocation and four solar samples per span. The near-sun view uses two subpixel rays per pixel; the other views use one.
++
++| View | Capture | Inspection |
++| --- | --- | --- |
++| Low ocean angle | [01 — Ocean cumulus](01-ocean-cumulus.png) | The cooler undersides separate from the sunlit edges and the distant clouds fade into the horizon. Several low clouds still have similar silhouettes, and the higher sheets lack fine cirrus detail. |
++| Near-sun gap | [02 — Silver lining](02-silver-lining.png) | Backlit rims separate the nearer cloud bank from the higher deck. The two-sample recapture reduced stipple, but some grain remains at the bottom and the brightest parts lose billow detail. |
++| Golden hour | [03 — Sunset](03-golden-hour.png) | The lower exposure retains more detail around the sun and separates the warm rim from the shaded cloud. The edges remain too soft in places, and the ocean reflection is stylized. |
++| Civil dawn | [04 — Dawn](04-dawn.png) | The pink upper layer stays lit above the cool lower deck. Removing the periodic cirrus lookup got rid of the most conspicuous fine comb streaks, but there is still some soft detail and stipple at the horizon. |
++| Orbit | [05 — Orbital limb](05-orbital-limb.png) | The curved limb, coherent fronts and surface shadows are visible. The revised vortex removed much of the fine striping from the first orbital pass; broad cloud decks still look too flat and uniform. |
++
++## Verification scope
++
++- The installer passed `git apply --check` and applied to an export of Frontier-1 at `8d75f4af29ffa800ea39ad58c9128673aa000ea1`. All 14 applied files matched the validation checkout byte for byte. The three edited C++ translation units and the integration Slang entry points compiled in the Development build.
++- **Slang host execution:** shell intersections (below, inside, tangent, and orbital), non-overlapping decks, reversible weather-front rotation, phase normalization, twilight illumination, zero-coverage bypass, lunar vacuum, and wind displacement with stateless frame replay all passed.
++- **Patched viewport entry on the Slang host:** the 4,144-byte uniform layout, exact airless bypass, and finite cloudy/clear outputs passed through Frontier-1's `CloudComputeEntry`. This does not exercise the Vulkan engine host.
++- **SwiftShader Vulkan diagnostics:** shell intersections, twilight illumination, phase normalization, layer bounds, reversible weather-front rotation, and real reads from the base, erosion and blue-noise volumes all passed. The full proof and native viewport Vulkan pipelines were stopped during software pipeline creation; no GPU beauty dispatch, linked engine run, or frame-rate validation is claimed.
++
++The exhibit uses a procedural ocean and a cloud-free Earth albedo. The shader produces all cloud coverage, opacity and cloud shadows in these frames. See the [reproduction instructions and Earth asset credit](../README.md#reproduce-the-captures).
+diff --git a/patches/Frontier1CloudIntegration.patch b/patches/Frontier1CloudIntegration.patch
+new file mode 100644
+index 0000000..c957e2f
+--- /dev/null
++++ b/patches/Frontier1CloudIntegration.patch
+@@ -0,0 +1,1177 @@
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -311,6 +311,9 @@
++             "${FRONTIER_SHADER_SRC_DIR}/MatCapEvaluation.slang"
++             "${CMAKE_SOURCE_DIR}/Engine/Shaders/Atmosphere/SkyViewTransmittanceCompute.slang"
++             "${CMAKE_SOURCE_DIR}/Engine/Shaders/Atmosphere/VolumetricCloudCompute.slang"
+++            "${CMAKE_SOURCE_DIR}/Engine/Shaders/Atmosphere/CloudWeatherField.slang"
+++            "${CMAKE_SOURCE_DIR}/Engine/Shaders/Atmosphere/PlanetaryCloudTransport.slang"
+++            "${CMAKE_SOURCE_DIR}/Engine/Shaders/Atmosphere/CloudAerialPerspective.slang"
++             "${CMAKE_SOURCE_DIR}/Engine/Shaders/Atmosphere/CelestialDiscStarCompute.slang"
++             "${CMAKE_SOURCE_DIR}/Engine/Shaders/Atmosphere/LensFlareCompute.slang"
++             "${CMAKE_SOURCE_DIR}/Engine/Shaders/Fluid/FluidSolverLayouts.slang"
++diff --git a/Engine/GeometricRaster/Atmosphere/AtmosphericSkySequence.h b/Engine/GeometricRaster/Atmosphere/AtmosphericSkySequence.h
++--- a/Engine/GeometricRaster/Atmosphere/AtmosphericSkySequence.h
+++++ b/Engine/GeometricRaster/Atmosphere/AtmosphericSkySequence.h
++@@ -38,6 +38,9 @@
++     Mathematics::LinearRGB GroundAlbedo               { 0.08f, 0.12f, 0.18f };       // [-] - Neutral cool lower-hemisphere bounce albedo
++     bool                   OrbitalViewEnabled         = false;                       // [-] - Enables outer-space planetary limb + star + sun rendering
++     float                  ObserverAltitudeMeters     = 100.0f;                      // [m] - Observer altitude above sea level (e.g. 800000+ for orbit)
+++    bool                   AirlessBody                = false;                       // [-] - Suppress all sky, cloud and fog media (Luna).
+++
+++    [[nodiscard]] bool HasAtmosphere() const noexcept { return AtmosphereEnabled && !AirlessBody; }
++ };
++ 
++ //------------------------------------------------------------------------------------------------------------------------
++diff --git a/Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.cpp b/Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.cpp
++--- a/Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.cpp
+++++ b/Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.cpp
++@@ -649,7 +649,7 @@
++     const Mathematics::Axis3D&          SunDirection,
++     const WorldAtmosphereConfiguration& Atmosphere) noexcept
++ {
++-    if (SunDirection.Z <= 0.01f)
+++    if (Atmosphere.Medium.AirlessBody || SunDirection.Z <= 0.01f)
++     {
++         return 1.0f;
++     }
++@@ -746,7 +746,7 @@
++ {
++     Mathematics::LinearRGB TotalRad { 0.0f, 0.0f, 0.0f };
++     const float SafeMax = std::max(0.0f, MaxDistanceMeters);
++-    if (SafeMax <= 0.05f)
+++    if (Atmosphere.Medium.AirlessBody || SafeMax <= 0.05f)
++     {
++         return TotalRad;
++     }
++@@ -861,6 +861,7 @@
++     float                               PixelJitter01) noexcept
++ {
++     OutTransmittance = 1.0f;
+++    if (Atmosphere.Medium.AirlessBody) return { 0.0f, 0.0f, 0.0f };
++     Mathematics::LinearRGB TotalRad = EvaluateLocalCloudsOverSegment(
++         RayOriginWorld, RayDirection, 60000.0f, SunDirection, SolarIrradiance, SkyRadiance,
++         Atmosphere, OutTransmittance, PixelJitter01);
++diff --git a/Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.h b/Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.h
++--- a/Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.h
+++++ b/Engine/GeometricRaster/Atmosphere/VolumetricCloudSequence.h
++@@ -84,8 +84,8 @@
++     float                    WindShearPerKilometer    = 0.35f;   // [/km]    - Vertical altitude shear
++     float                    WindVeerDegreesPerKm     = 12.0f;   // [d/km]   - Ekman wind bearing rotation with altitude [-60..60]
++     float                    WindTurbulence           = 0.30f;   // [0..1]   - Wind eddy warp on cloud silhouettes
++-    float                    CloudRenderScale         = 0.50f;   // [0.25..1]- Offscreen cloud pass resolution scale (0.5 = half-res)
++-    uint32_t                 CloudMarchSteps          = 48u;     // [16..96] - Volumetric cloud deck raymarch steps
+++    float                    CloudRenderScale         = 1.00f;   // [0.25..1]- Offscreen cloud pass resolution scale
+++    uint32_t                 CloudMarchSteps          = 104u;    // [32..256] - Volumetric cloud deck raymarch steps
++     CloudShadowConfiguration CloudShadow              {};
++ };
++ 
++diff --git a/Engine/GeometricRaster/GlobalIllumination/TieredWorldRenderSequence.cpp b/Engine/GeometricRaster/GlobalIllumination/TieredWorldRenderSequence.cpp
++--- a/Engine/GeometricRaster/GlobalIllumination/TieredWorldRenderSequence.cpp
+++++ b/Engine/GeometricRaster/GlobalIllumination/TieredWorldRenderSequence.cpp
++@@ -60,7 +60,7 @@
++     const WorldSceneSpecification* OptionalScene,
++     const AtmosphericSkySequence*  OptionalSky) noexcept
++ {
++-    if (OptionalScene != nullptr && OptionalSky != nullptr && OptionalScene->Atmosphere.Medium.AtmosphereEnabled)
+++    if (OptionalScene != nullptr && OptionalSky != nullptr && OptionalScene->Atmosphere.Medium.HasAtmosphere())
++     {
++         return OptionalSky->SampleSkyViewDirection(Dir);
++     }
++@@ -90,7 +90,7 @@
++         const AtmosphericSkySequence&  SkySeq)
++     {
++         const auto& Atmo = Scene.Atmosphere;
++-        if (!Atmo.Medium.AtmosphereEnabled || Atmo.Medium.OrbitalViewEnabled || !Atmo.Clouds.CloudsEnabled || FullW == 0u || FullH == 0u)
+++        if (!Atmo.Medium.HasAtmosphere() || Atmo.Medium.OrbitalViewEnabled || !Atmo.Clouds.CloudsEnabled || FullW == 0u || FullH == 0u)
++         {
++             WidthPx = HeightPx = 0u;
++             RgbaT.clear();
++@@ -184,7 +184,7 @@
++     float                             ScreenV       = -1.0f) noexcept
++ {
++     const auto& Atmo = Scene.Atmosphere;
++-    if (!Atmo.Medium.AtmosphereEnabled)
+++    if (!Atmo.Medium.HasAtmosphere())
++     {
++         return EvaluateSkyDome(RayDir, Scene.SkyRadiance, nullptr, nullptr);
++     }
++@@ -602,7 +602,7 @@
++ 
++         if (!Hit.HitConfirmed)
++         {
++-            const auto Sky = (Bounce == 0u && Scene.Atmosphere.Medium.AtmosphereEnabled)
+++            const auto Sky = (Bounce == 0u && Scene.Atmosphere.Medium.HasAtmosphere())
++                 ? EvaluateBackgroundSkyRadiance(Scene, SkySeq, RayO, RayD)
++                 : EvaluateSkyDome(RayD, Scene.SkyRadiance, &Scene, &SkySeq);
++             Radiance.R += Throughput.R * Sky.R;
++@@ -689,7 +689,7 @@
++                 SunQuery.MaximumDistance = 120.0f;
++                 if (!Scene.SceneTree.QueryRayOccluded(SunQuery))
++                 {
++-                    const float CloudShadowT = Scene.Atmosphere.Medium.AtmosphereEnabled
+++                    const float CloudShadowT = Scene.Atmosphere.Medium.HasAtmosphere()
++                         ? VolumetricCloudSequence::EvaluateSolarCloudTransmittance(
++                               HitPos, JitterSun, Scene.Atmosphere.Clouds,
++                               Scene.Atmosphere.Medium.PlanetRadiusMeters, Scene.Atmosphere.SimulationSeconds)
++@@ -1095,7 +1095,12 @@
++ 
++ void TieredWorldRenderSequence::SynchronizeWorldAtmosphere(WorldSceneSpecification& InOutScene)
++ {
++-    if (!InOutScene.Atmosphere.Medium.AtmosphereEnabled)
+++    if (InOutScene.Atmosphere.Medium.AirlessBody)
+++    {
+++        InOutScene.SkyRadiance = { 0.0f, 0.0f, 0.0f };
+++        return;
+++    }
+++    if (!InOutScene.Atmosphere.Medium.HasAtmosphere())
++     {
++         return;
++     }
++@@ -1343,7 +1348,7 @@
++     }
++     const float AspectRatio = static_cast<float>(Result.WidthPx) / static_cast<float>(std::max(1u, Result.HeightPx));
++     const ProjectedLensFlareFrame FlareProj =
++-        (Config.DebugChannel == 0u && PreparedScene.Atmosphere.Medium.AtmosphereEnabled && PreparedScene.Atmosphere.LensFlare.Enabled)
+++        (Config.DebugChannel == 0u && PreparedScene.Atmosphere.Medium.HasAtmosphere() && PreparedScene.Atmosphere.LensFlare.Enabled)
++             ? LensFlareSequence::ResolveSolarFlareProjection(
++                   CurBasis.CameraOrigin, CurBasis.ForwardAxis, CurBasis.RightAxis, CurBasis.UpAxis,
++                   CurBasis.TanHalfFovX, CurBasis.TanHalfFovY, PreparedScene.Atmosphere, &PreparedScene.SceneTree)
++@@ -1368,7 +1373,7 @@
++                         ? EvaluateDebugChannelColor(Config.DebugChannel, CurBasis.CameraOrigin, Hit, Mat)
++                         : EvaluateMatCapShading(CurBasis, Hit.TangentFrame.NormalZ, Mat);
++                 }
++-                else if (PreparedScene.Atmosphere.Medium.AtmosphereEnabled && Config.DebugChannel == 0u)
+++                else if (PreparedScene.Atmosphere.Medium.HasAtmosphere() && Config.DebugChannel == 0u)
++                 {
++                     const float FU = (static_cast<float>(PX) + 0.5f) / static_cast<float>(Result.WidthPx);
++                     const float FV = (static_cast<float>(PY) + 0.5f) / static_cast<float>(Result.HeightPx);
++@@ -1462,7 +1467,7 @@
++                     const float HitDist = Hit.ValidHit ? Mathematics::EvaluateLength(Hit.WorldPosition - CurBasis.CameraOrigin) : 3500.0f;
++                     const float Ign = EvaluateCloudIgn(PX, PY);
++                     const auto& Atmo = PreparedScene.Atmosphere;
++-                    const auto SkyForVol = Atmo.Medium.AtmosphereEnabled
+++                    const auto SkyForVol = Atmo.Medium.HasAtmosphere()
++                         ? SkySequence.SampleSkyViewDirection(RayDir)
++                         : PreparedScene.SkyRadiance;
++ 
++@@ -1485,7 +1490,7 @@
++                         };
++                     }
++ 
++-                    if (!Atmo.Medium.OrbitalViewEnabled &&
+++                    if (!Atmo.Medium.AirlessBody && !Atmo.Medium.OrbitalViewEnabled &&
++                         (Atmo.Fog.HeightFog.Enabled || Atmo.Fog.AerialFog.Enabled || !Atmo.Fog.LocalFogs.empty()))
++                     {
++                         const auto FogRes = VolumetricFogSequence::EvaluateVolumetricFog(
++@@ -1832,7 +1837,7 @@
++             Mathematics::LinearRGB FinalHdr = Result.DirectLighting.DirectHdrRadiance[Off];
++             if (Hit.ValidHit && Hit.MaterialSlot < MatCount)
++             {
++-                if (PreparedScene.Atmosphere.Medium.AtmosphereEnabled &&
+++                if (PreparedScene.Atmosphere.Medium.HasAtmosphere() &&
++                     PreparedScene.Atmosphere.Clouds.CloudsEnabled &&
++                     PreparedScene.Atmosphere.Clouds.CloudShadow.ShadowEnabled &&
++                     PreparedScene.AreaLights.empty())
++@@ -1880,7 +1885,7 @@
++                     FinalHdr = FinalHdr + Result.SpecularGlass.IndirectSpecularHdr[Off] * SpecAo;
++                 }
++             }
++-            else if (PreparedScene.Atmosphere.Medium.AtmosphereEnabled && VisTargets.GlassPeelFront64[Off] == 0ull)
+++            else if (PreparedScene.Atmosphere.Medium.HasAtmosphere() && VisTargets.GlassPeelFront64[Off] == 0ull)
++             {
++                 const float FU = (static_cast<float>(PX) + 0.5f) / static_cast<float>(Result.WidthPx);
++                 const float FV = (static_cast<float>(PY) + 0.5f) / static_cast<float>(Result.HeightPx);
++@@ -1910,7 +1915,7 @@
++                 const float Ign = EvaluateCloudIgn(PX, PY);
++ 
++                 const auto& Atmo = PreparedScene.Atmosphere;
++-                const Mathematics::LinearRGB SkyForVol = Atmo.Medium.AtmosphereEnabled
+++                const Mathematics::LinearRGB SkyForVol = Atmo.Medium.HasAtmosphere()
++                     ? SkySequence.SampleSkyViewDirection(RayDir)
++                     : EvaluateSkyDome(RayDir, PreparedScene.SkyRadiance, nullptr, nullptr);
++ 
++@@ -1939,7 +1944,7 @@
++                     };
++                 }
++ 
++-                if (!Atmo.Medium.OrbitalViewEnabled &&
+++                if (!Atmo.Medium.AirlessBody && !Atmo.Medium.OrbitalViewEnabled &&
++                     (Atmo.Fog.HeightFog.Enabled || Atmo.Fog.AerialFog.Enabled || !Atmo.Fog.LocalFogs.empty()))
++                 {
++                     const auto FogRes = VolumetricFogSequence::EvaluateVolumetricFog(
++diff --git a/Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.cpp b/Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.cpp
++--- a/Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.cpp
+++++ b/Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.cpp
++@@ -8,6 +8,7 @@
++ //------------------------------------------------------------------------------------------------------------------------
++ 
++ #include "Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.h"
+++#include "Engine/GeometricRaster/Atmosphere/CloudNoiseVolume.h"
++ #include "Engine/GeometricRaster/Atmosphere/LensFlareSequence.h"
++ #include "Engine/GeometrySpace/Analysis/CurvatureAnalysis.h"
++ 
++@@ -332,7 +333,7 @@
++         return false;
++     }
++ 
++-    constexpr std::array<VkDescriptorType, 28u> SlotTypes {{
+++    constexpr std::array<VkDescriptorType, 29u> SlotTypes {{
++         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
++         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
++         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
++@@ -361,6 +362,7 @@
++         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
++         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
++         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+++        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, // 28: shared cloud shape/detail/blue-noise volume
++     }};
++ 
++     const std::filesystem::path ShaderBinaryPath = CompiledShaderDirectory / "WorldViewportRadiometricCompute.comp.spv";
++@@ -657,6 +659,13 @@
++     EnsureBufferCapacity(SkyViewUniformBuffer, sizeof(AtmosphericSkyUniformStd140), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
++     constexpr uint64_t SkyLutBytes = static_cast<uint64_t>(AtmosphericSkySequence::SkyViewWidthPx) *
++                                      AtmosphericSkySequence::SkyViewHeightPx * sizeof(float) * 4ull;
+++    const auto& CloudTexels = CloudNoiseVolume::QueryTexels();
+++    if (!UploadToDeviceBuffer(CloudNoiseVolumeBuffer, CloudTexels.data(), CloudTexels.size() * sizeof(uint32_t),
+++                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
+++    {
+++        TeardownSequence();
+++        return false;
+++    }
++     EnsureDeviceBufferCapacity(AtmosphericSkyViewLutBuffer, SkyLutBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
++     {
++         const std::vector<uint8_t> ZeroLut(static_cast<std::size_t>(SkyLutBytes), 0u);
++@@ -749,6 +758,7 @@
++         BoundDevice->ReleaseBuffer(PongShadowAoBuffer);
++         BoundDevice->ReleaseBuffer(PongGiHdrBuffer);
++         BoundDevice->ReleaseBuffer(CloudRadiometricBuffer);
+++        BoundDevice->ReleaseBuffer(CloudNoiseVolumeBuffer);
++         BoundDevice->ReleaseBuffer(ClipmapUniformBuffer);
++         BoundDevice->ReleaseBuffer(ClipmapStaticDist0Buffer);
++         BoundDevice->ReleaseBuffer(ClipmapDist1Buffer);
++@@ -1059,7 +1069,7 @@
++         return false;
++     }
++ 
++-    const bool AtmoActive = Scene.Atmosphere.Medium.AtmosphereEnabled;
+++    const bool AtmoActive = Scene.Atmosphere.Medium.HasAtmosphere();
++     const auto SolarSolved = CelestialEphemerisSolver::SolveSolarEphemeris(Scene.Atmosphere.Solar);
++     const Mathematics::Axis3D SunDir = AtmoActive
++         ? SolarSolved.WorldDirectionToSun
++@@ -1218,7 +1228,7 @@
++     Uniforms.AtmosphereMaskPad[0] = AtmoActive ? 1u : 0u;
++     Uniforms.AtmosphereMaskPad[1] = AtmosphericSkySequence::SkyViewWidthPx;
++     Uniforms.AtmosphereMaskPad[2] = AtmosphericSkySequence::SkyViewHeightPx;
++-    Uniforms.AtmosphereMaskPad[3] = 0u;
+++    Uniforms.AtmosphereMaskPad[3] = Scene.Atmosphere.Medium.AirlessBody ? 16u : 0u;
++ 
++     Uniforms.SunCascadeCenterSpan[0] = CachedSunCascade.CenterWorld.X;
++     Uniforms.SunCascadeCenterSpan[1] = CachedSunCascade.CenterWorld.Y;
++@@ -1254,7 +1264,7 @@
++     const uint32_t SdfVolD = std::max(1u, CachedSdfDimZ);
++     EnsureSdfVolumeTexture(SdfVolW, SdfVolH, SdfVolD);
++ 
++-    auto MakePrecomputeSlots = [&](uint64_t UniOffset, bool WritingSdfVolume) -> std::array<ComputeSlotDescriptor, 28u>
+++    auto MakePrecomputeSlots = [&](uint64_t UniOffset, bool WritingSdfVolume) -> std::array<ComputeSlotDescriptor, 29u>
++     {
++         VkImageView ReadVolView  = WritingSdfVolume
++             ? SdfDummySampledVolume3D.ViewHandle
++@@ -1293,6 +1303,7 @@
++             { 25u, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CloudRadiometricBuffer.BufferHandle,     VK_WHOLE_SIZE },
++             { 26u, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_NULL_HANDLE, 0ull, 0ull, ReadVolView, SdfLinearSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
++             { 27u, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          VK_NULL_HANDLE, 0ull, 0ull, WriteVolView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL },
+++            { 28u, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CloudNoiseVolumeBuffer.BufferHandle, VK_WHOLE_SIZE },
++         }};
++     };
++ 
++@@ -1843,7 +1854,7 @@
++     return RenderWorldViewportWithEngine(Config, 0u, Camera, Scene, OutDisplayRgba8);
++ }
++ 
++-void VulkanWorldRenderSequence::DispatchGpuSkyViewLut(VkCommandBuffer Cmd, const WorldSceneSpecification& Scene)
+++void VulkanWorldRenderSequence::DispatchGpuSkyViewLut(VkCommandBuffer Cmd, const WorldSceneSpecification& Scene, float CameraAltitudeM)
++ {
++     if (SkyViewLutProgramHandle == UINT32_MAX || SkyViewUniformBuffer.HostAddress == nullptr ||
++         AtmosphericSkyViewLutBuffer.BufferHandle == VK_NULL_HANDLE)
++@@ -1882,7 +1893,7 @@
++ 
++     SkyUni.LutDimensions[0]         = AtmosphericSkySequence::SkyViewWidthPx;
++     SkyUni.LutDimensions[1]         = AtmosphericSkySequence::SkyViewHeightPx;
++-    SkyUni.ObserverParams[0]        = Atmo.Medium.ObserverAltitudeMeters;
+++    SkyUni.ObserverParams[0]        = CameraAltitudeM >= 0.0f ? CameraAltitudeM : Atmo.Medium.ObserverAltitudeMeters;
++     SkyUni.ObserverParams[1]        = Atmo.Medium.OrbitalViewEnabled ? 1.0f : 0.0f;
++ 
++     std::memcpy(SkyViewUniformBuffer.HostAddress, &SkyUni, sizeof(SkyUni));
++@@ -2034,7 +2045,7 @@
++     Uniforms.CameraForwardHeight[2] = Basis.ForwardAxis.Z;
++     Uniforms.CameraForwardHeight[3] = static_cast<float>(HeightPx);
++ 
++-    const bool AtmoActive = Scene.Atmosphere.Medium.AtmosphereEnabled;
+++    const bool AtmoActive = Scene.Atmosphere.Medium.HasAtmosphere();
++     const auto SolarSolved = CelestialEphemerisSolver::SolveSolarEphemeris(Scene.Atmosphere.Solar);
++     const Mathematics::Axis3D SunDir = AtmoActive
++         ? SolarSolved.WorldDirectionToSun
++@@ -2192,10 +2203,15 @@
++         (Config.GlobalIlluminationEnabled ? 0u : 1u) |
++         (Config.ReflectionsEnabled        ? 0u : 2u) |
++         (Config.PathTraceDenoise          ? 0u : 4u) |
++-        (Config.RaytracingEnabled         ? 0u : 8u);
++-
++-    Uniforms.AtmosphereObserver[0] = Scene.Atmosphere.Medium.ObserverAltitudeMeters;
++-    Uniforms.AtmosphereObserver[1] = Scene.Atmosphere.Medium.OrbitalViewEnabled ? 1.0f : 0.0f;
+++        (Config.RaytracingEnabled         ? 0u : 8u) |
+++        (Scene.Atmosphere.Medium.AirlessBody ? 16u : 0u);
+++
+++    const auto& Medium = Scene.Atmosphere.Medium;
+++    const float ObserverOffsetM = Medium.OrbitalViewEnabled ? Medium.ObserverAltitudeMeters : 0.0f;
+++    const bool OrbitalBackground = Medium.OrbitalViewEnabled ||
+++        Camera.CameraOrigin.Z >= Medium.AtmosphereThicknessMeters * 0.85f;
+++    Uniforms.AtmosphereObserver[0] = ObserverOffsetM;
+++    Uniforms.AtmosphereObserver[1] = OrbitalBackground ? 1.0f : 0.0f;
++     Uniforms.AtmosphereObserver[2] = Scene.Atmosphere.Medium.AtmosphereThicknessMeters;
++     Uniforms.AtmosphereObserver[3] = Scene.Atmosphere.Medium.MieAnisotropy;
++ 
++@@ -2238,13 +2254,15 @@
++         C.SunAxisToggle[1]   = SunDir.Y;
++         C.SunAxisToggle[2]   = SunDir.Z;
++         C.SunAxisToggle[3]   = Deck.CloudsEnabled ? 1.0f : 0.0f;
++-        C.SolarIrradianceExt[0] = EffectiveSunIrrad.R;
++-        C.SolarIrradianceExt[1] = EffectiveSunIrrad.G;
++-        C.SolarIrradianceExt[2] = EffectiveSunIrrad.B;
+++        const float CloudSolarScale = Atmo.Solar.SolarEnabled ? Atmo.Solar.SolarIntensityMultiplier * 0.72f : 0.0f;
+++        C.SolarIrradianceExt[0] = SolarSolved.EffectiveSolarTint.R * CloudSolarScale;
+++        C.SolarIrradianceExt[1] = SolarSolved.EffectiveSolarTint.G * CloudSolarScale;
+++        C.SolarIrradianceExt[2] = SolarSolved.EffectiveSolarTint.B * CloudSolarScale;
++         C.SolarIrradianceExt[3] = Atmo.Medium.PlanetRadiusMeters;
++-        C.SkyColorWind[0]        = Scene.SkyRadiance.R;
++-        C.SkyColorWind[1]        = Scene.SkyRadiance.G;
++-        C.SkyColorWind[2]        = Scene.SkyRadiance.B;
+++        const float SkyScale = Atmo.Medium.SkyBrightnessMultiplier * Atmo.Solar.SolarIntensityMultiplier / 22.0f;
+++        C.SkyColorWind[0]        = 0.37f * Atmo.Medium.SkyTint.R * SkyScale;
+++        C.SkyColorWind[1]        = 0.46f * Atmo.Medium.SkyTint.G * SkyScale;
+++        C.SkyColorWind[2]        = 0.62f * Atmo.Medium.SkyTint.B * SkyScale;
++         C.SkyColorWind[3]        = Deck.FollowWindEnabled ? 1.0f : 0.0f;
++         C.DeckGeometry[0]       = std::clamp(Deck.CloudFloorMeters, 100.0f, std::max(200.0f, Deck.DeckCeilingMeters - 100.0f));
++         C.DeckGeometry[1]       = Deck.LayerThicknessMeters;
++@@ -2279,7 +2297,7 @@
++         C.CloudShadowOptics[3]  = Deck.CloudShadow.ShadowAnvil;
++         C.CloudPassControl[0]   = (AtmoActive && Deck.CloudsEnabled) ? static_cast<float>(CloudW) : 0.0f;
++         C.CloudPassControl[1]   = (AtmoActive && Deck.CloudsEnabled) ? static_cast<float>(CloudH) : 0.0f;
++-        C.CloudPassControl[2]   = static_cast<float>(std::clamp(Deck.CloudMarchSteps, 12u, 96u));
+++        C.CloudPassControl[2]   = static_cast<float>(std::clamp(Deck.CloudMarchSteps, 32u, 256u));
++         C.CloudPassControl[3]   = (Atmo.ForceFieldSource != nullptr && Atmo.ForceFieldSource->QueryActiveSourceCount() > 0u) ? 1.0f : 0.0f;
++ 
++         uint32_t LocalCloudCount = 0u;
++@@ -2450,7 +2468,7 @@
++         F.GodRayTint[3]    = Fg.GodRays.Decay;
++ 
++         auto& Cel = Uniforms.CelestialParams;
++-        const bool OrbitalView = Atmo.Medium.OrbitalViewEnabled;
+++        const bool OrbitalView = OrbitalBackground;
++         const Mathematics::LinearRGB EffectiveCelSunTrans = OrbitalView ? Mathematics::LinearRGB { 1.0f, 1.0f, 1.0f } : SolarTrans;
++         Cel.SunAxisRadius[0]    = SunDir.X;
++         Cel.SunAxisRadius[1]    = SunDir.Y;
++@@ -2476,8 +2494,8 @@
++         Cel.ClockViewportDims[3]      = static_cast<float>(LunarStarfieldSequence::MaxMoonSlots);
++ 
++         const uint32_t AtmoFlagBits =
++-            (Atmo.Medium.AtmosphereEnabled  ? 1u : 0u) |
++-            (Atmo.Medium.OrbitalViewEnabled ? 2u : 0u) |
+++            (Atmo.Medium.HasAtmosphere()  ? 1u : 0u) |
+++            (OrbitalBackground ? 2u : 0u) |
++             (Atmo.Stars.EnableGalacticBand ? 4u : 0u) |
++             (Atmo.Stars.EnableBrightStarCatalog ? 8u : 0u);
++         Cel.AtmoMediumPack[0] = Atmo.Medium.RayleighStrength;
++@@ -2667,11 +2685,11 @@
++     WriteStamp(0u, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
++     if (AtmoActive)
++     {
++-        DispatchGpuSkyViewLut(Cmd, Scene);
+++        DispatchGpuSkyViewLut(Cmd, Scene, std::max(0.0f, Camera.CameraOrigin.Z + ObserverOffsetM));
++     }
++     WriteStamp(1u, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
++ 
++-    auto MakePassSlots = [&](uint64_t UniOffset, bool SwapPingPong) -> std::array<ComputeSlotDescriptor, 28u>
+++    auto MakePassSlots = [&](uint64_t UniOffset, bool SwapPingPong) -> std::array<ComputeSlotDescriptor, 29u>
++     {
++         const auto& InShadow  = SwapPingPong ? PongShadowAoBuffer : PingShadowAoBuffer;
++         const auto& InGi      = SwapPingPong ? PongGiHdrBuffer    : PingGiHdrBuffer;
++@@ -2709,6 +2727,7 @@
++             { 25u, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CloudRadiometricBuffer.BufferHandle,     CloudBytes    },
++             { 26u, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_NULL_HANDLE, 0ull, 0ull, ReadVolView, SdfLinearSampler, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
++             { 27u, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,          VK_NULL_HANDLE, 0ull, 0ull, SdfDummyStorageVolume3D.ViewHandle, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL },
+++            { 28u, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CloudNoiseVolumeBuffer.BufferHandle, VK_WHOLE_SIZE },
++         }};
++     };
++ 
++diff --git a/Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.h b/Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.h
++--- a/Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.h
+++++ b/Engine/GeometricRaster/GlobalIllumination/VulkanWorldRenderSequence.h
++@@ -141,7 +141,7 @@
++         VkBufferUsageFlags    UsageMask);
++ 
++     [[nodiscard]] bool DispatchGpuSignedDistanceGrid(const WorldSceneSpecification& Scene);
++-    void DispatchGpuSkyViewLut(VkCommandBuffer Cmd, const WorldSceneSpecification& Scene);
+++    void DispatchGpuSkyViewLut(VkCommandBuffer Cmd, const WorldSceneSpecification& Scene, float CameraAltitudeM = -1.0f);
++     void UploadSolarCascadeRadiosity(const WorldSceneSpecification& Scene, bool BuildDdgiOnGpu);
++     [[nodiscard]] bool DispatchGpuScenePrecompute(const WorldSceneSpecification& Scene, bool BuildDdgiOnGpu);
++     void EnsureSdfVolumeTexture(uint32_t DimX, uint32_t DimY, uint32_t DimZ);
++@@ -222,6 +222,7 @@
++     DeviceBufferResource   PongShadowAoBuffer          {};
++     DeviceBufferResource   PongGiHdrBuffer             {};
++     DeviceBufferResource   CloudRadiometricBuffer      {};
+++    DeviceBufferResource   CloudNoiseVolumeBuffer      {};
++ 
++     DeviceImageResource    SdfBakedVolume3D            {};
++     DeviceImageResource    SdfDummySampledVolume3D     {};
++diff --git a/Engine/Shaders/Atmosphere/SkyViewTransmittanceCompute.slang b/Engine/Shaders/Atmosphere/SkyViewTransmittanceCompute.slang
++--- a/Engine/Shaders/Atmosphere/SkyViewTransmittanceCompute.slang
+++++ b/Engine/Shaders/Atmosphere/SkyViewTransmittanceCompute.slang
++@@ -268,14 +268,13 @@
++     float3                     CamOriginM,
++     float3                     SunDir,
++     AtmosphericSkyUniformBlock Uni,
++-    float                      SimulationSeconds,
++-    float                      CloudCoverage01,
+++    float                      SurfaceCloudTransmittance,
++     out float3                 OutSpaceTransmittance)
++ {
++     float PlanetR  = max(500000.0, Uni.PlanetDimensions.x);
++     float AtmoTop  = max(60000.0, Uni.PlanetDimensions.y * 1.65);
++     float AtmoR    = PlanetR + AtmoTop;
++-    float ObsAlt   = max(AtmoTop * 1.15, Uni.ObserverParams.x);
+++    float ObsAlt   = Uni.ObserverParams.x;
++     float RayMul   = max(0.0, Uni.ScatteringStrengths.x);
++     float MieMul   = max(0.0, Uni.ScatteringStrengths.y);
++     float MieG     = clamp(Uni.ScatteringStrengths.z, 0.0, 0.99);
++@@ -356,26 +355,18 @@
++         float3 LandAlb  = float3(0.10 + 0.12 * (1.0 - Moist), 0.14 + 0.08 * Moist, 0.06 + 0.04 * (1.0 - Moist));
++         float3 SurfAlb  = lerp(lerp(OceanAlb, LandAlb, Land), float3(0.78, 0.82, 0.88), Ice);
++ 
++-        float Drift     = SimulationSeconds * 0.008;
++-        float Swirl     = FbmSkyGpu3(N * 4.5 + float3(Drift, 0.0, 0.0), 3u);
++-        float CloudN    = FbmSkyGpu3(float3(N.x * 7.2 + Drift * 1.4 + Swirl * 0.65, N.y * 9.0 - Swirl * 0.45, N.z * 7.2 + Drift * 0.7), 4u);
++-        float CovThresh = 1.0 - clamp(CloudCoverage01, 0.05, 0.95) * 0.68;
++-        float CloudMask = smoothstep(CovThresh - 0.14, CovThresh + 0.16, CloudN);
++-
++         float  NdotL    = max(0.0, dot(N, SunDir));
++-        float  TwiWrap  = clamp((dot(N, SunDir) + 0.16) / 0.34, 0.0, 1.0);
++         float3 SurfSunT = ComputeAtmoTransmittanceAlongRay(HitP + N * 120.0, SunDir, PlanetR, AtmoR, RayMul, MieMul, OzoneMul, RayH, MieH);
++ 
++         float3 HalfV = normalize(SunDir - RayDir);
++-        float  Spec  = (1.0 - Land) * (1.0 - Ice) * (1.0 - CloudMask) * pow(max(0.0, dot(N, HalfV)), 64.0) * 0.55;
++-
++-        float  SurfShade  = NdotL * (1.0 - CloudMask * 0.72);
++-        float  CloudShade = max(0.04, NdotL * 0.95 + TwiWrap * 0.08);
++-        float3 LitPlanet  = (SurfAlb * SurfShade + float3(0.90, 0.92, 0.96) * CloudMask * CloudShade + float3(Spec * NdotL)) *
+++        float  Spec  = (1.0 - Land) * (1.0 - Ice) * pow(max(0.0, dot(N, HalfV)), 64.0) * 0.55;
+++
+++        float  SurfShade  = NdotL * SurfaceCloudTransmittance;
+++        float3 LitPlanet = (SurfAlb * SurfShade + float3(Spec * NdotL * SurfaceCloudTransmittance)) *
++                             SurfSunT * SolarScale * 1.45;
++ 
++         float NightMask = smoothstep(0.06, -0.14, dot(N, SunDir)) * Land * (1.0 - Ice);
++-        float CityGlow  = smoothstep(0.76, 0.94, NoiseSkyGpu3(N * 42.0)) * NightMask * (1.0 - CloudMask * 0.7) * 0.045;
+++        float CityGlow  = smoothstep(0.76, 0.94, NoiseSkyGpu3(N * 42.0)) * NightMask * 0.045;
++         OutRgb += TAccum * (LitPlanet + float3(1.0, 0.65, 0.25) * CityGlow);
++ 
++         OutSpaceTransmittance = float3(0.0, 0.0, 0.0);
++diff --git a/Engine/Shaders/Atmosphere/VolumetricCloudCompute.slang b/Engine/Shaders/Atmosphere/VolumetricCloudCompute.slang
++--- a/Engine/Shaders/Atmosphere/VolumetricCloudCompute.slang
+++++ b/Engine/Shaders/Atmosphere/VolumetricCloudCompute.slang
++@@ -1,7 +1,7 @@
++ /*============================================================================================================================================
++                                                       VOLUMETRICCLOUDCOMPUTE.SLANG
++ ============================================================================================================================================*/
++-// 🧩 Anti-Banded 64-Step IGN Raymarched 3D FBM Planetary Volumetric Clouds (12 Formations), Bounded LocalCloudVolume & 3-Octave Multi-Scattering
+++// Planetary layered cloud transport with independently depth-clipped local volumes.
++ 
++ static const float CloudPiConst = 3.14159265359;
++ 
++@@ -102,138 +102,6 @@
++     float G2  = G * G;
++     float Den = max(1.0e-3, 1.0 + G2 - 2.0 * G * CosTheta);
++     return (1.0 - G2) / (4.0 * CloudPiConst * pow(Den, 1.5));
++-}
++-
++-float2 IntersectCloudShell(float OriginZ, float DirZ, float Radius)
++-{
++-    float B    = OriginZ * DirZ;
++-    float C    = (OriginZ - Radius) * (OriginZ + Radius);
++-    float Disc = B * B - C;
++-    if (Disc < 0.0) return float2(-1.0, -1.0);
++-    float Root = sqrt(Disc);
++-    return float2(-B - Root, -B + Root);
++-}
++-
++-float SampleCloudDeckDensityGpu(
++-    float3 P,
++-    float  PlanetR,
++-    float  FloorM,
++-    float  ThickM,
++-    float  Cov,
++-    float  Anvil,
++-    float  DensMul,
++-    float  FScale,
++-    float  WindX,
++-    float  WindY,
++-    float  ShearPerKm,
++-    uint   FormationIndex,
++-    float  DistanceMeters,
++-    float  VeerRadPerKm = 0.0,
++-    float  TurbulenceAmp = 0.0,
++-    float  TimeSec = 0.0)
++-{
++-    float Alt     = length(P) - PlanetR;
++-    float H       = clamp((Alt - FloorM) / max(1.0, ThickM), 0.0, 1.0);
++-    float Bot     = smoothstep(0.0, 0.22, H);
++-    float Top     = 1.0 - smoothstep(max(0.20, 0.72 - 0.24 * Anvil), 1.0, H);
++-    float Profile = Bot * Top;
++-    if (Profile <= 0.001) return 0.0;
++-
++-    float HighOctFade = 1.0 - smoothstep(5500.0, 19000.0, DistanceMeters);
++-    float AltKm       = (Alt - FloorM) * 0.001;
++-    float VeerAng     = AltKm * VeerRadPerKm;
++-    float CsV         = cos(VeerAng);
++-    float SnV         = sin(VeerAng);
++-    float VeeredWX    = WindX * CsV - WindY * SnV;
++-    float VeeredWY    = WindX * SnV + WindY * CsV;
++-    float ShearShift  = AltKm * ShearPerKm * 45.0;
++-    float BoilPhase   = TimeSec * (0.045 + 0.095 * TurbulenceAmp);
++-    float TurbWarpX   = (TurbulenceAmp > 1.0e-4)
++-        ? (LatticeNoiseCloud3(float3((P.x - VeeredWX) * FScale * 0.45, (P.y - VeeredWY) * FScale * 0.45, AltKm * 0.8 + BoilPhase)) - 0.5) * (TurbulenceAmp * 210.0)
++-        : 0.0;
++-    float TurbWarpY   = (TurbulenceAmp > 1.0e-4)
++-        ? (LatticeNoiseCloud3(float3((P.y - VeeredWY) * FScale * 0.45 + 7.3, (P.x - VeeredWX) * FScale * 0.45, AltKm * 0.8 - BoilPhase * 0.85)) - 0.5) * (TurbulenceAmp * 210.0)
++-        : 0.0;
++-    float WX = P.x - VeeredWX - ShearShift + TurbWarpX;
++-    float WY = P.y - VeeredWY + TurbWarpY;
++-    float WZ = (Alt - FloorM) + TimeSec * (1.8 + 4.2 * TurbulenceAmp);
++-
++-    float ShapeCov = clamp(Cov + Anvil * H * H * 0.22, 0.0, 1.0);
++-    float NNorm    = 0.0;
++-
++-    if (FormationIndex == 6u) // Lenticular (smooth FBM-warped laminar mountain lenses)
++-    {
++-        float MacroLobes    = LatticeNoiseCloud3(float3(WX * FScale * 0.22, WY * FScale * 0.55, 1.7));
++-        float SubtleWarp    = CloudFbmGpu3(float3(WX * FScale * 0.58, WY * FScale * 0.58, WZ * FScale * 0.30), HighOctFade);
++-        float LaminarSlices = 0.5 + 0.5 * sin(H * CloudPiConst * 2.5 - 0.3 + (SubtleWarp - 0.5) * 0.85);
++-        float LensMask      = smoothstep(0.45, 0.76, MacroLobes + (SubtleWarp - 0.5) * 0.26);
++-        NNorm   = clamp(LensMask * (0.52 + 0.48 * HighOctFade * LaminarSlices), 0.0, 1.0);
++-        Profile = smoothstep(0.04, 0.24, H) * (1.0 - smoothstep(0.74, 0.96, H));
++-    }
++-    else if (FormationIndex == 7u) // Mammatus (3-axis hexagonal pouches, zero dot-matrix)
++-    {
++-        float BaseFbm  = CloudFbmGpu3(float3(WX * FScale * 0.95, WY * FScale * 0.95, WZ * FScale * 1.15), HighOctFade);
++-        float InvScale = 1.0 / max(1.0e-5, FScale);
++-        float WarpX    = WX + (BaseFbm - 0.5) * (1.2 * InvScale);
++-        float WarpY    = WY + (LatticeNoiseCloud3(float3(WX * FScale * 0.8 + 5.1, WY * FScale * 0.8, WZ * FScale)) - 0.5) * (1.2 * InvScale);
++-        float K        = FScale * 2.4;
++-        float Hex0     = 0.5 + 0.5 * cos(WarpX * K);
++-        float Hex1     = 0.5 + 0.5 * cos((-0.5 * WarpX + 0.866025 * WarpY) * K + 1.3);
++-        float Hex2     = 0.5 + 0.5 * cos((-0.5 * WarpX - 0.866025 * WarpY) * K - 0.9);
++-        float PouchLobe = pow((Hex0 + Hex1 + Hex2) * 0.3333, 1.35) * (0.28 + 0.72 * HighOctFade);
++-        float LowerMask = 1.0 - smoothstep(0.18, 0.68, H);
++-        NNorm    = clamp(((BaseFbm - 0.24) / 0.44) * 0.62 + PouchLobe * LowerMask * 0.54, 0.0, 1.0);
++-        ShapeCov = clamp(Cov + LowerMask * 0.14 + Anvil * H * 0.16, 0.0, 1.0);
++-    }
++-    else if (FormationIndex == 8u) // KelvinHelmholtz
++-    {
++-        float MacroBand = smoothstep(0.38, 0.72, LatticeNoiseCloud3(float3(WX * FScale * 0.28, WY * FScale * 0.28, 3.1)));
++-        float CurlSkew  = 280.0 * sin(H * CloudPiConst) + 190.0 * H * H;
++-        float CurlX     = WX + CurlSkew;
++-        float WavePhase = CurlX * FScale * 3.8 + CloudFbmGpu3(float3(WX * FScale * 0.85, WY * FScale * 0.85, 0.4), HighOctFade) * 2.6;
++-        float Crest     = 0.5 + 0.5 * sin(WavePhase + H * 3.0);
++-        float BreakCurl = smoothstep(0.28, 0.88, Crest) * smoothstep(0.12, 0.65, H + 0.24 * Crest);
++-        float Billow    = CloudFbmGpu3(float3(CurlX * FScale * 1.05, WY * FScale * 0.85, WZ * FScale * 1.4), HighOctFade);
++-        NNorm = clamp(MacroBand * (BreakCurl * (0.35 + 0.35 * HighOctFade) + ((Billow - 0.24) / 0.46) * 0.48), 0.0, 1.0);
++-    }
++-    else if (FormationIndex == 9u) // Asperitas (4-direction rotated waves, zero 2-dir crosshatch)
++-    {
++-        float Warp   = CloudFbmGpu3(float3(WX * FScale * 0.75, WY * FScale * 0.75, WZ * FScale), HighOctFade);
++-        float W1     = sin((WX * 0.96 + WY * 0.28) * FScale * 2.7 + Warp * 3.6);
++-        float W2     = cos((WX * 0.62 + WY * 0.78) * FScale * 3.1 - Warp * 2.9);
++-        float W3     = sin((-WX * 0.19 + WY * 0.98) * FScale * 2.3 + Warp * 2.4);
++-        float W4     = cos((-WX * 0.77 + WY * 0.64) * FScale * 2.9 - Warp * 3.1);
++-        float Swell  = 0.5 + 0.14 * (W1 + W2 + W3 + W4) * (0.28 + 0.72 * HighOctFade);
++-        float Detail = CloudFbmGpu3(float3(WX * FScale * 1.15, WY * FScale * 1.15, WZ * FScale * 1.3), HighOctFade);
++-        NNorm = clamp(((Detail - 0.24) / 0.46) * 0.66 + Swell * 0.42, 0.0, 1.0);
++-    }
++-    else if (FormationIndex == 10u) // Nacreous
++-    {
++-        float MacroEnv = smoothstep(0.32, 0.74, LatticeNoiseCloud3(float3(WX * FScale * 0.34, WY * FScale * 0.34, 2.3)));
++-        float WarpN    = LatticeNoiseCloud3(float3(WX * FScale * 0.75, WY * FScale * 0.75, 0.5));
++-        float RibSin   = 0.5 + 0.5 * sin((WX * 0.42 + WY * 0.88) * FScale * 2.6 + WarpN * 3.8);
++-        float Ribbon   = RibSin * (1.45 - 0.45 * RibSin);
++-        float Silk     = LatticeNoiseCloud3(float3(WX * FScale * 1.05, WY * FScale * 1.05, WZ * FScale));
++-        NNorm = clamp(MacroEnv * ((0.22 + 0.38 * HighOctFade) * Ribbon + Silk * 0.52), 0.0, 1.0);
++-    }
++-    else if (FormationIndex == 11u) // Pyrocumulus
++-    {
++-        float PlumeColumn = LatticeNoiseCloud3(float3(WX * FScale * 0.36, WY * FScale * 0.36, 4.7));
++-        float PlumeMask   = smoothstep(0.45, 0.74, PlumeColumn + H * 0.10);
++-        float Base        = CloudFbmGpu3(float3(WX * FScale * 0.90, WY * FScale * 0.90, WZ * FScale * 1.15), HighOctFade);
++-        float RidgeRaw    = LatticeNoiseCloud3(float3(WX * FScale * 1.6, WY * FScale * 1.6, WZ * FScale * 1.7)) * 2.0 - 1.0;
++-        float BillowRidge = 1.0 - RidgeRaw * RidgeRaw;
++-        NNorm    = clamp(PlumeMask * (((Base - 0.20) / 0.44) * 0.76 + BillowRidge * 0.28 * (0.25 + 0.75 * HighOctFade)), 0.0, 1.0);
++-        ShapeCov = clamp(Cov + 0.14 * H, 0.0, 1.0);
++-    }
++-    else // Classic 0..5
++-    {
++-        float N = CloudFbmGpu3(float3(WX * FScale, WY * FScale, WZ * FScale * 1.4), HighOctFade);
++-        NNorm = clamp((N - 0.26) / 0.44, 0.0, 1.0);
++-    }
++-
++-    float Thresh = 1.0 - ShapeCov;
++-    return max(0.0, (NNorm - Thresh) / max(0.18, ShapeCov)) * Profile * DensMul;
++ }
++ 
++ float EvaluateCloudVolumeShapeMaskGpu(
++@@ -629,157 +497,42 @@
++     return TotalRad;
++ }
++ 
++-float3 EvaluateVolumetricCloudsGpu(
++-    VolumetricCloudUniformBlock Cfg,
++-    float3                      RayDir,
++-    float2                      PixelCoord,
++-    out float                   OutTransmittance,
++-    bool                        IncludeLocalClouds = true,
++-    uint                        StepCountOverride = 0u)
++-{
++-    OutTransmittance = 1.0;
++-    float3 TotalRad  = float3(0.0, 0.0, 0.0);
++-
++-    float Ign    = frac(52.9829189 * frac(dot(PixelCoord, float2(0.06711056, 0.00583715))));
++-    float Jitter = 0.25 + 0.50 * Ign;
++-
++-    float3 SunDir = normalize(Cfg.SunAxisToggle.xyz);
++-    float  WindX  = (Cfg.SkyColorWind.w > 0.5) ? (Cfg.WindVectorOcclude.x * Cfg.OriginTimeVector.w) : 0.0;
++-    float  WindY  = (Cfg.SkyColorWind.w > 0.5) ? (Cfg.WindVectorOcclude.y * Cfg.OriginTimeVector.w) : 0.0;
++-
++-    if (IncludeLocalClouds)
++-    {
++-        TotalRad += EvaluateLocalCloudsSegmentGpu(
++-            Cfg, Cfg.OriginTimeVector.xyz, RayDir, 60000.0, PixelCoord, OutTransmittance);
++-    }
++-
++-    // 2. Global Planetary Cloud Shell (96 IGN-jittered steps + LOD FBM + 3-octave multi-scattering + Beer-Powder + Ekman Veer + Turbulence)
++-    if (Cfg.SunAxisToggle.w < 0.5 || RayDir.z <= 0.006 || Cfg.DeckGeometry.z <= 0.01 || Cfg.DeckGeometry.w <= 0.01)
++-    {
++-        return TotalRad;
++-    }
++-
++-    float PlanetR = max(500000.0, Cfg.SolarIrradianceExt.w);
++-    float FloorM  = max(100.0, Cfg.DeckGeometry.x);
++-    float ThickM  = max(100.0, Cfg.DeckGeometry.y);
++-    float OrigZ   = PlanetR + 100.0;
++-
++-    float2 EnterHit = IntersectCloudShell(OrigZ, RayDir.z, PlanetR + FloorM);
++-    float2 ExitHit  = IntersectCloudShell(OrigZ, RayDir.z, PlanetR + FloorM + ThickM);
++-    float  MaxDist  = min(ExitHit.y, EnterHit.y + 32000.0);
++-    if (MaxDist <= EnterHit.y || EnterHit.y < 0.0 || EnterHit.y > 85000.0) return TotalRad;
++-
++-    uint  MarchSteps = (StepCountOverride > 0u)
++-        ? clamp(StepCountOverride, 12u, 96u)
++-        : ((Cfg.CloudPassControl.z > 1.0) ? clamp(uint(Cfg.CloudPassControl.z + 0.5), 12u, 96u) : 64u);
++-    float Dt        = (MaxDist - EnterHit.y) / float(MarchSteps);
++-    float FScale    = 0.00065 / max(0.08, Cfg.DeckOptics.x);
++-    float Cov       = clamp(Cfg.DeckGeometry.z, 0.0, 1.0);
++-    float DensMul   = max(0.0, Cfg.DeckGeometry.w) * 0.0085;
++-    float Anvil     = clamp(Cfg.DeckOptics.y, 0.0, 1.0);
++-    float G         = clamp(Cfg.DeckOptics.z, -0.5, 0.9);
++-    float CosTheta  = dot(RayDir, SunDir);
++-    uint  FmtIdx    = uint(Cfg.FormationOptics.x + 0.5);
++-    float VeerRadKm = Cfg.FormationOptics.y;
++-    float TurbAmp   = Cfg.FormationOptics.z;
++-    float TimeSec   = (Cfg.SkyColorWind.w > 0.5) ? Cfg.OriginTimeVector.w : 0.0;
++-    bool  HasProbes = (Cfg.SkyColorWind.w > 0.5) && (Cfg.CloudPassControl.w > 0.5) && (uint(Cfg.WindProbeMeta.x + 0.5) > 0u);
++-
++-    static const float SunOffsets[4] = { 0.10, 0.30, 0.65, 1.30 };
++-    static const float SunWeights[4] = { 0.18, 0.28, 0.38, 0.56 };
++-
++-    float  DeckT = 1.0;
++-    float3 DeckR = float3(0.0, 0.0, 0.0);
++-    for (uint S = 0u; S < MarchSteps; ++S)
++-    {
++-        float  T = EnterHit.y + (float(S) + Jitter) * Dt;
++-        float3 P = float3(RayDir.x * T, RayDir.y * T, OrigZ + RayDir.z * T);
++-        float3 EvalP = P;
++-        float  ExtraTurb = 0.0;
++-        if (HasProbes)
++-        {
++-            float AltNow = length(P) - PlanetR;
++-            float SwirlNow = 0.0;
++-            float3 Adv = AdvectCloudPointBackwardGpu(Cfg, float3(P.x, P.y, AltNow), float3(0.0, 0.0, 0.0), TimeSec, true, SwirlNow);
++-            EvalP.x = Adv.x;
++-            EvalP.y = Adv.y;
++-            ExtraTurb = clamp(SwirlNow * 0.25, 0.0, 1.25);
++-        }
++-        float  D = SampleCloudDeckDensityGpu(
++-            EvalP, PlanetR, FloorM, ThickM, Cov, Anvil, DensMul, FScale, WindX, WindY, Cfg.DeckOptics.w, FmtIdx, T, VeerRadKm, TurbAmp + ExtraTurb, TimeSec);
++-        if (D > 1.0e-6)
++-        {
++-            float SunTau = 0.0;
++-            if (Cfg.WindVectorOcclude.z > 0.5)
++-            {
++-                float ConeReach = ThickM * 0.42;
++-                for (uint K = 0u; K < 4u; ++K)
++-                {
++-                    float KS = SunOffsets[K] * ConeReach;
++-                    SunTau += SampleCloudDeckDensityGpu(
++-                        EvalP + SunDir * KS,
++-                        PlanetR, FloorM, ThickM, Cov, Anvil, DensMul, FScale, WindX, WindY, Cfg.DeckOptics.w, FmtIdx, 24000.0, VeerRadKm, 0.0, TimeSec) *
++-                        (SunWeights[K] * ConeReach);
++-                }
++-            }
++-
++-            float MultiScatter = 0.0;
++-            float OctAlbedo = 1.0;
++-            float OctExt    = 1.0;
++-            float OctG      = 1.0;
++-            for (uint Oct = 0u; Oct < 3u; ++Oct)
++-            {
++-                float Ph     = 0.76 * EvaluateCloudPhaseHG(CosTheta, G * OctG) +
++-                               0.24 * EvaluateCloudPhaseHG(CosTheta, -0.22 * OctG);
++-                float Att    = exp(-SunTau * 0.85 * OctExt);
++-                float Powder = 1.0 - 0.52 * exp(-D * 320.0 * OctExt - SunTau * 1.4);
++-                MultiScatter += OctAlbedo * Att * Powder * Ph;
++-                OctAlbedo *= 0.54;
++-                OctExt    *= 0.42;
++-                OctG      *= 0.68;
++-            }
++-
++-            float SegT         = exp(-D * Dt);
++-            float Scatter      = (1.0 - SegT) * 0.96;
++-            float Alt          = length(P) - PlanetR;
++-            float H            = clamp((Alt - FloorM) / ThickM, 0.0, 1.0);
++-            float SkyAmb       = 0.38 + 0.62 * H;
++-            float GroundBounce = 0.14 * (1.0 - H) * clamp(SunDir.z * 2.5 + 0.30, 0.05, 1.0);
++-
++-            float3 Iridescence = float3(1.0, 1.0, 1.0);
++-            float3 EmberGlow   = float3(0.0, 0.0, 0.0);
++-            if (FmtIdx == 10u)
++-            {
++-                float SpecPhase = CosTheta * 9.0 + H * 5.0 + (P.x + P.y) * 0.00020;
++-                Iridescence = float3(
++-                    0.98 + 0.28 * sin(SpecPhase),
++-                    0.95 + 0.28 * sin(SpecPhase + 2.094),
++-                    1.04 + 0.30 * sin(SpecPhase + 4.188));
++-            }
++-            else if (FmtIdx == 11u)
++-            {
++-                float CoreDense   = smoothstep(DensMul * 0.25, DensMul * 0.90, D);
++-                float EmberFactor = pow(1.0 - H, 2.8) * CoreDense * 1.25;
++-                EmberGlow = float3(1.55, 0.42, 0.06) * EmberFactor;
++-            }
++-
++-            float DirectGain = MultiScatter * 2.35 + 0.06;
++-            DeckR += DeckT * (Cfg.SolarIrradianceExt.xyz * DirectGain * Iridescence +
++-                              Cfg.SkyColorWind.xyz * (SkyAmb * 0.85 + GroundBounce) +
++-                              EmberGlow) * Scatter;
++-            DeckT *= SegT;
++-            if (DeckT < 0.01) break;
++-        }
++-    }
++-
++-    float LowAngleFade = smoothstep(0.008, 0.165, RayDir.z) * (1.0 - smoothstep(42000.0, 82000.0, EnterHit.y));
++-    float Haze = 1.0 - exp(-EnterHit.y * 0.000032);
++-    float3 HorizonTint = max(Cfg.SkyColorWind.xyz, float3(0.18, 0.25, 0.36) * (0.25 + 0.75 * max(0.0, SunDir.z)));
++-    DeckR = lerp(DeckR, HorizonTint * (1.0 - DeckT), Haze * 0.78) * LowAngleFade;
++-    DeckT = 1.0 - (1.0 - DeckT) * LowAngleFade;
++-    TotalRad += OutTransmittance * DeckR;
++-    OutTransmittance *= DeckT;
++-    return TotalRad;
+++#ifdef FRONTIER_ATMOSPHERE_EMBEDDED
+++[[vk::binding(28, 0)]] StructuredBuffer<uint> PlanetaryCloudNoise;
+++#else
+++[[vk::binding(2, 0)]] StructuredBuffer<uint> PlanetaryCloudNoise;
+++#endif
+++#include "CloudAerialPerspective.slang"
+++
+++PlanetaryCloudConfig DecodePlanetaryCloudConfig(VolumetricCloudUniformBlock In, float PixelAngle)
+++{
+++    PlanetaryCloudConfig C;
+++    C.RadiusM = max(500000.0, In.SolarIrradianceExt.w);
+++    C.Coverage = In.DeckGeometry.z;
+++    C.Extinction = In.DeckGeometry.w;
+++    C.FloorM = In.DeckGeometry.x;
+++    C.ThicknessM = In.DeckGeometry.y;
+++    C.FeatureScale = In.DeckOptics.x;
+++    C.Anvil = In.DeckOptics.y;
+++    C.PhaseG = lerp(0.63, 0.90, saturate(In.DeckOptics.z));
+++    C.Seed = 0.04;
+++    C.PixelAngle = PixelAngle;
+++    C.WindOffsetM = (In.SkyColorWind.w > 0.5) ? (In.WindVectorOcclude.xy * In.OriginTimeVector.w) : float2(0.0);
+++    C.Shear = In.DeckOptics.w;
+++    C.Veer = In.FormationOptics.y;
+++    C.Turbulence = In.FormationOptics.z;
+++    C.SunDirection = normalize(In.SunAxisToggle.xyz);
+++    C.SolarIrradiance = In.SolarIrradianceExt.xyz;
+++    C.SkyAmbient = In.SkyColorWind.xyz;
+++    C.AtmosphereStrengths = float3(1.0);
+++    C.AirScaleHeightsM = float2(8000.0, 1200.0);
+++    C.Steps = clamp(uint(max(32.0, In.CloudPassControl.z) + 0.5), 32u, 256u);
+++    C.LightSteps = 5u;
+++    C.Formation = uint(In.FormationOptics.x + 0.5);
+++    C.PrimaryKind = (C.Formation == 5u || C.Formation == 10u) ? 2u : ((C.Formation == 4u || C.Formation == 6u) ? 1u : 0u);
+++    C.UseClouds = In.SunAxisToggle.w > 0.5;
+++    C.UseCloudShadows = In.WindVectorOcclude.z > 0.5;
+++    return C;
++ }
++ 
++ #ifndef FRONTIER_ATMOSPHERE_EMBEDDED
++@@ -798,8 +551,13 @@
++     float Az  = (Uv.x - 0.5) * 6.2831853;
++     float El  = (1.0 - Uv.y) * 1.5707963;
++     float3 Rd = float3(cos(El) * cos(Az), cos(El) * sin(Az), sin(El));
++-    float  Trans = 1.0;
++-    float3 Rad   = EvaluateVolumetricCloudsGpu(CloudUniforms, Rd, float2(DispatchThreadID.xy), Trans);
++-    OutCloudRgba[DispatchThreadID.y * W + DispatchThreadID.x] = float4(Rad, Trans);
+++    PlanetaryCloudConfig C = DecodePlanetaryCloudConfig(CloudUniforms, 1.5707963 / float(H));
+++    float3 O = CloudUniforms.OriginTimeVector.xyz + float3(0.0, 0.0, C.RadiusM);
+++    PlanetaryCloudResult Cloud = TracePlanetaryClouds(C, O, Rd, float2(DispatchThreadID.xy), 1.0e9);
+++    float3 Rad = CloudRadianceThroughAir(C, O, Rd, Cloud, 8u);
+++    float LocalT = 1.0;
+++    float3 LocalRad = EvaluateLocalCloudsSegmentGpu(CloudUniforms, CloudUniforms.OriginTimeVector.xyz,
+++                                                  Rd, 60000.0, float2(DispatchThreadID.xy), LocalT);
+++    OutCloudRgba[DispatchThreadID.y * W + DispatchThreadID.x] = float4(LocalRad + LocalT * Rad, LocalT * Cloud.Transmittance);
++ }
++ #endif
++diff --git a/Engine/Shaders/GeometricRaster/WorldViewportRadiometricCompute.slang b/Engine/Shaders/GeometricRaster/WorldViewportRadiometricCompute.slang
++--- a/Engine/Shaders/GeometricRaster/WorldViewportRadiometricCompute.slang
+++++ b/Engine/Shaders/GeometricRaster/WorldViewportRadiometricCompute.slang
++@@ -6,6 +6,7 @@
++ // Enforces Zero SDF Shadows (5 Shadow Lab algorithms over depth32float + BVH4) & Zero SDF Reflections (BVH4 or Sky Environment).
++ 
++ #define FRONTIER_ATMOSPHERE_EMBEDDED 1
+++#define FRONTIER_CLOUD_EXTERNAL_FLOW 1
++ #include "../Atmosphere/SkyViewTransmittanceCompute.slang"
++ #include "../Atmosphere/VolumetricCloudCompute.slang"
++ #include "../Atmosphere/VolumetricFogCompute.slang"
++@@ -215,8 +216,11 @@
++     return float2(float(FirstDigits >> 8u), float(SecondDigits >> 8u)) * (1.0 / 16777216.0);
++ }
++ 
+++bool IsAirlessScene() { return (WorldUniforms.AtmosphereMaskPad.w & 16u) != 0u; }
+++
++ float3 EvaluateSkyDome(float3 Dir)
++ {
+++    if (IsAirlessScene()) return float3(0.0);
++     if (WorldUniforms.AtmosphereMaskPad.x != 0u)
++     {
++         return EvaluateSkyViewLutSample(
++@@ -253,83 +257,44 @@
++     float4 C11 = CloudRadiometricBuffer[Y1 * CW + X1];
++     float4 Res = lerp(lerp(C00, C10, TX), lerp(C01, C11, TX), TY);
++ 
++-    // Light 5-tap spatial anti-stipple filter when upscaling half/quarter-res cloud pass
++-    uint FullW = uint(WorldUniforms.CameraUpWidth.w + 0.5);
++-    if (CW < FullW && CW >= 4u && CH >= 4u)
++-    {
++-        uint XM = (X0 > 0u) ? (X0 - 1u) : X0;
++-        uint XP = min(CW - 1u, X1 + 1u);
++-        uint YM = (Y0 > 0u) ? (Y0 - 1u) : Y0;
++-        uint YP = min(CH - 1u, Y1 + 1u);
++-        float4 S0 = CloudRadiometricBuffer[Y0 * CW + XM];
++-        float4 S1 = CloudRadiometricBuffer[Y0 * CW + XP];
++-        float4 S2 = CloudRadiometricBuffer[YM * CW + X0];
++-        float4 S3 = CloudRadiometricBuffer[YP * CW + X0];
++-        float4 AvgNbr = (S0 + S1 + S2 + S3) * 0.25;
++-        Res = lerp(Res, AvgNbr, 0.52);
++-    }
++-
++     OutCloudTrans = clamp(Res.w, 0.0, 1.0);
++     return Res;
++ }
++ 
++-float3 EvaluateCloudDeckReflectionGpu(float3 RayDir, out float OutCloudTrans)
++-{
++-    OutCloudTrans = 1.0;
+++float2 PlanetCloudExternalFlow(float2 P, float AltitudeM)
+++{
++     VolumetricCloudUniformBlock C = WorldUniforms.CloudParams;
++-    if (WorldUniforms.AtmosphereObserver.y > 0.5)
++-    {
++-        return float3(0.0, 0.0, 0.0);
++-    }
++-    if (C.SunAxisToggle.w < 0.5 || RayDir.z <= 0.015 || C.DeckGeometry.z <= 0.01 || C.DeckGeometry.w <= 0.01)
++-    {
++-        return float3(0.0, 0.0, 0.0);
++-    }
++-    float TimeSec = (C.SkyColorWind.w > 0.5) ? C.OriginTimeVector.w : 0.0;
++-    float WindX   = C.WindVectorOcclude.x * TimeSec;
++-    float WindY   = C.WindVectorOcclude.y * TimeSec;
++-    float PlanetR = max(500000.0, C.SolarIrradianceExt.w);
++-    float FloorM  = max(100.0, C.DeckGeometry.x);
++-    float ThickM  = max(100.0, C.DeckGeometry.y);
++-    float MidAlt  = FloorM + ThickM * 0.45;
++-    float DistM   = min(38000.0, MidAlt / max(0.03, RayDir.z));
++-    float3 P      = float3(RayDir.x * DistM, RayDir.y * DistM, PlanetR + 100.0 + MidAlt);
++-    float ExtraTurb = 0.0;
++-    if (C.SkyColorWind.w > 0.5 && C.CloudPassControl.w > 0.5 && uint(C.WindProbeMeta.x + 0.5) > 0u)
++-    {
++-        float SwirlNow = 0.0;
++-        float3 Adv = AdvectCloudPointBackwardGpu(C, float3(P.x, P.y, MidAlt), float3(0.0, 0.0, 0.0), TimeSec, true, SwirlNow);
++-        P.x = Adv.x;
++-        P.y = Adv.y;
++-        ExtraTurb = clamp(SwirlNow * 0.25, 0.0, 1.25);
++-    }
++-    float FScale  = 0.00065 / max(0.08, C.DeckOptics.x);
++-    float D = SampleCloudDeckDensityGpu(
++-        P, PlanetR, FloorM, ThickM, clamp(C.DeckGeometry.z, 0.0, 1.0), clamp(C.DeckOptics.y, 0.0, 1.0),
++-        max(0.0, C.DeckGeometry.w) * 0.0085, FScale, WindX, WindY, C.DeckOptics.w, uint(C.FormationOptics.x + 0.5), DistM,
++-        C.FormationOptics.y, C.FormationOptics.z + ExtraTurb, TimeSec);
++-    if (D <= 1.0e-5)
++-    {
++-        return float3(0.0, 0.0, 0.0);
++-    }
++-    float Tau      = D * ThickM * 0.35;
++-    OutCloudTrans  = exp(-Tau);
++-    float3 SunDir  = normalize(C.SunAxisToggle.xyz);
++-    float  CosT    = dot(RayDir, SunDir);
++-    float  Phase   = lerp(0.55, 1.55, clamp(CosT * 0.5 + 0.5, 0.0, 1.0));
++-    float  Haze    = clamp(C.SolarIrradianceExt.w > 0.0 ? (1.0 - exp(-DistM * 0.000025)) : 0.0, 0.0, 0.65);
++-    float3 LitCol  = C.SolarIrradianceExt.xyz * (0.28 * Phase) + C.SkyColorWind.xyz * 0.65;
++-    return lerp(LitCol, C.SkyColorWind.xyz, Haze) * (1.0 - OutCloudTrans);
++-}
++-
++-float3 EvaluateBackgroundSkyCloudsGpu(float3 RayDir, float2 PixelCoord)
++-{
++-    (void)PixelCoord;
++-    if (WorldUniforms.AtmosphereMaskPad.x == 0u)
++-    {
++-        return EvaluateSkyDome(RayDir);
++-    }
++-
+++    if (C.SkyColorWind.w <= 0.5 || C.CloudPassControl.w <= 0.5 || C.WindProbeMeta.x < 0.5)
+++        return P;
+++    float Curl = 0.0;
+++    return AdvectCloudPointBackwardGpu(C, float3(P, AltitudeM), float3(0.0), C.OriginTimeVector.w, true, Curl).xy;
+++}
+++
+++PlanetaryCloudConfig QueryWorldCloudConfig()
+++{
+++    float H = max(1.0, WorldUniforms.CloudParams.CloudPassControl.y);
+++    PlanetaryCloudConfig C = DecodePlanetaryCloudConfig(WorldUniforms.CloudParams, 2.0 * WorldUniforms.CameraRightTanY.w / H);
+++    C.AtmosphereStrengths = WorldUniforms.CelestialParams.AtmoMediumPack.xyz;
+++    C.AirScaleHeightsM = WorldUniforms.AtmosphereScaleHeights.xy;
+++    C.UseClouds = C.UseClouds && WorldUniforms.AtmosphereMaskPad.x != 0u;
+++    return C;
+++}
+++
+++float3 PlanetaryWorldCamera(PlanetaryCloudConfig C)
+++{
+++    return WorldUniforms.CameraOriginTanX.xyz + float3(0.0, 0.0, C.RadiusM + WorldUniforms.AtmosphereObserver.x);
+++}
+++
+++float4 TraceWorldCloudRadiance(PlanetaryCloudConfig C, float3 RayDir, float2 Pixel, float LimitM)
+++{
+++    float3 O = PlanetaryWorldCamera(C);
+++    PlanetaryCloudResult R = TracePlanetaryClouds(C, O, RayDir, Pixel, LimitM);
+++    return float4(CloudRadianceThroughAir(C, O, RayDir, R, 10u), R.Transmittance);
+++}
+++
+++float3 EvaluateClearPlanetBackground(float3 RayDir)
+++{
+++    float3 CelestialRad = EvaluateCelestialBodiesGpu(WorldUniforms.CelestialParams, LunarSurfaceAtlasTexels, RayDir);
++     if (WorldUniforms.AtmosphereObserver.y > 0.5)
++     {
++         AtmosphericSkyUniformBlock SpaceUni;
++@@ -349,25 +314,24 @@
++         SpaceUni.LutDimensions         = uint4(256u, 128u, 0u, 0u);
++         SpaceUni.ObserverParams        = float4(WorldUniforms.AtmosphereObserver.x, 1.0, 0.0, 0.0);
++ 
++-        float3 SpaceTrans = float3(1.0, 1.0, 1.0);
++-        float3 PlanetLimb = EvaluateOrbitalSpaceGpu(
++-            RayDir,
++-            WorldUniforms.CameraOriginTanX.xyz,
++-            normalize(WorldUniforms.SunDirConeTan.xyz),
++-            SpaceUni,
++-            WorldUniforms.CloudParams.OriginTimeVector.w,
++-            WorldUniforms.CloudParams.DeckGeometry.z,
++-            SpaceTrans);
++-        float3 CelestialRad = EvaluateCelestialBodiesGpu(WorldUniforms.CelestialParams, LunarSurfaceAtlasTexels, RayDir);
+++        float3 SpaceTrans = float3(1.0);
+++        PlanetaryCloudConfig C = QueryWorldCloudConfig();
+++        float3 O = PlanetaryWorldCamera(C);
+++        float GroundM = PlanetCloudGroundDistance(O, RayDir, C.RadiusM);
+++        float SunT = (GroundM < 1.0e8) ? exp(-CloudSolarOpticalDepth(C, O + RayDir * GroundM, 6u, max(2350.0, GroundM * C.PixelAngle))) : 1.0;
+++        float3 PlanetLimb = EvaluateOrbitalSpaceGpu(RayDir, WorldUniforms.CameraOriginTanX.xyz, C.SunDirection,
+++                                                   SpaceUni, SunT, SpaceTrans);
++         return PlanetLimb + CelestialRad * SpaceTrans;
++     }
++-
++-    float3 SkyRad       = EvaluateSkyDome(RayDir);
++-    float3 CelestialRad = EvaluateCelestialBodiesGpu(WorldUniforms.CelestialParams, LunarSurfaceAtlasTexels, RayDir);
++-    if (WorldUniforms.CloudParams.SunAxisToggle.w < 0.5)
++-    {
++-        return SkyRad + CelestialRad;
++-    }
+++    return EvaluateSkyDome(RayDir) + CelestialRad;
+++}
+++
+++float3 EvaluateBackgroundSkyCloudsGpu(float3 RayDir, float2 PixelCoord)
+++{
+++    if (IsAirlessScene()) return float3(0.0);
+++    if (WorldUniforms.AtmosphereMaskPad.x == 0u) return EvaluateSkyDome(RayDir);
+++    float3 SkyRad = EvaluateClearPlanetBackground(RayDir);
+++    if (WorldUniforms.CloudParams.SunAxisToggle.w < 0.5) return SkyRad;
++ 
++     float  CloudTrans = 1.0;
++     float3 CloudRad   = float3(0.0, 0.0, 0.0);
++@@ -382,55 +346,25 @@
++         {
++             float2 Uv = float2(NdcX * 0.5 + 0.5, 0.5 - NdcY * 0.5);
++             CloudRad  = SampleCloudBufferBilinear(Uv, CloudTrans).xyz;
++-            return (SkyRad + CelestialRad) * CloudTrans + CloudRad;
++-        }
++-    }
++-
++-    // Off-frustum reflection/refraction fallback uses single-tap analytical deck lookup
++-    CloudRad = EvaluateCloudDeckReflectionGpu(RayDir, CloudTrans);
++-    return (SkyRad + CelestialRad) * CloudTrans + CloudRad;
+++            return SkyRad * CloudTrans + CloudRad;
+++        }
+++    }
+++
+++    PlanetaryCloudConfig C = QueryWorldCloudConfig();
+++    C.Steps = min(C.Steps, 36u);
+++    C.LightSteps = 3u;
+++    float4 OffscreenCloud = TraceWorldCloudRadiance(C, RayDir, PixelCoord, 1.0e9);
+++    return SkyRad * OffscreenCloud.w + OffscreenCloud.xyz;
++ }
++ 
++ float EvaluateSolarCloudTransmittanceGpu(float3 WorldPos, float3 SunDir)
++ {
++-    VolumetricCloudUniformBlock C = WorldUniforms.CloudParams;
++-    if (WorldUniforms.AtmosphereMaskPad.x == 0u || WorldUniforms.AtmosphereObserver.y > 0.5 || SunDir.z <= 0.01)
++-    {
++-        return 1.0;
++-    }
++-    float Trans = 1.0;
++-    if (C.SunAxisToggle.w >= 0.5 && C.WindVectorOcclude.z >= 0.5)
++-    {
++-        float TimeSec = (C.SkyColorWind.w > 0.5) ? C.OriginTimeVector.w : 0.0;
++-        float WindX   = C.WindVectorOcclude.x * TimeSec;
++-        float WindY   = C.WindVectorOcclude.y * TimeSec;
++-        float PlanetR = max(500000.0, C.SolarIrradianceExt.w);
++-        float FloorM  = max(100.0, C.DeckGeometry.x);
++-        float ThickM  = max(100.0, C.DeckGeometry.y);
++-        float MidAlt  = FloorM + ThickM * 0.45;
++-        float DistM   = MidAlt / max(0.05, SunDir.z);
++-        float3 P      = float3(WorldPos.x + SunDir.x * DistM, WorldPos.y + SunDir.y * DistM, PlanetR + 100.0 + MidAlt);
++-        float ExtraTurb = 0.0;
++-        if (C.SkyColorWind.w > 0.5 && C.CloudPassControl.w > 0.5 && uint(C.WindProbeMeta.x + 0.5) > 0u)
++-        {
++-            float SwirlNow = 0.0;
++-            float3 Adv = AdvectCloudPointBackwardGpu(C, float3(P.x, P.y, MidAlt), float3(0.0, 0.0, 0.0), TimeSec, true, SwirlNow);
++-            P.x = Adv.x;
++-            P.y = Adv.y;
++-            ExtraTurb = clamp(SwirlNow * 0.25, 0.0, 1.25);
++-        }
++-        float FScale  = (0.00065 / max(0.08, C.DeckOptics.x)) * max(0.01, C.CloudShadowOptics.z);
++-        float Cov     = clamp(C.DeckGeometry.z * C.CloudShadowOptics.x, 0.0, 1.0);
++-        float DensMul = max(0.0, C.DeckGeometry.w * C.CloudShadowOptics.y) * 0.0085;
++-        float Anvil   = clamp(C.DeckOptics.y * C.CloudShadowOptics.w, 0.0, 1.0);
++-        float D = SampleCloudDeckDensityGpu(
++-            P, PlanetR, FloorM, ThickM, Cov, Anvil,
++-            DensMul, FScale, WindX, WindY, C.DeckOptics.w, uint(C.FormationOptics.x + 0.5), 8000.0,
++-            C.FormationOptics.y, C.FormationOptics.z + ExtraTurb, TimeSec);
++-        Trans *= (0.12 + 0.88 * exp(-D * ThickM * 0.36));
++-    }
++-    Trans *= EvaluateLocalCloudsShadowGpu(C, WorldPos, SunDir);
++-    return clamp(Trans, 0.08, 1.0);
+++    if (WorldUniforms.AtmosphereMaskPad.x == 0u) return 1.0;
+++    PlanetaryCloudConfig C = QueryWorldCloudConfig();
+++    C.SunDirection = SunDir;
+++    float3 P = WorldPos + float3(0.0, 0.0, C.RadiusM);
+++    float Tau = CloudSolarOpticalDepth(C, P, 6u);
+++    return exp(-Tau) * EvaluateLocalCloudsShadowGpu(WorldUniforms.CloudParams, WorldPos, SunDir);
++ }
++ 
++ float IntersectTriangleMT(float3 Origin, float3 Dir, float MinT, float MaxT, uint TriIndex, out float2 OutUV)
++@@ -1746,7 +1680,7 @@
++ 
++         if (!Hit.Hit)
++         {
++-            float3 SkyB = (B == 0u) ? EvaluateBackgroundSkyCloudsGpu(RayD, float2(PixelXY)) : EvaluateSkyDome(RayD);
+++            float3 SkyB = (B == 0u && WorldUniforms.AtmosphereMaskPad.x != 0u) ? EvaluateClearPlanetBackground(RayD) : EvaluateSkyDome(RayD);
++             Radiance += Throughput * SkyB;
++             break;
++         }
++@@ -2195,8 +2129,7 @@
++             SceneVis *= EvaluateFluidShadowTransmittanceBufferGpu(
++                 WorldUniforms.FluidParams, FluidHeroThermoTexels, FluidWorldThermoTexels, P, SunDir, 32.0);
++         }
++-        float RawCloudVis = DoClouds ? EvaluateSolarCloudTransmittanceGpu(P, SunDir) : 1.0;
++-        float CloudVis    = DoClouds ? pow(saturate((RawCloudVis - 0.12) / 0.88), 2.35) : 1.0;
+++        float CloudVis = DoClouds ? EvaluateSolarCloudTransmittanceGpu(P, SunDir) : 1.0;
++ 
++         float MediumSigma = 0.0048 * BaseDen;
++         if (DoFog)
++@@ -2317,9 +2250,7 @@
++     }
++ 
++     uint PIdx = DispatchThreadID.y * CW + DispatchThreadID.x;
++-    if (WorldUniforms.AtmosphereMaskPad.x == 0u ||
++-        WorldUniforms.AtmosphereObserver.y > 0.5 ||
++-        WorldUniforms.CloudParams.SunAxisToggle.w < 0.5)
+++    if (WorldUniforms.AtmosphereMaskPad.x == 0u || WorldUniforms.CloudParams.SunAxisToggle.w < 0.5)
++     {
++         CloudRadiometricBuffer[PIdx] = float4(0.0, 0.0, 0.0, 1.0);
++         return;
++@@ -2333,10 +2264,8 @@
++         WorldUniforms.CameraRightTanY.xyz * (NdcX * WorldUniforms.CameraOriginTanX.w) +
++         WorldUniforms.CameraUpWidth.xyz   * (NdcY * WorldUniforms.CameraRightTanY.w));
++ 
++-    float  CloudTrans = 1.0;
++-    float3 CloudRad   = EvaluateVolumetricCloudsGpu(
++-        WorldUniforms.CloudParams, RayDir, float2(DispatchThreadID.xy), CloudTrans, false);
++-    CloudRadiometricBuffer[PIdx] = float4(CloudRad, CloudTrans);
+++    CloudRadiometricBuffer[PIdx] = TraceWorldCloudRadiance(QueryWorldCloudConfig(), RayDir,
+++                                                           float2(DispatchThreadID.xy), 1.0e9);
++ }
++ 
++ [shader("compute")]
++@@ -2824,10 +2753,25 @@
++         float HitDistForClouds = DirectBase.w;
++         float HitDistForFog    = SunContrib.w;
++ 
++-        float  LocalCloudTrans = 1.0;
++-        float3 LocalCloudRad   = EvaluateLocalCloudsSegmentGpu(
++-            WorldUniforms.CloudParams, CamOrigin, RayDir, HitDistForClouds, float2(DispatchThreadID.xy), LocalCloudTrans);
++-        FinalHdr = FinalHdr * LocalCloudTrans + LocalCloudRad;
+++        bool Airless = IsAirlessScene();
+++        if (!Airless)
+++        {
+++            // Path tracing accumulates surface samples, not moving sky volumes.
+++            if (EngineMode == 4u && CenterPos.w == 0.0 && HitDistForClouds >= 60000.0)
+++                FinalHdr = EvaluateBackgroundSkyCloudsGpu(RayDir, float2(DispatchThreadID.xy));
+++            // Background pixels already carry the sky-pass volume. Only
+++            // actual geometry needs a second, depth-limited view segment.
+++            PlanetaryCloudConfig C = QueryWorldCloudConfig();
+++            if (CenterPos.w > 0.0 && C.UseClouds && max(CamOrigin.z, CenterPos.z) >= PlanetCloudLayer(C, 0u).BottomM)
+++            {
+++                float4 Cloud = TraceWorldCloudRadiance(C, RayDir, float2(DispatchThreadID.xy), HitDistForClouds);
+++                FinalHdr = Cloud.xyz + Cloud.w * FinalHdr;
+++            }
+++            float LocalCloudTrans = 1.0;
+++            float3 LocalCloudRad = EvaluateLocalCloudsSegmentGpu(WorldUniforms.CloudParams, CamOrigin,
+++                                                                 RayDir, HitDistForClouds, float2(DispatchThreadID.xy), LocalCloudTrans);
+++            FinalHdr = FinalHdr * LocalCloudTrans + LocalCloudRad;
+++        }
++ 
++         if (WorldUniforms.FluidParams.HeroBoxMinFade.w > 0.5)
++         {
++@@ -2847,7 +2791,7 @@
++             FinalHdr = FinalHdr * FluidTrans + FluidRad;
++         }
++ 
++-        if (WorldUniforms.AtmosphereObserver.y < 0.5)
+++        if (!Airless && WorldUniforms.AtmosphereObserver.y < 0.5)
++         {
++             float  FogTrans = 1.0;
++             float3 FogRad   = EvaluateVolumetricFogGpu(
