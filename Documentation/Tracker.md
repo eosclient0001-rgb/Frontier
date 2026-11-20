@@ -1223,3 +1223,10 @@ in `Exhibits/LightCompute/Results/FogFacetRegression.txt`; this was a fixture-se
   the temporal modes (-9.9% / -4.7%), confirming the harness detects the correlation it guards against.
   LightCompute 6/6 release + ASan/UBSan. GitHub Actions: user enabled "Allow all actions" in repo
   Settings; PR #4 merge into main is the remaining step before WindowsWorkspaces can be dispatched.
+
+## Browser editor baselines — 2026-11-20
+
+- Restored only `Experimental/ProjectZeroEditor` and `Experimental/FrontierEditor` from
+  `SultanAladin/Frontier` at `63db1201d0cea199c7276c2126e62812b04821b9`, with pane designs unchanged.
+- Both browser previews rendered and passed focused interaction checks. Commands, captures, and
+  limitations: [Editor preview verification](../Exhibits/EditorPreviewValidation/README.md).
