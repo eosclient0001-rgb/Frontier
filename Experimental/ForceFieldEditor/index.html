@@ -1,0 +1,261 @@
+<!doctype html>
+<!--==========================================================================================================================================
+                                                               INDEX.HTML
+===========================================================================================================================================-->
+<!-- Frontier ForceField Studio — Project-Zero / Frontier World Editor UI (HTML + WebGL2) -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#090909" />
+  <title>Frontier · ForceField Editor</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23121215'/%3E%3Cpath d='M6 12h13a3 3 0 1 0-2.8-4M6 18h18a2.8 2.8 0 1 1-2.5 4M6 24h10' fill='none' stroke='%234AA8FF' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./ForceFieldEditor.css" />
+  <script type="module" src="./ForceFieldEditor.js"></script>
+</head>
+<body>
+  <div id="Editor" class="workspace">
+    <!-- LEFT DOCK: OUTLINER -->
+    <aside class="dock left" id="left-dock">
+      <div class="tab-strip">
+        <div class="document-tab active" role="tab" aria-selected="true">
+          <span>Outliner</span>
+        </div>
+        <button type="button" class="tab-add" id="tab-add-force-btn" title="Add Force Generator (Ctrl+A)" aria-label="Add Force Generator">+</button>
+      </div>
+
+      <div class="outliner-heading">
+        <h1>Outliner</h1>
+        <small id="outliner-summary">ForceField · 3 forces</small>
+        <button type="button" class="icon-circle" id="outliner-add-btn" title="Add Force Generator (Ctrl+A)" aria-label="Add Force Generator"></button>
+      </div>
+
+      <div class="stats">
+        <button type="button" id="stats-visible-btn" title="Filter visible / active forces">
+          <span class="status-disc" id="stats-visible-icon"></span>
+          <small>Active</small>
+          <strong id="stats-visible-count">3</strong>
+        </button>
+        <button type="button" id="stats-hidden-btn" title="Filter muted / hidden forces">
+          <span class="muted-disc" id="stats-hidden-icon"></span>
+          <small>Muted</small>
+          <strong id="stats-hidden-count">0</strong>
+        </button>
+      </div>
+
+      <div class="outliner-search">
+        <label>
+          <span id="outliner-search-icon"></span>
+          <input type="search" id="outliner-search" placeholder="Search Ctrl+F" aria-label="Search forces" />
+        </label>
+        <button type="button" id="outliner-filter-btn">Filter</button>
+      </div>
+
+      <div class="filter-chips" id="outliner-filter-chips">
+        <button type="button" class="active" data-filter="All">All</button>
+        <button type="button" data-filter="VectorField">Vector</button>
+        <button type="button" data-filter="FlowField">Flow</button>
+        <button type="button" data-filter="TurbulenceField">Turbulence</button>
+      </div>
+
+      <div class="outliner-rows" id="outliner-rows" role="tree" aria-label="Force field hierarchy"></div>
+
+      <footer class="outliner-footer">
+        <span><small>REALTIME</small><b id="footer-fps">60 fps</b></span>
+        <span><small>FORCES</small><b id="footer-forces">3/3</b></span>
+        <span><small>PROBE</small><b id="footer-speed">0.0 m/s</b></span>
+        <span><small>CURL |∇×F|</small><b id="footer-curl">0.0 /s</b></span>
+      </footer>
+
+      <div class="divider left" id="left-resizer" role="separator" aria-orientation="vertical"></div>
+    </aside>
+
+    <!-- CENTER DOCK: 3D WEBGL2 FORCE & FLOW VIEWPORT -->
+    <main class="dock centre" id="centre-dock">
+      <div class="tab-strip">
+        <div class="document-tab active" role="tab" aria-selected="true">
+          <span>Viewport</span>
+        </div>
+      </div>
+
+      <header class="viewport-header">
+        <div class="viewport-top-row">
+          <div class="viewport-scene-id">
+            <strong id="scene-title">ForceField Studio</strong>
+            <span class="preview-badge">WEBGL2 · +Z UP</span>
+            <select id="select-preset-quick" class="viewport-pill-select" aria-label="Scene Preset"></select>
+          </div>
+          <div class="viewport-modes" role="group" aria-label="Simulation execution mode">
+            <button type="button" id="mode-edit-btn">Edit</button>
+            <button type="button" id="mode-sim-btn" class="active">Sim</button>
+            <button type="button" id="mode-play-btn">Play</button>
+          </div>
+        </div>
+
+        <div class="viewport-toolbar">
+          <div class="viewport-action-row">
+            <button type="button" class="viewport-construct" id="btn-construct-force" title="Open Force Generator Catalogue (Ctrl+A)">
+              <span id="construct-btn-icon"></span>
+              <span>Add Force</span>
+              <kbd>Ctrl+A</kbd>
+            </button>
+            <button type="button" class="viewport-icon-button" id="btn-focus-cam" title="Focus Camera on Selected Force (F)" aria-label="Focus Camera"></button>
+            <select id="select-camera-view" class="viewport-pill-select" aria-label="Camera projection">
+              <option value="Perspective">Perspective</option>
+              <option value="Top">Top (XY)</option>
+              <option value="Front">Front (XZ)</option>
+              <option value="Side">Side (YZ)</option>
+            </select>
+          </div>
+
+          <div class="viewport-action-row">
+            <button type="button" class="viewport-icon-button active" id="btn-toggle-play" title="Play / Pause Flow Simulation (Space)" aria-label="Play or Pause"></button>
+            <button type="button" class="viewport-icon-button" id="btn-respawn-particles" title="Respawn Tracer Particles (R)" aria-label="Respawn Particles"></button>
+            <button type="button" class="viewport-icon-button" id="btn-split-view" title="Toggle Split Perspective / Top Viewport" aria-label="Split Viewport"></button>
+            <button type="button" class="viewport-icon-button active" id="btn-grid-toggle" title="Toggle 3D Ground Grid" aria-label="Toggle Grid"></button>
+            <button type="button" class="viewport-icon-button active" id="btn-gizmo-toggle" title="Toggle 3D Transform Gizmo" aria-label="Toggle Gizmo"></button>
+            <button type="button" class="viewport-icon-button" id="btn-diag-toggle" title="Toggle Diagnostics Overlay (F3)" aria-label="Toggle Diagnostics"></button>
+            <button type="button" class="viz-toggle-btn active" id="btn-flow-viz" title="Flow Visualization Layers">Flow Viz</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="scene-stage" id="viewport-stage">
+        <!-- WebGL2 + HUD Canvases mounted here -->
+        <div class="diag-overlay" id="diag-overlay" hidden>
+          <div class="diag-row"><span>Render Backend</span><b>WebGL2 GLSL 3.00</b></div>
+          <div class="diag-row"><span>Frame Rate</span><b id="diag-fps">60.0 fps</b></div>
+          <div class="diag-row"><span>Tracer Particles</span><b id="diag-particles">1600</b></div>
+          <div class="diag-row"><span>Overlay Triangles</span><b id="diag-tris">0</b></div>
+          <div class="diag-row"><span>Shift+Click</span><b>Move 3D Probe</b></div>
+        </div>
+
+        <div class="flow-viz-popover" id="flow-viz-popover" hidden></div>
+
+        <div class="probe-hud" id="probe-hud">
+          <div class="probe-hud-bar">
+            <span id="probe-hud-min">0</span>
+            <div class="probe-hud-gradient" id="probe-hud-grad"></div>
+            <span id="probe-hud-max">24 m/s</span>
+          </div>
+          <div class="probe-hud-metrics" id="probe-hud-metrics">
+            <span>|v| <b>0.0</b> m/s</span>
+            <span>|∇×F| <b>0.0</b></span>
+            <span>∇·F <b>0.0</b></span>
+          </div>
+        </div>
+      </div>
+
+      <footer class="viewport-footer">
+        <span id="vp-footer-status"><b class="live-green">LIVE</b> · Orbit: Drag · Pan: Mid/Shift · Fly: RMB+WASD · Probe: Shift+Click</span>
+        <span id="vp-footer-particles">1600 tracers · RK2 + RK4</span>
+      </footer>
+    </main>
+
+    <!-- RIGHT DOCK: INSPECTOR -->
+    <aside class="dock right" id="right-dock">
+      <div class="divider right" id="right-resizer" role="separator" aria-orientation="vertical"></div>
+      <div class="tab-strip">
+        <div class="document-tab active" role="tab" aria-selected="true">
+          <span>Inspector</span>
+        </div>
+      </div>
+
+      <div class="inspector-scroll" id="inspector-scroll"></div>
+
+      <footer class="inspector-footer">
+        <span id="inspector-footer-left">ForceField · 19 Laws</span>
+        <span id="inspector-footer-right">Project-Zero UI</span>
+      </footer>
+    </aside>
+  </div>
+
+  <!-- TOP TRAPEZOIDAL NOTCH (CONTROL CENTRE & SCENARIOS) -->
+  <div class="notch-shell" id="notch-shell">
+    <div class="notch-shade">
+      <div class="control-dashboard">
+        <header>
+          <div>
+            <h2>Frontier · ForceField Control Centre</h2>
+            <small>Select a multi-generator flow scenario or import/export `.VectorFieldSpace` TOML</small>
+          </div>
+          <button type="button" class="pill-btn" id="notch-close-btn">Close</button>
+        </header>
+        <div class="preset-grid" id="notch-presets-grid"></div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="pill-btn" id="notch-import-toml-btn" style="flex:1;">Import .ForceModel TOML</button>
+          <button type="button" class="pill-btn primary" id="notch-export-scene-btn" style="flex:1;">Export .VectorFieldSpace TOML</button>
+        </div>
+      </div>
+    </div>
+    <button type="button" class="notch-handle" id="notch-handle" title="Toggle Control Centre & Scenarios">
+      <svg viewBox="0 0 210 34" preserveAspectRatio="none"><polygon points="0,0 210,0 192,34 18,34"/></svg>
+      <span>Project-Zero · ForceField</span>
+    </button>
+  </div>
+
+  <!-- BOTTOM TRAPEZOIDAL DRAWER (FORCE GENERATORS PALETTE) -->
+  <div class="drawer-shell" id="drawer-shell">
+    <button type="button" class="drawer-handle" id="drawer-handle" title="Toggle Force Generators Drawer (Ctrl+B)">
+      <svg viewBox="0 0 184 30" preserveAspectRatio="none"><polygon points="16,0 168,0 184,30 0,30"/></svg>
+      <span>Force Generators</span>
+    </button>
+    <div class="drawer-body">
+      <div class="drawer-head">
+        <strong style="font-size:13px;font-weight:400;">Force Generator Palette <small style="margin-left:6px;">Drag onto 3D viewport or click to add</small></strong>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <div class="filter-chips" id="drawer-domain-filters" style="padding:0;">
+            <button type="button" class="active" data-domain="All">All (19)</button>
+            <button type="button" data-domain="VectorField">VectorField</button>
+            <button type="button" data-domain="FlowField">FlowField</button>
+            <button type="button" data-domain="TurbulenceField">Turbulence</button>
+          </div>
+          <input type="search" id="drawer-search" placeholder="Filter generators…" style="height:28px;border-radius:14px;padding:0 11px;font-size:11px;width:160px;" />
+        </div>
+      </div>
+      <div class="drawer-cards" id="drawer-cards"></div>
+    </div>
+  </div>
+
+  <!-- CONSTRUCT MODAL (+ ADD FORCE) -->
+  <div class="modal-scrim" id="construct-scrim" hidden>
+    <section class="construct-dialog" role="dialog" aria-modal="true" aria-label="Add Force Generator">
+      <header class="construct-titlebar">
+        <h2>Add Force Generator</h2>
+        <button type="button" id="construct-close-btn" style="border:0;background:transparent;min-height:24px;padding:4px;" aria-label="Close"></button>
+      </header>
+      <label class="construct-search">
+        <span id="construct-search-icon"></span>
+        <input type="search" id="construct-search-input" placeholder="Search 19 force laws (e.g. Vortex, Curl, Dipole, Spline, Burst…)" />
+      </label>
+      <div class="construct-catalogue">
+        <div class="construct-categories" id="construct-categories">
+          <button type="button" class="active" data-cat="All">All Laws (19)</button>
+          <button type="button" data-cat="VectorField">VectorField (12)</button>
+          <button type="button" data-cat="FlowField">FlowField (3)</button>
+          <button type="button" data-cat="TurbulenceField">Turbulence (4)</button>
+        </div>
+        <div class="construct-results">
+          <div class="construct-matrix" id="construct-matrix"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- TOML EXPORT / IMPORT MODAL -->
+  <div class="modal-scrim" id="export-scrim" hidden>
+    <section class="export-dialog-box" role="dialog" aria-modal="true" aria-label="ForceField TOML Codec">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h2 id="export-title" style="font-size:16px;">Export .VectorFieldSpace TOML</h2>
+        <button type="button" class="pill-btn" id="export-close-btn">Close</button>
+      </div>
+      <textarea id="export-code" class="export-code" rows="16"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" class="pill-btn" id="export-import-apply-btn" hidden>Import into Scene</button>
+        <button type="button" class="pill-btn" id="export-copy-btn">Copy TOML</button>
+        <button type="button" class="pill-btn primary" id="export-download-btn">Download File</button>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
