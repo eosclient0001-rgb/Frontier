@@ -1,7 +1,12 @@
-#!/usr/bin/env python3
-"""Stage a narrow, reproducible compatibility patch; never edit ExternalPackages in place."""
+#============================================================================================================================================
+#                                                          STAGETHORVG.PY
+#============================================================================================================================================
+# 🧩 Stage ThorVG tvgInitializer.cpp into build scratch without global operator new/delete overrides; never mutate ExternalPackages/thorvg.
+
 from pathlib import Path
-TAIL='''void* operator new(std::size_t size) {
+import argparse
+
+OperatorOverrideTail = '''void* operator new(std::size_t size) {
     return tvg::malloc(size);
 }
 
@@ -9,13 +14,23 @@ TAIL='''void* operator new(std::size_t size) {
 void operator delete(void* ptr) noexcept {
     tvg::free(ptr);
 }'''
-def stage(source:Path,destination:Path):
-    original=(source/'src/renderer/tvgInitializer.cpp').read_text()
-    if not original.endswith(TAIL):
-        raise RuntimeError('ThorVG initializer differs from the reviewed 1.0.0 pin; re-review the allocation patch.')
-    destination.parent.mkdir(parents=True,exist_ok=True)
-    destination.write_text(original[:-len(TAIL)]+'// Frontier: retain the standard C++ allocation functions.\n')
-    return destination
-if __name__=='__main__':
-    import argparse
-    p=argparse.ArgumentParser();p.add_argument('source',type=Path);p.add_argument('destination',type=Path);a=p.parse_args();stage(a.source,a.destination)
+
+
+def StageInitializer(SourceRoot: Path, DestinationFile: Path) -> Path:
+    OriginalText = (SourceRoot / 'src/renderer/tvgInitializer.cpp').read_text(encoding='utf-8')
+    if not OriginalText.endswith(OperatorOverrideTail):
+        raise RuntimeError('ThorVG tvgInitializer.cpp differs from reviewed 1.0.0 pin; re-audit allocation staging.')
+    DestinationFile.parent.mkdir(parents=True, exist_ok=True)
+    DestinationFile.write_text(
+        OriginalText[:-len(OperatorOverrideTail)] + '// Frontier: retain standard C++ global allocation operators.\n',
+        encoding='utf-8',
+    )
+    return DestinationFile
+
+
+if __name__ == '__main__':
+    Parser = argparse.ArgumentParser()
+    Parser.add_argument('source', type=Path)
+    Parser.add_argument('destination', type=Path)
+    Arguments = Parser.parse_args()
+    StageInitializer(Arguments.source, Arguments.destination)
