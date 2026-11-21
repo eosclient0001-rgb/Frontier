@@ -598,7 +598,7 @@ void EditorLifecycle::SynchronizeShowcaseGizmoAnchor() noexcept
     LastGizmoSlot = PrimarySlot;
 }
 
-void EditorLifecycle::FrameShowcaseCameraSelection() noexcept
+void EditorLifecycle::FrameShowcaseCameraSelection(bool SelectionOnly) noexcept
 {
     WorkspaceSessionPanes* Panes = Workspaces.AccessActivePanes();
     if (Panes == nullptr || ShowcaseBundle == nullptr)
@@ -606,26 +606,115 @@ void EditorLifecycle::FrameShowcaseCameraSelection() noexcept
         return;
     }
 
+    // 🔴 THE FIT IS MEASURED, NOT GUESSED. The retired arm multiplied the outliner SCALE by 2.25 and clamped
+    //    the result into 1.45..7.0 m. Scale is not a size: the ControlVehicle, the ground plane and a 4 cm
+    //    stamp all answer ~1.0, so F landed inside the plane, far from the stamp, and buried in the vehicle
+    //    whenever the field of view narrowed. The scene bundle already publishes every object's world centre
+    //    and metre dimensions, so the camera is placed by the sphere that actually encloses the selection,
+    //    measured through the narrow half-angle of the current viewport -- the same 38..42 degree optic the
+    //    projection uses.
     const OutlinerSlotToken    Primary = Panes->Outliner.QueryPrimarySelection();
     const OutlinerRecordEntry* Entry   = Primary.Valid() ? Panes->Outliner.FindEntry(Primary) : nullptr;
-    if (Entry != nullptr &&
+    const bool                 SelectedFocusable =
+        Entry != nullptr &&
         Entry->Category != ConstructSlotCategory::Folder &&
         Entry->Token != ShowcaseBundle->EditorCameraToken &&
-        Entry->Token != ShowcaseBundle->SunEmitterToken)
+        Entry->Token != ShowcaseBundle->SunEmitterToken;
+
+    // 📝 AUTHORED METRES TIMES THE INSTANCE'S OWN SCALE. `DimensionsMeters` is the size the asset was authored
+    //    at; the outliner's gizmo writes a uniform multiplier into the cluster instance, so a vehicle scaled
+    //    to 2x still reports its 1x metres here. Multiplying the two is the only pair that describes what is on
+    //    screen, and it reads identically for the 48 m ground plane and a 4 cm stamp.
+    auto WorldRadiusOf = [this](const GeometricRaster::ShowcaseWorldAssetEntry& Asset) noexcept
     {
-        const Mathematics::Axis3D TargetPos{ Entry->PositionX, Entry->PositionY, Entry->PositionZ };
-        const float MaxExtent = std::max(0.45f, std::max({ std::fabs(Entry->ScaleX), std::fabs(Entry->ScaleY), std::fabs(Entry->ScaleZ) }));
-        const Mathematics::Axis3D ViewOffset = Mathematics::NormalizeAxis(
-            ShowcaseBundle->EditorCamera.CameraOrigin - TargetPos,
-            { 0.0f, -1.0f, 0.12f });
-        const float Dist = std::clamp(MaxExtent * 2.25f, 1.45f, 7.0f);
-        ShowcaseBundle->EditorCamera.TargetPoint  = TargetPos;
-        ShowcaseBundle->EditorCamera.CameraOrigin = TargetPos + ViewOffset * Dist;
+        float UniformScale = 1.0f;
+        if (Asset.ClusterInstanceIndex < ShowcaseBundle->Scene.ClusterInstances.size())
+        {
+            UniformScale = std::max(0.05f, ShowcaseBundle->Scene.ClusterInstances[Asset.ClusterInstanceIndex].UniformScale);
+        }
+        const Mathematics::Scalar3D Extent {
+            std::fabs(Asset.AuthoredDimensions.X) * UniformScale,
+            std::fabs(Asset.AuthoredDimensions.Y) * UniformScale,
+            std::fabs(Asset.AuthoredDimensions.Z) * UniformScale };
+        return std::max(0.12f, 0.5f * std::sqrt(
+            Extent.X * Extent.X + Extent.Y * Extent.Y + Extent.Z * Extent.Z));
+    };
+
+    Mathematics::Axis3D Focus  {};
+    float               Radius = 0.0f;
+    bool                Framed = false;
+
+    if (SelectedFocusable)
+    {
+        Focus = { Entry->PositionX, Entry->PositionY, Entry->PositionZ };
+        const float MaxExtent = std::max({ std::fabs(Entry->ScaleX), std::fabs(Entry->ScaleY), std::fabs(Entry->ScaleZ) });
+        Radius = std::max(0.12f, MaxExtent * 0.5f);
+
+        for (const GeometricRaster::ShowcaseWorldAssetEntry& Asset : ShowcaseBundle->Objects)
+        {
+            if (Asset.SlotToken != Primary)
+            {
+                continue;
+            }
+            Radius = WorldRadiusOf(Asset);
+            break;
+        }
+        Framed = true;
+    }
+    else if (!SelectionOnly)
+    {
+        // 📝 FIT VIEW WITHOUT A SELECTION FRAMES THE WHOLE WORLD, NOT A FIXED POSE. A hard-coded home eye is a
+        //    claim about a scene the artist may have replaced; the enclosing sphere of the built objects is
+        //    the only answer that still holds after an import, a blank plane or a deleted vehicle.
+        Mathematics::Axis3D Minimum {  1.0e9f,  1.0e9f,  1.0e9f };
+        Mathematics::Axis3D Maximum { -1.0e9f, -1.0e9f, -1.0e9f };
+        for (const GeometricRaster::ShowcaseWorldAssetEntry& Asset : ShowcaseBundle->Objects)
+        {
+            const float HalfRadius = WorldRadiusOf(Asset);
+            Minimum.X = std::min(Minimum.X, Asset.CenterWorld.X - HalfRadius);
+            Minimum.Y = std::min(Minimum.Y, Asset.CenterWorld.Y - HalfRadius);
+            Minimum.Z = std::min(Minimum.Z, Asset.CenterWorld.Z - HalfRadius);
+            Maximum.X = std::max(Maximum.X, Asset.CenterWorld.X + HalfRadius);
+            Maximum.Y = std::max(Maximum.Y, Asset.CenterWorld.Y + HalfRadius);
+            Maximum.Z = std::max(Maximum.Z, Asset.CenterWorld.Z + HalfRadius);
+        }
+        if (!ShowcaseBundle->Objects.empty() && Minimum.X <= Maximum.X)
+        {
+            Focus = { (Minimum.X + Maximum.X) * 0.5f,
+                      (Minimum.Y + Maximum.Y) * 0.5f,
+                      (Minimum.Z + Maximum.Z) * 0.5f };
+            Radius = std::max(0.12f, 0.5f * std::sqrt(
+                (Maximum.X - Minimum.X) * (Maximum.X - Minimum.X) +
+                (Maximum.Y - Minimum.Y) * (Maximum.Y - Minimum.Y) +
+                (Maximum.Z - Minimum.Z) * (Maximum.Z - Minimum.Z)));
+            Framed = true;
+        }
+    }
+
+    if (!Framed)
+    {
+        if (SelectionOnly)
+        {
+            return;
+        }
+        ShowcaseBundle->EditorCamera.CameraOrigin = { 0.00f, -3.55f, 0.42f };
+        ShowcaseBundle->EditorCamera.TargetPoint  = { 0.00f,  0.55f, 0.15f };
     }
     else
     {
-        ShowcaseBundle->EditorCamera.CameraOrigin = { 0.00f, -3.55f, 0.42f };
-        ShowcaseBundle->EditorCamera.TargetPoint  = { 0.00f,  0.55f, 0.15f };
+        auto& Cam = ShowcaseBundle->EditorCamera;
+        // 📝 The viewing DIRECTION is preserved; only the standing distance changes, so F never spins the view.
+        const Mathematics::Axis3D ViewDirection = Mathematics::NormalizeAxis(
+            Cam.CameraOrigin - Focus,
+            Mathematics::NormalizeAxis(Cam.TargetPoint - Cam.CameraOrigin, { 0.0f, -1.0f, 0.12f }));
+        const float TanHalfVertical = std::tan(std::clamp(Cam.VerticalFovRadians, 0.10f, 2.60f) * 0.5f);
+        const float Aspect = static_cast<float>(std::max(1u, Cam.ViewportWidthPx)) /
+                             static_cast<float>(std::max(1u, Cam.ViewportHeightPx));
+        const float TanNarrow = std::max(0.05f, std::min(TanHalfVertical, TanHalfVertical * Aspect));
+        const float SinNarrow = TanNarrow / std::sqrt(1.0f + TanNarrow * TanNarrow);
+        const float Distance  = std::clamp(Radius / SinNarrow * 1.10f, Radius + 0.80f, 400.0f);
+        Cam.TargetPoint  = Focus;
+        Cam.CameraOrigin = Focus + ViewDirection * Distance;
     }
 
     if (OutlinerRecordEntry* CamEntry = Panes->Outliner.AccessEntry(ShowcaseBundle->EditorCameraToken))
@@ -1008,7 +1097,7 @@ void EditorLifecycle::ProcessShowcaseViewportInteraction(
         }
         else if (ImGui::IsKeyPressed(ImGuiKey_F, false))
         {
-            FrameShowcaseCameraSelection();
+            FrameShowcaseCameraSelection(true);
             return;
         }
     }

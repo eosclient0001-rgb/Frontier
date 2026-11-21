@@ -568,6 +568,32 @@ int main()
         const float LmbTargetDriftSq = Mathematics::EvaluateDot(TargetAfterLmb - TargetBeforeLmb,
                                                                TargetAfterLmb - TargetBeforeLmb);
 
+        // F frames the primary selection. The target must land on the object's authored world centre and the eye
+        // must stand clear of the sphere that encloses it: the retired arm multiplied outliner SCALE by 2.25,
+        // which is not a size, and clamped the answer into 1.45..7.0 m whatever the object actually measured.
+        float FocusTargetDriftSq    = 0.0f;
+        float FocusStandingDistance = 0.0f;
+        if (auto* FocusPanes = EditorSession.AccessWorkspaces().AccessActivePanes())
+        {
+            if (!LiveBundle->Objects.empty())
+            {
+                const GeometricRaster::ShowcaseWorldAssetEntry& FocusAsset = LiveBundle->Objects.front();
+                FocusPanes->Outliner.SelectSingle(FocusAsset.SlotToken);
+                Io.AddMousePosEvent(960.0f, 420.0f);
+                Io.AddKeyEvent(ImGuiKey_F, true);
+                ImGui::NewFrame();
+                EditorSession.PresentPrimaryEditorImGui(1.0 / 60.0);
+                ImGui::Render();
+                Io.AddKeyEvent(ImGuiKey_F, false);
+
+                const Mathematics::Axis3D TargetDrift = LiveBundle->EditorCamera.TargetPoint - FocusAsset.CenterWorld;
+                FocusTargetDriftSq = Mathematics::EvaluateDot(TargetDrift, TargetDrift);
+                const Mathematics::Axis3D Standing =
+                    LiveBundle->EditorCamera.CameraOrigin - LiveBundle->EditorCamera.TargetPoint;
+                FocusStandingDistance = std::sqrt(Mathematics::EvaluateDot(Standing, Standing));
+            }
+        }
+
         // Wheel must adjust Fly Speed (never Dolly-Zoom), with and without RMB held
         auto StepWheel = [&](bool RmbDown, float WheelNotches)
         {
@@ -607,11 +633,13 @@ int main()
             WheelOriginDriftSq > 1.0e-6f ||
             WheelTargetDriftSq > 1.0e-6f ||
             LmbOriginDriftSq > 1.0e-6f ||
-            LmbTargetDriftSq > 1.0e-6f)
+            LmbTargetDriftSq > 1.0e-6f ||
+            FocusTargetDriftSq > 1.0e-4f ||
+            FocusStandingDistance < 0.50f)
         {
             std::fprintf(
                 stderr,
-                "[FAIL] Unreal Engine camera controls validation failed (NormalW=%.3f, SprintW=%.3f, dZE=%.3f, dZShiftQ=%.3f, OutBoundsStrafeSq=%.4f, SpeedBefore=%.3f, SpeedWheelUp=%.3f, SpeedRmbWheel=%.3f, WheelDriftSq=%.6f/%.6f, LmbDriftSq=%.6f/%.6f).\n",
+                "[FAIL] Unreal Engine camera controls validation failed (NormalW=%.3f, SprintW=%.3f, dZE=%.3f, dZShiftQ=%.3f, OutBoundsStrafeSq=%.4f, SpeedBefore=%.3f, SpeedWheelUp=%.3f, SpeedRmbWheel=%.3f, WheelDriftSq=%.6f/%.6f, LmbDriftSq=%.6f/%.6f, FocusTargetDriftSq=%.6f, FocusStanding=%.3f).\n",
                 NormalStepDist,
                 SprintStepDist,
                 ZAfterE - ZBeforeE,
@@ -623,7 +651,9 @@ int main()
                 WheelOriginDriftSq,
                 WheelTargetDriftSq,
                 LmbOriginDriftSq,
-                LmbTargetDriftSq);
+                LmbTargetDriftSq,
+                FocusTargetDriftSq,
+                FocusStandingDistance);
             EditorSession.Finalize();
             ImGui::DestroyContext(Ctx);
             return 1;

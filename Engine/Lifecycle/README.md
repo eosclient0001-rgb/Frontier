@@ -35,16 +35,29 @@
 
 ### 3.1 World Viewport Navigation & Gizmos (`EditorLifecycle`)
 
+**One camera model, and it is the right mouse button.** A retired arm gave a bare `LMB` drag a second model
+(yaw turn + ground walk) beside `RMB` fly; the two fought the same hand, and the walk moved the camera under a
+gizmo grab and set `CameraInteractiveDrag`, which suppressed the GPU pick patch the grab needed. `LMB` is the
+gizmo's and the selection's button only.
+
 | Input | Action | Notes |
 | :--- | :--- | :--- |
-| `RMB` Drag + `W`/`A`/`S`/`D`/`Q`/`E` | Fly camera (`Q` down, `E` up; `Shift` boosts fly speed) | Active while holding `RMB` in viewport |
-| `Alt+LMB` Drag | Orbit camera around `TargetPoint` | — |
-| `MMB` Drag or `Shift+RMB` Drag | Pan camera | — |
-| `Mouse Wheel` | Dolly camera toward/away from target | — |
-| `W` / `E` / `R` / `U` | `TransformGizmo`: `Translate` / `Rotate` / `Scale` / `Universal` | When not flying `RMB` or typing |
+| `LMB` Press / Drag on a handle | Grab and drag `TransformGizmo` | `LMB` is never a camera button |
+| `LMB` Click (empty space) | Pick the 3D scene object under the cursor | — |
+| `RMB` Drag | Mouse-look (yaw / pitch) | Cursor confined and hidden while held |
+| `RMB` + `W`/`A`/`S`/`D` (or arrows) | Fly | Keyboard flight requires `RMB` |
+| `RMB` + `E` / `Q` (or `PageUp` / `PageDown`) | Rise / descend | — |
+| `RMB` + `Shift` / `Ctrl` | Sprint ×3 / crawl ×0.3 | `Shift` never turns `RMB` look into pan |
+| `MMB` Drag, `LMB`+`RMB` Drag | Truck / pedestal pan | — |
+| `Alt+LMB` / `Alt+RMB` / `Alt+MMB` | Orbit / dolly / pan | — |
+| `Mouse Wheel` | Fly-speed multiplier (`CameraFlySpeedScalar`) | Never dolly-zooms; dolly stays on `Alt+RMB` and the `+`/`-` capsule |
+| `W` / `E` / `R` / `U` or `Q` | `TransformGizmo`: `Translate` / `Rotate` / `Scale` / `Universal` | When not navigating and not typing |
 | Hold `Ctrl` (during gizmo drag) | Snap transform to `GizmoSnapSettings` grid | — |
-| `F` | Frame selected object in camera (`FrameShowcaseCameraSelection`) | — |
-| `LMB` Click | Pick `TransformGizmo` handle or 3D scene object | — |
+| `F` | Frame the primary selection by its measured world bounds | No focusable selection: no movement |
+| `Fit` capsule | Frame the selection, else the whole scene bounds | `FrameShowcaseCameraSelection()` |
+
+📝 The gizmo's GPU pick patch is requested every frame until a drag actually begins (`RequestPickPatch` checks
+`QueryDragging()`, not `CameraInteractiveDrag`), so a look drag can no longer blank the handle hover.
 
 ### 3.2 Global Panel & Editor Shortcuts (`InputSettings` & `Engine/Components/Panes/`)
 

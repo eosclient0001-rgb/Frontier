@@ -113,7 +113,7 @@ public:
     void               PopulateShowcaseGallerySession(uint32_t RenderWidthPx = 640u, uint32_t RenderHeightPx = 384u);
     void               PopulateBlankPlaneSkySession(uint32_t RenderWidthPx = 640u, uint32_t RenderHeightPx = 384u);
     void               RefreshShowcaseViewportRaster();
-    void               FrameShowcaseCameraSelection() noexcept;
+    void               FrameShowcaseCameraSelection(bool SelectionOnly = false) noexcept;
 
     [[nodiscard]] OutlinerSlotToken SpawnComponentClassPlacement(
         std::string_view             ClassTitle,
