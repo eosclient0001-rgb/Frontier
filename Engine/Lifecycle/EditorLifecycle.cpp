@@ -837,7 +837,7 @@ void EditorLifecycle::ProcessShowcaseViewportInteraction(
     const float NavDeltaY       = NavigationDragWasActive ? DeltaY : 0.0f;
     NavigationDragWasActive     = AnyNavButtonHeld;
 
-    // 2. GPU Gizmo Hover / Drag & 3D Ray Picking (evaluated first so Gizmo handles preempt LMB camera walk)
+    // 2. GPU Gizmo Hover / Drag & 3D Ray Picking (evaluated first so a handle grab always owns the left button)
     const float Aspect  = static_cast<float>(std::max(1u, Cam.ViewportWidthPx)) / static_cast<float>(std::max(1u, Cam.ViewportHeightPx));
     const float TanHalf = std::tan(std::clamp(Cam.VerticalFovRadians, 0.10f, 2.60f) * 0.5f);
     const float NdcX    = (NormU * 2.0f - 1.0f) * Aspect * TanHalf;
@@ -1072,7 +1072,7 @@ void EditorLifecycle::ProcessShowcaseViewportInteraction(
 
     CameraInteractiveDrag = RightHeld || MiddleHeld || (AltHeld && LeftHeld) || WorldTransformGizmo.QueryDragging() || CameraMoved;
 
-    // 4. Gizmo & Frame-Selection Keyboard Shortcuts (when not flying RMB/LMB and not typing in text fields)
+    // 4. Gizmo & Frame-Selection Keyboard Shortcuts (when not navigating and not typing in a text field)
     if (!RightHeld && !LeftHeld && !Io.WantTextInput && !CtrlHeld && !AltHeld)
     {
         if (ImGui::IsKeyPressed(ImGuiKey_W, false))
