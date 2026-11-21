@@ -743,7 +743,7 @@ void EditorLifecycle::ProcessShowcaseViewportInteraction(
         }
     }
 
-    const bool AnyNavButtonHeld = RightHeld || MiddleHeld || LeftHeld;
+    const bool AnyNavButtonHeld = RightHeld || MiddleHeld || (AltHeld && LeftHeld);
     const float NavDeltaX       = NavigationDragWasActive ? DeltaX : 0.0f;
     const float NavDeltaY       = NavigationDragWasActive ? DeltaY : 0.0f;
     NavigationDragWasActive     = AnyNavButtonHeld;
@@ -834,16 +834,21 @@ void EditorLifecycle::ProcessShowcaseViewportInteraction(
         }
     }
 
-    // 3. Unreal Engine Camera Navigation:
-    //    - RMB: 6-DOF Mouse-Look + WASD + Q (Down) + E (Up) + Shift (3x Sprint)
-    //    - LMB (when not dragging Gizmo): Drag Yaw/Horizontal-Walk + WASD + Q/E + Shift
-    //    - MMB or LMB+RMB: Truck / Pedestal Pan
-    //    - Alt+LMB: Orbit around Target, Alt+RMB: Smooth Dolly, Alt+MMB: Pan
-    //    - Wheel (with or without RMB): Fly-Speed Adjustment (never Dolly-Zoom; Dolly stays on Alt+RMB & +/- capsule)
-    //    - Shift is a Sprint modifier only: it must never switch RMB Mouse-Look into Pan or stop Fly keys
-    //    - Arrow Keys + PageUp/PageDown: Keyboard Fly
+    // 3. Unreal Engine camera navigation -- ONE model, and it is the RIGHT mouse button.
+    //    - RMB drag: mouse-look (yaw/pitch), cursor confined and hidden while held
+    //    - RMB + WASD / arrows / Q,E / PageUp,PageDown: fly (Shift = 3x sprint, Ctrl = 0.3x crawl)
+    //    - MMB drag, LMB+RMB: truck / pedestal pan
+    //    - Alt+LMB: orbit around target, Alt+RMB: dolly, Alt+MMB: pan
+    //    - Wheel (with or without RMB): fly-speed adjustment; dolly stays on Alt+RMB and the +/- capsule
+    //
+    // 🔴 THE LEFT BUTTON IS NOT A CAMERA BUTTON. A previous arm gave a bare LMB drag a second camera model --
+    //    "yaw turn + ground-plane walk" -- running alongside RMB fly. Two owners of one gesture is exactly why
+    //    the artist reported both cameras at once and a gizmo that could no longer be grabbed: the walk moved
+    //    the camera (and re-anchored the gizmo) under the hand reaching for a handle, and the movement set
+    //    `CameraInteractiveDrag`, which suppressed the GPU pick patch the next grab needs to find its handle.
+    //    In Unreal, LMB selects and drags the gizmo, and nothing else. Keys never fly without RMB held.
     const bool GizmoBusy = WorldTransformGizmo.QueryDragging();
-    const bool FlyKeysPossible = !Io.WantTextInput && !GizmoBusy && (RightHeld || (LeftHeld && !AltHeld && !MiddleHeld));
+    const bool FlyKeysPossible = !Io.WantTextInput && !GizmoBusy && RightHeld && !AltHeld && !MiddleHeld;
 
     // Wheel source: InputExtension snapshot and ImGui carry the same packet in the desktop host;
     // take the larger magnitude so neither path is double-counted and headless ImGui-only frames still work.
@@ -939,29 +944,6 @@ void EditorLifecycle::ProcessShowcaseViewportInteraction(
                 CameraMoved      = true;
             }
         }
-        else if (LeftHeld && !RightHeld && !MiddleHeld && !AltHeld && !Input.PrimaryPointer.Pressed)
-        {
-            // Unreal Engine LMB viewport drag: Yaw turn + horizontal ground-plane walk
-            if (std::fabs(NavDeltaX) > 0.05f || std::fabs(NavDeltaY) > 0.05f)
-            {
-                const Mathematics::Axis3D ToTarget = Cam.TargetPoint - Cam.CameraOrigin;
-                const float Dist  = std::max(0.35f, std::sqrt(Mathematics::EvaluateDot(ToTarget, ToTarget)));
-                const float Yaw   = std::atan2(Fwd.X, Fwd.Y) + NavDeltaX * 0.0040f;
-                const float Pitch = std::asin(std::clamp(Fwd.Z, -0.995f, 0.995f));
-                const float CosP  = std::cos(Pitch);
-                Fwd               = Mathematics::NormalizeAxis({ std::sin(Yaw) * CosP, std::cos(Yaw) * CosP, std::sin(Pitch) }, Fwd);
-                Right             = Mathematics::NormalizeAxis(Mathematics::EvaluateCross(Fwd, Cam.WorldUpAxis), Right);
-                Up                = Mathematics::NormalizeAxis(Mathematics::EvaluateCross(Right, Fwd), Up);
-
-                const Mathematics::Axis3D GroundFwd = Mathematics::NormalizeAxis({ Fwd.X, Fwd.Y, 0.0f }, { std::sin(Yaw), std::cos(Yaw), 0.0f });
-                const float WalkScale = 0.018f * CameraFlySpeedScalar * (ShiftHeld ? 3.0f : 1.0f);
-                const Mathematics::Axis3D WalkOffset = GroundFwd * (-NavDeltaY * WalkScale);
-                Cam.CameraOrigin = Cam.CameraOrigin + WalkOffset;
-                Cam.TargetPoint  = Cam.CameraOrigin + Fwd * Dist;
-                CameraMoved      = true;
-            }
-        }
-
         if (FlyKeysPossible)
         {
             Mathematics::Axis3D WishDir { 0.0f, 0.0f, 0.0f };
@@ -986,31 +968,6 @@ void EditorLifecycle::ProcessShowcaseViewportInteraction(
                 CameraMoved      = true;
             }
         }
-        else if (!RightHeld && !LeftHeld && !Io.WantTextInput && !CtrlHeld && !AltHeld)
-        {
-            // Arrow-key + PageUp/PageDown viewport flight without mouse button
-            Mathematics::Axis3D ArrowDir { 0.0f, 0.0f, 0.0f };
-            if (ImGui::IsKeyDown(ImGuiKey_UpArrow))    ArrowDir = ArrowDir + Fwd;
-            if (ImGui::IsKeyDown(ImGuiKey_DownArrow))  ArrowDir = ArrowDir - Fwd;
-            if (ImGui::IsKeyDown(ImGuiKey_RightArrow)) ArrowDir = ArrowDir + Right;
-            if (ImGui::IsKeyDown(ImGuiKey_LeftArrow))  ArrowDir = ArrowDir - Right;
-            if (ImGui::IsKeyDown(ImGuiKey_PageUp))     ArrowDir = ArrowDir + Cam.WorldUpAxis;
-            if (ImGui::IsKeyDown(ImGuiKey_PageDown))   ArrowDir = ArrowDir - Cam.WorldUpAxis;
-
-            const float ArrowLenSq = Mathematics::EvaluateDot(ArrowDir, ArrowDir);
-            if (ArrowLenSq > 1.0e-8f)
-            {
-                const Mathematics::Axis3D NormDir = ArrowDir * (1.0f / std::sqrt(ArrowLenSq));
-                const float StepMeters =
-                    6.0f * CameraFlySpeedScalar * (ShiftHeld ? 3.0f : 1.0f) *
-                    static_cast<float>(std::clamp(CurrentStepSeconds, 0.001, 0.100));
-                const Mathematics::Axis3D MoveVec = NormDir * StepMeters;
-                Cam.CameraOrigin = Cam.CameraOrigin + MoveVec;
-                Cam.TargetPoint  = Cam.TargetPoint + MoveVec;
-                CameraMoved      = true;
-            }
-        }
-
     }
 
     {
@@ -1788,7 +1745,7 @@ void EditorLifecycle::RefreshGizmoOverlayFromCachedWorld()
         CompReq.Camera               = ShowcaseBundle->EditorCamera;
         CompReq.Gizmo3D              = &WorldTransformGizmo;
         CompReq.DrawGizmo            = LastGizmoSlot.Valid();
-        CompReq.RequestPickPatch     = !CameraInteractiveDrag && CursorInCanvas && LastGizmoSlot.Valid();
+        CompReq.RequestPickPatch     = !WorldTransformGizmo.QueryDragging() && CursorInCanvas && LastGizmoSlot.Valid();
         CompReq.PickCursorX          = PickX;
         CompReq.PickCursorY          = PickY;
 
@@ -1957,7 +1914,7 @@ void EditorLifecycle::RefreshShowcaseViewportRaster()
             CompReq.Camera               = ShowcaseBundle->EditorCamera;
             CompReq.Gizmo3D              = &WorldTransformGizmo;
             CompReq.DrawGizmo            = LastGizmoSlot.Valid();
-            CompReq.RequestPickPatch     = !CameraInteractiveDrag && CursorInCanvas && LastGizmoSlot.Valid();
+            CompReq.RequestPickPatch     = !WorldTransformGizmo.QueryDragging() && CursorInCanvas && LastGizmoSlot.Valid();
             CompReq.PickCursorX          = PickX;
             CompReq.PickCursorY          = PickY;
 

@@ -540,6 +540,34 @@ int main()
         // Release RMB cleanly
         StepRmbFly(ImVec2(960.0f, 420.0f), false, ImGuiKey_None, false, 1.0 / 60.0);
 
+        // 🔴 LMB IS THE GIZMO'S BUTTON, NOT THE CAMERA'S. A bare left-drag (with W held for good measure) must
+        //    leave origin and target untouched: the retired second camera model yawed and ground-walked the
+        //    camera on that gesture, which also re-anchored the gizmo and killed its pick patch.
+        const Mathematics::Axis3D OriginBeforeLmb = LiveBundle->EditorCamera.CameraOrigin;
+        const Mathematics::Axis3D TargetBeforeLmb = LiveBundle->EditorCamera.TargetPoint;
+        for (int Step = 0; Step < 6; ++Step)
+        {
+            Io.AddMousePosEvent(900.0f + static_cast<float>(Step) * 12.0f,
+                                420.0f + static_cast<float>(Step) * 6.0f);
+            Io.AddMouseButtonEvent(ImGuiMouseButton_Left, Step < 5);
+            Io.AddKeyEvent(ImGuiKey_W, true);
+            ImGui::NewFrame();
+            EditorSession.PresentPrimaryEditorImGui(0.050);
+            ImGui::Render();
+            Io.AddKeyEvent(ImGuiKey_W, false);
+        }
+        Io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+        Io.AddMousePosEvent(960.0f, 420.0f);
+        ImGui::NewFrame();
+        EditorSession.PresentPrimaryEditorImGui(1.0 / 60.0);
+        ImGui::Render();
+        const Mathematics::Axis3D OriginAfterLmb = LiveBundle->EditorCamera.CameraOrigin;
+        const Mathematics::Axis3D TargetAfterLmb = LiveBundle->EditorCamera.TargetPoint;
+        const float LmbOriginDriftSq = Mathematics::EvaluateDot(OriginAfterLmb - OriginBeforeLmb,
+                                                               OriginAfterLmb - OriginBeforeLmb);
+        const float LmbTargetDriftSq = Mathematics::EvaluateDot(TargetAfterLmb - TargetBeforeLmb,
+                                                               TargetAfterLmb - TargetBeforeLmb);
+
         // Wheel must adjust Fly Speed (never Dolly-Zoom), with and without RMB held
         auto StepWheel = [&](bool RmbDown, float WheelNotches)
         {
@@ -577,11 +605,13 @@ int main()
             SpeedAfterRmbWheel > SpeedAfterWheelUp * 0.90f ||
             SpeedAfterRmbWheel < SpeedBeforeWheel * 1.05f ||
             WheelOriginDriftSq > 1.0e-6f ||
-            WheelTargetDriftSq > 1.0e-6f)
+            WheelTargetDriftSq > 1.0e-6f ||
+            LmbOriginDriftSq > 1.0e-6f ||
+            LmbTargetDriftSq > 1.0e-6f)
         {
             std::fprintf(
                 stderr,
-                "[FAIL] Unreal Engine camera controls validation failed (NormalW=%.3f, SprintW=%.3f, dZE=%.3f, dZShiftQ=%.3f, OutBoundsStrafeSq=%.4f, SpeedBefore=%.3f, SpeedWheelUp=%.3f, SpeedRmbWheel=%.3f, WheelDriftSq=%.6f/%.6f).\n",
+                "[FAIL] Unreal Engine camera controls validation failed (NormalW=%.3f, SprintW=%.3f, dZE=%.3f, dZShiftQ=%.3f, OutBoundsStrafeSq=%.4f, SpeedBefore=%.3f, SpeedWheelUp=%.3f, SpeedRmbWheel=%.3f, WheelDriftSq=%.6f/%.6f, LmbDriftSq=%.6f/%.6f).\n",
                 NormalStepDist,
                 SprintStepDist,
                 ZAfterE - ZBeforeE,
@@ -591,7 +621,9 @@ int main()
                 SpeedAfterWheelUp,
                 SpeedAfterRmbWheel,
                 WheelOriginDriftSq,
-                WheelTargetDriftSq);
+                WheelTargetDriftSq,
+                LmbOriginDriftSq,
+                LmbTargetDriftSq);
             EditorSession.Finalize();
             ImGui::DestroyContext(Ctx);
             return 1;
