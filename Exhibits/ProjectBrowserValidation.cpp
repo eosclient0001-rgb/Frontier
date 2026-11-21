@@ -573,12 +573,24 @@ int main()
         // which is not a size, and clamped the answer into 1.45..7.0 m whatever the object actually measured.
         float FocusTargetDriftSq    = 0.0f;
         float FocusStandingDistance = 0.0f;
-        if (auto* FocusPanes = EditorSession.AccessWorkspaces().AccessActivePanes())
+        const GeometricRaster::ShowcaseWorldAssetEntry* FocusAsset = nullptr;
+        for (const GeometricRaster::ShowcaseWorldAssetEntry& Candidate : LiveBundle->Objects)
         {
-            if (!LiveBundle->Objects.empty())
+            if (Candidate.SlotToken.Valid() && Candidate.AuthoredDimensions.X > 0.01f)
             {
-                const GeometricRaster::ShowcaseWorldAssetEntry& FocusAsset = LiveBundle->Objects.front();
-                FocusPanes->Outliner.SelectSingle(FocusAsset.SlotToken);
+                FocusAsset = &Candidate;
+                break;
+            }
+        }
+        if (auto* FocusPanes = EditorSession.AccessWorkspaces().AccessActivePanes(); FocusAsset != nullptr && FocusPanes != nullptr)
+        {
+            FocusPanes->Outliner.SelectSingle(FocusAsset->SlotToken);
+            const OutlinerRecordEntry* FocusEntry = FocusPanes->Outliner.FindEntry(FocusAsset->SlotToken);
+            if (FocusEntry != nullptr)
+            {
+                const Mathematics::Axis3D FocusAuthoredPosition{
+                    FocusEntry->PositionX, FocusEntry->PositionY, FocusEntry->PositionZ };
+
                 Io.AddMousePosEvent(960.0f, 420.0f);
                 Io.AddKeyEvent(ImGuiKey_F, true);
                 ImGui::NewFrame();
@@ -586,7 +598,8 @@ int main()
                 ImGui::Render();
                 Io.AddKeyEvent(ImGuiKey_F, false);
 
-                const Mathematics::Axis3D TargetDrift = LiveBundle->EditorCamera.TargetPoint - FocusAsset.CenterWorld;
+                const Mathematics::Axis3D TargetDrift =
+                    LiveBundle->EditorCamera.TargetPoint - FocusAuthoredPosition;
                 FocusTargetDriftSq = Mathematics::EvaluateDot(TargetDrift, TargetDrift);
                 const Mathematics::Axis3D Standing =
                     LiveBundle->EditorCamera.CameraOrigin - LiveBundle->EditorCamera.TargetPoint;
