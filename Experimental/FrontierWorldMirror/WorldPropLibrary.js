@@ -4,7 +4,7 @@
 //          Proving-Ground Barriers & Kerbs in Frontier Z-Up meters (+X Right, +Y Forward, +Z Up), using clean flat OpenPBR materials.
 //==========================================================================================================================================
 
-import { ResolveMaterial } from "./MaterialSpecification.js";
+import { ResolveMaterial, Rgb } from "./MaterialSpecification.js";
 
 export const FACE_KEYS = ["-X", "+X", "-Y", "+Y", "-Z", "+Z"];
 export const FACE_LABELS = {
@@ -395,7 +395,7 @@ function BuildControlVehicleTyre({ Pos = [0, 0, 0], ScaleFactor = 0.78, WithRimA
 }
 
 //==========================================================================================================================================
-// CATALOG OF BESPOKE 3D CAMERAS, STUDIO LIGHTS, FANS, CONTROLVEHICLE TYRES & PROVING-GROUND BARRIERS (28 ITEMS)
+// CATALOG OF BESPOKE 3D CAMERAS, STUDIO LIGHTS, FANS, CONTROLVEHICLE TYRES, PROVING-GROUND BARRIERS & LIGHT AIRCRAFT (29 ITEMS)
 //   Local coordinates are centered so Z ∈ [-HalfHeightZ, +HalfHeightZ], placing bottom flush at Z_world - HalfHeightZ!
 //==========================================================================================================================================
 export const WORLD_PROP_CATALOG = [
@@ -1339,6 +1339,49 @@ export const WORLD_PROP_CATALOG = [
       Part(2, [0.14, 0.06, 0.45], [0.032, 0.032, 0.015], [0, 0, 0], PAL.chrome),
     ],
   },
+  // ===================================================== 4. AIRCRAFT (1) ======================================================
+  {
+    PropId: "light_aircraft",
+    Name: "Light Trainer Aircraft",
+    Category: "Aircraft",
+    Panel: "geometry",
+    Icon: "aircraft",
+    HalfHeightZ: 0.45,
+    NominalScale: [1, 1, 1],
+    Description: "Display-scale high-wing single-engine trainer (Cessna-172 silhouette) · fixed tricycle gear, twin-blade propeller, wingtip position lights · 2.65 m span",
+    BuildParts: () => [
+      // Fuselage: capped cylinder laid on its side along Y (nose -Y) · titanium-ivory airframe
+      Part(2, [0, 0, 0.10], [0.13, 0.13, 0.78], [90, 0, 0], PAL.titaniumIvory),
+      // Tapered tail cone (apex +Y)
+      Part(3, [0, 0.845, 0.135], [0.072, 0.072, 0.165], [-90, 0, 0], PAL.titaniumIvory),
+      // Raked windshield (sapphire optical) + rear side-window band
+      Part(0, [0, -0.295, 0.185], [0.095, 0.155, 0.055], [12, 0, 0], PAL.sapphireOptic),
+      Part(0, [0, 0.155, 0.205], [0.088, 0.26, 0.028], [0, 0, 0], PAL.sapphireOptic),
+      // High wing + wingtip position lights (port red +X · starboard green -X)
+      Part(0, [0, -0.02, 0.335], [1.32, 0.155, 0.030], [0, 0, 0], PAL.titaniumIvory),
+      Part(0, [1.285, -0.02, 0.335], [0.035, 0.155, 0.034], [0, 0, 0], PAL.fiaRed),
+      Part(0, [-1.285, -0.02, 0.335], [0.035, 0.155, 0.034], [0, 0, 0], PAL.tallyGreen),
+      // Twin wing struts
+      StrutPart([0.10, -0.02, 0.02], [0.55, -0.02, 0.310], 0.012, PAL.titaniumIvory),
+      StrutPart([-0.10, -0.02, 0.02], [-0.55, -0.02, 0.310], 0.012, PAL.titaniumIvory),
+      // Horizontal stabilizer + vertical fin + red fin flash + fin-tip beacon
+      Part(0, [0, 0.705, 0.175], [0.47, 0.125, 0.024], [0, 0, 0], PAL.titaniumIvory),
+      Part(0, [0, 0.700, 0.285], [0.028, 0.150, 0.125], [0, 0, 0], PAL.titaniumIvory),
+      Part(0, [0, 0.678, 0.372], [0.031, 0.115, 0.035], [0, 0, 0], PAL.fiaRed),
+      Part(1, [0, 0.70, 0.423], [0.020, 0.020, 0.020], [0, 0, 0], PAL.tallyRed),
+      // Nose spinner + twin-blade propeller (disc faces -Y)
+      Part(3, [0, -0.85, 0.10], [0.062, 0.062, 0.145], [90, 0, 0], PAL.fiaRed),
+      Part(0, [0, -0.94, 0.10], [0.036, 0.014, 0.35], [0, 0, 0], PAL.anodizedBlack),
+      Part(0, [0, -0.94, 0.10], [0.35, 0.014, 0.036], [0, 0, 0], PAL.anodizedBlack),
+      // Fixed tricycle landing gear · wheel bottoms flush at local Z = -0.45
+      Part(2, [0, -0.50, -0.215], [0.013, 0.013, 0.185], [0, 0, 0], PAL.machinedSilver),
+      Part(2, [0.15, 0.09, -0.20], [0.015, 0.015, 0.21], [0, 0, 0], PAL.machinedSilver),
+      Part(2, [-0.15, 0.09, -0.20], [0.015, 0.015, 0.21], [0, 0, 0], PAL.machinedSilver),
+      Part(4, [0, -0.50, -0.40], [0.047, 0.047, 0.018], [0, 90, 0], PAL.rubberDark),
+      Part(4, [0.15, 0.09, -0.39], [0.060, 0.060, 0.022], [0, 90, 0], PAL.rubberDark),
+      Part(4, [-0.15, 0.09, -0.39], [0.060, 0.060, 0.022], [0, 90, 0], PAL.rubberDark),
+    ],
+  },
 ];
 
 export function GetWorldPropById(PropId) {
@@ -1412,7 +1455,24 @@ export function ExpandPropPrimitives(Row, Rec = {}, PickCode = 1) {
     const UseFaceAtlas = HasActiveFaceColors(FaceColors);
     const Metallic = Math.max(0, Math.min(1, Number(Ch.metallic?.Fill ?? 0)));
     const Roughness = Math.max(0.02, Math.min(1, Number(Ch.roughness?.Fill ?? 0.38)));
-    const Emission = Math.max(0, Number(Ch.emission?.Fill ?? 0));
+    let Emission = Math.max(0, Number(Ch.emission?.Fill ?? 0));
+    let BaseColor = Rgb(Ch.colour?.Fill || "#a6a6a6").map((C) => Math.pow(Math.max(0, C), 2.2));
+    if (UseFaceAtlas && Emission <= 0.01) {
+      let MaxFaceEmit = 0;
+      let BestHex = null;
+      for (const Key of FACE_KEYS) {
+        const Entry = FaceColors?.[Key];
+        const Fe = typeof Entry === "object" && Entry ? Number(Entry.Emission || 0) : 0;
+        if (Fe > MaxFaceEmit) {
+          MaxFaceEmit = Fe;
+          BestHex = Entry.Fill || null;
+        }
+      }
+      if (MaxFaceEmit > 0.05) {
+        Emission = MaxFaceEmit * 0.45;
+        if (BestHex) BaseColor = Rgb(BestHex).map((C) => Math.pow(Math.max(0, C), 2.2));
+      }
+    }
 
     Out.push({
       Id: `${Row.Id}__part_${I}`,
@@ -1430,7 +1490,7 @@ export function ExpandPropPrimitives(Row, Rec = {}, PickCode = 1) {
       FaceColors: UseFaceAtlas ? FaceColors : null,
       ResolvedMaterial: ResolvedMat,
       MaterialType: ResolvedMat.Type,
-      BaseColor: [0.65, 0.65, 0.65],
+      BaseColor,
       Metallic,
       Roughness,
       DiffuseRoughness: Roughness * 0.85,

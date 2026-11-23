@@ -1,2 +1,0 @@
-WINDOW_DEVICE name=SwiftShader Device (Subzero) type=4
-WINDOW_ORIGINAL analytic_pixels=100 blocked_black=1
