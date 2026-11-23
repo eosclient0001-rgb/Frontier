@@ -105,4 +105,5 @@ only. They are not ported until a native owner exists or the user schedules them
 | Date | Step | Result |
 | :--- | :--- | :--- |
 | 2026-11-23 | Baseline import `fab4b8f` · Editor profile configured · fonts and packages prepared | 🟢 |
-| 2026-11-23 | Phase 0 HTML capture started (Atmosphere 6 pages, Sun 5 pages first) | in progress |
+| 2026-11-23 | Phase 0 HTML capture: Atmosphere 6/6 pages, Sun 5/5 pages; the remaining rows are capturing | in progress |
+| 2026-11-23 | DOM geometry dump `Atmosphere-01-Overview.json`; note: the footer `Procedural sky · HTML preview` **is** in the HTML (kept) | 🟢 |
