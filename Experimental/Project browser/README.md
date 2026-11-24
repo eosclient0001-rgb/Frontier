@@ -25,6 +25,11 @@ python3 -m http.server 8770 --bind 0.0.0.0 --directory 'Experimental/Project bro
 - Three fixed shared columns for both catalogue and reader: 204 px left, flexible centre, 302 px right on desktop.
 - Each column owns an aligned 64 px header; the global Frontier/design-preview branding header is removed.
 - Left/right headers collapse their panels independently to 44 px rails and reopen them without losing view selection.
+- **Animated, draggable side panels.** Collapse / reopen eases the column (`cubic-bezier(.22,.8,.24,1)`, 0.32 s) while the pane content
+  keeps its open layout, slides 14 px and fades. Each pane's inner edge is a drag handle (orange `--pz-select` line on hover): left 160–380 px,
+  right 240–520 px, the centre keeps ≥ 320 px. Dragging narrower than 112 px snaps the pane shut and reopening restores the dragged width;
+  double-click resets the default, arrow keys nudge 16 px. Widths persist under browser-local `frontier.browser.paneWidths`.
+- The rail's "Your files. Your folders." note is removed (only *Browse files* remains).
 - Collapse choices carry across catalogue/reader transitions; narrow screens use compact collapsed panels.
 - The working version selector has a pill-shaped trigger.
 - Overview Markdown uses a complete 210:297 A4 sheet, laid out at 794 × 1123 px and fitted to available width/height.

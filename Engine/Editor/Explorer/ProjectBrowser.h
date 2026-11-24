@@ -146,6 +146,9 @@ public:
 
     [[nodiscard]] bool                            QueryReaderActive() const noexcept { return ActiveEntryIndex >= 0; }
     [[nodiscard]] int32_t                         QueryActiveEntryIndex() const noexcept { return ActiveEntryIndex; }
+    [[nodiscard]] float                           QueryLeftRailWidth() const noexcept { return LeftRailWidth; }
+    [[nodiscard]] float                           QueryRightPaneWidth() const noexcept { return RightPaneWidth; }
+    [[nodiscard]] bool                            QueryLeftRailCollapsed() const noexcept { return LeftRailCollapsed; }
     [[nodiscard]] std::span<const BrowserCollectionEntry> QueryCollection() const noexcept { return Collection; }
     [[nodiscard]] const Workspaces::WorkspaceCapabilityRegister& QueryCapabilities() const noexcept { return CapabilityRegister; }
 
@@ -159,6 +162,12 @@ private:
     void RenderLibraryMode(PixelSpace& Surface, Rectangle2D LogicalBounds, const ControlPointer& Pointer, double DeltaSeconds);
     void RenderReaderMode(PixelSpace& Surface, Rectangle2D LogicalBounds, const ControlPointer& Pointer, double DeltaSeconds);
     void RenderNewProjectModal(PixelSpace& Surface, Rectangle2D LogicalBounds, const ControlPointer& Pointer);
+
+    // Side panes: eased open / collapse (PanelLayout.css cubic-bezier(.22,.8,.24,1), 0.32 s) and draggable inner edges
+    [[nodiscard]] ControlPointer ResolvePaneColumns(PixelSpace& Surface, Rectangle2D LogicalBounds, const ControlPointer& Pointer, double DeltaSeconds);
+    void                         ConstructPaneEdges(PixelSpace& Surface, Rectangle2D LogicalBounds, const ControlPointer& Pointer) const;
+    [[nodiscard]] ControlPointer ResolvePaneContentPointer(const ControlPointer& Pointer, bool Collapsed) const noexcept;
+    [[nodiscard]] float          ConfigurePaneOpenWidth(bool LeftSide, float Width, float ViewWidth) noexcept;
     void RenderDiskPathModal(PixelSpace& Surface, Rectangle2D LogicalBounds, const ControlPointer& Pointer);
 
     Workspaces::WorkspaceCapabilityRegister                         CapabilityRegister   {};
@@ -183,6 +192,24 @@ private:
     float                   LibraryScrollY        = 0.0f;
     bool                    LeftRailCollapsed     = false;
     bool                    RightPaneCollapsed    = false;
+    float                   LeftRailOpenWidth     = 204.0f; // [px]  - Dragged open width of the left rail (160..380)
+    float                   RightPaneOpenWidth    = 302.0f; // [px]  - Dragged open width of the right pane (240..520)
+    float                   LeftRailClock         = 1.0f;   // [s]   - Time since the left rail's open / collapsed target changed
+    float                   RightPaneClock        = 1.0f;   // [s]   - Time since the right pane's open / collapsed target changed
+    float                   LeftRailFrom          = 204.0f; // [px]  - Width the current left rail transition started from
+    float                   RightPaneFrom         = 302.0f; // [px]  - Width the current right pane transition started from
+    bool                    LeftRailWasCollapsed  = false;  // [-]   - Target the left rail transition is heading to
+    bool                    RightPaneWasCollapsed = false;  // [-]   - Target the right pane transition is heading to
+    float                   LeftRailSlide         = 0.0f;   // [px]  - Content translateX (0 open, -14 collapsed)
+    float                   RightPaneSlide        = 0.0f;   // [px]  - Content translateX (0 open, +14 collapsed)
+    float                   LeftRailFade          = 1.0f;   // [0-1] - Left rail content opacity
+    float                   RightPaneFade         = 1.0f;   // [0-1] - Right pane content opacity
+    float                   LeftRailWidth         = 204.0f; // [px]  - Eased on-screen width of the left rail this frame
+    float                   RightPaneWidth        = 302.0f; // [px]  - Eased on-screen width of the right pane this frame
+    int32_t                 PaneDragSide          = 0;      // [-]   - 0 none, 1 left edge, 2 right edge
+    float                   PaneDragStartX        = 0.0f;   // [px]  - Pointer X when the edge drag began
+    float                   PaneDragStartWidth    = 0.0f;   // [px]  - On-screen pane width when the edge drag began
+    float                   PaneDragOpenWidth     = 0.0f;   // [px]  - Open width restored when a drag snaps the pane shut
     bool                    SortDropdownOpen      = false;
     bool                    RevisionDropdownOpen  = false;
     bool                    NewProjectModalOpen   = false;

@@ -466,6 +466,108 @@ ConfigurePanelCollapse('right',innerWidth<1000);
 
 window.addEventListener('resize',()=>{if(innerWidth<600)ConfigurePanelCollapse('left',true);if(innerWidth<1000)ConfigurePanelCollapse('right',true);});
 
+
+//------------------------------------------------------------------------------------------------------------------------
+//                                                     DRAGGABLE PANEL EDGES
+//------------------------------------------------------------------------------------------------------------------------
+
+// Each side pane gets a drag handle on its inner edge. Dragging resizes the open width (kept under browser-local
+// frontier.browser.paneWidths); dragging a pane narrower than PaneCollapseSnap collapses it, dragging a collapsed rail out
+// reopens it, double-click restores the default width and the arrow keys nudge by 16 px.
+const PaneLimits={
+    left:{Minimum:160,Maximum:380,Default:204,Variable:'--rail-open-width'},
+    right:{Minimum:240,Maximum:520,Default:302,Variable:'--inspector-open-width'}
+};
+const PaneCollapseSnap=112;
+const PaneWidthKey='frontier.browser.paneWidths';
+const PaneWidths=Object.assign({left:204,right:302},JSON.parse(localStorage.getItem(PaneWidthKey)||'{}'));
+
+function ConfigurePaneWidth(Side, Width)
+{
+    const Limit=PaneLimits[Side];
+    const Other=Side==='left'?'right':'left';
+    const OtherWidth=document.body.classList.contains(Other+'-collapsed')?44:PaneWidths[Other];
+    const Ceiling=Math.max(Limit.Minimum,Math.min(Limit.Maximum,innerWidth-OtherWidth-320));
+    PaneWidths[Side]=Math.round(Math.min(Ceiling,Math.max(Limit.Minimum,Width)));
+    document.documentElement.style.setProperty(Limit.Variable,PaneWidths[Side]+'px');
+    return PaneWidths[Side];
+}
+
+function RetainPaneWidths()
+{
+    localStorage.setItem(PaneWidthKey,JSON.stringify(PaneWidths));
+}
+
+function ConstructPaneResizer(Pane, Side)
+{
+    const Handle=document.createElement('div');
+    Handle.className='pane-resizer';
+    Handle.dataset.resize=Side;
+    Handle.tabIndex=0;
+    Handle.setAttribute('role','separator');
+    Handle.setAttribute('aria-orientation','vertical');
+    Handle.setAttribute('aria-label','Resize '+Side+' panel');
+    Handle.title='Drag to resize · double-click to reset';
+    Pane.append(Handle);
+
+    let StartX=0, StartWidth=0, OpenWidth=0;
+    Handle.addEventListener('pointerdown',Event=>{
+        if (Event.button!==0) return;
+        Event.preventDefault();
+        Handle.setPointerCapture(Event.pointerId);
+        StartX=Event.clientX;
+        StartWidth=document.body.classList.contains(Side+'-collapsed')?44:PaneWidths[Side];
+        OpenWidth=PaneWidths[Side];
+        Handle.classList.add('dragging');
+        document.body.classList.add('pane-resizing');
+    });
+    Handle.addEventListener('pointermove',Event=>{
+        if (!Handle.hasPointerCapture(Event.pointerId)) return;
+        const Delta=Event.clientX-StartX;
+        const Wanted=Side==='left'?StartWidth+Delta:StartWidth-Delta;
+        const Collapsed=document.body.classList.contains(Side+'-collapsed');
+        if (Wanted<PaneCollapseSnap)
+        {
+            // Snap shut but remember the width the pane had when the drag began, so reopening restores it.
+            if (!Collapsed) ConfigurePanelCollapse(Side,true);
+            ConfigurePaneWidth(Side,OpenWidth);
+            return;
+        }
+        ConfigurePaneWidth(Side,Wanted);
+        if (Collapsed) ConfigurePanelCollapse(Side,false);
+        if (LiveRenderer) LiveRenderer.Refresh();
+    });
+    const Release=Event=>{
+        if (!Handle.hasPointerCapture(Event.pointerId)) return;
+        Handle.releasePointerCapture(Event.pointerId);
+        Handle.classList.remove('dragging');
+        document.body.classList.remove('pane-resizing');
+        RetainPaneWidths();
+    };
+    Handle.addEventListener('pointerup',Release);
+    Handle.addEventListener('pointercancel',Release);
+    Handle.addEventListener('dblclick',()=>{
+        ConfigurePaneWidth(Side,PaneLimits[Side].Default);
+        ConfigurePanelCollapse(Side,false);
+        RetainPaneWidths();
+    });
+    Handle.addEventListener('keydown',Event=>{
+        if (Event.key!=='ArrowLeft' && Event.key!=='ArrowRight') return;
+        Event.preventDefault();
+        const Grow=(Event.key==='ArrowRight')===(Side==='left');
+        ConfigurePanelCollapse(Side,false);
+        ConfigurePaneWidth(Side,PaneWidths[Side]+(Grow?16:-16));
+        RetainPaneWidths();
+    });
+}
+
+document.querySelectorAll('.left-pane').forEach(Pane=>ConstructPaneResizer(Pane,'left'));
+document.querySelectorAll('.right-pane').forEach(Pane=>ConstructPaneResizer(Pane,'right'));
+if (innerWidth>700) { ConfigurePaneWidth('left',PaneWidths.left); ConfigurePaneWidth('right',PaneWidths.right); }
+// The live renderer follows the column while it eases open or closed.
+document.querySelectorAll('.left-pane, .right-pane').forEach(Pane=>Pane.addEventListener('transitionend',()=>{if(LiveRenderer)LiveRenderer.Refresh();}));
+document.body.addEventListener('transitionend',Event=>{if(Event.target===document.body&&LiveRenderer)LiveRenderer.Refresh();});
+
 function ConfigurePaperScale(Amount)
 {
     const Paper=Query('#PreviewCanvas .document-page');

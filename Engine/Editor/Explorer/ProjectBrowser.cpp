@@ -1035,14 +1035,16 @@ void ProjectBrowser::Render(Rectangle2D ViewportBounds, double DeltaSeconds, flo
         StatusBannerRemaining = std::max(0.0, StatusBannerRemaining - std::max(0.0, DeltaSeconds));
     }
 
+    const ControlPointer ColumnPointer = ResolvePaneColumns(Surface, LogicalBounds, BackgroundPointer, DeltaSeconds);
     if (ActiveEntryIndex >= 0 && static_cast<std::size_t>(ActiveEntryIndex) < Collection.size())
     {
-        RenderReaderMode(Surface, LogicalBounds, BackgroundPointer, DeltaSeconds);
+        RenderReaderMode(Surface, LogicalBounds, ColumnPointer, DeltaSeconds);
     }
     else
     {
-        RenderLibraryMode(Surface, LogicalBounds, BackgroundPointer, DeltaSeconds);
+        RenderLibraryMode(Surface, LogicalBounds, ColumnPointer, DeltaSeconds);
     }
+    ConstructPaneEdges(Surface, LogicalBounds, BackgroundPointer);
 
     if (NewProjectModalOpen)
     {
@@ -1067,6 +1069,195 @@ void ProjectBrowser::Render(Rectangle2D ViewportBounds, double DeltaSeconds, flo
     }
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                  ANIMATED · DRAGGABLE SIDE PANES
+//------------------------------------------------------------------------------------------------------------------------
+
+// Same geometry as the HTML prototype (Experimental/Project browser/PanelLayout.css + Browser.js "DRAGGABLE PANEL EDGES")
+constexpr float PaneCollapsedWidth  = 44.0f;  // [px] - Collapsed rail width
+constexpr float PaneDuration        = 0.32f;  // [s]  - --pane-duration
+constexpr float PaneFadeInDelay     = 0.08f;  // [s]  - Content opacity delay when opening
+constexpr float PaneFadeInDuration  = 0.20f;  // [s]  - Content opacity duration when opening
+constexpr float PaneFadeOutDuration = 0.14f;  // [s]  - Content opacity duration when closing
+constexpr float PaneCollapseSnap    = 112.0f; // [px] - Dragging narrower than this snaps the pane shut
+constexpr float PaneEdgeHitWidth    = 7.0f;   // [px] - .pane-resizer hit strip
+constexpr float PaneMainMinimum     = 320.0f; // [px] - Centre column kept open while dragging
+
+struct PaneWidthLimits
+{
+    float Minimum = 0.0f; // [px] - Narrowest open width
+    float Maximum = 0.0f; // [px] - Widest open width
+    float Default = 0.0f; // [px] - Double-click reset width
+};
+constexpr PaneWidthLimits LeftPaneLimits  { 160.0f, 380.0f, 204.0f };
+constexpr PaneWidthLimits RightPaneLimits { 240.0f, 520.0f, 302.0f };
+
+// --pane-ease: cubic-bezier(.22, .8, .24, 1) solved for the curve parameter by Newton iteration
+float ResolvePaneEase(float Progress) noexcept
+{
+    constexpr float X1 = 0.22f, Y1 = 0.8f, X2 = 0.24f, Y2 = 1.0f;
+    const float T = std::clamp(Progress, 0.0f, 1.0f);
+    float U = T;
+    for (int Step = 0; Step < 8; ++Step)
+    {
+        const float V     = 1.0f - U;
+        const float X     = 3.0f * V * V * U * X1 + 3.0f * V * U * U * X2 + U * U * U - T;
+        const float Slope = 3.0f * V * V * X1 + 6.0f * V * U * (X2 - X1) + 3.0f * U * U * (1.0f - X2);
+        if (std::fabs(Slope) < 1.0e-5f)
+        {
+            break;
+        }
+        U = std::clamp(U - X / Slope, 0.0f, 1.0f);
+    }
+    const float V = 1.0f - U;
+    return 3.0f * V * V * U * Y1 + 3.0f * V * U * U * Y2 + U * U * U;
+}
+
+float ProjectBrowser::ConfigurePaneOpenWidth(bool LeftSide, float Width, float ViewWidth) noexcept
+{
+    const PaneWidthLimits& Limit      = LeftSide ? LeftPaneLimits : RightPaneLimits;
+    const float            OtherWidth = LeftSide ? (RightPaneCollapsed ? PaneCollapsedWidth : RightPaneOpenWidth)
+                                                 : (LeftRailCollapsed ? PaneCollapsedWidth : LeftRailOpenWidth);
+    const float            Ceiling    = std::max(Limit.Minimum, std::min(Limit.Maximum, ViewWidth - OtherWidth - PaneMainMinimum));
+    float&                 Target     = LeftSide ? LeftRailOpenWidth : RightPaneOpenWidth;
+    Target = std::round(std::clamp(Width, Limit.Minimum, Ceiling));
+    return Target;
+}
+
+ControlPointer ProjectBrowser::ResolvePaneContentPointer(const ControlPointer& Pointer, bool Collapsed) const noexcept
+{
+    // pointer-events: none on collapsed pane content
+    if (!Collapsed)
+    {
+        return Pointer;
+    }
+    ControlPointer Muted = Pointer;
+    Muted.X        = -1.0e9f;
+    Muted.Y        = -1.0e9f;
+    Muted.Down     = false;
+    Muted.Pressed  = false;
+    Muted.Released = false;
+    Muted.Enabled  = false;
+    return Muted;
+}
+
+ControlPointer ProjectBrowser::ResolvePaneColumns(PixelSpace& Surface, Rectangle2D LogicalBounds, const ControlPointer& Pointer, double DeltaSeconds)
+{
+    const float Step = static_cast<float>(std::clamp(DeltaSeconds, 0.0, 0.1));
+
+    // 1. Edge drag (before easing so the column follows the pointer in the same frame)
+    const float   RightEdgeX = LogicalBounds.Width - RightPaneWidth;
+    const Rectangle2D LeftEdge  { LeftRailWidth - PaneEdgeHitWidth + 1.0f, 0.0f, PaneEdgeHitWidth, LogicalBounds.Height };
+    const Rectangle2D RightEdge { RightEdgeX - 1.0f, 0.0f, PaneEdgeHitWidth, LogicalBounds.Height };
+    const Point2D     At { Pointer.X, Pointer.Y };
+    const bool        OverLeft  = Pointer.Enabled && PaneDragSide == 0 && LeftEdge.Contains(At);
+    const bool        OverRight = Pointer.Enabled && PaneDragSide == 0 && !OverLeft && RightEdge.Contains(At);
+
+    if ((OverLeft || OverRight) && Surface.QueryMouseDoubleClicked(0))
+    {
+        // Double-click: default width, reopened
+        const bool LeftSide = OverLeft;
+        (LeftSide ? LeftRailCollapsed : RightPaneCollapsed) = false;
+        (void)ConfigurePaneOpenWidth(LeftSide, (LeftSide ? LeftPaneLimits : RightPaneLimits).Default, LogicalBounds.Width);
+    }
+    else if ((OverLeft || OverRight) && Pointer.Pressed)
+    {
+        PaneDragSide       = OverLeft ? 1 : 2;
+        PaneDragStartX     = Pointer.X;
+        PaneDragStartWidth = OverLeft ? (LeftRailCollapsed ? PaneCollapsedWidth : LeftRailOpenWidth)
+                                      : (RightPaneCollapsed ? PaneCollapsedWidth : RightPaneOpenWidth);
+        PaneDragOpenWidth  = OverLeft ? LeftRailOpenWidth : RightPaneOpenWidth;
+    }
+
+    if (PaneDragSide != 0)
+    {
+        const bool  LeftSide  = (PaneDragSide == 1);
+        bool&       Collapsed = LeftSide ? LeftRailCollapsed : RightPaneCollapsed;
+        const float Delta     = Pointer.X - PaneDragStartX;
+        const float Wanted    = LeftSide ? PaneDragStartWidth + Delta : PaneDragStartWidth - Delta;
+        if (Wanted < PaneCollapseSnap)
+        {
+            // Snap shut but keep the width the pane had when the drag began, so reopening restores it
+            Collapsed = true;
+            (void)ConfigurePaneOpenWidth(LeftSide, PaneDragOpenWidth, LogicalBounds.Width);
+        }
+        else
+        {
+            Collapsed = false;
+            (void)ConfigurePaneOpenWidth(LeftSide, Wanted, LogicalBounds.Width);
+            // body.pane-resizing { transition: none } - the column tracks the pointer directly
+            (LeftSide ? LeftRailClock : RightPaneClock)               = PaneDuration;
+            (LeftSide ? LeftRailWasCollapsed : RightPaneWasCollapsed) = false;
+            (LeftSide ? LeftRailFade : RightPaneFade)                 = 1.0f;
+        }
+        if (!Pointer.Down)
+        {
+            PaneDragSide = 0;
+        }
+    }
+
+    if (PaneDragSide != 0 || OverLeft || OverRight)
+    {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    }
+
+    // 2. CSS transition model: each target change restarts the curve from the current width (so collapsing is ease-out too)
+    const auto Advance = [&](bool Collapsed, float OpenWidth, bool& WasCollapsed, float& Clock, float& From, float& Width, float& Fade, float& Slide, float Direction)
+    {
+        if (Collapsed != WasCollapsed)
+        {
+            WasCollapsed = Collapsed;
+            From         = Width;
+            Clock        = 0.0f;
+        }
+        Clock = std::min(PaneDuration, Clock + Step);
+        const float Target = Collapsed ? PaneCollapsedWidth : OpenWidth;
+        Width = (Clock >= PaneDuration) ? Target : From + (Target - From) * ResolvePaneEase(Clock / PaneDuration);
+        if (Collapsed)
+        {
+            Fade = std::max(0.0f, Fade - Step / PaneFadeOutDuration);
+        }
+        else if (Clock >= PaneFadeInDelay || Fade > 0.0f)
+        {
+            Fade = std::min(1.0f, Fade + Step / PaneFadeInDuration);
+        }
+        const float OpenFraction = std::clamp((Width - PaneCollapsedWidth) / std::max(1.0f, OpenWidth - PaneCollapsedWidth), 0.0f, 1.0f);
+        Slide = Direction * 14.0f * (1.0f - OpenFraction);
+    };
+    Advance(LeftRailCollapsed, LeftRailOpenWidth, LeftRailWasCollapsed, LeftRailClock, LeftRailFrom, LeftRailWidth, LeftRailFade, LeftRailSlide, -1.0f);
+    Advance(RightPaneCollapsed, RightPaneOpenWidth, RightPaneWasCollapsed, RightPaneClock, RightPaneFrom, RightPaneWidth, RightPaneFade, RightPaneSlide, 1.0f);
+
+    // 3. The press that starts an edge drag never reaches the panes underneath
+    ControlPointer Filtered = Pointer;
+    if (PaneDragSide != 0 || OverLeft || OverRight)
+    {
+        Filtered.Pressed  = false;
+        Filtered.Released = false;
+        Filtered.Down     = false;
+    }
+    return Filtered;
+}
+
+void ProjectBrowser::ConstructPaneEdges(PixelSpace& Surface, Rectangle2D LogicalBounds, const ControlPointer& Pointer) const
+{
+    // .pane-resizer::after - 2px accent line at 75% on hover / drag
+    // --pz-select: #ffb454 on the dark looks, #e48f1f on the light look (ProjectZeroLook.css)
+    const BrowserSwatchScheme P          = QueryBrowserPalette(ActiveTheme);
+    const ColorRgba           EdgeInk    = (P.MainBg.Red > 128u) ? ColorRgba{ 228u, 143u, 31u, 191u } : ColorRgba{ 255u, 180u, 84u, 191u };
+    const float               RightEdgeX = LogicalBounds.Width - RightPaneWidth;
+    const Point2D             At { Pointer.X, Pointer.Y };
+    const bool LeftLit  = PaneDragSide == 1 || (PaneDragSide == 0 && Pointer.Enabled && Rectangle2D{ LeftRailWidth - PaneEdgeHitWidth + 1.0f, 0.0f, PaneEdgeHitWidth, LogicalBounds.Height }.Contains(At));
+    const bool RightLit = PaneDragSide == 2 || (PaneDragSide == 0 && Pointer.Enabled && !LeftLit && Rectangle2D{ RightEdgeX - 1.0f, 0.0f, PaneEdgeHitWidth, LogicalBounds.Height }.Contains(At));
+    if (LeftLit)
+    {
+        Surface.FillRectangle({ LeftRailWidth - 2.0f, 0.0f, 2.0f, LogicalBounds.Height }, EdgeInk, 0.0f);
+    }
+    if (RightLit)
+    {
+        Surface.FillRectangle({ RightEdgeX, 0.0f, 2.0f, LogicalBounds.Height }, EdgeInk, 0.0f);
+    }
+}
+
 void ProjectBrowser::RenderLibraryMode(
     PixelSpace&           Surface,
     Rectangle2D           LogicalBounds,
@@ -1078,13 +1269,13 @@ void ProjectBrowser::RenderLibraryMode(
     Surface.FillRectangle(LogicalBounds, P.MainBg, 0.0f);
 
     constexpr float HeaderH = 64.0f;
-    const float     LeftW   = LeftRailCollapsed ? 44.0f : 204.0f;
-    const float     RightW  = RightPaneCollapsed ? 44.0f : 302.0f;
+    const float     LeftW   = LeftRailWidth;
+    const float     RightW  = RightPaneWidth;
     const float     MainX   = LeftW;
     const float     MainW   = std::max(260.0f, LogicalBounds.Width - LeftW - RightW);
     const float     RightX  = MainX + MainW;
 
-    // 1. Left Rail (204px / 44px collapsed)
+    // 1. Left Rail (dragged open width / 44px collapsed, eased between)
     const Rectangle2D LeftPane { 0.0f, 0.0f, LeftW, LogicalBounds.Height };
     Surface.FillRectangle(LeftPane, P.PanelBg, 0.0f);
     Surface.StrokeLine({ LeftW, 0.0f }, { LeftW, LogicalBounds.Height }, P.Line, 1.0f);
@@ -1096,19 +1287,25 @@ void ProjectBrowser::RenderLibraryMode(
         ExpandBtn.Label    = ">";
         ExpandBtn.Tone     = ButtonTone::Ghost;
         ExpandBtn.FontSize = 13.0f;
-        if (CapsuleButton::Construct(Surface, { 8.0f, 18.0f, 28.0f, 28.0f }, ExpandBtn, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { (LeftW - 28.0f) * 0.5f, 18.0f, 28.0f, 28.0f }, ExpandBtn, Pointer).Pressed)
         {
             LeftRailCollapsed = false;
         }
     }
-    else
+    if (LeftRailFade > 0.004f)
     {
+        // Content keeps its open layout while the column eases; it is clipped, slid 14px and faded (PanelLayout.css)
+        const ControlPointer PanePointer = ResolvePaneContentPointer(Pointer, LeftRailCollapsed);
+        const float          LeftLayoutW = LeftRailOpenWidth;
+        Surface.PushClip(LeftPane);
+        const PixelSpace::GroupMarker PaneFade = Surface.BeginGroup({ 0.0f, 0.0f }, { 1.0f, 1.0f }, { LeftRailSlide, 0.0f }, LeftRailFade);
+        {
         Surface.Text({ 16.0f, 24.0f }, 12.5f, P.Ink, "Files");
         ButtonDescriptor CollapseBtn {};
         CollapseBtn.Label    = "<";
         CollapseBtn.Tone     = ButtonTone::Ghost;
         CollapseBtn.FontSize = 12.5f;
-        if (CapsuleButton::Construct(Surface, { LeftW - 36.0f, 18.0f, 26.0f, 28.0f }, CollapseBtn, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { LeftLayoutW - 36.0f, 18.0f, 26.0f, 28.0f }, CollapseBtn, PanePointer).Pressed)
         {
             LeftRailCollapsed = true;
         }
@@ -1119,9 +1316,9 @@ void ProjectBrowser::RenderLibraryMode(
 
         auto ConstructNavRow = [&](const char* Label, BrowserFilterMode Mode, const ColorRgba* FormatDot, int32_t TrailingCount)
         {
-            const Rectangle2D RowRect { 14.0f, NavY, LeftW - 28.0f, 34.0f };
+            const Rectangle2D RowRect { 14.0f, NavY, LeftLayoutW - 28.0f, 34.0f };
             const bool Active  = (ActiveFilter == Mode);
-            const bool Hovered = RowRect.Contains({ Pointer.X, Pointer.Y });
+            const bool Hovered = RowRect.Contains({ PanePointer.X, PanePointer.Y });
             if (Active || Hovered)
             {
                 Surface.FillRectangle(RowRect, Active ? P.Selected : P.Control, 7.0f);
@@ -1143,7 +1340,7 @@ void ProjectBrowser::RenderLibraryMode(
                 std::snprintf(CountBuf, sizeof(CountBuf), "%d", TrailingCount);
                 Surface.TextRightAligned({ RowRect.X, RowRect.Y, RowRect.Width - 10.0f, RowRect.Height }, 10.0f, P.Faint, CountBuf);
             }
-            if (Hovered && Pointer.Pressed)
+            if (Hovered && PanePointer.Pressed)
             {
                 ActiveFilter   = Mode;
                 LibraryScrollY = 0.0f;
@@ -1163,15 +1360,12 @@ void ProjectBrowser::RenderLibraryMode(
         ConstructNavRow("Geometry", BrowserFilterMode::Geometry, &P.DotGeom, -1);
 
         const float BottomY = std::max(NavY + 24.0f, LogicalBounds.Height - 134.0f);
-        Surface.Text({ 20.0f, BottomY }, 11.0f, P.Ink, "Your files. Your folders.");
-        Surface.Text({ 20.0f, BottomY + 20.0f }, 10.0f, P.Muted, "Browse from any location.");
-        Surface.Text({ 20.0f, BottomY + 35.0f }, 10.0f, P.Muted, "No fixed project directory.");
 
         ButtonDescriptor BrowseLink {};
         BrowseLink.Label    = "Browse folder";
         BrowseLink.Tone     = ButtonTone::Secondary;
         BrowseLink.FontSize = 10.5f;
-        if (CapsuleButton::Construct(Surface, { 18.0f, BottomY + 60.0f, LeftW - 36.0f, 30.0f }, BrowseLink, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { 18.0f, BottomY + 60.0f, LeftLayoutW - 36.0f, 30.0f }, BrowseLink, PanePointer).Pressed)
         {
             const auto ChosenDir = InvokeNativeOsDialog(true);
             if (!ChosenDir.empty())
@@ -1185,6 +1379,9 @@ void ProjectBrowser::RenderLibraryMode(
                 DiskPathModalOpen = true;
             }
         }
+    }
+        Surface.EndGroup(PaneFade);
+        Surface.PopClip();
     }
 
     // 2. Center Header (64px)
@@ -1449,7 +1646,7 @@ void ProjectBrowser::RenderLibraryMode(
 
     Surface.PopClip();
 
-    // 5. Right Inspector Pane (302px / 44px collapsed)
+    // 5. Right Inspector Pane (dragged open width / 44px collapsed, eased between)
     const Rectangle2D RightPane { RightX, 0.0f, RightW, LogicalBounds.Height };
     Surface.FillRectangle(RightPane, P.PanelBg, 0.0f);
     Surface.StrokeLine({ RightX, 0.0f }, { RightX, LogicalBounds.Height }, P.Line, 1.0f);
@@ -1461,13 +1658,19 @@ void ProjectBrowser::RenderLibraryMode(
         ExpandRight.Label    = "<";
         ExpandRight.Tone     = ButtonTone::Ghost;
         ExpandRight.FontSize = 13.0f;
-        if (CapsuleButton::Construct(Surface, { RightX + 8.0f, 18.0f, 28.0f, 28.0f }, ExpandRight, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { RightX + (RightW - 28.0f) * 0.5f, 18.0f, 28.0f, 28.0f }, ExpandRight, Pointer).Pressed)
         {
             RightPaneCollapsed = false;
         }
     }
-    else
+    if (RightPaneFade > 0.004f)
     {
+        // Content keeps its open layout while the column eases; it is clipped, slid 14px and faded (PanelLayout.css)
+        const ControlPointer PanePointer = ResolvePaneContentPointer(Pointer, RightPaneCollapsed);
+        const float          RightLayoutW = RightPaneOpenWidth;
+        Surface.PushClip(RightPane);
+        const PixelSpace::GroupMarker PaneFade = Surface.BeginGroup({ 0.0f, 0.0f }, { 1.0f, 1.0f }, { RightPaneSlide, 0.0f }, RightPaneFade);
+        {
         Surface.Text({ RightX + 20.0f, 25.0f }, 10.5f, P.Muted, "Details");
         Surface.Text({ RightX + 74.0f, 25.0f }, 10.5f, P.Faint, "Comments");
         Surface.Text({ RightX + 144.0f, 25.0f }, 10.5f, P.Faint, "History");
@@ -1476,7 +1679,7 @@ void ProjectBrowser::RenderLibraryMode(
         CollapseRight.Label    = ">";
         CollapseRight.Tone     = ButtonTone::Ghost;
         CollapseRight.FontSize = 12.5f;
-        if (CapsuleButton::Construct(Surface, { RightX + RightW - 36.0f, 18.0f, 26.0f, 28.0f }, CollapseRight, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { RightX + RightLayoutW - 36.0f, 18.0f, 26.0f, 28.0f }, CollapseRight, PanePointer).Pressed)
         {
             RightPaneCollapsed = true;
         }
@@ -1496,7 +1699,7 @@ void ProjectBrowser::RenderLibraryMode(
             {
                 continue;
             }
-            const Rectangle2D CapBox { RightX + 20.0f, CapY, RightW - 40.0f, 48.0f };
+            const Rectangle2D CapBox { RightX + 20.0f, CapY, RightLayoutW - 40.0f, 48.0f };
             Surface.FillRectangle(CapBox, P.Control, 7.0f);
             Surface.StrokeRectangle(CapBox, P.Line, 7.0f, 1.0f);
             Surface.Text({ CapBox.X + 12.0f, CapBox.Y + 9.0f }, 11.0f, P.Ink, Cap.ActionTitle.c_str());
@@ -1506,6 +1709,9 @@ void ProjectBrowser::RenderLibraryMode(
             Surface.Text({ CapBox.X + 12.0f, CapBox.Y + 27.0f }, 9.0f, P.Muted, Subtitle);
             CapY += 56.0f;
         }
+    }
+        Surface.EndGroup(PaneFade);
+        Surface.PopClip();
     }
 }
 
@@ -1521,8 +1727,8 @@ void ProjectBrowser::RenderReaderMode(
     Surface.FillRectangle(LogicalBounds, P.MainBg, 0.0f);
 
     constexpr float HeaderH = 64.0f;
-    const float     LeftW   = LeftRailCollapsed ? 44.0f : 204.0f;
-    const float     RightW  = RightPaneCollapsed ? 44.0f : 302.0f;
+    const float     LeftW   = LeftRailWidth;
+    const float     RightW  = RightPaneWidth;
     const float     MainX   = LeftW;
     const float     MainW   = std::max(280.0f, LogicalBounds.Width - LeftW - RightW);
     const float     RightX  = MainX + MainW;
@@ -1537,13 +1743,19 @@ void ProjectBrowser::RenderReaderMode(
         ButtonDescriptor ExpandBtn {};
         ExpandBtn.Label = ">";
         ExpandBtn.Tone  = ButtonTone::Ghost;
-        if (CapsuleButton::Construct(Surface, { 8.0f, 18.0f, 28.0f, 28.0f }, ExpandBtn, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { (LeftW - 28.0f) * 0.5f, 18.0f, 28.0f, 28.0f }, ExpandBtn, Pointer).Pressed)
         {
             LeftRailCollapsed = false;
         }
     }
-    else
+    if (LeftRailFade > 0.004f)
     {
+        // Content keeps its open layout while the column eases; it is clipped, slid 14px and faded (PanelLayout.css)
+        const ControlPointer PanePointer = ResolvePaneContentPointer(Pointer, LeftRailCollapsed);
+        const float          LeftLayoutW = LeftRailOpenWidth;
+        Surface.PushClip(Rectangle2D{ 0.0f, 0.0f, LeftW, LogicalBounds.Height });
+        const PixelSpace::GroupMarker PaneFade = Surface.BeginGroup({ 0.0f, 0.0f }, { 1.0f, 1.0f }, { LeftRailSlide, 0.0f }, LeftRailFade);
+        {
         const char* RailHeading = (Entry.Category == BrowserEntryCategory::Geometry) ? "Views" : "Levels";
         Surface.Text({ 16.0f, 24.0f }, 12.0f, P.Ink, RailHeading);
         char SeqCount[16]{};
@@ -1553,19 +1765,19 @@ void ProjectBrowser::RenderReaderMode(
         ButtonDescriptor CollapseBtn {};
         CollapseBtn.Label = "<";
         CollapseBtn.Tone  = ButtonTone::Ghost;
-        if (CapsuleButton::Construct(Surface, { LeftW - 36.0f, 18.0f, 26.0f, 28.0f }, CollapseBtn, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { LeftLayoutW - 36.0f, 18.0f, 26.0f, 28.0f }, CollapseBtn, PanePointer).Pressed)
         {
             LeftRailCollapsed = true;
         }
 
         float SeqY = HeaderH + 22.0f;
-        const float ThumbW = LeftW - 32.0f;
+        const float ThumbW = LeftLayoutW - 32.0f;
         const float ThumbH = std::round(ThumbW / 1.48f);
         for (std::size_t VIdx = 0u; VIdx < Entry.ViewTitles.size(); ++VIdx)
         {
             const Rectangle2D ThumbRect { 16.0f, SeqY, ThumbW, ThumbH };
             const bool Current = (ActiveViewIndex == VIdx);
-            const bool Hovered = ThumbRect.Contains({ Pointer.X, Pointer.Y });
+            const bool Hovered = ThumbRect.Contains({ PanePointer.X, PanePointer.Y });
 
             Surface.FillRectangle(ThumbRect, P.TileBg, 6.0f);
             ImTextureData* SeqTex = (VIdx < ReaderViewThumbs.size() && ReaderViewThumbs[VIdx] != nullptr)
@@ -1578,13 +1790,16 @@ void ProjectBrowser::RenderReaderMode(
             Surface.StrokeRectangle(ThumbRect, Current ? P.Ink : (Hovered ? P.Muted : P.Line), 6.0f, Current ? 2.0f : 1.0f);
             Surface.TextCentered({ 16.0f, SeqY + ThumbH + 6.0f, ThumbW, 16.0f }, 10.5f, Current ? P.Ink : P.Muted, Entry.ViewTitles[VIdx].c_str());
 
-            if (Hovered && Pointer.Pressed)
+            if (Hovered && PanePointer.Pressed)
             {
                 ActiveViewIndex = static_cast<uint32_t>(VIdx);
                 RefreshReaderPreviewTexture();
             }
             SeqY += ThumbH + 34.0f;
         }
+    }
+        Surface.EndGroup(PaneFade);
+        Surface.PopClip();
     }
 
     // 2. Center Reader Header + Capability-Filtered Launch Actions
@@ -1755,22 +1970,28 @@ void ProjectBrowser::RenderReaderMode(
         ButtonDescriptor ExpandRight {};
         ExpandRight.Label = "<";
         ExpandRight.Tone  = ButtonTone::Ghost;
-        if (CapsuleButton::Construct(Surface, { RightX + 8.0f, 18.0f, 28.0f, 28.0f }, ExpandRight, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { RightX + (RightW - 28.0f) * 0.5f, 18.0f, 28.0f, 28.0f }, ExpandRight, Pointer).Pressed)
         {
             RightPaneCollapsed = false;
         }
     }
-    else
+    if (RightPaneFade > 0.004f)
     {
+        // Content keeps its open layout while the column eases; it is clipped, slid 14px and faded (PanelLayout.css)
+        const ControlPointer PanePointer = ResolvePaneContentPointer(Pointer, RightPaneCollapsed);
+        const float          RightLayoutW = RightPaneOpenWidth;
+        Surface.PushClip(Rectangle2D{ RightX, 0.0f, RightW, LogicalBounds.Height });
+        const PixelSpace::GroupMarker PaneFade = Surface.BeginGroup({ 0.0f, 0.0f }, { 1.0f, 1.0f }, { RightPaneSlide, 0.0f }, RightPaneFade);
+        {
         constexpr std::array<const char*, 3> TabNames = {{ "Details", "Comments", "History" }};
         uint32_t ChosenTab = static_cast<uint32_t>(ActiveInspectorTab);
         if (CapsuleButton::ConstructSegmented(
                 Surface,
-                { RightX + 14.0f, 18.0f, RightW - 56.0f, 28.0f },
+                { RightX + 14.0f, 18.0f, RightLayoutW - 56.0f, 28.0f },
                 TabNames.data(),
                 3u,
                 ChosenTab,
-                Pointer,
+                PanePointer,
                 ChosenTab).Pressed)
         {
             ActiveInspectorTab = static_cast<BrowserInspectorTab>(ChosenTab);
@@ -1779,13 +2000,13 @@ void ProjectBrowser::RenderReaderMode(
         ButtonDescriptor CollapseRight {};
         CollapseRight.Label = ">";
         CollapseRight.Tone  = ButtonTone::Ghost;
-        if (CapsuleButton::Construct(Surface, { RightX + RightW - 36.0f, 18.0f, 26.0f, 28.0f }, CollapseRight, Pointer).Pressed)
+        if (CapsuleButton::Construct(Surface, { RightX + RightLayoutW - 36.0f, 18.0f, 26.0f, 28.0f }, CollapseRight, PanePointer).Pressed)
         {
             RightPaneCollapsed = true;
         }
 
         const float InspX = RightX + 20.0f;
-        const float InspW = RightW - 40.0f;
+        const float InspW = RightLayoutW - 40.0f;
         float       InspY = HeaderH + 22.0f;
 
         if (ActiveInspectorTab == BrowserInspectorTab::Details)
@@ -1833,7 +2054,7 @@ void ProjectBrowser::RenderReaderMode(
                 CapBtn.Label    = Cap.ActionTitle.c_str();
                 CapBtn.Tone     = (Cap.Target == PermittedCaps.front().Target) ? ButtonTone::Primary : ButtonTone::Secondary;
                 CapBtn.FontSize = 10.5f;
-                if (CapsuleButton::Construct(Surface, { InspX, InspY, InspW, 32.0f }, CapBtn, Pointer).Pressed && LaunchCallback)
+                if (CapsuleButton::Construct(Surface, { InspX, InspY, InspW, 32.0f }, CapBtn, PanePointer).Pressed && LaunchCallback)
                 {
                     BrowserWorkspaceLaunchDirective Directive {};
                     Directive.TargetWorkspace  = Cap.Target;
@@ -1859,14 +2080,14 @@ void ProjectBrowser::RenderReaderMode(
             }
 
             const float FormY = LogicalBounds.Height - 104.0f;
-            Surface.StrokeLine({ RightX, FormY - 12.0f }, { RightX + RightW, FormY - 12.0f }, P.Line, 1.0f);
+            Surface.StrokeLine({ RightX, FormY - 12.0f }, { RightX + RightLayoutW, FormY - 12.0f }, P.Line, 1.0f);
             Surface.Text({ InspX, FormY }, 9.5f, P.Muted, "Add a review note");
-            (void)TextInputField::Construct(Surface, { InspX, FormY + 18.0f, InspW - 68.0f, 30.0f }, CommentInput, Pointer, 10.5f);
+            (void)TextInputField::Construct(Surface, { InspX, FormY + 18.0f, InspW - 68.0f, 30.0f }, CommentInput, PanePointer, 10.5f);
             ButtonDescriptor SendBtn {};
             SendBtn.Label    = "Send";
             SendBtn.Tone     = ButtonTone::Primary;
             SendBtn.FontSize = 10.0f;
-            if ((CapsuleButton::Construct(Surface, { InspX + InspW - 62.0f, FormY + 18.0f, 62.0f, 30.0f }, SendBtn, Pointer).Pressed ||
+            if ((CapsuleButton::Construct(Surface, { InspX + InspW - 62.0f, FormY + 18.0f, 62.0f, 30.0f }, SendBtn, PanePointer).Pressed ||
                  CommentInput.Finalized) &&
                 CommentInput.Length > 0u)
             {
@@ -1880,7 +2101,7 @@ void ProjectBrowser::RenderReaderMode(
             {
                 const Rectangle2D RevRow { InspX, InspY, InspW, 52.0f };
                 const bool SelectedRev = (ActiveRevisionIndex == RIdx);
-                const bool HoveredRev  = RevRow.Contains({ Pointer.X, Pointer.Y });
+                const bool HoveredRev  = RevRow.Contains({ PanePointer.X, PanePointer.Y });
                 if (SelectedRev || HoveredRev)
                 {
                     Surface.FillRectangle(RevRow, SelectedRev ? P.Selected : P.Control, 6.0f);
@@ -1894,7 +2115,7 @@ void ProjectBrowser::RenderReaderMode(
                     RIdx == 0u ? " · CURRENT" : "");
                 Surface.Text({ RevRow.X + 12.0f, RevRow.Y + 9.0f }, 10.5f, P.Ink, VerTitle);
                 Surface.Text({ RevRow.X + 12.0f, RevRow.Y + 27.0f }, 9.5f, P.Muted, Entry.RevisionTitles[RIdx].c_str());
-                if (HoveredRev && Pointer.Pressed)
+                if (HoveredRev && PanePointer.Pressed)
                 {
                     ActiveRevisionIndex = static_cast<uint32_t>(RIdx);
                     RefreshReaderPreviewTexture();
@@ -1902,6 +2123,9 @@ void ProjectBrowser::RenderReaderMode(
                 InspY += 58.0f;
             }
         }
+    }
+        Surface.EndGroup(PaneFade);
+        Surface.PopClip();
     }
 
     if (RevisionDropdownOpen && !Entry.RevisionTitles.empty())

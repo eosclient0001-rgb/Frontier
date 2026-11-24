@@ -225,3 +225,86 @@ body.right-collapsed .right-pane .collapse-toggle { margin: 0; }
 }
 .document-canvas .document-page h1 { font-size: 25px; }
 .document-canvas .document-page h2 { font-size: 15px; }
+
+/*------------------------------------------------------------------------------------------------------------------------
+                                                     ANIMATED · DRAGGABLE SIDE PANELS
+------------------------------------------------------------------------------------------------------------------------*/
+/* The column widths are registered lengths so the grid eases between open and collapsed instead of jumping. Dragging a pane
+   edge writes --rail-open-width / --inspector-open-width; the transition is suspended while the pointer is down. */
+@property --rail-width { syntax: '<length>'; inherits: true; initial-value: 204px; }
+@property --inspector-width { syntax: '<length>'; inherits: true; initial-value: 302px; }
+:root {
+    --rail-open-width: 204px;
+    --inspector-open-width: 302px;
+    --pane-duration: .32s;
+    --pane-ease: cubic-bezier(.22, .8, .24, 1);
+}
+body {
+    --rail-width: var(--rail-open-width);
+    --inspector-width: var(--inspector-open-width);
+    transition: --rail-width var(--pane-duration) var(--pane-ease), --inspector-width var(--pane-duration) var(--pane-ease);
+}
+body.left-collapsed { --rail-width: 44px; }
+body.right-collapsed { --inspector-width: 44px; }
+body.pane-resizing { transition: none; cursor: col-resize; user-select: none; }
+body.pane-resizing * { cursor: col-resize !important; }
+
+/* Pane content keeps its open width while the column narrows, so it is clipped (never re-wrapped) and fades out. */
+.left-pane, .right-pane { position: relative; }
+.left-pane > .rail-scroll { min-width: calc(var(--rail-open-width) - 1px); }
+.right-pane > .inspector-scroll,
+.right-pane > .library-inspector-content { min-width: calc(var(--inspector-open-width) - 1px); }
+.left-pane > .rail-scroll,
+.right-pane > .inspector-scroll,
+.right-pane > .library-inspector-content {
+    transition: opacity .2s ease .08s, transform var(--pane-duration) var(--pane-ease), visibility 0s linear 0s;
+}
+body.left-collapsed .left-pane > .rail-scroll,
+body.right-collapsed .right-pane > .inspector-scroll,
+body.right-collapsed .right-pane > .library-inspector-content {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .14s ease, transform var(--pane-duration) var(--pane-ease), visibility 0s linear var(--pane-duration);
+}
+body.left-collapsed .library-rail > .rail-scroll { display: flex; transform: translateX(-14px); }
+body.left-collapsed .preview-rail > .rail-scroll { display: block; transform: translateX(-14px); }
+body.right-collapsed .right-pane > .inspector-scroll { display: flex; transform: translateX(14px); }
+body.right-collapsed .right-pane > .library-inspector-content { display: block; transform: translateX(14px); }
+.collapse-toggle { transition: color .16s, background .16s, transform var(--pane-duration) var(--pane-ease); }
+
+/* Drag handle on the inner edge of each side pane: a 7px hit strip with a 2px accent line on hover / drag. */
+.pane-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 7px;
+    z-index: 6;
+    cursor: col-resize;
+    touch-action: none;
+    background: transparent;
+}
+.left-pane > .pane-resizer { right: -1px; }
+.right-pane > .pane-resizer { left: -1px; }
+.pane-resizer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--pz-select, var(--accent));
+    opacity: 0;
+    transition: opacity .16s ease;
+}
+.left-pane > .pane-resizer::after { right: 2px; }
+.right-pane > .pane-resizer::after { left: 2px; }
+.pane-resizer:hover::after,
+.pane-resizer:focus-visible::after,
+.pane-resizer.dragging::after { opacity: .75; }
+.pane-resizer:focus-visible { outline: 0; }
+@media (prefers-reduced-motion: reduce) {
+    body, .left-pane > .rail-scroll, .right-pane > .inspector-scroll, .right-pane > .library-inspector-content { transition: none; }
+}
+@media (max-width: 700px) {
+    :root { --rail-open-width: 140px; --inspector-open-width: 220px; }
+}
