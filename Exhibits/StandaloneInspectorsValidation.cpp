@@ -80,16 +80,17 @@ bool RenderInspectorSnapshot(
     ViewportDisplaySettings&                  DisplaySettings,
     OutlinerSlotToken                         TargetToken,
     const std::filesystem::path&              OutputPath,
-    const PaneInputReading&                   InjectedInput = {})
+    const PaneInputReading&                   InjectedInput = {},
+    int                                       PaneHeight    = CaptureHeight)
 {
     Outliner.SelectSingle(TargetToken);
     ImGuiIO& Io    = ImGui::GetIO();
-    Io.DisplaySize = ImVec2(static_cast<float>(CaptureWidth), static_cast<float>(CaptureHeight));
+    Io.DisplaySize = ImVec2(static_cast<float>(CaptureWidth), static_cast<float>(PaneHeight));
     Io.DeltaTime   = 1.0f / 60.0f;
 
     ImGui::NewFrame();
     ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(CaptureWidth), static_cast<float>(CaptureHeight)), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(static_cast<float>(CaptureWidth), static_cast<float>(PaneHeight)), ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::Begin(
@@ -101,7 +102,7 @@ bool RenderInspectorSnapshot(
     bool Mutated = false;
     (void)Inspectors.ConstructActiveInspector(
         Surface,
-        Rectangle2D{ 0.0f, 0.0f, static_cast<float>(CaptureWidth), static_cast<float>(CaptureHeight) },
+        Rectangle2D{ 0.0f, 0.0f, static_cast<float>(CaptureWidth), static_cast<float>(PaneHeight) },
         Outliner,
         nullptr,
         Scene,
@@ -113,7 +114,7 @@ bool RenderInspectorSnapshot(
     ImGui::PopStyleVar(2);
     ImGui::Render();
 
-    Frontier::Exhibits::SoftwareRasterCanvas Canvas(CaptureWidth, CaptureHeight, Frontier::Components::RgbaColor8{ 24, 24, 24, 255 });
+    Frontier::Exhibits::SoftwareRasterCanvas Canvas(CaptureWidth, PaneHeight, Frontier::Components::RgbaColor8{ 24, 24, 24, 255 });
     Canvas.RasterizeImGuiBatches(ImGui::GetDrawData());
     return Canvas.WritePngFile(OutputPath);
 }
@@ -302,6 +303,12 @@ int main()
 
     // 3. Render 340x825 visual snapshots for key standalone inspectors + Baking LUT pages
     AllOk &= VerifyRequirement(RenderInspectorSnapshot(Inspectors, Outliner, Bundle.Scene, DisplaySettings, AtmoTok, OutDir / "01-Atmosphere-Overview.png"), "01-Atmosphere-Overview.png");
+    // HTML parity (InspectorHtmlParityPortPlan §5): pane = HTML .dock.right height minus the 30px tab strip
+    std::filesystem::create_directories(OutDir / "Native", DirEc);
+    AllOk &= VerifyRequirement(
+        RenderInspectorSnapshot(Inspectors, Outliner, Bundle.Scene, DisplaySettings, AtmoTok, OutDir / "Native/Atmosphere-01-Overview.png", {}, 1303 - 30),
+        "Native/Atmosphere-01-Overview.png");
+    std::cout << "        scrollHeight " << Inspectors.QueryScrollHeight() << " (HTML 1188)\n";
     Inspectors.QueryAtmosphere().SetActivePage(5u); // Baking page (Transmittance LUT + Sky-View LUT)
     AllOk &= VerifyRequirement(RenderInspectorSnapshot(Inspectors, Outliner, Bundle.Scene, DisplaySettings, AtmoTok, OutDir / "02-Atmosphere-Baking.png"), "02-Atmosphere-Baking.png");
     const uint32_t TransUploadsBefore = Inspectors.QueryAtmosphere().QueryTransmittanceLutUploads();

@@ -5,6 +5,8 @@
 
 #include "Engine/Editor/Inspectors/AtmosphereInspector.h"
 
+#include "Engine/Editor/Inspectors/AtmosphereLimbRaster.h"
+
 #include "Engine/Components/Panes/WorkspaceAppearance.h"
 #include "Engine/GeometricRaster/Atmosphere/AtmosphericSkySequence.h"
 #include "Engine/GeometricRaster/Atmosphere/CelestialEphemerisSolver.h"
@@ -43,68 +45,57 @@ inline void PutPixel(std::vector<uint8_t>& Buf, uint32_t W, uint32_t X, uint32_t
 } // namespace
 
 void AtmosphereInspector::UpdateLimbSurface(
-    const GeometricRaster::AtmosphericMediumConfiguration& Medium, float SunAtLimbDeg, bool FullDisc)
+    const GeometricRaster::AtmosphericMediumConfiguration& Medium, float SunAtLimbDeg, uint32_t WidthPx, uint32_t HeightPx)
 {
-    uint64_t Sig = FullDisc ? 0xA7001002ull : 0xA7001001ull;
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.RayleighStrength);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.MieStrength);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.MieAnisotropy);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.OzoneStrength);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.AtmosphereThicknessMeters);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.SkyBrightnessMultiplier);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.LimbGlowIntensity);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.SkyTint.R);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.SkyTint.G);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, Medium.SkyTint.B);
-    Sig = InspectorPrimitives::MixRevisionFloat(Sig, SunAtLimbDeg);
-
-    auto& Target = FullDisc ? OrbitalPreview : LimbPreview;
-    const uint32_t W = 224u;
-    const uint32_t H = FullDisc ? 172u : 194u;
-    Target.EnsureUpdated(Sig, W, H, [&](std::vector<uint8_t>& Pixels)
+    const LimbSkyMedium Sky = AtmosphereLimbRaster::ResolveMedium(Medium);
+    uint64_t Sig = 0xA7001001ull;
+    for (const float Reading : { Sky.Planet, Sky.Top, Sky.Rayleigh[0], Sky.RayleighHeight, Sky.Mie, Sky.MieHeight, Sky.Lean, Sky.Ozone[0],
+                                 Sky.Tint[0], Sky.Tint[1], Sky.Tint[2], Sky.Gain, Sky.Ground[0], Sky.Ground[1], Sky.Ground[2], SunAtLimbDeg })
     {
-        const float SunRad    = SunAtLimbDeg * (PiF / 180.0f);
-        const float Warmth    = std::exp(-std::pow((SunAtLimbDeg - 2.0f) / 10.0f, 2.0f));
-        const float DayLight  = std::clamp((SunAtLimbDeg + 12.0f) / 28.0f, 0.08f, 1.0f);
-        const float ThickNorm = std::clamp(Medium.AtmosphereThicknessMeters / 60000.0f, 0.35f, 2.2f);
-        const float CX        = static_cast<float>(W) * 0.5f;
-        const float PlanetR   = FullDisc ? 60.0f : 312.0f;
-        const float CY        = FullDisc ? (static_cast<float>(H) * 0.52f) : (static_cast<float>(H) * 0.62f + PlanetR);
-        const float BandH     = (FullDisc ? 13.0f : 34.0f) * ThickNorm;
+        Sig = InspectorPrimitives::MixRevisionFloat(Sig, Reading);
+    }
+    LimbPreview.EnsureUpdated(Sig, WidthPx, HeightPx, [&](std::vector<uint8_t>& Pixels)
+    {
+        AtmosphereLimbRaster::RasterizeLimb(Sky, SunAtLimbDeg, WidthPx, HeightPx, Pixels);
+    });
+}
 
-        for (uint32_t Y = 0u; Y < H; ++Y)
+void AtmosphereInspector::UpdateSunTrackSurface(uint32_t WidthPx)
+{
+    // linear-gradient(90deg, #1b1f3a, #e58a52 23%, #9cc6ff 50%, #e9eef8), height 4, border-radius 2
+    SunTrack.EnsureUpdated(0x5A7001ull, WidthPx, 4u, [&](std::vector<uint8_t>& Pixels)
+    {
+        constexpr std::array<std::array<float, 4>, 4u> Stops = {{
+            { 0.00f, 27.0f, 31.0f, 58.0f }, { 0.23f, 229.0f, 138.0f, 82.0f }, { 0.50f, 156.0f, 198.0f, 255.0f }, { 1.00f, 233.0f, 238.0f, 248.0f },
+        }};
+        const float W = static_cast<float>(WidthPx);
+        for (uint32_t Y = 0u; Y < 4u; ++Y)
         {
-            for (uint32_t X = 0u; X < W; ++X)
+            for (uint32_t X = 0u; X < WidthPx; ++X)
             {
-                const float DX   = static_cast<float>(X) + 0.5f - CX;
-                const float DY   = static_cast<float>(Y) + 0.5f - CY;
-                const float Dist = std::sqrt(DX * DX + DY * DY);
-                float R = 0.008f, G = 0.009f, B = 0.014f;
-                if (Dist < PlanetR)
+                const float T = (static_cast<float>(X) + 0.5f) / W;
+                std::size_t Upper = 1u;
+                while (Upper + 1u < Stops.size() && T > Stops[Upper][0]) ++Upper;
+                const auto& L = Stops[Upper - 1u];
+                const auto& H = Stops[Upper];
+                const float F = std::clamp((T - L[0]) / (H[0] - L[0]), 0.0f, 1.0f);
+                int Hits = 0; // 4x4 rounded-corner alpha (radius 2)
+                for (int Sy = 0; Sy < 4; ++Sy)
                 {
-                    const float Depth = (PlanetR - Dist) / PlanetR;
-                    const float Lit   = std::clamp(std::cos(SunRad) * 0.55f + (DX / PlanetR) * std::sin(SunRad) * 0.5f + 0.25f, 0.02f, 1.0f) * DayLight;
-                    const float Fade  = std::exp(-Depth * (FullDisc ? 3.0f : 18.0f));
-                    R = 0.02f + Fade * (0.14f + 0.36f * Warmth) * Lit * Medium.SkyTint.R;
-                    G = 0.03f + Fade * (0.26f + 0.16f * Warmth) * Lit * Medium.SkyTint.G;
-                    B = 0.05f + Fade * (0.58f - 0.14f * Warmth) * Lit * Medium.SkyTint.B;
-                }
-                else
-                {
-                    const float Alt = (Dist - PlanetR) / std::max(1.0f, BandH);
-                    if (Alt < 2.2f)
+                    for (int Sx = 0; Sx < 4; ++Sx)
                     {
-                        const float Ray = std::exp(-Alt * 2.7f) * Medium.RayleighStrength;
-                        const float Mie = std::exp(-Alt * 6.8f) * Medium.MieStrength;
-                        const float Oz  = 1.0f - 0.18f * std::clamp(Medium.OzoneStrength, 0.0f, 3.0f) * std::exp(-std::pow((Alt - 0.45f) * 3.2f, 2.0f));
-                        const float Side = std::clamp(1.0f - std::fabs(DX / (static_cast<float>(W) * 0.9f)) * 0.45f, 0.3f, 1.0f);
-                        const float Gain = DayLight * Side * Medium.SkyBrightnessMultiplier * (0.55f + 0.45f * Medium.LimbGlowIntensity);
-                        R += (Ray * (0.28f + 1.15f * Warmth) + Mie * (0.52f + 0.85f * Warmth)) * Gain * Medium.SkyTint.R;
-                        G += (Ray * (0.64f + 0.48f * Warmth) * Oz + Mie * (0.44f + 0.32f * Warmth)) * Gain * Medium.SkyTint.G;
-                        B += (Ray * (1.42f - 0.32f * Warmth) + Mie * (0.34f - 0.12f * Warmth)) * Gain * Medium.SkyTint.B;
+                        const float Px = static_cast<float>(X) + (static_cast<float>(Sx) + 0.5f) * 0.25f;
+                        const float Py = static_cast<float>(Y) + (static_cast<float>(Sy) + 0.5f) * 0.25f;
+                        const float Dx = std::max(std::fabs(Px - W * 0.5f) - (W * 0.5f - 2.0f), 0.0f);
+                        const float Dy = std::max(std::fabs(Py - 2.0f), 0.0f);
+                        Hits += (Dx * Dx + Dy * Dy <= 4.0f) ? 1 : 0;
                     }
                 }
-                PutPixel(Pixels, W, X, Y, ToneSrgb8(R), ToneSrgb8(G), ToneSrgb8(B));
+                const std::size_t Off = (static_cast<std::size_t>(Y) * WidthPx + X) * 4u;
+                Pixels[Off + 0u] = static_cast<uint8_t>(std::lround(L[1] + (H[1] - L[1]) * F));
+                Pixels[Off + 1u] = static_cast<uint8_t>(std::lround(L[2] + (H[2] - L[2]) * F));
+                Pixels[Off + 2u] = static_cast<uint8_t>(std::lround(L[3] + (H[3] - L[3]) * F));
+                Pixels[Off + 3u] = static_cast<uint8_t>(std::lround(255.0f * static_cast<float>(Hits) / 16.0f));
             }
         }
     });
@@ -223,65 +214,119 @@ float AtmosphereInspector::Construct(
 
     if (ActivePage == 0u)
     {
-        UpdateLimbSurface(Medium, Instance.SunAtLimbDeg, false);
-        const float PictureH = std::round(BodyW / 1.15f);
-        const float BoxH = InspectorMetrics::SectionPadTop + 28.0f + PictureH + 12.0f + 22.0f + InspectorMetrics::SectionPadBottom;
-        const Rectangle2D Section { LeftX, CursorY, InnerWidth, BoxH };
+        // ---- AtmosphereCards.jsx AtmosphereCard (measured: HtmlGeometry/Atmosphere-01-Overview.json) ----------------------
+        const float       ContentX  = LeftX + PadX + 1.0f;
+        const float       ContentW  = InnerWidth - (PadX + 1.0f) * 2.0f;
+        const float       LimbH     = ContentW / 1.15f;                 // .atmosphere-limb aspect-ratio 1.15
+        const float       SunRowH   = 13.0f;                            // 10px "normal" line of .atmosphere-card-sun
+        const float       SectionH  = 24.0f + 16.0f + 12.0f + LimbH + 12.0f + SunRowH + 23.0f;
+        const Rectangle2D Section { LeftX, CursorY, InnerWidth, SectionH };
         InspectorPrimitives::ConstructSectionSurface(Surface, Section, "Atmosphere overview");
 
-        const Rectangle2D LimbRect { LeftX + PadX, CursorY + InspectorMetrics::SectionPadTop + 28.0f, BodyW, PictureH };
+        const Rectangle2D LimbRect { ContentX, CursorY + 52.0f, ContentW, LimbH };
+        const uint32_t    LimbW = static_cast<uint32_t>(std::lround(ContentW));
+        const uint32_t    LimbHpx = static_cast<uint32_t>(LimbH); // ResizeObserver rounds the content box (193.03 -> 193)
+        const LimbSkyMedium SkyMedium = AtmosphereLimbRaster::ResolveMedium(Medium);
+        UpdateLimbSurface(Medium, Instance.SunAtLimbDeg, LimbW, LimbHpx);
+        Surface.FillRectangle(LimbRect, ColorRgba{ 2u, 2u, 3u, 255u }, 14.0f);
         LimbPreview.Present(Surface, LimbRect, 14.0f);
 
+        // SVG overlay (viewBox = canvas size): dashed top outline, handle, "60 km" readout
+        const LimbViewSetup View    = AtmosphereLimbRaster::ResolveView(SkyMedium, static_cast<float>(LimbW) / static_cast<float>(LimbHpx));
+        const auto          Outline = AtmosphereLimbRaster::ResolveTopOutline(View, SkyMedium.Top);
+        const auto          ToLimb  = [&](const std::array<float, 2>& At) { return Point2D{ LimbRect.X + At[0] * static_cast<float>(LimbW), LimbRect.Y + At[1] * static_cast<float>(LimbHpx) }; };
         Surface.PushClip(LimbRect);
-        const float ThickFrac = std::clamp(Medium.AtmosphereThicknessMeters / 120000.0f, 0.15f, 1.0f);
-        const float ApexY     = LimbRect.Y + PictureH * (0.64f - ThickFrac * 0.28f);
-        for (int32_t Seg = 0; Seg < 22; Seg += 2)
         {
-            const float T0 = static_cast<float>(Seg) / 22.0f;
-            const float T1 = static_cast<float>(Seg + 1) / 22.0f;
-            Surface.StrokeLine(
-                { LimbRect.X + T0 * BodyW, ApexY + std::pow((T0 - 0.5f) * 2.0f, 2.0f) * 26.0f },
-                { LimbRect.X + T1 * BodyW, ApexY + std::pow((T1 - 0.5f) * 2.0f, 2.0f) * 26.0f },
-                ColorRgba{ 255u, 255u, 255u, 98u }, 1.0f);
+            float Phase = 0.0f; // stroke-dasharray: 3 4
+            for (std::size_t Index = 0u; Index + 1u < Outline.size(); ++Index)
+            {
+                const Point2D From = ToLimb(Outline[Index]), To = ToLimb(Outline[Index + 1u]);
+                const float   Span = std::hypot(To.X - From.X, To.Y - From.Y);
+                float         At   = 0.0f;
+                while (At < Span)
+                {
+                    const float Cycle = std::fmod(Phase, 7.0f);
+                    const float Run   = std::min(Span - At, Cycle < 3.0f ? 3.0f - Cycle : 7.0f - Cycle);
+                    if (Cycle < 3.0f)
+                    {
+                        const float T0 = At / Span, T1 = (At + Run) / Span;
+                        Surface.StrokeLine({ From.X + (To.X - From.X) * T0, From.Y + (To.Y - From.Y) * T0 },
+                                           { From.X + (To.X - From.X) * T1, From.Y + (To.Y - From.Y) * T1 }, ColorRgba{ 255u, 255u, 255u, 97u }, 1.0f);
+                    }
+                    At += Run;
+                    Phase += Run;
+                }
+            }
         }
-        const Point2D HandlePt { LimbRect.Center().X, ApexY };
-        Surface.FillCircle(HandlePt, 4.0f, ColorRgba{ 245u, 247u, 255u, 255u });
-        Surface.StrokeCircle(HandlePt, 4.0f, ColorRgba{ 10u, 10u, 12u, 255u }, 1.5f);
-        char KmBuf[24]{}; std::snprintf(KmBuf, sizeof(KmBuf), "%.0f km", Medium.AtmosphereThicknessMeters * 0.001f);
-        const float KmW = WorkspaceAppearance::MeasureWeightedTextWidth(Surface, FontWeightClass::Regular, 11.0f, KmBuf);
-        WorkspaceAppearance::ConstructWeightedText(Surface, FontWeightClass::Regular, { HandlePt.X - KmW * 0.5f, HandlePt.Y - 18.0f }, 11.0f, ColorRgba{ 242u, 244u, 250u, 255u }, KmBuf);
+        std::array<float, 2> Middle { 0.5f, 0.3f };
+        for (const auto& Point : Outline)
+        {
+            if (std::fabs(Point[0] - 0.5f) < std::fabs(Middle[0] - 0.5f) || &Point == &Outline.front()) Middle = Point;
+        }
+        const Point2D Handle = ToLimb({ std::round(Middle[0] * static_cast<float>(LimbW) * 10.0f) / (10.0f * static_cast<float>(LimbW)),
+                                        std::round(Middle[1] * static_cast<float>(LimbHpx) * 10.0f) / (10.0f * static_cast<float>(LimbHpx)) });
+        Surface.FillCircle(Handle, 4.5f + 0.75f, ColorRgba{ 10u, 10u, 12u, 255u });   // stroke #0a0a0c 1.5 (centred on r 4.5)
+        Surface.FillCircle(Handle, 4.5f - 0.75f, ColorRgba{ 245u, 247u, 255u, 255u }); // fill #f5f7ff
+        char KmBuf[24]{};
+        std::snprintf(KmBuf, sizeof(KmBuf), "%ld km", std::lround(Medium.AtmosphereThicknessMeters / 1000.0f));
+        const float   KmW      = InspectorPrimitives::MeasureCssText(Surface, FontWeightClass::Regular, 9.0f, KmBuf);
+        const Point2D KmCorner { Handle.X - KmW * 0.5f, Handle.Y - 10.0f - 9.0f * 0.992f }; // text-anchor middle, baseline y = -10
+        for (int Ring = 0; Ring < 8; ++Ring)                                                 // paint-order stroke #000000a0 3px
+        {
+            const float A = static_cast<float>(Ring) * 0.78539816f;
+            InspectorPrimitives::ConstructCssText(Surface, FontWeightClass::Regular, { KmCorner.X + std::cos(A) * 1.5f, KmCorner.Y + std::sin(A) * 1.5f }, 9.0f, 0.0f, ColorRgba{ 0u, 0u, 0u, 46u }, KmBuf);
+        }
+        InspectorPrimitives::ConstructCssText(Surface, FontWeightClass::Regular, KmCorner, 9.0f, 0.0f, ColorRgba{ 242u, 244u, 250u, 255u }, KmBuf);
         Surface.PopClip();
 
-        const float SunRowY = LimbRect.Bottom() + 14.0f;
-        WorkspaceAppearance::ConstructWeightedText(Surface, FontWeightClass::Regular, { LeftX + PadX, SunRowY + 2.0f }, 10.0f, ColorRgba{ 154u, 154u, 154u, 255u }, "Sun at the limb");
-        char DegBuf[20]{}; std::snprintf(DegBuf, sizeof(DegBuf), "%.1f deg", Instance.SunAtLimbDeg);
-        const float DegW = WorkspaceAppearance::MeasureWeightedTextWidth(Surface, FontWeightClass::Regular, 10.0f, DegBuf);
-        WorkspaceAppearance::ConstructWeightedText(Surface, FontWeightClass::Regular, { Section.Right() - PadX - DegW, SunRowY + 2.0f }, 10.0f, ColorRgba{ 232u, 232u, 232u, 255u }, DegBuf);
+        // label.atmosphere-card-sun: span (10px #9a9a9a) | range (flex 1, gap 8) | b (min-width 38, right, #e8e8e8)
+        const float SunRowY  = LimbRect.Bottom() + 12.0f;
+        const float LabelW   = std::round(InspectorPrimitives::MeasureCssText(Surface, FontWeightClass::Regular, 10.0f, "Sun at the limb"));
+        InspectorPrimitives::ConstructCssText(Surface, FontWeightClass::Regular, { ContentX, SunRowY }, 10.0f, 0.0f, ColorRgba{ 154u, 154u, 154u, 255u }, "Sun at the limb");
+        char DegBuf[20]{};
+        std::snprintf(DegBuf, sizeof(DegBuf), "%.1f\xC2\xB0", Instance.SunAtLimbDeg);
+        const float DegW = InspectorPrimitives::MeasureCssText(Surface, FontWeightClass::Regular, 10.0f, DegBuf);
+        InspectorPrimitives::ConstructCssText(Surface, FontWeightClass::Regular, { ContentX + ContentW - DegW, SunRowY }, 10.0f, 0.0f, ColorRgba{ 232u, 232u, 232u, 255u }, DegBuf);
 
-        const Rectangle2D SunBar { LeftX + PadX + 78.0f, SunRowY, std::max(56.0f, BodyW - 78.0f - DegW - 10.0f), 16.0f };
-        const float TrackY = SunBar.Center().Y - 2.0f;
-        const float S1 = SunBar.Width * 0.23f, S2 = SunBar.Width * 0.27f, S3 = SunBar.Width * 0.50f;
-        Surface.FillRectangle({ SunBar.X,                       TrackY, S1,        4.0f }, ColorRgba{ 27u,  31u,  58u,  255u }, 2.0f);
-        Surface.FillRectangle({ SunBar.X + S1,                  TrackY, S2,        4.0f }, ColorRgba{ 229u, 138u, 82u,  255u }, 0.0f);
-        Surface.FillRectangle({ SunBar.X + S1 + S2,             TrackY, S3 * 0.5f, 4.0f }, ColorRgba{ 156u, 198u, 255u, 255u }, 0.0f);
-        Surface.FillRectangle({ SunBar.X + S1 + S2 + S3 * 0.5f, TrackY, S3 * 0.5f, 4.0f }, ColorRgba{ 233u, 238u, 248u, 255u }, 2.0f);
-        const float NormSun = std::clamp((Instance.SunAtLimbDeg + 12.0f) / 72.0f, 0.0f, 1.0f);
-        const Point2D ThumbPt { SunBar.X + NormSun * SunBar.Width, SunBar.Center().Y };
-        Surface.FillCircle(ThumbPt, 7.0f, ColorRgba{ 244u, 244u, 244u, 255u });
-        Surface.StrokeCircle(ThumbPt, 7.0f, ColorRgba{ 26u, 26u, 26u, 255u }, 2.0f);
+        const Rectangle2D Track { ContentX + LabelW + 8.0f, SunRowY + SunRowH * 0.5f - 2.0f, ContentW - LabelW - 8.0f - 8.0f - 38.0f, 4.0f };
+        UpdateSunTrackSurface(static_cast<uint32_t>(std::lround(Track.Width)));
+        SunTrack.Present(Surface, Track, 0.0f);
+        const float   SunFraction = std::clamp((Instance.SunAtLimbDeg - SunAtLimbMinimum) / (SunAtLimbMaximum - SunAtLimbMinimum), 0.0f, 1.0f);
+        const Point2D Thumb { Track.X + 7.0f + SunFraction * (Track.Width - 14.0f), Track.Center().Y };
+        Surface.FillCircle(Thumb, 8.0f, ColorRgba{ 255u, 255u, 255u, 64u }); // box-shadow 0 0 0 1px #ffffff40
+        Surface.FillCircle(Thumb, 7.0f, ColorRgba{ 26u, 26u, 26u, 255u });   // 2px #1a1a1a border
+        Surface.FillCircle(Thumb, 5.0f, ColorRgba{ 244u, 244u, 244u, 255u }); // #f4f4f4
 
-        const Point2D Cursor { Input.PrimaryPointer.X, Input.PrimaryPointer.Y };
-        if (SunBar.Contains(Cursor) && Input.PrimaryPointer.Pressed) ActiveDragId = 9001u;
-        if (ActiveDragId == 9001u && Input.PrimaryPointer.Down)
-            Instance.SunAtLimbDeg = -12.0f + std::clamp((Cursor.X - SunBar.X) / std::max(1.0f, SunBar.Width), 0.0f, 1.0f) * 72.0f;
-        else if (ActiveDragId == 9001u && !Input.PrimaryPointer.Down) ActiveDragId = 0u;
+        // Interaction: range (-12..40, step 0.5) and the outline/handle drag that sets "Atmosphere" (TopThrough)
+        const Point2D     Cursor { Input.PrimaryPointer.X, Input.PrimaryPointer.Y };
+        const Rectangle2D TrackHit { Track.X, SunRowY - 2.0f, Track.Width, SunRowH + 4.0f };
+        if (Input.PrimaryPointer.Pressed)
+        {
+            if (TrackHit.Contains(Cursor)) ActiveDragId = SunAtLimbDragId;
+            else if (LimbRect.Contains(Cursor) && std::hypot(Cursor.X - Handle.X, Cursor.Y - Handle.Y) <= 11.0f) ActiveDragId = AtmosphereTopDragId;
+        }
+        if (ActiveDragId == SunAtLimbDragId && Input.PrimaryPointer.Down)
+        {
+            const float Fraction = std::clamp((Cursor.X - Track.X - 7.0f) / std::max(1.0f, Track.Width - 14.0f), 0.0f, 1.0f);
+            const float Reading  = std::round((SunAtLimbMinimum + Fraction * (SunAtLimbMaximum - SunAtLimbMinimum)) / 0.5f) * 0.5f;
+            if (Reading != Instance.SunAtLimbDeg) { Instance.SunAtLimbDeg = Reading; OutMutated = true; }
+        }
+        else if (ActiveDragId == AtmosphereTopDragId && Input.PrimaryPointer.Down)
+        {
+            const float Top = AtmosphereLimbRaster::ResolveTopThrough(View, (Cursor.X - LimbRect.X) / LimbRect.Width, (Cursor.Y - LimbRect.Y) / LimbRect.Height);
+            if (Top != Medium.AtmosphereThicknessMeters) { Medium.AtmosphereThicknessMeters = Top; OutMutated = true; }
+        }
+        else if (!Input.PrimaryPointer.Down && (ActiveDragId == SunAtLimbDragId || ActiveDragId == AtmosphereTopDragId))
+        {
+            ActiveDragId = 0u;
+        }
 
         CursorY = Section.Bottom() + InspectorMetrics::SectionGap;
 
         const std::array<InspectorQuickSwitchSpec, 3u> Quick = {{
-            { "Visible",            InspectorSwitchSymbol::Eye,      Entry.VisibilityEnabled,   false },
-            { "Line at civil only", InspectorSwitchSymbol::LimbLine, Instance.LineAtCivilOnly,  false },
-            { "Orbital view",       InspectorSwitchSymbol::Orbit,    Medium.OrbitalViewEnabled, false },
+            { "Visible",            InspectorSwitchSymbol::Eye,      Entry.VisibilityEnabled,   false, "atmosphere" },
+            { "Line at civil only", InspectorSwitchSymbol::LimbLine, Instance.LineAtCivilOnly,  false, "atmosphere" },
+            { "Orbital view",       InspectorSwitchSymbol::Orbit,    Medium.OrbitalViewEnabled, false, "atmosphere" },
         }};
         int32_t Clicked = -1;
         CursorY = InspectorPrimitives::ConstructQuickSwitchSection(Surface, LeftX, CursorY, InnerWidth, Quick, Input, Clicked);
@@ -289,7 +334,8 @@ float AtmosphereInspector::Construct(
         else if (Clicked == 1) { Instance.LineAtCivilOnly = !Instance.LineAtCivilOnly; OutMutated = true; }
         else if (Clicked == 2) { Medium.OrbitalViewEnabled = !Medium.OrbitalViewEnabled; OutMutated = true; }
 
-        static constexpr std::array<const char*, 2u> Tags = {{ "atmosphere", "sky" }};
+        // Inspectors.jsx panel tag table: atmosphere: ["environment", "sky"]
+        static constexpr std::array<const char*, 2u> Tags = {{ "environment", "sky" }};
         CursorY = InspectorPrimitives::ConstructTagsSection(Surface, LeftX, CursorY, InnerWidth, Tags);
         CursorY = InspectorPrimitives::ConstructNotesSection(Surface, LeftX, CursorY, InnerWidth, Entry.AuthorNotes);
     }
@@ -402,11 +448,12 @@ float AtmosphereInspector::Construct(
     }
     else if (ActivePage == 4u)
     {
-        UpdateLimbSurface(Medium, Instance.SunAtLimbDeg, true);
+        // PENDING PORT (ledger Atmosphere-05): replaced in the next parity step
         const Rectangle2D S { LeftX, CursorY, InnerWidth, 344.0f };
         InspectorPrimitives::ConstructSectionSurface(Surface, S, "Planet from orbit");
         const Rectangle2D Img { LeftX + PadX, CursorY + InspectorMetrics::SectionPadTop + 28.0f, BodyW, 168.0f };
-        OrbitalPreview.Present(Surface, Img, 14.0f);
+        UpdateLimbSurface(Medium, Instance.SunAtLimbDeg, static_cast<uint32_t>(BodyW), 168u);
+        LimbPreview.Present(Surface, Img, 14.0f);
         float Y = Img.Bottom() + 14.0f;
         Y = InspectorPrimitives::ConstructToggleFieldRow(Surface, LeftX + PadX, Y, BodyW, "Orbital view", Medium.OrbitalViewEnabled, Input, OutMutated);
         (void)InspectorPrimitives::ConstructScalarFieldRow(Surface, LeftX + PadX, Y, BodyW, 1401u, "Observer altitude", "m", "%.0f", 0.0f, 250000.0f, Medium.ObserverAltitudeMeters, ActiveDragId, Input, OutMutated);

@@ -9,6 +9,7 @@
 //                                                        INCLUDES
 //------------------------------------------------------------------------------------------------------------------------
 
+#include "Engine/Components/Appearance/ThemeRepository.h"
 #include "Engine/Components/Controls/ControlAppearance.h"
 #include "Engine/Components/Panes/OutlinerPanel.h"
 #include "Engine/Mathematics/LinearColors.h"
@@ -19,6 +20,7 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Frontier
@@ -92,14 +94,31 @@ namespace InspectorMetrics
     inline constexpr ColorRgba NotesFill           { 22u,  22u,  22u,  255u }; // [-] - rgb(22, 22, 22)
     inline constexpr ColorRgba NotesBorder         { 51u,  51u,  51u,  255u }; // [-] - rgb(51, 51, 51)
     inline constexpr ColorRgba ChamberDark         { 4u,   5u,   8u,   255u }; // [-] - Deep dark optical chamber
+
+    // Measured from the rendered ProjectZeroEditor inspector (HtmlGeometry/*.json, scroller-relative CSS pixels)
+    inline constexpr float     CssTextScale        = 1.302f; // [-]  - DM Sans (ascent - descent) / em: ImGui pixel size per CSS px
+    inline constexpr float     BreadcrumbTop       = 32.0f;  // [px] - .breadcrumbs line box top
+    inline constexpr float     TitleTop            = 73.0f;  // [px] - h1 line box top
+    inline constexpr float     EyebrowTop          = 112.0f; // [px] - p.eyebrow line box top
+    inline constexpr float     PageStripTop        = 142.0f; // [px] - .pc-rail top
+    inline constexpr float     ScrollBottomPad     = 22.0f;  // [px] - Scroll height beyond the last section
+    inline constexpr float     FooterHeight        = 45.0f;  // [px] - .inspector-footer height
+    inline constexpr ColorRgba PaneFill            { 18u,  18u,  18u,  255u }; // [-] - .dock #121212
+    inline constexpr ColorRgba TitleInk            { 240u, 240u, 240u, 255u }; // [-] - h1 rgb(240, 240, 240)
+    inline constexpr ColorRgba GroupTitleInk       { 209u, 209u, 206u, 255u }; // [-] - Quick controls / Tags / Notes title
+    inline constexpr ColorRgba CountInk            { 141u, 141u, 141u, 255u }; // [-] - .quick-count rgb(141, 141, 141)
+    inline constexpr ColorRgba PlaceholderInk      { 117u, 117u, 117u, 255u }; // [-] - ::placeholder rgb(117, 117, 117)
+    inline constexpr ColorRgba FooterFill          { 21u,  21u,  21u,  255u }; // [-] - .inspector-footer rgb(21, 21, 21)
+    inline constexpr ColorRgba FooterInk           { 104u, 104u, 104u, 255u }; // [-] - Footer caption rgb(104, 104, 104)
 } // namespace InspectorMetrics
 
 struct InspectorQuickSwitchSpec
 {
     const char*           Label    = "";
-    InspectorSwitchSymbol Symbol   = InspectorSwitchSymbol::Eye;
+    InspectorSwitchSymbol Symbol   = InspectorSwitchSymbol::Eye; // [-] - Unused: the silhouette resolves from Label like QuickSymbol()
     bool                  Active   = false;
     bool                  Disabled = false;
+    const char*           Context  = "";                         // [-] - Panel id for the "Enabled" label (ActionIcon.jsx)
 };
 
 struct InspectorKpiMetricSpec
@@ -168,7 +187,22 @@ void ConstructSwitchSymbol(
     ColorRgba             Ink,
     ColorRgba             WellFill) noexcept;
 
-// Top breadcrumb ("Inspector / Environment"), large Light title, and muted subtitle
+// Text placed like a CSS line box: CssPx is the browser font-size, BoxTopLeft the line box corner, LineHeightPx 0 = "normal"
+void ConstructCssText(
+    PixelSpace&      Surface,
+    FontWeightClass  Weight,
+    Point2D          BoxTopLeft,
+    float            CssPx,
+    float            LineHeightPx,
+    ColorRgba        Ink,
+    std::string_view Text) noexcept;
+
+[[nodiscard]] float MeasureCssText(PixelSpace& Surface, FontWeightClass Weight, float CssPx, std::string_view Text) noexcept;
+
+// CSS box-shadow 0 OffsetY Blur rgba(0,0,0,Opacity) under a rounded box (Gaussian falloff in stacked rounded layers)
+void ConstructCssShadow(PixelSpace& Surface, Rectangle2D Bounds, float Radius, float OffsetY, float Blur, float Opacity) noexcept;
+
+// Top breadcrumb ("Inspector / Environment"), title and eyebrow at the measured line boxes; TopY is the scroller top
 [[nodiscard]] float ConstructInspectorHeader(
     PixelSpace& Surface,
     float       LeftX,

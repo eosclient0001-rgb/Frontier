@@ -231,6 +231,7 @@ set(FRONTIER_UI_COMPONENT_SOURCES
     Engine/Components/Controls/ConfirmationDialogue.cpp
     Engine/Components/Controls/NotificationSequence.cpp
     Engine/Components/Controls/InspectorSectionPrimitives.cpp
+    Engine/Components/Controls/QuickSymbolRepository.cpp
     Engine/Components/Controls/PolarDirectionDial.cpp
     Engine/Components/Docking/WorkspaceTabStrip.cpp
     Engine/Components/Docking/WorkspaceDockContainer.cpp
@@ -1002,6 +1003,7 @@ if(FRONTIER_PROFILE STREQUAL "Editor")
         Engine/Editor/WorldEnvironmentRegistry.cpp
         Engine/Editor/Inspectors/InspectorInstanceRegister.cpp
         Engine/Editor/Inspectors/AtmosphereInspector.cpp
+        Engine/Editor/Inspectors/AtmosphereLimbRaster.cpp
         Engine/Editor/Inspectors/SolarInspector.cpp
         Engine/Editor/Inspectors/CloudInspector.cpp
         Engine/Editor/Inspectors/LocalCloudInspector.cpp

@@ -70,6 +70,7 @@ public:
         bool&                                     OutMutated) noexcept;
 
     void SetScrollOffset(float ScrollPixels) noexcept { ScrollOffsetY = std::max(0.0f, ScrollPixels); }
+    [[nodiscard]] float QueryScrollHeight() const noexcept { return ScrollHeight; }
     void ClearInstances() noexcept { Instances.Clear(); ProjectHost.ClearAll(); }
 
     [[nodiscard]] ProjectInspectorHost&      QueryProjectHost() noexcept { return ProjectHost; }
@@ -144,6 +145,7 @@ private:
 
     uint32_t LastEntryId   = 0u;
     float    ScrollOffsetY = 0.0f;
+    float    ScrollHeight  = 0.0f; // [px] - Last constructed scroller content height (HTML scrollHeight)
 };
 
 } // namespace Frontier

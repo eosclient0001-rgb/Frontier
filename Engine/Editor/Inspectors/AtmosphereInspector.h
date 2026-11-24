@@ -36,7 +36,13 @@ public:
     [[nodiscard]] uint32_t QuerySkyViewLutUploads() const noexcept { return SkyViewLut.QueryUploadCount(); }
 
 private:
-    void UpdateLimbSurface(const GeometricRaster::AtmosphericMediumConfiguration& Medium, float SunAtLimbDeg, bool FullDisc);
+    void UpdateLimbSurface(const GeometricRaster::AtmosphericMediumConfiguration& Medium, float SunAtLimbDeg, uint32_t WidthPx, uint32_t HeightPx);
+    void UpdateSunTrackSurface(uint32_t WidthPx);
+
+    static constexpr float    SunAtLimbMinimum     = -12.0f; // [deg] - AtmosphereCards.jsx range min
+    static constexpr float    SunAtLimbMaximum     = 40.0f;  // [deg] - AtmosphereCards.jsx range max
+    static constexpr uint32_t SunAtLimbDragId      = 9001u;  // [-]   - Sun at the limb range drag
+    static constexpr uint32_t AtmosphereTopDragId  = 9002u;  // [-]   - Limb outline / handle drag
     void UpdateTransmittanceSurface(const GeometricRaster::AtmosphericMediumConfiguration& Medium);
     void UpdateSkyViewSurface(const GeometricRaster::AtmosphericMediumConfiguration& Medium, const GeometricRaster::SolarCelestialConfiguration& Solar);
 
@@ -47,6 +53,7 @@ private:
     uint32_t                TransResolutionTier    = 1u;
     uint32_t                SkyViewResolutionTier  = 1u;
     InspectorPreviewSurface LimbPreview            {};
+    InspectorPreviewSurface SunTrack               {};
     InspectorPreviewSurface OrbitalPreview         {};
     InspectorPreviewSurface TransmittanceLut       {};
     InspectorPreviewSurface SkyViewLut             {};
