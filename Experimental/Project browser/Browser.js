@@ -177,7 +177,6 @@ function ActivateFile(Token)
     ActiveTab = 'details';
     Query('#Library').hidden = true;
     Query('#Reader').hidden = false;
-    Query('#ReaderThemeSlot').append(Query('#ThemeControl'));
     Query('#ReaderName').textContent = Selected.Title + Selected.Extension;
     Query('#ReaderFormat').textContent = Selected.Extension;
     Query('#RailTitle').textContent = ({project:'Levels',cad:Selected.Extension === '.sketch' ? 'Sketches' : 'Assembly',geometry:'Views',document:'Document'})[Selected.Category];
@@ -193,7 +192,39 @@ function ActivateFile(Token)
 }
 function ConstructSequence()
 {
-    Query('#PreviewSequence').innerHTML = Selected.Views.map((Title, Index) => `<button class="preview-thumb" data-preview="${Index}" aria-current="${!DocumentEnabled && Index === PreviewIndex}">${ConstructThumbnail(Selected,Index,ActiveRevision)}<span>${Escape(Title)}</span></button>`).join('');
+    Query('#PreviewSequence').innerHTML = Selected.Views.map((Title, Index) => `<button class="preview-thumb" data-preview="${Index}" aria-current="${!DocumentEnabled && Index === PreviewIndex}">${ConstructMiniPage(Selected,Index)}<span><b>${Index+1}</b>${Escape(Title)}</span></button>`).join('');
+    Query('#Document').setAttribute('aria-current',String(DocumentEnabled));
+}
+// A document page in miniature: running header rule, title lines, the rendered figure, body lines (left rail + inspector).
+function ConstructMiniPage(Entry,Index)
+{
+    return `<span class="mini-page"><span class="mini-page-head"></span><span class="mini-page-title"></span>${ConstructThumbnail(Entry,Index,ActiveRevision)}<span class="mini-page-lines"><i></i><i></i><i></i></span><span class="mini-page-foot"></span></span>`;
+}
+function QueryPageCount()
+{
+    return Selected.Category === 'document' ? 1 : Selected.Views.length + 1;
+}
+function ConstructPageChrome()
+{
+    // Running header / footer and the facts table printed on the page, like a PDF export of the project.
+    const Version = Selected.Revisions.length-ActiveRevision;
+    const Page = DocumentEnabled ? QueryPageCount() : PreviewIndex+1;
+    Query('#PaperPage').classList.toggle('is-document',DocumentEnabled);
+    Query('#PageHeadLeft').textContent = Selected.Title + Selected.Extension;
+    Query('#PageHeadRight').textContent = Selected.Imported ? 'Local file' : `Version ${Version}${ActiveRevision===0 ? ' · Current' : ''}`;
+    Query('#PageFootLeft').textContent = `${Applications[QueryApplication(Selected)].Title} · ${Selected.Path || 'Local selection'}`;
+    Query('#PageFootNumber').textContent = `Page ${Page} of ${QueryPageCount()}`;
+    Query('#PreviewIndex').textContent = `${Page} / ${QueryPageCount()}`;
+    const Facts = [
+        ['Format', Selected.Extension],
+        [Query('#RailTitle').textContent, String(Selected.Views.length)],
+        ['Version', Selected.Imported ? 'Local file' : `${Version} of ${Selected.Revisions.length}`],
+        ['Opens in', Applications[QueryApplication(Selected)].Title],
+        ['Last opened', Selected.Opened || '—']
+    ];
+    const Sheet=Query('#InspectorContent .detail-page');
+    if (Sheet) Sheet.innerHTML=`${ConstructMiniPage(Selected,PreviewIndex)}<small>Page ${Page} of ${QueryPageCount()}</small>`;
+    Query('#PageFacts').innerHTML = Facts.map(([Term,Detail]) => `<dt>${Escape(Term)}</dt><dd>${Escape(Detail)}</dd>`).join('');
 }
 function ConstructMarkdown(Text)
 {
@@ -265,11 +296,12 @@ function ConstructPreview()
         }
         catch(Failure){ConfigureRenderFailure(Failure.message);}
     }
-    Zoom=100;Query('#ZoomReset').textContent='100%';
-    if(DocumentEnabled)ConfigurePaperScale(100);
+    Zoom=100;
+    ConstructPageChrome();
+    ConfigurePaperScale(100);
     ConstructSequence();
-    Query('#Previous').disabled=DocumentEnabled||Selected.Views.length<=1;
-    Query('#Next').disabled=DocumentEnabled||Selected.Views.length<=1;
+    Query('#Previous').disabled=QueryPageCount()<=1;
+    Query('#Next').disabled=QueryPageCount()<=1;
 }
 function ConfigureRenderFailure(Message)
 {
@@ -280,11 +312,9 @@ function ConfigureZoom(Amount)
 {
     Zoom = Math.max(50, Math.min(200, Amount));
     Query('#ZoomReset').textContent = Zoom+'%';
-    const Artwork = Query('#PreviewCanvas>.artwork, #PreviewCanvas .vulkan-capture');
-    if (Artwork) Artwork.style.transform = `scale(${Zoom/100})`;
-    const Paper=Query('#PreviewCanvas .document-page');
-    if (Paper) ConfigurePaperScale(Zoom);
-    if (LiveRenderer && Query('#PreviewCanvas').contains(LiveRenderer.Canvas)) { LiveRenderer.Camera.Distance=(Selected.Category==='project' ? 17 : 10.5)*100/Zoom; LiveRenderer.Refresh();CaptureCurrentPreview(); }
+    // The zoom scales the whole sheet, like a PDF viewer; the live figure re-renders once at the new size.
+    ConfigurePaperScale(Zoom);
+    if (LiveRenderer && Query('#PreviewCanvas').contains(LiveRenderer.Canvas)) requestAnimationFrame(()=>LiveRenderer.Refresh());
 }
 function QueryNotes()
 {
@@ -298,7 +328,7 @@ function ConstructInspector()
     const Surface = Query('#InspectorContent');
     if (ActiveTab === 'details')
     {
-        Surface.innerHTML = `<div class="pz-heading"><span class="pz-breadcrumbs">Inspector / ${Escape(FormatTitles[Selected.Category] || 'Files')}</span><h2>${Escape(Selected.Title)}</h2><p>${Escape(Selected.Extension)} · ${Selected.Imported ? 'Selected from your device' : 'Sample file · local workspace'}</p></div><div class="detail-hero pz-card">${ConstructThumbnail(Selected,PreviewIndex,ActiveRevision)}</div>${ConstructOpenWithCard(Selected)}<section class="pz-card" data-card="Details"><h3>${Icon('file')}Details</h3><p class="pz-card-text">${Escape(Selected.Description)}</p><div class="detail-list"><span>Workspace</span><strong>${({project:'Game project',cad:'Drafting / CAD',geometry:'Geometry',document:'Document'})[Selected.Category]}</strong><span>${Selected.Category === 'project' ? 'Levels' : Selected.Category === 'cad' ? 'Assemblies / sketches' : 'Preview views'}</span><strong>${Selected.Views.length}</strong><span>Last opened</span><strong>${Escape(Selected.Opened)}</strong><span>Storage</span><strong>${Selected.Imported ? 'Local file selection' : 'Sample location'}</strong></div></section><section class="pz-card" data-card="Location"><h3>${Icon('folder')}Location</h3><div class="source-path">${Escape(Selected.Path)}</div><span class="local-chip">${Selected.Imported ? 'Read-only · native decoder pending' : 'Sample file · read-only'}</span></section>`;
+        Surface.innerHTML = `<div class="pz-heading"><span class="pz-breadcrumbs">Inspector / ${Escape(FormatTitles[Selected.Category] || 'Files')}</span><h2>${Escape(Selected.Title)}</h2><p>${Escape(Selected.Extension)} · ${Selected.Imported ? 'Selected from your device' : 'Sample file · local workspace'}</p></div><div class="detail-hero detail-page">${ConstructMiniPage(Selected,PreviewIndex)}<small>Page ${DocumentEnabled ? QueryPageCount() : PreviewIndex+1} of ${QueryPageCount()}</small></div>${ConstructOpenWithCard(Selected)}<section class="pz-card" data-card="Details"><h3>${Icon('file')}Details</h3><p class="pz-card-text">${Escape(Selected.Description)}</p><div class="detail-list"><span>Workspace</span><strong>${({project:'Game project',cad:'Drafting / CAD',geometry:'Geometry',document:'Document'})[Selected.Category]}</strong><span>${Selected.Category === 'project' ? 'Levels' : Selected.Category === 'cad' ? 'Assemblies / sketches' : 'Preview views'}</span><strong>${Selected.Views.length}</strong><span>Last opened</span><strong>${Escape(Selected.Opened)}</strong><span>Storage</span><strong>${Selected.Imported ? 'Local file selection' : 'Sample location'}</strong></div></section><section class="pz-card" data-card="Location"><h3>${Icon('folder')}Location</h3><div class="source-path">${Escape(Selected.Path)}</div><span class="local-chip">${Selected.Imported ? 'Read-only · native decoder pending' : 'Sample file · read-only'}</span></section>`;
     }
     else if (ActiveTab === 'comments')
     {
@@ -359,8 +389,17 @@ for (const Surface of ['#LibraryOpenWith','#OpenAppSwitch','#InspectorContent'])
     });
 Query('#PreviewSequence').onclick = Event => { const Button=Event.target.closest('[data-preview]'); if (Button) { PreviewIndex=Number(Button.dataset.preview);DocumentEnabled=false;ConstructPreview(); } };
 Query('#Document').onclick = () => { DocumentEnabled=true;ConstructPreview(); };
-Query('#Previous').onclick = () => { PreviewIndex=(PreviewIndex+Selected.Views.length-1)%Selected.Views.length;DocumentEnabled=false;ConstructPreview(); };
-Query('#Next').onclick = () => { PreviewIndex=(PreviewIndex+1)%Selected.Views.length;DocumentEnabled=false;ConstructPreview(); };
+function ConfigurePage(Page)
+{
+    if (Selected.Category === 'document') return;
+    const Count=QueryPageCount();
+    const Wrapped=((Page%Count)+Count)%Count;
+    DocumentEnabled=Wrapped===Count-1;
+    if(!DocumentEnabled)PreviewIndex=Wrapped;
+    ConstructPreview();
+}
+Query('#Previous').onclick = () => ConfigurePage((DocumentEnabled ? QueryPageCount()-1 : PreviewIndex)-1);
+Query('#Next').onclick = () => ConfigurePage((DocumentEnabled ? QueryPageCount()-1 : PreviewIndex)+1);
 Query('#ZoomIn').onclick = () => ConfigureZoom(Zoom+25);
 Query('#ZoomOut').onclick = () => ConfigureZoom(Zoom-25);
 Query('#ZoomReset').onclick = Query('#Fit').onclick = () => ConfigureZoom(100);
@@ -370,6 +409,16 @@ Query('#InspectorContent').addEventListener('click',Event=>{const Button=Event.t
 Query('#RevisionSelect').onchange=Event=>ConfigureRevision(Number(Event.target.value));
 Query('#CommentForm').onsubmit = Event => { Event.preventDefault();const Text=Query('#CommentText').value.trim();if (!Text) return; if (!Array.isArray(LocalNotes[Selected.Token])) LocalNotes[Selected.Token]=[];LocalNotes[Selected.Token].push({Author:'You',Initial:'Y',Text:Text.slice(0,2000),Time:'Just now',Sample:false});PersistPreference('frontier.prototype.browser.notes',LocalNotes);Query('#CommentText').value='';ConstructInspector();Notify('Note saved in this browser. It has not been written to a project file.'); };
 Query('#OpenEditor').onclick = () => LaunchApplication(Selected, QueryApplication(Selected));
+function ConfigureOpenMenu(Open)
+{
+    Query('#OpenMenu').hidden=!Open;
+    Query('#OpenMenuToggle').setAttribute('aria-expanded',String(Open));
+}
+Query('#OpenMenuToggle').onclick = Event => { Event.stopPropagation(); ConfigureOpenMenu(Query('#OpenMenu').hidden); };
+Query('#OpenMenu').addEventListener('click', Event => { if (Event.target.closest('[data-application]')) setTimeout(()=>{ConfigureOpenMenu(false);ConstructPageChrome();},0); });
+document.addEventListener('click', Event => { if (!Event.target.closest('.open-split')) ConfigureOpenMenu(false); });
+// Escape closes the open-with menu first; only a second Escape leaves the reader.
+document.addEventListener('keydown', Event => { if (Event.key==='Escape' && !Query('#OpenMenu').hidden) { ConfigureOpenMenu(false); Event.stopImmediatePropagation(); } }, true);
 Query('#NewProject').onclick = () => ActivateFile(CreateProject().Token);
 Query('#CloseDialog').onclick = Query('#ReturnPreview').onclick = () => Query('#LaunchDialog').close();
 document.addEventListener('keydown', Event => { if (Event.target.tagName==='CANVAS' || ['INPUT','TEXTAREA','SELECT'].includes(Event.target.tagName) || Query('#LaunchDialog').open) return;if (Event.key==='/' && !Query('#Library').hidden) { Event.preventDefault();Query('#Search').focus(); } if (Event.key==='Escape' && !Query('#Reader').hidden) ReturnLibrary();if (Selected && Event.key==='ArrowRight') Query('#Next').click();if (Selected && Event.key==='ArrowLeft') Query('#Previous').click(); });
@@ -444,8 +493,16 @@ ConstructLibraryOpenWith();
 //                                                     STABLE PANEL COLLAPSE
 //------------------------------------------------------------------------------------------------------------------------
 
+let PaneSettle=0;
 function ConfigurePanelCollapse(Side, Collapsed)
 {
+    if (document.body.classList.contains(Side+'-collapsed')!==Collapsed)
+    {
+        // The live figure keeps its last frame (stretched) while the columns ease, then renders once at the final size.
+        document.body.classList.add('pane-animating');
+        clearTimeout(PaneSettle);
+        PaneSettle=setTimeout(()=>{document.body.classList.remove('pane-animating');if(!Query('#Reader').hidden)ConfigurePaperScale(Zoom);if(LiveRenderer)LiveRenderer.Refresh();},380);
+    }
     document.body.classList.toggle(Side+'-collapsed',Collapsed);
     document.querySelectorAll('[data-collapse="'+Side+'"]').forEach(Button=>{
         Button.setAttribute('aria-expanded',String(!Collapsed));
@@ -453,7 +510,6 @@ function ConfigurePanelCollapse(Side, Collapsed)
         Button.title=Button.getAttribute('aria-label');
         Button.textContent=Side==='left' ? (Collapsed?'›':'‹') : (Collapsed?'‹':'›');
     });
-    if (LiveRenderer) requestAnimationFrame(()=>LiveRenderer.Refresh());
 }
 document.querySelectorAll('[data-collapse]').forEach(Button=>Button.onclick=()=>{
     const Side=Button.dataset.collapse;
@@ -535,7 +591,6 @@ function ConstructPaneResizer(Pane, Side)
         }
         ConfigurePaneWidth(Side,Wanted);
         if (Collapsed) ConfigurePanelCollapse(Side,false);
-        if (LiveRenderer) LiveRenderer.Refresh();
     });
     const Release=Event=>{
         if (!Handle.hasPointerCapture(Event.pointerId)) return;
@@ -543,6 +598,7 @@ function ConstructPaneResizer(Pane, Side)
         Handle.classList.remove('dragging');
         document.body.classList.remove('pane-resizing');
         RetainPaneWidths();
+        if (LiveRenderer) LiveRenderer.Refresh();
     };
     Handle.addEventListener('pointerup',Release);
     Handle.addEventListener('pointercancel',Release);
@@ -565,25 +621,19 @@ document.querySelectorAll('.left-pane').forEach(Pane=>ConstructPaneResizer(Pane,
 document.querySelectorAll('.right-pane').forEach(Pane=>ConstructPaneResizer(Pane,'right'));
 if (innerWidth>700) { ConfigurePaneWidth('left',PaneWidths.left); ConfigurePaneWidth('right',PaneWidths.right); }
 // The live renderer follows the column while it eases open or closed.
-document.querySelectorAll('.left-pane, .right-pane').forEach(Pane=>Pane.addEventListener('transitionend',()=>{if(LiveRenderer)LiveRenderer.Refresh();}));
-document.body.addEventListener('transitionend',Event=>{if(Event.target===document.body&&LiveRenderer)LiveRenderer.Refresh();});
 
 function ConfigurePaperScale(Amount)
 {
-    const Paper=Query('#PreviewCanvas .document-page');
-    if(!Paper)return;
-    const Viewer=Query('.viewer-scroll');
-    let Reserved=0;
-    for(const Selector of ['.preview-heading','.preview-caption','.viewer-toolbar','.preview-bottom'])
-    {
-        const Surface=Query(Selector),Style=getComputedStyle(Surface);
-        Reserved+=Surface.offsetHeight+parseFloat(Style.marginTop)+parseFloat(Style.marginBottom);
-    }
-    const ViewerStyle=getComputedStyle(Viewer);
-    const AvailableHeight=Math.max(160,Viewer.clientHeight-Reserved-parseFloat(ViewerStyle.paddingTop)-parseFloat(ViewerStyle.paddingBottom)-44);
-    const Scale=Math.min(1,Query('#PreviewCanvas').clientWidth/794,AvailableHeight/Paper.offsetHeight)*Amount/100;
+    // The sheet is laid out at A4 (794 px = 210 mm) and fitted to the desk width; Amount is the zoom on top of the fit.
+    const Paper=Query('#PaperPage');
+    const Desk=Query('.document-desk');
+    if(!Paper||!Desk)return;
+    const DeskStyle=getComputedStyle(Desk);
+    const Room=Math.max(200,Desk.clientWidth-parseFloat(DeskStyle.paddingLeft)-parseFloat(DeskStyle.paddingRight));
+    const Scale=Math.min(1,Room/794)*Amount/100;
     Paper.style.zoom=String(Scale);
-    Query('#ZoomReset').textContent=Math.round(Scale*100)+'%';
+    Query('#ZoomReset').textContent=Math.round(Amount)+'%';
 }
-new ResizeObserver(()=>{if(DocumentEnabled)ConfigurePaperScale(Zoom);}).observe(Query('.viewer-scroll'));
+new ResizeObserver(()=>{if(!Query('#Reader').hidden)ConfigurePaperScale(Zoom);}).observe(Query('.document-desk'));
+
 

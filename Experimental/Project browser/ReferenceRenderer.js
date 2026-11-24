@@ -778,7 +778,8 @@ class ReferencePreview
         for(const Name of ['pointerup','pointercancel','lostpointercapture'])Canvas.addEventListener(Name,()=>{if(Pointer){Pointer=null;OnChange?.();}});
         Canvas.addEventListener('wheel',Event=>{Event.preventDefault();this.Camera.Distance=Math.max(4,Math.min(28,this.Camera.Distance*Math.exp(Math.max(-100,Math.min(100,Event.deltaY))*.001)));this.Refresh();OnChange?.();},{passive:false});
         Canvas.addEventListener('keydown',Event=>{if(Event.key==='Home'){Event.preventDefault();this.Configure(this.Configuration);this.Refresh();OnChange?.();}});
-        this.Observer=new ResizeObserver(()=>this.Refresh());this.Observer.observe(Canvas);
+        // While a side pane eases or is dragged the canvas is stretched by CSS; the browser renders once when it settles.
+        this.Observer=new ResizeObserver(()=>{const Body=document.body.classList;if(Body.contains('pane-animating')||Body.contains('pane-resizing'))return;this.Refresh();});this.Observer.observe(Canvas);
     }
 
     Refresh()
