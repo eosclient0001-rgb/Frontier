@@ -1,0 +1,32 @@
+[
+  {
+    "Name": "Sculpt stroke in 3D",
+    "Pass": true,
+    "Detail": "revision 0→74, stamps 74, history [Sculpt (74 stamps)]"
+  },
+  {
+    "Name": "Sculpt undo / redo",
+    "Pass": true,
+    "Detail": "mean height -33.6607 → undo -33.7995 → redo -33.6607 m"
+  },
+  {
+    "Name": "Spline point drag (2D)",
+    "Pass": true,
+    "Detail": "moved 711 m; cached layer 4; evaluation per drag tick [Region, Region, Region, Region, Region, Region, Region, Region]"
+  },
+  {
+    "Name": "Empty world → shape stroke → bounds cell",
+    "Pass": true,
+    "Detail": "Terrain 01 4000×3333 m; drawn while unassigned, adopted into its stack: Landmass(1); unassigned left 0; stroke condensed to 38 points"
+  },
+  {
+    "Name": "Canyon spline drawn in 2D",
+    "Pass": true,
+    "Detail": "splines/points [4]"
+  },
+  {
+    "Name": "Second region owns its own layer stack",
+    "Pass": true,
+    "Detail": "Terrain 02 stack [Landmass(1)], closed-loop stroke 33 points, peak 187.2 m; first stack unchanged true, its heights differ by 0 m; outliner nests each stack under its region true; active Terrain 02"
+  }
+]

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Frontier terrain authoring prototype: infinite 2D plan workspace and 3D SDF relief workspace with GPU spline and sculpt layers.">
+    <title>Frontier · Terrain Authoring</title>
+    <link rel="stylesheet" href="TerrainAuthoring.css">
+</head>
+<body>
+    <div class="notch"><b>Frontier</b> Terrain Authoring</div>
+    <div class="workspace" id="Workspace">
+        <aside class="dock left">
+            <div class="tab-strip"><div class="document-tab active">Outliner <span class="close">×</span></div></div>
+            <div class="outliner-heading"><h1>Outliner</h1><small id="OutlinerSummary"></small></div>
+            <div class="stats" id="OutlinerStats"></div>
+            <div class="outliner-rows" id="OutlinerRows"></div>
+            <div class="outliner-footer" id="OutlinerFooter"></div>
+        </aside>
+        <main class="dock centre">
+            <div class="tab-strip"><div class="document-tab active">Viewport <span class="close">×</span></div></div>
+            <div class="viewport-head" id="ViewportHead"></div>
+            <div class="tool-row" id="ToolRow"></div>
+            <div class="scene-image" id="Scene">
+                <canvas id="GpuCanvas"></canvas>
+                <canvas id="OverlayCanvas"></canvas>
+            </div>
+            <div class="viewport-footer" id="ViewportFooter"></div>
+        </main>
+        <aside class="dock right">
+            <div class="tab-strip"><div class="document-tab active">Inspector <span class="close">×</span></div></div>
+            <div class="inspector-scroll" id="Inspector"></div>
+            <div class="inspector-footer" id="InspectorFooter"></div>
+        </aside>
+    </div>
+    <input type="file" id="OpenFile" accept=".json,application/json" hidden>
+    <div class="toast" id="Toast" role="status"></div>
+    <script type="module" src="Source/Application.js"></script>
+</body>
+</html>

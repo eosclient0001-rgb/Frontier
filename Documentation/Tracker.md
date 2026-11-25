@@ -4,6 +4,27 @@ Single progress and violation tracker. Detailed evidence belongs in Exhibits, no
 The [renderer and GI evidence map](../Exhibits/RecoveryAudit/RendererStatus.md) separates software tracing,
 hardware RT, non-ray paths, reflections, PBR and the statistical limits of the recent charts.
 
+## Terrain authoring prototype — 2D world plan, splines, unlimited GPU sculpting — 2026-11-13
+
+- New WebGL2 browser prototype `Experimental/TerrainAuthoring` in the ProjectZero editor look: infinite 2D plan
+  (freehand shape strokes, boxed terrain cells with handles), road / river / canyon / ridge / tunnel spline layers,
+  and a 3D raymarched SDF relief with sculpt raise / lower / smooth / flatten, undo / redo, autosave, project files.
+- Sculpt strokes are rasterized into per-cell GPU delta textures instead of CSG nodes (the old prototype capped at
+  `MAX_CSG_NODES = 24`). 3,000 stamps: flat ~0.19 ms / stamp and unchanged 72,165,376-byte cell memory. Region
+  (scissored) evaluation cuts a 1024² sculpt edit from 760.8 to 26.8 ms and matches full evaluation bit-exactly.
+- Spline edits now use exact per-spline region evaluation plus 32² tile binning of spline groups: 1024² canyon drag
+  1847.0 → 371.8 ms. Cached landmass noise with an exact ocean skip: landmass parameter edit 2973.2 → 1054.8 ms,
+  stroke edit 3866.6 → 1984.0 ms (jump-flood rebuild remains). All region / bin / cache checks match full evaluation
+  at 0.0 m; cell memory is now 88,964,864 bytes.
+- Each region now owns its layer stack (nested under it in the Outliner); content drawn outside every region is
+  unassigned until a box adopts it; version 1 files migrate per region. A second mouse-drawn region leaves the
+  first region's 1,048,576 heights unchanged (0 m). Fixed closed-loop strokes collapsing to 2 points.
+- Interaction validation 6 / 6 with real pointer events. All timings are SwiftShader CPU emulation, **not** GPU
+  numbers; an in-app benchmark exists for the target machine.
+- Decision: stay with SDF (layered 2.5D stack + sparse 3D SDF for tunnels / future rocks); voxels only as bake output.
+  No C++ / Vulkan editor parity, erosion, simulation or Rock Studio.
+  [Evidence](../Exhibits/TerrainAuthoringValidation/README.md).
+
 ## Environment records, editor descriptions and Sun/sky/cloud/fog scene — 2026-10-28
 
 - Implemented plan steps 1–4 for the environment slice: editor-profile-only `RecordEditorDescription`,
