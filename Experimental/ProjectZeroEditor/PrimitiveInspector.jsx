@@ -5,6 +5,7 @@ import { convexHull, inflateHull } from "./ConvexHull.js";
 import { PrimitiveSurface } from "./WorkspaceGeometry.js";
 import { CustomKey, CustomModeKey, CustomModes, ColliderAccept, importCollider } from "./ColliderImport.js";
 import { PageStrip, PageTurn, PageLook } from "./PageCarousel.jsx";
+import { EvaluateMeshSize, ImportedGeometryPage, ImportedProfile, RetrieveMesh, useMeshRevision } from "./ImportInstance.jsx";
 import "./PrimitiveInspector.css";
 
 // 🧩 Inspector for the Showcase primitives (Cube, Sphere, Cylinder, Torus, Cone): one category carousel —
@@ -1388,10 +1389,18 @@ export function Carousel({ Pages, Focus = null, Summary, Sections = Categories }
 export default function PrimitiveInspector({ Subject, Values, Change, Hidden, ToggleHidden, MaterialCards, FractureCards, UvCards = null, SdfCards = null, LodCards = null, CaptureCards = null, Components = null, ComponentPage = null, ComponentTools = null, Focus = null, Kit }) {
   const Shape = ShapeOf(Subject);
   const Read = (Key, Initial) => (Values[Key] === undefined ? Initial : Values[Key]);
-  const Size = Measure(Shape, Read, Array.isArray(Values.Scale) ? Values.Scale : [1, 1, 1]);
+  // Follow-up 85: an imported mesh measures its own triangles and has its own Geometry page.
+  useMeshRevision();
+  const Mesh = Subject.Mesh ? RetrieveMesh(Subject.Mesh, Subject.MeshName) : null;
+  const Scale = Array.isArray(Values.Scale) ? Values.Scale : [1, 1, 1];
+  const Size = Subject.Mesh
+    ? Mesh
+      ? EvaluateMeshSize(Mesh, Read, Scale)
+      : { Bounds: [0, 0, 0], Area: 0, Volume: 0, Triangles: 0, Vertices: 0, Closed: false, Factor: 1 }
+    : Measure(Shape, Read, Scale);
   const Shared = { Shape, Read, Change, Values, Hidden, ToggleHidden, Size, Kit };
   return (
-    <div className="primitive-inspector">
+    <div className="primitive-inspector" data-imported={Subject.Mesh ? "true" : undefined}>
       <Carousel
         key={Subject.Id}
         Focus={Focus?.Owner === Subject.Id ? Focus : null}
@@ -1402,14 +1411,14 @@ export default function PrimitiveInspector({ Subject, Values, Change, Hidden, To
           Motion: Values.DYNAMIC ? "Dynamic" : "Static",
         }}
         Pages={{
-          overview: <OverviewPage {...Shared} Components={Components} />,
+          overview: <OverviewPage {...Shared} Components={Components} Profile={Subject.Mesh ? ImportedProfile(Subject) : null} />,
           components: ComponentPage && (
             <>
               {ComponentPage}
               {ComponentTools}
             </>
           ),
-          geometry: <GeometryPage {...Shared} />,
+          geometry: Subject.Mesh ? <ImportedGeometryPage {...Shared} Subject={Subject} /> : <GeometryPage {...Shared} />,
           material: MaterialCards,
           uv: UvCards,
           fracture: FractureCards,

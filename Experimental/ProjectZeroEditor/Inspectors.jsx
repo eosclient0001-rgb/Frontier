@@ -62,6 +62,7 @@ import SensorFormats, { Formats } from "./SensorFormats.jsx";
 import { WorkspacePanel } from "./Workspaces.jsx";
 import { VehicleInspector, VehiclePanel, VehicleSheet } from "./VehicleComponents.jsx";
 import { VehicleAssetInspector, VehicleAssetPanel, VehicleAssetSheet } from "./VehicleAssetInspector.jsx";
+import { ImportSlotInspector, ImportSlotPanel, ImportSlotSheet, ImportSymbol } from "./ImportInstance.jsx";
 
 // Native sheets with the Follow-up 48 Project Zero specification overlay (ProjectZeroSpecification.js).
 export const Panels = SpecifyPanels({
@@ -70,6 +71,7 @@ export const Panels = SpecifyPanels({
   [EnvironmentPanel]: EnvironmentSheet,
   [VehiclePanel]: VehicleSheet,
   [VehicleAssetPanel]: VehicleAssetSheet,
+  [ImportSlotPanel]: ImportSlotSheet,
   [ComponentPanel]: ComponentSheet,
 });
 // 📝 marker beside a label: the field is in the editor but not in the Project Zero specification. Kept for the user to decide.
@@ -218,6 +220,7 @@ export function Icon({ Name, Size = 24 }) {
       </span>
     );
   if (IsEffectIcon(Name)) return <PostEffectIcon Name={Name} Size={Size} />;
+  if (Name === "import" || Name === "import-instance") return <ImportSymbol Name={Name} Size={Size} />;
   const Source = LightGlyphSource(Name) || window.NativeAssets?.Icons[Name];
   return Source ? (
     <img
@@ -1133,6 +1136,13 @@ export function Inspector({
       </div>
     );
   }
+  if (Subject.Panel === ImportSlotPanel)
+    return (
+      <div className="generic-inspector import-slot-inspector" data-panel={Subject.Panel}>
+        {Header("Import")}
+        <ImportSlotInspector Subject={Subject} Kit={{ Card, Metric, Icon }} Scene={Scene} />
+      </div>
+    );
   if (Subject.Panel === VehicleAssetPanel)
     return (
       <div className="generic-inspector vehicle-asset-inspector" data-panel={Subject.Panel}>

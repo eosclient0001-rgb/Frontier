@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import ReferencePanel from "./ReferencePanel.jsx";
 import { IsEffectPanel } from "./PostEffects.jsx";
 import { Glyph, Icon, Inspector } from "./Inspectors.jsx";
+import { ImportFilePanel, ImportFileStep, ImportSlotPanel } from "./ImportInstance.jsx";
 
 export const ConstructGroups = [
   "All",
@@ -14,8 +15,10 @@ export const ConstructGroups = [
   "Geometry",
   "Lighting",
   "Vehicle",
+  "Import",
 ];
 export function ConstructGroup(Subject) {
+  if (Subject.Panel === ImportSlotPanel || Subject.Panel === ImportFilePanel) return "Import";
   if (
     [
       "wind",
@@ -44,13 +47,16 @@ export function ConstructGroup(Subject) {
 
 // Same dimensions, category rail and entity matrix as NativeConstructPanel.
 // Placement is intentionally browser-local; native construction is deferred.
-export default function ConstructPanel({ Catalogue, Add, Close }) {
+export default function ConstructPanel({ Catalogue, Add, Close, Keep = null }) {
   const [Query, Search] = useState("");
   const [Group, ChooseGroup] = useState("All");
   const [Picked, Choose] = useState(null);
   const [Name, Rename] = useState("");
   const [Properties, AssignProperties] = useState({});
   const [Visible, Show] = useState(true);
+  // Follow-up 85: Construct → Import holds the chosen file's row until Add to scene.
+  const [Imported, Hold] = useState(null);
+  const ImportStep = Picked?.Panel === ImportFilePanel;
   const Dialog = useRef(null),
     SearchField = useRef(null),
     BackButton = useRef(null);
@@ -78,6 +84,14 @@ export default function ConstructPanel({ Catalogue, Add, Close }) {
   }, [Picked]);
 
   const Pick = (Subject) => {
+    // Import instance is placed at once, empty; its inspector's slot decides what it becomes.
+    if (Subject.Panel === ImportSlotPanel) {
+      if (Adding.current) return;
+      Adding.current = true;
+      Add(Subject, {}, true);
+      return;
+    }
+    Hold(null);
     LastChoice.current = Subject.Id;
     Choose(Subject);
     Rename(Subject.Name);
@@ -222,6 +236,18 @@ export default function ConstructPanel({ Catalogue, Add, Close }) {
                 onChange={(Event) => Rename(Event.target.value)}
               />
             </div>
+            {ImportStep ? (
+            <div className="construct-properties construct-import">
+              <ImportFileStep
+                Entities={Catalogue}
+                Resolve={(Next) => {
+                  Hold(Next);
+                  if (Next?.Kept) Keep?.(Next.Kept);
+                  if (Next?.Template) Rename(Next.Template.Name);
+                }}
+              />
+            </div>
+            ) : (
             <div className="construct-properties">
               <Inspector
                 Subject={{ ...Picked, Name: Name.trim() || Picked.Name }}
@@ -262,11 +288,14 @@ export default function ConstructPanel({ Catalogue, Add, Close }) {
                 ToggleHidden={() => Show((Previous) => !Previous)}
               />
             </div>
+            )}
           </>
         )}
         <footer>
           <small>
-            {Picked
+            {ImportStep
+              ? Imported?.Refusal || (Imported?.Template ? "Kept in the Content Browser · Add places it in the Outliner" : "Choose a file · it is kept in this browser")
+              : Picked
               ? "Analytical preview only · no native object is created"
               : `${Candidates.length} entities · HTML preview`}
           </small>
@@ -274,9 +303,13 @@ export default function ConstructPanel({ Catalogue, Add, Close }) {
           {Picked && (
             <button
               className="construct-add"
+              disabled={ImportStep && !Imported?.Template}
               onClick={() => {
                 if (Adding.current) return;
+                if (ImportStep && !Imported?.Template) return;
                 Adding.current = true;
+                if (ImportStep) Add({ ...Imported.Template, Name: Name.trim() || Imported.Template.Name }, Imported.Properties, Visible);
+                else
                 Add(
                   { ...Picked, Name: Name.trim() || Picked.Name },
                   Properties,

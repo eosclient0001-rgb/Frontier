@@ -1,0 +1,321 @@
+/*==========================================================================================================================================
+                                                            IMPORTINSTANCE.CSS
+==========================================================================================================================================*/
+/* Follow-up 85: the Import instance slot, the Import dialog step and their preview. Same greys, radii and type as the PZE inspectors. */
+
+.ii-slot {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 12px 0 4px;
+  padding: 22px 14px 20px;
+  border: 1.5px dashed #4a4a4a;
+  border-radius: 12px;
+  background: repeating-linear-gradient(135deg, #1b1b1b 0 10px, #1e1e1e 10px 20px);
+  color: #9a9a9a;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s, transform 0.2s;
+}
+.ii-slot:hover,
+.ii-slot:focus-visible {
+  border-color: #6c6c6c;
+  outline: none;
+}
+.ii-slot[data-asset-drop-over="true"] {
+  border-color: #67cba8;
+  background: #67cba814;
+  transform: scale(1.01);
+}
+.ii-slot b {
+  color: #e2e2e2;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.ii-slot span {
+  font-size: 10.5px;
+  line-height: 1.45;
+  max-width: 300px;
+}
+.import-slot[data-busy] .ii-slot {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.ii-message {
+  margin: 10px 0 0 !important;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #e1948314;
+  border: 1px solid #e1948333;
+  color: #e7b2a6 !important;
+  font-size: 11px !important;
+}
+.ii-routes {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.ii-routes li {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  column-gap: 10px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid #2a2a2a;
+}
+.ii-routes li:first-child {
+  border-top: 0;
+}
+.ii-routes .native-icon,
+.ii-routes svg {
+  grid-row: span 2;
+}
+.ii-routes b {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #ddd;
+}
+.ii-routes span {
+  font-size: 10.5px;
+  color: #8a8a8a;
+}
+.ii-hint {
+  margin: 0 0 8px !important;
+  font-size: 10.5px !important;
+  color: #8a8a8a !important;
+}
+.ii-type-group h5 {
+  margin: 10px 0 6px;
+  font-size: 9.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #777;
+  font-weight: 400;
+}
+.ii-types {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+.ii-types button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #202020;
+  color: #cfcfcf;
+  font-size: 11px;
+  cursor: grab;
+}
+.ii-types button:hover {
+  border-color: #5a5a5a;
+  background: #262626;
+}
+.ii-types button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Import dialog step (Construct → Import) ─────────────────────────────────────────────────────────────────────────── */
+.ii-dialog {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
+  height: 100%;
+  min-height: 0;
+  padding: 14px 20px 16px;
+  box-sizing: border-box;
+}
+.ii-formats {
+  overflow: auto;
+  padding-right: 4px;
+}
+.ii-formats h5 {
+  margin: 2px 0 8px;
+  font-size: 9.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: #777;
+  font-weight: 400;
+}
+.ii-formats section {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.ii-formats section.ii-current {
+  background: #252525;
+  border-color: #3d3d3d;
+}
+.ii-formats b {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #ddd;
+}
+.ii-formats .ii-suffixes {
+  font: 10px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: #8fc6ed;
+  white-space: pre-wrap;
+}
+.ii-formats small {
+  font-size: 10px;
+  color: #808080;
+}
+.ii-formats .ii-unread b,
+.ii-formats .ii-unread .ii-suffixes {
+  color: #777;
+}
+.ii-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  gap: 12px;
+}
+.ii-file-slot {
+  margin: 0;
+}
+.ii-becomes {
+  margin: 0;
+  font-size: 11px;
+  color: #67cba8;
+}
+
+/* ── Preview ────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.ii-preview {
+  margin: 0;
+  border: 1px solid #333;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #1b1b1b;
+}
+.ii-stage {
+  display: grid;
+  place-items: center;
+  height: 240px;
+  background: radial-gradient(ellipse at 50% 35%, #2c2c2c, #151515 75%);
+}
+.ii-stage > img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+.ii-stage .ii-image {
+  max-width: 86%;
+  max-height: 86%;
+  border-radius: 4px;
+  box-shadow: 0 8px 26px #0008;
+  background: repeating-conic-gradient(#2a2a2a 0 25%, #222 0 50%) 0 0 / 16px 16px;
+}
+.ii-ies {
+  width: 86%;
+  height: 92%;
+}
+.ii-ies path {
+  fill: none;
+  stroke: #3a3a3a;
+  stroke-width: 0.8;
+}
+.ii-ies .c0 {
+  stroke: #ffd38a;
+  stroke-width: 1.8;
+}
+.ii-ies .c90 {
+  stroke: #8fc6ed;
+  stroke-width: 1.8;
+}
+.ii-font {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 0 24px;
+  color: #eee;
+  text-align: center;
+}
+.ii-font b {
+  font-size: 72px;
+  font-weight: inherit;
+  line-height: 1;
+}
+.ii-font span {
+  font-size: 15px;
+  color: #bbb;
+}
+.ii-swatch {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  box-shadow: inset -18px -22px 40px #0007, inset 12px 14px 30px #fff2, 0 14px 30px #0009;
+}
+.ii-empty {
+  font-size: 11px;
+  color: #777;
+  padding: 0 20px;
+  text-align: center;
+}
+.ii-preview figcaption {
+  padding: 10px 14px 12px;
+  border-top: 1px solid #2c2c2c;
+}
+.ii-preview figcaption > b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #e6e6e6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ii-preview dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.ii-preview dt {
+  font-size: 9px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: #777;
+}
+.ii-preview dd {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #ddd;
+}
+
+/* ── Imported geometry page ─────────────────────────────────────────────────────────────────────────────────────────── */
+.ii-source-picture {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  margin: 8px 0;
+  border-radius: 10px;
+  background: radial-gradient(ellipse at 50% 35%, #2a2a2a, #161616 75%);
+}
+.ii-source-picture img {
+  max-width: 100%;
+  display: block;
+}
+.ii-note {
+  margin: 4px 0 0 !important;
+  font-size: 10.5px !important;
+  color: #8a8a8a !important;
+}
+@media (max-width: 640px) {
+  .ii-dialog {
+    grid-template-columns: 1fr;
+  }
+  .ii-formats {
+    max-height: 160px;
+  }
+}

@@ -30,6 +30,7 @@ import { ResolveRenderSettings, RenderSettingsKey } from "./RenderSettings.js";
 import { WorkspaceView } from "./Workspaces.jsx";
 import { VehiclePanel, VehicleSummary, ComponentIcon, EnsureVehicleFolder, InitialVehicleRows, VehicleRevision, InVehicleTree, VehicleDescendants } from "./VehicleComponents.jsx";
 import { VehicleAssetPanel, VehicleAssetSummary } from "./VehicleAssetInspector.jsx";
+import { ImportEntries } from "./ImportInstance.jsx";
 import { ComponentPanel, ComponentSummary, WithObjectComponents, EnsureObjectComponents, ComponentRowsFor, OwnerKind, ComponentRevision, ComponentAddress, RenamedAddress } from "./ObjectComponents.jsx";
 import { BrowserFPS } from "./BrowserTiming.js";
 import {
@@ -1429,6 +1430,34 @@ function App() {
       while (At + 1 < Previous.length && Previous[At + 1].Parent === OwnerId) At++;
       return [...Previous.slice(0, At + 1), ...Fresh, ...Previous.slice(At + 1)];
     });
+  // The Construct list (also the Import instance slot's scene types). Follow-up 85: the two Import entries close it.
+  const ConstructEntities = [...PrepareLightRows(InitialRows, 1), EnvironmentRow, ...ReferenceLights]
+    .filter((Subject) => Subject.Panel !== "group" && Subject.Panel !== ComponentPanel)
+    .map((Row) => (IsEditorCamera(Row) ? { ...Row, Name: "Main Camera", Description: "Scene camera" } : Row))
+    .concat(ImportEntries);
+  const KeepImported = (Kept) => Kept && StoreAssets((Previous) => (Previous.some((Each) => Each.Id === Kept.Id) ? Previous : [...Previous, Kept]));
+  // Follow-up 85: an Import instance becomes what was dropped into its slot — same row (and id), the template's panel, icon and
+  // folder, its own components, and the dropped properties.
+  const ConvertRow = (Id, Template, Properties = {}) => {
+    const Current = Rows.find((Row) => Row.Id === Id);
+    if (!Current) return;
+    if (IsEditorCamera(Template))
+      Template = { ...Template, Name: "Main Camera", Description: "Scene camera · separate from the editor navigation camera" };
+    const Names = new Set(Rows.filter((Row) => Row.Id !== Id).map((Row) => Row.Name));
+    const Stem = String(Template.Name || "").replace(/[\x00-\x1f\x7f]/g, "").trim() || "Untitled";
+    let Name = Stem,
+      Suffix = 2;
+    while (Names.has(Name)) Name = Stem + " " + Suffix++;
+    const Parent = Rows.some((Row) => Row.Id === Template.Parent) ? Template.Parent : Current.Parent;
+    const Placed = { ...Template, Id, Name, Preview: true, Parent };
+    AssignRows((Previous) => [
+      ...Previous.filter((Row) => !(Row.Parent === Id && Row.Panel === ComponentPanel)).map((Row) => (Row.Id === Id ? Placed : Row)),
+      ...(OwnerKind(Placed) ? ComponentRowsFor(Placed) : []),
+    ]);
+    AssignValues((Previous) => ({ ...Previous, [Id]: { ...Properties, ...(Previous[Id]?.Notes ? { Notes: Previous[Id].Notes } : {}) } }));
+    if (Parent) Collapse((Previous) => ({ ...Previous, [Parent]: false }));
+    Toast("Import instance became " + Name);
+  };
   const AddRow = (
     Template,
     Properties = Values[Template.Id] || {},
@@ -2453,7 +2482,7 @@ function App() {
               OpenWorkspace={OpenWorkspace}
               OpenStudio={OwnsMaterial(Subject) && Subject.Panel === "geometry" ? (Studio) => OpenShaderStudio(Selected, Studio) : null}
               SetWorkspace={SetWorkspace}
-              Scene={{ Rows, SelectRow, AddRows: InsertUnder, PatchRow, OpenComponent, Focus: ComponentFocus, Air: AirOf(Values), Sun: ReaderOf(Values, "sun"), OpenComponentViewer: OpenVehiclePanel, Values, RenderSettings: Subject.Panel === "camera" ? RenderSettingsCard() : null, ChangeOf: ChangeValuesOf }}
+              Scene={{ Rows, SelectRow, AddRows: InsertUnder, PatchRow, OpenComponent, Focus: ComponentFocus, Air: AirOf(Values), Sun: ReaderOf(Values, "sun"), OpenComponentViewer: OpenVehiclePanel, Values, RenderSettings: Subject.Panel === "camera" ? RenderSettingsCard() : null, ChangeOf: ChangeValuesOf, Entities: ConstructEntities, Library: AssetRecords, Keep: KeepImported, Convert: (Template, Properties) => ConvertRow(Selected, Template, Properties) }}
               OpenWind={() => {
                 WindOpener.current = document.activeElement;
                 EditWind(Selected);
@@ -3038,17 +3067,8 @@ function App() {
       )}
       {Construct && (
         <ConstructPanel
-          Catalogue={[
-            ...PrepareLightRows(InitialRows, 1),
-            EnvironmentRow,
-            ...ReferenceLights,
-          ]
-            .filter((Subject) => Subject.Panel !== "group" && Subject.Panel !== ComponentPanel)
-            .map((Row) =>
-              IsEditorCamera(Row)
-                ? { ...Row, Name: "Main Camera", Description: "Scene camera" }
-                : Row,
-            )}
+          Catalogue={ConstructEntities}
+          Keep={KeepImported}
           Add={AddRow}
           Close={() => OpenConstruct(false)}
         />

@@ -3830,3 +3830,10 @@ img {
 .anemo-card.anemo-pinned::after {
   display: none;
 }
+.construct-properties.construct-import {
+  overflow: hidden;
+}
+.construct-dialog > footer .construct-add:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

@@ -38,6 +38,7 @@ import { VehicleAsset } from "./VehicleAssets.js";
 import { VehicleAssetPanel, PaintOf } from "./VehicleAssetInspector.jsx";
 import { IsEditorCamera } from "./ScenePolicy.js";
 import { LightPlacements, LightProp } from "./LightProps.js";
+import { ConstructMeshGeometry, RetrieveMesh, useMeshRevision } from "./ImportInstance.jsx";
 import { ComMark, CentroidMark, OverAll, MassCentreOf, CentroidOf, SolidParts } from "./DebugMarks.js";
 import { AnemometerAsset, PaintScreen, CupHeight } from "./Anemometer.js";
 import { SampleWind, Cardinal, Beaufort } from "./WindSample.js";
@@ -192,6 +193,7 @@ export default function Viewport3D({ Rows, Values, Hidden, Selected, Picked = []
   const Lens = FlareSettings(Flare);
   const Chosen = new Set([Selected, ...Picked]);
   const Placed = Placements(Rows, Values, Hidden);
+  const MeshRevision = useMeshRevision(); // Follow-up 85: imported meshes arrive from IndexedDB after the first draw
   const Posed = CameraPlacements(Rows, Values, Hidden);
   const Parked = VehiclePlacements(Rows, Values, Hidden);
   const Lamps = LightPlacements(Rows, Values, (Row) => HiddenUp(Rows, Hidden, Row));
@@ -719,8 +721,8 @@ export default function Viewport3D({ Rows, Values, Hidden, Selected, Picked = []
   const ShapeKey = JSON.stringify(
     Placed.map(({ Row, Along, Position, Rotation, Scale }) => {
       const Own = Values[Row.Id] || {};
-      const Slots = ResolveSlots(Own).map(({ Channels }) => [Channels.colour?.Fill, Channels.roughness?.Fill, Channels.metallic?.Fill]);
-      return [Row.Id, Along, Position, Rotation, Scale, Object.entries(Own).filter(([Key]) => Key.startsWith("Geometry ")), Slots, SectionSlots(Own, ShapeOf(Row))];
+      const Slots = ResolveSlots(Own).map(({ Channels }) => [Channels.colour?.Fill, Channels.colour?.Source, Channels.colour?.Texture?.Data?.length, Channels.roughness?.Fill, Channels.metallic?.Fill]);
+      return [Row.Id, Row.Mesh ? MeshRevision + ":" + !!RetrieveMesh(Row.Mesh, Row.MeshName) : 0, Along, Position, Rotation, Scale, Object.entries(Own).filter(([Key]) => Key.startsWith("Geometry ")), Slots, SectionSlots(Own, ShapeOf(Row))];
     }).concat(Posed.map(({ Row, ...Pose }) => [Row.Id, Pose]), Parked.map(({ Row, ...Pose }) => [Row.Id, Pose]), Lamps.map(({ Row, Type, Props }) => [Row.Id, Type, Props])),
   );
   useEffect(() => {
@@ -730,12 +732,17 @@ export default function Viewport3D({ Rows, Values, Hidden, Selected, Picked = []
     const Bounds = new THREE.Box3();
     for (const { Row, Shape, Along, Position, Rotation, Scale } of Placed) {
       const Own = Values[Row.Id] || {};
-      const { Geometry, Lift } = ShapeGeometry(Shape, (Key) => Own[Key]);
+      const Imported = Row.Mesh ? RetrieveMesh(Row.Mesh, Row.MeshName) : null;
+      const { Geometry, Lift } = Imported ? ConstructMeshGeometry(Imported, (Key, Initial) => (Own[Key] === undefined ? Initial : Own[Key])) : ShapeGeometry(Shape, (Key) => Own[Key]);
       // Follow-up 68: one three.js material per slot; each section (box face, cylinder cap, …) draws with the slot it is assigned to.
       const Drawn = ResolveSlots(Own).map(({ Channels: Material }) => {
         const Colour = /^#[\da-f]{6}$/i.test(Material.colour?.Fill || "") ? Material.colour.Fill : "#c7ada0";
+        // Follow-up 85: a colour channel fed by a texture (an image panel) draws the picture.
+        const Picture = Material.colour?.Source === "Texture" && Material.colour.Texture?.Data ? new THREE.TextureLoader().load(Material.colour.Texture.Data, () => Built.Touch()) : null;
+        if (Picture) Picture.colorSpace = THREE.SRGBColorSpace;
         return new THREE.MeshStandardMaterial({
-          color: new THREE.Color(Colour),
+          map: Picture,
+          color: new THREE.Color(Picture ? "#ffffff" : Colour),
           roughness: Math.max(0.04, Math.min(1, +Material.roughness?.Fill || 0.32)),
           metalness: Math.max(0, Math.min(1, +Material.metallic?.Fill || 0)),
         });

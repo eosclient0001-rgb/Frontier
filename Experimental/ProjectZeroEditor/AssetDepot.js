@@ -122,7 +122,7 @@ export function FileKind(Name) {
       ? "Colours"
       : ["ttf", "otf", "woff", "woff2"].includes(Extension)
         ? "Fonts"
-        : ["obj", "gltf", "glb", "fbx", "mesh"].includes(Extension)
+        : ["obj", "gltf", "glb", "fbx", "mesh", "stl", "ply", "facet", "blend"].includes(Extension)
           ? "Models"
           : ["slang", "glsl", "hlsl", "cpp", "h", "wgsl"].includes(Extension)
             ? "Code"
