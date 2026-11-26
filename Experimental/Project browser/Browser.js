@@ -109,6 +109,7 @@ let SnapshotFailure = null;
 const SnapshotCache = new Map();
 const SnapshotJobs = new Map();
 let DocumentEnabled = false;
+let DocumentSheet = 0; // 0 Overview, 1 Project details (pages of Overview.md)
 let Zoom = 100;
 let ActiveTab = 'details';
 let ToastTimeout;
@@ -173,6 +174,7 @@ function ActivateFile(Token)
     Query('#RevisionSelect').disabled = !!Selected.Imported;
     Query('#RevisionSelect').setAttribute('aria-label','Preview version');
     DocumentEnabled = Selected.Category === 'document';
+    DocumentSheet = 0;
     Zoom = 100;
     ActiveTab = 'details';
     Query('#Library').hidden = true;
@@ -181,8 +183,6 @@ function ActivateFile(Token)
     Query('#ReaderFormat').textContent = Selected.Extension;
     Query('#RailTitle').textContent = ({project:'Levels',cad:Selected.Extension === '.sketch' ? 'Sketches' : 'Assembly',geometry:'Views',document:'Document'})[Selected.Category];
     Query('#RailCount').textContent = Selected.Views.length;
-    Query('#Document').hidden = Selected.Category === 'document';
-    Query('#Document small').textContent = Selected.Imported ? 'Browser-generated summary' : 'Sample document';
     ConfigureStarButton();
     ConstructOpenControls();
     ConstructSequence();
@@ -193,7 +193,30 @@ function ActivateFile(Token)
 function ConstructSequence()
 {
     Query('#PreviewSequence').innerHTML = Selected.Views.map((Title, Index) => `<button class="preview-thumb" data-preview="${Index}" aria-current="${!DocumentEnabled && Index === PreviewIndex}">${ConstructMiniPage(Selected,Index)}<span><b>${Index+1}</b>${Escape(Title)}</span></button>`).join('');
-    Query('#Document').setAttribute('aria-current',String(DocumentEnabled));
+    // Overview.md as document pages after the levels: page 1 the overview, page 2 the editable project details.
+    const Sheets = Selected.Category === 'document' ? [] : [['text', 'Overview.md'], ...(QueryProjectDetailsEnabled() ? [['form', 'Project details']] : [])];
+    Query('#DocumentRail').hidden = !Sheets.length;
+    Query('#DocumentSequence').innerHTML = Sheets.map(([Kind, Title], Sheet) => `<button class="preview-thumb" data-sheet="${Sheet}" aria-current="${DocumentEnabled && DocumentSheet === Sheet}">${ConstructDocumentMiniPage(Kind)}<span><b>${Selected.Views.length+1+Sheet}</b>${Escape(Title)}</span></button>`).join('');
+}
+// The document pages in miniature: running head, a title bar, then text lines (Overview) or form rows with the icon (Project details).
+function ConstructDocumentMiniPage(Kind)
+{
+    if (Kind === 'form')
+    {
+        const Details = QueryProjectDetailsEnabled() ? RetrieveProjectDetails(Selected) : null;
+        const Picture = Details?.Project.Icon ? `<img src="${Escape(Details.Project.Icon)}" alt="">` : '';
+        return `<span class="mini-page mini-form"><span class="mini-page-head"></span><span class="mini-page-title"></span><span class="mini-form-top"><span class="mini-icon">${Picture}</span><span class="mini-page-lines"><i></i><i></i><i></i></span></span><span class="mini-form-rows">${'<i></i>'.repeat(7)}</span><span class="mini-page-foot"></span></span>`;
+    }
+    return `<span class="mini-page mini-text"><span class="mini-page-head"></span><span class="mini-page-title"></span><span class="mini-page-lines">${'<i></i>'.repeat(9)}</span><span class="mini-page-foot"></span></span>`;
+}
+function ConstructCurrentMiniPage()
+{
+    return DocumentEnabled && Selected.Category !== 'document' ? ConstructDocumentMiniPage(DocumentSheet === 1 ? 'form' : 'text') : ConstructMiniPage(Selected,PreviewIndex);
+}
+function QueryCurrentPage()
+{
+    if (Selected.Category === 'document') return 1;
+    return DocumentEnabled ? Selected.Views.length + 1 + DocumentSheet : PreviewIndex + 1;
 }
 // A document page in miniature: running header rule, title lines, the rendered figure, body lines (left rail + inspector).
 function ConstructMiniPage(Entry,Index)
@@ -202,15 +225,17 @@ function ConstructMiniPage(Entry,Index)
 }
 function QueryPageCount()
 {
-    return Selected.Category === 'document' ? 1 : Selected.Views.length + 1;
+    return Selected.Category === 'document' ? 1 : Selected.Views.length + 1 + (QueryProjectDetailsEnabled() ? 1 : 0);
 }
 function ConstructPageChrome()
 {
     // Running header / footer and the facts table printed on the page, like a PDF export of the project.
     const Version = Selected.Revisions.length-ActiveRevision;
-    const Page = DocumentEnabled ? QueryPageCount() : PreviewIndex+1;
+    const Page = QueryCurrentPage();
+    const Form = DocumentEnabled && DocumentSheet === 1;
     Query('#PaperPage').classList.toggle('is-document',DocumentEnabled);
-    Query('#PageHeadLeft').textContent = Selected.Title + Selected.Extension;
+    Query('#PaperPage').classList.toggle('is-form',Form);
+    Query('#PageHeadLeft').textContent = DocumentEnabled && Selected.Category !== 'document' ? `${Selected.Title} · Overview.md${Form ? ' · Project details' : ''}` : Selected.Title + Selected.Extension;
     Query('#PageHeadRight').textContent = Selected.Imported ? 'Local file' : `Version ${Version}${ActiveRevision===0 ? ' · Current' : ''}`;
     Query('#PageFootLeft').textContent = `${Applications[QueryApplication(Selected)].Title} · ${Selected.Path || 'Local selection'}`;
     Query('#PageFootNumber').textContent = `Page ${Page} of ${QueryPageCount()}`;
@@ -223,7 +248,7 @@ function ConstructPageChrome()
         ['Last opened', Selected.Opened || '—']
     ];
     const Sheet=Query('#InspectorContent .detail-page');
-    if (Sheet) Sheet.innerHTML=`${ConstructMiniPage(Selected,PreviewIndex)}<small>Page ${Page} of ${QueryPageCount()}</small>`;
+    if (Sheet) Sheet.innerHTML=`${ConstructCurrentMiniPage()}<small>Page ${Page} of ${QueryPageCount()}</small>`;
     Query('#PageFacts').innerHTML = Facts.map(([Term,Detail]) => `<dt>${Escape(Term)}</dt><dd>${Escape(Detail)}</dd>`).join('');
 }
 function ConstructMarkdown(Text)
@@ -237,7 +262,7 @@ function ConstructMarkdown(Text)
 }
 function ConstructPreview()
 {
-    const Title = DocumentEnabled ? (Selected.Category === 'document' ? Selected.Title : 'Overview.md') : Selected.Views[PreviewIndex];
+    const Title = DocumentEnabled ? (Selected.Category === 'document' ? Selected.Title : DocumentSheet === 1 ? 'Project details' : 'Overview.md') : Selected.Views[PreviewIndex];
     Query('#PreviewEyebrow').textContent = DocumentEnabled ? 'DOCUMENT' : `${Query('#RailTitle').textContent.toUpperCase()} ${String(PreviewIndex+1).padStart(2,'0')} · VERSION ${Selected.Revisions.length-ActiveRevision}`;
     Query('#PreviewTitle').textContent = Title;
     Query('#PreviewIndex').textContent = DocumentEnabled ? 'Document' : `${PreviewIndex+1} / ${Selected.Views.length}`;
@@ -247,9 +272,14 @@ function ConstructPreview()
     Query('#PreviewResolution').textContent = Selected.Imported ? 'Local file' : 'Drag to orbit · scroll to zoom';
     if(DocumentEnabled){Query('#PreviewMode').textContent='Markdown';Query('#PreviewResolution').textContent='A4 · 210 × 297 mm';}
     const Canvas=Query('#PreviewCanvas');Canvas.innerHTML='';Canvas.classList.toggle('document-canvas',DocumentEnabled);
-    if (DocumentEnabled)
+    if (DocumentEnabled && DocumentSheet === 1)
     {
-        const Text=Selected.Markdown || `# ${Selected.Title}\n\n${Selected.Description}\n\n## Preview sequence\n\n${Selected.Views.map((Name,Index)=>`${Index+1}. ${Name}`).join('\n')}\n\n## Revision ${Selected.Revisions.length-ActiveRevision}\n\n${Selected.Revisions[ActiveRevision] || 'Local document'}\n\n## Preview\n\nThe image below is captured from the same WebGL renderer as the live review. Sample revisions are browser fixtures, not an on-disk history archive.`;
+        ConstructProjectDetails(Canvas);
+        Query('#PreviewBottom').textContent = 'Project details · kept as you type';
+    }
+    else if (DocumentEnabled)
+    {
+        const Text=Selected.Markdown || `# ${Selected.Title}\n\n${Selected.Description}\n\n## Preview sequence\n\n${Selected.Views.map((Name,Index)=>`${Index+1}. ${Name}`).join('\n')}\n\n## Revision ${Selected.Revisions.length-ActiveRevision}\n\n${Selected.Revisions[ActiveRevision] || 'Local document'}\n\n## Preview\n\nThe image below is captured from the same WebGL renderer as the live review. Sample revisions are browser fixtures, not an on-disk history archive.${QueryProjectDetailsEnabled() ? '\n\n## Project details\n\nPage 2 holds the identity and icon, render resolution, online services and terms and conditions. Packaging reads it from Content/Project.json.' : ''}`;
         Canvas.innerHTML=`<article class="document-page">${ConstructMarkdown(Text)}${Selected.Imported ? '' : ConstructThumbnail(Selected,0,ActiveRevision)}</article>`;
     }
     else if (Selected.Blank)
@@ -328,7 +358,7 @@ function ConstructInspector()
     const Surface = Query('#InspectorContent');
     if (ActiveTab === 'details')
     {
-        Surface.innerHTML = `<div class="pz-heading"><span class="pz-breadcrumbs">Inspector / ${Escape(FormatTitles[Selected.Category] || 'Files')}</span><h2>${Escape(Selected.Title)}</h2><p>${Escape(Selected.Extension)} · ${Selected.Imported ? 'Selected from your device' : 'Sample file · local workspace'}</p></div><div class="detail-hero detail-page">${ConstructMiniPage(Selected,PreviewIndex)}<small>Page ${DocumentEnabled ? QueryPageCount() : PreviewIndex+1} of ${QueryPageCount()}</small></div>${ConstructOpenWithCard(Selected)}<section class="pz-card" data-card="Details"><h3>${Icon('file')}Details</h3><p class="pz-card-text">${Escape(Selected.Description)}</p><div class="detail-list"><span>Workspace</span><strong>${({project:'Game project',cad:'Drafting / CAD',geometry:'Geometry',document:'Document'})[Selected.Category]}</strong><span>${Selected.Category === 'project' ? 'Levels' : Selected.Category === 'cad' ? 'Assemblies / sketches' : 'Preview views'}</span><strong>${Selected.Views.length}</strong><span>Last opened</span><strong>${Escape(Selected.Opened)}</strong><span>Storage</span><strong>${Selected.Imported ? 'Local file selection' : 'Sample location'}</strong></div></section><section class="pz-card" data-card="Location"><h3>${Icon('folder')}Location</h3><div class="source-path">${Escape(Selected.Path)}</div><span class="local-chip">${Selected.Imported ? 'Read-only · native decoder pending' : 'Sample file · read-only'}</span></section>`;
+        Surface.innerHTML = `<div class="pz-heading"><span class="pz-breadcrumbs">Inspector / ${Escape(FormatTitles[Selected.Category] || 'Files')}</span><h2>${Escape(Selected.Title)}</h2><p>${Escape(Selected.Extension)} · ${Selected.Imported ? 'Selected from your device' : 'Sample file · local workspace'}</p></div><div class="detail-hero detail-page">${ConstructCurrentMiniPage()}<small>Page ${QueryCurrentPage()} of ${QueryPageCount()}</small></div>${ConstructOpenWithCard(Selected)}<section class="pz-card" data-card="Details"><h3>${Icon('file')}Details</h3><p class="pz-card-text">${Escape(Selected.Description)}</p><div class="detail-list"><span>Workspace</span><strong>${({project:'Game project',cad:'Drafting / CAD',geometry:'Geometry',document:'Document'})[Selected.Category]}</strong><span>${Selected.Category === 'project' ? 'Levels' : Selected.Category === 'cad' ? 'Assemblies / sketches' : 'Preview views'}</span><strong>${Selected.Views.length}</strong><span>Last opened</span><strong>${Escape(Selected.Opened)}</strong><span>Storage</span><strong>${Selected.Imported ? 'Local file selection' : 'Sample location'}</strong></div></section><section class="pz-card" data-card="Location"><h3>${Icon('folder')}Location</h3><div class="source-path">${Escape(Selected.Path)}</div><span class="local-chip">${Selected.Imported ? 'Read-only · native decoder pending' : 'Sample file · read-only'}</span></section>`;
     }
     else if (ActiveTab === 'comments')
     {
@@ -388,18 +418,19 @@ for (const Surface of ['#LibraryOpenWith','#OpenAppSwitch','#InspectorContent'])
         if (Event.target.closest('[data-launch-selected]') && Selected) LaunchApplication(Selected, QueryApplication(Selected));
     });
 Query('#PreviewSequence').onclick = Event => { const Button=Event.target.closest('[data-preview]'); if (Button) { PreviewIndex=Number(Button.dataset.preview);DocumentEnabled=false;ConstructPreview(); } };
-Query('#Document').onclick = () => { DocumentEnabled=true;ConstructPreview(); };
+Query('#DocumentSequence').onclick = Event => { const Button=Event.target.closest('[data-sheet]'); if (!Button) return; DocumentEnabled=true;DocumentSheet=Number(Button.dataset.sheet);ConstructPreview();ConstructInspector(); };
 function ConfigurePage(Page)
 {
     if (Selected.Category === 'document') return;
     const Count=QueryPageCount();
     const Wrapped=((Page%Count)+Count)%Count;
-    DocumentEnabled=Wrapped===Count-1;
-    if(!DocumentEnabled)PreviewIndex=Wrapped;
+    DocumentEnabled=Wrapped>=Selected.Views.length;
+    if(DocumentEnabled)DocumentSheet=Wrapped-Selected.Views.length;
+    else PreviewIndex=Wrapped;
     ConstructPreview();
 }
-Query('#Previous').onclick = () => ConfigurePage((DocumentEnabled ? QueryPageCount()-1 : PreviewIndex)-1);
-Query('#Next').onclick = () => ConfigurePage((DocumentEnabled ? QueryPageCount()-1 : PreviewIndex)+1);
+Query('#Previous').onclick = () => ConfigurePage(QueryCurrentPage()-2);
+Query('#Next').onclick = () => ConfigurePage(QueryCurrentPage());
 Query('#ZoomIn').onclick = () => ConfigureZoom(Zoom+25);
 Query('#ZoomOut').onclick = () => ConfigureZoom(Zoom-25);
 Query('#ZoomReset').onclick = Query('#Fit').onclick = () => ConfigureZoom(100);
