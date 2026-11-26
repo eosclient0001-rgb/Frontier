@@ -207,6 +207,12 @@ function ConstructDocumentMiniPage(Kind)
         const Picture = Details?.Project.Icon ? `<img src="${Escape(Details.Project.Icon)}" alt="">` : '';
         return `<span class="mini-page mini-form"><span class="mini-page-head"></span><span class="mini-page-title"></span><span class="mini-form-top"><span class="mini-icon">${Picture}</span><span class="mini-page-lines"><i></i><i></i><i></i></span></span><span class="mini-form-rows">${'<i></i>'.repeat(7)}</span><span class="mini-page-foot"></span></span>`;
     }
+    if (Kind === 'text' && Selected.Category !== 'document' && !Selected.Markdown)
+    {
+        const Details = QueryProjectDetailsEnabled() ? RetrieveProjectDetails(Selected) : null;
+        const Picture = Details?.Project.Icon ? `<img src="${Escape(Details.Project.Icon)}" alt="">` : '';
+        return `<span class="mini-page mini-overview"><span class="mini-page-head"></span><span class="mini-form-top"><span class="mini-icon">${Picture}</span><span class="mini-page-lines"><i></i><i></i></span></span><span class="mini-glance"><i></i><i></i><i></i><i></i></span>${ConstructThumbnail(Selected,0,ActiveRevision)}<span class="mini-columns"><span class="mini-page-lines"><i></i><i></i><i></i></span><span class="mini-page-lines"><i></i><i></i><i></i></span></span><span class="mini-page-foot"></span></span>`;
+    }
     return `<span class="mini-page mini-text"><span class="mini-page-head"></span><span class="mini-page-title"></span><span class="mini-page-lines">${'<i></i>'.repeat(9)}</span><span class="mini-page-foot"></span></span>`;
 }
 function ConstructCurrentMiniPage()
@@ -276,6 +282,10 @@ function ConstructPreview()
     {
         ConstructProjectDetails(Canvas);
         Query('#PreviewBottom').textContent = 'Project details · kept as you type';
+    }
+    else if (DocumentEnabled && Selected.Category !== 'document' && !Selected.Markdown)
+    {
+        ConstructOverviewPage(Canvas);
     }
     else if (DocumentEnabled)
     {
