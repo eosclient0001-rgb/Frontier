@@ -1,7 +1,7 @@
 //============================================================================================================================================
 //                                                              SCENESTUDIOS.JSX
 //============================================================================================================================================
-// 🧩 The ShaderEditor's object workspaces (Follow-up 75): UV, Fracture and Nanite. Where Material, Pattern, Stamp, Texture paint and
+// 🧩 The ShaderEditor's object workspaces (Follow-up 75): UV, Fracture and Nanite; Follow-up 84 adds Icon capture. Where Material, Pattern, Stamp, Texture paint and
 // Baking work on the bound material, these work on the bound scene object itself — the one "Bound to" names, or the selection when the
 // ShaderEditor follows it — and write into that object's own values, exactly as the in-viewport edit tools do:
 //   • UV — Values["UV Layout"] (island edits on the projection unwrap) and Values["Unwrapped UVs"] (paint and bake through this layout).
@@ -15,7 +15,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
-import { RotateCw, FlipHorizontal2, LayoutGrid, MousePointerClick, Move, Dices, Grid3x3, Check } from "lucide-react";
+import { RotateCw, FlipHorizontal2, LayoutGrid, MousePointerClick, Move, Dices, Grid3x3, Check, Camera } from "lucide-react";
 import ArtworkOutliner from "./ArtworkOutliner.jsx";
 import { DockTabs, ViewportHeader } from "./SurfaceDocks.jsx";
 import { PageStrip, PageTurn, PageLook } from "./PageCarousel.jsx";
@@ -23,6 +23,7 @@ import { Control, Card, Metric } from "./Inspectors.jsx";
 import ShaderViewport, { BoundShape } from "./ShaderViewport.jsx";
 import { UvLayoutOf, UvView, UvPanel, FractureView, FracturePanelBody, useShatter, PointsOf, PointsPatch, PointTone, WorkspaceGlyph } from "./Workspaces.jsx";
 import { ClusterView, ClusterPanel, useClusters, Cut, LevelTones, ClusterKey, ErrorText } from "./ClusterWorkspace.jsx";
+import { CaptureView, CapturePanel, CaptureKey, CaptureAngle, CaptureOf, CaptureIcon, Thumbnail, useCaptureBody } from "./CaptureWorkspace.jsx";
 import { packCharts } from "../GeometryCompiler/Engine/UvCharts.js";
 import { CheckerTexture } from "./WorkspaceGeometry.js";
 import { Hue } from "./WorkspaceSurface.jsx";
@@ -126,6 +127,7 @@ function BoundCard({ Subject, Values, Here, OpenStudio, Facts = [] }) {
     ["fracture", "Fracture", "fracture"],
     ["nanite", "Nanite", "lod"],
     ["sdf", "Distance field", "sdf"],
+    ["capture", "Icon capture", "capture"],
   ].filter(([Id]) => Id !== Here);
   return (
     <Card Title="Bound object">
@@ -736,10 +738,140 @@ export function NaniteStudio({ Subject, Values, Change, Material, OpenStudio }) 
   );
 }
 
+//------------------------------------------------------------------------------------------------------------------------
+//                                                   ICON CAPTURE
+//------------------------------------------------------------------------------------------------------------------------
+
+// Follow-up 84: the Icon Capture workspace (CaptureWorkspace.jsx) opened in the ShaderEditor, beside UV, Fracture and Nanite. The Outliner
+// lists the capture angles, the Viewport has the capture box (the exact crop of the PNG) and the live 3D view with the object's material,
+// the Inspector the same Capture box / Icon cards as the edit workspace. The saved thumbnail stays in Values["Icon Capture"].
+const CaptureAngles = [
+  ["three-quarter", "Three-quarter", "Default · the Geometry Compiler's icon angle", CaptureAngle.Yaw, CaptureAngle.Pitch],
+  ["front", "Front", "Straight on, slightly above", 0, 0.12],
+  ["side", "Side", "From the right, slightly above", Math.PI / 2, 0.12],
+  ["top", "Top", "Looking down", 0, 1.45],
+];
+export function CaptureStudio({ Subject, Values, Change, Material, OpenStudio }) {
+  const [Look, SetLook] = useLook({ Tool: "capture" });
+  const [Mode, ChooseMode] = useState("box");
+  const Capture = CaptureOf(Look);
+  const Body = useCaptureBody(Subject, Values);
+  const Saved = Values[CaptureKey];
+  const Unwrap = UvLayoutOf(Subject, Values);
+  const Bound = useMemo(() => ({ Name: Subject.Name, Key: "capture:" + Unwrap.Key, Unwrapped: true, Make: () => ForPreview(UnwrapGeometry(Unwrap)) }), [Unwrap.Key, Subject.Name]);
+  const Near = (A, B) => Math.abs(A - B) < 0.01;
+  const Turn = (Yaw, Pitch) => SetLook((Before) => ({ ...Before, Yaw, Pitch, CaptureDraft: null }));
+  const Degrees = (Radians) => `${Math.round((Radians * 180) / Math.PI)}°`;
+  const Shoot = () => {
+    const Result = CaptureIcon(Body, Capture);
+    if (!Result.Coverage) return;
+    SetLook((Before) => ({ ...Before, CaptureDraft: { Url: Result.Url, Thumbnail: Thumbnail(Result.Canvas), Coverage: Result.Coverage, Size: Capture.Size, Look: Capture.Look } }));
+  };
+
+  const Sift = useSift();
+  const Rows = [
+    ...CaptureAngles.map(([Id, Name, Detail, Yaw, Pitch]) => ({
+      Id: "angle-" + Id,
+      Name,
+      Label: `Turn to the ${Name.toLowerCase()} angle`,
+      Detail: `${Detail} · ${Degrees(Yaw)} yaw · ${Degrees(Pitch)} pitch`,
+      Picture: <WorkspaceGlyph Tool="capture" Size={15} />,
+      Chosen: Near(Capture.Yaw, Yaw) && Near(Capture.Pitch, Pitch),
+      Pick: () => Turn(Yaw, Pitch),
+    })),
+    ...(Saved
+      ? [
+          {
+            Id: "angle-saved",
+            Name: "Saved thumbnail",
+            Label: "Turn to the saved thumbnail's angle",
+            Detail: `${Saved.Size} px ${Saved.Look} · ${Degrees(Saved.Yaw)} yaw · ${Degrees(Saved.Pitch)} pitch`,
+            Picture: <img className="os-capture-thumb" src={Saved.Url} alt="" />,
+            Chosen: Near(Capture.Yaw, Saved.Yaw) && Near(Capture.Pitch, Saved.Pitch),
+            Pick: () => Turn(Saved.Yaw, Saved.Pitch),
+          },
+        ]
+      : []),
+  ].filter((Row) => Sift.Matches(Row.Name));
+  const Outliner = (
+    <ArtworkOutliner
+      Title="Capture angles"
+      Detail={Saved ? `Thumbnail saved · ${Saved.Size} px ${Saved.Look}` : "No thumbnail saved yet"}
+      Tallies={[
+        ["Angles", CaptureAngles.length, () => Turn(CaptureAngle.Yaw, CaptureAngle.Pitch), "Back to the default angle"],
+        ["Saved", Saved ? 1 : 0, Saved ? () => Turn(Saved.Yaw, Saved.Pitch) : () => {}, "The saved thumbnail's angle"],
+      ]}
+      {...Sift}
+      Label="Capture angles"
+      Rows={Rows}
+      Empty="No angle matches"
+      Footer={
+        <>
+          <span>
+            <small>Box</small>
+            <b>{Capture.Size} px</b>
+          </span>
+          <span>
+            <small>Pick an angle</small>Turns the capture to it
+          </span>
+        </>
+      }
+    />
+  );
+  const Header = (
+    <ViewportHeader
+      Picture={<Picture Tool="capture" />}
+      Name={<span className="sfw-view-name">{Subject.Name}</span>}
+      Detail={<span role="status">{`Icon · ${Capture.Size} × ${Capture.Size} · transparent · ${Degrees(Capture.Yaw)} yaw · ${Degrees(Capture.Pitch)} pitch`}</span>}
+      Badge={Look.CaptureDraft ? "Captured · not saved" : Saved ? "Thumbnail saved" : null}
+      ModesLabel="Icon capture view"
+      Modes={[
+        ["box", "Box", Mode === "box", () => ChooseMode("box")],
+        ["3d", "3D", Mode === "3d", () => ChooseMode("3d")],
+      ]}
+      Actions={null}
+      Primary={
+        <button type="button" className="sfw-apply" onClick={Shoot} title="Capture the box as a transparent PNG (save it from the Inspector)">
+          <Camera size={14} /> Capture
+        </button>
+      }
+      Tools={null}
+      Trailing={<span className="sfw-view-note">{Mode === "box" ? "Drag to turn · wheel to zoom" : "The object with its material"}</span>}
+    />
+  );
+  const Centre =
+    Mode === "box" ? (
+      <CaptureView Subject={Subject} Values={Values} Workspace={Look} SetWorkspace={SetLook} />
+    ) : (
+      <ShaderViewport Material={Material} Eyebrow="ICON CAPTURE / MATERIAL" Title={Subject.Name} Note="The icon is drawn in the capture box's look (Clay or Normals); this view shows the object's material" Shape={BoundShape} ChooseShape={() => {}} Bound={Bound} />
+    );
+  const Pages = [
+    { Id: "capture", Label: "Capture" },
+    { Id: "bound", Label: "Target" },
+  ];
+  const PageBodies = [
+    <CapturePanel Subject={Subject} Values={Values} Change={Change} Workspace={Look} SetWorkspace={SetLook} Kit={Kit} />,
+    <BoundCard Subject={Subject} Values={Values} Here="capture" OpenStudio={OpenStudio} Facts={[["Thumbnail", Saved ? `${Saved.Side} px copy · ${Saved.Size} px ${Saved.Look}` : "not saved"], ["Box", `${Capture.Size} px · ${Capture.Zoom.toFixed(2)}× framing`]]} />,
+  ];
+  return (
+    <StudioDocks
+      Studio="capture"
+      Owner="Icon capture"
+      OutlinerName="Outliner"
+      Outliner={Outliner}
+      Header={Header}
+      Centre={Centre}
+      Foot={Mode === "box" ? "The box is the exact crop of the PNG · the dashed circle is the 82 % fill guide" : "Live material preview · drag to orbit"}
+      Pages={Pages}
+      PageBodies={PageBodies}
+    />
+  );
+}
+
 // What the object workspaces show when the ShaderEditor is not bound to a primitive (a library material or a vehicle mesh).
 export function UnboundStudio({ Studio, Subject, Reason }) {
-  const Names = { uv: "UV", fracture: "Fracture", nanite: "Nanite" };
-  const Tools = { uv: "uv", fracture: "fracture", nanite: "lod" };
+  const Names = { uv: "UV", fracture: "Fracture", nanite: "Nanite", capture: "Icon capture" };
+  const Tools = { uv: "uv", fracture: "fracture", nanite: "lod", capture: "capture" };
   return (
     <div className="surface-workspace scene-studio os-unbound" data-surface-workspace={Studio}>
       <div className="os-unbound-card">

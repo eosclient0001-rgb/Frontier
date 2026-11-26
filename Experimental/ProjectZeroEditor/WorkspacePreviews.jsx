@@ -13,6 +13,7 @@ import { Surface, Hue } from "./WorkspaceSurface.jsx";
 import { CheckerTexture } from "./WorkspaceGeometry.js";
 import { useSdfVolume, useSliceImage } from "./SdfWorkspace.jsx";
 import { useClusters, LevelTones, ErrorText, Cut, PaintCut } from "./ClusterWorkspace.jsx";
+import { CaptureKey, CaptureAngle, CaptureFill, PaintIcon, useCaptureBody } from "./CaptureWorkspace.jsx";
 
 // UDIM numbering: 1001 + U tile + 10 × V tile, ten tiles per row.
 export const UdimOf = (U, V) => 1001 + Math.max(0, Math.min(9, Math.floor(U))) + 10 * Math.max(0, Math.floor(V));
@@ -32,7 +33,7 @@ function IslandTiles(Layout, Uvs) {
 
 // Follow-up 75: Studio opens the object in its dedicated ShaderEditor workspace (UV, Fracture, Nanite, or Baking's distance field);
 // that is the main button, and the in-viewport edit workspace stays beside it as the quieter one.
-const StudioNames = { uv: "UV editor", fracture: "Fracture editor", sdf: "Baking · distance field", lod: "Nanite workspace" };
+const StudioNames = { uv: "UV editor", fracture: "Fracture editor", sdf: "Baking · distance field", lod: "Nanite workspace", capture: "Icon capture workspace" };
 function OpenButton({ Tool, Label, Open, Studio = null }) {
   return (
     <div className="ws-actions">
@@ -51,7 +52,7 @@ function OpenButton({ Tool, Label, Open, Studio = null }) {
 }
 
 // Follow-up 66: the viewport's tool rail is gone, so the two workspaces without a page of their own open from small cards: Collision Fit
-// at the end of the Components page, Icon Capture at the end of the Overview.
+// at the end of the Components page. Follow-up 84: Icon Capture has its own page now (CapturePreviewCard, page 9).
 export function WorkspaceLaunchCard({ Tool, Title, Caption, Label, Open, Kit }) {
   const { Card } = Kit;
   return (
@@ -289,6 +290,45 @@ export function LodPreviewCard({ Subject, Values, Open, Studio = null, Kit }) {
       {Readout("Build time", Dag ? `${Dag.buildMs.toFixed(0)} ms` : "–")}
       <BakeLine Standing={Build.Standing} Baked={Settings.Baked} />
       <OpenButton Tool="lod" Label="Edit in LOD workspace" Open={Open} Studio={Studio} />
+    </Card>
+  );
+}
+
+// Follow-up 84: page 9, Icon capture. The saved thumbnail (or, before one is saved, the default framing drawn live) and the capture
+// settings it was made with; the main button opens the object in the ShaderEditor's Icon capture workspace.
+export function CapturePreviewCard({ Subject, Values, Open, Studio = null, Kit }) {
+  const { Card, Control, Metric } = Kit;
+  const Saved = Values[CaptureKey];
+  const Body = useCaptureBody(Subject, Values);
+  const Readout = (Label, Text) => <Control key={Label} Field={{ Label, Control: "Readout" }} Value={Text} />;
+  const Degrees = (Radians) => `${Math.round((Radians * 180) / Math.PI)}°`;
+  const Paint = (Brush, Width, Height) => {
+    const Side = Math.min(Width, Height) - 16, Left = (Width - Side) / 2, Top = (Height - Side) / 2;
+    const Cell = Math.max(8, Side / 12);
+    for (let Y = 0; Y < Side; Y += Cell)
+      for (let X = 0; X < Side; X += Cell) {
+        Brush.fillStyle = (Math.floor(X / Cell) + Math.floor(Y / Cell)) % 2 ? "#202020" : "#181818";
+        Brush.fillRect(Left + X, Top + Y, Math.min(Cell, Side - X), Math.min(Cell, Side - Y));
+      }
+    PaintIcon(Brush, Side, Body, { Yaw: CaptureAngle.Yaw, Pitch: CaptureAngle.Pitch, Zoom: 1, Look: 0 }, Left, Top);
+    Brush.strokeStyle = "#ffffff40";
+    Brush.strokeRect(Left + 0.5, Top + 0.5, Side - 1, Side - 1);
+  };
+  return (
+    <Card Title="Icon capture" Class="ws-preview-card ws-capture-card">
+      <Metric
+        Value={Saved ? `${Math.round(Saved.Coverage * 100)}` : "–"}
+        Unit={Saved ? "% of the box covered" : "no thumbnail yet"}
+        Caption={Saved ? `Saved ${new Date(Saved.At).toLocaleString()} · ${Saved.Size} px ${Saved.Look}` : "Default angle shown · capture to save the object's thumbnail"}
+      />
+      <button type="button" className="ws-preview-canvas ws-preview-capture" onClick={Studio || Open} disabled={!(Studio || Open)} aria-label="Open the Icon capture workspace">
+        {Saved?.Url ? <img src={Saved.Url} alt={`${Subject.Name} thumbnail`} /> : <Surface Paint={Paint} Label={`${Subject.Name} default icon framing`} Deps={[Body]} />}
+      </button>
+      {Readout("Angle", Saved ? `${Degrees(Saved.Yaw)} yaw · ${Degrees(Saved.Pitch)} pitch` : `${Degrees(CaptureAngle.Yaw)} yaw · ${Degrees(CaptureAngle.Pitch)} pitch · default`)}
+      {Readout("Output", Saved ? `${Saved.Size} × ${Saved.Size} px · transparent PNG` : "256 × 256 px · transparent PNG")}
+      {Readout("Kept on the object", Saved ? `${Saved.Side} px thumbnail` : "–")}
+      {Readout("Framing", `bounding sphere fills ${Math.round(CaptureFill * 100)} % of the box at 1×`)}
+      <OpenButton Tool="capture" Label="Capture in the viewport" Open={Open} Studio={Studio} />
     </Card>
   );
 }

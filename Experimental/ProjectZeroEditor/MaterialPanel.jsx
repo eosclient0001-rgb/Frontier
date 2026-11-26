@@ -37,7 +37,7 @@ import StampWorkspace from "./StampWorkspace.jsx";
 import PaintWorkspace from "./PaintWorkspace.jsx";
 import BakeWorkspace from "./BakeWorkspace.jsx";
 import { PatternMaterial, StampMaterial } from "./SurfaceTextures.js";
-import { UvStudio, FractureStudio, NaniteStudio, UnboundStudio } from "./SceneStudios.jsx";
+import { UvStudio, FractureStudio, NaniteStudio, CaptureStudio, UnboundStudio } from "./SceneStudios.jsx";
 import { BoundGeometry, ForPreview, LayoutKey } from "./BoundSurface.js";
 import { GeometryKeys } from "./WorkspaceSurface.jsx";
 
@@ -1427,6 +1427,8 @@ const StudioTabs = [
   { Id: "uv", Label: "UV", Glyph: "M4 4h16v16H4zM4 12h16M12 4v16M6.5 6.5h3.5v3.5H6.5z", Scene: true },
   { Id: "fracture", Label: "Fracture", Glyph: "M5.5 6.5 12 3.5l6.5 3v8.5L12 20.5 5.5 15zM12 3.5 10.5 10l4 2.5-2.5 8M10.5 10 5.5 12", Scene: true },
   { Id: "nanite", Label: "Nanite", Glyph: "M9 3.5h6V8H9zM4 11h6v4H4zM14 11h6v4h-6zM12 8v1.6M7 11V9.6h10V11M3.5 18.5h3M8.5 18.5h3M12.5 18.5h3M17.5 18.5h3", Scene: true },
+  // Follow-up 84: Icon capture, opened from the object's ninth inspector page.
+  { Id: "capture", Label: "Icon capture", Glyph: "M4 8.5V5.5a1.5 1.5 0 0 1 1.5-1.5h3M15.5 4h3A1.5 1.5 0 0 1 20 5.5v3M20 15.5v3a1.5 1.5 0 0 1-1.5 1.5h-3M8.5 20h-3A1.5 1.5 0 0 1 4 18.5v-3M12 8.2 15.3 10v3.9L12 15.8 8.7 13.9V10z", Scene: true },
 ];
 function ShaderStudios({ Studio, ChooseStudio, Subject, Material, Latest, Apply, Slot, ShowSlots, Scene, Bound, PreviewShape, ChoosePreviewShape, children }) {
   const [OwnStudio, ChooseOwnStudio] = useState("material");
@@ -1458,7 +1460,7 @@ function ShaderStudios({ Studio, ChooseStudio, Subject, Material, Latest, Apply,
         ))}
         {Shown !== "material" &&
           (StudioTabs.find((Tab) => Tab.Id === Shown)?.Scene ? (
-            <span className="shader-studio-owner" title="UV, Fracture and Nanite change the bound object itself">
+            <span className="shader-studio-owner" title="UV, Fracture, Nanite and Icon capture change the bound object itself">
               Edits <b>{Subject.Name}</b>
             </span>
           ) : (
@@ -1489,9 +1491,9 @@ function ShaderStudios({ Studio, ChooseStudio, Subject, Material, Latest, Apply,
             ChooseShape={ChoosePreviewShape}
             Bound={Bound}
           />
-        ) : Shown === "uv" || Shown === "fracture" || Shown === "nanite" ? (
+        ) : Shown === "uv" || Shown === "fracture" || Shown === "nanite" || Shown === "capture" ? (
           Scene ? (
-            React.createElement({ uv: UvStudio, fracture: FractureStudio, nanite: NaniteStudio }[Shown], { ...Scene, Material, OpenStudio })
+            React.createElement({ uv: UvStudio, fracture: FractureStudio, nanite: NaniteStudio, capture: CaptureStudio }[Shown], { ...Scene, Material, OpenStudio })
           ) : (
             <UnboundStudio Studio={Shown} Subject={Subject} Reason={Unbound} />
           )

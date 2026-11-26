@@ -101,6 +101,8 @@ const Categories = [
   ["fracture", "Fracture", "fracture", "#ff6b6b"],
   ["sdf", "SDF", "sdf", "#95c3ad"],
   ["lod", "LOD", "lod", "#edc181"],
+  // Follow-up 84: the icon the object is shown with (Content Browser, outliner), after LOD.
+  ["capture", "Icon capture", "capture", "#8fd3e8"],
 ];
 
 //------------------------------------------------------------------------------------------------------------------------
@@ -1383,7 +1385,7 @@ export function Carousel({ Pages, Focus = null, Summary, Sections = Categories }
 //                                                    INSPECTOR
 //------------------------------------------------------------------------------------------------------------------------
 
-export default function PrimitiveInspector({ Subject, Values, Change, Hidden, ToggleHidden, MaterialCards, FractureCards, UvCards = null, SdfCards = null, LodCards = null, Components = null, ComponentPage = null, ComponentTools = null, Focus = null, Kit }) {
+export default function PrimitiveInspector({ Subject, Values, Change, Hidden, ToggleHidden, MaterialCards, FractureCards, UvCards = null, SdfCards = null, LodCards = null, CaptureCards = null, Components = null, ComponentPage = null, ComponentTools = null, Focus = null, Kit }) {
   const Shape = ShapeOf(Subject);
   const Read = (Key, Initial) => (Values[Key] === undefined ? Initial : Values[Key]);
   const Size = Measure(Shape, Read, Array.isArray(Values.Scale) ? Values.Scale : [1, 1, 1]);
@@ -1413,6 +1415,7 @@ export default function PrimitiveInspector({ Subject, Values, Change, Hidden, To
           fracture: FractureCards,
           sdf: SdfCards,
           lod: LodCards,
+          capture: CaptureCards,
         }}
       />
     </div>

@@ -1,0 +1,49 @@
+/*==========================================================================================================================================
+                                                          CAMERACOMPONENTS.CSS
+==========================================================================================================================================*/
+/* 🧩 Follow-up 84: the Camera's Components page — the list and the open component side by side on a track that slides between them. */
+
+.cc-page { position: relative; overflow: hidden; }
+.cc-track { display: grid; grid-template-columns: 100% 100%; transition: transform .32s cubic-bezier(.22, .8, .24, 1); align-items: start; }
+.cc-track.at-entry { transform: translateX(-100%); }
+.cc-pane { min-width: 0; max-height: 100000px; transition: opacity .24s ease, max-height 0s linear 0s; }
+/* The pane being left fades while the track slides, then folds to no height so the page is as tall as the pane shown. */
+.cc-track.at-entry .cc-list-pane, .cc-track:not(.at-entry) .cc-entry-pane { opacity: 0; pointer-events: none; max-height: 0; overflow: hidden; transition: opacity .24s ease, max-height 0s linear .32s; }
+@media (prefers-reduced-motion: reduce) { .cc-track, .cc-pane { transition: none; } }
+
+.cc-stack-card .pi-card-head { display: flex; align-items: center; gap: 8px; }
+.cc-stack-card .pi-card-head h3 { flex: 1; }
+.cc-close { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid #ffffff14; border-radius: 8px; background: transparent; color: var(--muted, #9a9a9a); cursor: pointer; }
+.cc-close:hover { color: var(--text, #f0f0f0); background: #ffffff0d; }
+.cc-stack { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cc-entry { grid-template-columns: 1fr !important; }
+.cc-open { display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; width: 100%; text-align: left; }
+.cc-open > span { display: grid; min-width: 0; }
+.cc-open > span small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-scope { font-style: normal; font-size: 9px; letter-spacing: .4px; color: var(--muted, #9a9a9a); padding: 2px 7px; border-radius: 999px; background: #ffffff0a; white-space: nowrap; }
+.cc-crumbs { display: flex; align-items: center; gap: 8px; }
+.cc-crumbs > b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-live-dot { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; color: var(--pz-on, #5bdb87); }
+.cc-live-dot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent); }
+
+/* The nested inspector: its own heading is replaced by the path above. */
+.cc-live { margin-top: 10px; }
+.cc-live > .generic-inspector > .inspector-heading .breadcrumbs,
+.cc-live > * > .inspector-heading .breadcrumbs { display: none; }
+.cc-live .inspector-heading h1 { font-size: 20px; }
+.cc-live .oc-owner { display: none; }
+
+.cc-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border-radius: 16px; background: #ffffff08; border: 1px solid #ffffff0f; }
+.cc-strip button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: var(--muted, #9a9a9a); font-size: 10.5px; cursor: pointer; }
+.cc-strip button:hover { color: var(--text, #f0f0f0); background: #ffffff0a; }
+.cc-strip .cc-strip-item.on { background: var(--pz-pill-open, #34343a); color: var(--text, #f0f0f0); }
+.cc-strip .cc-strip-list { color: var(--text, #f0f0f0); border-right: 1px solid #ffffff14; border-radius: 10px 4px 4px 10px; }
+:root[data-theme=light] .cc-close, :root[data-theme=light] .cc-strip .cc-strip-list { border-color: #0f172a14; }
+:root[data-theme=light] .cc-strip { background: #0f172a05; border-color: #0f172a0f; }
+:root[data-theme=light] .cc-scope { background: #0f172a08; }
+
+/* The nested inspector sits inside the camera's page: no second page inset, a compact heading. */
+.cc-live > .generic-inspector, .cc-live > .specialized-inspector { padding: 0 !important; margin: 0; width: auto; max-width: none; min-width: 0; }
+.cc-live .inspector-heading { padding-top: 0; margin-top: 0; }
+.cc-live .inspector-heading h1 { margin-top: 0; }
+.cc-stack-card .pi-card-aside { font-size: 10px; color: var(--muted, #9a9a9a); }

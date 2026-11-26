@@ -995,6 +995,23 @@
         "Default": 6
       },
       {
+        "Label": "Streak rotation",
+        "Control": "Slider",
+        "Group": "Layers",
+        "NativeArguments": [
+          "0.0f",
+          "360.0f",
+          "Flare.Layers.StreakRotation",
+          "1",
+          "\"deg\""
+        ],
+        "Minimum": 0.0,
+        "Maximum": 360.0,
+        "Decimals": 1,
+        "Unit": "deg",
+        "Default": 0.0
+      },
+      {
         "Label": "Ghost brightness",
         "Control": "Slider",
         "Group": "Ghosts / halo",
@@ -1061,6 +1078,32 @@
         "Decimals": 3,
         "Unit": "",
         "Default": 0.035
+      },
+      {
+        "Label": "Halo rotation",
+        "Control": "Slider",
+        "Group": "Ghosts / halo",
+        "NativeArguments": [
+          "0.0f",
+          "360.0f",
+          "Flare.Layers.HaloRotation",
+          "1",
+          "\"deg\""
+        ],
+        "Minimum": 0.0,
+        "Maximum": 360.0,
+        "Decimals": 1,
+        "Unit": "deg",
+        "Default": 0.0
+      },
+      {
+        "Label": "Follow light",
+        "Control": "Switch",
+        "Group": "Ghosts / halo",
+        "NativeArguments": [
+          "Flare.Layers.FollowLight>0"
+        ],
+        "Default": false
       },
       {
         "Label": "Ghost shape",

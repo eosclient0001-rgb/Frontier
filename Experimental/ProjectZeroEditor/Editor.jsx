@@ -1000,6 +1000,9 @@ function App() {
   // Components store their values on the object that owns them.
   const SelectedRow = Rows.find((Row) => Row.Id === Selected);
   const ValueOwner = SelectedRow?.Panel === ComponentPanel ? SelectedRow.Parent : Selected;
+  // Follow-up 84: edits for another row (the Camera's Components page shows its components' inspectors inline).
+  const ChangeValuesOf = (Owner) => (Key, Value) =>
+    AssignValues((Previous) => ({ ...Previous, [Owner]: { ...Previous[Owner], [Key]: Value } }));
   const Change = (Key, Value) =>
     AssignValues((Previous) => ({
       ...Previous,
@@ -2450,7 +2453,7 @@ function App() {
               OpenWorkspace={OpenWorkspace}
               OpenStudio={OwnsMaterial(Subject) && Subject.Panel === "geometry" ? (Studio) => OpenShaderStudio(Selected, Studio) : null}
               SetWorkspace={SetWorkspace}
-              Scene={{ Rows, SelectRow, AddRows: InsertUnder, PatchRow, OpenComponent, Focus: ComponentFocus, Air: AirOf(Values), Sun: ReaderOf(Values, "sun"), OpenComponentViewer: OpenVehiclePanel, Values, RenderSettings: Subject.Panel === "camera" ? RenderSettingsCard() : null }}
+              Scene={{ Rows, SelectRow, AddRows: InsertUnder, PatchRow, OpenComponent, Focus: ComponentFocus, Air: AirOf(Values), Sun: ReaderOf(Values, "sun"), OpenComponentViewer: OpenVehiclePanel, Values, RenderSettings: Subject.Panel === "camera" ? RenderSettingsCard() : null, ChangeOf: ChangeValuesOf }}
               OpenWind={() => {
                 WindOpener.current = document.activeElement;
                 EditWind(Selected);

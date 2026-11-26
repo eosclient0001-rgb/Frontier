@@ -45,6 +45,11 @@ export function FlareSettings(Read) {
     Starburst: B("Starburst", true),
     Spread: N("Spread", 1),
     Rotation: N("Rotation", 0),
+    // Follow-up 84: the streaks and the halo turn on their own; Follow light adds the angle from the frame centre to the light, so they
+    // swing round as the light crosses the frame.
+    StreakRotation: N("Streak rotation", 0),
+    HaloRotation: N("Halo rotation", 0),
+    FollowLight: B("Follow light", false),
     RayPairs: Math.max(2, Math.min(12, Math.round(N("Ray pairs", 6)))),
     GhostGain: N("Ghost brightness", 1),
     GhostSpacing: N("Ghost spacing", 1),
@@ -116,13 +121,14 @@ export function PaintFlareAtlas(Canvas, Settings, Tint = [1, 1, 1]) {
     }
   });
 
-  // Halo: a ring, its red, green and blue parts spread apart by Chromatic.
+  // Halo: a ring, its red, green and blue parts spread apart by Chromatic — outward, and sideways along the cell's x axis (lateral colour),
+  // so the halo has a direction for Halo rotation (and Follow light) to turn.
   Clip(2, () => {
     const Radius = Half * 0.8, Width = Math.max(1.5, Settings.HaloWidth * S * 1.6);
     const Spread = Settings.Chromatic * Width * 0.9;
     [[1, 0.25, 0.2], [0.3, 1, 0.35], [0.25, 0.4, 1]].forEach((Channel, Index) => {
-      const R = Radius + (Index - 1) * Spread;
-      const Ring = Brush.createRadialGradient(0, 0, Math.max(0, R - Width), 0, 0, R + Width);
+      const R = Radius + (Index - 1) * Spread, Shift = (Index - 1) * Spread * 1.4;
+      const Ring = Brush.createRadialGradient(Shift, 0, Math.max(0, R - Width), Shift, 0, R + Width);
       const Colour = Times(Mix([1, 1, 1], Channel, 0.35 + 0.65 * Settings.Chromatic), Tint);
       Ring.addColorStop(0, Rgb(Colour, 0));
       Ring.addColorStop(0.5, Rgb(Colour, 0.55));
@@ -205,6 +211,9 @@ export function PaintFlare(Brush, Atlas, Settings, Pose) {
     Drawn++;
   };
   const Turn = (Settings.Rotation * Math.PI) / 180;
+  const Toward = Settings.FollowLight ? Math.atan2(Y - Height / 2, X - Width / 2) : 0;
+  const StreakTurn = Turn + (Settings.StreakRotation * Math.PI) / 180 + Toward;
+  const HaloTurn = (Settings.HaloRotation * Math.PI) / 180 + Toward;
   Brush.save();
   Brush.globalCompositeOperation = "lighter";
   // Veiling glare, then the glow.
@@ -213,10 +222,10 @@ export function PaintFlare(Brush, Atlas, Settings, Pose) {
   if (Settings.Starburst) Sprite(1, X, Y, Short * 0.62 * Settings.Spread, Short * 0.62 * Settings.Spread, Turn, Strength * 0.9 * W.Burst);
   if (Settings.Streaks)
     for (let Pair = 0; Pair < Settings.RayPairs; Pair++)
-      Sprite(3, X, Y, Short * 0.95 * Settings.Spread, Short * 0.035, Turn + 0.12 + (Pair / Settings.RayPairs) * Math.PI, Strength * 0.45 * Settings.StreakGain * W.Rays);
-  if (Settings.Anamorphic) Sprite(3, X, Y, Width * 1.5 * Settings.Spread, Short * 0.07, 0, Strength * 0.85 * Settings.StreakGain * W.Streak);
+      Sprite(3, X, Y, Short * 0.95 * Settings.Spread, Short * 0.035, StreakTurn + 0.12 + (Pair / Settings.RayPairs) * Math.PI, Strength * 0.45 * Settings.StreakGain * W.Rays);
+  if (Settings.Anamorphic) Sprite(3, X, Y, Width * 1.5 * Settings.Spread, Short * 0.07, StreakTurn - Turn, Strength * 0.85 * Settings.StreakGain * W.Streak);
   const Ring = Short * Settings.HaloRadius * 2.5 * Settings.Spread;
-  Sprite(2, X, Y, Ring, Ring, 0, Strength * 0.32 * Settings.HaloGain * W.Halo);
+  Sprite(2, X, Y, Ring, Ring, HaloTurn, Strength * 0.32 * Settings.HaloGain * W.Halo);
   // Ghosts along the line from the sun through the centre, the far ones past it.
   const Cx = Width / 2, Cy = Height / 2;
   for (let Ghost = 0; Ghost < Settings.Ghosts; Ghost++) {

@@ -15,8 +15,8 @@ import { Surface, useOrbit, Clamp, GeometryKeys } from "./WorkspaceSurface.jsx";
 export const CaptureKey = "Icon Capture";
 export const CaptureAngle = { Yaw: 0.7, Pitch: 0.38 };
 export const CaptureFill = 0.82;
-const Sizes = [128, 256, 512];
-const Looks = ["Clay", "Normals"];
+export const Sizes = [128, 256, 512];
+export const Looks = ["Clay", "Normals"];
 const ThumbnailSide = 128;
 
 export function useCaptureBody(Subject, Values) {
@@ -33,7 +33,7 @@ export function useCaptureBody(Subject, Values) {
   }, [Key]);
 }
 
-const CaptureOf = (Workspace) => ({
+export const CaptureOf = (Workspace) => ({
   Yaw: Workspace.Yaw ?? CaptureAngle.Yaw,
   Pitch: Workspace.Pitch ?? CaptureAngle.Pitch,
   Zoom: Workspace.Zoom ?? 1,
@@ -84,7 +84,7 @@ export function CaptureIcon(Body, Capture) {
   return { Canvas, Url: Canvas.toDataURL("image/png"), Coverage: Filled / (Capture.Size * Capture.Size) };
 }
 
-function Thumbnail(Canvas) {
+export function Thumbnail(Canvas) {
   const Small = document.createElement("canvas");
   Small.width = Small.height = ThumbnailSide;
   const Brush = Small.getContext("2d");

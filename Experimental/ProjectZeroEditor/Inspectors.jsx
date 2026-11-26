@@ -5,8 +5,9 @@ import HeightFogVisual from "./HeightFogVisual.jsx";
 import { HeightFogLayer, FogLightStudy, AerialRidges } from "./FogCards.jsx";
 import FracturePanel from "./FracturePanel.jsx";
 import { RenderComponentCards } from "./RenderComponents.jsx";
-import { UvPreviewCard, WorkspaceLaunchCard, FracturePreviewCard, SdfPreviewCard, LodPreviewCard } from "./WorkspacePreviews.jsx";
+import { UvPreviewCard, WorkspaceLaunchCard, FracturePreviewCard, SdfPreviewCard, LodPreviewCard, CapturePreviewCard } from "./WorkspacePreviews.jsx";
 import { ComponentPanel, ComponentSheet, ComponentsCard, ComponentStack, OwnerKind } from "./ObjectComponents.jsx";
+import { CameraComponentPage, ComponentValueOwner } from "./CameraComponents.jsx";
 import AtmosphereLab, { AtmosphereProfile } from "./AtmosphereLab.jsx";
 import MoonGlobe from "./MoonGlobe.jsx";
 import {
@@ -934,23 +935,22 @@ export function Inspector({
             Kit={{ Card, Control, Metric }}
           />
         }
+        CaptureCards={
+          <CapturePreviewCard
+            Subject={Subject}
+            Values={Values}
+            Open={OpenWorkspace && (() => OpenWorkspace("capture"))}
+            Studio={OpenStudio && (() => OpenStudio("capture"))}
+            Kit={{ Card, Control, Metric }}
+          />
+        }
         Components={
-          <>
-            <ComponentsCard
-              Owner={Subject}
-              Values={Values}
-              Scene={Scene}
-              Kit={{ Icon }}
-            />
-            <WorkspaceLaunchCard
-              Tool="capture"
-              Title="Icon capture"
-              Caption="Frame the object in a square box and capture a transparent PNG thumbnail."
-              Label="Open Icon Capture"
-              Open={OpenWorkspace && (() => OpenWorkspace("capture"))}
-              Kit={{ Card }}
-            />
-          </>
+          <ComponentsCard
+            Owner={Subject}
+            Values={Values}
+            Scene={Scene}
+            Kit={{ Icon }}
+          />
         }
         Focus={Scene?.Focus}
         ComponentPage={
@@ -1525,6 +1525,27 @@ export function Inspector({
         ])}
         {TagsAndNotes()}
         </>) },
+          // Follow-up 84: the camera's components (Camera Settings and the camera effects), each opening its own inspector here, live.
+          { Id: "components", Label: "Components", Content: (
+            <CameraComponentPage
+              Owner={Subject}
+              Scene={Scene}
+              Kit={{ Icon }}
+              Inspect={(Row) => (
+                <Inspector
+                  Subject={Row}
+                  Values={Scene?.Values?.[ComponentValueOwner(Row)] || {}}
+                  Change={Scene?.ChangeOf ? Scene.ChangeOf(ComponentValueOwner(Row)) : () => {}}
+                  Hidden={false}
+                  ToggleHidden={() => {}}
+                  OpenShader={() => {}}
+                  OpenFracture={() => {}}
+                  OpenWind={() => {}}
+                  Scene={Scene}
+                />
+              )}
+            />
+          ) },
           // Follow-up 78: scene cameras stand in the viewport, on a tripod or floating, at their own position and angle.
           ...(IsEditorCamera(Subject) ? [] : [{ Id: "mount", Label: "Mount", Content: (
             <CameraMountPage Subject={Subject} Values={Values} Assign={AssignProperty} Kit={{ Card, Control, Metric }} Body={CameraBodyOf(Subject.Id, V("Camera body"))} />
@@ -2048,6 +2069,11 @@ export function Inspector({
           { Id: "halo", Label: "Halo", Content: (<>
         <Card Title="Halo & optical response">
           {Fields("Halo Radius", "Halo brightness", "Halo width", "Chromatic")}
+        </Card>
+        {/* Follow-up 84: streaks and halo turn towards the light as it crosses the frame. */}
+        <Card Title="Rotation">
+          {Fields("Streak rotation", "Halo rotation", "Follow light")}
+          <p>Follow light adds the angle from the frame centre to the light, so the streaks and the halo swing round with it.</p>
         </Card>
         {SpecificationCard()}
         </>) },
